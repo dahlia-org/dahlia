@@ -31,7 +31,7 @@
                 to: Locale(identifier: "en_US"),
                 translateSegment: nil
             )
-            #expect(reconfigured.localeIdentifier == "en_US")
+            #expect(reconfigured.transcriptionLocaleIdentifier == "en_US")
 
             _ = try await runtime.controller.stop()
             await runtime.controller.completeStop()
@@ -552,9 +552,10 @@
             await runtime.controller.completeStop()
         }
 
-        private func makeRuntime(
+        func makeRuntime(
             mode: TranscriptionMode,
             liveSubtitlesEnabled: Bool,
+            liveChatEnabled: Bool = false,
             recognitionFailureMode: FakeRecognitionFailureMode = .none,
             failingRecognitionFinishSource: RecordingAudioSource? = nil,
             failingCaptureDeviceID: AudioDeviceID? = nil,
@@ -582,6 +583,7 @@
             let plan = TranscriptionSessionPlan(
                 finalMode: mode,
                 liveSubtitlesEnabled: liveSubtitlesEnabled,
+                liveChatEnabled: liveChatEnabled,
                 retainBatchAudio: mode == .batch
             )
             try await controller.prepare(
@@ -591,10 +593,7 @@
                     plan: plan,
                     locale: Locale(identifier: "ja_JP"),
                     sources: [
-                        .init(
-                            source: .microphone,
-                            forcesEchoCancellationForExternalMicrophone: forcesExternalMicrophoneEchoCancellation
-                        ),
+                        .init(source: .microphone, forcesEchoCancellationForExternalMicrophone: forcesExternalMicrophoneEchoCancellation),
                         .init(source: .system),
                     ],
                     dbQueue: mode == .batch ? DatabaseQueue() : nil,
@@ -655,7 +654,7 @@
     }
 
     @MainActor
-    private final class RuntimeFailureRecorder {
+    final class RuntimeFailureRecorder {
         struct Entry: Equatable {
             let source: RecordingAudioSource?
             let message: String
@@ -692,7 +691,7 @@
         }
     }
 
-    private final class FakeCaptureWarningStore: @unchecked Sendable {
+    final class FakeCaptureWarningStore: @unchecked Sendable {
         private struct State {
             var handlers: [RecordingAudioSource: [AudioCaptureWarningHandler]] = [:]
         }
@@ -800,6 +799,7 @@
         let probe: RecordingRuntimeProbe
         let failureMode: FakeRecognitionFailureMode
         let failingFinishSource: RecordingAudioSource?
+        private let sessionPreparationCount = OSAllocatedUnfairLock(initialState: 0)
 
         init(
             probe: RecordingRuntimeProbe,
@@ -824,7 +824,10 @@
             bufferingMode _: AudioBufferBridge.BufferingMode,
             translateSegment _: ProgressiveSegmentTranslationHandler?
         ) async throws -> PreparedProgressiveRecognitionSession {
-            if failureMode == .sessionPreparation {
+            let preparationIndex = sessionPreparationCount.withLock { count in defer { count += 1 }
+                return count
+            }
+            if failureMode == .sessionPreparation || (failureMode == .sessionPreparationAfterInitial && preparationIndex >= 2) {
                 throw FakeRuntimeError.recognitionSessionPreparation
             }
             let format = try #require(AVAudioFormat(
@@ -979,14 +982,6 @@
 
         func isRunning(sessionId _: UUID) async -> Bool { false }
         func recordRecordingFailure(sessionId _: UUID, message: String) async { await probe.append(.batchRecordingFailure(message)) }
-    }
-
-    private enum FakeRecognitionFailureMode: Equatable {
-        case none
-        case modelPreparation
-        case sessionPreparation
-        case start
-        case eventDuringStart
     }
 
     private enum FakeRuntimeError: Error {

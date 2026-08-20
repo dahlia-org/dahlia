@@ -6,6 +6,7 @@ struct BatchTranscriptionConfirmationView: View {
     let displayLocale: Locale
     let projects: [FlatProjectRow]
     let isRetranscription: Bool
+    let allowsRecordedLanguageSelection: Bool
     let onStart: (BatchTranscriptionLanguageSelection, Bool, SummaryGenerationOptions?, UUID?) -> String?
     let onPostpone: () -> Void
 
@@ -25,6 +26,7 @@ struct BatchTranscriptionConfirmationView: View {
         initialProjectId: UUID?,
         initialErrorMessage: String?,
         initialLanguageSelection: BatchTranscriptionLanguageSelection,
+        allowsRecordedLanguageSelection: Bool,
         initiallyRetainsAudioAfterBatch: Bool,
         initiallyGeneratesSummary: Bool,
         summaryGenerationOptions: SummaryGenerationOptions,
@@ -39,6 +41,7 @@ struct BatchTranscriptionConfirmationView: View {
         self.onStart = onStart
         self.onPostpone = onPostpone
         self.isRetranscription = isRetranscription
+        self.allowsRecordedLanguageSelection = allowsRecordedLanguageSelection
         _languageSelection = State(initialValue: initialLanguageSelection)
         _deleteAudioAfterTranscription = State(initialValue: !initiallyRetainsAudioAfterBatch)
         _generateSummaryAfterBatchTranscription = State(initialValue: initiallyGeneratesSummary)
@@ -68,6 +71,7 @@ struct BatchTranscriptionConfirmationView: View {
                 locales: locales,
                 automaticLanguageLocales: automaticLanguageLocales,
                 displayLocale: displayLocale,
+                allowsRecordedLanguageSelection: allowsRecordedLanguageSelection,
                 languageSelection: $languageSelection,
                 deleteAudioAfterTranscription: $deleteAudioAfterTranscription,
                 generateSummaryAfterBatchTranscription: $generateSummaryAfterBatchTranscription,

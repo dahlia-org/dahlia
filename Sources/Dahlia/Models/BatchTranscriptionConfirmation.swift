@@ -23,6 +23,7 @@ struct BatchTranscriptionConfirmation: Identifiable, Equatable {
     let suggestedLocaleIdentifier: String
     let retainAudioAfterBatch: Bool
     let initialLanguageSelection: BatchTranscriptionLanguageSelection
+    let allowsRecordedLanguageSelection: Bool
     let automaticLanguageCandidateSnapshot: BatchLanguageDetectionCandidateSnapshot?
     let purpose: Purpose
     let initiallyGeneratesSummary: Bool
@@ -34,6 +35,7 @@ struct BatchTranscriptionConfirmation: Identifiable, Equatable {
         suggestedLocaleIdentifier: String,
         retainAudioAfterBatch: Bool,
         initialLanguageSelection: BatchTranscriptionLanguageSelection? = nil,
+        allowsRecordedLanguageSelection: Bool? = nil,
         automaticLanguageCandidateSnapshot: BatchLanguageDetectionCandidateSnapshot? = nil,
         purpose: Purpose = .initialOrRetry,
         initiallyGeneratesSummary: Bool = false,
@@ -46,8 +48,11 @@ struct BatchTranscriptionConfirmation: Identifiable, Equatable {
         self.meetingId = meetingId
         self.suggestedLocaleIdentifier = suggestedLocaleIdentifier
         self.retainAudioAfterBatch = retainAudioAfterBatch
-        self.initialLanguageSelection = initialLanguageSelection
+        let resolvedLanguageSelection = initialLanguageSelection
             ?? .manual(localeIdentifier: suggestedLocaleIdentifier)
+        self.initialLanguageSelection = resolvedLanguageSelection
+        self.allowsRecordedLanguageSelection = allowsRecordedLanguageSelection
+            ?? (resolvedLanguageSelection == .recorded)
         self.automaticLanguageCandidateSnapshot = automaticLanguageCandidateSnapshot
         self.purpose = purpose
         self.initiallyGeneratesSummary = initiallyGeneratesSummary

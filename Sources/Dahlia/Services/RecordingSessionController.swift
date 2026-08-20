@@ -37,7 +37,8 @@ actor RecordingSessionController {
         let sessionId: UUID
         let startedAt: Date
         let plan: TranscriptionSessionPlan
-        let locale: Locale
+        let transcriptionLocale: Locale
+        let liveRecognitionLocale: Locale
         let sources: [SourceConfiguration]
         let dbQueue: DatabaseQueue?
         let meetingId: UUID?
@@ -51,6 +52,7 @@ actor RecordingSessionController {
             startedAt: Date,
             plan: TranscriptionSessionPlan,
             locale: Locale,
+            liveRecognitionLocale: Locale? = nil,
             sources: [SourceConfiguration],
             dbQueue: DatabaseQueue? = nil,
             meetingId: UUID? = nil,
@@ -62,7 +64,8 @@ actor RecordingSessionController {
             self.sessionId = sessionId
             self.startedAt = startedAt
             self.plan = plan
-            self.locale = locale
+            transcriptionLocale = locale
+            self.liveRecognitionLocale = liveRecognitionLocale ?? locale
             self.sources = sources
             self.dbQueue = dbQueue
             self.meetingId = meetingId
@@ -92,7 +95,8 @@ actor RecordingSessionController {
         let sessionId: UUID
         let startedAt: Date
         var plan: TranscriptionSessionPlan
-        var localeIdentifier: String
+        var transcriptionLocaleIdentifier: String
+        var liveRecognitionLocaleIdentifier: String
         var enabledSources: Set<RecordingAudioSource>
     }
 
@@ -110,7 +114,7 @@ actor RecordingSessionController {
 
     private struct Preparation {
         let sources: [PreparedSource]
-        let locale: Locale
+        let transcriptionLocale: Locale
     }
 
     struct PendingRecognitionStart {
@@ -143,7 +147,8 @@ actor RecordingSessionController {
     var onEvent: EventHandler?
     var onRuntimeFailure: RuntimeFailureHandler?
     var onAudioLevel: AudioLevelHandler?
-    var currentLocale: Locale?
+    var currentTranscriptionLocale: Locale?
+    var currentLiveRecognitionLocale: Locale?
     var batchRuntimeFailureMessage: String?
 
     init(
@@ -180,7 +185,7 @@ actor RecordingSessionController {
             var recognitionModelIsAvailable = request.plan.requiresLiveRecognition
             if request.plan.requiresLiveRecognition {
                 do {
-                    try await recognitionFactory.prepareModel(locale: request.locale)
+                    try await recognitionFactory.prepareModel(locale: request.liveRecognitionLocale)
                 } catch {
                     guard request.plan.finalMode == .batch else { throw error }
                     recognitionModelIsAvailable = false
@@ -211,7 +216,7 @@ actor RecordingSessionController {
                 if recognitionModelIsAvailable {
                     do {
                         recognition = try await recognitionFactory.prepareSession(
-                            locale: request.locale,
+                            locale: request.liveRecognitionLocale,
                             source: configuration.source,
                             sourceFormat: request.plan.recordsBatchAudio ? batchFormat : nil,
                             bufferingMode: request.plan.recordsBatchAudio
@@ -240,18 +245,20 @@ actor RecordingSessionController {
                 sessionId: request.sessionId,
                 startedAt: request.startedAt,
                 plan: request.plan,
-                localeIdentifier: request.locale.identifier,
+                transcriptionLocaleIdentifier: request.transcriptionLocale.identifier,
+                liveRecognitionLocaleIdentifier: request.liveRecognitionLocale.identifier,
                 enabledSources: Set(configurations.map(\.source))
             )
             preparation = Preparation(
                 sources: preparedSources,
-                locale: request.locale
+                transcriptionLocale: request.transcriptionLocale
             )
             batchScheduler = request.batchScheduler
             self.onEvent = onEvent
             self.onRuntimeFailure = onRuntimeFailure
             self.onAudioLevel = onAudioLevel
-            currentLocale = request.locale
+            currentTranscriptionLocale = request.transcriptionLocale
+            currentLiveRecognitionLocale = request.liveRecognitionLocale
             state = .prepared(snapshot)
             startBatchEventMonitoring()
         } catch {
@@ -275,7 +282,7 @@ actor RecordingSessionController {
             for preparedSource in preparation.sources {
                 try await startPreparedSource(
                     preparedSource,
-                    locale: preparation.locale,
+                    locale: preparation.transcriptionLocale,
                     snapshot: snapshot
                 )
             }
@@ -450,7 +457,8 @@ actor RecordingSessionController {
         onEvent = nil
         onRuntimeFailure = nil
         onAudioLevel = nil
-        currentLocale = nil
+        currentTranscriptionLocale = nil
+        currentLiveRecognitionLocale = nil
         batchRuntimeFailureMessage = nil
         state = .idle
     }

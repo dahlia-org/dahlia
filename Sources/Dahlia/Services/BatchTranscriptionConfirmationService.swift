@@ -278,19 +278,6 @@ extension BatchTranscriptionConfirmationService {
         updatedAt: Date,
         db: Database
     ) throws {
-        let recordedLocales = try String.fetchAll(
-            db,
-            sql: """
-            SELECT DISTINCT localeIdentifier
-            FROM recording_audio_segment_ranges
-            WHERE audioSegmentId IN (
-                SELECT id FROM recording_audio_segments WHERE recordingSessionId = ?
-            )
-            """,
-            arguments: [sessionId]
-        )
-        // 録音中に明示的に言語を切り替えた複数localeのrangeは保持する。
-        guard recordedLocales.count <= 1 else { return }
         try db.execute(
             sql: """
             UPDATE recording_audio_segment_ranges

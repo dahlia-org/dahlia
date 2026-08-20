@@ -175,6 +175,37 @@ import GRDB
         }
 
         @Test
+        func liveBatchTranslationVisibilityUsesLiveRecognitionLocale() {
+            let settings = AppSettings.shared
+            let previousValues = (
+                settings.transcriptionMode,
+                settings.transcriptionLocale,
+                settings.liveSubtitleLocale,
+                settings.transcriptTranslationEnabled,
+                settings.transcriptTranslationTargetLanguage
+            )
+            defer {
+                settings.transcriptionMode = previousValues.0
+                settings.transcriptionLocale = previousValues.1
+                settings.liveSubtitleLocale = previousValues.2
+                settings.transcriptTranslationEnabled = previousValues.3
+                settings.transcriptTranslationTargetLanguage = previousValues.4
+            }
+            settings.transcriptionMode = .batch
+            settings.transcriptionLocale = "en_US"
+            settings.liveSubtitleLocale = "ja_JP"
+            settings.transcriptTranslationEnabled = true
+            settings.transcriptTranslationTargetLanguage = "en"
+
+            let viewModel = CaptionViewModel()
+            viewModel.isListening = true
+            #expect(viewModel.showsTranscriptTranslations)
+
+            viewModel.isListening = false
+            #expect(!viewModel.showsTranscriptTranslations)
+        }
+
+        @Test
         func selectingActiveRecordingMeetingKeepsLiveTranscriptStore() throws {
             let viewModel = CaptionViewModel()
             let dbQueue = try DatabaseQueue(path: ":memory:")

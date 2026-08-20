@@ -309,6 +309,77 @@ import GRDB
             #expect(result.1.map(\.localeIdentifier) == ["en_US"])
         }
 
+        @Test
+        func recordedSelectionPreservesLocaleRangesUntilManualOverride() async throws {
+            let fixture = try BatchAudioTestFixture(
+                name: "RecordedLocaleConfirmation",
+                endedAt: Date(timeIntervalSince1970: 1_776_384_060),
+                duration: 60
+            )
+            defer { fixture.removeFiles() }
+            let recorder = try BatchAudioRecordingSession(
+                dbQueue: fixture.database.dbQueue,
+                managedRootURL: fixture.managedRootURL,
+                meetingId: fixture.meeting.id,
+                recordingSessionId: fixture.session.id,
+                recordingStartTime: fixture.now,
+                sampleRate: 16000
+            )
+            let writer = try await recorder.beginRange(
+                source: .microphone,
+                locale: Locale(identifier: "ja_JP"),
+                at: fixture.now
+            )
+            let buffer = try #require(AVAudioPCMBuffer(pcmFormat: recorder.targetFormat, frameCapacity: 160))
+            buffer.frameLength = 160
+            writer.appendBuffer(buffer)
+            _ = try await recorder.rotateRanges(
+                [BatchRecordingRangeOrigin(source: .microphone, startFrame: 0, sessionRelativeOriginSeconds: 0)],
+                locale: Locale(identifier: "en_US")
+            )
+            writer.appendBuffer(buffer)
+            try await recorder.finish()
+
+            _ = try await BatchTranscriptionConfirmationService.confirm(
+                sessionId: fixture.session.id,
+                languageSelection: .recorded,
+                automaticLanguageCandidates: nil,
+                retainAudioAfterBatch: true,
+                dbQueue: fixture.database.dbQueue
+            )
+            var persisted = try await fixture.database.dbQueue.read { db in
+                try (
+                    RecordingSessionRecord.fetchOne(db, key: fixture.session.id),
+                    RecordingAudioSegmentRangeRecord.order(Column("startFrame").asc).fetchAll(db)
+                )
+            }
+            #expect(persisted.0?.batchLanguageDetectionMode == .manual)
+            #expect(persisted.0?.batchSelectedLocaleIdentifier == nil)
+            #expect(persisted.1.map(\.localeIdentifier) == ["ja_JP", "en_US"])
+
+            try await fixture.database.dbQueue.write { db in
+                try db.execute(
+                    sql: "UPDATE recording_sessions SET batchLastError = ?, batchAttemptCount = 1 WHERE id = ?",
+                    arguments: ["failed", fixture.session.id]
+                )
+            }
+            _ = try await BatchTranscriptionConfirmationService.confirm(
+                sessionId: fixture.session.id,
+                languageSelection: .manual(localeIdentifier: "fr_FR"),
+                automaticLanguageCandidates: nil,
+                retainAudioAfterBatch: true,
+                dbQueue: fixture.database.dbQueue
+            )
+            persisted = try await fixture.database.dbQueue.read { db in
+                try (
+                    RecordingSessionRecord.fetchOne(db, key: fixture.session.id),
+                    RecordingAudioSegmentRangeRecord.order(Column("startFrame").asc).fetchAll(db)
+                )
+            }
+            #expect(persisted.0?.batchSelectedLocaleIdentifier == "fr_FR")
+            #expect(persisted.1.map(\.localeIdentifier) == ["fr_FR", "fr_FR"])
+        }
+
         @Test(arguments: [
             0,
             3,

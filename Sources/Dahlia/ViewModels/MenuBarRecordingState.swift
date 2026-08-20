@@ -12,7 +12,9 @@ final class MenuBarRecordingState {
     private(set) var isListening: Bool
     private(set) var microphoneSelection: MicrophoneSelection
     private(set) var isSystemAudioEnabled: Bool
-    private(set) var selectedLocale: String
+    private(set) var transcriptionLocale: String
+    private(set) var liveSubtitleLocale: String
+    private(set) var activeTranscriptionMode: TranscriptionMode?
     private(set) var availableMicrophones: [MicrophoneDevice]
     private(set) var filteredLocales: [Locale]
     private(set) var availableWindows: [ScreenshotWindowOption]
@@ -25,7 +27,9 @@ final class MenuBarRecordingState {
         isListening = viewModel.isListening
         microphoneSelection = viewModel.microphoneSelection
         isSystemAudioEnabled = viewModel.isSystemAudioEnabled
-        selectedLocale = viewModel.selectedLocale
+        transcriptionLocale = viewModel.transcriptionLocale
+        liveSubtitleLocale = viewModel.liveSubtitleLocale
+        activeTranscriptionMode = viewModel.activeTranscriptionMode
         availableMicrophones = viewModel.availableMicrophones
         filteredLocales = viewModel.filteredLocales
         availableWindows = viewModel.availableWindows
@@ -59,8 +63,8 @@ final class MenuBarRecordingState {
     }
 
     func selectLocale(_ identifier: String) {
-        guard identifier != viewModel.selectedLocale else { return }
-        viewModel.selectedLocale = identifier
+        guard identifier != viewModel.liveSubtitleLocale else { return }
+        viewModel.liveSubtitleLocale = identifier
     }
 
     func selectScreenshotSource(_ source: ScreenshotCaptureSource) {
@@ -84,9 +88,19 @@ final class MenuBarRecordingState {
             .sink { [weak self] in self?.isSystemAudioEnabled = $0 }
             .store(in: &cancellables)
 
-        viewModel.$selectedLocale
+        viewModel.$transcriptionLocale
             .removeDuplicates()
-            .sink { [weak self] in self?.selectedLocale = $0 }
+            .sink { [weak self] in self?.transcriptionLocale = $0 }
+            .store(in: &cancellables)
+
+        viewModel.$liveSubtitleLocale
+            .removeDuplicates()
+            .sink { [weak self] in self?.liveSubtitleLocale = $0 }
+            .store(in: &cancellables)
+
+        viewModel.$activeTranscriptionMode
+            .removeDuplicates()
+            .sink { [weak self] in self?.activeTranscriptionMode = $0 }
             .store(in: &cancellables)
 
         viewModel.$availableMicrophones

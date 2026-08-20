@@ -145,6 +145,7 @@ struct DahliaApp: App {
                     initialProjectId: confirmation.projectSelection.selectedProjectId,
                     initialErrorMessage: confirmation.projectSelection.errorMessage,
                     initialLanguageSelection: confirmation.initialLanguageSelection,
+                    allowsRecordedLanguageSelection: confirmation.allowsRecordedLanguageSelection,
                     initiallyRetainsAudioAfterBatch: confirmation.retainAudioAfterBatch,
                     initiallyGeneratesSummary: confirmation.initiallyGeneratesSummary,
                     summaryGenerationOptions: AppSettings.shared.batchSummaryGenerationOptions,

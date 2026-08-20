@@ -4,6 +4,7 @@ struct MenuBarRecordingControls: View {
     let state: MenuBarRecordingState
     let recordingCoordinator: RecordingCoordinator
 
+    @ObservedObject private var settings = AppSettings.shared
     @AppStorage("liveSubtitleOverlayEnabled") private var liveSubtitleOverlayEnabled = false
 
     var body: some View {
@@ -86,7 +87,7 @@ struct MenuBarRecordingControls: View {
 
         Menu {
             if state.filteredLocales.isEmpty {
-                let identifier = state.selectedLocale
+                let identifier = displayedLiveSubtitleLocale
                 let name = Locale.current.localizedString(forIdentifier: identifier) ?? identifier
                 Button {
                     state.selectLocale(identifier)
@@ -100,13 +101,14 @@ struct MenuBarRecordingControls: View {
                     Button {
                         state.selectLocale(identifier)
                     } label: {
-                        selectionLabel(name, isSelected: state.selectedLocale == identifier)
+                        selectionLabel(name, isSelected: displayedLiveSubtitleLocale == identifier)
                     }
                 }
             }
         } label: {
-            Label(L10n.language, systemImage: "globe")
+            Label(L10n.liveSubtitleLanguage, systemImage: "globe")
         }
+        .disabled(effectiveTranscriptionMode == .realtime)
 
         Menu {
             Button {
@@ -141,6 +143,14 @@ struct MenuBarRecordingControls: View {
         } label: {
             Label(L10n.source, systemImage: "rectangle.on.rectangle")
         }
+    }
+
+    private var effectiveTranscriptionMode: TranscriptionMode {
+        state.activeTranscriptionMode ?? settings.transcriptionMode
+    }
+
+    private var displayedLiveSubtitleLocale: String {
+        effectiveTranscriptionMode == .realtime ? state.transcriptionLocale : state.liveSubtitleLocale
     }
 
     private func selectionLabel(_ title: String, isSelected: Bool) -> some View {

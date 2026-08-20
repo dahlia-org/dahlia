@@ -21,6 +21,19 @@ struct TranscriptionSettingsView: View {
                 Text(transcriptionModeDescription)
             }
 
+            Section {
+                Picker(L10n.transcriptionLanguage, selection: $settings.transcriptionLocale) {
+                    ForEach(transcriptionLocaleOptions, id: \.identifier) { locale in
+                        Text(locale.localizedString(forIdentifier: locale.identifier) ?? locale.identifier)
+                            .tag(locale.identifier)
+                    }
+                }
+                .pickerStyle(.menu)
+                .disabled(isLoadingLocales)
+            } footer: {
+                Text(L10n.transcriptionLanguageDescription)
+            }
+
             if settings.transcriptionMode == .batch {
                 Section {
                     Picker(selection: $settings.batchTranscriptionStallTimeout) {
@@ -186,6 +199,16 @@ struct TranscriptionSettingsView: View {
                 )
             ),
         ]
+    }
+
+    private var transcriptionLocaleOptions: [Locale] {
+        var locales = settings.transcriptionLanguageScope == .all
+            ? supportedLocales
+            : supportedLocales.filter { settings.enabledLocaleIdentifiers.contains($0.identifier) }
+        if !locales.contains(where: { $0.identifier == settings.transcriptionLocale }) {
+            locales.append(Locale(identifier: settings.transcriptionLocale))
+        }
+        return locales.sortedByLocalizedName()
     }
 
     private var searchFilteredLocales: [Locale] {

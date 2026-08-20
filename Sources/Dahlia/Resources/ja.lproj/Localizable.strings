@@ -649,6 +649,11 @@
 "No matching languages" = "該当する言語がありません";
 "%lld languages selected" = "%lld 言語を選択中";
 "Transcription Languages" = "文字起こし言語";
+"Recorded Languages" = "録音時に使用した言語";
+"Transcription Language" = "文字起こし言語";
+"This language is used for the final transcript. Changing the language in the recording panel does not change it." = "最終的な文字起こしにはこの言語を使用します。録音パネルでライブ字幕言語を変更しても、この設定は変わりません。";
+"Live Subtitle Language" = "ライブ字幕言語";
+"With real-time transcription, live subtitles use the transcription language." = "リアルタイム文字起こしでは、ライブ字幕にも文字起こし言語を使用します。";
 "Language Range" = "言語の範囲";
 "All Supported Languages" = "対応するすべての言語";
 "Selected Languages" = "選択した言語";

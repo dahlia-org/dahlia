@@ -649,6 +649,11 @@
 "No matching languages" = "No matching languages";
 "%lld languages selected" = "%lld languages selected";
 "Transcription Languages" = "Transcription Languages";
+"Recorded Languages" = "Languages used while recording";
+"Transcription Language" = "Transcription Language";
+"This language is used for the final transcript. Changing the language in the recording panel does not change it." = "This language is used for the final transcript. Changing the language in the recording panel does not change it.";
+"Live Subtitle Language" = "Live Subtitle Language";
+"With real-time transcription, live subtitles use the transcription language." = "With real-time transcription, live subtitles use the transcription language.";
 "Language Range" = "Language Range";
 "All Supported Languages" = "All Supported Languages";
 "Selected Languages" = "Selected Languages";

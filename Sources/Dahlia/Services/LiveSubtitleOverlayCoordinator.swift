@@ -39,6 +39,7 @@ final class LiveSubtitleOverlayCoordinator {
             UserDefaults.standard.publisher(for: \.liveSubtitleSourceMode).sink { [weak self] _ in self?.sync() },
             UserDefaults.standard.publisher(for: \.transcriptTranslationEnabled).sink { [weak self] _ in self?.sync() },
             UserDefaults.standard.publisher(for: \.transcriptionLocale).sink { [weak self] _ in self?.sync() },
+            UserDefaults.standard.publisher(for: \.liveSubtitleLocale).sink { [weak self] _ in self?.sync() },
             UserDefaults.standard.publisher(for: \.transcriptTranslationTargetLanguage).sink { [weak self] _ in self?.sync() },
         ]
     }
@@ -53,7 +54,7 @@ final class LiveSubtitleOverlayCoordinator {
         let payload = LiveSubtitleOverlayPayload.latest(
             from: viewModel.liveCaptionStore.segments,
             sourceMode: AppSettings.shared.liveSubtitleSourceMode,
-            transcriptionLocaleIdentifier: AppSettings.shared.transcriptionLocale,
+            transcriptionLocaleIdentifier: viewModel.liveRecognitionLocaleIdentifier,
             translationEnabled: AppSettings.shared.transcriptTranslationEnabled,
             targetLanguageIdentifier: AppSettings.shared.transcriptTranslationTargetLanguage,
             maxEntries: max(1, AppSettings.shared.liveSubtitleOverlaySegmentCount)

@@ -73,7 +73,7 @@ extension RecordingSessionController {
         snapshot: Snapshot,
         translateSegment: ProgressiveSegmentTranslationHandler?
     ) async throws {
-        guard let locale = currentLocale else {
+        guard let locale = currentLiveRecognitionLocale else {
             throw RecordingSessionControllerError.sessionNotPrepared
         }
         do {
@@ -207,7 +207,58 @@ extension RecordingSessionController {
         return snapshot
     }
 
-    /// 新localeの認識器を先に準備・開始し、batch rangeを原子的に切り替えてからswapする。
+    /// 正本文字起こしのlocaleだけを変更する。realtimeでは共有認識器も同じlocaleへ追従する。
+    func changeTranscriptionLocale(
+        to locale: Locale,
+        translateSegment: ProgressiveSegmentTranslationHandler?
+    ) async throws -> Snapshot {
+        guard case let .capturing(snapshot) = state else {
+            throw RecordingSessionControllerError.sessionNotActive
+        }
+        guard snapshot.transcriptionLocaleIdentifier != locale.identifier else { return snapshot }
+        if snapshot.plan.finalMode == .realtime {
+            _ = try await changeLiveRecognitionLocale(to: locale, translateSegment: translateSegment)
+        } else {
+            try await rotateBatchRanges(to: locale)
+        }
+        return try commitTranscriptionLocale(locale, sessionId: snapshot.sessionId)
+    }
+
+    /// batch中のライブ字幕・ライブチャット用認識器だけを変更する。
+    func changeLiveRecognitionLocale(
+        to locale: Locale,
+        translateSegment: ProgressiveSegmentTranslationHandler?
+    ) async throws -> Snapshot {
+        guard case let .capturing(snapshot) = state else {
+            throw RecordingSessionControllerError.sessionNotActive
+        }
+        guard snapshot.liveRecognitionLocaleIdentifier != locale.identifier else { return snapshot }
+
+        let prepared = try await prepareLocaleReplacements(
+            locale: locale,
+            snapshot: snapshot,
+            translateSegment: translateSegment
+        )
+        let replacements = try await validateLocaleReplacements(prepared, snapshot: snapshot)
+        do {
+            try consumeLocaleReplacementStarts(replacements, sessionId: snapshot.sessionId)
+        } catch {
+            await cancelLocaleReplacements(replacements, sessionId: snapshot.sessionId)
+            throw error
+        }
+
+        let retired = installLocaleReplacements(replacements, snapshot: snapshot)
+        _ = try commitLiveRecognitionLocale(locale, sessionId: snapshot.sessionId)
+        await finishRetiredRecognitions(retired, finalMode: snapshot.plan.finalMode)
+
+        guard case let .capturing(finalSnapshot) = state,
+              finalSnapshot.sessionId == snapshot.sessionId else {
+            throw RecordingSessionControllerError.sessionNotActive
+        }
+        return finalSnapshot
+    }
+
+    /// 既存caller向けに両方のlocaleを同時変更する。
     func changeLocale(
         to locale: Locale,
         translateSegment: ProgressiveSegmentTranslationHandler?
@@ -215,7 +266,8 @@ extension RecordingSessionController {
         guard case let .capturing(snapshot) = state else {
             throw RecordingSessionControllerError.sessionNotActive
         }
-        guard snapshot.localeIdentifier != locale.identifier else { return snapshot }
+        guard snapshot.transcriptionLocaleIdentifier != locale.identifier
+            || snapshot.liveRecognitionLocaleIdentifier != locale.identifier else { return snapshot }
 
         let prepared = try await prepareLocaleReplacements(
             locale: locale,
@@ -241,7 +293,8 @@ extension RecordingSessionController {
         }
 
         let retired = installLocaleReplacements(replacements, snapshot: snapshot)
-        _ = try commitLocale(locale, sessionId: snapshot.sessionId)
+        _ = try commitLiveRecognitionLocale(locale, sessionId: snapshot.sessionId)
+        _ = try commitTranscriptionLocale(locale, sessionId: snapshot.sessionId)
         await finishRetiredRecognitions(retired, finalMode: snapshot.plan.finalMode)
 
         guard case let .capturing(finalSnapshot) = state,
@@ -385,6 +438,10 @@ extension RecordingSessionController {
                 await onRuntimeFailure?(source, error.localizedDescription, false)
             }
         }
+        guard !snapshot.plan.requiresLiveRecognition || valid.count == sourceRuntimes.count else {
+            await cancelLocaleReplacements(valid, sessionId: snapshot.sessionId)
+            throw RecordingSessionControllerError.recognitionFailed(L10n.speechRecognitionNotReady)
+        }
         return valid
     }
 
@@ -406,8 +463,6 @@ extension RecordingSessionController {
         _ replacements: [RecordingAudioSource: LocaleRecognitionReplacement],
         snapshot: Snapshot
     ) -> [RetiredRecognition] {
-        let detachesMissingRecognition = snapshot.plan.finalMode == .batch
-            && snapshot.plan.liveSubtitlesEnabled
         var retired: [RetiredRecognition] = []
 
         for source in Self.sortedSources(sourceRuntimes.keys) {
@@ -432,30 +487,32 @@ extension RecordingSessionController {
                         sessionId: snapshot.sessionId
                     )
                 )
-            } else if detachesMissingRecognition {
-                if let previous = runtime.recognition {
-                    retired.append(RetiredRecognition(
-                        source: source,
-                        router: runtime.pipeline.router,
-                        recognition: previous
-                    ))
-                }
-                runtime.recognition = nil
-                runtime.pipeline.router.setLiveConsumer(nil)
             }
             sourceRuntimes[source] = runtime
         }
         return retired
     }
 
-    private func commitLocale(_ locale: Locale, sessionId: UUID) throws -> Snapshot {
+    private func commitTranscriptionLocale(_ locale: Locale, sessionId: UUID) throws -> Snapshot {
         guard case var .capturing(snapshot) = state,
               snapshot.sessionId == sessionId else {
             throw RecordingSessionControllerError.sessionNotActive
         }
-        snapshot.localeIdentifier = locale.identifier
+        snapshot.transcriptionLocaleIdentifier = locale.identifier
         snapshot.enabledSources = Set(sourceRuntimes.keys)
-        currentLocale = locale
+        currentTranscriptionLocale = locale
+        transition(to: .capturing(snapshot))
+        return snapshot
+    }
+
+    private func commitLiveRecognitionLocale(_ locale: Locale, sessionId: UUID) throws -> Snapshot {
+        guard case var .capturing(snapshot) = state,
+              snapshot.sessionId == sessionId else {
+            throw RecordingSessionControllerError.sessionNotActive
+        }
+        snapshot.liveRecognitionLocaleIdentifier = locale.identifier
+        snapshot.enabledSources = Set(sourceRuntimes.keys)
+        currentLiveRecognitionLocale = locale
         transition(to: .capturing(snapshot))
         return snapshot
     }

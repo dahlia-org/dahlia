@@ -1,6 +1,7 @@
 import Foundation
 
 enum BatchTranscriptionLanguageSelection: Hashable, Sendable {
+    case recorded
     case automatic
     case manual(localeIdentifier: String)
 
@@ -8,7 +9,7 @@ enum BatchTranscriptionLanguageSelection: Hashable, Sendable {
         switch self {
         case .automatic:
             .automatic
-        case .manual:
+        case .recorded, .manual:
             .manual
         }
     }

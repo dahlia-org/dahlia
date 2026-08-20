@@ -123,7 +123,8 @@ private struct RecordingControllerStartRequest {
     let sessionId: UUID
     let startedAt: Date
     let plan: TranscriptionSessionPlan
-    let locale: Locale
+    let transcriptionLocale: Locale
+    let liveRecognitionLocale: Locale
     let batchSampleRate: Double?
 }
 
@@ -195,14 +196,16 @@ final class CaptionViewModel: ObservableObject {
     }
 
     @Published private(set) var activeControllerSources: Set<RecordingAudioSource> = []
+    @Published private(set) var appliedLiveRecognitionLocaleIdentifier: String?
     let recordingAudioLevelStore = RecordingAudioLevelStore()
 
-    @Published var selectedLocale: String = AppSettings.shared.transcriptionLocale {
+    @Published private(set) var transcriptionLocale: String = AppSettings.shared.transcriptionLocale
+    @Published var liveSubtitleLocale: String = AppSettings.shared.liveSubtitleLocale {
         didSet {
-            guard selectedLocale != oldValue else { return }
+            guard liveSubtitleLocale != oldValue else { return }
             updateFilteredLocales()
-            guard !isSynchronizingSelectedLocale else { return }
-            applyLocaleChange(from: oldValue, to: selectedLocale)
+            guard !isSynchronizingLiveSubtitleLocale else { return }
+            applyLiveSubtitleLocaleChange(from: oldValue, to: liveSubtitleLocale)
         }
     }
 
@@ -467,6 +470,26 @@ final class CaptionViewModel: ObservableObject {
         isListening && activeTranscriptionMode == .batch
     }
 
+    var liveRecognitionLocaleIdentifier: String {
+        if let appliedLiveRecognitionLocaleIdentifier {
+            return appliedLiveRecognitionLocaleIdentifier
+        }
+        return (activeTranscriptionMode ?? AppSettings.shared.transcriptionMode) == .realtime
+            ? transcriptionLocale
+            : liveSubtitleLocale
+    }
+
+    var showsTranscriptTranslations: Bool {
+        let settings = AppSettings.shared
+        let sourceLocaleIdentifier = isListening
+            ? liveRecognitionLocaleIdentifier
+            : settings.transcriptionLocale
+        return settings.transcriptTranslationEnabled && TranscriptTranslationLanguage.shouldTranslate(
+            transcriptionLocaleIdentifier: sourceLocaleIdentifier,
+            targetLanguageIdentifier: settings.transcriptTranslationTargetLanguage
+        )
+    }
+
     func setChatLiveModeEnabled(_ isEnabled: Bool) {
         guard isChatLiveModeEnabled != isEnabled else { return }
         isChatLiveModeEnabled = isEnabled
@@ -482,12 +505,12 @@ final class CaptionViewModel: ObservableObject {
             guard let self,
                   self.activeTranscriptionPlan?.liveChatEnabled == isEnabled else { return }
             do {
-                let locale = self.resolvedSelectedLocale()
+                let locale = self.appliedLiveRecognitionLocale()
                 let snapshot = try await self.recordingSessionController.setLiveChatEnabled(
                     isEnabled,
                     translateSegment: self.translationHandler(for: locale)
                 )
-                self.setActiveControllerSources(snapshot.enabledSources)
+                self.applyControllerSnapshot(snapshot)
             } catch {
                 guard self.activeTranscriptionPlan?.liveChatEnabled == isEnabled else { return }
                 self.errorMessage = error.localizedDescription
@@ -621,17 +644,19 @@ final class CaptionViewModel: ObservableObject {
     private var pendingLiveSubtitleWarning: String?
     private var startingMicrophoneSelection: MicrophoneSelection?
     private var startingSystemAudioEnabled: Bool?
-    private var startingLocaleIdentifier: String?
+    private var startingTranscriptionLocaleIdentifier: String?
+    private var startingLiveSubtitleLocaleIdentifier: String?
     private var settingsCancellable: AnyCancellable?
     private var storeSegmentsCancellable: AnyCancellable?
     private var transcriptionLocaleCancellable: AnyCancellable?
+    private var liveSubtitleLocaleCancellable: AnyCancellable?
     private var liveSubtitleSettingsCancellable: AnyCancellable?
     private var automaticScreenshotSettingsCancellables: Set<AnyCancellable> = []
     private var meetingLoadTask: Task<Void, Never>?
     private var meetingLoadGeneration: UInt64 = 0
     private var summaryReloadTask: Task<Void, Never>?
     private var summaryProjectionGeneration: UInt64 = 0
-    private var isSynchronizingSelectedLocale = false
+    private var isSynchronizingLiveSubtitleLocale = false
     private let audioHardwareQueryService: AudioHardwareQueryService
     private let transcriptTranslationService = TranscriptTranslationService()
     private let automaticScreenshotCaptureControl: AutomaticScreenshotCaptureControl
@@ -716,8 +741,21 @@ final class CaptionViewModel: ObservableObject {
             .removeDuplicates()
             .receive(on: RunLoop.main)
             .sink { [weak self] localeIdentifier in
-                guard let self, self.selectedLocale != localeIdentifier else { return }
-                self.selectedLocale = localeIdentifier
+                guard let self, self.transcriptionLocale != localeIdentifier else { return }
+                let previousLocaleIdentifier = self.transcriptionLocale
+                self.transcriptionLocale = localeIdentifier
+                self.updateFilteredLocales()
+                self.applyTranscriptionLocaleChange(from: previousLocaleIdentifier, to: localeIdentifier)
+            }
+
+        liveSubtitleLocaleCancellable = UserDefaults.standard
+            .publisher(for: \.liveSubtitleLocale)
+            .compactMap(\.self)
+            .removeDuplicates()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] localeIdentifier in
+                guard let self, self.liveSubtitleLocale != localeIdentifier else { return }
+                self.liveSubtitleLocale = localeIdentifier
             }
 
         liveSubtitleSettingsCancellable = UserDefaults.standard
@@ -851,7 +889,7 @@ final class CaptionViewModel: ObservableObject {
             presentBatchTranscriptionConfirmation(
                 sessionId: sessionId,
                 meetingId: meetingId,
-                suggestedLocaleIdentifier: selectedLocale,
+                suggestedLocaleIdentifier: transcriptionLocale,
                 dbQueue: currentDbQueue,
                 vaultURL: currentVaultURL
             )
@@ -925,8 +963,9 @@ final class CaptionViewModel: ObservableObject {
         }
         let preferences = batchConfirmationPreferences(
             sessionId: sessionId,
-            suggestedLocaleIdentifier: selectedLocale,
-            dbQueue: dbQueue
+            suggestedLocaleIdentifier: transcriptionLocale,
+            dbQueue: dbQueue,
+            confirmationSessionIds: sessionIds
         )
         pendingBatchTranscriptionConfirmation = BatchTranscriptionConfirmation(
             sessionId: sessionId,
@@ -1081,7 +1120,7 @@ final class CaptionViewModel: ObservableObject {
         presentBatchTranscriptionConfirmation(
             sessionId: sessionId,
             meetingId: meetingId,
-            suggestedLocaleIdentifier: selectedLocale,
+            suggestedLocaleIdentifier: transcriptionLocale,
             dbQueue: currentDbQueue,
             vaultURL: currentVaultURL
         )
@@ -1134,7 +1173,7 @@ final class CaptionViewModel: ObservableObject {
             presentBatchTranscriptionConfirmation(
                 sessionId: sessionId,
                 meetingId: meetingId,
-                suggestedLocaleIdentifier: selectedLocale,
+                suggestedLocaleIdentifier: transcriptionLocale,
                 dbQueue: dbQueue,
                 vaultURL: snapshot.vaultURL
             )
@@ -1167,6 +1206,7 @@ final class CaptionViewModel: ObservableObject {
             suggestedLocaleIdentifier: confirmation.suggestedLocaleIdentifier,
             retainAudioAfterBatch: retainAudioAfterBatch,
             initialLanguageSelection: languageSelection,
+            allowsRecordedLanguageSelection: confirmation.allowsRecordedLanguageSelection,
             automaticLanguageCandidateSnapshot: automaticLanguageCandidates.snapshot,
             purpose: confirmation.purpose,
             initiallyGeneratesSummary: summaryGenerationOptions != nil,
@@ -1553,7 +1593,8 @@ final class CaptionViewModel: ObservableObject {
         } else {
             filteredLocales = supportedLocales.filter { locale in
                 enabled.contains(locale.identifier)
-                    || locale.identifier == selectedLocale
+                    || locale.identifier == transcriptionLocale
+                    || locale.identifier == liveSubtitleLocale
             }
         }
     }
@@ -1568,21 +1609,33 @@ final class CaptionViewModel: ObservableObject {
         )
     }
 
-    private func resolvedSelectedLocale() -> Locale {
+    private func resolvedTranscriptionLocale() -> Locale {
         let resolvedIdentifier = Self.resolvedSupportedLocaleIdentifier(
-            preferredIdentifier: selectedLocale,
+            preferredIdentifier: transcriptionLocale,
             supportedLocales: supportedLocales
         )
-        synchronizeSelectedLocaleIfNeeded(resolvedIdentifier)
+        if transcriptionLocale != resolvedIdentifier {
+            transcriptionLocale = resolvedIdentifier
+            AppSettings.shared.transcriptionLocale = resolvedIdentifier
+        }
         return Locale(identifier: resolvedIdentifier)
     }
 
-    private func synchronizeSelectedLocaleIfNeeded(_ localeIdentifier: String) {
-        guard selectedLocale != localeIdentifier else { return }
-        isSynchronizingSelectedLocale = true
-        selectedLocale = localeIdentifier
-        isSynchronizingSelectedLocale = false
-        AppSettings.shared.transcriptionLocale = localeIdentifier
+    private func resolvedLiveRecognitionLocale(mode: TranscriptionMode? = nil) -> Locale {
+        if (mode ?? activeTranscriptionMode ?? AppSettings.shared.transcriptionMode) == .realtime {
+            return resolvedTranscriptionLocale()
+        }
+        let resolvedIdentifier = Self.resolvedSupportedLocaleIdentifier(
+            preferredIdentifier: liveSubtitleLocale,
+            supportedLocales: supportedLocales
+        )
+        if liveSubtitleLocale != resolvedIdentifier {
+            isSynchronizingLiveSubtitleLocale = true
+            liveSubtitleLocale = resolvedIdentifier
+            isSynchronizingLiveSubtitleLocale = false
+            AppSettings.shared.liveSubtitleLocale = resolvedIdentifier
+        }
+        return Locale(identifier: resolvedIdentifier)
     }
 
     func refreshAvailableMicrophones() async {
@@ -2372,7 +2425,7 @@ final class CaptionViewModel: ObservableObject {
                 self.updateFilteredLocales()
 
                 // モデルのダウンロードと準備確認
-                let locale = self.resolvedSelectedLocale()
+                let locale = self.resolvedLiveRecognitionLocale()
                 try await SpeechTranscriberService.ensureModelInstalled(locale: locale)
                 self.analyzerReady = true
                 self.isPreparingAnalyzer = false
@@ -2406,13 +2459,13 @@ final class CaptionViewModel: ObservableObject {
         applyAudioSourceSelectionChange(source: .system) { self.isSystemAudioEnabled = oldValue }
     }
 
-    private func applyLocaleChange(from oldLocale: String, to newLocale: String) {
+    private func applyTranscriptionLocaleChange(from oldLocale: String, to newLocale: String) {
         guard newLocale != oldLocale || !analyzerReady else { return }
-        if case .starting = recordingLifecycle, let startingLocaleIdentifier {
-            if newLocale != startingLocaleIdentifier {
-                selectedLocale = startingLocaleIdentifier
+        if case .starting = recordingLifecycle, let startingTranscriptionLocaleIdentifier {
+            if newLocale != startingTranscriptionLocaleIdentifier {
+                transcriptionLocale = startingTranscriptionLocaleIdentifier
             }
-            AppSettings.shared.transcriptionLocale = startingLocaleIdentifier
+            AppSettings.shared.transcriptionLocale = startingTranscriptionLocaleIdentifier
             return
         }
         AppSettings.shared.transcriptionLocale = newLocale
@@ -2420,7 +2473,33 @@ final class CaptionViewModel: ObservableObject {
         if isListening {
             enqueueRecordingConfiguration { [weak self] recordingSessionId in
                 _ = await self?.rebuildPipelines(
-                    reason: .localeChange,
+                    reason: .transcriptionLocaleChange,
+                    recordingSessionId: recordingSessionId
+                )
+            }
+        } else if AppSettings.shared.transcriptionMode == .realtime {
+            analyzerReady = false
+            prepareAnalyzer()
+        }
+    }
+
+    private func applyLiveSubtitleLocaleChange(from oldLocale: String, to newLocale: String) {
+        guard newLocale != oldLocale else { return }
+        if case .starting = recordingLifecycle, let startingLiveSubtitleLocaleIdentifier {
+            if newLocale != startingLiveSubtitleLocaleIdentifier {
+                isSynchronizingLiveSubtitleLocale = true
+                liveSubtitleLocale = startingLiveSubtitleLocaleIdentifier
+                isSynchronizingLiveSubtitleLocale = false
+            }
+            AppSettings.shared.liveSubtitleLocale = startingLiveSubtitleLocaleIdentifier
+            return
+        }
+        AppSettings.shared.liveSubtitleLocale = newLocale
+        guard (activeTranscriptionMode ?? AppSettings.shared.transcriptionMode) == .batch else { return }
+        if isListening {
+            enqueueRecordingConfiguration { [weak self] recordingSessionId in
+                _ = await self?.rebuildPipelines(
+                    reason: .liveSubtitleLocaleChange,
                     recordingSessionId: recordingSessionId
                 )
             }
@@ -2452,7 +2531,8 @@ final class CaptionViewModel: ObservableObject {
     }
 
     private enum PipelineRebuildReason {
-        case localeChange
+        case transcriptionLocaleChange
+        case liveSubtitleLocaleChange
         case audioSourceChange(RecordingAudioSource)
     }
 
@@ -2466,14 +2546,20 @@ final class CaptionViewModel: ObservableObject {
         do {
             let snapshot: RecordingSessionController.Snapshot
             switch reason {
-            case .localeChange:
-                let locale = resolvedSelectedLocale()
-                snapshot = try await recordingSessionController.changeLocale(
+            case .transcriptionLocaleChange:
+                let locale = resolvedTranscriptionLocale()
+                snapshot = try await recordingSessionController.changeTranscriptionLocale(
+                    to: locale,
+                    translateSegment: translationHandler(for: locale)
+                )
+            case .liveSubtitleLocaleChange:
+                let locale = resolvedLiveRecognitionLocale(mode: .batch)
+                snapshot = try await recordingSessionController.changeLiveRecognitionLocale(
                     to: locale,
                     translateSegment: translationHandler(for: locale)
                 )
             case let .audioSourceChange(source):
-                let locale = resolvedSelectedLocale()
+                let locale = appliedLiveRecognitionLocale()
                 snapshot = try await recordingSessionController.setSource(
                     controllerSourceConfiguration(for: source),
                     enabled: enabledRecordingAudioSources.contains(source),
@@ -2482,7 +2568,7 @@ final class CaptionViewModel: ObservableObject {
             }
             guard snapshot.sessionId == recordingSessionId else { return false }
             resetAudioLevels(for: reason)
-            setActiveControllerSources(snapshot.enabledSources)
+            applyControllerSnapshot(snapshot)
             errorMessage = nil
             return true
         } catch {
@@ -2491,7 +2577,7 @@ final class CaptionViewModel: ObservableObject {
             if let snapshot = await recordingSessionController.snapshot(),
                snapshot.sessionId == recordingSessionId {
                 resetAudioLevels(for: reason)
-                setActiveControllerSources(snapshot.enabledSources)
+                applyControllerSnapshot(snapshot)
             }
             setPipelineRebuildError(error, reason: reason)
             return false
@@ -2521,7 +2607,7 @@ final class CaptionViewModel: ObservableObject {
 
     private func setPipelineRebuildError(_ error: Error, reason: PipelineRebuildReason) {
         switch reason {
-        case .localeChange:
+        case .transcriptionLocaleChange, .liveSubtitleLocaleChange:
             errorMessage = L10n.languageChangeFailed(error.localizedDescription)
         case .audioSourceChange:
             errorMessage = error.localizedDescription
@@ -2530,7 +2616,7 @@ final class CaptionViewModel: ObservableObject {
 
     private func resetAudioLevels(for reason: PipelineRebuildReason) {
         switch reason {
-        case .localeChange:
+        case .transcriptionLocaleChange, .liveSubtitleLocaleChange:
             for source in activeControllerSources {
                 recordingAudioLevelStore.reset(source: source)
             }
@@ -2571,12 +2657,13 @@ final class CaptionViewModel: ObservableObject {
                 sessionId: request.sessionId,
                 startedAt: request.startedAt,
                 plan: request.plan,
-                locale: request.locale,
+                locale: request.transcriptionLocale,
+                liveRecognitionLocale: request.liveRecognitionLocale,
                 sources: controllerSourceConfigurations(),
                 dbQueue: request.plan.recordsBatchAudio ? request.dbQueue : nil,
                 meetingId: request.plan.recordsBatchAudio ? request.meetingId : nil,
                 batchSampleRate: request.batchSampleRate,
-                translateSegment: translationHandler(for: request.locale),
+                translateSegment: translationHandler(for: request.liveRecognitionLocale),
                 batchScheduler: batchTranscriptionCoordinator
             )
         ) { event in
@@ -2596,7 +2683,7 @@ final class CaptionViewModel: ObservableObject {
             )
         }
         let snapshot = try await recordingSessionController.startPrepared()
-        setActiveControllerSources(snapshot.enabledSources)
+        applyControllerSnapshot(snapshot)
         if request.plan.recordsBatchAudio {
             batchTranscriptionState = .recording(sessionId: request.sessionId)
         }
@@ -2615,7 +2702,8 @@ final class CaptionViewModel: ObservableObject {
         recordingLifecycle = .recording(recordingSessionId)
         startingMicrophoneSelection = nil
         startingSystemAudioEnabled = nil
-        startingLocaleIdentifier = nil
+        startingTranscriptionLocaleIdentifier = nil
+        startingLiveSubtitleLocaleIdentifier = nil
         isListening = true
         errorMessage = pendingLiveSubtitleWarning
         pendingLiveSubtitleWarning = nil
@@ -2802,7 +2890,8 @@ final class CaptionViewModel: ObservableObject {
         pendingLiveSubtitleWarning = nil
         startingMicrophoneSelection = nil
         startingSystemAudioEnabled = nil
-        startingLocaleIdentifier = nil
+        startingTranscriptionLocaleIdentifier = nil
+        startingLiveSubtitleLocaleIdentifier = nil
         liveCaptionStore.clear()
         store.clear()
         store.loadSegments(rollbackState.segments)
@@ -2891,7 +2980,8 @@ final class CaptionViewModel: ObservableObject {
         var meetingScope: UsageTelemetryEvent.MeetingScope = rollbackState.recordingSessions.isEmpty ? .new : .continued
         startingMicrophoneSelection = microphoneSelection
         startingSystemAudioEnabled = isSystemAudioEnabled
-        startingLocaleIdentifier = selectedLocale
+        startingTranscriptionLocaleIdentifier = transcriptionLocale
+        startingLiveSubtitleLocaleIdentifier = liveSubtitleLocale
         recordingLifecycle = .starting(recordingSessionId)
         activeRecordingTelemetryContext = nil
         pendingRealtimeRecognitionFailure = nil
@@ -2905,7 +2995,8 @@ final class CaptionViewModel: ObservableObject {
             liveChatEnabled: isChatLiveModeEnabled,
             retainBatchAudio: retainAudioAfterBatch
         )
-        let primaryLocale = resolvedSelectedLocale()
+        let finalTranscriptionLocale = resolvedTranscriptionLocale()
+        let liveRecognitionLocale = resolvedLiveRecognitionLocale(mode: transcriptionMode)
         activeTranscriptionMode = transcriptionMode
         activeTranscriptionPlan = transcriptionPlan
         activeRecordingSessionId = recordingSessionId
@@ -2953,7 +3044,8 @@ final class CaptionViewModel: ObservableObject {
                 sessionId: recordingSessionId,
                 startedAt: recordingStartTime,
                 plan: transcriptionPlan,
-                locale: primaryLocale,
+                transcriptionLocale: finalTranscriptionLocale,
+                liveRecognitionLocale: liveRecognitionLocale,
                 batchSampleRate: batchSampleRate
             ))
 
@@ -3159,7 +3251,8 @@ final class CaptionViewModel: ObservableObject {
         pendingLiveSubtitleWarning = nil
         startingMicrophoneSelection = nil
         startingSystemAudioEnabled = nil
-        startingLocaleIdentifier = nil
+        startingTranscriptionLocaleIdentifier = nil
+        startingLiveSubtitleLocaleIdentifier = nil
         liveCaptionStore.clear()
         recordingLifecycle = .idle
         if !isTerminationRequested {
@@ -3293,7 +3386,7 @@ final class CaptionViewModel: ObservableObject {
             presentBatchTranscriptionConfirmation(
                 sessionId: recordingSessionId,
                 meetingId: meetingId,
-                suggestedLocaleIdentifier: selectedLocale,
+                suggestedLocaleIdentifier: transcriptionLocale,
                 dbQueue: dbQueue,
                 vaultURL: vaultURL
             )
@@ -3358,7 +3451,8 @@ final class CaptionViewModel: ObservableObject {
     private func batchConfirmationPreferences(
         sessionId: UUID,
         suggestedLocaleIdentifier: String,
-        dbQueue: DatabaseQueue?
+        dbQueue: DatabaseQueue?,
+        confirmationSessionIds: [UUID]? = nil
     ) -> (
         localeIdentifier: String,
         retainsAudio: Bool,
@@ -3367,7 +3461,7 @@ final class CaptionViewModel: ObservableObject {
     ) {
         let fallbackRetention = AppSettings.shared.retainAudioAfterBatchTranscription
         guard let dbQueue,
-              let stored = try? dbQueue.read({ db -> (RecordingSessionRecord?, String?) in
+              let stored = try? dbQueue.read({ db -> (RecordingSessionRecord?, String?, Int) in
                   let session = try RecordingSessionRecord.fetchOne(db, key: sessionId)
                   let localeIdentifier = try String.fetchOne(
                       db,
@@ -3381,7 +3475,49 @@ final class CaptionViewModel: ObservableObject {
                       """,
                       arguments: [sessionId]
                   )
-                  return (session, localeIdentifier)
+                  guard let session else { return (nil, localeIdentifier, 0) }
+                  let localeCount: Int
+                  if let confirmationSessionIds, !confirmationSessionIds.isEmpty {
+                      let placeholders = Array(repeating: "?", count: confirmationSessionIds.count).joined(separator: ",")
+                      localeCount = try Int.fetchOne(
+                          db,
+                          sql: """
+                          SELECT COUNT(DISTINCT ranges.localeIdentifier)
+                          FROM recording_audio_segment_ranges AS ranges
+                          JOIN recording_audio_segments AS segments ON segments.id = ranges.audioSegmentId
+                          WHERE segments.recordingSessionId IN (\(placeholders))
+                          """,
+                          arguments: StatementArguments(confirmationSessionIds)
+                      ) ?? 0
+                  } else {
+                      let confirmsOnlySelectedSession = session.batchLastError?.nilIfBlank != nil
+                      localeCount = try Int.fetchOne(
+                          db,
+                          sql: """
+                          SELECT COUNT(DISTINCT ranges.localeIdentifier)
+                          FROM recording_audio_segment_ranges AS ranges
+                          JOIN recording_audio_segments AS segments ON segments.id = ranges.audioSegmentId
+                          JOIN recording_sessions AS sessions ON sessions.id = segments.recordingSessionId
+                          WHERE segments.recordingSessionId = ?
+                             OR (? = 0
+                                 AND sessions.meetingId = ?
+                                 AND sessions.transcriptionMode = ?
+                                 AND sessions.endedAt IS NOT NULL
+                                 AND sessions.batchCompletedAt IS NULL
+                                 AND sessions.batchDiscardedAt IS NULL
+                                 AND sessions.batchLastError IS NULL
+                                 AND sessions.batchLastAttemptAt IS NULL
+                                 AND sessions.batchAttemptCount = 0)
+                          """,
+                          arguments: [
+                              sessionId,
+                              confirmsOnlySelectedSession ? 1 : 0,
+                              session.meetingId,
+                              TranscriptionMode.batch.rawValue,
+                          ]
+                      ) ?? 0
+                  }
+                  return (session, localeIdentifier, localeCount)
               }),
               let session = stored.0 else {
             return (
@@ -3397,6 +3533,8 @@ final class CaptionViewModel: ObservableObject {
         let languageSelection: BatchTranscriptionLanguageSelection = if preservesStoredSelection,
                                                                         session.batchLanguageDetectionMode == .automatic {
             .automatic
+        } else if stored.2 > 1 {
+            .recorded
         } else {
             .manual(localeIdentifier: localeIdentifier)
         }
@@ -4499,7 +4637,7 @@ final class CaptionViewModel: ObservableObject {
                   self.activeRecordingSessionId == recordingSessionId else { return }
             let snapshot = await self.recordingSessionController.snapshot()
             if let snapshot, snapshot.sessionId == recordingSessionId {
-                self.setActiveControllerSources(snapshot.enabledSources)
+                self.applyControllerSnapshot(snapshot)
             }
             if isFatal {
                 if var telemetry = self.activeRecordingTelemetryContext {
@@ -4529,6 +4667,18 @@ final class CaptionViewModel: ObservableObject {
     private func setActiveControllerSources(_ sources: Set<RecordingAudioSource>) {
         activeControllerSources = sources
         recordingAudioLevelStore.retain(sources: sources)
+        if sources.isEmpty {
+            appliedLiveRecognitionLocaleIdentifier = nil
+        }
+    }
+
+    private func applyControllerSnapshot(_ snapshot: RecordingSessionController.Snapshot) {
+        setActiveControllerSources(snapshot.enabledSources)
+        appliedLiveRecognitionLocaleIdentifier = snapshot.liveRecognitionLocaleIdentifier
+    }
+
+    private func appliedLiveRecognitionLocale() -> Locale {
+        Locale(identifier: liveRecognitionLocaleIdentifier)
     }
 
     private func handleLiveSubtitleSettingChange(isEnabled: Bool) {
@@ -4569,12 +4719,12 @@ final class CaptionViewModel: ObservableObject {
             guard let self,
                   self.activeTranscriptionPlan?.liveSubtitlesEnabled == isEnabled else { return }
             do {
-                let locale = self.resolvedSelectedLocale()
+                let locale = self.appliedLiveRecognitionLocale()
                 let snapshot = try await self.recordingSessionController.setLiveSubtitlesEnabled(
                     isEnabled,
                     translateSegment: self.translationHandler(for: locale)
                 )
-                self.setActiveControllerSources(snapshot.enabledSources)
+                self.applyControllerSnapshot(snapshot)
             } catch {
                 self.errorMessage = error.localizedDescription
                 self.restoreLiveSubtitleSetting(
@@ -4633,21 +4783,21 @@ final class CaptionViewModel: ObservableObject {
         while recordingLifecycle == .starting(recordingSessionId) {
             guard let latestPlan = activeTranscriptionPlan else { throw CancellationError() }
             if appliedPlan.liveSubtitlesEnabled != latestPlan.liveSubtitlesEnabled {
-                let locale = resolvedSelectedLocale()
+                let locale = appliedLiveRecognitionLocale()
                 let snapshot = try await recordingSessionController.setLiveSubtitlesEnabled(
                     latestPlan.liveSubtitlesEnabled,
                     translateSegment: translationHandler(for: locale)
                 )
-                setActiveControllerSources(snapshot.enabledSources)
+                applyControllerSnapshot(snapshot)
                 appliedPlan = snapshot.plan
             }
             if appliedPlan.liveChatEnabled != latestPlan.liveChatEnabled {
-                let locale = resolvedSelectedLocale()
+                let locale = appliedLiveRecognitionLocale()
                 let snapshot = try await recordingSessionController.setLiveChatEnabled(
                     latestPlan.liveChatEnabled,
                     translateSegment: translationHandler(for: locale)
                 )
-                setActiveControllerSources(snapshot.enabledSources)
+                applyControllerSnapshot(snapshot)
                 appliedPlan = snapshot.plan
             }
             guard activeTranscriptionPlan?.liveSubtitlesEnabled == latestPlan.liveSubtitlesEnabled,

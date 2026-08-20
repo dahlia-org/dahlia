@@ -119,7 +119,7 @@ struct ControlPanelView: View {
                     TranscriptTabView(
                         store: viewModel.store,
                         allowsTextSelection: !viewModel.isListening,
-                        showsTranslatedText: appSettings.isTranscriptTranslationEffectivelyEnabled,
+                        showsTranslatedText: viewModel.showsTranscriptTranslations,
                         retryInitialMeetingLoad: viewModel.retryInitialMeetingLoad
                     )
                 case .conversationAnalytics:
