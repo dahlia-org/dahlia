@@ -26,7 +26,7 @@ struct CodexChatMessageRow: View {
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
                     .background(
-                        .quaternary,
+                        Color.primary.opacity(0.05),
                         in: RoundedRectangle(cornerRadius: CodexChatDesign.messageCornerRadius)
                     )
 

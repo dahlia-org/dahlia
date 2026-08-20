@@ -48,6 +48,7 @@ struct CodexChatConfigurationPanel: View {
                 alignment: .topLeading
             )
         }
+        .frame(height: CodexChatDesign.configurationPanelHeight)
         .codexChatPanelStyle()
     }
 
