@@ -78,10 +78,7 @@ import Foundation
         }
 
         private func waitUntil(_ predicate: @MainActor () -> Bool) async {
-            for _ in 0 ..< 1000 {
-                if predicate() { return }
-                await Task.yield()
-            }
+            if await pollUntil({ predicate() }) { return }
             Issue.record("Timed out waiting for context resolution")
         }
     }

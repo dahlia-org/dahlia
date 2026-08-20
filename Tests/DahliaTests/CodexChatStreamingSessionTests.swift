@@ -5,7 +5,7 @@ import Foundation
     import Testing
 
     @MainActor
-    @Suite(.timeLimit(.minutes(3)))
+    @Suite(.timeLimit(.minutes(1)))
     struct CodexChatStreamingSessionTests {
         @Test
         func trailingUpdateAppearsWhileStreamIsStillWaiting() async {

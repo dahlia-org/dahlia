@@ -81,7 +81,10 @@ import Foundation
                 ))
             }
 
-            try await Task.sleep(for: .milliseconds(500))
+            let showedLatestPreview = await waitUntil {
+                presenter.lastPayload?.entries.map(\.primaryText) == ["Preview 19"]
+            }
+            #expect(showedLatestPreview)
 
             let payload = try #require(presenter.lastPayload)
             #expect(payload.entries.map(\.primaryText) == ["Preview 19"])
@@ -155,13 +158,7 @@ import Foundation
         }
 
         private func waitUntil(_ predicate: @MainActor () -> Bool) async -> Bool {
-            for _ in 0 ..< 100 {
-                if predicate() {
-                    return true
-                }
-                await Task.yield()
-            }
-            return predicate()
+            await pollUntil { predicate() }
         }
     }
 

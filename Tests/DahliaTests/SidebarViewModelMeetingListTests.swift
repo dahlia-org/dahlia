@@ -8,7 +8,7 @@ import GRDB
     @MainActor
     // swiftlint:disable:next type_body_length
     struct SidebarViewModelMeetingListTests {
-        @Test(.timeLimit(.minutes(3)))
+        @Test(.timeLimit(.minutes(1)))
         func loadsMeetingsInFiftyItemBatches() async throws {
             let fixture = try SidebarViewModelMeetingListFixture()
             defer {
@@ -45,7 +45,7 @@ import GRDB
             #expect(!viewModel.hasMoreMeetings)
         }
 
-        @Test(.timeLimit(.minutes(3)))
+        @Test(.timeLimit(.minutes(1)))
         func refreshesMeetingRowsLoadedAfterInitialPage() async throws {
             let fixture = try SidebarViewModelMeetingListFixture()
             defer {
@@ -99,7 +99,7 @@ import GRDB
             })
         }
 
-        @Test(.timeLimit(.minutes(3)))
+        @Test(.timeLimit(.minutes(1)))
         func debouncesSearchAndExcludesTranscriptMatches() async throws {
             let fixture = try SidebarViewModelMeetingListFixture()
             defer {
@@ -155,7 +155,7 @@ import GRDB
             #expect(viewModel.displayedMeetingItems.count == 2)
         }
 
-        @Test(.timeLimit(.minutes(3)))
+        @Test(.timeLimit(.minutes(1)))
         func searchesBeyondInitialPageAndPaginatesMatches() async throws {
             let fixture = try SidebarViewModelMeetingListFixture()
             defer {
@@ -204,7 +204,7 @@ import GRDB
             #expect(!viewModel.hasMoreMeetingSearchResults)
         }
 
-        @Test(.timeLimit(.minutes(3)))
+        @Test(.timeLimit(.minutes(1)))
         func rapidSearchChangePublishesOnlyLatestQuery() async throws {
             let fixture = try SidebarViewModelMeetingListFixture()
             defer {
@@ -231,7 +231,7 @@ import GRDB
             #expect(viewModel.meetingSearchQuery == "Beta")
         }
 
-        @Test(.timeLimit(.minutes(3)))
+        @Test(.timeLimit(.minutes(1)))
         func activeSearchRefreshesWhenTheIndexCatchesUp() async throws {
             let fixture = try SidebarViewModelMeetingListFixture()
             defer {
@@ -294,7 +294,7 @@ import GRDB
             })
         }
 
-        @Test(.timeLimit(.minutes(3)))
+        @Test(.timeLimit(.minutes(1)))
         func selectedMeetingOutsideInitialPageStaysAvailableAndObservesChanges() async throws {
             let fixture = try SidebarViewModelMeetingListFixture()
             defer {
@@ -343,7 +343,7 @@ import GRDB
             #expect(viewModel.selectedMeetingDetail == nil)
         }
 
-        @Test(.timeLimit(.minutes(3)))
+        @Test(.timeLimit(.minutes(1)))
         func capsMaterializedMeetingListAndDefersChatCatalog() async throws {
             let fixture = try SidebarViewModelMeetingListFixture()
             defer {
@@ -383,7 +383,7 @@ import GRDB
             })
         }
 
-        @Test(.timeLimit(.minutes(3)))
+        @Test(.timeLimit(.minutes(1)))
         func loadsFiveProjectMeetingsThenTenMore() async throws {
             let fixture = try SidebarViewModelMeetingListFixture()
             defer { fixture.stop() }
@@ -452,7 +452,7 @@ import GRDB
             })
         }
 
-        @Test(.timeLimit(.minutes(3)))
+        @Test(.timeLimit(.minutes(1)))
         func ordersProjectsByNameAndKeepsUnassignedLast() async throws {
             let fixture = try SidebarViewModelMeetingListFixture()
             defer { fixture.stop() }
@@ -511,7 +511,7 @@ import GRDB
             ])
         }
 
-        @Test(.timeLimit(.minutes(3)))
+        @Test(.timeLimit(.minutes(1)))
         func capsProjectMeetingsAtFiveHundred() async throws {
             let fixture = try SidebarViewModelMeetingListFixture()
             defer { fixture.stop() }
@@ -572,7 +572,7 @@ import GRDB
 
     @MainActor
     struct SidebarViewModelMeetingSearchTests {
-        @Test(.timeLimit(.minutes(3)))
+        @Test(.timeLimit(.minutes(1)))
         func searchesWithFiltersWithoutFreeTextAndClearsThemTogether() async throws {
             let fixture = try SidebarViewModelMeetingListFixture()
             defer {

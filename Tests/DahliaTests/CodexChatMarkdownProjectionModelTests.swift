@@ -314,12 +314,7 @@
             _ markdown: String,
             renderer: ControlledCodexChatMarkdownRenderer
         ) async {
-            for _ in 0 ..< 1000 {
-                if await renderer.requestedMarkdown().contains(markdown) {
-                    return
-                }
-                await Task.yield()
-            }
+            if await pollUntil({ await renderer.requestedMarkdown().contains(markdown) }) { return }
             Issue.record("Renderer did not receive \(markdown)")
         }
 
@@ -327,12 +322,7 @@
             _ markdown: String,
             model: CodexChatMarkdownProjectionModel
         ) async {
-            for _ in 0 ..< 1000 {
-                if model.projection?.markdown == markdown {
-                    return
-                }
-                await Task.yield()
-            }
+            if await pollUntil({ model.projection?.markdown == markdown }) { return }
             Issue.record("Projection did not publish \(markdown)")
         }
 
@@ -341,15 +331,13 @@
             suffix: String,
             renderer: ControlledCodexChatMarkdownRenderer
         ) async {
-            for _ in 0 ..< 1000 {
-                if await renderer.requestedPendingInputs().contains(.init(
+            let received = await pollUntil {
+                await renderer.requestedPendingInputs().contains(.init(
                     reparseSource: reparseSource,
                     suffix: suffix
-                )) {
-                    return
-                }
-                await Task.yield()
+                ))
             }
+            if received { return }
             Issue.record("Renderer did not receive pending suffix \(suffix)")
         }
 
@@ -357,12 +345,7 @@
             _ blocks: [CodexChatMarkdownRenderedBlock],
             model: CodexChatMarkdownProjectionModel
         ) async {
-            for _ in 0 ..< 1000 {
-                if model.displayBlocks == blocks {
-                    return
-                }
-                await Task.yield()
-            }
+            if await pollUntil({ model.displayBlocks == blocks }) { return }
             Issue.record("Display blocks did not publish expected content")
         }
 
@@ -370,12 +353,7 @@
             _ markdown: String,
             renderer: ControlledCodexChatMarkdownRenderer
         ) async {
-            for _ in 0 ..< 1000 {
-                if await renderer.cachedValues().contains(markdown) {
-                    return
-                }
-                await Task.yield()
-            }
+            if await pollUntil({ await renderer.cachedValues().contains(markdown) }) { return }
             Issue.record("Renderer did not cache \(markdown)")
         }
     }

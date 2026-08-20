@@ -435,13 +435,7 @@ import Foundation
         private func waitUntil(
             _ condition: @escaping @Sendable () async -> Bool
         ) async -> Bool {
-            for _ in 0 ..< 1000 {
-                if await condition() {
-                    return true
-                }
-                await Task.yield()
-            }
-            return false
+            await pollUntil { await condition() }
         }
     }
 #endif

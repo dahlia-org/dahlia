@@ -56,7 +56,7 @@ import GRDB
             ))
         }
 
-        @Test(.timeLimit(.minutes(3)))
+        @Test(.timeLimit(.minutes(1)))
         func rapidSelectionChangePublishesOnlyLatestMeetingDetail() async throws {
             let fixture = try SidebarViewModelMeetingListFixture()
             defer { fixture.stop() }
@@ -84,7 +84,7 @@ import GRDB
             ))
         }
 
-        @Test(.timeLimit(.minutes(3)))
+        @Test(.timeLimit(.minutes(1)))
         func databaseChangeRejectsStaleSelectedMeetingDetail() async throws {
             let fixture = try SidebarViewModelMeetingListFixture()
             defer { fixture.stop() }
@@ -102,7 +102,7 @@ import GRDB
             #expect(viewModel.selectedMeetingIds.isEmpty)
         }
 
-        @Test(.timeLimit(.minutes(3)))
+        @Test(.timeLimit(.minutes(1)))
         func selectedMeetingDetailFailureCanBeRetried() async throws {
             let fixture = try SidebarViewModelMeetingListFixture()
             defer { fixture.stop() }
@@ -129,7 +129,7 @@ import GRDB
             #expect(viewModel.selectedMeetingDetailLoadError == nil)
         }
 
-        @Test(.timeLimit(.minutes(3)))
+        @Test(.timeLimit(.minutes(1)))
         func meetingExistenceIsScopedToCurrentVault() async throws {
             let fixture = try SidebarViewModelMeetingListFixture()
             defer { fixture.stop() }

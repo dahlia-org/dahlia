@@ -312,25 +312,21 @@ import GRDB
         }
 
         @Test
-        func canGenerateSummaryIsDisabledWhileFinalizingRecording() {
+        func commandsAreDisabledWhileFinalizingRecording() {
             let viewModel = summaryReadyViewModel()
+            let freshViewModel = CaptionViewModel()
 
             #expect(viewModel.canGenerateSummary)
+            #expect(freshViewModel.canSwitchVault)
 
             viewModel.isFinalizingRecording = true
+            freshViewModel.isFinalizingRecording = true
+            viewModel.triggerManualSummary()
 
             #expect(!viewModel.canGenerateSummary)
-        }
-
-        @Test
-        func vaultSwitchingIsDisabledWhileFinalizingRecording() {
-            let viewModel = CaptionViewModel()
-
-            #expect(viewModel.canSwitchVault)
-
-            viewModel.isFinalizingRecording = true
-
-            #expect(!viewModel.canSwitchVault)
+            #expect(!freshViewModel.canSwitchVault)
+            #expect(!viewModel.requestShowSummaryTab)
+            #expect(viewModel.summaryGeneratingMeetingIDs.isEmpty)
         }
 
         @Test
@@ -356,36 +352,6 @@ import GRDB
             #expect(!viewModel.canGenerateSummary)
         }
 
-        @Test
-        func manualSummaryDoesNotStartWhileFinalizingRecording() {
-            let viewModel = summaryReadyViewModel()
-            viewModel.isFinalizingRecording = true
-
-            viewModel.triggerManualSummary()
-
-            #expect(!viewModel.requestShowSummaryTab)
-            #expect(viewModel.summaryGeneratingMeetingIDs.isEmpty)
-        }
-
-        @Test
-        func loadMeetingDoesNotResetStoreWhileFinalizingRecording() throws {
-            let viewModel = summaryReadyViewModel()
-            let originalMeetingId = try #require(viewModel.currentMeetingId)
-            let originalSegments = viewModel.store.segments
-            let dbQueue = try DatabaseQueue(path: ":memory:")
-
-            viewModel.isFinalizingRecording = true
-            viewModel.loadMeeting(
-                UUID.v7(),
-                dbQueue: dbQueue,
-                projectURL: nil,
-                projectId: nil,
-                vaultURL: testVaultURL
-            )
-
-            #expect(viewModel.currentMeetingId == originalMeetingId)
-            #expect(viewModel.store.segments == originalSegments)
-        }
 
         @Test
         func retryInitialMeetingLoadRestoresMetadataAsWellAsTranscriptPage() async throws {
@@ -440,35 +406,43 @@ import GRDB
         }
 
         @Test
-        func clearCurrentMeetingDoesNotResetStoreWhileFinalizingRecording() throws {
-            let viewModel = summaryReadyViewModel()
-            let originalMeetingId = try #require(viewModel.currentMeetingId)
-            let originalSegments = viewModel.store.segments
+        func noMeetingSwitchResetsTheStoreWhileFinalizingRecording() throws {
+            // Every entry point that swaps the current meeting must leave the in-flight recording's
+            // segments alone until finalization completes.
+            func expectStorePreserved(_ switchMeeting: (CaptionViewModel) throws -> Void) throws {
+                let viewModel = summaryReadyViewModel()
+                let originalMeetingId = try #require(viewModel.currentMeetingId)
+                let originalSegments = viewModel.store.segments
 
-            viewModel.isFinalizingRecording = true
-            viewModel.clearCurrentMeeting()
+                viewModel.isFinalizingRecording = true
+                try switchMeeting(viewModel)
 
-            #expect(viewModel.currentMeetingId == originalMeetingId)
-            #expect(viewModel.store.segments == originalSegments)
-        }
+                #expect(viewModel.currentMeetingId == originalMeetingId)
+                #expect(viewModel.store.segments == originalSegments)
+            }
 
-        @Test
-        func createEmptyMeetingDoesNotResetStoreWhileFinalizingRecording() throws {
-            let viewModel = summaryReadyViewModel()
-            let originalMeetingId = try #require(viewModel.currentMeetingId)
-            let originalSegments = viewModel.store.segments
-
-            viewModel.isFinalizingRecording = true
-            try viewModel.createEmptyMeeting(
-                dbQueue: DatabaseQueue(path: ":memory:"),
-                projectURL: nil,
-                vaultId: UUID.v7(),
-                projectId: nil,
-                vaultURL: testVaultURL
-            )
-
-            #expect(viewModel.currentMeetingId == originalMeetingId)
-            #expect(viewModel.store.segments == originalSegments)
+            try expectStorePreserved { viewModel in
+                let dbQueue = try DatabaseQueue(path: ":memory:")
+                viewModel.loadMeeting(
+                    UUID.v7(),
+                    dbQueue: dbQueue,
+                    projectURL: nil,
+                    projectId: nil,
+                    vaultURL: testVaultURL
+                )
+            }
+            try expectStorePreserved { viewModel in
+                viewModel.clearCurrentMeeting()
+            }
+            try expectStorePreserved { viewModel in
+                try viewModel.createEmptyMeeting(
+                    dbQueue: DatabaseQueue(path: ":memory:"),
+                    projectURL: nil,
+                    vaultId: UUID.v7(),
+                    projectId: nil,
+                    vaultURL: testVaultURL
+                )
+            }
         }
 
         private func summaryReadyViewModel() -> CaptionViewModel {
@@ -807,10 +781,7 @@ import GRDB
         private func waitUntil(
             _ condition: @escaping @MainActor () -> Bool
         ) async throws {
-            for _ in 0 ..< 200 {
-                if condition() { return }
-                try await Task.sleep(for: .milliseconds(10))
-            }
+            if await pollUntil({ condition() }) { return }
             Issue.record("Timed out waiting for asynchronous view model state")
         }
 
@@ -826,204 +797,6 @@ import GRDB
         }
     }
 
-#elseif canImport(XCTest)
-    import XCTest
-
-    @MainActor
-    final class CaptionViewModelTests: XCTestCase {
-        private let testVaultURL = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
-
-        func testSelectingActiveRecordingMeetingKeepsLiveTranscriptStore() throws {
-            let viewModel = CaptionViewModel()
-            let dbQueue = try DatabaseQueue(path: ":memory:")
-            let meetingId = UUID.v7()
-            let initialSegment = TranscriptSegment(
-                startTime: Date(),
-                text: "live transcript",
-                isConfirmed: true,
-                speakerLabel: "mic"
-            )
-
-            viewModel.isListening = true
-            viewModel.currentMeetingId = meetingId
-            viewModel.currentVaultURL = testVaultURL
-            viewModel.store.loadSegments([initialSegment])
-
-            let storeIdentity = ObjectIdentifier(viewModel.store)
-
-            viewModel.loadMeeting(
-                meetingId,
-                dbQueue: dbQueue,
-                projectURL: nil,
-                projectId: nil,
-                vaultURL: testVaultURL
-            )
-
-            XCTAssertEqual(ObjectIdentifier(viewModel.store), storeIdentity)
-            XCTAssertEqual(viewModel.store.segments, [initialSegment])
-            XCTAssertEqual(viewModel.recordingMeetingId, meetingId)
-        }
-
-        func testCurrentMeetingHasTranscriptSegmentsTracksStoreContents() {
-            let viewModel = CaptionViewModel()
-            let segment = TranscriptSegment(
-                startTime: Date(),
-                text: "confirmed transcript",
-                isConfirmed: true,
-                speakerLabel: "mic"
-            )
-
-            XCTAssertFalse(viewModel.currentMeetingHasTranscriptSegments)
-
-            viewModel.store.loadSegments([segment])
-            XCTAssertTrue(viewModel.currentMeetingHasTranscriptSegments)
-
-            viewModel.store.clear()
-            XCTAssertFalse(viewModel.currentMeetingHasTranscriptSegments)
-        }
-
-        func testBeginDraftMeetingDoesNotPersistMeetingRecord() throws {
-            let viewModel = CaptionViewModel()
-            let database = try AppDatabaseManager(path: ":memory:")
-            let event = CalendarEvent(
-                id: "primary::event-1",
-                calendarID: "primary",
-                calendarName: "Primary",
-                calendarColorHex: "#4285F4",
-                platformId: "event-1",
-                title: "Design review",
-                description: "Review launch checklist",
-                icalUid: "event-1@google.com",
-                startDate: Date(timeIntervalSince1970: 1_776_384_000),
-                endDate: Date(timeIntervalSince1970: 1_776_387_600),
-                isAllDay: false,
-                conferenceURI: URL(string: "https://meet.google.com/test-link")
-            )
-            let vaultId = UUID.v7()
-            try database.dbQueue.write { db in
-                try VaultRecord(
-                    id: vaultId,
-                    path: testVaultURL.path,
-                    name: "Test Vault",
-                    createdAt: Date(),
-                    lastOpenedAt: Date()
-                ).insert(db)
-            }
-
-            viewModel.beginDraftMeeting(
-                from: event,
-                dbQueue: database.dbQueue,
-                vaultURL: testVaultURL
-            )
-
-            let counts = try database.dbQueue.read { db in
-                try (
-                    MeetingRecord.fetchCount(db),
-                    CalendarEventRecord.fetchCount(db)
-                )
-            }
-
-            XCTAssertTrue(viewModel.hasDraftMeeting)
-            XCTAssertEqual(viewModel.draftMeetingTitle, "Design review")
-            XCTAssertEqual(counts.0, 0)
-            XCTAssertEqual(counts.1, 0)
-        }
-
-        func testClearCurrentMeetingDiscardsDraftMeeting() throws {
-            let viewModel = CaptionViewModel()
-            let event = CalendarEvent(
-                id: "primary::event-1",
-                calendarID: "primary",
-                calendarName: "Primary",
-                calendarColorHex: "#4285F4",
-                platformId: "event-1",
-                title: "Design review",
-                description: "",
-                icalUid: "event-1@google.com",
-                startDate: Date(timeIntervalSince1970: 1_776_384_000),
-                endDate: Date(timeIntervalSince1970: 1_776_387_600),
-                isAllDay: false,
-                conferenceURI: nil
-            )
-
-            let dbQueue = try DatabaseQueue(path: ":memory:")
-            viewModel.beginDraftMeeting(
-                from: event,
-                dbQueue: dbQueue,
-                vaultURL: testVaultURL
-            )
-            viewModel.clearCurrentMeeting()
-
-            XCTAssertFalse(viewModel.hasDraftMeeting)
-            XCTAssertNil(viewModel.currentMeetingId)
-        }
-
-        func testMaterializeDraftMeetingPersistsMeetingAndCalendarEvent() throws {
-            let viewModel = CaptionViewModel()
-            let database = try AppDatabaseManager(path: ":memory:")
-            let vaultId = UUID.v7()
-            try database.dbQueue.write { db in
-                try VaultRecord(
-                    id: vaultId,
-                    path: testVaultURL.path,
-                    name: "Test Vault",
-                    createdAt: Date(),
-                    lastOpenedAt: Date()
-                ).insert(db)
-            }
-            let previousVault = AppSettings.shared.currentVault
-            AppSettings.shared.currentVault = VaultRecord(
-                id: vaultId,
-                path: testVaultURL.path,
-                name: "Test Vault",
-                createdAt: Date(),
-                lastOpenedAt: Date()
-            )
-            defer { AppSettings.shared.currentVault = previousVault }
-
-            viewModel.beginDraftMeeting(
-                from: CalendarEvent(
-                    id: "primary::event-1",
-                    calendarID: "primary",
-                    calendarName: "Primary",
-                    calendarColorHex: "#4285F4",
-                    platformId: "event-1",
-                    title: "Design review",
-                    description: "Review launch checklist",
-                    icalUid: "event-1@google.com",
-                    startDate: Date(timeIntervalSince1970: 1_776_384_000),
-                    endDate: Date(timeIntervalSince1970: 1_776_387_600),
-                    isAllDay: false,
-                    conferenceURI: URL(string: "https://meet.google.com/test-link")
-                ),
-                dbQueue: database.dbQueue,
-                vaultURL: testVaultURL
-            )
-
-            let meetingId = try XCTUnwrap(
-                viewModel.materializeDraftMeeting(customerIntelligenceIngestion: .afterMeetingPersistence)
-            )
-            let persisted = try database.dbQueue.read { db in
-                try (
-                    XCTUnwrap(MeetingRecord.fetchOne(db, key: meetingId)),
-                    XCTUnwrap(linkedCalendarEvent(meetingId: meetingId, in: db)),
-                    XCTUnwrap(
-                        CalendarEventSourceRecord
-                            .filter(Column("platform") == CalendarEventPlatform.googleCalendar)
-                            .filter(Column("platform_id") == "event-1")
-                            .fetchOne(db)
-                    )
-                )
-            }
-
-            XCTAssertEqual(persisted.0.name, "Design review")
-            XCTAssertEqual(persisted.0.calendarEventIcalUid, "event-1@google.com")
-            XCTAssertEqual(persisted.1.conferenceURI, "https://meet.google.com/test-link")
-            XCTAssertEqual(persisted.2.platformId, "event-1")
-            XCTAssertFalse(viewModel.hasDraftMeeting)
-            XCTAssertEqual(viewModel.currentMeetingId, meetingId)
-        }
-    }
 #endif
 
 private func linkedCalendarEvent(meetingId: UUID, in db: Database) throws -> CalendarEventRecord? {

@@ -876,10 +876,9 @@ import GRDB
                 projectId: nil,
                 vaultURL: vaultURL
             )
-            for _ in 0 ..< 200 {
-                if viewModel.currentMeetingId == meeting.id,
-                   viewModel.currentMeetingHasTranscriptSegments { break }
-                await Task.yield()
+            _ = await pollUntil {
+                viewModel.currentMeetingId == meeting.id
+                    && viewModel.currentMeetingHasTranscriptSegments
             }
             viewModel.noteText = note
         }

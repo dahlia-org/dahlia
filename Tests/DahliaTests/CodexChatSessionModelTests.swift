@@ -522,7 +522,6 @@ import Foundation
             #expect(await service.approvalDecisions == [
                 TestCodexChatService.ApprovalDecision(id: first.id, decision: .accept),
             ])
-            try? await Task.sleep(for: .milliseconds(600))
             await waitUntil { session.canDecidePendingApproval }
             session.respondToApproval(id: second.id, decision: .accept)
             await waitUntilAsync { await service.approvalDecisions.count == 2 }
@@ -555,7 +554,6 @@ import Foundation
             session.respondToApproval(id: first.id, decision: .accept)
             await waitUntil { session.pendingApprovals == [second] }
             #expect(session.respondingApprovalID == nil)
-            try? await Task.sleep(for: .milliseconds(600))
             await waitUntil { session.canDecidePendingApproval }
 
             session.stop()
@@ -863,20 +861,14 @@ import Foundation
         private func waitUntil(
             _ predicate: @MainActor () -> Bool
         ) async {
-            for _ in 0 ..< 1000 {
-                if predicate() { return }
-                await Task.yield()
-            }
+            if await pollUntil({ predicate() }) { return }
             Issue.record("Timed out waiting for chat state")
         }
 
         private func waitUntilAsync(
             _ predicate: @escaping @Sendable () async -> Bool
         ) async {
-            for _ in 0 ..< 1000 {
-                if await predicate() { return }
-                await Task.yield()
-            }
+            if await pollUntil({ await predicate() }) { return }
             Issue.record("Timed out waiting for asynchronous chat state")
         }
 

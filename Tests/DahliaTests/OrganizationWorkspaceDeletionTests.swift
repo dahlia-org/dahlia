@@ -51,7 +51,7 @@
             #expect(deletedOrganization == nil)
         }
 
-        @Test(.timeLimit(.minutes(3)))
+        @Test(.timeLimit(.minutes(1)))
         func workspaceChangeDuringDeletionPreparationStillPresentsConfirmation() async throws {
             let (fixture, organization, model) = try await makeDeletionFixture()
 

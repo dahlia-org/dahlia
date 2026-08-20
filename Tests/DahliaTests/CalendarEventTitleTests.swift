@@ -6,12 +6,8 @@ import Foundation
 
     struct CalendarEventTitleTests {
         @Test
-        func resolvedMeetingTitleTrimsWhitespace() {
+        func resolvedMeetingTitleTrimsWhitespaceAndFallsBackForBlankTitles() {
             #expect(calendarEvent(title: "  Planning  ").resolvedMeetingTitle == "Planning")
-        }
-
-        @Test
-        func resolvedMeetingTitleFallsBackForBlankTitles() {
             #expect(calendarEvent(title: " \n ").resolvedMeetingTitle == L10n.newMeeting)
         }
     }

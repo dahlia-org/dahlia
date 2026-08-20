@@ -2,13 +2,11 @@ import Foundation
 
 /// Deadline shared by the polling waits in this test target.
 ///
-/// Swift Testing starts every test at once, so the whole suite competes for a small number of
-/// cores. A wait that resolves in milliseconds on a developer machine has been observed taking
-/// tens of seconds on CI purely from scheduling delay. This deadline therefore sits far above the
-/// time any of these waits actually needs: it exists to describe a genuine hang, not a busy
-/// machine. A suite that uses it must not carry a shorter `.timeLimit` trait, because the trait
-/// would fail the test before the wait reports anything useful.
-let testPollTimeout = Duration.seconds(120)
+/// Every wait in this target resolves in milliseconds once the process is healthy, so this
+/// deadline exists only to describe a genuine hang. Keep it short enough that a regression fails
+/// the run quickly instead of stalling CI: a test that needs longer than this is waiting on
+/// something that blocks the cooperative pool or the MainActor, which is the bug to fix.
+let testPollTimeout = Duration.seconds(15)
 
 /// Polls `condition` until it holds or `timeout` elapses, and reports whether it held.
 ///

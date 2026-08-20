@@ -39,38 +39,14 @@ import Foundation
         }
 
         @Test
-        func includesAllDayEventsWhenEnabled() {
-            let filter = CalendarEventFilter(includesAllDayEvents: true)
-
-            #expect(filter.includes(makeEvent(isAllDay: true)))
-        }
-
-        @Test
-        func includesEventsWithoutOtherAttendeesWhenEnabled() {
-            let filter = CalendarEventFilter(includesEventsWithoutOtherAttendees: true)
-
-            #expect(filter.includes(makeEvent(hasOtherAttendees: false)))
-        }
-
-        @Test
-        func includesEventsWithoutConferenceURIWhenEnabled() {
-            let filter = CalendarEventFilter(includesEventsWithoutConferenceURI: true)
-
-            #expect(filter.includes(makeEvent(conferenceURI: nil)))
-        }
-
-        @Test
-        func includesDeclinedEventsWhenEnabled() {
-            let filter = CalendarEventFilter(includesDeclinedEvents: true)
-
-            #expect(filter.includes(makeEvent(isDeclined: true)))
-        }
-
-        @Test
-        func includesOutOfOfficeEventsWhenEnabled() {
-            let filter = CalendarEventFilter(includesOutOfOfficeEvents: true)
-
-            #expect(filter.includes(makeEvent(isOutOfOffice: true)))
+        func includesOptionalEventTypesWhenEnabled() {
+            #expect(CalendarEventFilter(includesAllDayEvents: true).includes(makeEvent(isAllDay: true)))
+            #expect(CalendarEventFilter(includesEventsWithoutOtherAttendees: true)
+                .includes(makeEvent(hasOtherAttendees: false)))
+            #expect(CalendarEventFilter(includesEventsWithoutConferenceURI: true)
+                .includes(makeEvent(conferenceURI: nil)))
+            #expect(CalendarEventFilter(includesDeclinedEvents: true).includes(makeEvent(isDeclined: true)))
+            #expect(CalendarEventFilter(includesOutOfOfficeEvents: true).includes(makeEvent(isOutOfOffice: true)))
         }
 
         @Test(arguments: [

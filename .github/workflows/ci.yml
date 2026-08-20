@@ -8,7 +8,8 @@ on:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # A cancelled run never saves its build cache, so only supersede pushes on a pull request.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -51,7 +52,7 @@ jobs:
   unit-tests:
     name: Unit Tests
     runs-on: macos-26
-    timeout-minutes: 15
+    timeout-minutes: 20
 
     steps:
       - name: Checkout repository
@@ -65,21 +66,32 @@ jobs:
           toolchain_hash="$(printf '%s' "$toolchain" | shasum -a 256 | awk '{ print $1 }')"
           echo "hash=$toolchain_hash" >> "$GITHUB_OUTPUT"
 
-      - name: Cache SwiftPM build
-        uses: actions/cache@v5
+      - name: Restore SwiftPM build cache
+        id: cache
+        uses: actions/cache/restore@v5
         with:
           path: .build
           key: spm-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.hash }}-${{ hashFiles('Package.resolved') }}-${{ github.sha }}
           restore-keys: |
             spm-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.hash }}-${{ hashFiles('Package.resolved') }}-
 
+      - name: Build package and tests
+        run: swift build --build-tests
+
       - name: Run unit tests
         run: |
           set -o pipefail
-          swift test 2>&1 | tee test-output.log
+          swift test --skip-build 2>&1 | tee test-output.log
 
       - name: Verify tests executed
         run: grep -Eq "Test run with [1-9][0-9]* tests" test-output.log
 
-      - name: Build executable
-        run: swift build
+      # Saving only on main keeps pull requests from evicting each other: the cache entry is
+      # ~1.5 GB and the repository limit is 10 GB. `always()` also saves a timed-out run, so a
+      # slow build cannot compound into a colder cache on the next run.
+      - name: Save SwiftPM build cache
+        if: always() && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@v5
+        with:
+          path: .build
+          key: ${{ steps.cache.outputs.cache-primary-key }}

@@ -121,22 +121,28 @@ import GRDB
         private var standardInput: FileHandle?
 
         init(lockURL: URL) throws {
+            // Python's fcntl.flock maps straight onto flock(2), so the child holds the same
+            // process-wide advisory lock the production code takes. Running the helper through
+            // `xcrun swift -e` instead compiled Swift on every call, which cost tens of seconds
+            // and blocked the caller — including the MainActor — for the whole compile.
             let helper = """
-            import Darwin
-            import Foundation
-            let path = ProcessInfo.processInfo.environment["DAHLIA_TEST_LOCK_PATH"]!
-            let descriptor = open(path, O_RDWR | O_CLOEXEC)
-            guard descriptor >= 0, flock(descriptor, LOCK_EX | LOCK_NB) == 0 else { exit(2) }
-            try! FileHandle.standardOutput.write(contentsOf: Data([1]))
-            _ = try! FileHandle.standardInput.readToEnd()
-            _ = flock(descriptor, LOCK_UN)
-            close(descriptor)
+            import fcntl, os, sys
+            descriptor = os.open(os.environ["DAHLIA_TEST_LOCK_PATH"], os.O_RDWR)
+            try:
+                fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except OSError:
+                sys.exit(2)
+            sys.stdout.buffer.write(bytes([1]))
+            sys.stdout.buffer.flush()
+            sys.stdin.buffer.read()
+            fcntl.flock(descriptor, fcntl.LOCK_UN)
+            os.close(descriptor)
             """
             let inputPipe = Pipe()
             let outputPipe = Pipe()
             let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/xcrun")
-            process.arguments = ["swift", "-e", helper]
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
+            process.arguments = ["-c", helper]
             process.standardInput = inputPipe
             process.standardOutput = outputPipe
             process.standardError = Pipe()
