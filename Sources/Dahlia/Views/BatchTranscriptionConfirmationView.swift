@@ -26,6 +26,7 @@ struct BatchTranscriptionConfirmationView: View {
         initialProjectId: UUID?,
         initialErrorMessage: String?,
         initialLanguageSelection: BatchTranscriptionLanguageSelection,
+        allowsRecordedLanguageSelection: Bool,
         initiallyRetainsAudioAfterBatch: Bool,
         initiallyGeneratesSummary: Bool,
         summaryGenerationOptions: SummaryGenerationOptions,
@@ -40,7 +41,7 @@ struct BatchTranscriptionConfirmationView: View {
         self.onStart = onStart
         self.onPostpone = onPostpone
         self.isRetranscription = isRetranscription
-        allowsRecordedLanguageSelection = initialLanguageSelection == .recorded
+        self.allowsRecordedLanguageSelection = allowsRecordedLanguageSelection
         _languageSelection = State(initialValue: initialLanguageSelection)
         _deleteAudioAfterTranscription = State(initialValue: !initiallyRetainsAudioAfterBatch)
         _generateSummaryAfterBatchTranscription = State(initialValue: initiallyGeneratesSummary)

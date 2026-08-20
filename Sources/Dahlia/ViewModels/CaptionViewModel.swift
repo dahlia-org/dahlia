@@ -479,6 +479,17 @@ final class CaptionViewModel: ObservableObject {
             : liveSubtitleLocale
     }
 
+    var showsTranscriptTranslations: Bool {
+        let settings = AppSettings.shared
+        let sourceLocaleIdentifier = isListening
+            ? liveRecognitionLocaleIdentifier
+            : settings.transcriptionLocale
+        return settings.transcriptTranslationEnabled && TranscriptTranslationLanguage.shouldTranslate(
+            transcriptionLocaleIdentifier: sourceLocaleIdentifier,
+            targetLanguageIdentifier: settings.transcriptTranslationTargetLanguage
+        )
+    }
+
     func setChatLiveModeEnabled(_ isEnabled: Bool) {
         guard isChatLiveModeEnabled != isEnabled else { return }
         isChatLiveModeEnabled = isEnabled
@@ -1195,6 +1206,7 @@ final class CaptionViewModel: ObservableObject {
             suggestedLocaleIdentifier: confirmation.suggestedLocaleIdentifier,
             retainAudioAfterBatch: retainAudioAfterBatch,
             initialLanguageSelection: languageSelection,
+            allowsRecordedLanguageSelection: confirmation.allowsRecordedLanguageSelection,
             automaticLanguageCandidateSnapshot: automaticLanguageCandidates.snapshot,
             purpose: confirmation.purpose,
             initiallyGeneratesSummary: summaryGenerationOptions != nil,

@@ -62,7 +62,7 @@
         }
 
         @Test
-        func failedChatOnlyLocaleChangeDetachesOldRecognizers() async throws {
+        func failedChatOnlyLocaleChangePreservesOldRecognizers() async throws {
             let runtime = try await RecordingSessionControllerTests().makeRuntime(
                 mode: .batch,
                 liveSubtitlesEnabled: false,
@@ -71,16 +71,19 @@
             )
             await runtime.probe.clear()
 
-            let snapshot = try await runtime.controller.changeLiveRecognitionLocale(
-                to: Locale(identifier: "en_US"),
-                translateSegment: nil
-            )
+            await #expect(throws: RecordingSessionControllerError.self) {
+                try await runtime.controller.changeLiveRecognitionLocale(
+                    to: Locale(identifier: "en_US"),
+                    translateSegment: nil
+                )
+            }
 
-            #expect(snapshot.liveRecognitionLocaleIdentifier == "en_US")
-            #expect(await runtime.controller.resourceCounts().recognizers == 0)
+            let snapshot = try #require(await runtime.controller.snapshot())
+            #expect(snapshot.liveRecognitionLocaleIdentifier == "ja_JP")
+            #expect(await runtime.controller.resourceCounts().recognizers == 2)
             let actions = await runtime.probe.actions
-            #expect(actions.filter { $0 == .recognitionCancel(.microphone) }.count == 1)
-            #expect(actions.filter { $0 == .recognitionCancel(.system) }.count == 1)
+            #expect(!actions.contains(.recognitionCancel(.microphone)))
+            #expect(!actions.contains(.recognitionCancel(.system)))
             _ = try await runtime.controller.stop()
             await runtime.controller.completeStop()
         }

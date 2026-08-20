@@ -438,6 +438,10 @@ extension RecordingSessionController {
                 await onRuntimeFailure?(source, error.localizedDescription, false)
             }
         }
+        guard !snapshot.plan.requiresLiveRecognition || valid.count == sourceRuntimes.count else {
+            await cancelLocaleReplacements(valid, sessionId: snapshot.sessionId)
+            throw RecordingSessionControllerError.recognitionFailed(L10n.speechRecognitionNotReady)
+        }
         return valid
     }
 
@@ -459,8 +463,6 @@ extension RecordingSessionController {
         _ replacements: [RecordingAudioSource: LocaleRecognitionReplacement],
         snapshot: Snapshot
     ) -> [RetiredRecognition] {
-        let detachesMissingRecognition = snapshot.plan.finalMode == .batch
-            && snapshot.plan.requiresLiveRecognition
         var retired: [RetiredRecognition] = []
 
         for source in Self.sortedSources(sourceRuntimes.keys) {
@@ -485,16 +487,6 @@ extension RecordingSessionController {
                         sessionId: snapshot.sessionId
                     )
                 )
-            } else if detachesMissingRecognition {
-                if let previous = runtime.recognition {
-                    retired.append(RetiredRecognition(
-                        source: source,
-                        router: runtime.pipeline.router,
-                        recognition: previous
-                    ))
-                }
-                runtime.recognition = nil
-                runtime.pipeline.router.setLiveConsumer(nil)
             }
             sourceRuntimes[source] = runtime
         }

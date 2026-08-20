@@ -105,6 +105,17 @@ import GRDB
             )
 
             #expect(confirmation.initialLanguageSelection == .manual(localeIdentifier: "ja_JP"))
+            #expect(!confirmation.allowsRecordedLanguageSelection)
+
+            let retry = BatchTranscriptionConfirmation(
+                sessionId: confirmation.sessionId,
+                meetingId: confirmation.meetingId,
+                suggestedLocaleIdentifier: "ja_JP",
+                retainAudioAfterBatch: true,
+                initialLanguageSelection: .automatic,
+                allowsRecordedLanguageSelection: true
+            )
+            #expect(retry.allowsRecordedLanguageSelection)
         }
 
         @Test
