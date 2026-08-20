@@ -68,7 +68,6 @@ Sentry の PII、request、user、extra、自動 breadcrumb、network breadcrumb
 
 - screenshot grid の backend 固定値、件数 bucket、最小幅 bucket
 - automatic screenshot の `fingerprint` / `encoding` / `persistence` stage と 500 / 1000 / 2000 / 5000 ms の duration bucket
-- automatic screenshot stream の固定 restart event
 
 ## 送信禁止データ
 

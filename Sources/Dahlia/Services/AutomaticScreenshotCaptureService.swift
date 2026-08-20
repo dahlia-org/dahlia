@@ -1,5 +1,4 @@
-@preconcurrency import CoreMedia
-import CoreVideo
+import CoreGraphics
 import DahliaRuntimeSupport
 import Foundation
 import GRDB
@@ -41,7 +40,7 @@ protocol AutomaticScreenshotCapturing: Sendable {
 }
 
 /// Serializes ordinary setting changes while allowing stop to invalidate and bypass
-/// a slow ScreenCaptureKit start operation.
+/// a slow ScreenCaptureKit capture operation.
 @MainActor
 final class AutomaticScreenshotCaptureControl {
     private let capture: any AutomaticScreenshotCapturing
@@ -83,210 +82,23 @@ final class AutomaticScreenshotCaptureControl {
     }
 }
 
-struct AutomaticScreenshotCaptureAttempt: Equatable, Sendable {
-    let generation: UInt64
-    let id: UInt64
-}
-
-struct AutomaticScreenshotPixelDimensions: Equatable, Sendable {
-    let width: Int
-    let height: Int
-}
-
-enum AutomaticScreenshotFrameResolutionAction: Equatable, Sendable {
-    case process
-    case discard
-    case updateConfiguration(AutomaticScreenshotPixelDimensions)
-}
-
 struct AutomaticScreenshotCaptureLifecycle {
     private(set) var generation: UInt64 = 0
     private(set) var isActive = false
-    private(set) var activeAttempt: AutomaticScreenshotCaptureAttempt?
-    private var nextAttemptID: UInt64 = 0
-    private var isCompletionInProgress = false
-
-    mutating func begin() -> UInt64? {
-        guard !isActive, activeAttempt == nil else { return nil }
-        generation &+= 1
-        isActive = true
-        isCompletionInProgress = false
-        return generation
-    }
 
     mutating func beginReplacement() -> UInt64 {
         generation &+= 1
         isActive = true
-        activeAttempt = nil
-        isCompletionInProgress = false
         return generation
     }
 
     mutating func stop() {
         generation &+= 1
         isActive = false
-        activeAttempt = nil
-        isCompletionInProgress = false
     }
 
     func accepts(generation: UInt64) -> Bool {
         isActive && self.generation == generation
-    }
-
-    mutating func beginAttempt(generation: UInt64) -> AutomaticScreenshotCaptureAttempt? {
-        guard accepts(generation: generation), activeAttempt == nil else { return nil }
-        nextAttemptID &+= 1
-        let attempt = AutomaticScreenshotCaptureAttempt(generation: generation, id: nextAttemptID)
-        activeAttempt = attempt
-        isCompletionInProgress = false
-        return attempt
-    }
-
-    func accepts(attempt: AutomaticScreenshotCaptureAttempt) -> Bool {
-        accepts(generation: attempt.generation)
-            && activeAttempt == attempt
-            && !isCompletionInProgress
-    }
-
-    mutating func claimCompletion(attempt: AutomaticScreenshotCaptureAttempt) -> Bool {
-        guard accepts(attempt: attempt) else { return false }
-        isCompletionInProgress = true
-        return true
-    }
-
-    mutating func finishAttempt(_ attempt: AutomaticScreenshotCaptureAttempt) {
-        guard activeAttempt == attempt else { return }
-        activeAttempt = nil
-        isCompletionInProgress = false
-    }
-}
-
-struct CopiedScreenshotFrame: Sendable {
-    let width: Int
-    let height: Int
-    let bytesPerRow: Int
-    let pixels: Data
-    let capturedAt: Date
-    var sourcePixelDimensions: AutomaticScreenshotPixelDimensions?
-
-    var pixelDimensions: AutomaticScreenshotPixelDimensions {
-        AutomaticScreenshotPixelDimensions(width: width, height: height)
-    }
-
-    func makeImage() -> CGImage? {
-        guard let provider = CGDataProvider(data: pixels as CFData),
-              let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) else { return nil }
-        return CGImage(
-            width: width,
-            height: height,
-            bitsPerComponent: 8,
-            bitsPerPixel: 32,
-            bytesPerRow: bytesPerRow,
-            space: colorSpace,
-            bitmapInfo: CGBitmapInfo.byteOrder32Little.union(
-                CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedFirst.rawValue)
-            ),
-            provider: provider,
-            decode: nil,
-            shouldInterpolate: true,
-            intent: .defaultIntent
-        )
-    }
-}
-
-struct AutomaticScreenshotFrameMailbox: Sendable {
-    let stream: AsyncStream<CopiedScreenshotFrame>
-    private let continuation: AsyncStream<CopiedScreenshotFrame>.Continuation
-
-    init() {
-        let pair = AsyncStream.makeStream(
-            of: CopiedScreenshotFrame.self,
-            bufferingPolicy: .bufferingNewest(1)
-        )
-        stream = pair.stream
-        continuation = pair.continuation
-    }
-
-    func yield(_ frame: CopiedScreenshotFrame) {
-        continuation.yield(frame)
-    }
-
-    func finish() {
-        continuation.finish()
-    }
-}
-
-struct AutomaticScreenshotProcessingState {
-    struct Operation {
-        let id: UInt64
-        let attempt: AutomaticScreenshotCaptureAttempt
-        let task: Task<Void, Never>
-    }
-
-    struct PendingFrame {
-        let attempt: AutomaticScreenshotCaptureAttempt
-        let frame: CopiedScreenshotFrame
-    }
-
-    private(set) var operation: Operation?
-    private(set) var pendingFrame: PendingFrame?
-    private var nextOperationID: UInt64 = 0
-
-    var isProcessing: Bool {
-        operation != nil
-    }
-
-    mutating func begin(
-        attempt: AutomaticScreenshotCaptureAttempt,
-        task: (UInt64) -> Task<Void, Never>
-    ) {
-        precondition(operation == nil)
-        nextOperationID &+= 1
-        let operationID = nextOperationID
-        operation = Operation(
-            id: operationID,
-            attempt: attempt,
-            task: task(operationID)
-        )
-    }
-
-    mutating func queueLatest(
-        _ frame: CopiedScreenshotFrame,
-        attempt: AutomaticScreenshotCaptureAttempt
-    ) -> Bool {
-        guard operation?.attempt == attempt else { return false }
-        pendingFrame = PendingFrame(attempt: attempt, frame: frame)
-        return true
-    }
-
-    mutating func discardPendingFrame(matching attempt: AutomaticScreenshotCaptureAttempt) {
-        guard pendingFrame?.attempt == attempt else { return }
-        pendingFrame = nil
-    }
-
-    mutating func complete(
-        operationID: UInt64,
-        attempt: AutomaticScreenshotCaptureAttempt
-    ) -> PendingFrame? {
-        guard let operation,
-              operation.id == operationID,
-              operation.attempt == attempt else { return nil }
-        self.operation = nil
-        defer { pendingFrame = nil }
-        guard pendingFrame?.attempt == attempt else { return nil }
-        return pendingFrame
-    }
-
-    mutating func take(
-        matching attempt: AutomaticScreenshotCaptureAttempt? = nil
-    ) -> Operation? {
-        if attempt == nil || pendingFrame?.attempt == attempt {
-            pendingFrame = nil
-        }
-        guard let operation,
-              attempt == nil || operation.attempt == attempt else { return nil }
-        self.operation = nil
-        return operation
     }
 }
 
@@ -307,26 +119,26 @@ private enum ScreenshotCaptureMetrics {
     }
 }
 
+struct AutomaticScreenshotCaptureOutput: Sendable {
+    let image: CGImage
+    let capturedAt: Date
+}
+
 private struct EncodedScreenshotFrame: Sendable {
     let data: Data
     let mimeType: String
 }
 
-private struct FingerprintedScreenshotFrame: Sendable {
-    let image: CGImage
-    let fingerprint: ScreenshotFingerprint
-}
-
 private actor AutomaticScreenshotFrameProcessor {
-    func fingerprint(for frame: CopiedScreenshotFrame) -> FingerprintedScreenshotFrame? {
-        guard !Task.isCancelled, let image = frame.makeImage() else { return nil }
+    func fingerprint(for image: CGImage) -> ScreenshotFingerprint? {
+        guard !Task.isCancelled else { return nil }
         let startedAt = ContinuousClock.now
         let state = ScreenshotCaptureMetrics.signposter.beginInterval("Fingerprint")
         let fingerprint = ScreenshotChangeDetector.fingerprint(for: image)
         ScreenshotCaptureMetrics.signposter.endInterval("Fingerprint", state)
         ScreenshotCaptureMetrics.recordSlowStage(.fingerprint, startedAt: startedAt)
         guard !Task.isCancelled, let fingerprint else { return nil }
-        return FingerprintedScreenshotFrame(image: image, fingerprint: fingerprint)
+        return fingerprint
     }
 
     func encode(_ image: CGImage) -> EncodedScreenshotFrame? {
@@ -342,252 +154,150 @@ private actor AutomaticScreenshotFrameProcessor {
     }
 }
 
-/// Owns the periodic ScreenCaptureKit stream and keeps image-sized work off MainActor.
+/// Periodically takes one-shot screenshots without holding a display stream open
+/// while another app starts or runs screen sharing.
 actor AutomaticScreenshotCaptureService: AutomaticScreenshotCapturing {
-    private struct ActiveCapture {
-        let attempt: AutomaticScreenshotCaptureAttempt
-        let stream: SCStream
-        let adapter: AutomaticScreenshotStreamAdapter
-        let configuration: SCStreamConfiguration
-        let frameConsumerTask: Task<Void, Never>
-    }
+    typealias CaptureImage = @Sendable (ScreenshotCaptureSource) async throws -> AutomaticScreenshotCaptureOutput
+    typealias Sleep = @Sendable (Duration) async throws -> Void
 
     private var lifecycle = AutomaticScreenshotCaptureLifecycle()
     private let frameProcessor = AutomaticScreenshotFrameProcessor()
-    private let frameQueue = AutomaticScreenshotFrameQueue()
+    private let captureImage: CaptureImage
+    private let sleep: Sleep
     private var desiredRequest: AutomaticScreenshotCaptureRequest?
-    private var activeCapture: ActiveCapture?
-    private var processingState = AutomaticScreenshotProcessingState()
+    private var captureTask: Task<Void, Never>?
     private var lastSavedFingerprint: ScreenshotFingerprint?
-    private var retryTask: Task<Void, Never>?
 
-    func start(_ request: AutomaticScreenshotCaptureRequest) async {
-        desiredRequest = Self.normalized(request)
-        retryTask?.cancel()
-        retryTask = nil
-        let generation = lifecycle.beginReplacement()
-        await stopCaptureAndProcessing()
-        guard lifecycle.accepts(generation: generation) else { return }
-        lastSavedFingerprint = nil
-        await startStream(generation: generation)
+    init() {
+        self.init(
+            captureImage: Self.captureImage,
+            sleep: { try await Task.sleep(for: $0) }
+        )
     }
 
-    func updateSettings(intervalSeconds: Int, changeThresholdRatio: Double) async {
+    init(
+        captureImage: @escaping CaptureImage,
+        sleep: @escaping Sleep
+    ) {
+        self.captureImage = captureImage
+        self.sleep = sleep
+    }
+
+    func start(_ request: AutomaticScreenshotCaptureRequest) {
+        desiredRequest = Self.normalized(request)
+        lastSavedFingerprint = nil
+        restartCaptureLoop(captureImmediately: true)
+    }
+
+    func updateSettings(intervalSeconds: Int, changeThresholdRatio: Double) {
         guard var request = desiredRequest else { return }
         request.intervalSeconds = intervalSeconds
         request.changeThresholdRatio = changeThresholdRatio
-        request = Self.normalized(request)
-        desiredRequest = request
-
-        guard let activeCapture,
-              lifecycle.accepts(attempt: activeCapture.attempt) else { return }
-        activeCapture.configuration.minimumFrameInterval = Self.frameInterval(
-            seconds: request.intervalSeconds
-        )
-        do {
-            try await activeCapture.stream.updateConfiguration(activeCapture.configuration)
-        } catch {
-            await handleRuntimeFailure(error, attempt: activeCapture.attempt)
-        }
+        desiredRequest = Self.normalized(request)
+        restartCaptureLoop(captureImmediately: false)
     }
 
-    func stop() async {
+    func stop() {
         desiredRequest = nil
-        retryTask?.cancel()
-        retryTask = nil
         lifecycle.stop()
-        await stopCaptureAndProcessing()
+        captureTask?.cancel()
     }
 
-    private func stopCaptureAndProcessing() async {
-        let processingOperation = processingState.take()
-        processingOperation?.task.cancel()
-        await stopActiveCapture()
-        await processingOperation?.task.value
-    }
-
-    private func startStream(generation: UInt64) async {
-        guard let request = desiredRequest,
-              let attempt = lifecycle.beginAttempt(generation: generation) else { return }
-
-        do {
-            let content = try await SCShareableContent.excludingDesktopWindows(
-                false,
-                onScreenWindowsOnly: false
-            )
-            guard lifecycle.accepts(attempt: attempt) else { return }
-            let filter = try Self.contentFilter(source: request.source, content: content)
-            let configuration = Self.streamConfiguration(
-                filter: filter,
-                intervalSeconds: request.intervalSeconds
-            )
-            let frameMailbox = AutomaticScreenshotFrameMailbox()
-            let adapter = AutomaticScreenshotStreamAdapter(
-                attempt: attempt,
-                frameMailbox: frameMailbox,
-                onStopped: { [weak self] attempt, error in
-                    Task {
-                        await self?.handleRuntimeFailure(error, attempt: attempt)
-                    }
-                }
-            )
-            let stream = SCStream(filter: filter, configuration: configuration, delegate: adapter)
-            try stream.addStreamOutput(
-                adapter,
-                type: .screen,
-                sampleHandlerQueue: frameQueue.sampleHandlerQueue
-            )
-            guard lifecycle.accepts(attempt: attempt) else {
-                adapter.deactivate()
-                return
+    private func restartCaptureLoop(captureImmediately: Bool) {
+        let previousTask = captureTask
+        previousTask?.cancel()
+        let generation = lifecycle.beginReplacement()
+        captureTask = Task(priority: .utility) { [weak self] in
+            if captureImmediately {
+                await previousTask?.value
+            } else {
+                async let intervalElapsed = self?.sleepUntilNextCapture(generation: generation)
+                await previousTask?.value
+                guard await intervalElapsed == true else { return }
             }
-            let frameConsumerTask = Task(priority: .utility) { [weak self] in
-                for await frame in frameMailbox.stream {
-                    guard !Task.isCancelled else { break }
-                    await self?.receive(frame, attempt: attempt)
-                }
-            }
-            activeCapture = ActiveCapture(
-                attempt: attempt,
-                stream: stream,
-                adapter: adapter,
-                configuration: configuration,
-                frameConsumerTask: frameConsumerTask
+            guard !Task.isCancelled else { return }
+            await self?.runCaptureLoop(
+                generation: generation
             )
-            try await stream.startCapture()
-        } catch {
-            await handleRuntimeFailure(error, attempt: attempt)
         }
     }
 
-    private func stopActiveCapture() async {
-        guard let activeCapture else { return }
-        self.activeCapture = nil
-        lifecycle.finishAttempt(activeCapture.attempt)
-        await stopCaptureResources(activeCapture)
-    }
-
-    private func stopCaptureResources(_ capture: ActiveCapture) async {
-        capture.adapter.deactivate()
-        capture.frameConsumerTask.cancel()
-        try? await capture.stream.stopCapture()
-        await frameQueue.drain()
-        await capture.frameConsumerTask.value
-    }
-
-    private func takeActiveCapture(matching attempt: AutomaticScreenshotCaptureAttempt) -> ActiveCapture? {
-        guard let activeCapture, activeCapture.attempt == attempt else { return nil }
-        self.activeCapture = nil
-        activeCapture.adapter.deactivate()
-        activeCapture.frameConsumerTask.cancel()
-        return activeCapture
-    }
-
-    private func handleRuntimeFailure(
-        _ error: Error,
-        attempt: AutomaticScreenshotCaptureAttempt
-    ) async {
-        guard let request = desiredRequest,
-              lifecycle.claimCompletion(attempt: attempt) else { return }
-        let capture = takeActiveCapture(matching: attempt)
-        let processingOperation = processingState.take(matching: attempt)
-        processingOperation?.task.cancel()
-        if let capture {
-            await stopCaptureResources(capture)
-        }
-        await processingOperation?.task.value
-        lifecycle.finishAttempt(attempt)
-        guard lifecycle.accepts(generation: attempt.generation),
-              desiredRequest != nil else { return }
-        await request.onFailure(error)
-        guard lifecycle.accepts(generation: attempt.generation),
-              desiredRequest != nil else { return }
-        ErrorReportingService.recordAutomaticScreenshotStreamRestart()
-        scheduleRetry(
-            generation: attempt.generation,
-            intervalSeconds: request.intervalSeconds
-        )
-    }
-
-    private func scheduleRetry(generation: UInt64, intervalSeconds: Int) {
-        retryTask?.cancel()
-        retryTask = Task { [weak self] in
+    private func runCaptureLoop(generation: UInt64) async {
+        while lifecycle.accepts(generation: generation),
+              let request = desiredRequest {
+            async let intervalElapsed: Void = sleep(.seconds(request.intervalSeconds))
+            await captureAndPersist(generation: generation)
             do {
-                try await Task.sleep(for: .seconds(max(1, intervalSeconds)))
+                try await intervalElapsed
             } catch {
                 return
             }
-            guard let self else { return }
-            await self.retry(generation: generation)
         }
     }
 
-    private func retry(generation: UInt64) async {
+    private func sleepUntilNextCapture(generation: UInt64) async -> Bool {
         guard lifecycle.accepts(generation: generation),
-              lifecycle.activeAttempt == nil,
-              desiredRequest != nil else { return }
-        retryTask = nil
-        await startStream(generation: generation)
+              let request = desiredRequest else { return false }
+        do {
+            try await sleep(.seconds(request.intervalSeconds))
+        } catch {
+            return false
+        }
+        return lifecycle.accepts(generation: generation)
     }
 
-    private func receive(
-        _ frame: CopiedScreenshotFrame,
-        attempt: AutomaticScreenshotCaptureAttempt
-    ) async {
-        guard lifecycle.accepts(attempt: attempt) else { return }
-        if await shouldDiscardFrameForResolution(for: frame, attempt: attempt) {
+    private func captureAndPersist(generation: UInt64) async {
+        guard lifecycle.accepts(generation: generation),
+              let request = desiredRequest else { return }
+        do {
+            let screenshot = try await captureImage(request.source)
+            guard !Task.isCancelled,
+                  lifecycle.accepts(generation: generation) else { return }
+            await process(screenshot, request: request, generation: generation)
+        } catch is CancellationError {
             return
-        }
-        if processingState.isProcessing {
-            _ = processingState.queueLatest(frame, attempt: attempt)
-            return
-        }
-        startProcessing(frame, attempt: attempt)
-    }
-
-    private func startProcessing(
-        _ frame: CopiedScreenshotFrame,
-        attempt: AutomaticScreenshotCaptureAttempt
-    ) {
-        processingState.begin(attempt: attempt) { [weak self] operationID in
-            Task(priority: .utility) {
-                await self?.process(frame, attempt: attempt)
-                await self?.finishProcessing(operationID: operationID, attempt: attempt)
+        } catch {
+            guard !Task.isCancelled,
+                  lifecycle.accepts(generation: generation) else { return }
+            await MainActor.run {
+                guard !Task.isCancelled else { return }
+                request.onFailure(error)
             }
         }
     }
 
     private func process(
-        _ frame: CopiedScreenshotFrame,
-        attempt: AutomaticScreenshotCaptureAttempt
+        _ screenshot: AutomaticScreenshotCaptureOutput,
+        request: AutomaticScreenshotCaptureRequest,
+        generation: UInt64
     ) async {
-        guard lifecycle.accepts(attempt: attempt),
-              let request = desiredRequest else { return }
-        let fingerprintedFrame = await frameProcessor.fingerprint(for: frame)
-        guard let fingerprintedFrame,
+        let fingerprint = await frameProcessor.fingerprint(for: screenshot.image)
+        guard let fingerprint,
               !Task.isCancelled,
-              lifecycle.accepts(attempt: attempt) else { return }
-
+              lifecycle.accepts(generation: generation) else { return }
         guard shouldSave(
-            fingerprintedFrame.fingerprint,
+            fingerprint,
             changeThresholdRatio: request.changeThresholdRatio
         ) else { return }
 
-        guard let encoded = await frameProcessor.encode(fingerprintedFrame.image) else {
+        guard let encoded = await frameProcessor.encode(screenshot.image) else {
             guard !Task.isCancelled,
-                  lifecycle.accepts(attempt: attempt) else { return }
-            await request.onFailure(ScreenshotError.encodingFailed)
+                  lifecycle.accepts(generation: generation) else { return }
+            await MainActor.run {
+                guard !Task.isCancelled else { return }
+                request.onFailure(ScreenshotError.encodingFailed)
+            }
             return
         }
         guard !Task.isCancelled,
-              lifecycle.accepts(attempt: attempt) else { return }
-        guard shouldSave(
-            fingerprintedFrame.fingerprint,
-            changeThresholdRatio: request.changeThresholdRatio
-        ) else { return }
+              lifecycle.accepts(generation: generation),
+              shouldSave(
+                  fingerprint,
+                  changeThresholdRatio: request.changeThresholdRatio
+              ) else { return }
 
         let record = Self.makeRecord(
-            frame: frame,
+            capturedAt: screenshot.capturedAt,
             meetingID: request.meetingID,
             sessionID: request.sessionID,
             encodedData: encoded.data,
@@ -603,29 +313,23 @@ actor AutomaticScreenshotCaptureService: AutomaticScreenshotCapturing {
             ScreenshotCaptureMetrics.signposter.endInterval("Persist", persistenceState)
             ScreenshotCaptureMetrics.recordSlowStage(.persistence, startedAt: persistenceStartedAt)
             guard !Task.isCancelled,
-                  lifecycle.accepts(attempt: attempt) else { return }
-            await request.onFailure(error)
+                  lifecycle.accepts(generation: generation) else { return }
+            await MainActor.run {
+                guard !Task.isCancelled else { return }
+                request.onFailure(error)
+            }
             return
         }
         ScreenshotCaptureMetrics.signposter.endInterval("Persist", persistenceState)
         ScreenshotCaptureMetrics.recordSlowStage(.persistence, startedAt: persistenceStartedAt)
 
         guard !Task.isCancelled,
-              lifecycle.accepts(attempt: attempt) else { return }
-        lastSavedFingerprint = fingerprintedFrame.fingerprint
-        await request.onPersisted(record)
-    }
-
-    private func finishProcessing(
-        operationID: UInt64,
-        attempt: AutomaticScreenshotCaptureAttempt
-    ) {
-        guard let pendingFrame = processingState.complete(
-            operationID: operationID,
-            attempt: attempt
-        ) else { return }
-        guard lifecycle.accepts(attempt: attempt) else { return }
-        startProcessing(pendingFrame.frame, attempt: attempt)
+              lifecycle.accepts(generation: generation) else { return }
+        lastSavedFingerprint = fingerprint
+        await MainActor.run {
+            guard !Task.isCancelled else { return }
+            request.onPersisted(record)
+        }
     }
 
     private func shouldSave(
@@ -642,40 +346,6 @@ actor AutomaticScreenshotCaptureService: AutomaticScreenshotCapturing {
 }
 
 extension AutomaticScreenshotCaptureService {
-    private func shouldDiscardFrameForResolution(
-        for frame: CopiedScreenshotFrame,
-        attempt: AutomaticScreenshotCaptureAttempt
-    ) async -> Bool {
-        guard let activeCapture, activeCapture.attempt == attempt else { return false }
-        let configuredDimensions = AutomaticScreenshotPixelDimensions(
-            width: activeCapture.configuration.width,
-            height: activeCapture.configuration.height
-        )
-        switch Self.frameResolutionAction(
-            frameDimensions: frame.pixelDimensions,
-            sourcePixelDimensions: frame.sourcePixelDimensions,
-            configuredDimensions: configuredDimensions
-        ) {
-        case .process:
-            return false
-        case .discard:
-            return true
-        case let .updateConfiguration(dimensions):
-            processingState.discardPendingFrame(matching: attempt)
-            activeCapture.configuration.width = dimensions.width
-            activeCapture.configuration.height = dimensions.height
-            do {
-                try await activeCapture.stream.updateConfiguration(activeCapture.configuration)
-            } catch {
-                // Failure cleanup joins the frame consumer, so it must run from another task.
-                Task { [weak self] in
-                    await self?.handleRuntimeFailure(error, attempt: attempt)
-                }
-            }
-            return true
-        }
-    }
-
     private static func normalized(_ request: AutomaticScreenshotCaptureRequest) -> AutomaticScreenshotCaptureRequest {
         var request = request
         request.intervalSeconds = max(1, request.intervalSeconds)
@@ -688,7 +358,7 @@ extension AutomaticScreenshotCaptureService {
     }
 
     static func makeRecord(
-        frame: CopiedScreenshotFrame,
+        capturedAt: Date,
         meetingID: UUID,
         sessionID: UUID?,
         encodedData: Data,
@@ -698,10 +368,24 @@ extension AutomaticScreenshotCaptureService {
             id: UUID.v7(),
             meetingId: meetingID,
             sessionId: sessionID,
-            capturedAt: frame.capturedAt,
+            capturedAt: capturedAt,
             imageData: encodedData,
             mimeType: mimeType
         )
+    }
+
+    private static func captureImage(source: ScreenshotCaptureSource) async throws -> AutomaticScreenshotCaptureOutput {
+        let content = try await SCShareableContent.excludingDesktopWindows(
+            false,
+            onScreenWindowsOnly: false
+        )
+        let filter = try contentFilter(source: source, content: content)
+        let configuration = screenshotConfiguration(filter: filter)
+        let image = try await SCScreenshotManager.captureImage(
+            contentFilter: filter,
+            configuration: configuration
+        )
+        return AutomaticScreenshotCaptureOutput(image: image, capturedAt: .now)
     }
 
     private static func contentFilter(
@@ -724,192 +408,15 @@ extension AutomaticScreenshotCaptureService {
         }
     }
 
-    private static func streamConfiguration(
-        filter: SCContentFilter,
-        intervalSeconds: Int
-    ) -> SCStreamConfiguration {
+    private static func screenshotConfiguration(filter: SCContentFilter) -> SCStreamConfiguration {
         let configuration = SCStreamConfiguration()
         configuration.width = max(1, Int((filter.contentRect.width * Double(filter.pointPixelScale)).rounded()))
         configuration.height = max(1, Int((filter.contentRect.height * Double(filter.pointPixelScale)).rounded()))
-        configuration.minimumFrameInterval = frameInterval(seconds: intervalSeconds)
-        configuration.queueDepth = 3
-        configuration.pixelFormat = kCVPixelFormatType_32BGRA
         configuration.captureResolution = .best
         configuration.scalesToFit = true
         configuration.preservesAspectRatio = true
         configuration.showsCursor = false
         configuration.capturesAudio = false
         return configuration
-    }
-
-    private static func frameInterval(seconds: Int) -> CMTime {
-        CMTime(seconds: Double(max(1, seconds)), preferredTimescale: 600)
-    }
-
-    static func sourcePixelDimensions(
-        contentRect: CGRect,
-        contentScale: CGFloat,
-        scaleFactor: CGFloat
-    ) -> AutomaticScreenshotPixelDimensions? {
-        guard contentRect.width > 0,
-              contentRect.height > 0,
-              contentScale > 0,
-              scaleFactor > 0,
-              contentRect.width.isFinite,
-              contentRect.height.isFinite,
-              contentScale.isFinite,
-              scaleFactor.isFinite else { return nil }
-        return AutomaticScreenshotPixelDimensions(
-            width: max(1, Int((contentRect.width / contentScale * scaleFactor).rounded())),
-            height: max(1, Int((contentRect.height / contentScale * scaleFactor).rounded()))
-        )
-    }
-
-    static func sourcePixelDimensions(
-        from attachments: [SCStreamFrameInfo: Any]
-    ) -> AutomaticScreenshotPixelDimensions? {
-        guard let contentRect = contentRect(from: attachments[.contentRect]),
-              let contentScale = attachments[.contentScale] as? CGFloat,
-              let scaleFactor = attachments[.scaleFactor] as? CGFloat else { return nil }
-        return sourcePixelDimensions(
-            contentRect: contentRect,
-            contentScale: contentScale,
-            scaleFactor: scaleFactor
-        )
-    }
-
-    static func contentRect(from value: Any?) -> CGRect? {
-        guard let value else { return nil }
-        if let contentRect = value as? CGRect {
-            return contentRect
-        }
-        guard let dictionary = value as? NSDictionary else { return nil }
-        return CGRect(dictionaryRepresentation: dictionary)
-    }
-
-    static func frameResolutionAction(
-        frameDimensions: AutomaticScreenshotPixelDimensions,
-        sourcePixelDimensions: AutomaticScreenshotPixelDimensions?,
-        configuredDimensions: AutomaticScreenshotPixelDimensions
-    ) -> AutomaticScreenshotFrameResolutionAction {
-        guard frameDimensions == configuredDimensions else {
-            return .discard
-        }
-        if let sourcePixelDimensions, sourcePixelDimensions != configuredDimensions {
-            return .updateConfiguration(sourcePixelDimensions)
-        }
-        return .process
-    }
-}
-
-private struct AutomaticScreenshotFrameQueue: Sendable {
-    let sampleHandlerQueue = DispatchQueue(
-        label: "com.dahlia.automatic-screenshot",
-        qos: .utility
-    )
-
-    func drain() async {
-        await withCheckedContinuation { continuation in
-            sampleHandlerQueue.async {
-                continuation.resume()
-            }
-        }
-    }
-}
-
-/// ScreenCaptureKit invokes this adapter only on its serial frame queue.
-private final class AutomaticScreenshotStreamAdapter: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked Sendable {
-    typealias StopHandler = @Sendable (AutomaticScreenshotCaptureAttempt, Error) -> Void
-
-    private let attempt: AutomaticScreenshotCaptureAttempt
-    private let frameMailbox: AutomaticScreenshotFrameMailbox
-    private let onStopped: StopHandler
-    private let isAcceptingFrames = OSAllocatedUnfairLock(initialState: true)
-
-    init(
-        attempt: AutomaticScreenshotCaptureAttempt,
-        frameMailbox: AutomaticScreenshotFrameMailbox,
-        onStopped: @escaping StopHandler
-    ) {
-        self.attempt = attempt
-        self.frameMailbox = frameMailbox
-        self.onStopped = onStopped
-    }
-
-    func deactivate() {
-        let shouldFinish = isAcceptingFrames.withLock { isAccepting in
-            defer { isAccepting = false }
-            return isAccepting
-        }
-        if shouldFinish {
-            frameMailbox.finish()
-        }
-    }
-
-    func stream(
-        _: SCStream,
-        didOutputSampleBuffer sampleBuffer: CMSampleBuffer,
-        of type: SCStreamOutputType
-    ) {
-        guard type == .screen,
-              isAcceptingFrames.withLock({ $0 }),
-              Self.isCompleteFrame(sampleBuffer) else { return }
-        let capturedAt = Date.now
-        let copyState = ScreenshotCaptureMetrics.signposter.beginInterval("Copy frame")
-        let frame = Self.copyFrame(sampleBuffer, capturedAt: capturedAt)
-        ScreenshotCaptureMetrics.signposter.endInterval("Copy frame", copyState)
-        guard let frame else { return }
-        frameMailbox.yield(frame)
-    }
-
-    func stream(_: SCStream, didStopWithError error: Error) {
-        deactivate()
-        onStopped(attempt, error)
-    }
-
-    private static func isCompleteFrame(_ sampleBuffer: CMSampleBuffer) -> Bool {
-        guard let attachments = CMSampleBufferGetSampleAttachmentsArray(
-            sampleBuffer,
-            createIfNecessary: false
-        ) as? [[SCStreamFrameInfo: Any]],
-            let statusRawValue = attachments.first?[.status] as? Int,
-            let status = SCFrameStatus(rawValue: statusRawValue) else { return false }
-        return status == .complete
-    }
-
-    private static func copyFrame(
-        _ sampleBuffer: CMSampleBuffer,
-        capturedAt: Date
-    ) -> CopiedScreenshotFrame? {
-        guard let pixelBuffer = sampleBuffer.imageBuffer,
-              CVPixelBufferGetPixelFormatType(pixelBuffer) == kCVPixelFormatType_32BGRA else { return nil }
-        CVPixelBufferLockBaseAddress(pixelBuffer, .readOnly)
-        defer { CVPixelBufferUnlockBaseAddress(pixelBuffer, .readOnly) }
-        guard let baseAddress = CVPixelBufferGetBaseAddress(pixelBuffer) else { return nil }
-
-        let width = CVPixelBufferGetWidth(pixelBuffer)
-        let height = CVPixelBufferGetHeight(pixelBuffer)
-        let bytesPerRow = CVPixelBufferGetBytesPerRow(pixelBuffer)
-        let sourcePixelDimensions = frameAttachments(sampleBuffer).flatMap {
-            AutomaticScreenshotCaptureService.sourcePixelDimensions(from: $0)
-        }
-        return CopiedScreenshotFrame(
-            width: width,
-            height: height,
-            bytesPerRow: bytesPerRow,
-            pixels: Data(bytes: baseAddress, count: bytesPerRow * height),
-            capturedAt: capturedAt,
-            sourcePixelDimensions: sourcePixelDimensions
-        )
-    }
-
-    private static func frameAttachments(
-        _ sampleBuffer: CMSampleBuffer
-    ) -> [SCStreamFrameInfo: Any]? {
-        let attachments = CMSampleBufferGetSampleAttachmentsArray(
-            sampleBuffer,
-            createIfNecessary: false
-        ) as? [[SCStreamFrameInfo: Any]]
-        return attachments?.first
     }
 }
