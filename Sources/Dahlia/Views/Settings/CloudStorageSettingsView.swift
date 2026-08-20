@@ -13,30 +13,19 @@ struct CloudStorageSettingsView: View {
             Section {
                 connectionRow
 
-                if let message = driveStore.lastErrorMessage {
-                    SettingsStatusMessage(
-                        text: message,
-                        systemImage: "exclamationmark.triangle",
-                        tint: .orange
-                    )
-                }
-            } header: {
-                Text(L10n.googleDocs)
-            } footer: {
-                Text(L10n.googleDocsSettingsDescription)
-            }
+                if driveStore.isAuthorized {
+                    LabeledContent {
+                        Text(exportFolderName)
+                    } label: {
+                        Text(L10n.googleDriveExportFolder)
+                        Text(L10n.myDrive)
+                    }
 
-            Section {
-                LabeledContent {
-                    Text(AppSettings.defaultGoogleDriveExportFolderName)
-                } label: {
-                    Text(L10n.googleDriveExportFolder)
-                    Text(L10n.myDrive)
-                }
-
-                if let exportFolderURL {
-                    Link(destination: exportFolderURL) {
-                        Label(L10n.openInGoogleDrive, systemImage: "arrow.up.right.square")
+                    if let exportFolderURL {
+                        Link(destination: exportFolderURL) {
+                            Label(L10n.openInGoogleDrive, systemImage: "arrow.up.right.square")
+                        }
+                        .buttonStyle(.dahlia())
                     }
                 }
 
@@ -47,10 +36,34 @@ struct CloudStorageSettingsView: View {
                         tint: .orange
                     )
                 }
+
+                if let message = driveStore.lastErrorMessage {
+                    SettingsStatusMessage(
+                        text: message,
+                        systemImage: "exclamationmark.triangle",
+                        tint: .orange
+                    )
+                }
             } header: {
-                Text(L10n.googleDriveExportDestination)
+                Text(L10n.googleDrive)
             } footer: {
-                Text(L10n.googleDriveExportDestinationDescription)
+                Text(L10n.googleDocsSettingsDescription)
+                if driveStore.isAuthorized {
+                    Text(L10n.googleDriveExportDestinationDescription)
+                }
+            }
+
+            Section {
+                LabeledContent {
+                    Button(L10n.comingSoon) {}
+                        .buttonStyle(.dahlia())
+                        .disabled(true)
+                } label: {
+                    Text(L10n.notion)
+                    Text(L10n.notionExportDescription)
+                }
+            } header: {
+                Text(L10n.notion)
             }
         }
         .formStyle(.grouped)
@@ -106,7 +119,7 @@ struct CloudStorageSettingsView: View {
             Button(L10n.googleDriveConnect) {
                 googleOAuthConsent.request(.drive)
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.dahlia(.primary))
             .disabled(!driveStore.isConfigured || driveStore.isBusy)
         } else {
             Button(L10n.googleDriveDisconnect) {
@@ -114,7 +127,7 @@ struct CloudStorageSettingsView: View {
                     await driveStore.disconnect()
                 }
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.dahlia())
             .disabled(!driveStore.isConfigured || driveStore.isBusy)
         }
     }
@@ -134,6 +147,12 @@ struct CloudStorageSettingsView: View {
     private var exportFolderURL: URL? {
         guard let accountID = driveStore.account?.id else { return nil }
         return settings.googleDriveExportFolderURL(forAccountID: accountID)
+    }
+
+    private var exportFolderName: String {
+        guard let accountID = driveStore.account?.id else { return AppSettings.defaultGoogleDriveExportFolderName }
+        return settings.googleDriveExportFolderName(forAccountID: accountID)
+            ?? AppSettings.defaultGoogleDriveExportFolderName
     }
 
     private func presentExportFolderError(_ message: String) {

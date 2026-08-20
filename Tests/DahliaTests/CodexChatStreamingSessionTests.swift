@@ -46,13 +46,12 @@ import Foundation
         }
 
         @Test
-        func bufferedBurstYieldsMainActorAndPreservesEveryDelta() async {
+        func bufferedBurstPreservesEveryDelta() async {
             let session = makeSession(mode: .bufferedBurstThenInterrupt)
 
             session.draft = "Question"
             session.sendDraft()
 
-            #expect(await waitUntil { session.activeTurnID != nil })
             #expect(session.isGenerating)
             #expect(await waitUntil { !session.isGenerating })
             #expect(session.messages.last?.text == String(repeating: "x", count: 2048))

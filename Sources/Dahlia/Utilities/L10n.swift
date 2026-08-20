@@ -1576,6 +1576,11 @@ enum L10n {
         bundle: bundle
     ) }
     static var unprocessedRecordings: String { String(localized: "Unprocessed Recordings", bundle: bundle) }
+    static var viewUnprocessedRecordings: String { String(localized: "Open Unprocessed Recordings", bundle: bundle) }
+    static var finishRecordingBeforeOpeningAnotherVault: String { String(
+        localized: "Finish the current recording before opening unprocessed recordings in another vault.",
+        bundle: bundle
+    ) }
     static var unprocessedRecordingsDescription: String { String(
         localized: "Transcribe or discard every unprocessed recording before creating or restoring a backup.",
         bundle: bundle
@@ -1666,8 +1671,12 @@ enum L10n {
     static var removingVault: String { String(localized: "Removing Vault…", bundle: bundle) }
     static var appearance: String { String(localized: "Appearance", bundle: bundle) }
     static var display: String { String(localized: "Display", bundle: bundle) }
-    static var meetingList: String { String(localized: "Meeting List", bundle: bundle) }
-    static var displayStyle: String { String(localized: "Display Style", bundle: bundle) }
+    static var meetingSidebar: String { String(localized: "Meeting Sidebar", bundle: bundle) }
+    static var sidebarDisplayStyle: String { String(localized: "Sidebar Display Style", bundle: bundle) }
+    static var sidebarDisplayStyleDescription: String { String(
+        localized: "Controls how meetings appear in the sidebar.",
+        bundle: bundle
+    ) }
     static var standard: String { String(localized: "Standard", bundle: bundle) }
     static var compact: String { String(localized: "Compact", bundle: bundle) }
     static var appLanguage: String { String(localized: "App Language", bundle: bundle) }
@@ -1817,7 +1826,9 @@ enum L10n {
         String(localized: "Calendar event: \(title)", bundle: bundle)
     }
 
-    static var googleDocs: String { String(localized: "Google Docs", bundle: bundle) }
+    static var googleDrive: String { String(localized: "Google Drive", bundle: bundle) }
+    static var notion: String { String(localized: "Notion", bundle: bundle) }
+    static var notionExportDescription: String { String(localized: "Export summaries to Notion.", bundle: bundle) }
     static var googleCalendarSettingsDescription: String { String(
         localized: "Connect a Google account and choose which calendars appear on Home.",
         bundle: bundle
@@ -1873,7 +1884,7 @@ enum L10n {
     ) }
     static var googleDriveOAuthDisclosureAccess: String { String(
         localized: """
-        Your Google account name and email address, a Meeting Notes folder, and Google Docs summaries created by Dahlia. \
+        Your Google account name and email address, a Dahlia folder, and Google Docs summaries created by Dahlia. \
         Other Drive files are not accessible to Dahlia.
         """,
         bundle: bundle
@@ -1932,12 +1943,11 @@ enum L10n {
     static var continueToGoogle: String { String(localized: "Continue to Google", bundle: bundle) }
     static var googleDocsConnected: String { String(localized: "Google Docs connected", bundle: bundle) }
     static var googleDocsNotConnected: String { googleCalendarNotConnected }
-    static var googleDriveExportDestination: String { String(localized: "Export Destination", bundle: bundle) }
     static var googleDriveExportFolder: String { String(localized: "Export Folder", bundle: bundle) }
     static var openInGoogleDrive: String { String(localized: "Open in Google Drive", bundle: bundle) }
     static var myDrive: String { String(localized: "My Drive", bundle: bundle) }
     static var googleDriveExportDestinationDescription: String { String(
-        localized: "On first connection, Dahlia creates Meeting Notes directly under My Drive and exports Google Docs into it. The export destination is fixed to this folder.",
+        localized: "On first connection, Dahlia creates a Dahlia folder directly under My Drive and exports Google Docs into it. The export destination is fixed to this folder.",
         bundle: bundle
     ) }
     static var googleDriveExportFolderNotConfigured: String { String(

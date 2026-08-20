@@ -93,10 +93,10 @@ private struct PermissionSettingsRow: View {
         Group {
             if isRequestable {
                 baseButton
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.dahlia(.primary))
             } else {
                 baseButton
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.dahlia())
             }
         }
         .disabled(actionsDisabled)

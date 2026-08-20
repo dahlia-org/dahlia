@@ -9,14 +9,14 @@ import Foundation
     @MainActor
     struct GoogleDriveExportFolderConfigurationServiceTests {
         @Test
-        func initialConfigurationStoresMeetingNotesFolderForConnectedAccount() async throws {
+        func initialConfigurationStoresDahliaFolderForConnectedAccount() async throws {
             let apiClient = FolderConfigurationAPIClient(folderID: "folder-1")
             let settings = FolderConfigurationSettings()
             let service = GoogleDriveExportFolderConfigurationService(apiClient: apiClient, settings: settings)
 
             try await service.configureIfNeeded(session: defaultDriveSession)
 
-            #expect(await apiClient.resolvedFolderNames == ["Meeting Notes"])
+            #expect(await apiClient.resolvedFolderNames == ["Dahlia"])
             #expect(settings.googleDriveExportFolderID(forAccountID: "user-1") == "folder-1")
         }
 
@@ -26,6 +26,24 @@ import Foundation
 
             #expect(url?.absoluteString == "https://drive.google.com/drive/folders/folder-1_abc")
             #expect(AppSettings.googleDriveExportFolderURL(folderID: "") == nil)
+        }
+
+        @Test
+        func legacyMeetingNotesFolderRemainsAvailableAfterFolderNameChange() {
+            let folderID = AppSettings.validatedGoogleDriveExportFolderID(
+                storedID: "legacy-folder",
+                storedAccountID: "user-1",
+                storedFolderName: "Meeting Notes",
+                accountID: "user-1"
+            )
+
+            #expect(folderID == "legacy-folder")
+            #expect(AppSettings.validatedGoogleDriveExportFolderID(
+                storedID: "custom-folder",
+                storedAccountID: "user-1",
+                storedFolderName: "Custom",
+                accountID: "user-1"
+            ) == nil)
         }
 
         @Test
@@ -52,7 +70,7 @@ import Foundation
             async let second: Void = service.configureIfNeeded(session: defaultDriveSession)
             _ = try await (first, second)
 
-            #expect(await apiClient.resolvedFolderNames == ["Meeting Notes"])
+            #expect(await apiClient.resolvedFolderNames == ["Dahlia"])
             #expect(settings.googleDriveExportFolderID(forAccountID: "user-1") == "folder-1")
         }
 
@@ -66,7 +84,7 @@ import Foundation
             try await service.configureIfNeeded(session: defaultDriveSession)
 
             #expect(await apiClient.validatedFolderIDs == ["stale-folder"])
-            #expect(await apiClient.resolvedFolderNames == ["Meeting Notes"])
+            #expect(await apiClient.resolvedFolderNames == ["Dahlia"])
             #expect(settings.googleDriveExportFolderID(forAccountID: "user-1") == "replacement-folder")
         }
 
@@ -80,7 +98,7 @@ import Foundation
             try await service.configureIfNeeded(session: makeDriveSession(accountID: "user-2"))
 
             #expect(await apiClient.validatedFolderIDs.isEmpty)
-            #expect(await apiClient.resolvedFolderNames == ["Meeting Notes"])
+            #expect(await apiClient.resolvedFolderNames == ["Dahlia"])
             #expect(settings.googleDriveExportFolderID(forAccountID: "user-2") == "account-2-folder")
         }
 

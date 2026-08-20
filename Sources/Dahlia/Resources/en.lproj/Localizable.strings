@@ -33,6 +33,8 @@
 "Restore this backup?" = "Restore this backup?";
 "The current database will be backed up first, then replaced. Dahlia will restart. Audio files and app settings are not restored." = "The current database will be backed up first, then replaced. Dahlia will restart. Audio files and app settings are not restored.";
 "Unprocessed Recordings" = "Unprocessed Recordings";
+"Open Unprocessed Recordings" = "Open Unprocessed Recordings";
+"Finish the current recording before opening unprocessed recordings in another vault." = "Finish the current recording before opening unprocessed recordings in another vault.";
 "Recordings that need manual transcription will appear here." = "Recordings that need manual transcription will appear here.";
 "Transcribe or discard every unprocessed recording before creating or restoring a backup." = "Transcribe or discard every unprocessed recording before creating or restoring a backup.";
 "Waiting for transcription" = "Waiting for transcription";
@@ -500,8 +502,9 @@
 "Typography" = "Typography";
 "Font Size" = "Font Size";
 "%lld pt" = "%lld pt";
-"Meeting List" = "Meeting List";
-"Display Style" = "Display Style";
+"Meeting Sidebar" = "Meeting Sidebar";
+"Sidebar Display Style" = "Sidebar Display Style";
+"Controls how meetings appear in the sidebar." = "Controls how meetings appear in the sidebar.";
 "App Language" = "App Language";
 "Set the display language for the app." = "Set the display language for the app.";
 "Follow System" = "Follow System";
@@ -570,7 +573,7 @@
 "Dahlia requests access only to the Google Drive files and folders it creates or that you explicitly use with Dahlia." = "Dahlia requests access only to the Google Drive files and folders it creates or that you explicitly use with Dahlia.";
 "Data Dahlia Accesses" = "Data Dahlia Accesses";
 "Your Google account name and email address, calendar names, and event titles, descriptions, dates, attendance status, and meeting links." = "Your Google account name and email address, calendar names, and event titles, descriptions, dates, attendance status, and meeting links.";
-"Your Google account name and email address, a Meeting Notes folder, and Google Docs summaries created by Dahlia. Other Drive files are not accessible to Dahlia." = "Your Google account name and email address, a Meeting Notes folder, and Google Docs summaries created by Dahlia. Other Drive files are not accessible to Dahlia.";
+"Your Google account name and email address, a Dahlia folder, and Google Docs summaries created by Dahlia. Other Drive files are not accessible to Dahlia." = "Your Google account name and email address, a Dahlia folder, and Google Docs summaries created by Dahlia. Other Drive files are not accessible to Dahlia.";
 "How Dahlia Uses and Stores It" = "How Dahlia Uses and Stores It";
 "OAuth tokens and your account ID, name, and email address are stored in Keychain. Upcoming events are shown in Dahlia. Auto-recording stores the selected event occurrence identifier and its start and end dates in local settings until the recording attempt or event end. Linked event details are stored in the local meeting database and any database backups you create while a saved meeting refers to them." = "OAuth tokens and your account ID, name, and email address are stored in Keychain. Upcoming events are shown in Dahlia. Auto-recording stores the selected event occurrence identifier and its start and end dates in local settings until the recording attempt or event end. Linked event details are stored in the local meeting database and any database backups you create while a saved meeting refers to them.";
 "OAuth tokens and your account ID, name, and email address are stored in Keychain. The export folder and account IDs are stored in local settings. Exported document URLs and IDs are stored with the related meeting and in any database backups you create." = "OAuth tokens and your account ID, name, and email address are stored in Keychain. The export folder and account IDs are stored in local settings. Exported document URLs and IDs are stored with the related meeting and in any database backups you create.";
@@ -789,15 +792,16 @@
 
 /* Keychain */
 "Cloud Storage" = "Cloud Storage";
-"Google Docs" = "Google Docs";
+"Google Drive" = "Google Drive";
+"Notion" = "Notion";
+"Export summaries to Notion." = "Export summaries to Notion.";
 "Connect a Google account to export summaries, including images, to Google Docs from the Share menu." = "Connect a Google account to export summaries, including images, to Google Docs from the Share menu.";
 "Sign in with Google to export summaries to Google Docs." = "Sign in with Google to export summaries to Google Docs.";
 "Google Docs connected" = "Google Docs connected";
-"Export Destination" = "Export Destination";
 "Export Folder" = "Export Folder";
 "Open in Google Drive" = "Open in Google Drive";
 "My Drive" = "My Drive";
-"On first connection, Dahlia creates Meeting Notes directly under My Drive and exports Google Docs into it. The export destination is fixed to this folder." = "On first connection, Dahlia creates Meeting Notes directly under My Drive and exports Google Docs into it. The export destination is fixed to this folder.";
+"On first connection, Dahlia creates a Dahlia folder directly under My Drive and exports Google Docs into it. The export destination is fixed to this folder." = "On first connection, Dahlia creates a Dahlia folder directly under My Drive and exports Google Docs into it. The export destination is fixed to this folder.";
 "The Google Drive export folder has not been configured." = "The Google Drive export folder has not been configured.";
 "Could not configure the Google Drive export folder." = "Could not configure the Google Drive export folder.";
 "Open Cloud Storage Settings" = "Open Cloud Storage Settings";

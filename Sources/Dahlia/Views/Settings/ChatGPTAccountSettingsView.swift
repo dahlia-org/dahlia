@@ -37,16 +37,20 @@ struct ChatGPTAccountSettingsView: View {
 
             if controller.isSigningIn {
                 Button(L10n.cancelSignIn, action: cancelSignIn)
+                    .buttonStyle(.dahlia())
             } else if controller.accountStatus?.isAuthenticated == true {
                 Button(L10n.signOut, action: signOut)
+                    .buttonStyle(.dahlia())
                     .disabled(controller.isBusy)
             } else if controller.accountStatus?.requiresOpenAIAuth != false {
                 Button(L10n.signInWithChatGPT, action: signIn)
+                    .buttonStyle(.dahlia(.primary))
                     .disabled(controller.isBusy)
             }
 
             if controller.errorMessage != nil {
                 Button(L10n.retry, action: activate)
+                    .buttonStyle(.dahlia())
                     .disabled(controller.isBusy)
             }
         } header: {

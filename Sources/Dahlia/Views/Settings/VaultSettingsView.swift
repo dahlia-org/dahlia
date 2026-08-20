@@ -51,7 +51,7 @@ struct VaultSettingsView: View {
                     Spacer()
 
                     Button(L10n.addVault, systemImage: "plus", action: showFolderPicker)
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.dahlia(.primary))
                         .controlSize(.small)
                         .help(L10n.openFolderAsVaultDescription)
                 }

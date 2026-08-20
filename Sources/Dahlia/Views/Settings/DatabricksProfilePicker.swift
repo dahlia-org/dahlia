@@ -13,13 +13,13 @@ struct DatabricksProfilePicker: View {
             Text(L10n.noDatabricksProfiles)
                 .foregroundStyle(DahliaDesign.secondaryTextColor)
         } else {
-            Picker("", selection: $selection) {
-                ForEach(profiles) { profile in
-                    Text(profile.name).tag(profile.name)
-                }
-            }
+            DahliaMenuPicker(
+                title: L10n.databricksProfile,
+                selection: $selection,
+                options: profiles.map(\.name),
+                label: { $0 }
+            )
             .labelsHidden()
-            .pickerStyle(.menu)
         }
     }
 }

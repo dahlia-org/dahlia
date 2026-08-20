@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// 設定画面「一般」タブ。アカウント、表示言語、録音、通知の基本設定を管理する。
+/// 設定画面「一般」タブ。アカウント、録音、通知の基本設定を管理する。
 struct GeneralSettingsView: View {
     @ObservedObject private var settings = AppSettings.shared
 
@@ -13,17 +13,6 @@ struct GeneralSettingsView: View {
                 } label: {
                     Text(L10n.dahliaAccount)
                     Text(L10n.dahliaAccountDescription)
-                }
-            }
-
-            Section(L10n.appearance) {
-                Picker(selection: $settings.appLanguage) {
-                    ForEach(AppLanguage.allCases) { language in
-                        Text(language.displayName).tag(language)
-                    }
-                } label: {
-                    Text(L10n.appLanguage)
-                    Text(L10n.appLanguageDescription)
                 }
             }
 

@@ -12,16 +12,19 @@ struct BackupSettingsView: View {
     @State private var model: BackupSettingsViewModel
     @State private var pendingDeleteGeneration: BackupGeneration?
     @State private var pendingRestoreGeneration: BackupGeneration?
-    @State private var pendingDiscardItem: BackupPreflightItem?
 
     private let dbQueue: DatabaseQueue?
+    private let onShowUnprocessedRecordings: (UUID) -> Void
     @ObservedObject private var captionViewModel: CaptionViewModel
+    @ObservedObject private var settings = AppSettings.shared
 
     init(
         dbQueue: DatabaseQueue?,
-        captionViewModel: CaptionViewModel
+        captionViewModel: CaptionViewModel,
+        onShowUnprocessedRecordings: @escaping (UUID) -> Void
     ) {
         self.dbQueue = dbQueue
+        self.onShowUnprocessedRecordings = onShowUnprocessedRecordings
         _captionViewModel = ObservedObject(wrappedValue: captionViewModel)
         _model = State(initialValue: BackupSettingsViewModel(dbQueue: dbQueue))
     }
@@ -37,12 +40,13 @@ struct BackupSettingsView: View {
                     Button(L10n.createBackup) {
                         Task { await model.createBackup() }
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.dahlia(.primary))
                     .disabled(dbQueue == nil || model.isBusy || !model.preflightItems.isEmpty)
 
                     Button(L10n.importBackup) {
                         importBackup()
                     }
+                    .buttonStyle(.dahlia())
                     .disabled(model.isBusy)
 
                     if model.isBusy {
@@ -125,49 +129,23 @@ struct BackupSettingsView: View {
         } message: {
             Text(L10n.restoreBackupDescription)
         }
-        .confirmationDialog(
-            L10n.discardUnprocessedRecordingConfirmation,
-            isPresented: Binding(
-                get: { pendingDiscardItem != nil },
-                set: { if !$0 { pendingDiscardItem = nil } }
-            ),
-            titleVisibility: .visible
-        ) {
-            Button(L10n.discardRecording, role: .destructive) {
-                guard let item = pendingDiscardItem else { return }
-                pendingDiscardItem = nil
-                Task { await model.discardAudio(item) }
-            }
-            Button(L10n.cancel, role: .cancel) { pendingDiscardItem = nil }
-        } message: {
-            Text(L10n.discardUnprocessedRecordingDescription)
-        }
     }
 
     private var unresolvedAudioSection: some View {
         Section {
-            ForEach(model.preflightItems) { item in
-                LabeledContent {
-                    HStack {
-                        if item.canStartTranscription {
-                            Button(L10n.transcribe) {
-                                Task { await resolveByTranscribing(item) }
-                            }
-                        } else if item.isWorkInProgress {
-                            ProgressView()
-                                .controlSize(.small)
-                        }
-                        if item.canDiscard {
-                            Button(L10n.discardRecording, role: .destructive) {
-                                pendingDiscardItem = item
-                            }
-                        }
-                    }
-                } label: {
-                    Text(item.meetingName)
-                    Text(item.startedAt.formatted(date: .abbreviated, time: .shortened))
-                    Text(item.statusDescription)
+            LabeledContent {
+                Button(L10n.viewUnprocessedRecordings, systemImage: "arrow.right") {
+                    guard let vaultID = unprocessedRecordingsTargetVaultID else { return }
+                    onShowUnprocessedRecordings(vaultID)
                 }
+                .buttonStyle(.dahlia(.primary))
+                .disabled(unprocessedRecordingsTargetVaultID == nil)
+                .help(unprocessedRecordingsNavigationHelp)
+            } label: {
+                Label(
+                    L10n.resolveUnprocessedRecordings(model.preflightItems.count),
+                    systemImage: "waveform.badge.exclamationmark"
+                )
             }
         } header: {
             Text(L10n.unprocessedRecordings)
@@ -176,12 +154,40 @@ struct BackupSettingsView: View {
         }
     }
 
+    private var unprocessedRecordingsTargetVaultID: UUID? {
+        Self.unprocessedRecordingsTargetVaultID(
+            in: model.preflightItems,
+            currentVaultID: settings.currentVault?.id,
+            canSwitchVault: captionViewModel.canSwitchVault
+        )
+    }
+
+    private var unprocessedRecordingsNavigationHelp: String {
+        unprocessedRecordingsTargetVaultID == nil
+            ? L10n.finishRecordingBeforeOpeningAnotherVault
+            : L10n.viewUnprocessedRecordings
+    }
+
+    nonisolated static func unprocessedRecordingsTargetVaultID(
+        in items: [BackupPreflightItem],
+        currentVaultID: UUID?,
+        canSwitchVault: Bool
+    ) -> UUID? {
+        if let currentVaultID,
+           items.contains(where: { $0.vaultId == currentVaultID }) {
+            return currentVaultID
+        }
+        return canSwitchVault ? items.first?.vaultId : nil
+    }
+
     private func generationRow(_ generation: BackupGeneration) -> some View {
         LabeledContent {
             HStack {
                 Button(L10n.exportBackup) { exportBackup(generation) }
+                    .buttonStyle(.dahlia())
                     .disabled(!generation.isValid || model.isBusy)
                 Button(L10n.restoreBackup) { pendingRestoreGeneration = generation }
+                    .buttonStyle(.dahlia())
                     .disabled(
                         !generation.isValid
                             || model.isBusy
@@ -189,6 +195,7 @@ struct BackupSettingsView: View {
                             || !model.preflightItems.isEmpty
                     )
                 Button(L10n.delete, role: .destructive) { pendingDeleteGeneration = generation }
+                    .buttonStyle(.dahlia(.destructive))
                     .disabled(model.isBusy)
             }
         } label: {
@@ -208,15 +215,6 @@ struct BackupSettingsView: View {
                     .foregroundStyle(.orange)
             }
         }
-    }
-
-    private func resolveByTranscribing(_ item: BackupPreflightItem) async {
-        guard let dbQueue else { return }
-        await captionViewModel.presentManualBatchTranscription(
-            sessionId: item.sessionId,
-            meetingId: item.meetingId,
-            dbQueue: dbQueue
-        )
     }
 
     private func importBackup() {

@@ -178,7 +178,7 @@ struct CalendarSettingsView: View {
             Button(L10n.googleCalendarConnect) {
                 googleOAuthConsent.request(.calendar)
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.dahlia(.primary))
             .disabled(!googleCalendarStore.isConfigured || googleCalendarStore.isBusy)
         } else {
             Button(L10n.googleCalendarDisconnect) {
@@ -186,7 +186,7 @@ struct CalendarSettingsView: View {
                     await googleCalendarStore.disconnect()
                 }
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.dahlia())
             .disabled(!googleCalendarStore.isConfigured || googleCalendarStore.isBusy)
         }
     }
@@ -224,7 +224,7 @@ struct CalendarSettingsView: View {
                     await macCalendarStore.requestAccess()
                 }
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.dahlia(.primary))
             .disabled(macCalendarStore.isBusy)
         } else {
             Button(L10n.googleCalendarRetry) {
@@ -232,7 +232,7 @@ struct CalendarSettingsView: View {
                     await macCalendarStore.refreshIfNeeded(force: true)
                 }
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.dahlia())
             .disabled(!macCalendarStore.isAuthorized || macCalendarStore.isBusy)
         }
     }

@@ -11,24 +11,24 @@ struct TranscriptionSettingsView: View {
     var body: some View {
         Form {
             Section {
-                Picker(L10n.transcriptionMethod, selection: $settings.transcriptionMode) {
-                    ForEach(TranscriptionMode.allCases, id: \.self) { mode in
-                        Text(mode.displayName).tag(mode)
-                    }
-                }
-                .pickerStyle(.segmented)
+                DahliaSegmentedPicker(
+                    title: L10n.transcriptionMethod,
+                    selection: $settings.transcriptionMode,
+                    options: TranscriptionMode.allCases,
+                    label: \.displayName
+                )
             } footer: {
                 Text(transcriptionModeDescription)
             }
 
             Section {
-                Picker(L10n.transcriptionLanguage, selection: $settings.transcriptionLocale) {
-                    ForEach(transcriptionLocaleOptions, id: \.identifier) { locale in
-                        Text(locale.localizedString(forIdentifier: locale.identifier) ?? locale.identifier)
-                            .tag(locale.identifier)
-                    }
+                DahliaMenuPicker(
+                    title: L10n.transcriptionLanguage,
+                    selection: $settings.transcriptionLocale,
+                    options: transcriptionLocaleOptions.map(\.identifier)
+                ) { identifier in
+                    Locale(identifier: identifier).localizedString(forIdentifier: identifier) ?? identifier
                 }
-                .pickerStyle(.menu)
                 .disabled(isLoadingLocales)
             } footer: {
                 Text(L10n.transcriptionLanguageDescription)
@@ -36,15 +36,13 @@ struct TranscriptionSettingsView: View {
 
             if settings.transcriptionMode == .batch {
                 Section {
-                    Picker(selection: $settings.batchTranscriptionStallTimeout) {
-                        ForEach(BatchTranscriptionStallTimeout.allCases) { timeout in
-                            Text(timeout.displayName).tag(timeout)
-                        }
-                    } label: {
-                        Text(L10n.batchTranscriptionStallTimeout)
-                        Text(L10n.batchTranscriptionStallTimeoutDescription)
-                    }
-                    .pickerStyle(.menu)
+                    DahliaMenuPicker(
+                        title: L10n.batchTranscriptionStallTimeout,
+                        description: L10n.batchTranscriptionStallTimeoutDescription,
+                        selection: $settings.batchTranscriptionStallTimeout,
+                        options: BatchTranscriptionStallTimeout.allCases,
+                        label: \.displayName
+                    )
 
                     Toggle(isOn: $settings.retainAudioAfterBatchTranscription) {
                         Text(L10n.retainBatchAudio)
@@ -95,15 +93,14 @@ struct TranscriptionSettingsView: View {
                 }
                 .toggleStyle(.switch)
 
-                Picker(selection: $settings.transcriptTranslationTargetLanguage) {
-                    ForEach(targetLanguageOptions) { option in
-                        Text(option.displayName).tag(option.identifier)
-                    }
-                } label: {
-                    Text(L10n.translationTargetLanguage)
-                    Text(L10n.translationTargetLanguageDescription)
+                DahliaMenuPicker(
+                    title: L10n.translationTargetLanguage,
+                    description: L10n.translationTargetLanguageDescription,
+                    selection: $settings.transcriptTranslationTargetLanguage,
+                    options: targetLanguageOptions.map(\.identifier)
+                ) { identifier in
+                    targetLanguageOptions.first(where: { $0.identifier == identifier })?.displayName ?? identifier
                 }
-                .pickerStyle(.menu)
                 .disabled(!settings.transcriptTranslationEnabled)
             } header: {
                 Text(L10n.transcriptTranslation)
@@ -116,12 +113,12 @@ struct TranscriptionSettingsView: View {
             }
 
             Section {
-                Picker(L10n.languageRange, selection: languageScopeBinding) {
-                    ForEach(TranscriptionLanguageScope.allCases) { scope in
-                        Text(scope.displayName).tag(scope)
-                    }
-                }
-                .pickerStyle(.segmented)
+                DahliaSegmentedPicker(
+                    title: L10n.languageRange,
+                    selection: languageScopeBinding,
+                    options: TranscriptionLanguageScope.allCases,
+                    label: \.displayName
+                )
                 .disabled(isLoadingLocales)
 
                 if settings.transcriptionLanguageScope == .selected {

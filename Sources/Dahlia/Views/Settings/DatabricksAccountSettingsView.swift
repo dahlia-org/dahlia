@@ -22,6 +22,7 @@ struct DatabricksAccountSettingsView: View {
                     )
                     .labelStyle(.iconOnly)
                     .dahliaFixedSymbol()
+                    .buttonStyle(.dahlia())
                     .disabled(controller.isBusy)
                 }
             } label: {

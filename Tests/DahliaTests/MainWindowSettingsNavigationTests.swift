@@ -73,6 +73,22 @@
         }
 
         @Test
+        func openingUnprocessedRecordingsFromSettingsSelectsDestinationAndDismissesSettings() {
+            let navigation = MainWindowNavigation(
+                openMainWindow: {},
+                initialSettingsCategory: .backups
+            )
+            navigation.recordNavigation(to: .projects)
+            navigation.openSettings()
+
+            navigation.openUnprocessedRecordingsFromSettings()
+
+            #expect(!navigation.isShowingSettings)
+            #expect(navigation.section == .meetings)
+            #expect(navigation.currentLocation == .unprocessedRecordings)
+        }
+
+        @Test
         func changingVaultWhileSettingsAreVisibleResetsThePreservedLocation() {
             let navigation = MainWindowNavigation(
                 openMainWindow: {},
