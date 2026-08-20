@@ -80,7 +80,7 @@ jobs:
       - name: Run unit tests
         run: |
           set -o pipefail
-          swift test --skip-build --experimental-maximum-parallelization-width 1 2>&1 | tee test-output.log
+          swift test --skip-build --experimental-maximum-parallelization-width 1 -q 2>&1 | tee test-output.log
 
       - name: Verify tests executed
         run: grep -Eq "Test run with [1-9][0-9]* tests" test-output.log
