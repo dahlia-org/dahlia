@@ -14,12 +14,29 @@ struct SearchDocumentProjection {
 struct SearchDocumentFields {
     let title: String
     let description: String
+    let summary: String
     let calendar: String
     let tags: String
     let projectPath: String
 
+    init(
+        title: String,
+        description: String,
+        summary: String = "",
+        calendar: String,
+        tags: String,
+        projectPath: String
+    ) {
+        self.title = title
+        self.description = description
+        self.summary = summary
+        self.calendar = calendar
+        self.tags = tags
+        self.projectPath = projectPath
+    }
+
     var hash: String {
-        let content = [title, description, calendar, tags, projectPath]
+        let content = [title, description, summary, calendar, tags, projectPath]
             .map { "\($0.utf8.count):\($0)" }.joined()
         return SHA256.hash(data: Data(content.utf8)).map { String(format: "%02x", $0) }.joined()
     }
@@ -112,13 +129,14 @@ private func insertFTS(rowID: Int64, fields: SearchDocumentFields, in db: Databa
     try db.execute(
         sql: """
         INSERT INTO search_documents_fts(
-            rowid, title, description, calendar, tags, projectPath
-        ) VALUES(?, ?, ?, ?, ?, ?)
+            rowid, title, description, summary, calendar, tags, projectPath
+        ) VALUES(?, ?, ?, ?, ?, ?, ?)
         """,
         arguments: [
             rowID,
             fields.title,
             fields.description,
+            fields.summary,
             fields.calendar,
             fields.tags,
             fields.projectPath,
@@ -130,12 +148,13 @@ private func updateFTS(rowID: Int64, fields: SearchDocumentFields, in db: Databa
     try db.execute(
         sql: """
         UPDATE search_documents_fts
-        SET title = ?, description = ?, calendar = ?, tags = ?, projectPath = ?
+        SET title = ?, description = ?, summary = ?, calendar = ?, tags = ?, projectPath = ?
         WHERE rowid = ?
         """,
         arguments: [
             fields.title,
             fields.description,
+            fields.summary,
             fields.calendar,
             fields.tags,
             fields.projectPath,

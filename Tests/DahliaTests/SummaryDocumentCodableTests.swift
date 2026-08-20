@@ -52,6 +52,51 @@ import Foundation
         }
 
         @Test
+        func searchableBodyTextIncludesBlocksAndExcludesMetadataAndReferences() {
+            let screenshotID = UUID.v7()
+            let document = SummaryDocument(
+                title: "Excluded title",
+                description: "Excluded description",
+                sections: [
+                    SummarySection(
+                        id: .v7(),
+                        heading: "Section heading",
+                        blocks: [
+                            .paragraph("Paragraph", transcriptRef: .init(time: "00:00:01")),
+                            .bulletedList(items: ["Bullet"]),
+                            .numberedList(items: ["Numbered"]),
+                            .checklist(items: [.init(text: "Checklist", checked: false)]),
+                            .quote("Quote"),
+                            .code(language: "swift", code: "let searchable = true"),
+                            .image(screenshotId: screenshotID, caption: "Image caption"),
+                            .heading(level: 3, text: "Block heading"),
+                            .table(headers: ["Header"], rows: [["Cell"]]),
+                        ]
+                    ),
+                ],
+                tags: ["Excluded tag"],
+                actionItems: [.init(title: "Excluded action", assignee: "Excluded assignee")]
+            )
+
+            #expect(document.searchableBodyText == """
+            Section heading
+            Paragraph
+            Bullet
+            Numbered
+            Checklist
+            Quote
+            let searchable = true
+            Image caption
+            Block heading
+            Header
+            Cell
+            """)
+            #expect(!document.searchableBodyText.contains(screenshotID.uuidString))
+            #expect(!document.searchableBodyText.contains("00:00:01"))
+            #expect(!document.searchableBodyText.contains("Excluded"))
+        }
+
+        @Test
         func summaryDocumentDoesNotEncodeTranscriptReferenceLabels() throws {
             let document = SummaryDocument(
                 title: "Weekly sync",

@@ -225,6 +225,11 @@ final class AppDatabaseManager: Sendable {
             try SearchDocumentsMigration.migrate(in: db)
         }
 
+        migrator.registerMigration("v36_summarySearch") { db in
+            try SearchFTS5Tokenizer.register(in: db)
+            try SummarySearchMigration.migrate(in: db)
+        }
+
         return migrator
     }()
 

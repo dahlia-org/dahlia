@@ -223,7 +223,7 @@ recording-critical lane から捨てる根拠にはしない。
 画面や選択対象が変わった場合は不要な処理をキャンセルし、identity または generation を確認して古い完了結果を捨てる。
 UI projection を破棄しても、durable source of truth は変更しない。
 
-全文検索は `search_documents` registry と contentless `search_documents_fts` を再構築可能な projection として扱う。初期リリースは meeting metadata と project だけを索引し、文字起こしと翻訳文は FTS と将来の vector projection の対象にしない。source table の trigger は coalesce 可能な job の upsert だけを行い、Lindera による tokenization と FTS 更新は utility-priority の `SearchIndexer` actor が小さい transaction で処理する。Indexer は録音開始前に停止して録音終了後に再開し、録音中は projection write を実行しない。初期構築・再構築中は不完全な結果を返さず検索 unavailable とし、索引の遅延や failure は録音、確定文字起こし、正本 metadata の commit を待たせない。
+全文検索は `search_documents` registry と contentless `search_documents_fts` を再構築可能な projection として扱う。meeting metadata、構造化 summary の本文、project を索引し、summary の metadata・内部識別子と文字起こし・翻訳文は対象にしない。source table の trigger は coalesce 可能な job の upsert だけを行い、Lindera による tokenization と FTS 更新は utility-priority の `SearchIndexer` actor が小さい transaction で処理する。Indexer は録音開始前に停止して録音終了後に再開し、録音中は projection write を実行しない。初期構築・再構築中は不完全な結果を返さず検索 unavailable とし、索引の遅延や failure は録音、確定文字起こし、正本 metadata と summary の commit を待たせない。
 
 ミーティングサイドバーは SQLite を正本とし、最新 50 件から keyset pagination で段階表示する。表示用 projection は
 最大 500 件に制限し、それ以前は全履歴の FTS projection から検索可能にする。文字列検索は索引 revision 付き relevance

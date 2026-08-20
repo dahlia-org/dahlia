@@ -197,6 +197,8 @@ struct MeetingSidebarRow: View {
         switch kind {
         case .description:
             L10n.descriptionMatch
+        case .summary:
+            L10n.summaryMatch
         case .calendar:
             L10n.calendarMatch
         case .tag:

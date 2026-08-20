@@ -247,6 +247,7 @@
 "Tag filter" = "タグの絞り込み";
 "Description" = "概要";
 "Description:" = "説明:";
+"Summary:" = "要約:";
 "Event:" = "予定:";
 "Tag:" = "タグ:";
 "Project:" = "プロジェクト:";

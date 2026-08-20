@@ -523,10 +523,12 @@ import ImageIO
                 icalUID: "missing@example.com"
             )).meetings.isEmpty)
             #expect(try store.queryMeetings(MeetingQuery(projectID: fixture.otherVaultProjectID)).meetings.isEmpty)
-            #expect(try store.queryMeetings(MeetingQuery(query: "secret body")).meetings.isEmpty)
+            #expect(try store.queryMeetings(MeetingQuery(query: "secret body")).meetings.map(\.id) == [fixture.firstMeetingID])
+            #expect(try store.queryMeetings(MeetingQuery(query: "cret bo", simple: true)).meetings.map(\.id) == [fixture.firstMeetingID])
             #expect(!firstPage.meetings.contains { $0.id == fixture.otherVaultMeetingID })
 
             let otherStore = try fixture.store(vaultID: fixture.otherVaultID)
+            #expect(try otherStore.queryMeetings(MeetingQuery(query: "secret body")).meetings.isEmpty)
             #expect(throws: MeetingAccessError.invalidCursor) {
                 try otherStore.queryMeetings(MeetingQuery(cursor: cursor))
             }
@@ -2584,6 +2586,23 @@ import ImageIO
         }
 
         @Test
+        func v35DatabaseRequiresOpeningDahliaForSummarySearchSchema() throws {
+            let databaseURL = URL.temporaryDirectory
+                .appending(path: "dahlia-meeting-access-v35-\(UUID.v7().uuidString)")
+                .appendingPathExtension("sqlite")
+            defer { try? FileManager.default.removeItem(at: databaseURL) }
+            let vault = customerIntelligenceVault(name: "Before v36")
+            let queue = try DatabaseQueue(path: databaseURL.path)
+            try AppDatabaseManager.migrator.migrate(queue, upTo: "v35_searchDocuments")
+            try queue.write { try vault.insert($0) }
+            let store = try MeetingAccessStore(databaseURL: databaseURL, vaultID: vault.id)
+
+            #expect(throws: MeetingAccessError.databaseUpgradeRequired) {
+                try store.scopedVault()
+            }
+        }
+
+        @Test
         func v25DatabaseRejectsWorkspaceAccessWithUpgradeError() throws {
             let databaseURL = URL.temporaryDirectory
                 .appending(path: "dahlia-meeting-access-v25-\(UUID.v7().uuidString)")
@@ -2801,6 +2820,16 @@ import ImageIO
             """#))
             let simpleContent = (simpleQuery["result"] as? [String: Any])?["structuredContent"] as? [String: Any]
             #expect((simpleContent?["meetings"] as? [[String: Any]])?.first?["id"] as? String == fixture.firstMeetingID.uuidString)
+
+            for (id, simple) in [(32, false), (33, true)] {
+                let summaryQuery = try Self.json(server.handleLine(#"""
+                {"jsonrpc":"2.0","id":\#(id),"method":"tools/call","params":{"name":"query_meetings","arguments":{
+                    "query":"\#(simple ? "cret bo" : "secret body")","simple":\#(simple)
+                }}}
+                """#))
+                let summaryContent = (summaryQuery["result"] as? [String: Any])?["structuredContent"] as? [String: Any]
+                #expect((summaryContent?["meetings"] as? [[String: Any]])?.first?["id"] as? String == fixture.firstMeetingID.uuidString)
+            }
 
             let projectQuery = try Self.json(server.handleLine(#"""
             {"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"query_meetings","arguments":{"project_id":"\#(fixture

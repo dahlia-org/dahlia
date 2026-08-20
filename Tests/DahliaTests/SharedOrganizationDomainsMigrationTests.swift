@@ -109,7 +109,7 @@ import GRDB
                     sql: "SELECT identifier FROM grdb_migrations ORDER BY rowid DESC LIMIT 1"
                 )
             }
-            #expect(applied == "v35_searchDocuments")
+            #expect(applied == "v36_summarySearch")
         }
 
         private func insertRootOrganization(

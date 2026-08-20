@@ -15,7 +15,7 @@ Codex は全 ADR を順番に読まず、最初にこの一覧から現在の作
 | [0002](0002-isolate-recording-critical-path-from-main-actor.md) | Recording / Concurrency | 録音と確定データの保存を MainActor の UI projection から分離する | Accepted; partially superseded by 0006 and 0009 |
 | [0003](0003-use-a-shared-codex-app-server.md) | AI runtime | Codex app-server をアプリ共有の長寿命 backend として使う | Accepted; amended by 0013, 0015, 0019, 0020, 0021, 0022, 0028, and 0032 |
 | [0004](0004-protect-recordings-with-segmented-immutable-storage.md) | Recording storage | 録音データを分割された immutable segment として保全する | Accepted |
-| [0005](0005-vault-scoped-meeting-access-mcp.md) | Meeting access | Vault 固定・read-only の local MCP で meeting data を公開する | Accepted; amended by 0010 |
+| [0005](0005-vault-scoped-meeting-access-mcp.md) | Meeting access | Vault 固定・read-only の local MCP で meeting data を公開する | Accepted; amended by 0010 and 0034 |
 | [0006](0006-bounded-transcript-projection.md) | Transcript UI | SQLite を正本とし、文字起こし表示を bounded projection と keyset pagination にする | Accepted; partially supersedes 0002 |
 | [0007](0007-version-and-restore-sqlite-backups.md) | Database backup | SQLite backup を schema generation 付きで管理する | Accepted |
 | [0008](0008-render-streaming-chat-markdown-as-bounded-projection.md) | Chat UI | Streaming Markdown を bounded UI projection として描画する | Accepted |
@@ -42,4 +42,5 @@ Codex は全 ADR を順番に読まず、最初にこの一覧から現在の作
 | [0029](0029-offer-an-optional-codex-ai-gateway.md) | AI runtime / Server gateway | 内蔵 Codex 用の任意の認証付き AI Gateway を別 runtime で提供する | Accepted; amends 0003; amended by 0031 |
 | [0031](0031-publish-dahlia-server-extension-contract.md) | Server gateway / Distribution | 実行可能な Server と versioned extension contract を同じ package で配布する | Accepted; amends 0029 |
 | [0032](0032-use-local-codex-login-success-page.md) | AI runtime / Authentication | ChatGPT 認証完了に app-server のローカル成功ページを使う | Accepted; amends 0003 |
-| [0033](0033-use-local-fts5-search-projection.md) | Search / Database projection | Lindera と FTS5 による再構築可能なローカル検索索引を使う | Accepted; builds on 0006, 0007, and 0009 |
+| [0033](0033-use-local-fts5-search-projection.md) | Search / Database projection | Lindera と FTS5 による再構築可能なローカル検索索引を使う | Accepted; builds on 0006, 0007, and 0009; amended by 0034 |
+| [0034](0034-index-summary-body-in-local-search.md) | Search / Summary | 構造化 summary の本文をローカル検索対象にする | Accepted; amends 0005 and 0033, builds on 0001 |

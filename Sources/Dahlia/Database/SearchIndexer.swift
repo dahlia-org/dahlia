@@ -433,9 +433,12 @@ private extension SearchIndexer {
             }
             let calendarText = [calendar?["title"] as String?, calendar?["description"] as String?]
                 .compactMap(\.self).joined(separator: " ")
+            let summaryText = try SummaryRecord.fetchOne(db, key: id)
+                .flatMap { try? $0.loadDocument().searchableBodyText } ?? ""
             let fields = SearchDocumentFields(
                 title: meeting.name,
                 description: meeting.description,
+                summary: summaryText,
                 calendar: calendarText,
                 tags: tags,
                 projectPath: projectPath

@@ -1,6 +1,7 @@
 import Foundation
 import GRDB
 @testable import Dahlia
+@testable import DahliaRuntimeSupport
 
 #if canImport(Testing)
     import Testing
@@ -48,6 +49,7 @@ import GRDB
             #expect(snapshot.2 == 0)
             #expect(snapshot.3?.contains("detail=full") == true)
             #expect(snapshot.3?.contains("contentless_delete=1") == true)
+            #expect(snapshot.3?.contains("summary") == true)
             #expect(snapshot.3?.contains("transcript") == false)
         }
 
@@ -117,6 +119,106 @@ import GRDB
 
             #expect(page.items.isEmpty)
             #expect(segmentDocumentCount == 0)
+        }
+
+        @Test
+        func summaryBodyIsIndexedUpdatedDeletedAndAvailableToSimpleSearch() async throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            let vault = Self.makeVault()
+            let meeting = Self.makeMeeting(vaultID: vault.id)
+            try await database.dbQueue.write { db in
+                try vault.insert(db)
+                try meeting.insert(db)
+                try SummaryRecord(
+                    meetingId: meeting.id,
+                    title: "Excluded summary title",
+                    document: try Self.summaryDocument(body: "要約固有語を記録").databaseJSONString(),
+                    createdAt: .now
+                ).insert(db)
+            }
+            await database.searchIndexer.drain()
+
+            let advanced = try await MeetingRepository.searchMeetingSidebarPage(
+                vaultId: vault.id,
+                query: "要約固有語",
+                limit: 20,
+                dbQueue: database.dbQueue
+            )
+            let simple = try await MeetingRepository.searchMeetingSidebarPage(
+                vaultId: vault.id,
+                query: "約固有",
+                mode: .simple,
+                limit: 20,
+                dbQueue: database.dbQueue
+            )
+            #expect(advanced.items.map(\.id) == [meeting.id])
+            #expect(advanced.items.first?.searchMatchContext?.kind == .summary)
+            #expect(simple.items.map(\.id) == [meeting.id])
+            #expect(simple.items.first?.searchMatchContext?.kind == .summary)
+
+            try await database.dbQueue.write { db in
+                try db.execute(
+                    sql: "UPDATE summaries SET document = ? WHERE meetingId = ?",
+                    arguments: [try Self.summaryDocument(body: "更新後要約語を記録").databaseJSONString(), meeting.id]
+                )
+            }
+            await database.searchIndexer.drain()
+            let oldResult = try await MeetingRepository.searchMeetingSidebarPage(
+                vaultId: vault.id,
+                query: "要約固有語",
+                limit: 20,
+                dbQueue: database.dbQueue
+            )
+            let updatedResult = try await MeetingRepository.searchMeetingSidebarPage(
+                vaultId: vault.id,
+                query: "更新後要約語",
+                limit: 20,
+                dbQueue: database.dbQueue
+            )
+            #expect(oldResult.items.isEmpty)
+            #expect(updatedResult.items.map(\.id) == [meeting.id])
+
+            try await database.dbQueue.write { db in
+                _ = try SummaryRecord.deleteOne(db, key: meeting.id)
+            }
+            await database.searchIndexer.drain()
+            let deletedResult = try await MeetingRepository.searchMeetingSidebarPage(
+                vaultId: vault.id,
+                query: "更新後要約語",
+                limit: 20,
+                dbQueue: database.dbQueue
+            )
+            #expect(deletedResult.items.isEmpty)
+        }
+
+        @Test
+        func invalidSummaryDocumentDoesNotFailMetadataIndexing() async throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            let vault = Self.makeVault()
+            let meeting = {
+                var value = Self.makeMeeting(vaultID: vault.id)
+                value.name = "壊れても検索可能"
+                return value
+            }()
+            try await database.dbQueue.write { db in
+                try vault.insert(db)
+                try meeting.insert(db)
+                try SummaryRecord(meetingId: meeting.id, title: "Invalid", document: "{}", createdAt: .now).insert(db)
+            }
+
+            await database.searchIndexer.drain()
+
+            let phase = try await database.dbQueue.read { db in
+                try String.fetchOne(db, sql: "SELECT phase FROM search_index_state WHERE indexKind = 'fts'")
+            }
+            let result = try await MeetingRepository.searchMeetingSidebarPage(
+                vaultId: vault.id,
+                query: "検索可能",
+                limit: 20,
+                dbQueue: database.dbQueue
+            )
+            #expect(phase == "ready")
+            #expect(result.items.map(\.id) == [meeting.id])
         }
 
         @Test
@@ -405,7 +507,7 @@ import GRDB
                 try db.execute(
                     sql: """
                     UPDATE search_documents_fts
-                    SET title = '破損内容', description = '', calendar = '', tags = '', projectPath = ''
+                    SET title = '破損内容', description = '', summary = '', calendar = '', tags = '', projectPath = ''
                     WHERE rowid = ?
                     """,
                     arguments: [rowID]
@@ -715,6 +817,85 @@ import GRDB
         }
 
         @Test
+        func migrationFromV35PreservesSourcesAndRebuildsSummaryIndex() async throws {
+            let queue = try DatabaseQueue()
+            try AppDatabaseManager.migrator.migrate(queue, upTo: "v35_searchDocuments")
+            let vault = Self.makeVault()
+            let meeting = Self.makeMeeting(vaultID: vault.id)
+            try await queue.write { db in
+                try vault.insert(db)
+                try meeting.insert(db)
+                try SummaryRecord(
+                    meetingId: meeting.id,
+                    title: "Preserved",
+                    document: try Self.summaryDocument(body: "移行後検索対象").databaseJSONString(),
+                    createdAt: .now
+                ).insert(db)
+                try db.execute(
+                    sql: """
+                    INSERT INTO search_documents(
+                        kind, sourceId, vaultId, meetingId, projectId,
+                        sourceContentHash, indexGeneration, updatedAt
+                    ) VALUES('meeting', ?, ?, ?, NULL, 'v35-hash', 1, ?)
+                    """,
+                    arguments: [meeting.id, vault.id, meeting.id, Date.now]
+                )
+                try db.execute(
+                    sql: """
+                    INSERT INTO search_documents_fts(rowid, title, description, calendar, tags, projectPath)
+                    VALUES(?, ?, '', '', '', '')
+                    """,
+                    arguments: [db.lastInsertedRowID, meeting.name]
+                )
+                try db.execute(sql: "UPDATE search_index_state SET phase = 'ready' WHERE indexKind = 'fts'")
+            }
+
+            try AppDatabaseManager.migrator.migrate(queue)
+
+            let migrated = try await queue.read { db in
+                try (
+                    MeetingRecord.fetchOne(db, key: meeting.id),
+                    SummaryRecord.fetchOne(db, key: meeting.id),
+                    Set(String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('search_documents_fts')")),
+                    String.fetchOne(db, sql: "SELECT phase FROM search_index_state WHERE indexKind = 'fts'"),
+                    Int.fetchOne(db, sql: "SELECT COUNT(*) FROM search_documents_fts") ?? -1
+                )
+            }
+            #expect(migrated.0?.id == meeting.id)
+            #expect(migrated.1?.title == "Preserved")
+            #expect(migrated.2.contains("summary"))
+            #expect(migrated.3 == "pending")
+            #expect(migrated.4 == 0)
+
+            let indexer = SearchIndexer(dbQueue: queue)
+            await indexer.drain()
+            let result = try await MeetingRepository.searchMeetingSidebarPage(
+                vaultId: vault.id,
+                query: "移行後検索対象",
+                limit: 20,
+                dbQueue: queue
+            )
+            #expect(result.items.map(\.id) == [meeting.id])
+        }
+
+        @Test
+        func summarySearchMigrationCanBeRerun() throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+
+            try database.dbQueue.write { db in
+                try SummarySearchMigration.migrate(in: db)
+            }
+
+            let triggerCount = try database.dbQueue.read { db in
+                try Int.fetchOne(
+                    db,
+                    sql: "SELECT COUNT(*) FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'search_queue_summaries_%'"
+                ) ?? 0
+            }
+            #expect(triggerCount == 3)
+        }
+
+        @Test
         func schemaSignatureIncludesFTSShadowTables() throws {
             let database = try AppDatabaseManager(path: ":memory:")
             let matches = try database.dbQueue.read { db in
@@ -738,6 +919,16 @@ import GRDB
                 name: "Search",
                 createdAt: .now,
                 lastOpenedAt: .now
+            )
+        }
+
+        private nonisolated static func summaryDocument(body: String) -> SummaryDocument {
+            SummaryDocument(
+                title: "Excluded title",
+                description: "Excluded description",
+                sections: [SummarySection(id: .v7(), heading: "", blocks: [.paragraph(body)])],
+                tags: ["Excluded tag"],
+                actionItems: [.init(title: "Excluded action", assignee: "Excluded assignee")]
             )
         }
 
