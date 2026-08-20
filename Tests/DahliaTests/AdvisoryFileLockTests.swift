@@ -123,7 +123,7 @@ import GRDB
         private var standardInput: FileHandle?
 
         init(lockURL: URL) throws {
-            let descriptor = open(lockURL.path, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR)
+            let descriptor = open(lockURL.path, O_RDWR | O_CREAT | O_CLOEXEC, S_IRUSR | S_IWUSR)
             guard descriptor >= 0, flock(descriptor, LOCK_EX | LOCK_NB) == 0 else {
                 if descriptor >= 0 { close(descriptor) }
                 throw CocoaError(.fileLocking)
