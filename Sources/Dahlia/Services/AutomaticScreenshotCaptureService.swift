@@ -201,28 +201,28 @@ actor AutomaticScreenshotCaptureService: AutomaticScreenshotCapturing {
         desiredRequest = nil
         lifecycle.stop()
         captureTask?.cancel()
-        captureTask = nil
     }
 
     private func restartCaptureLoop(captureImmediately: Bool) {
-        captureTask?.cancel()
+        let previousTask = captureTask
+        previousTask?.cancel()
         let generation = lifecycle.beginReplacement()
         captureTask = Task(priority: .utility) { [weak self] in
+            if captureImmediately {
+                await previousTask?.value
+            } else {
+                async let intervalElapsed = self?.sleepUntilNextCapture(generation: generation)
+                await previousTask?.value
+                guard await intervalElapsed == true else { return }
+            }
+            guard !Task.isCancelled else { return }
             await self?.runCaptureLoop(
-                generation: generation,
-                captureImmediately: captureImmediately
+                generation: generation
             )
         }
     }
 
-    private func runCaptureLoop(
-        generation: UInt64,
-        captureImmediately: Bool
-    ) async {
-        if !captureImmediately {
-            guard await sleepUntilNextCapture(generation: generation) else { return }
-        }
-
+    private func runCaptureLoop(generation: UInt64) async {
         while lifecycle.accepts(generation: generation),
               let request = desiredRequest {
             async let intervalElapsed: Void = sleep(.seconds(request.intervalSeconds))

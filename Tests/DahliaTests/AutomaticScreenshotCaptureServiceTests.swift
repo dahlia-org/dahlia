@@ -100,6 +100,54 @@ import GRDB
         }
 
         @Test
+        func replacementAfterStopWaitsForAnUnfinishedCapture() async throws {
+            let capture = BlockingCapture()
+            let service = AutomaticScreenshotCaptureService(
+                captureImage: { _ in try await capture.capture() },
+                sleep: { duration in try await Task.sleep(for: duration) }
+            )
+            let request = try makeRequest()
+
+            await service.start(request)
+            await capture.wait(for: 1)
+            await service.stop()
+            await service.start(request)
+            await Task.yield()
+            #expect(await capture.maximumActiveCount == 1)
+
+            await capture.resume(try makeCaptureOutput())
+            await capture.wait(for: 2)
+            #expect(await capture.maximumActiveCount == 1)
+
+            await service.stop()
+        }
+
+        @Test(.timeLimit(.minutes(1)))
+        func settingsIntervalElapsesWhileWaitingForAnUnfinishedCapture() async throws {
+            let capture = BlockingCapture()
+            let sleeper = ControlledSleeper()
+            let service = AutomaticScreenshotCaptureService(
+                captureImage: { _ in try await capture.capture() },
+                sleep: { duration in try await sleeper.sleep(duration) }
+            )
+
+            await service.start(try makeRequest())
+            await capture.wait(for: 1)
+            await sleeper.wait(for: 1)
+            await service.updateSettings(intervalSeconds: 10, changeThresholdRatio: 0.30)
+            await sleeper.wait(for: 2)
+            #expect(await sleeper.recordedDurations == [.seconds(5), .seconds(10)])
+
+            await sleeper.resumeAll()
+            await capture.resume(try makeCaptureOutput())
+            await capture.wait(for: 2)
+            #expect(await capture.maximumActiveCount == 1)
+
+            await service.stop()
+            await sleeper.resumeAll()
+        }
+
+        @Test
         func persistedRecordUsesOneShotCaptureTime() {
             let capturedAt = Date(timeIntervalSince1970: 123)
             let record = AutomaticScreenshotCaptureService.makeRecord(
@@ -280,14 +328,24 @@ import GRDB
         private var continuation: CheckedContinuation<AutomaticScreenshotCaptureOutput, Error>?
         private var startWaiters: [CheckedContinuation<Void, Never>] = []
         private var cancellationWaiters: [CheckedContinuation<Void, Never>] = []
+        private var attemptWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
         private var didStart = false
         private var wasCancelled = false
+        private var attemptCount = 0
+        private var activeCount = 0
+        private(set) var maximumActiveCount = 0
 
         func capture() async throws -> AutomaticScreenshotCaptureOutput {
+            attemptCount += 1
+            activeCount += 1
+            maximumActiveCount = max(maximumActiveCount, activeCount)
             didStart = true
             let waiters = startWaiters
             startWaiters.removeAll()
             waiters.forEach { $0.resume() }
+            resumeSatisfiedAttemptWaiters()
+            defer { activeCount -= 1 }
+            guard attemptCount == 1 else { throw CaptureFailure.expected }
             return try await withTaskCancellationHandler {
                 try await withCheckedThrowingContinuation { continuation in
                     self.continuation = continuation
@@ -311,6 +369,13 @@ import GRDB
             }
         }
 
+        func wait(for count: Int) async {
+            guard attemptCount < count else { return }
+            await withCheckedContinuation { continuation in
+                attemptWaiters.append((count, continuation))
+            }
+        }
+
         func resume(_ output: AutomaticScreenshotCaptureOutput) {
             continuation?.resume(returning: output)
             continuation = nil
@@ -321,6 +386,18 @@ import GRDB
             let waiters = cancellationWaiters
             cancellationWaiters.removeAll()
             waiters.forEach { $0.resume() }
+        }
+
+        private func resumeSatisfiedAttemptWaiters() {
+            var pending: [(Int, CheckedContinuation<Void, Never>)] = []
+            for waiter in attemptWaiters {
+                if attemptCount >= waiter.0 {
+                    waiter.1.resume()
+                } else {
+                    pending.append(waiter)
+                }
+            }
+            attemptWaiters = pending
         }
     }
 
