@@ -339,8 +339,8 @@ enum CodexChatMarkdownTextDocument {
             appendTable(table, to: document)
         case .divider:
             appendDivider(to: document)
-        case .code:
-            break
+        case let .code(_, text):
+            appendCode(text, to: document)
         }
     }
 
@@ -450,6 +450,25 @@ enum CodexChatMarkdownTextDocument {
             value: true,
             range: NSRange(location: location, length: 1)
         )
+    }
+
+    private static func appendCode(
+        _ text: String,
+        to document: NSMutableAttributedString
+    ) {
+        let range = append(AttributedString(text), to: document)
+        let bodyFont = NSFont.preferredFont(forTextStyle: .body)
+        document.addAttribute(
+            .font,
+            value: NSFont.monospacedSystemFont(ofSize: bodyFont.pointSize, weight: .regular),
+            range: range
+        )
+        document.addAttribute(
+            .foregroundColor,
+            value: DahliaDesign.secondaryTextNSColor,
+            range: range
+        )
+        applyParagraphStyle(to: document, range: range)
     }
 
     @discardableResult

@@ -54,6 +54,17 @@ import Foundation
             #expect(settled == exact)
         }
 
+        @Test
+        func largeCodeBlockPreservesAllSelectableText() throws {
+            let text = String(repeating: "summary line\n", count: 400)
+            let textView = CodexChatSelectableTextView.makeConfigured()
+            textView.setBlocks([.code(language: "json", text: text)])
+
+            #expect(text.utf8.count > 4096)
+            #expect(textView.attributedString().string == text)
+            #expect(try #require(textView.measuredHeight(constrainedTo: 400)) > 0)
+        }
+
         private static func makeTextView() -> CodexChatSelectableTextView {
             let textView = CodexChatSelectableTextView.makeConfigured()
             let blocks = (0 ..< 20).map { index in

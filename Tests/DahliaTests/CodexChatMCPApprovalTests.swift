@@ -1,3 +1,4 @@
+import Foundation
 @testable import Dahlia
 
 #if canImport(Testing)
@@ -14,6 +15,22 @@
             #expect(request.mcpTool == "update_project")
             #expect(request.mcpArguments?.contains("Updated description") == true)
             #expect(request.actions == [.allowOnce, .deny])
+        }
+
+        @Test
+        func largeSummaryUpdateArgumentsRemainCompleteAndReviewable() throws {
+            let summary = String(repeating: "summary line\n", count: 400)
+            let request = try normalizedRequest(
+                tool: "update_meeting_summary",
+                arguments: .object(["summary": .string(summary)])
+            )
+
+            let encodedArguments = try #require(request.mcpArguments)
+            #expect(request.reviewability == .ready)
+            #expect(request.canApprove)
+            #expect(encodedArguments.utf8.count > 4096)
+            let decodedArguments = try JSONDecoder().decode(JSONValue.self, from: Data(encodedArguments.utf8))
+            #expect(decodedArguments.objectValue?["summary"]?.stringValue == summary)
         }
 
         @Test
@@ -90,6 +107,7 @@
                 "itemId": .string("item-1"),
                 "reason": .string("Update one Project"),
             ],
+            tool: String = "update_project",
             arguments: JSONValue = .object([
                 "description": .string("Updated description"),
                 "project_id": .string("AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA"),
@@ -103,7 +121,7 @@
                 fileChanges: [],
                 mcpToolCall: CodexChatApprovalNormalizer.boundedMCPToolCall(
                     server: "dahlia",
-                    tool: "update_project",
+                    tool: tool,
                     arguments: arguments
                 )
             )
