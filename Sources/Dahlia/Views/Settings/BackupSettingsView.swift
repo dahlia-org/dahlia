@@ -16,6 +16,7 @@ struct BackupSettingsView: View {
     private let dbQueue: DatabaseQueue?
     private let onShowUnprocessedRecordings: (UUID) -> Void
     @ObservedObject private var captionViewModel: CaptionViewModel
+    @ObservedObject private var settings = AppSettings.shared
 
     init(
         dbQueue: DatabaseQueue?,
@@ -134,10 +135,12 @@ struct BackupSettingsView: View {
         Section {
             LabeledContent {
                 Button(L10n.viewUnprocessedRecordings, systemImage: "arrow.right") {
-                    guard let vaultID = model.preflightItems.first?.vaultId else { return }
+                    guard let vaultID = unprocessedRecordingsTargetVaultID else { return }
                     onShowUnprocessedRecordings(vaultID)
                 }
                 .buttonStyle(.dahlia(.primary))
+                .disabled(unprocessedRecordingsTargetVaultID == nil)
+                .help(unprocessedRecordingsNavigationHelp)
             } label: {
                 Label(
                     L10n.resolveUnprocessedRecordings(model.preflightItems.count),
@@ -149,6 +152,32 @@ struct BackupSettingsView: View {
         } footer: {
             Text(L10n.unprocessedRecordingsDescription)
         }
+    }
+
+    private var unprocessedRecordingsTargetVaultID: UUID? {
+        Self.unprocessedRecordingsTargetVaultID(
+            in: model.preflightItems,
+            currentVaultID: settings.currentVault?.id,
+            canSwitchVault: captionViewModel.canSwitchVault
+        )
+    }
+
+    private var unprocessedRecordingsNavigationHelp: String {
+        unprocessedRecordingsTargetVaultID == nil
+            ? L10n.finishRecordingBeforeOpeningAnotherVault
+            : L10n.viewUnprocessedRecordings
+    }
+
+    nonisolated static func unprocessedRecordingsTargetVaultID(
+        in items: [BackupPreflightItem],
+        currentVaultID: UUID?,
+        canSwitchVault: Bool
+    ) -> UUID? {
+        if let currentVaultID,
+           items.contains(where: { $0.vaultId == currentVaultID }) {
+            return currentVaultID
+        }
+        return canSwitchVault ? items.first?.vaultId : nil
     }
 
     private func generationRow(_ generation: BackupGeneration) -> some View {

@@ -28,7 +28,7 @@ struct DahliaButtonStyle: ButtonStyle {
     private var foregroundColor: Color {
         switch variant {
         case .primary:
-            .white
+            Color(nsColor: .selectedControlTextColor)
         case .secondary:
             DahliaDesign.primaryTextColor
         case .destructive:

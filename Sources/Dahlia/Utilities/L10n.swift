@@ -1577,6 +1577,10 @@ enum L10n {
     ) }
     static var unprocessedRecordings: String { String(localized: "Unprocessed Recordings", bundle: bundle) }
     static var viewUnprocessedRecordings: String { String(localized: "Open Unprocessed Recordings", bundle: bundle) }
+    static var finishRecordingBeforeOpeningAnotherVault: String { String(
+        localized: "Finish the current recording before opening unprocessed recordings in another vault.",
+        bundle: bundle
+    ) }
     static var unprocessedRecordingsDescription: String { String(
         localized: "Transcribe or discard every unprocessed recording before creating or restoring a backup.",
         bundle: bundle

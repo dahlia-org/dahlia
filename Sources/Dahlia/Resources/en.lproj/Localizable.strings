@@ -34,6 +34,7 @@
 "The current database will be backed up first, then replaced. Dahlia will restart. Audio files and app settings are not restored." = "The current database will be backed up first, then replaced. Dahlia will restart. Audio files and app settings are not restored.";
 "Unprocessed Recordings" = "Unprocessed Recordings";
 "Open Unprocessed Recordings" = "Open Unprocessed Recordings";
+"Finish the current recording before opening unprocessed recordings in another vault." = "Finish the current recording before opening unprocessed recordings in another vault.";
 "Recordings that need manual transcription will appear here." = "Recordings that need manual transcription will appear here.";
 "Transcribe or discard every unprocessed recording before creating or restoring a backup." = "Transcribe or discard every unprocessed recording before creating or restoring a backup.";
 "Waiting for transcription" = "Waiting for transcription";

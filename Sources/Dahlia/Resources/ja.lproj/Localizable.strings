@@ -34,6 +34,7 @@
 "The current database will be backed up first, then replaced. Dahlia will restart. Audio files and app settings are not restored." = "現在のデータベースを先に退避してから置き換え、Dahliaを再起動します。音声ファイルとアプリ設定は復元されません。";
 "Unprocessed Recordings" = "未処理の録音";
 "Open Unprocessed Recordings" = "未処理の録音を開く";
+"Finish the current recording before opening unprocessed recordings in another vault." = "別の保管庫にある未処理の録音を開くには、現在の録音を終了してください。";
 "Recordings that need manual transcription will appear here." = "手動で文字起こしする必要がある録音がここに表示されます。";
 "Transcribe or discard every unprocessed recording before creating or restoring a backup." = "バックアップの作成または復元前に、すべての未処理録音を文字起こしするか破棄してください。";
 "Waiting for transcription" = "文字起こし待ち";
