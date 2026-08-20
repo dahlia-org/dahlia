@@ -234,6 +234,7 @@ import Foundation
 
             #expect(payload?.entries.map(\.primaryText) == ["Confirmed line", "Unconfirmed current"])
             #expect(payload?.entries.map(\.secondaryText) == ["確定済み", nil])
+            #expect(payload?.entries.map(\.isConfirmed) == [true, false])
         }
 
         @Test

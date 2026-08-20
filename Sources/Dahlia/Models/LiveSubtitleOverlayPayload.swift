@@ -5,7 +5,7 @@ struct LiveSubtitleOverlayPayload: Equatable {
         let id: UUID
         let primaryText: String
         let secondaryText: String?
-        fileprivate let isConfirmed: Bool
+        let isConfirmed: Bool
         fileprivate let sourceLabel: String?
     }
 
