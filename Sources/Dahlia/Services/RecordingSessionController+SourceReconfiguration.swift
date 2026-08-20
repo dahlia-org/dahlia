@@ -21,7 +21,8 @@ extension RecordingSessionController {
         translateSegment: ProgressiveSegmentTranslationHandler?
     ) async throws -> Snapshot {
         guard case let .capturing(snapshot) = state,
-              let locale = currentLocale else {
+              let transcriptionLocale = currentTranscriptionLocale,
+              let liveRecognitionLocale = currentLiveRecognitionLocale else {
             throw RecordingSessionControllerError.sessionNotActive
         }
         let source = configuration.source
@@ -33,14 +34,16 @@ extension RecordingSessionController {
             return try await replaceSource(
                 runtime,
                 with: configuration,
-                locale: locale,
+                transcriptionLocale: transcriptionLocale,
+                liveRecognitionLocale: liveRecognitionLocale,
                 snapshot: snapshot,
                 translateSegment: translateSegment
             )
         } else if enabled {
             return try await addSource(
                 configuration,
-                locale: locale,
+                transcriptionLocale: transcriptionLocale,
+                liveRecognitionLocale: liveRecognitionLocale,
                 snapshot: snapshot,
                 translateSegment: translateSegment
             )
@@ -55,17 +58,18 @@ extension RecordingSessionController {
 
     func addSource(
         _ configuration: SourceConfiguration,
-        locale: Locale,
+        transcriptionLocale: Locale,
+        liveRecognitionLocale: Locale,
         snapshot: Snapshot,
         translateSegment: ProgressiveSegmentTranslationHandler?
     ) async throws -> Snapshot {
         let preparation = try await prepareSourcePipeline(
             configuration,
-            locale: locale,
+            locale: liveRecognitionLocale,
             snapshot: snapshot,
             translateSegment: translateSegment
         )
-        return try await activateAddedSource(preparation, locale: locale, snapshot: snapshot)
+        return try await activateAddedSource(preparation, locale: transcriptionLocale, snapshot: snapshot)
     }
 
     private func prepareSourcePipeline(
@@ -274,20 +278,21 @@ extension RecordingSessionController {
     private func replaceSource(
         _ previousRuntime: SourceRuntime,
         with configuration: SourceConfiguration,
-        locale: Locale,
+        transcriptionLocale: Locale,
+        liveRecognitionLocale: Locale,
         snapshot: Snapshot,
         translateSegment: ProgressiveSegmentTranslationHandler?
     ) async throws -> Snapshot {
         let preparation = try await prepareSourcePipeline(
             configuration,
-            locale: locale,
+            locale: liveRecognitionLocale,
             snapshot: snapshot,
             translateSegment: translateSegment
         )
         try await activateReplacement(
             previousRuntime,
             preparation: preparation,
-            locale: locale,
+            locale: transcriptionLocale,
             snapshot: snapshot
         )
         await retirePreviousRuntime(previousRuntime, finalMode: snapshot.plan.finalMode)

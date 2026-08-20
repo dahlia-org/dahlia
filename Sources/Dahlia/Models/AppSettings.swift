@@ -97,6 +97,8 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
     nonisolated static let exportBatchSummaryToVaultUserDefaultsKey = "exportBatchSummaryToVault"
     nonisolated static let exportBatchSummaryToGoogleDocsUserDefaultsKey = "exportBatchSummaryToGoogleDocs"
     nonisolated static let transcriptionLanguageScopeUserDefaultsKey = "transcriptionLanguageScope"
+    nonisolated static let transcriptionLocaleUserDefaultsKey = "transcriptionLocale"
+    nonisolated static let liveSubtitleLocaleUserDefaultsKey = "liveSubtitleLocale"
     nonisolated static let batchTranscriptionStallTimeoutUserDefaultsKey = "batchTranscriptionStallTimeoutMinutes"
     nonisolated static let customerIntelligenceBetaEnabledUserDefaultsKey = "customerIntelligenceBetaEnabled"
     nonisolated static let conversationAnalyticsBetaEnabledUserDefaultsKey = "conversationAnalyticsBetaEnabled"
@@ -119,6 +121,7 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
 
     init() {
         Self.migrateCalendarEventFilterSettings(in: .standard)
+        Self.migrateLiveSubtitleLocaleSetting(in: .standard)
         batchTranscriptionStallTimeoutRawValue = batchTranscriptionStallTimeout.rawValue
     }
 
@@ -193,7 +196,8 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
 
     // MARK: - 音声認識設定
 
-    @AppStorage("transcriptionLocale") var transcriptionLocale: String = Locale.current.identifier
+    @AppStorage(AppSettings.transcriptionLocaleUserDefaultsKey) var transcriptionLocale: String = Locale.current.identifier
+    @AppStorage(AppSettings.liveSubtitleLocaleUserDefaultsKey) var liveSubtitleLocale: String = Locale.current.identifier
     @AppStorage(TranscriptionMode.userDefaultsKey) var transcriptionModeRawValue = TranscriptionMode.defaultMode.rawValue
     @AppStorage("forceEchoCancellationForExternalMicrophone") var forceEchoCancellationForExternalMicrophone = false
     @AppStorage("retainAudioAfterBatchTranscription") var retainAudioAfterBatchTranscription = false
@@ -285,6 +289,12 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
             transcriptionLocaleIdentifier: transcriptionLocale,
             targetLanguageIdentifier: transcriptTranslationTargetLanguage
         )
+    }
+
+    nonisolated static func migrateLiveSubtitleLocaleSetting(in userDefaults: UserDefaults) {
+        guard userDefaults.object(forKey: liveSubtitleLocaleUserDefaultsKey) == nil else { return }
+        let localeIdentifier = userDefaults.string(forKey: transcriptionLocaleUserDefaultsKey) ?? Locale.current.identifier
+        userDefaults.set(localeIdentifier, forKey: liveSubtitleLocaleUserDefaultsKey)
     }
 
     private nonisolated static func normalizedOption(_ value: Int, options: [Int], defaultValue: Int) -> Int {
@@ -733,7 +743,11 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
 extension UserDefaults {
     /// NOTE: KVO を正しく動作させるため、プロパティ名を UserDefaults キー名と一致させる
     @objc dynamic var transcriptionLocale: String? {
-        string(forKey: "transcriptionLocale")
+        string(forKey: AppSettings.transcriptionLocaleUserDefaultsKey)
+    }
+
+    @objc dynamic var liveSubtitleLocale: String? {
+        string(forKey: AppSettings.liveSubtitleLocaleUserDefaultsKey)
     }
 
     @objc dynamic var enabledLocaleIdentifiers: String? {

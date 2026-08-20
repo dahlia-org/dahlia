@@ -193,18 +193,21 @@ struct RecordingStatusBar: View {
 
     private var languageMenu: some View {
         RecordingSourceMenu(
-            title: L10n.language,
+            title: L10n.liveSubtitleLanguage,
             displayValue: selectedLanguageDisplayName,
             systemImage: "globe",
-            selection: $viewModel.selectedLocale,
+            selection: transcriptionMode == .batch
+                ? $viewModel.liveSubtitleLocale
+                : .constant(viewModel.transcriptionLocale),
             items: languageMenuItems
         )
-        .help(L10n.language)
+        .disabled(transcriptionMode == .realtime)
+        .help(transcriptionMode == .realtime ? L10n.liveSubtitleLanguageFollowsTranscription : L10n.liveSubtitleLanguage)
     }
 
     private var languageMenuItems: [RecordingSourceMenuItem<String>] {
         if viewModel.filteredLocales.isEmpty {
-            return [.option(title: selectedLanguageDisplayName, value: viewModel.selectedLocale)]
+            return [.option(title: selectedLanguageDisplayName, value: displayedLiveSubtitleLocale)]
         }
 
         return viewModel.filteredLocales.map { locale in
@@ -257,11 +260,15 @@ struct RecordingStatusBar: View {
     }
 
     private var selectedLanguageDisplayName: String {
-        let id = viewModel.selectedLocale
+        let id = displayedLiveSubtitleLocale
         if let locale = viewModel.filteredLocales.first(where: { $0.identifier == id }) {
             return locale.localizedString(forIdentifier: id) ?? id
         }
         return Locale.current.localizedString(forIdentifier: id) ?? id
+    }
+
+    private var displayedLiveSubtitleLocale: String {
+        transcriptionMode == .realtime ? viewModel.transcriptionLocale : viewModel.liveSubtitleLocale
     }
 
     private var selectedScreenSourceDisplayName: String {

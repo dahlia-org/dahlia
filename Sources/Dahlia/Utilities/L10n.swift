@@ -2103,6 +2103,17 @@ enum L10n {
     static var noMatchingLanguages: String { String(localized: "No matching languages", bundle: bundle) }
     static func languagesSelected(_ count: Int) -> String { String(localized: "\(count) languages selected", bundle: bundle) }
     static var transcriptionLanguages: String { String(localized: "Transcription Languages", bundle: bundle) }
+    static var recordedLanguages: String { String(localized: "Recorded Languages", bundle: bundle) }
+    static var transcriptionLanguage: String { String(localized: "Transcription Language", bundle: bundle) }
+    static var transcriptionLanguageDescription: String { String(
+        localized: "This language is used for the final transcript. Changing the language in the recording panel does not change it.",
+        bundle: bundle
+    ) }
+    static var liveSubtitleLanguage: String { String(localized: "Live Subtitle Language", bundle: bundle) }
+    static var liveSubtitleLanguageFollowsTranscription: String { String(
+        localized: "With real-time transcription, live subtitles use the transcription language.",
+        bundle: bundle
+    ) }
     static var languageRange: String { String(localized: "Language Range", bundle: bundle) }
     static var allSupportedLanguages: String { String(localized: "All Supported Languages", bundle: bundle) }
     static var selectedLanguages: String { String(localized: "Selected Languages", bundle: bundle) }

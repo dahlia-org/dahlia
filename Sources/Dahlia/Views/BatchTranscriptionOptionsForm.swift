@@ -4,6 +4,7 @@ struct BatchTranscriptionOptionsForm: View {
     let locales: [Locale]
     let automaticLanguageLocales: [Locale]
     let displayLocale: Locale
+    let allowsRecordedLanguageSelection: Bool
     @Binding var languageSelection: BatchTranscriptionLanguageSelection
     @Binding var deleteAudioAfterTranscription: Bool
     @Binding var generateSummaryAfterBatchTranscription: Bool
@@ -16,6 +17,11 @@ struct BatchTranscriptionOptionsForm: View {
         Form {
             Section(L10n.transcription) {
                 Picker(L10n.language, selection: $languageSelection) {
+                    if allowsRecordedLanguageSelection {
+                        Text(L10n.recordedLanguages)
+                            .tag(BatchTranscriptionLanguageSelection.recorded)
+                    }
+
                     Text(L10n.auto)
                         .tag(BatchTranscriptionLanguageSelection.automatic)
                         .disabled(automaticLanguageLocales.isEmpty)
