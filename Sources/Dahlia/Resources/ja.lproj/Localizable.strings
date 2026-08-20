@@ -767,6 +767,12 @@
 "Show Event in Calendar" = "イベントをカレンダーで表示する";
 "Attending" = "参加予定";
 
+/* Search Modes */
+"Search mode" = "検索モード";
+"Search mode Simple" = "Simple";
+"Search mode Advanced" = "Advanced";
+"Search mode Neural" = "Neural";
+
 /* Meeting Detection */
 "Meeting Notifications" = "ミーティング通知";
 "Notify me about meetings using macOS notifications." = "macOS の通知を使ってミーティングをお知らせします。";

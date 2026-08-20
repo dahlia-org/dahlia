@@ -767,6 +767,12 @@
 "Show Event in Calendar" = "Show Event in Calendar";
 "Attending" = "Attending";
 
+/* Search Modes */
+"Search mode" = "Search mode";
+"Search mode Simple" = "Simple";
+"Search mode Advanced" = "Advanced";
+"Search mode Neural" = "Neural";
+
 /* Meeting Detection */
 "Meeting Notifications" = "Meeting Notifications";
 "Notify me about meetings using macOS notifications." = "Notify me about meetings using macOS notifications.";

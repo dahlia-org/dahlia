@@ -6,6 +6,7 @@ import Observation
 final class MainSearchModel {
     private(set) var isPresented = false
     var inputText = ""
+    var searchMode: SearchMode = .advanced
     private(set) var tokens: [MeetingSearchToken] = []
     private(set) var meetings: [MeetingSidebarItem] = []
     private(set) var projects: [ProjectOverviewItem] = []
@@ -50,6 +51,14 @@ final class MainSearchModel {
             return
         }
         startSearch(using: sidebarViewModel, delay: .milliseconds(250), appending: false)
+    }
+
+    func searchModeDidChange(using sidebarViewModel: SidebarViewModel) {
+        guard searchMode.isAvailable else {
+            searchMode = .advanced
+            return
+        }
+        startSearch(using: sidebarViewModel, delay: nil, appending: false)
     }
 
     @discardableResult
@@ -157,6 +166,7 @@ final class MainSearchModel {
         let vaultID = sidebarViewModel.currentVault?.id
         let dbQueue = sidebarViewModel.searchDBQueue
         let criteria = searchCriteria(using: sidebarViewModel)
+        let mode = searchMode
         activeMeetingCriteria = criteria
         let cursor = appending ? meetingCursor : nil
         let limit = criteria.isEmpty ? MainSearchDesign.recentResultLimit : MainSearchDesign.meetingPageSize
@@ -180,6 +190,7 @@ final class MainSearchModel {
                 let page = try await MeetingRepository.searchMeetingSidebarPage(
                     vaultId: vaultID,
                     criteria: criteria,
+                    mode: mode,
                     after: cursor,
                     limit: limit,
                     dbQueue: dbQueue
@@ -244,6 +255,7 @@ final class MainSearchModel {
 
         isProjectCatalogLoading = true
         let projectItems = sidebarViewModel.allProjectItems
+        let mode = searchMode
         projectSearchTask = Task { [weak self] in
             let results: [ProjectOverviewItem]
             if criteria.isEmpty {
@@ -255,6 +267,7 @@ final class MainSearchModel {
                     let ids = try await MeetingRepository.searchProjectIDs(
                         vaultID: vaultID,
                         query: criteria.text,
+                        mode: mode,
                         limit: MainSearchDesign.projectResultLimit,
                         dbQueue: dbQueue
                     )
