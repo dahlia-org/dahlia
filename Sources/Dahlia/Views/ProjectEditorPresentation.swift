@@ -5,6 +5,7 @@ struct ProjectEditorPresentation: View {
     let parentProjects: [ProjectOverviewItem]
     let projectName: String
     let appearance: ProjectAppearance
+    let appearanceForParentProject: (UUID) -> ProjectAppearance
     let onCancel: () -> Void
     let onDelete: (() -> Void)?
     let onSave: (String, String, UUID?, ProjectType, ProjectAppearance) async -> String?
@@ -33,6 +34,7 @@ struct ProjectEditorPresentation: View {
                 appearance: appearance,
                 isSaving: $isSaving,
                 initiallyFocusesName: project == nil,
+                appearanceForParentProject: appearanceForParentProject,
                 onCancel: cancel,
                 onDelete: onDelete,
                 onSave: onSave

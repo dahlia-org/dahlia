@@ -7,6 +7,7 @@ struct ProjectEditorSheet: View {
     let onCancel: () -> Void
     let onDelete: (() -> Void)?
     let initiallyFocusesName: Bool
+    let appearanceForParentProject: (UUID) -> ProjectAppearance
     let onSave: (String, String, UUID?, ProjectType, ProjectAppearance) async -> String?
     @Binding var isSaving: Bool
 
@@ -15,6 +16,8 @@ struct ProjectEditorSheet: View {
     @State private var parentProjectId: UUID?
     @State private var projectType: ProjectType
     @State private var appearance: ProjectAppearance
+    @State private var rootAppearance: ProjectAppearance
+    @State private var hasRootAppearanceDraft: Bool
     @State private var errorMessage = ""
     @FocusState private var isProjectNameFocused: Bool
     @FocusState private var isProjectDescriptionFocused: Bool
@@ -30,6 +33,7 @@ struct ProjectEditorSheet: View {
         appearance: ProjectAppearance,
         isSaving: Binding<Bool>,
         initiallyFocusesName: Bool,
+        appearanceForParentProject: @escaping (UUID) -> ProjectAppearance,
         onCancel: @escaping () -> Void,
         onDelete: (() -> Void)? = nil,
         onSave: @escaping (String, String, UUID?, ProjectType, ProjectAppearance) async -> String?
@@ -38,6 +42,7 @@ struct ProjectEditorSheet: View {
         self.actionTitle = actionTitle
         self.parentProjects = parentProjects
         self.initiallyFocusesName = initiallyFocusesName
+        self.appearanceForParentProject = appearanceForParentProject
         self.onCancel = onCancel
         self.onDelete = onDelete
         self.onSave = onSave
@@ -47,6 +52,8 @@ struct ProjectEditorSheet: View {
         _parentProjectId = State(initialValue: parentProjectId)
         _projectType = State(initialValue: projectType)
         _appearance = State(initialValue: appearance)
+        _rootAppearance = State(initialValue: appearance)
+        _hasRootAppearanceDraft = State(initialValue: parentProjectId == nil)
     }
 
     var body: some View {
@@ -85,6 +92,7 @@ struct ProjectEditorSheet: View {
                                 projectName: $projectName,
                                 appearance: $appearance,
                                 isProjectNameFocused: $isProjectNameFocused,
+                                isAppearanceEditable: parentProjectId == nil,
                                 onSubmit: save
                             )
 
@@ -118,6 +126,20 @@ struct ProjectEditorSheet: View {
         .frame(width: 560, height: 500)
         .background(Color(nsColor: .windowBackgroundColor))
         .defaultFocus($isProjectNameFocused, initiallyFocusesName)
+        .onChange(of: parentProjectId) { previousParentProjectId, parentProjectId in
+            if let parentProjectId {
+                if previousParentProjectId == nil, hasRootAppearanceDraft {
+                    rootAppearance = appearance
+                }
+                appearance = appearanceForParentProject(parentProjectId)
+                if !hasRootAppearanceDraft {
+                    rootAppearance = appearance
+                }
+            } else {
+                appearance = rootAppearance
+                hasRootAppearanceDraft = true
+            }
+        }
     }
 
     private var trimmedProjectName: String {

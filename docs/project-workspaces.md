@@ -33,6 +33,13 @@ Sibling names, including root names, are unique by `nameKey`. Rename and reparen
 Project identity and `parentProjectId` are deliberately independent from future Organization or Person relationships.
 Those tables may later reference stable Project IDs, but neither is a Project hierarchy parent.
 
+## Project appearance
+
+Icon and color are Vault-scoped local settings owned by root Projects. A subproject always displays its parent's
+appearance; any older setting stored for the subproject remains intact but is ignored while it has a parent. Reparenting
+updates the inherited appearance immediately. Promoting a subproject to the Vault root seeds its editable appearance
+from the inherited value currently shown. Appearance is not part of the Project database, API, MCP, or revision contract.
+
 ## Project type
 
 `projectType` has four values: `customer`, `internal`, `personal`, and `undefined`.
