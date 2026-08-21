@@ -64,10 +64,10 @@ import GRDB
         @Test
         func systemDefaultMicrophoneSelectionResolvesCurrentDefaultDevice() async {
             let inputProvider = MutableMicrophoneInputProvider(
-                defaultDeviceID: AudioDeviceID(101),
+                defaultDeviceID: AudioDeviceID(202),
                 devices: [
                     MicrophoneDevice(id: 101, name: "Poly Sync 20"),
-                    MicrophoneDevice(id: 202, name: "MacBook Pro Mic"),
+                    MicrophoneDevice(id: 202, name: "MacBook Pro Mic", isBuiltIn: true),
                 ]
             )
             let viewModel = CaptionViewModel(
@@ -77,13 +77,15 @@ import GRDB
             await viewModel.refreshAvailableMicrophones()
 
             #expect(viewModel.microphoneSelection == MicrophoneSelection.systemDefault)
-            #expect(viewModel.selectedMicrophoneID == 101)
+            #expect(viewModel.selectedMicrophoneID == 202)
+            #expect(viewModel.selectedBuiltInMicrophoneID == 202)
             #expect(viewModel.microphoneCaptureDeviceID == nil)
 
-            inputProvider.defaultDeviceID = 202
+            inputProvider.defaultDeviceID = 101
             await viewModel.refreshAvailableMicrophones()
 
-            #expect(viewModel.selectedMicrophoneID == 202)
+            #expect(viewModel.selectedMicrophoneID == 101)
+            #expect(viewModel.selectedBuiltInMicrophoneID == nil)
             #expect(viewModel.microphoneCaptureDeviceID == nil)
         }
 
@@ -97,6 +99,28 @@ import GRDB
             viewModel.microphoneSelection = .device(101)
 
             #expect(viewModel.microphoneCaptureDeviceID == 101)
+        }
+
+        @Test
+        func inputVolumeControlTargetsOnlyTheSelectedBuiltInMicrophone() async {
+            let viewModel = CaptionViewModel(
+                availableInputDevicesProvider: {
+                    [
+                        MicrophoneDevice(id: 101, name: "MacBook Pro Microphone", isBuiltIn: true),
+                        MicrophoneDevice(id: 202, name: "USB Mic"),
+                    ]
+                },
+                defaultInputDeviceIDProvider: { 101 }
+            )
+            await viewModel.refreshAvailableMicrophones()
+
+            #expect(viewModel.selectedBuiltInMicrophoneID == 101)
+
+            viewModel.microphoneSelection = .device(202)
+            #expect(viewModel.selectedBuiltInMicrophoneID == nil)
+
+            viewModel.microphoneSelection = .none
+            #expect(viewModel.selectedBuiltInMicrophoneID == nil)
         }
 
         @Test
@@ -342,6 +366,7 @@ import GRDB
             #expect(!viewModel.canGenerateSummary)
         }
 
+
         @Test
         func commandsAreDisabledWhileFinalizingRecording() {
             let viewModel = summaryReadyViewModel()
@@ -382,7 +407,6 @@ import GRDB
 
             #expect(!viewModel.canGenerateSummary)
         }
-
 
         @Test
         func retryInitialMeetingLoadRestoresMetadataAsWellAsTranscriptPage() async throws {

@@ -700,6 +700,13 @@
 "Speaker echo cancellation is unavailable" = "スピーカー回り込み除去を利用できません";
 "Speaker echo cancellation became unavailable. Recording continues with raw microphone audio." = "スピーカー回り込み除去を利用できなくなったため、マイクの raw 音声で録音を継続します。";
 "Audio Input" = "音声入力";
+"Adjust Microphone Input Volume" = "マイクの入力音量を調整";
+"Built-in Microphone Input Volume" = "内蔵マイクの入力音量";
+"Use a higher input volume in large meeting rooms. This changes the input volume for all of macOS." = "広い会議室では入力音量を高めに設定してください。この変更はmacOS全体に適用されます。";
+"Input volume cannot be changed from Dahlia on this Mac." = "このMacではDahliaから入力音量を変更できません。";
+"Could not change the input volume." = "入力音量を変更できませんでした。";
+"Open Sound Settings" = "サウンド設定を開く";
+"Could not open Sound settings." = "サウンド設定を開けませんでした。";
 "Use Echo Cancellation with External Microphones" = "外部マイクでもAECを使用";
 "Enable this when an external microphone can pick up audio from speakers." = "外部マイクがスピーカー音を拾う場合に有効にします。";
 "Echo cancellation is always enabled for the built-in microphone, regardless of this setting." = "内蔵マイクでは、この設定に関係なくAECが有効になります。";
