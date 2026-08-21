@@ -1469,3 +1469,13 @@
 "Search index ready" = "Ready";
 "Search index failed" = "Unavailable";
 "Search index error format" = "Indexing error: %@";
+"Approval method" = "How should ChatGPT actions be approved?";
+"Change permissions" = "Change permissions";
+"Ask for approval" = "Ask for approval";
+"Always ask before editing files outside the workspace or using the internet." = "Always ask to edit external files and use the internet";
+"Review approvals" = "Approve for me";
+"Ask only when an operation is detected as potentially unsafe." = "Only ask for actions detected as potentially unsafe";
+"Available with a ChatGPT subscription only." = "Available with a ChatGPT subscription only.";
+"Full access" = "Full access";
+"Allow unrestricted access to the internet and all files on this Mac." = "Unrestricted access to the internet and any file on your computer";
+"Could not update the approval method: %@" = "Could not update the approval method: %@";

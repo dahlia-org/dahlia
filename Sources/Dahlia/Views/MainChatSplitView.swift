@@ -39,11 +39,9 @@ struct MainChatSplitView<Content: View, Sidebar: View>: View {
                 if isVisible {
                     sidebar
                         .frame(width: sidebarWidth, height: geometry.size.height)
-                        .background {
+                        .background(alignment: .leading) {
                             Color(nsColor: .windowBackgroundColor)
                                 .ignoresSafeArea()
-                        }
-                        .overlay(alignment: .leading) {
                             Rectangle()
                                 .fill(Color(nsColor: .separatorColor))
                                 .frame(width: 1)

@@ -155,7 +155,7 @@ struct CodexChatView: View {
     }
 
     private func retryConnection() {
-        Task { await session.prepare(forceRefresh: true) }
+        Task { await session.restore() }
     }
 
     private func retryHistory() {

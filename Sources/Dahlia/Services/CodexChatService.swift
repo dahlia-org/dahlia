@@ -109,11 +109,9 @@ actor CodexChatService: CodexChatServicing {
             return try await appServer.chatRequest(
                 method: "thread/resume",
                 params: .object([
-                    "approvalPolicy": .string("on-request"),
                     "config": config,
                     "cwd": .string(workspaceURL.path),
                     "developerInstructions": .string(Self.developerInstructions),
-                    "sandbox": .string("workspace-write"),
                     "threadId": .string(id),
                 ]),
                 bypassConfigurationReloadAdmission: true
@@ -127,7 +125,12 @@ actor CodexChatService: CodexChatServicing {
         return try Self.parseThread(
             thread,
             model: object["model"]?.stringValue,
-            reasoningEffort: object["reasoningEffort"]?.stringValue
+            reasoningEffort: object["reasoningEffort"]?.stringValue,
+            approvalMethod: CodexChatApprovalMethod.restored(
+                approvalPolicy: object["approvalPolicy"],
+                approvalsReviewer: object["approvalsReviewer"],
+                sandbox: object["sandbox"]
+            )
         )
     }
 
@@ -198,7 +201,8 @@ actor CodexChatService: CodexChatServicing {
             threadID: threadID,
             inputs: inputs,
             model: model,
-            effort: effort
+            effort: effort,
+            approvalMethod: .autoReview
         ).events
     }
 
@@ -206,17 +210,19 @@ actor CodexChatService: CodexChatServicing {
         threadID: String,
         inputs: [CodexAppServerInput],
         model: String?,
-        effort: String
+        effort: String,
+        approvalMethod: CodexChatApprovalMethod
     ) async throws -> CodexChatTurnHandle {
-        let turn = try await appServer.withChatOperation { appServer in
-            let approvalsReviewer = await appServer.configuredAccountProvider() == .chatGPTSubscription
-                ? "auto_review"
-                : "user"
+        let (turn, effectiveApprovalMethod) = try await appServer.withChatOperation { appServer in
+            let provider = await appServer.configuredAccountProvider()
+            let approvalMethod = approvalMethod.availableMethod(for: provider)
 
             var params: [String: JSONValue] = [
-                "approvalsReviewer": .string(approvalsReviewer),
+                "approvalPolicy": approvalMethod.approvalPolicy,
+                "approvalsReviewer": approvalMethod.approvalsReviewer,
                 "effort": .string(effort),
                 "input": .array(inputs.map(Self.jsonInput)),
+                "sandboxPolicy": approvalMethod.sandboxPolicy,
                 "summary": .string("auto"),
                 "threadId": .string(threadID),
             ]
@@ -224,11 +230,12 @@ actor CodexChatService: CodexChatServicing {
                 params["model"] = .string(model)
             }
 
-            return try await appServer.beginChatTurn(
+            let turn = try await appServer.beginChatTurn(
                 threadID: threadID,
                 params: .object(params),
                 bypassConfigurationReloadAdmission: true
             )
+            return (turn, approvalMethod)
         }
 
         let events = AsyncThrowingStream<CodexChatTurnEvent, any Error>(
@@ -289,7 +296,32 @@ actor CodexChatService: CodexChatServicing {
             }
             continuation.onTermination = { _ in task.cancel() }
         }
-        return CodexChatTurnHandle(id: turn.id, events: events)
+        return CodexChatTurnHandle(
+            id: turn.id,
+            events: events,
+            approvalMethod: effectiveApprovalMethod
+        )
+    }
+
+    func updateApprovalMethod(
+        threadID: String,
+        approvalMethod: CodexChatApprovalMethod
+    ) async throws -> CodexChatApprovalMethod {
+        try await appServer.withChatOperation { appServer in
+            let provider = await appServer.configuredAccountProvider()
+            let approvalMethod = approvalMethod.availableMethod(for: provider)
+            _ = try await appServer.chatRequest(
+                method: "thread/settings/update",
+                params: .object([
+                    "approvalPolicy": approvalMethod.approvalPolicy,
+                    "approvalsReviewer": approvalMethod.approvalsReviewer,
+                    "sandboxPolicy": approvalMethod.sandboxPolicy,
+                    "threadId": .string(threadID),
+                ]),
+                bypassConfigurationReloadAdmission: true
+            )
+            return approvalMethod
+        }
     }
 
     private nonisolated static func yield(
@@ -444,7 +476,8 @@ private extension CodexChatService {
     nonisolated static func parseThread(
         _ object: [String: JSONValue],
         model: String?,
-        reasoningEffort: String?
+        reasoningEffort: String?,
+        approvalMethod: CodexChatApprovalMethod? = nil
     ) throws -> CodexChatThread {
         guard let id = object["id"]?.stringValue,
               let turns = object["turns"]?.arrayValue
@@ -459,7 +492,8 @@ private extension CodexChatService {
             title: title,
             messages: turns.flatMap(parseMessages),
             model: model,
-            reasoningEffort: reasoningEffort
+            reasoningEffort: reasoningEffort,
+            approvalMethod: approvalMethod
         )
     }
 

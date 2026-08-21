@@ -46,6 +46,8 @@ struct CodexChatComposerInputRow: View {
             .dahliaHoverHelp(label: L10n.addToChat, shortcut: "@")
             .onExitCommand(perform: onExitCommand)
 
+            CodexChatApprovalMethodButton(session: session)
+
             Spacer(minLength: 0)
 
             if session.isLoading, session.models.isEmpty {
@@ -69,7 +71,7 @@ struct CodexChatComposerInputRow: View {
                 )
             } else if !session.liveModeEnabled, !session.hasComposerContent {
                 CodexChatLiveModeStartButton(
-                    isEnabled: session.isBoundToCurrentVault,
+                    isEnabled: session.isBoundToCurrentVault && !session.isRestoring && !session.needsRestore,
                     action: session.toggleLiveMode
                 )
             } else {

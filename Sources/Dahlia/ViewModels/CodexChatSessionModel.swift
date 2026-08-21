@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import Observation
 
@@ -19,8 +20,11 @@ final class CodexChatSessionModel: Identifiable {
 
     var selectedModelID: String
     var selectedEffort: String
+    private(set) var selectedApprovalMethod: CodexChatApprovalMethod
     private(set) var models: [CodexModel] = []
     private(set) var isLoading = false
+    private(set) var isRestoring = false
+    private(set) var needsRestore: Bool
     var isGenerating = false
     var errorMessage: String?
     var noticeMessage: String?
@@ -94,6 +98,13 @@ final class CodexChatSessionModel: Identifiable {
     @ObservationIgnored private var failedSubmission: CodexChatFailedSubmission?
     @ObservationIgnored private var usesLiveModePlaceholderTitle = false
     @ObservationIgnored private var liveModeChangeHandler: (@MainActor (Bool) -> Void)?
+    @ObservationIgnored private var syncedApprovalMethod: CodexChatApprovalMethod?
+    @ObservationIgnored private var approvalMethodUpdateTask: Task<Void, Never>?
+    @ObservationIgnored private var approvalMethodUpdateErrorMessage: String?
+    @ObservationIgnored private var approvalMethodSelectionGeneration: UInt = 0
+    @ObservationIgnored private var restoreSelectionGeneration: UInt?
+    private var configuredAccountProvider: AIAccountProvider?
+    @ObservationIgnored private var settingsObserver: AnyCancellable?
 
     init(
         id: CodexChatSessionID = CodexChatSessionID(),
@@ -103,6 +114,7 @@ final class CodexChatSessionModel: Identifiable {
         messages: [CodexChatMessage] = [],
         modelID: String? = nil,
         effort: String? = nil,
+        approvalMethod: CodexChatApprovalMethod? = nil,
         service: any CodexChatServicing = CodexChatService.shared,
         settings: AppSettings = .shared,
         contextProvider: any CodexChatContextProviding = CodexChatContextProvider(),
@@ -118,11 +130,16 @@ final class CodexChatSessionModel: Identifiable {
         self.messages = messages
         self.selectedModelID = modelID ?? settings.codexChatModelID
         self.selectedEffort = effort ?? settings.codexChatReasoningEffort
+        self.selectedApprovalMethod = approvalMethod
+            ?? CodexChatApprovalMethod.defaultMethod(for: settings.configuredCodexAccountProvider)
+        self.needsRestore = backendThreadID != nil && messages.isEmpty && approvalMethod == nil
         self.service = service
         self.settings = settings
         self.contextProvider = contextProvider
         self.streamingUpdateInterval = streamingUpdateInterval
         self.usageTelemetryReporter = usageTelemetryReporter
+        self.configuredAccountProvider = settings.configuredCodexAccountProvider
+        observeConfiguredAccountProvider()
     }
 
     func prepare(forceRefresh: Bool = false) async {
@@ -144,14 +161,25 @@ final class CodexChatSessionModel: Identifiable {
     }
 
     func restore() async {
+        guard !isRestoring else { return }
         guard let backendThreadID, messages.isEmpty else {
             await prepare()
             return
         }
+        if restoreSelectionGeneration == nil {
+            restoreSelectionGeneration = approvalMethodSelectionGeneration
+        }
+        guard let selectionGeneration = restoreSelectionGeneration else { return }
+        var didRestoreThread = false
         isLoading = true
+        isRestoring = true
         errorMessage = nil
         defer {
             isLoading = false
+            isRestoring = false
+            if didRestoreThread {
+                synchronizeApprovalMethodIfNeeded()
+            }
             unsubscribeIfPossible()
         }
         do {
@@ -162,7 +190,14 @@ final class CodexChatSessionModel: Identifiable {
             try await ensureThreadLease(thread.id)
             self.models = models
             apply(thread)
+            restoreApprovalMethod(
+                thread.approvalMethod,
+                ifSelectionGenerationUnchangedSince: selectionGeneration
+            )
             resolveSelections()
+            needsRestore = false
+            restoreSelectionGeneration = nil
+            didRestoreThread = true
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -180,7 +215,51 @@ final class CodexChatSessionModel: Identifiable {
         settings.codexChatReasoningEffort = effort
     }
 
+    var canUseAutoReview: Bool {
+        configuredAccountProvider == .chatGPTSubscription
+    }
+
+    var hasApprovalMethodUpdateFailure: Bool {
+        approvalMethodUpdateErrorMessage != nil
+    }
+
+    func selectApprovalMethod(_ approvalMethod: CodexChatApprovalMethod) {
+        let approvalMethod = approvalMethod.availableMethod(for: settings.configuredCodexAccountProvider)
+        updateSelectedApprovalMethod(approvalMethod, recordsSelectionIntent: true)
+    }
+
+    func refreshApprovalMethodAvailability() {
+        configuredAccountProviderDidChange(to: settings.configuredCodexAccountProvider)
+        let approvalMethod = selectedApprovalMethod.availableMethod(for: configuredAccountProvider)
+        updateSelectedApprovalMethod(approvalMethod)
+    }
+
+    func configuredAccountProviderDidChange(to provider: AIAccountProvider?) {
+        guard configuredAccountProvider != provider else { return }
+        configuredAccountProvider = provider
+        let approvalMethod = selectedApprovalMethod.availableMethod(for: provider)
+        updateSelectedApprovalMethod(approvalMethod)
+    }
+
+    private func updateSelectedApprovalMethod(
+        _ approvalMethod: CodexChatApprovalMethod,
+        recordsSelectionIntent: Bool = false
+    ) {
+        if recordsSelectionIntent {
+            approvalMethodSelectionGeneration &+= 1
+        }
+        guard selectedApprovalMethod != approvalMethod else { return }
+        selectedApprovalMethod = approvalMethod
+        if syncedApprovalMethod == approvalMethod {
+            clearApprovalMethodUpdateError()
+            processPendingInputIfPossible()
+            return
+        }
+        synchronizeApprovalMethodIfNeeded()
+    }
+
     func sendDraft() {
+        refreshApprovalMethodAvailability()
         guard canSend else { return }
         let draftSnapshot = draft
         let referenceIDsSnapshot = selectedMeetingReferenceIDs
@@ -217,6 +296,12 @@ final class CodexChatSessionModel: Identifiable {
     }
 
     func retry() {
+        if let approvalMethodUpdateErrorMessage,
+           errorMessage == approvalMethodUpdateErrorMessage {
+            clearApprovalMethodUpdateError()
+            synchronizeApprovalMethodIfNeeded()
+            return
+        }
         switch failedSubmission {
         case let .liveTranscript(failedLiveTranscript):
             self.failedLiveTranscript = nil
@@ -289,6 +374,7 @@ final class CodexChatSessionModel: Identifiable {
     }
 
     func toggleLiveMode() {
+        guard isLiveModeEnabled || !isRestoring && !needsRestore else { return }
         setLiveModeEnabled(!isLiveModeEnabled)
     }
 
@@ -314,6 +400,7 @@ final class CodexChatSessionModel: Identifiable {
     func release() {
         guard !isReleased else { return }
         isReleased = true
+        settingsObserver = nil
         steerTask?.cancel()
         steerTask = nil
         pendingManualInputs.removeAll()
@@ -382,6 +469,7 @@ extension CodexChatSessionModel {
         context: CodexChatContext?,
         responseID: String,
         liveModeState: CodexChatLiveModeSubmissionState,
+        approvalMethod: CodexChatApprovalMethod,
         submissionID: UUID
     ) async -> Bool {
         let accumulator = CodexChatTurnAccumulator()
@@ -422,8 +510,10 @@ extension CodexChatSessionModel {
                 threadID: backendThreadID,
                 inputs: inputs,
                 model: selectedModelID.nilIfBlank,
-                effort: selectedEffort
+                effort: selectedEffort,
+                approvalMethod: approvalMethod
             )
+            applyEffectiveApprovalMethod(turn.approvalMethod ?? approvalMethod, requested: approvalMethod)
             do {
                 try ensureSubmissionCanContinue(submissionID, liveTranscript: liveTranscript)
             } catch {
@@ -467,7 +557,8 @@ extension CodexChatSessionModel {
                     threadID: backendThreadID,
                     inputs: inputs,
                     model: selectedModelID.nilIfBlank,
-                    effort: selectedEffort
+                    effort: selectedEffort,
+                    approvalMethod: approvalMethod
                 ),
                 accumulator: accumulator,
                 updateLimiter: updateLimiter,
@@ -715,6 +806,7 @@ extension CodexChatSessionModel {
         let inputs: [CodexAppServerInput]
         let model: String?
         let effort: String
+        let approvalMethod: CodexChatApprovalMethod
     }
 
     private func consumeTurnEventsRecoveringMissingThread(
@@ -738,11 +830,17 @@ extension CodexChatSessionModel {
             let thread = try await service.resumeThread(id: retry.threadID, vaultID: vaultID)
             try ensureSubmissionCanContinue(submissionID, liveTranscript: liveTranscript)
             apply(thread, preservingPendingMessages: true)
+            syncedApprovalMethod = thread.approvalMethod
             let retryTurn = try await requestTurnHandle(
                 threadID: thread.id,
                 inputs: retry.inputs,
                 model: retry.model,
-                effort: retry.effort
+                effort: retry.effort,
+                approvalMethod: retry.approvalMethod
+            )
+            applyEffectiveApprovalMethod(
+                retryTurn.approvalMethod ?? retry.approvalMethod,
+                requested: retry.approvalMethod
             )
             try ensureSubmissionCanContinue(submissionID, liveTranscript: liveTranscript)
             activeTurnHandleID = retryTurn.id
@@ -760,7 +858,8 @@ extension CodexChatSessionModel {
         threadID: String,
         inputs: [CodexAppServerInput],
         model: String?,
-        effort: String
+        effort: String,
+        approvalMethod: CodexChatApprovalMethod
     ) async throws -> CodexChatTurnHandle {
         isRequestingTurnHandle = true
         defer { isRequestingTurnHandle = false }
@@ -768,8 +867,83 @@ extension CodexChatSessionModel {
             threadID: threadID,
             inputs: inputs,
             model: model,
-            effort: effort
+            effort: effort,
+            approvalMethod: approvalMethod
         )
+    }
+
+    private func observeConfiguredAccountProvider() {
+        settingsObserver = settings.objectWillChange.sink { [weak self] _ in
+            Task { @MainActor [weak self] in
+                await Task.yield()
+                guard let self, !isReleased else { return }
+                configuredAccountProviderDidChange(to: settings.configuredCodexAccountProvider)
+            }
+        }
+    }
+
+    private func restoreApprovalMethod(
+        _ approvalMethod: CodexChatApprovalMethod?,
+        ifSelectionGenerationUnchangedSince selectionGeneration: UInt
+    ) {
+        syncedApprovalMethod = approvalMethod
+        if approvalMethodSelectionGeneration == selectionGeneration {
+            selectedApprovalMethod = (approvalMethod ?? .ask).availableMethod(for: configuredAccountProvider)
+        }
+        synchronizeApprovalMethodIfNeeded()
+    }
+
+    private func applyEffectiveApprovalMethod(
+        _ effectiveMethod: CodexChatApprovalMethod,
+        requested requestedMethod: CodexChatApprovalMethod
+    ) {
+        syncedApprovalMethod = effectiveMethod
+        if selectedApprovalMethod == requestedMethod {
+            selectedApprovalMethod = effectiveMethod
+        }
+        clearApprovalMethodUpdateError()
+        synchronizeApprovalMethodIfNeeded()
+    }
+
+    func clearApprovalMethodUpdateError() {
+        if errorMessage == approvalMethodUpdateErrorMessage {
+            errorMessage = nil
+        }
+        approvalMethodUpdateErrorMessage = nil
+    }
+
+    private func synchronizeApprovalMethodIfNeeded() {
+        guard !isRestoring,
+              !needsRestore,
+              backendThreadID != nil,
+              syncedApprovalMethod != selectedApprovalMethod,
+              approvalMethodUpdateTask == nil else { return }
+        approvalMethodUpdateTask = Task {
+            await synchronizeApprovalMethod()
+        }
+    }
+
+    private func synchronizeApprovalMethod() async {
+        defer { approvalMethodUpdateTask = nil }
+        while !Task.isCancelled,
+              let backendThreadID,
+              syncedApprovalMethod != selectedApprovalMethod {
+            let approvalMethod = selectedApprovalMethod
+            do {
+                let effectiveMethod = try await service.updateApprovalMethod(
+                    threadID: backendThreadID,
+                    approvalMethod: approvalMethod
+                )
+                applyEffectiveApprovalMethod(effectiveMethod, requested: approvalMethod)
+            } catch is CancellationError {
+                return
+            } catch {
+                let message = L10n.chatApprovalUpdateFailed(error.localizedDescription)
+                approvalMethodUpdateErrorMessage = message
+                errorMessage = message
+                return
+            }
+        }
     }
 
     func ensureBackendThread(
