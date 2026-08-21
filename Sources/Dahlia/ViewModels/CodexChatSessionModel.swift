@@ -203,23 +203,23 @@ final class CodexChatSessionModel: Identifiable {
 
     func selectApprovalMethod(_ approvalMethod: CodexChatApprovalMethod) {
         let approvalMethod = approvalMethod.availableMethod(for: settings.configuredCodexAccountProvider)
-        guard selectedApprovalMethod != approvalMethod else { return }
-        selectedApprovalMethod = approvalMethod
-        synchronizeApprovalMethodIfNeeded()
+        updateSelectedApprovalMethod(approvalMethod)
     }
 
     func refreshApprovalMethodAvailability() {
         configuredAccountProviderDidChange(to: settings.configuredCodexAccountProvider)
         let approvalMethod = selectedApprovalMethod.availableMethod(for: configuredAccountProvider)
-        guard selectedApprovalMethod != approvalMethod else { return }
-        selectedApprovalMethod = approvalMethod
-        synchronizeApprovalMethodIfNeeded()
+        updateSelectedApprovalMethod(approvalMethod)
     }
 
     func configuredAccountProviderDidChange(to provider: AIAccountProvider?) {
         guard configuredAccountProvider != provider else { return }
         configuredAccountProvider = provider
         let approvalMethod = selectedApprovalMethod.availableMethod(for: provider)
+        updateSelectedApprovalMethod(approvalMethod)
+    }
+
+    private func updateSelectedApprovalMethod(_ approvalMethod: CodexChatApprovalMethod) {
         guard selectedApprovalMethod != approvalMethod else { return }
         selectedApprovalMethod = approvalMethod
         synchronizeApprovalMethodIfNeeded()
