@@ -120,6 +120,36 @@ import Foundation
         }
 
         @Test
+        func revertingToTheSavedApprovalMethodClearsFailureAndContinuesQueuedInput() async {
+            let service = TestCodexChatService(
+                mode: .complete,
+                approvalMethodUpdateError: .invalidProtocolResponse
+            )
+            let settings = AppSettings()
+            settings.currentVault = Self.testVault()
+            let session = CodexChatSessionModel(
+                backendThreadID: "thread-1",
+                approvalMethod: .ask,
+                service: service,
+                settings: settings
+            )
+            session.draft = "Initial question"
+            session.sendDraft()
+            await waitUntil { !session.isGenerating }
+            session.selectApprovalMethod(.fullAccess)
+            await waitUntil { session.hasApprovalMethodUpdateFailure }
+            session.enqueueManualInput(CodexChatManualSubmission(text: "Queued question", images: []))
+
+            session.selectApprovalMethod(.ask)
+            await waitUntil { !session.isGenerating }
+
+            #expect(!session.hasApprovalMethodUpdateFailure)
+            #expect(session.errorMessage == nil)
+            #expect(await service.sentTextBlocks == [["Initial question"], ["Queued question"]])
+            #expect(await service.approvalMethodUpdates == [.fullAccess])
+        }
+
+        @Test
         func failedTurnStartKeepsTheApprovalUpdateRetryAvailable() async {
             let service = TestCodexChatService(
                 mode: .alwaysFail,

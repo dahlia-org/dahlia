@@ -250,6 +250,11 @@ final class CodexChatSessionModel: Identifiable {
         }
         guard selectedApprovalMethod != approvalMethod else { return }
         selectedApprovalMethod = approvalMethod
+        if syncedApprovalMethod == approvalMethod {
+            clearApprovalMethodUpdateError()
+            processPendingInputIfPossible()
+            return
+        }
         synchronizeApprovalMethodIfNeeded()
     }
 
