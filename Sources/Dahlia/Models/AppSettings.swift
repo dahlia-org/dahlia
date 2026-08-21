@@ -99,6 +99,8 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
     nonisolated static let transcriptionLanguageScopeUserDefaultsKey = "transcriptionLanguageScope"
     nonisolated static let transcriptionLocaleUserDefaultsKey = "transcriptionLocale"
     nonisolated static let liveSubtitleLocaleUserDefaultsKey = "liveSubtitleLocale"
+    nonisolated static let liveSubtitleTranslationEnabledKey = "transcriptTranslationEnabled"
+    nonisolated static let liveSubtitleTranslationTargetLanguageKey = "transcriptTranslationTargetLanguage"
     nonisolated static let batchTranscriptionStallTimeoutUserDefaultsKey = "batchTranscriptionStallTimeoutMinutes"
     nonisolated static let customerIntelligenceBetaEnabledUserDefaultsKey = "customerIntelligenceBetaEnabled"
     nonisolated static let conversationAnalyticsBetaEnabledUserDefaultsKey = "conversationAnalyticsBetaEnabled"
@@ -227,8 +229,9 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
     @AppStorage(AppSettings.generateSummaryAfterBatchTranscriptionUserDefaultsKey) var generateSummaryAfterBatchTranscription = false
     @AppStorage(AppSettings.exportBatchSummaryToVaultUserDefaultsKey) var exportBatchSummaryToVault = true
     @AppStorage(AppSettings.exportBatchSummaryToGoogleDocsUserDefaultsKey) var exportBatchSummaryToGoogleDocs = false
-    @AppStorage("transcriptTranslationEnabled") var transcriptTranslationEnabled = true
-    @AppStorage("transcriptTranslationTargetLanguage") var transcriptTranslationTargetLanguage = TranscriptTranslationLanguage.defaultIdentifier
+    @AppStorage(AppSettings.liveSubtitleTranslationEnabledKey) var liveSubtitleTranslationEnabled = true
+    @AppStorage(AppSettings.liveSubtitleTranslationTargetLanguageKey) var liveSubtitleTranslationTargetLanguage =
+        TranscriptTranslationLanguage.defaultIdentifier
     @AppStorage("liveSubtitleOverlayEnabled") var liveSubtitleOverlayEnabled = false
     @AppStorage("liveSubtitleOverlaySegmentCount") var liveSubtitleOverlaySegmentCount = 2
     @AppStorage("liveSubtitleSourceMode") var liveSubtitleSourceModeRawValue = LiveSubtitleSourceMode.defaultMode.rawValue
@@ -305,10 +308,11 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
         set { liveSubtitleSourceMode = LiveSubtitleSourceMode(includesMicrophone: newValue) }
     }
 
-    var isTranscriptTranslationEffectivelyEnabled: Bool {
-        transcriptTranslationEnabled && TranscriptTranslationLanguage.shouldTranslate(
-            transcriptionLocaleIdentifier: transcriptionLocale,
-            targetLanguageIdentifier: transcriptTranslationTargetLanguage
+    var isLiveSubtitleTranslationEffectivelyEnabled: Bool {
+        let liveRecognitionLocale = transcriptionMode == .realtime ? transcriptionLocale : liveSubtitleLocale
+        return liveSubtitleTranslationEnabled && TranscriptTranslationLanguage.shouldTranslate(
+            transcriptionLocaleIdentifier: liveRecognitionLocale,
+            targetLanguageIdentifier: liveSubtitleTranslationTargetLanguage
         )
     }
 
@@ -780,11 +784,11 @@ extension UserDefaults {
     }
 
     @objc dynamic var transcriptTranslationEnabled: Bool {
-        object(forKey: "transcriptTranslationEnabled") as? Bool ?? true
+        object(forKey: AppSettings.liveSubtitleTranslationEnabledKey) as? Bool ?? true
     }
 
     @objc dynamic var transcriptTranslationTargetLanguage: String? {
-        string(forKey: "transcriptTranslationTargetLanguage")
+        string(forKey: AppSettings.liveSubtitleTranslationTargetLanguageKey)
     }
 
     @objc dynamic var liveSubtitleOverlayEnabled: Bool {

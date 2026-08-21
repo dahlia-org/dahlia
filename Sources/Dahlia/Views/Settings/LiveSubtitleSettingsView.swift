@@ -1,7 +1,10 @@
+import Speech
 import SwiftUI
 
 struct LiveSubtitleSettingsView: View {
     @ObservedObject private var settings = AppSettings.shared
+    @State private var supportedLocales: [Locale] = []
+    @State private var isLoadingLocales = true
 
     var body: some View {
         Form {
@@ -40,7 +43,60 @@ struct LiveSubtitleSettingsView: View {
                     Text(L10n.enableLiveSubtitlesToConfigure)
                 }
             }
+
+            Section {
+                Toggle(isOn: $settings.liveSubtitleTranslationEnabled) {
+                    Text(L10n.liveSubtitleTranslation)
+                    Text(L10n.liveSubtitleTranslationDescription)
+                }
+                .toggleStyle(.switch)
+
+                DahliaMenuPicker(
+                    title: L10n.translationTargetLanguage,
+                    description: L10n.liveSubtitleTranslationTargetLanguageDescription,
+                    selection: $settings.liveSubtitleTranslationTargetLanguage,
+                    options: targetLanguageOptions.map(\.identifier)
+                ) { identifier in
+                    targetLanguageOptions.first(where: { $0.identifier == identifier })?.displayName ?? identifier
+                }
+                .disabled(!settings.liveSubtitleTranslationEnabled || isLoadingLocales)
+            } header: {
+                Text(L10n.liveSubtitleTranslation)
+            } footer: {
+                if !settings.liveSubtitleTranslationEnabled {
+                    Text(L10n.enableLiveSubtitleTranslationToChooseLanguage)
+                } else if !settings.isLiveSubtitleTranslationEffectivelyEnabled {
+                    Text(settings.transcriptionMode == .realtime
+                        ? L10n.liveSubtitleTranslationDisabledForMatchingTranscriptionLanguage
+                        : L10n.liveSubtitleTranslationDisabledForMatchingLiveSubtitleLanguage)
+                }
+            }
         }
         .formStyle(.grouped)
+        .task {
+            supportedLocales = await SpeechTranscriber.supportedLocales.sortedByLocalizedName()
+            isLoadingLocales = false
+        }
+    }
+
+    private var targetLanguageOptions: [TranscriptTranslationLanguageOption] {
+        let displayLocale = settings.appLanguage.locale
+        let options = TranscriptTranslationLanguage.availableTargetLanguages(
+            from: supportedLocales,
+            locale: displayLocale
+        )
+        if options.contains(where: { $0.identifier == settings.liveSubtitleTranslationTargetLanguage }) {
+            return options
+        }
+
+        return options + [
+            TranscriptTranslationLanguageOption(
+                identifier: settings.liveSubtitleTranslationTargetLanguage,
+                displayName: TranscriptTranslationLanguage.displayName(
+                    for: settings.liveSubtitleTranslationTargetLanguage,
+                    locale: displayLocale
+                )
+            ),
+        ]
     }
 }

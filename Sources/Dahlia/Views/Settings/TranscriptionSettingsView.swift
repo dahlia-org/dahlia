@@ -87,32 +87,6 @@ struct TranscriptionSettingsView: View {
             }
 
             Section {
-                Toggle(isOn: $settings.transcriptTranslationEnabled) {
-                    Text(L10n.transcriptTranslation)
-                    Text(L10n.transcriptTranslationDescription)
-                }
-                .toggleStyle(.switch)
-
-                DahliaMenuPicker(
-                    title: L10n.translationTargetLanguage,
-                    description: L10n.translationTargetLanguageDescription,
-                    selection: $settings.transcriptTranslationTargetLanguage,
-                    options: targetLanguageOptions.map(\.identifier)
-                ) { identifier in
-                    targetLanguageOptions.first(where: { $0.identifier == identifier })?.displayName ?? identifier
-                }
-                .disabled(!settings.transcriptTranslationEnabled)
-            } header: {
-                Text(L10n.transcriptTranslation)
-            } footer: {
-                if !settings.transcriptTranslationEnabled {
-                    Text(L10n.enableTranscriptTranslationToChooseLanguage)
-                } else if !settings.isTranscriptTranslationEffectivelyEnabled {
-                    Text(L10n.translationDisabledForMatchingLanguage)
-                }
-            }
-
-            Section {
                 DahliaSegmentedPicker(
                     title: L10n.languageRange,
                     selection: languageScopeBinding,
@@ -175,27 +149,6 @@ struct TranscriptionSettingsView: View {
         case .all: L10n.allTranscriptionLanguagesDescription
         case .selected: L10n.selectedTranscriptionLanguagesDescription
         }
-    }
-
-    private var targetLanguageOptions: [TranscriptTranslationLanguageOption] {
-        let displayLocale = settings.appLanguage.locale
-        let options = TranscriptTranslationLanguage.availableTargetLanguages(
-            from: supportedLocales,
-            locale: displayLocale
-        )
-        if options.contains(where: { $0.identifier == settings.transcriptTranslationTargetLanguage }) {
-            return options
-        }
-
-        return options + [
-            TranscriptTranslationLanguageOption(
-                identifier: settings.transcriptTranslationTargetLanguage,
-                displayName: TranscriptTranslationLanguage.displayName(
-                    for: settings.transcriptTranslationTargetLanguage,
-                    locale: displayLocale
-                )
-            ),
-        ]
     }
 
     private var transcriptionLocaleOptions: [Locale] {

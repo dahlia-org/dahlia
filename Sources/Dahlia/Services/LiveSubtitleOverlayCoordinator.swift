@@ -101,8 +101,8 @@ final class LiveSubtitleOverlayCoordinator {
         LiveSubtitleOverlayPayload.Configuration(
             sourceMode: AppSettings.shared.liveSubtitleSourceMode,
             transcriptionLocaleIdentifier: viewModel.liveRecognitionLocaleIdentifier,
-            translationEnabled: AppSettings.shared.transcriptTranslationEnabled,
-            targetLanguageIdentifier: AppSettings.shared.transcriptTranslationTargetLanguage
+            translationEnabled: AppSettings.shared.liveSubtitleTranslationEnabled,
+            targetLanguageIdentifier: AppSettings.shared.liveSubtitleTranslationTargetLanguage
         )
     }
 }

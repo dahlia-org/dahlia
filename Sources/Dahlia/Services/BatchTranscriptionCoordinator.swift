@@ -44,14 +44,8 @@ actor BatchTranscriptionCoordinator {
         let projectName: String
     }
 
-    private struct TranslationConfiguration: Sendable {
-        let isEnabled: Bool
-        let targetLanguage: String
-    }
-
     private let dbQueue: DatabaseQueue
     private let recordingAudioStore: RecordingAudioStore?
-    private let translationService = TranscriptTranslationService()
     private let languageDetector: any BatchLanguageDetecting
     private let speechRecognizer: any BatchSpeechRecognizing
     private let audioFeatureAnalyzer: any BatchTranscriptAudioFeatureAnalyzing
@@ -358,29 +352,20 @@ actor BatchTranscriptionCoordinator {
     }
 
     private func transcribe(job: Job) async throws -> [TranscriptSegment] {
-        let translationConfiguration = await MainActor.run {
-            TranslationConfiguration(
-                isEnabled: AppSettings.shared.transcriptTranslationEnabled,
-                targetLanguage: AppSettings.shared.transcriptTranslationTargetLanguage
-            )
-        }
-
         guard let recordingAudioStore else {
             throw RecordingAudioStoreError.storageUnavailable
         }
         return try await recordingAudioStore.withVerifiedTranscribableSegments(sessionId: job.session.id) { verified in
             try await self.transcribe(
                 verifiedSegments: verified,
-                job: job,
-                translationConfiguration: translationConfiguration
+                job: job
             )
         }
     }
 
     private func transcribe(
         verifiedSegments: [RecordingAudioStore.VerifiedSegment],
-        job: Job,
-        translationConfiguration: TranslationConfiguration
+        job: Job
     ) async throws -> [TranscriptSegment] {
         let supportedLocales: [Locale] = if job.session.batchLanguageDetectionMode == .automatic {
             await supportedLocalesProvider()
@@ -409,7 +394,7 @@ actor BatchTranscriptionCoordinator {
             fallbackCollector: fallbackCollector
         )
         let recognitionState = Self.signposter.beginInterval("Recognize audio runs")
-        var workResults: [TranscriptionWorkResult]
+        let workResults: [TranscriptionWorkResult]
         do {
             workResults = try await transcribeConcurrently(
                 workItems: workItems,
@@ -431,12 +416,6 @@ actor BatchTranscriptionCoordinator {
             fallbackCollector.snapshot(),
             candidates: automaticLanguageCandidates
         )
-        if translationConfiguration.isEnabled {
-            workResults = try await translate(
-                workResults: workResults,
-                configuration: translationConfiguration
-            )
-        }
         return sortedTranscriptSegments(workResults.flatMap(\.segments))
     }
 
@@ -482,39 +461,6 @@ actor BatchTranscriptionCoordinator {
             throw BatchSpeechTranscriberError.noAutomaticLanguageCandidates
         }
         return candidates
-    }
-
-    private func translate(
-        workResults: [TranscriptionWorkResult],
-        configuration: TranslationConfiguration
-    ) async throws -> [TranscriptionWorkResult] {
-        let translationState = Self.signposter.beginInterval("Translate transcript")
-        defer { Self.signposter.endInterval("Translate transcript", translationState) }
-        var workResults = workResults
-        let requests = workResults.flatMap { result in
-            guard TranscriptTranslationLanguage.shouldTranslate(
-                transcriptionLocaleIdentifier: result.localeIdentifier,
-                targetLanguageIdentifier: configuration.targetLanguage
-            ) else { return [TranscriptTranslationService.BatchRequest]() }
-            return result.segments.map {
-                TranscriptTranslationService.BatchRequest(
-                    id: $0.id,
-                    text: $0.text,
-                    sourceLocaleIdentifier: result.localeIdentifier
-                )
-            }
-        }
-        let translations = try await translationService.translateBatch(
-            requests,
-            to: configuration.targetLanguage
-        )
-        for resultIndex in workResults.indices {
-            for segmentIndex in workResults[resultIndex].segments.indices {
-                let segmentId = workResults[resultIndex].segments[segmentIndex].id
-                workResults[resultIndex].segments[segmentIndex].translatedText = translations[segmentId]
-            }
-        }
-        return workResults
     }
 
     private func transcribe(
