@@ -11,14 +11,23 @@ actor TestCodexChatAppServerTransport: CodexAppServerTransport {
 
     private let turnOutcome: TurnOutcome
     private let automaticallyRespondsToModelList: Bool
+    private let planType: String?
+    private let modelList: JSONValue
     private var responses: [Data] = []
     private var sentMessages: [JSONValue] = []
     private var receiveContinuation: CheckedContinuation<Data?, Never>?
     private(set) var isClosed = false
 
-    init(turnOutcome: TurnOutcome = .completed, automaticallyRespondsToModelList: Bool = true) {
+    init(
+        turnOutcome: TurnOutcome = .completed,
+        automaticallyRespondsToModelList: Bool = true,
+        planType: String? = "plus",
+        modelList: JSONValue = TestCodexChatFixtures.modelList
+    ) {
         self.turnOutcome = turnOutcome
         self.automaticallyRespondsToModelList = automaticallyRespondsToModelList
+        self.planType = planType
+        self.modelList = modelList
     }
 
     func sendLine(_ data: Data) throws {
@@ -55,13 +64,13 @@ actor TestCodexChatAppServerTransport: CodexAppServerTransport {
                 "account": .object([
                     "type": .string("chatgpt"),
                     "email": .string("test@example.com"),
-                    "planType": .string("plus"),
+                    "planType": planType.map(JSONValue.string) ?? .null,
                 ]),
                 "requiresOpenaiAuth": .bool(true),
             ]))
         case "model/list":
             if automaticallyRespondsToModelList {
-                enqueueResponse(requestID, result: TestCodexChatFixtures.modelList)
+                enqueueResponse(requestID, result: modelList)
             }
         case "config/read":
             enqueueResponse(requestID, result: .object([

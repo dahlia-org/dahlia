@@ -17,6 +17,7 @@ actor CodexAppServerService {
         let isAuthenticated: Bool
         let requiresOpenAIAuth: Bool
         let label: String?
+        let planType: String?
 
         var canUseCodex: Bool {
             isAuthenticated || !requiresOpenAIAuth
@@ -324,6 +325,10 @@ actor CodexAppServerService {
             cursor = response.nextCursor
         } while cursor != nil
 
+        if await configuredAccountProvider() == .chatGPTSubscription, account.planType == "free" {
+            models.removeAll { $0.model != "gpt-5.6-luna" }
+        }
+
         cachedModels = models
         return models
     }
@@ -398,7 +403,8 @@ actor CodexAppServerService {
         cachedAccountStatus = AccountStatus(
             isAuthenticated: false,
             requiresOpenAIAuth: true,
-            label: nil
+            label: nil,
+            planType: nil
         )
     }
 
@@ -412,19 +418,22 @@ actor CodexAppServerService {
             return AccountStatus(
                 isAuthenticated: false,
                 requiresOpenAIAuth: requiresOpenAIAuth,
-                label: nil
+                label: nil,
+                planType: nil
             )
         }
         guard let account = accountValue.objectValue else {
             throw CodexAppServerError.invalidProtocolResponse
         }
+        let planType = account["planType"]?.stringValue
         let label = account["email"]?.stringValue
-            ?? account["planType"]?.stringValue
+            ?? planType
             ?? account["type"]?.stringValue
         return AccountStatus(
             isAuthenticated: true,
             requiresOpenAIAuth: requiresOpenAIAuth,
-            label: label
+            label: label,
+            planType: planType
         )
     }
 
@@ -958,8 +967,10 @@ private extension CodexAppServerService {
         let selectedModel = request.model
             .flatMap { requestedModel in availableModels.first { $0.model == requestedModel } }
             ?? availableModels.first(where: \CodexModel.isDefault)
+            ?? availableModels.first
+        guard let selectedModel else { throw CodexAppServerError.invalidProtocolResponse }
         let shouldOmitImages = request.inputs.contains(where: \CodexAppServerInput.isImage)
-            && selectedModel?.supportsImages == false
+            && !selectedModel.supportsImages
         let generationInputs: [CodexAppServerInput]
         if shouldOmitImages {
             let imageCount = request.inputs.count(where: \CodexAppServerInput.isImage)
@@ -985,9 +996,7 @@ private extension CodexAppServerService {
             "ephemeral": .bool(true),
             "sandbox": .string("read-only"),
         ]
-        if let selectedModel {
-            threadParams["model"] = .string(selectedModel.model)
-        }
+        threadParams["model"] = .string(selectedModel.model)
         let threadResult = try await self.request(method: "thread/start", params: .object(threadParams))
         guard let threadID = threadResult.objectValue?["thread"]?.objectValue?["id"]?.stringValue else {
             throw CodexAppServerError.invalidProtocolResponse

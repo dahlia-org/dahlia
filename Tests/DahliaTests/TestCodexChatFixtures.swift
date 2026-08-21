@@ -28,15 +28,19 @@ enum TestCodexChatFixtures {
     }
 
     nonisolated static var modelList: JSONValue {
+        modelList(["default-model"])
+    }
+
+    nonisolated static func modelList(_ modelIDs: [String]) -> JSONValue {
         .object([
-            "data": .array([
+            "data": .array(modelIDs.enumerated().map { index, modelID in
                 .object([
-                    "id": .string("default"),
-                    "model": .string("default-model"),
-                    "displayName": .string("Default"),
-                    "description": .string("Default model"),
+                    "id": .string(modelID == "default-model" ? "default" : modelID),
+                    "model": .string(modelID),
+                    "displayName": .string(modelID == "default-model" ? "Default" : modelID),
+                    "description": .string(modelID == "default-model" ? "Default model" : modelID),
                     "hidden": .bool(false),
-                    "isDefault": .bool(true),
+                    "isDefault": .bool(index == 0),
                     "supportedReasoningEfforts": .array([
                         .object([
                             "reasoningEffort": .string("medium"),
@@ -49,8 +53,8 @@ enum TestCodexChatFixtures {
                     ]),
                     "defaultReasoningEffort": .string("medium"),
                     "inputModalities": .array([.string("text")]),
-                ]),
-            ]),
+                ])
+            }),
             "nextCursor": .null,
         ])
     }

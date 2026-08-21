@@ -10,6 +10,8 @@ import Foundation
     // Protocol lifecycle scenarios share test doubles and are kept in one auditable suite.
     // swiftlint:disable:next type_body_length
     struct CodexAppServerServiceTests {
+        private let serverModelIDs = ["gpt-5.6-sol", "gpt-5.6-luna", "gpt-5.6-terra"]
+
         private actor CompletionGate {
             private var isOpen = false
             private var continuation: CheckedContinuation<Void, Never>?
@@ -24,6 +26,23 @@ import Foundation
                 continuation?.resume()
                 continuation = nil
             }
+        }
+
+        private func loadedModelIDs(
+            provider: AIAccountProvider,
+            planType: String
+        ) async throws -> [String] {
+            let transport = TestCodexChatAppServerTransport(
+                planType: planType,
+                modelList: TestCodexChatFixtures.modelList(serverModelIDs)
+            )
+            let service = makeTestCodexAppServerService(
+                transportFactory: { transport },
+                accountProviderResolver: { provider }
+            )
+            let modelIDs = try await service.models().map(\.model)
+            await service.shutdown()
+            return modelIDs
         }
 
         @Test
@@ -41,6 +60,87 @@ import Foundation
             #expect(methods.count(where: { $0 == "model/list" }) == 2)
             await service.shutdown()
             #expect(await transport.isClosed)
+        }
+
+        @Test
+        func freeChatGPTPlanOnlyReturnsLuna() async throws {
+            let models = try await loadedModelIDs(
+                provider: .chatGPTSubscription,
+                planType: "free"
+            )
+
+            #expect(models == ["gpt-5.6-luna"])
+        }
+
+        @Test
+        func freeChatGPTPlanUsesLunaWhenSavedModelIsUnavailable() async throws {
+            let transport = TestCodexChatAppServerTransport(
+                planType: "free",
+                modelList: TestCodexChatFixtures.modelList(serverModelIDs)
+            )
+            let service = makeTestCodexAppServerService(
+                transportFactory: { transport },
+                accountProviderResolver: { .chatGPTSubscription }
+            )
+
+            _ = try await service.generate(.init(
+                model: "gpt-5.6-sol",
+                developerInstructions: "Summarize.",
+                inputs: [.text("Transcript")],
+                outputSchema: Data(#"{"type":"object"}"#.utf8)
+            ))
+
+            let threadStart = try #require(await transport.messages().first {
+                $0.objectValue?["method"]?.stringValue == "thread/start"
+            })
+            #expect(threadStart.objectValue?["params"]?.objectValue?["model"] == .string("gpt-5.6-luna"))
+            await service.shutdown()
+        }
+
+        @Test
+        func freeChatGPTPlanWithoutLunaFailsBeforeStartingThread() async {
+            let transport = TestCodexChatAppServerTransport(
+                planType: "free",
+                modelList: TestCodexChatFixtures.modelList(["gpt-5.6-sol", "gpt-5.6-terra"])
+            )
+            let service = makeTestCodexAppServerService(
+                transportFactory: { transport },
+                accountProviderResolver: { .chatGPTSubscription }
+            )
+
+            await #expect(throws: CodexAppServerError.invalidProtocolResponse) {
+                _ = try await service.generate(.init(
+                    model: nil,
+                    developerInstructions: "Summarize.",
+                    inputs: [.text("Transcript")],
+                    outputSchema: Data(#"{"type":"object"}"#.utf8)
+                ))
+            }
+
+            #expect(await !transport.messages().contains {
+                $0.objectValue?["method"]?.stringValue == "thread/start"
+            })
+            await service.shutdown()
+        }
+
+        @Test
+        func paidChatGPTPlanReturnsAllModels() async throws {
+            let models = try await loadedModelIDs(
+                provider: .chatGPTSubscription,
+                planType: "plus"
+            )
+
+            #expect(models == serverModelIDs)
+        }
+
+        @Test
+        func databricksReturnsAllModelsRegardlessOfPlanType() async throws {
+            let models = try await loadedModelIDs(
+                provider: .databricks,
+                planType: "free"
+            )
+
+            #expect(models == serverModelIDs)
         }
 
         @Test
