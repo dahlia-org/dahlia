@@ -209,20 +209,29 @@ actor CodexChatService: CodexChatServicing {
         effort: String
     ) async throws -> CodexChatTurnHandle {
         let turn = try await appServer.withChatOperation { appServer in
+            let availableModels = try await appServer.models(
+                bypassProviderAuthenticationPreparation: true,
+                bypassConfigurationReloadAdmission: true
+            )
+            let selectedModel = model
+                .flatMap { requested in availableModels.first { $0.model == requested } }
+                ?? availableModels.first(where: \CodexModel.isDefault)
+                ?? availableModels.first
+            guard let selectedModel else {
+                throw CodexAppServerError.invalidProtocolResponse
+            }
             let approvalsReviewer = await appServer.configuredAccountProvider() == .chatGPTSubscription
                 ? "auto_review"
                 : "user"
 
-            var params: [String: JSONValue] = [
+            let params: [String: JSONValue] = [
                 "approvalsReviewer": .string(approvalsReviewer),
                 "effort": .string(effort),
                 "input": .array(inputs.map(Self.jsonInput)),
                 "summary": .string("auto"),
                 "threadId": .string(threadID),
+                "model": .string(selectedModel.model),
             ]
-            if let model = model?.nilIfBlank {
-                params["model"] = .string(model)
-            }
 
             return try await appServer.beginChatTurn(
                 threadID: threadID,
