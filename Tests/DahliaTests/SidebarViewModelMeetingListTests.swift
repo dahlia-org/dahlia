@@ -185,7 +185,9 @@ import GRDB
             defer {
                 viewModel.setAppDatabase(nil)
             }
-            #expect(await waitUntil { viewModel.meetingSidebarItems.count == 50 })
+            #expect(await waitUntil {
+                viewModel.meetingSidebarItems.count == 50 && viewModel.searchIndexRevision > 0
+            })
 
             viewModel.updateMeetingSearchQuery("Needle")
 
@@ -201,6 +203,9 @@ import GRDB
                 viewModel.meetingSearchItems.count == 51
                     && !viewModel.isMeetingSearchLoadingMore
             })
+            #expect(!viewModel.hasMoreMeetingSearchResults)
+            try await Task.sleep(for: .milliseconds(600))
+            #expect(viewModel.meetingSearchItems.count == 51)
             #expect(!viewModel.hasMoreMeetingSearchResults)
         }
 

@@ -761,7 +761,11 @@ final class CaptionViewModel: ObservableObject {
                 let previousLocaleIdentifier = self.transcriptionLocale
                 self.transcriptionLocale = localeIdentifier
                 self.updateFilteredLocales()
-                self.applyTranscriptionLocaleChange(from: previousLocaleIdentifier, to: localeIdentifier)
+                self.applyTranscriptionLocaleChange(
+                    from: previousLocaleIdentifier,
+                    to: localeIdentifier,
+                    persistSetting: false
+                )
             }
 
         liveSubtitleLocaleCancellable = UserDefaults.standard
@@ -771,7 +775,15 @@ final class CaptionViewModel: ObservableObject {
             .receive(on: RunLoop.main)
             .sink { [weak self] localeIdentifier in
                 guard let self, self.liveSubtitleLocale != localeIdentifier else { return }
+                let previousLocaleIdentifier = self.liveSubtitleLocale
+                self.isSynchronizingLiveSubtitleLocale = true
                 self.liveSubtitleLocale = localeIdentifier
+                self.isSynchronizingLiveSubtitleLocale = false
+                self.applyLiveSubtitleLocaleChange(
+                    from: previousLocaleIdentifier,
+                    to: localeIdentifier,
+                    persistSetting: false
+                )
             }
 
         liveSubtitleSettingsCancellable = UserDefaults.standard
@@ -2454,7 +2466,7 @@ final class CaptionViewModel: ObservableObject {
                 }
 
                 // サポート言語一覧を取得
-                let locales = await SpeechTranscriber.supportedLocales
+                let locales = await SpeechSupportedLocales.load()
                 self.supportedLocales = locales.sortedByLocalizedName()
                 self.updateFilteredLocales()
 
@@ -2493,7 +2505,11 @@ final class CaptionViewModel: ObservableObject {
         applyAudioSourceSelectionChange(source: .system) { self.isSystemAudioEnabled = oldValue }
     }
 
-    private func applyTranscriptionLocaleChange(from oldLocale: String, to newLocale: String) {
+    private func applyTranscriptionLocaleChange(
+        from oldLocale: String,
+        to newLocale: String,
+        persistSetting: Bool = true
+    ) {
         guard newLocale != oldLocale || !analyzerReady else { return }
         if case .starting = recordingLifecycle, let startingTranscriptionLocaleIdentifier {
             if newLocale != startingTranscriptionLocaleIdentifier {
@@ -2502,7 +2518,9 @@ final class CaptionViewModel: ObservableObject {
             AppSettings.shared.transcriptionLocale = startingTranscriptionLocaleIdentifier
             return
         }
-        AppSettings.shared.transcriptionLocale = newLocale
+        if persistSetting, AppSettings.shared.transcriptionLocale != newLocale {
+            AppSettings.shared.transcriptionLocale = newLocale
+        }
 
         if isListening {
             enqueueRecordingConfiguration { [weak self] recordingSessionId in
@@ -2517,7 +2535,11 @@ final class CaptionViewModel: ObservableObject {
         }
     }
 
-    private func applyLiveSubtitleLocaleChange(from oldLocale: String, to newLocale: String) {
+    private func applyLiveSubtitleLocaleChange(
+        from oldLocale: String,
+        to newLocale: String,
+        persistSetting: Bool = true
+    ) {
         guard newLocale != oldLocale else { return }
         if case .starting = recordingLifecycle, let startingLiveSubtitleLocaleIdentifier {
             if newLocale != startingLiveSubtitleLocaleIdentifier {
@@ -2528,7 +2550,9 @@ final class CaptionViewModel: ObservableObject {
             AppSettings.shared.liveSubtitleLocale = startingLiveSubtitleLocaleIdentifier
             return
         }
-        AppSettings.shared.liveSubtitleLocale = newLocale
+        if persistSetting, AppSettings.shared.liveSubtitleLocale != newLocale {
+            AppSettings.shared.liveSubtitleLocale = newLocale
+        }
         guard (activeTranscriptionMode ?? AppSettings.shared.transcriptionMode) == .batch else { return }
         if isListening {
             enqueueRecordingConfiguration { [weak self] recordingSessionId in

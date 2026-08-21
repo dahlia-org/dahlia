@@ -28,6 +28,7 @@ import GRDB
                 dbQueue: batch.database.dbQueue,
                 managedRootURL: batch.managedRootURL,
                 speechRecognizer: CountingBatchSpeechRecognizer(probe: retryProbe),
+                supportedLocalesProvider: { testSupportedSpeechLocales },
                 onStateChange: { _ in }
             )
 
@@ -65,6 +66,7 @@ import GRDB
                 dbQueue: batch.database.dbQueue,
                 managedRootURL: batch.managedRootURL,
                 speechRecognizer: recognizer,
+                supportedLocalesProvider: { testSupportedSpeechLocales },
                 onStateChange: { _ in }
             )
             await coordinator.enqueue(sessionId: batch.session.id)
@@ -103,6 +105,7 @@ import GRDB
                 dbQueue: batch.database.dbQueue,
                 managedRootURL: batch.managedRootURL,
                 speechRecognizer: recognizer,
+                supportedLocalesProvider: { testSupportedSpeechLocales },
                 onStateChange: { _ in }
             )
             await coordinator.enqueue(sessionId: batch.session.id)
@@ -148,6 +151,7 @@ import GRDB
                 dbQueue: batch.database.dbQueue,
                 managedRootURL: batch.managedRootURL,
                 speechRecognizer: CountingBatchSpeechRecognizer(probe: recognitionProbe),
+                supportedLocalesProvider: { testSupportedSpeechLocales },
                 onStateChange: { _ in }
             )
             let confirmationTask = Task {
@@ -201,6 +205,7 @@ import GRDB
                 dbQueue: batch.database.dbQueue,
                 managedRootURL: batch.managedRootURL,
                 speechRecognizer: StalledBatchSpeechRecognizer(),
+                supportedLocalesProvider: { testSupportedSpeechLocales },
                 onStateChange: { _ in }
             )
 
@@ -229,6 +234,7 @@ import GRDB
                 dbQueue: batch.database.dbQueue,
                 managedRootURL: batch.managedRootURL,
                 speechRecognizer: CountingBatchSpeechRecognizer(probe: retryProbe),
+                supportedLocalesProvider: { testSupportedSpeechLocales },
                 onStateChange: { _ in }
             )
             try await recoveryCoordinator.recoverAndEnqueue()

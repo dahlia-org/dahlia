@@ -212,7 +212,9 @@ import GRDB
             try await fixture.insertSearchContent()
             let sidebar = fixture.makeSidebarViewModel()
             defer { sidebar.setAppDatabase(nil) }
-            #expect(await pollUntil { sidebar.areSearchProjectsLoaded })
+            #expect(await pollUntil {
+                sidebar.areSearchProjectsLoaded && sidebar.isProjectCatalogLoaded
+            })
 
             let model = MainSearchModel()
             model.present(using: sidebar)

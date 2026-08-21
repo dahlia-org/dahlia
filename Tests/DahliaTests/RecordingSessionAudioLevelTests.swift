@@ -9,31 +9,20 @@
 
     struct RecordingSessionAudioLevelTests {
         @Test
-        func invalidatedGateDropsDeliveryQueuedBehindMainActor() async throws {
+        @MainActor
+        func invalidatedGateDropsDeliveryQueuedOnMainActor() async {
             let deliveryGate = RecordingAudioLevelDeliveryGate()
             let levelRecorder = MeteringLevelRecorder()
-            let mainActorEntered = DispatchSemaphore(value: 0)
-            let releaseMainActor = DispatchSemaphore(value: 0)
-            let blocker = Task { @MainActor in
-                blockMainActor(entered: mainActorEntered, release: releaseMainActor)
-            }
-            // blockMainActor holds the MainActor until it is signalled. Leaving this scope without
-            // signalling — the wait below can time out — wedges the MainActor for every remaining
-            // test in the process, not just this one.
-            defer { releaseMainActor.signal() }
-            try await wait(for: mainActorEntered)
-            let delivery = Task {
-                await deliveryGate.deliver(source: .microphone, level: 1) { source, level in
+            let delivery = Task { @MainActor in
+                deliveryGate.deliver(source: .microphone, level: 1) { source, level in
                     levelRecorder.append(source: source, level: level)
                 }
             }
 
             deliveryGate.invalidate()
-            releaseMainActor.signal()
-            await blocker.value
             await delivery.value
 
-            #expect(await levelRecorder.entries.isEmpty)
+            #expect(levelRecorder.entries.isEmpty)
         }
 
         @Test
@@ -139,32 +128,6 @@
             await recognitionFinishGate.release()
             await unexpectedStop.value
             await controller.abort()
-        }
-
-        private func wait(
-            for semaphore: DispatchSemaphore,
-            // Matches testPollTimeout: the MainActor task this waits on competes with every other
-            // MainActor test, so a short bound here reports contention as a failure.
-            timeout: DispatchTimeInterval = .seconds(120)
-        ) async throws {
-            try await withCheckedThrowingContinuation { continuation in
-                DispatchQueue.global().async {
-                    if semaphore.wait(timeout: .now() + timeout) == .success {
-                        continuation.resume()
-                    } else {
-                        continuation.resume(throwing: MeteringTestError.timedOutWaitingForMainActor)
-                    }
-                }
-            }
-        }
-
-        @MainActor
-        private func blockMainActor(
-            entered: DispatchSemaphore,
-            release: DispatchSemaphore
-        ) {
-            entered.signal()
-            release.wait()
         }
 
         private func makeChunk(sample: Float, time: TimeInterval) throws -> CapturedAudioChunk {
@@ -323,7 +286,6 @@
     private enum MeteringTestError: Error {
         case unexpectedBatchRecording
         case timedOutWaitingForLevel
-        case timedOutWaitingForMainActor
         case timedOutWaitingForRecognitionFinish
     }
 #endif

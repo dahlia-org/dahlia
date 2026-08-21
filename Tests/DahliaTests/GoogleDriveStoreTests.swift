@@ -156,18 +156,50 @@ import Foundation
                 settings: settings,
                 presentingWindowProvider: { NSWindow() }
             )
-            await store.signIn()
-            await Task.yield()
 
             NotificationCenter.default.post(
                 name: watchedNotification,
                 object: GoogleAuthSessionChangeReason.disconnected
             )
-            await Task.yield()
 
+            #expect(await pollUntil {
+                store.state == .signedOut
+                    && settings.googleDriveExportFolderID(forAccountID: driveSession.account.id) == nil
+            })
             #expect(signInProvider.restoreCallCount == 0)
-            #expect(store.state == .signedOut)
-            #expect(settings.googleDriveExportFolderID(forAccountID: driveSession.account.id) == nil)
+        }
+
+        @Test
+        func disconnectNotificationWaitsBehindInFlightRestore() async throws {
+            let watchedNotification = Notification.Name("GoogleDriveStoreTests.restoreDisconnect.\(UUID().uuidString)")
+            let settings = MockGoogleDriveExportFolderSettings()
+            let signInProvider = MockGoogleSignInProvider(
+                hasPreviousSignIn: true,
+                sessionDidChangeNotification: watchedNotification,
+                suspendsRestore: true
+            )
+            let store = GoogleDriveStore(
+                signInProvider: signInProvider,
+                exportFolderConfiguration: MockGoogleDriveExportFolderConfiguration(),
+                settings: settings,
+                presentingWindowProvider: { NSWindow() }
+            )
+            await store.signIn()
+            settings.setGoogleDriveExportFolder(id: "folder-1", accountID: driveSession.account.id)
+
+            NotificationCenter.default.post(name: watchedNotification, object: nil)
+            try #require(await pollUntil { signInProvider.restoreCallCount == 1 })
+
+            NotificationCenter.default.post(
+                name: watchedNotification,
+                object: GoogleAuthSessionChangeReason.disconnected
+            )
+            signInProvider.finishRestore()
+
+            #expect(await pollUntil {
+                store.state == .signedOut
+                    && settings.googleDriveExportFolderID(forAccountID: driveSession.account.id) == nil
+            })
         }
     }
 
@@ -191,6 +223,8 @@ import Foundation
         var restoreResult: Result<GoogleSession, Error>
         var signInResult: Result<GoogleSession, Error>
         var refreshResult: Result<GoogleSession?, Error>
+        private let suspendsRestore: Bool
+        private var restoreContinuation: CheckedContinuation<Void, Never>?
         private(set) var restoreCallCount = 0
         private(set) var signInRequestedScopes: [Set<String>] = []
 
@@ -200,7 +234,8 @@ import Foundation
             sessionDidChangeNotification: Notification.Name = .googleDriveSessionDidChange,
             restoreResult: Result<GoogleSession, Error> = .success(driveSession),
             signInResult: Result<GoogleSession, Error> = .success(driveSession),
-            refreshResult: Result<GoogleSession?, Error> = .success(driveSession)
+            refreshResult: Result<GoogleSession?, Error> = .success(driveSession),
+            suspendsRestore: Bool = false
         ) {
             self.isConfigured = isConfigured
             self.hasPreviousSignIn = hasPreviousSignIn
@@ -208,11 +243,22 @@ import Foundation
             self.restoreResult = restoreResult
             self.signInResult = signInResult
             self.refreshResult = refreshResult
+            self.suspendsRestore = suspendsRestore
         }
 
         func restorePreviousSignIn() async throws -> GoogleSession {
             restoreCallCount += 1
+            if suspendsRestore {
+                await withCheckedContinuation { continuation in
+                    restoreContinuation = continuation
+                }
+            }
             return try restoreResult.get()
+        }
+
+        func finishRestore() {
+            restoreContinuation?.resume()
+            restoreContinuation = nil
         }
 
         func signIn(withPresentingWindow _: NSWindow, requestedScopes: Set<String>) async throws -> GoogleSession {

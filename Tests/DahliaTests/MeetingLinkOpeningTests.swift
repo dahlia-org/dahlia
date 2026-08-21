@@ -1,4 +1,3 @@
-import Dispatch
 import Foundation
 @testable import Dahlia
 
@@ -172,17 +171,20 @@ import Foundation
         }
 
         @Test
-        func openingMeetingLinkDoesNotWaitForMainActor() throws {
-            let openSignal = DispatchSemaphore(value: 0)
-            let workspace = TestMeetingLinkWorkspace(openSignal: openSignal)
+        func openingMeetingLinkDoesNotWaitForMainActor() async throws {
+            let workspace = TestMeetingLinkWorkspace()
             let opener = MeetingLinkOpener(
                 settings: TestSettings(globalTarget: .systemDefault),
                 workspace: workspace
             )
 
-            try opener.open(url("https://meet.google.com/abc"))
+            let opening = try MeetingLinkOpeningTaskContext.$isMainActorCaller.withValue(true) {
+                try opener.open(url("https://meet.google.com/abc"))
+            }
 
-            #expect(openSignal.wait(timeout: .now() + 5) == .success)
+            #expect(await opening.value)
+            #expect(await workspace.attemptedApplications() == [nil])
+            #expect(await workspace.observedMainActorCallerValues() == [false])
         }
 
         @Test
@@ -299,18 +301,16 @@ import Foundation
         private actor TestMeetingLinkWorkspace: MeetingLinkWorkspaceOpening {
             private let applicationURLs: [String: URL]
             private let failedApplicationURLs: Set<URL>
-            private let openSignal: DispatchSemaphore?
             private var attempts: [URL?] = []
+            private var inheritedMainActorCallerValues: [Bool] = []
             private var resolvedBundleIdentifiersStorage: [String] = []
 
             init(
                 applicationURLs: [String: URL] = [:],
-                failedApplicationURLs: Set<URL> = [],
-                openSignal: DispatchSemaphore? = nil
+                failedApplicationURLs: Set<URL> = []
             ) {
                 self.applicationURLs = applicationURLs
                 self.failedApplicationURLs = failedApplicationURLs
-                self.openSignal = openSignal
             }
 
             func applicationURL(forBundleIdentifier bundleIdentifier: String) async -> URL? {
@@ -320,7 +320,7 @@ import Foundation
 
             func open(_: URL, withApplicationAt applicationURL: URL?) async -> Bool {
                 attempts.append(applicationURL)
-                openSignal?.signal()
+                inheritedMainActorCallerValues.append(MeetingLinkOpeningTaskContext.isMainActorCaller)
                 guard let applicationURL else { return true }
                 return !failedApplicationURLs.contains(applicationURL)
             }
@@ -329,10 +329,18 @@ import Foundation
                 attempts
             }
 
+            func observedMainActorCallerValues() -> [Bool] {
+                inheritedMainActorCallerValues
+            }
+
             func resolvedBundleIdentifiers() -> [String] {
                 resolvedBundleIdentifiersStorage
             }
         }
+    }
+
+    private enum MeetingLinkOpeningTaskContext {
+        @TaskLocal static var isMainActorCaller = false
     }
 
     private func webURLHandlerInfo(documentType: [String: Any]? = nil) -> [String: Any] {

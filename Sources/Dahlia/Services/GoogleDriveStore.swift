@@ -36,7 +36,7 @@ final class GoogleDriveStore: ObservableObject {
     private let presentingWindowProvider: @MainActor () -> NSWindow?
     private var currentSession: GoogleSession?
     private var didAttemptRestore = false
-    private var authChangeTask: Task<Void, Never>?
+    private var authChangeObserver: GoogleAuthSessionObserver?
 
     init(
         signInProvider: any GoogleSignInProviding = GoogleSignInAdapter(sessionKind: .drive),
@@ -50,17 +50,9 @@ final class GoogleDriveStore: ObservableObject {
         self.presentingWindowProvider = presentingWindowProvider
         let sessionDidChangeNotification = signInProvider.sessionDidChangeNotification
         self.state = signInProvider.isConfigured ? .signedOut : .unconfigured
-        authChangeTask = Task { [weak self] in
-            for await notification in NotificationCenter.default.notifications(named: sessionDidChangeNotification) {
-                await self?.handleAuthSessionChanged(
-                    forceSignOut: notification.object as? GoogleAuthSessionChangeReason == .disconnected
-                )
-            }
+        authChangeObserver = GoogleAuthSessionObserver(notificationName: sessionDidChangeNotification) { [weak self] forceSignOut in
+            await self?.handleAuthSessionChanged(forceSignOut: forceSignOut)
         }
-    }
-
-    deinit {
-        authChangeTask?.cancel()
     }
 
     func restoreSessionIfNeeded() async {

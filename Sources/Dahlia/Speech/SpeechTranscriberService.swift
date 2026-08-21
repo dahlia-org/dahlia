@@ -3,6 +3,14 @@ import CoreMedia
 import Foundation
 import Speech
 
+enum SpeechSupportedLocales {
+    private static let loadTask = Task { await SpeechTranscriber.supportedLocales }
+
+    static func load() async -> [Locale] {
+        await loadTask.value
+    }
+}
+
 /// SpeechAnalyzer + SpeechTranscriber によるストリーミング文字起こしサービス。
 /// AudioBufferBridge から受け取った AsyncStream<AnalyzerInput> を SpeechAnalyzer に渡し、
 /// SpeechTranscriber の結果を保存先に依存しないイベントとして通知する。

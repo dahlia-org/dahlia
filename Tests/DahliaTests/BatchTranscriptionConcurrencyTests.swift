@@ -106,36 +106,31 @@ import Speech
         }
 
         @Test
-        func speechAssetPreparationCoalescesWaitersAndCancelledWaiterLeavesImmediately() async throws {
+        func speechAssetPreparationSurvivesCancelledWaiterAndCachesResult() async throws {
             let probe = SpeechAssetPreparationProbe()
             defer { Task { await probe.resumeFirstPreparation() } }
-            let preparer = AppleSpeechAssetPreparer { _ in
-                try await probe.prepare()
-            }
-            let transcriber = SpeechTranscriber(locale: Locale(identifier: "ja_JP"), preset: .transcription)
+            let preparer = AppleSpeechAssetPreparer()
 
             let first = Task {
-                try await preparer.prepare(transcriber: transcriber, localeIdentifier: "ja_JP")
+                try await preparer.prepare(localeIdentifier: "ja_JP", operation: probe.prepare)
             }
             try await waitUntil { await probe.callCount == 1 }
-            let second = Task {
-                try await preparer.prepare(transcriber: transcriber, localeIdentifier: "ja_JP")
-            }
-            await Task.yield()
-
             first.cancel()
             await #expect(throws: CancellationError.self) {
                 try await first.value
             }
             #expect(await probe.callCount == 1)
 
+            let second = Task {
+                try await preparer.prepare(localeIdentifier: "ja_JP", operation: probe.prepare)
+            }
             await probe.resumeFirstPreparation()
             try await second.value
 
-            try await preparer.prepare(transcriber: transcriber, localeIdentifier: "ja_JP")
+            try await preparer.prepare(localeIdentifier: "ja_JP", operation: probe.prepare)
             #expect(await probe.callCount == 1)
             await preparer.reset()
-            try await preparer.prepare(transcriber: transcriber, localeIdentifier: "ja_JP")
+            try await preparer.prepare(localeIdentifier: "ja_JP", operation: probe.prepare)
             #expect(await probe.callCount == 2)
         }
 
@@ -143,12 +138,9 @@ import Speech
         func resettingSpeechAssetsCancelsInflightPreparationAndDoesNotRecacheIt() async throws {
             let probe = SpeechAssetPreparationProbe()
             defer { Task { await probe.resumeFirstPreparation() } }
-            let preparer = AppleSpeechAssetPreparer { _ in
-                try await probe.prepare()
-            }
-            let transcriber = SpeechTranscriber(locale: Locale(identifier: "ja_JP"), preset: .transcription)
+            let preparer = AppleSpeechAssetPreparer()
             let first = Task {
-                try await preparer.prepare(transcriber: transcriber, localeIdentifier: "ja_JP")
+                try await preparer.prepare(localeIdentifier: "ja_JP", operation: probe.prepare)
             }
             try await waitUntil { await probe.callCount == 1 }
 
@@ -156,7 +148,7 @@ import Speech
             await #expect(throws: CancellationError.self) {
                 try await first.value
             }
-            try await preparer.prepare(transcriber: transcriber, localeIdentifier: "ja_JP")
+            try await preparer.prepare(localeIdentifier: "ja_JP", operation: probe.prepare)
             #expect(await probe.callCount == 2)
         }
 

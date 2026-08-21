@@ -48,7 +48,7 @@ final class GoogleCalendarStore: ObservableObject {
     private var didAttemptRestore = false
     private var isDisconnecting = false
     private var isLoadingAccountData = false
-    private var authChangeTask: Task<Void, Never>?
+    private var authChangeObserver: GoogleAuthSessionObserver?
     private var refreshGeneration: UInt64 = 0
     private var refreshTask: Task<Void, Never>?
     private var refreshTaskID: UUID?
@@ -72,17 +72,9 @@ final class GoogleCalendarStore: ObservableObject {
         let sessionDidChangeNotification = signInProvider.sessionDidChangeNotification
         self.selectedCalendarIDs = Self.loadSelectedCalendarIDs(from: userDefaults)
         self.state = signInProvider.isConfigured ? .signedOut : .unconfigured
-        authChangeTask = Task { [weak self] in
-            for await notification in NotificationCenter.default.notifications(named: sessionDidChangeNotification) {
-                await self?.handleAuthSessionChanged(
-                    forceSignOut: notification.object as? GoogleAuthSessionChangeReason == .disconnected
-                )
-            }
+        authChangeObserver = GoogleAuthSessionObserver(notificationName: sessionDidChangeNotification) { [weak self] forceSignOut in
+            await self?.handleAuthSessionChanged(forceSignOut: forceSignOut)
         }
-    }
-
-    deinit {
-        authChangeTask?.cancel()
     }
 
     func restoreSessionIfNeeded() async {

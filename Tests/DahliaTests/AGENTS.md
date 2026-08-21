@@ -29,5 +29,21 @@ Run the targeted suite first. Expand to the full suite for changes with broad ef
 ## Test Design
 
 - Cover relevant boundaries, failures, cancellation, and retries in addition to the happy path.
-- Await observable state or events in asynchronous tests; do not rely on fixed sleeps.
+- Await the behavior's observable completion condition or expected event count. Do not use fixed sleeps, `Task.yield()`, or an unrelated actor call as a completion barrier.
+- Never block `MainActor` or the test task with `DispatchSemaphore`. If a contention test needs a synchronous lock, confine it to a detached worker and await its observable state asynchronously.
+- Register notification and callback observers before triggering the operation. When production code must catch an event immediately after initialization, add a regression test that posts it immediately after construction.
+- Preserve event ordering when replacing an async sequence with callbacks. Cover overlapping operations such as an in-flight restore followed by disconnect.
+- Treat an initial observation as baseline state when only later changes should trigger work. Test the initial value and a later change separately so delayed work cannot cancel unrelated operations.
+- Use `#require` before indexing asynchronous results. A missing event should fail the test, not crash the test process.
+- Keep polling deadlines bounded and assert the final state after the wait. Do not hide flakes with retries or longer timeouts.
+- Tests share process-wide state and run concurrently in CI. Restore global settings and avoid assumptions that unrelated suites are idle; production observers should suppress duplicate values when repeated notifications are valid.
+- When injecting a fake platform service, inject its capability providers too. A fake speech recognizer must not fall through to live Speech locale discovery, which can multiply XPC work under parallel tests.
+- Test Speech coordination through injected operations. Do not construct live Speech framework objects when the test only needs to exercise Dahlia's cancellation or coalescing state.
+- Measure the behavior under test, such as distinct preview revisions, instead of counting unrelated publications from process-wide observers.
 - For bug fixes, prefer a regression test that fails before the fix and passes afterward.
+
+## CI Stability
+
+- Reproduce a flake with the smallest affected test first, then repeat it under the same parallelism as CI and finish with the full suite.
+- Preserve the test count and success summary when checking CI-equivalent runs. A retry, quarantine, or removed test is not a stability fix.
+- Optimize by removing unnecessary waits and duplicate work before changing parallelism, cache behavior, or polling deadlines.

@@ -148,10 +148,11 @@ struct AppleBatchSpeechRecognizer: BatchSpeechRecognizing {
         ) {
             await analyzer.cancelAndFinishNow()
         }
-        await watchdog.start()
 
         do {
-            try await analyzerPreparation(analyzer, audioFormat)
+            try await Self.prepareAfterStartingWatchdog(watchdog) {
+                try await analyzerPreparation(analyzer, audioFormat)
+            }
             try await throwIfAnalysisStalled(watchdog: watchdog, timeout: stallTimeout)
             await watchdog.recordProgress()
         } catch {
@@ -206,6 +207,14 @@ struct AppleBatchSpeechRecognizer: BatchSpeechRecognizing {
         }
     }
 
+    static func prepareAfterStartingWatchdog(
+        _ watchdog: BatchSpeechAnalysisWatchdog,
+        preparation: @escaping @Sendable () async throws -> Void
+    ) async throws {
+        await watchdog.start()
+        try await preparation()
+    }
+
     private func throwIfAnalysisStalled(
         watchdog: BatchSpeechAnalysisWatchdog,
         timeout: BatchTranscriptionStallTimeout
@@ -221,22 +230,24 @@ struct AppleBatchSpeechRecognizer: BatchSpeechRecognizing {
 }
 
 actor AppleSpeechAssetPreparer {
-    typealias PrepareOperation = @Sendable (SpeechTranscriber) async throws -> Void
-
     private struct Preparation {
         let id: UUID
         let task: Task<Void, Error>
     }
 
-    private let prepareOperation: PrepareOperation
     private var preparedLocaleIdentifiers: Set<String> = []
     private var preparations: [String: Preparation] = [:]
 
-    init(prepareOperation: @escaping PrepareOperation = AppleSpeechAssetPreparer.prepareAsset) {
-        self.prepareOperation = prepareOperation
+    func prepare(transcriber: SpeechTranscriber, localeIdentifier: String) async throws {
+        try await prepare(localeIdentifier: localeIdentifier) {
+            try await Self.prepareAsset(transcriber: transcriber)
+        }
     }
 
-    func prepare(transcriber: SpeechTranscriber, localeIdentifier: String) async throws {
+    func prepare(
+        localeIdentifier: String,
+        operation: @escaping @Sendable () async throws -> Void
+    ) async throws {
         if preparedLocaleIdentifiers.contains(localeIdentifier) {
             return
         }
@@ -246,9 +257,8 @@ actor AppleSpeechAssetPreparer {
         }
 
         let id = UUID.v7()
-        let prepareOperation = prepareOperation
         let preparationTask = Task {
-            try await prepareOperation(transcriber)
+            try await operation()
         }
         preparations[localeIdentifier] = Preparation(id: id, task: preparationTask)
         Task { [self] in

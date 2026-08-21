@@ -698,23 +698,40 @@
             await persistenceReady.wait()
 
             let stall = FiniteMainActorStall()
-            defer { stall.release() }
+            let stallWatchdog = Task.detached {
+                try? await Task.sleep(for: .seconds(5))
+                guard !Task.isCancelled else { return }
+                stall.release()
+            }
+            defer {
+                stallWatchdog.cancel()
+                stall.release()
+            }
+            let exerciseTask = Task.detached {
+                let mainActorStarted = await stall.waitUntilStarted()
+                writer.appendBuffer(buffer)
+                await startPersistence.open()
+                await persistenceTask.value
+                let result = (
+                    mainActorWasBlocked: mainActorStarted && stall.isBlocking,
+                    acceptedFrameCount: writer.acceptedFrameCount,
+                    uiEvents: await uiEvents.snapshot(),
+                    persistedEvents: await persistedEvents.snapshot()
+                )
+                stall.release()
+                return result
+            }
             let stallTask = Task { @MainActor in
                 stall.block()
             }
-            #expect(await stall.waitUntilStarted())
-
-            writer.appendBuffer(buffer)
-            await startPersistence.open()
-            await persistenceTask.value
-
-            #expect(stall.isBlocking)
-            #expect(writer.acceptedFrameCount == 160)
-            #expect(await uiEvents.snapshot().isEmpty)
-            #expect(await persistedEvents.snapshot() == events)
-
-            stall.release()
+            let result = await exerciseTask.value
             await stallTask.value
+
+            #expect(result.mainActorWasBlocked)
+            #expect(result.acceptedFrameCount == 160)
+            #expect(result.uiEvents.isEmpty)
+            #expect(result.persistedEvents == events)
+
             await uiEvents.waitForCount(2)
             try await pipeline.finish()
             await liveCaptionRelay.finish()
