@@ -134,24 +134,14 @@ enum BackupRestoreStartupProcessor {
     }
 
     private static func validateRestoredDatabase(at url: URL) throws {
-        var probeConfiguration = Configuration()
-        probeConfiguration.readonly = true
-        let probe = try DatabaseQueue(path: url.path, configuration: probeConfiguration)
-        defer { try? probe.close() }
-        let quickCheck = try probe.read { db in
-            try String.fetchOne(db, sql: "PRAGMA quick_check") ?? "unknown"
-        }
-        guard quickCheck == "ok" else {
-            throw BackupServiceError.integrityCheckFailed(quickCheck)
-        }
-
-        let queue = try DatabaseQueue(
-            path: url.path,
-            configuration: AppDatabaseManager.configuration(readonly: true)
-        )
+        var configuration = Configuration()
+        configuration.readonly = true
+        let queue = try DatabaseQueue(path: url.path, configuration: configuration)
         defer { try? queue.close() }
         try queue.read { db in
-            guard try Row.fetchAll(db, sql: "PRAGMA foreign_key_check").isEmpty,
+            let quickCheck = try String.fetchOne(db, sql: "PRAGMA quick_check") ?? "unknown"
+            guard quickCheck == "ok",
+                  try Row.fetchAll(db, sql: "PRAGMA foreign_key_check").isEmpty,
                   try AppDatabaseManager.migrator.hasCompletedMigrations(db),
                   try !AppDatabaseManager.migrator.hasBeenSuperseded(db),
                   try !db.tableExists(BackupService.metadataTableName),
