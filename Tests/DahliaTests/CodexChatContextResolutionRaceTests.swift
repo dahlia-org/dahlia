@@ -51,6 +51,30 @@ import Foundation
             #expect(await service.sentTextBlocks.isEmpty)
         }
 
+        @Test
+        func approvalChangeDuringContextResolutionAppliesAfterSubmittedTurn() async {
+            let service = TestCodexChatService(mode: .complete)
+            let settings = AppSettings()
+            settings.currentVault = Self.testVault()
+            let contextProvider = DelayedCodexChatContextProvider()
+            let session = Self.session(
+                backendThreadID: "existing-thread",
+                service: service,
+                settings: settings,
+                contextProvider: contextProvider
+            )
+            session.draft = "Use the submitted permission"
+
+            session.sendDraft()
+            await waitUntil { contextProvider.isWaiting }
+            session.selectApprovalMethod(.fullAccess)
+            contextProvider.resume()
+            await waitUntil { !session.isGenerating }
+
+            #expect(await service.turnApprovalMethods == [.ask])
+            #expect(session.selectedApprovalMethod == .fullAccess)
+        }
+
         private static func session(
             backendThreadID: String? = nil,
             service: TestCodexChatService,

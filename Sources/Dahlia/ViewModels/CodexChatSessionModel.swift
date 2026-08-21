@@ -464,6 +464,7 @@ extension CodexChatSessionModel {
         context: CodexChatContext?,
         responseID: String,
         liveModeState: CodexChatLiveModeSubmissionState,
+        approvalMethod: CodexChatApprovalMethod,
         submissionID: UUID
     ) async -> Bool {
         let accumulator = CodexChatTurnAccumulator()
@@ -500,7 +501,6 @@ extension CodexChatSessionModel {
                 liveTranscript: liveTranscript,
                 images: images
             )
-            let approvalMethod = selectedApprovalMethod
             let turn = try await requestTurnHandle(
                 threadID: backendThreadID,
                 inputs: inputs,

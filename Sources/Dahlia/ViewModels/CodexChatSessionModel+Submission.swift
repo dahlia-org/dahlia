@@ -70,6 +70,7 @@ extension CodexChatSessionModel {
         )
         let submissionID = UUID.v7()
         activeSubmissionID = submissionID
+        let approvalMethod = selectedApprovalMethod
 
         turnTask = Task { [weak self] in
             await self?.resolveContextAndRunTurn(
@@ -78,6 +79,7 @@ extension CodexChatSessionModel {
                 composerSnapshot: composerSnapshot,
                 liveTranscript: liveTranscript,
                 liveModeState: liveModeState,
+                approvalMethod: approvalMethod,
                 submissionID: submissionID
             )
         }
@@ -89,6 +91,7 @@ extension CodexChatSessionModel {
         composerSnapshot: CodexChatComposerSnapshot?,
         liveTranscript: String?,
         liveModeState: CodexChatLiveModeSubmissionState,
+        approvalMethod: CodexChatApprovalMethod,
         submissionID: UUID
     ) async {
         defer {
@@ -118,6 +121,7 @@ extension CodexChatSessionModel {
             context: context,
             responseID: responseID,
             liveModeState: liveModeState,
+            approvalMethod: approvalMethod,
             submissionID: submissionID
         )
     }
