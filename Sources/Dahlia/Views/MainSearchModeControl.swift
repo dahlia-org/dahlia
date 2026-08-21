@@ -2,6 +2,7 @@ import SwiftUI
 
 struct MainSearchModeControl: View {
     @Binding var selection: SearchMode
+    let allowsNeuralSearch: Bool
 
     @State private var isPresented = false
     @State private var isHovering = false
@@ -39,7 +40,7 @@ struct MainSearchModeControl: View {
         .accessibilityValue(title(for: selection))
         .popover(isPresented: $isPresented, arrowEdge: .bottom) {
             VStack(spacing: 2) {
-                ForEach(SearchMode.allCases, id: \.self) { mode in
+                ForEach(SearchMode.allCases.filter { $0 != .neural || allowsNeuralSearch }, id: \.self) { mode in
                     Button(action: { select(mode) }) {
                         HStack(spacing: 8) {
                             Text(title(for: mode))
@@ -49,28 +50,21 @@ struct MainSearchModeControl: View {
                                 Image(systemName: "checkmark")
                                     .dahliaFixedSymbol()
                                     .accessibilityHidden(true)
-                            } else if !mode.isAvailable {
-                                Image(systemName: "lock.fill")
-                                    .dahliaFixedSymbol()
-                                    .accessibilityHidden(true)
                             }
                         }
-                        .foregroundStyle(
-                            mode.isAvailable ? DahliaDesign.primaryTextColor : DahliaDesign.optionalTextColor
-                        )
+                        .foregroundStyle(DahliaDesign.primaryTextColor)
                         .padding(.horizontal, 10)
                         .frame(height: 32)
                         .contentShape(.rect)
                     }
                     .buttonStyle(.plain)
                     .background(
-                        hoveredMode == mode && mode.isAvailable ? DahliaDesign.contentHighlightColor : .clear,
+                        hoveredMode == mode ? DahliaDesign.contentHighlightColor : .clear,
                         in: .rect(cornerRadius: DahliaDesign.Highlight.compactCornerRadius)
                     )
                     .onHover { isHovered in
                         hoveredMode = isHovered ? mode : nil
                     }
-                    .disabled(!mode.isAvailable)
                     .accessibilityAddTraits(mode == selection ? .isSelected : [])
                 }
             }
@@ -80,7 +74,6 @@ struct MainSearchModeControl: View {
     }
 
     private func select(_ mode: SearchMode) {
-        guard mode.isAvailable else { return }
         selection = mode
         isPresented = false
     }

@@ -460,6 +460,41 @@ test_lindera_license_embedding_validation() {
     expect_failure embed_lindera_licenses "$fake_project" "$contents_dir"
 }
 
+test_embedding_dependency_license_validation() {
+    local fake_project="${TEST_DIR}/embedding-license-project"
+    local contents_dir="${TEST_DIR}/EmbeddingLicenseContents"
+    local entry
+    local checkout
+    local notice
+    local notices=(
+        "eventsource:LICENSE.md" "mlx-swift:LICENSE" "mlx-swift:ACKNOWLEDGMENTS.md"
+        "mlx-swift-lm:LICENSE" "mlx-swift-lm:ACKNOWLEDGMENTS.md" "swift-asn1:LICENSE.txt"
+        "swift-asn1:NOTICE.txt" "swift-collections:LICENSE.txt" "swift-crypto:LICENSE.txt"
+        "swift-crypto:NOTICE.txt" "swift-huggingface:LICENSE" "swift-jinja:LICENSE"
+        "swift-numerics:LICENSE.txt" "swift-syntax:LICENSE.txt" "swift-transformers:LICENSE"
+        "yyjson:LICENSE"
+    )
+
+    for entry in "${notices[@]}"; do
+        checkout="${entry%%:*}"
+        notice="${entry#*:}"
+        mkdir -p "${fake_project}/.build/checkouts/${checkout}"
+        printf '%s' "${checkout} ${notice}" > "${fake_project}/.build/checkouts/${checkout}/${notice}"
+    done
+
+    embed_embedding_dependency_licenses "$fake_project" "$contents_dir"
+    for entry in "${notices[@]}"; do
+        checkout="${entry%%:*}"
+        notice="${entry#*:}"
+        cmp \
+            "${fake_project}/.build/checkouts/${checkout}/${notice}" \
+            "${contents_dir}/Resources/Licenses/${checkout}/${notice}"
+    done
+
+    rm "${fake_project}/.build/checkouts/mlx-swift-lm/ACKNOWLEDGMENTS.md"
+    expect_failure embed_embedding_dependency_licenses "$fake_project" "$contents_dir"
+}
+
 test_telemetrydeck_configuration_and_embedding() {
     local plist_path="${TEST_DIR}/TelemetryInfo.plist"
     local fake_project="${TEST_DIR}/telemetrydeck-project"
@@ -587,6 +622,7 @@ test_cleanup_removes_previous_release_plist
 test_framework_embedding_validation
 test_whisperkit_license_embedding_validation
 test_lindera_license_embedding_validation
+test_embedding_dependency_license_validation
 test_telemetrydeck_configuration_and_embedding
 test_codex_code_mode_host_packaging
 test_telemetrydeck_adapter_allowlist

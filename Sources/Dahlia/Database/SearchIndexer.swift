@@ -5,6 +5,7 @@ import GRDB
 
 actor SearchIndexer {
     private let dbQueue: DatabaseQueue
+    private let vectorIndexer: VectorSearchIndexer?
     private let observationQueue = DispatchQueue(label: "app.dahlia.search-indexer", qos: .utility)
     private var workerTask: Task<Void, Never>?
     private var observationDrainTask: Task<Void, Never>?
@@ -17,11 +18,13 @@ actor SearchIndexer {
 
     private static let divergenceCheckInterval: TimeInterval = 15 * 60
 
-    init(dbQueue: DatabaseQueue) {
+    init(dbQueue: DatabaseQueue, vectorIndexer: VectorSearchIndexer? = nil) {
         self.dbQueue = dbQueue
+        self.vectorIndexer = vectorIndexer
     }
 
-    func start() {
+    func start() async {
+        await vectorIndexer?.start()
         guard workerTask == nil else { return }
         isPaused = false
         let observation = ValueObservation.tracking { db in
@@ -50,6 +53,7 @@ actor SearchIndexer {
     }
 
     func stop() async {
+        await vectorIndexer?.stop()
         isPaused = true
         let tasks = [workerTask, observationDrainTask].compactMap(\.self)
         tasks.forEach { $0.cancel() }

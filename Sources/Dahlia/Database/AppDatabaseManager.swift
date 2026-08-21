@@ -12,6 +12,8 @@ import GRDB
 final class AppDatabaseManager: Sendable {
     let dbQueue: DatabaseQueue
     let searchDBQueue: DatabaseQueue
+    let embeddingService: EmbeddingGemmaService
+    let vectorSearchIndexer: VectorSearchIndexer
     let searchIndexer: SearchIndexer
 
     /// アプリケーションサポートディレクトリに DB を作成・オープンする。
@@ -45,7 +47,11 @@ final class AppDatabaseManager: Sendable {
             configuration.readonly = true
             searchDBQueue = try DatabaseQueue(path: path, configuration: configuration)
         }
-        searchIndexer = SearchIndexer(dbQueue: dbQueue)
+        let embeddingService = EmbeddingGemmaService()
+        let vectorSearchIndexer = VectorSearchIndexer(dbQueue: dbQueue, embedder: embeddingService)
+        self.embeddingService = embeddingService
+        self.vectorSearchIndexer = vectorSearchIndexer
+        searchIndexer = SearchIndexer(dbQueue: dbQueue, vectorIndexer: vectorSearchIndexer)
         if path != ":memory:" {
             try FileManager.default.setAttributes(
                 [.posixPermissions: 0o600],
@@ -228,6 +234,22 @@ final class AppDatabaseManager: Sendable {
         migrator.registerMigration("v36_summarySearch") { db in
             try SearchFTS5Tokenizer.register(in: db)
             try SummarySearchMigration.migrate(in: db)
+        }
+
+        migrator.registerMigration("v37_vectorSearch") { db in
+            try VectorSearchMigration.migrate(in: db)
+        }
+
+        migrator.registerMigration("v38_vectorSearchOptIn") { db in
+            try VectorSearchOptInMigration.migrate(in: db)
+        }
+
+        migrator.registerMigration("v39_vectorExplicitRebuild") { db in
+            try VectorSearchExplicitRebuildMigration.migrate(in: db)
+        }
+
+        migrator.registerMigration("v40_vectorQueueContract") { db in
+            try VectorSearchQueueContractMigration.migrate(in: db)
         }
 
         return migrator

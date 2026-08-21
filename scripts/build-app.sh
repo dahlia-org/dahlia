@@ -18,6 +18,7 @@ load_local_env() {
 }
 
 cd "$PROJECT_DIR"
+export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
 load_local_env
 export CLANG_MODULE_CACHE_PATH="${TMPDIR:-/tmp}/dahlia-clang-module-cache"
 mkdir -p "$CLANG_MODULE_CACHE_PATH"
@@ -94,6 +95,8 @@ embed_sparkle_framework "$PROJECT_DIR" "$CONTENTS"
 embed_whisperkit_licenses "$PROJECT_DIR" "$CONTENTS"
 embed_lindera_licenses "$PROJECT_DIR" "$CONTENTS"
 embed_telemetrydeck_resources "$PROJECT_DIR" "$BUILD_DIR" "$CONTENTS"
+embed_embedding_dependency_licenses "$PROJECT_DIR" "$CONTENTS"
+embed_mlx_metal_library "$PROJECT_DIR" "$CONTENTS"
 
 SIGN_IDENTITY="${CODESIGN_IDENTITY:-Developer ID Application: Kazuki Matsuda (XCHHYPN52N)}"
 xattr -cr "${APP_BUNDLE}" || true

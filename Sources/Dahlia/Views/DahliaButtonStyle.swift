@@ -8,6 +8,7 @@ enum DahliaButtonVariant {
 
 struct DahliaButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
+    @State private var isHovered = false
 
     let variant: DahliaButtonVariant
 
@@ -16,13 +17,17 @@ struct DahliaButtonStyle: ButtonStyle {
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
             .foregroundStyle(foregroundColor)
-            .background(backgroundColor(isPressed: configuration.isPressed), in: .rect(cornerRadius: DahliaDesign.Button.cornerRadius))
+            .background(
+                backgroundColor(isPressed: configuration.isPressed),
+                in: .rect(cornerRadius: DahliaDesign.Button.cornerRadius)
+            )
             .overlay {
                 RoundedRectangle(cornerRadius: DahliaDesign.Button.cornerRadius)
                     .strokeBorder(borderColor, lineWidth: 1)
             }
             .contentShape(.rect(cornerRadius: DahliaDesign.Button.cornerRadius))
             .opacity(isEnabled ? 1 : 0.45)
+            .onHover { isHovered = $0 }
     }
 
     private var foregroundColor: Color {
@@ -39,9 +44,9 @@ struct DahliaButtonStyle: ButtonStyle {
     private func backgroundColor(isPressed: Bool) -> Color {
         switch variant {
         case .primary:
-            Color.accentColor.opacity(isPressed ? 0.72 : 1)
+            Color.accentColor.opacity(isPressed ? 0.72 : isHovered ? 0.86 : 1)
         case .secondary, .destructive:
-            Color.primary.opacity(isPressed ? 0.12 : 0.06)
+            Color.primary.opacity(isPressed ? 0.14 : isHovered ? 0.10 : 0.06)
         }
     }
 

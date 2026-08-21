@@ -7,6 +7,7 @@ extension MeetingRepository {
         vaultId: UUID,
         query: String,
         mode: SearchMode = .advanced,
+        queryEmbedding: [Float]? = nil,
         after cursor: MeetingSearchCursor? = nil,
         limit: Int,
         dbQueue: DatabaseQueue
@@ -15,6 +16,7 @@ extension MeetingRepository {
             vaultId: vaultId,
             criteria: MeetingSearchCriteria(text: query),
             mode: mode,
+            queryEmbedding: queryEmbedding,
             after: cursor,
             limit: limit,
             dbQueue: dbQueue
@@ -25,6 +27,7 @@ extension MeetingRepository {
         vaultId: UUID,
         criteria: MeetingSearchCriteria,
         mode: SearchMode = .advanced,
+        queryEmbedding: [Float]? = nil,
         after cursor: MeetingSearchCursor? = nil,
         limit: Int,
         dbQueue: DatabaseQueue
@@ -58,10 +61,146 @@ extension MeetingRepository {
                         in: db
                     )
                 case .neural:
-                    throw MeetingSearchError.indexUnavailable
+                    if let queryEmbedding {
+                        try hybridSearch(
+                            vaultId: vaultId,
+                            criteria: criteria,
+                            queryEmbedding: queryEmbedding,
+                            cursor: cursor,
+                            limit: limit,
+                            in: db
+                        )
+                    } else {
+                        try fullTextSearch(
+                            vaultId: vaultId,
+                            criteria: criteria,
+                            cursor: cursor,
+                            limit: limit,
+                            in: db
+                        )
+                    }
                 }
             }
         }
+    }
+
+    private nonisolated static func hybridSearch(
+        vaultId: UUID,
+        criteria: MeetingSearchCriteria,
+        queryEmbedding: [Float],
+        cursor: MeetingSearchCursor?,
+        limit: Int,
+        in db: Database
+    ) throws -> MeetingSearchPage {
+        let vectorState = try Row.fetchOne(
+            db,
+            sql: """
+            SELECT indexRevision, indexGeneration, phase, isEnabled, analyzerConfigurationHash
+            FROM search_index_state WHERE indexKind = 'vector'
+            """
+        )
+        guard vectorState?["isEnabled"] as Bool? == true,
+              vectorState?["phase"] as String? == "ready",
+              vectorState?["analyzerConfigurationHash"] as String? == EmbeddingGemmaDescriptor.configurationHash else {
+            return try fullTextSearch(
+                vaultId: vaultId,
+                criteria: criteria,
+                cursor: cursor,
+                limit: limit,
+                in: db
+            )
+        }
+        let ftsPage = try fullTextSearch(
+            vaultId: vaultId,
+            criteria: criteria,
+            cursor: nil,
+            limit: HybridSearchRRF.candidateLimit,
+            in: db
+        )
+        let ftsRevision = try Int.fetchOne(
+            db,
+            sql: "SELECT indexRevision FROM search_index_state WHERE indexKind = 'fts'"
+        ) ?? 0
+        let vectorRevision: Int = vectorState?["indexRevision"] ?? 0
+        let vectorGeneration: Int = vectorState?["indexGeneration"] ?? 1
+        let offset: Int
+        let replacesResults: Bool
+        if case let .hybrid(oldFTS, oldVector, oldOffset) = cursor,
+           oldFTS == ftsRevision, oldVector == vectorRevision {
+            offset = oldOffset
+            replacesResults = false
+        } else {
+            offset = 0
+            replacesResults = cursor != nil
+        }
+
+        let projects = try ProjectRecord.fetchResolvedAll(vaultId: vaultId, in: db)
+        let includedProjects = descendantProjectIDs(selectedIDs: criteria.projectIDs, projects: projects)
+        let filters = searchFilters(criteria: criteria, includedProjectIDs: includedProjects)
+        var arguments: StatementArguments = [vaultId, vectorGeneration]
+        arguments += filters.arguments
+        let rows = try Row.fetchAll(
+            db,
+            sql: """
+            SELECT search_documents.meetingId AS meetingId, search_documents_vec.embedding AS embedding,
+                   \(sidebarRecordingStartedAtSQL) AS meetingDate
+            FROM search_documents_vec
+            JOIN search_documents ON search_documents.id = search_documents_vec.documentId
+            JOIN meetings ON meetings.id = search_documents.meetingId
+            WHERE search_documents.kind = 'meeting' AND search_documents.vaultId = ?
+              AND search_documents_vec.indexGeneration = ?
+              AND search_documents_vec.sourceContentHash = search_documents.sourceContentHash
+              \(filters.condition)
+            """,
+            arguments: arguments
+        )
+        var vectorHits: [(UUID, Float, Date)] = []
+        vectorHits.reserveCapacity(rows.count)
+        for (index, row) in rows.enumerated() {
+            if index.isMultiple(of: 256) { try Task.checkCancellation() }
+            let data: Data = row["embedding"]
+            let vector = try EmbeddingVector.decode(data)
+            let similarity = try EmbeddingVector.cosineSimilarity(queryEmbedding, vector)
+            guard similarity >= HybridSearchRRF.minimumVectorSimilarity else { continue }
+            vectorHits.append((
+                row["meetingId"],
+                similarity,
+                row["meetingDate"]
+            ))
+        }
+        try Task.checkCancellation()
+        vectorHits.sort {
+            if $0.1 != $1.1 { return $0.1 > $1.1 }
+            if $0.2 != $1.2 { return $0.2 > $1.2 }
+            return $0.0.uuidString < $1.0.uuidString
+        }
+        let vectorCandidates = vectorHits.prefix(HybridSearchRRF.candidateLimit)
+
+        let ordered = HybridSearchRRF.rank(
+            fullText: ftsPage.items.map(\.id),
+            vector: vectorCandidates.map(\.0)
+        )
+        let window = Array(ordered.dropFirst(offset).prefix(limit + 1))
+        let visibleIDs = Array(window.prefix(limit))
+        var itemsByID = Dictionary(uniqueKeysWithValues: ftsPage.items.map { ($0.id, $0) })
+        let missing = visibleIDs.filter { itemsByID[$0] == nil }
+        for var item in try fetchMeetingSidebarItems(ids: missing, vaultId: vaultId, in: db) {
+            item.searchMatchContext = .init(kind: .semantic, text: "")
+            itemsByID[item.id] = item
+        }
+        let items = visibleIDs.compactMap { itemsByID[$0] }
+        let hasMore = window.count > limit
+        return MeetingSearchPage(
+            items: items,
+            groups: MeetingDateGrouping.searchResultGroups(from: items),
+            hasMore: hasMore,
+            nextCursor: hasMore ? .hybrid(
+                ftsRevision: ftsRevision,
+                vectorRevision: vectorRevision,
+                offset: offset + items.count
+            ) : nil,
+            replacesResults: replacesResults
+        )
     }
 
     /// Both callers wrap GRDB async reads, whose task cancellation interrupts the active SQLite statement.
@@ -675,11 +814,42 @@ extension MeetingRepository {
 
 }
 
+enum HybridSearchRRF {
+    static let candidateLimit = 100
+    static let minimumVectorSimilarity: Float = 0.45
+
+    static func rank(fullText: [UUID], vector: [UUID], rankConstant: Int = 60) -> [UUID] {
+        var scores: [UUID: Double] = [:]
+        let fullTextRanks = Dictionary(uniqueKeysWithValues: fullText.enumerated().map { ($1, $0) })
+        let vectorRanks = Dictionary(uniqueKeysWithValues: vector.enumerated().map { ($1, $0) })
+        for (rank, id) in fullText.enumerated() {
+            scores[id, default: 0] += 1 / Double(rankConstant + rank + 1)
+        }
+        for (rank, id) in vector.enumerated() {
+            scores[id, default: 0] += 1 / Double(rankConstant + rank + 1)
+        }
+        return scores.sorted {
+            if $0.value != $1.value { return $0.value > $1.value }
+            let lhsFullTextRank = fullTextRanks[$0.key]
+            let rhsFullTextRank = fullTextRanks[$1.key]
+            if (lhsFullTextRank != nil) != (rhsFullTextRank != nil) { return lhsFullTextRank != nil }
+            if lhsFullTextRank != rhsFullTextRank {
+                return (lhsFullTextRank ?? .max) < (rhsFullTextRank ?? .max)
+            }
+            let lhsVectorRank = vectorRanks[$0.key]
+            let rhsVectorRank = vectorRanks[$1.key]
+            if lhsVectorRank != rhsVectorRank { return (lhsVectorRank ?? .max) < (rhsVectorRank ?? .max) }
+            return $0.key.uuidString < $1.key.uuidString
+        }.map(\.key)
+    }
+}
+
 extension MeetingRepository {
     nonisolated static func searchProjectIDs(
         vaultID: UUID,
         query: String,
         mode: SearchMode = .advanced,
+        queryEmbedding: [Float]? = nil,
         limit: Int,
         dbQueue: DatabaseQueue
     ) async throws -> [UUID] {
@@ -692,10 +862,77 @@ extension MeetingRepository {
                 case .advanced:
                     try searchProjectIDs(vaultID: vaultID, query: query, limit: limit, in: db)
                 case .neural:
-                    throw MeetingSearchError.indexUnavailable
+                    if let queryEmbedding {
+                        try hybridProjectIDs(
+                            vaultID: vaultID,
+                            query: query,
+                            queryEmbedding: queryEmbedding,
+                            limit: limit,
+                            in: db
+                        )
+                    } else {
+                        try searchProjectIDs(vaultID: vaultID, query: query, limit: limit, in: db)
+                    }
                 }
             }
         }
+    }
+
+    private nonisolated static func hybridProjectIDs(
+        vaultID: UUID,
+        query: String,
+        queryEmbedding: [Float],
+        limit: Int,
+        in db: Database
+    ) throws -> [UUID] {
+        guard let state = try Row.fetchOne(
+            db,
+            sql: """
+            SELECT phase, indexGeneration, isEnabled, analyzerConfigurationHash
+            FROM search_index_state WHERE indexKind = 'vector'
+            """
+        ), state["isEnabled"] as Bool, state["phase"] as String == "ready",
+        state["analyzerConfigurationHash"] as String == EmbeddingGemmaDescriptor.configurationHash else {
+            return try searchProjectIDs(vaultID: vaultID, query: query, limit: limit, in: db)
+        }
+        let fullText = try searchProjectIDs(
+            vaultID: vaultID,
+            query: query,
+            limit: HybridSearchRRF.candidateLimit,
+            in: db
+        )
+        let generation: Int = state["indexGeneration"]
+        let rows = try Row.fetchAll(
+            db,
+            sql: """
+            SELECT search_documents.projectId AS projectId, search_documents_vec.embedding AS embedding
+            FROM search_documents_vec
+            JOIN search_documents ON search_documents.id = search_documents_vec.documentId
+            WHERE search_documents.kind = 'project' AND search_documents.vaultId = ?
+              AND search_documents_vec.indexGeneration = ?
+              AND search_documents_vec.sourceContentHash = search_documents.sourceContentHash
+            """,
+            arguments: [vaultID, generation]
+        )
+        var vectorHits: [(UUID, Float)] = []
+        vectorHits.reserveCapacity(rows.count)
+        for (index, row) in rows.enumerated() {
+            if index.isMultiple(of: 256) { try Task.checkCancellation() }
+            let data: Data = row["embedding"]
+            let score = try EmbeddingVector.cosineSimilarity(
+                queryEmbedding,
+                EmbeddingVector.decode(data)
+            )
+            guard score >= HybridSearchRRF.minimumVectorSimilarity else { continue }
+            vectorHits.append((row["projectId"], score))
+        }
+        try Task.checkCancellation()
+        vectorHits.sort {
+            if $0.1 != $1.1 { return $0.1 > $1.1 }
+            return $0.0.uuidString < $1.0.uuidString
+        }
+        let vector = vectorHits.prefix(HybridSearchRRF.candidateLimit).map(\.0)
+        return Array(HybridSearchRRF.rank(fullText: fullText, vector: vector).prefix(limit))
     }
 
     private nonisolated static func simpleProjectIDs(

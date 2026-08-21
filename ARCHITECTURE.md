@@ -225,6 +225,8 @@ UI projection を破棄しても、durable source of truth は変更しない。
 
 全文検索は `search_documents` registry と contentless `search_documents_fts` を再構築可能な projection として扱う。meeting metadata、構造化 summary の本文、project を索引し、summary の metadata・内部識別子と文字起こし・翻訳文は対象にしない。source table の trigger は coalesce 可能な job の upsert だけを行い、Lindera による tokenization と FTS 更新は utility-priority の `SearchIndexer` actor が小さい transaction で処理する。Indexer は録音開始前に停止して録音終了後に再開し、録音中は projection write を実行しない。初期構築・再構築中は不完全な結果を返さず検索 unavailable とし、索引の遅延や failure は録音、確定文字起こし、正本 metadata と summary の commit を待たせない。
 
+任意導入の Neural 検索は Apple の MLX 実装で EmbeddingGemma 300M 4-bit をローカル実行し、MRL 出力の先頭256次元を再正規化して `search_documents_vec` に保存する。meeting は description と summary 本文の空白を除く合計が80文字以上の場合だけ vector 化し、metadata は条件通過後の補助情報に限る。ベクトル検索は既定で無効とし、無効中は vector job を作らず Neural を検索モードに表示しない。有効化だけでは索引を作らず、設定画面で明示的に再構築した場合だけ全件をキューへ追加する。無効化では既存の vector と job を保持し、無効中に索引対象が変化した場合は job を作らず再構築待ちへ戻す。有効時の vector worker は FTS projection の更新を独立に追随し、最大4文書かつ padding 込み4096 tokenまでを1バッチとして直列に推論する。録音中は FTS worker と共に停止する。アプリは filter 適用後に cosine 0.45 未満を除外した vector 上位100件と FTS 上位100件を RRF で統合し、同点では FTS を優先する。configuration hash 不一致を含め、vector が未導入・未構築・失敗中なら FTS の結果を維持する。MCP は MLX をリンクせず、常に FTS を使う。
+
 ミーティングサイドバーは SQLite を正本とし、最新 50 件から keyset pagination で段階表示する。表示用 projection は
 最大 500 件に制限し、それ以前は全履歴の FTS projection から検索可能にする。文字列検索は索引 revision 付き relevance
 cursor、filter-only 検索は時系列 keyset cursor を使い、新しい検索語で古い処理をキャンセルする。選択詳細とチャット候補は一覧とは別の projection とし、チャット候補は

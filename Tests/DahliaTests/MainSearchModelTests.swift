@@ -43,10 +43,6 @@ import GRDB
 
             let model = MainSearchModel()
             #expect(model.searchMode == .advanced)
-            #expect(!SearchMode.neural.isAvailable)
-            model.searchMode = .neural
-            model.searchModeDidChange(using: sidebar)
-            #expect(model.searchMode == .advanced)
 
             model.present(using: sidebar)
             model.inputText = "Needle"
@@ -110,6 +106,84 @@ import GRDB
         }
 
         @Test(.timeLimit(.minutes(1)))
+        func neuralSearchKeepsFTSResultsWhenEmbeddingFails() async throws {
+            let fixture = try MainSearchModelFixture()
+            defer { fixture.stop() }
+            try await fixture.insertSearchContent()
+            try await fixture.setVectorState(phase: "ready", isEnabled: true)
+            let sidebar = fixture.makeSidebarViewModel()
+            defer { sidebar.setAppDatabase(nil) }
+            #expect(await pollUntil { sidebar.isVectorSearchReady })
+
+            let model = MainSearchModel(embeddingService: ReviewEmbeddingProvider(throwsForQueries: true))
+            model.searchMode = .neural
+            model.present(using: sidebar)
+            model.inputText = "Needle"
+            model.queryDidChange(using: sidebar)
+            #expect(await pollUntil { !model.isLoading && model.meetings.map(\.meetingName) == ["Needle meeting"] })
+            #expect(model.errorMessage == nil)
+        }
+
+        @Test(.timeLimit(.minutes(1)))
+        func staleNeuralCompletionDoesNotReplaceCurrentQueryEmbedding() async throws {
+            let fixture = try MainSearchModelFixture()
+            defer { fixture.stop() }
+            try await fixture.insertSearchContent()
+            try await fixture.setVectorState(phase: "ready", isEnabled: true)
+            let sidebar = fixture.makeSidebarViewModel()
+            defer { sidebar.setAppDatabase(nil) }
+            #expect(await pollUntil { sidebar.isVectorSearchReady })
+            let embedder = ReviewEmbeddingProvider(blockedQuery: "Older")
+
+            let model = MainSearchModel(embeddingService: embedder)
+            model.searchMode = .neural
+            model.present(using: sidebar)
+            model.inputText = "Older"
+            model.queryDidChange(using: sidebar)
+            #expect(await pollUntil { await embedder.didStartBlockedQuery })
+
+            model.inputText = "Needle"
+            model.queryDidChange(using: sidebar)
+            #expect(await pollUntil { model.activeQueryEmbedding?.first == 2 })
+            await embedder.releaseBlockedQuery()
+            #expect(await pollUntil { await embedder.didFinishBlockedQuery })
+            #expect(model.activeQueryEmbedding?.first == 2)
+        }
+
+        @Test(.timeLimit(.minutes(1)))
+        func reopeningSearchDowngradesDisabledNeuralMode() throws {
+            let fixture = try MainSearchModelFixture()
+            defer { fixture.stop() }
+            let sidebar = fixture.makeSidebarViewModel()
+            defer { sidebar.setAppDatabase(nil) }
+            let model = MainSearchModel()
+            model.searchMode = .neural
+
+            model.present(using: sidebar)
+
+            #expect(model.searchMode == .advanced)
+        }
+
+        @Test(.timeLimit(.minutes(1)))
+        func missingModelGuidanceSurvivesModeChangeCallback() async throws {
+            let fixture = try MainSearchModelFixture()
+            defer { fixture.stop() }
+            try await fixture.setVectorState(phase: "pending", isEnabled: true)
+            let sidebar = fixture.makeSidebarViewModel()
+            defer { sidebar.setAppDatabase(nil) }
+            #expect(await pollUntil { sidebar.isVectorSearchEnabled })
+            let model = MainSearchModel(embeddingService: ReviewEmbeddingProvider(isAvailable: false))
+            model.searchMode = .neural
+            model.present(using: sidebar)
+
+            #expect(await pollUntil { model.errorMessage == L10n.neuralModelRequired })
+            model.searchModeDidChange(using: sidebar)
+            #expect(await pollUntil { !model.isLoading && model.errorMessage == L10n.neuralModelRequired })
+            #expect(model.searchMode == .neural)
+            #expect(model.errorMessage == L10n.neuralModelRequired)
+        }
+
+        @Test(.timeLimit(.minutes(1)))
         func boundsProjectSearchResults() async throws {
             let fixture = try MainSearchModelFixture()
             defer { fixture.stop() }
@@ -166,6 +240,28 @@ import GRDB
             model.loadMore(using: sidebar)
             #expect(await pollUntil { !model.isLoading && model.meetings.count == 51 })
             #expect(!model.hasMoreMeetings)
+        }
+
+        @Test(.timeLimit(.minutes(1)))
+        func reportsLoadMoreFailureWithoutDiscardingTheFirstPage() async throws {
+            let fixture = try MainSearchModelFixture()
+            defer { fixture.stop() }
+            try await fixture.insertMatchingMeetings(count: 51)
+            let sidebar = fixture.makeSidebarViewModel()
+            defer { sidebar.setAppDatabase(nil) }
+            let model = MainSearchModel()
+            model.present(using: sidebar)
+            model.inputText = "Planning"
+            model.queryDidChange(using: sidebar)
+            #expect(await pollUntil { !model.isLoading && model.meetings.count == MainSearchDesign.meetingPageSize })
+            try await fixture.manager.dbQueue.write { db in
+                try db.execute(sql: "UPDATE search_index_state SET phase = 'failed' WHERE indexKind = 'fts'")
+            }
+
+            model.loadMore(using: sidebar)
+
+            #expect(await pollUntil { !model.isLoading && model.errorMessage != nil })
+            #expect(model.meetings.count == MainSearchDesign.meetingPageSize)
         }
 
         @Test(.timeLimit(.minutes(1)))
@@ -451,6 +547,18 @@ import GRDB
             await manager.searchIndexer.drain()
         }
 
+        func setVectorState(phase: String, isEnabled: Bool) async throws {
+            try await manager.dbQueue.write { db in
+                try db.execute(
+                    sql: """
+                    UPDATE search_index_state SET phase = ?, isEnabled = ?
+                    WHERE indexKind = 'vector'
+                    """,
+                    arguments: [phase, isEnabled]
+                )
+            }
+        }
+
         func insertMatchingMeetings(count: Int) async throws {
             let vaultID = vault.id
             try await manager.dbQueue.write { db in
@@ -498,5 +606,45 @@ import GRDB
                 updatedAt: createdAt
             ).insert(db)
         }
+    }
+
+    private actor ReviewEmbeddingProvider: TextEmbeddingProviding {
+        private let blockedQuery: String?
+        private let throwsForQueries: Bool
+        private let available: Bool
+        private var releasesBlockedQuery = false
+        private(set) var didStartBlockedQuery = false
+        private(set) var didFinishBlockedQuery = false
+        var isAvailable: Bool { available }
+
+        init(blockedQuery: String? = nil, throwsForQueries: Bool = false, isAvailable: Bool = true) {
+            self.blockedQuery = blockedQuery
+            self.throwsForQueries = throwsForQueries
+            available = isAvailable
+        }
+
+        func queryEmbedding(_ query: String) async throws -> [Float] {
+            if throwsForQueries { throw ReviewEmbeddingError.failed }
+            if query == blockedQuery {
+                didStartBlockedQuery = true
+                while !releasesBlockedQuery {
+                    try? await Task.sleep(for: .milliseconds(10))
+                    await Task.yield()
+                }
+                didFinishBlockedQuery = true
+            }
+            let value: Float = query == "Needle" ? 2 : 1
+            return [value] + Array(repeating: 0, count: EmbeddingGemmaDescriptor.dimensions - 1)
+        }
+
+        func documentEmbeddings(_: [DocumentEmbeddingInput]) async throws -> [[Float]] { [] }
+
+        func releaseBlockedQuery() {
+            releasesBlockedQuery = true
+        }
+    }
+
+    private enum ReviewEmbeddingError: Error {
+        case failed
     }
 #endif

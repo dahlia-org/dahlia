@@ -10,6 +10,7 @@ CODEX_ENTITLEMENTS_PATH="${PROJECT_DIR}/CodexHelper.entitlements"
 source "${SCRIPT_DIR}/common.sh"
 
 cd "$PROJECT_DIR"
+export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
 
 # .env.local から環境変数を読み込む（SENTRY_DSN、TELEMETRYDECK_APP_ID など）
 if [ -f .env.local ]; then
@@ -92,6 +93,8 @@ embed_sparkle_framework "$PROJECT_DIR" "$CONTENTS"
 embed_whisperkit_licenses "$PROJECT_DIR" "$CONTENTS"
 embed_lindera_licenses "$PROJECT_DIR" "$CONTENTS"
 embed_telemetrydeck_resources "$PROJECT_DIR" "$BUILD_DIR" "$CONTENTS"
+embed_embedding_dependency_licenses "$PROJECT_DIR" "$CONTENTS"
+embed_mlx_metal_library "$PROJECT_DIR" "$CONTENTS"
 
 xattr -cr "${APP_BUNDLE}" || true
 

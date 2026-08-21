@@ -48,7 +48,10 @@ struct MainSearchPanel: View {
                     RoundedRectangle(cornerRadius: DahliaDesign.Field.cornerRadius)
                         .stroke(.separator, lineWidth: 1)
                 }
-                MainSearchModeControl(selection: $model.searchMode)
+                MainSearchModeControl(
+                    selection: $model.searchMode,
+                    allowsNeuralSearch: sidebarViewModel.isVectorSearchEnabled
+                )
             }
             .padding(.horizontal, 20)
             .frame(minHeight: 72)
@@ -125,6 +128,9 @@ struct MainSearchPanel: View {
         }
         .onChange(of: sidebarViewModel.searchIndexRevision) {
             model.searchIndexDidChange(using: sidebarViewModel)
+        }
+        .onChange(of: sidebarViewModel.isVectorSearchEnabled) {
+            model.vectorSearchAvailabilityDidChange(using: sidebarViewModel)
         }
         .onKeyPress(.downArrow) {
             model.moveSelection(by: 1)
