@@ -779,7 +779,12 @@
 
 /* Meeting Detection */
 "Meeting Notifications" = "Meeting Notifications";
-"Notify me about meetings using macOS notifications." = "Notify me about meetings using macOS notifications.";
+"Meeting Notification" = "Meeting Notification";
+"Notify me about upcoming or detected meetings." = "Notify me about upcoming or detected meetings.";
+"Notification Style" = "Notification Style";
+"Choose where meeting notifications appear." = "Choose where meeting notifications appear.";
+"Prominent Popup" = "Prominent Popup";
+"macOS Notification" = "macOS Notification";
 "Notification Conditions" = "Notification Conditions";
 "Choose when Dahlia sends a meeting notification." = "Choose when Dahlia sends a meeting notification.";
 "Meeting app microphone activity" = "Meeting app microphone activity";

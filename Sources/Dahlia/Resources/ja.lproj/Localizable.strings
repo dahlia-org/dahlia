@@ -779,7 +779,12 @@
 
 /* Meeting Detection */
 "Meeting Notifications" = "ミーティング通知";
-"Notify me about meetings using macOS notifications." = "macOS の通知を使ってミーティングをお知らせします。";
+"Meeting Notification" = "ミーティング通知";
+"Notify me about upcoming or detected meetings." = "予定または検出したミーティングをお知らせします。";
+"Notification Style" = "通知の表示方法";
+"Choose where meeting notifications appear." = "ミーティング通知を表示する場所を選択します。";
+"Prominent Popup" = "目立つポップアップ";
+"macOS Notification" = "macOS通知";
 "Notification Conditions" = "通知条件";
 "Choose when Dahlia sends a meeting notification." = "Dahlia がミーティング通知を送信する条件を選択します。";
 "Meeting app microphone activity" = "ミーティングアプリによるマイク利用";

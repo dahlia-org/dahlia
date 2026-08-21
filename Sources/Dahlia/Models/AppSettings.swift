@@ -123,6 +123,7 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
     init() {
         Self.migrateCalendarEventFilterSettings(in: .standard)
         Self.migrateLiveSubtitleLocaleSetting(in: .standard)
+        meetingNotificationPresentationRawValue = meetingNotificationPresentation.rawValue
         batchTranscriptionStallTimeoutRawValue = batchTranscriptionStallTimeout.rawValue
     }
 
@@ -399,6 +400,13 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
     @AppStorage("meetingDetectionEnabled") var meetingDetectionEnabled = true
     @AppStorage("microphoneMeetingNotificationsEnabled") var microphoneMeetingNotificationsEnabled = true
     @AppStorage("calendarEventMeetingNotificationsEnabled") var calendarEventMeetingNotificationsEnabled = false
+    @AppStorage(MeetingNotificationPresentation.userDefaultsKey)
+    var meetingNotificationPresentationRawValue = MeetingNotificationPresentation.defaultValue.rawValue
+
+    var meetingNotificationPresentation: MeetingNotificationPresentation {
+        get { MeetingNotificationPresentation(storedRawValue: meetingNotificationPresentationRawValue) }
+        set { meetingNotificationPresentationRawValue = newValue.rawValue }
+    }
 
     // MARK: - 録音設定
 

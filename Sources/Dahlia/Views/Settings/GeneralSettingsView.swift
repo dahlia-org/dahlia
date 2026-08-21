@@ -31,6 +31,17 @@ struct GeneralSettingsView: View {
                 }
                 .toggleStyle(.switch)
 
+                Picker(selection: $settings.meetingNotificationPresentation) {
+                    ForEach(MeetingNotificationPresentation.allCases) { presentation in
+                        Text(presentation.displayName)
+                            .tag(presentation)
+                    }
+                } label: {
+                    Text(L10n.notificationPresentation)
+                    Text(L10n.notificationPresentationDescription)
+                }
+                .disabled(!settings.meetingDetectionEnabled)
+
                 LabeledContent {
                     VStack(alignment: .leading) {
                         Toggle(

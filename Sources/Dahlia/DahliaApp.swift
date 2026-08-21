@@ -380,6 +380,10 @@ struct DahliaApp: App {
             onStartRecording: { meeting in
                 handleDetectedMeeting(meeting, in: db, startTranscription: true)
             },
+            onJoinMeeting: { [weak recordingCoordinator] meeting in
+                guard let event = meeting.calendarEvent else { return }
+                recordingCoordinator?.openMeetingLink(for: event)
+            },
             onJoinAndStartRecording: { meeting in
                 joinAndStartRecording(meeting, in: db)
             }

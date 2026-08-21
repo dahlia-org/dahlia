@@ -146,6 +146,7 @@ final class MeetingDetectionService: ObservableObject {
             settings.microphoneMeetingNotificationsEnabled.description,
             settings.automaticMeetingEndRecordingStopEnabled.description,
             settings.calendarEventMeetingNotificationsEnabled.description,
+            settings.meetingNotificationPresentationRawValue,
             settings.enabledCalendarSourcesJSON,
             settings.includesAllDayCalendarEvents.description,
             settings.includesCalendarEventsWithoutOtherAttendees.description,
@@ -161,7 +162,8 @@ final class MeetingDetectionService: ObservableObject {
         notificationAuthorizationTask?.cancel()
         if settings.meetingDetectionEnabled,
            settings.microphoneMeetingNotificationsEnabled,
-           !settings.calendarEventMeetingNotificationsEnabled {
+           !settings.calendarEventMeetingNotificationsEnabled,
+           settings.meetingNotificationPresentation == .systemNotification {
             notificationAuthorizationTask = Task {
                 _ = await notificationService.requestAuthorizationIfNeeded()
             }

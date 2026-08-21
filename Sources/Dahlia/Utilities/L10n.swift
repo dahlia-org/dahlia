@@ -2613,10 +2613,18 @@ enum L10n {
     // MARK: - Meeting Detection
 
     static var meetingNotifications: String { String(localized: "Meeting Notifications", bundle: bundle) }
+    static var meetingNotification: String { String(localized: "Meeting Notification", bundle: bundle) }
     static var meetingNotificationsDescription: String { String(
-        localized: "Notify me about meetings using macOS notifications.",
+        localized: "Notify me about upcoming or detected meetings.",
         bundle: bundle
     ) }
+    static var notificationPresentation: String { String(localized: "Notification Style", bundle: bundle) }
+    static var notificationPresentationDescription: String { String(
+        localized: "Choose where meeting notifications appear.",
+        bundle: bundle
+    ) }
+    static var prominentPopup: String { String(localized: "Prominent Popup", bundle: bundle) }
+    static var macOSNotification: String { String(localized: "macOS Notification", bundle: bundle) }
     static var notificationConditions: String { String(localized: "Notification Conditions", bundle: bundle) }
     static var notificationConditionsDescription: String { String(
         localized: "Choose when Dahlia sends a meeting notification.",
