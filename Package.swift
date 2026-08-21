@@ -17,6 +17,9 @@ let package = Package(
         .package(url: "https://github.com/TelemetryDeck/SwiftSDK", from: "2.13.0"),
         .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.9.2"),
         .package(url: "https://github.com/argmaxinc/argmax-oss-swift.git", exact: "1.0.0"),
+        .package(url: "https://github.com/ml-explore/mlx-swift", exact: "0.31.6"),
+        .package(url: "https://github.com/ml-explore/mlx-swift-lm", exact: "3.31.4"),
+        .package(url: "https://github.com/huggingface/swift-transformers", exact: "1.3.0"),
     ],
     targets: [
         .binaryTarget(
@@ -60,6 +63,11 @@ let package = Package(
                 .product(name: "TelemetryDeck", package: "SwiftSDK"),
                 .product(name: "Sparkle", package: "Sparkle"),
                 .product(name: "WhisperKit", package: "argmax-oss-swift"),
+                .product(name: "MLX", package: "mlx-swift"),
+                .product(name: "MLXEmbedders", package: "mlx-swift-lm"),
+                .product(name: "MLXLMCommon", package: "mlx-swift-lm"),
+                .product(name: "Hub", package: "swift-transformers"),
+                .product(name: "Tokenizers", package: "swift-transformers"),
             ],
             path: "Sources/Dahlia",
             exclude: [

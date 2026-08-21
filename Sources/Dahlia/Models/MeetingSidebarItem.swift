@@ -106,6 +106,7 @@ struct MeetingSidebarPage: Equatable, Sendable {
 enum MeetingSearchCursor: Equatable, Sendable {
     case chronological(MeetingSidebarCursor)
     case relevance(indexRevision: Int, offset: Int)
+    case hybrid(ftsRevision: Int, vectorRevision: Int, offset: Int)
 }
 
 struct MeetingSearchPage: Equatable, Sendable {

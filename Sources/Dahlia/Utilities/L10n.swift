@@ -72,16 +72,32 @@ enum L10n {
     static var search: String { String(localized: "Search", bundle: bundle) }
     static var searchResults: String { String(localized: "Search Results", bundle: bundle) }
     static var searchQueryTooBroad: String { String(localized: "Search query is too broad", bundle: bundle) }
-    static var searchIndex: String { String(localized: "Search index", bundle: bundle) }
+    static var fullTextSearch: String { String(localized: "Full-text search", bundle: bundle) }
+    static var vectorSearch: String { String(localized: "Vector search", bundle: bundle) }
+    static var enableVectorSearch: String { String(localized: "Enable vector search", bundle: bundle) }
     static var searchIndexStatus: String { String(localized: "Search index status", bundle: bundle) }
     static var searchQueuePending: String { String(localized: "Pending search jobs", bundle: bundle) }
     static var searchQueueProcessing: String { String(localized: "Processing search jobs", bundle: bundle) }
     static var searchIndexProgress: String { String(localized: "Indexing progress", bundle: bundle) }
     static var searchIndexDescription: String { String(localized: "Search index description", bundle: bundle) }
-    static var rebuildSearchIndex: String { String(localized: "Rebuild search index", bundle: bundle) }
-    static var rebuildSearchIndexDescription: String {
-        String(localized: "Rebuild search index description", bundle: bundle)
+    static var semanticMatch: String { String(localized: "Semantic match", bundle: bundle) }
+    static var neuralModelRequired: String { String(localized: "Neural model required", bundle: bundle) }
+    static var embeddingModel: String { String(localized: "Embedding model", bundle: bundle) }
+    static var installed: String { String(localized: "Installed", bundle: bundle) }
+    static var notInstalled: String { String(localized: "Not installed", bundle: bundle) }
+    static var vectorIndexStatus: String { String(localized: "Vector index status", bundle: bundle) }
+    static var downloadingEmbeddingModel: String { String(localized: "Downloading embedding model", bundle: bundle) }
+    static var acceptTermsAndDownloadModel: String {
+        String(localized: "Accept terms and download model", bundle: bundle)
     }
+
+    static var gemmaTerms: String { String(localized: "Gemma terms", bundle: bundle) }
+    static var embeddingModelDescription: String {
+        String(localized: "Embedding model description", bundle: bundle)
+    }
+
+    static var rebuildFullTextSearch: String { String(localized: "Rebuild full-text search", bundle: bundle) }
+    static var rebuildVectorSearch: String { String(localized: "Rebuild vector search", bundle: bundle) }
 
     static var searchIndexPending: String { String(localized: "Search index pending", bundle: bundle) }
     static var searchIndexMetadata: String { String(localized: "Indexing meeting metadata", bundle: bundle) }

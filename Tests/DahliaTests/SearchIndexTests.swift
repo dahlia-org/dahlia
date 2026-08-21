@@ -540,7 +540,10 @@ import GRDB
             let paused = try await database.dbQueue.read { db in
                 try (
                     Int.fetchOne(db, sql: "SELECT COUNT(*) FROM search_documents") ?? -1,
-                    Int.fetchOne(db, sql: "SELECT COUNT(*) FROM search_index_jobs") ?? -1
+                    Int.fetchOne(
+                        db,
+                        sql: "SELECT COUNT(*) FROM search_index_jobs WHERE indexKind = 'fts'"
+                    ) ?? -1
                 )
             }
             #expect(paused.0 == 0)
@@ -550,7 +553,10 @@ import GRDB
             let resumed = try await database.dbQueue.read { db in
                 try (
                     String.fetchOne(db, sql: "SELECT phase FROM search_index_state WHERE indexKind = 'fts'"),
-                    Int.fetchOne(db, sql: "SELECT COUNT(*) FROM search_index_jobs") ?? -1
+                    Int.fetchOne(
+                        db,
+                        sql: "SELECT COUNT(*) FROM search_index_jobs WHERE indexKind = 'fts'"
+                    ) ?? -1
                 )
             }
             #expect(resumed.0 == "ready")
@@ -730,7 +736,10 @@ import GRDB
                 )
             }
             let contentJobs = try database.dbQueue.read { db in
-                try Row.fetchAll(db, sql: "SELECT targetKind, targetKey FROM search_index_jobs")
+                try Row.fetchAll(
+                    db,
+                    sql: "SELECT targetKind, targetKey FROM search_index_jobs WHERE indexKind = 'fts'"
+                )
             }
             #expect(contentJobs.count == 1)
             #expect(contentJobs.first?["targetKind"] as String? == "project")
@@ -751,7 +760,10 @@ import GRDB
                 )
             }
             let hierarchyJobs = try database.dbQueue.read { db in
-                try Row.fetchAll(db, sql: "SELECT targetKind, targetKey FROM search_index_jobs")
+                try Row.fetchAll(
+                    db,
+                    sql: "SELECT targetKind, targetKey FROM search_index_jobs WHERE indexKind = 'fts'"
+                )
             }
             #expect(hierarchyJobs.count == 1)
             #expect(hierarchyJobs.first?["targetKind"] as String? == "projectHierarchy")
