@@ -22,7 +22,8 @@ struct MeetingListSidebarView: View {
     @State private var editingMeetingId: UUID?
     @State private var editingMeetingName = ""
     @State private var pendingDeletion: MeetingDeletionRequest?
-    @State private var collapsedProjectKeys: Set<MeetingProjectKey> = []
+    @State private var expandedProjectKeys: Set<MeetingProjectKey> = []
+    @State private var collapsedPinnedProjectKeys: Set<MeetingProjectKey> = []
     @State private var collapsedDateGroupIDs: Set<String> = []
     @State private var isPinnedSectionExpanded = true
     @State private var isProjectSectionExpanded = true
@@ -350,7 +351,7 @@ struct MeetingListSidebarView: View {
                 mainWindowNavigation.projectAppearance(for: $0, vaultId: sidebarViewModel.currentVault?.id)
             } ?? .default,
             isPinned: isPinned,
-            isExpanded: isExpanded ?? !collapsedProjectKeys.contains(group.key),
+            isExpanded: isExpanded ?? projectGroupIsExpanded(group.key),
             canCreateMeeting: !viewModel.isRecordingStartPending && !viewModel.isFinalizingRecording,
             showsMeetingDate: mainWindowNavigation.meetingSidebarDisplayMode == .byProject,
             selectedMeetingIDs: renderedMeetingSelection,
@@ -360,7 +361,7 @@ struct MeetingListSidebarView: View {
             isRenameFieldFocused: $isRenameFieldFocused,
             onCommitRename: commitRename,
             onCancelRename: cancelRename,
-            onToggleExpansion: { collapsedProjectKeys.toggle(group.key) },
+            onToggleExpansion: { toggleProjectGroupExpansion(group.key) },
             allowsListSelection: !isPinned
                 || mainWindowNavigation.meetingSidebarDisplayMode == .byProject,
             onSelectMeeting: sidebarViewModel.selectMeeting,
@@ -377,6 +378,21 @@ struct MeetingListSidebarView: View {
             in: sidebarViewModel.projectItemsByID,
             vaultId: sidebarViewModel.currentVault?.id
         )
+    }
+
+    private func projectGroupIsExpanded(_ key: MeetingProjectKey) -> Bool {
+        guard mainWindowNavigation.meetingSidebarDisplayMode == .byProject else {
+            return !collapsedPinnedProjectKeys.contains(key)
+        }
+        return expandedProjectKeys.contains(key)
+    }
+
+    private func toggleProjectGroupExpansion(_ key: MeetingProjectKey) {
+        guard mainWindowNavigation.meetingSidebarDisplayMode == .byProject else {
+            collapsedPinnedProjectKeys.toggle(key)
+            return
+        }
+        expandedProjectKeys.toggle(key)
     }
 
     private func clearSearch() {
