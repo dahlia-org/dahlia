@@ -4,7 +4,9 @@ extension CodexChatSessionModel {
     }
 
     var canSend: Bool {
-        isBoundToCurrentVault
+        !isRestoring
+            && !needsRestore
+            && isBoundToCurrentVault
             && pendingImagePreparationCount == 0
             && (attachedImages.isEmpty || selectedModelSupportsImages)
             && hasComposerContent

@@ -46,6 +46,8 @@ extension CodexChatSessionModel {
         liveTranscript: String? = nil
     ) {
         guard isBoundToCurrentVault,
+              !isRestoring,
+              !needsRestore,
               !isGenerating,
               !isTurnCleanupPending,
               text.nilIfBlank != nil || !images.isEmpty || liveTranscript?.nilIfBlank != nil else { return }
@@ -54,7 +56,6 @@ extension CodexChatSessionModel {
             return
         }
         prepareFailureStateForSubmission(liveTranscript: liveTranscript)
-        clearApprovalMethodUpdateError()
         isGenerating = true
         isPreparingTurn = liveTranscript == nil
         isAwaitingTurnOutput = liveTranscript != nil

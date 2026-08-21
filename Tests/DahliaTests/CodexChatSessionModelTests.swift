@@ -2,6 +2,8 @@ import Foundation
 @testable import Dahlia
 
 #if canImport(Testing)
+    import Observation
+    import Synchronization
     import Testing
 
     @MainActor
@@ -60,31 +62,34 @@ import Foundation
         @Test
         func providerChangeImmediatelyFallsBackAndPersistsAsk() async {
             let service = TestCodexChatService(mode: .complete)
-            let settings = AppSettings()
-            let originalProvider = settings.codexAccountProviderRawValue
-            let originalConfiguredProvider = settings.codexConfiguredAccountProviderRawValue
-            let originalProfile = settings.codexDatabricksProfile
-            let originalConfiguredProfile = settings.codexConfiguredDatabricksProfile
-            defer {
-                settings.codexAccountProviderRawValue = originalProvider
-                settings.codexConfiguredAccountProviderRawValue = originalConfiguredProvider
-                settings.codexDatabricksProfile = originalProfile
-                settings.codexConfiguredDatabricksProfile = originalConfiguredProfile
-            }
-            settings.codexAccountProviderRawValue = AIAccountProvider.chatGPTSubscription.rawValue
-            settings.codexConfiguredAccountProviderRawValue = AIAccountProvider.chatGPTSubscription.rawValue
             let session = CodexChatSessionModel(
                 backendThreadID: "thread-1",
                 approvalMethod: .autoReview,
-                service: service,
-                settings: settings
+                service: service
             )
 
-            settings.codexAccountProviderRawValue = AIAccountProvider.databricks.rawValue
-            settings.codexDatabricksProfile = "test"
-            settings.markCodexAccountConfigurationCurrent(provider: .databricks, databricksProfile: "test")
+            session.configuredAccountProviderDidChange(to: .chatGPTSubscription)
+            session.configuredAccountProviderDidChange(to: .databricks)
             await waitUntilAsync { await service.completedApprovalMethodUpdates.last == .ask }
 
+            #expect(session.selectedApprovalMethod == .ask)
+        }
+
+        @Test
+        func providerChangePublishesAvailabilityWhenSelectionStaysAsk() {
+            let session = CodexChatSessionModel(approvalMethod: .ask)
+            session.configuredAccountProviderDidChange(to: .chatGPTSubscription)
+            let didObserveChange = Mutex(false)
+            withObservationTracking {
+                _ = session.canUseAutoReview
+            } onChange: {
+                didObserveChange.withLock { $0 = true }
+            }
+
+            session.configuredAccountProviderDidChange(to: .databricks)
+
+            #expect(didObserveChange.withLock { $0 })
+            #expect(!session.canUseAutoReview)
             #expect(session.selectedApprovalMethod == .ask)
         }
 
@@ -112,6 +117,38 @@ import Foundation
             await waitUntilAsync { await service.approvalMethodUpdates.count == 2 }
 
             #expect(await service.sentTextBlocks == [["Question"]])
+        }
+
+        @Test
+        func failedTurnStartKeepsTheApprovalUpdateRetryAvailable() async {
+            let service = TestCodexChatService(
+                mode: .alwaysFail,
+                approvalMethodUpdateError: .invalidProtocolResponse
+            )
+            let settings = AppSettings()
+            settings.currentVault = Self.testVault()
+            let session = CodexChatSessionModel(
+                backendThreadID: "thread-1",
+                approvalMethod: .ask,
+                service: service,
+                settings: settings
+            )
+            session.selectApprovalMethod(.fullAccess)
+            await waitUntil { session.hasApprovalMethodUpdateFailure }
+
+            session.draft = "Question"
+            session.sendDraft()
+            await waitUntil { !session.isGenerating }
+
+            #expect(session.hasApprovalMethodUpdateFailure)
+            #expect(await service.sentTextBlocks == [["Question"]])
+
+            session.retry()
+            await waitUntilAsync { await service.sentTextBlocks.count == 2 }
+            await waitUntil { !session.isGenerating }
+
+            #expect(session.hasApprovalMethodUpdateFailure)
+            #expect(await service.approvalMethodUpdates == [.fullAccess])
         }
 
         @Test
@@ -150,6 +187,134 @@ import Foundation
             await session.restore()
 
             #expect(session.selectedApprovalMethod == .fullAccess)
+        }
+
+        @Test
+        func selectionDuringRestoreWinsAndSendingWaitsForRestoredPermissions() async {
+            let service = TestCodexChatService(
+                mode: .complete,
+                delaysLoad: true,
+                restoredApprovalMethod: .fullAccess
+            )
+            let settings = AppSettings()
+            let vault = Self.testVault()
+            settings.currentVault = vault
+            let session = CodexChatSessionModel(
+                vaultID: vault.id,
+                backendThreadID: "thread-1",
+                approvalMethod: .ask,
+                service: service,
+                settings: settings
+            )
+            let restoreTask = Task { await session.restore() }
+            await waitUntilAsync { await service.isLoadWaiting }
+
+            session.draft = "Question"
+            #expect(session.isRestoring)
+            #expect(!session.canSend)
+            session.sendDraft()
+            session.selectApprovalMethod(.ask)
+
+            await service.resumeDelayedLoad()
+            await restoreTask.value
+            await waitUntilAsync { await service.completedApprovalMethodUpdates.last == .ask }
+
+            #expect(session.selectedApprovalMethod == .ask)
+            #expect(await service.sentTextBlocks.isEmpty)
+        }
+
+        @Test
+        func providerFallbackDuringRestoreDoesNotReplaceStoredFullAccess() async {
+            let service = TestCodexChatService(
+                mode: .complete,
+                delaysLoad: true,
+                restoredApprovalMethod: .fullAccess
+            )
+            let settings = AppSettings()
+            let vault = Self.testVault()
+            settings.currentVault = vault
+            let session = CodexChatSessionModel(
+                vaultID: vault.id,
+                backendThreadID: "thread-1",
+                service: service,
+                settings: settings
+            )
+            let restoreTask = Task { await session.restore() }
+            await waitUntilAsync { await service.isLoadWaiting }
+
+            session.configuredAccountProviderDidChange(to: .chatGPTSubscription)
+            session.configuredAccountProviderDidChange(to: .databricks)
+            #expect(session.selectedApprovalMethod == .ask)
+
+            await service.resumeDelayedLoad()
+            await restoreTask.value
+
+            #expect(session.selectedApprovalMethod == .fullAccess)
+            #expect(await service.completedApprovalMethodUpdates.isEmpty)
+        }
+
+        @Test
+        func concurrentRestoreCallsShareOneResumeAndLease() async {
+            let service = TestCodexChatService(
+                mode: .complete,
+                delaysLoad: true,
+                restoredApprovalMethod: .ask
+            )
+            let settings = AppSettings()
+            let vault = Self.testVault()
+            settings.currentVault = vault
+            let session = CodexChatSessionModel(
+                vaultID: vault.id,
+                backendThreadID: "thread-1",
+                service: service,
+                settings: settings
+            )
+            let firstRestore = Task { await session.restore() }
+            await waitUntilAsync { await service.isLoadWaiting }
+
+            await session.restore()
+
+            #expect(session.isRestoring)
+            #expect(await service.resumedThreadIDs == ["thread-1"])
+            await service.resumeDelayedLoad()
+            await firstRestore.value
+
+            #expect(await service.acquiredThreadLeaseCount == 1)
+        }
+
+        @Test
+        func failedRestoreKeepsSendingDisabledUntilRetryRestoresPermissions() async {
+            let service = TestCodexChatService(
+                mode: .complete,
+                restoredApprovalMethod: .fullAccess,
+                resumeErrors: [.invalidProtocolResponse]
+            )
+            let settings = AppSettings()
+            let vault = Self.testVault()
+            settings.currentVault = vault
+            let session = CodexChatSessionModel(
+                vaultID: vault.id,
+                backendThreadID: "thread-1",
+                service: service,
+                settings: settings
+            )
+            session.draft = "Question"
+
+            await session.restore()
+
+            #expect(session.needsRestore)
+            #expect(!session.canSend)
+            session.sendDraft()
+            #expect(await service.sentTextBlocks.isEmpty)
+            #expect(await service.approvalMethodUpdates.isEmpty)
+            session.selectApprovalMethod(.ask)
+
+            await session.restore()
+            await waitUntilAsync { await service.completedApprovalMethodUpdates.last == .ask }
+
+            #expect(!session.needsRestore)
+            #expect(session.selectedApprovalMethod == .ask)
+            #expect(session.canSend)
         }
 
         @Test
@@ -1208,6 +1373,7 @@ import Foundation
         private let restoredApprovalMethod: CodexChatApprovalMethod?
         private let approvalMethodUpdateError: CodexAppServerError?
         private let delaysApprovalMethodUpdate: Bool
+        private var resumeErrors: [CodexAppServerError]
         private var steerErrors: [CodexAppServerError]
         private(set) var sentTextBlocks: [[String]] = []
         private(set) var steeredTextBlocks: [[String]] = []
@@ -1217,6 +1383,7 @@ import Foundation
         private(set) var lifecycleEvents: [LifecycleEvent] = []
         private(set) var unsubscribedThreadIDs: [String] = []
         private(set) var resumedThreadIDs: [String] = []
+        private(set) var acquiredThreadLeaseCount = 0
         private(set) var approvalMethodUpdates: [CodexChatApprovalMethod] = []
         private(set) var completedApprovalMethodUpdates: [CodexChatApprovalMethod] = []
         private(set) var turnApprovalMethods: [CodexChatApprovalMethod] = []
@@ -1251,7 +1418,8 @@ import Foundation
             delaysLoad: Bool = false,
             restoredApprovalMethod: CodexChatApprovalMethod? = nil,
             approvalMethodUpdateError: CodexAppServerError? = nil,
-            delaysApprovalMethodUpdate: Bool = false
+            delaysApprovalMethodUpdate: Bool = false,
+            resumeErrors: [CodexAppServerError] = []
         ) {
             self.mode = mode
             self.steerErrors = steerErrors
@@ -1259,6 +1427,7 @@ import Foundation
             self.restoredApprovalMethod = restoredApprovalMethod
             self.approvalMethodUpdateError = approvalMethodUpdateError
             self.delaysApprovalMethodUpdate = delaysApprovalMethodUpdate
+            self.resumeErrors = resumeErrors
         }
 
         func models(forceRefresh _: Bool) async throws -> [CodexModel] {
@@ -1305,6 +1474,9 @@ import Foundation
 
         func resumeThread(id: String, vaultID _: UUID) async throws -> CodexChatThread {
             resumedThreadIDs.append(id)
+            if !resumeErrors.isEmpty {
+                throw resumeErrors.removeFirst()
+            }
             let thread = try await loadThread(id: id)
             return CodexChatThread(
                 id: thread.id,
@@ -1324,6 +1496,11 @@ import Foundation
                 model: "default-model",
                 reasoningEffort: effort
             )
+        }
+
+        func acquireThreadLease(threadID _: String) async -> UUID {
+            acquiredThreadLeaseCount += 1
+            return UUID.v7()
         }
 
         func setThreadName(threadID _: String, name: String) async {

@@ -61,6 +61,7 @@ import Foundation
                 backendThreadID: backendThreadID,
                 modelID: "default-model",
                 effort: "medium",
+                approvalMethod: backendThreadID == nil ? nil : .ask,
                 service: service,
                 settings: settings,
                 contextProvider: contextProvider
