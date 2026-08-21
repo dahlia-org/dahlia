@@ -188,6 +188,7 @@ import GRDB
             #expect(await waitUntil {
                 viewModel.meetingSidebarItems.count == 50 && viewModel.searchIndexRevision > 0
             })
+            #expect(viewModel.searchIndexRefreshTask == nil)
 
             viewModel.updateMeetingSearchQuery("Needle")
 
@@ -204,7 +205,6 @@ import GRDB
                     && !viewModel.isMeetingSearchLoadingMore
             })
             #expect(!viewModel.hasMoreMeetingSearchResults)
-            try await Task.sleep(for: .milliseconds(600))
             #expect(viewModel.meetingSearchItems.count == 51)
             #expect(!viewModel.hasMoreMeetingSearchResults)
         }
