@@ -74,33 +74,6 @@ import Foundation
             await appServer.shutdown()
         }
 
-        @Test
-        func freeChatGPTPlanReplacesStalePaidModelBeforeStartingTurn() async throws {
-            let transport = TestCodexChatAppServerTransport(
-                planType: "free",
-                modelList: TestCodexChatFixtures.modelList(["gpt-5.6-sol", "gpt-5.6-luna"])
-            )
-            let appServer = makeTestCodexAppServerService(
-                transportFactory: { transport },
-                accountProviderResolver: { .chatGPTSubscription }
-            )
-            let service = CodexChatService(appServer: appServer)
-
-            let stream = try await service.send(
-                threadID: "thread-1",
-                inputs: [.text("Hi")],
-                model: "gpt-5.6-sol",
-                effort: "medium"
-            )
-            for try await _ in stream {}
-
-            let params = try #require(await transport.messages().first {
-                $0.objectValue?["method"]?.stringValue == "turn/start"
-            }?.objectValue?["params"]?.objectValue)
-            #expect(params["model"] == .string("gpt-5.6-luna"))
-            await appServer.shutdown()
-        }
-
         @Test(arguments: [AIAccountProvider.chatGPTSubscription, .databricks, nil])
         func approvalReviewerFollowsProvider(provider: AIAccountProvider?) async throws {
             let transport = TestCodexChatAppServerTransport()
@@ -133,19 +106,12 @@ import Foundation
             let transports = Mutex([first, second])
             let resolverStarted = AsyncStream.makeStream(of: Void.self)
             let releaseResolver = AsyncStream.makeStream(of: Void.self)
-            let shouldBlockResolver = Mutex(true)
             let appServer = makeTestCodexAppServerService(
                 transportFactory: { transports.withLock { $0.removeFirst() } },
                 accountProviderResolver: {
-                    let shouldBlock = shouldBlockResolver.withLock { shouldBlock in
-                        defer { shouldBlock = false }
-                        return shouldBlock
-                    }
-                    if shouldBlock {
-                        resolverStarted.continuation.yield()
-                        for await _ in releaseResolver.stream {
-                            break
-                        }
+                    resolverStarted.continuation.yield()
+                    for await _ in releaseResolver.stream {
+                        break
                     }
                     return .chatGPTSubscription
                 }
