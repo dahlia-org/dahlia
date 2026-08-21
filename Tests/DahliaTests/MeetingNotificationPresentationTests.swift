@@ -5,9 +5,9 @@
 
     struct MeetingNotificationPresentationTests {
         @Test
-        func defaultsToProminentPopup() {
-            #expect(MeetingNotificationPresentation.defaultValue == .prominentPopup)
-            #expect(MeetingNotificationPresentation(storedRawValue: "unsupported") == .prominentPopup)
+        func defaultsToSystemNotification() {
+            #expect(MeetingNotificationPresentation.defaultValue == .systemNotification)
+            #expect(MeetingNotificationPresentation(storedRawValue: "unsupported") == .systemNotification)
         }
 
         @Test

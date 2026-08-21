@@ -3,7 +3,7 @@ enum MeetingNotificationPresentation: String, CaseIterable, Identifiable {
     case systemNotification
 
     nonisolated static let userDefaultsKey = "meetingNotificationPresentation"
-    nonisolated static let defaultValue: Self = .prominentPopup
+    nonisolated static let defaultValue: Self = .systemNotification
 
     var id: String { rawValue }
 
