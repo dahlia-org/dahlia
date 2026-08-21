@@ -16,7 +16,8 @@ struct RecordButton: View {
 
     var body: some View {
         Button(label, systemImage: iconName, action: toggle)
-            .labelStyle(DahliaFixedSymbolTitleAndIconLabelStyle())
+            .labelStyle(.titleAndIcon)
+            .font(.title3)
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
             .tint(.red)
@@ -54,7 +55,7 @@ struct RecordButton: View {
     }
 }
 
-struct GenerateSummaryFloatingButton: View {
+struct GenerateSummaryHeaderButton: View {
     @ObservedObject var viewModel: CaptionViewModel
     var sidebarViewModel: SidebarViewModel
     @State private var isConfirmationPresented = false
@@ -78,12 +79,11 @@ struct GenerateSummaryFloatingButton: View {
                         .tint(.purple)
                 } else {
                     Image(systemName: "sparkles")
-                        .dahliaFixedSymbol()
                         .foregroundStyle(viewModel.canGenerateSummary ? Color.purple : DahliaDesign.secondaryTextColor)
                 }
             }
         }
-        .modifier(FloatingSummaryButtonModifier(isEnabled: isGenerateSummaryEnabled))
+        .modifier(SummaryHeaderButtonModifier(isEnabled: isGenerateSummaryEnabled))
         .disabled(!isGenerateSummaryEnabled)
         .help(isGeneratingCurrentMeeting ? L10n.generatingSummary : L10n.generateSummary)
         .sheet(isPresented: $isConfirmationPresented) {
@@ -108,7 +108,7 @@ struct GenerateSummaryFloatingButton: View {
     }
 }
 
-struct ShareSummaryFloatingButton: View {
+struct ShareSummaryHeaderButton: View {
     @ObservedObject var viewModel: CaptionViewModel
     @State private var isPopoverPresented = false
 
@@ -120,11 +120,10 @@ struct ShareSummaryFloatingButton: View {
                 Text(L10n.share)
             } icon: {
                 Image(systemName: "square.and.arrow.up")
-                    .dahliaFixedSymbol()
                     .foregroundStyle(viewModel.canShareCurrentSummary ? Color.accentColor : DahliaDesign.secondaryTextColor)
             }
         }
-        .modifier(FloatingSummaryButtonModifier(isEnabled: viewModel.canShareCurrentSummary))
+        .modifier(SummaryHeaderButtonModifier(isEnabled: viewModel.canShareCurrentSummary))
         .disabled(!viewModel.canShareCurrentSummary)
         .help(L10n.shareSummary)
         .popover(isPresented: $isPopoverPresented, arrowEdge: .bottom) {
@@ -135,29 +134,21 @@ struct ShareSummaryFloatingButton: View {
     }
 }
 
-private struct FloatingSummaryButtonModifier: ViewModifier {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+private struct SummaryHeaderButtonModifier: ViewModifier {
     let isEnabled: Bool
     @State private var isHovered = false
 
     func body(content: Content) -> some View {
-        let respondsToHover = isHovered && isEnabled
-        let scalesOnHover = respondsToHover && !reduceMotion
-
         content
             .labelStyle(.iconOnly)
-            .dahliaFixedSymbol()
+            .font(.title3)
             .buttonStyle(.plain)
-            .frame(width: 28, height: 28)
-            .contentShape(Circle())
-            .background(DahliaDesign.contentHighlightColor, in: Circle())
-            .scaleEffect(scalesOnHover ? 1.08 : 1)
-            .shadow(
-                color: .black.opacity(respondsToHover ? 0.18 : 0.06),
-                radius: respondsToHover ? 5 : 2,
-                y: respondsToHover ? 2 : 1
+            .frame(width: 32, height: 32)
+            .contentShape(.rect)
+            .background(
+                isHovered && isEnabled ? DahliaDesign.contentHighlightColor : .clear,
+                in: .rect(cornerRadius: DahliaDesign.Highlight.regularCornerRadius)
             )
-            .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: respondsToHover)
             .onHover { isHovered = $0 }
     }
 }

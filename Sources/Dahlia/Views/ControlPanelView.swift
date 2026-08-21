@@ -248,26 +248,13 @@ struct ControlPanelView: View {
     }
 
     private var summaryTabContent: some View {
-        ZStack(alignment: .topTrailing) {
-            SummaryTabContentView(
-                screenshotStore: viewModel.screenshotStore,
-                document: viewModel.currentSummaryDocument,
-                hasSummary: viewModel.hasCurrentMeetingSummary,
-                openScreenshot: openSummaryScreenshot,
-                transcriptText: summaryTranscriptText
-            )
-            .padding(.trailing, 56)
-
-            VStack(spacing: 8) {
-                ShareSummaryFloatingButton(viewModel: viewModel)
-                GenerateSummaryFloatingButton(
-                    viewModel: viewModel,
-                    sidebarViewModel: sidebarViewModel
-                )
-            }
-            .padding(.top, 12)
-            .padding(.trailing, 16)
-        }
+        SummaryTabContentView(
+            screenshotStore: viewModel.screenshotStore,
+            document: viewModel.currentSummaryDocument,
+            hasSummary: viewModel.hasCurrentMeetingSummary,
+            openScreenshot: openSummaryScreenshot,
+            transcriptText: summaryTranscriptText
+        )
     }
 
     private var notesTabContent: some View {

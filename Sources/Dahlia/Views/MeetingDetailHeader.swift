@@ -103,13 +103,23 @@ struct MeetingDetailHeader: View {
                     onEditorTap: onEditorTap
                 )
 
-                if showsRecordButton {
-                    RecordButton(
-                        viewModel: viewModel,
-                        sidebarViewModel: sidebarViewModel,
-                        recordingCoordinator: recordingCoordinator
-                    )
-                    .fixedSize(horizontal: true, vertical: false)
+                HStack(spacing: 4) {
+                    HStack(spacing: 0) {
+                        GenerateSummaryHeaderButton(
+                            viewModel: viewModel,
+                            sidebarViewModel: sidebarViewModel
+                        )
+                        ShareSummaryHeaderButton(viewModel: viewModel)
+                    }
+
+                    if showsRecordButton {
+                        RecordButton(
+                            viewModel: viewModel,
+                            sidebarViewModel: sidebarViewModel,
+                            recordingCoordinator: recordingCoordinator
+                        )
+                        .fixedSize(horizontal: true, vertical: false)
+                    }
                 }
             }
 
