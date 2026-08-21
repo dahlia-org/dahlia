@@ -73,6 +73,23 @@ import Foundation
         }
 
         @Test
+        func accountUpdateDuringModelListUsesTheUpdatedFreePlan() async throws {
+            let transport = TestCodexAppServerTransport(mode: .accountUpdatesDuringModelList)
+            let service = makeTestCodexAppServerService(
+                transportFactory: { transport },
+                accountProviderResolver: { .chatGPTSubscription }
+            )
+
+            let models = try await service.models()
+
+            #expect(models.isEmpty)
+            let methods = await methodsSent(to: transport)
+            #expect(methods.count(where: { $0 == "account/read" }) == 2)
+            #expect(methods.count(where: { $0 == "model/list" }) == 1)
+            await service.shutdown()
+        }
+
+        @Test
         func freeChatGPTPlanUsesLunaWhenSavedModelIsUnavailable() async throws {
             let transport = TestCodexChatAppServerTransport(
                 planType: "free",

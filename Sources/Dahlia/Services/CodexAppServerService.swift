@@ -308,7 +308,7 @@ actor CodexAppServerService {
             bypassingAdmission: bypassConfigurationReloadAdmission
         )
         defer { finishCodexOperation(operationID) }
-        let account = try await accountStatus(forceRefresh: false)
+        var account = try await accountStatus(forceRefresh: false)
         guard account.canUseCodex else { throw CodexAppServerError.notLoggedIn }
         if !forceRefresh, let cachedModels { return cachedModels }
         var models: [CodexModel] = []
@@ -325,6 +325,10 @@ actor CodexAppServerService {
             cursor = response.nextCursor
         } while cursor != nil
 
+        account = try await accountStatus(forceRefresh: false)
+        guard account.canUseCodex else {
+            throw CodexAppServerError.notLoggedIn
+        }
         if await configuredAccountProvider() == .chatGPTSubscription, account.planType == "free" {
             models.removeAll { $0.model != "gpt-5.6-luna" }
         }

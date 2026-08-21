@@ -7,6 +7,7 @@ actor TestCodexAppServerTransport: CodexAppServerTransport {
         case blockInitialize
         case blockTurnStart
         case blockFirstModelList
+        case accountUpdatesDuringModelList
         case blockRequests
         case outOfOrder
         case serverRequests
@@ -41,6 +42,7 @@ actor TestCodexAppServerTransport: CodexAppServerTransport {
     private var approvalResponseContinuation: CheckedContinuation<Void, Never>?
     private var didStartClosing = false
     private var isAuthenticated: Bool
+    private var planType = "plus"
     private(set) var isClosed = false
 
     init(
@@ -160,7 +162,7 @@ actor TestCodexAppServerTransport: CodexAppServerTransport {
             .object([
                 "type": .string("chatgpt"),
                 "email": .string("test@example.com"),
-                "planType": .string("plus"),
+                "planType": .string(planType),
             ])
         } else {
             .null
@@ -225,6 +227,16 @@ actor TestCodexAppServerTransport: CodexAppServerTransport {
     private func enqueueModelListResponse(requestID: Int) {
         modelListCount += 1
         if mode == .blockFirstModelList, modelListCount == 1 { return }
+        if mode == .accountUpdatesDuringModelList, modelListCount == 1 {
+            planType = "free"
+            enqueue(jsonValue: .object([
+                "method": .string("account/updated"),
+                "params": .object([
+                    "authMode": .string("chatgpt"),
+                    "planType": .string(planType),
+                ]),
+            ]))
+        }
         let inputModalities: JSONValue = mode == .textOnlyGenerationCompletes
             ? .array([.string("text")])
             : .array([.string("text"), .string("image")])
