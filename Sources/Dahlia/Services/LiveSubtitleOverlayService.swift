@@ -370,7 +370,6 @@ private struct LiveSubtitleOverlayView: View {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .stroke(Color.white.opacity(0.12), lineWidth: 1)
         )
-        .shadow(color: .black.opacity(0.28), radius: 18, y: 10)
         .padding(LiveSubtitleOverlayLayout.outerPadding)
         .dahliaAppearance()
     }
@@ -418,14 +417,14 @@ private struct LiveSubtitleEntryView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(entry.primaryText)
-                .font(.body)
+                .font(.title3)
                 .foregroundStyle(entry.isConfirmed ? .white : .white.opacity(0.7))
                 .lineLimit(3)
                 .multilineTextAlignment(.leading)
 
             if let secondaryText = entry.secondaryText {
                 Text(secondaryText)
-                    .font(.callout)
+                    .font(.body)
                     .foregroundStyle(Color(nsColor: .systemCyan))
                     .lineLimit(3)
                     .multilineTextAlignment(.leading)

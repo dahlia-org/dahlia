@@ -2818,6 +2818,32 @@ enum L10n {
     }
 
     static var chatApprovalDeny: String { String(localized: "Deny", bundle: bundle) }
+    static var chatApprovalMethod: String { String(localized: "Approval method", bundle: bundle) }
+    static var chatChangePermissions: String { String(localized: "Change permissions", bundle: bundle) }
+    static var chatApprovalAsk: String { String(localized: "Ask for approval", bundle: bundle) }
+    static var chatApprovalAskDescription: String { String(
+        localized: "Always ask before editing files outside the workspace or using the internet.",
+        bundle: bundle
+    ) }
+    static var chatApprovalAutoReview: String { String(localized: "Review approvals", bundle: bundle) }
+    static var chatApprovalAutoReviewDescription: String { String(
+        localized: "Ask only when an operation is detected as potentially unsafe.",
+        bundle: bundle
+    ) }
+    static var chatApprovalAutoReviewRequiresSubscription: String {
+        String(localized: "Available with a ChatGPT subscription only.", bundle: bundle)
+    }
+
+    static var chatApprovalFullAccess: String { String(localized: "Full access", bundle: bundle) }
+    static var chatApprovalFullAccessDescription: String { String(
+        localized: "Allow unrestricted access to the internet and all files on this Mac.",
+        bundle: bundle
+    ) }
+
+    static func chatApprovalUpdateFailed(_ detail: String) -> String { String(
+        localized: "Could not update the approval method: \(detail)",
+        bundle: bundle
+    ) }
     static var chatApprovalDetailsTooLarge: String {
         String(localized: "This request is too large to review completely, so it cannot be approved.", bundle: bundle)
     }

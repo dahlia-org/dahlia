@@ -4,7 +4,9 @@ extension CodexChatSessionModel {
     }
 
     var canSend: Bool {
-        isBoundToCurrentVault
+        !isRestoring
+            && !needsRestore
+            && isBoundToCurrentVault
             && pendingImagePreparationCount == 0
             && (attachedImages.isEmpty || selectedModelSupportsImages)
             && hasComposerContent
@@ -38,7 +40,7 @@ extension CodexChatSessionModel {
     }
 
     var hasRetryableSubmission: Bool {
-        failedLiveTranscript != nil || lastSubmittedText != nil
+        hasApprovalMethodUpdateFailure || failedLiveTranscript != nil || lastSubmittedText != nil
     }
 
     var effortOptions: [CodexReasoningEffortOption] {

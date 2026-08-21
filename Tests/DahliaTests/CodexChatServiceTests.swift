@@ -99,6 +99,105 @@ import Foundation
             await appServer.shutdown()
         }
 
+        @Test(arguments: CodexChatApprovalMethod.allCases)
+        func approvalMethodControlsTurnAndStoredThreadSettings(method: CodexChatApprovalMethod) async throws {
+            let transport = TestCodexChatAppServerTransport()
+            let appServer = makeTestCodexAppServerService(
+                transportFactory: { transport },
+                accountProviderResolver: { .chatGPTSubscription }
+            )
+            let service = CodexChatService(appServer: appServer)
+
+            let turn = try await service.beginTurn(
+                threadID: "thread-1",
+                inputs: [.text("Hi")],
+                model: "default-model",
+                effort: "medium",
+                approvalMethod: method
+            )
+            for try await _ in turn.events {}
+            let storedMethod = try await service.updateApprovalMethod(
+                threadID: "thread-1",
+                approvalMethod: method
+            )
+
+            let messages = await transport.messages()
+            let turnParams = try #require(messages.first {
+                $0.objectValue?["method"]?.stringValue == "turn/start"
+            }?.objectValue?["params"]?.objectValue)
+            let settingsParams = try #require(messages.first {
+                $0.objectValue?["method"]?.stringValue == "thread/settings/update"
+            }?.objectValue?["params"]?.objectValue)
+            let expectedPolicy = JSONValue.string(method == .fullAccess ? "never" : "on-request")
+            let expectedReviewer = JSONValue.string(method == .autoReview ? "auto_review" : "user")
+            let expectedSandbox: JSONValue = method == .fullAccess
+                ? .object(["type": .string("dangerFullAccess")])
+                : .object(["networkAccess": .bool(false), "type": .string("workspaceWrite")])
+            for params in [turnParams, settingsParams] {
+                #expect(params["approvalPolicy"] == expectedPolicy)
+                #expect(params["approvalsReviewer"] == expectedReviewer)
+                #expect(params["sandboxPolicy"] == expectedSandbox)
+            }
+            #expect(turn.approvalMethod == method)
+            #expect(storedMethod == method)
+            await appServer.shutdown()
+        }
+
+        @Test
+        func autoReviewFallsBackToUserApprovalOutsideChatGPTSubscription() async throws {
+            let transport = TestCodexChatAppServerTransport()
+            let appServer = makeTestCodexAppServerService(
+                transportFactory: { transport },
+                accountProviderResolver: { .databricks }
+            )
+            let service = CodexChatService(appServer: appServer)
+
+            let turn = try await service.beginTurn(
+                threadID: "thread-1",
+                inputs: [.text("Hi")],
+                model: nil,
+                effort: "medium",
+                approvalMethod: .autoReview
+            )
+            for try await _ in turn.events {}
+            let storedMethod = try await service.updateApprovalMethod(
+                threadID: "thread-1",
+                approvalMethod: .autoReview
+            )
+
+            let params = try #require(await transport.messages().first {
+                $0.objectValue?["method"]?.stringValue == "turn/start"
+            }?.objectValue?["params"]?.objectValue)
+            #expect(params["approvalPolicy"] == .string("on-request"))
+            #expect(params["approvalsReviewer"] == .string("user"))
+            #expect(params["sandboxPolicy"] == .object([
+                "networkAccess": .bool(false),
+                "type": .string("workspaceWrite"),
+            ]))
+            #expect(turn.approvalMethod == .ask)
+            #expect(storedMethod == .ask)
+            await appServer.shutdown()
+        }
+
+        @Test
+        func legacyReadOnlyThreadDoesNotRestoreAsFullAccess() async throws {
+            let transport = TestCodexChatAppServerTransport(
+                resumedApprovalPolicy: .string("never"),
+                resumedApprovalsReviewer: .string("user"),
+                resumedSandbox: .object(["type": .string("readOnly")])
+            )
+            let appServer = makeTestCodexAppServerService(transportFactory: { transport })
+            let service = CodexChatService(
+                appServer: appServer,
+                mcpExecutableURL: URL(filePath: "/tmp/dahlia-mcp")
+            )
+
+            let thread = try await service.resumeThread(id: "thread-history", vaultID: UUID.v7())
+
+            #expect(thread.approvalMethod == nil)
+            await appServer.shutdown()
+        }
+
         @Test
         func providerResolutionAndTurnStartDoNotCrossConfigurationReload() async throws {
             let first = TestCodexChatAppServerTransport()
@@ -352,6 +451,7 @@ import Foundation
             #expect(loaded.messages[3].reasoning == "Reasoning without an answer")
             #expect(resumed.model == "default-model")
             #expect(resumed.reasoningEffort == "high")
+            #expect(resumed.approvalMethod == .autoReview)
             guard case let .meeting(meetingID, meetingName, calendarEvent) = loaded.messages[0].context else {
                 Issue.record("Expected restored Meeting context")
                 return
@@ -372,8 +472,8 @@ import Foundation
             let resumeParams = try #require(await transport.messages().first {
                 $0.objectValue?["method"]?.stringValue == "thread/resume"
             }?.objectValue?["params"]?.objectValue)
-            #expect(resumeParams["approvalPolicy"] == .string("on-request"))
-            #expect(resumeParams["sandbox"] == .string("workspace-write"))
+            #expect(resumeParams["approvalPolicy"] == nil)
+            #expect(resumeParams["sandbox"] == nil)
             expectDeveloperInstructions(resumeParams["developerInstructions"]?.stringValue)
             await appServer.shutdown()
         }

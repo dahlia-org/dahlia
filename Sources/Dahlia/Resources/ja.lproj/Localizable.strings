@@ -1473,3 +1473,13 @@
 "Search index ready" = "準備完了";
 "Search index failed" = "利用できません";
 "Search index error format" = "インデックス処理エラー: %@";
+"Approval method" = "アクションの承認方法";
+"Change permissions" = "権限を変更";
+"Ask for approval" = "承認を求める";
+"Always ask before editing files outside the workspace or using the internet." = "外部ファイルの編集やインターネットの利用について、常に確認を求めます";
+"Review approvals" = "代わりに承認";
+"Ask only when an operation is detected as potentially unsafe." = "安全でない可能性があると検出された操作についてのみ確認を求めます";
+"Available with a ChatGPT subscription only." = "ChatGPT サブスクリプションでのみ利用できます。";
+"Full access" = "フルアクセス";
+"Allow unrestricted access to the internet and all files on this Mac." = "インターネットとコンピュータ上のすべてのファイルに無制限でアクセスします";
+"Could not update the approval method: %@" = "承認方法を更新できませんでした: %@";
