@@ -3,7 +3,7 @@ import SwiftUI
 struct MainSearchSuggestions: View {
     @Bindable var model: MainSearchModel
     var sidebarViewModel: SidebarViewModel
-    @Binding var mode: Mode
+    let mode: Mode
 
     @State private var customDateStart = Calendar.current.startOfDay(for: .now)
     @State private var customDateEnd = Calendar.current.startOfDay(for: .now)
@@ -20,14 +20,6 @@ struct MainSearchSuggestions: View {
                 tagSuggestions
             case .period:
                 periodSuggestions
-            }
-
-            if !model.inputText.isEmpty || !model.tokens.isEmpty {
-                Button(L10n.clearAllSearchConditions, systemImage: "xmark.circle") {
-                    model.clearConditions(using: sidebarViewModel)
-                    mode = .overview
-                }
-                .buttonStyle(.plain)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
