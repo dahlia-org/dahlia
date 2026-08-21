@@ -253,6 +253,7 @@ struct MainSearchPanel: View {
             projectTint: meeting.projectId.map { appearanceForProject($0).color.color },
             dateText: meeting.effectiveRecordingStartedAt.formatted(date: .numeric, time: .omitted),
             shortcutNumber: shortcutNumber,
+            isSemanticHit: meeting.isSemanticHit,
             isSelected: model.selectedResultID == .meeting(meeting.id),
             action: { onOpenMeeting(meeting.id) }
         )

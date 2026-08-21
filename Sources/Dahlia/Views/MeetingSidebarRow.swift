@@ -188,12 +188,6 @@ struct MeetingSidebarRow: View {
             highlightedText(context.text)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
-            if item.isSemanticHit, context.kind != .semantic {
-                Image(systemName: "brain")
-                    .foregroundStyle(.tertiary)
-                    .help(L10n.semanticMatch)
-                    .accessibilityLabel(L10n.semanticMatch)
-            }
         }
         .font(.caption)
         .accessibilityElement(children: .combine)
