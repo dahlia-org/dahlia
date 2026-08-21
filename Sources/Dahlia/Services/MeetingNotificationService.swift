@@ -3,7 +3,7 @@ import Foundation
 
 private let meetingNotificationPayloadKey = "dahliaDetectedMeeting"
 
-/// macOS の標準通知を予約し、通知アクションをアプリ内の録音処理へ中継する。
+/// ミーティング通知を選択された表示形式で提示し、通知アクションをアプリ内の録音処理へ中継する。
 @MainActor
 final class MeetingNotificationService: NSObject, UNUserNotificationCenterDelegate {
     static let shared = MeetingNotificationService()
@@ -20,13 +20,18 @@ final class MeetingNotificationService: NSObject, UNUserNotificationCenterDelega
     private static let maximumScheduledCalendarNotifications = 50
 
     private let notificationCenter: UNUserNotificationCenter
+    private let popupPresenter = MeetingNotificationPopupPresenter()
+    private let calendarPopupScheduler = MeetingCalendarPopupScheduler()
     private var onOpenMeeting: (DetectedMeeting) -> Void = { _ in }
     private var onStartRecording: (DetectedMeeting) -> Void = { _ in }
+    private var onJoinMeeting: (DetectedMeeting) -> Void = { _ in }
     private var onJoinAndStartRecording: (DetectedMeeting) -> Void = { _ in }
     private var pendingResponses: [(actionIdentifier: String, meeting: DetectedMeeting)] = []
     private var callbacksAreConfigured = false
     private var calendarOperationTask: Task<Void, Never>?
     private var notificationAuthorizationTask: Task<Bool, Never>?
+    private var activePresentation: MeetingNotificationPresentation?
+    private var deliveredCalendarIdentifiers = Set<String>()
 
     private init(notificationCenter: UNUserNotificationCenter = .current()) {
         self.notificationCenter = notificationCenter
@@ -46,10 +51,12 @@ final class MeetingNotificationService: NSObject, UNUserNotificationCenterDelega
     func configure(
         onOpenMeeting: @escaping (DetectedMeeting) -> Void,
         onStartRecording: @escaping (DetectedMeeting) -> Void,
+        onJoinMeeting: @escaping (DetectedMeeting) -> Void,
         onJoinAndStartRecording: @escaping (DetectedMeeting) -> Void
     ) {
         self.onOpenMeeting = onOpenMeeting
         self.onStartRecording = onStartRecording
+        self.onJoinMeeting = onJoinMeeting
         self.onJoinAndStartRecording = onJoinAndStartRecording
         callbacksAreConfigured = true
 
@@ -90,16 +97,38 @@ final class MeetingNotificationService: NSObject, UNUserNotificationCenterDelega
     }
 
     func deliverMicrophoneDetection(_ meeting: DetectedMeeting) async -> Bool {
-        guard AppSettings.shared.meetingDetectionEnabled,
-              AppSettings.shared.microphoneMeetingNotificationsEnabled,
-              await requestAuthorizationIfNeeded()
+        let settings = AppSettings.shared
+        guard settings.meetingDetectionEnabled,
+              settings.microphoneMeetingNotificationsEnabled
         else { return false }
+
+        let presentation = settings.meetingNotificationPresentation
+        await synchronizePresentation(presentation)
+        let title = meeting.calendarEvent == nil ? L10n.meetingDetected : meeting.title
+        let body = L10n.meetingDetectedSubtitle(meeting.appName)
+
+        if presentation == .prominentPopup {
+            popupPresenter.present(
+                MeetingNotificationPopup(
+                    id: Self.microphoneRequestPrefix + meeting.id.uuidString,
+                    meeting: meeting,
+                    title: title,
+                    subtitle: meeting.calendarEvent?.calendarName,
+                    body: body,
+                    isCalendarNotification: false
+                ),
+                onAction: performPopupAction
+            )
+            return true
+        }
+
+        guard await requestAuthorizationIfNeeded() else { return false }
 
         do {
             let content = try notificationContent(
                 for: meeting,
-                title: meeting.calendarEvent == nil ? L10n.meetingDetected : meeting.title,
-                body: L10n.meetingDetectedSubtitle(meeting.appName),
+                title: title,
+                body: body,
                 categoryIdentifier: Self.microphoneCategoryIdentifier
             )
             let request = UNNotificationRequest(
@@ -129,13 +158,33 @@ final class MeetingNotificationService: NSObject, UNUserNotificationCenterDelega
 
     private func performReplaceCalendarNotifications(with events: [CalendarEvent]) async {
         let settings = AppSettings.shared
-        guard settings.meetingDetectionEnabled,
-              settings.calendarEventMeetingNotificationsEnabled
-        else {
+        let presentation = settings.meetingNotificationPresentation
+        await synchronizePresentation(presentation)
+        guard settings.meetingDetectionEnabled else {
+            calendarPopupScheduler.cancel()
+            popupPresenter.removeAll()
+            await removeSystemMeetingNotifications()
+            return
+        }
+        if !settings.microphoneMeetingNotificationsEnabled {
+            popupPresenter.removeMicrophoneNotifications()
+            await removeSystemMicrophoneNotifications()
+        }
+        guard settings.calendarEventMeetingNotificationsEnabled else {
             await removeCalendarNotifications(includeDelivered: true)
             return
         }
 
+        let now = Date.now
+        let schedule = calendarSchedule(for: events, filter: settings.calendarEventFilter, now: now)
+        if presentation == .prominentPopup {
+            await removeSystemCalendarNotifications(includeDelivered: true)
+            replaceCalendarPopupNotifications(with: schedule)
+            return
+        }
+
+        calendarPopupScheduler.cancel()
+        popupPresenter.removeCalendarNotifications()
         let isAuthorized = await requestAuthorizationIfNeeded()
         guard !Task.isCancelled else { return }
         guard isAuthorized else {
@@ -143,8 +192,6 @@ final class MeetingNotificationService: NSObject, UNUserNotificationCenterDelega
             return
         }
 
-        let now = Date.now
-        let schedule = calendarSchedule(for: events, filter: settings.calendarEventFilter, now: now)
         let scheduledIdentifiers = Set(
             schedule.map { Self.calendarNotificationIdentifier(for: $0.event) }
         )
@@ -165,6 +212,7 @@ final class MeetingNotificationService: NSObject, UNUserNotificationCenterDelega
                 .map(\.request.identifier)
                 .filter(Self.isCalendarNotificationIdentifier)
         )
+        deliveredCalendarIdentifiers.formUnion(deliveredIdentifiers)
         let staleDeliveredIdentifiers = CalendarMeetingNotificationPlanner.staleDeliveredIdentifiers(
             from: deliveredIdentifiers,
             scheduledIdentifiers: scheduledIdentifiers
@@ -176,7 +224,7 @@ final class MeetingNotificationService: NSObject, UNUserNotificationCenterDelega
         for (event, notificationDate) in schedule {
             guard !Task.isCancelled else { return }
             let identifier = Self.calendarNotificationIdentifier(for: event)
-            guard !deliveredIdentifiers.contains(identifier) else { continue }
+            guard !deliveredCalendarIdentifiers.contains(identifier) else { continue }
 
             do {
                 try await addCalendarNotification(
@@ -198,6 +246,12 @@ final class MeetingNotificationService: NSObject, UNUserNotificationCenterDelega
     }
 
     private func removeCalendarNotifications(includeDelivered: Bool) async {
+        calendarPopupScheduler.cancel()
+        popupPresenter.removeCalendarNotifications()
+        await removeSystemCalendarNotifications(includeDelivered: includeDelivered)
+    }
+
+    private func removeSystemCalendarNotifications(includeDelivered: Bool) async {
         let pendingRequests = await notificationCenter.pendingNotificationRequests()
         guard !Task.isCancelled else { return }
         let pendingIdentifiers = pendingRequests
@@ -213,6 +267,45 @@ final class MeetingNotificationService: NSObject, UNUserNotificationCenterDelega
         let deliveredIdentifiers = deliveredNotifications
             .map(\.request.identifier)
             .filter(Self.isCalendarNotificationIdentifier)
+        if !deliveredIdentifiers.isEmpty {
+            notificationCenter.removeDeliveredNotifications(withIdentifiers: deliveredIdentifiers)
+        }
+    }
+
+    private func removeSystemMeetingNotifications() async {
+        let pendingRequests = await notificationCenter.pendingNotificationRequests()
+        let pendingIdentifiers = pendingRequests
+            .map(\.identifier)
+            .filter(Self.isMeetingNotificationIdentifier)
+        if !pendingIdentifiers.isEmpty {
+            notificationCenter.removePendingNotificationRequests(withIdentifiers: pendingIdentifiers)
+        }
+
+        let deliveredNotifications = await notificationCenter.deliveredNotifications()
+        let deliveredIdentifiers = deliveredNotifications
+            .map(\.request.identifier)
+            .filter(Self.isMeetingNotificationIdentifier)
+        deliveredCalendarIdentifiers.formUnion(
+            deliveredIdentifiers.filter(Self.isCalendarNotificationIdentifier)
+        )
+        if !deliveredIdentifiers.isEmpty {
+            notificationCenter.removeDeliveredNotifications(withIdentifiers: deliveredIdentifiers)
+        }
+    }
+
+    private func removeSystemMicrophoneNotifications() async {
+        let pendingRequests = await notificationCenter.pendingNotificationRequests()
+        let pendingIdentifiers = pendingRequests
+            .map(\.identifier)
+            .filter(Self.isMicrophoneNotificationIdentifier)
+        if !pendingIdentifiers.isEmpty {
+            notificationCenter.removePendingNotificationRequests(withIdentifiers: pendingIdentifiers)
+        }
+
+        let deliveredNotifications = await notificationCenter.deliveredNotifications()
+        let deliveredIdentifiers = deliveredNotifications
+            .map(\.request.identifier)
+            .filter(Self.isMicrophoneNotificationIdentifier)
         if !deliveredIdentifiers.isEmpty {
             notificationCenter.removeDeliveredNotifications(withIdentifiers: deliveredIdentifiers)
         }
@@ -260,6 +353,51 @@ final class MeetingNotificationService: NSObject, UNUserNotificationCenterDelega
             now: now,
             limit: Self.maximumScheduledCalendarNotifications
         )
+    }
+
+    private func replaceCalendarPopupNotifications(
+        with schedule: [(event: CalendarEvent, notificationDate: Date)]
+    ) {
+        let scheduledIdentifiers = Set(schedule.map { Self.calendarNotificationIdentifier(for: $0.event) })
+        popupPresenter.retainCalendarNotifications(withIdentifiers: scheduledIdentifiers)
+        calendarPopupScheduler.replace(
+            with: schedule,
+            identifierForEvent: Self.calendarNotificationIdentifier,
+            onPresent: { [weak self] event, identifier in
+                self?.presentCalendarPopup(for: event, identifier: identifier)
+            }
+        )
+    }
+
+    private func presentCalendarPopup(for event: CalendarEvent, identifier: String) {
+        guard deliveredCalendarIdentifiers.insert(identifier).inserted else { return }
+        let meeting = DetectedMeeting(
+            title: event.resolvedMeetingTitle,
+            appName: L10n.calendar,
+            bundleIdentifier: event.platform,
+            calendarEvent: event
+        )
+        popupPresenter.present(
+            MeetingNotificationPopup(
+                id: identifier,
+                meeting: meeting,
+                title: meeting.title,
+                subtitle: event.calendarName,
+                body: L10n.calendarEventStartsInOneMinute,
+                isCalendarNotification: true
+            ),
+            onAction: performPopupAction
+        )
+    }
+
+    private func synchronizePresentation(_ presentation: MeetingNotificationPresentation) async {
+        guard activePresentation != presentation else { return }
+        activePresentation = presentation
+        calendarPopupScheduler.cancel()
+        popupPresenter.removeAll()
+        if presentation == .prominentPopup {
+            await removeSystemMeetingNotifications()
+        }
     }
 
     private func registerCategories() {
@@ -380,6 +518,18 @@ final class MeetingNotificationService: NSObject, UNUserNotificationCenterDelega
         }
     }
 
+    private func performPopupAction(
+        _ popup: MeetingNotificationPopup,
+        _ action: MeetingNotificationPopup.Action
+    ) {
+        action.perform(
+            for: popup.meeting,
+            onStartRecording: onStartRecording,
+            onJoinMeeting: onJoinMeeting,
+            onJoinAndStartRecording: onJoinAndStartRecording
+        )
+    }
+
     private static func calendarNotificationIdentifier(for event: CalendarEvent) -> String {
         let timestamp = Int(event.startDate.timeIntervalSince1970)
         return "\(calendarRequestPrefix)\(event.platform).\(event.platformId).\(timestamp)"
@@ -387,6 +537,14 @@ final class MeetingNotificationService: NSObject, UNUserNotificationCenterDelega
 
     private static func isCalendarNotificationIdentifier(_ identifier: String) -> Bool {
         identifier.hasPrefix(calendarRequestPrefix)
+    }
+
+    private static func isMicrophoneNotificationIdentifier(_ identifier: String) -> Bool {
+        identifier.hasPrefix(microphoneRequestPrefix)
+    }
+
+    private static func isMeetingNotificationIdentifier(_ identifier: String) -> Bool {
+        isCalendarNotificationIdentifier(identifier) || isMicrophoneNotificationIdentifier(identifier)
     }
 
     private static func payload(for meeting: DetectedMeeting) throws -> String {
