@@ -346,10 +346,9 @@ actor BackupService {
         at url: URL,
         validateIntegrity shouldValidateIntegrity: Bool
     ) throws -> BackupMetadata {
-        let queue = try DatabaseQueue(
-            path: url.path,
-            configuration: AppDatabaseManager.configuration(readonly: true)
-        )
+        var configuration = Configuration()
+        configuration.readonly = true
+        let queue = try DatabaseQueue(path: url.path, configuration: configuration)
         return try queue.read { db in
             if shouldValidateIntegrity {
                 try validateIntegrity(in: db)
@@ -400,10 +399,9 @@ actor BackupService {
         let expectedVersion = AppDatabaseManager.schemaVersion(from: metadata.migrationIdentifier)
         guard expectedVersion == metadata.schemaVersion else { throw BackupServiceError.invalidBackup }
 
-        let queue = try DatabaseQueue(
-            path: url.path,
-            configuration: AppDatabaseManager.configuration(readonly: true)
-        )
+        var configuration = Configuration()
+        configuration.readonly = true
+        let queue = try DatabaseQueue(path: url.path, configuration: configuration)
         try queue.read { db in
             let completed = try AppDatabaseManager.migrator.completedMigrations(db)
             let expected = Array(AppDatabaseManager.migrationIdentifiers.prefix(index + 1))
