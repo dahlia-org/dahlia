@@ -115,7 +115,7 @@ final class SidebarViewModel {
     @ObservationIgnored private var projectObservation: AnyDatabaseCancellable?
     @ObservationIgnored private var vaultObservation: AnyDatabaseCancellable?
     @ObservationIgnored private var searchIndexObservation: AnyDatabaseCancellable?
-    @ObservationIgnored private var searchIndexRefreshTask: Task<Void, Never>?
+    @ObservationIgnored private(set) var searchIndexRefreshTask: Task<Void, Never>?
     @ObservationIgnored private var hasObservedSearchIndexRevision = false
     @ObservationIgnored private var vaultSyncService: VaultSyncService?
     @ObservationIgnored private var workspaceChangeObserver: NSObjectProtocol?
