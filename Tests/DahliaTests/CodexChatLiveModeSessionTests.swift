@@ -30,6 +30,21 @@ import Foundation
         }
 
         @Test
+        func disablingLiveModeCancelsTheInitialPromptBeforeItStarts() async {
+            let service = TestCodexChatService(mode: .staleRollout)
+            let settings = AppSettings()
+            settings.currentVault = Self.testVault()
+            let session = Self.session(service: service, settings: settings)
+
+            session.startLiveMode()
+            session.disableLiveMode()
+            await waitUntil { !session.isGenerating && !session.isTurnCleanupPending }
+
+            #expect(await service.sentTextBlocks.isEmpty)
+            #expect(session.messages.isEmpty)
+        }
+
+        @Test
         func restartingLiveModeSendsOneInitialPromptPerActivation() async {
             let service = TestCodexChatService(mode: .staleRollout)
             let settings = AppSettings()
@@ -168,21 +183,48 @@ import Foundation
         }
 
         @Test
+        func failedShortcutCannotRetryAfterLiveModeEnds() async {
+            let service = TestCodexChatService(
+                mode: .block,
+                steerErrors: [.invalidProtocolResponse]
+            )
+            let settings = AppSettings()
+            settings.currentVault = Self.testVault()
+            let session = Self.session(service: service, settings: settings)
+
+            session.startLiveMode()
+            await waitUntil { session.activeTurnID != nil }
+            session.sendLiveModeShortcut(L10n.chatLiveModeSummarizeShortcut)
+            await waitUntil { session.errorMessage != nil }
+
+            session.disableLiveMode()
+            await waitUntil { !session.isGenerating && !session.isTurnCleanupPending }
+            session.retry()
+            await waitUntil { !session.isGenerating && !session.isTurnCleanupPending }
+
+            #expect(await service.sentTextBlocks == [[L10n.chatLiveModeInitialPrompt]])
+            #expect(await service.steeredTextBlocks == [[L10n.chatLiveModeSummarizeShortcut]])
+        }
+
+        @Test
         func disablingLiveModeDropsAQueuedShortcut() async {
             let service = TestCodexChatService(mode: .block)
             let settings = AppSettings()
             settings.currentVault = Self.testVault()
             let session = Self.session(service: service, settings: settings)
 
-            session.startLiveMode()
+            session.draft = "Root question"
+            session.sendDraft()
+            await waitUntil { session.activeTurnID != nil }
+            session.toggleLiveMode()
             session.sendLiveModeShortcut(L10n.chatLiveModeSummarizeShortcut)
             #expect(!session.canSendLiveModeShortcut)
 
             session.disableLiveMode()
-            await waitUntil { session.activeTurnID != nil }
             await service.completeBlockedTurn()
             await waitUntil { !session.isGenerating }
 
+            #expect(await service.sentTextBlocks == [["Root question"]])
             #expect(await service.steeredTextBlocks.isEmpty)
             #expect(!session.messages.contains { $0.text == L10n.chatLiveModeSummarizeShortcut })
         }

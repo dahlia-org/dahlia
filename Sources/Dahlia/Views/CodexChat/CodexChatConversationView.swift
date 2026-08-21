@@ -1,5 +1,14 @@
 import SwiftUI
 
+struct CodexChatConversationScrollState: Equatable {
+    let contentHeight: CGFloat
+    let isAtBottom: Bool
+
+    func shouldRestoreFollow(from previous: Self, isFollowingLatest: Bool) -> Bool {
+        isFollowingLatest && contentHeight != previous.contentHeight
+    }
+}
+
 struct CodexChatConversationView: View {
     private static let bottomID = "codex-chat-bottom"
 
@@ -53,12 +62,19 @@ struct CodexChatConversationView: View {
                 guard wasResizing, !isResizing else { return }
                 scrollToLatest(with: proxy)
             }
-            .onScrollGeometryChange(for: Bool.self) { geometry in
+            .onScrollGeometryChange(for: CodexChatConversationScrollState.self) { geometry in
                 let visibleBottom = geometry.contentOffset.y + geometry.containerSize.height
-                return visibleBottom >= geometry.contentSize.height - 24
-            } action: { _, isAtBottom in
+                return CodexChatConversationScrollState(
+                    contentHeight: geometry.contentSize.height,
+                    isAtBottom: visibleBottom >= geometry.contentSize.height - 24
+                )
+            } action: { previous, current in
                 guard !isChatSidebarResizing else { return }
-                isFollowingLatest = isAtBottom
+                if current.shouldRestoreFollow(from: previous, isFollowingLatest: isFollowingLatest) {
+                    scrollToLatest(with: proxy)
+                } else {
+                    isFollowingLatest = current.isAtBottom
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }

@@ -288,7 +288,8 @@ final class CodexChatSessionModel: Identifiable {
         sendManualSubmission(
             CodexChatManualSubmission(
                 text: L10n.chatLiveModeInitialPrompt,
-                images: []
+                images: [],
+                liveModeGeneration: liveModeGeneration
             ),
             reportsUsage: false
         )
@@ -1047,10 +1048,14 @@ extension CodexChatSessionModel {
                 images: images,
                 liveModeGeneration: activeManualSubmissionLiveModeGeneration
             )
-            lastSubmittedText = submission.text
-            lastManualSubmission = submission
-            failedSubmission = .manual(submission)
+            recordFailedManualSubmission(submission)
         }
+    }
+
+    func recordFailedManualSubmission(_ submission: CodexChatManualSubmission) {
+        lastSubmittedText = submission.text
+        lastManualSubmission = submission
+        failedSubmission = .manual(submission)
     }
 
     func recordFailedLiveTranscript(_ text: String) {
@@ -1341,7 +1346,7 @@ extension CodexChatSessionModel {
     func recordSteerFailure(_ input: CodexChatPendingInput) {
         switch input {
         case let .manual(submission):
-            recordFailedSubmission(text: submission.text, images: submission.images, liveTranscript: nil)
+            recordFailedManualSubmission(submission)
         case let .liveTranscript(text, _):
             recordFailedSubmission(text: nil, liveTranscript: text)
         }
