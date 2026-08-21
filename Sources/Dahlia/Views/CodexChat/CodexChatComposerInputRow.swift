@@ -46,6 +46,8 @@ struct CodexChatComposerInputRow: View {
             .dahliaHoverHelp(label: L10n.addToChat, shortcut: "@")
             .onExitCommand(perform: onExitCommand)
 
+            CodexChatApprovalMethodButton(session: session)
+
             Spacer(minLength: 0)
 
             if session.isLoading, session.models.isEmpty {

@@ -31,7 +31,7 @@ extension CodexChatSessionModel {
     }
 
     var hasRetryableSubmission: Bool {
-        failedLiveTranscript != nil || lastSubmittedText != nil
+        hasApprovalMethodUpdateFailure || failedLiveTranscript != nil || lastSubmittedText != nil
     }
 
     var effortOptions: [CodexReasoningEffortOption] {

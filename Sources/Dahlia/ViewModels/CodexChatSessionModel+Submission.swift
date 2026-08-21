@@ -54,6 +54,7 @@ extension CodexChatSessionModel {
             return
         }
         prepareFailureStateForSubmission(liveTranscript: liveTranscript)
+        clearApprovalMethodUpdateError()
         isGenerating = true
         isPreparingTurn = liveTranscript == nil
         isAwaitingTurnOutput = liveTranscript != nil

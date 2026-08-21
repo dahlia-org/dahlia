@@ -11,14 +11,26 @@ actor TestCodexChatAppServerTransport: CodexAppServerTransport {
 
     private let turnOutcome: TurnOutcome
     private let automaticallyRespondsToModelList: Bool
+    private let resumedApprovalPolicy: JSONValue
+    private let resumedApprovalsReviewer: JSONValue
+    private let resumedSandbox: JSONValue
     private var responses: [Data] = []
     private var sentMessages: [JSONValue] = []
     private var receiveContinuation: CheckedContinuation<Data?, Never>?
     private(set) var isClosed = false
 
-    init(turnOutcome: TurnOutcome = .completed, automaticallyRespondsToModelList: Bool = true) {
+    init(
+        turnOutcome: TurnOutcome = .completed,
+        automaticallyRespondsToModelList: Bool = true,
+        resumedApprovalPolicy: JSONValue = .string("on-request"),
+        resumedApprovalsReviewer: JSONValue = .string("auto_review"),
+        resumedSandbox: JSONValue = .string("workspace-write")
+    ) {
         self.turnOutcome = turnOutcome
         self.automaticallyRespondsToModelList = automaticallyRespondsToModelList
+        self.resumedApprovalPolicy = resumedApprovalPolicy
+        self.resumedApprovalsReviewer = resumedApprovalsReviewer
+        self.resumedSandbox = resumedSandbox
     }
 
     func sendLine(_ data: Data) throws {
@@ -96,9 +108,12 @@ actor TestCodexChatAppServerTransport: CodexAppServerTransport {
             ]))
         case "thread/resume":
             enqueueResponse(requestID, result: .object([
+                "approvalPolicy": resumedApprovalPolicy,
+                "approvalsReviewer": resumedApprovalsReviewer,
                 "thread": TestCodexChatFixtures.chatThread(id: "thread-history"),
                 "model": .string("default-model"),
                 "reasoningEffort": .string("high"),
+                "sandbox": resumedSandbox,
             ]))
         case "thread/start":
             enqueueResponse(requestID, result: .object([

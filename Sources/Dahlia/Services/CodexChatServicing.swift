@@ -19,8 +19,13 @@ protocol CodexChatServicing: Sendable {
         threadID: String,
         inputs: [CodexAppServerInput],
         model: String?,
-        effort: String
+        effort: String,
+        approvalMethod: CodexChatApprovalMethod
     ) async throws -> CodexChatTurnHandle
+    func updateApprovalMethod(
+        threadID: String,
+        approvalMethod: CodexChatApprovalMethod
+    ) async throws -> CodexChatApprovalMethod
     func decideApproval(turnID: UUID, id: String, decision: CodexChatApprovalDecision) async throws
     func stopTurn(_ turnID: UUID) async
     func respondToApproval(id: String, decision: CodexChatApprovalDecision) async
@@ -43,7 +48,8 @@ extension CodexChatServicing {
         threadID: String,
         inputs: [CodexAppServerInput],
         model: String?,
-        effort: String
+        effort: String,
+        approvalMethod: CodexChatApprovalMethod
     ) async throws -> CodexChatTurnHandle {
         let events = try await send(
             threadID: threadID,
@@ -53,8 +59,16 @@ extension CodexChatServicing {
         )
         return CodexChatTurnHandle(
             id: UUID.v7(),
-            events: events
+            events: events,
+            approvalMethod: approvalMethod
         )
+    }
+
+    func updateApprovalMethod(
+        threadID _: String,
+        approvalMethod: CodexChatApprovalMethod
+    ) async throws -> CodexChatApprovalMethod {
+        approvalMethod
     }
 
     func decideApproval(turnID _: UUID, id: String, decision: CodexChatApprovalDecision) async throws {

@@ -660,6 +660,7 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
     func invalidateCodexAccountConfiguration() {
         codexConfiguredAccountProviderRawValue = ""
         codexConfiguredDatabricksProfile = ""
+        objectWillChange.send()
     }
 
     func markCodexAccountConfigurationCurrent(
@@ -668,6 +669,7 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
     ) {
         codexConfiguredAccountProviderRawValue = provider.rawValue
         codexConfiguredDatabricksProfile = provider == .databricks ? databricksProfile : ""
+        objectWillChange.send()
     }
 
     var llmSummaryLanguage: SummaryLanguage {
