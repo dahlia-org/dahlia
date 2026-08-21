@@ -740,6 +740,8 @@
 "Manage Vaults..." = "保管庫を管理...";
 "Manage Projects..." = "プロジェクトを管理...";
 "Settings" = "設定";
+"Help" = "ヘルプ";
+"Feedback" = "フィードバック";
 
 /* Menu Bar */
 "Open Dahlia" = "Dahlia を開く";

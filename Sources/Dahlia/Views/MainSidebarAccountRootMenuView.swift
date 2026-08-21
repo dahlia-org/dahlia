@@ -6,7 +6,7 @@ struct MainSidebarAccountRootMenuView: View {
     let onShowVaults: () -> Void
     let onShowLanguages: () -> Void
     let onDismissSubmenu: () -> Void
-    let onOpenMCP: () -> Void
+    let onOpenSettings: () -> Void
 
     @State private var pendingHoverTask: Task<Void, Never>?
 
@@ -33,12 +33,12 @@ struct MainSidebarAccountRootMenuView: View {
             )
 
             MainSidebarAccountMenuRow(
-                title: L10n.mcpSettings,
-                image: mcpImage,
+                title: L10n.settings,
+                image: Image(systemName: "gearshape"),
                 isKeyboardHighlighted: navigation.activeMenu == .root && navigation.rootSelection == 2,
                 onHoverStart: { hover(index: 2, submenu: nil, action: onDismissSubmenu) },
                 onHoverEnd: cancelPendingHover,
-                action: { activate(index: 2, action: onOpenMCP) }
+                action: { activate(index: 2, action: onOpenSettings) }
             )
         }
         .onDisappear(perform: cancelPendingHover)
@@ -76,13 +76,5 @@ struct MainSidebarAccountRootMenuView: View {
     private func cancelPendingHover() {
         pendingHoverTask?.cancel()
         pendingHoverTask = nil
-    }
-
-    private var mcpImage: Image {
-        if let icon = Bundle.appModule.image(forResource: "MCPLogo") {
-            Image(nsImage: icon).renderingMode(.template)
-        } else {
-            Image(systemName: "point.3.connected.trianglepath.dotted")
-        }
     }
 }

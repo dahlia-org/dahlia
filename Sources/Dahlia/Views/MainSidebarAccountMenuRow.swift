@@ -53,7 +53,7 @@ struct MainSidebarAccountMenuRow: View {
                     minimum: .fixed(DahliaDesign.Highlight.compactCornerRadius)
                 ))
             )
-            .font(.callout)
+            .font(.body.bold())
             .foregroundStyle(DahliaDesign.sidebarPrimaryTextColor)
         }
         .buttonStyle(.plain)

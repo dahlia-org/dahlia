@@ -2587,6 +2587,8 @@ enum L10n {
     static var manageVaults: String { String(localized: "Manage Vaults...", bundle: bundle) }
     static var manageProjects: String { String(localized: "Manage Projects...", bundle: bundle) }
     static var settings: String { String(localized: "Settings", bundle: bundle) }
+    static var help: String { String(localized: "Help", bundle: bundle) }
+    static var feedback: String { String(localized: "Feedback", bundle: bundle) }
 
     // MARK: - Menu Bar
 
