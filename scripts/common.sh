@@ -141,6 +141,7 @@ embed_telemetrydeck_resources() {
     mkdir -p "${contents_dir}/Resources" "$(dirname "$license_destination")"
     cp -R "$resource_bundle" "${contents_dir}/Resources/"
     cp "$license_source" "$license_destination"
+    chmod -R u+w "${contents_dir}/Resources/${bundle_name}" "$license_destination"
 }
 
 embed_embedding_dependency_licenses() {
@@ -179,6 +180,7 @@ embed_embedding_dependency_licenses() {
         cp \
             "${project_dir}/.build/checkouts/${checkout}/${notice}" \
             "${contents_dir}/Resources/Licenses/${checkout}/${notice}"
+        chmod u+w "${contents_dir}/Resources/Licenses/${checkout}/${notice}"
     done
 }
 
