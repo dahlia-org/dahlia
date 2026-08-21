@@ -1,6 +1,9 @@
 import DahliaMeetingAccess
 import Foundation
 import GRDB
+import OSLog
+
+private let hybridSearchLogger = Logger(subsystem: "com.dahlia", category: "HybridSearch")
 
 extension MeetingRepository {
     nonisolated static func searchMeetingSidebarPage(
@@ -99,9 +102,15 @@ extension MeetingRepository {
             FROM search_index_state WHERE indexKind = 'vector'
             """
         )
-        guard vectorState?["isEnabled"] as Bool? == true,
-              vectorState?["phase"] as String? == "ready",
-              vectorState?["analyzerConfigurationHash"] as String? == EmbeddingGemmaDescriptor.configurationHash else {
+        let vectorIsEnabled = vectorState?["isEnabled"] as Bool? == true
+        let vectorPhase = vectorState?["phase"] as String? ?? "missing"
+        let configurationHashMatches = vectorState?["analyzerConfigurationHash"] as String?
+            == EmbeddingGemmaDescriptor.configurationHash
+        guard vectorIsEnabled, vectorPhase == "ready", configurationHashMatches else {
+            hybridSearchLogger.notice("""
+            Falling back to full-text search: enabled=\(vectorIsEnabled) phase=\(vectorPhase, privacy: .public) \
+            configurationHashMatches=\(configurationHashMatches)
+            """)
             return try fullTextSearch(
                 vaultId: vaultId,
                 criteria: criteria,
@@ -134,10 +143,62 @@ extension MeetingRepository {
             replacesResults = cursor != nil
         }
 
+        let vectorCandidates = try vectorSearchCandidates(
+            vaultId: vaultId,
+            criteria: criteria,
+            queryEmbedding: queryEmbedding,
+            indexGeneration: vectorGeneration,
+            in: db
+        )
+
+        let ordered = HybridSearchRRF.rank(
+            fullText: ftsPage.items.map(\.id),
+            vector: vectorCandidates
+        )
+        let window = Array(ordered.dropFirst(offset).prefix(limit + 1))
+        let visibleIDs = Array(window.prefix(limit))
+        var itemsByID = Dictionary(uniqueKeysWithValues: ftsPage.items.map { ($0.id, $0) })
+        let missing = visibleIDs.filter { itemsByID[$0] == nil }
+        hybridSearchLogger.info("""
+        Hybrid fusion: fullText=\(ftsPage.items.count) vectorCandidates=\(vectorCandidates.count) \
+        vectorOnlyVisible=\(missing.count)
+        """)
+        for var item in try fetchMeetingSidebarItems(ids: missing, vaultId: vaultId, in: db) {
+            item.searchMatchContext = .init(kind: .semantic, text: "")
+            itemsByID[item.id] = item
+        }
+        let vectorIDs = Set(vectorCandidates)
+        let items = visibleIDs.compactMap { itemsByID[$0] }.map { item in
+            var item = item
+            item.isSemanticHit = vectorIDs.contains(item.id)
+            return item
+        }
+        let hasMore = window.count > limit
+        return MeetingSearchPage(
+            items: items,
+            groups: MeetingDateGrouping.searchResultGroups(from: items),
+            hasMore: hasMore,
+            nextCursor: hasMore ? .hybrid(
+                ftsRevision: ftsRevision,
+                vectorRevision: vectorRevision,
+                offset: offset + visibleIDs.count
+            ) : nil,
+            replacesResults: replacesResults
+        )
+    }
+
+    /// Returns filtered meeting IDs above the similarity threshold, best first, capped at the RRF candidate limit.
+    private nonisolated static func vectorSearchCandidates(
+        vaultId: UUID,
+        criteria: MeetingSearchCriteria,
+        queryEmbedding: [Float],
+        indexGeneration: Int,
+        in db: Database
+    ) throws -> [UUID] {
         let projects = try ProjectRecord.fetchResolvedAll(vaultId: vaultId, in: db)
         let includedProjects = descendantProjectIDs(selectedIDs: criteria.projectIDs, projects: projects)
         let filters = searchFilters(criteria: criteria, includedProjectIDs: includedProjects)
-        var arguments: StatementArguments = [vaultId, vectorGeneration]
+        var arguments: StatementArguments = [vaultId, indexGeneration]
         arguments += filters.arguments
         let rows = try Row.fetchAll(
             db,
@@ -156,11 +217,13 @@ extension MeetingRepository {
         )
         var vectorHits: [(UUID, Float, Date)] = []
         vectorHits.reserveCapacity(rows.count)
+        var maximumSimilarity: Float = -1
         for (index, row) in rows.enumerated() {
             if index.isMultiple(of: 256) { try Task.checkCancellation() }
             let data: Data = row["embedding"]
             let vector = try EmbeddingVector.decode(data)
             let similarity = try EmbeddingVector.cosineSimilarity(queryEmbedding, vector)
+            maximumSimilarity = max(maximumSimilarity, similarity)
             guard similarity >= HybridSearchRRF.minimumVectorSimilarity else { continue }
             vectorHits.append((
                 row["meetingId"],
@@ -174,33 +237,11 @@ extension MeetingRepository {
             if $0.2 != $1.2 { return $0.2 > $1.2 }
             return $0.0.uuidString < $1.0.uuidString
         }
-        let vectorCandidates = vectorHits.prefix(HybridSearchRRF.candidateLimit)
-
-        let ordered = HybridSearchRRF.rank(
-            fullText: ftsPage.items.map(\.id),
-            vector: vectorCandidates.map(\.0)
-        )
-        let window = Array(ordered.dropFirst(offset).prefix(limit + 1))
-        let visibleIDs = Array(window.prefix(limit))
-        var itemsByID = Dictionary(uniqueKeysWithValues: ftsPage.items.map { ($0.id, $0) })
-        let missing = visibleIDs.filter { itemsByID[$0] == nil }
-        for var item in try fetchMeetingSidebarItems(ids: missing, vaultId: vaultId, in: db) {
-            item.searchMatchContext = .init(kind: .semantic, text: "")
-            itemsByID[item.id] = item
-        }
-        let items = visibleIDs.compactMap { itemsByID[$0] }
-        let hasMore = window.count > limit
-        return MeetingSearchPage(
-            items: items,
-            groups: MeetingDateGrouping.searchResultGroups(from: items),
-            hasMore: hasMore,
-            nextCursor: hasMore ? .hybrid(
-                ftsRevision: ftsRevision,
-                vectorRevision: vectorRevision,
-                offset: offset + items.count
-            ) : nil,
-            replacesResults: replacesResults
-        )
+        hybridSearchLogger.info("""
+        Vector scan: scannedEmbeddings=\(rows.count) aboveThreshold=\(vectorHits.count) \
+        maxSimilarity=\(maximumSimilarity)
+        """)
+        return vectorHits.prefix(HybridSearchRRF.candidateLimit).map(\.0)
     }
 
     /// Both callers wrap GRDB async reads, whose task cancellation interrupts the active SQLite statement.

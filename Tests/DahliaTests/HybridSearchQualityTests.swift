@@ -36,6 +36,7 @@ import GRDB
             )
 
             #expect(page.items.map(\.id) == [exact.id, semantic.id])
+            #expect(page.items.map(\.isSemanticHit) == [false, true])
             #expect(page.items.first?.searchMatchContext?.kind == .title)
             #expect(page.items.last?.searchMatchContext?.kind == .semantic)
 

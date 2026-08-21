@@ -1452,6 +1452,8 @@
 "Search index description" = "Meeting and project search is maintained as a rebuildable local index.";
 "Semantic match" = "Semantic match";
 "Neural model required" = "Install EmbeddingGemma in Search settings to use Neural search, or switch to Advanced for full-text results.";
+"Neural index not ready" = "Showing full-text results because the vector index is not ready. Rebuild the index in Search settings.";
+"Neural search failed" = "Showing full-text results because semantic search could not run.";
 "Embedding model" = "Embedding model";
 "Installed" = "Installed";
 "Not installed" = "Not installed";
