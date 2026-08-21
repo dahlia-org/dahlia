@@ -1452,6 +1452,8 @@
 "Search index description" = "ミーティングとプロジェクトの検索を、再構築可能なローカルインデックスで管理します。";
 "Semantic match" = "意味による一致";
 "Neural model required" = "Neural検索を使うには検索設定でEmbeddingGemmaを導入してください。Advanced検索へ切り替えると全文検索できます。";
+"Neural index not ready" = "ベクトルインデックスが準備できていないため、全文検索の結果を表示しています。検索設定でインデックスを再構築してください。";
+"Neural search failed" = "セマンティック検索を実行できなかったため、全文検索の結果を表示しています。";
 "Embedding model" = "埋め込みモデル";
 "Installed" = "導入済み";
 "Not installed" = "未導入";

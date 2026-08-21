@@ -82,6 +82,8 @@ enum L10n {
     static var searchIndexDescription: String { String(localized: "Search index description", bundle: bundle) }
     static var semanticMatch: String { String(localized: "Semantic match", bundle: bundle) }
     static var neuralModelRequired: String { String(localized: "Neural model required", bundle: bundle) }
+    static var neuralIndexNotReady: String { String(localized: "Neural index not ready", bundle: bundle) }
+    static var neuralSearchFailed: String { String(localized: "Neural search failed", bundle: bundle) }
     static var embeddingModel: String { String(localized: "Embedding model", bundle: bundle) }
     static var installed: String { String(localized: "Installed", bundle: bundle) }
     static var notInstalled: String { String(localized: "Not installed", bundle: bundle) }

@@ -14,6 +14,7 @@ struct MeetingSidebarItem: Equatable, FetchableRecord, Identifiable, Sendable {
     var recordingStartedAt: Date?
     var calendarEventTitle: String?
     var searchMatchContext: MeetingSearchMatchContext?
+    var isSemanticHit = false
 
     var id: UUID { meetingId }
 

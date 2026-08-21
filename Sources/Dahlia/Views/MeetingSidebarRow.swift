@@ -179,7 +179,7 @@ struct MeetingSidebarRow: View {
                     .fill(context.colorHex.map(Color.init(hex:)) ?? Color.secondary)
                     .frame(width: 6, height: 6)
             } else {
-                Image(systemName: context.kind == .calendar ? "calendar" : context.kind == .semantic ? "sparkles" : "text.alignleft")
+                Image(systemName: context.kind == .calendar ? "calendar" : context.kind == .semantic ? "brain" : "text.alignleft")
                     .frame(width: 8)
             }
 

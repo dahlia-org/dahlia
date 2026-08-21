@@ -33,6 +33,21 @@ import Foundation
                 if judgment.document != nil { documentIndex += 1 }
             }
 
+            let sweep: [Float] = [-.infinity, 0.30, 0.35, 0.40, 0.45]
+            for threshold in sweep {
+                let metrics = Self.quality(at: threshold, queries: queryScores)
+                let classification = Self.classification(at: threshold, queries: queryScores)
+                let averageCandidates = Double(queryScores.reduce(0) { total, query in
+                    total + query.scores.count(where: { $0 >= threshold })
+                }) / Double(queryScores.count)
+                print(
+                    "EmbeddingGemma threshold sweep threshold=\(threshold) "
+                        + "ndcg=\(metrics.ndcgAt10) semantic_recall=\(metrics.semanticRecallAt10) "
+                        + "false_positives=\(metrics.noMatchHitsAt10) macro_f1=\(classification.macroF1) "
+                        + "precision=\(classification.precision) avg_candidates=\(averageCandidates)"
+                )
+            }
+
             let calibrated = Self.selectThreshold(from: queryScores)
             let baseline = Self.quality(at: -.infinity, queries: queryScores)
             let quality = Self.quality(at: calibrated, queries: queryScores)

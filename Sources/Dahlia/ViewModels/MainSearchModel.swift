@@ -1,5 +1,8 @@
 import Foundation
 import Observation
+import OSLog
+
+private let mainSearchLogger = Logger(subsystem: "com.dahlia", category: "MainSearch")
 
 @MainActor
 @Observable
@@ -241,8 +244,12 @@ final class MainSearchModel {
                         self.guidanceMessage = L10n.neuralModelRequired
                         return
                     }
+                    guard self.generation == requestGeneration else { return }
                     guard !criteria.text.isEmpty else { return }
-                    guard sidebarViewModel.isVectorSearchReady else { return }
+                    guard sidebarViewModel.isVectorSearchReady else {
+                        self.guidanceMessage = L10n.neuralIndexNotReady
+                        return
+                    }
                     let embedding: [Float]
                     if appending, let cached = self.activeQueryEmbedding {
                         embedding = cached
@@ -275,6 +282,11 @@ final class MainSearchModel {
                 } catch is CancellationError {
                     return
                 } catch {
+                    guard self.generation == requestGeneration else { return }
+                    mainSearchLogger.error(
+                        "Neural search fell back to full-text results: \(error.localizedDescription, privacy: .public)"
+                    )
+                    self.guidanceMessage = L10n.neuralSearchFailed
                     return
                 }
             } catch is CancellationError {
