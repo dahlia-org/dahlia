@@ -9,7 +9,7 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
     private var currentVault: VaultRecord?
     private var onSelectVault: (VaultRecord) -> Void
     private var onManageVaults: () -> Void
-    private var onOpenMCP: () -> Void
+    private var onOpenSettings: () -> Void
     private let navigation = MainSidebarAccountMenuNavigationState()
     private var mainPanel: NSPanel?
     private var submenuPanel: NSPanel?
@@ -23,13 +23,13 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
         currentVault: VaultRecord?,
         onSelectVault: @escaping (VaultRecord) -> Void,
         onManageVaults: @escaping () -> Void,
-        onOpenMCP: @escaping () -> Void
+        onOpenSettings: @escaping () -> Void
     ) {
         self.vaults = vaults
         self.currentVault = currentVault
         self.onSelectVault = onSelectVault
         self.onManageVaults = onManageVaults
-        self.onOpenMCP = onOpenMCP
+        self.onOpenSettings = onOpenSettings
     }
 
     static func shouldPassThroughKeyEvent(modifierFlags: NSEvent.ModifierFlags) -> Bool {
@@ -41,7 +41,7 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
         currentVault: VaultRecord?,
         onSelectVault: @escaping (VaultRecord) -> Void,
         onManageVaults: @escaping () -> Void,
-        onOpenMCP: @escaping () -> Void
+        onOpenSettings: @escaping () -> Void
     ) {
         let refreshVaultMenu = navigation.activeMenu == .vaults &&
             (self.vaults != vaults || self.currentVault != currentVault)
@@ -49,7 +49,7 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
         self.currentVault = currentVault
         self.onSelectVault = onSelectVault
         self.onManageVaults = onManageVaults
-        self.onOpenMCP = onOpenMCP
+        self.onOpenSettings = onOpenSettings
         if refreshVaultMenu {
             presentVaultMenu()
         }
@@ -81,7 +81,7 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
                 onShowVaults: { [weak self] in self?.presentVaultMenu() },
                 onShowLanguages: { [weak self] in self?.presentLanguageMenu() },
                 onDismissSubmenu: { [weak self] in self?.closeSubmenu() },
-                onOpenMCP: { [weak self] in self?.openMCP() }
+                onOpenSettings: { [weak self] in self?.openSettings() }
             )
         }
         let panel = makePanel(content: content)
@@ -157,10 +157,11 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
         guard let window = button.window else { return }
         let buttonFrame = window.convertToScreen(button.convert(button.bounds, to: nil))
         let screenFrame = visibleScreenFrame(containing: buttonFrame)
-        let x = min(max(buttonFrame.minX, screenFrame.minX + 6), screenFrame.maxX - panel.frame.width - 6)
-        let preferredY = buttonFrame.maxY + 6
-        let y = min(preferredY, screenFrame.maxY - panel.frame.height - 6)
-        panel.setFrameOrigin(NSPoint(x: x, y: max(y, screenFrame.minY + 6)))
+        panel.setFrameOrigin(MainSidebarAccountMenuLayout.mainMenuOrigin(
+            panelSize: panel.frame.size,
+            buttonFrame: buttonFrame,
+            screenFrame: screenFrame
+        ))
     }
 
     private func positionSubmenu(_ panel: NSPanel, relativeTo mainPanel: NSPanel) {
@@ -200,9 +201,9 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
         onManageVaults()
     }
 
-    private func openMCP() {
+    private func openSettings() {
         dismissMenu()
-        onOpenMCP()
+        onOpenSettings()
     }
 
     private func closeSubmenu() {
@@ -423,7 +424,7 @@ private extension MainSidebarAccountMenuCoordinator {
         switch selection {
         case 0: presentVaultMenu()
         case 1: presentLanguageMenu()
-        case 2: openMCP()
+        case 2: openSettings()
         default: break
         }
     }
@@ -450,7 +451,7 @@ private extension MainSidebarAccountMenuCoordinator {
         let title: String?
         switch navigation.activeMenu {
         case .root:
-            let titles = [L10n.vault, L10n.language, L10n.mcpSettings]
+            let titles = [L10n.vault, L10n.language, L10n.settings]
             title = navigation.rootSelection.flatMap { titles.indices.contains($0) ? titles[$0] : nil }
         case .vaults:
             guard let selection = navigation.submenuSelection else { return }

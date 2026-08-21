@@ -14,6 +14,20 @@ enum MainSidebarAccountMenuLayout {
             ?? screenFrames.firstIndex { $0.intersects(targetFrame) }
     }
 
+    static func mainMenuOrigin(
+        panelSize: CGSize,
+        buttonFrame: CGRect,
+        screenFrame: CGRect
+    ) -> CGPoint {
+        let x = min(
+            max(buttonFrame.minX, screenFrame.minX + screenInset),
+            screenFrame.maxX - panelSize.width - screenInset
+        )
+        let preferredY = buttonFrame.maxY + panelGap
+        let y = min(preferredY, screenFrame.maxY - panelSize.height - screenInset)
+        return CGPoint(x: x, y: max(y, screenFrame.minY + screenInset))
+    }
+
     static func submenuOrigin(
         panelSize: CGSize,
         mainPanelFrame: CGRect,

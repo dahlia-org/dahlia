@@ -9,7 +9,7 @@ struct MainSidebarFooterView: View {
     let onSelectVault: (VaultRecord) -> Void
 
     @State private var isAccountMenuHovered = false
-    @State private var isSettingsHovered = false
+    @State private var isHelpHovered = false
     @State private var isMCPPresented = false
 
     var body: some View {
@@ -19,7 +19,7 @@ struct MainSidebarFooterView: View {
                 currentVault: currentVault,
                 onSelectVault: onSelectVault,
                 onManageVaults: showVaultManager,
-                onOpenMCP: showMCP
+                onOpenSettings: showSettings
             )
             .frame(maxWidth: .infinity, alignment: .leading)
             .frame(height: 30)
@@ -37,20 +37,15 @@ struct MainSidebarFooterView: View {
                 MainSidebarUpdateBadge(updateController: updateController)
             }
 
-            Button {
-                mainWindowNavigation.openSettings()
-            } label: {
-                Label(L10n.settings, systemImage: "gearshape")
-                    .labelStyle(.iconOnly)
-                    .dahliaFixedSymbol()
-                    .frame(width: 30, height: 30)
-                    .background(isSettingsHovered ? DahliaDesign.sidebarHighlightColor : .clear, in: Circle())
-                    .contentShape(Circle())
-            }
-            .buttonStyle(.plain)
-            .help(L10n.settingsMenuItem)
-            .accessibilityLabel(L10n.settings)
-            .onHover { isSettingsHovered = $0 }
+            MainSidebarHelpMenuButton(onOpenMCP: showMCP)
+                .frame(width: 30, height: 30)
+                .background(
+                    isHelpHovered ? DahliaDesign.sidebarHighlightColor : .clear,
+                    in: .rect(cornerRadius: DahliaDesign.Highlight.compactCornerRadius)
+                )
+                .contentShape(.rect(cornerRadius: DahliaDesign.Highlight.compactCornerRadius))
+                .help(L10n.help)
+                .onHover { isHelpHovered = $0 }
         }
         .padding(.horizontal, 10)
         .frame(height: MainSidebarLayout.footerHeight)
@@ -73,5 +68,9 @@ struct MainSidebarFooterView: View {
 
     private func showMCP() {
         isMCPPresented = true
+    }
+
+    private func showSettings() {
+        mainWindowNavigation.openSettings()
     }
 }

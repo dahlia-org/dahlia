@@ -37,6 +37,17 @@
         }
 
         @Test
+        func mainMenuAlignsItsLeftEdgeWithTheButton() {
+            let origin = MainSidebarAccountMenuLayout.mainMenuOrigin(
+                panelSize: CGSize(width: 180, height: 100),
+                buttonFrame: CGRect(x: 400, y: 100, width: 30, height: 30),
+                screenFrame: CGRect(x: 0, y: 0, width: 1000, height: 800)
+            )
+
+            #expect(origin == CGPoint(x: 400, y: 136))
+        }
+
+        @Test
         func selectsScreenContainingButtonInsteadOfWindowScreen() {
             let screenIndex = MainSidebarAccountMenuLayout.screenIndex(
                 containing: CGRect(x: 1050, y: 100, width: 120, height: 30),

@@ -8,7 +8,7 @@ struct MainSidebarAccountMenuButton: NSViewRepresentable {
     let currentVault: VaultRecord?
     let onSelectVault: (VaultRecord) -> Void
     let onManageVaults: () -> Void
-    let onOpenMCP: () -> Void
+    let onOpenSettings: () -> Void
 
     func makeCoordinator() -> MainSidebarAccountMenuCoordinator {
         MainSidebarAccountMenuCoordinator(
@@ -16,7 +16,7 @@ struct MainSidebarAccountMenuButton: NSViewRepresentable {
             currentVault: currentVault,
             onSelectVault: onSelectVault,
             onManageVaults: onManageVaults,
-            onOpenMCP: onOpenMCP
+            onOpenSettings: onOpenSettings
         )
     }
 
@@ -27,7 +27,6 @@ struct MainSidebarAccountMenuButton: NSViewRepresentable {
         button.imageScaling = .scaleProportionallyDown
         button.alignment = .left
         button.lineBreakMode = .byTruncatingTail
-        button.font = .preferredFont(forTextStyle: .callout)
         button.setContentHuggingPriority(.defaultLow, for: .horizontal)
         context.coordinator.button = button
         configure(button)
@@ -40,7 +39,7 @@ struct MainSidebarAccountMenuButton: NSViewRepresentable {
             currentVault: currentVault,
             onSelectVault: onSelectVault,
             onManageVaults: onManageVaults,
-            onOpenMCP: onOpenMCP
+            onOpenSettings: onOpenSettings
         )
         configure(button)
     }
@@ -52,9 +51,16 @@ struct MainSidebarAccountMenuButton: NSViewRepresentable {
     private func configure(_ button: NSButton) {
         _ = dynamicTypeSize
         let title = currentVault?.name ?? L10n.noVaultSelected
-        button.font = .preferredFont(forTextStyle: .callout)
+        button.font = bodyFont
         button.title = title
-        button.image = NSImage(systemSymbolName: "externaldrive", accessibilityDescription: nil)
+        button.image = NSImage(
+            systemSymbolName: "externaldrive",
+            accessibilityDescription: nil
+        )?.withSymbolConfiguration(.init(pointSize: bodyFont.pointSize, weight: .regular))
         button.setAccessibilityLabel("\(L10n.currentVault), \(title)")
+    }
+
+    private var bodyFont: NSFont {
+        .preferredFont(forTextStyle: .body)
     }
 }
