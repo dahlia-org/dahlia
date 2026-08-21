@@ -12,6 +12,8 @@ actor VectorSearchIndexer {
     private let observationQueue = DispatchQueue(label: "app.dahlia.vector-indexer", qos: .utility)
     private var workerTask: Task<Void, Never>?
     private var observationDrainTask: Task<Void, Never>?
+    private var retiredTasks: [Task<Void, Never>] = []
+    private var observationDrainGeneration = 0
     private var observation: AnyDatabaseCancellable?
     private var isDraining = false
     private var isPaused = false
@@ -49,20 +51,27 @@ actor VectorSearchIndexer {
     }
 
     func stop() async {
-        isPaused = true
-        workerTask?.cancel()
-        observationDrainTask?.cancel()
-        let task = workerTask
-        let observationTask = observationDrainTask
-        workerTask = nil
-        observationDrainTask = nil
-        observation?.cancel()
-        observation = nil
-        await task?.value
-        await observationTask?.value
+        pauseForRecording()
+        let tasks = retiredTasks
+        retiredTasks.removeAll()
+        for task in tasks {
+            await task.value
+        }
         while isDraining {
             await Task.yield()
         }
+    }
+
+    func pauseForRecording() {
+        isPaused = true
+        let tasks = [workerTask, observationDrainTask].compactMap(\.self)
+        tasks.forEach { $0.cancel() }
+        retiredTasks.append(contentsOf: tasks)
+        workerTask = nil
+        observationDrainTask = nil
+        observationDrainGeneration &+= 1
+        observation?.cancel()
+        observation = nil
     }
 
     func requestRebuild() async throws {
@@ -123,14 +132,18 @@ actor VectorSearchIndexer {
 
     private func scheduleObservationDrain() {
         guard observationDrainTask == nil else { return }
+        observationDrainGeneration &+= 1
+        let generation = observationDrainGeneration
         observationDrainTask = Task { [weak self] in
-            await self?.runObservationDrain()
+            await self?.runObservationDrain(generation: generation)
         }
     }
 
-    private func runObservationDrain() async {
+    private func runObservationDrain(generation: Int) async {
         await drain()
-        observationDrainTask = nil
+        if generation == observationDrainGeneration {
+            observationDrainTask = nil
+        }
     }
 
     private func prepareRebuildIfNeeded() async throws {

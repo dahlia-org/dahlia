@@ -240,18 +240,6 @@ final class AppDatabaseManager: Sendable {
             try VectorSearchMigration.migrate(in: db)
         }
 
-        migrator.registerMigration("v38_vectorSearchOptIn") { db in
-            try VectorSearchOptInMigration.migrate(in: db)
-        }
-
-        migrator.registerMigration("v39_vectorExplicitRebuild") { db in
-            try VectorSearchExplicitRebuildMigration.migrate(in: db)
-        }
-
-        migrator.registerMigration("v40_vectorQueueContract") { db in
-            try VectorSearchQueueContractMigration.migrate(in: db)
-        }
-
         return migrator
     }()
 

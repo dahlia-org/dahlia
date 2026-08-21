@@ -2950,7 +2950,7 @@ final class CaptionViewModel: ObservableObject {
               !isFinalizingRecording,
               !isTerminationRequested,
               canStartRecording() else { return }
-        await searchIndexer?.stop()
+        await searchIndexer?.pauseForRecording()
         let previousBatchTranscriptionState = batchTranscriptionState
         let activeDraftMeeting = usesDraftMeeting ? draftMeeting : nil
         let preservedDraftContext: PreservedDraftContext? = if !usesDraftMeeting, let draftMeeting {

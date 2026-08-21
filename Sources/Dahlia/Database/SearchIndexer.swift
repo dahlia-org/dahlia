@@ -54,6 +54,15 @@ actor SearchIndexer {
 
     func stop() async {
         await vectorIndexer?.stop()
+        await stopOwnWorker()
+    }
+
+    func pauseForRecording() async {
+        await vectorIndexer?.pauseForRecording()
+        await stopOwnWorker()
+    }
+
+    private func stopOwnWorker() async {
         isPaused = true
         let tasks = [workerTask, observationDrainTask].compactMap(\.self)
         tasks.forEach { $0.cancel() }

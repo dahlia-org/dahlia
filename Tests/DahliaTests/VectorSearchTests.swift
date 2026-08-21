@@ -56,54 +56,6 @@ import GRDB
         }
 
         @Test
-        func explicitRebuildMigrationPreservesExistingVectorWork() throws {
-            let queue = try DatabaseQueue(configuration: AppDatabaseManager.configuration())
-            try AppDatabaseManager.migrator.migrate(queue, upTo: "v38_vectorSearchOptIn")
-            try queue.write { db in
-                try db.execute(
-                    sql: """
-                    UPDATE search_index_state SET isEnabled = 1, phase = 'metadata'
-                    WHERE indexKind = 'vector'
-                    """
-                )
-                try db.execute(
-                    sql: """
-                    INSERT INTO search_documents(
-                        kind, sourceId, vaultId, projectId, sourceContentHash,
-                        indexGeneration, updatedAt
-                    ) VALUES('project', ?, ?, ?, 'existing', 1, ?)
-                    """,
-                    arguments: [UUID.v7(), UUID.v7(), UUID.v7(), Date()]
-                )
-                try db.execute(
-                    sql: """
-                    INSERT INTO search_documents_vec(
-                        documentId, embedding, sourceContentHash, indexGeneration, updatedAt
-                    ) VALUES(?, ?, 'existing', 1, ?)
-                    """,
-                    arguments: [db.lastInsertedRowID, Data(count: 1024), Date()]
-                )
-            }
-
-            try AppDatabaseManager.migrator.migrate(queue)
-
-            let snapshot = try queue.read { db in
-                try (
-                    String.fetchOne(
-                        db,
-                        sql: "SELECT phase FROM search_index_state WHERE indexKind = 'vector'"
-                    ),
-                    Int.fetchOne(
-                        db,
-                        sql: "SELECT COUNT(*) FROM search_index_jobs WHERE indexKind = 'vector'"
-                    ),
-                    Int.fetchOne(db, sql: "SELECT COUNT(*) FROM search_documents_vec")
-                )
-            }
-            #expect(snapshot == ("pending", 1, 1))
-        }
-
-        @Test
         func togglingVectorSearchDoesNotBuildOrDiscardQueuedWork() async throws {
             let database = try AppDatabaseManager(path: ":memory:")
             let indexer = VectorSearchIndexer(dbQueue: database.dbQueue, embedder: FakeEmbeddingProvider())
@@ -634,6 +586,53 @@ import GRDB
             #expect(snapshot?["leaseExpiresAt"] as Date? == nil)
         }
 
+        @Test(.timeLimit(.minutes(1)))
+        func pausingForRecordingDoesNotAwaitNonCancellableInference() async throws {
+            let fake = NonCancellableEmbeddingProvider()
+            let (database, indexer) = try await indexingFixture(count: 1, fake: fake)
+            try await database.dbQueue.write { db in
+                try db.execute(
+                    sql: """
+                    UPDATE search_index_state SET phase = 'metadata', totalCount = 1
+                    WHERE indexKind = 'vector'
+                    """
+                )
+                try db.execute(
+                    sql: """
+                    INSERT INTO search_index_jobs(indexKind, targetKind, targetKey, availableAt, updatedAt)
+                    SELECT 'vector', 'document', id, unixepoch('subsec'), unixepoch('subsec')
+                    FROM search_documents
+                    """
+                )
+            }
+            await indexer.start()
+            #expect(await pollUntil { await fake.hasStarted })
+
+            let completion = CompletionFlag()
+            let pause = Task {
+                await indexer.pauseForRecording()
+                await completion.markCompleted()
+            }
+            #expect(await pollUntil(timeout: .seconds(1)) { await completion.isCompleted })
+            await fake.release()
+            await pause.value
+            #expect(await pollUntil {
+                let status = try? await database.dbQueue.read { db in
+                    try String.fetchOne(
+                        db,
+                        sql: "SELECT status FROM search_index_jobs WHERE indexKind = 'vector'"
+                    )
+                }
+                return status == "pending"
+            })
+            let vectorCount = try await database.dbQueue.read { db in
+                try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM search_documents_vec")
+            }
+            #expect(vectorCount == 0)
+            #expect(await fake.callCount == 1)
+            await indexer.stop()
+        }
+
         @Test
         func realModelSingletonAndPaddedBatchEmbeddingsAreClose() async throws {
             guard let basePath = ProcessInfo.processInfo.environment["DAHLIA_EMBEDDING_TEST_BASE"] else { return }
@@ -784,7 +783,7 @@ import GRDB
 
         private func indexingFixture(
             count: Int,
-            fake: FakeEmbeddingProvider
+            fake: any TextEmbeddingProviding
         ) async throws -> (AppDatabaseManager, VectorSearchIndexer) {
             let database = try AppDatabaseManager(path: ":memory:")
             let indexer = VectorSearchIndexer(dbQueue: database.dbQueue, embedder: fake)
@@ -873,6 +872,42 @@ import GRDB
 
         private var vector: [Float] {
             [1] + Array(repeating: 0, count: EmbeddingGemmaDescriptor.dimensions - 1)
+        }
+    }
+
+    private actor NonCancellableEmbeddingProvider: TextEmbeddingProviding {
+        private var isReleased = false
+        private(set) var hasStarted = false
+        private(set) var callCount = 0
+        var isAvailable: Bool { true }
+
+        func queryEmbedding(_: String) -> [Float] {
+            vector
+        }
+
+        func documentEmbeddings(_ documents: [DocumentEmbeddingInput]) async -> [[Float]] {
+            callCount += 1
+            hasStarted = true
+            while !isReleased {
+                try? await Task.sleep(for: .milliseconds(10))
+            }
+            return documents.map { _ in vector }
+        }
+
+        func release() {
+            isReleased = true
+        }
+
+        private var vector: [Float] {
+            [1] + Array(repeating: 0, count: EmbeddingGemmaDescriptor.dimensions - 1)
+        }
+    }
+
+    private actor CompletionFlag {
+        private(set) var isCompleted = false
+
+        func markCompleted() {
+            isCompleted = true
         }
     }
 #endif
