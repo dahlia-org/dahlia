@@ -2391,6 +2391,32 @@ enum L10n {
         bundle: bundle
     ) }
     static var audioInput: String { String(localized: "Audio Input", bundle: bundle) }
+    static var adjustMicrophoneInputVolume: String {
+        String(localized: "Adjust Microphone Input Volume", bundle: bundle)
+    }
+
+    static var builtInMicrophoneInputVolume: String {
+        String(localized: "Built-in Microphone Input Volume", bundle: bundle)
+    }
+
+    static var builtInMicrophoneInputVolumeDescription: String { String(
+        localized: "Use a higher input volume in large meeting rooms. This changes the input volume for all of macOS.",
+        bundle: bundle
+    ) }
+
+    static var inputVolumeUnavailable: String {
+        String(localized: "Input volume cannot be changed from Dahlia on this Mac.", bundle: bundle)
+    }
+
+    static var inputVolumeUpdateFailed: String {
+        String(localized: "Could not change the input volume.", bundle: bundle)
+    }
+
+    static var openSoundSettings: String { String(localized: "Open Sound Settings", bundle: bundle) }
+    static var soundSettingsOpenFailed: String {
+        String(localized: "Could not open Sound settings.", bundle: bundle)
+    }
+
     static var externalMicrophoneEchoCancellation: String { String(
         localized: "Use Echo Cancellation with External Microphones",
         bundle: bundle

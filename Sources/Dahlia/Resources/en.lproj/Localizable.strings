@@ -707,6 +707,13 @@
 "Speaker echo cancellation is unavailable" = "Speaker echo cancellation is unavailable";
 "Speaker echo cancellation became unavailable. Recording continues with raw microphone audio." = "Speaker echo cancellation became unavailable. Recording continues with raw microphone audio.";
 "Audio Input" = "Audio Input";
+"Adjust Microphone Input Volume" = "Adjust Microphone Input Volume";
+"Built-in Microphone Input Volume" = "Built-in Microphone Input Volume";
+"Use a higher input volume in large meeting rooms. This changes the input volume for all of macOS." = "Use a higher input volume in large meeting rooms. This changes the input volume for all of macOS.";
+"Input volume cannot be changed from Dahlia on this Mac." = "Input volume cannot be changed from Dahlia on this Mac.";
+"Could not change the input volume." = "Could not change the input volume.";
+"Open Sound Settings" = "Open Sound Settings";
+"Could not open Sound settings." = "Could not open Sound settings.";
 "Use Echo Cancellation with External Microphones" = "Use Echo Cancellation with External Microphones";
 "Enable this when an external microphone can pick up audio from speakers." = "Enable this when an external microphone can pick up audio from speakers.";
 "Echo cancellation is always enabled for the built-in microphone, regardless of this setting." = "Echo cancellation is always enabled for the built-in microphone, regardless of this setting.";

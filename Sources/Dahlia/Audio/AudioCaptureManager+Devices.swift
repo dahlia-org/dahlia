@@ -7,7 +7,11 @@ extension AudioCaptureManager {
         inputDeviceIDs()
             .compactMap { deviceID in
                 guard let name = deviceName(for: deviceID) else { return nil }
-                return MicrophoneDevice(id: deviceID, name: name)
+                return MicrophoneDevice(
+                    id: deviceID,
+                    name: name,
+                    isBuiltIn: isBuiltInInputDevice(deviceID)
+                )
             }
             .sorted { lhs, rhs in
                 lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
@@ -163,4 +167,56 @@ extension AudioCaptureManager {
         return transportType == kAudioDeviceTransportTypeBuiltIn
     }
 
+    static func inputVolumeState(for deviceID: AudioDeviceID) -> MicrophoneInputVolumeState? {
+        var address = inputVolumeAddress()
+        guard AudioObjectHasProperty(deviceID, &address) else {
+            return nil
+        }
+
+        var volume: Float32 = 0
+        var propertySize = UInt32(MemoryLayout<Float32>.size)
+        guard AudioObjectGetPropertyData(
+            deviceID,
+            &address,
+            0,
+            nil,
+            &propertySize,
+            &volume
+        ) == noErr else {
+            return nil
+        }
+
+        var isSettable = DarwinBoolean(false)
+        let canSetVolume = AudioObjectIsPropertySettable(deviceID, &address, &isSettable) == noErr
+            && isSettable.boolValue
+        return MicrophoneInputVolumeState(value: volume, isSettable: canSetVolume)
+    }
+
+    static func setInputVolume(_ volume: Float, for deviceID: AudioDeviceID) -> Bool {
+        var address = inputVolumeAddress()
+        var isSettable = DarwinBoolean(false)
+        guard AudioObjectHasProperty(deviceID, &address),
+              AudioObjectIsPropertySettable(deviceID, &address, &isSettable) == noErr,
+              isSettable.boolValue else {
+            return false
+        }
+
+        var clampedVolume = min(max(volume, 0), 1)
+        return AudioObjectSetPropertyData(
+            deviceID,
+            &address,
+            0,
+            nil,
+            UInt32(MemoryLayout<Float32>.size),
+            &clampedVolume
+        ) == noErr
+    }
+
+    private static func inputVolumeAddress() -> AudioObjectPropertyAddress {
+        AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyVolumeScalar,
+            mScope: kAudioObjectPropertyScopeInput,
+            mElement: kAudioObjectPropertyElementMain
+        )
+    }
 }

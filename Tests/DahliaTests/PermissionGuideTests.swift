@@ -99,6 +99,16 @@
                 #expect(urls[1].absoluteString == "x-apple.systempreferences:com.apple.preference.security")
             }
         }
+
+        @Test
+        func soundInputSettingsRoutesIncludeSpecificAndFallbackURLs() throws {
+            let urls = SystemSettingsOpener.soundInputURLs
+
+            #expect(urls.count == 2)
+            #expect(try #require(urls.first).absoluteString.hasSuffix("?input"))
+            #expect(try #require(urls.last).absoluteString ==
+                "x-apple.systempreferences:com.apple.Sound-Settings.extension")
+        }
     }
 
     @MainActor

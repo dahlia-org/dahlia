@@ -431,6 +431,22 @@ final class CaptionViewModel: ObservableObject {
         microphoneSelection.resolvedDeviceID(defaultDeviceID: defaultInputDeviceID)
     }
 
+    var selectedBuiltInMicrophoneID: AudioDeviceID? {
+        guard let selectedMicrophoneID,
+              availableMicrophones.first(where: { $0.id == selectedMicrophoneID })?.isBuiltIn == true else {
+            return nil
+        }
+        return selectedMicrophoneID
+    }
+
+    func inputVolumeState(for deviceID: AudioDeviceID) async -> MicrophoneInputVolumeState? {
+        await audioHardwareQueryService.inputVolumeState(for: deviceID)
+    }
+
+    func setInputVolume(_ volume: Float, for deviceID: AudioDeviceID) async -> Bool {
+        await audioHardwareQueryService.setInputVolume(volume, for: deviceID)
+    }
+
     var microphoneCaptureDeviceID: AudioDeviceID? {
         guard case let .device(deviceID) = microphoneSelection else { return nil }
         return deviceID

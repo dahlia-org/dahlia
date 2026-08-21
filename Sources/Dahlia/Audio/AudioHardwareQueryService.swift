@@ -1,5 +1,10 @@
 import CoreAudio
 
+struct MicrophoneInputVolumeState: Equatable, Sendable {
+    let value: Float
+    let isSettable: Bool
+}
+
 struct MicrophoneDeviceSnapshot {
     let devices: [MicrophoneDevice]
     let defaultDeviceID: AudioDeviceID?
@@ -14,13 +19,19 @@ actor AudioHardwareQueryService {
 
     private let availableInputDevicesProvider: @Sendable () -> [MicrophoneDevice]
     private let defaultInputDeviceIDProvider: @Sendable () -> AudioDeviceID?
+    private let inputVolumeStateProvider: @Sendable (AudioDeviceID) -> MicrophoneInputVolumeState?
+    private let inputVolumeSetter: @Sendable (Float, AudioDeviceID) -> Bool
 
     init(
         availableInputDevicesProvider: @escaping @Sendable () -> [MicrophoneDevice] = AudioCaptureManager.availableInputDevices,
-        defaultInputDeviceIDProvider: @escaping @Sendable () -> AudioDeviceID? = AudioCaptureManager.defaultInputDeviceID
+        defaultInputDeviceIDProvider: @escaping @Sendable () -> AudioDeviceID? = AudioCaptureManager.defaultInputDeviceID,
+        inputVolumeStateProvider: @escaping @Sendable (AudioDeviceID) -> MicrophoneInputVolumeState? = AudioCaptureManager.inputVolumeState,
+        inputVolumeSetter: @escaping @Sendable (Float, AudioDeviceID) -> Bool = AudioCaptureManager.setInputVolume
     ) {
         self.availableInputDevicesProvider = availableInputDevicesProvider
         self.defaultInputDeviceIDProvider = defaultInputDeviceIDProvider
+        self.inputVolumeStateProvider = inputVolumeStateProvider
+        self.inputVolumeSetter = inputVolumeSetter
     }
 
     func microphoneSnapshot() -> MicrophoneDeviceSnapshot {
@@ -36,5 +47,15 @@ actor AudioHardwareQueryService {
     func defaultInputDeviceID() -> AudioDeviceID? {
         guard !Task.isCancelled else { return nil }
         return defaultInputDeviceIDProvider()
+    }
+
+    func inputVolumeState(for deviceID: AudioDeviceID) -> MicrophoneInputVolumeState? {
+        guard !Task.isCancelled else { return nil }
+        return inputVolumeStateProvider(deviceID)
+    }
+
+    func setInputVolume(_ volume: Float, for deviceID: AudioDeviceID) -> Bool {
+        guard !Task.isCancelled else { return false }
+        return inputVolumeSetter(volume, deviceID)
     }
 }

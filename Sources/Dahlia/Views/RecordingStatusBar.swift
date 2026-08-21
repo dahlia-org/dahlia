@@ -79,8 +79,17 @@ struct RecordingStatusBar: View {
             VStack(spacing: 6) {
                 microphoneMenu
                 systemAudioMenu
-                languageMenu
-                RecordingLiveSubtitleToggle(isEnabled: $liveSubtitleOverlayEnabled)
+                RecordingLiveSubtitleToggle(
+                    isEnabled: $liveSubtitleOverlayEnabled,
+                    languageSelection: transcriptionMode == .batch
+                        ? $viewModel.liveSubtitleLocale
+                        : .constant(viewModel.transcriptionLocale),
+                    locales: liveSubtitleLocales,
+                    isLanguageSelectionEnabled: transcriptionMode == .batch,
+                    languageHelp: transcriptionMode == .realtime
+                        ? L10n.liveSubtitleLanguageFollowsTranscription
+                        : L10n.liveSubtitleLanguage
+                )
                 screenSourceMenu
             }
         }
@@ -150,8 +159,33 @@ struct RecordingStatusBar: View {
             viewModel.handleMicrophoneSelectionChange(from: oldValue, to: newValue)
         }
         .help(L10n.microphone)
+        .overlay {
+            if let deviceID = viewModel.selectedBuiltInMicrophoneID {
+                HStack(spacing: 6) {
+                    Color.clear
+                        .frame(width: 14)
+                        .allowsHitTesting(false)
+
+                    Text(L10n.mic)
+                        .font(.footnote.weight(.semibold))
+                        .fixedSize()
+                        .hidden()
+                        .accessibilityHidden(true)
+
+                    MicrophoneInputVolumeControl(viewModel: viewModel, deviceID: deviceID)
+
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 8)
+            }
+        }
         .task {
             await viewModel.refreshAvailableMicrophones()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            Task {
+                await viewModel.refreshAvailableMicrophones()
+            }
         }
     }
 
@@ -189,31 +223,6 @@ struct RecordingStatusBar: View {
             viewModel.handleSystemAudioSelectionChange(from: oldValue, to: newValue)
         }
         .help(L10n.systemAudio)
-    }
-
-    private var languageMenu: some View {
-        RecordingSourceMenu(
-            title: L10n.liveSubtitleLanguage,
-            displayValue: selectedLanguageDisplayName,
-            systemImage: "globe",
-            selection: transcriptionMode == .batch
-                ? $viewModel.liveSubtitleLocale
-                : .constant(viewModel.transcriptionLocale),
-            items: languageMenuItems
-        )
-        .disabled(transcriptionMode == .realtime)
-        .help(transcriptionMode == .realtime ? L10n.liveSubtitleLanguageFollowsTranscription : L10n.liveSubtitleLanguage)
-    }
-
-    private var languageMenuItems: [RecordingSourceMenuItem<String>] {
-        if viewModel.filteredLocales.isEmpty {
-            return [.option(title: selectedLanguageDisplayName, value: displayedLiveSubtitleLocale)]
-        }
-
-        return viewModel.filteredLocales.map { locale in
-            let id = locale.identifier
-            return .option(title: locale.localizedString(forIdentifier: id) ?? id, value: id)
-        }
     }
 
     private var screenSourceMenu: some View {
@@ -259,16 +268,16 @@ struct RecordingStatusBar: View {
         }
     }
 
-    private var selectedLanguageDisplayName: String {
-        let id = displayedLiveSubtitleLocale
-        if let locale = viewModel.filteredLocales.first(where: { $0.identifier == id }) {
-            return locale.localizedString(forIdentifier: id) ?? id
-        }
-        return Locale.current.localizedString(forIdentifier: id) ?? id
-    }
-
     private var displayedLiveSubtitleLocale: String {
         transcriptionMode == .realtime ? viewModel.transcriptionLocale : viewModel.liveSubtitleLocale
+    }
+
+    private var liveSubtitleLocales: [Locale] {
+        if viewModel.filteredLocales.isEmpty {
+            [Locale(identifier: displayedLiveSubtitleLocale)]
+        } else {
+            viewModel.filteredLocales
+        }
     }
 
     private var selectedScreenSourceDisplayName: String {
@@ -339,12 +348,18 @@ private struct RecordingSourceMenu<Value: Hashable>: View {
             isInputActive: isInputActive
         )
         .overlay {
-            RecordingSourcePopupButton(
-                selection: $selection,
-                items: items,
-                onSelectionChange: onSelectionChange
-            )
-            .frame(maxWidth: .infinity, minHeight: 32)
+            HStack(spacing: 0) {
+                Color.clear
+                    .frame(width: 92)
+                    .allowsHitTesting(false)
+
+                RecordingSourcePopupButton(
+                    selection: $selection,
+                    items: items,
+                    onSelectionChange: onSelectionChange
+                )
+                .frame(maxWidth: .infinity, minHeight: 32)
+            }
         }
         .frame(maxWidth: .infinity)
         .accessibilityLabel("\(title), \(displayValue)")
