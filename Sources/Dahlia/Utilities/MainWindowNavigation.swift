@@ -139,6 +139,22 @@ final class MainWindowNavigation {
         return projectAppearancesByVault[vaultId.uuidString]?[projectId.uuidString] ?? .default
     }
 
+    func projectAppearance(for project: ProjectOverviewItem, vaultId: UUID?) -> ProjectAppearance {
+        projectAppearance(
+            projectId: project.parentProjectId ?? project.projectId,
+            vaultId: vaultId
+        )
+    }
+
+    func projectAppearance(
+        for projectId: UUID,
+        in projectsByID: [UUID: ProjectOverviewItem],
+        vaultId: UUID?
+    ) -> ProjectAppearance {
+        guard let project = projectsByID[projectId] else { return .default }
+        return projectAppearance(for: project, vaultId: vaultId)
+    }
+
     func setProjectAppearance(_ appearance: ProjectAppearance, projectId: UUID, vaultId: UUID?) {
         guard let vaultId else { return }
         projectAppearancesByVault[vaultId.uuidString, default: [:]][projectId.uuidString] = appearance

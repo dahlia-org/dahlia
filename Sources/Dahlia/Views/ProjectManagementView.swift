@@ -152,7 +152,8 @@ struct ProjectManagementView: View {
 
     private func projectAppearance(_ projectId: UUID) -> ProjectAppearance {
         mainWindowNavigation.projectAppearance(
-            projectId: projectId,
+            for: projectId,
+            in: sidebarViewModel.projectItemsByID,
             vaultId: sidebarViewModel.currentVault?.id
         )
     }

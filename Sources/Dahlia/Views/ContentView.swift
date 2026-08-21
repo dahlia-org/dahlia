@@ -194,12 +194,7 @@ struct ContentView: View {
                 MainSearchOverlay(
                     model: searchModel,
                     sidebarViewModel: sidebarViewModel,
-                    appearanceForProject: { projectId in
-                        mainWindowNavigation.projectAppearance(
-                            projectId: projectId,
-                            vaultId: sidebarViewModel.currentVault?.id
-                        )
-                    },
+                    appearanceForProject: projectAppearance,
                     onOpenMeeting: openSearchMeeting,
                     onOpenProject: openSearchProject
                 )
@@ -612,11 +607,7 @@ private extension ContentView {
             return sidebarViewModel.lastError ?? L10n.projectCreationFailedDescription
         }
 
-        mainWindowNavigation.setProjectAppearance(
-            appearance,
-            projectId: project.id,
-            vaultId: sidebarViewModel.currentVault?.id
-        )
+        setRootProjectAppearance(appearance, projectId: project.id, parentProjectId: parentProjectId)
         dismissProjectEditor()
         showProjectCatalog()
         return nil
@@ -648,18 +639,31 @@ private extension ContentView {
             }
         }
 
-        mainWindowNavigation.setProjectAppearance(
-            appearance,
-            projectId: project.projectId,
-            vaultId: sidebarViewModel.currentVault?.id
-        )
+        setRootProjectAppearance(appearance, projectId: project.projectId, parentProjectId: parentProjectId)
         dismissProjectEditor()
         return nil
     }
 
     private func projectAppearance(_ project: ProjectOverviewItem) -> ProjectAppearance {
         mainWindowNavigation.projectAppearance(
-            projectId: project.projectId,
+            for: project,
+            vaultId: sidebarViewModel.currentVault?.id
+        )
+    }
+
+    private func projectAppearance(_ projectId: UUID) -> ProjectAppearance {
+        mainWindowNavigation.projectAppearance(
+            for: projectId,
+            in: sidebarViewModel.projectItemsByID,
+            vaultId: sidebarViewModel.currentVault?.id
+        )
+    }
+
+    private func setRootProjectAppearance(_ appearance: ProjectAppearance, projectId: UUID, parentProjectId: UUID?) {
+        guard parentProjectId == nil else { return }
+        mainWindowNavigation.setProjectAppearance(
+            appearance,
+            projectId: projectId,
             vaultId: sidebarViewModel.currentVault?.id
         )
     }

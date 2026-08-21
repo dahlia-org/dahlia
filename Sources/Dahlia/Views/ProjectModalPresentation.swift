@@ -33,11 +33,18 @@ private struct ProjectModalPresentationModifier: ViewModifier {
 
     private func editor(_ request: ProjectEditorRequest) -> some View {
         let project = request.project
+        let availableParentProjects = parentProjects(for: project)
         return ProjectEditorPresentation(
             request: request,
-            parentProjects: parentProjects(for: project),
+            parentProjects: availableParentProjects,
             projectName: project.map(displayName) ?? "",
             appearance: project.map(appearanceForProject) ?? .default,
+            appearanceForParentProject: { parentProjectId in
+                guard let parent = availableParentProjects.first(where: { $0.projectId == parentProjectId }) else {
+                    return .default
+                }
+                return appearanceForProject(parent)
+            },
             onCancel: onCancelEditor,
             onDelete: project.map { project in
                 { onDeleteFromEditor(project) }

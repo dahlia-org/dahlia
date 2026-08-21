@@ -318,10 +318,7 @@ struct MeetingListSidebarView: View {
 
     private func meetingRow(_ item: MeetingSidebarItem) -> some View {
         let projectAppearance = item.projectId.map {
-            mainWindowNavigation.projectAppearance(
-                projectId: $0,
-                vaultId: sidebarViewModel.currentVault?.id
-            )
+            resolvedProjectAppearance($0)
         }
         return MeetingSidebarRow(
             item: item,
@@ -350,10 +347,7 @@ struct MeetingListSidebarView: View {
             group: group,
             showsHeader: showsHeader,
             projectAppearance: group.project.map {
-                mainWindowNavigation.projectAppearance(
-                    projectId: $0.projectId,
-                    vaultId: sidebarViewModel.currentVault?.id
-                )
+                mainWindowNavigation.projectAppearance(for: $0, vaultId: sidebarViewModel.currentVault?.id)
             } ?? .default,
             isPinned: isPinned,
             isExpanded: isExpanded ?? !collapsedProjectKeys.contains(group.key),
@@ -374,6 +368,14 @@ struct MeetingListSidebarView: View {
             onTogglePin: { mainWindowNavigation.toggleProjectPin($0, vaultId: sidebarViewModel.currentVault?.id) },
             onCreateMeeting: recordingCoordinator.createDraftMeeting,
             onLoadMore: sidebarViewModel.loadMoreProjectMeetings
+        )
+    }
+
+    private func resolvedProjectAppearance(_ projectId: UUID) -> ProjectAppearance {
+        mainWindowNavigation.projectAppearance(
+            for: projectId,
+            in: sidebarViewModel.projectItemsByID,
+            vaultId: sidebarViewModel.currentVault?.id
         )
     }
 

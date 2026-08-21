@@ -64,7 +64,13 @@ final class SidebarViewModel {
     var meetingReferences: [CodexChatMeetingReference] = []
     var isMeetingCatalogLoaded = false
     /// 現在の vault に属する全 project の集約一覧。
-    var allProjectItems: [ProjectOverviewItem] = []
+    var allProjectItems: [ProjectOverviewItem] = [] {
+        didSet {
+            projectItemsByID = Dictionary(uniqueKeysWithValues: allProjectItems.map { ($0.projectId, $0) })
+        }
+    }
+
+    @ObservationIgnored private(set) var projectItemsByID: [UUID: ProjectOverviewItem] = [:]
     private(set) var isProjectCatalogLoaded = false
     private(set) var projectCatalogLoadFailed = false
     /// 現在の vault に属する全 instructions の一覧。
