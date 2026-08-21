@@ -93,6 +93,10 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
     ]
     nonisolated static let automaticScreenshotIntervalSecondsUserDefaultsKey = "automaticScreenshotIntervalSeconds"
     nonisolated static let automaticScreenshotChangeThresholdPercentUserDefaultsKey = "automaticScreenshotChangeThresholdPercent"
+    nonisolated static let automaticScreenshotSharedRegionDetectionKey =
+        "automaticScreenshotDetectChangesInSharedRegionOnly"
+    nonisolated static let automaticScreenshotSharedRegionCropKey =
+        "automaticScreenshotCropToSharedRegion"
     nonisolated static let generateSummaryAfterBatchTranscriptionUserDefaultsKey = "generateSummaryAfterBatchTranscription"
     nonisolated static let exportBatchSummaryToVaultUserDefaultsKey = "exportBatchSummaryToVault"
     nonisolated static let exportBatchSummaryToGoogleDocsUserDefaultsKey = "exportBatchSummaryToGoogleDocs"
@@ -237,6 +241,10 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
         AppSettings.defaultAutomaticScreenshotIntervalSeconds
     @AppStorage(AppSettings.automaticScreenshotChangeThresholdPercentUserDefaultsKey) private var storedAutomaticScreenshotChangeThresholdPercent =
         AppSettings.defaultAutomaticScreenshotChangeThresholdPercent
+    @AppStorage(AppSettings.automaticScreenshotSharedRegionDetectionKey)
+    var automaticScreenshotDetectChangesInSharedRegionOnly = false
+    @AppStorage(AppSettings.automaticScreenshotSharedRegionCropKey)
+    var automaticScreenshotCropToSharedRegion = false
 
     var transcriptionMode: TranscriptionMode {
         get { TranscriptionMode(rawValue: transcriptionModeRawValue) ?? .defaultMode }
@@ -811,6 +819,14 @@ extension UserDefaults {
     @objc dynamic var automaticScreenshotChangeThresholdPercent: Int {
         object(forKey: AppSettings.automaticScreenshotChangeThresholdPercentUserDefaultsKey) as? Int
             ?? AppSettings.defaultAutomaticScreenshotChangeThresholdPercent
+    }
+
+    @objc dynamic var automaticScreenshotDetectChangesInSharedRegionOnly: Bool {
+        bool(forKey: AppSettings.automaticScreenshotSharedRegionDetectionKey)
+    }
+
+    @objc dynamic var automaticScreenshotCropToSharedRegion: Bool {
+        bool(forKey: AppSettings.automaticScreenshotSharedRegionCropKey)
     }
 
     @objc dynamic var calendarSource: String? {

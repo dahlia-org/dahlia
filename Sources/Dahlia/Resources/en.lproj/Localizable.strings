@@ -388,6 +388,12 @@
 "Choose how often Dahlia checks the screen for meaningful changes." = "Choose how often Dahlia checks the screen for meaningful changes.";
 "Screenshot Change Threshold" = "Screenshot Change Threshold";
 "Save a new screenshot when at least this much of the screen changes." = "Save a new screenshot when at least this much of the screen changes.";
+"Shared Content" = "Shared Content";
+"Detect Changes in Shared Content Only" = "Detect Changes in Shared Content Only";
+"Ignore changes outside detected slides or shared screens." = "Ignore changes outside detected slides or shared screens.";
+"Save Shared Content Only" = "Save Shared Content Only";
+"Crop screenshots to detected slides or shared screens." = "Crop screenshots to detected slides or shared screens.";
+"When shared content cannot be detected reliably, Dahlia uses the entire selected screen or window." = "When shared content cannot be detected reliably, Dahlia uses the entire selected screen or window.";
 "%lld seconds" = "%lld seconds";
 "%lld%%" = "%lld%%";
 "Show Live Subtitles" = "Show Live Subtitles";

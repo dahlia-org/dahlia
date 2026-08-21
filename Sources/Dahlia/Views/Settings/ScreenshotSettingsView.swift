@@ -44,6 +44,25 @@ struct ScreenshotSettingsView: View {
                     }
                 }
             }
+
+            Section {
+                Toggle(isOn: $settings.automaticScreenshotDetectChangesInSharedRegionOnly) {
+                    Text(L10n.detectScreenshotChangesInSharedContentOnly)
+                    Text(L10n.sharedContentChangeDetectionDescription)
+                }
+                .toggleStyle(.switch)
+
+                Toggle(isOn: $settings.automaticScreenshotCropToSharedRegion) {
+                    Text(L10n.saveSharedContentOnly)
+                    Text(L10n.saveSharedContentOnlyDescription)
+                }
+                .toggleStyle(.switch)
+            } header: {
+                Text(L10n.sharedContent)
+            } footer: {
+                Text(L10n.sharedContentDetectionFallbackDescription)
+            }
+            .disabled(!settings.automaticScreenshotEnabled)
         }
         .formStyle(.grouped)
     }
