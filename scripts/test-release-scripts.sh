@@ -480,6 +480,7 @@ test_embedding_dependency_license_validation() {
         notice="${entry#*:}"
         mkdir -p "${fake_project}/.build/checkouts/${checkout}"
         printf '%s' "${checkout} ${notice}" > "${fake_project}/.build/checkouts/${checkout}/${notice}"
+        chmod a-w "${fake_project}/.build/checkouts/${checkout}/${notice}"
     done
 
     embed_embedding_dependency_licenses "$fake_project" "$contents_dir"
@@ -489,6 +490,8 @@ test_embedding_dependency_license_validation() {
         cmp \
             "${fake_project}/.build/checkouts/${checkout}/${notice}" \
             "${contents_dir}/Resources/Licenses/${checkout}/${notice}"
+        [ -w "${contents_dir}/Resources/Licenses/${checkout}/${notice}" ] \
+            || fail "embedded ${checkout} ${notice} was not writable"
     done
 
     rm "${fake_project}/.build/checkouts/mlx-swift-lm/ACKNOWLEDGMENTS.md"
@@ -520,11 +523,18 @@ test_telemetrydeck_configuration_and_embedding() {
     mkdir -p "${build_dir}/TelemetryDeck_TelemetryDeck.bundle" "$checkout_dir"
     printf '%s' 'privacy manifest' > "${build_dir}/TelemetryDeck_TelemetryDeck.bundle/PrivacyInfo.xcprivacy"
     printf '%s' 'license fixture' > "${checkout_dir}/LICENSE"
+    chmod a-w \
+        "${build_dir}/TelemetryDeck_TelemetryDeck.bundle/PrivacyInfo.xcprivacy" \
+        "${checkout_dir}/LICENSE"
     embed_telemetrydeck_resources "$fake_project" "$build_dir" "$contents_dir"
     cmp \
         "${build_dir}/TelemetryDeck_TelemetryDeck.bundle/PrivacyInfo.xcprivacy" \
         "${contents_dir}/Resources/TelemetryDeck_TelemetryDeck.bundle/PrivacyInfo.xcprivacy"
     cmp "$checkout_dir/LICENSE" "${contents_dir}/Resources/Licenses/TelemetryDeck/LICENSE"
+    [ -w "${contents_dir}/Resources/TelemetryDeck_TelemetryDeck.bundle/PrivacyInfo.xcprivacy" ] \
+        || fail "embedded TelemetryDeck privacy manifest was not writable"
+    [ -w "${contents_dir}/Resources/Licenses/TelemetryDeck/LICENSE" ] \
+        || fail "embedded TelemetryDeck license was not writable"
 
     rm "${build_dir}/TelemetryDeck_TelemetryDeck.bundle/PrivacyInfo.xcprivacy"
     rmdir "${build_dir}/TelemetryDeck_TelemetryDeck.bundle"
