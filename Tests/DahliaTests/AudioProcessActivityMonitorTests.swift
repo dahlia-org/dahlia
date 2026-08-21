@@ -8,9 +8,8 @@ import os
 
     struct AudioProcessActivityMonitorTests {
         @Test
-        func publishesInitialAndChangedValuesWithoutDuplicates() async {
-            let inputReads = AsyncStream.makeStream(of: Void.self, bufferingPolicy: .unbounded)
-            let harness = AudioProcessActivityMonitorHarness(inputReadContinuation: inputReads.continuation)
+        func publishesInitialAndChangedValuesWithoutDuplicates() async throws {
+            let harness = AudioProcessActivityMonitorHarness()
             harness.configureProcess(bundleID: "us.zoom.caphost", isRunningInput: true)
             let monitor = AudioProcessActivityMonitor(dependencies: harness.dependencies, excludedPID: 999)
             let events = OSAllocatedUnfairLock(
@@ -20,28 +19,27 @@ import os
             let observerID = await monitor.addRunningInputObserver { result in
                 events.withLock { $0.append(result) }
             }
-            var inputReadIterator = inputReads.stream.makeAsyncIterator()
-            _ = await inputReadIterator.next()
+            #expect(await pollUntil { harness.inputReadCount >= 1 })
 
             harness.fireInputListener()
-            _ = await inputReadIterator.next()
-            _ = await monitor.isMonitoring()
-            #expect(events.withLock { $0.count } == 1)
+            #expect(await pollUntil { harness.inputReadCount >= 2 })
 
             harness.setRunningInput(false)
             harness.fireInputListener()
-            _ = await inputReadIterator.next()
-            _ = await monitor.isMonitoring()
+            #expect(await pollUntil { harness.inputReadCount >= 3 })
+            #expect(await pollUntil { events.withLock { $0.count >= 2 } })
 
             let values = events.withLock { $0 }
             #expect(values.count == 2)
-            #expect((try? values[0].get()) == Set(["us.zoom.caphost"]))
-            #expect((try? values[1].get()) == Set<String>())
+            let initial = try #require(values.first)
+            let changed = try #require(values.dropFirst().first)
+            #expect((try? initial.get()) == Set(["us.zoom.caphost"]))
+            #expect((try? changed.get()) == Set<String>())
             await monitor.removeRunningInputObserver(observerID)
         }
 
         @Test
-        func refreshesCachedInputStateWhenCoreAudioDoesNotNotify() async {
+        func refreshesCachedInputStateWhenCoreAudioDoesNotNotify() async throws {
             let harness = AudioProcessActivityMonitorHarness()
             harness.configureProcess(bundleID: "com.google.Chrome.helper", isRunningInput: false)
             let monitor = AudioProcessActivityMonitor(dependencies: harness.dependencies, excludedPID: 999)
@@ -57,8 +55,10 @@ import os
 
             let values = events.withLock { $0 }
             #expect(values.count == 2)
-            #expect((try? values[0].get()) == Set<String>())
-            #expect((try? values[1].get()) == Set(["com.google.Chrome.helper"]))
+            let initial = try #require(values.first)
+            let changed = try #require(values.dropFirst().first)
+            #expect((try? initial.get()) == Set<String>())
+            #expect((try? changed.get()) == Set(["com.google.Chrome.helper"]))
             await monitor.removeRunningInputObserver(observerID)
         }
 
@@ -223,19 +223,17 @@ import os
             var runningOutputs = [AudioObjectID: Bool]()
             var listeners = [ListenerKey: StoredListener]()
             var failedAddSelectors = Set<AudioObjectPropertySelector>()
+            var inputReadCount = 0
             var processListReadCount = 0
         }
 
         private let processObjectID = AudioObjectID(42)
         private let state = OSAllocatedUnfairLock(initialState: State())
-        private let inputReadContinuation: AsyncStream<Void>.Continuation?
         private let listenerAddContinuation: AsyncStream<AudioObjectPropertySelector>.Continuation?
 
         init(
-            inputReadContinuation: AsyncStream<Void>.Continuation? = nil,
             listenerAddContinuation: AsyncStream<AudioObjectPropertySelector>.Continuation? = nil
         ) {
-            self.inputReadContinuation = inputReadContinuation
             self.listenerAddContinuation = listenerAddContinuation
         }
 
@@ -254,8 +252,10 @@ import os
                     state.withLock { .success($0.bundleIDs[objectID]) }
                 },
                 isRunningInput: { [self] objectID in
-                    inputReadContinuation?.yield()
-                    return state.withLock { .success($0.runningInputs[objectID] ?? false) }
+                    state.withLock { state in
+                        state.inputReadCount += 1
+                        return .success(state.runningInputs[objectID] ?? false)
+                    }
                 },
                 isRunningOutput: { [self] objectID in
                     state.withLock { .success($0.runningOutputs[objectID] ?? false) }
@@ -285,6 +285,10 @@ import os
 
         var processListReadCount: Int {
             state.withLock(\.processListReadCount)
+        }
+
+        var inputReadCount: Int {
+            state.withLock(\.inputReadCount)
         }
 
         func configureProcess(bundleID: String, isRunningInput: Bool) {

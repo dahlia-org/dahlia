@@ -1,7 +1,9 @@
 import CoreAudio
+import Combine
 import Dispatch
 import Foundation
 import GRDB
+import os
 @testable import Dahlia
 @testable import DahliaRuntimeSupport
 
@@ -687,6 +689,13 @@ import GRDB
                 vaultURL: testVaultURL
             )
             viewModel.updateDraftMeetingTitle("Edited design review")
+            let reportedStartFailure = OSAllocatedUnfairLock(initialState: false)
+            let errorObservation = viewModel.$errorMessage.sink { errorMessage in
+                if errorMessage != nil {
+                    reportedStartFailure.withLock { $0 = true }
+                }
+            }
+            defer { errorObservation.cancel() }
             let databaseAccessStarted = AsyncStream<Void>.makeStream()
             let releaseDatabase = DispatchSemaphore(value: 0)
             let blockingDatabaseTask = Task.detached {
@@ -727,7 +736,7 @@ import GRDB
             #expect(viewModel.currentProjectName == nil)
             #expect(viewModel.noteText == "Keep the latest draft note")
             #expect(!viewModel.isListening)
-            #expect(viewModel.errorMessage != nil)
+            #expect(reportedStartFailure.withLock { $0 })
         }
 
         @Test

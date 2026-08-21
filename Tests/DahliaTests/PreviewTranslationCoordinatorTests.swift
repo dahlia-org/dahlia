@@ -31,7 +31,7 @@ import Foundation
             await sleepGate.release()
 
             #expect(await waitUntil { await recorder.translateCallCount() == 1 })
-            #expect(await recorder.appliedTexts() == ["訳: Hello"])
+            #expect(await waitUntil { await recorder.appliedTexts() == ["訳: Hello"] })
         }
 
         @Test

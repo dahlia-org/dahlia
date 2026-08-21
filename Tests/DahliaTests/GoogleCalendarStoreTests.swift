@@ -474,6 +474,34 @@ import Foundation
         }
 
         @Test
+        func disconnectNotificationImmediatelySignsOut() async {
+            let watchedNotification = Notification.Name("GoogleCalendarStoreTests.disconnect.\(UUID().uuidString)")
+            let defaults = isolatedUserDefaults()
+            seedSelectedCalendars([primaryCalendar.id], defaults: defaults)
+            let signInProvider = MockGoogleCalendarSignInProvider(
+                hasPreviousSignIn: true,
+                sessionDidChangeNotification: watchedNotification,
+                signInResult: .success(fixtureSession)
+            )
+            let store = GoogleCalendarStore(
+                signInProvider: signInProvider,
+                apiClient: MockGoogleCalendarAPIClient(calendars: [primaryCalendar], events: [fixtureEvent]),
+                userDefaults: defaults,
+                now: { fixtureNow },
+                presentingWindowProvider: { NSWindow() }
+            )
+
+            NotificationCenter.default.post(
+                name: watchedNotification,
+                object: GoogleAuthSessionChangeReason.disconnected
+            )
+
+            #expect(await pollUntil { store.selectedCalendarIDs.isEmpty })
+            #expect(store.state == .signedOut)
+            #expect(signInProvider.restoreCallCount == 0)
+        }
+
+        @Test
         func eventTransformationPrefersConferenceEntryPointAndFiltersFutureWindow() throws {
             let conferenceItem = GoogleCalendarAPIClient.EventItem(
                 id: "event-1",

@@ -74,6 +74,41 @@ enum GoogleAuthSessionChangeReason: Equatable, Sendable {
     case disconnected
 }
 
+/// NotificationCenter owns and may release its opaque token off the main actor.
+/// The buffered stream preserves notification order and returns to MainActor before touching Google account state.
+final class GoogleAuthSessionObserver: @unchecked Sendable {
+    private let token: NSObjectProtocol
+    private let continuation: AsyncStream<Bool>.Continuation
+    private let observationTask: Task<Void, Never>
+
+    init(
+        notificationName: Notification.Name,
+        handler: @escaping @MainActor @Sendable (Bool) async -> Void
+    ) {
+        let (stream, continuation) = AsyncStream.makeStream(of: Bool.self)
+        self.continuation = continuation
+        token = NotificationCenter.default.addObserver(
+            forName: notificationName,
+            object: nil,
+            queue: .main
+        ) { notification in
+            let forceSignOut = notification.object as? GoogleAuthSessionChangeReason == .disconnected
+            continuation.yield(forceSignOut)
+        }
+        observationTask = Task { @MainActor in
+            for await forceSignOut in stream {
+                await handler(forceSignOut)
+            }
+        }
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(token)
+        continuation.finish()
+        observationTask.cancel()
+    }
+}
+
 enum GoogleSignInError: LocalizedError {
     case notConfigured
     case missingPresentingWindow

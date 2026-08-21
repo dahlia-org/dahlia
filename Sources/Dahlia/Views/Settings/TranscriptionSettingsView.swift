@@ -220,7 +220,7 @@ struct TranscriptionSettingsView: View {
 
     private func loadSupportedLocales() async {
         isLoadingLocales = true
-        let locales = await SpeechTranscriber.supportedLocales
+        let locales = await SpeechSupportedLocales.load()
         supportedLocales = locales.sortedByLocalizedName()
         if settings.transcriptionLanguageScope == .selected,
            settings.enabledLocaleIdentifiers.isEmpty {

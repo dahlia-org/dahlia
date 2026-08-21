@@ -85,6 +85,8 @@ import GRDB
             let coordinator = BatchTranscriptionCoordinator(
                 dbQueue: fixture.database.dbQueue,
                 managedRootURL: fixture.managedRootURL,
+                speechRecognizer: TestBatchSpeechRecognizer(),
+                supportedLocalesProvider: { testSupportedSpeechLocales },
                 onStateChange: { _ in }
             )
             try await coordinator.recoverAndEnqueue()
@@ -121,6 +123,7 @@ import GRDB
                 dbQueue: fixture.database.dbQueue,
                 managedRootURL: fixture.managedRootURL,
                 speechRecognizer: DeferredFailureBatchSpeechRecognizer(gate: recognitionGate),
+                supportedLocalesProvider: { testSupportedSpeechLocales },
                 onStateChange: { update in
                     await updateProbe.record(update)
                 }

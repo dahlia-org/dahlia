@@ -1,10 +1,21 @@
 import Foundation
+@testable import Dahlia
 
 /// Deadline shared by the polling waits in this test target.
 ///
 /// Every wait in this target resolves in milliseconds once the process is healthy, so this
 /// deadline exists only to describe a genuine hang.
 let testPollTimeout = Duration.seconds(15)
+
+let testSupportedSpeechLocales = [Locale(identifier: "ja_JP"), Locale(identifier: "en_US")]
+
+struct TestBatchSpeechRecognizer: BatchSpeechRecognizing {
+    func recognize(audioURL _: URL, locale _: Locale) async throws -> [BatchSpeechRecognition] { [] }
+
+    func recognize(audioSlices _: [BatchSpeechAudioSlice], locale _: Locale) async throws -> [BatchSpeechRecognition] {
+        []
+    }
+}
 
 /// Polls `condition` until it holds or `timeout` elapses, and reports whether it held.
 ///

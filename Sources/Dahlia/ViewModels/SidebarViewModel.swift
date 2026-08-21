@@ -116,6 +116,7 @@ final class SidebarViewModel {
     @ObservationIgnored private var vaultObservation: AnyDatabaseCancellable?
     @ObservationIgnored private var searchIndexObservation: AnyDatabaseCancellable?
     @ObservationIgnored private var searchIndexRefreshTask: Task<Void, Never>?
+    @ObservationIgnored private var hasObservedSearchIndexRevision = false
     @ObservationIgnored private var vaultSyncService: VaultSyncService?
     @ObservationIgnored private var workspaceChangeObserver: NSObjectProtocol?
     @ObservationIgnored var meetingSearchTask: Task<Void, Never>?
@@ -195,6 +196,7 @@ final class SidebarViewModel {
         vaultSyncService = nil
         fileWatcher = nil
         searchIndexRevision = 0
+        hasObservedSearchIndexRevision = false
         isVectorSearchEnabled = false
         isVectorSearchReady = false
         flatProjects.removeAll()
@@ -332,10 +334,15 @@ final class SidebarViewModel {
             onError: { _ in },
             onChange: { [weak self] values in
                 Task { @MainActor [weak self] in
-                    guard let self else { return }
+                    guard let self, self.dbQueue === dbQueue else { return }
                     let revision = values[0]
                     self.isVectorSearchEnabled = values[1] == 1
                     self.isVectorSearchReady = values[2] == 1
+                    guard self.hasObservedSearchIndexRevision else {
+                        self.hasObservedSearchIndexRevision = true
+                        self.searchIndexRevision = revision
+                        return
+                    }
                     guard revision != self.searchIndexRevision else { return }
                     self.searchIndexRevision = revision
                     self.searchIndexRefreshTask?.cancel()

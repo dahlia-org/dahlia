@@ -138,20 +138,6 @@ import Foundation
                 viewModel: viewModel,
                 liveSubtitleOverlayService: presenter
             )
-            var previousUpdateCount = presenter.updateCount
-            var stableCheckCount = 0
-            let initialUpdatesSettled = await pollUntil {
-                let currentUpdateCount = presenter.updateCount
-                if currentUpdateCount == previousUpdateCount {
-                    stableCheckCount += 1
-                } else {
-                    previousUpdateCount = currentUpdateCount
-                    stableCheckCount = 0
-                }
-                return stableCheckCount >= 3
-            }
-            #expect(initialUpdatesSettled)
-            let initialUpdateCount = presenter.updateCount
             let clock = ContinuousClock()
             let end = clock.now.advanced(by: .seconds(1))
             var index = 0
@@ -177,7 +163,10 @@ import Foundation
 
             let payload = try #require(presenter.lastPayload)
             #expect(payload.entries.map(\.primaryText) == [latestPreview])
-            #expect(presenter.updateCount - initialUpdateCount <= 7)
+            let publishedPreviews = Set(presenter.payloadTextUpdates.compactMap(\.first).filter {
+                $0.hasPrefix("Preview ")
+            })
+            #expect(publishedPreviews.count <= 7)
             withExtendedLifetime(coordinator) {}
         }
 

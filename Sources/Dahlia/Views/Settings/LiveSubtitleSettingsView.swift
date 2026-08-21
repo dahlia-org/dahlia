@@ -74,7 +74,7 @@ struct LiveSubtitleSettingsView: View {
         }
         .formStyle(.grouped)
         .task {
-            supportedLocales = await SpeechTranscriber.supportedLocales.sortedByLocalizedName()
+            supportedLocales = await SpeechSupportedLocales.load().sortedByLocalizedName()
             isLoadingLocales = false
         }
     }

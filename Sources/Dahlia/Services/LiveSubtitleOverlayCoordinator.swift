@@ -36,13 +36,13 @@ final class LiveSubtitleOverlayCoordinator {
             }
 
         defaultsCancellables = [
-            UserDefaults.standard.publisher(for: \.liveSubtitleOverlayEnabled).sink { [weak self] _ in self?.sync() },
-            UserDefaults.standard.publisher(for: \.liveSubtitleOverlaySegmentCount).sink { [weak self] _ in self?.sync() },
-            UserDefaults.standard.publisher(for: \.liveSubtitleSourceMode).sink { [weak self] _ in self?.sync() },
-            UserDefaults.standard.publisher(for: \.transcriptTranslationEnabled).sink { [weak self] _ in self?.sync() },
-            UserDefaults.standard.publisher(for: \.transcriptionLocale).sink { [weak self] _ in self?.sync() },
-            UserDefaults.standard.publisher(for: \.liveSubtitleLocale).sink { [weak self] _ in self?.sync() },
-            UserDefaults.standard.publisher(for: \.transcriptTranslationTargetLanguage).sink { [weak self] _ in self?.sync() },
+            UserDefaults.standard.publisher(for: \.liveSubtitleOverlayEnabled).removeDuplicates().sink { [weak self] _ in self?.sync() },
+            UserDefaults.standard.publisher(for: \.liveSubtitleOverlaySegmentCount).removeDuplicates().sink { [weak self] _ in self?.sync() },
+            UserDefaults.standard.publisher(for: \.liveSubtitleSourceMode).removeDuplicates().sink { [weak self] _ in self?.sync() },
+            UserDefaults.standard.publisher(for: \.transcriptTranslationEnabled).removeDuplicates().sink { [weak self] _ in self?.sync() },
+            UserDefaults.standard.publisher(for: \.transcriptionLocale).removeDuplicates().sink { [weak self] _ in self?.sync() },
+            UserDefaults.standard.publisher(for: \.liveSubtitleLocale).removeDuplicates().sink { [weak self] _ in self?.sync() },
+            UserDefaults.standard.publisher(for: \.transcriptTranslationTargetLanguage).removeDuplicates().sink { [weak self] _ in self?.sync() },
         ]
     }
 

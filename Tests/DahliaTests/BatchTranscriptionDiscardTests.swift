@@ -224,6 +224,8 @@ import GRDB
             let coordinator = BatchTranscriptionCoordinator(
                 dbQueue: fixture.database.dbQueue,
                 managedRootURL: fixture.managedRootURL,
+                speechRecognizer: TestBatchSpeechRecognizer(),
+                supportedLocalesProvider: { testSupportedSpeechLocales },
                 onStateChange: { _ in }
             )
             let repository = MeetingRepository(dbQueue: fixture.database.dbQueue)

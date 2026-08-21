@@ -70,7 +70,7 @@ actor BatchTranscriptionCoordinator {
         speechRecognizer: any BatchSpeechRecognizing = AppleBatchSpeechRecognizer(),
         audioFeatureAnalyzer: any BatchTranscriptAudioFeatureAnalyzing = BatchTranscriptAudioFeatureAnalyzer(),
         supportedLocalesProvider: @escaping @Sendable () async -> [Locale] = {
-            await SpeechTranscriber.supportedLocales
+            await SpeechSupportedLocales.load()
         },
         languageFallbackReporter: LanguageFallbackReporter? = nil,
         onStateChange: @escaping StateHandler

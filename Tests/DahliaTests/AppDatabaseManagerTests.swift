@@ -1,6 +1,7 @@
 import DahliaRuntimeSupport
 import Foundation
 import GRDB
+import os
 @testable import Dahlia
 
 #if canImport(Testing)
@@ -58,46 +59,37 @@ import GRDB
         }
 
         @Test
-        func searchReadTransactionDoesNotBlockDurableWrites() throws {
+        func searchReadTransactionDoesNotBlockDurableWrites() async throws {
             let databaseDirectory = FileManager.default.temporaryDirectory
                 .appending(path: "dahlia-database-search-concurrency-\(UUID.v7().uuidString)")
             let databaseURL = databaseDirectory.appending(path: "dahlia.sqlite")
             defer { try? FileManager.default.removeItem(at: databaseDirectory) }
 
             let manager = try AppDatabaseManager(path: databaseURL.path, enablesConcurrentSearch: true)
-            let readStarted = DispatchSemaphore(value: 0)
+            let readStarted = OSAllocatedUnfairLock(initialState: false)
             let releaseRead = DispatchSemaphore(value: 0)
-            let readFinished = DispatchSemaphore(value: 0)
-            let writeFinished = DispatchSemaphore(value: 0)
-            DispatchQueue.global().async {
-                do {
-                    try manager.searchDBQueue.read { db in
-                        _ = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM meetings")
-                        readStarted.signal()
-                        releaseRead.wait()
-                    }
-                } catch {
-                    Issue.record(error)
+            let writeFinished = OSAllocatedUnfairLock(initialState: false)
+            let readTask = Task.detached {
+                try manager.searchDBQueue.read { db in
+                    _ = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM meetings")
+                    readStarted.withLock { $0 = true }
+                    releaseRead.wait()
                 }
-                readFinished.signal()
             }
-            #expect(readStarted.wait(timeout: .now() + 5) == .success)
+            #expect(await pollUntil { readStarted.withLock { $0 } })
 
-            DispatchQueue.global().async {
-                do {
-                    try manager.dbQueue.write { db in
-                        try db.execute(
-                            sql: "UPDATE search_index_state SET updatedAt = updatedAt WHERE indexKind = 'fts'"
-                        )
-                    }
-                } catch {
-                    Issue.record(error)
+            let writeTask = Task.detached {
+                try manager.dbQueue.write { db in
+                    try db.execute(
+                        sql: "UPDATE search_index_state SET updatedAt = updatedAt WHERE indexKind = 'fts'"
+                    )
                 }
-                writeFinished.signal()
+                writeFinished.withLock { $0 = true }
             }
-            let completedWhileReading = writeFinished.wait(timeout: .now() + 1) == .success
+            let completedWhileReading = await pollUntil(timeout: .seconds(1)) { writeFinished.withLock { $0 } }
             releaseRead.signal()
-            #expect(readFinished.wait(timeout: .now() + 5) == .success)
+            try await readTask.value
+            try await writeTask.value
 
             #expect(completedWhileReading)
         }
