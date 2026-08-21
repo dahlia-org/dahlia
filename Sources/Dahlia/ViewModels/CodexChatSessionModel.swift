@@ -76,16 +76,17 @@ final class CodexChatSessionModel: Identifiable {
     @ObservationIgnored private var approvalRearmTask: Task<Void, Never>?
     @ObservationIgnored private var pendingLiveTranscript: String?
     @ObservationIgnored private var didTruncatePendingLiveTranscript = false
-    @ObservationIgnored var pendingManualInputs: [CodexChatManualSubmission] = []
+    var pendingManualInputs: [CodexChatManualSubmission] = []
     @ObservationIgnored var preparingManualComposerSnapshot: CodexChatComposerSnapshot?
     @ObservationIgnored var lastManualSubmission: CodexChatManualSubmission?
     @ObservationIgnored var isActiveTurnLiveTranscript = false
     @ObservationIgnored var didSendLiveModeContext = false
     @ObservationIgnored var liveModeGeneration: UInt = 0
     @ObservationIgnored private var activeSteerIsLiveTranscript = false
-    @ObservationIgnored private var activeSteeringManualSubmission: CodexChatManualSubmission?
+    var activeSteeringManualSubmission: CodexChatManualSubmission?
     @ObservationIgnored private var activeTurnSupportsImages: Bool?
     @ObservationIgnored var activeSubmissionID: UUID?
+    @ObservationIgnored var activeManualSubmissionLiveModeGeneration: UInt?
     @ObservationIgnored private var activeResponseID: String?
     @ObservationIgnored var activeOutputItemIDs: Set<String> = []
     @ObservationIgnored var turnOutputGeneration: UInt = 0
@@ -199,21 +200,50 @@ final class CodexChatSessionModel: Identifiable {
             images: imagesSnapshot,
             composerSnapshot: composerSnapshot
         )
-        if isGenerating || isTurnCleanupPending {
+        sendManualSubmission(submission)
+    }
+
+    func startLiveMode() {
+        guard !isLiveModeEnabled, isBoundToCurrentVault else { return }
+        setLiveModeEnabled(true)
+        sendManualSubmission(
+            CodexChatManualSubmission(
+                text: L10n.chatLiveModeInitialPrompt,
+                images: []
+            ),
+            reportsUsage: false
+        )
+    }
+
+    func sendLiveModeShortcut(_ text: String) {
+        guard canSendLiveModeShortcut,
+              let text = text.nilIfBlank else { return }
+        sendManualSubmission(CodexChatManualSubmission(
+            text: text,
+            images: [],
+            liveModeGeneration: liveModeGeneration
+        ))
+    }
+
+    private func sendManualSubmission(
+        _ submission: CodexChatManualSubmission,
+        reportsUsage: Bool = true
+    ) {
+        let shouldEnqueue = isGenerating || isTurnCleanupPending
+        if shouldEnqueue, let composerSnapshot = submission.composerSnapshot {
             let isDuplicate = preparingManualComposerSnapshot == composerSnapshot
                 || activeSteeringManualSubmission?.composerSnapshot == composerSnapshot
                 || pendingManualInputs.contains(where: { $0.composerSnapshot == composerSnapshot })
             guard !isDuplicate else { return }
+        }
+        if reportsUsage {
             usageTelemetryReporter(.aiChatPromptSubmitted)
+        }
+        if shouldEnqueue {
             enqueueManualInput(submission)
             return
         }
-        usageTelemetryReporter(.aiChatPromptSubmitted)
-        submit(
-            text,
-            images: imagesSnapshot,
-            composerSnapshot: composerSnapshot
-        )
+        submitManualSubmission(submission)
     }
 
     func retry() {
@@ -673,6 +703,7 @@ extension CodexChatSessionModel {
         isStopRequested = false
         isActiveTurnLiveTranscript = false
         activeTurnSupportsImages = nil
+        activeManualSubmissionLiveModeGeneration = nil
         activeSubmissionID = nil
         activeResponseID = nil
         turnTask = nil
@@ -811,6 +842,11 @@ extension CodexChatSessionModel {
         guard activeSubmissionID == submissionID, !Task.isCancelled else {
             throw CancellationError()
         }
+        if let generation = activeManualSubmissionLiveModeGeneration {
+            guard isLiveModeEnabled, generation == liveModeGeneration else {
+                throw CancellationError()
+            }
+        }
         guard liveTranscript == nil || isLiveModeEnabled, !isStopRequested else {
             throw CancellationError()
         }
@@ -832,7 +868,11 @@ extension CodexChatSessionModel {
         if let liveTranscript, isLiveModeEnabled {
             recordFailedLiveTranscript(liveTranscript)
         } else if text?.nilIfBlank != nil || !images.isEmpty {
-            let submission = CodexChatManualSubmission(text: text ?? "", images: images)
+            let submission = CodexChatManualSubmission(
+                text: text ?? "",
+                images: images,
+                liveModeGeneration: activeManualSubmissionLiveModeGeneration
+            )
             lastSubmittedText = submission.text
             lastManualSubmission = submission
             failedSubmission = .manual(submission)
@@ -913,12 +953,19 @@ extension CodexChatSessionModel {
             if activeSteerIsLiveTranscript {
                 steerTask?.cancel()
             }
+            if activeSteeringManualSubmission?.liveModeGeneration != nil {
+                steerTask?.cancel()
+            }
+            pendingManualInputs.removeAll { $0.liveModeGeneration != nil }
             pendingLiveTranscript = nil
             failedLiveTranscript = nil
             failedSubmission = nil
             didTruncatePendingLiveTranscript = false
             noticeMessage = nil
             if isGenerating, isActiveTurnLiveTranscript {
+                stop()
+            }
+            if isGenerating, activeManualSubmissionLiveModeGeneration != nil {
                 stop()
             }
         }
@@ -940,11 +987,7 @@ extension CodexChatSessionModel {
                 return
             }
             let submission = pendingManualInputs.removeFirst()
-            submit(
-                submission.text,
-                images: submission.images,
-                composerSnapshot: submission.composerSnapshot
-            )
+            submitManualSubmission(submission)
         } else {
             sendNextLiveTranscriptIfPossible()
         }
@@ -1134,6 +1177,10 @@ extension CodexChatSessionModel {
         guard !isReleased else { return }
         switch input {
         case let .manual(submission):
+            if let generation = submission.liveModeGeneration,
+               !isLiveModeEnabled || generation != liveModeGeneration {
+                return
+            }
             pendingManualInputs.insert(submission, at: 0)
         case let .liveTranscript(text, wasTruncated):
             if let liveModeGenerationSnapshot,

@@ -1,14 +1,17 @@
-import CoreGraphics
+import SwiftUI
 
 enum CodexChatDesign {
     static let panelCornerRadius: CGFloat = 18
     static let liveModeStatusSpacing: CGFloat = 6
     static let liveModeStatusHorizontalPadding: CGFloat = 10
-    static let liveModeStatusVerticalPadding: CGFloat = 3
+    static let liveModeStatusVerticalPadding: CGFloat = 8
     static let liveModeStatusCornerRadius: CGFloat = 8
     static let liveModeStatusBottomPadding: CGFloat = 4
     static let liveModeStatusOuterHorizontalPadding: CGFloat = 16
     static let liveModeCloseButtonSize: CGFloat = 24
+    static let liveModeAccent = Color.purple
+    static let liveModeAccentLight = Color(red: 0.61, green: 0.50, blue: 0.93)
+    static let liveModeAccentDark = Color(red: 0.45, green: 0.34, blue: 0.82)
     static let contentHorizontalPadding: CGFloat = 16
     static let composerHorizontalPadding: CGFloat = 8
     static let composerBottomPadding: CGFloat = 8

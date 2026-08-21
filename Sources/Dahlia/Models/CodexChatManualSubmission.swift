@@ -10,14 +10,17 @@ struct CodexChatManualSubmission: Equatable, Sendable {
     let text: String
     let images: [CodexChatImageAttachment]
     let composerSnapshot: CodexChatComposerSnapshot?
+    let liveModeGeneration: UInt?
 
     init(
         text: String,
         images: [CodexChatImageAttachment],
-        composerSnapshot: CodexChatComposerSnapshot? = nil
+        composerSnapshot: CodexChatComposerSnapshot? = nil,
+        liveModeGeneration: UInt? = nil
     ) {
         self.text = text
         self.images = images
         self.composerSnapshot = composerSnapshot
+        self.liveModeGeneration = liveModeGeneration
     }
 }

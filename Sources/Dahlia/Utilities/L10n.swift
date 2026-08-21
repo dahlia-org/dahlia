@@ -2752,6 +2752,29 @@ enum L10n {
     static var enableChatLiveMode: String { String(localized: "Turn on live mode", bundle: bundle) }
     static var disableChatLiveMode: String { String(localized: "Turn off live mode", bundle: bundle) }
     static var chatLiveModeOn: String { String(localized: "Live mode on", bundle: bundle) }
+    static var chatLiveModeInitialPrompt: String {
+        String(
+            localized: """
+            I'll send you the live transcript of this meeting. \
+            You don't need to respond to every transcript update. \
+            Support me when needed.
+            """,
+            bundle: bundle
+        )
+    }
+
+    static var chatLiveModeSummarizeShortcut: String {
+        String(localized: "Summarize the discussion so far.", bundle: bundle)
+    }
+
+    static var chatLiveModeExplainShortcut: String {
+        String(localized: "Explain what I just missed.", bundle: bundle)
+    }
+
+    static var chatLiveModeHistoryShortcut: String {
+        String(localized: "Review our past conversations.", bundle: bundle)
+    }
+
     static var chatLiveTranscriptBacklogTruncated: String {
         String(localized: "Some older live transcript was skipped because the chat backlog was too large.", bundle: bundle)
     }

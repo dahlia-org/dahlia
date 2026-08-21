@@ -70,7 +70,7 @@ struct CodexChatComposerInputRow: View {
             } else if !session.liveModeEnabled, !session.hasComposerContent {
                 CodexChatLiveModeStartButton(
                     isEnabled: session.isBoundToCurrentVault,
-                    action: session.toggleLiveMode
+                    action: session.startLiveMode
                 )
             } else {
                 CodexChatActionButton(

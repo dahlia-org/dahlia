@@ -106,7 +106,7 @@ enum ErrorReportingService {
 
     static func start() {
         let infoDictionary = Bundle.main.infoDictionary ?? [:]
-        guard let dsn = resolveDSN(infoDictionary: infoDictionary, isDebugBuild: isDebugBuild) else { return }
+        guard let dsn = resolveDSN(infoDictionary: infoDictionary) else { return }
         let releaseMetadata = resolveReleaseMetadata(infoDictionary: infoDictionary)
 
         isEnabled = true
@@ -248,9 +248,8 @@ enum ErrorReportingService {
         }
     }
 
-    static func resolveDSN(infoDictionary: [String: Any], isDebugBuild: Bool) -> String? {
-        guard !isDebugBuild else { return nil }
-        return trimmedString(for: dsnInfoKey, in: infoDictionary)
+    static func resolveDSN(infoDictionary: [String: Any]) -> String? {
+        trimmedString(for: dsnInfoKey, in: infoDictionary)
     }
 
     static func resolveReleaseMetadata(infoDictionary: [String: Any]) -> ReleaseMetadata? {
@@ -271,13 +270,5 @@ enum ErrorReportingService {
         guard let rawValue = dictionary[key] as? String else { return nil }
         let value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
         return value.isEmpty ? nil : value
-    }
-
-    private static var isDebugBuild: Bool {
-        #if DEBUG
-            true
-        #else
-            false
-        #endif
     }
 }

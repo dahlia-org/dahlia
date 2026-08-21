@@ -17,8 +17,8 @@ struct CodexChatLiveModeStartButton: View {
         .background(
             LinearGradient(
                 colors: [
-                    Color(red: 0.61, green: 0.50, blue: 0.93),
-                    Color(red: 0.45, green: 0.34, blue: 0.82),
+                    CodexChatDesign.liveModeAccentLight,
+                    CodexChatDesign.liveModeAccentDark,
                 ],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing

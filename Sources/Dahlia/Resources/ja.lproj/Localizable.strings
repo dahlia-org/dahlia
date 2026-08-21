@@ -1066,6 +1066,10 @@
 "Turn on live mode" = "ライブモードをオンにする";
 "Turn off live mode" = "ライブモードをオフにする";
 "Live mode on" = "ライブモード：オン";
+"I'll send you the live transcript of this meeting. You don't need to respond to every transcript update. Support me when needed." = "このミーティングのライブ文字起こしをあなたに送ります。送られてくるすべての文字起こしに反応する必要はありません。必要に応じてサポートしてください。";
+"Summarize the discussion so far." = "ここまでの内容を簡単に要約して。";
+"Explain what I just missed." = "今のよくわかってないので解説して。";
+"Review our past conversations." = "過去のやり取りを確認して";
 "Some older live transcript was skipped because the chat backlog was too large." = "チャットの待機量が上限を超えたため、古いライブ文字起こしの一部をスキップしました。";
 "The assistant wants to run a command." = "アシスタントがコマンドの実行を求めています。";
 "The assistant wants to change files." = "アシスタントがファイルの変更を求めています。";
