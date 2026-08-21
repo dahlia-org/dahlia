@@ -388,6 +388,12 @@
 "Choose how often Dahlia checks the screen for meaningful changes." = "Dahlia が画面の変化を確認する間隔を選びます。";
 "Screenshot Change Threshold" = "画面変化の閾値";
 "Save a new screenshot when at least this much of the screen changes." = "画面の変化率がこの値以上になったときに新しいスクリーンショットを保存します。";
+"Shared Content" = "共有コンテンツ";
+"Detect Changes in Shared Content Only" = "共有領域のみで画面差分を判定";
+"Ignore changes outside detected slides or shared screens." = "検出したスライドや画面共有以外の変化を無視します。";
+"Save Shared Content Only" = "共有領域のみを保存";
+"Crop screenshots to detected slides or shared screens." = "検出したスライドや画面共有部分だけを切り出して保存します。";
+"When shared content cannot be detected reliably, Dahlia uses the entire selected screen or window." = "共有領域を確実に判定できない場合は、選択した画面またはウィンドウ全体を使用します。";
 "%lld seconds" = "%lld 秒";
 "%lld%%" = "%lld%%";
 "Show Live Subtitles" = "ライブ字幕を表示";

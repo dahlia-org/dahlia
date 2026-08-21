@@ -27,6 +27,8 @@ struct AutomaticScreenshotCaptureRequest: Sendable {
     let source: ScreenshotCaptureSource
     var intervalSeconds: Int
     var changeThresholdRatio: Double
+    var detectsChangesInSharedContentOnly: Bool
+    var cropsToSharedContent: Bool
     let meetingID: UUID
     let sessionID: UUID?
     let dbQueue: DatabaseQueue
@@ -36,7 +38,12 @@ struct AutomaticScreenshotCaptureRequest: Sendable {
 
 protocol AutomaticScreenshotCapturing: Sendable {
     func start(_ request: AutomaticScreenshotCaptureRequest) async
-    func updateSettings(intervalSeconds: Int, changeThresholdRatio: Double) async
+    func updateSettings(
+        intervalSeconds: Int,
+        changeThresholdRatio: Double,
+        detectsChangesInSharedContentOnly: Bool,
+        cropsToSharedContent: Bool
+    ) async
     func stop() async
 }
 
@@ -312,24 +319,77 @@ private struct EncodedScreenshotFrame: Sendable {
     let mimeType: String
 }
 
-private struct FingerprintedScreenshotFrame: Sendable {
-    let image: CGImage
+private struct PreparedScreenshotFrame: Sendable {
+    let imageToEncode: CGImage
     let fingerprint: ScreenshotFingerprint
 }
 
-private actor AutomaticScreenshotFrameProcessor {
-    func fingerprint(for frame: CopiedScreenshotFrame) -> FingerprintedScreenshotFrame? {
+struct AutomaticScreenshotFingerprintBaseline {
+    private(set) var value: ScreenshotFingerprint?
+
+    mutating func reset() {
+        value = nil
+    }
+
+    mutating func record(
+        _ fingerprint: ScreenshotFingerprint,
+        detectionScopeMatches: Bool
+    ) {
+        guard detectionScopeMatches else { return }
+        value = fingerprint
+    }
+}
+
+actor AutomaticScreenshotFrameProcessor {
+    fileprivate func prepare(
+        _ frame: CopiedScreenshotFrame,
+        detectsChangesInSharedContentOnly: Bool,
+        cropsToSharedContent: Bool
+    ) async -> PreparedScreenshotFrame? {
         guard !Task.isCancelled, let image = frame.makeImage() else { return nil }
+        let sharedContentImage: CGImage?
+        if detectsChangesInSharedContentOnly || cropsToSharedContent {
+            let state = ScreenshotCaptureMetrics.signposter.beginInterval("SharedContentRegion")
+            let region = await ScreenshotSharedContentRegionDetector.region(in: image)
+            ScreenshotCaptureMetrics.signposter.endInterval("SharedContentRegion", state)
+            sharedContentImage = region.flatMap { image.cropping(to: $0) }
+        } else {
+            sharedContentImage = nil
+        }
+        guard !Task.isCancelled else { return nil }
+
+        let selectedImages = Self.selectedImages(
+            fullImage: image,
+            sharedContentImage: sharedContentImage,
+            detectsChangesInSharedContentOnly: detectsChangesInSharedContentOnly,
+            cropsToSharedContent: cropsToSharedContent
+        )
         let startedAt = ContinuousClock.now
         let state = ScreenshotCaptureMetrics.signposter.beginInterval("Fingerprint")
-        let fingerprint = ScreenshotChangeDetector.fingerprint(for: image)
+        let fingerprint = ScreenshotChangeDetector.fingerprint(for: selectedImages.fingerprint)
         ScreenshotCaptureMetrics.signposter.endInterval("Fingerprint", state)
         ScreenshotCaptureMetrics.recordSlowStage(.fingerprint, startedAt: startedAt)
         guard !Task.isCancelled, let fingerprint else { return nil }
-        return FingerprintedScreenshotFrame(image: image, fingerprint: fingerprint)
+        return PreparedScreenshotFrame(
+            imageToEncode: selectedImages.encoding,
+            fingerprint: fingerprint
+        )
     }
 
-    func encode(_ image: CGImage) -> EncodedScreenshotFrame? {
+    static func selectedImages(
+        fullImage: CGImage,
+        sharedContentImage: CGImage?,
+        detectsChangesInSharedContentOnly: Bool,
+        cropsToSharedContent: Bool
+    ) -> (fingerprint: CGImage, encoding: CGImage) {
+        let detectedOrFullImage = sharedContentImage ?? fullImage
+        return (
+            fingerprint: detectsChangesInSharedContentOnly ? detectedOrFullImage : fullImage,
+            encoding: cropsToSharedContent ? detectedOrFullImage : fullImage
+        )
+    }
+
+    fileprivate func encode(_ image: CGImage) -> EncodedScreenshotFrame? {
         guard !Task.isCancelled else { return nil }
         let startedAt = ContinuousClock.now
         let state = ScreenshotCaptureMetrics.signposter.beginInterval("Encode")
@@ -358,7 +418,7 @@ actor AutomaticScreenshotCaptureService: AutomaticScreenshotCapturing {
     private var desiredRequest: AutomaticScreenshotCaptureRequest?
     private var activeCapture: ActiveCapture?
     private var processingState = AutomaticScreenshotProcessingState()
-    private var lastSavedFingerprint: ScreenshotFingerprint?
+    private var fingerprintBaseline = AutomaticScreenshotFingerprintBaseline()
     private var retryTask: Task<Void, Never>?
 
     func start(_ request: AutomaticScreenshotCaptureRequest) async {
@@ -368,16 +428,27 @@ actor AutomaticScreenshotCaptureService: AutomaticScreenshotCapturing {
         let generation = lifecycle.beginReplacement()
         await stopCaptureAndProcessing()
         guard lifecycle.accepts(generation: generation) else { return }
-        lastSavedFingerprint = nil
+        fingerprintBaseline.reset()
         await startStream(generation: generation)
     }
 
-    func updateSettings(intervalSeconds: Int, changeThresholdRatio: Double) async {
+    func updateSettings(
+        intervalSeconds: Int,
+        changeThresholdRatio: Double,
+        detectsChangesInSharedContentOnly: Bool,
+        cropsToSharedContent: Bool
+    ) async {
         guard var request = desiredRequest else { return }
+        let detectionScopeChanged = request.detectsChangesInSharedContentOnly != detectsChangesInSharedContentOnly
         request.intervalSeconds = intervalSeconds
         request.changeThresholdRatio = changeThresholdRatio
+        request.detectsChangesInSharedContentOnly = detectsChangesInSharedContentOnly
+        request.cropsToSharedContent = cropsToSharedContent
         request = Self.normalized(request)
         desiredRequest = request
+        if detectionScopeChanged {
+            fingerprintBaseline.reset()
+        }
 
         guard let activeCapture,
               lifecycle.accepts(attempt: activeCapture.attempt) else { return }
@@ -563,26 +634,33 @@ actor AutomaticScreenshotCaptureService: AutomaticScreenshotCapturing {
     ) async {
         guard lifecycle.accepts(attempt: attempt),
               let request = desiredRequest else { return }
-        let fingerprintedFrame = await frameProcessor.fingerprint(for: frame)
-        guard let fingerprintedFrame,
+        let preparedFrame = await frameProcessor.prepare(
+            frame,
+            detectsChangesInSharedContentOnly: request.detectsChangesInSharedContentOnly,
+            cropsToSharedContent: request.cropsToSharedContent
+        )
+        guard let preparedFrame,
               !Task.isCancelled,
-              lifecycle.accepts(attempt: attempt) else { return }
+              lifecycle.accepts(attempt: attempt),
+              processingScopeMatches(request) else { return }
 
         guard shouldSave(
-            fingerprintedFrame.fingerprint,
+            preparedFrame.fingerprint,
             changeThresholdRatio: request.changeThresholdRatio
         ) else { return }
 
-        guard let encoded = await frameProcessor.encode(fingerprintedFrame.image) else {
+        guard let encoded = await frameProcessor.encode(preparedFrame.imageToEncode) else {
             guard !Task.isCancelled,
-                  lifecycle.accepts(attempt: attempt) else { return }
+                  lifecycle.accepts(attempt: attempt),
+                  processingScopeMatches(request) else { return }
             await request.onFailure(ScreenshotError.encodingFailed)
             return
         }
         guard !Task.isCancelled,
-              lifecycle.accepts(attempt: attempt) else { return }
+              lifecycle.accepts(attempt: attempt),
+              processingScopeMatches(request) else { return }
         guard shouldSave(
-            fingerprintedFrame.fingerprint,
+            preparedFrame.fingerprint,
             changeThresholdRatio: request.changeThresholdRatio
         ) else { return }
 
@@ -612,7 +690,10 @@ actor AutomaticScreenshotCaptureService: AutomaticScreenshotCapturing {
 
         guard !Task.isCancelled,
               lifecycle.accepts(attempt: attempt) else { return }
-        lastSavedFingerprint = fingerprintedFrame.fingerprint
+        fingerprintBaseline.record(
+            preparedFrame.fingerprint,
+            detectionScopeMatches: detectionScopeMatches(request)
+        )
         await request.onPersisted(record)
     }
 
@@ -632,12 +713,22 @@ actor AutomaticScreenshotCaptureService: AutomaticScreenshotCapturing {
         _ fingerprint: ScreenshotFingerprint,
         changeThresholdRatio: Double
     ) -> Bool {
-        guard let lastSavedFingerprint else { return true }
+        guard let lastSavedFingerprint = fingerprintBaseline.value else { return true }
         return ScreenshotChangeDetector.isSignificantlyDifferent(
             lastSavedFingerprint,
             fingerprint,
             changedPixelRatioThreshold: changeThresholdRatio
         )
+    }
+
+    private func processingScopeMatches(_ request: AutomaticScreenshotCaptureRequest) -> Bool {
+        guard let desiredRequest else { return false }
+        return desiredRequest.detectsChangesInSharedContentOnly == request.detectsChangesInSharedContentOnly
+            && desiredRequest.cropsToSharedContent == request.cropsToSharedContent
+    }
+
+    private func detectionScopeMatches(_ request: AutomaticScreenshotCaptureRequest) -> Bool {
+        desiredRequest?.detectsChangesInSharedContentOnly == request.detectsChangesInSharedContentOnly
     }
 }
 

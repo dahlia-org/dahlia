@@ -1195,6 +1195,24 @@ enum L10n {
         localized: "Save a new screenshot when at least this much of the screen changes.",
         bundle: bundle
     ) }
+    static var sharedContent: String { String(localized: "Shared Content", bundle: bundle) }
+    static var detectScreenshotChangesInSharedContentOnly: String { String(
+        localized: "Detect Changes in Shared Content Only",
+        bundle: bundle
+    ) }
+    static var sharedContentChangeDetectionDescription: String { String(
+        localized: "Ignore changes outside detected slides or shared screens.",
+        bundle: bundle
+    ) }
+    static var saveSharedContentOnly: String { String(localized: "Save Shared Content Only", bundle: bundle) }
+    static var saveSharedContentOnlyDescription: String { String(
+        localized: "Crop screenshots to detected slides or shared screens.",
+        bundle: bundle
+    ) }
+    static var sharedContentDetectionFallbackDescription: String { String(
+        localized: "When shared content cannot be detected reliably, Dahlia uses the entire selected screen or window.",
+        bundle: bundle
+    ) }
     static func seconds(_ count: Int) -> String { String(localized: "\(count) seconds", bundle: bundle) }
     static func percent(_ count: Int) -> String { String(localized: "\(count)%", bundle: bundle) }
     static var showLiveSubtitles: String { String(localized: "Show Live Subtitles", bundle: bundle) }

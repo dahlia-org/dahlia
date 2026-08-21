@@ -130,6 +130,18 @@ import GRDB
         }
 
         @Test
+        func stalePersistenceDoesNotRestoreResetFingerprintBaseline() {
+            let oldFingerprint = ScreenshotFingerprint(width: 1, height: 1, pixels: [1])
+            var baseline = AutomaticScreenshotFingerprintBaseline()
+            baseline.record(oldFingerprint, detectionScopeMatches: true)
+
+            baseline.reset()
+            baseline.record(oldFingerprint, detectionScopeMatches: false)
+
+            #expect(baseline.value == nil)
+        }
+
+        @Test
         func sourcePixelDimensionsRecoverNativeSizeFromScaledSurface() throws {
             let dimensions = try #require(AutomaticScreenshotCaptureService.sourcePixelDimensions(
                 contentRect: CGRect(x: 0, y: 0, width: 600, height: 400),
@@ -248,6 +260,8 @@ import GRDB
                 source: .entireDesktop,
                 intervalSeconds: 5,
                 changeThresholdRatio: 0.20,
+                detectsChangesInSharedContentOnly: false,
+                cropsToSharedContent: false,
                 meetingID: .v7(),
                 sessionID: .v7(),
                 dbQueue: DatabaseQueue(),
@@ -259,7 +273,12 @@ import GRDB
             }
             await capture.waitUntilStartBegins()
             let settingsTask = control.enqueue { capture in
-                await capture.updateSettings(intervalSeconds: 10, changeThresholdRatio: 0.30)
+                await capture.updateSettings(
+                    intervalSeconds: 10,
+                    changeThresholdRatio: 0.30,
+                    detectsChangesInSharedContentOnly: true,
+                    cropsToSharedContent: true
+                )
             }
 
             let stopTask = control.stop()
@@ -317,7 +336,12 @@ import GRDB
             }
         }
 
-        func updateSettings(intervalSeconds _: Int, changeThresholdRatio _: Double) {
+        func updateSettings(
+            intervalSeconds _: Int,
+            changeThresholdRatio _: Double,
+            detectsChangesInSharedContentOnly _: Bool,
+            cropsToSharedContent _: Bool
+        ) {
             observedSettingsUpdateCount += 1
         }
 

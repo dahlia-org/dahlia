@@ -792,6 +792,24 @@ final class CaptionViewModel: ObservableObject {
                 self?.updateAutomaticScreenshotProcessingSettings()
             }
             .store(in: &automaticScreenshotSettingsCancellables)
+
+        UserDefaults.standard
+            .publisher(for: \.automaticScreenshotDetectChangesInSharedRegionOnly)
+            .removeDuplicates()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.updateAutomaticScreenshotProcessingSettings()
+            }
+            .store(in: &automaticScreenshotSettingsCancellables)
+
+        UserDefaults.standard
+            .publisher(for: \.automaticScreenshotCropToSharedRegion)
+            .removeDuplicates()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.updateAutomaticScreenshotProcessingSettings()
+            }
+            .store(in: &automaticScreenshotSettingsCancellables)
     }
 
     convenience init(
@@ -4351,10 +4369,14 @@ final class CaptionViewModel: ObservableObject {
               screenshotCaptureSource.isSelected else { return }
         let intervalSeconds = AppSettings.shared.automaticScreenshotIntervalSeconds
         let changeThresholdRatio = AppSettings.shared.automaticScreenshotChangeThresholdRatio
+        let detectsChangesInSharedContentOnly = AppSettings.shared.automaticScreenshotDetectChangesInSharedRegionOnly
+        let cropsToSharedContent = AppSettings.shared.automaticScreenshotCropToSharedRegion
         automaticScreenshotCaptureControl.enqueue { capture in
             await capture.updateSettings(
                 intervalSeconds: intervalSeconds,
-                changeThresholdRatio: changeThresholdRatio
+                changeThresholdRatio: changeThresholdRatio,
+                detectsChangesInSharedContentOnly: detectsChangesInSharedContentOnly,
+                cropsToSharedContent: cropsToSharedContent
             )
         }
     }
@@ -4378,6 +4400,8 @@ final class CaptionViewModel: ObservableObject {
             source: screenshotCaptureSource,
             intervalSeconds: AppSettings.shared.automaticScreenshotIntervalSeconds,
             changeThresholdRatio: AppSettings.shared.automaticScreenshotChangeThresholdRatio,
+            detectsChangesInSharedContentOnly: AppSettings.shared.automaticScreenshotDetectChangesInSharedRegionOnly,
+            cropsToSharedContent: AppSettings.shared.automaticScreenshotCropToSharedRegion,
             meetingID: meetingId,
             sessionID: persistenceService?.recordingSessionId,
             dbQueue: dbQueue,
