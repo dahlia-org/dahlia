@@ -1751,22 +1751,26 @@ enum L10n {
         localized: "Keep the protected audio in Dahlia after batch transcription succeeds.",
         bundle: bundle
     ) }
-    static var transcriptTranslation: String { String(localized: "Transcript Translation", bundle: bundle) }
-    static var transcriptTranslationDescription: String { String(
-        localized: "Show translated transcript lines in the selected target language when available.",
+    static var liveSubtitleTranslation: String { String(localized: "Live Subtitle Translation", bundle: bundle) }
+    static var liveSubtitleTranslationDescription: String { String(
+        localized: "Translate live subtitles into the selected target language. With real-time transcription, translations are also saved.",
         bundle: bundle
     ) }
     static var translationTargetLanguage: String { String(localized: "Target Language", bundle: bundle) }
-    static var translationTargetLanguageDescription: String { String(
-        localized: "Choose which language translated transcript lines should use.",
+    static var liveSubtitleTranslationTargetLanguageDescription: String { String(
+        localized: "Choose which language translated live subtitles should use.",
         bundle: bundle
     ) }
-    static var translationDisabledForMatchingLanguage: String { String(
+    static var liveSubtitleTranslationDisabledForMatchingTranscriptionLanguage: String { String(
         localized: "Translation is automatically disabled when the target language matches the transcription language.",
         bundle: bundle
     ) }
-    static var enableTranscriptTranslationToChooseLanguage: String { String(
-        localized: "Turn on transcript translation to choose a target language.",
+    static var liveSubtitleTranslationDisabledForMatchingLiveSubtitleLanguage: String { String(
+        localized: "Translation is automatically disabled when the target language matches the live subtitle language.",
+        bundle: bundle
+    ) }
+    static var enableLiveSubtitleTranslationToChooseLanguage: String { String(
+        localized: "Turn on live subtitle translation to choose a target language.",
         bundle: bundle
     ) }
     static var developerSettingsDescription: String { String(

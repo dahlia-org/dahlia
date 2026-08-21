@@ -517,11 +517,12 @@
 "Follow System" = "Follow System";
 "Choose one or both conditions. Calendar notifications use events from enabled calendar sources." = "Choose one or both conditions. Calendar notifications use events from enabled calendar sources.";
 "Choose which languages are available for transcription and automatic detection." = "Choose which languages are available for transcription and automatic detection.";
-"Transcript Translation" = "Transcript Translation";
-"Show translated transcript lines in the selected target language when available." = "Show translated transcript lines in the selected target language when available.";
+"Live Subtitle Translation" = "Live Subtitle Translation";
+"Translate live subtitles into the selected target language. With real-time transcription, translations are also saved." = "Translate live subtitles into the selected target language. With real-time transcription, translations are also saved.";
 "Target Language" = "Target Language";
-"Choose which language translated transcript lines should use." = "Choose which language translated transcript lines should use.";
+"Choose which language translated live subtitles should use." = "Choose which language translated live subtitles should use.";
 "Translation is automatically disabled when the target language matches the transcription language." = "Translation is automatically disabled when the target language matches the transcription language.";
+"Translation is automatically disabled when the target language matches the live subtitle language." = "Translation is automatically disabled when the target language matches the live subtitle language.";
 "Configure these only when your organization requires a company-managed Google OAuth client. Otherwise, leave them blank to use the app defaults." = "Configure these only when your organization requires a company-managed Google OAuth client. Otherwise, leave them blank to use the app defaults.";
 "Google OAuth Client ID" = "Google OAuth Client ID";
 "Leave blank to use the app's default client ID." = "Leave blank to use the app's default client ID.";
@@ -1130,7 +1131,7 @@
 "Select a vault before configuring MCP." = "Select a vault before configuring MCP.";
 "%@ registration command" = "%@ registration command";
 "Turn on meeting notifications to choose notification conditions." = "Turn on meeting notifications to choose notification conditions.";
-"Turn on transcript translation to choose a target language." = "Turn on transcript translation to choose a target language.";
+"Turn on live subtitle translation to choose a target language." = "Turn on live subtitle translation to choose a target language.";
 "Turn on live subtitles to choose their source and line count." = "Turn on live subtitles to choose their source and line count.";
 "Turn on automatic screenshots to choose the interval and change threshold." = "Turn on automatic screenshots to choose the interval and change threshold.";
 "Organizations" = "Organizations";

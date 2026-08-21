@@ -214,11 +214,16 @@ preview は保存しない。finalized segment と確定 translation は `Transc
 SQLite failure 時は actor 内に保持して backoff 付きで再試行する。process が終了すれば memory backlog は失われ得るため、
 durable の境界は ingress ではなく SQLite commit である。
 
+ライブ字幕翻訳は字幕オーバーレイの表示とは独立した設定である。リアルタイム文字起こしではオーバーレイが無効でも、
+翻訳が有効なら確定 translation を正本文字起こしと同じ persistence lane から SQLite へ保存する。
+
 ### バッチ文字起こしと字幕
 
 batch mode では、字幕またはライブチャットを有効にした場合だけ録音中の逐次認識を追加する。そのイベントは
 `TranscriptPersistencePolicy.deferred` により正本文字起こしとして保存しない。逐次認識が失敗しても audio recording が
 継続可能なら、ライブ機能を縮退して停止後の batch transcription を維持する。
+
+録音中のライブ字幕にはライブ字幕翻訳設定を適用するが、停止後に生成する batch の正本文字起こしは翻訳しない。
 
 停止後、ユーザーの確認を経て `BatchTranscriptionCoordinator` が session を queue へ登録する。
 

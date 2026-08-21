@@ -181,21 +181,21 @@ import GRDB
                 settings.transcriptionMode,
                 settings.transcriptionLocale,
                 settings.liveSubtitleLocale,
-                settings.transcriptTranslationEnabled,
-                settings.transcriptTranslationTargetLanguage
+                settings.liveSubtitleTranslationEnabled,
+                settings.liveSubtitleTranslationTargetLanguage
             )
             defer {
                 settings.transcriptionMode = previousValues.0
                 settings.transcriptionLocale = previousValues.1
                 settings.liveSubtitleLocale = previousValues.2
-                settings.transcriptTranslationEnabled = previousValues.3
-                settings.transcriptTranslationTargetLanguage = previousValues.4
+                settings.liveSubtitleTranslationEnabled = previousValues.3
+                settings.liveSubtitleTranslationTargetLanguage = previousValues.4
             }
             settings.transcriptionMode = .batch
             settings.transcriptionLocale = "en_US"
             settings.liveSubtitleLocale = "ja_JP"
-            settings.transcriptTranslationEnabled = true
-            settings.transcriptTranslationTargetLanguage = "en"
+            settings.liveSubtitleTranslationEnabled = true
+            settings.liveSubtitleTranslationTargetLanguage = "en"
 
             let viewModel = CaptionViewModel()
             viewModel.isListening = true
@@ -203,6 +203,35 @@ import GRDB
 
             viewModel.isListening = false
             #expect(!viewModel.showsTranscriptTranslations)
+        }
+
+        @Test
+        func liveSubtitleTranslationUsesCurrentRecognitionLanguage() {
+            let settings = AppSettings.shared
+            let previousValues = (
+                settings.transcriptionMode,
+                settings.transcriptionLocale,
+                settings.liveSubtitleLocale,
+                settings.liveSubtitleTranslationEnabled,
+                settings.liveSubtitleTranslationTargetLanguage
+            )
+            defer {
+                settings.transcriptionMode = previousValues.0
+                settings.transcriptionLocale = previousValues.1
+                settings.liveSubtitleLocale = previousValues.2
+                settings.liveSubtitleTranslationEnabled = previousValues.3
+                settings.liveSubtitleTranslationTargetLanguage = previousValues.4
+            }
+            settings.transcriptionLocale = "ja_JP"
+            settings.liveSubtitleLocale = "en_US"
+            settings.liveSubtitleTranslationEnabled = true
+            settings.liveSubtitleTranslationTargetLanguage = "en"
+
+            settings.transcriptionMode = .realtime
+            #expect(settings.isLiveSubtitleTranslationEffectivelyEnabled)
+
+            settings.transcriptionMode = .batch
+            #expect(!settings.isLiveSubtitleTranslationEffectivelyEnabled)
         }
 
         @Test

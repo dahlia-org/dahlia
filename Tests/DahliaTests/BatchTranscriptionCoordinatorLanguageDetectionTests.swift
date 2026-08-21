@@ -42,7 +42,19 @@ import GRDB
         }
 
         @Test
-        func adjacentCAFsWithSameDetectedLanguageUseOneRecognitionRun() async throws {
+        func adjacentCAFsUseOneUntranslatedRecognitionRun() async throws {
+            let settings = AppSettings.shared
+            let previousTranslationSettings = (
+                settings.liveSubtitleTranslationEnabled,
+                settings.liveSubtitleTranslationTargetLanguage
+            )
+            defer {
+                settings.liveSubtitleTranslationEnabled = previousTranslationSettings.0
+                settings.liveSubtitleTranslationTargetLanguage = previousTranslationSettings.1
+            }
+            settings.liveSubtitleTranslationEnabled = true
+            settings.liveSubtitleTranslationTargetLanguage = "en"
+
             let fixture = try BatchAudioTestFixture(
                 name: "AutomaticLanguagePipeline",
                 endedAt: Date(timeIntervalSince1970: 1_776_384_001),
@@ -77,6 +89,7 @@ import GRDB
                     .fetchAll(db)
             }
             #expect(transcripts.count == 1)
+            #expect(transcripts[0].translatedText == nil)
             #expect(await probe.events == [
                 "detection-1",
                 "detection-2",

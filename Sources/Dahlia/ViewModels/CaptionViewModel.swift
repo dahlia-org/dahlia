@@ -484,9 +484,9 @@ final class CaptionViewModel: ObservableObject {
         let sourceLocaleIdentifier = isListening
             ? liveRecognitionLocaleIdentifier
             : settings.transcriptionLocale
-        return settings.transcriptTranslationEnabled && TranscriptTranslationLanguage.shouldTranslate(
+        return settings.liveSubtitleTranslationEnabled && TranscriptTranslationLanguage.shouldTranslate(
             transcriptionLocaleIdentifier: sourceLocaleIdentifier,
-            targetLanguageIdentifier: settings.transcriptTranslationTargetLanguage
+            targetLanguageIdentifier: settings.liveSubtitleTranslationTargetLanguage
         )
     }
 
@@ -4838,8 +4838,8 @@ final class CaptionViewModel: ObservableObject {
         return { segment in
             let configuration = await MainActor.run {
                 (
-                    isEnabled: AppSettings.shared.transcriptTranslationEnabled,
-                    targetLanguageIdentifier: AppSettings.shared.transcriptTranslationTargetLanguage
+                    isEnabled: AppSettings.shared.liveSubtitleTranslationEnabled,
+                    targetLanguageIdentifier: AppSettings.shared.liveSubtitleTranslationTargetLanguage
                 )
             }
             guard configuration.isEnabled,

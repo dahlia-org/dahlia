@@ -517,11 +517,12 @@
 "Follow System" = "システムに従う";
 "Choose one or both conditions. Calendar notifications use events from enabled calendar sources." = "1つまたは両方の条件を選択できます。カレンダー通知には、有効なカレンダーソースの予定が使用されます。";
 "Choose which languages are available for transcription and automatic detection." = "文字起こしと自動判定で利用する言語を選びます。";
-"Transcript Translation" = "文字起こし翻訳";
-"Show translated transcript lines in the selected target language when available." = "選択したターゲット言語で翻訳済みの文字起こし行を表示します。";
+"Live Subtitle Translation" = "ライブ字幕翻訳";
+"Translate live subtitles into the selected target language. With real-time transcription, translations are also saved." = "ライブ字幕を選択した翻訳先の言語へ翻訳します。リアルタイム文字起こしでは、翻訳結果も保存します。";
 "Target Language" = "翻訳先の言語";
-"Choose which language translated transcript lines should use." = "翻訳済みの文字起こし行に使う言語を選びます。";
+"Choose which language translated live subtitles should use." = "翻訳したライブ字幕に使う言語を選びます。";
 "Translation is automatically disabled when the target language matches the transcription language." = "翻訳先の言語が文字起こし言語と同じ場合、翻訳は自動的に無効になります。";
+"Translation is automatically disabled when the target language matches the live subtitle language." = "翻訳先の言語がライブ字幕の言語と同じ場合、翻訳は自動的に無効になります。";
 "Configure these only when your organization requires a company-managed Google OAuth client. Otherwise, leave them blank to use the app defaults." = "会社のポリシーで自社管理の Google OAuth クライアントを使用する必要がある場合にのみ設定してください。通常は空欄のまま、アプリ規定の設定を使用できます。";
 "Google OAuth Client ID" = "Google OAuth クライアント ID";
 "Leave blank to use the app's default client ID." = "空欄の場合は、アプリ規定のクライアント ID を使用します。";
@@ -1130,7 +1131,7 @@
 "Select a vault before configuring MCP." = "MCPを設定する前に保管庫を選択してください。";
 "%@ registration command" = "%@ 登録コマンド";
 "Turn on meeting notifications to choose notification conditions." = "通知条件を選ぶには、ミーティング通知をオンにしてください。";
-"Turn on transcript translation to choose a target language." = "翻訳先の言語を選ぶには、文字起こし翻訳をオンにしてください。";
+"Turn on live subtitle translation to choose a target language." = "翻訳先の言語を選ぶには、ライブ字幕翻訳をオンにしてください。";
 "Turn on live subtitles to choose their source and line count." = "音声ソースと表示行数を選ぶには、ライブ字幕をオンにしてください。";
 "Turn on automatic screenshots to choose the interval and change threshold." = "取得間隔と変化量を選ぶには、自動スクリーンショットをオンにしてください。";
 "Organizations" = "組織";

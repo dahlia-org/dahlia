@@ -1,4 +1,5 @@
 import Foundation
+import GRDB
 
 #if canImport(Testing)
     import Testing
@@ -118,6 +119,70 @@ import Foundation
             #expect(liveStore.segments.count == TranscriptStore.maximumConfirmedSegmentCount + 1)
             #expect(liveStore.segments.first?.text == "Segment 0")
             #expect(liveStore.segments.last?.text == "Segment \(TranscriptStore.maximumConfirmedSegmentCount)")
+        }
+
+        @Test
+        func realtimePersistsTranslationWhileLiveSubtitlesAreDisabled() async throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            let vault = VaultRecord(
+                id: .v7(),
+                path: "/tmp/translated-meeting-vault",
+                name: "Test Vault",
+                createdAt: Date(timeIntervalSince1970: 1_776_380_000),
+                lastOpenedAt: Date(timeIntervalSince1970: 1_776_380_000)
+            )
+            try await database.dbQueue.write { db in
+                try vault.insert(db)
+            }
+            let transcriptStore = TranscriptStore()
+            transcriptStore.recordingStartTime = Date(timeIntervalSince1970: 1_776_384_000)
+            let persistenceService = try await MeetingPersistenceService.createNew(
+                store: transcriptStore,
+                dbQueue: database.dbQueue,
+                vaultId: vault.id,
+                projectId: nil,
+                initialName: "Translated meeting"
+            )
+            let segment = makeSegment(sessionID: persistenceService.recordingSessionId)
+            let plan = TranscriptionSessionPlan(
+                finalMode: .realtime,
+                liveSubtitlesEnabled: false,
+                retainBatchAudio: false
+            )
+            let pipeline = TranscriptionEventPipeline(
+                uiSink: { events in
+                    for event in events {
+                        TranscriptionEventRouter.routeTranscriptProjection(
+                            event,
+                            plan: plan,
+                            transcriptStore: transcriptStore
+                        )
+                    }
+                },
+                persistenceSink: { events in
+                    try await persistenceService.persist(events)
+                },
+                persistenceFlushSink: {
+                    try await persistenceService.flushPendingTranscriptEvents()
+                }
+            )
+
+            await pipeline.start()
+            await pipeline.enqueue(.finalized(segment))
+            await pipeline.enqueue(.translation(
+                sessionId: persistenceService.recordingSessionId,
+                segmentID: segment.id,
+                translatedText: "Translated"
+            ))
+            try await pipeline.finish()
+
+            let persistedTranslation = try await database.dbQueue.read { db in
+                try TranscriptSegmentRecord.fetchOne(db, key: segment.id)?.translatedText
+            }
+            #expect(persistedTranslation == "Translated")
+            #expect(transcriptStore.segments.first?.translatedText == "Translated")
+
+            _ = await persistenceService.stop()
         }
 
         @Test
