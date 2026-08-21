@@ -12,6 +12,8 @@ struct MainSearchPanel: View {
     @FocusState private var isSearchFocused: Bool
     @State private var suggestionMode: MainSearchSuggestions.Mode = .overview
     @State private var hoveredFilterMode: MainSearchSuggestions.Mode?
+    @State private var isClearHovered = false
+    @State private var isCloseHovered = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -26,19 +28,27 @@ struct MainSearchPanel: View {
                         .font(.headline)
                         .focused($isSearchFocused)
                         .onSubmit(activateSelectionOrSubmit)
+                    if !model.inputText.isEmpty || !model.tokens.isEmpty {
+                        Button(L10n.clearAllSearchConditions, systemImage: "xmark", action: clearConditions)
+                            .labelStyle(.iconOnly)
+                            .dahliaFixedSymbol()
+                            .buttonStyle(.plain)
+                            .foregroundStyle(DahliaDesign.secondaryTextColor)
+                            .frame(width: 28, height: 28)
+                            .contentShape(.rect)
+                            .background(
+                                isClearHovered ? DahliaDesign.contentHighlightColor : .clear,
+                                in: .rect(cornerRadius: DahliaDesign.Highlight.regularCornerRadius)
+                            )
+                            .onHover { isClearHovered = $0 }
+                            .onDisappear { isClearHovered = false }
+                            .help(L10n.clearAllSearchConditions)
+                    }
                     HStack(spacing: 2) {
                         filterButton(L10n.projectFilter, systemImage: "folder", mode: .projects)
                         filterButton(L10n.tagFilter, systemImage: "tag", mode: .tags)
                         filterButton(L10n.periodFilter, systemImage: "calendar", mode: .period)
                     }
-                    Button(L10n.close, systemImage: "xmark", action: onDismiss)
-                        .labelStyle(.iconOnly)
-                        .dahliaFixedSymbol()
-                        .buttonStyle(.plain)
-                        .foregroundStyle(DahliaDesign.secondaryTextColor)
-                        .frame(width: 28, height: 28)
-                        .contentShape(.rect)
-                        .help(L10n.close)
                 }
                 .padding(.leading, 12)
                 .padding(.trailing, 6)
@@ -52,6 +62,19 @@ struct MainSearchPanel: View {
                     selection: $model.searchMode,
                     allowsNeuralSearch: sidebarViewModel.isVectorSearchEnabled
                 )
+                Button(L10n.close, systemImage: "xmark", action: onDismiss)
+                    .labelStyle(.iconOnly)
+                    .dahliaFixedSymbol()
+                    .buttonStyle(.plain)
+                    .foregroundStyle(DahliaDesign.secondaryTextColor)
+                    .frame(width: 28, height: 28)
+                    .contentShape(.rect)
+                    .background(
+                        isCloseHovered ? DahliaDesign.contentHighlightColor : .clear,
+                        in: .rect(cornerRadius: DahliaDesign.Highlight.regularCornerRadius)
+                    )
+                    .onHover { isCloseHovered = $0 }
+                    .help(L10n.close)
             }
             .padding(.horizontal, 20)
             .frame(minHeight: 72)
@@ -67,11 +90,11 @@ struct MainSearchPanel: View {
                 .padding(.bottom, 12)
             }
 
-            if suggestionMode != .overview || !model.inputText.isEmpty || !model.tokens.isEmpty {
+            if suggestionMode != .overview {
                 MainSearchSuggestions(
                     model: model,
                     sidebarViewModel: sidebarViewModel,
-                    mode: $suggestionMode
+                    mode: suggestionMode
                 )
                 .padding(.horizontal, 20)
                 .padding(.bottom, 12)
@@ -286,5 +309,10 @@ struct MainSearchPanel: View {
         case let .project(id): onOpenProject(id)
         case nil: break
         }
+    }
+
+    private func clearConditions() {
+        model.clearConditions(using: sidebarViewModel)
+        suggestionMode = .overview
     }
 }
