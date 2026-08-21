@@ -168,6 +168,7 @@ import GRDB
         func missingModelGuidanceSurvivesModeChangeCallback() async throws {
             let fixture = try MainSearchModelFixture()
             defer { fixture.stop() }
+            try await fixture.insertSearchContent()
             try await fixture.setVectorState(phase: "pending", isEnabled: true)
             let sidebar = fixture.makeSidebarViewModel()
             defer { sidebar.setAppDatabase(nil) }
@@ -175,12 +176,15 @@ import GRDB
             let model = MainSearchModel(embeddingService: ReviewEmbeddingProvider(isAvailable: false))
             model.searchMode = .neural
             model.present(using: sidebar)
+            model.inputText = "Needle"
+            model.queryDidChange(using: sidebar)
 
-            #expect(await pollUntil { model.errorMessage == L10n.neuralModelRequired })
+            #expect(await pollUntil { model.guidanceMessage == L10n.neuralModelRequired })
             model.searchModeDidChange(using: sidebar)
-            #expect(await pollUntil { !model.isLoading && model.errorMessage == L10n.neuralModelRequired })
+            #expect(await pollUntil { !model.isLoading && model.guidanceMessage == L10n.neuralModelRequired })
             #expect(model.searchMode == .neural)
-            #expect(model.errorMessage == L10n.neuralModelRequired)
+            #expect(model.meetings.map(\.meetingName) == ["Needle meeting"])
+            #expect(model.errorMessage == nil)
         }
 
         @Test(.timeLimit(.minutes(1)))

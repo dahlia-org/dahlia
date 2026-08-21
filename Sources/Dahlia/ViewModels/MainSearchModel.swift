@@ -12,6 +12,7 @@ final class MainSearchModel {
     private(set) var projects: [ProjectOverviewItem] = []
     private(set) var isLoading = false
     private(set) var errorMessage: String?
+    private(set) var guidanceMessage: String?
     private(set) var isProjectCatalogLoading = false
     private(set) var projectCatalogLoadFailed = false
     private(set) var hasMoreMeetings = false
@@ -159,6 +160,7 @@ final class MainSearchModel {
         projects = []
         isLoading = false
         errorMessage = nil
+        guidanceMessage = nil
         isProjectCatalogLoading = false
         projectCatalogLoadFailed = false
         hasMoreMeetings = false
@@ -236,7 +238,7 @@ final class MainSearchModel {
                 do {
                     guard mode == .neural else { return }
                     guard let embeddingService, await embeddingService.isAvailable else {
-                        self.errorMessage = L10n.neuralModelRequired
+                        self.guidanceMessage = L10n.neuralModelRequired
                         return
                     }
                     guard !criteria.text.isEmpty else { return }
@@ -303,6 +305,7 @@ final class MainSearchModel {
     ) {
         isRecent = criteria.isEmpty
         errorMessage = nil
+        guidanceMessage = nil
         isLoading = true
         guard !appending else { return }
         meetings = []

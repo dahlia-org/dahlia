@@ -616,20 +616,28 @@ import GRDB
             #expect(await pollUntil(timeout: .seconds(1)) { await completion.isCompleted })
             await fake.release()
             await pause.value
-            #expect(await pollUntil {
-                let status = try? await database.dbQueue.read { db in
-                    try String.fetchOne(
-                        db,
-                        sql: "SELECT status FROM search_index_jobs WHERE indexKind = 'vector'"
-                    )
-                }
-                return status == "pending"
-            })
-            let vectorCount = try await database.dbQueue.read { db in
-                try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM search_documents_vec")
+            #expect(await pollUntil { await fake.hasFinished })
+            let paused = try await database.dbQueue.read { db in
+                try Row.fetchOne(
+                    db,
+                    sql: """
+                    SELECT status, (SELECT COUNT(*) FROM search_documents_vec) AS vectorCount
+                    FROM search_index_jobs WHERE indexKind = 'vector'
+                    """
+                )
             }
-            #expect(vectorCount == 0)
+            #expect(paused?["status"] as String? == "processing")
+            #expect(paused?["vectorCount"] as Int? == 0)
             #expect(await fake.callCount == 1)
+
+            await indexer.start()
+            #expect(await pollUntil {
+                let vectorCount = try? await database.dbQueue.read { db in
+                    try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM search_documents_vec")
+                }
+                return vectorCount == 1
+            })
+            #expect(await fake.callCount == 2)
             await indexer.stop()
         }
 
@@ -878,6 +886,7 @@ import GRDB
     private actor NonCancellableEmbeddingProvider: TextEmbeddingProviding {
         private var isReleased = false
         private(set) var hasStarted = false
+        private(set) var hasFinished = false
         private(set) var callCount = 0
         var isAvailable: Bool { true }
 
@@ -891,6 +900,7 @@ import GRDB
             while !isReleased {
                 try? await Task.sleep(for: .milliseconds(10))
             }
+            hasFinished = true
             return documents.map { _ in vector }
         }
 

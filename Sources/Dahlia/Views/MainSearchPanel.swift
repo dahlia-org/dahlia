@@ -160,6 +160,13 @@ struct MainSearchPanel: View {
             ContentUnavailableView.search
                 .frame(maxWidth: .infinity, minHeight: 240)
         } else {
+            if let guidanceMessage = model.guidanceMessage {
+                Label(guidanceMessage, systemImage: "square.and.arrow.down")
+                    .font(.callout)
+                    .foregroundStyle(DahliaDesign.secondaryTextColor)
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 8)
+            }
             if !model.meetings.isEmpty {
                 sectionHeader(model.isRecent ? L10n.recentMeetings : L10n.meetings)
                 ForEach(Array(model.meetings.enumerated()), id: \.element.id) { index, meeting in

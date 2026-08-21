@@ -13,6 +13,7 @@ actor VectorSearchIndexer {
     private var workerTask: Task<Void, Never>?
     private var observationDrainTask: Task<Void, Never>?
     private var retiredTasks: [Task<Void, Never>] = []
+    private var deferredReleases: [VectorSearchJob] = []
     private var observationDrainGeneration = 0
     private var observation: AnyDatabaseCancellable?
     private var isDraining = false
@@ -43,6 +44,7 @@ actor VectorSearchIndexer {
             }
         )
         workerTask = Task(priority: .utility) { [weak self] in
+            await self?.releaseDeferredJobs()
             while !Task.isCancelled {
                 await self?.drain()
                 try? await Task.sleep(for: .seconds(2))
@@ -57,6 +59,7 @@ actor VectorSearchIndexer {
         for task in tasks {
             await task.value
         }
+        await releaseDeferredJobs()
         while isDraining {
             await Task.yield()
         }
@@ -117,7 +120,11 @@ actor VectorSearchIndexer {
                     try Task.checkCancellation()
                     try await process(jobs)
                 } catch is CancellationError {
-                    try? await release(jobs)
+                    if isPaused {
+                        deferredReleases.append(contentsOf: jobs)
+                    } else {
+                        try? await release(jobs)
+                    }
                     return
                 } catch {
                     try await fail(jobs, error: error)
@@ -353,6 +360,13 @@ actor VectorSearchIndexer {
                 }
             }
         }.value
+    }
+
+    private func releaseDeferredJobs() async {
+        guard !deferredReleases.isEmpty else { return }
+        let jobs = deferredReleases
+        deferredReleases.removeAll()
+        try? await release(jobs)
     }
 
     private func fail(_ failures: [VectorSearchFailure]) async throws {
