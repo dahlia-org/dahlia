@@ -488,7 +488,7 @@ private struct VectorDocument: Sendable {
         let semanticContent = [summary.description, summary.searchableBodyText]
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
-        guard semanticContent.joined().filter({ !$0.isWhitespace }).count >= 80 else { return nil }
+        guard !semanticContent.isEmpty else { return nil }
         let title = meeting.name.trimmingCharacters(in: .whitespacesAndNewlines)
         return Self(
             title: title,

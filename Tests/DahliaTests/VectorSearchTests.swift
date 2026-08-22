@@ -823,7 +823,7 @@ import GRDB
         }
 
         @Test
-        func meetingRequiresEightySemanticBodyCharactersForEmbedding() async throws {
+        func meetingRequiresNonemptySummaryContentForEmbedding() async throws {
             let database = try AppDatabaseManager(path: ":memory:")
             let fake = FakeEmbeddingProvider()
             let indexer = VectorSearchIndexer(dbQueue: database.dbQueue, embedder: fake)
@@ -835,12 +835,12 @@ import GRDB
                 id: .v7(), vaultId: vault.id, parentProjectId: nil, name: "Metadata project",
                 createdAt: .now, projectType: .undefined
             )
-            let belowMinimum = MeetingRecord(
-                id: .v7(), vaultId: vault.id, projectId: project.id, name: "M79",
+            let shortSummary = MeetingRecord(
+                id: .v7(), vaultId: vault.id, projectId: project.id, name: "Short summary",
                 description: String(repeating: "除外", count: 40), createdAt: .now, updatedAt: .now
             )
-            let atMinimum = MeetingRecord(
-                id: .v7(), vaultId: vault.id, projectId: project.id, name: "M80",
+            let detailedSummary = MeetingRecord(
+                id: .v7(), vaultId: vault.id, projectId: project.id, name: "Detailed summary",
                 description: String(repeating: "除外", count: 40),
                 createdAt: .now, updatedAt: .now
             )
@@ -848,19 +848,23 @@ import GRDB
                 id: .v7(), vaultId: vault.id, projectId: project.id, name: "Metadata title",
                 createdAt: .now, updatedAt: .now
             )
+            let emptySummary = MeetingRecord(
+                id: .v7(), vaultId: vault.id, projectId: project.id, name: "Empty summary",
+                createdAt: .now, updatedAt: .now
+            )
             try await database.dbQueue.write { db in
                 try vault.insert(db)
                 try project.insert(db)
-                try belowMinimum.insert(db)
-                try atMinimum.insert(db)
+                try shortSummary.insert(db)
+                try detailedSummary.insert(db)
                 try SummaryRecord(
-                    meetingId: belowMinimum.id,
+                    meetingId: shortSummary.id,
                     title: "Summary",
-                    document: Self.summaryDocument(body: String(repeating: "あ", count: 79)).databaseJSONString(),
+                    document: Self.summaryDocument(body: "あ").databaseJSONString(),
                     createdAt: .now
                 ).insert(db)
                 try SummaryRecord(
-                    meetingId: atMinimum.id,
+                    meetingId: detailedSummary.id,
                     title: "Summary",
                     document: Self.summaryDocument(
                         body: String(repeating: "い", count: 40),
@@ -869,6 +873,13 @@ import GRDB
                     createdAt: .now
                 ).insert(db)
                 try metadataOnly.insert(db)
+                try emptySummary.insert(db)
+                try SummaryRecord(
+                    meetingId: emptySummary.id,
+                    title: "Summary",
+                    document: Self.summaryDocument(body: " \n", description: " ").databaseJSONString(),
+                    createdAt: .now
+                ).insert(db)
             }
             await database.searchIndexer.drain()
             try await database.dbQueue.write { db in
@@ -895,12 +906,15 @@ import GRDB
                     """
                 )
             }
-            #expect(embeddedMeetingIDs == [atMinimum.id])
+            #expect(Set(embeddedMeetingIDs) == [shortSummary.id, detailedSummary.id])
             let embeddedTitles = await fake.embeddedTitles
-            #expect(embeddedTitles.contains("M80"))
-            #expect(!embeddedTitles.contains("M79"))
+            #expect(embeddedTitles.contains("Short summary"))
+            #expect(embeddedTitles.contains("Detailed summary"))
             #expect(!embeddedTitles.contains("Metadata title"))
-            let embeddedDocument = try #require(await fake.embeddedDocuments.first { $0.title == "M80" })
+            #expect(!embeddedTitles.contains("Empty summary"))
+            let shortDocument = try #require(await fake.embeddedDocuments.first { $0.title == "Short summary" })
+            #expect(shortDocument.text == "あ")
+            let embeddedDocument = try #require(await fake.embeddedDocuments.first { $0.title == "Detailed summary" })
             #expect(embeddedDocument.text == String(repeating: "う", count: 40) + "\n" + String(repeating: "い", count: 40))
             #expect(!embeddedDocument.text.contains("除外"))
         }

@@ -44,5 +44,6 @@ Codex は全 ADR を順番に読まず、最初にこの一覧から現在の作
 | [0032](0032-use-local-codex-login-success-page.md) | AI runtime / Authentication | ChatGPT 認証完了に app-server のローカル成功ページを使う | Accepted; amends 0003 |
 | [0033](0033-use-local-fts5-search-projection.md) | Search / Database projection | Lindera と FTS5 による再構築可能なローカル検索索引を使う | Accepted; builds on 0006, 0007, and 0009; amended by 0034 |
 | [0034](0034-index-summary-body-in-local-search.md) | Search / Summary | 構造化 summary の本文をローカル検索対象にする | Accepted; amends 0005 and 0033, builds on 0001 |
-| [0035](0035-add-local-hybrid-search.md) | Search / ML | 任意導入の256次元 EmbeddingGemma 索引でローカルハイブリッド検索を提供する | Accepted; amends 0033 and 0034 |
+| [0035](0035-add-local-hybrid-search.md) | Search / ML | 任意導入の256次元 EmbeddingGemma 索引でローカルハイブリッド検索を提供する | Accepted; amends 0033 and 0034; amended by 0037 |
 | [0036](0036-select-chat-approval-method-per-task.md) | AI runtime / Chat / Authentication | AI チャットの承認方法をタスクごとに選択する | Accepted; amends 0022 and 0027; builds on 0023 |
+| [0037](0037-use-actual-summary-content-for-meeting-vectors.md) | Search / ML / Summary | meeting vector を title と実際の summary コンテンツに限定する | Accepted; amends 0035, builds on 0001 and 0034 |
