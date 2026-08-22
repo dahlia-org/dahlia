@@ -218,6 +218,10 @@ actor BackupService {
             try Self.writeMetadata(metadata, in: db)
             try Self.validateIntegrity(in: db)
         }
+        try destinationQueue.writeWithoutTransaction { db in
+            let journalMode = try String.fetchOne(db, sql: "PRAGMA journal_mode = DELETE")
+            guard journalMode?.lowercased() == "delete" else { throw BackupServiceError.invalidBackup }
+        }
         try destinationQueue.close()
         try fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: temporaryURL.path)
         try fileManager.moveItem(at: temporaryURL, to: destinationURL)

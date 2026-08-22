@@ -8,6 +8,27 @@ import GRDB
     @MainActor
     struct BackupServiceTests {
         @Test
+        func generationFromWALDatabaseCanBeReadAfterMovingIntoPlace() async throws {
+            let rootURL = FileManager.default.temporaryDirectory
+                .appending(path: "dahlia-wal-backup-\(UUID.v7().uuidString)", directoryHint: .isDirectory)
+            defer { try? FileManager.default.removeItem(at: rootURL) }
+            let live = try AppDatabaseManager(
+                path: rootURL.appending(path: "live.sqlite").path,
+                enablesConcurrentSearch: true
+            )
+            defer { try? live.close() }
+            let service = BackupService(dbQueue: live.dbQueue, applicationSupportURL: rootURL)
+            let journalMode = try await live.dbQueue.read { db in
+                try String.fetchOne(db, sql: "PRAGMA journal_mode")
+            }
+
+            _ = try await service.createGeneration()
+
+            #expect(journalMode?.lowercased() == "wal")
+            #expect(try await service.listGenerations().first?.isValid == true)
+        }
+
+        @Test
         // swiftlint:disable:next function_body_length
         func generationEmbedsSchemaAndRemovesAudioReferences() async throws {
             let fixture = try BatchAudioTestFixture(
