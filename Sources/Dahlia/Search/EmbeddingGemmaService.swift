@@ -18,7 +18,7 @@ enum EmbeddingGemmaDescriptor {
     static let documentPrompt = "title: %@ | text: %@"
     static let modelIdentifier = "\(repository)@\(revision)"
     static let configurationHash = sha256(
-        "\(modelIdentifier)|\(dimensions)|\(maximumTokens)|\(queryPrompt)|\(documentPrompt)|meeting-v3|project-v1"
+        "\(modelIdentifier)|\(dimensions)|\(maximumTokens)|\(queryPrompt)|\(documentPrompt)|meeting-v4|project-v3"
     )
     static let fileChecksums = [
         "added_tokens.json": "50b2f405ba56a26d4913fd772089992252d7f942123cc0a034d96424221ba946",
@@ -222,9 +222,10 @@ actor EmbeddingGemmaService: TextEmbeddingProviding {
 
     func documentEmbeddings(_ documents: [DocumentEmbeddingInput]) async throws -> [[Float]] {
         try await embed(documents.map {
-            String(
+            guard !$0.title.isEmpty else { return "text: \($0.text)" }
+            return String(
                 format: EmbeddingGemmaDescriptor.documentPrompt,
-                $0.title.isEmpty ? "none" : $0.title,
+                $0.title,
                 $0.text
             )
         })

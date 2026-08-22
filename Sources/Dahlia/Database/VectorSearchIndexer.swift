@@ -475,43 +475,24 @@ private struct VectorDocument: Sendable {
         let sourceContentHash: String = document["sourceContentHash"]
         if kind == "project" {
             guard let project = try ProjectRecord.fetchResolved(id: sourceID, in: db) else { return nil }
+            let description = project.description.trimmingCharacters(in: .whitespacesAndNewlines)
             return Self(
-                title: project.name,
-                text: [project.description, project.path].filter { !$0.isEmpty }.joined(separator: "\n"),
+                title: project.path,
+                text: description,
                 sourceContentHash: sourceContentHash
             )
         }
         guard let meeting = try MeetingRecord.fetchOne(db, key: sourceID) else { return nil }
-        let calendar = try Row.fetchOne(
-            db,
-            sql: """
-            SELECT title, description FROM calendar_events
-            WHERE ical_uid = ? AND recurrence_id = ?
-            """,
-            arguments: [meeting.calendarEventIcalUid, meeting.calendarEventRecurrenceId]
-        )
-        let tags = try String.fetchAll(
-            db,
-            sql: """
-            SELECT tags.name FROM tags JOIN meeting_tags ON meeting_tags.tagId = tags.id
-            WHERE meeting_tags.meetingId = ? ORDER BY tags.id
-            """,
-            arguments: [sourceID]
-        ).joined(separator: " ")
-        let summary = try SummaryRecord.fetchOne(db, key: sourceID)
-            .flatMap { try? $0.loadDocument().searchableBodyText } ?? ""
-        let semanticContent = [meeting.description, summary]
-        guard semanticContent.joined().filter({ !$0.isWhitespace }).count >= 80 else { return nil }
-        let projectPath = try meeting.projectId.flatMap { try ProjectRecord.fetchResolved(id: $0, in: db)?.path } ?? ""
-        let calendarText = [calendar?["title"] as String?, calendar?["description"] as String?]
-            .compactMap(\.self).joined(separator: " ")
-        let title = meeting.name.trimmingCharacters(in: .whitespacesAndNewlines)
-        let text = (semanticContent + [calendarText, tags, projectPath])
+        guard let summary = try SummaryRecord.fetchOne(db, key: sourceID)
+            .flatMap({ try? $0.loadDocument() }) else { return nil }
+        let semanticContent = [summary.description, summary.searchableBodyText]
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }.joined(separator: "\n")
+            .filter { !$0.isEmpty }
+        guard semanticContent.joined().filter({ !$0.isWhitespace }).count >= 80 else { return nil }
+        let title = meeting.name.trimmingCharacters(in: .whitespacesAndNewlines)
         return Self(
             title: title,
-            text: text,
+            text: semanticContent.joined(separator: "\n"),
             sourceContentHash: sourceContentHash
         )
     }
