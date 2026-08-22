@@ -71,7 +71,7 @@ swift test
 
 The lint script and pre-commit hook use the exact SwiftFormat version managed by the independent `BuildTools` Swift package. SwiftPM resolves and caches the tool separately from the app's dependencies.
 
-If you set `SENTRY_DSN` before running `build-app.sh` or `notarize.sh`, the generated release app embeds the DSN into `Info.plist` and enables Sentry when launched from Finder. Debug runs remain disabled, so `swift run Dahlia` and `run-dev.sh` do not send Sentry events by default.
+If you set `SENTRY_DSN` before running `build-app.sh`, `notarize.sh`, or `run-dev.sh`, the generated app embeds the DSN into `Info.plist` and enables Sentry. Debug events are tagged with the `debug` environment. `swift run Dahlia` and `run-dev.sh` without an explicitly configured DSN do not send Sentry events.
 
 Set `TELEMETRYDECK_APP_ID` before `build-app.sh`, `notarize.sh`, or `run-dev.sh` to embed the public TelemetryDeck App ID. If it is absent, usage telemetry stays disabled. Debug builds send only Test Mode signals. Dahlia records allowlisted workflow outcomes, bounded recording durations, AI chat adoption, and built-in MCP usage without meeting content or identifiers and never waits for delivery. External MCP client usage is not collected; see [`docs/telemetry.md`](docs/telemetry.md).
 
@@ -176,7 +176,7 @@ Sources/Dahlia/
 ## Dependencies
 
 - [GRDB.swift](https://github.com/groue/GRDB.swift) — SQLite toolkit
-- [sentry-cocoa](https://github.com/getsentry/sentry-cocoa) — Crash reporting for release builds
+- [sentry-cocoa](https://github.com/getsentry/sentry-cocoa) — Crash reporting and allowlisted diagnostics
 - [TelemetryDeck SwiftSDK](https://github.com/TelemetryDeck/SwiftSDK) — Anonymous, non-blocking usage metrics
 - [Sparkle](https://github.com/sparkle-project/Sparkle) — Secure in-app updates
 - [WhisperKit](https://github.com/argmaxinc/WhisperKit) — On-device language detection for batch transcription

@@ -1066,6 +1066,10 @@
 "Turn on live mode" = "Turn on live mode";
 "Turn off live mode" = "Turn off live mode";
 "Live mode on" = "Live mode on";
+"I'll send you the live transcript of this meeting. You don't need to respond to every transcript update. Support me when needed." = "I'll send you the live transcript of this meeting. You don't need to respond to every transcript update. Support me when needed.";
+"Summarize the discussion so far." = "Summarize the discussion so far.";
+"Explain what I just missed." = "Explain what I just missed.";
+"Review our past conversations." = "Review our past conversations.";
 "Some older live transcript was skipped because the chat backlog was too large." = "Some older live transcript was skipped because the chat backlog was too large.";
 "The assistant wants to run a command." = "The assistant wants to run a command.";
 "The assistant wants to change files." = "The assistant wants to change files.";

@@ -85,6 +85,18 @@ extension CodexChatSessionModel {
         }
     }
 
+    func submitManualSubmission(_ submission: CodexChatManualSubmission) {
+        activeManualSubmissionLiveModeGeneration = submission.liveModeGeneration
+        submit(
+            submission.text,
+            images: submission.images,
+            composerSnapshot: submission.composerSnapshot
+        )
+        if !isGenerating {
+            activeManualSubmissionLiveModeGeneration = nil
+        }
+    }
+
     func resolveContextAndRunTurn(
         text: String,
         images: [CodexChatImageAttachment],
@@ -161,11 +173,12 @@ extension CodexChatSessionModel {
         } else {
             nil
         }
-        submit(
-            submission.text,
+        submitManualSubmission(CodexChatManualSubmission(
+            text: submission.text,
             images: submission.images,
-            composerSnapshot: composerSnapshot
-        )
+            composerSnapshot: composerSnapshot,
+            liveModeGeneration: submission.liveModeGeneration
+        ))
     }
 
     func resolveContext(if isRequired: Bool) async throws -> CodexChatContext? {

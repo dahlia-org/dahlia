@@ -12,6 +12,13 @@ extension CodexChatSessionModel {
             && hasComposerContent
     }
 
+    var canSendLiveModeShortcut: Bool {
+        isLiveModeEnabled
+            && isBoundToCurrentVault
+            && activeSteeringManualSubmission == nil
+            && pendingManualInputs.isEmpty
+    }
+
     var hasComposerContent: Bool {
         draft.nilIfBlank != nil || !selectedMeetingReferenceIDs.isEmpty || !attachedImages.isEmpty
     }

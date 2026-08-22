@@ -20,7 +20,7 @@ extension CodexChatSessionModel {
               activeSubmissionID == state.submissionID,
               activeTurnID == state.turnID,
               backendThreadID == state.threadID else { return }
-        if input.isLiveTranscript {
+        if input.isLiveTranscript || input.manualSubmission?.liveModeGeneration != nil {
             guard isLiveModeEnabled,
                   liveModeGeneration == state.liveModeGeneration else { return }
         }

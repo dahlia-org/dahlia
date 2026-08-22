@@ -499,6 +499,7 @@ import Foundation
             let session = CodexChatSessionModel(
                 modelID: "default-model",
                 effort: "medium",
+                approvalMethod: .ask,
                 service: service,
                 settings: settings
             )

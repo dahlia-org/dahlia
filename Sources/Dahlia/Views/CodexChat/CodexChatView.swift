@@ -89,9 +89,13 @@ struct CodexChatView: View {
                 .padding(.bottom, CodexChatDesign.composerBottomPadding)
             } else {
                 if session.liveModeEnabled {
-                    CodexChatLiveModeStatusView(onDisable: session.disableLiveMode)
-                        .padding(.horizontal, CodexChatDesign.liveModeStatusOuterHorizontalPadding)
-                        .padding(.bottom, CodexChatDesign.liveModeStatusBottomPadding)
+                    CodexChatLiveModeStatusView(
+                        isShortcutEnabled: session.canSendLiveModeShortcut,
+                        onDisable: session.disableLiveMode,
+                        onSubmit: session.sendLiveModeShortcut
+                    )
+                    .padding(.horizontal, CodexChatDesign.liveModeStatusOuterHorizontalPadding)
+                    .padding(.bottom, CodexChatDesign.liveModeStatusBottomPadding)
                 }
 
                 CodexChatComposer(

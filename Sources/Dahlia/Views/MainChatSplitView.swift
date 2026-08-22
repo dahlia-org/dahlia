@@ -1,6 +1,10 @@
 import AppKit
 import SwiftUI
 
+extension EnvironmentValues {
+    @Entry var isChatSidebarResizing = false
+}
+
 struct MainChatSplitView<Content: View, Sidebar: View>: View {
     private static var animationDuration: TimeInterval { 0.3 }
 
@@ -13,6 +17,7 @@ struct MainChatSplitView<Content: View, Sidebar: View>: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @GestureState private var resizeTranslation: CGFloat = 0
+    @GestureState private var isResizing = false
 
     var body: some View {
         GeometryReader { geometry in
@@ -38,6 +43,7 @@ struct MainChatSplitView<Content: View, Sidebar: View>: View {
 
                 if isVisible {
                     sidebar
+                        .environment(\.isChatSidebarResizing, isResizing)
                         .frame(width: sidebarWidth, height: geometry.size.height)
                         .background(alignment: .leading) {
                             Color(nsColor: .windowBackgroundColor)
@@ -81,8 +87,12 @@ struct MainChatSplitView<Content: View, Sidebar: View>: View {
 
     private func resizeGesture(from width: CGFloat, availableWidth: CGFloat) -> some Gesture {
         DragGesture(minimumDistance: 0)
-            .updating($resizeTranslation) { value, translation, _ in
+            .updating($resizeTranslation) { value, translation, transaction in
+                transaction.disablesAnimations = true
                 translation = value.translation.width
+            }
+            .updating($isResizing) { _, isResizing, _ in
+                isResizing = true
             }
             .onEnded { value in
                 onWidthChange(MainChatSidebarLayout.effectiveWidth(

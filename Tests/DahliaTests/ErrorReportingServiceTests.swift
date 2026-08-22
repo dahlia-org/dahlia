@@ -6,10 +6,9 @@ import Foundation
 
     struct ErrorReportingServiceTests {
         @Test
-        func resolveDSNUsesPlistValueForReleaseBuild() {
+        func resolveDSNUsesExplicitPlistValue() {
             let dsn = ErrorReportingService.resolveDSN(
-                infoDictionary: ["SENTRY_DSN": "https://examplePublicKey@o0.ingest.sentry.io/1"],
-                isDebugBuild: false
+                infoDictionary: ["SENTRY_DSN": "https://examplePublicKey@o0.ingest.sentry.io/1"]
             )
 
             #expect(dsn == "https://examplePublicKey@o0.ingest.sentry.io/1")
@@ -18,18 +17,7 @@ import Foundation
         @Test
         func resolveDSNIgnoresWhitespaceOnlyValues() {
             let dsn = ErrorReportingService.resolveDSN(
-                infoDictionary: ["SENTRY_DSN": "   \n  "],
-                isDebugBuild: false
-            )
-
-            #expect(dsn == nil)
-        }
-
-        @Test
-        func resolveDSNDisablesSentryForDebugBuilds() {
-            let dsn = ErrorReportingService.resolveDSN(
-                infoDictionary: ["SENTRY_DSN": "https://examplePublicKey@o0.ingest.sentry.io/1"],
-                isDebugBuild: true
+                infoDictionary: ["SENTRY_DSN": "   \n  "]
             )
 
             #expect(dsn == nil)
