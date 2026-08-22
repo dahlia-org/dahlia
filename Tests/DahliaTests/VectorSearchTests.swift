@@ -167,6 +167,7 @@ import GRDB
                 parentProjectId: nil,
                 name: "Generation project",
                 createdAt: .now,
+                description: "body",
                 projectType: .undefined
             )
             try await database.dbQueue.write { db in
@@ -430,17 +431,17 @@ import GRDB
                 createdAt: .now,
                 lastOpenedAt: .now
             )
+            let parent = ProjectRecord(
+                id: .v7(), vaultId: vault.id, parentProjectId: nil, name: "Parent",
+                createdAt: .now, projectType: .undefined
+            )
             let project = ProjectRecord(
-                id: .v7(),
-                vaultId: vault.id,
-                parentProjectId: nil,
-                name: "Vector project",
-                createdAt: .now,
-                description: "semantic body",
-                projectType: .undefined
+                id: .v7(), vaultId: vault.id, parentProjectId: parent.id, name: "Vector project",
+                createdAt: .now, description: "semantic body", projectType: nil
             )
             try await database.dbQueue.write { db in
                 try vault.insert(db)
+                try parent.insert(db)
                 try project.insert(db)
                 try db.execute(
                     sql: "UPDATE projects SET description = 'semantic body 2' WHERE id = ?",
@@ -471,8 +472,10 @@ import GRDB
                     ) ?? 0
                 )
             }
-            #expect(snapshot == (1, 0, 1024))
-            #expect(await fake.batchSizes == [1])
+            #expect(snapshot == (2, 0, 1024))
+            #expect(await fake.batchSizes == [2])
+            let input = try #require(await fake.embeddedDocuments.first { $0.title == "Parent/Vector project" })
+            #expect(input.text == "semantic body 2")
         }
 
         @Test
@@ -712,7 +715,115 @@ import GRDB
         }
 
         @Test
-        func meetingRequiresEightySemanticBodyCharactersForEmbedding() async throws {
+        func emptyProjectDescriptionStillEmbedsProjectPath() async throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            let fake = FakeEmbeddingProvider()
+            let indexer = VectorSearchIndexer(dbQueue: database.dbQueue, embedder: fake)
+            let vault = VaultRecord(
+                id: .v7(), path: "/tmp/empty-project-vector-vault", name: "Vault",
+                createdAt: .now, lastOpenedAt: .now
+            )
+            let project = ProjectRecord(
+                id: .v7(), vaultId: vault.id, parentProjectId: nil, name: "Project name",
+                createdAt: .now, description: "   \n", projectType: .undefined
+            )
+            try await database.dbQueue.write { db in
+                try vault.insert(db)
+                try project.insert(db)
+            }
+            await database.searchIndexer.drain()
+            try await indexer.setEnabled(true)
+            try await indexer.requestRebuild()
+
+            #expect(try await database.dbQueue.read { db in
+                try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM search_documents_vec")
+            } == 1)
+            let input = try #require(await fake.embeddedDocuments.first)
+            #expect(input.title == "Project name")
+            #expect(input.text.isEmpty)
+        }
+
+        @Test
+        func projectDescriptionChangeQueuesOnlyTheProjectVector() async throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            let indexer = VectorSearchIndexer(dbQueue: database.dbQueue, embedder: FakeEmbeddingProvider())
+            let vault = VaultRecord(
+                id: .v7(), path: "/tmp/project-vector-propagation-vault", name: "Vault",
+                createdAt: .now, lastOpenedAt: .now
+            )
+            let project = ProjectRecord(
+                id: .v7(), vaultId: vault.id, parentProjectId: nil, name: "Project",
+                createdAt: .now, description: "Before", projectType: .undefined
+            )
+            let meeting = MeetingRecord(
+                id: .v7(), vaultId: vault.id, projectId: project.id, name: "Meeting",
+                createdAt: .now, updatedAt: .now
+            )
+            try await database.dbQueue.write { db in
+                try vault.insert(db)
+                try project.insert(db)
+                try meeting.insert(db)
+                try SummaryRecord(
+                    meetingId: meeting.id,
+                    title: "Summary",
+                    document: Self.summaryDocument(body: String(repeating: "会", count: 80)).databaseJSONString(),
+                    createdAt: .now
+                ).insert(db)
+            }
+            await database.searchIndexer.drain()
+            try await indexer.setEnabled(true)
+            try await indexer.requestRebuild()
+
+            try await database.dbQueue.write { db in
+                try db.execute(
+                    sql: "UPDATE projects SET description = ? WHERE id = ?",
+                    arguments: ["After", project.id]
+                )
+            }
+            await database.searchIndexer.drain()
+
+            let queuedKinds = try await database.dbQueue.read { db in
+                try String.fetchAll(
+                    db,
+                    sql: """
+                    SELECT search_documents.kind FROM search_index_jobs
+                    JOIN search_documents ON search_documents.id = search_index_jobs.targetKey
+                    WHERE search_index_jobs.indexKind = 'vector'
+                    ORDER BY search_documents.kind
+                    """
+                )
+            }
+            #expect(queuedKinds == ["project"])
+
+            await indexer.drain()
+            try await database.dbQueue.write { db in
+                try db.execute(
+                    sql: "UPDATE meetings SET description = ? WHERE id = ?",
+                    arguments: ["Excluded", meeting.id]
+                )
+                try db.execute(
+                    sql: "UPDATE projects SET name = ? WHERE id = ?",
+                    arguments: ["Renamed", project.id]
+                )
+            }
+            await database.searchIndexer.drain()
+
+            let hierarchyKinds = try await database.dbQueue.read { db in
+                try String.fetchAll(
+                    db,
+                    sql: """
+                    SELECT search_documents.kind FROM search_index_jobs
+                    JOIN search_documents ON search_documents.id = search_index_jobs.targetKey
+                    WHERE search_index_jobs.indexKind = 'vector'
+                    ORDER BY search_documents.kind
+                    """
+                )
+            }
+            #expect(hierarchyKinds == ["project"])
+        }
+
+        @Test
+        func meetingRequiresNonemptySummaryContentForEmbedding() async throws {
             let database = try AppDatabaseManager(path: ":memory:")
             let fake = FakeEmbeddingProvider()
             let indexer = VectorSearchIndexer(dbQueue: database.dbQueue, embedder: fake)
@@ -724,31 +835,51 @@ import GRDB
                 id: .v7(), vaultId: vault.id, parentProjectId: nil, name: "Metadata project",
                 createdAt: .now, projectType: .undefined
             )
-            let belowMinimum = MeetingRecord(
-                id: .v7(), vaultId: vault.id, projectId: project.id, name: "M79",
-                description: String(repeating: "あ", count: 79), createdAt: .now, updatedAt: .now
+            let shortSummary = MeetingRecord(
+                id: .v7(), vaultId: vault.id, projectId: project.id, name: "Short summary",
+                description: String(repeating: "除外", count: 40), createdAt: .now, updatedAt: .now
             )
-            let atMinimum = MeetingRecord(
-                id: .v7(), vaultId: vault.id, projectId: project.id, name: "M80",
-                description: String(repeating: "あ", count: 40) + String(repeating: " \n", count: 4),
+            let detailedSummary = MeetingRecord(
+                id: .v7(), vaultId: vault.id, projectId: project.id, name: "Detailed summary",
+                description: String(repeating: "除外", count: 40),
                 createdAt: .now, updatedAt: .now
             )
             let metadataOnly = MeetingRecord(
                 id: .v7(), vaultId: vault.id, projectId: project.id, name: "Metadata title",
                 createdAt: .now, updatedAt: .now
             )
+            let emptySummary = MeetingRecord(
+                id: .v7(), vaultId: vault.id, projectId: project.id, name: "Empty summary",
+                createdAt: .now, updatedAt: .now
+            )
             try await database.dbQueue.write { db in
                 try vault.insert(db)
                 try project.insert(db)
-                try belowMinimum.insert(db)
-                try atMinimum.insert(db)
+                try shortSummary.insert(db)
+                try detailedSummary.insert(db)
                 try SummaryRecord(
-                    meetingId: atMinimum.id,
+                    meetingId: shortSummary.id,
                     title: "Summary",
-                    document: Self.summaryDocument(body: String(repeating: "い", count: 40)).databaseJSONString(),
+                    document: Self.summaryDocument(body: "あ").databaseJSONString(),
+                    createdAt: .now
+                ).insert(db)
+                try SummaryRecord(
+                    meetingId: detailedSummary.id,
+                    title: "Summary",
+                    document: Self.summaryDocument(
+                        body: String(repeating: "い", count: 40),
+                        description: String(repeating: "う", count: 40)
+                    ).databaseJSONString(),
                     createdAt: .now
                 ).insert(db)
                 try metadataOnly.insert(db)
+                try emptySummary.insert(db)
+                try SummaryRecord(
+                    meetingId: emptySummary.id,
+                    title: "Summary",
+                    document: Self.summaryDocument(body: " \n", description: " ").databaseJSONString(),
+                    createdAt: .now
+                ).insert(db)
             }
             await database.searchIndexer.drain()
             try await database.dbQueue.write { db in
@@ -775,16 +906,23 @@ import GRDB
                     """
                 )
             }
-            #expect(embeddedMeetingIDs == [atMinimum.id])
+            #expect(Set(embeddedMeetingIDs) == [shortSummary.id, detailedSummary.id])
             let embeddedTitles = await fake.embeddedTitles
-            #expect(embeddedTitles.contains("M80"))
-            #expect(!embeddedTitles.contains("M79"))
+            #expect(embeddedTitles.contains("Short summary"))
+            #expect(embeddedTitles.contains("Detailed summary"))
             #expect(!embeddedTitles.contains("Metadata title"))
+            #expect(!embeddedTitles.contains("Empty summary"))
+            let shortDocument = try #require(await fake.embeddedDocuments.first { $0.title == "Short summary" })
+            #expect(shortDocument.text == "あ")
+            let embeddedDocument = try #require(await fake.embeddedDocuments.first { $0.title == "Detailed summary" })
+            #expect(embeddedDocument.text == String(repeating: "う", count: 40) + "\n" + String(repeating: "い", count: 40))
+            #expect(!embeddedDocument.text.contains("除外"))
         }
 
-        private nonisolated static func summaryDocument(body: String) -> SummaryDocument {
+        private nonisolated static func summaryDocument(body: String, description: String = "") -> SummaryDocument {
             SummaryDocument(
                 title: "Summary",
+                description: description,
                 sections: [SummarySection(id: .v7(), heading: "", blocks: [.paragraph(body)])]
             )
         }
@@ -804,7 +942,7 @@ import GRDB
                 for index in 0 ..< count {
                     try ProjectRecord(
                         id: .v7(), vaultId: vault.id, parentProjectId: nil, name: "P\(index)",
-                        createdAt: .now, description: "body", projectType: .undefined
+                        createdAt: .now, description: "P\(index)", projectType: .undefined
                     ).insert(db)
                 }
             }
@@ -819,6 +957,7 @@ import GRDB
         private let blocksUntilCancelled: Bool
         private(set) var batchSizes: [Int] = []
         private(set) var embeddedTitles: [String] = []
+        private(set) var embeddedDocuments: [DocumentEmbeddingInput] = []
         private(set) var hasStarted = false
         var isAvailable: Bool { true }
 
@@ -834,15 +973,17 @@ import GRDB
         func documentEmbeddings(_ documents: [DocumentEmbeddingInput]) async throws -> [[Float]] {
             batchSizes.append(documents.count)
             embeddedTitles.append(contentsOf: documents.map(\.title))
+            embeddedDocuments.append(contentsOf: documents)
             hasStarted = true
             while blocksUntilCancelled {
                 try await Task.sleep(for: .milliseconds(10))
             }
             return documents.map { document in
-                if invalidTitles.contains(document.title) {
+                let identifier = document.title.isEmpty ? document.text : document.title
+                if invalidTitles.contains(identifier) {
                     return Array(repeating: 0, count: EmbeddingGemmaDescriptor.dimensions - 1)
                 }
-                let value = Float(document.title.dropFirst()) ?? 1
+                let value = Float(identifier.dropFirst()) ?? 1
                 return [value] + Array(repeating: 0, count: EmbeddingGemmaDescriptor.dimensions - 1)
             }
         }

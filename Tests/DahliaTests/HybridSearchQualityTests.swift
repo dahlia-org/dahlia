@@ -68,6 +68,50 @@ import GRDB
         }
 
         @Test
+        func projectSimilarityReranksButDoesNotCreateMeetingCandidates() async throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            let vault = makeVault(name: "Project rerank")
+            let strongProject = makeProject(vaultID: vault.id, name: "Strong context")
+            let weakProject = makeProject(vaultID: vault.id, name: "Weak context")
+            let boosted = makeMeeting(vaultID: vault.id, projectID: strongProject.id, name: "Boosted")
+            let unboosted = makeMeeting(vaultID: vault.id, projectID: weakProject.id, name: "Unboosted")
+            let belowThreshold = makeMeeting(vaultID: vault.id, projectID: strongProject.id, name: "Below threshold")
+            try await database.dbQueue.write { db in
+                try vault.insert(db)
+                try strongProject.insert(db)
+                try weakProject.insert(db)
+                try boosted.insert(db)
+                try unboosted.insert(db)
+                try belowThreshold.insert(db)
+            }
+            await database.searchIndexer.drain()
+            try await installVectors(
+                [
+                    (boosted.id, 0.65),
+                    (unboosted.id, 0.70),
+                    (belowThreshold.id, HybridSearchRRF.minimumVectorSimilarity - 0.01),
+                ],
+                in: database
+            )
+            try await installProjectVectors(
+                [(strongProject.id, 1), (weakProject.id, 0.20)],
+                in: database
+            )
+
+            let page = try await MeetingRepository.searchMeetingSidebarPage(
+                vaultId: vault.id,
+                query: "context-rerank-query",
+                mode: .neural,
+                queryEmbedding: unitVector(similarity: 1),
+                limit: 10,
+                dbQueue: database.dbQueue
+            )
+
+            #expect(page.items.map(\.id) == [boosted.id, unboosted.id])
+            #expect(!page.items.contains { $0.id == belowThreshold.id })
+        }
+
+        @Test
         func hybridSearchAppliesVaultProjectTagAndDateFiltersBeforeFusion() async throws {
             let database = try AppDatabaseManager(path: ":memory:")
             let primary = makeVault(name: "Primary")
@@ -237,6 +281,25 @@ import GRDB
                     """,
                     arguments: [EmbeddingGemmaDescriptor.configurationHash]
                 )
+            }
+        }
+
+        private func installProjectVectors(
+            _ vectors: [(projectID: UUID, similarity: Float)],
+            in database: AppDatabaseManager
+        ) async throws {
+            try await database.dbQueue.write { db in
+                for vector in vectors {
+                    try db.execute(
+                        sql: """
+                        INSERT INTO search_documents_vec(
+                            documentId, embedding, sourceContentHash, indexGeneration, updatedAt
+                        ) SELECT id, ?, sourceContentHash, 1, ? FROM search_documents
+                        WHERE kind = 'project' AND projectId = ?
+                        """,
+                        arguments: [EmbeddingVector.encode(unitVector(similarity: vector.similarity)), Date(), vector.projectID]
+                    )
+                }
             }
         }
 

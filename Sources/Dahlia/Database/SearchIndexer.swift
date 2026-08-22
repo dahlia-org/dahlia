@@ -258,7 +258,7 @@ actor SearchIndexer {
         }
         for id in projectIDs {
             try checkCanContinue()
-            try await indexProject(id: id, generation: generation, forceFTSUpdate: true)
+            try await indexProject(id: id, generation: generation)
             try await incrementRebuildProgress()
         }
 
@@ -267,7 +267,7 @@ actor SearchIndexer {
         }
         for id in meetingIDs {
             try checkCanContinue()
-            try await indexMeeting(id: id, generation: generation, forceFTSUpdate: true)
+            try await indexMeeting(id: id, generation: generation)
             try await incrementRebuildProgress()
         }
 
@@ -416,7 +416,6 @@ private extension SearchIndexer {
     func indexMeeting(
         id: UUID,
         generation: Int,
-        forceFTSUpdate: Bool = false,
         projectPath knownProjectPath: String? = nil
     ) async throws {
         try await dbQueue.write { db in
@@ -446,15 +445,17 @@ private extension SearchIndexer {
             }
             let calendarText = [calendar?["title"] as String?, calendar?["description"] as String?]
                 .compactMap(\.self).joined(separator: " ")
-            let summaryText = try SummaryRecord.fetchOne(db, key: id)
-                .flatMap { try? $0.loadDocument().searchableBodyText } ?? ""
+            let summaryDocument = try SummaryRecord.fetchOne(db, key: id)
+                .flatMap { try? $0.loadDocument() }
+            let summaryText = summaryDocument?.searchableBodyText ?? ""
             let fields = SearchDocumentFields(
                 title: meeting.name,
                 description: meeting.description,
                 summary: summaryText,
                 calendar: calendarText,
                 tags: tags,
-                projectPath: projectPath
+                projectPath: projectPath,
+                summaryDescription: summaryDocument?.description ?? ""
             )
             try db.execute(
                 sql: "UPDATE search_documents SET projectId = ? WHERE meetingId = ? AND projectId IS NOT ?",
@@ -468,17 +469,16 @@ private extension SearchIndexer {
                 projectID: meeting.projectId,
                 fields: fields
             )
-            try upsertDocument(document, generation: generation, forceFTSUpdate: forceFTSUpdate, in: db)
+            try upsertDocument(document, generation: generation, in: db)
         }
     }
 
-    private func indexProject(id: UUID, generation: Int, forceFTSUpdate: Bool = false) async throws {
+    private func indexProject(id: UUID, generation: Int) async throws {
         try await dbQueue.write { db in
             guard let project = try ProjectRecord.fetchResolved(id: id, in: db) else { return }
             try upsertDocument(
                 Self.projectDocument(project),
                 generation: generation,
-                forceFTSUpdate: forceFTSUpdate,
                 in: db
             )
         }

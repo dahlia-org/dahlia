@@ -18,6 +18,7 @@ struct SearchDocumentFields {
     let calendar: String
     let tags: String
     let projectPath: String
+    let summaryDescription: String
 
     init(
         title: String,
@@ -25,7 +26,8 @@ struct SearchDocumentFields {
         summary: String = "",
         calendar: String,
         tags: String,
-        projectPath: String
+        projectPath: String,
+        summaryDescription: String = ""
     ) {
         self.title = title
         self.description = description
@@ -33,36 +35,44 @@ struct SearchDocumentFields {
         self.calendar = calendar
         self.tags = tags
         self.projectPath = projectPath
+        self.summaryDescription = summaryDescription
     }
 
-    var hash: String {
-        let content = [title, description, summary, calendar, tags, projectPath]
+    func vectorHash(for kind: String) -> String {
+        let trim: (String) -> String = { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        let content = switch kind {
+        case "meeting":
+            [trim(title), [summaryDescription, summary].map(trim).filter { !$0.isEmpty }.joined(separator: "\n")]
+        case "project":
+            [projectPath, trim(description)]
+        default:
+            [title, description, summary, calendar, tags, projectPath, summaryDescription]
+        }
+        let serialized = content
             .map { "\($0.utf8.count):\($0)" }.joined()
-        return SHA256.hash(data: Data(content.utf8)).map { String(format: "%02x", $0) }.joined()
+        return SHA256.hash(data: Data(serialized.utf8)).map { String(format: "%02x", $0) }.joined()
     }
 }
 
 func upsertDocument(
     _ document: SearchDocumentProjection,
     generation: Int,
-    forceFTSUpdate: Bool = false,
     in db: Database
 ) throws {
-    let hash = document.fields.hash
+    let hash = document.fields.vectorHash(for: document.kind)
     if let existing = try Row.fetchOne(
         db,
         sql: """
-        SELECT id, sourceContentHash,
-               EXISTS(SELECT 1 FROM search_documents_fts WHERE rowid = search_documents.id) AS hasFTS
+        SELECT id, EXISTS(
+            SELECT 1 FROM search_documents_fts WHERE rowid = search_documents.id
+        ) AS hasFTS
         FROM search_documents WHERE kind = ? AND sourceId = ?
         """,
         arguments: [document.kind, document.sourceID]
     ) {
         let id: Int64 = existing["id"]
-        let existingHash: String = existing["sourceContentHash"]
         let hasFTS: Bool = existing["hasFTS"]
         try updateRegistry(document, rowID: id, hash: hash, generation: generation, in: db)
-        guard forceFTSUpdate || existingHash != hash || !hasFTS else { return }
         if hasFTS {
             try updateFTS(rowID: id, fields: document.fields, in: db)
         } else {

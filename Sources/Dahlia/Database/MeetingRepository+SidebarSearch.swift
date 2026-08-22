@@ -204,7 +204,7 @@ extension MeetingRepository {
             db,
             sql: """
             SELECT search_documents.meetingId AS meetingId, search_documents_vec.embedding AS embedding,
-                   \(sidebarRecordingStartedAtSQL) AS meetingDate
+                   meetings.projectId AS projectId, \(sidebarRecordingStartedAtSQL) AS meetingDate
             FROM search_documents_vec
             JOIN search_documents ON search_documents.id = search_documents_vec.documentId
             JOIN meetings ON meetings.id = search_documents.meetingId
@@ -215,7 +215,7 @@ extension MeetingRepository {
             """,
             arguments: arguments
         )
-        var vectorHits: [(UUID, Float, Date)] = []
+        var vectorHits: [(meetingID: UUID, similarity: Float, meetingDate: Date, projectID: UUID?)] = []
         vectorHits.reserveCapacity(rows.count)
         var maximumSimilarity: Float = -1
         for (index, row) in rows.enumerated() {
@@ -228,20 +228,58 @@ extension MeetingRepository {
             vectorHits.append((
                 row["meetingId"],
                 similarity,
-                row["meetingDate"]
+                row["meetingDate"],
+                row["projectId"]
             ))
+        }
+        let projectIDs = Array(Set(vectorHits.compactMap(\.projectID)))
+        var projectSimilarities: [UUID: Float] = [:]
+        for start in stride(from: 0, to: projectIDs.count, by: 200) {
+            let batch = Array(projectIDs[start ..< min(start + 200, projectIDs.count)])
+            let placeholders = Array(repeating: "?", count: batch.count).joined(separator: ",")
+            var projectArguments: StatementArguments = [vaultId, indexGeneration]
+            projectArguments += StatementArguments(batch)
+            let projectRows = try Row.fetchAll(
+                db,
+                sql: """
+                SELECT search_documents.projectId AS projectId, search_documents_vec.embedding AS embedding
+                FROM search_documents_vec
+                JOIN search_documents ON search_documents.id = search_documents_vec.documentId
+                WHERE search_documents.kind = 'project' AND search_documents.vaultId = ?
+                  AND search_documents_vec.indexGeneration = ?
+                  AND search_documents_vec.sourceContentHash = search_documents.sourceContentHash
+                  AND search_documents.projectId IN (\(placeholders))
+                """,
+                arguments: projectArguments
+            )
+            for row in projectRows {
+                let projectID: UUID = row["projectId"]
+                let data: Data = row["embedding"]
+                projectSimilarities[projectID] = try EmbeddingVector.cosineSimilarity(
+                    queryEmbedding,
+                    EmbeddingVector.decode(data)
+                )
+            }
+            try Task.checkCancellation()
+        }
+        for index in vectorHits.indices {
+            guard let projectID = vectorHits[index].projectID,
+                  let projectSimilarity = projectSimilarities[projectID],
+                  projectSimilarity > vectorHits[index].similarity else { continue }
+            vectorHits[index].similarity += HybridSearchRRF.projectContextRerankWeight
+                * (projectSimilarity - vectorHits[index].similarity)
         }
         try Task.checkCancellation()
         vectorHits.sort {
-            if $0.1 != $1.1 { return $0.1 > $1.1 }
-            if $0.2 != $1.2 { return $0.2 > $1.2 }
-            return $0.0.uuidString < $1.0.uuidString
+            if $0.similarity != $1.similarity { return $0.similarity > $1.similarity }
+            if $0.meetingDate != $1.meetingDate { return $0.meetingDate > $1.meetingDate }
+            return $0.meetingID.uuidString < $1.meetingID.uuidString
         }
         hybridSearchLogger.info("""
         Vector scan: scannedEmbeddings=\(rows.count) aboveThreshold=\(vectorHits.count) \
         maxSimilarity=\(maximumSimilarity)
         """)
-        return vectorHits.prefix(HybridSearchRRF.candidateLimit).map(\.0)
+        return vectorHits.prefix(HybridSearchRRF.candidateLimit).map(\.meetingID)
     }
 
     /// Both callers wrap GRDB async reads, whose task cancellation interrupts the active SQLite statement.
@@ -858,6 +896,7 @@ extension MeetingRepository {
 enum HybridSearchRRF {
     static let candidateLimit = 100
     static let minimumVectorSimilarity: Float = 0.45
+    static let projectContextRerankWeight: Float = 0.2
 
     static func rank(fullText: [UUID], vector: [UUID], rankConstant: Int = 60) -> [UUID] {
         var scores: [UUID: Double] = [:]
