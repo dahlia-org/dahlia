@@ -112,6 +112,12 @@ import Foundation
     }
 
     struct TranscriptionLanguageScopeTests {
+        @Test
+        func languageSelectionKeepsTheLastEnabledLanguage() {
+            #expect(AppLanguageSelection.updating(["ja"], identifier: "ja", isEnabled: false) == ["ja"])
+            #expect(AppLanguageSelection.updating(["en", "ja"], identifier: "ja", isEnabled: false) == ["en"])
+        }
+
         @Test(arguments: [
             ("all", Set(["en_US"]), TranscriptionLanguageScope.all),
             ("selected", Set<String>(), TranscriptionLanguageScope.selected),

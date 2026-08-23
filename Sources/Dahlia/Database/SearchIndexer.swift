@@ -149,7 +149,8 @@ actor SearchIndexer {
                     return
                 } catch {
                     if Self.isDeferredScreenshotAnalysisError(error) {
-                        try await deferForPrerequisite(jobs, error: error)
+                        try await deferScreenshotQueueForPrerequisite(error)
+                        return
                     } else if jobs.count > 1, jobs.first?.targetKind == "screenshotAnalysis" {
                         try await processScreenshotJobsIndividually(jobs)
                     } else {
@@ -529,7 +530,8 @@ private extension SearchIndexer {
                 throw CancellationError()
             } catch {
                 if Self.isDeferredScreenshotAnalysisError(error) {
-                    try await deferForPrerequisite([job], error: error)
+                    try await deferScreenshotQueueForPrerequisite(error)
+                    return
                 } else {
                     try await fail(job, error: error)
                 }
@@ -780,26 +782,21 @@ private extension SearchIndexer {
         }.value
     }
 
-    private func deferForPrerequisite(_ jobs: [SearchIndexJob], error: Error) async throws {
+    private func deferScreenshotQueueForPrerequisite(_ error: Error) async throws {
+        let retryAt = Date().addingTimeInterval(60)
         try await dbQueue.write { db in
-            for job in jobs {
-                try db.execute(
-                    sql: """
-                    UPDATE search_index_jobs
-                    SET status = 'pending', attempts = 0, availableAt = ?,
-                        claimedAt = NULL, leaseExpiresAt = NULL, lastErrorCode = ?, updatedAt = ?
-                    WHERE indexKind = 'fts' AND targetKind = ? AND targetKey = ? AND generation = ?
-                    """,
-                    arguments: [
-                        Date().addingTimeInterval(60),
-                        String(describing: type(of: error)),
-                        Date(),
-                        job.targetKind,
-                        job.targetID,
-                        job.generation,
-                    ]
-                )
-            }
+            try db.execute(
+                sql: """
+                UPDATE search_index_jobs
+                SET status = 'pending',
+                    attempts = CASE WHEN status = 'processing' THEN 0 ELSE attempts END,
+                    availableAt = MAX(availableAt, ?),
+                    claimedAt = NULL, leaseExpiresAt = NULL, lastErrorCode = ?, updatedAt = ?
+                WHERE indexKind = 'fts' AND targetKind = 'screenshotAnalysis'
+                  AND (status = 'processing' OR attempts < 5)
+                """,
+                arguments: [retryAt, String(describing: type(of: error)), Date()]
+            )
         }
     }
 

@@ -40,4 +40,14 @@ struct AppLanguageSelection: Identifiable, Equatable, Hashable, Sendable {
             canonicalIdentifier(from: $0).map(selected.contains) == true
         }
     }
+
+    static func updating(
+        _ identifiers: Set<String>,
+        identifier: String,
+        isEnabled: Bool
+    ) -> Set<String> {
+        if isEnabled { return identifiers.union([identifier]) }
+        guard identifiers.count > 1 else { return identifiers }
+        return identifiers.subtracting([identifier])
+    }
 }

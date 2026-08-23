@@ -126,9 +126,11 @@ struct GeneralSettingsView: View {
         Binding {
             settings.enabledLanguageIdentifiers.contains(identifier)
         } set: { enabled in
-            var identifiers = settings.enabledLanguageIdentifiers
-            if enabled { identifiers.insert(identifier) } else { identifiers.remove(identifier) }
-            settings.enabledLanguageIdentifiers = identifiers
+            settings.enabledLanguageIdentifiers = AppLanguageSelection.updating(
+                settings.enabledLanguageIdentifiers,
+                identifier: identifier,
+                isEnabled: enabled
+            )
         }
     }
 }

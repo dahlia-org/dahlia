@@ -280,58 +280,67 @@ import GRDB
         }
 
         @Test
-        func unavailableRequiredModelKeepsJobPendingForAutomaticRetry() async throws {
+        func unavailableRequiredModelBacksOffTheEntireScreenshotQueue() async throws {
             let analyzer = UnavailableThenSuccessfulScreenshotAnalyzer()
             let database = try AppDatabaseManager(path: ":memory:", screenshotAnalyzer: analyzer)
             let vault = makeVault()
             let meeting = makeMeeting(vaultID: vault.id)
-            let screenshot = MeetingScreenshotRecord(
-                id: .v7(),
-                meetingId: meeting.id,
-                sessionId: nil,
-                capturedAt: .now,
-                imageData: Data([1]),
-                mimeType: "image/png"
-            )
+            let screenshots = (0 ..< 5).map { index in
+                MeetingScreenshotRecord(
+                    id: .v7(),
+                    meetingId: meeting.id,
+                    sessionId: nil,
+                    capturedAt: Date(timeIntervalSince1970: TimeInterval(index)),
+                    imageData: Data([UInt8(index)]),
+                    mimeType: "image/png"
+                )
+            }
             try await database.dbQueue.write { db in
                 try vault.insert(db)
                 try meeting.insert(db)
-                try screenshot.insert(db)
+                for screenshot in screenshots {
+                    try screenshot.insert(db)
+                }
             }
 
             await database.searchIndexer.drain()
             let deferred = try await database.dbQueue.read { db in
-                try Row.fetchOne(
-                    db,
-                    sql: """
-                    SELECT status, attempts, availableAt FROM search_index_jobs
-                    WHERE targetKind = 'screenshotAnalysis' AND targetKey = ?
-                    """,
-                    arguments: [screenshot.id]
+                try (
+                    Int.fetchOne(
+                        db,
+                        sql: "SELECT COUNT(*) FROM search_index_jobs WHERE targetKind = 'screenshotAnalysis' AND status = 'pending'"
+                    ) ?? 0,
+                    Int.fetchOne(
+                        db,
+                        sql: "SELECT MAX(attempts) FROM search_index_jobs WHERE targetKind = 'screenshotAnalysis'"
+                    ) ?? -1,
+                    Date.fetchOne(
+                        db,
+                        sql: "SELECT MIN(availableAt) FROM search_index_jobs WHERE targetKind = 'screenshotAnalysis'"
+                    )
                 )
             }
-            #expect(deferred?["status"] as String? == "pending")
-            #expect(deferred?["attempts"] as Int? == 0)
-            #expect((deferred?["availableAt"] as Date?) ?? .distantPast > .now)
+            #expect(deferred.0 == 5)
+            #expect(deferred.1 == 0)
+            #expect((deferred.2 ?? .distantPast) > .now)
+            #expect(await analyzer.callCount == 1)
 
             try await database.dbQueue.write { db in
                 try db.execute(
-                    sql: "UPDATE search_index_jobs SET availableAt = ? WHERE targetKey = ?",
-                    arguments: [Date.distantPast, screenshot.id]
+                    sql: "UPDATE search_index_jobs SET availableAt = ? WHERE targetKind = 'screenshotAnalysis'",
+                    arguments: [Date.distantPast]
                 )
             }
             await database.searchIndexer.drain()
 
-            let stored = try await database.dbQueue.read { db in
-                try Row.fetchOne(
+            let storedCount = try await database.dbQueue.read { db in
+                try Int.fetchOne(
                     db,
-                    sql: "SELECT ocrText, caption FROM screenshots WHERE id = ?",
-                    arguments: [screenshot.id]
-                )
+                    sql: "SELECT COUNT(*) FROM screenshots WHERE ocrText = 'retry text' AND caption = 'retry caption'"
+                ) ?? 0
             }
-            #expect(stored?["ocrText"] as String? == "retry text")
-            #expect(stored?["caption"] as String? == "retry caption")
-            #expect(await analyzer.callCount == 2)
+            #expect(storedCount == 5)
+            #expect(await analyzer.callCount == 3)
         }
 
         @Test
