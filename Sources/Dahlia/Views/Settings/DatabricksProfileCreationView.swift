@@ -86,12 +86,7 @@ struct DatabricksProfileCreationView: View {
                 Button(L10n.signInWithDatabricks, action: signIn)
                     .buttonStyle(.dahlia(.primary))
                     .keyboardShortcut(.defaultAction)
-                    .disabled(
-                        controller.isBusy
-                            || controller.isCLIAvailable == false
-                            || profileName.nilIfBlank == nil
-                            || workspaceURL.nilIfBlank == nil
-                    )
+                    .disabled(!canSignIn)
             }
         }
         .frame(minWidth: 500, minHeight: 300)
@@ -103,14 +98,15 @@ struct DatabricksProfileCreationView: View {
         }
     }
 
+    private var canSignIn: Bool {
+        !controller.isBusy
+            && controller.isCLIAvailable != false
+            && profileName.nilIfBlank != nil
+            && workspaceURL.nilIfBlank != nil
+    }
+
     private func signIn() {
-        guard !controller.isBusy,
-              controller.isCLIAvailable != false,
-              profileName.nilIfBlank != nil,
-              workspaceURL.nilIfBlank != nil
-        else {
-            return
-        }
+        guard canSignIn else { return }
         signInTask = Task {
             guard let createdProfileName = await controller.signIn(
                 workspaceURL: workspaceURL,
