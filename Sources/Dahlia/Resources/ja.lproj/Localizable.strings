@@ -279,7 +279,7 @@
 "The Summary output folder has not been created yet." = "Summary の書き出しフォルダはまだ作成されていません。";
 "Project Description" = "プロジェクトの説明";
 "Organization Description" = "組織・部門の説明";
-"This description is included when summaries are generated for this project." = "このプロジェクトの要約生成時に説明を含めます。";
+"The description is provided as context when generating summaries. For example, you can include project members." = "要約生成時にコンテキストとして渡されます。例えば、プロジェクトメンバーなどを記載できます。";
 "Describe this project..." = "このプロジェクトについて説明してください...";
 "Could not save the project description." = "プロジェクトの説明を保存できませんでした。";
 "Saving…" = "保存中…";

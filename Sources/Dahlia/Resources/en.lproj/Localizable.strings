@@ -279,7 +279,7 @@
 "The Summary output folder has not been created yet." = "The Summary output folder has not been created yet.";
 "Project Description" = "Project Description";
 "Organization Description" = "Organization Description";
-"This description is included when summaries are generated for this project." = "This description is included when summaries are generated for this project.";
+"The description is provided as context when generating summaries. For example, you can include project members." = "The description is provided as context when generating summaries. For example, you can include project members.";
 "Describe this project..." = "Describe this project...";
 "Could not save the project description." = "Could not save the project description.";
 "Saving…" = "Saving…";

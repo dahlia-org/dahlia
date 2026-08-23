@@ -1039,7 +1039,7 @@ enum L10n {
     ) }
     static var projectDescription: String { String(localized: "Project Description", bundle: bundle) }
     static var projectDescriptionHelp: String { String(
-        localized: "This description is included when summaries are generated for this project.",
+        localized: "The description is provided as context when generating summaries. For example, you can include project members.",
         bundle: bundle
     ) }
     static var projectDescriptionPlaceholder: String { String(localized: "Describe this project...", bundle: bundle) }
