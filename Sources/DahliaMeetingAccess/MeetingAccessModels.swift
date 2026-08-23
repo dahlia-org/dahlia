@@ -50,6 +50,47 @@ public struct MeetingQueryPage: Codable, Sendable, Equatable {
     public let nextCursor: String?
 }
 
+public struct ScreenshotTextQuery: Sendable, Equatable {
+    public var query: String
+    public var projectID: UUID?
+    public var createdFrom: Date?
+    public var createdBefore: Date?
+    public var limit: Int
+    public var cursor: String?
+
+    public init(
+        query: String,
+        projectID: UUID? = nil,
+        createdFrom: Date? = nil,
+        createdBefore: Date? = nil,
+        limit: Int = 20,
+        cursor: String? = nil
+    ) {
+        self.query = query
+        self.projectID = projectID
+        self.createdFrom = createdFrom
+        self.createdBefore = createdBefore
+        self.limit = limit
+        self.cursor = cursor
+    }
+}
+
+public struct ScreenshotTextQueryPage: Codable, Sendable, Equatable {
+    public let vault: ScopedVault
+    public let screenshots: [ScreenshotTextMetadata]
+    public let nextCursor: String?
+}
+
+public struct ScreenshotTextMetadata: Codable, Sendable, Equatable {
+    public let id: UUID
+    public let meetingID: UUID
+    public let meetingName: String
+    public let capturedAt: Date
+    public let mimeType: String
+    public let detectedText: String
+    public let caption: String
+}
+
 public struct ScopedVault: Codable, Sendable, Equatable {
     public let id: UUID
     public let name: String
@@ -265,6 +306,7 @@ public enum MeetingAccessError: Error, LocalizedError, Equatable {
     case invalidCursor
     case invalidLimit(maximum: Int)
     case invalidSearchQuery(maximum: Int)
+    case searchQueryTooShort(minimum: Int)
     case invalidTimeRange
     case screenshotNotFound
     case screenshotEncodingFailed
@@ -315,6 +357,8 @@ public enum MeetingAccessError: Error, LocalizedError, Equatable {
             "The limit must be between 1 and \(maximum)."
         case let .invalidSearchQuery(maximum):
             "The search query must be at most \(maximum) characters."
+        case let .searchQueryTooShort(minimum):
+            "The search query must be at least \(minimum) characters."
         case .invalidTimeRange:
             "Elapsed time values must be finite and nonnegative, and the start must be before the end."
         case .screenshotNotFound:

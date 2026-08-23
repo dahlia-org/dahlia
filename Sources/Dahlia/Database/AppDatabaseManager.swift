@@ -21,7 +21,11 @@ final class AppDatabaseManager: Sendable {
         try self.init(path: Self.databaseURL.path, enablesConcurrentSearch: true)
     }
 
-    init(path: String, enablesConcurrentSearch: Bool = false) throws {
+    init(
+        path: String,
+        enablesConcurrentSearch: Bool = false,
+        screenshotAnalyzer: any ScreenshotAnalyzing = CodexScreenshotAnalysisService()
+    ) throws {
         if path != ":memory:" {
             let dbURL = URL(fileURLWithPath: path)
             try FileManager.default.createDirectory(
@@ -51,7 +55,11 @@ final class AppDatabaseManager: Sendable {
         let vectorSearchIndexer = VectorSearchIndexer(dbQueue: dbQueue, embedder: embeddingService)
         self.embeddingService = embeddingService
         self.vectorSearchIndexer = vectorSearchIndexer
-        searchIndexer = SearchIndexer(dbQueue: dbQueue, vectorIndexer: vectorSearchIndexer)
+        searchIndexer = SearchIndexer(
+            dbQueue: dbQueue,
+            vectorIndexer: vectorSearchIndexer,
+            screenshotAnalyzer: screenshotAnalyzer
+        )
         if path != ":memory:" {
             try FileManager.default.setAttributes(
                 [.posixPermissions: 0o600],
@@ -238,6 +246,11 @@ final class AppDatabaseManager: Sendable {
 
         migrator.registerMigration("v37_vectorSearch") { db in
             try VectorSearchMigration.migrate(in: db)
+        }
+
+        migrator.registerMigration("v38_screenshotOCRSearch") { db in
+            try SearchFTS5Tokenizer.register(in: db)
+            try ScreenshotOCRSearchMigration.migrate(in: db)
         }
 
         return migrator

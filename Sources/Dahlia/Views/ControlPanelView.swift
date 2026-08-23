@@ -29,30 +29,15 @@ enum DetailTab: String, CaseIterable, Identifiable {
     }
 }
 
-private struct ExpandedScreenshotPresentation {
-    /// 前後送りの対象範囲。開いた画面の文脈をそのまま保つ。
-    enum Scope {
-        /// スクリーンショット一覧タブ。ミーティングの全スクリーンショットを撮影順にたどる。
-        case allScreenshots
-        /// 要約タブ。要約本文に埋め込まれた画像だけを出現順にたどる。
-        case summary
-    }
-
-    let screenshot: MeetingScreenshotRecord
-    let previewImage: CGImage?
-    let requestedAt: ContinuousClock.Instant
-    let scope: Scope
-}
-
 /// メインコントロールウィンドウ（議事録ビュー）。
 struct ControlPanelView: View {
     @ObservedObject var viewModel: CaptionViewModel
     var sidebarViewModel: SidebarViewModel
     let recordingCoordinator: RecordingCoordinator
+    @Binding var expandedScreenshot: ExpandedScreenshotPresentation?
 
     @ObservedObject private var appSettings = AppSettings.shared
     @State private var selectedTab: DetailTab = .summary
-    @State private var expandedScreenshot: ExpandedScreenshotPresentation?
     @State private var screenshotMinimumWidth = ScreenshotGridSizing.defaultMinimumWidth
     @State private var isSelectingScreenshots = false
     @State private var selectedScreenshotIds: Set<UUID> = []
@@ -173,6 +158,12 @@ struct ControlPanelView: View {
         .onChange(of: viewModel.requestShowSummaryTab) {
             updateSummaryTabSelection()
         }
+        .onChange(of: viewModel.requestOpenScreenshotID) {
+            openRequestedScreenshot(in: viewModel.screenshotStore.records)
+        }
+        .onReceive(viewModel.screenshotStore.$records) { records in
+            openRequestedScreenshot(in: records)
+        }
         .onChange(of: isSelectingScreenshots) { _, isSelecting in
             if !isSelecting {
                 selectedScreenshotIds.removeAll()
@@ -207,21 +198,6 @@ struct ControlPanelView: View {
             if let meetingId = viewModel.currentMeetingId,
                meetingIds.contains(meetingId) {
                 viewModel.clearCurrentMeeting()
-            }
-        }
-        .overlay {
-            if let presentation = expandedScreenshot {
-                ScreenshotOverlayView(
-                    screenshot: presentation.screenshot,
-                    previewImage: presentation.previewImage,
-                    requestedAt: presentation.requestedAt,
-                    canGoPrevious: canStepExpandedScreenshot(by: -1),
-                    canGoNext: canStepExpandedScreenshot(by: 1),
-                    onPrevious: { stepExpandedScreenshot(by: -1) },
-                    onNext: { stepExpandedScreenshot(by: 1) },
-                    onDismiss: dismissExpandedScreenshot
-                )
-                .transition(.opacity)
             }
         }
     }
@@ -335,51 +311,16 @@ struct ControlPanelView: View {
         openScreenshot(screenshot, previewImage: previewImage, scope: .summary)
     }
 
+    private func openRequestedScreenshot(in records: [MeetingScreenshotRecord]) {
+        guard let id = viewModel.requestOpenScreenshotID,
+              let screenshot = records.first(where: { $0.id == id }) else { return }
+        selectedTab = .screenshots
+        openScreenshot(screenshot, previewImage: nil, scope: .allScreenshots)
+        viewModel.requestOpenScreenshotID = nil
+    }
+
     private func screenshotRecord(withID id: UUID) -> MeetingScreenshotRecord? {
         viewModel.screenshotStore.records.first { $0.id == id }
-    }
-
-    /// 拡大表示中に削除や再生成が起きても追従できるよう、移動対象は都度現在の state から組み立てる。
-    private func expandedScreenshotNavigationIDs(for scope: ExpandedScreenshotPresentation.Scope) -> [UUID] {
-        switch scope {
-        case .allScreenshots:
-            viewModel.screenshotStore.records.map(\.id)
-        case .summary:
-            (viewModel.currentSummaryDocument?.orderedScreenshotIds ?? [])
-                .filter { screenshotRecord(withID: $0) != nil }
-        }
-    }
-
-    private func neighborExpandedScreenshot(by offset: Int) -> MeetingScreenshotRecord? {
-        guard let presentation = expandedScreenshot else { return nil }
-        guard let neighborID = ScreenshotOverlayNavigation.neighborID(
-            in: expandedScreenshotNavigationIDs(for: presentation.scope),
-            from: presentation.screenshot.id,
-            offset: offset
-        ) else { return nil }
-        return screenshotRecord(withID: neighborID)
-    }
-
-    private func canStepExpandedScreenshot(by offset: Int) -> Bool {
-        neighborExpandedScreenshot(by: offset) != nil
-    }
-
-    private func stepExpandedScreenshot(by offset: Int) {
-        guard let presentation = expandedScreenshot,
-              let neighbor = neighborExpandedScreenshot(by: offset) else { return }
-        expandedScreenshot = ExpandedScreenshotPresentation(
-            screenshot: neighbor,
-            previewImage: nil,
-            requestedAt: .now,
-            scope: presentation.scope
-        )
-    }
-
-    private func dismissExpandedScreenshot() {
-        guard expandedScreenshot != nil else { return }
-        withAnimation(.easeOut(duration: 0.15)) {
-            expandedScreenshot = nil
-        }
     }
 
     private func deleteSelectedScreenshots() {

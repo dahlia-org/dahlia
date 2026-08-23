@@ -73,6 +73,89 @@ public final class MeetingAccessStore: Sendable {
         }
     }
 
+    public func queryScreenshots(_ query: ScreenshotTextQuery) throws -> ScreenshotTextQueryPage {
+        guard (1 ... 100).contains(query.limit) else {
+            throw MeetingAccessError.invalidLimit(maximum: 100)
+        }
+        let text = query.query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard text.count >= 2 else {
+            throw MeetingAccessError.searchQueryTooShort(minimum: 2)
+        }
+        guard text.count <= Self.maximumSearchQueryLength else {
+            throw MeetingAccessError.invalidSearchQuery(maximum: Self.maximumSearchQueryLength)
+        }
+        return try database.read { db in
+            let vault = try fetchVault(in: db)
+            return try withSearchDeadline(enabled: true, in: db) {
+                let revision = try fullTextIndexRevision(in: db)
+                let scope = screenshotCursorScope(text: text, query: query)
+                let cursor = try query.cursor.map {
+                    try ScreenshotTextCursor.decode($0, vaultID: vaultID, revision: revision, scope: scope)
+                }
+                guard let fullTextQuery = try fullTextQuery(text, in: db) else {
+                    return ScreenshotTextQueryPage(vault: vault, screenshots: [], nextCursor: nil)
+                }
+                var conditions = [
+                    "search_documents.kind = 'screenshot'",
+                    "search_documents.vaultId = ?",
+                    "search_documents_fts MATCH ?",
+                ]
+                var arguments: StatementArguments = [vaultID, "{ocr caption} : (\(fullTextQuery))"]
+                if let projectID = query.projectID {
+                    conditions.append("meetings.projectId = ?")
+                    arguments += [projectID]
+                }
+                if let createdFrom = query.createdFrom {
+                    conditions.append("screenshots.capturedAt >= ?")
+                    arguments += [createdFrom]
+                }
+                if let createdBefore = query.createdBefore {
+                    conditions.append("screenshots.capturedAt < ?")
+                    arguments += [createdBefore]
+                }
+                arguments += [query.limit + 1, cursor?.offset ?? 0]
+                var rows = try Row.fetchAll(
+                    db,
+                    sql: """
+                    SELECT screenshots.id, screenshots.meetingId, meetings.name AS meetingName,
+                           screenshots.capturedAt, screenshots.mimeType,
+                           screenshots.ocrText AS detectedText, screenshots.caption
+                    FROM search_documents
+                    JOIN search_documents_fts ON search_documents_fts.rowid = search_documents.id
+                    JOIN screenshots ON screenshots.id = search_documents.sourceId
+                    JOIN meetings ON meetings.id = screenshots.meetingId
+                    WHERE \(conditions.joined(separator: " AND "))
+                    ORDER BY bm25(search_documents_fts), screenshots.capturedAt DESC, screenshots.id
+                    LIMIT ? OFFSET ?
+                    """,
+                    arguments: arguments
+                )
+                let hasMore = rows.count > query.limit
+                if hasMore { rows.removeLast() }
+                let screenshots = rows.map { row in
+                    ScreenshotTextMetadata(
+                        id: row["id"],
+                        meetingID: row["meetingId"],
+                        meetingName: row["meetingName"],
+                        capturedAt: row["capturedAt"],
+                        mimeType: row["mimeType"],
+                        detectedText: String((row["detectedText"] as String).prefix(500)),
+                        caption: row["caption"]
+                    )
+                }
+                let nextCursor = hasMore
+                    ? ScreenshotTextCursor(
+                        vaultID: vaultID,
+                        revision: revision,
+                        scope: scope,
+                        offset: (cursor?.offset ?? 0) + screenshots.count
+                    ).encoded()
+                    : nil
+                return ScreenshotTextQueryPage(vault: vault, screenshots: screenshots, nextCursor: nextCursor)
+            }
+        }
+    }
+
     private func fullTextIndexRevision(in db: Database) throws -> Int {
         guard let row = try Row.fetchOne(
             db,
@@ -219,6 +302,19 @@ public final class MeetingAccessStore: Sendable {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         guard let data = try? encoder.encode(components) else { return "meetings" }
+        return data.base64EncodedString()
+    }
+
+    private func screenshotCursorScope(text: String, query: ScreenshotTextQuery) -> String {
+        let components = ScreenshotTextCursorFilterScope(
+            query: text,
+            projectID: query.projectID,
+            createdFrom: query.createdFrom,
+            createdBefore: query.createdBefore
+        )
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        guard let data = try? encoder.encode(components) else { return "screenshots" }
         return data.base64EncodedString()
     }
 
@@ -853,12 +949,16 @@ extension MeetingAccessStore {
         let legacySummaryColumns: Set = ["summary", "googleFileId", "vaultRelativePath"]
         guard meetingColumns.contains("description"),
               summaryColumns.contains("document"),
-              searchColumns.contains("summary"),
+              searchColumns.isSuperset(of: ["summary", "ocr", "caption"]),
               summaryColumns.isDisjoint(with: legacySummaryColumns),
               projectColumns.isSuperset(of: ["parentProjectId", "name", "nameKey", "projectType", "revision"]),
               try Bool.fetchOne(
                   db,
-                  sql: "SELECT COUNT(*) = 3 FROM sqlite_master WHERE type = 'table' AND name IN ('search_documents', 'search_documents_fts', 'search_index_state')"
+                  sql: """
+                  SELECT COUNT(*) = 3 FROM sqlite_master
+                  WHERE type = 'table'
+                    AND name IN ('search_documents', 'search_documents_fts', 'search_index_state')
+                  """
               ) == true
         else {
             throw MeetingAccessError.databaseUpgradeRequired
@@ -1077,4 +1177,26 @@ private struct ScreenshotCursor: Codable {
                 && cursor.toElapsedSeconds == toElapsedSeconds
         }
     }
+}
+
+private struct ScreenshotTextCursor: Codable {
+    let vaultID: UUID
+    let revision: Int
+    let scope: String
+    let offset: Int
+
+    func encoded() -> String { AccessCursorCodec.encode(self) }
+
+    static func decode(_ value: String, vaultID: UUID, revision: Int, scope: String) throws -> Self {
+        try AccessCursorCodec.decode(Self.self, from: value) {
+            $0.vaultID == vaultID && $0.revision == revision && $0.scope == scope && $0.offset >= 0
+        }
+    }
+}
+
+private struct ScreenshotTextCursorFilterScope: Codable {
+    let query: String
+    let projectID: UUID?
+    let createdFrom: Date?
+    let createdBefore: Date?
 }

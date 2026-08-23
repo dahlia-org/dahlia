@@ -93,7 +93,7 @@ struct VaultPickerView: View {
                 .disabled(model.isRemovingVault)
             } settingsContent: {
                 SettingsDetailView(
-                    selection: mainWindowNavigation.settingsCategory,
+                    selection: $mainWindowNavigation.settingsCategory,
                     captionViewModel: captionViewModel,
                     sidebarViewModel: sidebarViewModel,
                     appDatabase: appDatabase,

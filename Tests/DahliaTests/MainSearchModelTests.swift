@@ -106,6 +106,29 @@ import GRDB
         }
 
         @Test(.timeLimit(.minutes(1)))
+        func presentsScreenshotMatchesAsTheirOwnResults() async throws {
+            let fixture = try MainSearchModelFixture()
+            defer { fixture.stop() }
+            let expected = try await fixture.insertIndexedScreenshot(text: "Screenshot-only design token")
+            let sidebar = fixture.makeSidebarViewModel()
+            defer { sidebar.setAppDatabase(nil) }
+            #expect(await pollUntil { sidebar.isProjectCatalogLoaded })
+
+            let model = MainSearchModel()
+            model.present(using: sidebar)
+            model.inputText = "design token"
+            model.queryDidChange(using: sidebar)
+            #expect(model.presentedScreenshots.isEmpty)
+            #expect(await pollUntil { !model.isLoading && !model.isLoadingScreenshots })
+
+            #expect(model.meetings.isEmpty)
+            #expect(model.screenshots.map(\.id) == [expected.screenshotID])
+            #expect(model.presentedScreenshots.map(\.id) == [expected.screenshotID])
+            #expect(model.screenshots.first?.meetingID == expected.meetingID)
+            #expect(model.resultIDs == [.screenshot(expected.screenshotID)])
+        }
+
+        @Test(.timeLimit(.minutes(1)))
         func neuralSearchKeepsFTSResultsWhenEmbeddingFails() async throws {
             let fixture = try MainSearchModelFixture()
             defer { fixture.stop() }
@@ -551,6 +574,55 @@ import GRDB
                 try Self.insertMeeting(vaultID: vaultID, name: "Older meeting", in: db)
             }
             await manager.searchIndexer.drain()
+        }
+
+        func insertIndexedScreenshot(text: String) async throws -> (screenshotID: UUID, meetingID: UUID) {
+            let meetingID = UUID.v7()
+            let screenshotID = UUID.v7()
+            let vaultID = vault.id
+            try await manager.dbQueue.write { db in
+                try MeetingRecord(
+                    id: meetingID,
+                    vaultId: vaultID,
+                    projectId: nil,
+                    name: "Visual meeting",
+                    createdAt: .now,
+                    updatedAt: .now
+                ).insert(db)
+                try MeetingScreenshotRecord(
+                    id: screenshotID,
+                    meetingId: meetingID,
+                    sessionId: nil,
+                    capturedAt: .now,
+                    imageData: Data([1]),
+                    mimeType: "image/png",
+                    ocrText: text,
+                    caption: "Visual description"
+                ).insert(db)
+                try upsertDocument(
+                    SearchDocumentProjection(
+                        kind: "screenshot",
+                        sourceID: screenshotID,
+                        vaultID: vaultID,
+                        meetingID: meetingID,
+                        projectID: nil,
+                        fields: SearchDocumentFields(
+                            title: "",
+                            description: "",
+                            calendar: "",
+                            tags: "",
+                            projectPath: "",
+                            ocr: text,
+                            caption: "Visual description"
+                        )
+                    ),
+                    generation: 1,
+                    in: db
+                )
+                try db.execute(sql: "DELETE FROM search_index_jobs")
+                try db.execute(sql: "UPDATE search_index_state SET phase = 'ready' WHERE indexKind = 'fts'")
+            }
+            return (screenshotID, meetingID)
         }
 
         func setVectorState(phase: String, isEnabled: Bool) async throws {

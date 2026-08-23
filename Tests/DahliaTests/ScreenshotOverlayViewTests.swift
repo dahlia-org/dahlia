@@ -1,5 +1,6 @@
 #if canImport(Testing)
     import AppKit
+    import ImageIO
     import Testing
     import UniformTypeIdentifiers
     @testable import Dahlia
@@ -28,6 +29,28 @@
                 imageSize: CGSize(width: 1600, height: 900),
                 availableSize: .zero
             ) == .zero)
+        }
+
+        @Test
+        func loadedImageReplacesPreviewOnlyForTheCurrentScreenshot() throws {
+            let data = try #require(TestScreenshotImageFixture.data(using: .png))
+            let source = try #require(CGImageSourceCreateWithData(data as CFData, nil))
+            let preview = try #require(CGImageSourceCreateImageAtIndex(source, 0, nil))
+            let loaded = try #require(CGImageSourceCreateImageAtIndex(source, 0, nil))
+            let screenshotID = UUID.v7()
+
+            #expect(ScreenshotOverlayLayout.displayedImage(
+                previewImage: preview,
+                loadedImage: loaded,
+                loadedScreenshotID: screenshotID,
+                screenshotID: screenshotID
+            ) === loaded)
+            #expect(ScreenshotOverlayLayout.displayedImage(
+                previewImage: preview,
+                loadedImage: loaded,
+                loadedScreenshotID: UUID.v7(),
+                screenshotID: screenshotID
+            ) === preview)
         }
 
         @Test
@@ -88,8 +111,8 @@
         }
 
         @Test
-        func outsideMouseClicksAreForwardedAndDismiss() async throws {
-            for eventType in [NSEvent.EventType.leftMouseDown, .rightMouseDown, .otherMouseDown] {
+        func outsideNonPrimaryMouseClicksAreForwardedAndDismiss() async throws {
+            for eventType in [NSEvent.EventType.rightMouseDown, .otherMouseDown] {
                 let fixture = try makeMouseFixture(
                     eventType: eventType,
                     eventLocation: CGPoint(x: 150, y: 150)
@@ -106,6 +129,23 @@
                 await waitUntil { dismissCount == 1 }
                 #expect(dismissCount == 1)
             }
+        }
+
+        @Test
+        func primaryMouseDownIsLeftToSwiftUIControlsAndBackdrop() throws {
+            let fixture = try makeMouseFixture(
+                eventType: .leftMouseDown,
+                eventLocation: CGPoint(x: 150, y: 150)
+            )
+            var dismissCount = 0
+            let coordinator = ScreenshotOverlayInputMonitor.Coordinator {
+                dismissCount += 1
+            }
+
+            let handledEvent = coordinator.handle(fixture.event, in: fixture.view)
+
+            #expect(handledEvent === fixture.event)
+            #expect(dismissCount == 0)
         }
 
         @Test
@@ -126,9 +166,45 @@
         }
 
         @Test
-        func installedMonitorReceivesOutsideMouseDown() async throws {
+        func topTrailingToolbarClickDoesNotDismissOverlay() throws {
             let fixture = try makeMouseFixture(
-                eventType: .leftMouseDown,
+                eventType: .rightMouseDown,
+                eventLocation: CGPoint(x: 180, y: 180)
+            )
+            var dismissCount = 0
+            let coordinator = ScreenshotOverlayInputMonitor.Coordinator(
+                onDismiss: { dismissCount += 1 },
+                topTrailingProtectedSize: CGSize(width: 80, height: 80)
+            )
+
+            let handledEvent = coordinator.handle(fixture.event, in: fixture.view)
+
+            #expect(handledEvent === fixture.event)
+            #expect(dismissCount == 0)
+        }
+
+        @Test
+        func bottomCenterZoomClickDoesNotDismissOverlay() throws {
+            let fixture = try makeMouseFixture(
+                eventType: .rightMouseDown,
+                eventLocation: CGPoint(x: 120, y: 20)
+            )
+            var dismissCount = 0
+            let coordinator = ScreenshotOverlayInputMonitor.Coordinator(
+                onDismiss: { dismissCount += 1 },
+                bottomCenterProtectedSize: CGSize(width: 80, height: 60)
+            )
+
+            let handledEvent = coordinator.handle(fixture.event, in: fixture.view)
+
+            #expect(handledEvent === fixture.event)
+            #expect(dismissCount == 0)
+        }
+
+        @Test
+        func installedMonitorReceivesOutsideNonPrimaryMouseDown() async throws {
+            let fixture = try makeMouseFixture(
+                eventType: .rightMouseDown,
                 eventLocation: CGPoint(x: 150, y: 150)
             )
             var dismissCount = 0

@@ -133,6 +133,7 @@ import Foundation
             }
 
             #expect(await !methodsSent(to: transport).contains("thread/start"))
+            #expect(await !methodsSent(to: transport).contains("model/list"))
             await service.shutdown()
         }
 
@@ -1400,6 +1401,45 @@ import Foundation
         }
 
         @Test
+        func unavailableRequiredModelDoesNotFallBack() async throws {
+            let transport = TestCodexAppServerTransport(mode: .generationCompletes)
+            let service = makeTestCodexAppServerService(transportFactory: { transport })
+
+            await #expect(throws: CodexAppServerError.requestedModelUnavailable("retired-model")) {
+                _ = try await service.generate(.init(
+                    model: "retired-model",
+                    requiresExactModel: true,
+                    developerInstructions: "Analyze.",
+                    inputs: [.text("Screenshot")],
+                    outputSchema: Data(#"{"type":"object"}"#.utf8)
+                ))
+            }
+
+            #expect(await !methodsSent(to: transport).contains("thread/start"))
+            await service.shutdown()
+        }
+
+        @Test
+        func requiredImageInputDoesNotRunOnATextOnlyModel() async throws {
+            let transport = TestCodexAppServerTransport(mode: .textOnlyGenerationCompletes)
+            let service = makeTestCodexAppServerService(transportFactory: { transport })
+
+            await #expect(throws: CodexAppServerError.requestedModelUnavailable("default-model")) {
+                _ = try await service.generate(.init(
+                    model: "default-model",
+                    requiresExactModel: true,
+                    requiresImageInput: true,
+                    developerInstructions: "Analyze.",
+                    inputs: [.imageDataURI("data:image/jpeg;base64,AA==")],
+                    outputSchema: Data(#"{"type":"object"}"#.utf8)
+                ))
+            }
+
+            #expect(await !methodsSent(to: transport).contains("thread/start"))
+            await service.shutdown()
+        }
+
+        @Test
         func defaultTextOnlyModelDropsImagesAndStillGenerates() async throws {
             let transport = TestCodexAppServerTransport(mode: .textOnlyGenerationCompletes)
             let service = makeTestCodexAppServerService(transportFactory: { transport })
@@ -1568,7 +1608,7 @@ import Foundation
         }
 
         @Test
-        func generationCancellationInterruptsAndUnsubscribesWithoutKillingProcess() async {
+        func generationCancellationAwaitsInterruptAndUnsubscribeWithoutKillingProcess() async {
             let transport = TestCodexAppServerTransport(mode: .generationBlocks)
             let service = makeTestCodexAppServerService(transportFactory: { transport })
             let generation = Task {
@@ -1586,7 +1626,6 @@ import Foundation
             await #expect(throws: CancellationError.self) {
                 _ = try await generation.value
             }
-            await transport.waitUntilSent("thread/unsubscribe")
             let methods = await methodsSent(to: transport)
             #expect(methods.count(where: { $0 == "turn/interrupt" }) == 1)
             #expect(methods.contains("thread/unsubscribe"))

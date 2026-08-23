@@ -6,6 +6,7 @@ import GRDB
 actor SearchIndexer {
     private let dbQueue: DatabaseQueue
     private let vectorIndexer: VectorSearchIndexer?
+    private let screenshotAnalyzer: any ScreenshotAnalyzing
     private let observationQueue = DispatchQueue(label: "app.dahlia.search-indexer", qos: .utility)
     private var workerTask: Task<Void, Never>?
     private var observationDrainTask: Task<Void, Never>?
@@ -18,9 +19,14 @@ actor SearchIndexer {
 
     private static let divergenceCheckInterval: TimeInterval = 15 * 60
 
-    init(dbQueue: DatabaseQueue, vectorIndexer: VectorSearchIndexer? = nil) {
+    init(
+        dbQueue: DatabaseQueue,
+        vectorIndexer: VectorSearchIndexer? = nil,
+        screenshotAnalyzer: any ScreenshotAnalyzing = CodexScreenshotAnalysisService()
+    ) {
         self.dbQueue = dbQueue
         self.vectorIndexer = vectorIndexer
+        self.screenshotAnalyzer = screenshotAnalyzer
     }
 
     func start() async {
@@ -82,6 +88,15 @@ actor SearchIndexer {
         try await dbQueue.write { db in
             try db.execute(
                 sql: """
+                UPDATE search_index_jobs
+                SET status = 'pending', attempts = 0, availableAt = ?, claimedAt = NULL,
+                    leaseExpiresAt = NULL, lastErrorCode = NULL, updatedAt = ?
+                WHERE indexKind = 'fts' AND targetKind = 'screenshotAnalysis' AND attempts >= 5
+                """,
+                arguments: [Date(), Date()]
+            )
+            try db.execute(
+                sql: """
                 UPDATE search_index_state
                 SET indexGeneration = indexGeneration + 1,
                     phase = 'pending', completedCount = 0, totalCount = 0,
@@ -125,14 +140,24 @@ actor SearchIndexer {
             if try await needsRebuild(phase: phase, checksDivergence: checksDivergence) {
                 try await rebuild()
             }
-            while !isPaused, let job = try await claimNextJob() {
+            while !isPaused, let jobs = try await claimNextJobs() {
                 do {
-                    try await process(job)
-                    try await complete(job)
+                    try await process(jobs)
+                    try await complete(jobs)
                 } catch is CancellationError {
+                    try await release(jobs)
                     return
                 } catch {
-                    try await fail(job, error: error)
+                    if Self.isDeferredScreenshotAnalysisError(error) {
+                        try await deferScreenshotQueueForPrerequisite(error)
+                        return
+                    } else if jobs.count > 1, jobs.first?.targetKind == "screenshotAnalysis" {
+                        try await processScreenshotJobsIndividually(jobs)
+                    } else {
+                        for job in jobs {
+                            try await fail(job, error: error)
+                        }
+                    }
                 }
             }
         } catch is CancellationError {
@@ -142,14 +167,17 @@ actor SearchIndexer {
     }
 
     private func drainCleanupJobs() async throws {
-        while !isPaused, let job = try await claimNextJob(cleanupOnly: true) {
+        while !isPaused, let jobs = try await claimNextJobs(cleanupOnly: true) {
             do {
-                try await process(job)
-                try await complete(job)
+                try await process(jobs)
+                try await complete(jobs)
             } catch is CancellationError {
+                try await release(jobs)
                 return
             } catch {
-                try await fail(job, error: error)
+                for job in jobs {
+                    try await fail(job, error: error)
+                }
             }
         }
     }
@@ -240,6 +268,7 @@ actor SearchIndexer {
                 sql: """
                 SELECT (SELECT COUNT(*) FROM meetings)
                      + (SELECT COUNT(*) FROM projects)
+                     + (SELECT COUNT(*) FROM screenshots WHERE ocrText IS NOT NULL AND caption IS NOT NULL)
                 """
             ) ?? 0
             try db.execute(
@@ -268,6 +297,18 @@ actor SearchIndexer {
         for id in meetingIDs {
             try checkCanContinue()
             try await indexMeeting(id: id, generation: generation)
+            try await incrementRebuildProgress()
+        }
+
+        let screenshotIDs = try await dbQueue.read { db in
+            try UUID.fetchAll(
+                db,
+                sql: "SELECT id FROM screenshots WHERE ocrText IS NOT NULL AND caption IS NOT NULL ORDER BY rowid"
+            )
+        }
+        for id in screenshotIDs {
+            try checkCanContinue()
+            try await indexScreenshot(id: id, generation: generation)
             try await incrementRebuildProgress()
         }
 
@@ -307,19 +348,20 @@ actor SearchIndexer {
         }
     }
 
-    private func claimNextJob(cleanupOnly: Bool = false) async throws -> SearchIndexJob? {
+    private func claimNextJobs(cleanupOnly: Bool = false) async throws -> [SearchIndexJob]? {
         try await dbQueue.write { db in
             let now = Date()
             let cleanupFilter = cleanupOnly
-                ? "AND targetKind IN ('vaultCleanup', 'meetingCleanup', 'projectCleanup')"
+                ? "AND targetKind IN ('vaultCleanup', 'meetingCleanup', 'projectCleanup', 'screenshotCleanup')"
                 : ""
-            guard let row = try Row.fetchOne(
+            guard let firstRow = try Row.fetchOne(
                 db,
                 sql: """
                 SELECT targetKind, targetKey, generation, attempts
                 FROM search_index_jobs
                 WHERE indexKind = 'fts'
                   AND availableAt <= ?
+                  AND attempts < 5
                   AND (status = 'pending' OR leaseExpiresAt < ?)
                   \(cleanupFilter)
                 ORDER BY priority DESC, availableAt, targetKind, targetKey
@@ -327,35 +369,63 @@ actor SearchIndexer {
                 """,
                 arguments: [now, now]
             ) else { return nil }
-            let previousAttempts: Int = row["attempts"]
-            let job = SearchIndexJob(
-                targetKind: row["targetKind"],
-                targetID: row["targetKey"],
-                generation: row["generation"],
-                attempts: previousAttempts + 1
-            )
-            try db.execute(
-                sql: """
-                UPDATE search_index_jobs
-                SET status = 'processing', attempts = attempts + 1,
-                    claimedAt = ?, leaseExpiresAt = ?, updatedAt = ?
-                WHERE indexKind = 'fts' AND targetKind = ? AND targetKey = ? AND generation = ?
-                """,
-                arguments: [
-                    now,
-                    now.addingTimeInterval(60),
-                    now,
-                    job.targetKind,
-                    job.targetID,
-                    job.generation,
-                ]
-            )
-            return job
+            let targetKind: String = firstRow["targetKind"]
+            let rows: [Row] = if targetKind == "screenshotAnalysis", !cleanupOnly {
+                try Row.fetchAll(
+                    db,
+                    sql: """
+                    SELECT targetKind, targetKey, generation, attempts
+                    FROM search_index_jobs
+                    WHERE indexKind = 'fts' AND targetKind = 'screenshotAnalysis'
+                      AND availableAt <= ? AND attempts < 5
+                      AND (status = 'pending' OR leaseExpiresAt < ?)
+                    ORDER BY priority DESC, availableAt, targetKey
+                    LIMIT ?
+                    """,
+                    arguments: [now, now, CodexScreenshotAnalysisService.maximumBatchSize]
+                )
+            } else {
+                [firstRow]
+            }
+            let jobs = rows.map { row in
+                let previousAttempts: Int = row["attempts"]
+                return SearchIndexJob(
+                    targetKind: row["targetKind"],
+                    targetID: row["targetKey"],
+                    generation: row["generation"],
+                    attempts: previousAttempts + 1
+                )
+            }
+            let leaseDuration: TimeInterval = targetKind == "screenshotAnalysis" ? 300 : 60
+            for job in jobs {
+                try db.execute(
+                    sql: """
+                    UPDATE search_index_jobs
+                    SET status = 'processing', attempts = attempts + 1,
+                        claimedAt = ?, leaseExpiresAt = ?, updatedAt = ?
+                    WHERE indexKind = 'fts' AND targetKind = ? AND targetKey = ? AND generation = ?
+                    """,
+                    arguments: [
+                        now,
+                        now.addingTimeInterval(leaseDuration),
+                        now,
+                        job.targetKind,
+                        job.targetID,
+                        job.generation,
+                    ]
+                )
+            }
+            return jobs
         }
     }
 
-    private func process(_ job: SearchIndexJob) async throws {
+    private func process(_ jobs: [SearchIndexJob]) async throws {
         let generation = try await currentGeneration()
+        if jobs.first?.targetKind == "screenshotAnalysis" {
+            try await analyzeAndIndexScreenshots(jobs, generation: generation)
+            return
+        }
+        guard let job = jobs.first else { return }
         switch job.targetKind {
         case "vaultCleanup":
             try await deleteDocuments(where: "vaultId = ?", arguments: [job.targetID])
@@ -370,6 +440,11 @@ actor SearchIndexer {
         case "projectCleanup":
             try await deleteDocuments(
                 where: "kind = 'project' AND projectId = ?",
+                arguments: [job.targetID]
+            )
+        case "screenshotCleanup":
+            try await deleteDocuments(
+                where: "kind = 'screenshot' AND sourceId = ?",
                 arguments: [job.targetID]
             )
         default:
@@ -413,6 +488,88 @@ actor SearchIndexer {
 }
 
 private extension SearchIndexer {
+    func analyzeAndIndexScreenshots(_ jobs: [SearchIndexJob], generation: Int) async throws {
+        let inputs = try await dbQueue.read { db in
+            try jobs.compactMap { job -> ScreenshotAnalysisInput? in
+                guard let screenshot = try MeetingScreenshotRecord.fetchOne(db, key: job.targetID) else { return nil }
+                return ScreenshotAnalysisInput(
+                    id: screenshot.id,
+                    imageData: screenshot.imageData,
+                    mimeType: screenshot.mimeType
+                )
+            }
+        }
+        guard !inputs.isEmpty else { return }
+        let results = try await screenshotAnalyzer.analyze(inputs)
+        try Task.checkCancellation()
+        try await dbQueue.write { db in
+            for result in results {
+                guard try MeetingScreenshotRecord.fetchOne(db, key: result.screenshotID) != nil else { continue }
+                try db.execute(
+                    sql: "UPDATE screenshots SET ocrText = ?, caption = ? WHERE id = ?",
+                    arguments: [result.ocrText, result.caption, result.screenshotID]
+                )
+                try Self.indexScreenshot(id: result.screenshotID, generation: generation, in: db)
+            }
+        }
+    }
+
+    func indexScreenshot(id: UUID, generation: Int) async throws {
+        try await dbQueue.write { db in
+            try Self.indexScreenshot(id: id, generation: generation, in: db)
+        }
+    }
+
+    func processScreenshotJobsIndividually(_ jobs: [SearchIndexJob]) async throws {
+        for (index, job) in jobs.enumerated() {
+            do {
+                try await process([job])
+                try await complete([job])
+            } catch is CancellationError {
+                try await release(Array(jobs[index...]))
+                throw CancellationError()
+            } catch {
+                if Self.isDeferredScreenshotAnalysisError(error) {
+                    try await deferScreenshotQueueForPrerequisite(error)
+                    return
+                } else {
+                    try await fail(job, error: error)
+                }
+            }
+        }
+    }
+
+    nonisolated static func indexScreenshot(id: UUID, generation: Int, in db: Database) throws {
+        guard let row = try Row.fetchOne(
+            db,
+            sql: """
+            SELECT screenshots.id, screenshots.meetingId, screenshots.ocrText, screenshots.caption,
+                   meetings.vaultId, meetings.projectId
+            FROM screenshots
+            JOIN meetings ON meetings.id = screenshots.meetingId
+            WHERE screenshots.id = ? AND screenshots.ocrText IS NOT NULL AND screenshots.caption IS NOT NULL
+            """,
+            arguments: [id]
+        ) else { return }
+        let document = SearchDocumentProjection(
+            kind: "screenshot",
+            sourceID: row["id"],
+            vaultID: row["vaultId"],
+            meetingID: row["meetingId"],
+            projectID: row["projectId"],
+            fields: SearchDocumentFields(
+                title: "",
+                description: "",
+                calendar: "",
+                tags: "",
+                projectPath: "",
+                ocr: row["ocrText"],
+                caption: row["caption"]
+            )
+        )
+        try upsertDocument(document, generation: generation, in: db)
+    }
+
     func indexMeeting(
         id: UUID,
         generation: Int,
@@ -586,15 +743,17 @@ private extension SearchIndexer {
         }
     }
 
-    private func complete(_ job: SearchIndexJob) async throws {
+    private func complete(_ jobs: [SearchIndexJob]) async throws {
         try await dbQueue.write { db in
-            try db.execute(
-                sql: """
-                DELETE FROM search_index_jobs
-                WHERE indexKind = 'fts' AND targetKind = ? AND targetKey = ? AND generation = ?
-                """,
-                arguments: [job.targetKind, job.targetID, job.generation]
-            )
+            for job in jobs {
+                try db.execute(
+                    sql: """
+                    DELETE FROM search_index_jobs
+                    WHERE indexKind = 'fts' AND targetKind = ? AND targetKey = ? AND generation = ?
+                    """,
+                    arguments: [job.targetKind, job.targetID, job.generation]
+                )
+            }
             try db.execute(
                 sql: """
                 UPDATE search_index_state SET updatedAt = ?
@@ -605,8 +764,61 @@ private extension SearchIndexer {
         }
     }
 
+    private func release(_ jobs: [SearchIndexJob]) async throws {
+        try await Task.detached(priority: .utility) { [dbQueue] in
+            try await dbQueue.write { db in
+                for job in jobs {
+                    try db.execute(
+                        sql: """
+                        UPDATE search_index_jobs
+                        SET status = 'pending', attempts = max(0, attempts - 1), availableAt = ?,
+                            claimedAt = NULL, leaseExpiresAt = NULL, updatedAt = ?
+                        WHERE indexKind = 'fts' AND targetKind = ? AND targetKey = ? AND generation = ?
+                        """,
+                        arguments: [Date(), Date(), job.targetKind, job.targetID, job.generation]
+                    )
+                }
+            }
+        }.value
+    }
+
+    private func deferScreenshotQueueForPrerequisite(_ error: Error) async throws {
+        let retryAt = Date().addingTimeInterval(60)
+        try await dbQueue.write { db in
+            try db.execute(
+                sql: """
+                UPDATE search_index_jobs
+                SET status = 'pending',
+                    attempts = CASE WHEN status = 'processing' THEN MAX(0, attempts - 1) ELSE attempts END,
+                    availableAt = MAX(availableAt, ?),
+                    claimedAt = NULL, leaseExpiresAt = NULL, lastErrorCode = ?, updatedAt = ?
+                WHERE indexKind = 'fts' AND targetKind = 'screenshotAnalysis'
+                  AND (status = 'processing' OR attempts < 5)
+                """,
+                arguments: [retryAt, String(describing: type(of: error)), Date()]
+            )
+        }
+    }
+
     private func fail(_ job: SearchIndexJob, error: Error) async throws {
         if job.attempts >= 5 {
+            if job.targetKind == "screenshotAnalysis" {
+                try await dbQueue.write { db in
+                    try db.execute(
+                        sql: """
+                        UPDATE search_index_jobs
+                        SET status = 'pending', claimedAt = NULL, leaseExpiresAt = NULL,
+                            lastErrorCode = ?, updatedAt = ?
+                        WHERE indexKind = 'fts' AND targetKind = ? AND targetKey = ? AND generation = ?
+                        """,
+                        arguments: [
+                            String(describing: type(of: error)), Date(),
+                            job.targetKind, job.targetID, job.generation,
+                        ]
+                    )
+                }
+                return
+            }
             try await dbQueue.write { db in
                 try db.execute(
                     sql: """
@@ -639,6 +851,17 @@ private extension SearchIndexer {
                     job.generation,
                 ]
             )
+        }
+    }
+
+    nonisolated static func isDeferredScreenshotAnalysisError(_ error: Error) -> Bool {
+        if error is CodexConfigurationError { return true }
+        guard let error = error as? CodexAppServerError else { return false }
+        return switch error {
+        case .helperNotBundled, .notLoggedIn, .providerAuthenticationFailed, .requestedModelUnavailable:
+            true
+        default:
+            false
         }
     }
 

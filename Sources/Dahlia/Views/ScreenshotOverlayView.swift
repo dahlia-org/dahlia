@@ -17,6 +17,16 @@ enum ScreenshotOverlayLayout {
             height: imageSize.height * scale
         )
     }
+
+    static func displayedImage(
+        previewImage: CGImage?,
+        loadedImage: CGImage?,
+        loadedScreenshotID: UUID?,
+        screenshotID: UUID
+    ) -> CGImage? {
+        if loadedScreenshotID == screenshotID, let loadedImage { return loadedImage }
+        return previewImage
+    }
 }
 
 enum ScreenshotOverlayNavigation {
@@ -29,12 +39,13 @@ enum ScreenshotOverlayNavigation {
     }
 }
 
-/// 拡大表示に重ねる丸型ボタン。閉じる・コピー・前後送りで見た目を揃える。
+/// 拡大表示に重ねる、ChatGPT スタイルの不透過な丸型ボタン。
 private struct ScreenshotOverlayControlButton: View {
     let title: String
     let systemImage: String
     var isEnabled = true
     let action: () -> Void
+    @State private var isHovered = false
 
     var body: some View {
         Button(action: action) {
@@ -42,16 +53,20 @@ private struct ScreenshotOverlayControlButton: View {
             // グリフの矩形しか反応せず、chevron のような細い記号は押しにくい。
             Label(title, systemImage: systemImage)
                 .labelStyle(.iconOnly)
-                .font(.title2)
+                .font(.title3)
                 .foregroundStyle(.black)
-                .padding(8)
-                .background(.white, in: .circle)
+                .frame(width: 44, height: 44)
+                .background(
+                    isHovered && isEnabled ? Color(white: 0.92) : .white,
+                    in: .circle
+                )
                 .contentShape(.circle)
         }
         .buttonStyle(.plain)
         .shadow(color: .black.opacity(0.35), radius: 4, y: 2)
         .pointerStyle(.link)
         .help(title)
+        .onHover { isHovered = $0 }
         .disabled(!isEnabled)
         .opacity(isEnabled ? 1 : 0.35)
     }
@@ -62,6 +77,14 @@ struct ScreenshotOverlayView: View {
     private static let imagePadding: CGFloat = 24
     private static let navigationButtonWidth: CGFloat = 44
     private static let navigationSpacing: CGFloat = 12
+    private static let toolbarSpacing: CGFloat = 8
+    private static let toolbarReservedHeight: CGFloat = 72
+    private static let zoomControlsReservedHeight: CGFloat = 60
+    private static let informationPanelWidth: CGFloat = 320
+    private static let informationPanelSpacing: CGFloat = 16
+    private static let toolbarProtectedSize = CGSize(width: 232, height: 76)
+    private static let zoomControlsProtectedSize = CGSize(width: 160, height: 60)
+    private static let backdropColor = Color.black.opacity(0.82)
 
     /// Retina の全画面キャプチャを元解像度でレイヤー化すると、RenderBox の
     /// surface allocation が枯渇し得る。画面表示には十分なサイズへ制限する。
@@ -74,51 +97,62 @@ struct ScreenshotOverlayView: View {
     let canGoNext: Bool
     let onPrevious: () -> Void
     let onNext: () -> Void
+    var onDownload: () -> Void = {}
     let onDismiss: () -> Void
+    var ocrStateProvider: @Sendable (UUID) async -> ScreenshotOCRState = { _ in .pending }
 
     @State private var imageLoader = ScreenshotImageLoadModel()
+    @State private var ocrState: ScreenshotOCRState = .pending
+    @State private var isShowingInformation = false
+    @State private var zoom: CGFloat = 1
+    @State private var loadedScreenshotID: UUID?
 
     private var displayedImage: CGImage? {
-        if case let .loaded(image) = imageLoader.state {
-            return image
-        }
-        return previewImage
+        let loadedImage: CGImage? = if case let .loaded(image) = imageLoader.state { image } else { nil }
+        return ScreenshotOverlayLayout.displayedImage(
+            previewImage: previewImage,
+            loadedImage: loadedImage,
+            loadedScreenshotID: loadedScreenshotID,
+            screenshotID: screenshot.id
+        )
     }
 
     private var hasNavigation: Bool {
         canGoPrevious || canGoNext
     }
 
+    private var showsNavigationControls: Bool {
+        if displayedImage != nil { return true }
+        guard loadedScreenshotID == screenshot.id else { return false }
+        if case .failed = imageLoader.state { return true }
+        return false
+    }
+
     var body: some View {
         ZStack(alignment: .topTrailing) {
-            Color.black.opacity(0.7)
-                .ignoresSafeArea()
-                .allowsHitTesting(false)
+            Button(action: onDismiss) {
+                Self.backdropColor
+                    .ignoresSafeArea()
+                    .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .accessibilityHidden(true)
 
             GeometryReader { proxy in
                 navigationChrome {
-                    if let displayedImage {
-                        expandedImage(displayedImage, availableSize: proxy.size)
-                    } else if case .failed = imageLoader.state {
-                        placeholder(availableSize: proxy.size) {
-                            Text(L10n.summaryImageUnavailable)
-                                .foregroundStyle(DahliaDesign.secondaryTextColor)
-                        }
-                    } else {
-                        placeholder(availableSize: proxy.size) {
-                            ProgressView()
-                        }
-                    }
+                    previewContent(availableSize: proxy.size)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
             }
 
-            ScreenshotOverlayControlButton(
-                title: L10n.close,
-                systemImage: "xmark.circle.fill",
-                action: onDismiss
-            )
-            .padding(16)
+            toolbar
+                .padding(16)
+
+            if displayedImage != nil {
+                ScreenshotOverlayZoomControls(zoom: $zoom)
+                    .padding(.bottom, 16)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+            }
         }
         .onAppear {
             ScreenshotImageDecodeWorker.recordOverlayPresented(
@@ -127,52 +161,118 @@ struct ScreenshotOverlayView: View {
             )
         }
         .task(id: screenshot.id) {
+            let screenshotID = screenshot.id
+            loadedScreenshotID = nil
+            zoom = 1
             await imageLoader.loadTransient(
                 data: screenshot.imageData,
                 maxPixelSize: Self.maximumDisplayPixelSize,
                 requestedAt: requestedAt
             )
+            guard !Task.isCancelled else { return }
+            loadedScreenshotID = screenshotID
+        }
+        .task(id: screenshot.id) {
+            ocrState = .pending
+            repeat {
+                ocrState = await ocrStateProvider(screenshot.id)
+                if !ocrState.isTerminal { try? await Task.sleep(for: .seconds(2)) }
+            } while !ocrState.isTerminal && !Task.isCancelled
         }
         .onDisappear(perform: imageLoader.unload)
     }
 
     /// 送りボタンの列を差し引いた、画像が使える領域。
-    private func contentSize(availableSize: CGSize) -> CGSize {
+    private func availableImageSize(in availableSize: CGSize) -> CGSize {
         let navigationInset = hasNavigation ? (Self.navigationButtonWidth + Self.navigationSpacing) * 2 : 0
+        let informationInset = isShowingInformation
+            ? Self.informationPanelWidth + Self.informationPanelSpacing
+            : 0
         return CGSize(
-            width: max(0, availableSize.width - Self.imagePadding * 2 - navigationInset),
-            height: max(0, availableSize.height - Self.imagePadding * 2)
+            width: max(0, availableSize.width - Self.imagePadding * 2 - navigationInset - informationInset),
+            height: max(
+                0,
+                availableSize.height - Self.imagePadding * 2
+                    - Self.toolbarReservedHeight - Self.zoomControlsReservedHeight
+            )
         )
+    }
+
+    private func previewContent(availableSize: CGSize) -> some View {
+        let imageAreaSize = availableImageSize(in: availableSize)
+
+        return HStack(spacing: Self.informationPanelSpacing) {
+            if let displayedImage {
+                expandedImage(displayedImage, availableSize: availableSize)
+            } else if case .failed = imageLoader.state {
+                placeholder(availableSize: availableSize) {
+                    Text(L10n.summaryImageUnavailable)
+                        .foregroundStyle(DahliaDesign.secondaryTextColor)
+                }
+            } else {
+                placeholder(availableSize: availableSize) {
+                    ProgressView()
+                }
+            }
+
+            if isShowingInformation {
+                ScreenshotOverlayInformationView(
+                    screenshot: screenshot,
+                    image: displayedImage,
+                    ocrState: ocrState
+                )
+                .frame(
+                    width: Self.informationPanelWidth,
+                    height: imageAreaSize.height
+                )
+            }
+        }
     }
 
     /// 読み込み中と失敗時も画像と同じ幅を占め、送りボタンが左右に動かないようにする。
     /// 高さは広げない。上下の余白はそのまま「外側クリックで閉じる」領域として残る。
     private func placeholder(availableSize: CGSize, @ViewBuilder content: () -> some View) -> some View {
         content()
-            .frame(width: contentSize(availableSize: availableSize).width)
+            .frame(width: availableImageSize(in: availableSize).width)
     }
 
     private func expandedImage(_ image: CGImage, availableSize: CGSize) -> some View {
-        let imageSize = ScreenshotOverlayLayout.fittedSize(
+        let imageAreaSize = availableImageSize(in: availableSize)
+        let fittedImageSize = ScreenshotOverlayLayout.fittedSize(
             imageSize: CGSize(width: image.width, height: image.height),
-            availableSize: contentSize(availableSize: availableSize)
+            availableSize: imageAreaSize
+        )
+        let scaledImageSize = CGSize(
+            width: fittedImageSize.width * zoom,
+            height: fittedImageSize.height * zoom
+        )
+        let viewportSize = CGSize(
+            width: min(scaledImageSize.width, imageAreaSize.width),
+            height: min(scaledImageSize.height, imageAreaSize.height)
         )
 
-        return Image(decorative: image, scale: 1)
-            .resizable()
-            .frame(width: imageSize.width, height: imageSize.height)
-            .clipShape(.rect(cornerRadius: DahliaDesign.Media.cornerRadius))
-            .overlay(alignment: .topTrailing) {
-                ScreenshotOverlayControlButton(
-                    title: L10n.copyImage,
-                    systemImage: "doc.on.doc",
-                    action: copyImageToGeneralPasteboard
-                )
-                .padding(12)
+        return Group {
+            if zoom > 1 {
+                ScrollView([.horizontal, .vertical]) {
+                    Image(decorative: image, scale: 1)
+                        .resizable()
+                        .frame(width: scaledImageSize.width, height: scaledImageSize.height)
+                }
+                .defaultScrollAnchor(.center)
+                .scrollClipDisabled(false)
+                .scrollIndicators(.hidden)
+            } else {
+                Image(decorative: image, scale: 1)
+                    .resizable()
+                    .frame(width: scaledImageSize.width, height: scaledImageSize.height)
             }
-            .contextMenu {
-                Button(L10n.copyImage, systemImage: "doc.on.doc", action: copyImageToGeneralPasteboard)
-            }
+        }
+        .frame(width: viewportSize.width, height: viewportSize.height)
+        .clipShape(.rect(cornerRadius: DahliaDesign.Media.cornerRadius))
+        .contextMenu {
+            Button(L10n.copyImage, systemImage: "doc.on.doc", action: copyImageToGeneralPasteboard)
+            Button(L10n.download, systemImage: "arrow.down.to.line", action: onDownload)
+        }
     }
 
     /// 送りボタンごと監視ビューの内側に置く。ボタンが bounds の外にあると、
@@ -186,6 +286,8 @@ struct ScreenshotOverlayView: View {
                     isEnabled: canGoPrevious,
                     action: onPrevious
                 )
+                .opacity(showsNavigationControls ? 1 : 0)
+                .allowsHitTesting(showsNavigationControls)
             }
 
             content()
@@ -197,13 +299,42 @@ struct ScreenshotOverlayView: View {
                     isEnabled: canGoNext,
                     action: onNext
                 )
+                .opacity(showsNavigationControls ? 1 : 0)
+                .allowsHitTesting(showsNavigationControls)
             }
         }
         .background {
             ScreenshotOverlayInputMonitor(
                 onDismiss: onDismiss,
                 onPrevious: onPrevious,
-                onNext: onNext
+                onNext: onNext,
+                topTrailingProtectedSize: Self.toolbarProtectedSize,
+                bottomCenterProtectedSize: Self.zoomControlsProtectedSize
+            )
+        }
+    }
+
+    private var toolbar: some View {
+        HStack(spacing: Self.toolbarSpacing) {
+            ScreenshotOverlayControlButton(
+                title: L10n.imageInformation,
+                systemImage: "info.circle",
+                action: { isShowingInformation.toggle() }
+            )
+            ScreenshotOverlayControlButton(
+                title: L10n.copyImage,
+                systemImage: "doc.on.doc",
+                action: copyImageToGeneralPasteboard
+            )
+            ScreenshotOverlayControlButton(
+                title: L10n.download,
+                systemImage: "arrow.down.to.line",
+                action: onDownload
+            )
+            ScreenshotOverlayControlButton(
+                title: L10n.close,
+                systemImage: "xmark",
+                action: onDismiss
             )
         }
     }

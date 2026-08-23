@@ -1118,7 +1118,7 @@ private extension MeetingSearchPage {
     }
 }
 
-private enum MeetingSearchError: LocalizedError {
+enum MeetingSearchError: LocalizedError {
     case indexUnavailable
     case queryTooBroad
 

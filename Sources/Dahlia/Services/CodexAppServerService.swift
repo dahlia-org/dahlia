@@ -779,15 +779,17 @@ actor CodexAppServerService {
             await finishGeneration(generationID)
             return result
         } catch {
-            let shouldInterrupt = error is CancellationError || Self.isSummaryTimeout(error)
-            let cleanup = Task {
-                await finishGeneration(
-                    generationID,
-                    interrupt: shouldInterrupt
-                )
+            if error is CancellationError || Task.isCancelled {
+                let cleanup = Task {
+                    await finishGeneration(generationID, interrupt: true)
+                }
+                await cleanup.value
+                throw CancellationError()
             }
-            await cleanup.value
-            if Task.isCancelled { throw CancellationError() }
+            await finishGeneration(
+                generationID,
+                interrupt: Self.isSummaryTimeout(error)
+            )
             throw error
         }
     }
@@ -955,9 +957,30 @@ private extension CodexAppServerService {
             bypassProviderAuthenticationPreparation: true,
             bypassConfigurationReloadAdmission: true
         )
-        let selectedModel = request.model
+        var selectedModel = request.model
             .flatMap { requestedModel in availableModels.first { $0.model == requestedModel } }
             ?? availableModels.first(where: \CodexModel.isDefault)
+        if request.requiresExactModel,
+           selectedModel?.model != request.model {
+            let refreshedModels = try await models(
+                forceRefresh: true,
+                bypassProviderAuthenticationPreparation: true,
+                bypassConfigurationReloadAdmission: true
+            )
+            selectedModel = request.model
+                .flatMap { requestedModel in refreshedModels.first { $0.model == requestedModel } }
+                ?? refreshedModels.first(where: \CodexModel.isDefault)
+        }
+        if request.requiresExactModel,
+           selectedModel?.model != request.model,
+           let requestedModel = request.model {
+            throw CodexAppServerError.requestedModelUnavailable(requestedModel)
+        }
+        if request.requiresImageInput,
+           let selectedModel,
+           !selectedModel.supportsImages {
+            throw CodexAppServerError.requestedModelUnavailable(selectedModel.model)
+        }
         let shouldOmitImages = request.inputs.contains(where: \CodexAppServerInput.isImage)
             && selectedModel?.supportsImages == false
         let generationInputs: [CodexAppServerInput]

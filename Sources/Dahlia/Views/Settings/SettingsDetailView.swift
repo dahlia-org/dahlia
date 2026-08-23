@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct SettingsDetailView: View {
-    let selection: SettingsCategory
+    @Binding var selection: SettingsCategory
     var captionViewModel: CaptionViewModel
     var sidebarViewModel: SidebarViewModel
     let appDatabase: AppDatabaseManager?
@@ -60,7 +60,7 @@ struct SettingsDetailView: View {
         case .liveSubtitles:
             LiveSubtitleSettingsView()
         case .screenshots:
-            ScreenshotSettingsView()
+            ScreenshotSettingsView(onOpenLanguageSettings: { selection = .general })
         case .calendar:
             CalendarSettingsView()
         case .cloudStorage:

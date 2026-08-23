@@ -7,11 +7,11 @@ struct MainSearchPanel: View {
     let appearanceForProject: (UUID) -> ProjectAppearance
     let onDismiss: () -> Void
     let onOpenMeeting: (UUID) -> Void
+    let onOpenScreenshot: (ScreenshotSearchResult) -> Void
     let onOpenProject: (UUID) -> Void
 
     @FocusState private var isSearchFocused: Bool
     @State private var suggestionMode: MainSearchSuggestions.Mode = .overview
-    @State private var hoveredFilterMode: MainSearchSuggestions.Mode?
     @State private var isClearHovered = false
     @State private var isCloseHovered = false
 
@@ -45,9 +45,24 @@ struct MainSearchPanel: View {
                             .help(L10n.clearAllSearchConditions)
                     }
                     HStack(spacing: 2) {
-                        filterButton(L10n.projectFilter, systemImage: "folder", mode: .projects)
-                        filterButton(L10n.tagFilter, systemImage: "tag", mode: .tags)
-                        filterButton(L10n.periodFilter, systemImage: "calendar", mode: .period)
+                        MainSearchFilterButton(
+                            title: L10n.projectFilter,
+                            systemImage: "folder",
+                            mode: .projects,
+                            selection: $suggestionMode
+                        )
+                        MainSearchFilterButton(
+                            title: L10n.tagFilter,
+                            systemImage: "tag",
+                            mode: .tags,
+                            selection: $suggestionMode
+                        )
+                        MainSearchFilterButton(
+                            title: L10n.periodFilter,
+                            systemImage: "calendar",
+                            mode: .period,
+                            selection: $suggestionMode
+                        )
                     }
                 }
                 .padding(.leading, 12)
@@ -149,9 +164,6 @@ struct MainSearchPanel: View {
         .onChange(of: sidebarViewModel.areSearchTagsLoaded) {
             model.catalogDidChange(using: sidebarViewModel)
         }
-        .onChange(of: sidebarViewModel.searchIndexRevision) {
-            model.searchIndexDidChange(using: sidebarViewModel)
-        }
         .onChange(of: sidebarViewModel.isVectorSearchEnabled) {
             model.vectorSearchAvailabilityDidChange(using: sidebarViewModel)
         }
@@ -206,22 +218,38 @@ struct MainSearchPanel: View {
                 }
             }
 
+            if !model.presentedScreenshots.isEmpty {
+                sectionHeader(L10n.screenshotSearchResults)
+                    .padding(.top, model.meetings.isEmpty ? 0 : 12)
+                ScreenshotSearchResultsGrid(
+                    results: model.presentedScreenshots,
+                    selectedResultID: model.selectedResultID,
+                    hasMore: model.hasMoreScreenshots,
+                    isLoading: model.isLoadingScreenshots,
+                    imageDataProvider: { id in
+                        await model.screenshotImageData(id: id, using: sidebarViewModel)
+                    },
+                    onOpen: onOpenScreenshot,
+                    onLoadMore: { model.loadMoreScreenshots(using: sidebarViewModel) }
+                )
+            }
+
             if model.isProjectCatalogLoading {
                 sectionHeader(model.isRecent ? L10n.recentProjects : L10n.projects)
-                    .padding(.top, model.meetings.isEmpty ? 0 : 12)
+                    .padding(.top, model.meetings.isEmpty && model.presentedScreenshots.isEmpty ? 0 : 12)
                 ProgressView(L10n.loadingProjects)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 20)
             } else if model.projectCatalogLoadFailed {
                 sectionHeader(model.isRecent ? L10n.recentProjects : L10n.projects)
-                    .padding(.top, model.meetings.isEmpty ? 0 : 12)
+                    .padding(.top, model.meetings.isEmpty && model.presentedScreenshots.isEmpty ? 0 : 12)
                 Label(L10n.searchUnavailable, systemImage: "exclamationmark.triangle")
                     .foregroundStyle(DahliaDesign.secondaryTextColor)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 20)
             } else if !model.projects.isEmpty {
                 sectionHeader(model.isRecent ? L10n.recentProjects : L10n.projects)
-                    .padding(.top, model.meetings.isEmpty ? 0 : 12)
+                    .padding(.top, model.meetings.isEmpty && model.presentedScreenshots.isEmpty ? 0 : 12)
                 ForEach(model.projects) { project in
                     MainSearchResultRow(
                         title: project.projectName,
@@ -261,37 +289,6 @@ struct MainSearchPanel: View {
         .id(MainSearchResultID.meeting(meeting.id))
     }
 
-    private func filterButton(
-        _ title: String,
-        systemImage: String,
-        mode: MainSearchSuggestions.Mode
-    ) -> some View {
-        Button(title, systemImage: systemImage) {
-            suggestionMode = suggestionMode == mode ? .overview : mode
-        }
-        .labelStyle(.iconOnly)
-        .dahliaFixedSymbol()
-        .buttonStyle(.plain)
-        .foregroundStyle(
-            suggestionMode == mode ? DahliaDesign.primaryTextColor : DahliaDesign.secondaryTextColor
-        )
-        .frame(width: 28, height: 28)
-        .contentShape(.rect)
-        .background(
-            suggestionMode == mode || hoveredFilterMode == mode ? DahliaDesign.contentHighlightColor : .clear,
-            in: .rect(cornerRadius: DahliaDesign.Highlight.regularCornerRadius)
-        )
-        .onHover { isHovered in
-            if isHovered {
-                hoveredFilterMode = mode
-            } else if hoveredFilterMode == mode {
-                hoveredFilterMode = nil
-            }
-        }
-        .dahliaHoverHelp(label: title)
-        .accessibilityAddTraits(suggestionMode == mode ? .isSelected : [])
-    }
-
     private func sectionHeader(_ title: String) -> some View {
         Text(title)
             .font(.body)
@@ -307,6 +304,10 @@ struct MainSearchPanel: View {
         }
         switch model.selectedResultID {
         case let .meeting(id): onOpenMeeting(id)
+        case let .screenshot(id):
+            if let screenshot = model.screenshots.first(where: { $0.id == id }) {
+                onOpenScreenshot(screenshot)
+            }
         case let .project(id): onOpenProject(id)
         case nil: break
         }

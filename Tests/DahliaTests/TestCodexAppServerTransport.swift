@@ -25,6 +25,8 @@ actor TestCodexAppServerTransport: CodexAppServerTransport {
     }
 
     private let mode: Mode
+    private let modelName: String
+    private let generationResponse: String
     private let failsApprovalResponses: Bool
     private let blocksApprovalResponses: Bool
     private let failsTurnStartWrites: Bool
@@ -45,11 +47,15 @@ actor TestCodexAppServerTransport: CodexAppServerTransport {
 
     init(
         mode: Mode,
+        modelName: String = "default-model",
+        generationResponse: String = #"{"status":"ok"}"#,
         failsApprovalResponses: Bool = false,
         blocksApprovalResponses: Bool = false,
         failsTurnStartWrites: Bool = false
     ) {
         self.mode = mode
+        self.modelName = modelName
+        self.generationResponse = generationResponse
         self.failsApprovalResponses = failsApprovalResponses
         self.blocksApprovalResponses = blocksApprovalResponses
         self.failsTurnStartWrites = failsTurnStartWrites
@@ -232,7 +238,7 @@ actor TestCodexAppServerTransport: CodexAppServerTransport {
             "data": .array([
                 .object([
                     "id": .string("default"),
-                    "model": .string("default-model"),
+                    "model": .string(modelName),
                     "displayName": .string("Default"),
                     "description": .string("Default model"),
                     "hidden": .bool(false),
@@ -295,7 +301,7 @@ actor TestCodexAppServerTransport: CodexAppServerTransport {
                 "item": .object([
                     "id": .string("item-1"),
                     "type": .string("agentMessage"),
-                    "text": .string(#"{"status":"ok"}"#),
+                    "text": .string(generationResponse),
                 ]),
             ]),
         ]))

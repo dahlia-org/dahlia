@@ -12,6 +12,7 @@ final class MainSearchModel {
     var searchMode: SearchMode = .advanced
     private(set) var tokens: [MeetingSearchToken] = []
     private(set) var meetings: [MeetingSidebarItem] = []
+    private(set) var screenshots: [ScreenshotSearchResult] = []
     private(set) var projects: [ProjectOverviewItem] = []
     private(set) var isLoading = false
     private(set) var errorMessage: String?
@@ -19,13 +20,19 @@ final class MainSearchModel {
     private(set) var isProjectCatalogLoading = false
     private(set) var projectCatalogLoadFailed = false
     private(set) var hasMoreMeetings = false
+    private(set) var hasMoreScreenshots = false
+    private(set) var isLoadingScreenshots = false
+    private var hasCompletedInitialMeetingSearch = false
     private(set) var isRecent = true
     var selectedResultID: MainSearchResultID?
 
     @ObservationIgnored private var meetingCursor: MeetingSearchCursor?
+    @ObservationIgnored private var screenshotCursor: ScreenshotSearchCursor?
     @ObservationIgnored private var searchTask: Task<Void, Never>?
     @ObservationIgnored private var projectSearchTask: Task<Void, Never>?
+    @ObservationIgnored private var screenshotSearchTask: Task<Void, Never>?
     @ObservationIgnored private var generation = 0
+    @ObservationIgnored private var screenshotGeneration = 0
     @ObservationIgnored private var projectGeneration = 0
     @ObservationIgnored private var activeMeetingCriteria = MeetingSearchCriteria()
     @ObservationIgnored private(set) var activeQueryEmbedding: [Float]?
@@ -37,11 +44,17 @@ final class MainSearchModel {
     }
 
     var resultIDs: [MainSearchResultID] {
-        meetings.map { .meeting($0.id) } + projects.map { .project($0.id) }
+        meetings.map { .meeting($0.id) }
+            + presentedScreenshots.map { .screenshot($0.id) }
+            + projects.map { .project($0.id) }
+    }
+
+    var presentedScreenshots: [ScreenshotSearchResult] {
+        hasCompletedInitialMeetingSearch ? screenshots : []
     }
 
     var hasResults: Bool {
-        !meetings.isEmpty || !projects.isEmpty
+        !meetings.isEmpty || !presentedScreenshots.isEmpty || !projects.isEmpty
     }
 
     func present(using sidebarViewModel: SidebarViewModel) {
@@ -119,14 +132,18 @@ final class MainSearchModel {
         }
     }
 
-    func searchIndexDidChange(using sidebarViewModel: SidebarViewModel) {
-        guard isPresented else { return }
-        startSearch(using: sidebarViewModel, delay: nil, appending: false)
-    }
-
     func loadMore(using sidebarViewModel: SidebarViewModel) {
         guard hasMoreMeetings, !isLoading else { return }
         startSearch(using: sidebarViewModel, delay: nil, appending: true)
+    }
+
+    func loadMoreScreenshots(using sidebarViewModel: SidebarViewModel) {
+        guard hasMoreScreenshots, !isLoadingScreenshots else { return }
+        startScreenshotSearch(
+            criteria: activeMeetingCriteria,
+            using: sidebarViewModel,
+            appending: true
+        )
     }
 
     func moveSelection(by offset: Int) {
@@ -155,11 +172,14 @@ final class MainSearchModel {
     private func resetSearch() {
         searchTask?.cancel()
         projectSearchTask?.cancel()
+        screenshotSearchTask?.cancel()
         generation &+= 1
+        screenshotGeneration &+= 1
         projectGeneration &+= 1
         inputText = ""
         tokens = []
         meetings = []
+        screenshots = []
         projects = []
         isLoading = false
         errorMessage = nil
@@ -167,7 +187,11 @@ final class MainSearchModel {
         isProjectCatalogLoading = false
         projectCatalogLoadFailed = false
         hasMoreMeetings = false
+        hasMoreScreenshots = false
+        isLoadingScreenshots = false
+        hasCompletedInitialMeetingSearch = false
         meetingCursor = nil
+        screenshotCursor = nil
         activeMeetingCriteria = MeetingSearchCriteria()
         activeQueryEmbedding = nil
         selectedResultID = nil
@@ -195,6 +219,12 @@ final class MainSearchModel {
         preparePresentation(criteria: criteria, appending: appending)
         if !appending {
             startProjectSearch(criteria: criteria, using: sidebarViewModel)
+            startScreenshotSearch(
+                criteria: criteria,
+                using: sidebarViewModel,
+                appending: false,
+                delay: delay
+            )
         }
 
         guard let vaultID, let dbQueue else {
@@ -308,6 +338,7 @@ final class MainSearchModel {
         meetingCursor = page.nextCursor
         hasMoreMeetings = page.hasMore
         isLoading = false
+        if !appending { hasCompletedInitialMeetingSearch = true }
         clearInvalidSelection()
     }
 
@@ -321,11 +352,73 @@ final class MainSearchModel {
         isLoading = true
         guard !appending else { return }
         meetings = []
+        screenshots = []
         projects = []
         meetingCursor = nil
+        screenshotCursor = nil
         activeQueryEmbedding = nil
         hasMoreMeetings = false
+        hasMoreScreenshots = false
+        hasCompletedInitialMeetingSearch = false
         selectedResultID = nil
+    }
+
+    private func startScreenshotSearch(
+        criteria: MeetingSearchCriteria,
+        using sidebarViewModel: SidebarViewModel,
+        appending: Bool,
+        delay: Duration? = nil
+    ) {
+        screenshotSearchTask?.cancel()
+        screenshotGeneration &+= 1
+        let requestGeneration = screenshotGeneration
+        guard searchMode != .simple, !criteria.text.isEmpty,
+              let vaultID = sidebarViewModel.currentVault?.id,
+              let dbQueue = sidebarViewModel.searchDBQueue else {
+            if !appending { screenshots = [] }
+            hasMoreScreenshots = false
+            isLoadingScreenshots = false
+            return
+        }
+        let cursor = appending ? screenshotCursor : nil
+        isLoadingScreenshots = true
+        screenshotSearchTask = Task { [weak self] in
+            do {
+                if let delay {
+                    try await Task.sleep(for: delay)
+                }
+                let page = try await MeetingRepository.searchScreenshotPage(
+                    vaultID: vaultID,
+                    criteria: criteria,
+                    after: cursor,
+                    limit: MainSearchDesign.screenshotPageSize,
+                    dbQueue: dbQueue
+                )
+                try Task.checkCancellation()
+                guard let self,
+                      self.screenshotGeneration == requestGeneration,
+                      sidebarViewModel.currentVault?.id == vaultID else { return }
+                if appending, !page.replacesResults {
+                    self.screenshots.append(contentsOf: page.items)
+                } else {
+                    self.screenshots = page.items
+                }
+                self.screenshotCursor = page.nextCursor
+                self.hasMoreScreenshots = page.nextCursor != nil
+                self.isLoadingScreenshots = false
+                self.clearInvalidSelection()
+            } catch is CancellationError {
+            } catch {
+                guard let self, self.screenshotGeneration == requestGeneration else { return }
+                self.isLoadingScreenshots = false
+            }
+        }
+    }
+
+    func screenshotImageData(id: UUID, using sidebarViewModel: SidebarViewModel) async -> Data? {
+        guard let vaultID = sidebarViewModel.currentVault?.id,
+              let dbQueue = sidebarViewModel.searchDBQueue else { return nil }
+        return try? await MeetingRepository.screenshotImageData(id: id, vaultID: vaultID, dbQueue: dbQueue)
     }
 
     private func startProjectSearch(

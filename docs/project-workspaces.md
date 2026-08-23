@@ -119,6 +119,7 @@ Read tools:
 - `query_projects`
 - `get_project`
 - `query_meetings`
+- `query_screenshots`
 - `get_meeting`
 - `get_meeting_transcript`
 - `get_meeting_screenshots`
@@ -128,6 +129,8 @@ strings. For compatibility with clients that populate every property, the server
 optional string filters as unspecified; nonblank malformed UUIDs, dates, and cursors remain errors.
 Text queries use the FTS index by default. Set `simple: true` to use literal substring matching (`LIKE`) against
 Meeting and Project metadata instead. Summary body text is available only through the default FTS search.
+`query_screenshots` searches detected text and generated image descriptions, and returns screenshots as independent
+results with their owning Meeting IDs. Queries must contain at least two non-whitespace characters.
 
 `get_meeting_screenshots` uses `image_size: "preview"` by default. Set `image_size` to `"original"` only when an
 external agent needs the original resolution, such as when preparing a document that must preserve screenshot detail.
