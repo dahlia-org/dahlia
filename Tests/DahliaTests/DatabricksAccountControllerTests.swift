@@ -194,7 +194,7 @@ import Foundation
             #expect(controller.profiles.isEmpty)
             #expect(controller.errorMessage == nil)
 
-            _ = await controller.signIn(workspaceURL: "https://dbc.example.com")
+            _ = await controller.signIn(workspaceURL: "https://dbc.example.com", profileName: "DEFAULT")
             #expect(controller.isCLIAvailable == false)
             #expect(controller.errorMessage == nil)
         }
@@ -219,7 +219,7 @@ import Foundation
         }
 
         @Test
-        func workspaceSignInCreatesANonConflictingProfileAndConfiguresCodex() async {
+        func workspaceSignInUsesTheRequestedProfileNameAndConfiguresCodex() async {
             let rootURL = FileManager.default.temporaryDirectory
                 .appending(path: "dahlia-databricks-new-workspace-\(UUID().uuidString)", directoryHint: .isDirectory)
             defer { try? FileManager.default.removeItem(at: rootURL) }
@@ -234,7 +234,7 @@ import Foundation
                 {"profiles":[
                     {"name":"Dahlia","host":"https://pat.example.com","auth_type":"pat"},
                     {"name":"Dahlia 2","host":"https://other.example.com","auth_type":"databricks-cli"},
-                    {"name":"Dahlia 3","host":"https://dbc.example.com","auth_type":"databricks-cli"}
+                    {"name":"DEFAULT","host":"https://dbc.example.com","auth_type":"databricks-cli"}
                 ]}
                 """
             )
@@ -249,16 +249,19 @@ import Foundation
                 configurationStore: configurationStore
             )
 
-            let profileName = await controller.signIn(workspaceURL: "https://dbc.example.com/")
+            let profileName = await controller.signIn(
+                workspaceURL: "https://dbc.example.com/",
+                profileName: "DEFAULT"
+            )
 
-            #expect(profileName == "Dahlia 3")
+            #expect(profileName == "DEFAULT")
             #expect(controller.isConfigured)
-            #expect(configurationStore.configuredDatabricksProfile == "Dahlia 3")
+            #expect(configurationStore.configuredDatabricksProfile == "DEFAULT")
             #expect(await responder.commands == [
                 ["auth", "profiles", "--skip-validate", "--output", "json"],
-                ["auth", "login", "--host", "https://dbc.example.com", "--profile", "Dahlia 3"],
+                ["auth", "login", "--host", "https://dbc.example.com", "--profile", "DEFAULT"],
                 ["auth", "profiles", "--skip-validate", "--output", "json"],
-                ["auth", "token", "--profile", "Dahlia 3", "--output", "json"],
+                ["auth", "token", "--profile", "DEFAULT", "--output", "json"],
             ])
             await service.shutdown()
         }
@@ -284,12 +287,43 @@ import Foundation
                 configurationStore: TestCodexAccountConfigurationStore()
             )
 
-            let profileName = await controller.signIn(workspaceURL: "https://dbc.example.com")
+            let profileName = await controller.signIn(
+                workspaceURL: "https://dbc.example.com",
+                profileName: "WORK"
+            )
 
             #expect(profileName == "WORK")
             #expect(await responder.commands.contains(
                 ["auth", "login", "--host", "https://dbc.example.com", "--profile", "WORK"]
             ))
+            await service.shutdown()
+        }
+
+        @Test
+        func workspaceSignInDoesNotOverwriteAnExistingProfileForAnotherHost() async {
+            let profiles = """
+            {"profiles":[
+                {"name":"DEFAULT","host":"https://other.example.com","auth_type":"databricks-cli"}
+            ]}
+            """
+            let responder = WorkspaceSignInResponder(initialProfiles: profiles, signedInProfiles: profiles)
+            let service = CodexAppServerService { TestCodexAppServerTransport(mode: .models) }
+            let controller = DatabricksAccountController(
+                client: DatabricksCLIClient { await responder.run($0) },
+                service: service,
+                configurationStore: TestCodexAccountConfigurationStore()
+            )
+
+            let profileName = await controller.signIn(
+                workspaceURL: "https://dbc.example.com",
+                profileName: "DEFAULT"
+            )
+
+            #expect(profileName == nil)
+            #expect(controller.errorMessage == L10n.databricksProfileAlreadyExists("DEFAULT"))
+            #expect(await responder.commands == [
+                ["auth", "profiles", "--skip-validate", "--output", "json"],
+            ])
             await service.shutdown()
         }
 
@@ -326,7 +360,7 @@ import Foundation
                 configurationStore: configurationStore
             )
 
-            _ = await controller.signIn(workspaceURL: "https://dbc.example.com")
+            _ = await controller.signIn(workspaceURL: "https://dbc.example.com", profileName: "Dahlia")
 
             #expect(FileManager.default.contents(atPath: configURL.path) == originalConfiguration)
             #expect(configurationStore.configuredDatabricksProfile == "OLD")
@@ -390,7 +424,7 @@ import Foundation
                 configurationStore: configurationStore
             )
 
-            _ = await controller.signIn(workspaceURL: "https://dbc.example.com")
+            _ = await controller.signIn(workspaceURL: "https://dbc.example.com", profileName: "DEFAULT")
 
             #expect(configurationStore.selectedProviderRawValue == AIAccountProvider.databricks.rawValue)
             #expect(configurationStore.configuredProviderRawValue == AIAccountProvider.chatGPTSubscription.rawValue)
@@ -474,7 +508,9 @@ import Foundation
                 configurationStore: configurationStore
             )
 
-            let signIn = Task { await controller.signIn(workspaceURL: "https://new.example.com") }
+            let signIn = Task {
+                await controller.signIn(workspaceURL: "https://new.example.com", profileName: "Dahlia")
+            }
             await validationTransport.waitUntilSent("model/list")
 
             #expect(configurationStore.configuredProviderRawValue.isEmpty)

@@ -5,6 +5,7 @@ struct DatabricksProfileCreationView: View {
     let onCreated: (String) -> Void
 
     @Environment(\.dismiss) private var dismiss
+    @State private var profileName = "DEFAULT"
     @State private var workspaceURL = ""
     @State private var signInTask: Task<Void, Never>?
 
@@ -13,6 +14,18 @@ struct DatabricksProfileCreationView: View {
             DahliaSheetHeader(title: L10n.createNewDatabricksProfile)
 
             Form {
+                Section {
+                    TextField(L10n.databricksProfileName, text: $profileName)
+                        .labelsHidden()
+                        .textFieldStyle(.roundedBorder)
+                        .accessibilityLabel(L10n.databricksProfileName)
+                        .disabled(controller.isBusy || controller.isCLIAvailable == false)
+                } header: {
+                    Text(L10n.databricksProfileName)
+                } footer: {
+                    Text(L10n.databricksProfileNameDescription)
+                }
+
                 Section {
                     TextField(
                         L10n.databricksWorkspaceURL,
@@ -73,7 +86,12 @@ struct DatabricksProfileCreationView: View {
                 Button(L10n.signInWithDatabricks, action: signIn)
                     .buttonStyle(.dahlia(.primary))
                     .keyboardShortcut(.defaultAction)
-                    .disabled(controller.isBusy || controller.isCLIAvailable == false || workspaceURL.nilIfBlank == nil)
+                    .disabled(
+                        controller.isBusy
+                            || controller.isCLIAvailable == false
+                            || profileName.nilIfBlank == nil
+                            || workspaceURL.nilIfBlank == nil
+                    )
             }
         }
         .frame(minWidth: 500, minHeight: 300)
@@ -88,17 +106,20 @@ struct DatabricksProfileCreationView: View {
     private func signIn() {
         guard !controller.isBusy,
               controller.isCLIAvailable != false,
+              profileName.nilIfBlank != nil,
               workspaceURL.nilIfBlank != nil
         else {
             return
         }
         signInTask = Task {
-            guard let profileName = await controller.signIn(workspaceURL: workspaceURL),
-                  !Task.isCancelled
+            guard let createdProfileName = await controller.signIn(
+                workspaceURL: workspaceURL,
+                profileName: profileName
+            ), !Task.isCancelled
             else {
                 return
             }
-            onCreated(profileName)
+            onCreated(createdProfileName)
             dismiss()
         }
     }

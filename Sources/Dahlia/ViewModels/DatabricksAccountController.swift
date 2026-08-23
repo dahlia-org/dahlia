@@ -57,8 +57,12 @@ final class DatabricksAccountController {
         return nil
     }
 
-    func signIn(workspaceURL: String) async -> String? {
+    func signIn(workspaceURL: String, profileName: String) async -> String? {
         guard !isBusy else { return nil }
+        guard let profileName = profileName.nilIfBlank else {
+            errorMessage = L10n.databricksProfileRequired
+            return nil
+        }
         isSigningIn = true
         isConfigured = false
         configuredProfileName = nil
@@ -74,7 +78,14 @@ final class DatabricksAccountController {
             try Task.checkCancellation()
             allProfiles = try await client.allProfiles()
             isCLIAvailable = true
-            let profileName = matchingOAuthProfileName(for: workspaceURL) ?? nextDahliaProfileName()
+            if let existingProfile = allProfiles.first(where: { $0.name == profileName }) {
+                let existingWorkspaceURL = existingProfile.host.flatMap {
+                    try? configurationManager.normalizedDatabricksWorkspaceURL($0)
+                }
+                guard existingProfile.usesOAuthU2M, existingWorkspaceURL == workspaceURL else {
+                    throw DatabricksCLIError.profileAlreadyExists(name: profileName)
+                }
+            }
             attemptedProfileName = profileName
             await service.markProviderAuthenticationReloadRequired()
             try await client.signIn(workspaceURL: workspaceURL, profileName: profileName)
@@ -208,28 +219,6 @@ final class DatabricksAccountController {
         configurationStore.selectCodexAccountProvider(.databricks)
         isConfigured = true
         configuredProfileName = profile.name
-    }
-
-    private func matchingOAuthProfileName(for workspaceURL: URL) -> String? {
-        allProfiles.first { profile in
-            guard profile.usesOAuthU2M,
-                  let profileURL = try? configurationManager.normalizedDatabricksWorkspaceURL(profile.host)
-            else {
-                return false
-            }
-            return profileURL == workspaceURL
-        }?.name
-    }
-
-    private func nextDahliaProfileName() -> String {
-        let existingNames = Set(allProfiles.map(\.name))
-        if !existingNames.contains("Dahlia") { return "Dahlia" }
-
-        var suffix = 2
-        while existingNames.contains("Dahlia \(suffix)") {
-            suffix += 1
-        }
-        return "Dahlia \(suffix)"
     }
 
     private func updateProfiles(_ profiles: [DatabricksCLIClient.Profile]) {

@@ -1025,6 +1025,9 @@
 "Cancel Sign-In" = "サインインをキャンセル";
 "Sign Out" = "サインアウト";
 "Databricks CLI Profile" = "Databricks CLI プロファイル";
+"Databricks CLI Profile Name" = "Databricks CLI プロファイル名";
+"Enter the name used to save this sign-in in Databricks CLI." = "Databricks CLI に保存するサインイン名を入力します。";
+"A Databricks CLI profile named %@ already exists for another workspace or authentication method." = "「%@」という Databricks CLI プロファイルは、別のワークスペースまたは認証方式ですでに使われています。";
 "Codex obtains the workspace and credentials from this Databricks CLI profile." = "Codex は、この Databricks CLI プロファイルからワークスペースと認証情報を取得します。";
 "Refresh Profiles" = "プロファイルを再読み込み";
 "No Databricks workspaces are connected yet." = "接続済みの Databricks ワークスペースはまだありません。";

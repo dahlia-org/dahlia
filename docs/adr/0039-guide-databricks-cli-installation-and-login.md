@@ -12,8 +12,8 @@ Databricks provider は user `HOME` にある Databricks CLI の OAuth profile �
 
 - Databricks CLI は同梱・自動ダウンロードせず、公式手順、Databricks License、Privacy Notice を利用前に表示する。
 - CLI 未検出時は固定された Homebrew command を Terminal.app の新規 session で実行する。Apple Events が拒否された場合は command を clipboard にコピーして Terminal.app を開く。
-- 設定画面の「プロファイルを新規作成」から開く dialog で workspace root の HTTPS URL を受け取り、`databricks auth login --host <url> --profile <name>` を引数配列で実行する。
-- 同じ host の OAuth profile は再利用する。新規作成時は、認証方式を問わず既存名を上書きしない `Dahlia`, `Dahlia 2`, ... を選ぶ。
+- 設定画面の「プロファイルを新規作成」から開く dialog で profile 名（初期値 `DEFAULT`）と workspace root の HTTPS URL を受け取り、`databricks auth login --host <url> --profile <name>` を引数配列で実行する。
+- 指定した名前が同じ host の OAuth profile なら再利用する。別の host または認証方式の既存 profile は上書きしない。
 - token、Codex config、app-server reload、model 一覧まで検証できた場合だけ設定を有効化する。失敗時は以前の有効な Codex config を復元し、dialog 内で修正できる状態を保つ。dialog を閉じた場合は以前の provider 選択も復元する。
 - 既存 OAuth profile の選択 UI は互換性のため残す。
 

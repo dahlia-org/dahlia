@@ -1025,6 +1025,9 @@
 "Cancel Sign-In" = "Cancel Sign-In";
 "Sign Out" = "Sign Out";
 "Databricks CLI Profile" = "Databricks CLI Profile";
+"Databricks CLI Profile Name" = "Databricks CLI Profile Name";
+"Enter the name used to save this sign-in in Databricks CLI." = "Enter the name used to save this sign-in in Databricks CLI.";
+"A Databricks CLI profile named %@ already exists for another workspace or authentication method." = "A Databricks CLI profile named %@ already exists for another workspace or authentication method.";
 "Codex obtains the workspace and credentials from this Databricks CLI profile." = "Codex obtains the workspace and credentials from this Databricks CLI profile.";
 "Refresh Profiles" = "Refresh Profiles";
 "No Databricks workspaces are connected yet." = "No Databricks workspaces are connected yet.";

@@ -2286,6 +2286,15 @@ enum L10n {
     static var cancelSignIn: String { String(localized: "Cancel Sign-In", bundle: bundle) }
     static var signOut: String { String(localized: "Sign Out", bundle: bundle) }
     static var databricksProfile: String { String(localized: "Databricks CLI Profile", bundle: bundle) }
+    static var databricksProfileName: String { String(localized: "Databricks CLI Profile Name", bundle: bundle) }
+    static var databricksProfileNameDescription: String { String(
+        localized: "Enter the name used to save this sign-in in Databricks CLI.",
+        bundle: bundle
+    ) }
+    static func databricksProfileAlreadyExists(_ name: String) -> String { String(
+        localized: "A Databricks CLI profile named \(name) already exists for another workspace or authentication method.",
+        bundle: bundle
+    ) }
     static var databricksProfileDescription: String { String(
         localized: "Codex obtains the workspace and credentials from this Databricks CLI profile.",
         bundle: bundle
