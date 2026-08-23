@@ -789,7 +789,7 @@ private extension SearchIndexer {
                 sql: """
                 UPDATE search_index_jobs
                 SET status = 'pending',
-                    attempts = CASE WHEN status = 'processing' THEN 0 ELSE attempts END,
+                    attempts = CASE WHEN status = 'processing' THEN MAX(0, attempts - 1) ELSE attempts END,
                     availableAt = MAX(availableAt, ?),
                     claimedAt = NULL, leaseExpiresAt = NULL, lastErrorCode = ?, updatedAt = ?
                 WHERE indexKind = 'fts' AND targetKind = 'screenshotAnalysis'

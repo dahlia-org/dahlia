@@ -46,7 +46,7 @@ enum ScreenshotOCRSearchMigration {
                 INSERT INTO search_index_jobs(
                     indexKind, targetKind, targetKey, priority, availableAt, updatedAt
                 )
-                SELECT 'fts', 'screenshotAnalysis', id, 20, unixepoch('subsec'), unixepoch('subsec')
+                SELECT 'fts', 'screenshotAnalysis', id, -10, unixepoch('subsec'), unixepoch('subsec')
                 FROM screenshots
                 """
             )
@@ -220,9 +220,9 @@ enum ScreenshotOCRSearchMigration {
     private static let screenshotTriggerSQL = """
     CREATE TRIGGER search_queue_screenshots_insert AFTER INSERT ON screenshots BEGIN
         INSERT INTO search_index_jobs(indexKind, targetKind, targetKey, priority, availableAt, updatedAt)
-        VALUES('fts', 'screenshotAnalysis', new.id, 20, unixepoch('subsec'), unixepoch('subsec'))
+        VALUES('fts', 'screenshotAnalysis', new.id, -10, unixepoch('subsec'), unixepoch('subsec'))
         ON CONFLICT(indexKind, targetKind, targetKey) DO UPDATE SET
-            generation = generation + 1, priority = 20, status = 'pending', attempts = 0,
+            generation = generation + 1, priority = -10, status = 'pending', attempts = 0,
             availableAt = excluded.availableAt, claimedAt = NULL, leaseExpiresAt = NULL,
             lastErrorCode = NULL, updatedAt = excluded.updatedAt;
     END;

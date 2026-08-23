@@ -1608,7 +1608,7 @@ import Foundation
         }
 
         @Test
-        func generationCancellationInterruptsAndUnsubscribesWithoutKillingProcess() async {
+        func generationCancellationAwaitsInterruptAndUnsubscribeWithoutKillingProcess() async {
             let transport = TestCodexAppServerTransport(mode: .generationBlocks)
             let service = makeTestCodexAppServerService(transportFactory: { transport })
             let generation = Task {
@@ -1626,7 +1626,6 @@ import Foundation
             await #expect(throws: CancellationError.self) {
                 _ = try await generation.value
             }
-            await transport.waitUntilSent("thread/unsubscribe")
             let methods = await methodsSent(to: transport)
             #expect(methods.count(where: { $0 == "turn/interrupt" }) == 1)
             #expect(methods.contains("thread/unsubscribe"))

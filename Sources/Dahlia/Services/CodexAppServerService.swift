@@ -780,9 +780,10 @@ actor CodexAppServerService {
             return result
         } catch {
             if error is CancellationError || Task.isCancelled {
-                Task {
+                let cleanup = Task {
                     await finishGeneration(generationID, interrupt: true)
                 }
+                await cleanup.value
                 throw CancellationError()
             }
             await finishGeneration(

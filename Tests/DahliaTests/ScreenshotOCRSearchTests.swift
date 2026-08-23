@@ -30,6 +30,20 @@ import GRDB
                 try screenshot.insert(db)
             }
 
+            let coreSearchHasPriority = try await database.dbQueue.read { db in
+                try Bool.fetchOne(
+                    db,
+                    sql: """
+                    SELECT
+                        (SELECT priority FROM search_index_jobs WHERE targetKind = 'meeting' AND targetKey = ?)
+                        >
+                        (SELECT priority FROM search_index_jobs WHERE targetKind = 'screenshotAnalysis' AND targetKey = ?)
+                    """,
+                    arguments: [meeting.id, screenshot.id]
+                ) ?? false
+            }
+            #expect(coreSearchHasPriority)
+
             await database.searchIndexer.drain()
 
             let storedText = try await database.dbQueue.read { db in
@@ -301,6 +315,9 @@ import GRDB
                 for screenshot in screenshots {
                     try screenshot.insert(db)
                 }
+                try db.execute(
+                    sql: "UPDATE search_index_jobs SET attempts = 3 WHERE targetKind = 'screenshotAnalysis'"
+                )
             }
 
             await database.searchIndexer.drain()
@@ -312,8 +329,8 @@ import GRDB
                     ) ?? 0,
                     Int.fetchOne(
                         db,
-                        sql: "SELECT MAX(attempts) FROM search_index_jobs WHERE targetKind = 'screenshotAnalysis'"
-                    ) ?? -1,
+                        sql: "SELECT COUNT(*) FROM search_index_jobs WHERE targetKind = 'screenshotAnalysis' AND attempts = 3"
+                    ) ?? 0,
                     Date.fetchOne(
                         db,
                         sql: "SELECT MIN(availableAt) FROM search_index_jobs WHERE targetKind = 'screenshotAnalysis'"
@@ -321,7 +338,7 @@ import GRDB
                 )
             }
             #expect(deferred.0 == 5)
-            #expect(deferred.1 == 0)
+            #expect(deferred.1 == 5)
             #expect((deferred.2 ?? .distantPast) > .now)
             #expect(await analyzer.callCount == 1)
 
