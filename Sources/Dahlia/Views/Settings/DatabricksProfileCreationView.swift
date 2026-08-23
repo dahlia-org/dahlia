@@ -19,6 +19,9 @@ struct DatabricksProfileCreationView: View {
                         text: $workspaceURL,
                         prompt: Text(L10n.databricksWorkspaceURLPlaceholder)
                     )
+                    .labelsHidden()
+                    .textFieldStyle(.roundedBorder)
+                    .accessibilityLabel(L10n.databricksWorkspaceURL)
                     .textContentType(.URL)
                     .disabled(controller.isBusy || controller.isCLIAvailable == false)
                     .onSubmit(signIn)
@@ -65,9 +68,10 @@ struct DatabricksProfileCreationView: View {
                     signInTask?.cancel()
                     dismiss()
                 }
+                .buttonStyle(.dahlia())
                 .keyboardShortcut(.cancelAction)
                 Button(L10n.signInWithDatabricks, action: signIn)
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.dahlia(.primary))
                     .keyboardShortcut(.defaultAction)
                     .disabled(controller.isBusy || controller.isCLIAvailable == false || workspaceURL.nilIfBlank == nil)
             }
