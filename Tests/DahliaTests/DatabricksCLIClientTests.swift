@@ -1,4 +1,5 @@
 import Foundation
+import os
 @testable import Dahlia
 
 #if canImport(Testing)
@@ -32,6 +33,50 @@ import Foundation
                     "--skip-validate",
                     "--output",
                     "json",
+                ],
+            ])
+        }
+
+        @Test
+        func allProfilesIncludesNamesReservedByOtherAuthenticationTypes() async throws {
+            let response = Data(
+                """
+                {"profiles":[
+                    {"name":"Dahlia","host":"https://pat.example.com","auth_type":"pat"},
+                    {"name":"WORK","host":"https://work.example.com","auth_type":"databricks-cli"}
+                ]}
+                """.utf8
+            )
+            let client = DatabricksCLIClient { _ in
+                .init(standardOutput: response, standardError: Data(), terminationStatus: 0)
+            }
+
+            let profiles = try await client.allProfiles()
+
+            #expect(profiles.map(\.name) == ["Dahlia", "WORK"])
+        }
+
+        @Test
+        func signInPassesWorkspaceAndProfileWithoutShellInterpolation() async throws {
+            let recorder = CommandRecorder()
+            let client = DatabricksCLIClient { arguments in
+                await recorder.record(arguments)
+                return .success()
+            }
+
+            try await client.signIn(
+                workspaceURL: URL(string: "https://dbc.example.com")!,
+                profileName: "Dahlia 2"
+            )
+
+            #expect(await recorder.commands == [
+                [
+                    "auth",
+                    "login",
+                    "--host",
+                    "https://dbc.example.com",
+                    "--profile",
+                    "Dahlia 2",
                 ],
             ])
         }
@@ -228,6 +273,31 @@ import Foundation
             let profiles = try await client.profiles()
 
             #expect(profiles.map(\.name) == ["DEFAULT"])
+        }
+
+        @Test
+        func executableIsResolvedAgainAfterInstallation() async throws {
+            let executableURL = FileManager.default.temporaryDirectory
+                .appending(path: "dahlia-databricks-cli-\(UUID().uuidString)")
+            defer { try? FileManager.default.removeItem(at: executableURL) }
+            let locatedExecutable = OSAllocatedUnfairLock<URL?>(initialState: nil)
+            let client = DatabricksCLIClient(executableLocator: {
+                locatedExecutable.withLock { $0 }
+            })
+
+            await #expect(throws: DatabricksCLIError.self) {
+                _ = try await client.profiles()
+            }
+
+            let script = """
+            #!/bin/sh
+            printf '%s' '{"profiles":[]}'
+            """
+            try Data(script.utf8).write(to: executableURL)
+            try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: executableURL.path)
+            locatedExecutable.withLock { $0 = executableURL }
+
+            #expect(try await client.profiles().isEmpty)
         }
 
         private actor CommandRecorder {

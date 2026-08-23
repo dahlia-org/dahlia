@@ -692,6 +692,10 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
         objectWillChange.send()
     }
 
+    func selectCodexAccountProvider(_ provider: AIAccountProvider) {
+        codexAccountProviderRawValue = provider.rawValue
+    }
+
     var llmSummaryLanguage: SummaryLanguage {
         get { SummaryLanguage(rawValue: llmSummaryLanguageRawValue) ?? .ja }
         set { llmSummaryLanguageRawValue = newValue.rawValue }

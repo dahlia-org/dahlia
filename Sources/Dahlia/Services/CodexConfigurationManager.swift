@@ -48,16 +48,35 @@ struct CodexConfigurationManager {
         _ = try validatedDatabricksValues(profile: profile)
     }
 
+    func configurationData() throws -> Data? {
+        let configURL = try configURL()
+        guard FileManager.default.fileExists(atPath: configURL.path) else { return nil }
+        do {
+            return try Data(contentsOf: configURL)
+        } catch {
+            throw CodexConfigurationError.updateFailed(error.localizedDescription)
+        }
+    }
+
+    func restoreConfiguration(_ data: Data?) throws {
+        let configURL = try configURL()
+        if let data {
+            _ = try writeIfChanged(data)
+        } else if FileManager.default.fileExists(atPath: configURL.path) {
+            try FileManager.default.removeItem(at: configURL)
+        }
+    }
+
     private func validatedDatabricksValues(
         profile: DatabricksCLIClient.Profile
     ) throws -> (profileName: String, workspaceURL: URL) {
         guard let profileName = profile.name.nilIfBlank else {
             throw CodexConfigurationError.databricksProfileRequired
         }
-        return try (profileName, normalizedWorkspaceURL(profile.host))
+        return try (profileName, normalizedDatabricksWorkspaceURL(profile.host))
     }
 
-    private func normalizedWorkspaceURL(_ value: String?) throws -> URL {
+    func normalizedDatabricksWorkspaceURL(_ value: String?) throws -> URL {
         guard let value = value?.nilIfBlank,
               var components = URLComponents(string: value),
               components.scheme?.lowercased() == "https",
@@ -69,6 +88,11 @@ struct CodexConfigurationManager {
               components.path.isEmpty || components.path == "/"
         else {
             throw CodexConfigurationError.invalidDatabricksWorkspaceURL
+        }
+        components.scheme = "https"
+        components.host = components.host?.lowercased()
+        if components.port == 443 {
+            components.port = nil
         }
         components.path = ""
         guard let url = components.url else {

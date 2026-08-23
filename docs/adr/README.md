@@ -13,7 +13,7 @@ Codex は全 ADR を順番に読まず、最初にこの一覧から現在の作
 | --- | --- | --- | --- |
 | [0001](0001-summary-document-ast.md) | Summary | `SummaryDocument` AST をサマリーの正準表現にする | Accepted; amended by 0024 |
 | [0002](0002-isolate-recording-critical-path-from-main-actor.md) | Recording / Concurrency | 録音と確定データの保存を MainActor の UI projection から分離する | Accepted; partially superseded by 0006 and 0009 |
-| [0003](0003-use-a-shared-codex-app-server.md) | AI runtime | Codex app-server をアプリ共有の長寿命 backend として使う | Accepted; amended by 0013, 0015, 0019, 0020, 0021, 0022, 0028, and 0032 |
+| [0003](0003-use-a-shared-codex-app-server.md) | AI runtime | Codex app-server をアプリ共有の長寿命 backend として使う | Accepted; amended by 0013, 0015, 0019, 0020, 0021, 0022, 0028, 0032, and 0039 |
 | [0004](0004-protect-recordings-with-segmented-immutable-storage.md) | Recording storage | 録音データを分割された immutable segment として保全する | Accepted |
 | [0005](0005-vault-scoped-meeting-access-mcp.md) | Meeting access | Vault 固定・read-only の local MCP で meeting data を公開する | Accepted; amended by 0010 and 0034 |
 | [0006](0006-bounded-transcript-projection.md) | Transcript UI | SQLite を正本とし、文字起こし表示を bounded projection と keyset pagination にする | Accepted; partially supersedes 0002 |
@@ -31,7 +31,7 @@ Codex は全 ADR を順番に読まず、最初にこの一覧から現在の作
 | [0018](0018-mcp-meeting-summary-update.md) | Summary / Meeting access | サマリーの訂正を MCP のドキュメント全体置換で行う | Accepted; amends 0005 and 0010, builds on 0001; amended by 0024 |
 | [0019](0019-pull-codex-stdout-with-backpressure.md) | AI runtime | Codex stdout を64 KiB単位で需要駆動読み取りする | Accepted; supersedes 0013, amends 0003; amended by 0020 |
 | [0020](0020-bound-codex-output-relative-to-client-input.md) | AI runtime | Codex stdout の単一行上限をclient入力に応じて拡張する | Accepted; amends 0019 and 0003 |
-| [0021](0021-preserve-user-home-for-databricks-authentication.md) | AI runtime / Authentication | app-server では `CODEX_HOME` だけを分離し、Databricks CLI のため user `HOME` を継承する | Accepted; partially supersedes 0015, amends 0003 |
+| [0021](0021-preserve-user-home-for-databricks-authentication.md) | AI runtime / Authentication | app-server では `CODEX_HOME` だけを分離し、Databricks CLI のため user `HOME` を継承する | Accepted; partially supersedes 0015, amends 0003; amended by 0039 |
 | [0022](0022-user-approved-workspace-write-chat.md) | AI runtime / Chat | アプリ内チャットを `workspace-write` とユーザー承認で実行する | Accepted; amends 0003 and 0012; amended by 0023, 0027, and 0036 |
 | [0023](0023-review-vault-mcp-writes-in-chat.md) | AI runtime / Chat / MCP | Vault MCP の書き込みを追加権限なしの単一 tool call として承認する | Accepted; amends 0022 |
 | [0024](0024-flat-summary-blocks-with-hierarchy-attributes.md) | Summary / Meeting access | 平坦な階層属性でサマリーのネストリストと表を表現する | Accepted; amends 0001 and 0018 |
@@ -48,3 +48,4 @@ Codex は全 ADR を順番に読まず、最初にこの一覧から現在の作
 | [0036](0036-select-chat-approval-method-per-task.md) | AI runtime / Chat / Authentication | AI チャットの承認方法をタスクごとに選択する | Accepted; amends 0022 and 0027; builds on 0023 |
 | [0037](0037-use-actual-summary-content-for-meeting-vectors.md) | Search / ML / Summary | meeting vector を title と実際の summary コンテンツに限定する | Accepted; amends 0035, builds on 0001 and 0034 |
 | [0038](0038-index-screenshot-ocr-in-local-search.md) | Search / Screenshots | 全 screenshot の検出文字と画像説明を正本保存し独立した FTS 結果として返す | Accepted; amends 0005, 0033, and 0035 |
+| [0039](0039-guide-databricks-cli-installation-and-login.md) | AI runtime / Authentication / Distribution | CLI を外部導入のまま案内し、workspace URL から OAuth profile を作成する | Accepted; amends 0003 and 0021 |

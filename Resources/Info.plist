@@ -22,6 +22,8 @@
     <true/>
     <key>NSCalendarsFullAccessUsageDescription</key>
     <string>会議予定を表示し、文字起こしするミーティングを選択するためにカレンダーへのアクセスが必要です。</string>
+    <key>NSAppleEventsUsageDescription</key>
+    <string>Dahlia controls Terminal to show and run the Databricks CLI installation command.</string>
     <key>NSMicrophoneUsageDescription</key>
     <string>会議の文字起こしのためにマイクへのアクセスが必要です。</string>
     <key>NSScreenCaptureUsageDescription</key>

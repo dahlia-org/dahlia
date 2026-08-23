@@ -2292,11 +2292,34 @@ enum L10n {
     ) }
     static var refreshDatabricksProfiles: String { String(localized: "Refresh Profiles", bundle: bundle) }
     static var noDatabricksProfiles: String { String(
-        localized: "No Databricks CLI profiles found. Run databricks auth login in Terminal, then refresh.",
+        localized: "No Databricks workspaces are connected yet.",
         bundle: bundle
     ) }
     static var databricksCLINotInstalled: String { String(
-        localized: "Databricks CLI was not found. Install it and relaunch Dahlia.",
+        localized: "Databricks CLI was not found. Install it to connect a workspace.",
+        bundle: bundle
+    ) }
+    static var installDatabricksCLI: String { String(localized: "Install Databricks CLI", bundle: bundle) }
+    static var databricksCLIInstallOverview: String { String(
+        localized: "Dahlia uses the official Databricks CLI for browser sign-in and token refresh. The CLI is installed separately and is subject to the Databricks License and Privacy Notice.",
+        bundle: bundle
+    ) }
+    static var databricksCLIInstallCommand: String { String(localized: "Homebrew Command", bundle: bundle) }
+    static var databricksCLIInstallCommandDescription: String { String(
+        localized: "Terminal runs this visible command. Dahlia does not bundle or download the CLI.",
+        bundle: bundle
+    ) }
+    static var installInTerminal: String { String(localized: "Install in Terminal", bundle: bundle) }
+    static var viewOfficialInstallGuide: String { String(localized: "View Official Installation Guide", bundle: bundle) }
+    static var viewDatabricksLicense: String { String(localized: "View Databricks License", bundle: bundle) }
+    static var viewDatabricksPrivacyNotice: String { String(localized: "View Databricks Privacy Notice", bundle: bundle) }
+    static var databricksCLIInstallation: String { String(localized: "Databricks CLI Installation", bundle: bundle) }
+    static var databricksCLIInstallCommandCopied: String { String(
+        localized: "Dahlia could not control Terminal. The installation command was copied and Terminal was opened. Paste the command and press Return.",
+        bundle: bundle
+    ) }
+    static var databricksCLIInstallFailed: String { String(
+        localized: "Dahlia could not open Terminal. Use the official installation guide to install Databricks CLI.",
         bundle: bundle
     ) }
     static func databricksCLICommandFailed(_ detail: String) -> String { String(
@@ -2313,15 +2336,21 @@ enum L10n {
     ) }
     static var databricksProfileRequired: String { String(localized: "Select a Databricks CLI profile.", bundle: bundle) }
     static var databricksWorkspaceURLInvalid: String { String(
-        localized: "The selected Databricks CLI profile does not provide a valid HTTPS workspace URL.",
+        localized: "Enter a valid HTTPS Databricks workspace root URL.",
         bundle: bundle
     ) }
     static var databricksWorkspaceURL: String { String(localized: "Databricks Workspace URL", bundle: bundle) }
-    static var databricksWorkspaceID: String { String(localized: "Databricks Workspace ID", bundle: bundle) }
-    static var workspaceHostUnavailableFromProfile: String { String(
-        localized: "Workspace URL unavailable from profile",
+    static var databricksWorkspaceURLDescription: String { String(
+        localized: "Enter the HTTPS URL of the workspace used by Codex.",
         bundle: bundle
     ) }
+    static var databricksWorkspaceURLPlaceholder: String { String(
+        localized: "https://your-workspace.cloud.databricks.com",
+        bundle: bundle
+    ) }
+    static var createNewDatabricksProfile: String { String(localized: "Create New Profile", bundle: bundle) }
+    static var signInWithDatabricks: String { String(localized: "Sign in with Databricks", bundle: bundle) }
+    static var databricksWorkspaceID: String { String(localized: "Databricks Workspace ID", bundle: bundle) }
     static var workspaceIDUnavailableFromProfile: String { String(
         localized: "Workspace ID unavailable from profile",
         bundle: bundle

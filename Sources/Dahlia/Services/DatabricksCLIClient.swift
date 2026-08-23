@@ -21,7 +21,7 @@ struct DatabricksCLIClient {
 
         var id: String { name }
 
-        fileprivate var usesOAuthU2M: Bool {
+        var usesOAuthU2M: Bool {
             authenticationType == "databricks-cli"
         }
 
@@ -48,12 +48,13 @@ struct DatabricksCLIClient {
     }
 
     typealias CommandRunner = @Sendable ([String]) async throws -> CommandOutput
+    typealias ExecutableLocator = @Sendable () -> URL?
 
     private let runCommand: CommandRunner
 
-    init(executableURL: URL? = Self.locateExecutable()) {
+    init(executableLocator: @escaping ExecutableLocator = { Self.locateExecutable() }) {
         runCommand = { arguments in
-            guard let executableURL else {
+            guard let executableURL = executableLocator() else {
                 throw DatabricksCLIError.cliNotInstalled
             }
             return try await Self.execute(
@@ -64,11 +65,19 @@ struct DatabricksCLIClient {
         }
     }
 
+    init(executableURL: URL) {
+        self.init(executableLocator: { executableURL })
+    }
+
     init(runCommand: @escaping CommandRunner) {
         self.runCommand = runCommand
     }
 
     func profiles() async throws -> [Profile] {
+        try await allProfiles().filter(\.usesOAuthU2M)
+    }
+
+    func allProfiles() async throws -> [Profile] {
         let output = try await runValidatedCommand([
             "auth",
             "profiles",
@@ -81,8 +90,18 @@ struct DatabricksCLIClient {
             throw DatabricksCLIError.invalidProfilesResponse
         }
         return response.profiles
-            .filter(\.usesOAuthU2M)
             .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+
+    func signIn(workspaceURL: URL, profileName: String) async throws {
+        _ = try await runValidatedCommand([
+            "auth",
+            "login",
+            "--host",
+            workspaceURL.absoluteString,
+            "--profile",
+            profileName,
+        ])
     }
 
     func ensureAuthenticated(

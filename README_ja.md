@@ -32,7 +32,7 @@ macOS ネイティブのリアルタイム文字起こしアプリです。マ�
 
 新規インストールでは、Dahlia が `Documents/Dahlia` を作成して `Default` という保管庫として登録し、自動的に開きます。既存の保管庫登録は維持されます。自動設定に失敗した場合は保管庫管理画面が表示され、フォルダを手動で選択できます。
 
-Dahlia は、同梱 Codex の状態と認証を他の Codex アプリや Codex CLI から分離して管理します。**設定 → AI 接続**で、ChatGPT Subscription または `databricks auth login` で作成した OAuth プロファイルを選択します。ChatGPT 認証は Dahlia の Application Support ディレクトリに保存され、Databricks のトークンは引き続き Databricks CLI が管理します。
+Dahlia は、同梱 Codex の状態と認証を他の Codex アプリや Codex CLI から分離して管理します。**設定 → AI 接続**で、ChatGPT Subscription を選ぶか、「プロファイルを新規作成」から Databricks workspace URL を入力してブラウザでサインインします。既存の Databricks OAuth プロファイルも引き続き選択できます。Databricks CLI は同梱せず、未導入時は設定画面から公式手順・ライセンスを確認し、Terminal で `brew install databricks/tap/databricks` を実行できます。ChatGPT 認証は Dahlia の Application Support ディレクトリに保存され、Databricks のトークンは Databricks CLI が管理します。
 
 バッチ文字起こしの自動判定を初めて使うときは、固定リビジョンの多言語 WhisperKit `tiny` モデルと tokenizer を取得し、Dahlia の Application Support ディレクトリへキャッシュします。言語判定と文字起こしはデバイス上で行い、録音音声はアップロードしません。
 
