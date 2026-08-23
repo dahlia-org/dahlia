@@ -40,7 +40,7 @@ actor CodexScreenshotAnalysisService: ScreenshotAnalyzing {
                 : settings.enabledLanguageIdentifiers.sorted().joined(separator: ", ")
             return (settings.llmSummaryLanguage.displayName, languages)
         }
-        let inputs = await Self.codexInputs(for: screenshots)
+        let inputs = try await Self.codexInputs(for: screenshots)
         let response = try await appServer.generate(.init(
             model: Self.model,
             requiresExactModel: true,
@@ -82,22 +82,23 @@ actor CodexScreenshotAnalysisService: ScreenshotAnalyzing {
         return results
     }
 
-    private nonisolated static func codexInputs(
+    nonisolated static func codexInputs(
         for screenshots: [ScreenshotAnalysisInput]
-    ) async -> [CodexAppServerInput] {
-        await Task.detached(priority: .utility) {
-            screenshots.flatMap { screenshot -> [CodexAppServerInput] in
-                let imageData = ImageEncoder.resized(
-                    screenshot.imageData,
-                    maxLongEdge: maximumImageLongEdge
-                )
-                let mimeType = ImageEncoder.mimeType(for: imageData) ?? screenshot.mimeType
-                return [
-                    .imageMetadata("<screenshot_id>\(screenshot.id.uuidString)</screenshot_id>"),
-                    .imageDataURI("data:\(mimeType);base64,\(imageData.base64EncodedString())"),
-                ]
-            }
-        }.value
+    ) async throws -> [CodexAppServerInput] {
+        var inputs: [CodexAppServerInput] = []
+        inputs.reserveCapacity(screenshots.count * 2)
+        for screenshot in screenshots {
+            try Task.checkCancellation()
+            let imageData = ImageEncoder.resized(
+                screenshot.imageData,
+                maxLongEdge: maximumImageLongEdge
+            )
+            try Task.checkCancellation()
+            let mimeType = ImageEncoder.mimeType(for: imageData) ?? screenshot.mimeType
+            inputs.append(.imageMetadata("<screenshot_id>\(screenshot.id.uuidString)</screenshot_id>"))
+            inputs.append(.imageDataURI("data:\(mimeType);base64,\(imageData.base64EncodedString())"))
+        }
+        return inputs
     }
 
     private nonisolated static func instructions(

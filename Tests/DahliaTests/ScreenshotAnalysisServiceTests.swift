@@ -7,6 +7,23 @@ import Foundation
     @MainActor
     struct ScreenshotAnalysisServiceTests {
         @Test
+        func cancelledImagePreparationStopsBeforeEncoding() async {
+            let preparation = Task {
+                while !Task.isCancelled {
+                    await Task.yield()
+                }
+                return try await CodexScreenshotAnalysisService.codexInputs(for: [
+                    ScreenshotAnalysisInput(id: .v7(), imageData: Data([1]), mimeType: "image/png"),
+                ])
+            }
+            preparation.cancel()
+
+            await #expect(throws: CancellationError.self) {
+                _ = try await preparation.value
+            }
+        }
+
+        @Test
         func sendsOneStructuredLunaRequestForTheBatch() async throws {
             let firstID = try #require(UUID(uuidString: "00000000-0000-0000-0000-000000000001"))
             let secondID = try #require(UUID(uuidString: "00000000-0000-0000-0000-000000000002"))
