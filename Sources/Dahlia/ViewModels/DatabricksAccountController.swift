@@ -78,13 +78,9 @@ final class DatabricksAccountController {
             try Task.checkCancellation()
             allProfiles = try await client.allProfiles()
             isCLIAvailable = true
-            if let existingProfile = allProfiles.first(where: { $0.name == profileName }) {
-                let existingWorkspaceURL = existingProfile.host.flatMap {
-                    try? configurationManager.normalizedDatabricksWorkspaceURL($0)
-                }
-                guard existingProfile.usesOAuthU2M, existingWorkspaceURL == workspaceURL else {
-                    throw DatabricksCLIError.profileAlreadyExists(name: profileName)
-                }
+            if let existingProfile = allProfiles.first(where: { $0.name == profileName }),
+               !isOAuthProfile(existingProfile, for: workspaceURL) {
+                throw DatabricksCLIError.profileAlreadyExists(name: profileName)
             }
             attemptedProfileName = profileName
             await service.markProviderAuthenticationReloadRequired()
@@ -92,7 +88,8 @@ final class DatabricksAccountController {
             try Task.checkCancellation()
             let signedInProfiles = try await client.allProfiles()
             updateProfiles(signedInProfiles)
-            guard let profile = profile(named: profileName) else {
+            guard let profile = profile(named: profileName),
+                  isOAuthProfile(profile, for: workspaceURL) else {
                 throw DatabricksCLIError.invalidProfilesResponse
             }
             isSigningIn = false
@@ -224,6 +221,15 @@ final class DatabricksAccountController {
     private func updateProfiles(_ profiles: [DatabricksCLIClient.Profile]) {
         allProfiles = profiles
         self.profiles = profiles.filter(\.usesOAuthU2M)
+    }
+
+    private func isOAuthProfile(_ profile: DatabricksCLIClient.Profile, for workspaceURL: URL) -> Bool {
+        guard profile.usesOAuthU2M,
+              let profileWorkspaceURL = try? configurationManager.normalizedDatabricksWorkspaceURL(profile.host)
+        else {
+            return false
+        }
+        return profileWorkspaceURL == workspaceURL
     }
 
     private func configuredDatabricksProfileName() -> String? {

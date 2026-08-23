@@ -328,6 +328,44 @@ import Foundation
         }
 
         @Test
+        func workspaceSignInRejectsProfileMovedToAnotherHostDuringLogin() async {
+            let responder = WorkspaceSignInResponder(
+                initialProfiles: #"{"profiles":[]}"#,
+                signedInProfiles: """
+                {"profiles":[
+                    {"name":"DEFAULT","host":"https://other.example.com","auth_type":"databricks-cli"}
+                ]}
+                """
+            )
+            let service = CodexAppServerService { TestCodexAppServerTransport(mode: .models) }
+            let configurationStore = TestCodexAccountConfigurationStore(
+                configuredProvider: .databricks,
+                configuredDatabricksProfile: "OLD"
+            )
+            let controller = DatabricksAccountController(
+                client: DatabricksCLIClient { await responder.run($0) },
+                service: service,
+                configurationStore: configurationStore
+            )
+
+            let profileName = await controller.signIn(
+                workspaceURL: "https://dbc.example.com",
+                profileName: "DEFAULT"
+            )
+
+            #expect(profileName == nil)
+            #expect(controller.errorMessage == L10n.databricksCLIInvalidProfilesResponse)
+            #expect(configurationStore.configuredProviderRawValue == AIAccountProvider.databricks.rawValue)
+            #expect(configurationStore.configuredDatabricksProfile == "OLD")
+            #expect(await responder.commands == [
+                ["auth", "profiles", "--skip-validate", "--output", "json"],
+                ["auth", "login", "--host", "https://dbc.example.com", "--profile", "DEFAULT"],
+                ["auth", "profiles", "--skip-validate", "--output", "json"],
+            ])
+            await service.shutdown()
+        }
+
+        @Test
         func failedModelValidationRestoresPreviousConfiguration() async throws {
             let rootURL = FileManager.default.temporaryDirectory
                 .appending(path: "dahlia-databricks-model-failure-\(UUID().uuidString)", directoryHint: .isDirectory)
