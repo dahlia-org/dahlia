@@ -2,6 +2,7 @@ import SwiftUI
 
 /// 設定画面「スクリーンショット」タブ。自動スクリーンショット取得を管理する。
 struct ScreenshotSettingsView: View {
+    let onOpenLanguageSettings: () -> Void
     @ObservedObject private var settings = AppSettings.shared
 
     var body: some View {
@@ -63,6 +64,15 @@ struct ScreenshotSettingsView: View {
                 Text(L10n.sharedContentDetectionFallbackDescription)
             }
             .disabled(!settings.automaticScreenshotEnabled)
+
+            Section {
+                LabeledContent {
+                    Button(L10n.openLanguageSettings, action: onOpenLanguageSettings)
+                } label: {
+                    Text(L10n.imageTextLanguages)
+                    Text(L10n.imageTextLanguagesDescription)
+                }
+            }
         }
         .formStyle(.grouped)
     }

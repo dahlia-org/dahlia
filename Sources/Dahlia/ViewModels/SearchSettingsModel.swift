@@ -56,7 +56,10 @@ final class SearchSettingsModel {
                     totalCount: state?["totalCount"] ?? 0,
                     pendingJobCount: Int.fetchOne(
                         db,
-                        sql: "SELECT COUNT(*) FROM search_index_jobs WHERE indexKind = 'fts' AND status = 'pending'"
+                        sql: """
+                        SELECT COUNT(*) FROM search_index_jobs WHERE indexKind = 'fts'
+                          AND status = 'pending' AND attempts < 5
+                        """
                     ) ?? 0,
                     processingJobCount: Int.fetchOne(
                         db,

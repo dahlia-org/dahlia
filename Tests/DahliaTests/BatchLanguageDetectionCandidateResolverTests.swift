@@ -129,5 +129,46 @@ import Foundation
                 enabledLocaleIdentifiers: enabledLocaleIdentifiers
             ) == expected)
         }
+
+        @Test
+        func migratesLegacyLocalesToSharedLanguageAndScriptIdentifiers() throws {
+            let suite = "AppLanguageSettingsTests-\(UUID().uuidString)"
+            let defaults = try #require(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            defaults.set("selected", forKey: AppSettings.transcriptionLanguageScopeUserDefaultsKey)
+            defaults.set(
+                #"["en_US","zh_Hant_TW","ja_JP"]"#,
+                forKey: "enabledLocaleIdentifiers"
+            )
+
+            AppSettings.migrateAppLanguageSettings(in: defaults)
+
+            #expect(defaults.string(forKey: AppSettings.appLanguageScopeUserDefaultsKey) == "selected")
+            #expect(AppSettings.enabledLanguageIdentifiers(in: defaults) == ["en", "ja", "zh-Hant"])
+        }
+
+        @Test
+        func migrationPreservesExplicitLegacyAllLanguageSelection() throws {
+            let suite = "AppLanguageSettingsTests-\(UUID().uuidString)"
+            let defaults = try #require(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            defaults.set("", forKey: "enabledLocaleIdentifiers")
+
+            AppSettings.migrateAppLanguageSettings(in: defaults)
+
+            #expect(defaults.string(forKey: AppSettings.appLanguageScopeUserDefaultsKey) == "all")
+        }
+
+        @Test
+        func migrationKeepsTheLegacyDefaultLanguageSelection() throws {
+            let suite = "AppLanguageSettingsTests-\(UUID().uuidString)"
+            let defaults = try #require(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+
+            AppSettings.migrateAppLanguageSettings(in: defaults)
+
+            #expect(defaults.string(forKey: AppSettings.appLanguageScopeUserDefaultsKey) == "selected")
+            #expect(AppSettings.enabledLanguageIdentifiers(in: defaults) == ["en", "ja"])
+        }
     }
 #endif

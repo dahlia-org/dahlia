@@ -6,7 +6,6 @@ struct TranscriptionSettingsView: View {
     @ObservedObject private var settings = AppSettings.shared
     @State private var supportedLocales: [Locale] = []
     @State private var isLoadingLocales = true
-    @State private var localeSearchText = ""
 
     var body: some View {
         Form {
@@ -86,35 +85,6 @@ struct TranscriptionSettingsView: View {
                 Text(L10n.builtInMicrophoneEchoCancellationDescription)
             }
 
-            Section {
-                DahliaSegmentedPicker(
-                    title: L10n.languageRange,
-                    selection: languageScopeBinding,
-                    options: TranscriptionLanguageScope.allCases,
-                    label: \.displayName
-                )
-                .disabled(isLoadingLocales)
-
-                if settings.transcriptionLanguageScope == .selected {
-                    TextField(L10n.searchLanguages, text: $localeSearchText)
-                        .textFieldStyle(.roundedBorder)
-
-                    if isLoadingLocales {
-                        ProgressView(L10n.loadingLanguages)
-                    } else {
-                        localeSelectionList
-                    }
-                }
-            } header: {
-                Text(L10n.transcriptionLanguages)
-            } footer: {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(languageScopeDescription)
-                    if settings.transcriptionLanguageScope == .selected {
-                        Text(L10n.languagesSelected(settings.enabledLocaleIdentifiers.count))
-                    }
-                }
-            }
         }
         .formStyle(.grouped)
         .task {
@@ -131,101 +101,18 @@ struct TranscriptionSettingsView: View {
         }
     }
 
-    @ViewBuilder
-    private var localeSelectionList: some View {
-        let searchedLocales = searchFilteredLocales
-        if searchedLocales.isEmpty {
-            Text(L10n.noMatchingLanguages)
-                .foregroundStyle(DahliaDesign.secondaryTextColor)
-        } else {
-            ForEach(searchedLocales, id: \.identifier) { locale in
-                localeRow(for: locale)
-            }
-        }
-    }
-
-    private var languageScopeDescription: String {
-        switch settings.transcriptionLanguageScope {
-        case .all: L10n.allTranscriptionLanguagesDescription
-        case .selected: L10n.selectedTranscriptionLanguagesDescription
-        }
-    }
-
     private var transcriptionLocaleOptions: [Locale] {
-        var locales = settings.transcriptionLanguageScope == .all
-            ? supportedLocales
-            : supportedLocales.filter { settings.enabledLocaleIdentifiers.contains($0.identifier) }
+        var locales = supportedLocales.filter { settings.isLanguageEnabled($0.identifier) }
         if !locales.contains(where: { $0.identifier == settings.transcriptionLocale }) {
             locales.append(Locale(identifier: settings.transcriptionLocale))
         }
         return locales.sortedByLocalizedName()
     }
 
-    private var searchFilteredLocales: [Locale] {
-        guard !localeSearchText.isEmpty else { return supportedLocales }
-        return supportedLocales.filter { locale in
-            let name = locale.localizedString(forIdentifier: locale.identifier) ?? ""
-            return name.localizedStandardContains(localeSearchText)
-                || locale.identifier.localizedStandardContains(localeSearchText)
-        }
-    }
-
-    private func toggleLocale(_ identifier: String) {
-        var enabled = settings.enabledLocaleIdentifiers
-        if enabled.contains(identifier) {
-            enabled.remove(identifier)
-        } else {
-            enabled.insert(identifier)
-        }
-        settings.enabledLocaleIdentifiers = enabled
-    }
-
-    private func localeSelectionBinding(for identifier: String) -> Binding<Bool> {
-        Binding {
-            settings.isLocaleEnabled(identifier)
-        } set: { _ in
-            toggleLocale(identifier)
-        }
-    }
-
-    private var languageScopeBinding: Binding<TranscriptionLanguageScope> {
-        Binding {
-            settings.transcriptionLanguageScope
-        } set: { scope in
-            settings.transcriptionLanguageScope = scope
-            if scope == .selected, settings.enabledLocaleIdentifiers.isEmpty {
-                seedDefaultEnabledLocales()
-            }
-        }
-    }
-
-    private func seedDefaultEnabledLocales() {
-        let supportedIdentifiers = Set(supportedLocales.map(\.identifier))
-        guard !supportedIdentifiers.isEmpty else { return }
-        settings.enabledLocaleIdentifiers = AppSettings.defaultEnabledLocaleIdentifiers
-            .intersection(supportedIdentifiers)
-    }
-
-    private func localeRow(for locale: Locale) -> some View {
-        let identifier = locale.identifier
-        return Toggle(isOn: localeSelectionBinding(for: identifier)) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(locale.localizedString(forIdentifier: identifier) ?? identifier)
-
-                Text(identifier)
-            }
-        }
-        .toggleStyle(.checkbox)
-    }
-
     private func loadSupportedLocales() async {
         isLoadingLocales = true
         let locales = await SpeechSupportedLocales.load()
         supportedLocales = locales.sortedByLocalizedName()
-        if settings.transcriptionLanguageScope == .selected,
-           settings.enabledLocaleIdentifiers.isEmpty {
-            seedDefaultEnabledLocales()
-        }
         isLoadingLocales = false
     }
 }

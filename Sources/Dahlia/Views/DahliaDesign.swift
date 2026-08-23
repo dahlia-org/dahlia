@@ -177,8 +177,8 @@ extension View {
         modifier(DahliaChipSurface(isHovered: isHovered, tint: tint))
     }
 
-    func dahliaSidebarHoverCard() -> some View {
-        modifier(DahliaSidebarHoverCardModifier())
+    func dahliaSidebarHoverCard(width: CGFloat = DahliaDesign.sidebarHoverCardWidth) -> some View {
+        modifier(DahliaSidebarHoverCardModifier(width: width))
     }
 
     func dahliaCardSurface() -> some View {
@@ -194,12 +194,14 @@ extension View {
 }
 
 private struct DahliaSidebarHoverCardModifier: ViewModifier {
+    let width: CGFloat
+
     func body(content: Content) -> some View {
         content
             .font(.callout)
             .foregroundStyle(.black.opacity(0.82))
             .padding(12)
-            .frame(width: DahliaDesign.sidebarHoverCardWidth, alignment: .leading)
+            .frame(width: width, alignment: .leading)
             .background(.white, in: .rect(cornerRadius: DahliaDesign.HoverCard.cornerRadius))
             .overlay {
                 RoundedRectangle(cornerRadius: DahliaDesign.HoverCard.cornerRadius)

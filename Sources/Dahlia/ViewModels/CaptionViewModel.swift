@@ -299,6 +299,32 @@ final class CaptionViewModel: ObservableObject {
 
     /// Summary タブへの切り替えをリクエストするフラグ。
     @Published var requestShowSummaryTab = false
+    @Published var requestOpenScreenshotID: UUID?
+
+    func screenshotOCRState(id: UUID) async -> ScreenshotOCRState {
+        guard let dbQueue = currentDbQueue else { return .pending }
+        return await (try? dbQueue.read { db in
+            if let row = try Row.fetchOne(
+                db,
+                sql: "SELECT ocrText, caption FROM screenshots WHERE id = ?",
+                arguments: [id]
+            ), let text: String = row["ocrText"], let caption: String = row["caption"] {
+                return .completed(ocrText: text, caption: caption)
+            }
+            guard let row = try Row.fetchOne(
+                db,
+                sql: """
+                SELECT status, attempts FROM search_index_jobs
+                WHERE indexKind = 'fts' AND targetKind = 'screenshotAnalysis' AND targetKey = ?
+                """,
+                arguments: [id]
+            ) else { return .pending }
+            let attempts: Int = row["attempts"]
+            if attempts >= 5 { return .failed }
+            let status: String = row["status"]
+            return status == "processing" ? .processing : .pending
+        }) ?? .pending
+    }
 
     // MARK: - Note State
 
@@ -743,8 +769,8 @@ final class CaptionViewModel: ObservableObject {
 
         // AppSettings の表示言語設定変更を監視
         settingsCancellable = UserDefaults.standard
-            .publisher(for: \.enabledLocaleIdentifiers)
-            .merge(with: UserDefaults.standard.publisher(for: \.transcriptionLanguageScope))
+            .publisher(for: \.enabledLanguageIdentifiers)
+            .merge(with: UserDefaults.standard.publisher(for: \.appLanguageScope))
             .removeDuplicates()
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
@@ -1028,7 +1054,7 @@ final class CaptionViewModel: ObservableObject {
     }
 
     func batchTranscriptionLocaleOptions(preferredIdentifier: String) -> [Locale] {
-        var locales = AppSettings.shared.transcriptionLanguageScope == .all
+        var locales = AppSettings.shared.appLanguageScope == .all
             ? supportedLocales
             : filteredLocales
         if !locales.contains(where: { $0.identifier == preferredIdentifier }) {
@@ -1048,8 +1074,8 @@ final class CaptionViewModel: ObservableObject {
         }
         let settings = AppSettings.shared
         return BatchLanguageDetectionCandidateResolver.candidates(
-            scope: settings.transcriptionLanguageScope,
-            enabledLocaleIdentifiers: settings.enabledLocaleIdentifiers,
+            scope: settings.appLanguageScope,
+            enabledLocaleIdentifiers: settings.enabledLanguageIdentifiers,
             supportedLocales: supportedLocales
         )
     }
@@ -1633,15 +1659,10 @@ final class CaptionViewModel: ObservableObject {
     /// supportedLocales と設定から filteredLocales を再計算する。
     private func updateFilteredLocales() {
         let settings = AppSettings.shared
-        let enabled = settings.enabledLocaleIdentifiers
-        if settings.transcriptionLanguageScope == .all {
-            filteredLocales = supportedLocales
-        } else {
-            filteredLocales = supportedLocales.filter { locale in
-                enabled.contains(locale.identifier)
-                    || locale.identifier == transcriptionLocale
-                    || locale.identifier == liveSubtitleLocale
-            }
+        filteredLocales = supportedLocales.filter { locale in
+            settings.isLanguageEnabled(locale.identifier)
+                || locale.identifier == transcriptionLocale
+                || locale.identifier == liveSubtitleLocale
         }
     }
 

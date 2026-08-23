@@ -63,7 +63,7 @@ struct ProjectManagementView: View {
                 projectCatalog
             } settingsContent: {
                 SettingsDetailView(
-                    selection: mainWindowNavigation.settingsCategory,
+                    selection: $mainWindowNavigation.settingsCategory,
                     captionViewModel: captionViewModel,
                     sidebarViewModel: sidebarViewModel,
                     appDatabase: appDatabase,

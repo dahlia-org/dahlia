@@ -172,6 +172,12 @@ public final class DahliaMCPServer {
                 errorCode: -32602,
                 message: MeetingAccessError.invalidSearchQuery(maximum: maximum).localizedDescription
             )
+        } catch let MeetingAccessError.searchQueryTooShort(minimum) {
+            return response(
+                id: id,
+                errorCode: -32602,
+                message: MeetingAccessError.searchQueryTooShort(minimum: minimum).localizedDescription
+            )
         } catch let error as MeetingAccessError {
             return response(
                 id: id,
@@ -213,7 +219,7 @@ public final class DahliaMCPServer {
             .write
         }
         let category: MCPUsageTelemetryEvent.Category = switch name {
-        case "query_meetings", "get_meeting", "get_meeting_screenshots", "get_meeting_transcript",
+        case "query_meetings", "query_screenshots", "get_meeting", "get_meeting_screenshots", "get_meeting_transcript",
              "update_meeting_summary":
             .meeting
         case "query_projects", "get_project", "create_project", "update_project", "query_project_resources",
@@ -244,6 +250,11 @@ public final class DahliaMCPServer {
                 "ical_uid", "created_from", "created_before", "simple", "limit", "cursor",
             ])
             return try toolResult(queryMeetings(arguments))
+        case "query_screenshots":
+            try validate(arguments, allowedKeys: [
+                "query", "project_id", "created_from", "created_before", "limit", "cursor",
+            ])
+            return try toolResult(queryScreenshots(arguments))
         case "get_meeting":
             try validate(arguments, allowedKeys: ["meeting_id"])
             return try toolResult(getMeeting(arguments))
@@ -674,6 +685,17 @@ public final class DahliaMCPServer {
             createdFrom: date(arguments, key: "created_from"),
             createdBefore: date(arguments, key: "created_before"),
             limit: limit,
+            cursor: string(arguments, key: "cursor")
+        ))
+    }
+
+    private func queryScreenshots(_ arguments: [String: Any]) throws -> ScreenshotTextQueryPage {
+        try store.queryScreenshots(ScreenshotTextQuery(
+            query: requiredString(arguments, key: "query"),
+            projectID: optionalUUID(arguments, key: "project_id"),
+            createdFrom: date(arguments, key: "created_from"),
+            createdBefore: date(arguments, key: "created_before"),
+            limit: integer(arguments, key: "limit") ?? 20,
             cursor: string(arguments, key: "cursor")
         ))
     }
@@ -1250,6 +1272,31 @@ private extension DahliaMCPServer {
                 "summary_document_version": ["type": "string"],
             ],
             required: ["vault", "meeting"]
+        )
+    }
+
+    private static var screenshotTextQueryOutputSchema: [String: Any] {
+        objectSchema(
+            properties: [
+                "vault": vaultSchema,
+                "screenshots": [
+                    "type": "array",
+                    "items": objectSchema(
+                        properties: [
+                            "id": ["type": "string", "format": "uuid"],
+                            "meeting_id": ["type": "string", "format": "uuid"],
+                            "meeting_name": ["type": "string"],
+                            "captured_at": ["type": "string", "format": "date-time"],
+                            "mime_type": ["type": "string"],
+                            "detected_text": ["type": "string"],
+                            "caption": ["type": "string"],
+                        ],
+                        required: ["id", "meeting_id", "meeting_name", "captured_at", "mime_type", "detected_text", "caption"]
+                    ),
+                ],
+                "next_cursor": ["type": "string"],
+            ],
+            required: ["vault", "screenshots"]
         )
     }
 
@@ -2531,6 +2578,27 @@ private extension DahliaMCPServer {
                 "additionalProperties": false,
             ],
             "outputSchema": meetingQueryOutputSchema,
+            "annotations": annotations,
+        ],
+        [
+            "name": "query_screenshots",
+            "title": "Query screenshots",
+            "description": "Search detected text and generated descriptions for screenshots. Results remain individual screenshots and include "
+                + "their owning meeting IDs; use get_meeting_screenshots to inspect an image.",
+            "inputSchema": [
+                "type": "object",
+                "properties": [
+                    "query": ["type": "string", "minLength": 2, "maxLength": 1024],
+                    "project_id": ["type": "string", "format": "uuid"],
+                    "created_from": ["type": "string", "format": "date-time"],
+                    "created_before": ["type": "string", "format": "date-time"],
+                    "limit": ["type": "integer", "minimum": 1, "maximum": 100, "default": 20],
+                    "cursor": ["type": "string"],
+                ],
+                "required": ["query"],
+                "additionalProperties": false,
+            ],
+            "outputSchema": screenshotTextQueryOutputSchema,
             "annotations": annotations,
         ],
         [

@@ -18,6 +18,8 @@ struct SearchDocumentFields {
     let calendar: String
     let tags: String
     let projectPath: String
+    let ocr: String
+    let caption: String
     let summaryDescription: String
 
     init(
@@ -27,6 +29,8 @@ struct SearchDocumentFields {
         calendar: String,
         tags: String,
         projectPath: String,
+        ocr: String = "",
+        caption: String = "",
         summaryDescription: String = ""
     ) {
         self.title = title
@@ -35,6 +39,8 @@ struct SearchDocumentFields {
         self.calendar = calendar
         self.tags = tags
         self.projectPath = projectPath
+        self.ocr = ocr
+        self.caption = caption
         self.summaryDescription = summaryDescription
     }
 
@@ -46,7 +52,7 @@ struct SearchDocumentFields {
         case "project":
             [projectPath, trim(description)]
         default:
-            [title, description, summary, calendar, tags, projectPath, summaryDescription]
+            [title, description, summary, calendar, tags, projectPath, ocr, caption, summaryDescription]
         }
         let serialized = content
             .map { "\($0.utf8.count):\($0)" }.joined()
@@ -139,8 +145,8 @@ private func insertFTS(rowID: Int64, fields: SearchDocumentFields, in db: Databa
     try db.execute(
         sql: """
         INSERT INTO search_documents_fts(
-            rowid, title, description, summary, calendar, tags, projectPath
-        ) VALUES(?, ?, ?, ?, ?, ?, ?)
+            rowid, title, description, summary, calendar, tags, projectPath, ocr, caption
+        ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         arguments: [
             rowID,
@@ -150,6 +156,8 @@ private func insertFTS(rowID: Int64, fields: SearchDocumentFields, in db: Databa
             fields.calendar,
             fields.tags,
             fields.projectPath,
+            fields.ocr,
+            fields.caption,
         ]
     )
 }
@@ -158,7 +166,7 @@ private func updateFTS(rowID: Int64, fields: SearchDocumentFields, in db: Databa
     try db.execute(
         sql: """
         UPDATE search_documents_fts
-        SET title = ?, description = ?, summary = ?, calendar = ?, tags = ?, projectPath = ?
+        SET title = ?, description = ?, summary = ?, calendar = ?, tags = ?, projectPath = ?, ocr = ?, caption = ?
         WHERE rowid = ?
         """,
         arguments: [
@@ -168,6 +176,8 @@ private func updateFTS(rowID: Int64, fields: SearchDocumentFields, in db: Databa
             fields.calendar,
             fields.tags,
             fields.projectPath,
+            fields.ocr,
+            fields.caption,
             rowID,
         ]
     )

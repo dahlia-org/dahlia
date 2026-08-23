@@ -50,6 +50,7 @@ import GRDB
             #expect(snapshot.3?.contains("detail=full") == true)
             #expect(snapshot.3?.contains("contentless_delete=1") == true)
             #expect(snapshot.3?.contains("summary") == true)
+            #expect(snapshot.3?.contains("ocr") == true)
             #expect(snapshot.3?.contains("transcript") == false)
         }
 
@@ -132,7 +133,7 @@ import GRDB
                 try SummaryRecord(
                     meetingId: meeting.id,
                     title: "Excluded summary title",
-                    document: try Self.summaryDocument(body: "要約固有語を記録").databaseJSONString(),
+                    document: Self.summaryDocument(body: "要約固有語を記録").databaseJSONString(),
                     createdAt: .now
                 ).insert(db)
             }
@@ -158,7 +159,7 @@ import GRDB
             try await database.dbQueue.write { db in
                 try db.execute(
                     sql: "UPDATE summaries SET document = ? WHERE meetingId = ?",
-                    arguments: [try Self.summaryDocument(body: "更新後要約語を記録").databaseJSONString(), meeting.id]
+                    arguments: [Self.summaryDocument(body: "更新後要約語を記録").databaseJSONString(), meeting.id]
                 )
             }
             await database.searchIndexer.drain()
@@ -506,7 +507,8 @@ import GRDB
                 try db.execute(
                     sql: """
                     UPDATE search_documents_fts
-                    SET title = '破損内容', description = '', summary = '', calendar = '', tags = '', projectPath = ''
+                    SET title = '破損内容', description = '', summary = '', calendar = '', tags = '',
+                        projectPath = '', ocr = '', caption = ''
                     WHERE rowid = ?
                     """,
                     arguments: [rowID]
@@ -839,7 +841,7 @@ import GRDB
                 try SummaryRecord(
                     meetingId: meeting.id,
                     title: "Preserved",
-                    document: try Self.summaryDocument(body: "移行後検索対象").databaseJSONString(),
+                    document: Self.summaryDocument(body: "移行後検索対象").databaseJSONString(),
                     createdAt: .now
                 ).insert(db)
                 try db.execute(
@@ -991,4 +993,5 @@ import GRDB
             )
         }
     }
+
 #endif

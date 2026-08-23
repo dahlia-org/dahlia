@@ -26,6 +26,7 @@ struct ContentView: View {
     @State private var searchModel = MainSearchModel()
     @State private var projectEditorRequest: ProjectEditorRequest?
     @State private var projectPendingDeletion: ProjectOverviewItem?
+    @State private var expandedScreenshot: ExpandedScreenshotPresentation?
 
     var body: some View {
         let isShowingSettings = mainWindowNavigation.isShowingSettings
@@ -101,7 +102,7 @@ struct ContentView: View {
                             detailView
                         } settingsContent: {
                             SettingsDetailView(
-                                selection: mainWindowNavigation.settingsCategory,
+                                selection: $mainWindowNavigation.settingsCategory,
                                 captionViewModel: viewModel,
                                 sidebarViewModel: sidebarViewModel,
                                 appDatabase: appDatabase,
@@ -196,6 +197,7 @@ struct ContentView: View {
                     sidebarViewModel: sidebarViewModel,
                     appearanceForProject: projectAppearance,
                     onOpenMeeting: openSearchMeeting,
+                    onOpenScreenshot: openSearchScreenshot,
                     onOpenProject: openSearchProject
                 )
                 .opacity(isShowingSettings ? 0 : 1)
@@ -204,6 +206,13 @@ struct ContentView: View {
                 .accessibilityHidden(isShowingSettings)
             }
         }
+        .screenshotOverlayPresentation(
+            presentation: $expandedScreenshot,
+            screenshots: { viewModel.screenshotStore.records },
+            summaryScreenshotIDs: { viewModel.currentSummaryDocument?.orderedScreenshotIds ?? [] },
+            onDownload: viewModel.downloadScreenshot,
+            ocrStateProvider: viewModel.screenshotOCRState
+        )
         .projectModalPresentation(
             editorRequest: $projectEditorRequest,
             deletionProject: $projectPendingDeletion,
@@ -357,6 +366,11 @@ private extension ContentView {
         sidebarViewModel.selectMeeting(id)
     }
 
+    private func openSearchScreenshot(_ result: ScreenshotSearchResult) {
+        viewModel.requestOpenScreenshotID = result.id
+        openSearchMeeting(result.meetingID)
+    }
+
     private func openSearchProject(_ id: UUID) {
         openProjectDetail(id)
     }
@@ -464,7 +478,8 @@ private extension ContentView {
             ControlPanelView(
                 viewModel: viewModel,
                 sidebarViewModel: sidebarViewModel,
-                recordingCoordinator: recordingCoordinator
+                recordingCoordinator: recordingCoordinator,
+                expandedScreenshot: $expandedScreenshot
             )
         } else {
             CalendarScheduleView(

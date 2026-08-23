@@ -52,6 +52,11 @@ enum L10n {
     static var select: String { String(localized: "Select", bundle: bundle) }
     static var selectAll: String { String(localized: "Select All", bundle: bundle) }
     static var download: String { String(localized: "Download", bundle: bundle) }
+    static var imageInformation: String { String(localized: "Image Information", bundle: bundle) }
+    static var capturedAt: String { String(localized: "Captured", bundle: bundle) }
+    static var fileType: String { String(localized: "File Type", bundle: bundle) }
+    static var fileSize: String { String(localized: "File Size", bundle: bundle) }
+    static var imageDimensions: String { String(localized: "Dimensions", bundle: bundle) }
     static var layout: String { String(localized: "Layout", bundle: bundle) }
     static var large: String { String(localized: "Large", bundle: bundle) }
     static var medium: String { String(localized: "Medium", bundle: bundle) }
@@ -819,7 +824,13 @@ enum L10n {
     static var inProgress: String { String(localized: "In Progress", bundle: bundle) }
     static var noMeetingsYet: String { String(localized: "No meetings yet", bundle: bundle) }
     static var searchMeetings: String { String(localized: "Search meetings...", bundle: bundle) }
-    static var searchMeetingsAndProjects: String { String(localized: "Search meetings and projects", bundle: bundle) }
+    static var searchMeetingsAndProjects: String { String(localized: "Search meetings, screenshots, and projects", bundle: bundle) }
+    static var screenshotSearchResults: String { String(localized: "Screenshots", bundle: bundle) }
+    static var detectedText: String { String(localized: "Detected Text", bundle: bundle) }
+    static var imageDescription: String { String(localized: "Image Description", bundle: bundle) }
+    static var noTextDetected: String { String(localized: "No text was detected.", bundle: bundle) }
+    static var imageAnalysisFailed: String { String(localized: "Image analysis failed.", bundle: bundle) }
+    static var analyzingImage: String { String(localized: "Analyzing image...", bundle: bundle) }
     static var searchMode: String { String(localized: "Search mode", bundle: bundle) }
     static var searchModeSimple: String { String(localized: "Search mode Simple", bundle: bundle) }
     static var searchModeAdvanced: String { String(localized: "Search mode Advanced", bundle: bundle) }
@@ -2158,6 +2169,17 @@ enum L10n {
     static var noMatchingLanguages: String { String(localized: "No matching languages", bundle: bundle) }
     static func languagesSelected(_ count: Int) -> String { String(localized: "\(count) languages selected", bundle: bundle) }
     static var transcriptionLanguages: String { String(localized: "Transcription Languages", bundle: bundle) }
+    static var appLanguages: String { String(localized: "App Languages", bundle: bundle) }
+    static var appLanguagesDescription: String { String(
+        localized: "Limits languages shown for transcription and live subtitles, automatic language detection, and screenshot text extraction.",
+        bundle: bundle
+    ) }
+    static var imageTextLanguages: String { String(localized: "Screenshot Text Languages", bundle: bundle) }
+    static var imageTextLanguagesDescription: String { String(
+        localized: "Codex uses the app languages selected in General as hints when extracting screenshot text.",
+        bundle: bundle
+    ) }
+    static var openLanguageSettings: String { String(localized: "Open Language Settings", bundle: bundle) }
     static var recordedLanguages: String { String(localized: "Recorded Languages", bundle: bundle) }
     static var transcriptionLanguage: String { String(localized: "Transcription Language", bundle: bundle) }
     static var transcriptionLanguageDescription: String { String(

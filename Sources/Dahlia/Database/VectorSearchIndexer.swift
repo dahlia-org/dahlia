@@ -183,13 +183,16 @@ actor VectorSearchIndexer {
                 )
             }
             guard phase != "ready" else { return }
-            let total = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM search_documents") ?? 0
+            let total = try Int.fetchOne(
+                db,
+                sql: "SELECT COUNT(*) FROM search_documents WHERE kind != 'screenshot'"
+            ) ?? 0
             try db.execute(
                 sql: """
                 INSERT INTO search_index_jobs(indexKind, targetKind, targetKey, availableAt, updatedAt)
                 SELECT 'vector', 'document', id, unixepoch('subsec'), unixepoch('subsec')
                 FROM search_documents
-                WHERE true
+                WHERE kind != 'screenshot'
                 ON CONFLICT(indexKind, targetKind, targetKey) DO UPDATE SET
                     generation = generation + 1, status = 'pending', attempts = 0,
                     availableAt = excluded.availableAt, claimedAt = NULL, leaseExpiresAt = NULL,
@@ -471,6 +474,7 @@ private struct VectorDocument: Sendable {
             arguments: [id]
         ) else { return nil }
         let kind: String = document["kind"]
+        guard kind != "screenshot" else { return nil }
         let sourceID: UUID = document["sourceId"]
         let sourceContentHash: String = document["sourceContentHash"]
         if kind == "project" {

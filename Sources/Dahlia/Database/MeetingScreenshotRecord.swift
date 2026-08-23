@@ -11,4 +11,6 @@ struct MeetingScreenshotRecord: Codable, FetchableRecord, PersistableRecord, Sen
     var capturedAt: Date
     var imageData: Data
     var mimeType: String
+    var ocrText: String? = nil
+    var caption: String? = nil
 }

@@ -69,7 +69,10 @@ enum BatchLanguageDetectionCandidateResolver {
         supportedLocales: [Locale]
     ) -> BatchLanguageDetectionCandidates {
         let eligibleLocales = supportedLocales.filter { locale in
-            scope == .all || enabledLocaleIdentifiers.contains(locale.identifier)
+            scope == .all
+                || enabledLocaleIdentifiers.contains(locale.identifier)
+                || AppLanguageSelection.canonicalIdentifier(from: locale.identifier)
+                .map(enabledLocaleIdentifiers.contains) == true
         }
         var languageIdentifiers: Set<String> = []
         let candidateLocales = eligibleLocales.filter { locale in

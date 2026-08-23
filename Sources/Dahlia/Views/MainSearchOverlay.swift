@@ -5,6 +5,7 @@ struct MainSearchOverlay: View {
     var sidebarViewModel: SidebarViewModel
     let appearanceForProject: (UUID) -> ProjectAppearance
     let onOpenMeeting: (UUID) -> Void
+    let onOpenScreenshot: (ScreenshotSearchResult) -> Void
     let onOpenProject: (UUID) -> Void
 
     var body: some View {
@@ -27,6 +28,10 @@ struct MainSearchOverlay: View {
                     onOpenMeeting: { id in
                         model.dismiss()
                         onOpenMeeting(id)
+                    },
+                    onOpenScreenshot: { screenshot in
+                        model.dismiss()
+                        onOpenScreenshot(screenshot)
                     },
                     onOpenProject: { id in
                         model.dismiss()

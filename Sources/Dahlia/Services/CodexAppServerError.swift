@@ -17,6 +17,7 @@ enum CodexAppServerError: LocalizedError, Equatable {
     case backendResetForSafety
     case approvalNoLongerPending
     case emptyResponse
+    case requestedModelUnavailable(String)
 
     var errorDescription: String? {
         switch self {
@@ -38,6 +39,7 @@ enum CodexAppServerError: LocalizedError, Equatable {
         case .backendResetForSafety: L10n.codexBackendResetForSafety
         case .approvalNoLongerPending: L10n.codexApprovalNoLongerPending
         case .emptyResponse: L10n.llmErrorEmptyResponse
+        case let .requestedModelUnavailable(model): "Requested Codex model is unavailable: \(model)"
         }
     }
 

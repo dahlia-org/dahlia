@@ -60,7 +60,7 @@ enum CalendarSource: String, CaseIterable, Identifiable {
     }
 }
 
-enum TranscriptionLanguageScope: String, CaseIterable, Codable, Identifiable, Sendable {
+enum AppLanguageScope: String, CaseIterable, Codable, Identifiable, Sendable {
     case all
     case selected
 
@@ -73,6 +73,8 @@ enum TranscriptionLanguageScope: String, CaseIterable, Codable, Identifiable, Se
         }
     }
 }
+
+typealias TranscriptionLanguageScope = AppLanguageScope
 
 /// アプリ設定の一元管理。@AppStorage で UserDefaults に永続化。
 @MainActor
@@ -101,6 +103,8 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
     nonisolated static let exportBatchSummaryToVaultUserDefaultsKey = "exportBatchSummaryToVault"
     nonisolated static let exportBatchSummaryToGoogleDocsUserDefaultsKey = "exportBatchSummaryToGoogleDocs"
     nonisolated static let transcriptionLanguageScopeUserDefaultsKey = "transcriptionLanguageScope"
+    nonisolated static let appLanguageScopeUserDefaultsKey = "appLanguageScope"
+    nonisolated static let enabledLanguageIdentifiersUserDefaultsKey = "enabledLanguageIdentifiers"
     nonisolated static let transcriptionLocaleUserDefaultsKey = "transcriptionLocale"
     nonisolated static let liveSubtitleLocaleUserDefaultsKey = "liveSubtitleLocale"
     nonisolated static let liveSubtitleTranslationEnabledKey = "transcriptTranslationEnabled"
@@ -129,6 +133,7 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
     init() {
         Self.migrateCalendarEventFilterSettings(in: .standard)
         Self.migrateLiveSubtitleLocaleSetting(in: .standard)
+        Self.migrateAppLanguageSettings(in: .standard)
         meetingNotificationPresentationRawValue = meetingNotificationPresentation.rawValue
         batchTranscriptionStallTimeoutRawValue = batchTranscriptionStallTimeout.rawValue
     }
@@ -342,49 +347,64 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
     // MARK: - 表示言語設定
 
     /// デフォルトで有効にする言語識別子のJSON。
-    nonisolated static let defaultEnabledLocaleIdentifiers: Set = ["en_US", "ja_JP"]
-    private static let defaultEnabledLocalesJSON = "[\"en_US\",\"ja_JP\"]"
+    nonisolated static let defaultEnabledLanguageIdentifiers: Set = ["en", "ja"]
+    private nonisolated static let defaultEnabledLanguagesJSON = "[\"en\",\"ja\"]"
 
     /// 空文字は旧設定を表し、既存の言語集合から範囲を推定する。
-    @AppStorage(transcriptionLanguageScopeUserDefaultsKey) var transcriptionLanguageScopeRawValue = ""
+    @AppStorage(appLanguageScopeUserDefaultsKey) var appLanguageScopeRawValue = AppLanguageScope.selected.rawValue
 
-    var transcriptionLanguageScope: TranscriptionLanguageScope {
-        get {
-            Self.resolvedTranscriptionLanguageScope(
-                storedRawValue: transcriptionLanguageScopeRawValue,
-                enabledLocaleIdentifiers: enabledLocaleIdentifiers
-            )
-        }
-        set { transcriptionLanguageScopeRawValue = newValue.rawValue }
+    var appLanguageScope: AppLanguageScope {
+        get { AppLanguageScope(rawValue: appLanguageScopeRawValue) ?? .selected }
+        set { appLanguageScopeRawValue = newValue.rawValue }
     }
 
-    /// 言語選択ピッカーに表示する言語の識別子（JSON配列）。
-    @AppStorage("enabledLocaleIdentifiers") var enabledLocaleIdentifiersJSON = defaultEnabledLocalesJSON
+    @AppStorage(enabledLanguageIdentifiersUserDefaultsKey)
+    var enabledLanguageIdentifiersJSON = defaultEnabledLanguagesJSON
 
-    var enabledLocaleIdentifiers: Set<String> {
-        get {
-            guard !enabledLocaleIdentifiersJSON.isEmpty,
-                  let data = enabledLocaleIdentifiersJSON.data(using: .utf8),
-                  let array = try? JSONDecoder().decode([String].self, from: data)
-            else { return [] }
-            return Set(array)
-        }
-        set {
-            if newValue.isEmpty {
-                enabledLocaleIdentifiersJSON = ""
-            } else {
-                let array = Array(newValue).sorted()
-                if let data = try? JSONEncoder().encode(array),
-                   let json = String(data: data, encoding: .utf8) {
-                    enabledLocaleIdentifiersJSON = json
-                }
-            }
-        }
+    var enabledLanguageIdentifiers: Set<String> {
+        get { Self.enabledLanguageIdentifiers(in: .standard) }
+        set { enabledLanguageIdentifiersJSON = Self.encodedLanguageIdentifiers(newValue) }
     }
 
-    /// 指定ロケールがピッカーと自動言語判定の候補として有効かどうか。
-    func isLocaleEnabled(_ identifier: String) -> Bool {
-        transcriptionLanguageScope == .all || enabledLocaleIdentifiers.contains(identifier)
+    func isLanguageEnabled(_ identifier: String) -> Bool {
+        appLanguageScope == .all
+            || AppLanguageSelection.canonicalIdentifier(from: identifier).map(enabledLanguageIdentifiers.contains) == true
+    }
+
+    nonisolated static func enabledLanguageIdentifiers(in defaults: UserDefaults) -> Set<String> {
+        guard let encoded = defaults.string(forKey: enabledLanguageIdentifiersUserDefaultsKey),
+              let data = encoded.data(using: .utf8),
+              let identifiers = try? JSONDecoder().decode([String].self, from: data) else {
+            return defaultEnabledLanguageIdentifiers
+        }
+        return Set(identifiers.compactMap(AppLanguageSelection.canonicalIdentifier))
+    }
+
+    nonisolated static func migrateAppLanguageSettings(in defaults: UserDefaults) {
+        guard defaults.object(forKey: appLanguageScopeUserDefaultsKey) == nil else { return }
+        let legacyEncodedIdentifiers = defaults.string(forKey: "enabledLocaleIdentifiers")
+        let legacyIdentifiers = legacyEncodedIdentifiers
+            .flatMap { $0.data(using: .utf8) }
+            .flatMap { try? JSONDecoder().decode([String].self, from: $0) } ?? []
+        let identifiers = Set(legacyIdentifiers.compactMap(AppLanguageSelection.canonicalIdentifier))
+        let legacyScope = defaults.string(forKey: transcriptionLanguageScopeUserDefaultsKey)
+        let legacySelectionForScope = legacyEncodedIdentifiers == nil
+            ? Set(["en_US", "ja_JP"])
+            : Set(legacyIdentifiers)
+        let scope = resolvedTranscriptionLanguageScope(
+            storedRawValue: legacyScope ?? "",
+            enabledLocaleIdentifiers: legacySelectionForScope
+        )
+        defaults.set(scope.rawValue, forKey: appLanguageScopeUserDefaultsKey)
+        defaults.set(
+            encodedLanguageIdentifiers(identifiers.isEmpty ? defaultEnabledLanguageIdentifiers : identifiers),
+            forKey: enabledLanguageIdentifiersUserDefaultsKey
+        )
+    }
+
+    private nonisolated static func encodedLanguageIdentifiers(_ identifiers: Set<String>) -> String {
+        let data = try? JSONEncoder().encode(identifiers.sorted())
+        return data.flatMap { String(data: $0, encoding: .utf8) } ?? defaultEnabledLanguagesJSON
     }
 
     nonisolated static func resolvedTranscriptionLanguageScope(
@@ -721,7 +741,8 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
 
     <citation_policy>
     - Support important claims with transcript references when possible.
-    - Add transcript references to each relevant `content.transcript_ref` or `items[].transcript_ref` for key decisions, risks, dates, and open questions.
+    - Add transcript references to each relevant `content.transcript_ref` or `items[].transcript_ref`
+      for key decisions, risks, dates, and open questions.
     - Do not over-cite to the point that readability suffers.
     </citation_policy>
 
@@ -793,12 +814,12 @@ extension UserDefaults {
         string(forKey: AppSettings.liveSubtitleLocaleUserDefaultsKey)
     }
 
-    @objc dynamic var enabledLocaleIdentifiers: String? {
-        string(forKey: "enabledLocaleIdentifiers")
+    @objc dynamic var enabledLanguageIdentifiers: String? {
+        string(forKey: AppSettings.enabledLanguageIdentifiersUserDefaultsKey)
     }
 
-    @objc dynamic var transcriptionLanguageScope: String? {
-        string(forKey: AppSettings.transcriptionLanguageScopeUserDefaultsKey)
+    @objc dynamic var appLanguageScope: String? {
+        string(forKey: AppSettings.appLanguageScopeUserDefaultsKey)
     }
 
     @objc dynamic var transcriptTranslationEnabled: Bool {

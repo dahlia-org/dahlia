@@ -728,6 +728,53 @@ import ImageIO
         }
 
         @Test
+        func screenshotTextSearchReturnsImagesWithoutMergingMeetings() async throws {
+            let fixture = try Fixture()
+            await fixture.manager.searchIndexer.drain()
+            try await fixture.manager.dbQueue.write { db in
+                let text = "Screenshot-only architecture needle"
+                let caption = "Architecture diagram for the meeting"
+                try db.execute(
+                    sql: "UPDATE screenshots SET ocrText = ?, caption = ? WHERE id = ?",
+                    arguments: [text, caption, fixture.firstScreenshotID]
+                )
+                let meeting = try #require(try MeetingRecord.fetchOne(db, key: fixture.firstMeetingID))
+                try upsertDocument(
+                    SearchDocumentProjection(
+                        kind: "screenshot",
+                        sourceID: fixture.firstScreenshotID,
+                        vaultID: fixture.primaryVaultID,
+                        meetingID: fixture.firstMeetingID,
+                        projectID: meeting.projectId,
+                        fields: SearchDocumentFields(
+                            title: "",
+                            description: "",
+                            calendar: "",
+                            tags: "",
+                            projectPath: "",
+                            ocr: text,
+                            caption: caption
+                        )
+                    ),
+                    generation: 1,
+                    in: db
+                )
+            }
+            let store = try fixture.store(vaultID: fixture.primaryVaultID)
+            #expect(throws: MeetingAccessError.searchQueryTooShort(minimum: 2)) {
+                try store.queryScreenshots(ScreenshotTextQuery(query: "a"))
+            }
+            let screenshots = try store.queryScreenshots(ScreenshotTextQuery(query: "architecture needle"))
+            let meetings = try store.queryMeetings(MeetingQuery(query: "architecture needle"))
+
+            #expect(screenshots.screenshots.map(\.id) == [fixture.firstScreenshotID])
+            #expect(screenshots.screenshots.first?.meetingID == fixture.firstMeetingID)
+            #expect(screenshots.screenshots.first?.detectedText == "Screenshot-only architecture needle")
+            #expect(screenshots.screenshots.first?.caption == "Architecture diagram for the meeting")
+            #expect(meetings.meetings.isEmpty)
+        }
+
+        @Test
         func screenshotImagesAreActuallyDownsampledAndRejectCorruptData() throws {
             let fixture = try Fixture()
             let largeImage = try #require(Self.makeImage(width: 2048, height: 512))
@@ -1065,7 +1112,7 @@ import ImageIO
             let tools = try Self.json(server.handleLine(#"{"jsonrpc":"2.0","id":3,"method":"tools/list"}"#))
             let definitions = ((tools["result"] as? [String: Any])?["tools"] as? [[String: Any]]) ?? []
             #expect(definitions.map { $0["name"] as? String } == [
-                "query_meetings", "get_meeting", "get_meeting_transcript", "get_meeting_screenshots",
+                "query_meetings", "query_screenshots", "get_meeting", "get_meeting_transcript", "get_meeting_screenshots",
                 "query_projects", "get_project",
                 "query_organizations", "get_organization", "query_organization_chart",
                 "query_contacts", "get_contact",
@@ -1080,6 +1127,12 @@ import ImageIO
             let screenshotDefinition = try #require(
                 definitions.first { $0["name"] as? String == "get_meeting_screenshots" }
             )
+            let screenshotQueryDefinition = try #require(
+                definitions.first { $0["name"] as? String == "query_screenshots" }
+            )
+            let screenshotQueryInput = try #require(screenshotQueryDefinition["inputSchema"] as? [String: Any])
+            let screenshotQueryProperties = try #require(screenshotQueryInput["properties"] as? [String: Any])
+            #expect((screenshotQueryProperties["query"] as? [String: Any])?["minLength"] as? Int == 2)
             let screenshotInputSchema = try #require(screenshotDefinition["inputSchema"] as? [String: Any])
             let screenshotInputProperties = try #require(screenshotInputSchema["properties"] as? [String: Any])
             let imageSizeSchema = try #require(screenshotInputProperties["image_size"] as? [String: Any])
