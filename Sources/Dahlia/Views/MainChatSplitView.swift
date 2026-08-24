@@ -45,9 +45,11 @@ struct MainChatSplitView<Content: View, Sidebar: View>: View {
                     sidebar
                         .environment(\.isChatSidebarResizing, isResizing)
                         .frame(width: sidebarWidth, height: geometry.size.height)
-                        .background(alignment: .leading) {
+                        .background {
                             Color(nsColor: .windowBackgroundColor)
                                 .ignoresSafeArea()
+                        }
+                        .overlay(alignment: .leading) {
                             Rectangle()
                                 .fill(Color(nsColor: .separatorColor))
                                 .frame(width: 1)
