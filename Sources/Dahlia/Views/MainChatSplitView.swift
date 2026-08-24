@@ -54,13 +54,14 @@ struct MainChatSplitView<Content: View, Sidebar: View>: View {
                                 .fill(Color(nsColor: .separatorColor))
                                 .frame(width: 1)
                         }
-                        .overlay(alignment: .leading) {
-                            resizeHandle(
-                                from: restingSidebarWidth,
-                                availableWidth: geometry.size.width
-                            )
-                        }
                         .transition(.move(edge: .trailing))
+
+                    resizeHandle(
+                        currentWidth: sidebarWidth,
+                        restingWidth: restingSidebarWidth,
+                        availableWidth: geometry.size.width
+                    )
+                    .transition(.move(edge: .trailing))
                 }
             }
             .frame(width: geometry.size.width, height: geometry.size.height)
@@ -70,17 +71,17 @@ struct MainChatSplitView<Content: View, Sidebar: View>: View {
         .frame(minWidth: isVisible ? MainChatSidebarLayout.minimumWidth + contentMinimumWidth : contentMinimumWidth)
     }
 
-    private func resizeHandle(from width: CGFloat, availableWidth: CGFloat) -> some View {
+    private func resizeHandle(currentWidth: CGFloat, restingWidth: CGFloat, availableWidth: CGFloat) -> some View {
         Color.clear
             .frame(width: 8)
             .contentShape(.rect)
-            .offset(x: -4)
-            .gesture(resizeGesture(from: width, availableWidth: availableWidth))
+            .offset(x: -currentWidth + 4)
+            .gesture(resizeGesture(from: restingWidth, availableWidth: availableWidth))
             .accessibilityElement()
             .accessibilityLabel(L10n.resize)
-            .accessibilityValue(Int(width).formatted())
+            .accessibilityValue(Int(currentWidth).formatted())
             .accessibilityAdjustableAction { direction in
-                resizeSidebar(direction, from: width, availableWidth: availableWidth)
+                resizeSidebar(direction, from: restingWidth, availableWidth: availableWidth)
             }
             .onContinuousHover { phase in
                 (phase == .ended ? NSCursor.arrow : NSCursor.resizeLeftRight).set()
