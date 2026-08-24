@@ -59,6 +59,7 @@ struct MainChatSplitView<Content: View, Sidebar: View>: View {
                         restingWidth: restingSidebarWidth,
                         availableWidth: geometry.size.width
                     )
+                    .transition(.move(edge: .trailing))
                 }
             }
             .frame(width: geometry.size.width, height: geometry.size.height)
