@@ -664,6 +664,7 @@
 "Search languages..." = "言語を検索...";
 "No matching languages" = "該当する言語がありません";
 "%lld languages selected" = "%lld 言語を選択中";
+"%lld more languages" = "ほか%lld言語";
 "Transcription Languages" = "文字起こし言語";
 "App Languages" = "アプリで扱う言語";
 "Limits languages shown for transcription and live subtitles, automatic language detection, and screenshot text extraction." = "文字起こしとライブ字幕の選択肢、自動言語判定、スクリーンショットの文字抽出に使う言語を絞り込みます。";
@@ -741,6 +742,7 @@
 "System audio capture stopped" = "システム音声キャプチャが停止しました";
 "Microphone capture stopped" = "マイクのキャプチャが停止しました";
 "Recording" = "録音";
+"Automatic Recording Stop" = "録音の自動停止";
 "Automatically Stop Recording When the Meeting Ends" = "ミーティング終了時に録音を自動停止";
 "Stop and save after both recording and supported meeting-app activity have lasted at least 30 seconds. Browser activity also requires a recognized meeting window. In-person meetings are not detected." = "録音と対応会議アプリの利用がどちらも30秒以上続いた後に終了したら、停止して保存します。ブラウザでは対応する会議ウィンドウも必要です。対面会議は検出しません。";
 

@@ -2168,6 +2168,7 @@ enum L10n {
     static var searchLanguages: String { String(localized: "Search languages...", bundle: bundle) }
     static var noMatchingLanguages: String { String(localized: "No matching languages", bundle: bundle) }
     static func languagesSelected(_ count: Int) -> String { String(localized: "\(count) languages selected", bundle: bundle) }
+    static func additionalLanguages(_ count: Int) -> String { String(localized: "\(count) more languages", bundle: bundle) }
     static var transcriptionLanguages: String { String(localized: "Transcription Languages", bundle: bundle) }
     static var appLanguages: String { String(localized: "App Languages", bundle: bundle) }
     static var appLanguagesDescription: String { String(
@@ -2625,6 +2626,7 @@ enum L10n {
     static var systemAudioCaptureStopped: String { String(localized: "System audio capture stopped", bundle: bundle) }
     static var microphoneCaptureStopped: String { String(localized: "Microphone capture stopped", bundle: bundle) }
     static var recording: String { String(localized: "Recording", bundle: bundle) }
+    static var automaticRecordingStop: String { String(localized: "Automatic Recording Stop", bundle: bundle) }
     static var automaticMeetingEndRecordingStop: String { String(
         localized: "Automatically Stop Recording When the Meeting Ends",
         bundle: bundle
