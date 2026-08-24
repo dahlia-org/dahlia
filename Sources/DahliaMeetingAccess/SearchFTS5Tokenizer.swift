@@ -74,4 +74,11 @@ public final class SearchFTS5Tokenizer: FTS5CustomTokenizer {
     public static func quotedQueryToken(_ token: String, isPrefix: Bool) -> String {
         "\"\(token.replacingOccurrences(of: "\"", with: "\"\""))\"\(isPrefix ? "*" : "")"
     }
+
+    /// screenshot 検索のランキング式。caption は AI 生成の解釈でハルシネーションがあり得るため、
+    /// 実際に写っている文字である ocr より低い重みを与える。
+    /// 重みは ScreenshotOCRSearchMigration が定義する search_documents_fts のカラム位置に対応し、
+    /// ScreenshotOCRSearchTests.ocrMatchRanksAboveCaptionOnlyMatch がカラム順をピン留めしている。
+    public static let screenshotRankingSQL =
+        "bm25(search_documents_fts, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.4)"
 }

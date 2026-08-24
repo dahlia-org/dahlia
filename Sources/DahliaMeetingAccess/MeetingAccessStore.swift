@@ -125,7 +125,7 @@ public final class MeetingAccessStore: Sendable {
                     JOIN screenshots ON screenshots.id = search_documents.sourceId
                     JOIN meetings ON meetings.id = screenshots.meetingId
                     WHERE \(conditions.joined(separator: " AND "))
-                    ORDER BY bm25(search_documents_fts), screenshots.capturedAt DESC, screenshots.id
+                    ORDER BY \(SearchFTS5Tokenizer.screenshotRankingSQL), screenshots.capturedAt DESC, screenshots.id
                     LIMIT ? OFFSET ?
                     """,
                     arguments: arguments

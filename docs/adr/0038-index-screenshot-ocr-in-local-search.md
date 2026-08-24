@@ -14,6 +14,7 @@ Accepted; amends ADR-0005, ADR-0033, and ADR-0035.
 - v38 migration は meeting/project の document ID と既存 vector を保持し、FTS だけを再構築する。
 - 要約生成には抽出結果ではなく画像を渡し続ける。ユーザーは画像 overlay で検出文字、画像説明、処理状態を確認でき、MCP では完了済みの検出文字と画像説明を参照できる。
 - 「一般」のアプリ言語設定を Speech、WhisperKit、画像内テキストの共通候補として使う。画像説明は要約言語で生成し、設定変更は将来の画像解析にだけ適用する。
+- screenshot 検索は `ocr` と `caption` の両カラムを対象とし、BM25 で caption に ocr より低い重み（0.4）を与える。caption は AI 生成の解釈であり、実際の検出文字より信頼度が低いため。
 
 ## Consequences
 
