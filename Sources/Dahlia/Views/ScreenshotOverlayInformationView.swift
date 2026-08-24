@@ -12,7 +12,7 @@ struct ScreenshotOverlayInformationView: View {
                 Text(L10n.imageInformation)
                     .font(.headline)
 
-                VStack(spacing: 8) {
+                VStack(alignment: .leading, spacing: 8) {
                     LabeledContent(L10n.capturedAt) {
                         Text(screenshot.capturedAt.formatted(date: .abbreviated, time: .standard))
                     }
