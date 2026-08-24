@@ -188,10 +188,10 @@ final class DatabricksAccountController {
         )
         try Task.checkCancellation()
         let previousAccountConfiguration = configurationStore.codexAccountConfigurationSnapshot
-        let previousConfiguration = try configurationManager.configurationData()
+        let previousConfiguration = try await configurationManager.configurationData()
         configurationStore.invalidateCodexAccountConfiguration()
         do {
-            let configurationChanged = try configurationManager.configureDatabricks(profile: profile)
+            let configurationChanged = try await configurationManager.configureDatabricks(profile: profile)
             if configurationChanged || browserLoginCompleted || authenticationResult == .browserLoginCompleted {
                 try await service.reloadConfiguration()
             }
@@ -203,7 +203,7 @@ final class DatabricksAccountController {
             )
             try Task.checkCancellation()
         } catch {
-            try configurationManager.restoreConfiguration(previousConfiguration)
+            try await configurationManager.restoreConfiguration(previousConfiguration)
             await service.markProviderAuthenticationReloadRequired()
             try? await service.reloadConfiguration()
             configurationStore.restoreCodexAccountConfiguration(previousAccountConfiguration)

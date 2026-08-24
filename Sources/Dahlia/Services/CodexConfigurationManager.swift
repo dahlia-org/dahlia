@@ -1,6 +1,6 @@
 import Foundation
 
-struct CodexConfigurationManager {
+actor CodexConfigurationManager {
     private let homeLocator: ApplicationSupportCodexHomeLocator
 
     init(homeLocator: ApplicationSupportCodexHomeLocator = ApplicationSupportCodexHomeLocator()) {
@@ -44,7 +44,7 @@ struct CodexConfigurationManager {
         return try writeIfChanged(Data(configuration.utf8))
     }
 
-    func validateDatabricks(profile: DatabricksCLIClient.Profile) throws {
+    nonisolated func validateDatabricks(profile: DatabricksCLIClient.Profile) throws {
         _ = try validatedDatabricksValues(profile: profile)
     }
 
@@ -67,7 +67,7 @@ struct CodexConfigurationManager {
         }
     }
 
-    private func validatedDatabricksValues(
+    private nonisolated func validatedDatabricksValues(
         profile: DatabricksCLIClient.Profile
     ) throws -> (profileName: String, workspaceURL: URL) {
         guard let profileName = profile.name.nilIfBlank else {
@@ -76,7 +76,7 @@ struct CodexConfigurationManager {
         return try (profileName, normalizedDatabricksWorkspaceURL(profile.host))
     }
 
-    func normalizedDatabricksWorkspaceURL(_ value: String?) throws -> URL {
+    nonisolated func normalizedDatabricksWorkspaceURL(_ value: String?) throws -> URL {
         guard let value = value?.nilIfBlank,
               var components = URLComponents(string: value),
               components.scheme?.lowercased() == "https",
@@ -121,11 +121,11 @@ struct CodexConfigurationManager {
         }
     }
 
-    private func shellQuote(_ value: String) -> String {
+    private nonisolated func shellQuote(_ value: String) -> String {
         "'" + value.replacingOccurrences(of: "'", with: "'\"'\"'") + "'"
     }
 
-    private func tomlEscape(_ value: String) -> String {
+    private nonisolated func tomlEscape(_ value: String) -> String {
         value
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")

@@ -39,7 +39,7 @@ final class CodexAccountController {
         do {
             try Task.checkCancellation()
             configurationStore.invalidateCodexAccountConfiguration()
-            if try configurationManager.configureChatGPTSubscription() {
+            if try await configurationManager.configureChatGPTSubscription() {
                 try await service.reloadConfiguration()
             }
             accountStatus = try await service.accountStatus(forceRefresh: true)
