@@ -86,7 +86,7 @@ swift build                            # Debug build
 swift run Dahlia                       # Unsigned debug run
 ./scripts/run-dev.sh                   # Debug + codesign; preferred for full-feature testing
 ./scripts/build-app.sh                 # Release .app bundle
-swift test                             # Full test suite
+swift test --experimental-maximum-parallelization-width 4 # Full test suite; matches CI
 swift test --filter SummaryServiceTests # Example targeted suite
 CI=true ./scripts/lint.sh              # Check SwiftFormat and SwiftLint without modifying files
 ```
@@ -96,7 +96,7 @@ CI=true ./scripts/lint.sh              # Check SwiftFormat and SwiftLint without
 ## Definition of Done
 
 - The requested outcome and all applicable repository instructions are satisfied.
-- Swift changes pass `swift build`, behavior changes pass targeted tests, and broader changes run `swift test` when warranted. Swift source changes also pass `CI=true ./scripts/lint.sh`.
+- Swift changes pass `swift build`, behavior changes pass targeted tests, and broader changes run `swift test --experimental-maximum-parallelization-width 4` when warranted. Swift source changes also pass `CI=true ./scripts/lint.sh`.
 - Confirm from the test summary—not only exit code 0—that the intended tests actually ran.
 - Changes to public behavior, settings, or schemas include the corresponding tests, localization, and documentation.
 - Review the final diff against the applicable Code Review Rules for unintended changes and regressions.
