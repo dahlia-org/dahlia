@@ -57,6 +57,25 @@ import SwiftUI
         }
 
         @Test
+        @MainActor
+        func primaryButtonMeetsTextContrastInEveryEnabledState() throws {
+            let appearances = try [
+                NSAppearance.Name.aqua,
+                .darkAqua,
+                .accessibilityHighContrastAqua,
+                .accessibilityHighContrastDarkAqua,
+            ].map { try #require(NSAppearance(named: $0)) }
+            let states: [DahliaDesign.Button.InteractionState] = [.normal, .hovered, .pressed]
+
+            for appearance in appearances {
+                for state in states {
+                    let color = resolved(DahliaDesign.primaryButtonBackgroundNSColor(for: state), with: appearance)
+                    #expect(contrast(color, against: .white) >= 4.5)
+                }
+            }
+        }
+
+        @Test
         func sidebarHighlightStrengthensWithIncreasedContrast() {
             #expect(DahliaDesign.sidebarHighlightOpacity(for: .standard) == 0.10)
             #expect(DahliaDesign.sidebarHighlightOpacity(for: .increased) == 0.20)
@@ -72,11 +91,22 @@ import SwiftUI
         }
 
         private func contrastAgainstWhite(_ color: NSColor) -> CGFloat {
+            contrast(color, against: .white)
+        }
+
+        private func contrast(_ first: NSColor, against second: NSColor) -> CGFloat {
+            let luminances = [first, second].map { color in
+                relativeLuminance(color)
+            }.sorted()
+            return (luminances[1] + 0.05) / (luminances[0] + 0.05)
+        }
+
+        private func relativeLuminance(_ color: NSColor) -> CGFloat {
+            let color = color.usingColorSpace(.sRGB) ?? color
             let components = [color.redComponent, color.greenComponent, color.blueComponent].map { component in
                 component <= 0.04045 ? component / 12.92 : pow((component + 0.055) / 1.055, 2.4)
             }
-            let luminance = 0.2126 * components[0] + 0.7152 * components[1] + 0.0722 * components[2]
-            return 1.05 / (luminance + 0.05)
+            return 0.2126 * components[0] + 0.7152 * components[1] + 0.0722 * components[2]
         }
     }
 #endif

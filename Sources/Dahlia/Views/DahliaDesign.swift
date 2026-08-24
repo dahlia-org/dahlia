@@ -3,6 +3,12 @@ import SwiftUI
 
 enum DahliaDesign {
     enum Button {
+        enum InteractionState {
+            case normal
+            case hovered
+            case pressed
+        }
+
         static let cornerRadius: CGFloat = 12
     }
 
@@ -39,6 +45,37 @@ enum DahliaDesign {
     static let sidebarHighlightColor = Color.primary.opacity(0.10)
     static let contentHighlightColor = Color.primary.opacity(0.05)
     static let chipHoverColor = Color.primary.opacity(0.10)
+    static func primaryButtonBackgroundNSColor(for state: Button.InteractionState) -> NSColor {
+        NSColor(name: nil) { appearance in
+            let appearance = appearance.bestMatch(from: [
+                .accessibilityHighContrastDarkAqua,
+                .accessibilityHighContrastAqua,
+                .darkAqua,
+                .aqua,
+            ])
+            let isDark = appearance == .accessibilityHighContrastDarkAqua || appearance == .darkAqua
+
+            switch (isDark, state) {
+            case (true, .normal):
+                return NSColor(srgbRed: 71 / 255, green: 119 / 255, blue: 179 / 255, alpha: 1)
+            case (true, .hovered):
+                return NSColor(srgbRed: 64 / 255, green: 109 / 255, blue: 168 / 255, alpha: 1)
+            case (true, .pressed):
+                return NSColor(srgbRed: 56 / 255, green: 99 / 255, blue: 156 / 255, alpha: 1)
+            case (false, .normal):
+                return NSColor(srgbRed: 63 / 255, green: 110 / 255, blue: 168 / 255, alpha: 1)
+            case (false, .hovered):
+                return NSColor(srgbRed: 56 / 255, green: 101 / 255, blue: 157 / 255, alpha: 1)
+            case (false, .pressed):
+                return NSColor(srgbRed: 47 / 255, green: 90 / 255, blue: 145 / 255, alpha: 1)
+            }
+        }
+    }
+
+    static func primaryButtonBackgroundColor(for state: Button.InteractionState) -> Color {
+        Color(nsColor: primaryButtonBackgroundNSColor(for: state))
+    }
+
     static let primaryTextNSColor = adaptiveTextColor(
         light: NSColor(srgbRed: 26 / 255, green: 28 / 255, blue: 31 / 255, alpha: 1),
         dark: NSColor(srgbRed: 223 / 255, green: 223 / 255, blue: 223 / 255, alpha: 1),
