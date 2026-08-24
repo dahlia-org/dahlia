@@ -1,8 +1,12 @@
 import SwiftUI
 
 struct ChatGPTAccountSettingsView: View {
-    @State private var controller = CodexAccountController()
+    let controller: CodexAccountController
     @State private var actionTask: Task<Void, Never>?
+
+    init(controller: CodexAccountController = CodexAccountController()) {
+        self.controller = controller
+    }
 
     var body: some View {
         Section {

@@ -18,8 +18,8 @@ import Foundation
                 host: "https://dbc.example.com/"
             )
 
-            #expect(try manager.configureDatabricks(profile: profile))
-            #expect(try !manager.configureDatabricks(profile: profile))
+            #expect(try await manager.configureDatabricks(profile: profile))
+            #expect(try await !manager.configureDatabricks(profile: profile))
 
             let configURL = try ApplicationSupportCodexHomeLocator(applicationSupportURL: rootURL)
                 .homeURL()
@@ -45,10 +45,10 @@ import Foundation
             let locator = ApplicationSupportCodexHomeLocator(applicationSupportURL: rootURL)
             let manager = CodexConfigurationManager(homeLocator: locator)
             let profile = try await databricksProfile(name: "DEFAULT", host: "https://dbc.example.com")
-            _ = try manager.configureDatabricks(profile: profile)
+            _ = try await manager.configureDatabricks(profile: profile)
 
-            #expect(try manager.configureChatGPTSubscription())
-            #expect(try !manager.configureChatGPTSubscription())
+            #expect(try await manager.configureChatGPTSubscription())
+            #expect(try await !manager.configureChatGPTSubscription())
             #expect(try !FileManager.default.fileExists(atPath: locator.homeURL().appending(path: "config.toml").path))
         }
 
@@ -62,8 +62,8 @@ import Foundation
             )
             let profile = try await databricksProfile(name: "DEFAULT", host: "http://dbc.example.com")
 
-            #expect(throws: CodexConfigurationError.self) {
-                try manager.configureDatabricks(profile: profile)
+            await #expect(throws: CodexConfigurationError.self) {
+                try await manager.configureDatabricks(profile: profile)
             }
         }
 

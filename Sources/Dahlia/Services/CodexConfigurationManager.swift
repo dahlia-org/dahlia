@@ -1,6 +1,6 @@
 import Foundation
 
-struct CodexConfigurationManager {
+actor CodexConfigurationManager {
     private let homeLocator: ApplicationSupportCodexHomeLocator
 
     init(homeLocator: ApplicationSupportCodexHomeLocator = ApplicationSupportCodexHomeLocator()) {
@@ -44,20 +44,39 @@ struct CodexConfigurationManager {
         return try writeIfChanged(Data(configuration.utf8))
     }
 
-    func validateDatabricks(profile: DatabricksCLIClient.Profile) throws {
+    nonisolated func validateDatabricks(profile: DatabricksCLIClient.Profile) throws {
         _ = try validatedDatabricksValues(profile: profile)
     }
 
-    private func validatedDatabricksValues(
+    func configurationData() throws -> Data? {
+        let configURL = try configURL()
+        guard FileManager.default.fileExists(atPath: configURL.path) else { return nil }
+        do {
+            return try Data(contentsOf: configURL)
+        } catch {
+            throw CodexConfigurationError.updateFailed(error.localizedDescription)
+        }
+    }
+
+    func restoreConfiguration(_ data: Data?) throws {
+        let configURL = try configURL()
+        if let data {
+            _ = try writeIfChanged(data)
+        } else if FileManager.default.fileExists(atPath: configURL.path) {
+            try FileManager.default.removeItem(at: configURL)
+        }
+    }
+
+    private nonisolated func validatedDatabricksValues(
         profile: DatabricksCLIClient.Profile
     ) throws -> (profileName: String, workspaceURL: URL) {
         guard let profileName = profile.name.nilIfBlank else {
             throw CodexConfigurationError.databricksProfileRequired
         }
-        return try (profileName, normalizedWorkspaceURL(profile.host))
+        return try (profileName, normalizedDatabricksWorkspaceURL(profile.host))
     }
 
-    private func normalizedWorkspaceURL(_ value: String?) throws -> URL {
+    nonisolated func normalizedDatabricksWorkspaceURL(_ value: String?) throws -> URL {
         guard let value = value?.nilIfBlank,
               var components = URLComponents(string: value),
               components.scheme?.lowercased() == "https",
@@ -69,6 +88,11 @@ struct CodexConfigurationManager {
               components.path.isEmpty || components.path == "/"
         else {
             throw CodexConfigurationError.invalidDatabricksWorkspaceURL
+        }
+        components.scheme = "https"
+        components.host = components.host?.lowercased()
+        if components.port == 443 {
+            components.port = nil
         }
         components.path = ""
         guard let url = components.url else {
@@ -97,11 +121,11 @@ struct CodexConfigurationManager {
         }
     }
 
-    private func shellQuote(_ value: String) -> String {
+    private nonisolated func shellQuote(_ value: String) -> String {
         "'" + value.replacingOccurrences(of: "'", with: "'\"'\"'") + "'"
     }
 
-    private func tomlEscape(_ value: String) -> String {
+    private nonisolated func tomlEscape(_ value: String) -> String {
         value
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
