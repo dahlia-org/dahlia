@@ -862,17 +862,26 @@ extension MeetingRepository {
             .flatMap { try? $0.loadDocument().searchableBodyText } ?? ""
     }
 
-    private nonisolated static func snippet(_ text: String, matching token: String) -> String {
-        let maximumLength = 180
-        guard text.count > maximumLength else { return text }
+    nonisolated static func snippet(_ text: String, matching token: String) -> String {
         guard let match = text.range(
             of: token,
-            options: [.caseInsensitive, .diacriticInsensitive],
+            options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive],
             locale: .current
-        ) else { return String(text.prefix(maximumLength)) }
+        ) else { return String(text.prefix(180)) }
+        return snippet(text, around: match)
+    }
+
+    nonisolated static func snippet(_ text: String, around match: Range<String.Index>) -> String {
+        let maximumLength = 180
+        guard text.count > maximumLength else { return text }
         let start = text.index(match.lowerBound, offsetBy: -60, limitedBy: text.startIndex) ?? text.startIndex
-        let end = text.index(start, offsetBy: maximumLength, limitedBy: text.endIndex) ?? text.endIndex
-        return "\(start == text.startIndex ? "" : "…")\(text[start ..< end])\(end == text.endIndex ? "" : "…")"
+        let hasLeadingEllipsis = start != text.startIndex
+        let availableLength = maximumLength - (hasLeadingEllipsis ? 1 : 0)
+        let availableEnd = text.index(start, offsetBy: availableLength, limitedBy: text.endIndex) ?? text.endIndex
+        let hasTrailingEllipsis = availableEnd != text.endIndex
+        let contentLength = availableLength - (hasTrailingEllipsis ? 1 : 0)
+        let end = text.index(start, offsetBy: contentLength, limitedBy: text.endIndex) ?? text.endIndex
+        return "\(hasLeadingEllipsis ? "…" : "")\(text[start ..< end])\(hasTrailingEllipsis ? "…" : "")"
     }
 
     private nonisolated static func searchPlaceholders(_ count: Int) -> String {

@@ -24,6 +24,17 @@ struct ScreenshotSearchHoverCard: View {
             Text(result.meetingDescription)
                 .foregroundStyle(.black.opacity(0.7))
                 .lineLimit(Self.descriptionLineLimit)
+
+            ForEach(result.matches, id: \.source) { match in
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(match.source.localizedTitle)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.black.opacity(0.7))
+
+                    Text(match.snippet)
+                        .lineLimit(3)
+                }
+            }
         }
         .dahliaSidebarHoverCard(width: MainSearchDesign.screenshotHoverCardWidth)
         .accessibilityHidden(true)

@@ -84,6 +84,9 @@ struct ScreenshotSearchResultTile: View {
     }
 
     private var accessibilityLabel: String {
-        "\(result.meetingTitle), \(result.capturedAt.formatted(date: .numeric, time: .shortened)), \(result.snippet)"
+        let matches = result.matches.map {
+            "\($0.source.localizedTitle): \($0.snippet)"
+        }.joined(separator: ", ")
+        return "\(result.meetingTitle), \(result.capturedAt.formatted(date: .numeric, time: .shortened)), \(matches)"
     }
 }

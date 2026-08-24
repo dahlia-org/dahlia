@@ -775,6 +775,68 @@ import ImageIO
         }
 
         @Test
+        func screenshotTextSearchRanksOCRThenMixedThenCaptionAcrossPages() async throws {
+            let fixture = try Fixture()
+            await fixture.manager.searchIndexer.drain()
+            let ocrID = UUID.v7()
+            let mixedID = UUID.v7()
+            let captionID = UUID.v7()
+            try await fixture.manager.dbQueue.write { db in
+                let meeting = try #require(try MeetingRecord.fetchOne(db, key: fixture.firstMeetingID))
+                for (id, capturedAt, ocr, caption) in [
+                    (ocrID, Date(timeIntervalSince1970: 100), "alpha beta in OCR", "unrelated caption"),
+                    (mixedID, Date(timeIntervalSince1970: 200), "alpha in OCR", "beta in caption"),
+                    (captionID, Date(timeIntervalSince1970: 300), "unrelated OCR", "alpha beta in caption"),
+                ] {
+                    try MeetingScreenshotRecord(
+                        id: id,
+                        meetingId: meeting.id,
+                        sessionId: nil,
+                        capturedAt: capturedAt,
+                        imageData: fixture.imageData,
+                        mimeType: "image/png",
+                        ocrText: ocr,
+                        caption: caption
+                    ).insert(db)
+                    try upsertDocument(
+                        SearchDocumentProjection(
+                            kind: "screenshot",
+                            sourceID: id,
+                            vaultID: fixture.primaryVaultID,
+                            meetingID: meeting.id,
+                            projectID: meeting.projectId,
+                            fields: SearchDocumentFields(
+                                title: "",
+                                description: "",
+                                calendar: "",
+                                tags: "",
+                                projectPath: "",
+                                ocr: ocr,
+                                caption: caption
+                            )
+                        ),
+                        generation: 1,
+                        in: db
+                    )
+                }
+            }
+            let store = try fixture.store(vaultID: fixture.primaryVaultID)
+            var cursor: String?
+            var ids: [UUID] = []
+            repeat {
+                let page = try store.queryScreenshots(ScreenshotTextQuery(
+                    query: "alpha beta",
+                    limit: 1,
+                    cursor: cursor
+                ))
+                ids += page.screenshots.map(\.id)
+                cursor = page.nextCursor
+            } while cursor != nil
+
+            #expect(ids == [ocrID, mixedID, captionID])
+        }
+
+        @Test
         func screenshotImagesAreActuallyDownsampledAndRejectCorruptData() throws {
             let fixture = try Fixture()
             let largeImage = try #require(Self.makeImage(width: 2048, height: 512))
