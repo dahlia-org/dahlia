@@ -1241,7 +1241,7 @@ import Foundation
 
     extension CodexChatSessionModelTests {
         @Test
-        func failedLiveTranscriptCanBeRetriedWithoutBecomingVisible() async {
+        func failedLiveTranscriptCanBeRetriedWithoutBecomingVisible() async throws {
             let service = TestCodexChatService(mode: .failThenComplete)
             let settings = AppSettings()
             settings.currentVault = Self.testVault()
@@ -1265,7 +1265,7 @@ import Foundation
 
             #expect(session.failedLiveTranscript == nil)
             let sentTextBlocks = await service.sentTextBlocks
-            #expect(sentTextBlocks.count == 2)
+            try #require(sentTextBlocks.count == 2)
             #expect(sentTextBlocks[0] == sentTextBlocks[1])
             #expect(session.messages.allSatisfy { $0.role != .user })
         }

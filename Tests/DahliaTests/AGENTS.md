@@ -6,7 +6,7 @@ Tests are complete when they prove the changed behavior with reproducible inputs
 
 ```bash
 swift test --filter SummaryServiceTests # Example targeted suite
-swift test                              # Full suite
+swift test --experimental-maximum-parallelization-width 4 # Full suite; matches CI
 ```
 
 Run the targeted suite first. Expand to the full suite for changes with broad effects, including shared models, database migrations, and the recording lifecycle.

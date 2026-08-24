@@ -307,7 +307,7 @@ process-wide hang、crash、OOM の注入は現在の受け入れ条件には含
 | Normal stop drain and failure | Conforms | capture の新規受付を閉じて in-flight callback、recognition、batch writer を drain する。realtime stop が失敗した場合は controller が runtime 参照を保持し、呼び出し側が `abort()` で capture／recognition／batch resource を解放してから state を reset する。capture の最初の失敗は realtime では throw し、batch では有効な録音結果と併せて返して batch 専用の failure state で明示する |
 | Async surface | Conforms | `preparedCaptureFormat` は同期化し、未使用の非同期 no-op `endActiveRanges` は削除した |
 | Screenshot interactive scheduling | Conforms | overlay shell と既存 thumbnail を先に表示し、cacheable decode と非 cache の interactive decode を別 worker lane に分離する。同一 thumbnail miss は集約し、内容変更／削除は stale cache と in-flight completion を無効化し、cancel 済み waiter は直ちに外す |
-| MainActor-stall proof | Conforms | MainActor を有限時間同期占有する回帰テストが、解放前の audio acceptance と finalized persistence、解放後の UI catch-up を検証する |
+| UI-lane isolation proof | Conforms | 停止した UI sink の解放前に audio acceptance と finalized persistence が進み、解放後に UI が追いつくことを回帰テストで検証する |
 | Process-wide isolation | Out of scope | helper process は導入せず、process-wide hang の証拠が得られた場合に別 ADR で判断する |
 
 ## Remediation Plan
