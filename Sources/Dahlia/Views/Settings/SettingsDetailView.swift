@@ -36,6 +36,8 @@ struct SettingsDetailView: View {
         switch selection {
         case .general:
             GeneralSettingsView()
+        case .language:
+            LanguageSettingsView()
         case .appearance:
             AppearanceSettingsView()
         case .vault:
@@ -60,7 +62,7 @@ struct SettingsDetailView: View {
         case .liveSubtitles:
             LiveSubtitleSettingsView()
         case .screenshots:
-            ScreenshotSettingsView(onOpenLanguageSettings: { selection = .general })
+            ScreenshotSettingsView(onOpenLanguageSettings: { selection = .language })
         case .calendar:
             CalendarSettingsView()
         case .cloudStorage:

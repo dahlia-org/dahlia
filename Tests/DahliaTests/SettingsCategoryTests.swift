@@ -12,6 +12,7 @@ import Foundation
 
             #expect(SettingsCategory.allCases == [
                 .general,
+                .language,
                 .appearance,
                 .vault,
                 .permissions,
@@ -34,7 +35,7 @@ import Foundation
             #expect(!groupedCategories.contains(.instructions))
             #expect(!groupedCategories.contains(.mcp))
             #expect(SettingsGroup.allCases.last == .advanced)
-            #expect(SettingsGroup.app.categories == [.general, .appearance, .vault, .permissions, .backups, .search])
+            #expect(SettingsGroup.app.categories == [.general, .language, .appearance, .vault, .permissions, .backups, .search])
             #expect(SettingsGroup.meetings.label == L10n.meetings)
             #expect(SettingsGroup.meetings.categories == [.transcription, .liveSubtitles, .screenshots])
             #expect(SettingsGroup.advanced.categories == [.betaFeatures, .developer, .audioDiagnostics])
@@ -86,6 +87,8 @@ import Foundation
             #expect(SettingsCategory.backups.systemImage == "externaldrive.badge.timemachine")
             #expect(SettingsCategory.search.label == L10n.search)
             #expect(SettingsCategory.search.systemImage == "magnifyingglass")
+            #expect(SettingsCategory.language.label == L10n.language)
+            #expect(SettingsCategory.language.systemImage == "globe")
             #expect(SettingsCategory.modelProvider.label == L10n.modelProvider)
             #expect(SettingsCategory.modelProvider.systemImage == "sparkles")
             #expect(SettingsCategory.aiSummary.systemImage == "list.bullet.clipboard")
