@@ -3,9 +3,7 @@ import SwiftUI
 /// 設定画面「一般」タブ。アカウント、録音、通知の基本設定を管理する。
 struct GeneralSettingsView: View {
     @ObservedObject private var settings = AppSettings.shared
-    @State private var languages: [AppLanguageSelection] = []
-    @State private var languageSearchText = ""
-    @State private var isLoadingLanguages = true
+    @State private var isLanguageSelectionPresented = false
 
     var body: some View {
         Form {
@@ -19,44 +17,24 @@ struct GeneralSettingsView: View {
                 }
             }
 
-            Section(L10n.recording) {
-                Toggle(isOn: $settings.automaticMeetingEndRecordingStopEnabled) {
-                    Text(L10n.automaticMeetingEndRecordingStop)
-                    Text(L10n.automaticMeetingEndRecordingStopDescription)
-                }
-                .toggleStyle(.switch)
-            }
-
             Section {
-                DahliaSegmentedPicker(
-                    title: L10n.languageRange,
-                    selection: $settings.appLanguageScope,
-                    options: AppLanguageScope.allCases,
-                    label: \.displayName
-                )
-
-                if settings.appLanguageScope == .selected {
-                    TextField(L10n.searchLanguages, text: $languageSearchText)
-                        .textFieldStyle(.roundedBorder)
-                    if isLoadingLanguages {
-                        ProgressView(L10n.loadingLanguages)
-                    } else if filteredLanguages.isEmpty {
-                        Text(L10n.noMatchingLanguages)
-                            .foregroundStyle(DahliaDesign.secondaryTextColor)
-                    } else {
-                        ForEach(filteredLanguages) { language in
-                            Toggle(isOn: languageBinding(language.id)) {
-                                Text(language.displayName())
-                                Text(language.id)
-                            }
-                            .toggleStyle(.checkbox)
-                        }
+                LabeledContent(L10n.languageRange) {
+                    Button(languageSelectionSummary) {
+                        isLanguageSelectionPresented = true
                     }
                 }
             } header: {
                 Text(L10n.appLanguages)
             } footer: {
                 Text(L10n.appLanguagesDescription)
+            }
+
+            Section(L10n.automaticRecordingStop) {
+                Toggle(isOn: $settings.automaticMeetingEndRecordingStopEnabled) {
+                    Text(L10n.automaticMeetingEndRecordingStop)
+                    Text(L10n.automaticMeetingEndRecordingStopDescription)
+                }
+                .toggleStyle(.switch)
             }
 
             Section {
@@ -108,29 +86,40 @@ struct GeneralSettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .task {
-            languages = await AppLanguageCatalog.load()
-            isLoadingLanguages = false
-        }
-    }
-
-    private var filteredLanguages: [AppLanguageSelection] {
-        guard !languageSearchText.isEmpty else { return languages }
-        return languages.filter {
-            $0.id.localizedStandardContains(languageSearchText)
-                || $0.displayName().localizedStandardContains(languageSearchText)
-        }
-    }
-
-    private func languageBinding(_ identifier: String) -> Binding<Bool> {
-        Binding {
-            settings.enabledLanguageIdentifiers.contains(identifier)
-        } set: { enabled in
-            settings.enabledLanguageIdentifiers = AppLanguageSelection.updating(
-                settings.enabledLanguageIdentifiers,
-                identifier: identifier,
-                isEnabled: enabled
+        .sheet(isPresented: $isLanguageSelectionPresented) {
+            AppLanguageSelectionSheet(
+                scope: settings.appLanguageScope,
+                enabledLanguageIdentifiers: settings.enabledLanguageIdentifiers,
+                onSave: saveLanguageSelection
             )
         }
+    }
+
+    private var languageSelectionSummary: String {
+        guard settings.appLanguageScope == .selected else { return L10n.allSupportedLanguages }
+        let summary = Self.languageSelectionSummaryParts(identifiers: settings.enabledLanguageIdentifiers)
+        let names = summary.names.joined(separator: ", ")
+        guard !names.isEmpty else { return L10n.languagesSelected(0) }
+        guard summary.remainingCount > 0 else { return names }
+        return "\(names), \(L10n.additionalLanguages(summary.remainingCount))"
+    }
+
+    static func languageSelectionSummaryParts(
+        identifiers: Set<String>,
+        locale: Locale = .current
+    ) -> (names: [String], remainingCount: Int) {
+        let names = identifiers
+            .map { AppLanguageSelection(id: $0).displayName(locale: locale) }
+            .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+        let displayedNames = Array(names.prefix(2))
+        return (displayedNames, names.count - displayedNames.count)
+    }
+
+    private func saveLanguageSelection(
+        scope: AppLanguageScope,
+        enabledLanguageIdentifiers: Set<String>
+    ) {
+        settings.enabledLanguageIdentifiers = enabledLanguageIdentifiers
+        settings.appLanguageScope = scope
     }
 }

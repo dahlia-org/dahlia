@@ -664,6 +664,7 @@
 "Search languages..." = "Search languages...";
 "No matching languages" = "No matching languages";
 "%lld languages selected" = "%lld languages selected";
+"%lld more languages" = "%lld more languages";
 "Transcription Languages" = "Transcription Languages";
 "App Languages" = "App Languages";
 "Limits languages shown for transcription and live subtitles, automatic language detection, and screenshot text extraction." = "Limits languages shown for transcription and live subtitles, automatic language detection, and screenshot text extraction.";
@@ -741,6 +742,7 @@
 "System audio capture stopped" = "System audio capture stopped";
 "Microphone capture stopped" = "Microphone capture stopped";
 "Recording" = "Recording";
+"Automatic Recording Stop" = "Automatic Recording Stop";
 "Automatically Stop Recording When the Meeting Ends" = "Automatically Stop Recording When the Meeting Ends";
 "Stop and save after both recording and supported meeting-app activity have lasted at least 30 seconds. Browser activity also requires a recognized meeting window. In-person meetings are not detected." = "Stop and save after both recording and supported meeting-app activity have lasted at least 30 seconds. Browser activity also requires a recognized meeting window. In-person meetings are not detected.";
 
