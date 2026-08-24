@@ -1,6 +1,7 @@
 #if canImport(Testing)
     import AppKit
     import ImageIO
+    import SwiftUI
     import Testing
     import UniformTypeIdentifiers
     @testable import Dahlia
@@ -146,6 +147,45 @@
 
             #expect(handledEvent === fixture.event)
             #expect(dismissCount == 0)
+        }
+
+        @Test
+        func dismissalAreaReceivesEveryMouseButtonFromHostingView() throws {
+            var dismissCount = 0
+            let host = NSHostingView(rootView:
+                ScreenshotOverlayDismissalArea { dismissCount += 1 }
+                    .frame(width: 100, height: 100)
+            )
+            let window = makeWindow()
+            host.frame = window.contentView?.bounds ?? .zero
+            window.contentView?.addSubview(host)
+            window.makeKeyAndOrderFront(nil)
+            defer { window.orderOut(nil) }
+            host.layoutSubtreeIfNeeded()
+
+            let point = CGPoint(x: 100, y: 100)
+            #expect(host.hitTest(point) is ScreenshotOverlayDismissalArea.DismissalView)
+
+            for (index, eventType) in [
+                NSEvent.EventType.leftMouseDown,
+                .rightMouseDown,
+                .otherMouseDown,
+            ].enumerated() {
+                let event = try #require(NSEvent.mouseEvent(
+                    with: eventType,
+                    location: point,
+                    modifierFlags: [],
+                    timestamp: 0,
+                    windowNumber: window.windowNumber,
+                    context: nil,
+                    eventNumber: index,
+                    clickCount: 1,
+                    pressure: 0
+                ))
+
+                NSApp.sendEvent(event)
+                #expect(dismissCount == index + 1)
+            }
         }
 
         @Test
