@@ -717,7 +717,7 @@ actor CodexAppServerService {
     }
 
     // swiftformat:disable:next modifierOrder
-    nonisolated private static func isTurnCompletionMessage(_ message: JSONValue) -> Bool {
+    private nonisolated static func isTurnCompletionMessage(_ message: JSONValue) -> Bool {
         message.objectValue?["method"]?.stringValue == "turn/completed"
     }
 
@@ -862,7 +862,7 @@ actor CodexAppServerService {
     }
 
     // swiftformat:disable:next modifierOrder
-    nonisolated private static func restrictedThreadConfig(
+    private nonisolated static func restrictedThreadConfig(
         from configReadResult: JSONValue,
         reasoningEffort: String
     ) throws -> JSONValue {

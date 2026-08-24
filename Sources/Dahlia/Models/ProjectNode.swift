@@ -9,11 +9,11 @@ struct FlatProjectRow: Identifiable, Equatable {
     let hasChildren: Bool
 
     /// ProjectRecord 配列から、入力順を保ったままサイドバー表示用のフラット行を構築する。
-    static func buildRows(fromRecords records: [ProjectRecord]) -> [FlatProjectRow] {
+    static func buildRows(fromRecords records: [ProjectRecord]) -> [Self] {
         guard !records.isEmpty else { return [] }
 
         let parentIDs = Set(records.compactMap(\.parentProjectId))
-        var rows: [FlatProjectRow] = []
+        var rows: [Self] = []
         rows.reserveCapacity(records.count)
 
         for record in records {
@@ -23,7 +23,7 @@ struct FlatProjectRow: Identifiable, Equatable {
             let hasChildren = parentIDs.contains(record.id)
 
             rows.append(
-                FlatProjectRow(
+                Self(
                     id: record.id,
                     name: record.path,
                     displayName: displayName,
@@ -38,8 +38,8 @@ struct FlatProjectRow: Identifiable, Equatable {
 
     static func validParentCandidates(
         for project: ProjectRecord,
-        in rows: [FlatProjectRow]
-    ) -> [FlatProjectRow] {
+        in rows: [Self]
+    ) -> [Self] {
         guard rows.first(where: { $0.id == project.id })?.hasChildren != true else {
             return []
         }
@@ -53,11 +53,11 @@ struct ProjectTreeNode: Identifiable, Equatable {
     let project: ProjectOverviewItem
     let displayName: String
     let meetingCount: Int
-    let children: [ProjectTreeNode]?
+    let children: [Self]?
 
     var id: UUID { project.projectId }
 
-    static func buildNodes(from projects: [ProjectOverviewItem]) -> [ProjectTreeNode] {
+    static func buildNodes(from projects: [ProjectOverviewItem]) -> [Self] {
         guard !projects.isEmpty else { return [] }
 
         var roots: [ProjectOverviewItem] = []
@@ -72,11 +72,11 @@ struct ProjectTreeNode: Identifiable, Equatable {
             childrenByParent[parentProjectId, default: []].append(project)
         }
 
-        func buildNode(for project: ProjectOverviewItem) -> ProjectTreeNode {
+        func buildNode(for project: ProjectOverviewItem) -> Self {
             let childNodes = childrenByParent[project.projectId, default: []].map(buildNode)
             let totalMeetingCount = project.meetingCount + childNodes.reduce(0) { $0 + $1.meetingCount }
 
-            return ProjectTreeNode(
+            return Self(
                 project: project,
                 displayName: project.projectDisplayName.nilIfBlank
                     ?? project.projectName.split(separator: "/").last.map(String.init)
@@ -89,11 +89,11 @@ struct ProjectTreeNode: Identifiable, Equatable {
         return roots.map(buildNode)
     }
 
-    func filtered(matching query: String) -> ProjectTreeNode? {
+    func filtered(matching query: String) -> Self? {
         let childNodes = children?.compactMap { $0.filtered(matching: query) } ?? []
         guard matches(query) || !childNodes.isEmpty else { return nil }
 
-        return ProjectTreeNode(
+        return Self(
             project: project,
             displayName: displayName,
             meetingCount: meetingCount,

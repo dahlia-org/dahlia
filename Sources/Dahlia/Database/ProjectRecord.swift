@@ -83,13 +83,13 @@ struct ProjectRecord: Codable, FetchableRecord, PersistableRecord, Identifiable,
         )
     }
 
-    static func fetchResolved(id: UUID, in db: Database) throws -> ProjectRecord? {
+    static func fetchResolved(id: UUID, in db: Database) throws -> Self? {
         guard let record = try fetchOne(db, key: id) else { return nil }
         return try fetchResolvedAll(vaultId: record.vaultId, in: db).first { $0.id == id }
     }
 
-    static func fetchResolvedAll(vaultId: UUID, in db: Database) throws -> [ProjectRecord] {
-        var records = try ProjectRecord
+    static func fetchResolvedAll(vaultId: UUID, in db: Database) throws -> [Self] {
+        var records = try Self
             .filter(Column("vaultId") == vaultId)
             .fetchAll(db)
         let paths = resolvedPaths(records)
@@ -102,11 +102,11 @@ struct ProjectRecord: Codable, FetchableRecord, PersistableRecord, Identifiable,
         }
     }
 
-    static func resolvedPaths(_ records: [ProjectRecord]) -> [UUID: String] {
+    static func resolvedPaths(_ records: [Self]) -> [UUID: String] {
         let recordsByID = Dictionary(uniqueKeysWithValues: records.map { ($0.id, $0) })
         var paths: [UUID: String] = [:]
 
-        func resolve(_ record: ProjectRecord, visiting: Set<UUID>) -> String {
+        func resolve(_ record: Self, visiting: Set<UUID>) -> String {
             if let path = paths[record.id] { return path }
             guard let parentProjectId = record.parentProjectId,
                   let parent = recordsByID[parentProjectId],
@@ -127,22 +127,22 @@ struct ProjectRecord: Codable, FetchableRecord, PersistableRecord, Identifiable,
         return paths
     }
 
-    static func hierarchy(projectId: UUID, vaultId: UUID, in db: Database) throws -> [ProjectRecord] {
+    static func hierarchy(projectId: UUID, vaultId: UUID, in db: Database) throws -> [Self] {
         let records = try fetchResolvedAll(vaultId: vaultId, in: db)
         return hierarchy(projectId: projectId, records: records)
     }
 
-    static func hierarchy(path: String, vaultId: UUID, in db: Database) throws -> [ProjectRecord] {
+    static func hierarchy(path: String, vaultId: UUID, in db: Database) throws -> [Self] {
         let records = try fetchResolvedAll(vaultId: vaultId, in: db)
         guard let project = records.first(where: { $0.path == path }) else { return [] }
         return hierarchy(projectId: project.id, records: records)
     }
 
-    private static func hierarchy(projectId: UUID, records: [ProjectRecord]) -> [ProjectRecord] {
+    private static func hierarchy(projectId: UUID, records: [Self]) -> [Self] {
         let childrenByParent = Dictionary(grouping: records, by: \.parentProjectId)
-        var result: [ProjectRecord] = []
+        var result: [Self] = []
 
-        func append(_ project: ProjectRecord) {
+        func append(_ project: Self) {
             result.append(project)
             for child in childrenByParent[project.id, default: []] {
                 append(child)
@@ -156,19 +156,19 @@ struct ProjectRecord: Codable, FetchableRecord, PersistableRecord, Identifiable,
 
     static func effectiveType(
         for projectId: UUID,
-        records: [ProjectRecord]
+        records: [Self]
     ) -> (type: ProjectType, ownerProjectId: UUID)? {
         effectiveTypes(records)[projectId]
     }
 
     static func effectiveTypes(
-        _ records: [ProjectRecord]
+        _ records: [Self]
     ) -> [UUID: (type: ProjectType, ownerProjectId: UUID)] {
         let recordsByID = Dictionary(uniqueKeysWithValues: records.map { ($0.id, $0) })
         var result: [UUID: (type: ProjectType, ownerProjectId: UUID)] = [:]
 
         func resolve(
-            _ project: ProjectRecord,
+            _ project: Self,
             visiting: Set<UUID>
         ) -> (type: ProjectType, ownerProjectId: UUID)? {
             if let effectiveType = result[project.id] { return effectiveType }
@@ -191,8 +191,7 @@ struct ProjectRecord: Codable, FetchableRecord, PersistableRecord, Identifiable,
 
     static func incrementRevisions(_ ids: Set<UUID>, in db: Database) throws {
         guard !ids.isEmpty else { return }
-        _ = try ProjectRecord
-            .filter(ids.contains(Column("id")))
+        _ = try filter(ids.contains(Column("id")))
             .updateAll(db, Column("revision").set(to: Column("revision") + 1))
     }
 

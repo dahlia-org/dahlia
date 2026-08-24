@@ -38,7 +38,7 @@ enum ProjectIcon: String, CaseIterable, Codable, Sendable {
     case puzzle = "puzzlepiece"
     case nature = "leaf"
 
-    static let allCases: [ProjectIcon] = [
+    static let allCases: [Self] = [
         .folder, .finance, .book, .education, .writing, .tag,
         .code, .terminal, .music, .entertainment, .painting, .art,
         .medical, .spark, .wellness, .work, .analytics, .award,

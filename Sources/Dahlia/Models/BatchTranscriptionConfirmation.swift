@@ -5,7 +5,7 @@ struct BatchTranscriptionProjectSelection: Equatable {
     let selectedProjectId: UUID?
     let errorMessage: String?
 
-    static let unavailable = BatchTranscriptionProjectSelection(
+    static let unavailable = Self(
         projects: [],
         selectedProjectId: nil,
         errorMessage: nil

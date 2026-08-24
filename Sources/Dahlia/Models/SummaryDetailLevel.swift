@@ -4,7 +4,7 @@ enum SummaryDetailLevel: String, CaseIterable, Identifiable {
     case standard
     case detailed
 
-    static let defaultValue = SummaryDetailLevel.detailed
+    static let defaultValue = Self.detailed
 
     var id: String { rawValue }
 
@@ -27,7 +27,7 @@ enum SummaryDetailLevel: String, CaseIterable, Identifiable {
         }
     }
 
-    static func fromPersistedValue(_ value: String) -> SummaryDetailLevel {
-        SummaryDetailLevel(rawValue: value) ?? defaultValue
+    static func fromPersistedValue(_ value: String) -> Self {
+        Self(rawValue: value) ?? defaultValue
     }
 }

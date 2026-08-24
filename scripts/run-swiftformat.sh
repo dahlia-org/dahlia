@@ -9,6 +9,9 @@ if [[ -z "${DEVELOPER_DIR:-}" ]] \
     export DEVELOPER_DIR="/Applications/Xcode.app/Contents/Developer"
 fi
 
+export CLANG_MODULE_CACHE_PATH="${CLANG_MODULE_CACHE_PATH:-${TMPDIR:-/tmp}/dahlia-clang-module-cache}"
+mkdir -p "$CLANG_MODULE_CACHE_PATH"
+
 exec swift run \
     --package-path "$repo_root/BuildTools" \
     --configuration release \

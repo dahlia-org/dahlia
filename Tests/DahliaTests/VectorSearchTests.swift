@@ -620,7 +620,7 @@ import GRDB
             await fake.release()
             await pause.value
             #expect(await pollUntil { await fake.hasFinished })
-            let paused = try await database.dbQueue.read { db in
+            let paused = try database.dbQueue.read { db in
                 try Row.fetchOne(
                     db,
                     sql: """

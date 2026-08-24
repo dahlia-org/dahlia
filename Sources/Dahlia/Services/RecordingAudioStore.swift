@@ -1,5 +1,5 @@
 // Audio mutation and reconciliation remain colocated behind this single actor boundary.
-// swiftlint:disable file_length type_body_length
+// swiftlint:disable file_length
 
 @preconcurrency import AVFoundation
 import CryptoKit

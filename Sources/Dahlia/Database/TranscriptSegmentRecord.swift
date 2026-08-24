@@ -7,18 +7,18 @@ struct TranscriptSegmentRecord: Codable, FetchableRecord, PersistableRecord {
 
     var id: UUID
     var meetingId: UUID
-    var sessionId: UUID? = nil
+    var sessionId: UUID?
     var startTime: Date
     var endTime: Date?
     var text: String
     var translatedText: String?
     var isConfirmed: Bool
     var speakerLabel: String?
-    var audioFeatureVersion: Int? = nil
-    var audioActiveRmsDecibels: Double? = nil
-    var audioMedianPitchHertz: Double? = nil
-    var audioVoicedFrameRatio: Double? = nil
-    var audioPitchSpreadHertz: Double? = nil
+    var audioFeatureVersion: Int?
+    var audioActiveRmsDecibels: Double?
+    var audioMedianPitchHertz: Double?
+    var audioVoicedFrameRatio: Double?
+    var audioPitchSpreadHertz: Double?
 }
 
 extension TranscriptSegmentRecord {

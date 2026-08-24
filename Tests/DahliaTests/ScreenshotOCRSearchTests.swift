@@ -431,7 +431,7 @@ import GRDB
 
             await database.searchIndexer.drain()
 
-            let state = try await database.dbQueue.read { db -> (Int, Int, Row?) in
+            let state = try database.dbQueue.read { db -> (Int, Int, Row?) in
                 try (
                     Int.fetchOne(db, sql: "SELECT COUNT(*) FROM screenshots WHERE ocrText = 'stored text'") ?? 0,
                     Int.fetchOne(
@@ -491,7 +491,7 @@ import GRDB
             let triggeredFailure = await analyzer.failFirstWave()
             if !triggeredFailure { drainTask.cancel() }
             await drainTask.value
-            let deferred = try await database.dbQueue.read { db in
+            let deferred = try database.dbQueue.read { db in
                 try Row.fetchOne(
                     db,
                     sql: """
@@ -568,7 +568,7 @@ import GRDB
 
             await database.searchIndexer.pauseForRecording()
             try await database.searchIndexer.requestRebuild()
-            let reset = try await database.dbQueue.read { db in
+            let reset = try database.dbQueue.read { db in
                 try Row.fetchOne(
                     db,
                     sql: "SELECT status, attempts FROM search_index_jobs WHERE targetKind = 'screenshotAnalysis' AND targetKey = ?",

@@ -75,10 +75,8 @@ private func transcriptFileWatcherCallback(
     guard let clientCallBackInfo else { return }
     let watcher = Unmanaged<TranscriptFileWatcher>.fromOpaque(clientCallBackInfo).takeUnretainedValue()
 
-    for i in 0 ..< numEvents {
-        if eventFlags[i] & UInt32(kFSEventStreamEventFlagItemRemoved) != 0 {
-            watcher.handleFileSystemEvent()
-            return
-        }
+    for i in 0 ..< numEvents where eventFlags[i] & UInt32(kFSEventStreamEventFlagItemRemoved) != 0 {
+        watcher.handleFileSystemEvent()
+        return
     }
 }
