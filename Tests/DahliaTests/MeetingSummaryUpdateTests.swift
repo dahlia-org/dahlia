@@ -87,7 +87,7 @@ import GRDB
             let name: String = row["name"]
             let description: String? = row["description"]
             #expect(name.isEmpty)
-            #expect(description == "")
+            #expect(description?.isEmpty == true)
         }
 
         @Test

@@ -688,10 +688,10 @@ private struct PKCE {
     let codeVerifier: String
     let codeChallenge: String
 
-    static func generate() -> PKCE {
+    static func generate() -> Self {
         let verifier = randomURLSafeString(length: 64)
         let challenge = Data(CryptoKit.SHA256.hash(data: Data(verifier.utf8))).base64URLEncoded
-        return PKCE(codeVerifier: verifier, codeChallenge: challenge)
+        return Self(codeVerifier: verifier, codeChallenge: challenge)
     }
 
     fileprivate static func randomURLSafeString(length: Int) -> String {

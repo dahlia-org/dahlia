@@ -7,7 +7,7 @@ enum MeetingStatus: String, Codable, DatabaseValueConvertible, Sendable {
     case processingTranscript = "PROCESSING_TRANSCRIPT"
     case ready = "READY"
 
-    static func fromDatabaseValue(_ dbValue: DatabaseValue) -> MeetingStatus? {
+    static func fromDatabaseValue(_ dbValue: DatabaseValue) -> Self? {
         guard let rawValue = String.fromDatabaseValue(dbValue),
               let status = normalized(rawValue: rawValue)
         else {
@@ -20,7 +20,7 @@ enum MeetingStatus: String, Codable, DatabaseValueConvertible, Sendable {
         rawValue.databaseValue
     }
 
-    private static func normalized(rawValue: String) -> MeetingStatus? {
+    private static func normalized(rawValue: String) -> Self? {
         switch rawValue.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() {
         case "TRANSCRIPT_NOT_FOUND":
             .transcriptNotFound
@@ -47,9 +47,9 @@ struct MeetingRecord: Codable, FetchableRecord, PersistableRecord, Equatable, Se
     var duration: TimeInterval?
     var createdAt: Date
     var updatedAt: Date
-    var recordingStartedAt: Date? = nil
-    var calendarEventIcalUid: String? = nil
-    var calendarEventRecurrenceId: String? = nil
+    var recordingStartedAt: Date?
+    var calendarEventIcalUid: String?
+    var calendarEventRecurrenceId: String?
 
     var effectiveRecordingStartedAt: Date {
         recordingStartedAt ?? createdAt

@@ -8,7 +8,6 @@ import GRDB
 
 /// アプリ全体で単一の SQLite データベースを管理する。
 /// 正アプリは `Application Support/Dahlia`、`run-dev.sh` は分離した開発プロファイルに配置する。
-// swiftlint:disable:next type_body_length
 final class AppDatabaseManager: Sendable {
     let dbQueue: DatabaseQueue
     let searchDBQueue: DatabaseQueue

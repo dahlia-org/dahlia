@@ -1,7 +1,7 @@
 import Foundation
 
 struct ProjectAppearance: Codable, Equatable, Sendable {
-    static let `default` = ProjectAppearance(icon: .folder, color: .neutral)
+    static let `default` = Self(icon: .folder, color: .neutral)
 
     var icon: ProjectIcon
     var color: ProjectThemeColor

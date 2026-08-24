@@ -51,8 +51,8 @@ public struct SummaryDocument: Codable, Equatable, Sendable {
         return try String(decoding: encoder.encode(self), as: UTF8.self)
     }
 
-    public static func decode(databaseJSON: String) throws -> SummaryDocument {
-        try JSONDecoder().decode(SummaryDocument.self, from: Data(databaseJSON.utf8))
+    public static func decode(databaseJSON: String) throws -> Self {
+        try JSONDecoder().decode(Self.self, from: Data(databaseJSON.utf8))
     }
 
     /// 本文の出現順。重複した参照は最初の出現位置だけ残す。
@@ -78,7 +78,7 @@ public struct SummaryDocument: Codable, Equatable, Sendable {
         .joined(separator: "\n")
     }
 
-    public func removingScreenshotReferences(_ screenshotIds: Set<UUID>) -> SummaryDocument {
+    public func removingScreenshotReferences(_ screenshotIds: Set<UUID>) -> Self {
         guard !screenshotIds.isEmpty else { return self }
 
         var updated = self
@@ -169,75 +169,75 @@ public struct SummaryBlock: Codable, Equatable, Identifiable, Sendable {
 
     public typealias ChecklistItem = SummaryBlockContent.ChecklistItem
 
-    public static func paragraph(_ text: String, transcriptRef: TranscriptReference? = nil) -> SummaryBlock {
-        SummaryBlock(content: .paragraph(SummaryText(text, transcriptRef: transcriptRef)))
+    public static func paragraph(_ text: String, transcriptRef: TranscriptReference? = nil) -> Self {
+        Self(content: .paragraph(SummaryText(text, transcriptRef: transcriptRef)))
     }
 
-    public static func paragraph(_ text: SummaryText) -> SummaryBlock {
-        SummaryBlock(content: .paragraph(text))
+    public static func paragraph(_ text: SummaryText) -> Self {
+        Self(content: .paragraph(text))
     }
 
-    public static func bulletedList(items: [String]) -> SummaryBlock {
-        SummaryBlock(content: .bulletedList(items: items.map { SummaryText($0) }))
+    public static func bulletedList(items: [String]) -> Self {
+        Self(content: .bulletedList(items: items.map { SummaryText($0) }))
     }
 
-    public static func bulletedList(items: [SummaryText]) -> SummaryBlock {
-        SummaryBlock(content: .bulletedList(items: items))
+    public static func bulletedList(items: [SummaryText]) -> Self {
+        Self(content: .bulletedList(items: items))
     }
 
-    public static func numberedList(items: [String]) -> SummaryBlock {
-        SummaryBlock(content: .numberedList(items: items.map { SummaryText($0) }))
+    public static func numberedList(items: [String]) -> Self {
+        Self(content: .numberedList(items: items.map { SummaryText($0) }))
     }
 
-    public static func numberedList(items: [SummaryText]) -> SummaryBlock {
-        SummaryBlock(content: .numberedList(items: items))
+    public static func numberedList(items: [SummaryText]) -> Self {
+        Self(content: .numberedList(items: items))
     }
 
-    public static func checklist(items: [ChecklistItem]) -> SummaryBlock {
-        SummaryBlock(content: .checklist(items: items))
+    public static func checklist(items: [ChecklistItem]) -> Self {
+        Self(content: .checklist(items: items))
     }
 
-    public static func quote(_ text: String, transcriptRef: TranscriptReference? = nil) -> SummaryBlock {
-        SummaryBlock(content: .quote(SummaryText(text, transcriptRef: transcriptRef)))
+    public static func quote(_ text: String, transcriptRef: TranscriptReference? = nil) -> Self {
+        Self(content: .quote(SummaryText(text, transcriptRef: transcriptRef)))
     }
 
-    public static func quote(_ text: SummaryText) -> SummaryBlock {
-        SummaryBlock(content: .quote(text))
+    public static func quote(_ text: SummaryText) -> Self {
+        Self(content: .quote(text))
     }
 
-    public static func code(language: String, code: String, transcriptRef: TranscriptReference? = nil) -> SummaryBlock {
-        SummaryBlock(content: .code(language: language, content: SummaryText(code, transcriptRef: transcriptRef)))
+    public static func code(language: String, code: String, transcriptRef: TranscriptReference? = nil) -> Self {
+        Self(content: .code(language: language, content: SummaryText(code, transcriptRef: transcriptRef)))
     }
 
-    public static func code(language: String, content: SummaryText) -> SummaryBlock {
-        SummaryBlock(content: .code(language: language, content: content))
+    public static func code(language: String, content: SummaryText) -> Self {
+        Self(content: .code(language: language, content: content))
     }
 
-    public static func image(screenshotId: UUID, caption: String, transcriptRef: TranscriptReference? = nil) -> SummaryBlock {
-        SummaryBlock(content: .image(screenshotId: screenshotId, caption: SummaryText(caption, transcriptRef: transcriptRef)))
+    public static func image(screenshotId: UUID, caption: String, transcriptRef: TranscriptReference? = nil) -> Self {
+        Self(content: .image(screenshotId: screenshotId, caption: SummaryText(caption, transcriptRef: transcriptRef)))
     }
 
-    public static func image(screenshotId: UUID, caption: SummaryText) -> SummaryBlock {
-        SummaryBlock(content: .image(screenshotId: screenshotId, caption: caption))
+    public static func image(screenshotId: UUID, caption: SummaryText) -> Self {
+        Self(content: .image(screenshotId: screenshotId, caption: caption))
     }
 
-    public static func heading(level: Int, text: String, transcriptRef: TranscriptReference? = nil) -> SummaryBlock {
-        SummaryBlock(content: .heading(level: level, content: SummaryText(text, transcriptRef: transcriptRef)))
+    public static func heading(level: Int, text: String, transcriptRef: TranscriptReference? = nil) -> Self {
+        Self(content: .heading(level: level, content: SummaryText(text, transcriptRef: transcriptRef)))
     }
 
-    public static func heading(level: Int, content: SummaryText) -> SummaryBlock {
-        SummaryBlock(content: .heading(level: level, content: content))
+    public static func heading(level: Int, content: SummaryText) -> Self {
+        Self(content: .heading(level: level, content: content))
     }
 
-    public static func table(headers: [String], rows: [[String]]) -> SummaryBlock {
-        SummaryBlock(content: .table(headers: headers.map { SummaryText($0) }, rows: rows.map { $0.map { SummaryText($0) } }))
+    public static func table(headers: [String], rows: [[String]]) -> Self {
+        Self(content: .table(headers: headers.map { SummaryText($0) }, rows: rows.map { $0.map { SummaryText($0) } }))
     }
 
-    public static func table(headers: [SummaryText], rows: [[SummaryText]]) -> SummaryBlock {
-        SummaryBlock(content: .table(headers: headers, rows: rows))
+    public static func table(headers: [SummaryText], rows: [[SummaryText]]) -> Self {
+        Self(content: .table(headers: headers, rows: rows))
     }
 
-    public static func == (lhs: SummaryBlock, rhs: SummaryBlock) -> Bool {
+    public static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.content == rhs.content
     }
 }

@@ -397,7 +397,6 @@ import os
             #expect(!viewModel.canGenerateSummary)
         }
 
-
         @Test
         func commandsAreDisabledWhileFinalizingRecording() {
             let viewModel = summaryReadyViewModel()

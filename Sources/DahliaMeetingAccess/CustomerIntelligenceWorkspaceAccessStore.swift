@@ -84,8 +84,7 @@ public extension MeetingAccessStore {
                 ]
             )
             let nodesTruncated = rows.count > Self.maximumOrganizationChartNodeCount
-            let nodes = try rows.prefix(Self.maximumOrganizationChartNodeCount).map {
-                row -> OrganizationChartAccessNode in
+            let nodes = try rows.prefix(Self.maximumOrganizationChartNodeCount).map { row -> OrganizationChartAccessNode in
                 guard let kind = OrganizationAccessNodeKind(rawValue: row["nodeKind"]) else {
                     throw MeetingAccessError.invalidCustomerIntelligenceData
                 }
@@ -227,8 +226,7 @@ public extension MeetingAccessStore {
                 arguments: [id, Self.customerNestedLimit + 1]
             )
             let referencesTruncated = referenceRows.count > Self.customerNestedLimit
-            let references = try referenceRows.prefix(Self.customerNestedLimit).map {
-                referenceRow -> ConversationTopicReferenceAccessMetadata in
+            let references = try referenceRows.prefix(Self.customerNestedLimit).map { referenceRow -> ConversationTopicReferenceAccessMetadata in
                 guard let type = CustomerIntelligenceResourceKind(rawValue: referenceRow["resourceType"]) else {
                     throw MeetingAccessError.invalidCustomerIntelligenceData
                 }

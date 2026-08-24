@@ -313,11 +313,11 @@ private func makeRecordingSession(recorder: RequestRecorderURLProtocol) -> URLSe
 private final class RecordingURLProtocol: URLProtocol, @unchecked Sendable {
     nonisolated(unsafe) static var recorder: RequestRecorderURLProtocol?
 
-    override class func canInit(with _: URLRequest) -> Bool {
+    override static func canInit(with _: URLRequest) -> Bool {
         true
     }
 
-    override class func canonicalRequest(for request: URLRequest) -> URLRequest {
+    override static func canonicalRequest(for request: URLRequest) -> URLRequest {
         request
     }
 

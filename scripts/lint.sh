@@ -53,11 +53,9 @@ if [[ -z "${DEVELOPER_DIR:-}" ]] \
     swiftlint_command=(env DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swiftlint)
 fi
 
-if [[ "$is_ci" == "true" ]]; then
-    if ! "${swiftlint_command[@]}" lint --quiet --no-cache; then
-        echo "SwiftLint reported violations. Keeping non-blocking until existing violations are cleaned up."
-    fi
-else
-    "${swiftlint_command[@]}" lint --quiet --no-cache || true
-fi
+"${swiftlint_command[@]}" lint \
+    --strict \
+    --quiet \
+    --no-cache \
+    Sources Tests
 echo "SwiftLint: done"
