@@ -669,7 +669,7 @@
 "App Languages" = "App Languages";
 "Limits languages shown for transcription and live subtitles, automatic language detection, and screenshot text extraction." = "Limits languages shown for transcription and live subtitles, automatic language detection, and screenshot text extraction.";
 "Screenshot Text Languages" = "Screenshot Text Languages";
-"Codex uses the app languages selected in General as hints when extracting screenshot text." = "Codex uses the app languages selected in General as hints when extracting screenshot text.";
+"Codex uses the app languages selected in Language settings as hints when extracting screenshot text." = "Codex uses the app languages selected in Language settings as hints when extracting screenshot text.";
 "Open Language Settings" = "Open Language Settings";
 "Recorded Languages" = "Languages used while recording";
 "Transcription Language" = "Transcription Language";

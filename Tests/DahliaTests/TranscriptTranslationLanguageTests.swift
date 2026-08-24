@@ -39,5 +39,17 @@ import Foundation
             #expect(TranscriptTranslationLanguage.displayName(for: "ja", locale: Locale(identifier: "en")) == "Japanese")
             #expect(TranscriptTranslationLanguage.displayName(for: "en", locale: Locale(identifier: "ja")) == "英語")
         }
+
+        @Test
+        func includesSavedTargetLanguageWhenUnavailable() {
+            let options = TranscriptTranslationLanguage.availableTargetLanguages(
+                from: [Locale(identifier: "en_US")],
+                including: "ja",
+                locale: Locale(identifier: "en")
+            )
+
+            #expect(options.map(\.identifier) == ["en", "ja"])
+            #expect(options.last?.displayName == "Japanese")
+        }
     }
 #endif

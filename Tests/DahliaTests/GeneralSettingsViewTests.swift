@@ -31,11 +31,11 @@
 
         @Test
         func languageSelectionSummaryIsBounded() {
-            let summary = GeneralSettingsView.languageSelectionSummaryParts(
+            let summary = AppLanguageSelectionRow.summaryParts(
                 identifiers: ["en", "fr", "ja"],
                 locale: Locale(identifier: "en")
             )
-            let emptySummary = GeneralSettingsView.languageSelectionSummaryParts(
+            let emptySummary = AppLanguageSelectionRow.summaryParts(
                 identifiers: [],
                 locale: Locale(identifier: "en")
             )

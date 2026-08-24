@@ -2177,7 +2177,7 @@ enum L10n {
     ) }
     static var imageTextLanguages: String { String(localized: "Screenshot Text Languages", bundle: bundle) }
     static var imageTextLanguagesDescription: String { String(
-        localized: "Codex uses the app languages selected in General as hints when extracting screenshot text.",
+        localized: "Codex uses the app languages selected in Language settings as hints when extracting screenshot text.",
         bundle: bundle
     ) }
     static var openLanguageSettings: String { String(localized: "Open Language Settings", bundle: bundle) }

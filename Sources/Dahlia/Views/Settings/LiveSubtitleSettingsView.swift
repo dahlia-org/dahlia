@@ -80,23 +80,10 @@ struct LiveSubtitleSettingsView: View {
     }
 
     private var targetLanguageOptions: [TranscriptTranslationLanguageOption] {
-        let displayLocale = settings.appLanguage.locale
-        let options = TranscriptTranslationLanguage.availableTargetLanguages(
+        TranscriptTranslationLanguage.availableTargetLanguages(
             from: supportedLocales,
-            locale: displayLocale
+            including: settings.liveSubtitleTranslationTargetLanguage,
+            locale: settings.appLanguage.locale
         )
-        if options.contains(where: { $0.identifier == settings.liveSubtitleTranslationTargetLanguage }) {
-            return options
-        }
-
-        return options + [
-            TranscriptTranslationLanguageOption(
-                identifier: settings.liveSubtitleTranslationTargetLanguage,
-                displayName: TranscriptTranslationLanguage.displayName(
-                    for: settings.liveSubtitleTranslationTargetLanguage,
-                    locale: displayLocale
-                )
-            ),
-        ]
     }
 }

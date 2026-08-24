@@ -669,7 +669,7 @@
 "App Languages" = "アプリで扱う言語";
 "Limits languages shown for transcription and live subtitles, automatic language detection, and screenshot text extraction." = "文字起こしとライブ字幕の選択肢、自動言語判定、スクリーンショットの文字抽出に使う言語を絞り込みます。";
 "Screenshot Text Languages" = "スクリーンショットの文字言語";
-"Codex uses the app languages selected in General as hints when extracting screenshot text." = "Codexは「一般」で選択した言語を、スクリーンショットから文字を抽出する際のヒントとして使用します。";
+"Codex uses the app languages selected in Language settings as hints when extracting screenshot text." = "Codexは「言語」で選択した言語を、スクリーンショットから文字を抽出する際のヒントとして使用します。";
 "Open Language Settings" = "言語設定を開く";
 "Recorded Languages" = "録音時に使用した言語";
 "Transcription Language" = "文字起こし言語";

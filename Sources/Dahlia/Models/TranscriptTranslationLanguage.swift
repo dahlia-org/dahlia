@@ -66,4 +66,19 @@ enum TranscriptTranslationLanguage {
             $0.displayName.compare($1.displayName, locale: locale) == .orderedAscending
         }
     }
+
+    static func availableTargetLanguages(
+        from locales: [Locale],
+        including identifier: String,
+        locale: Locale = .current
+    ) -> [TranscriptTranslationLanguageOption] {
+        let options = availableTargetLanguages(from: locales, locale: locale)
+        guard !options.contains(where: { $0.identifier == identifier }) else { return options }
+        return options + [
+            TranscriptTranslationLanguageOption(
+                identifier: identifier,
+                displayName: displayName(for: identifier, locale: locale)
+            ),
+        ]
+    }
 }

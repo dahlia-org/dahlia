@@ -3,6 +3,7 @@ import Foundation
 /// 設定画面のカテゴリ。
 enum SettingsCategory: String, CaseIterable, Identifiable {
     case general
+    case language
     case appearance
     case vault
     case permissions
@@ -26,6 +27,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
     var label: String {
         switch self {
         case .general: L10n.general
+        case .language: L10n.language
         case .appearance: L10n.appearance
         case .vault: L10n.vault
         case .permissions: L10n.permissions
@@ -49,6 +51,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
     var systemImage: String {
         switch self {
         case .general: "gearshape"
+        case .language: "globe"
         case .appearance: "sun.max"
         case .vault: "externaldrive"
         case .permissions: "hand.raised"
