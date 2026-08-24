@@ -115,6 +115,7 @@ extension SidebarViewModel {
         let generation = meetingSearchObservationGeneration
         let cursor = appending ? meetingSearchCursor : nil
         let searchQueue = searchDBQueue ?? dbQueue
+        let rankingPolicy = AppSettings.shared.meetingSearchRankingPolicy
         meetingSearchTask = Task { [weak self] in
             do {
                 if let delay {
@@ -123,6 +124,7 @@ extension SidebarViewModel {
                 let page = try await MeetingRepository.searchMeetingSidebarPage(
                     vaultId: vaultId,
                     criteria: criteria,
+                    rankingPolicy: rankingPolicy,
                     after: cursor,
                     limit: Self.meetingPageSize,
                     dbQueue: searchQueue

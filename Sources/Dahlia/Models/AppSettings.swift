@@ -117,6 +117,8 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
     nonisolated static let customerIntelligenceSectionUserDefaultsKey = "customerIntelligenceSection"
     nonisolated static let customerIntelligenceScopeUserDefaultsKey = "customerIntelligenceScope"
     nonisolated static let customerIntelligenceTableDensityUserDefaultsKey = "customerIntelligenceTableDensity"
+    nonisolated static let meetingSearchRankingWeightsUserDefaultsKey = "meetingSearchRankingWeights"
+    nonisolated static let meetingSearchJudgmentsUserDefaultsKey = "meetingSearchBenchmarkJudgments"
     nonisolated static let meetingSidebarRowStyleUserDefaultsKey = "meetingSidebarRowStyle"
     nonisolated static let defaultMeetingLinkOpenTargetUserDefaultsKey = "defaultMeetingLinkOpenTarget"
     nonisolated static let googleMeetMeetingLinkOpenTargetUserDefaultsKey = "googleMeetMeetingLinkOpenTarget"
@@ -415,6 +417,51 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
             return storedScope
         }
         return enabledLocaleIdentifiers.isEmpty ? .all : .selected
+    }
+
+    // MARK: - 検索設定
+
+    /// フィールドごとの重み。クエリ時にだけ使うため、変更しても索引の再構築は不要。
+    @AppStorage(meetingSearchRankingWeightsUserDefaultsKey)
+    private var meetingSearchRankingWeightsJSON = ""
+
+    var meetingSearchRankingPolicy: MeetingSearchRankingPolicy {
+        get { Self.meetingSearchRankingPolicy(in: .standard) }
+        set { meetingSearchRankingWeightsJSON = Self.encodedMeetingSearchRankingPolicy(newValue) }
+    }
+
+    /// 未設定と不正な JSON はどちらも既定のプリセットとして扱う。
+    nonisolated static func meetingSearchRankingPolicy(in defaults: UserDefaults) -> MeetingSearchRankingPolicy {
+        guard let encoded = defaults.string(forKey: meetingSearchRankingWeightsUserDefaultsKey),
+              let data = encoded.data(using: .utf8),
+              let policy = try? JSONDecoder().decode(MeetingSearchRankingPolicy.self, from: data)
+        else {
+            return .standard
+        }
+        return policy
+    }
+
+    private nonisolated static func encodedMeetingSearchRankingPolicy(
+        _ policy: MeetingSearchRankingPolicy
+    ) -> String {
+        let data = try? JSONEncoder().encode(policy)
+        return data.flatMap { String(data: $0, encoding: .utf8) } ?? ""
+    }
+
+    /// ベンチマークの正解データ。LLM 呼び出しを繰り返さずに重みを探索し直せるよう保持する。
+    nonisolated static func meetingSearchJudgmentList(
+        in defaults: UserDefaults
+    ) -> MeetingSearchJudgmentList? {
+        guard let data = defaults.data(forKey: meetingSearchJudgmentsUserDefaultsKey) else { return nil }
+        return try? JSONDecoder().decode(MeetingSearchJudgmentList.self, from: data)
+    }
+
+    nonisolated static func storeMeetingSearchJudgmentList(
+        _ list: MeetingSearchJudgmentList,
+        in defaults: UserDefaults
+    ) {
+        guard let data = try? JSONEncoder().encode(list) else { return }
+        defaults.set(data, forKey: meetingSearchJudgmentsUserDefaultsKey)
     }
 
     // MARK: - 保管庫（ランタイム状態）

@@ -212,6 +212,7 @@ final class MainSearchModel {
         let embeddingService = embeddingServiceOverride ?? sidebarViewModel.embeddingService
         let criteria = searchCriteria(using: sidebarViewModel)
         let mode = searchMode
+        let rankingPolicy = AppSettings.shared.meetingSearchRankingPolicy
         activeMeetingCriteria = criteria
         let cursor = appending ? meetingCursor : nil
         let limit = criteria.isEmpty ? MainSearchDesign.recentResultLimit : MainSearchDesign.meetingPageSize
@@ -243,6 +244,7 @@ final class MainSearchModel {
                         vaultId: vaultID,
                         criteria: criteria,
                         mode: .neural,
+                        rankingPolicy: rankingPolicy,
                         queryEmbedding: embedding,
                         after: cursor,
                         limit: limit,
@@ -259,6 +261,7 @@ final class MainSearchModel {
                     vaultId: vaultID,
                     criteria: criteria,
                     mode: mode == .neural ? .advanced : mode,
+                    rankingPolicy: rankingPolicy,
                     after: cursor,
                     limit: limit,
                     dbQueue: dbQueue
@@ -300,6 +303,7 @@ final class MainSearchModel {
                         vaultId: vaultID,
                         criteria: criteria,
                         mode: .neural,
+                        rankingPolicy: rankingPolicy,
                         queryEmbedding: embedding,
                         after: appending ? cursor : nil,
                         limit: limit,
