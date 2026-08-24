@@ -7,7 +7,7 @@ Accepted; amends ADR-0005, ADR-0033, and ADR-0035.
 ## Decision
 
 - 保存された全 screenshot は Codex app-server の `gpt-5.6-luna`、reasoning effort `low` で解析し、検出文字を `screenshots.ocrText`、画像説明を `screenshots.caption` に保存する。代替モデルにはフォールバックしない。
-- screenshot 作成 trigger は既存の FTS queue に `screenshotAnalysis` job を積むだけとし、FTS worker が最大4枚を一度に解析して、正本保存、`search_documents`、`search_documents_fts` 更新を一続きで行う。独立した画像解析 worker は作らない。
+- screenshot 作成 trigger は既存の FTS queue に `screenshotAnalysis` job を積むだけとし、FTS worker が1枚ずつ最大8並行で解析して、正本保存、`search_documents`、`search_documents_fts` 更新を一続きで行う。独立した画像解析 worker は作らない。
 - Codex の未設定、未認証、指定モデル利用不可は一時的な prerequisite 不足として job の試行回数を消費せず queue に残し、自動再試行する。
 - 録音中は画像解析を含む FTS worker と vector worker をすべて停止し、終了後に queue から再開する。
 - screenshot は `search_documents.kind = 'screenshot'` として索引するが vector は生成しない。検索結果は meeting に集約せず、同じ検索画面と `query_screenshots` MCP tool の独立した screenshot 一覧として返す。

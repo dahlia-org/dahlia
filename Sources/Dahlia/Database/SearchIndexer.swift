@@ -10,6 +10,7 @@ actor SearchIndexer {
     private let observationQueue = DispatchQueue(label: "app.dahlia.search-indexer", qos: .utility)
     private var workerTask: Task<Void, Never>?
     private var observationDrainTask: Task<Void, Never>?
+    private var activeDrainTask: Task<Void, Never>?
     private var jobObservation: AnyDatabaseCancellable?
     private var isDraining = false
     private var isPaused = false
@@ -18,6 +19,7 @@ actor SearchIndexer {
     private var lastDivergenceCheckAt: Date?
 
     private static let divergenceCheckInterval: TimeInterval = 15 * 60
+    private static let maximumConcurrentScreenshotAnalysisCount = 8
 
     init(
         dbQueue: DatabaseQueue,
@@ -70,7 +72,7 @@ actor SearchIndexer {
 
     private func stopOwnWorker() async {
         isPaused = true
-        let tasks = [workerTask, observationDrainTask].compactMap(\.self)
+        let tasks = [workerTask, observationDrainTask, activeDrainTask].compactMap(\.self)
         tasks.forEach { $0.cancel() }
         workerTask = nil
         observationDrainTask = nil
@@ -79,6 +81,7 @@ actor SearchIndexer {
         for task in tasks {
             await task.value
         }
+        activeDrainTask = nil
         if isDraining {
             await withCheckedContinuation { drainWaiters.append($0) }
         }
@@ -110,7 +113,7 @@ actor SearchIndexer {
     }
 
     func drain() async {
-        await drain(checksDivergence: true)
+        await runDrain(checksDivergence: true)
     }
 
     private func drainScheduledWork() async {
@@ -119,10 +122,28 @@ actor SearchIndexer {
         let checksDivergence = lastDivergenceCheckAt.map {
             now.timeIntervalSince($0) >= Self.divergenceCheckInterval
         } ?? true
-        await drain(checksDivergence: checksDivergence)
+        await runDrain(checksDivergence: checksDivergence)
     }
 
-    private func drain(checksDivergence: Bool) async {
+    private func runDrain(checksDivergence: Bool) async {
+        if let activeDrainTask {
+            await activeDrainTask.value
+            return
+        }
+        let task = Task(priority: .utility) { [weak self] in
+            guard let self else { return }
+            await self.performDrain(checksDivergence: checksDivergence)
+        }
+        activeDrainTask = task
+        await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            task.cancel()
+        }
+        activeDrainTask = nil
+    }
+
+    private func performDrain(checksDivergence: Bool) async {
         guard !isDraining, !isPaused else { return }
         isDraining = true
         defer {
@@ -141,6 +162,19 @@ actor SearchIndexer {
                 try await rebuild()
             }
             while !isPaused, let jobs = try await claimNextJobs() {
+                if jobs.first?.targetKind == "screenshotAnalysis" {
+                    do {
+                        if try await processScreenshotJobsConcurrently(jobs) { return }
+                    } catch is CancellationError {
+                        try await release(jobs)
+                        return
+                    } catch {
+                        for job in jobs {
+                            try await fail(job, error: error)
+                        }
+                    }
+                    continue
+                }
                 do {
                     try await process(jobs)
                     try await complete(jobs)
@@ -148,15 +182,8 @@ actor SearchIndexer {
                     try await release(jobs)
                     return
                 } catch {
-                    if Self.isDeferredScreenshotAnalysisError(error) {
-                        try await deferScreenshotQueueForPrerequisite(error)
-                        return
-                    } else if jobs.count > 1, jobs.first?.targetKind == "screenshotAnalysis" {
-                        try await processScreenshotJobsIndividually(jobs)
-                    } else {
-                        for job in jobs {
-                            try await fail(job, error: error)
-                        }
+                    for job in jobs {
+                        try await fail(job, error: error)
                     }
                 }
             }
@@ -382,7 +409,7 @@ actor SearchIndexer {
                     ORDER BY priority DESC, availableAt, targetKey
                     LIMIT ?
                     """,
-                    arguments: [now, now, CodexScreenshotAnalysisService.maximumBatchSize]
+                    arguments: [now, now, Self.maximumConcurrentScreenshotAnalysisCount]
                 )
             } else {
                 [firstRow]
@@ -421,10 +448,6 @@ actor SearchIndexer {
 
     private func process(_ jobs: [SearchIndexJob]) async throws {
         let generation = try await currentGeneration()
-        if jobs.first?.targetKind == "screenshotAnalysis" {
-            try await analyzeAndIndexScreenshots(jobs, generation: generation)
-            return
-        }
         guard let job = jobs.first else { return }
         switch job.targetKind {
         case "vaultCleanup":
@@ -488,20 +511,82 @@ actor SearchIndexer {
 }
 
 private extension SearchIndexer {
-    func analyzeAndIndexScreenshots(_ jobs: [SearchIndexJob], generation: Int) async throws {
+    func indexScreenshot(id: UUID, generation: Int) async throws {
+        try await dbQueue.write { db in
+            try Self.indexScreenshot(id: id, generation: generation, in: db)
+        }
+    }
+
+    func processScreenshotJobsConcurrently(_ jobs: [SearchIndexJob]) async throws -> Bool {
         let inputs = try await dbQueue.read { db in
-            try jobs.compactMap { job -> ScreenshotAnalysisInput? in
+            try Dictionary(uniqueKeysWithValues: jobs.compactMap { job -> (UUID, ScreenshotAnalysisInput)? in
                 guard let screenshot = try MeetingScreenshotRecord.fetchOne(db, key: job.targetID) else { return nil }
-                return ScreenshotAnalysisInput(
+                return (job.targetID, ScreenshotAnalysisInput(
                     id: screenshot.id,
                     imageData: screenshot.imageData,
                     mimeType: screenshot.mimeType
-                )
+                ))
+            })
+        }
+        var outcomes = jobs.compactMap { job in
+            inputs[job.targetID] == nil ? ScreenshotJobOutcome.missing(job) : nil
+        }
+        var prerequisiteError: (any Error)?
+        await withTaskGroup(of: ScreenshotJobOutcome.self) { group in
+            for job in jobs {
+                guard let input = inputs[job.targetID] else { continue }
+                group.addTask(priority: .utility) { [screenshotAnalyzer] in
+                    do {
+                        let results = try await screenshotAnalyzer.analyze([input])
+                        try Task.checkCancellation()
+                        return .success(job, results)
+                    } catch is CancellationError {
+                        return .cancelled
+                    } catch {
+                        return .failure(job, error)
+                    }
+                }
+            }
+            for await outcome in group {
+                outcomes.append(outcome)
+                if case let .failure(_, error) = outcome,
+                   Self.isDeferredScreenshotAnalysisError(error) {
+                    prerequisiteError = prerequisiteError ?? error
+                    group.cancelAll()
+                }
             }
         }
-        guard !inputs.isEmpty else { return }
-        let results = try await screenshotAnalyzer.analyze(inputs)
         try Task.checkCancellation()
+
+        if let prerequisiteError {
+            try await deferScreenshotQueueForPrerequisite(prerequisiteError)
+            return true
+        }
+
+        let generation = try await currentGeneration()
+        for outcome in outcomes {
+            switch outcome {
+            case let .success(job, results):
+                do {
+                    try await storeScreenshotAnalyses(results, generation: generation)
+                    try await complete([job])
+                } catch is CancellationError {
+                    throw CancellationError()
+                } catch {
+                    try await fail(job, error: error)
+                }
+            case let .failure(job, error):
+                try await fail(job, error: error)
+            case let .missing(job):
+                try await complete([job])
+            case .cancelled:
+                throw CancellationError()
+            }
+        }
+        return false
+    }
+
+    func storeScreenshotAnalyses(_ results: [ScreenshotAnalysis], generation: Int) async throws {
         try await dbQueue.write { db in
             for result in results {
                 guard try MeetingScreenshotRecord.fetchOne(db, key: result.screenshotID) != nil else { continue }
@@ -510,31 +595,6 @@ private extension SearchIndexer {
                     arguments: [result.ocrText, result.caption, result.screenshotID]
                 )
                 try Self.indexScreenshot(id: result.screenshotID, generation: generation, in: db)
-            }
-        }
-    }
-
-    func indexScreenshot(id: UUID, generation: Int) async throws {
-        try await dbQueue.write { db in
-            try Self.indexScreenshot(id: id, generation: generation, in: db)
-        }
-    }
-
-    func processScreenshotJobsIndividually(_ jobs: [SearchIndexJob]) async throws {
-        for (index, job) in jobs.enumerated() {
-            do {
-                try await process([job])
-                try await complete([job])
-            } catch is CancellationError {
-                try await release(Array(jobs[index...]))
-                throw CancellationError()
-            } catch {
-                if Self.isDeferredScreenshotAnalysisError(error) {
-                    try await deferScreenshotQueueForPrerequisite(error)
-                    return
-                } else {
-                    try await fail(job, error: error)
-                }
             }
         }
     }
@@ -883,6 +943,13 @@ private struct SearchIndexJob: Sendable {
     let targetID: UUID
     let generation: Int
     let attempts: Int
+}
+
+private enum ScreenshotJobOutcome: Sendable {
+    case success(SearchIndexJob, [ScreenshotAnalysis])
+    case failure(SearchIndexJob, any Error)
+    case cancelled
+    case missing(SearchIndexJob)
 }
 
 private enum SearchIndexError: Error {

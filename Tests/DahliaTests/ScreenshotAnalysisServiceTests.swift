@@ -24,13 +24,11 @@ import Foundation
         }
 
         @Test
-        func sendsOneStructuredLunaRequestForTheBatch() async throws {
-            let firstID = try #require(UUID(uuidString: "00000000-0000-0000-0000-000000000001"))
-            let secondID = try #require(UUID(uuidString: "00000000-0000-0000-0000-000000000002"))
+        func sendsOneStructuredLunaRequestForOneScreenshot() async throws {
+            let screenshotID = try #require(UUID(uuidString: "00000000-0000-0000-0000-000000000001"))
             let response = """
             {"screenshots":[
-              {"screenshot_id":"\(firstID)","ocr_text":"First text","caption":"First caption"},
-              {"screenshot_id":"\(secondID)","ocr_text":"Second text","caption":"Second caption"}
+              {"screenshot_id":"\(screenshotID)","ocr_text":"Visible text","caption":"Visible caption"}
             ]}
             """
             let transport = TestCodexAppServerTransport(
@@ -42,15 +40,13 @@ import Foundation
             let analyzer = CodexScreenshotAnalysisService(appServer: appServer)
 
             let results = try await analyzer.analyze([
-                ScreenshotAnalysisInput(id: firstID, imageData: Data([1]), mimeType: "image/png"),
-                ScreenshotAnalysisInput(id: secondID, imageData: Data([2]), mimeType: "image/png"),
+                ScreenshotAnalysisInput(id: screenshotID, imageData: Data([1]), mimeType: "image/png"),
             ])
 
-            #expect(results.map(\.screenshotID) == [firstID, secondID])
-            #expect(results.map(\.caption) == ["First caption", "Second caption"])
+            #expect(results.map(\.screenshotID) == [screenshotID])
+            #expect(results.map(\.caption) == ["Visible caption"])
             _ = try await analyzer.analyze([
-                ScreenshotAnalysisInput(id: firstID, imageData: Data([1]), mimeType: "image/png"),
-                ScreenshotAnalysisInput(id: secondID, imageData: Data([2]), mimeType: "image/png"),
+                ScreenshotAnalysisInput(id: screenshotID, imageData: Data([1]), mimeType: "image/png"),
             ])
             let messages = await transport.messages()
             #expect(messages.count(where: { $0.objectValue?["method"]?.stringValue == "model/list" }) == 1)
@@ -62,9 +58,21 @@ import Foundation
             let turnParams = try #require(messages.first {
                 $0.objectValue?["method"]?.stringValue == "turn/start"
             }?.objectValue?["params"]?.objectValue)
-            #expect(turnParams["input"]?.arrayValue?.count == 4)
+            #expect(turnParams["input"]?.arrayValue?.count == 2)
             #expect(turnParams["outputSchema"]?.objectValue?["required"] == .array([.string("screenshots")]))
             await appServer.shutdown()
+        }
+
+        @Test
+        func rejectsMultipleScreenshots() async {
+            let analyzer = CodexScreenshotAnalysisService()
+
+            await #expect(throws: ScreenshotAnalysisError.invalidBatchSize) {
+                _ = try await analyzer.analyze([
+                    ScreenshotAnalysisInput(id: .v7(), imageData: Data([1]), mimeType: "image/png"),
+                    ScreenshotAnalysisInput(id: .v7(), imageData: Data([2]), mimeType: "image/png"),
+                ])
+            }
         }
 
         @Test
