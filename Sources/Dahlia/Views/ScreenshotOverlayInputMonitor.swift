@@ -35,7 +35,48 @@ struct ScreenshotOverlayInputMonitor: NSViewRepresentable {
     static func dismantleNSView(_: NSView, coordinator: Coordinator) {
         coordinator.stopMonitoring()
     }
+}
 
+struct ScreenshotOverlayDismissalArea: NSViewRepresentable {
+    let onDismiss: () -> Void
+
+    func makeNSView(context _: Context) -> DismissalView {
+        DismissalView(onDismiss: onDismiss)
+    }
+
+    func updateNSView(_ view: DismissalView, context _: Context) {
+        view.onDismiss = onDismiss
+    }
+
+    @MainActor
+    final class DismissalView: NSView {
+        var onDismiss: () -> Void
+
+        init(onDismiss: @escaping () -> Void) {
+            self.onDismiss = onDismiss
+            super.init(frame: .zero)
+        }
+
+        @available(*, unavailable)
+        required init?(coder _: NSCoder) {
+            fatalError("init(coder:) has not been implemented")
+        }
+
+        override func mouseDown(with _: NSEvent) {
+            onDismiss()
+        }
+
+        override func rightMouseDown(with _: NSEvent) {
+            onDismiss()
+        }
+
+        override func otherMouseDown(with _: NSEvent) {
+            onDismiss()
+        }
+    }
+}
+
+extension ScreenshotOverlayInputMonitor {
     @MainActor
     final class Coordinator {
         private static let escapeKeyCode: UInt16 = 53

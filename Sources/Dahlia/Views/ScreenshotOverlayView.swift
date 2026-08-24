@@ -278,31 +278,36 @@ struct ScreenshotOverlayView: View {
     /// 送りボタンごと監視ビューの内側に置く。ボタンが bounds の外にあると、
     /// クリックが「オーバーレイ外クリック」と判定されて拡大表示が閉じてしまう。
     private func navigationChrome(@ViewBuilder content: () -> some View) -> some View {
-        HStack(spacing: Self.navigationSpacing) {
-            if hasNavigation {
-                navigationButton(
-                    title: L10n.previousImage,
-                    systemImage: "chevron.backward",
-                    isEnabled: canGoPrevious,
-                    action: onPrevious
-                )
-                .opacity(showsNavigationControls ? 1 : 0)
-                .allowsHitTesting(showsNavigationControls)
-            }
+        ZStack {
+            dismissalArea
 
-            content()
+            HStack(spacing: Self.navigationSpacing) {
+                if hasNavigation {
+                    navigationButton(
+                        title: L10n.previousImage,
+                        systemImage: "chevron.backward",
+                        isEnabled: canGoPrevious,
+                        action: onPrevious
+                    )
+                    .opacity(showsNavigationControls ? 1 : 0)
+                    .allowsHitTesting(showsNavigationControls)
+                }
 
-            if hasNavigation {
-                navigationButton(
-                    title: L10n.nextImage,
-                    systemImage: "chevron.forward",
-                    isEnabled: canGoNext,
-                    action: onNext
-                )
-                .opacity(showsNavigationControls ? 1 : 0)
-                .allowsHitTesting(showsNavigationControls)
+                content()
+
+                if hasNavigation {
+                    navigationButton(
+                        title: L10n.nextImage,
+                        systemImage: "chevron.forward",
+                        isEnabled: canGoNext,
+                        action: onNext
+                    )
+                    .opacity(showsNavigationControls ? 1 : 0)
+                    .allowsHitTesting(showsNavigationControls)
+                }
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background {
             ScreenshotOverlayInputMonitor(
                 onDismiss: onDismiss,
@@ -352,6 +357,11 @@ struct ScreenshotOverlayView: View {
             action: action
         )
         .frame(width: Self.navigationButtonWidth)
+    }
+
+    private var dismissalArea: some View {
+        ScreenshotOverlayDismissalArea(onDismiss: onDismiss)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private func copyImageToGeneralPasteboard() {
