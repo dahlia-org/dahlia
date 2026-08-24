@@ -95,12 +95,14 @@ public final class MeetingAccessStore: Sendable {
                 guard let fullTextQuery = try fullTextQuery(text, in: db) else {
                     return ScreenshotTextQueryPage(vault: vault, screenshots: [], nextCursor: nil)
                 }
+                let combinedQuery = "{ocr caption} : (\(fullTextQuery))"
+                let fullOCRQuery = "ocr : (\(fullTextQuery))"
+                let fullCaptionQuery = "caption : (\(fullTextQuery))"
                 var conditions = [
                     "search_documents.kind = 'screenshot'",
                     "search_documents.vaultId = ?",
-                    "search_documents_fts MATCH ?",
                 ]
-                var arguments: StatementArguments = [vaultID, "{ocr caption} : (\(fullTextQuery))"]
+                var arguments: StatementArguments = [combinedQuery, fullOCRQuery, fullCaptionQuery, vaultID]
                 if let projectID = query.projectID {
                     conditions.append("meetings.projectId = ?")
                     arguments += [projectID]
@@ -117,15 +119,33 @@ public final class MeetingAccessStore: Sendable {
                 var rows = try Row.fetchAll(
                     db,
                     sql: """
+                    WITH combined_matches AS (
+                        SELECT rowid, bm25(search_documents_fts) AS relevance
+                        FROM search_documents_fts
+                        WHERE search_documents_fts MATCH ?
+                    ),
+                    full_ocr_matches AS (
+                        SELECT rowid FROM search_documents_fts
+                        WHERE search_documents_fts MATCH ?
+                    ),
+                    full_caption_matches AS (
+                        SELECT rowid FROM search_documents_fts
+                        WHERE search_documents_fts MATCH ?
+                    )
                     SELECT screenshots.id, screenshots.meetingId, meetings.name AS meetingName,
                            screenshots.capturedAt, screenshots.mimeType,
-                           screenshots.ocrText AS detectedText, screenshots.caption
-                    FROM search_documents
-                    JOIN search_documents_fts ON search_documents_fts.rowid = search_documents.id
+                           screenshots.ocrText AS detectedText, screenshots.caption,
+                           CASE WHEN full_ocr_matches.rowid IS NOT NULL THEN 0
+                                WHEN full_caption_matches.rowid IS NULL THEN 1
+                                ELSE 2 END AS matchTier
+                    FROM combined_matches
+                    JOIN search_documents ON search_documents.id = combined_matches.rowid
                     JOIN screenshots ON screenshots.id = search_documents.sourceId
                     JOIN meetings ON meetings.id = screenshots.meetingId
+                    LEFT JOIN full_ocr_matches ON full_ocr_matches.rowid = combined_matches.rowid
+                    LEFT JOIN full_caption_matches ON full_caption_matches.rowid = combined_matches.rowid
                     WHERE \(conditions.joined(separator: " AND "))
-                    ORDER BY bm25(search_documents_fts), screenshots.capturedAt DESC, screenshots.id
+                    ORDER BY matchTier, combined_matches.relevance, screenshots.capturedAt DESC, screenshots.id
                     LIMIT ? OFFSET ?
                     """,
                     arguments: arguments

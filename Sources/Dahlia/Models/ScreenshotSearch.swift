@@ -1,5 +1,24 @@
 import Foundation
 
+struct ScreenshotSearchMatch: Equatable, Sendable {
+    enum Source: Equatable, Hashable, Sendable {
+        case ocr
+        case caption
+
+        var localizedTitle: String {
+            switch self {
+            case .ocr:
+                L10n.detectedText
+            case .caption:
+                L10n.imageDescription
+            }
+        }
+    }
+
+    let source: Source
+    let snippet: String
+}
+
 struct ScreenshotSearchResult: Identifiable, Equatable, Sendable {
     let id: UUID
     let meetingID: UUID
@@ -7,7 +26,7 @@ struct ScreenshotSearchResult: Identifiable, Equatable, Sendable {
     let meetingDescription: String
     let capturedAt: Date
     let mimeType: String
-    let snippet: String
+    let matches: [ScreenshotSearchMatch]
 }
 
 struct ScreenshotSearchCursor: Equatable, Sendable {

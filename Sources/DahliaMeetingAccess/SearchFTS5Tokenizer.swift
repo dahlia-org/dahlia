@@ -2,6 +2,19 @@ import DahliaLindera
 import Foundation
 import GRDB
 
+private final class DocumentTokenRangeContext {
+    let priorities: [String: Int]
+    var bestMatch: (priority: Int, byteRange: Range<Int>)?
+
+    init(candidates: [String]) {
+        var priorities: [String: Int] = [:]
+        for (index, candidate) in candidates.enumerated() where priorities[candidate] == nil {
+            priorities[candidate] = index
+        }
+        self.priorities = priorities
+    }
+}
+
 public final class SearchFTS5Tokenizer: FTS5CustomTokenizer {
     public static let name = "dahlia_lindera_ipadic_v1"
     public static let configurationHash = "e4e5d5c88f88895432fe3ec7e98b00ee2f05ca9ff6d78b47dda780ba6f5f308c"
@@ -73,5 +86,45 @@ public final class SearchFTS5Tokenizer: FTS5CustomTokenizer {
 
     public static func quotedQueryToken(_ token: String, isPrefix: Bool) -> String {
         "\"\(token.replacingOccurrences(of: "\"", with: "\"\""))\"\(isPrefix ? "*" : "")"
+    }
+
+    public static func firstDocumentTokenRange(
+        in text: String,
+        matching candidates: [String],
+        using tokenizer: any FTS5Tokenizer
+    ) throws -> Range<String.Index>? {
+        let bytes = Array(text.utf8)
+        let byteRange = try bytes.withUnsafeBufferPointer { buffer -> Range<Int>? in
+            guard let address = buffer.baseAddress else { return nil }
+            var context = DocumentTokenRangeContext(candidates: candidates)
+            let code = withUnsafeMutablePointer(to: &context) { contextPointer in
+                tokenizer.tokenize(
+                    context: UnsafeMutableRawPointer(contextPointer),
+                    tokenization: .document,
+                    pText: UnsafeRawPointer(address).assumingMemoryBound(to: CChar.self),
+                    nText: CInt(buffer.count)
+                ) { rawContext, _, tokenBytes, tokenLength, startOffset, endOffset in
+                    guard let rawContext, let tokenBytes,
+                          let token = String(
+                              data: Data(bytes: tokenBytes, count: Int(tokenLength)),
+                              encoding: .utf8
+                          ) else { return 0 }
+                    let context = rawContext.assumingMemoryBound(to: DocumentTokenRangeContext.self).pointee
+                    guard let priority = context.priorities[token],
+                          priority < (context.bestMatch?.priority ?? .max) else { return 0 }
+                    context.bestMatch = (priority, Int(startOffset) ..< Int(endOffset))
+                    return 0
+                }
+            }
+            guard code == 0 else { throw DatabaseError(resultCode: ResultCode(rawValue: code)) }
+            return context.bestMatch?.byteRange
+        }
+        guard let byteRange else { return nil }
+        let utf8 = text.utf8
+        let lowerUTF8 = utf8.index(utf8.startIndex, offsetBy: byteRange.lowerBound)
+        let upperUTF8 = utf8.index(utf8.startIndex, offsetBy: byteRange.upperBound)
+        guard let lowerBound = lowerUTF8.samePosition(in: text),
+              let upperBound = upperUTF8.samePosition(in: text) else { return nil }
+        return lowerBound ..< upperBound
     }
 }

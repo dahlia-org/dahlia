@@ -9,6 +9,150 @@ import GRDB
     // swiftlint:disable:next type_body_length
     struct ScreenshotOCRSearchTests {
         @Test
+        func ranksOCRThenMixedThenCaptionAcrossPages() async throws {
+            let ocrID = UUID.v7()
+            let mixedID = UUID.v7()
+            let captionID = UUID.v7()
+            let database = try AppDatabaseManager(
+                path: ":memory:",
+                screenshotAnalyzer: MappedScreenshotAnalyzer(values: [
+                    ocrID: ("alpha beta in detected text", "unrelated description"),
+                    mixedID: ("alpha in detected text", "beta in image description"),
+                    captionID: ("unrelated detected text", "alpha beta in image description"),
+                ])
+            )
+            let vault = makeVault()
+            let meeting = makeMeeting(vaultID: vault.id)
+            try await database.dbQueue.write { db in
+                try vault.insert(db)
+                try meeting.insert(db)
+                for (id, capturedAt) in [
+                    (ocrID, Date(timeIntervalSince1970: 100)),
+                    (mixedID, Date(timeIntervalSince1970: 200)),
+                    (captionID, Date(timeIntervalSince1970: 300)),
+                ] {
+                    try MeetingScreenshotRecord(
+                        id: id,
+                        meetingId: meeting.id,
+                        sessionId: nil,
+                        capturedAt: capturedAt,
+                        imageData: Data([1]),
+                        mimeType: "image/png"
+                    ).insert(db)
+                }
+            }
+            await database.searchIndexer.drain()
+
+            var cursor: ScreenshotSearchCursor?
+            var results: [ScreenshotSearchResult] = []
+            repeat {
+                let page = try await MeetingRepository.searchScreenshotPage(
+                    vaultID: vault.id,
+                    criteria: MeetingSearchCriteria(text: "alpha beta"),
+                    after: cursor,
+                    limit: 1,
+                    dbQueue: database.dbQueue
+                )
+                results += page.items
+                cursor = page.nextCursor
+            } while cursor != nil
+
+            #expect(results.map(\.id) == [ocrID, mixedID, captionID])
+            #expect(results.map { $0.matches.map(\.source) } == [[.ocr], [.ocr, .caption], [.caption]])
+        }
+
+        @Test
+        func returnsBothMatchSourcesWithRelevantLongSnippets() async throws {
+            let screenshotID = UUID.v7()
+            let captionOnlyID = UUID.v7()
+            let prefix = "BEGIN " + String(repeating: "before ", count: 40)
+            let suffix = String(repeating: " after", count: 40) + " END"
+            let database = try AppDatabaseManager(
+                path: ":memory:",
+                screenshotAnalyzer: MappedScreenshotAnalyzer(values: [
+                    screenshotID: (
+                        "\(prefix)target phrase in detected text\(suffix)",
+                        "\(prefix)target phrase in image description\(suffix)"
+                    ),
+                    captionOnlyID: ("unrelated detected text", "target phrase in a newer description"),
+                ])
+            )
+            let vault = makeVault()
+            let meeting = makeMeeting(vaultID: vault.id)
+            try await database.dbQueue.write { db in
+                try vault.insert(db)
+                try meeting.insert(db)
+                try MeetingScreenshotRecord(
+                    id: screenshotID,
+                    meetingId: meeting.id,
+                    sessionId: nil,
+                    capturedAt: .now,
+                    imageData: Data([1]),
+                    mimeType: "image/png"
+                ).insert(db)
+                try MeetingScreenshotRecord(
+                    id: captionOnlyID,
+                    meetingId: meeting.id,
+                    sessionId: nil,
+                    capturedAt: .now.addingTimeInterval(60),
+                    imageData: Data([2]),
+                    mimeType: "image/png"
+                ).insert(db)
+            }
+            await database.searchIndexer.drain()
+
+            let result = try #require(try await MeetingRepository.searchScreenshotPage(
+                vaultID: vault.id,
+                criteria: MeetingSearchCriteria(text: "target phrase"),
+                limit: 20,
+                dbQueue: database.dbQueue
+            ).items.first)
+
+            #expect(result.matches.map(\.source) == [.ocr, .caption])
+            #expect(result.matches.allSatisfy { $0.snippet.contains("target phrase") })
+            #expect(result.matches.allSatisfy { $0.snippet.count <= 180 })
+            #expect(result.matches.allSatisfy { !$0.snippet.hasPrefix("BEGIN") })
+        }
+
+        @Test
+        func locatesNormalizedJapaneseTokenInLongOCRText() async throws {
+            let screenshotID = UUID.v7()
+            let prefix = "BEGIN " + String(repeating: "前の文章", count: 50)
+            let database = try AppDatabaseManager(
+                path: ":memory:",
+                screenshotAnalyzer: MappedScreenshotAnalyzer(values: [
+                    screenshotID: ("\(prefix)会議で話した内容", "関係のない説明"),
+                ])
+            )
+            let vault = makeVault()
+            let meeting = makeMeeting(vaultID: vault.id)
+            try await database.dbQueue.write { db in
+                try vault.insert(db)
+                try meeting.insert(db)
+                try MeetingScreenshotRecord(
+                    id: screenshotID,
+                    meetingId: meeting.id,
+                    sessionId: nil,
+                    capturedAt: .now,
+                    imageData: Data([1]),
+                    mimeType: "image/png"
+                ).insert(db)
+            }
+            await database.searchIndexer.drain()
+
+            let result = try #require(try await MeetingRepository.searchScreenshotPage(
+                vaultID: vault.id,
+                criteria: MeetingSearchCriteria(text: "話す"),
+                limit: 20,
+                dbQueue: database.dbQueue
+            ).items.first)
+
+            let snippet = try #require(result.matches.first?.snippet)
+            #expect(snippet.contains("話した"))
+            #expect(!snippet.hasPrefix("BEGIN"))
+        }
+
+        @Test
         func storesOCRAndReturnsTheImageWithoutMergingItsMeeting() async throws {
             let database = try AppDatabaseManager(
                 path: ":memory:",
@@ -595,6 +739,21 @@ import GRDB
         }
     }
 
+    private struct MappedScreenshotAnalyzer: ScreenshotAnalyzing {
+        let values: [UUID: (ocr: String, caption: String)]
+
+        func analyze(_ screenshots: [ScreenshotAnalysisInput]) async throws -> [ScreenshotAnalysis] {
+            screenshots.map { screenshot in
+                let value = values[screenshot.id] ?? ("", "")
+                return ScreenshotAnalysis(
+                    screenshotID: screenshot.id,
+                    ocrText: value.ocr,
+                    caption: value.caption
+                )
+            }
+        }
+    }
+
     private actor SlowScreenshotAnalyzer: ScreenshotAnalyzing {
         private(set) var didStart = false
 
@@ -632,11 +791,13 @@ import GRDB
         func analyze(_ screenshots: [ScreenshotAnalysisInput]) async throws -> [ScreenshotAnalysis] {
             batchSizes.append(screenshots.count)
             guard screenshots.count == 1, screenshots[0].id != failingID else { throw Failure() }
-            return [ScreenshotAnalysis(
-                screenshotID: screenshots[0].id,
-                ocrText: "isolated text",
-                caption: "isolated caption"
-            )]
+            return [
+                ScreenshotAnalysis(
+                    screenshotID: screenshots[0].id,
+                    ocrText: "isolated text",
+                    caption: "isolated caption"
+                ),
+            ]
         }
 
         private struct Failure: Error {}
