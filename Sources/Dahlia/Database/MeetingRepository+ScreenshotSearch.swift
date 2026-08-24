@@ -51,7 +51,7 @@ extension MeetingRepository {
                   AND search_documents.vaultId = ?
                   AND search_documents_fts MATCH ?
                   \(filter.condition)
-                ORDER BY bm25(search_documents_fts), screenshots.capturedAt DESC, screenshots.id
+                ORDER BY \(SearchFTS5Tokenizer.screenshotRankingSQL), screenshots.capturedAt DESC, screenshots.id
                 LIMIT ? OFFSET ?
                 """,
                 arguments: arguments

@@ -80,6 +80,49 @@ import GRDB
         }
 
         @Test
+        func ocrMatchRanksAboveCaptionOnlyMatch() async throws {
+            let ocrMatchID = UUID.v7()
+            let captionMatchID = UUID.v7()
+            let database = try AppDatabaseManager(
+                path: ":memory:",
+                screenshotAnalyzer: FieldTargetedScreenshotAnalyzer(ocrMatchID: ocrMatchID)
+            )
+            let vault = makeVault()
+            let meeting = makeMeeting(vaultID: vault.id)
+            try await database.dbQueue.write { db in
+                try vault.insert(db)
+                try meeting.insert(db)
+                // caption マッチ側を新しくし、BM25 が同点なら capturedAt DESC で先頭に来る配置にする
+                for (id, second) in [(ocrMatchID, 0), (captionMatchID, 1)] {
+                    try MeetingScreenshotRecord(
+                        id: id,
+                        meetingId: meeting.id,
+                        sessionId: nil,
+                        capturedAt: Date(timeIntervalSince1970: TimeInterval(second)),
+                        imageData: Data([UInt8(second)]),
+                        mimeType: "image/png"
+                    ).insert(db)
+                }
+            }
+
+            await database.searchIndexer.drain()
+
+            let page = try await MeetingRepository.searchScreenshotPage(
+                vaultID: vault.id,
+                criteria: MeetingSearchCriteria(text: "重み検証語"),
+                limit: 20,
+                dbQueue: database.dbQueue
+            )
+            #expect(page.items.map(\.id) == [ocrMatchID, captionMatchID])
+
+            // screenshotRankingSQL の bm25 重みは FTS カラム位置に対応するため、カラム順の変更を検知する
+            let columns = try await database.dbQueue.read { db in
+                try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('search_documents_fts')")
+            }
+            #expect(columns == ["title", "description", "summary", "calendar", "tags", "projectPath", "ocr", "caption"])
+        }
+
+        @Test
         func recordingPauseLeavesOCRQueuedUntilRestart() async throws {
             let database = try AppDatabaseManager(
                 path: ":memory:",
@@ -591,6 +634,17 @@ import GRDB
         func analyze(_ screenshots: [ScreenshotAnalysisInput]) async throws -> [ScreenshotAnalysis] {
             screenshots.map {
                 ScreenshotAnalysis(screenshotID: $0.id, ocrText: text, caption: "画像の説明")
+            }
+        }
+    }
+
+    private struct FieldTargetedScreenshotAnalyzer: ScreenshotAnalyzing {
+        let ocrMatchID: UUID
+        func analyze(_ screenshots: [ScreenshotAnalysisInput]) async throws -> [ScreenshotAnalysis] {
+            screenshots.map {
+                $0.id == ocrMatchID
+                    ? ScreenshotAnalysis(screenshotID: $0.id, ocrText: "重み検証語", caption: "無関係な説明")
+                    : ScreenshotAnalysis(screenshotID: $0.id, ocrText: "無関係な文字", caption: "重み検証語")
             }
         }
     }
