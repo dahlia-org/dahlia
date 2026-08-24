@@ -170,8 +170,8 @@ import GRDB
         }
 
         @Test
-        func recordingPauseCancelsInFlightOCRAndRequeuesIt() async throws {
-            let analyzer = SlowScreenshotAnalyzer()
+        func recordingPauseCancelsAllInFlightOCRAndRequeuesIt() async throws {
+            let analyzer = CancellableScreenshotAnalyzer()
             let database = try AppDatabaseManager(path: ":memory:", screenshotAnalyzer: analyzer)
             let vault = makeVault()
             let meeting = makeMeeting(vaultID: vault.id)
@@ -181,33 +181,85 @@ import GRDB
             }
             await database.searchIndexer.drain()
             await database.searchIndexer.start()
-            let screenshot = MeetingScreenshotRecord(
-                id: .v7(),
-                meetingId: meeting.id,
-                sessionId: nil,
-                capturedAt: .now,
-                imageData: Data([1]),
-                mimeType: "image/png"
-            )
-            try await database.dbQueue.write { db in try screenshot.insert(db) }
-            #expect(await pollUntil { await analyzer.didStart })
+            let screenshots = (0 ..< 8).map { index in
+                MeetingScreenshotRecord(
+                    id: .v7(),
+                    meetingId: meeting.id,
+                    sessionId: nil,
+                    capturedAt: Date(timeIntervalSince1970: TimeInterval(index)),
+                    imageData: Data([UInt8(index)]),
+                    mimeType: "image/png"
+                )
+            }
+            try await database.dbQueue.write { db in
+                for screenshot in screenshots {
+                    try screenshot.insert(db)
+                }
+            }
+            #expect(await pollUntil { await analyzer.startedCount == 8 })
 
             await database.searchIndexer.pauseForRecording()
 
             let state = try await database.dbQueue.read { db in
-                try Row.fetchOne(
-                    db,
-                    sql: """
-                    SELECT screenshots.ocrText, search_index_jobs.status
-                    FROM screenshots
-                    JOIN search_index_jobs ON search_index_jobs.targetKey = screenshots.id
-                    WHERE screenshots.id = ? AND search_index_jobs.targetKind = 'screenshotAnalysis'
-                    """,
-                    arguments: [screenshot.id]
+                try (
+                    Int.fetchOne(
+                        db,
+                        sql: "SELECT COUNT(*) FROM screenshots WHERE ocrText IS NOT NULL"
+                    ) ?? 0,
+                    Int.fetchOne(
+                        db,
+                        sql: """
+                        SELECT COUNT(*) FROM search_index_jobs
+                        WHERE targetKind = 'screenshotAnalysis' AND status = 'pending'
+                        """
+                    ) ?? 0
                 )
             }
-            #expect(state?["ocrText"] as String? == nil)
-            #expect(state?["status"] as String? == "pending")
+            #expect(state.0 == 0)
+            #expect(state.1 == 8)
+            #expect(await analyzer.cancelledCount == 8)
+        }
+
+        @Test(.timeLimit(.minutes(1)))
+        func recordingPauseCancelsExplicitRebuildOCRAndRequeuesIt() async throws {
+            let analyzer = CancellableScreenshotAnalyzer()
+            let database = try AppDatabaseManager(path: ":memory:", screenshotAnalyzer: analyzer)
+            let vault = makeVault()
+            let meeting = makeMeeting(vaultID: vault.id)
+            try await database.dbQueue.write { db in
+                try vault.insert(db)
+                try meeting.insert(db)
+                for index in 0 ..< 8 {
+                    try MeetingScreenshotRecord(
+                        id: .v7(),
+                        meetingId: meeting.id,
+                        sessionId: nil,
+                        capturedAt: Date(timeIntervalSince1970: TimeInterval(index)),
+                        imageData: Data([UInt8(index)]),
+                        mimeType: "image/png"
+                    ).insert(db)
+                }
+            }
+            let rebuildTask = Task { try await database.searchIndexer.requestRebuild() }
+            #expect(await pollUntil { await analyzer.startedCount == 8 })
+
+            await database.searchIndexer.pauseForRecording()
+            try await rebuildTask.value
+
+            let state = try await database.dbQueue.read { db in
+                try (
+                    Int.fetchOne(db, sql: "SELECT COUNT(*) FROM screenshots WHERE ocrText IS NOT NULL") ?? 0,
+                    Int.fetchOne(
+                        db,
+                        sql: """
+                        SELECT COUNT(*) FROM search_index_jobs
+                        WHERE targetKind = 'screenshotAnalysis' AND status = 'pending'
+                        """
+                    ) ?? 0
+                )
+            }
+            #expect(state == (0, 8))
+            #expect(await analyzer.cancelledCount == 8)
         }
 
         @Test
@@ -257,13 +309,13 @@ import GRDB
             #expect(refreshed.items.map(\.id) == first.items.map(\.id))
         }
 
-        @Test
-        func analyzesScreenshotsInBatchesOfFour() async throws {
-            let analyzer = RecordingScreenshotAnalyzer()
+        @Test(.timeLimit(.minutes(1)))
+        func analyzesSingleScreenshotsUpToEightConcurrently() async throws {
+            let analyzer = ConcurrentScreenshotAnalyzer()
             let database = try AppDatabaseManager(path: ":memory:", screenshotAnalyzer: analyzer)
             let vault = makeVault()
             let meeting = makeMeeting(vaultID: vault.id)
-            let screenshots = (0 ..< 5).map { index in
+            let screenshots = (0 ..< 9).map { index in
                 MeetingScreenshotRecord(
                     id: .v7(),
                     meetingId: meeting.id,
@@ -281,26 +333,32 @@ import GRDB
                 }
             }
 
-            await database.searchIndexer.drain()
+            let drainTask = Task { await database.searchIndexer.drain() }
+            let startedFirstWave = await pollUntil { await analyzer.callSizes.count == 8 }
+            await analyzer.releaseFirstWave()
+            await drainTask.value
 
-            #expect(await analyzer.batchSizes == [4, 1])
+            #expect(startedFirstWave)
+            #expect(await analyzer.callSizes == Array(repeating: 1, count: 9))
+            #expect(await analyzer.activeCountsAtStart == Array(1 ... 8) + [1])
+            #expect(await analyzer.maximumActiveCount == 8)
             let indexedCount = try await database.dbQueue.read { db in
                 try Int.fetchOne(
                     db,
                     sql: "SELECT COUNT(*) FROM screenshots WHERE ocrText IS NOT NULL AND caption IS NOT NULL"
                 ) ?? 0
             }
-            #expect(indexedCount == 5)
+            #expect(indexedCount == 9)
         }
 
         @Test
-        func batchFailureIsolatesTheFailingScreenshot() async throws {
+        func concurrentFailureIsolatesTheFailingScreenshot() async throws {
             let failingID = UUID.v7()
-            let analyzer = BatchIsolatingScreenshotAnalyzer(failingID: failingID)
+            let analyzer = FailingOneScreenshotAnalyzer(failingID: failingID)
             let database = try AppDatabaseManager(path: ":memory:", screenshotAnalyzer: analyzer)
             let vault = makeVault()
             let meeting = makeMeeting(vaultID: vault.id)
-            let screenshots = [failingID] + (0 ..< 3).map { _ in UUID.v7() }
+            let screenshots = [failingID] + (0 ..< 7).map { _ in UUID.v7() }
             try await database.dbQueue.write { db in
                 try vault.insert(db)
                 try meeting.insert(db)
@@ -328,23 +386,88 @@ import GRDB
                         db,
                         sql: "SELECT attempts FROM search_index_jobs WHERE targetKey = ?",
                         arguments: [failingID]
-                    )
+                    ),
+                    Int.fetchOne(db, sql: "SELECT COUNT(*) FROM search_index_jobs WHERE targetKind = 'screenshotAnalysis'") ?? 0
                 )
             }
-            #expect(state.0 == 3)
+            #expect(state.0 == 7)
             #expect(state.1 == 1)
-            #expect(await analyzer.batchSizes == [4, 1, 1, 1, 1])
+            #expect(state.2 == 1)
+            #expect(await analyzer.callSizes == Array(repeating: 1, count: 8))
         }
 
         @Test
-        func unavailableRequiredModelBacksOffTheEntireScreenshotQueue() async throws {
-            let analyzer = UnavailableThenSuccessfulScreenshotAnalyzer()
+        func screenshotPersistenceFailureOnlyRetriesTheAffectedJob() async throws {
+            let failingID = UUID.v7()
+            let analyzer = StubScreenshotAnalyzer(text: "stored text")
             let database = try AppDatabaseManager(path: ":memory:", screenshotAnalyzer: analyzer)
             let vault = makeVault()
             let meeting = makeMeeting(vaultID: vault.id)
-            let screenshots = (0 ..< 5).map { index in
+            let screenshotIDs = [failingID] + (0 ..< 7).map { _ in UUID.v7() }
+            try await database.dbQueue.write { db in
+                try vault.insert(db)
+                try meeting.insert(db)
+                for id in screenshotIDs {
+                    try MeetingScreenshotRecord(
+                        id: id,
+                        meetingId: meeting.id,
+                        sessionId: nil,
+                        capturedAt: .now,
+                        imageData: id == failingID ? Data([255]) : Data([1]),
+                        mimeType: "image/png"
+                    ).insert(db)
+                }
+                try db.execute(
+                    sql: """
+                    CREATE TEMP TRIGGER reject_screenshot_analysis
+                    BEFORE UPDATE OF ocrText, caption ON screenshots
+                    WHEN OLD.imageData = X'FF'
+                    BEGIN
+                        SELECT RAISE(FAIL, 'forced screenshot persistence failure');
+                    END
+                    """
+                )
+            }
+
+            await database.searchIndexer.drain()
+
+            let state = try await database.dbQueue.read { db -> (Int, Int, Row?) in
+                try (
+                    Int.fetchOne(db, sql: "SELECT COUNT(*) FROM screenshots WHERE ocrText = 'stored text'") ?? 0,
+                    Int.fetchOne(
+                        db,
+                        sql: """
+                        SELECT COUNT(*) FROM search_index_jobs
+                        WHERE targetKind = 'screenshotAnalysis' AND targetKey != ?
+                        """,
+                        arguments: [failingID]
+                    ) ?? 0,
+                    Row.fetchOne(
+                        db,
+                        sql: """
+                        SELECT status, attempts FROM search_index_jobs
+                        WHERE targetKind = 'screenshotAnalysis' AND targetKey = ?
+                        """,
+                        arguments: [failingID]
+                    )
+                )
+            }
+            #expect(state.0 == 7)
+            #expect(state.1 == 0)
+            #expect(state.2?["status"] as String? == "pending")
+            #expect(state.2?["attempts"] as Int? == 1)
+        }
+
+        @Test(.timeLimit(.minutes(1)))
+        func unavailableRequiredModelBacksOffTheEntireScreenshotQueue() async throws {
+            let failingID = try #require(UUID(uuidString: "00000000-0000-7000-8000-000000000000"))
+            let analyzer = PrerequisiteRetryAnalyzer(failingID: failingID)
+            let database = try AppDatabaseManager(path: ":memory:", screenshotAnalyzer: analyzer)
+            let vault = makeVault()
+            let meeting = makeMeeting(vaultID: vault.id)
+            let screenshots = ([failingID] + (0 ..< 8).map { _ in UUID.v7() }).enumerated().map { index, id in
                 MeetingScreenshotRecord(
-                    id: .v7(),
+                    id: id,
                     meetingId: meeting.id,
                     sessionId: nil,
                     capturedAt: Date(timeIntervalSince1970: TimeInterval(index)),
@@ -363,27 +486,26 @@ import GRDB
                 )
             }
 
-            await database.searchIndexer.drain()
+            let drainTask = Task { await database.searchIndexer.drain() }
+            let startedFirstWave = await pollUntil { await analyzer.firstWaveStartedCount == 8 }
+            let triggeredFailure = await analyzer.failFirstWave()
+            if !triggeredFailure { drainTask.cancel() }
+            await drainTask.value
             let deferred = try await database.dbQueue.read { db in
-                try (
-                    Int.fetchOne(
-                        db,
-                        sql: "SELECT COUNT(*) FROM search_index_jobs WHERE targetKind = 'screenshotAnalysis' AND status = 'pending'"
-                    ) ?? 0,
-                    Int.fetchOne(
-                        db,
-                        sql: "SELECT COUNT(*) FROM search_index_jobs WHERE targetKind = 'screenshotAnalysis' AND attempts = 3"
-                    ) ?? 0,
-                    Date.fetchOne(
-                        db,
-                        sql: "SELECT MIN(availableAt) FROM search_index_jobs WHERE targetKind = 'screenshotAnalysis'"
-                    )
+                try Row.fetchOne(
+                    db,
+                    sql: """
+                    SELECT COUNT(*) AS pendingCount, SUM(attempts = 3) AS preservedAttempts, MIN(availableAt) AS availableAt
+                    FROM search_index_jobs WHERE targetKind = 'screenshotAnalysis' AND status = 'pending'
+                    """
                 )
             }
-            #expect(deferred.0 == 5)
-            #expect(deferred.1 == 5)
-            #expect((deferred.2 ?? .distantPast) > .now)
-            #expect(await analyzer.callCount == 1)
+            #expect(startedFirstWave)
+            #expect(deferred?["pendingCount"] as Int? == 9)
+            #expect(deferred?["preservedAttempts"] as Int? == 9)
+            #expect((deferred?["availableAt"] as Date? ?? .distantPast) > .now)
+            #expect(await analyzer.firstWaveStartedCount == 8)
+            #expect(await analyzer.firstWaveCancelledCount == 7)
 
             try await database.dbQueue.write { db in
                 try db.execute(
@@ -393,14 +515,12 @@ import GRDB
             }
             await database.searchIndexer.drain()
 
-            let storedCount = try await database.dbQueue.read { db in
+            #expect(try await database.dbQueue.read { db in
                 try Int.fetchOne(
                     db,
                     sql: "SELECT COUNT(*) FROM screenshots WHERE ocrText = 'retry text' AND caption = 'retry caption'"
                 ) ?? 0
-            }
-            #expect(storedCount == 5)
-            #expect(await analyzer.callCount == 3)
+            } == 9)
         }
 
         @Test
@@ -649,13 +769,21 @@ import GRDB
         }
     }
 
-    private actor SlowScreenshotAnalyzer: ScreenshotAnalyzing {
-        private(set) var didStart = false
+    private actor CancellableScreenshotAnalyzer: ScreenshotAnalyzing {
+        private(set) var startedCount = 0
+        private(set) var cancelledCount = 0
 
-        func analyze(_: [ScreenshotAnalysisInput]) async throws -> [ScreenshotAnalysis] {
-            didStart = true
-            try await Task.sleep(for: .seconds(60))
-            return []
+        func analyze(_ screenshots: [ScreenshotAnalysisInput]) async throws -> [ScreenshotAnalysis] {
+            startedCount += 1
+            do {
+                try await Task.sleep(for: .seconds(60))
+                return screenshots.map {
+                    ScreenshotAnalysis(screenshotID: $0.id, ocrText: "late text", caption: "late caption")
+                }
+            } catch {
+                cancelledCount += 1
+                throw error
+            }
         }
     }
 
@@ -664,49 +792,95 @@ import GRDB
         private struct Failure: Error {}
     }
 
-    private actor RecordingScreenshotAnalyzer: ScreenshotAnalyzing {
-        private(set) var batchSizes: [Int] = []
+    private actor ConcurrentScreenshotAnalyzer: ScreenshotAnalyzing {
+        private(set) var callSizes: [Int] = []
+        private(set) var activeCountsAtStart: [Int] = []
+        private(set) var maximumActiveCount = 0
+        private var activeCount = 0
+        private var isFirstWaveBlocked = true
+        private var firstWaveWaiters: [CheckedContinuation<Void, Never>] = []
 
         func analyze(_ screenshots: [ScreenshotAnalysisInput]) async throws -> [ScreenshotAnalysis] {
-            batchSizes.append(screenshots.count)
+            callSizes.append(screenshots.count)
+            activeCount += 1
+            activeCountsAtStart.append(activeCount)
+            maximumActiveCount = max(maximumActiveCount, activeCount)
+            if isFirstWaveBlocked {
+                await withCheckedContinuation { firstWaveWaiters.append($0) }
+            }
+            activeCount -= 1
             return screenshots.map {
                 ScreenshotAnalysis(screenshotID: $0.id, ocrText: "batch text", caption: "batch caption")
             }
         }
+
+        func releaseFirstWave() {
+            isFirstWaveBlocked = false
+            let waiters = firstWaveWaiters
+            firstWaveWaiters.removeAll()
+            waiters.forEach { $0.resume() }
+        }
     }
 
-    private actor BatchIsolatingScreenshotAnalyzer: ScreenshotAnalyzing {
+    private actor FailingOneScreenshotAnalyzer: ScreenshotAnalyzing {
         let failingID: UUID
-        private(set) var batchSizes: [Int] = []
+        private(set) var callSizes: [Int] = []
 
         init(failingID: UUID) {
             self.failingID = failingID
         }
 
         func analyze(_ screenshots: [ScreenshotAnalysisInput]) async throws -> [ScreenshotAnalysis] {
-            batchSizes.append(screenshots.count)
-            guard screenshots.count == 1, screenshots[0].id != failingID else { throw Failure() }
-            return [ScreenshotAnalysis(
-                screenshotID: screenshots[0].id,
-                ocrText: "isolated text",
-                caption: "isolated caption"
-            )]
+            callSizes.append(screenshots.count)
+            guard screenshots[0].id != failingID else { throw Failure() }
+            return [
+                ScreenshotAnalysis(
+                    screenshotID: screenshots[0].id,
+                    ocrText: "isolated text",
+                    caption: "isolated caption"
+                ),
+            ]
         }
 
         private struct Failure: Error {}
     }
 
-    private actor UnavailableThenSuccessfulScreenshotAnalyzer: ScreenshotAnalyzing {
-        private(set) var callCount = 0
+    private actor PrerequisiteRetryAnalyzer: ScreenshotAnalyzing {
+        let failingID: UUID
+        private(set) var firstWaveStartedCount = 0
+        private(set) var firstWaveCancelledCount = 0
+        private var isFirstWave = true
+        private var failureWaiter: CheckedContinuation<Void, Never>?
+
+        init(failingID: UUID) {
+            self.failingID = failingID
+        }
 
         func analyze(_ screenshots: [ScreenshotAnalysisInput]) async throws -> [ScreenshotAnalysis] {
-            callCount += 1
-            if callCount == 1 {
-                throw CodexAppServerError.requestedModelUnavailable(CodexScreenshotAnalysisService.model)
+            if isFirstWave {
+                firstWaveStartedCount += 1
+                if screenshots[0].id == failingID {
+                    await withCheckedContinuation { failureWaiter = $0 }
+                    isFirstWave = false
+                    throw CodexAppServerError.requestedModelUnavailable(CodexScreenshotAnalysisService.model)
+                }
+                do {
+                    try await Task.sleep(for: .seconds(60))
+                } catch {
+                    firstWaveCancelledCount += 1
+                    throw error
+                }
             }
             return screenshots.map {
                 ScreenshotAnalysis(screenshotID: $0.id, ocrText: "retry text", caption: "retry caption")
             }
+        }
+
+        func failFirstWave() -> Bool {
+            guard let failureWaiter else { return false }
+            self.failureWaiter = nil
+            failureWaiter.resume()
+            return true
         }
     }
 #endif

@@ -20,7 +20,7 @@ protocol ScreenshotAnalyzing: Sendable {
 actor CodexScreenshotAnalysisService: ScreenshotAnalyzing {
     static let model = "gpt-5.6-luna"
     static let reasoningEffort = "low"
-    static let maximumBatchSize = 4
+    static let maximumBatchSize = 1
     static let maximumImageLongEdge = 2048
 
     private let appServer: CodexAppServerService
