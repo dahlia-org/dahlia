@@ -34,10 +34,10 @@ struct ControlPanelView: View {
     @ObservedObject var viewModel: CaptionViewModel
     var sidebarViewModel: SidebarViewModel
     let recordingCoordinator: RecordingCoordinator
+    @Binding var selectedTab: DetailTab
     @Binding var expandedScreenshot: ExpandedScreenshotPresentation?
 
     @ObservedObject private var appSettings = AppSettings.shared
-    @State private var selectedTab: DetailTab = .summary
     @State private var screenshotMinimumWidth = ScreenshotGridSizing.defaultMinimumWidth
     @State private var isSelectingScreenshots = false
     @State private var selectedScreenshotIds: Set<UUID> = []
@@ -169,16 +169,13 @@ struct ControlPanelView: View {
                 selectedScreenshotIds.removeAll()
             }
         }
-        .onChange(of: displayedMeetingIdentity) { oldIdentity, newIdentity in
-            if oldIdentity == nil, newIdentity != nil {
-                selectedTab = initialTabSelection
-            }
+        .onChange(of: displayedMeetingIdentity) { _, _ in
             viewModel.requestShowSummaryTab = false
             cancelMeetingRename()
             isSelectingScreenshots = false
             selectedScreenshotIds.removeAll()
         }
-        .onChange(of: appSettings.isConversationAnalyticsBetaEnabled) { _, isEnabled in
+        .onChange(of: appSettings.isConversationAnalyticsBetaEnabled, initial: true) { _, isEnabled in
             if !isEnabled, selectedTab == .conversationAnalytics {
                 selectedTab = .transcript
             }
@@ -491,10 +488,6 @@ struct ControlPanelView: View {
             selectedTab = .summary
             viewModel.requestShowSummaryTab = false
         }
-    }
-
-    private var initialTabSelection: DetailTab {
-        .summary
     }
 
 }
