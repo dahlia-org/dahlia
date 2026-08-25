@@ -1496,8 +1496,6 @@
 "Search ranking description" = "全文検索の順位を決める、フィールドごとの重みです。重みを 0 にしたフィールドは検索対象から外れます。インデックスの再構築は不要です。";
 "Ranking preset" = "プリセット";
 "Ranking preset standard" = "標準";
-"Ranking preset title and tags" = "タイトル・タグ重視";
-"Ranking preset content" = "内容重視";
 "Ranking preset custom" = "カスタム";
 "Excluded from search" = "検索対象外";
 "Search benchmark" = "検索精度ベンチマーク";

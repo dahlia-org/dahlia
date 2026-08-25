@@ -10,6 +10,7 @@ let package = Package(
     products: [
         .executable(name: "Dahlia", targets: ["Dahlia"]),
         .executable(name: "dahlia-mcp", targets: ["DahliaMCP"]),
+        .executable(name: "dahlia-search-ranking-benchmark", targets: ["DahliaSearchRankingBenchmark"]),
     ],
     dependencies: [
         .package(url: "https://github.com/groue/GRDB.swift.git", from: "7.0.0"),
@@ -53,6 +54,14 @@ let package = Package(
             path: "Sources/DahliaMCP"
         ),
         .executableTarget(
+            name: "DahliaSearchRankingBenchmark",
+            dependencies: [
+                "DahliaMeetingAccess",
+                .product(name: "GRDB", package: "GRDB.swift"),
+            ],
+            path: "Sources/DahliaSearchRankingBenchmark"
+        ),
+        .executableTarget(
             name: "Dahlia",
             dependencies: [
                 "DahliaAEC3",
@@ -85,7 +94,12 @@ let package = Package(
         ),
         .testTarget(
             name: "DahliaTests",
-            dependencies: ["Dahlia", "DahliaMeetingAccess", "DahliaRuntimeSupport"],
+            dependencies: [
+                "Dahlia",
+                "DahliaMeetingAccess",
+                "DahliaRuntimeSupport",
+                "DahliaSearchRankingBenchmark",
+            ],
             path: "Tests/DahliaTests",
             exclude: [
                 "AGENTS.md",

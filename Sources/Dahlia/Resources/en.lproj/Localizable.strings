@@ -1496,8 +1496,6 @@
 "Search ranking description" = "Per-field weights that decide full-text search ranking. A field weighted 0 is excluded from search. Changing weights does not require reindexing.";
 "Ranking preset" = "Preset";
 "Ranking preset standard" = "Standard";
-"Ranking preset title and tags" = "Favor title and tags";
-"Ranking preset content" = "Favor content";
 "Ranking preset custom" = "Custom";
 "Excluded from search" = "Excluded";
 "Search benchmark" = "Search quality benchmark";
