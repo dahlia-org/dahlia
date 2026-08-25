@@ -675,7 +675,7 @@
 "Transcription Language" = "Transcription Language";
 "This language is used for the final transcript. Changing the language in the recording panel does not change it." = "This language is used for the final transcript. Changing the language in the recording panel does not change it.";
 "Live Subtitle Language" = "Live Subtitle Language";
-"With real-time transcription, live subtitles use the transcription language." = "With real-time transcription, live subtitles use the transcription language.";
+"Real-time transcription also uses this language. You can also change it from the recording panel." = "Real-time transcription also uses this language. You can also change it from the recording panel.";
 "Language Range" = "Language Range";
 "All Supported Languages" = "All Supported Languages";
 "Selected Languages" = "Selected Languages";
@@ -852,7 +852,7 @@
 "Transcription Method" = "Transcription Method";
 "Real-time Transcription" = "Real-time Transcription";
 "Batch Transcription" = "Batch Transcription";
-"Show the transcript while recording. Accuracy may be lower than transcription after recording, and audio files are not saved." = "Show the transcript while recording. Accuracy may be lower than transcription after recording, and audio files are not saved.";
+"Show the transcript while recording. Accuracy may be lower than transcription after recording, and audio files are not saved. Real-time transcription uses the live subtitle language. Change it in Language settings or from the recording panel." = "Show the transcript while recording. Accuracy may be lower than transcription after recording, and audio files are not saved. Real-time transcription uses the live subtitle language. Change it in Language settings or from the recording panel.";
 "Record audio first, then create a higher-accuracy transcript after recording stops." = "Record audio first, then create a higher-accuracy transcript after recording stops.";
 "Keep Audio After Transcription" = "Keep Audio After Transcription";
 "Keep the protected audio in Dahlia after batch transcription succeeds." = "Keep the protected audio in Dahlia after batch transcription succeeds.";

@@ -81,14 +81,11 @@ struct RecordingStatusBar: View {
                 systemAudioMenu
                 RecordingLiveSubtitleToggle(
                     isEnabled: $liveSubtitleOverlayEnabled,
-                    languageSelection: transcriptionMode == .batch
-                        ? $viewModel.liveSubtitleLocale
-                        : .constant(viewModel.transcriptionLocale),
+                    selectedLanguageIdentifier: displayedLiveSubtitleLocale,
                     locales: liveSubtitleLocales,
-                    isLanguageSelectionEnabled: transcriptionMode == .batch,
-                    languageHelp: transcriptionMode == .realtime
-                        ? L10n.liveSubtitleLanguageFollowsTranscription
-                        : L10n.liveSubtitleLanguage
+                    onSelectLanguage: { identifier in
+                        viewModel.selectLiveSubtitleLocale(identifier)
+                    }
                 )
                 screenSourceMenu
             }
@@ -269,7 +266,7 @@ struct RecordingStatusBar: View {
     }
 
     private var displayedLiveSubtitleLocale: String {
-        transcriptionMode == .realtime ? viewModel.transcriptionLocale : viewModel.liveSubtitleLocale
+        viewModel.liveRecognitionLocaleIdentifier
     }
 
     private var liveSubtitleLocales: [Locale] {

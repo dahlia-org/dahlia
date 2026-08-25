@@ -26,23 +26,25 @@ struct LanguageSettingsView: View {
                 Text(L10n.appLanguagesDescription)
             }
 
-            Section(L10n.transcription) {
-                DahliaMenuPicker(
-                    title: L10n.transcriptionLanguage,
-                    description: L10n.transcriptionLanguageDescription,
-                    selection: $settings.transcriptionLocale,
-                    options: enabledLocaleOptions(including: settings.transcriptionLocale).map(\.identifier)
-                ) { identifier in
-                    Locale(identifier: identifier).localizedString(forIdentifier: identifier) ?? identifier
+            if settings.transcriptionMode == .batch {
+                Section(L10n.transcription) {
+                    DahliaMenuPicker(
+                        title: L10n.transcriptionLanguage,
+                        description: L10n.transcriptionLanguageDescription,
+                        selection: $settings.transcriptionLocale,
+                        options: enabledLocaleOptions(including: settings.transcriptionLocale).map(\.identifier)
+                    ) { identifier in
+                        Locale(identifier: identifier).localizedString(forIdentifier: identifier) ?? identifier
+                    }
+                    .disabled(isLoadingLocales)
                 }
-                .disabled(isLoadingLocales)
             }
 
             Section {
                 DahliaMenuPicker(
                     title: L10n.liveSubtitleLanguage,
                     description: settings.transcriptionMode == .realtime
-                        ? L10n.liveSubtitleLanguageFollowsTranscription
+                        ? L10n.liveSubtitleLanguageUsedForRealtimeTranscription
                         : nil,
                     selection: settings.transcriptionMode == .realtime
                         ? $settings.transcriptionLocale
@@ -51,7 +53,7 @@ struct LanguageSettingsView: View {
                 ) { identifier in
                     Locale(identifier: identifier).localizedString(forIdentifier: identifier) ?? identifier
                 }
-                .disabled(isLoadingLocales || settings.transcriptionMode == .realtime)
+                .disabled(isLoadingLocales)
 
                 Toggle(isOn: $settings.liveSubtitleTranslationEnabled) {
                     Text(L10n.liveSubtitleTranslation)

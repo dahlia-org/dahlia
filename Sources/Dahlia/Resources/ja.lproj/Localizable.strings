@@ -675,7 +675,7 @@
 "Transcription Language" = "文字起こし言語";
 "This language is used for the final transcript. Changing the language in the recording panel does not change it." = "最終的な文字起こしにはこの言語を使用します。録音パネルでライブ字幕言語を変更しても、この設定は変わりません。";
 "Live Subtitle Language" = "ライブ字幕言語";
-"With real-time transcription, live subtitles use the transcription language." = "リアルタイム文字起こしでは、ライブ字幕にも文字起こし言語を使用します。";
+"Real-time transcription also uses this language. You can also change it from the recording panel." = "リアルタイム文字起こしにもこの言語を使用します。録音パネルからも変更できます。";
 "Language Range" = "言語の範囲";
 "All Supported Languages" = "対応するすべての言語";
 "Selected Languages" = "選択した言語";
@@ -852,7 +852,7 @@
 "Transcription Method" = "文字起こし方式";
 "Real-time Transcription" = "リアルタイム文字起こし";
 "Batch Transcription" = "バッチ文字起こし";
-"Show the transcript while recording. Accuracy may be lower than transcription after recording, and audio files are not saved." = "録音中に文字起こしを表示します。録音後の文字起こしより精度が低下する場合があり、音声ファイルは保存されません。";
+"Show the transcript while recording. Accuracy may be lower than transcription after recording, and audio files are not saved. Real-time transcription uses the live subtitle language. Change it in Language settings or from the recording panel." = "録音中に文字起こしを表示します。録音後の文字起こしより精度が低下する場合があり、音声ファイルは保存されません。リアルタイム文字起こしにはライブ字幕言語を使用します。言語設定または録音パネルから変更できます。";
 "Record audio first, then create a higher-accuracy transcript after recording stops." = "先に音声を録音し、録音終了後に高精度な文字起こしを作成します。";
 "Keep Audio After Transcription" = "文字起こし後も音声を残す";
 "Keep the protected audio in Dahlia after batch transcription succeeds." = "バッチ文字起こし成功後も保護された音声を Dahlia 内に残します。";

@@ -20,20 +20,20 @@ struct TranscriptionSettingsView: View {
                 Text(transcriptionModeDescription)
             }
 
-            Section {
-                DahliaMenuPicker(
-                    title: L10n.transcriptionLanguage,
-                    selection: $settings.transcriptionLocale,
-                    options: transcriptionLocaleOptions.map(\.identifier)
-                ) { identifier in
-                    Locale(identifier: identifier).localizedString(forIdentifier: identifier) ?? identifier
-                }
-                .disabled(isLoadingLocales)
-            } footer: {
-                Text(L10n.transcriptionLanguageDescription)
-            }
-
             if settings.transcriptionMode == .batch {
+                Section {
+                    DahliaMenuPicker(
+                        title: L10n.transcriptionLanguage,
+                        selection: $settings.transcriptionLocale,
+                        options: transcriptionLocaleOptions.map(\.identifier)
+                    ) { identifier in
+                        Locale(identifier: identifier).localizedString(forIdentifier: identifier) ?? identifier
+                    }
+                    .disabled(isLoadingLocales)
+                } footer: {
+                    Text(L10n.transcriptionLanguageDescription)
+                }
+
                 Section {
                     DahliaMenuPicker(
                         title: L10n.batchTranscriptionStallTimeout,
