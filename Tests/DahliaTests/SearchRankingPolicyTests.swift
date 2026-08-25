@@ -15,7 +15,6 @@ import GRDB
             let policy = MeetingSearchRankingPolicy(weights: [
                 .title: 42,
                 .tags: -5,
-                .projectPath: 3,
                 .calendar: 3,
                 .description: 3,
                 .summary: 3,
@@ -23,7 +22,6 @@ import GRDB
 
             #expect(policy.weight(for: .title) == MeetingSearchRankingPolicy.maximumWeight)
             #expect(policy.weight(for: .tags) == MeetingSearchRankingPolicy.minimumWeight)
-            #expect(policy.weight(for: .projectPath) == 3)
         }
 
         @Test
@@ -48,7 +46,6 @@ import GRDB
             let policy = MeetingSearchRankingPolicy(weights: [
                 .title: 1,
                 .tags: 2,
-                .projectPath: 3,
                 .calendar: 4,
                 .description: 5,
                 .summary: 6,
@@ -82,15 +79,15 @@ import GRDB
                 .settingWeight(0, for: .summary)
                 .settingWeight(0, for: .calendar)
 
-            #expect(policy.columnFilter == "{title tags projectPath description}")
-            #expect(policy.matchExpression("\"a\"") == "{title tags projectPath description} : (\"a\")")
+            #expect(policy.columnFilter == "{title tags description}")
+            #expect(policy.matchExpression("\"a\"") == "{title tags description} : (\"a\")")
         }
 
         /// 一致フィールドの判定順は重みの降順で、同値は宣言順で解決する。
         @Test
         func rankedFieldsOrderByWeightThenDeclarationOrder() {
             #expect(MeetingSearchRankingPolicy.standard.rankedFields == [
-                .title, .tags, .projectPath, .calendar, .description, .summary,
+                .title, .tags, .calendar, .description, .summary,
             ])
             #expect(!MeetingSearchRankingPolicy.standard.settingWeight(0, for: .tags).rankedFields.contains(.tags))
         }

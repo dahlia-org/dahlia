@@ -149,7 +149,7 @@ import GRDB
 
         @Test
         @MainActor
-        func localJudgmentsCoverEveryWeightedSearchField() async throws {
+        func localJudgmentsExcludeProjectPathAndCoverEveryRankedSearchField() async throws {
             let database = try AppDatabaseManager(path: ":memory:")
             defer { try? database.close() }
             let vault = VaultRecord(
@@ -220,9 +220,32 @@ import GRDB
             let queries = Set(list.judgments.map(\.query))
 
             #expect(queries.isSuperset(of: [
-                "TitleNeedle", "TagNeedle", "ProjectNeedle", "CalendarNeedle", "DescriptionNeedle", "SummaryNeedle",
+                "TitleNeedle", "TagNeedle", "CalendarNeedle", "DescriptionNeedle", "SummaryNeedle",
             ]))
+            #expect(!queries.contains("ProjectNeedle"))
             #expect(list.judgments.allSatisfy { $0.entries.first == .init(meetingID: meetingID, grade: .exact) })
+        }
+
+        @Test
+        func legacyProjectWeightedJudgmentsAreNotReused() throws {
+            let suiteName = "SearchRankingBenchmarkTests-\(UUID.v7())"
+            let defaults = try #require(UserDefaults(suiteName: suiteName))
+            defer { defaults.removePersistentDomain(forName: suiteName) }
+            let list = MeetingSearchJudgmentList(
+                vaultID: .v7(),
+                generatedAt: .now,
+                sampledMeetingCount: 1,
+                judgments: [MeetingSearchJudgment(
+                    query: "ProjectNeedle",
+                    entries: [.init(meetingID: .v7(), grade: .exact)]
+                )]
+            )
+            defaults.set(try JSONEncoder().encode(list), forKey: "meetingSearchBenchmarkJudgments")
+
+            #expect(AppSettings.meetingSearchJudgmentList(in: defaults) == nil)
+
+            AppSettings.storeMeetingSearchJudgmentList(list, in: defaults)
+            #expect(AppSettings.meetingSearchJudgmentList(in: defaults) == list)
         }
 
         @Test(.timeLimit(.minutes(1)))
