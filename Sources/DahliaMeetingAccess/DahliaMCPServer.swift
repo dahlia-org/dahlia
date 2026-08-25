@@ -2543,14 +2543,19 @@ private extension DahliaMCPServer {
             "name": "query_meetings",
             "title": "Query meetings",
             "description": "Find recent meetings in the configured vault by meeting name, AI description, summary body, "
-                + "calendar title, project, or tag. Use ical_uid to find past meetings for the same calendar event, "
-                + "or exact project_id to find related meetings across different calendar events. Transcript bodies are "
+                + "calendar title, or tag. Project names and paths are not searched by query; use project or project_id "
+                + "to filter by Project. Use ical_uid to find past meetings for the same calendar event. Transcript bodies are "
                 + "not searched. All parameters are optional filters. Omit unused properties entirely; do not "
                 + "send empty strings. Full-text search is used by default; set simple to true for literal substring matching.",
             "inputSchema": [
                 "type": "object",
                 "properties": [
-                    "query": ["type": "string", "maxLength": 1024],
+                    "query": [
+                        "type": "string",
+                        "maxLength": 1024,
+                        "description": "Search meeting name, AI description, summary body, calendar title, and tags. "
+                            + "Project names and paths are excluded; use project or project_id instead.",
+                    ],
                     "simple": [
                         "type": "boolean",
                         "default": false,

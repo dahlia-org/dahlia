@@ -128,7 +128,8 @@ All `query_meetings` parameters are optional filters. Clients should omit unused
 strings. For compatibility with clients that populate every property, the server treats empty or whitespace-only
 optional string filters as unspecified; nonblank malformed UUIDs, dates, and cursors remain errors.
 Text queries use the FTS index by default. Set `simple: true` to use literal substring matching (`LIKE`) against
-Meeting and Project metadata instead. Summary body text is available only through the default FTS search.
+Meeting metadata instead. Project names and paths are excluded from both text-search modes; use `project` or
+`project_id` to filter meetings by Project. Summary body text is available only through the default FTS search.
 `query_screenshots` searches detected text and generated image descriptions, and returns screenshots as independent
 results with their owning Meeting IDs. Queries must contain at least two non-whitespace characters.
 
