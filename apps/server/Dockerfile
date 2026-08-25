@@ -6,7 +6,7 @@ COPY apps/server/package.json ./apps/server/package.json
 COPY apps/site/package.json ./apps/site/package.json
 RUN pnpm install --frozen-lockfile
 COPY apps/server ./apps/server
-RUN pnpm --filter dahlia-ai build
+RUN pnpm --filter @dahlia-ai/server build
 
 FROM node:24-alpine AS runtime
 ENV NODE_ENV=production

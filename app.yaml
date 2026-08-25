@@ -1,4 +1,4 @@
-command: ["corepack", "pnpm", "--filter", "dahlia-ai", "start:databricks"]
+command: ["corepack", "pnpm", "--filter", "@dahlia-ai/server", "start:databricks"]
 
 env:
   - name: DAHLIA_RUNTIME

@@ -23,15 +23,15 @@ The checked-in template is [`apps/server/wrangler.example.jsonc`](../../wrangler
 ```bash
 corepack enable
 pnpm install --frozen-lockfile
-pnpm --filter dahlia-ai build:cloudflare
+pnpm --filter @dahlia-ai/server build:cloudflare
 ```
 
 ## 2. Create and migrate D1
 
 ```bash
 cp apps/server/wrangler.example.jsonc apps/server/wrangler.jsonc
-pnpm --filter dahlia-ai exec wrangler d1 create dahlia-db-prod
-pnpm --filter dahlia-ai exec wrangler d1 migrations apply dahlia_db_prod --remote
+pnpm --filter @dahlia-ai/server exec wrangler d1 create dahlia-db-prod
+pnpm --filter @dahlia-ai/server exec wrangler d1 migrations apply dahlia_db_prod --remote
 ```
 
 Copy the database name and ID returned by the first command into `d1_databases[0]` in `apps/server/wrangler.jsonc`. Keep the binding name `dahlia_db_prod` and migrations directory `auth-migrations` unchanged. The real configuration stays local and is not committed.
@@ -39,10 +39,10 @@ Copy the database name and ID returned by the first command into `d1_databases[0
 ## 3. Configure authentication
 
 ```bash
-pnpm --filter dahlia-ai exec wrangler secret put DAHLIA_BASE_URL
-pnpm --filter dahlia-ai exec wrangler secret put BETTER_AUTH_SECRET
-pnpm --filter dahlia-ai exec wrangler secret put GOOGLE_CLIENT_ID
-pnpm --filter dahlia-ai exec wrangler secret put GOOGLE_CLIENT_SECRET
+pnpm --filter @dahlia-ai/server exec wrangler secret put DAHLIA_BASE_URL
+pnpm --filter @dahlia-ai/server exec wrangler secret put BETTER_AUTH_SECRET
+pnpm --filter @dahlia-ai/server exec wrangler secret put GOOGLE_CLIENT_ID
+pnpm --filter @dahlia-ai/server exec wrangler secret put GOOGLE_CLIENT_SECRET
 ```
 
 Use the final HTTPS Worker or custom-domain origin for `DAHLIA_BASE_URL`; do not include a path.
@@ -53,8 +53,8 @@ Optionally set `DAHLIA_ADMIN_EMAIL` to bootstrap `/admin` and add further admini
 Configure Cloudflare's account-level OpenAI-compatible Responses endpoint. Use an API token with AI Gateway permission as `OPENAI_API_KEY` and enter the full account URL as `OPENAI_BASE_URL`:
 
 ```bash
-pnpm --filter dahlia-ai exec wrangler secret put OPENAI_API_KEY
-pnpm --filter dahlia-ai exec wrangler secret put OPENAI_BASE_URL
+pnpm --filter @dahlia-ai/server exec wrangler secret put OPENAI_API_KEY
+pnpm --filter @dahlia-ai/server exec wrangler secret put OPENAI_BASE_URL
 ```
 
 Use `https://api.cloudflare.com/client/v4/accounts/<account-id>/ai/v1` as the base URL. This contract uses the default gateway and does not expose named-gateway selection. Dahlia sends `cf-aig-collect-log-payload: false` so prompt and response content are not collected in AI Gateway logs. After deployment, create public aliases such as `gpt-5.6-luna` and upstream IDs such as `openai/gpt-5.6-luna` under `/admin/models`.
@@ -63,8 +63,8 @@ Use `https://api.cloudflare.com/client/v4/accounts/<account-id>/ai/v1` as the ba
 
 ```bash
 pnpm check
-pnpm --filter dahlia-ai build:cloudflare
-pnpm --filter dahlia-ai exec wrangler deploy
+pnpm --filter @dahlia-ai/server build:cloudflare
+pnpm --filter @dahlia-ai/server exec wrangler deploy
 ```
 
 The Cloudflare Vite plugin writes the deployable Worker, client assets, and output `wrangler.json` under `dist/cloudflare`. Wrangler automatically uses that output configuration after the Vite build.

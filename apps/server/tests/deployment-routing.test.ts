@@ -126,13 +126,13 @@ describe("deployment routing", () => {
     const workspace = readFileSync(new URL("../../../pnpm-workspace.yaml", import.meta.url), "utf8");
 
     expect(rootPackage.packageManager).toMatch(/^pnpm@/);
-    expect(rootPackage.scripts.dev).toContain("dahlia-ai");
-    expect(rootPackage.scripts["dev:cloudflare"]).toContain("dahlia-ai");
+    expect(rootPackage.scripts.dev).toContain("@dahlia-ai/server");
+    expect(rootPackage.scripts["dev:cloudflare"]).toContain("@dahlia-ai/server");
     expect(workspace).toContain("apps/*");
-    expect(appYaml).toContain('command: ["corepack", "pnpm", "--filter", "dahlia-ai", "start:databricks"]');
+    expect(appYaml).toContain('command: ["corepack", "pnpm", "--filter", "@dahlia-ai/server", "start:databricks"]');
     expect(appYaml).toContain("name: DAHLIA_RUNTIME");
     expect(appYaml).toContain("value: databricks");
-    expect(serverPackage.name).toBe("dahlia-ai");
+    expect(serverPackage.name).toBe("@dahlia-ai/server");
     expect(serverPackage.exports).toHaveProperty(".");
     expect(serverPackage.exports).toHaveProperty("./client");
     expect(serverPackage.exports).toHaveProperty("./package.json");

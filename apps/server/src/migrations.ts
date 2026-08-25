@@ -22,7 +22,7 @@ export interface MigrationManifest {
   sqlite: MigrationSet<SQLiteMigrationDirectory>;
 }
 
-const packageDirectory = fileURLToPath(new URL(".", import.meta.resolve("dahlia-ai/package.json")));
+const packageDirectory = fileURLToPath(new URL(".", import.meta.resolve("@dahlia-ai/server/package.json")));
 
 export const serverMigrationManifest: MigrationManifest = {
   postgres: {

@@ -1,5 +1,5 @@
 {
-  "name": "dahlia-ai",
+  "name": "@dahlia-ai/server",
   "version": "0.1.0",
   "type": "module",
   "description": "Self-hostable authenticated Responses gateway for Dahlia",

@@ -36,9 +36,9 @@ jobs:
         run: node -e 'const expected=`server-v${require("./apps/server/package.json").version}`;if(process.env.GITHUB_REF_NAME!==expected)throw new Error(`Expected tag ${expected}`)'
 
       - name: Validate Server
-        run: pnpm --filter dahlia-ai check
+        run: pnpm --filter @dahlia-ai/server check
 
       - name: Publish package
-        run: pnpm --filter dahlia-ai publish --no-git-checks --access public
+        run: pnpm --filter @dahlia-ai/server publish --no-git-checks --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

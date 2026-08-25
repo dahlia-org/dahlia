@@ -27,8 +27,8 @@ try {
     encoding: "utf8",
   });
   if (packed.status !== 0) throw new Error(packed.stderr || packed.stdout || "pnpm pack failed");
-  const tarball = join(directory, `dahlia-ai-${packageJson.version}.tgz`);
-  const installedPackage = join(directory, "node_modules", "dahlia-ai");
+  const tarball = join(directory, `dahlia-ai-server-${packageJson.version}.tgz`);
+  const installedPackage = join(directory, "node_modules", "@dahlia-ai", "server");
   await mkdir(installedPackage, { recursive: true });
   const extracted = spawnSync("tar", ["-xzf", tarball, "-C", installedPackage, "--strip-components=1"], {
     encoding: "utf8",
@@ -50,10 +50,10 @@ try {
     type: "module",
   }));
   await writeFile(join(directory, "verify.mjs"), `
-    import { createApp } from "dahlia-ai";
-    import { createNodeAuthStore } from "dahlia-ai/node";
-    import { App } from "dahlia-ai/client";
-    import { serverMigrationManifest } from "dahlia-ai/migrations";
+    import { createApp } from "@dahlia-ai/server";
+    import { createNodeAuthStore } from "@dahlia-ai/server/node";
+    import { App } from "@dahlia-ai/server/client";
+    import { serverMigrationManifest } from "@dahlia-ai/server/migrations";
     import { readFile } from "node:fs/promises";
     import { DatabaseSync } from "node:sqlite";
     import { fileURLToPath } from "node:url";
@@ -62,9 +62,9 @@ try {
     if (serverMigrationManifest.sqlite.files.length !== 2) {
       throw new Error("Migration manifest is incomplete");
     }
-    const style = await readFile(new URL(import.meta.resolve("dahlia-ai/client/styles.css")), "utf8");
+    const style = await readFile(new URL(import.meta.resolve("@dahlia-ai/server/client/styles.css")), "utf8");
     const migration = await readFile(
-      new URL(import.meta.resolve("dahlia-ai/migrations/sqlite/0002_server.sql")),
+      new URL(import.meta.resolve("@dahlia-ai/server/migrations/sqlite/0002_server.sql")),
       "utf8",
     );
     if (!style.includes(".app-shell") || !migration.includes("modelAlias")) {
@@ -93,9 +93,9 @@ try {
     }
   `);
   await writeFile(join(directory, "verify.ts"), `
-    import { createD1AuthStore, type D1DatabaseLike } from "dahlia-ai";
-    import { createNodeAuthStore } from "dahlia-ai/node";
-    import type { App } from "dahlia-ai/client";
+    import { createD1AuthStore, type D1DatabaseLike } from "@dahlia-ai/server";
+    import { createNodeAuthStore } from "@dahlia-ai/server/node";
+    import type { App } from "@dahlia-ai/server/client";
 
     declare const database: D1DatabaseLike;
     const store = createD1AuthStore(database);
