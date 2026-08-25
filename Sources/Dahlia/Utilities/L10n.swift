@@ -4,7 +4,7 @@
 import Foundation
 
 /// ローカライズ文字列への型安全なアクセスを提供する。
-enum L10n {
+enum L10n { // swiftlint:disable:this type_body_length
     /// キャッシュ済みの Bundle と、その生成元の言語 rawValue。
     /// 言語設定が変わらない限り Bundle を再生成しない。
     private nonisolated(unsafe) static var cachedBundle: Bundle = .appModule
@@ -101,6 +101,41 @@ enum L10n {
     static var embeddingModelDescription: String {
         String(localized: "Embedding model description", bundle: bundle)
     }
+
+    static var searchRanking: String { String(localized: "Search ranking", bundle: bundle) }
+    static var advancedSearchSettings: String { String(localized: "Advanced search settings", bundle: bundle) }
+    static var searchRankingDescription: String { String(localized: "Search ranking description", bundle: bundle) }
+    static var searchRankingPreset: String { String(localized: "Ranking preset", bundle: bundle) }
+    static var searchRankingPresetStandard: String { String(localized: "Ranking preset standard", bundle: bundle) }
+    static var searchRankingPresetTitleAndTags: String {
+        String(localized: "Ranking preset title and tags", bundle: bundle)
+    }
+
+    static var searchRankingPresetContent: String { String(localized: "Ranking preset content", bundle: bundle) }
+    static var searchRankingPresetCustom: String { String(localized: "Ranking preset custom", bundle: bundle) }
+    static var searchRankingFieldExcluded: String { String(localized: "Excluded from search", bundle: bundle) }
+
+    static func searchRankingWeight(_ weight: Double) -> String {
+        String(format: "%.1f", weight)
+    }
+
+    static var searchBenchmark: String { String(localized: "Search benchmark", bundle: bundle) }
+    static var searchBenchmarkDescription: String { String(localized: "Search benchmark description", bundle: bundle) }
+    static var searchBenchmarkRun: String { String(localized: "Run benchmark", bundle: bundle) }
+    static var searchBenchmarkReevaluate: String { String(localized: "Re-evaluate", bundle: bundle) }
+    static var searchBenchmarkGenerating: String { String(localized: "Building the evaluation set", bundle: bundle) }
+    static var searchBenchmarkEvaluating: String { String(localized: "Scoring ranking weights", bundle: bundle) }
+    static var searchBenchmarkQueryCount: String { String(localized: "Evaluated queries", bundle: bundle) }
+    static var searchBenchmarkCurrentScore: String { String(localized: "Current weights", bundle: bundle) }
+    static var searchBenchmarkScoreFormat: String { String(localized: "Benchmark score format", bundle: bundle) }
+    static var searchBenchmarkRecommendationFormat: String {
+        String(localized: "Benchmark recommendation format", bundle: bundle)
+    }
+
+    static var searchBenchmarkApplyRecommendation: String { String(localized: "Apply recommended", bundle: bundle) }
+    static var searchBenchmarkCurrentIsBest: String { String(localized: "Benchmark current is best", bundle: bundle) }
+    static var searchBenchmarkNeedsMeetings: String { String(localized: "Benchmark needs meetings", bundle: bundle) }
+    static var searchBenchmarkNoJudgments: String { String(localized: "Benchmark no judgments", bundle: bundle) }
 
     static var rebuildFullTextSearch: String { String(localized: "Rebuild full-text search", bundle: bundle) }
     static var rebuildVectorSearch: String { String(localized: "Rebuild vector search", bundle: bundle) }

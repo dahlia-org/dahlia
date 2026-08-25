@@ -272,6 +272,31 @@ import GRDB
         }
 
         @Test(.timeLimit(.minutes(1)))
+        func rankingChangeRestartsMeetingPagination() async throws {
+            let originalPolicy = AppSettings.shared.meetingSearchRankingPolicy
+            defer { AppSettings.shared.meetingSearchRankingPolicy = originalPolicy }
+            AppSettings.shared.meetingSearchRankingPolicy = .standard
+            let fixture = try MainSearchModelFixture()
+            defer { fixture.stop() }
+            try await fixture.insertMatchingMeetings(count: MainSearchDesign.meetingPageSize + 1)
+            let sidebar = fixture.makeSidebarViewModel()
+            defer { sidebar.setAppDatabase(nil) }
+
+            let model = MainSearchModel()
+            model.present(using: sidebar)
+            model.inputText = "Planning"
+            model.queryDidChange(using: sidebar)
+            #expect(await pollUntil { !model.isLoading && model.meetings.count == MainSearchDesign.meetingPageSize })
+
+            AppSettings.shared.meetingSearchRankingPolicy = try #require(MeetingSearchRankingPreset.content.policy)
+            model.loadMore(using: sidebar)
+
+            #expect(await pollUntil { !model.isLoading })
+            #expect(model.meetings.count == MainSearchDesign.meetingPageSize)
+            #expect(model.hasMoreMeetings)
+        }
+
+        @Test(.timeLimit(.minutes(1)))
         func reportsLoadMoreFailureWithoutDiscardingTheFirstPage() async throws {
             let fixture = try MainSearchModelFixture()
             defer { fixture.stop() }

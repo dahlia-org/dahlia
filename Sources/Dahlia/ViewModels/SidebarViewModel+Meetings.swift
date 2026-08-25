@@ -113,8 +113,11 @@ extension SidebarViewModel {
         meetingSearchTask?.cancel()
         meetingSearchObservationGeneration &+= 1
         let generation = meetingSearchObservationGeneration
-        let cursor = appending ? meetingSearchCursor : nil
         let searchQueue = searchDBQueue ?? dbQueue
+        let rankingPolicy = AppSettings.shared.meetingSearchRankingPolicy
+        let appendsCurrentRanking = appending && activeMeetingSearchRankingPolicy == rankingPolicy
+        activeMeetingSearchRankingPolicy = rankingPolicy
+        let cursor = appendsCurrentRanking ? meetingSearchCursor : nil
         meetingSearchTask = Task { [weak self] in
             do {
                 if let delay {
@@ -123,6 +126,7 @@ extension SidebarViewModel {
                 let page = try await MeetingRepository.searchMeetingSidebarPage(
                     vaultId: vaultId,
                     criteria: criteria,
+                    rankingPolicy: rankingPolicy,
                     after: cursor,
                     limit: Self.meetingPageSize,
                     dbQueue: searchQueue
@@ -133,7 +137,7 @@ extension SidebarViewModel {
                       self.meetingSearchCriteria == criteria,
                       self.meetingSearchObservationGeneration == generation else { return }
 
-                if appending, !page.replacesResults {
+                if appendsCurrentRanking, !page.replacesResults {
                     self.appendMeetingSearchPage(page)
                 } else {
                     self.meetingSearchItems = page.items
@@ -305,6 +309,7 @@ extension SidebarViewModel {
         meetingSearchLoadError = nil
         hasMoreMeetingSearchResults = false
         meetingSearchCursor = nil
+        activeMeetingSearchRankingPolicy = nil
         isMeetingSearchLimited = false
 
         guard !criteria.isEmpty else {

@@ -4,6 +4,7 @@
 - Date: 2026-08-21
 - Amends: ADR-0005, ADR-0033
 - Builds on: ADR-0001
+- Amended by: ADR-0040
 
 ## Context
 

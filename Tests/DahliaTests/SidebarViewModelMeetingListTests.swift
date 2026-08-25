@@ -6,6 +6,7 @@ import GRDB
     import Testing
 
     @MainActor
+    @Suite(.serialized)
     // swiftlint:disable:next type_body_length
     struct SidebarViewModelMeetingListTests {
         @Test(.timeLimit(.minutes(1)))
@@ -207,6 +208,43 @@ import GRDB
             #expect(!viewModel.hasMoreMeetingSearchResults)
             #expect(viewModel.meetingSearchItems.count == 51)
             #expect(!viewModel.hasMoreMeetingSearchResults)
+        }
+
+        @Test(.timeLimit(.minutes(1)))
+        func rankingChangeRestartsMeetingSearchPagination() async throws {
+            let originalPolicy = AppSettings.shared.meetingSearchRankingPolicy
+            defer { AppSettings.shared.meetingSearchRankingPolicy = originalPolicy }
+            AppSettings.shared.meetingSearchRankingPolicy = .standard
+            let fixture = try SidebarViewModelMeetingListFixture()
+            defer { fixture.stop() }
+            try await fixture.manager.dbQueue.write { db in
+                for index in 0 ... SidebarViewModel.meetingPageSize {
+                    try insertMeeting(
+                        vaultId: fixture.vault.id,
+                        name: "Needle \(index)",
+                        createdAt: Date(timeIntervalSince1970: 1_800_000_000 + TimeInterval(index)),
+                        in: db
+                    )
+                }
+            }
+            await fixture.manager.searchIndexer.drain()
+            let viewModel = fixture.makeViewModel()
+            defer { viewModel.setAppDatabase(nil) }
+            #expect(await waitUntil { viewModel.searchIndexRevision > 0 })
+
+            viewModel.updateMeetingSearchQuery("Needle")
+            #expect(await waitUntil {
+                viewModel.isMeetingSearchLoaded
+                    && viewModel.meetingSearchItems.count == SidebarViewModel.meetingPageSize
+                    && viewModel.hasMoreMeetingSearchResults
+            })
+
+            AppSettings.shared.meetingSearchRankingPolicy = try #require(MeetingSearchRankingPreset.content.policy)
+            viewModel.loadMoreDisplayedMeetings()
+
+            #expect(await waitUntil { !viewModel.isMeetingSearchLoadingMore })
+            #expect(viewModel.meetingSearchItems.count == SidebarViewModel.meetingPageSize)
+            #expect(viewModel.hasMoreMeetingSearchResults)
         }
 
         @Test(.timeLimit(.minutes(1)))

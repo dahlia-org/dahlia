@@ -10,6 +10,7 @@ extension MeetingRepository {
         vaultId: UUID,
         query: String,
         mode: SearchMode = .advanced,
+        rankingPolicy: MeetingSearchRankingPolicy = .standard,
         queryEmbedding: [Float]? = nil,
         after cursor: MeetingSearchCursor? = nil,
         limit: Int,
@@ -19,6 +20,7 @@ extension MeetingRepository {
             vaultId: vaultId,
             criteria: MeetingSearchCriteria(text: query),
             mode: mode,
+            rankingPolicy: rankingPolicy,
             queryEmbedding: queryEmbedding,
             after: cursor,
             limit: limit,
@@ -30,6 +32,7 @@ extension MeetingRepository {
         vaultId: UUID,
         criteria: MeetingSearchCriteria,
         mode: SearchMode = .advanced,
+        rankingPolicy: MeetingSearchRankingPolicy = .standard,
         queryEmbedding: [Float]? = nil,
         after cursor: MeetingSearchCursor? = nil,
         limit: Int,
@@ -59,6 +62,7 @@ extension MeetingRepository {
                     try fullTextSearch(
                         vaultId: vaultId,
                         criteria: criteria,
+                        policy: rankingPolicy,
                         cursor: cursor,
                         limit: limit,
                         in: db
@@ -68,6 +72,7 @@ extension MeetingRepository {
                         try hybridSearch(
                             vaultId: vaultId,
                             criteria: criteria,
+                            policy: rankingPolicy,
                             queryEmbedding: queryEmbedding,
                             cursor: cursor,
                             limit: limit,
@@ -77,6 +82,7 @@ extension MeetingRepository {
                         try fullTextSearch(
                             vaultId: vaultId,
                             criteria: criteria,
+                            policy: rankingPolicy,
                             cursor: cursor,
                             limit: limit,
                             in: db
@@ -90,6 +96,7 @@ extension MeetingRepository {
     private nonisolated static func hybridSearch(
         vaultId: UUID,
         criteria: MeetingSearchCriteria,
+        policy: MeetingSearchRankingPolicy,
         queryEmbedding: [Float],
         cursor: MeetingSearchCursor?,
         limit: Int,
@@ -114,6 +121,7 @@ extension MeetingRepository {
             return try fullTextSearch(
                 vaultId: vaultId,
                 criteria: criteria,
+                policy: policy,
                 cursor: cursor,
                 limit: limit,
                 in: db
@@ -122,6 +130,7 @@ extension MeetingRepository {
         let ftsPage = try fullTextSearch(
             vaultId: vaultId,
             criteria: criteria,
+            policy: policy,
             cursor: nil,
             limit: HybridSearchRRF.candidateLimit,
             in: db
@@ -451,12 +460,13 @@ extension MeetingRepository {
             return .init(kind: .calendar, text: calendar)
         }
         let description: String = meeting?["description"] ?? ""
-        return .init(kind: .description, text: snippet(description, matching: query))
+        return .init(kind: .description, text: snippet(description, matching: [query]))
     }
 
     private nonisolated static func fullTextSearch(
         vaultId: UUID,
         criteria: MeetingSearchCriteria,
+        policy: MeetingSearchRankingPolicy,
         cursor: MeetingSearchCursor?,
         limit: Int,
         in db: Database
@@ -486,11 +496,17 @@ extension MeetingRepository {
         let meetingIDs = try qualifyingMeetingIDs(
             queryTokens: queryTokens,
             vaultId: vaultId,
+            policy: policy,
             filters: filters,
             in: db
         )
-        let hits = try fullTextHits(queryTokens: queryTokens, meetingIDs: meetingIDs, in: db)
-        let ranked = rankedMeetings(from: hits, requiredTokenCount: tokens.count)
+        let hits = try fullTextHits(
+            queryTokens: queryTokens,
+            meetingIDs: meetingIDs,
+            policy: policy,
+            in: db
+        )
+        let ranked = rankedMeetings(from: hits)
 
         let window = Array(ranked.dropFirst(offset).prefix(limit + 1))
         let visible = Array(window.prefix(limit))
@@ -499,10 +515,17 @@ extension MeetingRepository {
             uniqueKeysWithValues: fetchMeetingSidebarItems(ids: orderedIDs, vaultId: vaultId, in: db)
                 .map { ($0.id, $0) }
         )
-        for rank in visible {
-            itemsByID[rank.meetingID]?.searchMatchContext = try matchContext(
-                rank.evidence,
-                meetingID: rank.meetingID,
+        let fieldsByMeeting = try matchedFields(
+            meetingIDs: orderedIDs,
+            queryTokens: queryTokens,
+            policy: policy,
+            in: db
+        )
+        for id in orderedIDs {
+            itemsByID[id]?.searchMatchContext = try matchContext(
+                field: fieldsByMeeting[id] ?? .title,
+                tokens: tokens,
+                meetingID: id,
                 projects: projects,
                 in: db
             )
@@ -518,52 +541,102 @@ extension MeetingRepository {
         )
     }
 
+    /// 候補 meeting を全 token の AND で一度だけ採点する。
+    /// 順位は設定された重みを BM25 のカラム重みとして与えた単一のスコアで決まる。
     private nonisolated static func fullTextHits(
         queryTokens: [FTSQueryToken],
         meetingIDs: [UUID],
+        policy: MeetingSearchRankingPolicy,
         in db: Database
-    ) throws -> [UUID: [Int: SearchTokenHit]] {
+    ) throws -> [UUID: SearchHit] {
         guard !meetingIDs.isEmpty else { return [:] }
-        var meetingHits: [UUID: [Int: SearchTokenHit]] = [:]
-        for queryToken in queryTokens {
+        let expression = policy.matchExpression(conjunction(of: queryTokens))
+        var meetingHits: [UUID: SearchHit] = [:]
+        for start in stride(from: 0, to: meetingIDs.count, by: 200) {
             try Task.checkCancellation()
-            for field in SearchField.allCases {
-                for start in stride(from: 0, to: meetingIDs.count, by: 200) {
-                    try Task.checkCancellation()
-                    let ids = Array(meetingIDs[start ..< min(start + 200, meetingIDs.count)])
-                    var arguments = StatementArguments(ids)
-                    arguments += ["\(field.rawValue) : \(queryToken.query)"]
-                    let rows = try Row.fetchAll(
-                        db,
-                        sql: """
-                        WITH candidate_documents AS MATERIALIZED (
-                            SELECT id, meetingId
-                            FROM search_documents
-                            WHERE kind = 'meeting'
-                              AND meetingId IN (\(searchPlaceholders(ids.count)))
-                        )
-                        SELECT candidate_documents.meetingId AS meetingId,
-                               \(sidebarRecordingStartedAtSQL) AS meetingDate,
-                               -bm25(search_documents_fts) AS relevance
-                        FROM candidate_documents
-                        CROSS JOIN search_documents_fts
-                        JOIN meetings ON meetings.id = candidate_documents.meetingId
-                        WHERE search_documents_fts.rowid = candidate_documents.id
-                          AND search_documents_fts MATCH ?
-                        """,
-                        arguments: arguments
-                    )
-                    merge(
-                        rows: rows,
-                        field: field,
-                        ordinal: queryToken.ordinal,
-                        token: queryToken.token,
-                        into: &meetingHits
-                    )
-                }
+            let ids = Array(meetingIDs[start ..< min(start + 200, meetingIDs.count)])
+            var arguments = StatementArguments(ids)
+            arguments += [expression]
+            let rows = try Row.fetchAll(
+                db,
+                sql: """
+                WITH candidate_documents AS MATERIALIZED (
+                    SELECT id, meetingId
+                    FROM search_documents
+                    WHERE kind = 'meeting'
+                      AND meetingId IN (\(searchPlaceholders(ids.count)))
+                )
+                SELECT candidate_documents.meetingId AS meetingId,
+                       \(sidebarRecordingStartedAtSQL) AS meetingDate,
+                       -\(policy.bm25RankingSQL) AS relevance
+                FROM candidate_documents
+                CROSS JOIN search_documents_fts
+                JOIN meetings ON meetings.id = candidate_documents.meetingId
+                WHERE search_documents_fts.rowid = candidate_documents.id
+                  AND search_documents_fts MATCH ?
+                """,
+                arguments: arguments
+            )
+            for row in rows {
+                let meetingID: UUID = row["meetingId"]
+                meetingHits[meetingID] = SearchHit(
+                    relevance: row["relevance"],
+                    meetingDate: row["meetingDate"]
+                )
             }
         }
         return meetingHits
+    }
+
+    /// 表示するページの各 meeting について、どのフィールドで一致したかを重みの高い順に判定する。
+    /// 候補全件ではなくページ内の meeting だけを対象にする。
+    private nonisolated static func matchedFields(
+        meetingIDs: [UUID],
+        queryTokens: [FTSQueryToken],
+        policy: MeetingSearchRankingPolicy,
+        in db: Database
+    ) throws -> [UUID: MeetingSearchField] {
+        guard !meetingIDs.isEmpty else { return [:] }
+        let disjunction = queryTokens
+            .sorted { $0.ordinal < $1.ordinal }
+            .map(\.query)
+            .joined(separator: " OR ")
+        var resolved: [UUID: MeetingSearchField] = [:]
+        for field in policy.rankedFields {
+            guard resolved.count < meetingIDs.count else { break }
+            try Task.checkCancellation()
+            let pending = meetingIDs.filter { resolved[$0] == nil }
+            var arguments = StatementArguments(pending)
+            arguments += ["{\(field.rawValue)} : (\(disjunction))"]
+            let matched = try UUID.fetchAll(
+                db,
+                sql: """
+                WITH candidate_documents AS MATERIALIZED (
+                    SELECT id, meetingId
+                    FROM search_documents
+                    WHERE kind = 'meeting'
+                      AND meetingId IN (\(searchPlaceholders(pending.count)))
+                )
+                SELECT candidate_documents.meetingId
+                FROM candidate_documents
+                CROSS JOIN search_documents_fts
+                WHERE search_documents_fts.rowid = candidate_documents.id
+                  AND search_documents_fts MATCH ?
+                """,
+                arguments: arguments
+            )
+            for id in matched {
+                resolved[id] = field
+            }
+        }
+        return resolved
+    }
+
+    private nonisolated static func conjunction(of queryTokens: [FTSQueryToken]) -> String {
+        queryTokens
+            .sorted { $0.ordinal < $1.ordinal }
+            .map(\.query)
+            .joined(separator: " AND ")
     }
 
     private nonisolated static func orderedQueryTokens(_ tokens: [String], in db: Database) throws -> [FTSQueryToken] {
@@ -602,6 +675,7 @@ extension MeetingRepository {
     private nonisolated static func qualifyingMeetingIDs(
         queryTokens: [FTSQueryToken],
         vaultId: UUID,
+        policy: MeetingSearchRankingPolicy,
         filters: (condition: String, arguments: StatementArguments),
         in db: Database
     ) throws -> [UUID] {
@@ -620,9 +694,9 @@ extension MeetingRepository {
             )
             """
         }.joined(separator: " AND ")
-        var arguments: StatementArguments = [seed.query, vaultId]
+        var arguments: StatementArguments = [policy.matchExpression(seed.query), vaultId]
         arguments += filters.arguments
-        arguments += StatementArguments(remaining.map(\.query))
+        arguments += StatementArguments(remaining.map { policy.matchExpression($0.query) })
         return try UUID.fetchAll(
             db,
             sql: """
@@ -645,52 +719,10 @@ extension MeetingRepository {
         )
     }
 
-    private nonisolated static func merge(
-        rows: [Row],
-        field: SearchField,
-        ordinal: Int,
-        token: String,
-        into meetingHits: inout [UUID: [Int: SearchTokenHit]]
-    ) {
-        for row in rows {
-            let meetingID: UUID = row["meetingId"]
-            let hit = SearchTokenHit(
-                field: field,
-                token: token,
-                relevance: row["relevance"],
-                meetingDate: row["meetingDate"]
-            )
-            if let current = meetingHits[meetingID]?[ordinal] {
-                guard hit.field.matchClass < current.field.matchClass
-                    || (hit.field.matchClass == current.field.matchClass && hit.relevance > current.relevance)
-                else { continue }
-            }
-            meetingHits[meetingID, default: [:]][ordinal] = hit
-        }
-    }
-
-    private nonisolated static func rankedMeetings(
-        from meetingHits: [UUID: [Int: SearchTokenHit]],
-        requiredTokenCount: Int
-    ) -> [RankedMeeting] {
-        meetingHits.compactMap { meetingID, hitsByOrdinal -> RankedMeeting? in
-            guard hitsByOrdinal.count == requiredTokenCount else { return nil }
-            let hits = hitsByOrdinal.keys.sorted().compactMap { hitsByOrdinal[$0] }
-            guard let evidence = hits.max(by: { lhs, rhs in
-                if lhs.field.matchClass != rhs.field.matchClass {
-                    return lhs.field.matchClass < rhs.field.matchClass
-                }
-                return lhs.relevance < rhs.relevance
-            }) else { return nil }
-            return RankedMeeting(
-                meetingID: meetingID,
-                matchClass: evidence.field.matchClass,
-                relevance: hits.map(\.relevance).min() ?? 0,
-                meetingDate: hits.first?.meetingDate ?? .distantPast,
-                evidence: evidence
-            )
+    private nonisolated static func rankedMeetings(from meetingHits: [UUID: SearchHit]) -> [RankedMeeting] {
+        meetingHits.map { meetingID, hit in
+            RankedMeeting(meetingID: meetingID, relevance: hit.relevance, meetingDate: hit.meetingDate)
         }.sorted { lhs, rhs in
-            if lhs.matchClass != rhs.matchClass { return lhs.matchClass < rhs.matchClass }
             if lhs.relevance != rhs.relevance { return lhs.relevance > rhs.relevance }
             if lhs.meetingDate != rhs.meetingDate { return lhs.meetingDate > rhs.meetingDate }
             return lhs.meetingID.uuidString < rhs.meetingID.uuidString
@@ -794,23 +826,24 @@ extension MeetingRepository {
     }
 
     private nonisolated static func matchContext(
-        _ hit: SearchTokenHit,
+        field: MeetingSearchField,
+        tokens: [String],
         meetingID: UUID,
         projects: [ProjectRecord],
         in db: Database
     ) throws -> MeetingSearchMatchContext {
-        switch hit.field {
+        switch field {
         case .title:
             return try .init(kind: .title, text: meetingText("name", meetingID: meetingID, in: db))
         case .description:
             return try .init(
                 kind: .description,
-                text: snippet(meetingText("description", meetingID: meetingID, in: db), matching: hit.token)
+                text: snippet(meetingText("description", meetingID: meetingID, in: db), matching: tokens)
             )
         case .summary:
             return try .init(
                 kind: .summary,
-                text: snippet(summaryBodyText(meetingID: meetingID, in: db), matching: hit.token)
+                text: snippet(summaryBodyText(meetingID: meetingID, in: db), matching: tokens)
             )
         case .calendar:
             let calendar = try Row.fetchOne(
@@ -840,7 +873,7 @@ extension MeetingRepository {
             )
             let tag = tags.first(where: { row in
                 let name: String = row["name"]
-                return name.localizedStandardContains(hit.token)
+                return tokens.contains { name.localizedStandardContains($0) }
             }) ?? tags.first
             return .init(kind: .tag, text: tag?["name"] ?? "", colorHex: tag?["colorHex"])
         case .projectPath:
@@ -862,14 +895,13 @@ extension MeetingRepository {
             .flatMap { try? $0.loadDocument().searchableBodyText } ?? ""
     }
 
-    private nonisolated static func snippet(_ text: String, matching token: String) -> String {
+    private nonisolated static func snippet(_ text: String, matching tokens: [String]) -> String {
         let maximumLength = 180
         guard text.count > maximumLength else { return text }
-        guard let match = text.range(
-            of: token,
-            options: [.caseInsensitive, .diacriticInsensitive],
-            locale: .current
-        ) else { return String(text.prefix(maximumLength)) }
+        guard let match = tokens.lazy.compactMap({ token in
+            text.range(of: token, options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+        }).min(by: { $0.lowerBound < $1.lowerBound })
+        else { return String(text.prefix(maximumLength)) }
         let start = text.index(match.lowerBound, offsetBy: -60, limitedBy: text.startIndex) ?? text.startIndex
         let end = text.index(start, offsetBy: maximumLength, limitedBy: text.endIndex) ?? text.endIndex
         return "\(start == text.startIndex ? "" : "…")\(text[start ..< end])\(end == text.endIndex ? "" : "…")"
@@ -1078,18 +1110,6 @@ extension MeetingRepository {
     }
 }
 
-private enum SearchField: String, CaseIterable {
-    case title, tags, projectPath, calendar, description, summary
-
-    var matchClass: Int {
-        switch self {
-        case .title: 0
-        case .tags, .projectPath, .calendar: 1
-        case .description, .summary: 2
-        }
-    }
-}
-
 private struct FTSQueryToken {
     let ordinal: Int
     let token: String
@@ -1097,19 +1117,15 @@ private struct FTSQueryToken {
     let estimatedDocuments: Int
 }
 
-private struct SearchTokenHit {
-    let field: SearchField
-    let token: String
+private struct SearchHit {
     let relevance: Double
     let meetingDate: Date
 }
 
 private struct RankedMeeting {
     let meetingID: UUID
-    let matchClass: Int
     let relevance: Double
     let meetingDate: Date
-    let evidence: SearchTokenHit
 }
 
 private extension MeetingSearchPage {

@@ -35,6 +35,7 @@ final class MainSearchModel {
     @ObservationIgnored private var screenshotGeneration = 0
     @ObservationIgnored private var projectGeneration = 0
     @ObservationIgnored private var activeMeetingCriteria = MeetingSearchCriteria()
+    @ObservationIgnored private var activeRankingPolicy: MeetingSearchRankingPolicy?
     @ObservationIgnored private(set) var activeQueryEmbedding: [Float]?
     @ObservationIgnored private let embeddingServiceOverride: (any TextEmbeddingProviding)?
     @ObservationIgnored private var pendingQualifierText: String?
@@ -193,6 +194,7 @@ final class MainSearchModel {
         meetingCursor = nil
         screenshotCursor = nil
         activeMeetingCriteria = MeetingSearchCriteria()
+        activeRankingPolicy = nil
         activeQueryEmbedding = nil
         selectedResultID = nil
         isRecent = true
@@ -212,12 +214,15 @@ final class MainSearchModel {
         let embeddingService = embeddingServiceOverride ?? sidebarViewModel.embeddingService
         let criteria = searchCriteria(using: sidebarViewModel)
         let mode = searchMode
+        let rankingPolicy = AppSettings.shared.meetingSearchRankingPolicy
+        let appendsCurrentRanking = appending && activeRankingPolicy == rankingPolicy
         activeMeetingCriteria = criteria
-        let cursor = appending ? meetingCursor : nil
+        activeRankingPolicy = rankingPolicy
+        let cursor = appendsCurrentRanking ? meetingCursor : nil
         let limit = criteria.isEmpty ? MainSearchDesign.recentResultLimit : MainSearchDesign.meetingPageSize
 
-        preparePresentation(criteria: criteria, appending: appending)
-        if !appending {
+        preparePresentation(criteria: criteria, appending: appendsCurrentRanking)
+        if !appendsCurrentRanking {
             startProjectSearch(criteria: criteria, using: sidebarViewModel)
             startScreenshotSearch(
                 criteria: criteria,
@@ -238,11 +243,12 @@ final class MainSearchModel {
                 if let delay {
                     try await Task.sleep(for: delay)
                 }
-                if mode == .neural, appending, let embedding = self?.activeQueryEmbedding {
+                if mode == .neural, appendsCurrentRanking, let embedding = self?.activeQueryEmbedding {
                     let page = try await MeetingRepository.searchMeetingSidebarPage(
                         vaultId: vaultID,
                         criteria: criteria,
                         mode: .neural,
+                        rankingPolicy: rankingPolicy,
                         queryEmbedding: embedding,
                         after: cursor,
                         limit: limit,
@@ -259,6 +265,7 @@ final class MainSearchModel {
                     vaultId: vaultID,
                     criteria: criteria,
                     mode: mode == .neural ? .advanced : mode,
+                    rankingPolicy: rankingPolicy,
                     after: cursor,
                     limit: limit,
                     dbQueue: dbQueue
@@ -267,7 +274,7 @@ final class MainSearchModel {
                 guard let self,
                       self.generation == requestGeneration,
                       sidebarViewModel.currentVault?.id == vaultID else { return }
-                self.apply(firstPage, appending: appending)
+                self.apply(firstPage, appending: appendsCurrentRanking)
                 do {
                     guard mode == .neural else { return }
                     guard let embeddingService, await embeddingService.isAvailable else {
@@ -281,7 +288,7 @@ final class MainSearchModel {
                         return
                     }
                     let embedding: [Float]
-                    if appending, let cached = self.activeQueryEmbedding {
+                    if appendsCurrentRanking, let cached = self.activeQueryEmbedding {
                         embedding = cached
                     } else {
                         embedding = try await embeddingService.queryEmbedding(criteria.text)
@@ -300,15 +307,16 @@ final class MainSearchModel {
                         vaultId: vaultID,
                         criteria: criteria,
                         mode: .neural,
+                        rankingPolicy: rankingPolicy,
                         queryEmbedding: embedding,
-                        after: appending ? cursor : nil,
+                        after: appendsCurrentRanking ? cursor : nil,
                         limit: limit,
                         dbQueue: dbQueue
                     )
                     try Task.checkCancellation()
                     guard self.generation == requestGeneration,
                           sidebarViewModel.currentVault?.id == vaultID else { return }
-                    self.apply(hybridPage, appending: appending)
+                    self.apply(hybridPage, appending: appendsCurrentRanking)
                 } catch is CancellationError {
                     return
                 } catch {
