@@ -39,13 +39,13 @@ import Foundation
         }
 
         @Test
-        func activatingChatGPTRemovesDatabricksConfigurationAndReloadsStatus() async throws {
+        func activatingChatGPTSelectsOpenAIAndReloadsStatus() async throws {
             let rootURL = FileManager.default.temporaryDirectory
                 .appending(path: "dahlia-chatgpt-activation-\(UUID().uuidString)", directoryHint: .isDirectory)
             defer { try? FileManager.default.removeItem(at: rootURL) }
             let locator = ApplicationSupportCodexHomeLocator(applicationSupportURL: rootURL)
             let configURL = try locator.homeURL().appending(path: "config.toml")
-            try Data("model_provider = \"Databricks\"\n".utf8).write(to: configURL)
+            try Data("model_provider = \"Databricks\"\ncustom_setting = true\n".utf8).write(to: configURL)
             let service = CodexAppServerService {
                 TestCodexAppServerTransport(mode: .models)
             }
@@ -60,7 +60,9 @@ import Foundation
 
             #expect(controller.accountStatus?.isAuthenticated == true)
             #expect(controller.errorMessage == nil)
-            #expect(!FileManager.default.fileExists(atPath: configURL.path))
+            let configuration = try String(contentsOf: configURL, encoding: .utf8)
+            #expect(configuration.contains(#"model_provider = "openai""#))
+            #expect(configuration.contains("custom_setting = true"))
             #expect(configurationStore.configuredProviderRawValue == AIAccountProvider.chatGPTSubscription.rawValue)
             #expect(configurationStore.configuredDatabricksProfile.isEmpty)
             await service.shutdown()
@@ -91,7 +93,7 @@ import Foundation
             activation.cancel()
             await activation.value
 
-            #expect(!FileManager.default.fileExists(atPath: configURL.path))
+            #expect(try String(contentsOf: configURL, encoding: .utf8).contains(#"model_provider = "openai""#))
             #expect(configurationStore.configuredProviderRawValue.isEmpty)
             #expect(configurationStore.configuredDatabricksProfile.isEmpty)
             await service.shutdown()
