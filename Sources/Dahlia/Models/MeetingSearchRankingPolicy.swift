@@ -5,7 +5,6 @@ import Foundation
 enum MeetingSearchField: String, CaseIterable, Identifiable, Sendable {
     case title
     case tags
-    case projectPath
     case calendar
     case description
     case summary
@@ -16,7 +15,6 @@ enum MeetingSearchField: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .title: L10n.title
         case .tags: L10n.tags
-        case .projectPath: L10n.project
         case .calendar: L10n.calendar
         case .description: L10n.descriptionTitle
         case .summary: L10n.summary
@@ -30,11 +28,10 @@ struct MeetingSearchRankingPolicy: Hashable, Sendable {
     static let minimumWeight: Double = 0
     static let maximumWeight: Double = 10
 
-    /// 現行の既定。title を最優先し、tag/path/calendar、description/summary の順に下げる。
+    /// 現行の既定。title を最優先し、tag、calendar、description/summary の順に下げる。
     static let standard = Self(weights: [
         .title: 10,
         .tags: 6,
-        .projectPath: 4,
         .calendar: 4,
         .description: 2,
         .summary: 2,
@@ -94,7 +91,7 @@ struct MeetingSearchRankingPolicy: Hashable, Sendable {
             weight(for: .summary),
             weight(for: .calendar),
             weight(for: .tags),
-            weight(for: .projectPath),
+            0, // projectPath は Project 検索と明示的な絞り込みだけで使う
             0, // ocr は screenshot 専用で meeting 文書では常に空
             0, // caption も同様
         ]
@@ -152,7 +149,6 @@ enum MeetingSearchRankingPreset: String, CaseIterable, Identifiable, Sendable {
             MeetingSearchRankingPolicy(weights: [
                 .title: 10,
                 .tags: 10,
-                .projectPath: 4,
                 .calendar: 2,
                 .description: 1,
                 .summary: 1,
@@ -161,7 +157,6 @@ enum MeetingSearchRankingPreset: String, CaseIterable, Identifiable, Sendable {
             MeetingSearchRankingPolicy(weights: [
                 .title: 4,
                 .tags: 3,
-                .projectPath: 2,
                 .calendar: 2,
                 .description: 8,
                 .summary: 10,

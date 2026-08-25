@@ -204,8 +204,7 @@ extension MeetingRepository {
         indexGeneration: Int,
         in db: Database
     ) throws -> [UUID] {
-        let projects = try ProjectRecord.fetchResolvedAll(vaultId: vaultId, in: db)
-        let includedProjects = descendantProjectIDs(selectedIDs: criteria.projectIDs, projects: projects)
+        let includedProjects = try includedProjectIDs(for: criteria, vaultId: vaultId, in: db)
         let filters = searchFilters(criteria: criteria, includedProjectIDs: includedProjects)
         var arguments: StatementArguments = [vaultId, indexGeneration]
         arguments += filters.arguments
@@ -213,7 +212,7 @@ extension MeetingRepository {
             db,
             sql: """
             SELECT search_documents.meetingId AS meetingId, search_documents_vec.embedding AS embedding,
-                   meetings.projectId AS projectId, \(sidebarRecordingStartedAtSQL) AS meetingDate
+                   \(sidebarRecordingStartedAtSQL) AS meetingDate
             FROM search_documents_vec
             JOIN search_documents ON search_documents.id = search_documents_vec.documentId
             JOIN meetings ON meetings.id = search_documents.meetingId
@@ -224,7 +223,7 @@ extension MeetingRepository {
             """,
             arguments: arguments
         )
-        var vectorHits: [(meetingID: UUID, similarity: Float, meetingDate: Date, projectID: UUID?)] = []
+        var vectorHits: [(meetingID: UUID, similarity: Float, meetingDate: Date)] = []
         vectorHits.reserveCapacity(rows.count)
         var maximumSimilarity: Float = -1
         for (index, row) in rows.enumerated() {
@@ -237,46 +236,8 @@ extension MeetingRepository {
             vectorHits.append((
                 row["meetingId"],
                 similarity,
-                row["meetingDate"],
-                row["projectId"]
+                row["meetingDate"]
             ))
-        }
-        let projectIDs = Array(Set(vectorHits.compactMap(\.projectID)))
-        var projectSimilarities: [UUID: Float] = [:]
-        for start in stride(from: 0, to: projectIDs.count, by: 200) {
-            let batch = Array(projectIDs[start ..< min(start + 200, projectIDs.count)])
-            let placeholders = Array(repeating: "?", count: batch.count).joined(separator: ",")
-            var projectArguments: StatementArguments = [vaultId, indexGeneration]
-            projectArguments += StatementArguments(batch)
-            let projectRows = try Row.fetchAll(
-                db,
-                sql: """
-                SELECT search_documents.projectId AS projectId, search_documents_vec.embedding AS embedding
-                FROM search_documents_vec
-                JOIN search_documents ON search_documents.id = search_documents_vec.documentId
-                WHERE search_documents.kind = 'project' AND search_documents.vaultId = ?
-                  AND search_documents_vec.indexGeneration = ?
-                  AND search_documents_vec.sourceContentHash = search_documents.sourceContentHash
-                  AND search_documents.projectId IN (\(placeholders))
-                """,
-                arguments: projectArguments
-            )
-            for row in projectRows {
-                let projectID: UUID = row["projectId"]
-                let data: Data = row["embedding"]
-                projectSimilarities[projectID] = try EmbeddingVector.cosineSimilarity(
-                    queryEmbedding,
-                    EmbeddingVector.decode(data)
-                )
-            }
-            try Task.checkCancellation()
-        }
-        for index in vectorHits.indices {
-            guard let projectID = vectorHits[index].projectID,
-                  let projectSimilarity = projectSimilarities[projectID],
-                  projectSimilarity > vectorHits[index].similarity else { continue }
-            vectorHits[index].similarity += HybridSearchRRF.projectContextRerankWeight
-                * (projectSimilarity - vectorHits[index].similarity)
         }
         try Task.checkCancellation()
         vectorHits.sort {
@@ -322,7 +283,7 @@ extension MeetingRepository {
         )
     }
 
-    private nonisolated static let simpleProjectPathsCTE = """
+    private nonisolated static let projectPathsCTE = """
     WITH RECURSIVE project_paths(id, vaultId, path) AS (
         SELECT id, vaultId, name
         FROM projects
@@ -346,14 +307,13 @@ extension MeetingRepository {
         let chronologicalCursor: MeetingSidebarCursor? = if case let .chronological(value) = cursor { value } else {
             nil
         }
-        let projects = try ProjectRecord.fetchResolvedAll(vaultId: vaultId, in: db)
-        let includedProjects = descendantProjectIDs(selectedIDs: criteria.projectIDs, projects: projects)
+        let includedProjects = try includedProjectIDs(for: criteria, vaultId: vaultId, in: db)
         let filters = searchFilters(criteria: criteria, includedProjectIDs: includedProjects)
         let cursorFilter = sidebarCursorFilter(chronologicalCursor)
         let pattern = "%\(escapedLikePattern(criteria.text))%"
-        var arguments: StatementArguments = [vaultId, vaultId, vaultId]
+        var arguments: StatementArguments = [vaultId]
         arguments += filters.arguments
-        for _ in 0 ..< 6 {
+        for _ in 0 ..< 5 {
             arguments += [pattern]
         }
         arguments += cursorFilter.arguments
@@ -361,13 +321,11 @@ extension MeetingRepository {
         var ids = try UUID.fetchAll(
             db,
             sql: """
-            \(simpleProjectPathsCTE)
             SELECT meetings.id
             FROM meetings
             LEFT JOIN calendar_events
               ON calendar_events.ical_uid = meetings.calendar_event_ical_uid
              AND calendar_events.recurrence_id = meetings.calendar_event_recurrence_id
-            LEFT JOIN project_paths ON project_paths.id = meetings.projectId
             WHERE meetings.vaultId = ?
               \(filters.condition)
               AND (
@@ -381,7 +339,6 @@ extension MeetingRepository {
                     WHERE meeting_tags.meetingId = meetings.id
                       AND tags.name LIKE ? ESCAPE '\\' COLLATE NOCASE
                 )
-                OR project_paths.path LIKE ? ESCAPE '\\' COLLATE NOCASE
               )
               \(cursorFilter.condition)
             ORDER BY \(sidebarRecordingStartedAtSQL) DESC, meetings.id DESC
@@ -399,7 +356,6 @@ extension MeetingRepository {
             itemsByID[id]?.searchMatchContext = try simpleMatchContext(
                 query: criteria.text,
                 meetingID: id,
-                projects: projects,
                 in: db
             )
         }
@@ -416,13 +372,12 @@ extension MeetingRepository {
     private nonisolated static func simpleMatchContext(
         query: String,
         meetingID: UUID,
-        projects: [ProjectRecord],
         in db: Database
     ) throws -> MeetingSearchMatchContext {
         let meeting = try Row.fetchOne(
             db,
             sql: """
-            SELECT meetings.name, meetings.description, meetings.projectId,
+            SELECT meetings.name, meetings.description,
                    calendar_events.title AS calendarTitle,
                    calendar_events.description AS calendarDescription
             FROM meetings LEFT JOIN calendar_events
@@ -447,11 +402,6 @@ extension MeetingRepository {
         )
         if let tag = tags.first(where: { ($0["name"] as String).localizedStandardContains(query) }) {
             return .init(kind: .tag, text: tag["name"], colorHex: tag["colorHex"])
-        }
-        let projectID: UUID? = meeting?["projectId"]
-        if let path = projectID.flatMap({ id in projects.first { $0.id == id }?.path }),
-           path.localizedStandardContains(query) {
-            return .init(kind: .project, text: path)
         }
         let calendar = [meeting?["calendarTitle"] as String?, meeting?["calendarDescription"] as String?]
             .compactMap(\.self)
@@ -489,8 +439,7 @@ extension MeetingRepository {
             replacesResults = cursor != nil
         }
 
-        let projects = try ProjectRecord.fetchResolvedAll(vaultId: vaultId, in: db)
-        let includedProjects = descendantProjectIDs(selectedIDs: criteria.projectIDs, projects: projects)
+        let includedProjects = try includedProjectIDs(for: criteria, vaultId: vaultId, in: db)
         let filters = searchFilters(criteria: criteria, includedProjectIDs: includedProjects)
         let queryTokens = try orderedQueryTokens(tokens, in: db)
         let meetingIDs = try qualifyingMeetingIDs(
@@ -526,7 +475,6 @@ extension MeetingRepository {
                 field: fieldsByMeeting[id] ?? .title,
                 tokens: tokens,
                 meetingID: id,
-                projects: projects,
                 in: db
             )
         }
@@ -825,11 +773,20 @@ extension MeetingRepository {
         return result
     }
 
+    private nonisolated static func includedProjectIDs(
+        for criteria: MeetingSearchCriteria,
+        vaultId: UUID,
+        in db: Database
+    ) throws -> Set<UUID> {
+        guard !criteria.projectIDs.isEmpty else { return [] }
+        let projects = try ProjectRecord.fetchResolvedAll(vaultId: vaultId, in: db)
+        return descendantProjectIDs(selectedIDs: criteria.projectIDs, projects: projects)
+    }
+
     private nonisolated static func matchContext(
         field: MeetingSearchField,
         tokens: [String],
         meetingID: UUID,
-        projects: [ProjectRecord],
         in db: Database
     ) throws -> MeetingSearchMatchContext {
         switch field {
@@ -876,9 +833,6 @@ extension MeetingRepository {
                 return tokens.contains { name.localizedStandardContains($0) }
             }) ?? tags.first
             return .init(kind: .tag, text: tag?["name"] ?? "", colorHex: tag?["colorHex"])
-        case .projectPath:
-            let projectID = try UUID.fetchOne(db, sql: "SELECT projectId FROM meetings WHERE id = ?", arguments: [meetingID])
-            return .init(kind: .project, text: projectID.flatMap { id in projects.first { $0.id == id }?.path } ?? "")
         }
     }
 
@@ -928,7 +882,6 @@ extension MeetingRepository {
 enum HybridSearchRRF {
     static let candidateLimit = 100
     static let minimumVectorSimilarity: Float = 0.45
-    static let projectContextRerankWeight: Float = 0.2
 
     static func rank(fullText: [UUID], vector: [UUID], rankConstant: Int = 60) -> [UUID] {
         var scores: [UUID: Double] = [:]
@@ -1057,7 +1010,7 @@ extension MeetingRepository {
         return try UUID.fetchAll(
             db,
             sql: """
-            \(simpleProjectPathsCTE)
+            \(projectPathsCTE)
             SELECT projects.id FROM projects
             JOIN project_paths ON project_paths.id = projects.id
             WHERE projects.vaultId = ? AND (

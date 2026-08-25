@@ -68,27 +68,31 @@ import GRDB
         }
 
         @Test
-        func projectSimilarityReranksButDoesNotCreateMeetingCandidates() async throws {
+        func projectSimilarityDoesNotAffectMeetingCandidates() async throws {
             let database = try AppDatabaseManager(path: ":memory:")
             let vault = makeVault(name: "Project rerank")
             let strongProject = makeProject(vaultID: vault.id, name: "Strong context")
             let weakProject = makeProject(vaultID: vault.id, name: "Weak context")
-            let boosted = makeMeeting(vaultID: vault.id, projectID: strongProject.id, name: "Boosted")
-            let unboosted = makeMeeting(vaultID: vault.id, projectID: weakProject.id, name: "Unboosted")
+            let projectMatched = makeMeeting(vaultID: vault.id, projectID: strongProject.id, name: "Project matched")
+            let higherMeetingSimilarity = makeMeeting(
+                vaultID: vault.id,
+                projectID: weakProject.id,
+                name: "Higher meeting similarity"
+            )
             let belowThreshold = makeMeeting(vaultID: vault.id, projectID: strongProject.id, name: "Below threshold")
             try await database.dbQueue.write { db in
                 try vault.insert(db)
                 try strongProject.insert(db)
                 try weakProject.insert(db)
-                try boosted.insert(db)
-                try unboosted.insert(db)
+                try projectMatched.insert(db)
+                try higherMeetingSimilarity.insert(db)
                 try belowThreshold.insert(db)
             }
             await database.searchIndexer.drain()
             try await installVectors(
                 [
-                    (boosted.id, 0.65),
-                    (unboosted.id, 0.70),
+                    (projectMatched.id, 0.65),
+                    (higherMeetingSimilarity.id, 0.70),
                     (belowThreshold.id, HybridSearchRRF.minimumVectorSimilarity - 0.01),
                 ],
                 in: database
@@ -107,7 +111,7 @@ import GRDB
                 dbQueue: database.dbQueue
             )
 
-            #expect(page.items.map(\.id) == [boosted.id, unboosted.id])
+            #expect(page.items.map(\.id) == [higherMeetingSimilarity.id, projectMatched.id])
             #expect(!page.items.contains { $0.id == belowThreshold.id })
         }
 

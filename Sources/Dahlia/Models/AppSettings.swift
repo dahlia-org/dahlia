@@ -118,7 +118,7 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
     nonisolated static let customerIntelligenceScopeUserDefaultsKey = "customerIntelligenceScope"
     nonisolated static let customerIntelligenceTableDensityUserDefaultsKey = "customerIntelligenceTableDensity"
     nonisolated static let meetingSearchRankingWeightsUserDefaultsKey = "meetingSearchRankingWeights"
-    nonisolated static let meetingSearchJudgmentsUserDefaultsKey = "meetingSearchBenchmarkJudgments"
+    nonisolated static let meetingSearchJudgmentsUserDefaultsKey = "meetingSearchBenchmarkJudgmentsV2"
     nonisolated static let meetingSidebarRowStyleUserDefaultsKey = "meetingSidebarRowStyle"
     nonisolated static let defaultMeetingLinkOpenTargetUserDefaultsKey = "defaultMeetingLinkOpenTarget"
     nonisolated static let googleMeetMeetingLinkOpenTargetUserDefaultsKey = "googleMeetMeetingLinkOpenTarget"

@@ -113,7 +113,7 @@ import GRDB
 
             #expect(try await fixture.resultIDs(query: "Quarterly") == [expected.title])
             #expect(try await fixture.resultIDs(query: "budget") == [expected.description])
-            #expect(try await fixture.resultIDs(query: "Acme/Zephyr") == [expected.project])
+            #expect(try await fixture.resultIDs(query: "Acme/Zephyr").isEmpty)
             #expect(try await fixture.resultIDs(query: "Launch") == [expected.calendar])
             #expect(try await fixture.resultIDs(query: "Customer") == [expected.tag])
             #expect(try await fixture.resultIDs(query: "verbatimneedle").isEmpty)
@@ -130,7 +130,7 @@ import GRDB
 
             #expect(try await fixture.resultIDs(query: "Quarterly", mode: .simple) == [expected.title])
             #expect(try await fixture.resultIDs(query: "budget", mode: .simple) == [expected.description])
-            #expect(try await fixture.resultIDs(query: "Acme/Zephyr", mode: .simple) == [expected.project])
+            #expect(try await fixture.resultIDs(query: "Acme/Zephyr", mode: .simple).isEmpty)
             #expect(try await fixture.resultIDs(query: "Calendar description", mode: .simple) == [expected.calendar])
             #expect(try await fixture.resultIDs(query: "Customer", mode: .simple) == [expected.tag])
             #expect(try await fixture.resultIDs(query: "verbatimneedle", mode: .simple).isEmpty)

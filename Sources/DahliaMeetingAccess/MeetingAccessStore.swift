@@ -1069,7 +1069,6 @@ private struct QueryComponents {
             meetings.name LIKE ? ESCAPE '\\' COLLATE NOCASE
             OR meetings.description LIKE ? ESCAPE '\\' COLLATE NOCASE
             OR calendar_events.title LIKE ? ESCAPE '\\' COLLATE NOCASE
-            OR projects.name LIKE ? ESCAPE '\\' COLLATE NOCASE
             OR EXISTS (
                 SELECT 1 FROM meeting_tags
                 JOIN tags ON tags.id = meeting_tags.tagId
@@ -1078,7 +1077,7 @@ private struct QueryComponents {
             )
         )
         """)
-        for _ in 0 ..< 5 {
+        for _ in 0 ..< 4 {
             arguments += [pattern]
         }
     }
@@ -1095,7 +1094,7 @@ private struct QueryComponents {
               AND search_documents_fts MATCH ?
         )
         """)
-        arguments += [query]
+        arguments += ["{title description summary calendar tags} : (\(query))"]
     }
 }
 

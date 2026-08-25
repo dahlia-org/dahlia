@@ -503,6 +503,8 @@ import ImageIO
             #expect(descriptionMatch.meetings.map(\.id) == [fixture.firstMeetingID])
             let tagMatch = try store.queryMeetings(MeetingQuery(query: "launch-tag"))
             #expect(tagMatch.meetings.map(\.id) == [fixture.firstMeetingID])
+            #expect(try store.queryMeetings(MeetingQuery(query: "Acme")).meetings.isEmpty)
+            #expect(try store.queryMeetings(MeetingQuery(query: "Acme", simple: true)).meetings.isEmpty)
             #expect(try store.queryMeetings(MeetingQuery(query: "anning")).meetings.isEmpty)
             #expect(try store.queryMeetings(MeetingQuery(query: "anning", simple: true)).meetings.map(\.id) == [fixture.firstMeetingID])
             #expect(throws: MeetingAccessError.invalidSearchQuery(maximum: 1024)) {
@@ -540,7 +542,7 @@ import ImageIO
             let store = try fixture.store(vaultID: fixture.primaryVaultID)
             await fixture.manager.searchIndexer.drain()
 
-            let firstPage = try store.queryMeetings(.init(query: "Acme", limit: 1))
+            let firstPage = try store.queryMeetings(.init(query: "review", limit: 1))
             let cursor = try #require(firstPage.nextCursor)
             try await fixture.manager.dbQueue.write { db in
                 try db.execute(
@@ -548,7 +550,7 @@ import ImageIO
                 )
             }
             #expect(throws: MeetingAccessError.invalidCursor) {
-                try store.queryMeetings(.init(query: "Acme", limit: 1, cursor: cursor))
+                try store.queryMeetings(.init(query: "review", limit: 1, cursor: cursor))
             }
 
             try await fixture.manager.dbQueue.write { db in

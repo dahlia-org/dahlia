@@ -29,7 +29,7 @@ enum MeetingSearchJudgmentService {
         )
     }
 
-    /// 各 meeting の全検索フィールドから順番にクエリを作り、特定のフィールドだけに偏らせない。
+    /// 各 meeting のランキング対象フィールドから順番にクエリを作り、特定のフィールドだけに偏らせない。
     private static func makeJudgments(from samples: [SampledMeeting]) -> [MeetingSearchJudgment] {
         var seenQueries: Set<String> = []
         var judgments: [MeetingSearchJudgment] = []
@@ -59,17 +59,12 @@ enum MeetingSearchJudgmentService {
         dbQueue: DatabaseQueue
     ) async throws -> [SampledMeeting] {
         try await dbQueue.read { db in
-            let projectPaths = try Dictionary(
-                uniqueKeysWithValues: ProjectRecord.fetchResolvedAll(vaultId: vaultID, in: db)
-                    .map { ($0.id, $0.path) }
-            )
             let rows = try Row.fetchAll(
                 db,
                 sql: """
                 SELECT meetings.id AS id,
                        meetings.name AS name,
                        meetings.description AS description,
-                       meetings.projectId AS projectId,
                        calendar_events.title AS calendarTitle,
                        calendar_events.description AS calendarDescription
                 FROM meetings
@@ -95,7 +90,6 @@ enum MeetingSearchJudgmentService {
                 ).joined(separator: " ")
                 let summary = try SummaryRecord.fetchOne(db, key: id)
                     .flatMap { try? $0.loadDocument().searchableBodyText } ?? ""
-                let projectID: UUID? = row["projectId"]
                 let calendar = [row["calendarTitle"] as String?, row["calendarDescription"] as String?]
                     .compactMap(\.self)
                     .joined(separator: " ")
@@ -104,7 +98,6 @@ enum MeetingSearchJudgmentService {
                     fields: [
                         .title: row["name"] ?? "",
                         .tags: tags,
-                        .projectPath: projectID.flatMap { projectPaths[$0] } ?? "",
                         .calendar: calendar,
                         .description: row["description"] ?? "",
                         .summary: summary,
