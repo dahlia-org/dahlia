@@ -7,7 +7,6 @@ import Observation
 final class VaultManagementModel {
     static let defaultVaultURL = URL.documentsDirectory
         .appending(path: "Dahlia", directoryHint: .isDirectory)
-    private static let defaultVaultName = "Default"
 
     private(set) var vaults: [VaultRecord] = []
     private(set) var errorMessage = ""
@@ -17,7 +16,7 @@ final class VaultManagementModel {
     var isShowingError = false
 
     private var appDatabase: AppDatabaseManager?
-    private var hasLoadedVaults = false
+    private(set) var hasLoadedVaults = false
     private var repository: MeetingRepository?
 
     func configure(appDatabase: AppDatabaseManager?) async {
@@ -47,39 +46,27 @@ final class VaultManagementModel {
         }
     }
 
-    func resolveStartupVault(
-        appDatabase: AppDatabaseManager,
-        defaultVaultURL vaultURL: URL = defaultVaultURL
-    ) async -> (vault: VaultRecord, isNewlyCreated: Bool)? {
+    func resolveExistingStartupVault(appDatabase: AppDatabaseManager) async -> VaultRecord? {
         await configure(appDatabase: appDatabase)
-        guard hasLoadedVaults, let repository else { return nil }
-
-        if let lastOpenedVault = vaults.first(where: { $0.lastOpenedAt != .distantPast }) {
-            return (lastOpenedVault, false)
-        }
-        guard vaults.isEmpty else { return nil }
-
-        do {
-            try await Self.createDirectory(at: vaultURL)
-            let now = Date.now
-            let vault = VaultRecord(
-                id: .v7(),
-                path: Self.normalizedFileURL(vaultURL).path,
-                name: Self.defaultVaultName,
-                createdAt: now,
-                lastOpenedAt: now
-            )
-            try await repository.insertVaultAsync(vault)
-            vaults = [vault]
-            return (vault, true)
-        } catch {
-            guard !Task.isCancelled else { return nil }
-            presentError(L10n.vaultAddFailed, error: error, source: "resolveStartupVault.create")
-            return nil
-        }
+        guard hasLoadedVaults else { return nil }
+        return vaults.first(where: { $0.lastOpenedAt != .distantPast })
     }
 
-    func registerVault(at url: URL, markAsOpened: Bool = true) async -> VaultRecord? {
+    func createVault(at url: URL) async -> VaultRecord? {
+        do {
+            try await Self.createDirectory(at: url)
+        } catch {
+            guard !Task.isCancelled else { return nil }
+            presentError(L10n.vaultAddFailed, error: error, source: "createVault.directory")
+            return nil
+        }
+        return await registerVault(at: url, markAsOpened: false)
+    }
+
+    func registerVault(
+        at url: URL,
+        markAsOpened: Bool = true
+    ) async -> VaultRecord? {
         guard let repository else {
             presentError(L10n.vaultAddFailed, source: "registerVault")
             return nil

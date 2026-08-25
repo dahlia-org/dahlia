@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct SettingsDetailView: View {
+    @Environment(MainWindowNavigation.self) private var mainWindowNavigation
     @Binding var selection: SettingsCategory
     var captionViewModel: CaptionViewModel
     var sidebarViewModel: SidebarViewModel
@@ -16,10 +17,19 @@ struct SettingsDetailView: View {
                 Section {
                     EmptyView()
                 } header: {
-                    Text(selection.label)
-                        .font(.title2)
-                        .foregroundStyle(DahliaDesign.primaryTextColor)
-                        .accessibilityAddTraits(.isHeader)
+                    HStack {
+                        Text(selection.label)
+                            .font(.title2)
+                            .foregroundStyle(DahliaDesign.primaryTextColor)
+                            .accessibilityAddTraits(.isHeader)
+
+                        Spacer()
+
+                        if selection == .general {
+                            Button(L10n.initialSetup, action: mainWindowNavigation.openSetupTour)
+                                .buttonStyle(.dahlia(.primary))
+                        }
+                    }
                 }
             }
             .formStyle(.grouped)

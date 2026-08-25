@@ -15,8 +15,6 @@ struct ContentView: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.openWindow) private var openWindow
-    @AppStorage(PermissionGuidePresentationPolicy.userDefaultsKey)
-    private var permissionGuidePresentationVersion = 0
     @AppStorage(AppSettings.customerIntelligenceBetaEnabledUserDefaultsKey)
     private var isCustomerIntelligenceBetaEnabled = AppSettings.defaultCustomerIntelligenceBetaEnabled
     @State private var isSidebarVisible = true
@@ -224,9 +222,6 @@ struct ContentView: View {
             onCancelDeletion: dismissProjectDeletion,
             onConfirmDeletion: deleteProject
         )
-        .task {
-            presentPermissionGuideIfNeeded()
-        }
         .task(id: sidebarViewModel.currentVault?.id) {
             await sidebarViewModel.refreshUnprocessedRecordings()
         }
@@ -383,13 +378,6 @@ private extension ContentView {
         case .delete:
             projectPendingDeletion = project
         }
-    }
-
-    private func presentPermissionGuideIfNeeded() {
-        guard PermissionGuidePresentationPolicy.shouldPresent(
-            storedVersion: permissionGuidePresentationVersion
-        ) else { return }
-        openWindow(id: WindowID.permissions)
     }
 
     private func openDetachedChat(_ sessionID: CodexChatSessionID) {

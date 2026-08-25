@@ -105,6 +105,7 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
     nonisolated static let transcriptionLanguageScopeUserDefaultsKey = "transcriptionLanguageScope"
     nonisolated static let appLanguageScopeUserDefaultsKey = "appLanguageScope"
     nonisolated static let enabledLanguageIdentifiersUserDefaultsKey = "enabledLanguageIdentifiers"
+    nonisolated static let llmSummaryLanguageUserDefaultsKey = "llmSummaryLanguage"
     nonisolated static let transcriptionLocaleUserDefaultsKey = "transcriptionLocale"
     nonisolated static let liveSubtitleLocaleUserDefaultsKey = "liveSubtitleLocale"
     nonisolated static let liveSubtitleTranslationEnabledKey = "transcriptTranslationEnabled"
@@ -688,7 +689,7 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
     @AppStorage("codexReasoningEffort") var codexReasoningEffort = "high"
     @AppStorage("codexChatModelID") var codexChatModelID = ""
     @AppStorage("codexChatReasoningEffort") var codexChatReasoningEffort = CodexReasoningEffortOption.defaultValue
-    @AppStorage("llmSummaryLanguage") var llmSummaryLanguageRawValue = SummaryLanguage.ja.rawValue
+    @AppStorage(llmSummaryLanguageUserDefaultsKey) var llmSummaryLanguageRawValue = SummaryLanguage.ja.rawValue
     @AppStorage("summaryDetailLevel") var summaryDetailLevelRawValue = SummaryDetailLevel.defaultValue.rawValue
 
     var codexAccountProvider: AIAccountProvider {

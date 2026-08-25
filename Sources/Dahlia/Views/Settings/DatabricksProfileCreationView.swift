@@ -2,6 +2,7 @@ import SwiftUI
 
 struct DatabricksProfileCreationView: View {
     let controller: DatabricksAccountController
+    var restoresProviderSelection = true
     let onCreated: (String) -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -94,7 +95,9 @@ struct DatabricksProfileCreationView: View {
         .onDisappear {
             signInTask?.cancel()
             signInTask = nil
-            controller.restoreSelectedProvider()
+            if restoresProviderSelection {
+                controller.restoreSelectedProvider()
+            }
         }
     }
 
@@ -110,7 +113,8 @@ struct DatabricksProfileCreationView: View {
         signInTask = Task {
             guard let createdProfileName = await controller.signIn(
                 workspaceURL: workspaceURL,
-                profileName: profileName
+                profileName: profileName,
+                restoreProviderSelectionOnCancellation: restoresProviderSelection
             ), !Task.isCancelled
             else {
                 return

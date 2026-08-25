@@ -66,6 +66,7 @@ struct AppLanguageSelectionSheet: View {
             DahliaSheetActionBar {
                 Button(L10n.done, action: save)
                     .keyboardShortcut(.defaultAction)
+                    .disabled(!draft.isValid)
             }
         }
         .frame(minWidth: 500, minHeight: 500)

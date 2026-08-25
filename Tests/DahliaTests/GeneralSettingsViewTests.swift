@@ -45,5 +45,20 @@
             #expect(emptySummary.names.isEmpty)
             #expect(emptySummary.remainingCount == 0)
         }
+
+        @Test
+        func selectedLanguageDraftRejectsAnEmptySelection() {
+            var didSave = false
+            let draft = AppLanguageSelectionDraft(
+                scope: .selected,
+                enabledLanguageIdentifiers: []
+            )
+
+            draft.commit { _, _ in didSave = true }
+
+            #expect(!draft.isValid)
+            #expect(!didSave)
+            #expect(AppLanguageSelectionDraft(scope: .all, enabledLanguageIdentifiers: []).isValid)
+        }
     }
 #endif

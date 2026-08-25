@@ -7,7 +7,6 @@ enum WindowID {
     static let audioRecognitionTest = "audio-recognition-test"
     static let applicationLogs = "application-logs"
     static let codexChat = "codex-chat"
-    static let permissions = "permissions"
 }
 
 private enum MainWindowMetrics {
@@ -91,6 +90,14 @@ struct DahliaApp: App {
                         ProgressView(L10n.loadingVaults)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
+                } else if let setupTourMode = mainWindowNavigation.setupTourMode {
+                    SetupTourView(
+                        mode: setupTourMode,
+                        currentVault: AppSettings.shared.currentVault,
+                        vaultManagementModel: vaultManagementModel,
+                        canComplete: { viewModel.canSwitchVault },
+                        onComplete: completeSetupTour
+                    )
                 } else if showVaultPicker {
                     VaultPickerView(
                         appDatabase: appDatabase,
@@ -266,22 +273,6 @@ struct DahliaApp: App {
         .restorationBehavior(.disabled)
         .dahliaSettingsCommands(mainWindowNavigation)
 
-        Window(L10n.permissions, id: WindowID.permissions) {
-            VStack(spacing: 0) {
-                DahliaWindowHeader(reservesWindowControls: true) {
-                    Spacer()
-                }
-                PermissionGuideWindowView()
-            }
-            .dahliaAppearance()
-            .dahliaSimpleWindowStyle()
-        }
-        .windowStyle(.hiddenTitleBar)
-        .defaultSize(width: 680, height: 620)
-        .windowResizability(.contentMinSize)
-        .restorationBehavior(.disabled)
-        .dahliaSettingsCommands(mainWindowNavigation)
-
         MenuBarExtra {
             MenuBarMenuView(
                 viewModel: viewModel,
@@ -331,21 +322,31 @@ struct DahliaApp: App {
             return await viewModel?.prepareForTermination()
         }
 
-        let resolution = await vaultManagementModel.resolveStartupVault(appDatabase: db)
-        if let resolution {
-            openVault(resolution.vault, isNewlyCreated: resolution.isNewlyCreated)
+        await vaultManagementModel.configure(appDatabase: db)
+        let setupVersion = UserDefaults.standard.integer(forKey: SetupTourPresentationPolicy.userDefaultsKey)
+        let setupProgressExists = setupVersion < SetupTourPresentationPolicy.currentVersion
+            && SetupTourPresentationPolicy.hasSavedProgress()
+        if !setupProgressExists,
+           let vault = await vaultManagementModel.resolveExistingStartupVault(appDatabase: db) {
+            openVault(vault)
+        } else if SetupTourPresentationPolicy.shouldPresentAutomatically(
+            storedVersion: setupVersion,
+            hasLoadedVaults: vaultManagementModel.hasLoadedVaults,
+            hasRegisteredVaults: !vaultManagementModel.vaults.isEmpty,
+            hasSavedProgress: setupProgressExists
+        ) {
+            mainWindowNavigation.presentInitialSetupTour()
         }
         isInitializingVault = false
         configureMeetingDetection(in: db)
     }
 
-    private func openVault(_ vault: VaultRecord, isNewlyCreated: Bool = false) {
-        guard viewModel.canSwitchVault, let db = appDatabase else { return }
-        guard showVaultPicker || AppSettings.shared.currentVault?.id != vault.id else { return }
+    @discardableResult
+    private func openVault(_ vault: VaultRecord) -> Bool {
+        guard showVaultPicker || AppSettings.shared.currentVault?.id != vault.id else { return true }
+        guard viewModel.canSwitchVault, let db = appDatabase else { return false }
 
-        if !isNewlyCreated {
-            try? FileManager.default.createDirectory(at: vault.url, withIntermediateDirectories: true)
-        }
+        try? FileManager.default.createDirectory(at: vault.url, withIntermediateDirectories: true)
 
         sidebarViewModel.clearMeetingSelection()
         viewModel.clearCurrentMeeting()
@@ -353,11 +354,17 @@ struct DahliaApp: App {
         AppSettings.shared.currentVault = vault
         chatCoordinator.activateVault(vault.id)
         sidebarViewModel.setAppDatabase(db)
-        if !isNewlyCreated {
-            sidebarViewModel.updateVaultLastOpened(vault.id)
-        }
+        sidebarViewModel.updateVaultLastOpened(vault.id)
         viewModel.prepareAnalyzer()
         showVaultPicker = false
+        return true
+    }
+
+    private func completeSetupTour(_ vault: VaultRecord) -> Bool {
+        guard openVault(vault) else { return false }
+        SetupTourPresentationPolicy.markCompleted()
+        mainWindowNavigation.completeSetupTour()
+        return true
     }
 
     private func configureMeetingDetection(in db: AppDatabaseManager) {

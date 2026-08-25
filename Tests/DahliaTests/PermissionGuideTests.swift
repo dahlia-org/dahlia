@@ -77,14 +77,6 @@
         }
 
         @Test
-        func firstLaunchGuideUsesVersionedOneTimePresentation() {
-            #expect(PermissionGuidePresentationPolicy.shouldPresent(storedVersion: 0))
-            #expect(!PermissionGuidePresentationPolicy.shouldPresent(
-                storedVersion: PermissionGuidePresentationPolicy.currentVersion
-            ))
-        }
-
-        @Test
         func systemSettingsRoutesIncludeSpecificAndFallbackURLs() {
             let expectedAnchors: [AppPermission: String] = [
                 .screenAndSystemAudio: "Privacy_ScreenCapture",

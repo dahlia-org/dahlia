@@ -1705,6 +1705,53 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var ai: String { String(localized: "AI", bundle: bundle) }
     static var advanced: String { String(localized: "Advanced", bundle: bundle) }
     static var modelProvider: String { String(localized: "Model Provider", bundle: bundle) }
+    static var setupDahlia: String { String(localized: "Set Up Dahlia", bundle: bundle) }
+
+    static func version(_ version: String) -> String {
+        String(format: String(localized: "Version %@", bundle: bundle), version)
+    }
+
+    static var initialSetup: String { String(localized: "Initial Setup", bundle: bundle) }
+    static var setupProgress: String { String(localized: "Setup Progress", bundle: bundle) }
+    static var workingLanguages: String { String(localized: "Working Languages", bundle: bundle) }
+    static var setupComplete: String { String(localized: "Setup Complete", bundle: bundle) }
+    static var continueAction: String { String(localized: "Continue", bundle: bundle) }
+    static var startDahlia: String { String(localized: "Start Dahlia", bundle: bundle) }
+    static var vaultSetupDescription: String { String(
+        localized: "Dahlia stores meeting data and generated files in a local Vault.",
+        bundle: bundle
+    ) }
+    static var workingLanguagesSetupDescription: String { String(
+        localized: "Choose the languages Dahlia should recognize and the primary language for AI output.",
+        bundle: bundle
+    ) }
+    static var recognitionAndOCRLanguages: String { String(localized: "Recognition and OCR Languages", bundle: bundle) }
+    static var primaryLanguage: String { String(localized: "Primary Language", bundle: bundle) }
+    static var primaryLanguageDescription: String { String(
+        localized: "Used for summaries and screenshot captions.",
+        bundle: bundle
+    ) }
+    static var summaryAndCaptionLanguage: String { String(localized: "Summaries and Image Captions", bundle: bundle) }
+    static var modelProviderSetupDescription: String { String(
+        localized: "Choose the model provider used for summaries and other AI features.",
+        bundle: bundle
+    ) }
+    static var chatGPTProviderDescription: String { String(localized: "Use your ChatGPT account.", bundle: bundle) }
+    static var databricksProviderDescription: String { String(localized: "Use a Databricks CLI profile.", bundle: bundle) }
+    static var audioPermissionSetupDescription: String { String(
+        localized: "Allow access to the audio sources Dahlia records. You can continue and grant access later.",
+        bundle: bundle
+    ) }
+    static var calendarSetupTitle: String { String(localized: "Calendar (Optional)", bundle: bundle) }
+    static var calendarSetupDescription: String { String(
+        localized: "Connect a calendar to see upcoming meetings in Dahlia. You can set this up later.",
+        bundle: bundle
+    ) }
+    static var setupCompletionDescription: String { String(
+        localized: "Review your choices, then create or open the selected Vault.",
+        bundle: bundle
+    ) }
+    static var setupSummary: String { String(localized: "Setup Summary", bundle: bundle) }
     static var diagnostics: String { String(localized: "Diagnostics", bundle: bundle) }
     static var notifications: String { String(localized: "Notifications", bundle: bundle) }
     static var calendar: String { String(localized: "Calendar", bundle: bundle) }
@@ -2165,6 +2212,8 @@ enum L10n { // swiftlint:disable:this type_body_length
 
     // MARK: - Vault Picker
 
+    static var createNewVault: String { String(localized: "Create New Vault", bundle: bundle) }
+    static var createNewVaultDescription: String { String(localized: "Create a new folder to use as a vault.", bundle: bundle) }
     static var addVault: String { String(localized: "Add Vault", bundle: bundle) }
     static var registeredVaults: String { String(localized: "Registered Vaults", bundle: bundle) }
     static var openFolderAsVault: String { String(localized: "Open Folder as Vault", bundle: bundle) }
@@ -2185,6 +2234,7 @@ enum L10n { // swiftlint:disable:this type_body_length
     ) }
     static var vaultDetails: String { String(localized: "Vault Details", bundle: bundle) }
     static var vaultName: String { String(localized: "Vault Name", bundle: bundle) }
+    static var vaultNameDescription: String { String(localized: "Enter a name for the new vault.", bundle: bundle) }
     static func renameVault(_ name: String) -> String { String(localized: "Rename \(name)", bundle: bundle) }
     static var openVault: String { String(localized: "Open Vault", bundle: bundle) }
     static var openVaultDescription: String { String(localized: "Use this vault for recordings and sync.", bundle: bundle) }

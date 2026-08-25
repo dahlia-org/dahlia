@@ -3,6 +3,8 @@ import SwiftUI
 struct DatabricksAccountSettingsView: View {
     @ObservedObject private var settings = AppSettings.shared
     let controller: DatabricksAccountController
+    let restoresProviderSelection: Bool
+    let showsDescription: Bool
     @State private var refreshTask: Task<Void, Never>?
     @State private var isShowingInstallGuide = false
     @State private var isShowingProfileCreation = false
@@ -10,8 +12,14 @@ struct DatabricksAccountSettingsView: View {
     @State private var installationAlertMessage = ""
     @Environment(\.scenePhase) private var scenePhase
 
-    init(controller: DatabricksAccountController = DatabricksAccountController()) {
+    init(
+        controller: DatabricksAccountController = DatabricksAccountController(),
+        restoresProviderSelection: Bool = true,
+        showsDescription: Bool = true
+    ) {
         self.controller = controller
+        self.restoresProviderSelection = restoresProviderSelection
+        self.showsDescription = showsDescription
     }
 
     var body: some View {
@@ -77,14 +85,20 @@ struct DatabricksAccountSettingsView: View {
         } header: {
             Text(L10n.databricks)
         } footer: {
-            Text(L10n.databricksCodexDescription)
+            if showsDescription {
+                Text(L10n.databricksCodexDescription)
+            }
         }
         .task(id: settings.codexDatabricksProfile) {
             let requestedProfileName = settings.codexDatabricksProfile
             if controller.configuredProfileName == requestedProfileName {
                 return
             }
-            if let resolvedProfile = await controller.prepare(profileName: requestedProfileName),
+            let resolvedProfile = await controller.prepare(
+                profileName: requestedProfileName,
+                restoreProviderSelectionOnCancellation: restoresProviderSelection
+            )
+            if let resolvedProfile,
                settings.codexDatabricksProfile == requestedProfileName {
                 settings.codexDatabricksProfile = resolvedProfile
             }
@@ -97,7 +111,10 @@ struct DatabricksAccountSettingsView: View {
             DatabricksCLIInstallGuideView(onInstall: installCLI)
         }
         .sheet(isPresented: $isShowingProfileCreation) {
-            DatabricksProfileCreationView(controller: controller) { profileName in
+            DatabricksProfileCreationView(
+                controller: controller,
+                restoresProviderSelection: restoresProviderSelection
+            ) { profileName in
                 settings.codexDatabricksProfile = profileName
             }
         }
@@ -107,7 +124,8 @@ struct DatabricksAccountSettingsView: View {
         .onDisappear {
             refreshTask?.cancel()
             refreshTask = nil
-            if settings.codexAccountProvider == .databricks {
+            if restoresProviderSelection,
+               settings.codexAccountProvider == .databricks {
                 controller.restoreSelectedProvider()
             }
         }
@@ -143,7 +161,11 @@ struct DatabricksAccountSettingsView: View {
         refreshTask?.cancel()
         refreshTask = Task {
             let requestedProfileName = settings.codexDatabricksProfile
-            if let resolvedProfile = await controller.prepare(profileName: requestedProfileName),
+            let resolvedProfile = await controller.prepare(
+                profileName: requestedProfileName,
+                restoreProviderSelectionOnCancellation: restoresProviderSelection
+            )
+            if let resolvedProfile,
                settings.codexDatabricksProfile == requestedProfileName {
                 settings.codexDatabricksProfile = resolvedProfile
             }

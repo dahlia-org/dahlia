@@ -2,10 +2,15 @@ import SwiftUI
 
 struct ChatGPTAccountSettingsView: View {
     let controller: CodexAccountController
+    let showsDescription: Bool
     @State private var actionTask: Task<Void, Never>?
 
-    init(controller: CodexAccountController = CodexAccountController()) {
+    init(
+        controller: CodexAccountController = CodexAccountController(),
+        showsDescription: Bool = true
+    ) {
         self.controller = controller
+        self.showsDescription = showsDescription
     }
 
     var body: some View {
@@ -60,7 +65,9 @@ struct ChatGPTAccountSettingsView: View {
         } header: {
             Text(L10n.chatGPTSubscription)
         } footer: {
-            Text(L10n.codexAccountDescription)
+            if showsDescription {
+                Text(L10n.codexAccountDescription)
+            }
         }
         .task {
             await controller.activateChatGPTSubscription()
