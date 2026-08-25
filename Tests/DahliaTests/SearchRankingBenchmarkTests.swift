@@ -225,6 +225,39 @@ import GRDB
             #expect(list.judgments.allSatisfy { $0.entries.first == .init(meetingID: meetingID, grade: .exact) })
         }
 
+        @Test(.timeLimit(.minutes(1)))
+        @MainActor
+        func benchmarkDiscardsResultWhenRankingPolicyChanges() async throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            defer { try? database.close() }
+            let vault = VaultRecord(
+                id: .v7(),
+                path: "/tmp/search-benchmark-policy-\(UUID.v7())",
+                name: "Benchmark",
+                createdAt: .now,
+                lastOpenedAt: .now
+            )
+            try await database.dbQueue.write { db in
+                try vault.insert(db)
+                try MeetingRecord(
+                    id: .v7(),
+                    vaultId: vault.id,
+                    projectId: nil,
+                    name: "PolicyNeedle",
+                    createdAt: .now,
+                    updatedAt: .now
+                ).insert(db)
+            }
+            var policy = MeetingSearchRankingPolicy.standard
+            let model = SearchRankingBenchmarkModel(database: database) { policy }
+
+            model.regenerateAndRun(vaultID: vault.id)
+            policy = try #require(MeetingSearchRankingPreset.content.policy)
+
+            #expect(await pollUntil { !model.isRunning })
+            #expect(model.result == nil)
+        }
+
         /// title の重みが 0 より大きいときだけ正解を先頭に返す検索のスタブ。
         private static let titleSensitiveResults: MeetingSearchRankingBenchmark.RankedResultsProvider = { _, policy in
             policy.weight(for: .title) > 0 ? [Self.first, Self.second] : [Self.second, Self.third]

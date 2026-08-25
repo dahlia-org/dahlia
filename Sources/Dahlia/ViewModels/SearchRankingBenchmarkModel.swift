@@ -21,12 +21,19 @@ final class SearchRankingBenchmarkModel {
     private(set) var judgmentList: MeetingSearchJudgmentList?
 
     @ObservationIgnored private let database: AppDatabaseManager?
+    @ObservationIgnored private let rankingPolicy: @MainActor () -> MeetingSearchRankingPolicy
     @ObservationIgnored private var runTask: Task<Void, Never>?
     /// 実行ごとの世代。取り消し済みの実行が後続の実行の状態を上書きしないようにする。
     @ObservationIgnored private var runGeneration = 0
 
-    init(database: AppDatabaseManager?) {
+    init(
+        database: AppDatabaseManager?,
+        rankingPolicy: @escaping @MainActor () -> MeetingSearchRankingPolicy = {
+            AppSettings.shared.meetingSearchRankingPolicy
+        }
+    ) {
         self.database = database
+        self.rankingPolicy = rankingPolicy
     }
 
     var isRunning: Bool { phase != .idle }
@@ -73,8 +80,9 @@ final class SearchRankingBenchmarkModel {
             return
         }
         errorMessage = nil
+        result = nil
         let reusable = reusingJudgments && judgmentList?.vaultID == vaultID ? judgmentList : nil
-        let currentPolicy = AppSettings.shared.meetingSearchRankingPolicy
+        let currentPolicy = rankingPolicy()
         // 探索は数百回の検索を発行するため、書き込みキューを塞がない読み取り専用キューを使う。
         let dbQueue = database.searchDBQueue
         phase = reusable == nil ? .generatingJudgments : .evaluating
@@ -111,6 +119,10 @@ final class SearchRankingBenchmarkModel {
                 }
                 try Task.checkCancellation()
                 guard let self, self.runGeneration == generation else { return }
+                guard self.rankingPolicy() == currentPolicy else {
+                    self.phase = .idle
+                    return
+                }
                 self.result = benchmark
                 self.phase = .idle
             } catch is CancellationError {

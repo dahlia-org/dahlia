@@ -126,6 +126,7 @@ final class SidebarViewModel {
     @ObservationIgnored var projectMeetingLoadTasks: [MeetingProjectKey: Task<Void, Never>] = [:]
     @ObservationIgnored var meetingListCursor: MeetingSidebarCursor?
     @ObservationIgnored var meetingSearchCursor: MeetingSearchCursor?
+    @ObservationIgnored var activeMeetingSearchRankingPolicy: MeetingSearchRankingPolicy?
     @ObservationIgnored var meetingInitialPageIDs: [UUID] = []
     @ObservationIgnored var isMeetingCatalogRequested = false
     @ObservationIgnored var meetingListObservationGeneration = 0
@@ -231,6 +232,7 @@ final class SidebarViewModel {
         isMeetingCatalogLoaded = false
         meetingListCursor = nil
         meetingSearchCursor = nil
+        activeMeetingSearchRankingPolicy = nil
         meetingInitialPageIDs.removeAll()
         isMeetingCatalogRequested = false
         meetingListObservationGeneration &+= 1
