@@ -1501,7 +1501,7 @@
 "Ranking preset custom" = "カスタム";
 "Excluded from search" = "検索対象外";
 "Search benchmark" = "検索精度ベンチマーク";
-"Search benchmark description" = "保管庫のミーティングから AI が検索クエリと正解を作り、重みごとの検索精度を採点します。採点と探索はローカルで行い、作成した正解データは再採点のために端末へ保存します。";
+"Search benchmark description" = "保管庫のミーティングから検索クエリと正解を端末内で作り、重みごとの検索精度を採点します。作成した正解データは再採点のためにこの Mac へ保存します。";
 "Run benchmark" = "ベンチマークを実行";
 "Re-evaluate" = "同じ正解で再採点";
 "Building the evaluation set" = "正解データを作成中";

@@ -1501,7 +1501,7 @@
 "Ranking preset custom" = "Custom";
 "Excluded from search" = "Excluded";
 "Search benchmark" = "Search quality benchmark";
-"Search benchmark description" = "AI writes search queries and expected results from the meetings in this vault, then each set of weights is scored for search quality. Scoring and the weight search run locally, and the generated evaluation set is stored on this Mac so it can be re-scored.";
+"Search benchmark description" = "Dahlia creates search queries and expected results from meetings in this vault entirely on this Mac, then scores each set of weights for search quality. The generated evaluation set is stored locally so it can be re-scored.";
 "Run benchmark" = "Run benchmark";
 "Re-evaluate" = "Re-score same set";
 "Building the evaluation set" = "Building the evaluation set";

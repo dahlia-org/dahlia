@@ -448,7 +448,7 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
         return data.flatMap { String(data: $0, encoding: .utf8) } ?? ""
     }
 
-    /// ベンチマークの正解データ。LLM 呼び出しを繰り返さずに重みを探索し直せるよう保持する。
+    /// ベンチマークの正解データ。再生成せずに重みを探索し直せるよう保持する。
     nonisolated static func meetingSearchJudgmentList(
         in defaults: UserDefaults
     ) -> MeetingSearchJudgmentList? {

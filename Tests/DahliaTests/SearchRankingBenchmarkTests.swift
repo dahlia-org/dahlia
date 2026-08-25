@@ -1,5 +1,7 @@
 import Foundation
+import GRDB
 @testable import Dahlia
+@testable import DahliaRuntimeSupport
 
 #if canImport(Testing)
     import Testing
@@ -143,38 +145,84 @@ import Foundation
             #expect(score.normalizedDiscountedCumulativeGain == 0)
         }
 
-        // MARK: - 判定の取り込み
+        // MARK: - ローカル正解生成
 
         @Test
-        func decodingDropsUnknownMeetingsInvalidGradesAndWeakQueries() {
-            let known = Self.first
-            let response = """
-            {"judgments": [
-              {"query": "有効なクエリ", "meetings": [
-                {"id": "\(known.uuidString)", "grade": 3},
-                {"id": "\(UUID.v7().uuidString)", "grade": 3},
-                {"id": "\(known.uuidString)", "grade": 2},
-                {"id": "not-a-uuid", "grade": 2}
-              ]},
-              {"query": "関連だけ", "meetings": [{"id": "\(known.uuidString)", "grade": 1}]},
-              {"query": "x", "meetings": [{"id": "\(known.uuidString)", "grade": 3}]},
-              {"query": "範囲外", "meetings": [{"id": "\(known.uuidString)", "grade": 9}]}
-            ]}
-            """
-
-            let judgments = MeetingSearchJudgmentService.decodeJudgments(
-                from: response,
-                knownIDs: [known]
+        @MainActor
+        func localJudgmentsCoverEveryWeightedSearchField() async throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            defer { try? database.close() }
+            let vault = VaultRecord(
+                id: .v7(),
+                path: "/tmp/search-benchmark-\(UUID.v7())",
+                name: "Benchmark",
+                createdAt: .now,
+                lastOpenedAt: .now
             )
+            let project = ProjectRecord(
+                id: .v7(),
+                vaultId: vault.id,
+                parentProjectId: nil,
+                name: "ProjectNeedle",
+                createdAt: .now,
+                projectType: .undefined
+            )
+            let meetingID = UUID.v7()
+            try await database.dbQueue.write { db in
+                try vault.insert(db)
+                try project.insert(db)
+                try db.execute(
+                    sql: """
+                    INSERT INTO calendar_events(
+                        ical_uid, recurrence_id, created_at, updated_at, title, description, start, "end", is_all_day
+                    ) VALUES (?, '', ?, ?, ?, '', ?, ?, 0)
+                    """,
+                    arguments: ["calendar-id", Date.now, Date.now, "CalendarNeedle", Date.now, Date.now]
+                )
+                try MeetingRecord(
+                    id: meetingID,
+                    vaultId: vault.id,
+                    projectId: project.id,
+                    name: "TitleNeedle",
+                    description: "DescriptionNeedle",
+                    createdAt: .now,
+                    updatedAt: .now,
+                    recordingStartedAt: .now,
+                    calendarEventIcalUid: "calendar-id",
+                    calendarEventRecurrenceId: ""
+                ).insert(db)
+                let tag = TagRecord(id: nil, name: "TagNeedle", colorHex: "#808080", createdAt: .now)
+                try tag.insert(db)
+                try db.execute(
+                    sql: "INSERT INTO meeting_tags(meetingId, tagId) VALUES(?, ?)",
+                    arguments: [meetingID, db.lastInsertedRowID]
+                )
+                try SummaryRecord(
+                    meetingId: meetingID,
+                    title: "Summary",
+                    document: SummaryDocument(
+                        title: "Summary",
+                        description: "",
+                        sections: [
+                            SummarySection(id: .v7(), heading: "", blocks: [.paragraph("SummaryNeedle")]),
+                        ],
+                        tags: [],
+                        actionItems: []
+                    ).databaseJSONString(),
+                    createdAt: .now
+                ).insert(db)
+            }
 
-            #expect(judgments.map(\.query) == ["有効なクエリ"])
-            #expect(judgments.first?.entries == [.init(meetingID: known, grade: .exact)])
-        }
+            let list = try await MeetingSearchJudgmentService.generateJudgments(
+                vaultID: vault.id,
+                dbQueue: database.searchDBQueue
+            )
+            let queries = Set(list.judgments.map(\.query))
 
-        @Test
-        func decodingMalformedResponsesYieldsNoJudgments() {
-            #expect(MeetingSearchJudgmentService.decodeJudgments(from: "not json", knownIDs: []).isEmpty)
-            #expect(MeetingSearchJudgmentService.decodeJudgments(from: "{}", knownIDs: []).isEmpty)
+            #expect(queries.isSuperset(of: [
+                "TitleNeedle", "TagNeedle", "ProjectNeedle", "CalendarNeedle", "DescriptionNeedle", "SummaryNeedle",
+            ]))
+            #expect(list.judgments.allSatisfy { $0.entries.first == .init(meetingID: meetingID, grade: .exact) })
         }
 
         /// title の重みが 0 より大きいときだけ正解を先頭に返す検索のスタブ。
