@@ -59,7 +59,7 @@ let package = Package(
                 "DahliaMeetingAccess",
                 .product(name: "GRDB", package: "GRDB.swift"),
             ],
-            path: "Sources/DahliaSearchRankingBenchmark"
+            path: "Tools/SearchRankingBenchmark"
         ),
         .executableTarget(
             name: "Dahlia",

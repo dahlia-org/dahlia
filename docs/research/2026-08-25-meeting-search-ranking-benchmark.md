@@ -4,7 +4,7 @@
 - 対象: Dahlia のミーティング全文検索
 - 採用する標準重み: title 10 / tags 6 / calendar 4 / description 2 / summary 2
 - データ取扱い: 本番 SQLite を読み取り専用で集計。検索語、会議内容、UUID、Vault ID は記録しない
-- 再現用ハーネス: [DahliaSearchRankingBenchmark](../../Sources/DahliaSearchRankingBenchmark/main.swift)
+- 再現用ハーネス: [DahliaSearchRankingBenchmark](../../Tools/SearchRankingBenchmark/main.swift)
 - 集計出力: [2026-08-25 実行結果](data/2026-08-25-meeting-search-ranking-benchmark.txt)
 
 ## 結論
