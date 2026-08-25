@@ -31,7 +31,7 @@ struct MeetingSearchRankingPolicy: Hashable, Sendable {
     static let maximumWeight: Double = 10
 
     /// 現行の既定。title を最優先し、tag/path/calendar、description/summary の順に下げる。
-    static let standard = MeetingSearchRankingPolicy(weights: [
+    static let standard = Self(weights: [
         .title: 10,
         .tags: 6,
         .projectPath: 4,

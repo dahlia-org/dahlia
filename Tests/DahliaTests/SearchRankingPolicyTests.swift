@@ -1,6 +1,7 @@
 import Foundation
 import GRDB
 @testable import Dahlia
+@testable import DahliaRuntimeSupport
 
 #if canImport(Testing)
     import Testing
@@ -164,7 +165,7 @@ import GRDB
         /// 検索語 `固有検索語` が、それぞれ別のフィールドだけで一致する meeting を用意する。
         @MainActor
         private struct RankingFixture {
-            static let query = "固有検索語"
+            nonisolated static let query = "固有検索語"
 
             let database: AppDatabaseManager
             let vault: VaultRecord
@@ -240,7 +241,7 @@ import GRDB
                 try await page(policy: policy).items.map(\.id)
             }
 
-            private static func meeting(id: UUID, vaultID: UUID, name: String) -> MeetingRecord {
+            private nonisolated static func meeting(id: UUID, vaultID: UUID, name: String) -> MeetingRecord {
                 MeetingRecord(
                     id: id,
                     vaultId: vaultID,

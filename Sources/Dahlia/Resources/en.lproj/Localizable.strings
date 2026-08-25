@@ -1491,7 +1491,8 @@
 "Processing search jobs" = "Processing jobs";
 "Indexing progress" = "Indexing progress";
 "Search index description" = "Meeting and project search is maintained as a rebuildable local index.";
-"Search ranking" = "Search ranking";
+"Search ranking" = "Search ranking weights";
+"Advanced search settings" = "Advanced settings";
 "Search ranking description" = "Per-field weights that decide full-text search ranking. A field weighted 0 is excluded from search. Changing weights does not require reindexing.";
 "Ranking preset" = "Preset";
 "Ranking preset standard" = "Standard";
@@ -1499,7 +1500,7 @@
 "Ranking preset content" = "Favor content";
 "Ranking preset custom" = "Custom";
 "Excluded from search" = "Excluded";
-"Search benchmark" = "Weight benchmark";
+"Search benchmark" = "Search quality benchmark";
 "Search benchmark description" = "AI writes search queries and expected results from the meetings in this vault, then each set of weights is scored for search quality. Scoring and the weight search run locally, and the generated evaluation set is stored on this Mac so it can be re-scored.";
 "Run benchmark" = "Run benchmark";
 "Re-evaluate" = "Re-score same set";

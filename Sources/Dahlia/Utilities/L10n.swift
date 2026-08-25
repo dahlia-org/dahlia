@@ -4,7 +4,7 @@
 import Foundation
 
 /// ローカライズ文字列への型安全なアクセスを提供する。
-enum L10n {
+enum L10n { // swiftlint:disable:this type_body_length
     /// キャッシュ済みの Bundle と、その生成元の言語 rawValue。
     /// 言語設定が変わらない限り Bundle を再生成しない。
     private nonisolated(unsafe) static var cachedBundle: Bundle = .appModule
@@ -103,6 +103,7 @@ enum L10n {
     }
 
     static var searchRanking: String { String(localized: "Search ranking", bundle: bundle) }
+    static var advancedSearchSettings: String { String(localized: "Advanced search settings", bundle: bundle) }
     static var searchRankingDescription: String { String(localized: "Search ranking description", bundle: bundle) }
     static var searchRankingPreset: String { String(localized: "Ranking preset", bundle: bundle) }
     static var searchRankingPresetStandard: String { String(localized: "Ranking preset standard", bundle: bundle) }
