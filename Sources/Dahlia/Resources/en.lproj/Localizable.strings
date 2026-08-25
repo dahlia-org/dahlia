@@ -1500,7 +1500,7 @@
 "Ranking preset custom" = "Custom";
 "Excluded from search" = "Excluded";
 "Search benchmark" = "Weight benchmark";
-"Search benchmark description" = "AI writes search queries and expected results from the meetings in this vault, then each set of weights is scored for search quality. Scoring and the weight search run locally.";
+"Search benchmark description" = "AI writes search queries and expected results from the meetings in this vault, then each set of weights is scored for search quality. Scoring and the weight search run locally, and the generated evaluation set is stored on this Mac so it can be re-scored.";
 "Run benchmark" = "Run benchmark";
 "Re-evaluate" = "Re-score same set";
 "Building the evaluation set" = "Building the evaluation set";

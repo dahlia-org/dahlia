@@ -72,7 +72,8 @@ final class SearchRankingBenchmarkModel {
         errorMessage = nil
         let reusable = reusingJudgments && judgmentList?.vaultID == vaultID ? judgmentList : nil
         let currentPolicy = AppSettings.shared.meetingSearchRankingPolicy
-        let dbQueue = database.dbQueue
+        // 探索は数百回の検索を発行するため、書き込みキューを塞がない読み取り専用キューを使う。
+        let dbQueue = database.searchDBQueue
         phase = reusable == nil ? .generatingJudgments : .evaluating
         runTask = Task { [weak self] in
             do {

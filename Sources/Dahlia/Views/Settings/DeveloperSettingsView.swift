@@ -151,8 +151,14 @@ struct DeveloperSettingsView: View {
         }
         if result.recommendationImprovesCurrent {
             HStack {
-                Text(String(format: L10n.searchBenchmarkRecommendationFormat, scoreLabel(result.recommended)))
-                    .foregroundStyle(DahliaDesign.secondaryTextColor)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(String(
+                        format: L10n.searchBenchmarkRecommendationFormat,
+                        weightsLabel(result.recommended.policy)
+                    ))
+                    Text(scoreLabel(result.recommended))
+                }
+                .foregroundStyle(DahliaDesign.secondaryTextColor)
                 Spacer()
                 Button(L10n.searchBenchmarkApplyRecommendation) {
                     benchmark.applyRecommendation(settings)
@@ -208,8 +214,18 @@ struct DeveloperSettingsView: View {
     }
 
     private func weightLabel(for field: MeetingSearchField) -> String {
-        let weight = settings.meetingSearchRankingPolicy.weight(for: field)
-        return weight == 0 ? L10n.searchRankingFieldExcluded : L10n.searchRankingWeight(weight)
+        weightValueLabel(settings.meetingSearchRankingPolicy.weight(for: field))
+    }
+
+    private func weightValueLabel(_ weight: Double) -> String {
+        weight == 0 ? L10n.searchRankingFieldExcluded : L10n.searchRankingWeight(weight)
+    }
+
+    /// 推奨を適用する前に、重みそのものを示す。重み 0 のフィールドは検索対象から外れるため明示する。
+    private func weightsLabel(_ policy: MeetingSearchRankingPolicy) -> String {
+        MeetingSearchField.allCases
+            .map { "\($0.displayName) \(weightValueLabel(policy.weight(for: $0)))" }
+            .joined(separator: " / ")
     }
 
     private var hasOverrides: Bool {
