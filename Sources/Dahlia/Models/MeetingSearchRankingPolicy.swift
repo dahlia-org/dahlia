@@ -125,8 +125,6 @@ extension MeetingSearchRankingPolicy: Codable {
 /// 設定画面が提示するランキングのプリセット。
 enum MeetingSearchRankingPreset: String, CaseIterable, Identifiable, Sendable {
     case standard
-    case titleAndTags
-    case content
     case custom
 
     var id: String { rawValue }
@@ -134,8 +132,6 @@ enum MeetingSearchRankingPreset: String, CaseIterable, Identifiable, Sendable {
     var displayName: String {
         switch self {
         case .standard: L10n.searchRankingPresetStandard
-        case .titleAndTags: L10n.searchRankingPresetTitleAndTags
-        case .content: L10n.searchRankingPresetContent
         case .custom: L10n.searchRankingPresetCustom
         }
     }
@@ -145,29 +141,13 @@ enum MeetingSearchRankingPreset: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .standard:
             .standard
-        case .titleAndTags:
-            MeetingSearchRankingPolicy(weights: [
-                .title: 10,
-                .tags: 10,
-                .calendar: 2,
-                .description: 1,
-                .summary: 1,
-            ])
-        case .content:
-            MeetingSearchRankingPolicy(weights: [
-                .title: 4,
-                .tags: 3,
-                .calendar: 2,
-                .description: 8,
-                .summary: 10,
-            ])
         case .custom:
             nil
         }
     }
 
-    /// 重みが一致するプリセット。どれとも一致しなければ `custom`。
+    /// 標準の重みと一致しなければ `custom`。
     static func matching(_ policy: MeetingSearchRankingPolicy) -> Self {
-        allCases.first { $0.policy == policy } ?? .custom
+        policy == .standard ? .standard : .custom
     }
 }

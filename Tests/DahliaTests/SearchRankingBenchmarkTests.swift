@@ -125,7 +125,7 @@ import GRDB
                 rankedResults: Self.titleSensitiveResults
             )
 
-            #expect(result.presets.map(\.preset) == [.standard, .titleAndTags, .content])
+            #expect(result.presets.map(\.preset) == [.standard])
             #expect(result.judgmentCount == 1)
             #expect(result.current.normalizedDiscountedCumulativeGain == 0)
             #expect(result.recommendationImprovesCurrent)
@@ -275,7 +275,7 @@ import GRDB
             let model = SearchRankingBenchmarkModel(database: database) { policy }
 
             model.regenerateAndRun(vaultID: vault.id)
-            policy = try #require(MeetingSearchRankingPreset.content.policy)
+            policy = .standard.settingWeight(3, for: .summary)
 
             #expect(await pollUntil { !model.isRunning })
             #expect(model.result == nil)

@@ -239,7 +239,7 @@ import GRDB
                     && viewModel.hasMoreMeetingSearchResults
             })
 
-            AppSettings.shared.meetingSearchRankingPolicy = try #require(MeetingSearchRankingPreset.content.policy)
+            AppSettings.shared.meetingSearchRankingPolicy = .standard.settingWeight(3, for: .summary)
             viewModel.loadMoreDisplayedMeetings()
 
             #expect(await waitUntil { !viewModel.isMeetingSearchLoadingMore })

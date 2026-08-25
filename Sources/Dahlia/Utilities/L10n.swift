@@ -107,11 +107,6 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var searchRankingDescription: String { String(localized: "Search ranking description", bundle: bundle) }
     static var searchRankingPreset: String { String(localized: "Ranking preset", bundle: bundle) }
     static var searchRankingPresetStandard: String { String(localized: "Ranking preset standard", bundle: bundle) }
-    static var searchRankingPresetTitleAndTags: String {
-        String(localized: "Ranking preset title and tags", bundle: bundle)
-    }
-
-    static var searchRankingPresetContent: String { String(localized: "Ranking preset content", bundle: bundle) }
     static var searchRankingPresetCustom: String { String(localized: "Ranking preset custom", bundle: bundle) }
     static var searchRankingFieldExcluded: String { String(localized: "Excluded from search", bundle: bundle) }
 

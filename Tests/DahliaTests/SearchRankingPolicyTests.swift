@@ -67,6 +67,10 @@ import GRDB
         func presetsResolveFromWeightsAndAdjustmentsBecomeCustom() {
             let adjusted = MeetingSearchRankingPolicy.standard.settingWeight(7, for: .summary)
 
+            #expect(MeetingSearchField.allCases.map { MeetingSearchRankingPolicy.standard.weight(for: $0) } == [
+                10, 6, 4, 2, 2,
+            ])
+            #expect(MeetingSearchRankingPreset.allCases == [.standard, .custom])
             #expect(MeetingSearchRankingPreset.matching(.standard) == .standard)
             #expect(MeetingSearchRankingPreset.matching(adjusted) == .custom)
             #expect(MeetingSearchRankingPreset.custom.policy == nil)
@@ -121,11 +125,13 @@ import GRDB
         }
 
         @Test
-        func contentPresetRanksSummaryAboveTitle() async throws {
+        func customPolicyRanksSummaryAboveTitle() async throws {
             let fixture = try await RankingFixture()
-            let contentPolicy = try #require(MeetingSearchRankingPreset.content.policy)
+            let customPolicy = MeetingSearchRankingPolicy.standard
+                .settingWeight(1, for: .title)
+                .settingWeight(10, for: .summary)
 
-            let ranked = try await fixture.search(policy: contentPolicy)
+            let ranked = try await fixture.search(policy: customPolicy)
 
             #expect(ranked.first == fixture.ids["summary"])
         }

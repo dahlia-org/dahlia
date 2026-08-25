@@ -288,7 +288,7 @@ import GRDB
             model.queryDidChange(using: sidebar)
             #expect(await pollUntil { !model.isLoading && model.meetings.count == MainSearchDesign.meetingPageSize })
 
-            AppSettings.shared.meetingSearchRankingPolicy = try #require(MeetingSearchRankingPreset.content.policy)
+            AppSettings.shared.meetingSearchRankingPolicy = .standard.settingWeight(3, for: .summary)
             model.loadMore(using: sidebar)
 
             #expect(await pollUntil { !model.isLoading })
