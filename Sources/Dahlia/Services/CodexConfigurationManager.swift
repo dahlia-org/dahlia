@@ -9,15 +9,32 @@ actor CodexConfigurationManager {
 
     @discardableResult
     func configureChatGPTSubscription() throws -> Bool {
-        let configURL = try configURL()
-        guard FileManager.default.fileExists(atPath: configURL.path) else { return false }
-
-        do {
-            try FileManager.default.removeItem(at: configURL)
-            return true
-        } catch {
-            throw CodexConfigurationError.updateFailed(error.localizedDescription)
+        let configuration: String
+        if let data = try configurationData() {
+            guard let decodedConfiguration = String(data: data, encoding: .utf8) else {
+                throw CodexConfigurationError.updateFailed(CocoaError(.fileReadInapplicableStringEncoding).localizedDescription)
+            }
+            configuration = decodedConfiguration
+        } else {
+            configuration = ""
         }
+        let firstTableStart = configuration.range(
+            of: #"(?m)^[\t ]*\["#,
+            options: .regularExpression
+        )?.lowerBound ?? configuration.endIndex
+        let rootConfiguration = String(configuration[..<firstTableStart])
+        let modelProviderPattern = #"(?m)(^[\t ]*model_provider[\t ]*=[\t ]*)(?:"[^"\r\n]*"|'[^'\r\n]*')"#
+        let openAIModelProvider = #"model_provider = "openai""#
+        let updatedConfiguration = if rootConfiguration.range(of: modelProviderPattern, options: .regularExpression) != nil {
+            rootConfiguration.replacingOccurrences(
+                of: modelProviderPattern,
+                with: #"$1"openai""#,
+                options: .regularExpression
+            ) + String(configuration[firstTableStart...])
+        } else {
+            openAIModelProvider + "\n\n" + configuration
+        }
+        return try writeIfChanged(Data(updatedConfiguration.utf8))
     }
 
     @discardableResult
@@ -37,8 +54,11 @@ actor CodexConfigurationManager {
         [model_providers.Databricks.auth]
         command = "sh"
         args = ["-c", "\(tomlEscape(tokenCommand))"]
-        timeout_ms = 5000
-        refresh_interval_ms = 1800000
+        timeout_ms = 20000
+        refresh_interval_ms = 1500000
+
+        [model_providers.Databricks.http_headers]
+        Databricks-Ai-Gateway-Request-Tags = "{\\\"source\\\": \\\"dahlia\\\"}"
         """ + "\n"
 
         return try writeIfChanged(Data(configuration.utf8))

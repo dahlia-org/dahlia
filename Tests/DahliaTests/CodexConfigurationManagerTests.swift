@@ -32,13 +32,15 @@ import Foundation
             #expect(configuration.contains(#"--profile 'Team'\"'\"'s Profile'"#))
             #expect(configuration.contains("/usr/bin/plutil -extract access_token raw -o - -"))
             #expect(!configuration.contains("jq"))
-            #expect(configuration.contains("refresh_interval_ms = 1800000"))
+            #expect(configuration.contains("timeout_ms = 20000"))
+            #expect(configuration.contains("refresh_interval_ms = 1500000"))
+            #expect(configuration.contains(#"Databricks-Ai-Gateway-Request-Tags = "{\"source\": \"dahlia\"}""#))
             let attributes = try FileManager.default.attributesOfItem(atPath: configURL.path)
             #expect((attributes[.posixPermissions] as? NSNumber)?.intValue == 0o600)
         }
 
         @Test
-        func chatGPTConfigurationRemovesDatabricksConfiguration() async throws {
+        func chatGPTConfigurationPreservesDatabricksConfiguration() async throws {
             let rootURL = FileManager.default.temporaryDirectory
                 .appending(path: "dahlia-codex-config-\(UUID().uuidString)", directoryHint: .isDirectory)
             defer { try? FileManager.default.removeItem(at: rootURL) }
@@ -46,10 +48,51 @@ import Foundation
             let manager = CodexConfigurationManager(homeLocator: locator)
             let profile = try await databricksProfile(name: "DEFAULT", host: "https://dbc.example.com")
             _ = try await manager.configureDatabricks(profile: profile)
+            let configURL = try locator.homeURL().appending(path: "config.toml")
+            var originalConfiguration = try String(contentsOf: configURL, encoding: .utf8)
+            originalConfiguration = originalConfiguration.replacingOccurrences(
+                of: #"model_provider = "Databricks""#,
+                with: #"model_provider = "Databricks" # selected by Dahlia"#
+            )
+            originalConfiguration += """
+
+            [profiles.work]
+            model_provider = "Databricks"
+            """
+            try Data(originalConfiguration.utf8).write(to: configURL)
 
             #expect(try await manager.configureChatGPTSubscription())
             #expect(try await !manager.configureChatGPTSubscription())
-            #expect(try !FileManager.default.fileExists(atPath: locator.homeURL().appending(path: "config.toml").path))
+            let configuration = try String(contentsOf: configURL, encoding: .utf8)
+            #expect(configuration.contains(#"model_provider = "openai" # selected by Dahlia"#))
+            #expect(configuration.contains("[model_providers.Databricks]"))
+            #expect(configuration.contains(#"base_url = "https://dbc.example.com/ai-gateway/codex/v1""#))
+            #expect(configuration.contains("""
+            [profiles.work]
+            model_provider = "Databricks"
+            """))
+        }
+
+        @Test
+        func chatGPTConfigurationAddsRootProviderWithoutChangingProfile() async throws {
+            let rootURL = FileManager.default.temporaryDirectory
+                .appending(path: "dahlia-codex-config-\(UUID().uuidString)", directoryHint: .isDirectory)
+            defer { try? FileManager.default.removeItem(at: rootURL) }
+            let locator = ApplicationSupportCodexHomeLocator(applicationSupportURL: rootURL)
+            let manager = CodexConfigurationManager(homeLocator: locator)
+            let configURL = try locator.homeURL().appending(path: "config.toml")
+            let profileConfiguration = """
+            [profiles.work]
+            model_provider = "Databricks"
+            """
+            try Data(profileConfiguration.utf8).write(to: configURL)
+
+            #expect(try await manager.configureChatGPTSubscription())
+            #expect(try String(contentsOf: configURL, encoding: .utf8) == """
+            model_provider = "openai"
+
+            \(profileConfiguration)
+            """)
         }
 
         @Test
