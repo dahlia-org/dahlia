@@ -1,6 +1,13 @@
 import Foundation
 
 actor CodexConfigurationManager {
+    private enum TOMLStringContext {
+        case basic
+        case literal
+        case multilineBasic
+        case multilineLiteral
+    }
+
     private let homeLocator: ApplicationSupportCodexHomeLocator
 
     init(homeLocator: ApplicationSupportCodexHomeLocator = ApplicationSupportCodexHomeLocator()) {
@@ -18,12 +25,10 @@ actor CodexConfigurationManager {
         } else {
             configuration = ""
         }
-        let firstTableStart = configuration.range(
-            of: #"(?m)^[\t ]*\["#,
-            options: .regularExpression
-        )?.lowerBound ?? configuration.endIndex
+        let firstTableStart = rootConfigurationEnd(in: configuration)
         let rootConfiguration = String(configuration[..<firstTableStart])
-        let modelProviderPattern = #"(?m)(^[\t ]*model_provider[\t ]*=[\t ]*)(?:"[^"\r\n]*"|'[^'\r\n]*')"#
+        let modelProviderPattern =
+            #"(?m)(^[\t ]*(?:model_provider|"model_provider"|'model_provider')[\t ]*=[\t ]*)(?:"[^"\r\n]*"|'[^'\r\n]*')"#
         let openAIModelProvider = #"model_provider = "openai""#
         let updatedConfiguration = if rootConfiguration.range(of: modelProviderPattern, options: .regularExpression) != nil {
             rootConfiguration.replacingOccurrences(
@@ -35,6 +40,82 @@ actor CodexConfigurationManager {
             openAIModelProvider + "\n\n" + configuration
         }
         return try writeIfChanged(Data(updatedConfiguration.utf8))
+    }
+
+    private nonisolated func rootConfigurationEnd(in configuration: String) -> String.Index {
+        var lineStart = configuration.startIndex
+        var stringContext: TOMLStringContext?
+        while lineStart < configuration.endIndex {
+            let lineRange = configuration.lineRange(for: lineStart ..< lineStart)
+            let line = configuration[lineRange]
+            if stringContext == nil,
+               line.drop(while: { $0 == " " || $0 == "\t" }).first == "[" {
+                return lineStart
+            }
+            updateTOMLStringContext(in: line, context: &stringContext)
+            lineStart = lineRange.upperBound
+        }
+        return configuration.endIndex
+    }
+
+    private nonisolated func updateTOMLStringContext(
+        in line: Substring,
+        context: inout TOMLStringContext?
+    ) {
+        var index = line.startIndex
+        while index < line.endIndex {
+            let remainder = line[index...]
+            switch context {
+            case nil:
+                if remainder.first == "#" { return }
+                if remainder.hasPrefix("\"\"\"") {
+                    context = .multilineBasic
+                    index = line.index(index, offsetBy: 3)
+                } else if remainder.hasPrefix("'''") {
+                    context = .multilineLiteral
+                    index = line.index(index, offsetBy: 3)
+                } else if remainder.first == "\"" {
+                    context = .basic
+                    index = line.index(after: index)
+                } else if remainder.first == "'" {
+                    context = .literal
+                    index = line.index(after: index)
+                } else {
+                    index = line.index(after: index)
+                }
+            case .basic:
+                if remainder.first == "\\" {
+                    index = line.index(after: index)
+                    if index < line.endIndex { index = line.index(after: index) }
+                } else if remainder.first == "\"" {
+                    context = nil
+                    index = line.index(after: index)
+                } else {
+                    index = line.index(after: index)
+                }
+            case .literal:
+                if remainder.first == "'" { context = nil }
+                index = line.index(after: index)
+            case .multilineBasic:
+                if remainder.first == "\\" {
+                    index = line.index(after: index)
+                    if index < line.endIndex { index = line.index(after: index) }
+                } else if remainder.hasPrefix("\"\"\"") {
+                    context = nil
+                    index = line.index(index, offsetBy: 3)
+                } else {
+                    index = line.index(after: index)
+                }
+            case .multilineLiteral:
+                if remainder.hasPrefix("'''") {
+                    context = nil
+                    index = line.index(index, offsetBy: 3)
+                } else {
+                    index = line.index(after: index)
+                }
+            }
+        }
+        if context == .basic || context == .literal { context = nil }
     }
 
     @discardableResult

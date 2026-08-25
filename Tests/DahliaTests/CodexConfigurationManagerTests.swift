@@ -96,6 +96,40 @@ import Foundation
         }
 
         @Test
+        func chatGPTConfigurationHandlesQuotedKeyAfterMultilineValue() async throws {
+            let rootURL = FileManager.default.temporaryDirectory
+                .appending(path: "dahlia-codex-config-\(UUID().uuidString)", directoryHint: .isDirectory)
+            defer { try? FileManager.default.removeItem(at: rootURL) }
+            let locator = ApplicationSupportCodexHomeLocator(applicationSupportURL: rootURL)
+            let manager = CodexConfigurationManager(homeLocator: locator)
+            let configURL = try locator.homeURL().appending(path: "config.toml")
+            let originalConfiguration = #"""
+            developer_instructions = """
+            [Review Guidelines]
+            Preserve this text.
+            """
+            "model_provider" = "Databricks" # selected by Dahlia
+
+            [profiles.work]
+            model_provider = "Databricks"
+            """#
+            try Data(originalConfiguration.utf8).write(to: configURL)
+
+            #expect(try await manager.configureChatGPTSubscription())
+            let configuration = try String(contentsOf: configURL, encoding: .utf8)
+            #expect(configuration.contains(#""model_provider" = "openai" # selected by Dahlia"#))
+            #expect(!configuration.contains(#"model_provider = "openai""#))
+            #expect(configuration.contains("""
+            [profiles.work]
+            model_provider = "Databricks"
+            """))
+            #expect(configuration.contains("""
+            [Review Guidelines]
+            Preserve this text.
+            """))
+        }
+
+        @Test
         func databricksConfigurationRejectsProfileWithoutHTTPSWorkspace() async throws {
             let rootURL = FileManager.default.temporaryDirectory
                 .appending(path: "dahlia-codex-config-\(UUID().uuidString)", directoryHint: .isDirectory)
