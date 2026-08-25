@@ -8,21 +8,18 @@ struct AccountSettingsView: View {
     var body: some View {
         Form {
             Section {
-                LazyVGrid(
-                    columns: [GridItem(.adaptive(minimum: 280, maximum: 320), spacing: 16)],
-                    spacing: 16
-                ) {
-                    ForEach(AIAccountProvider.allCases) { provider in
-                        ModelProviderChoiceCard(
-                            provider: provider,
-                            isSelected: settings.codexAccountProvider == provider
-                        ) {
-                            settings.codexAccountProvider = provider
-                        }
-                    }
-                }
-                .frame(maxWidth: .infinity)
+                DahliaMenuPicker(
+                    title: L10n.provider,
+                    description: L10n.aiAccountDescription,
+                    selection: $settings.codexAccountProvider,
+                    options: AIAccountProvider.allCases,
+                    label: \.displayName
+                )
                 .disabled(chatGPTController.isBusy || databricksController.isBusy)
+            } header: {
+                Text(L10n.modelProvider)
+            } footer: {
+                Text(L10n.aiAccountSettingsDescription)
             }
 
             switch settings.codexAccountProvider {
