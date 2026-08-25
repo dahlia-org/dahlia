@@ -76,7 +76,7 @@ struct SettingsDetailView: View {
         case .betaFeatures:
             BetaFeaturesSettingsView()
         case .developer:
-            DeveloperSettingsView()
+            DeveloperSettingsView(database: appDatabase)
         case .audioDiagnostics:
             DebugSettingsView()
         }

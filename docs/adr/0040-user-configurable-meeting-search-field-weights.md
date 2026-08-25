@@ -18,7 +18,7 @@ ADR-0033 はミーティング検索の順位を、title、tag/path/calendar、d
 - 採点は候補に対して全 token の `AND` を一度だけ `MATCH` し、重み付き BM25 を取る。token ごと・フィールドごとの `MATCH` は発行しない。同点は meeting 日時の降順、次に meeting ID で解決する。
 - 結果行が表示する一致フィールド（`searchMatchContext`）は、表示するページの meeting に限って、重みの高いフィールドから順にカラム限定の `MATCH` で判定する。候補全件には発行しない。
 - 設定は `MeetingSearchRankingPolicy` として UserDefaults に JSON で保存し、検索の呼び出し側が引数として渡す。未設定と不正な JSON は既定のプリセットとして扱う。既定のプリセットは title を最優先し、tag、path/calendar、description/summary の順に下げる。
-- 設定画面の検索カテゴリに、プリセット（標準、タイトル・タグ重視、内容重視、カスタム）とフィールドごとのスライダーを置く。プリセットの選択状態は保存せず、現在の重みから導出する。
+- 重みの調整 UI は設定画面の開発者設定に置き、プリセット（標準、タイトル・タグ重視、内容重視、カスタム）とフィールドごとのスライダーを提供する。プリセットの選択状態は保存せず、現在の重みから導出する。既定の重みで十分かを検証するまで、検索カテゴリには公開しない。
 - `simple` 検索と project 検索、screenshot 検索の順位は変更しない。screenshot の `caption` 重み（ADR-0038）も据え置く。
 - MCP の `query_meetings` は既定の重みを使う。アプリの UserDefaults は `DahliaMeetingAccess` から参照しない。
 
