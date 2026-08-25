@@ -145,7 +145,11 @@ struct MenuBarRecordingControls: View {
     }
 
     private var effectiveTranscriptionMode: TranscriptionMode {
-        state.activeTranscriptionMode ?? settings.transcriptionMode
+        if state.isListening {
+            state.activeTranscriptionMode ?? settings.transcriptionMode
+        } else {
+            settings.transcriptionMode
+        }
     }
 
     private var displayedLiveSubtitleLocale: String {

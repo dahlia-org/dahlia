@@ -516,14 +516,14 @@ final class CaptionViewModel: ObservableObject {
         if let appliedLiveRecognitionLocaleIdentifier {
             return appliedLiveRecognitionLocaleIdentifier
         }
-        return (activeTranscriptionMode ?? AppSettings.shared.transcriptionMode) == .realtime
+        return effectiveTranscriptionMode == .realtime
             ? transcriptionLocale
             : liveSubtitleLocale
     }
 
     func selectLiveSubtitleLocale(_ localeIdentifier: String) {
         let currentLocaleIdentifier = isListening ? liveRecognitionLocaleIdentifier : nil
-        switch activeTranscriptionMode ?? AppSettings.shared.transcriptionMode {
+        switch effectiveTranscriptionMode {
         case .realtime:
             let previousLocaleIdentifier = currentLocaleIdentifier ?? transcriptionLocale
             guard localeIdentifier != previousLocaleIdentifier else { return }
@@ -540,6 +540,14 @@ final class CaptionViewModel: ObservableObject {
             } else {
                 applyLiveSubtitleLocaleChange(from: previousLocaleIdentifier, to: localeIdentifier)
             }
+        }
+    }
+
+    private var effectiveTranscriptionMode: TranscriptionMode {
+        if isListening {
+            activeTranscriptionMode ?? AppSettings.shared.transcriptionMode
+        } else {
+            AppSettings.shared.transcriptionMode
         }
     }
 
