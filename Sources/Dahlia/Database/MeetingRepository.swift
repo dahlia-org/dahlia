@@ -146,13 +146,13 @@ final class MeetingRepository {
         try deleteVault(id: id)
     }
 
-    /// 保管庫の最終オープン日時を更新する。
-    func updateVaultLastOpened(id: UUID) throws {
-        try dbQueue.write { db in
-            if var record = try VaultRecord.fetchOne(db, key: id) {
-                record.lastOpenedAt = Date()
-                try record.update(db)
-            }
+    /// UI をブロックせず、保管庫の最終オープン日時を更新する。
+    nonisolated func updateVaultLastOpened(id: UUID) async throws -> VaultRecord? {
+        try await dbQueue.write { db in
+            guard var record = try VaultRecord.fetchOne(db, key: id) else { return nil }
+            record.lastOpenedAt = .now
+            try record.update(db)
+            return record
         }
     }
 

@@ -96,6 +96,27 @@ final class VaultManagementModel {
         }
     }
 
+    func markVaultOpened(_ vault: VaultRecord) async -> Bool {
+        guard let repository else {
+            presentError(L10n.vaultOperationFailed, source: "markVaultOpened")
+            return false
+        }
+
+        do {
+            guard let updatedVault = try await repository.updateVaultLastOpened(id: vault.id) else {
+                presentError(L10n.vaultOperationFailed, source: "markVaultOpened")
+                return false
+            }
+            if let index = vaults.firstIndex(where: { $0.id == vault.id }) {
+                vaults[index] = updatedVault
+            }
+            return true
+        } catch {
+            presentError(L10n.vaultOperationFailed, error: error, source: "markVaultOpened")
+            return false
+        }
+    }
+
     func removeVault(_ vault: VaultRecord, currentVaultId: UUID?) async -> Bool {
         guard vault.id != currentVaultId else { return false }
         guard !isRemovingVault else { return false }

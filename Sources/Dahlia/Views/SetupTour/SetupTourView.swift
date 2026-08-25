@@ -9,7 +9,7 @@ struct SetupTourView: View {
 
     private let vaultManagementModel: VaultManagementModel
     private let canComplete: () -> Bool
-    private let onComplete: (VaultRecord) -> Bool
+    private let onComplete: (VaultRecord) async -> Bool
     private let vaultStepReferenceHeight: CGFloat = 476
 
     init(
@@ -17,7 +17,7 @@ struct SetupTourView: View {
         currentVault: VaultRecord?,
         vaultManagementModel: VaultManagementModel,
         canComplete: @escaping () -> Bool,
-        onComplete: @escaping (VaultRecord) -> Bool
+        onComplete: @escaping (VaultRecord) async -> Bool
     ) {
         self.vaultManagementModel = vaultManagementModel
         self.canComplete = canComplete
@@ -190,7 +190,7 @@ struct SetupTourView: View {
                 model.finishCompletion(errorMessage: vaultManagementModel.errorMessage)
                 return
             }
-            guard onComplete(vault) else {
+            guard await onComplete(vault) else {
                 model.finishCompletion(errorMessage: L10n.vaultOperationFailed)
                 return
             }

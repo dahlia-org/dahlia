@@ -44,6 +44,23 @@
         }
 
         @Test
+        func setupMarksVaultOpenedOnlyAfterTheExplicitPersistenceStep() async throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            let repository = MeetingRepository(dbQueue: database.dbQueue)
+            let model = VaultManagementModel()
+            await model.configure(appDatabase: database)
+            let rootURL = temporaryDirectoryURL()
+            let selectedURL = rootURL.appending(path: "Dahlia", directoryHint: .isDirectory)
+            defer { try? FileManager.default.removeItem(at: rootURL) }
+            let vault = try #require(await model.createVault(at: selectedURL))
+
+            #expect(try repository.fetchLastOpenedVault() == nil)
+            #expect(await model.markVaultOpened(vault))
+            #expect(try repository.fetchLastOpenedVault()?.id == vault.id)
+            #expect(model.vaults.first(where: { $0.id == vault.id })?.lastOpenedAt != .distantPast)
+        }
+
+        @Test
         func setupPreservesFilesInAnExistingSelectedFolder() async throws {
             let database = try AppDatabaseManager(path: ":memory:")
             let model = VaultManagementModel()

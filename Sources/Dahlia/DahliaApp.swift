@@ -342,7 +342,7 @@ struct DahliaApp: App {
     }
 
     @discardableResult
-    private func openVault(_ vault: VaultRecord) -> Bool {
+    private func openVault(_ vault: VaultRecord, recordsLastOpened: Bool = true) -> Bool {
         guard showVaultPicker || AppSettings.shared.currentVault?.id != vault.id else { return true }
         guard viewModel.canSwitchVault, let db = appDatabase else { return false }
 
@@ -354,14 +354,17 @@ struct DahliaApp: App {
         AppSettings.shared.currentVault = vault
         chatCoordinator.activateVault(vault.id)
         sidebarViewModel.setAppDatabase(db)
-        sidebarViewModel.updateVaultLastOpened(vault.id)
+        if recordsLastOpened {
+            Task { await vaultManagementModel.markVaultOpened(vault) }
+        }
         viewModel.prepareAnalyzer()
         showVaultPicker = false
         return true
     }
 
-    private func completeSetupTour(_ vault: VaultRecord) -> Bool {
-        guard openVault(vault) else { return false }
+    private func completeSetupTour(_ vault: VaultRecord) async -> Bool {
+        guard openVault(vault, recordsLastOpened: false),
+              await vaultManagementModel.markVaultOpened(vault) else { return false }
         SetupTourPresentationPolicy.markCompleted()
         mainWindowNavigation.completeSetupTour()
         return true
