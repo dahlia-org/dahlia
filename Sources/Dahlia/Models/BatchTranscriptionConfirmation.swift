@@ -27,6 +27,7 @@ struct BatchTranscriptionConfirmation: Identifiable, Equatable {
     let automaticLanguageCandidateSnapshot: BatchLanguageDetectionCandidateSnapshot?
     let purpose: Purpose
     let initiallyGeneratesSummary: Bool
+    let summaryGenerationOptions: SummaryGenerationOptions
     let projectSelection: BatchTranscriptionProjectSelection
 
     init(
@@ -39,6 +40,7 @@ struct BatchTranscriptionConfirmation: Identifiable, Equatable {
         automaticLanguageCandidateSnapshot: BatchLanguageDetectionCandidateSnapshot? = nil,
         purpose: Purpose = .initialOrRetry,
         initiallyGeneratesSummary: Bool = false,
+        summaryGenerationOptions: SummaryGenerationOptions = .manual,
         projectSelection: BatchTranscriptionProjectSelection = .unavailable
     ) {
         if case let .retranscription(sessionIds) = purpose {
@@ -56,6 +58,7 @@ struct BatchTranscriptionConfirmation: Identifiable, Equatable {
         self.automaticLanguageCandidateSnapshot = automaticLanguageCandidateSnapshot
         self.purpose = purpose
         self.initiallyGeneratesSummary = initiallyGeneratesSummary
+        self.summaryGenerationOptions = summaryGenerationOptions
         self.projectSelection = projectSelection
     }
 

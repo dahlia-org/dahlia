@@ -487,6 +487,7 @@
 "Controls how much reasoning Codex uses for each summary." = "Controls how much reasoning Codex uses for each summary.";
 "Summary Output" = "Summary Output";
 "Detail Level" = "Detail Level";
+"Event Session" = "Event Session";
 "Controls how much information is included in each summary." = "Controls how much information is included in each summary.";
 "Concise" = "Concise";
 "Detailed" = "Detailed";

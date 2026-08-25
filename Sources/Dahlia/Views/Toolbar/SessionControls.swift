@@ -90,6 +90,7 @@ struct GenerateSummaryHeaderButton: View {
             SummaryGenerationConfirmationView(
                 projects: sidebarViewModel.flatProjects,
                 initialProjectId: viewModel.currentProjectId,
+                initialDetailLevel: AppSettings.shared.summaryDetailLevel,
                 onGenerate: generateSummary
             )
         }

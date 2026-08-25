@@ -438,6 +438,28 @@ struct SummaryServiceTests {
     }
 
     @Test
+    func eventSessionDetailFocusesOnContentAndUsefulEvidence() {
+        let settings = AppSettings.shared
+        let previousDetailLevel = settings.summaryDetailLevel
+        defer { settings.summaryDetailLevel = previousDetailLevel }
+        settings.summaryDetailLevel = .concise
+        let instruction = SummaryDetailLevel.eventSession.instruction
+        let generationSettings = SummaryGenerationSettings.current(
+            settings,
+            detailLevel: .eventSession
+        )
+
+        #expect(SummaryDetailLevel.eventSession.rawValue == "eventSession")
+        #expect(SummaryDetailLevel.eventSession.displayName == L10n.summaryDetailEventSession)
+        #expect(generationSettings.detailLevelInstruction == instruction)
+        #expect(settings.summaryDetailLevel == .concise)
+        #expect(instruction.contains("event or conference session"))
+        #expect(instruction.contains("demonstrations, examples, and takeaways"))
+        #expect(instruction.contains("only where they provide useful evidence"))
+        #expect(instruction.contains("do not invent slide"))
+    }
+
+    @Test
     func summaryGenerationInstructionsIgnoreSelectedCustomInstruction() {
         let previousInstructionID = AppSettings.shared.selectedInstructionID
         defer { AppSettings.shared.selectedInstructionID = previousInstructionID }

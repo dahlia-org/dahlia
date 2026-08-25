@@ -1079,6 +1079,7 @@ final class CaptionViewModel: ObservableObject {
             purpose: .retranscription(sessionIds: sessionIds),
             initiallyGeneratesSummary: hasCurrentMeetingSummary
                 || AppSettings.shared.generateSummaryAfterBatchTranscription,
+            summaryGenerationOptions: AppSettings.shared.batchSummaryGenerationOptions,
             projectSelection: details.projectSelection
         )
     }
@@ -1291,7 +1292,8 @@ final class CaptionViewModel: ObservableObject {
     func confirmBatchTranscription(
         languageSelection: BatchTranscriptionLanguageSelection,
         retainAudioAfterBatch: Bool,
-        summaryGenerationOptions: SummaryGenerationOptions?
+        generatesSummary: Bool,
+        summaryGenerationOptions: SummaryGenerationOptions
     ) {
         guard !isListening,
               let confirmation = pendingBatchTranscriptionConfirmation,
@@ -1311,7 +1313,8 @@ final class CaptionViewModel: ObservableObject {
             allowsRecordedLanguageSelection: confirmation.allowsRecordedLanguageSelection,
             automaticLanguageCandidateSnapshot: automaticLanguageCandidates.snapshot,
             purpose: confirmation.purpose,
-            initiallyGeneratesSummary: summaryGenerationOptions != nil,
+            initiallyGeneratesSummary: generatesSummary,
+            summaryGenerationOptions: summaryGenerationOptions,
             projectSelection: makeBatchTranscriptionConfirmationDetails(
                 meetingId: confirmation.meetingId,
                 dbQueue: batchSummaryContextsBySessionId[confirmation.sessionId]?.dbQueue
@@ -1321,7 +1324,7 @@ final class CaptionViewModel: ObservableObject {
         updatePendingBatchSummaryRequest(
             sessionID: confirmation.sessionId,
             meetingID: confirmation.meetingId,
-            options: summaryGenerationOptions
+            options: generatesSummary ? summaryGenerationOptions : nil
         )
         batchSummaryContextsBySessionId.removeValue(forKey: confirmation.sessionId)
         pendingBatchTranscriptionConfirmation = nil
@@ -3552,6 +3555,7 @@ final class CaptionViewModel: ObservableObject {
             initialLanguageSelection: preferences.languageSelection,
             automaticLanguageCandidateSnapshot: preferences.automaticLanguageCandidateSnapshot,
             initiallyGeneratesSummary: AppSettings.shared.generateSummaryAfterBatchTranscription,
+            summaryGenerationOptions: AppSettings.shared.batchSummaryGenerationOptions,
             projectSelection: details.projectSelection
         )
         MainWindowOpener.shared.openMainWindow()
@@ -3749,7 +3753,7 @@ final class CaptionViewModel: ObservableObject {
 
     private final class PendingBatchSummaryRequest {
         let meetingId: UUID
-        let options: SummaryGenerationOptions
+        private(set) var options: SummaryGenerationOptions
         let dbQueue: DatabaseQueue
         let vaultURL: URL
         let job: SummaryGenerationJob
@@ -3792,6 +3796,12 @@ final class CaptionViewModel: ObservableObject {
         func hasSamePersistenceContext(as other: PendingBatchSummaryRequest) -> Bool {
             dbQueue === other.dbQueue
                 && vaultURL.standardizedFileURL == other.vaultURL.standardizedFileURL
+        }
+
+        @MainActor
+        func mergeOptions(_ other: SummaryGenerationOptions) {
+            options = .merging([options, other])
+            job.configureExports(options.exportOptions)
         }
     }
 
@@ -3966,7 +3976,7 @@ final class CaptionViewModel: ObservableObject {
             noteText: noteText.nilIfBlank,
             recordingSessions: store.recordingSessions,
             options: options,
-            generationSettings: .current(),
+            generationSettings: .current(detailLevel: options.detailLevel),
             retriesFailedPersistence: true,
             telemetryTrigger: .manual
         )
@@ -3974,9 +3984,23 @@ final class CaptionViewModel: ObservableObject {
         return startSummaryGeneration(request)
     }
 
-    private func generatePendingBatchSummaryIfReady(meetingId: UUID) {
+    private func generatePendingBatchSummaryIfReady(
+        meetingId: UUID,
+        precedingAutomaticRequest: SummaryGenerationRequest? = nil
+    ) {
         guard !isDeletingScreenshots,
               !isSummaryGenerating(meetingId: meetingId) else { return }
+        if let precedingAutomaticRequest {
+            var seenRequests: Set<ObjectIdentifier> = []
+            for request in pendingBatchSummaryRequestsBySessionId.values
+                where seenRequests.insert(ObjectIdentifier(request)).inserted
+                && request.meetingId == meetingId
+                && !request.job.hasFailure
+                && precedingAutomaticRequest.dbQueue === request.dbQueue
+                && precedingAutomaticRequest.vaultURL.standardizedFileURL == request.vaultURL.standardizedFileURL {
+                request.mergeOptions(precedingAutomaticRequest.options)
+            }
+        }
         var seenJobIDs: Set<UUID> = []
         let completedRequests = pendingBatchSummaryRequestsBySessionId.values.filter { request in
             seenJobIDs.insert(request.job.id).inserted
@@ -3985,7 +4009,13 @@ final class CaptionViewModel: ObservableObject {
                 && !request.job.hasFailure
         }
         .sorted { $0.sortKey < $1.sortKey }
-        guard let first = completedRequests.first else { return }
+        let first = precedingAutomaticRequest.flatMap { precedingRequest in
+            completedRequests.first { request in
+                precedingRequest.dbQueue === request.dbQueue
+                    && precedingRequest.vaultURL.standardizedFileURL == request.vaultURL.standardizedFileURL
+            }
+        } ?? completedRequests.first
+        guard let first else { return }
         let pendingRequests = completedRequests.filter {
             $0.hasSamePersistenceContext(as: first)
         }
@@ -4064,7 +4094,7 @@ final class CaptionViewModel: ObservableObject {
             noteText: snapshot.2?.text.nilIfBlank,
             recordingSessions: snapshot.3.map(RecordingSessionTimeline.init),
             options: options,
-            generationSettings: .current(),
+            generationSettings: .current(detailLevel: options.detailLevel),
             retriesFailedPersistence: false,
             telemetryTrigger: telemetryTrigger
         )
@@ -4305,7 +4335,10 @@ final class CaptionViewModel: ObservableObject {
             }
         }
 
-        generatePendingBatchSummaryIfReady(meetingId: request.meetingId)
+        generatePendingBatchSummaryIfReady(
+            meetingId: request.meetingId,
+            precedingAutomaticRequest: request.telemetryTrigger == .automaticAfterBatch ? request : nil
+        )
     }
 
     private func persistGoogleDocsFileId(

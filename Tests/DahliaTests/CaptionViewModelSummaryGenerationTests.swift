@@ -235,7 +235,8 @@ import GRDB
             try fixture.assign(fixture.first, to: project)
             let sessionID = try fixture.insertRecordingSession(for: fixture.first, offset: 0)
             let options = SummaryGenerationOptions(
-                exportOptions: SummaryExportOptions(exportsToVault: false, exportsToGoogleDocs: false)
+                exportOptions: SummaryExportOptions(exportsToVault: false, exportsToGoogleDocs: false),
+                detailLevel: .eventSession
             )
 
             viewModel.registerPendingBatchSummaryForTesting(
@@ -266,6 +267,7 @@ import GRDB
             #expect(job.progress.transcriptionProgress == nil)
             #expect(runner.calls[0].projectName == project.path)
             #expect(runner.calls[0].projectDescription == "Batch context")
+            #expect(runner.calls[0].settings.detailLevelInstruction == SummaryDetailLevel.eventSession.instruction)
             runner.complete(meetingID: fixture.first.id, title: "Summary")
             #expect(await waitUntil { !viewModel.isSummaryGenerating(meetingId: fixture.first.id) })
         }
@@ -278,7 +280,8 @@ import GRDB
             let viewModel = CaptionViewModel(summaryGenerationRunner: runner.run)
             let meetingIDs: Set<UUID> = [fixture.first.id, fixture.second.id]
             let options = SummaryGenerationOptions(
-                exportOptions: SummaryExportOptions(exportsToVault: false, exportsToGoogleDocs: false)
+                exportOptions: SummaryExportOptions(exportsToVault: false, exportsToGoogleDocs: false),
+                detailLevel: .standard
             )
 
             #expect(viewModel.canRegenerateSummaries(meetingIds: meetingIDs))
@@ -291,6 +294,9 @@ import GRDB
             await runner.waitForCallCount(2)
 
             #expect(Set(runner.calls.map(\.meetingID)) == meetingIDs)
+            #expect(runner.calls.allSatisfy {
+                $0.settings.detailLevelInstruction == SummaryDetailLevel.standard.instruction
+            })
             #expect(viewModel.summaryGeneratingMeetingIDs == meetingIDs)
             #expect(!viewModel.canRegenerateSummaries(meetingIds: meetingIDs))
             #expect(viewModel.currentMeetingId == nil)
@@ -392,7 +398,8 @@ import GRDB
                 summaryJobSleeper: sleeper.sleep
             )
             let options = SummaryGenerationOptions(
-                exportOptions: SummaryExportOptions(exportsToVault: false, exportsToGoogleDocs: false)
+                exportOptions: SummaryExportOptions(exportsToVault: false, exportsToGoogleDocs: false),
+                detailLevel: .eventSession
             )
             await fixture.select(fixture.first, in: viewModel, note: "note")
 
@@ -402,6 +409,7 @@ import GRDB
             settings.codexReasoningEffort = "low"
             #expect(runner.calls[0].settings.modelID == "frozen-model")
             #expect(runner.calls[0].settings.reasoningEffort == "high")
+            #expect(runner.calls[0].settings.detailLevelInstruction == SummaryDetailLevel.eventSession.instruction)
 
             runner.fail(meetingID: fixture.first.id)
             #expect(await waitUntil { !viewModel.isSummaryGenerating(meetingId: fixture.first.id) })
@@ -430,11 +438,19 @@ import GRDB
             defer { fixture.removeFiles() }
             let runner = BlockingSummaryRunner()
             let viewModel = CaptionViewModel(summaryGenerationRunner: runner.run)
-            let options = SummaryGenerationOptions(
+            let manualOptions = SummaryGenerationOptions(
                 exportOptions: SummaryExportOptions(exportsToVault: false, exportsToGoogleDocs: false)
             )
+            let eventOptions = SummaryGenerationOptions(
+                exportOptions: SummaryExportOptions(exportsToVault: false, exportsToGoogleDocs: false),
+                detailLevel: .eventSession
+            )
+            let conciseOptions = SummaryGenerationOptions(
+                exportOptions: SummaryExportOptions(exportsToVault: false, exportsToGoogleDocs: false),
+                detailLevel: .concise
+            )
             await fixture.select(fixture.first, in: viewModel, note: "manual")
-            viewModel.triggerManualSummary(options: options)
+            viewModel.triggerManualSummary(options: manualOptions)
             await runner.waitForCallCount(1)
             await fixture.select(fixture.second, in: viewModel, note: "visible")
 
@@ -443,14 +459,14 @@ import GRDB
             viewModel.registerPendingBatchSummaryForTesting(
                 sessionID: firstSessionID,
                 meetingID: fixture.first.id,
-                options: options,
+                options: eventOptions,
                 dbQueue: fixture.database.dbQueue,
                 vaultURL: fixture.vaultURL
             )
             viewModel.registerPendingBatchSummaryForTesting(
                 sessionID: secondSessionID,
                 meetingID: fixture.first.id,
-                options: options,
+                options: conciseOptions,
                 dbQueue: fixture.database.dbQueue,
                 vaultURL: fixture.vaultURL
             )
@@ -463,6 +479,7 @@ import GRDB
             runner.complete(meetingID: fixture.first.id, title: "Manual")
             await runner.waitForCallCount(2)
             #expect(runner.calls[1].recordingSessionIDs == [firstSessionID])
+            #expect(runner.calls[1].settings.detailLevelInstruction == SummaryDetailLevel.eventSession.instruction)
 
             _ = try fixture.insertRecordingSession(
                 for: fixture.first,
@@ -478,6 +495,7 @@ import GRDB
             runner.complete(meetingID: fixture.first.id, title: "First automatic")
             await runner.waitForCallCount(3)
             #expect(Set(runner.calls[2].recordingSessionIDs) == [firstSessionID, secondSessionID])
+            #expect(runner.calls[2].settings.detailLevelInstruction == SummaryDetailLevel.eventSession.instruction)
             runner.complete(meetingID: fixture.first.id, title: "Second automatic")
             #expect(await waitUntil { !viewModel.isSummaryGenerating(meetingId: fixture.first.id) })
             #expect(runner.calls.count == 3)
@@ -545,6 +563,156 @@ import GRDB
             #expect(await waitUntil { !viewModel.isSummaryGenerating(meetingId: original.first.id) })
             #expect(try original.summary(for: original.first.id)?.loadDocument().title == "Original context")
             #expect(try destination.summary(for: original.first.id)?.loadDocument().title == "Destination context")
+        }
+
+        @Test
+        func automaticOptionsFollowTheirPersistenceContextAcrossQueuedRequests() async throws {
+            let original = try SummaryGenerationFixture()
+            let destination = try SummaryGenerationFixture()
+            defer {
+                original.removeFiles()
+                destination.removeFiles()
+            }
+            try destination.insertMeeting(
+                id: original.first.id,
+                name: "Moved",
+                transcript: "moved transcript"
+            )
+            let destinationMeeting = try #require(
+                try MeetingRepository(dbQueue: destination.database.dbQueue).fetchMeeting(id: original.first.id)
+            )
+            let runner = BlockingSummaryRunner()
+            let viewModel = CaptionViewModel(summaryGenerationRunner: runner.run)
+            let eventOptions = SummaryGenerationOptions(
+                exportOptions: SummaryExportOptions(exportsToVault: true, exportsToGoogleDocs: false),
+                detailLevel: .eventSession
+            )
+            let sameContextOptions = SummaryGenerationOptions(
+                exportOptions: SummaryExportOptions(exportsToVault: false, exportsToGoogleDocs: true),
+                detailLevel: .concise
+            )
+            let otherContextOptions = SummaryGenerationOptions(
+                exportOptions: SummaryExportOptions(exportsToVault: false, exportsToGoogleDocs: false),
+                detailLevel: .concise
+            )
+            let activeSessionID = try original.insertRecordingSession(for: original.first, offset: 0)
+            viewModel.registerPendingBatchSummaryForTesting(
+                sessionID: activeSessionID,
+                meetingID: original.first.id,
+                options: eventOptions,
+                dbQueue: original.database.dbQueue,
+                vaultURL: original.vaultURL
+            )
+            await viewModel.handleBatchTranscriptionUpdate(.init(
+                meetingId: original.first.id,
+                state: .completed(sessionId: activeSessionID)
+            ))
+            await runner.waitForCallCount(1)
+
+            let otherContextSessionID = try #require(UUID(uuidString: "00000000-0000-0000-0000-000000000001"))
+            let sameContextSessionID = try #require(UUID(uuidString: "00000000-0000-0000-0000-000000000002"))
+            let otherMeetingSessionID = try #require(UUID(uuidString: "00000000-0000-0000-0000-000000000003"))
+            let failedSessionID = try #require(UUID(uuidString: "00000000-0000-0000-0000-000000000004"))
+            _ = try destination.insertRecordingSession(
+                for: destinationMeeting,
+                id: otherContextSessionID,
+                offset: 0
+            )
+            _ = try original.insertRecordingSession(
+                for: original.first,
+                id: sameContextSessionID,
+                offset: 60
+            )
+            _ = try original.insertRecordingSession(
+                for: original.second,
+                id: otherMeetingSessionID,
+                offset: 0
+            )
+            _ = try original.insertRecordingSession(
+                for: original.first,
+                id: failedSessionID,
+                offset: 90
+            )
+            viewModel.registerPendingBatchSummaryForTesting(
+                sessionID: otherContextSessionID,
+                meetingID: original.first.id,
+                options: otherContextOptions,
+                dbQueue: destination.database.dbQueue,
+                vaultURL: destination.vaultURL
+            )
+            viewModel.registerPendingBatchSummaryForTesting(
+                sessionID: sameContextSessionID,
+                meetingID: original.first.id,
+                options: sameContextOptions,
+                dbQueue: original.database.dbQueue,
+                vaultURL: original.vaultURL
+            )
+            viewModel.registerPendingBatchSummaryForTesting(
+                sessionID: otherMeetingSessionID,
+                meetingID: original.second.id,
+                options: otherContextOptions,
+                dbQueue: original.database.dbQueue,
+                vaultURL: original.vaultURL
+            )
+            viewModel.registerPendingBatchSummaryForTesting(
+                sessionID: failedSessionID,
+                meetingID: original.first.id,
+                options: otherContextOptions,
+                dbQueue: original.database.dbQueue,
+                vaultURL: original.vaultURL
+            )
+            let failedJobID = try #require(viewModel.summaryGenerationJobs.last?.id)
+            await viewModel.handleBatchTranscriptionUpdate(.init(
+                meetingId: original.first.id,
+                state: .failed(sessionId: failedSessionID, message: "speech failed")
+            ))
+            await viewModel.handleBatchTranscriptionUpdate(.init(
+                meetingId: original.first.id,
+                state: .completed(sessionId: otherContextSessionID)
+            ))
+
+            runner.complete(meetingID: original.first.id, title: "First context")
+            await runner.waitForCallCount(2)
+            let failedJob = try #require(viewModel.summaryGenerationJobs.first { $0.id == failedJobID })
+            #expect(failedJob.isFinished)
+            #expect(failedJob.progress.vaultExport.isSkipped)
+            #expect(failedJob.progress.googleDocsExport.isSkipped)
+            #expect(runner.calls[1].settings.detailLevelInstruction == SummaryDetailLevel.concise.instruction)
+            let otherContextJob = try #require(viewModel.summaryGenerationJobs.first {
+                if case .running = $0.progress.summaryGeneration { true } else { false }
+            })
+            #expect(otherContextJob.progress.vaultExport.isSkipped)
+            #expect(otherContextJob.progress.googleDocsExport.isSkipped)
+
+            await viewModel.handleBatchTranscriptionUpdate(.init(
+                meetingId: original.first.id,
+                state: .completed(sessionId: sameContextSessionID)
+            ))
+
+            runner.fail(meetingID: original.first.id)
+            await runner.waitForCallCount(3)
+            #expect(runner.calls[2].settings.detailLevelInstruction == SummaryDetailLevel.eventSession.instruction)
+            let sameContextJob = try #require(viewModel.summaryGenerationJobs.first {
+                if case .running = $0.progress.summaryGeneration { true } else { false }
+            })
+            #expect(!sameContextJob.progress.vaultExport.isSkipped)
+            #expect(!sameContextJob.progress.googleDocsExport.isSkipped)
+            runner.fail(meetingID: original.first.id)
+            #expect(await waitUntil { !viewModel.isSummaryGenerating(meetingId: original.first.id) })
+
+            await viewModel.handleBatchTranscriptionUpdate(.init(
+                meetingId: original.second.id,
+                state: .completed(sessionId: otherMeetingSessionID)
+            ))
+            await runner.waitForCallCount(4)
+            #expect(runner.calls[3].settings.detailLevelInstruction == SummaryDetailLevel.concise.instruction)
+            let otherMeetingJob = try #require(viewModel.summaryGenerationJobs.first {
+                if case .running = $0.progress.summaryGeneration { true } else { false }
+            })
+            #expect(otherMeetingJob.progress.vaultExport.isSkipped)
+            #expect(otherMeetingJob.progress.googleDocsExport.isSkipped)
+            runner.fail(meetingID: original.second.id)
+            #expect(await waitUntil { !viewModel.isSummaryGenerating(meetingId: original.second.id) })
         }
 
         @Test
