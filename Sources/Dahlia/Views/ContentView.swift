@@ -23,6 +23,7 @@ struct ContentView: View {
     @State private var isShowingUnprocessedRecordings = false
     @State private var isShowingChatHistory = false
     @State private var isShowingChatConfiguration = false
+    @State private var selectedDetailTab: DetailTab = .summary
     @State private var searchModel = MainSearchModel()
     @State private var projectEditorRequest: ProjectEditorRequest?
     @State private var projectPendingDeletion: ProjectOverviewItem?
@@ -479,6 +480,7 @@ private extension ContentView {
                 viewModel: viewModel,
                 sidebarViewModel: sidebarViewModel,
                 recordingCoordinator: recordingCoordinator,
+                selectedTab: $selectedDetailTab,
                 expandedScreenshot: $expandedScreenshot
             )
         } else {
