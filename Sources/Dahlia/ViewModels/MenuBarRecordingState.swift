@@ -14,6 +14,7 @@ final class MenuBarRecordingState {
     private(set) var isSystemAudioEnabled: Bool
     private(set) var transcriptionLocale: String
     private(set) var liveSubtitleLocale: String
+    private(set) var liveRecognitionLocaleIdentifier: String
     private(set) var activeTranscriptionMode: TranscriptionMode?
     private(set) var availableMicrophones: [MicrophoneDevice]
     private(set) var filteredLocales: [Locale]
@@ -29,6 +30,7 @@ final class MenuBarRecordingState {
         isSystemAudioEnabled = viewModel.isSystemAudioEnabled
         transcriptionLocale = viewModel.transcriptionLocale
         liveSubtitleLocale = viewModel.liveSubtitleLocale
+        liveRecognitionLocaleIdentifier = viewModel.liveRecognitionLocaleIdentifier
         activeTranscriptionMode = viewModel.activeTranscriptionMode
         availableMicrophones = viewModel.availableMicrophones
         filteredLocales = viewModel.filteredLocales
@@ -62,9 +64,8 @@ final class MenuBarRecordingState {
         viewModel.handleSystemAudioSelectionChange(from: oldValue, to: isEnabled)
     }
 
-    func selectLocale(_ identifier: String) {
-        guard identifier != viewModel.liveSubtitleLocale else { return }
-        viewModel.liveSubtitleLocale = identifier
+    func selectLiveSubtitleLocale(_ localeIdentifier: String) {
+        viewModel.selectLiveSubtitleLocale(localeIdentifier)
     }
 
     func selectScreenshotSource(_ source: ScreenshotCaptureSource) {
@@ -96,6 +97,13 @@ final class MenuBarRecordingState {
         viewModel.$liveSubtitleLocale
             .removeDuplicates()
             .sink { [weak self] in self?.liveSubtitleLocale = $0 }
+            .store(in: &cancellables)
+
+        viewModel.$appliedLiveRecognitionLocaleIdentifier
+            .sink { [weak self] _ in
+                guard let self else { return }
+                liveRecognitionLocaleIdentifier = viewModel.liveRecognitionLocaleIdentifier
+            }
             .store(in: &cancellables)
 
         viewModel.$activeTranscriptionMode

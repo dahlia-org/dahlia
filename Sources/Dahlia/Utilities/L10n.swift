@@ -1741,7 +1741,10 @@ enum L10n {
     static var realtimeTranscription: String { String(localized: "Real-time Transcription", bundle: bundle) }
     static var batchTranscription: String { String(localized: "Batch Transcription", bundle: bundle) }
     static var realtimeTranscriptionDescription: String { String(
-        localized: "Show the transcript while recording. Accuracy may be lower than transcription after recording, and audio files are not saved.",
+        localized: """
+        Show the transcript while recording. Accuracy may be lower than transcription after recording, and audio files are not saved. \
+        Real-time transcription uses the live subtitle language. Change it in Language settings or from the recording panel.
+        """,
         bundle: bundle
     ) }
     static var batchTranscriptionDescription: String { String(
@@ -2187,8 +2190,8 @@ enum L10n {
         bundle: bundle
     ) }
     static var liveSubtitleLanguage: String { String(localized: "Live Subtitle Language", bundle: bundle) }
-    static var liveSubtitleLanguageFollowsTranscription: String { String(
-        localized: "With real-time transcription, live subtitles use the transcription language.",
+    static var liveSubtitleLanguageUsedForRealtimeTranscription: String { String(
+        localized: "Real-time transcription also uses this language. You can also change it from the recording panel.",
         bundle: bundle
     ) }
     static var languageRange: String { String(localized: "Language Range", bundle: bundle) }

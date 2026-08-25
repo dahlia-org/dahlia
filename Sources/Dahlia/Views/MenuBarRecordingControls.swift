@@ -90,7 +90,7 @@ struct MenuBarRecordingControls: View {
                 let identifier = displayedLiveSubtitleLocale
                 let name = Locale.current.localizedString(forIdentifier: identifier) ?? identifier
                 Button {
-                    state.selectLocale(identifier)
+                    state.selectLiveSubtitleLocale(identifier)
                 } label: {
                     selectionLabel(name, isSelected: true)
                 }
@@ -99,7 +99,7 @@ struct MenuBarRecordingControls: View {
                     let identifier = locale.identifier
                     let name = locale.localizedString(forIdentifier: identifier) ?? identifier
                     Button {
-                        state.selectLocale(identifier)
+                        state.selectLiveSubtitleLocale(identifier)
                     } label: {
                         selectionLabel(name, isSelected: displayedLiveSubtitleLocale == identifier)
                     }
@@ -108,7 +108,6 @@ struct MenuBarRecordingControls: View {
         } label: {
             Label(L10n.liveSubtitleLanguage, systemImage: "globe")
         }
-        .disabled(effectiveTranscriptionMode == .realtime)
 
         Menu {
             Button {
@@ -146,11 +145,19 @@ struct MenuBarRecordingControls: View {
     }
 
     private var effectiveTranscriptionMode: TranscriptionMode {
-        state.activeTranscriptionMode ?? settings.transcriptionMode
+        if state.isListening {
+            state.activeTranscriptionMode ?? settings.transcriptionMode
+        } else {
+            settings.transcriptionMode
+        }
     }
 
     private var displayedLiveSubtitleLocale: String {
-        effectiveTranscriptionMode == .realtime ? state.transcriptionLocale : state.liveSubtitleLocale
+        if state.isListening {
+            state.liveRecognitionLocaleIdentifier
+        } else {
+            effectiveTranscriptionMode == .realtime ? state.transcriptionLocale : state.liveSubtitleLocale
+        }
     }
 
     private func selectionLabel(_ title: String, isSelected: Bool) -> some View {

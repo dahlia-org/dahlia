@@ -44,11 +44,12 @@
         }
 
         @Test
-        func realtimeTranscriptionLocaleKeepsOneRecognizerAndLiveLocaleInSync() async throws {
+        func realtimeTranscriptionLocaleKeepsSharedRecognizersAndLiveLocaleInSync() async throws {
             let runtime = try await RecordingSessionControllerTests().makeRuntime(
                 mode: .realtime,
                 liveSubtitlesEnabled: true
             )
+            await runtime.probe.clear()
             let snapshot = try await runtime.controller.changeTranscriptionLocale(
                 to: Locale(identifier: "en_US"),
                 translateSegment: nil
@@ -57,6 +58,13 @@
             #expect(snapshot.transcriptionLocaleIdentifier == "en_US")
             #expect(snapshot.liveRecognitionLocaleIdentifier == "en_US")
             #expect(await runtime.controller.resourceCounts().recognizers == 2)
+            let actions = await runtime.probe.actions
+            #expect(actions.contains(.recognitionStart(.microphone)))
+            #expect(actions.contains(.recognitionStart(.system)))
+            #expect(actions.contains(.recognitionFinish(.microphone)))
+            #expect(actions.contains(.recognitionFinish(.system)))
+            let restartedCapture = actions.contains(where: \.isCaptureStartOrStop)
+            #expect(!restartedCapture)
             _ = try await runtime.controller.stop()
             await runtime.controller.completeStop()
         }

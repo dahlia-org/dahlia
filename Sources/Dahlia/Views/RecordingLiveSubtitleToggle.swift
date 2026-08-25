@@ -2,10 +2,9 @@ import SwiftUI
 
 struct RecordingLiveSubtitleToggle: View {
     @Binding var isEnabled: Bool
-    @Binding var languageSelection: String
+    let selectedLanguageIdentifier: String
     let locales: [Locale]
-    let isLanguageSelectionEnabled: Bool
-    let languageHelp: String
+    let onSelectLanguage: (String) -> Void
 
     var body: some View {
         HStack(spacing: 6) {
@@ -25,9 +24,9 @@ struct RecordingLiveSubtitleToggle: View {
                 ForEach(locales, id: \.identifier) { locale in
                     let identifier = locale.identifier
                     Button {
-                        languageSelection = identifier
+                        onSelectLanguage(identifier)
                     } label: {
-                        if identifier == languageSelection {
+                        if identifier == selectedLanguageIdentifier {
                             Label(languageName(for: locale), systemImage: "checkmark")
                         } else {
                             Text(languageName(for: locale))
@@ -52,10 +51,9 @@ struct RecordingLiveSubtitleToggle: View {
             .menuIndicator(.hidden)
             .controlSize(.small)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .disabled(!isLanguageSelectionEnabled)
             .accessibilityLabel(L10n.liveSubtitleLanguage)
             .accessibilityValue(selectedLanguageName)
-            .help(languageHelp)
+            .help(L10n.liveSubtitleLanguage)
 
             Toggle(L10n.liveSubtitles, isOn: $isEnabled)
                 .labelsHidden()
@@ -75,8 +73,8 @@ struct RecordingLiveSubtitleToggle: View {
     }
 
     private var selectedLanguageName: String {
-        guard let locale = locales.first(where: { $0.identifier == languageSelection }) else {
-            return Locale.current.localizedString(forIdentifier: languageSelection) ?? languageSelection
+        guard let locale = locales.first(where: { $0.identifier == selectedLanguageIdentifier }) else {
+            return Locale.current.localizedString(forIdentifier: selectedLanguageIdentifier) ?? selectedLanguageIdentifier
         }
         return languageName(for: locale)
     }
