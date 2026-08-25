@@ -3988,8 +3988,6 @@ final class CaptionViewModel: ObservableObject {
         meetingId: UUID,
         precedingAutomaticRequest: SummaryGenerationRequest? = nil
     ) {
-        guard !isDeletingScreenshots,
-              !isSummaryGenerating(meetingId: meetingId) else { return }
         if let precedingAutomaticRequest {
             var seenRequests: Set<ObjectIdentifier> = []
             for request in pendingBatchSummaryRequestsBySessionId.values
@@ -4001,6 +3999,8 @@ final class CaptionViewModel: ObservableObject {
                 request.mergeOptions(precedingAutomaticRequest.options)
             }
         }
+        guard !isDeletingScreenshots,
+              !isSummaryGenerating(meetingId: meetingId) else { return }
         var seenJobIDs: Set<UUID> = []
         let completedRequests = pendingBatchSummaryRequestsBySessionId.values.filter { request in
             seenJobIDs.insert(request.job.id).inserted

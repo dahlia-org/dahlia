@@ -762,6 +762,63 @@ import GRDB
         }
 
         @Test
+        func automaticSummaryPreservesMergedOptionsWhileScreenshotDeletionDefersNextRequest() async throws {
+            let fixture = try SummaryGenerationFixture()
+            defer { fixture.removeFiles() }
+            let runner = BlockingSummaryRunner()
+            let viewModel = CaptionViewModel(summaryGenerationRunner: runner.run)
+            let firstSessionID = try fixture.insertRecordingSession(for: fixture.first, offset: 0)
+            let secondSessionID = try fixture.insertRecordingSession(for: fixture.first, offset: 60)
+
+            viewModel.registerPendingBatchSummaryForTesting(
+                sessionID: firstSessionID,
+                meetingID: fixture.first.id,
+                options: SummaryGenerationOptions(
+                    exportOptions: SummaryExportOptions(exportsToVault: true, exportsToGoogleDocs: false),
+                    detailLevel: .eventSession
+                ),
+                dbQueue: fixture.database.dbQueue,
+                vaultURL: fixture.vaultURL
+            )
+            await viewModel.handleBatchTranscriptionUpdate(.init(
+                meetingId: fixture.first.id,
+                state: .completed(sessionId: firstSessionID)
+            ))
+            await runner.waitForCallCount(1)
+
+            viewModel.registerPendingBatchSummaryForTesting(
+                sessionID: secondSessionID,
+                meetingID: fixture.first.id,
+                options: SummaryGenerationOptions(
+                    exportOptions: SummaryExportOptions(exportsToVault: false, exportsToGoogleDocs: true),
+                    detailLevel: .concise
+                ),
+                dbQueue: fixture.database.dbQueue,
+                vaultURL: fixture.vaultURL
+            )
+            await viewModel.handleBatchTranscriptionUpdate(.init(
+                meetingId: fixture.first.id,
+                state: .completed(sessionId: secondSessionID)
+            ))
+
+            viewModel.setScreenshotDeletionInProgressForTesting(true)
+            runner.complete(meetingID: fixture.first.id, title: "First automatic")
+            #expect(await waitUntil { !viewModel.isSummaryGenerating(meetingId: fixture.first.id) })
+            #expect(runner.calls.count == 1)
+
+            viewModel.setScreenshotDeletionInProgressForTesting(false)
+            await runner.waitForCallCount(2)
+            #expect(runner.calls[1].settings.detailLevelInstruction == SummaryDetailLevel.eventSession.instruction)
+            let job = try #require(viewModel.summaryGenerationJobs.first {
+                if case .running = $0.progress.summaryGeneration { true } else { false }
+            })
+            #expect(!job.progress.vaultExport.isSkipped)
+            #expect(!job.progress.googleDocsExport.isSkipped)
+            runner.fail(meetingID: fixture.first.id)
+            #expect(await waitUntil { !viewModel.isSummaryGenerating(meetingId: fixture.first.id) })
+        }
+
+        @Test
         func backgroundPreparationFailureCreatesDismissibleJob() async throws {
             let fixture = try SummaryGenerationFixture()
             defer { fixture.removeFiles() }
