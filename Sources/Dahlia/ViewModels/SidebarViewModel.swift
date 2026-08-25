@@ -158,11 +158,6 @@ final class SidebarViewModel {
         currentVault!.url.appendingPathComponent(name, isDirectory: true)
     }
 
-    /// 保管庫の最終オープン日時を更新する。
-    func updateVaultLastOpened(_ id: UUID) {
-        try? meetingRepository?.updateVaultLastOpened(id: id)
-    }
-
     /// アプリ起動時に AppDatabaseManager と保管庫を設定する。
     /// 呼び出し前に設定の currentVault を設定しておくこと。
     func setAppDatabase(_ database: AppDatabaseManager?) {

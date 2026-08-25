@@ -22,8 +22,19 @@ struct AppLanguageSelectionRow: View {
     }
 
     private var selectionSummary: String {
-        guard settings.appLanguageScope == .selected else { return L10n.allSupportedLanguages }
-        let summary = Self.summaryParts(identifiers: settings.enabledLanguageIdentifiers)
+        Self.selectionSummary(
+            scope: settings.appLanguageScope,
+            identifiers: settings.enabledLanguageIdentifiers
+        )
+    }
+
+    static func selectionSummary(
+        scope: AppLanguageScope,
+        identifiers: Set<String>,
+        locale: Locale = .current
+    ) -> String {
+        guard scope == .selected else { return L10n.allSupportedLanguages }
+        let summary = summaryParts(identifiers: identifiers, locale: locale)
         let names = summary.names.joined(separator: ", ")
         guard !names.isEmpty else { return L10n.languagesSelected(0) }
         guard summary.remainingCount > 0 else { return names }

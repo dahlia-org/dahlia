@@ -40,6 +40,7 @@ final class MainWindowNavigation {
     private(set) var isNavigatingHistory = false
     private(set) var hasInitializedNavigationHistory = false
     private(set) var isShowingSettings = false
+    private(set) var setupTourMode: SetupTourMode?
     private(set) var sidebarWidth: CGFloat
     private(set) var chatSidebarWidth: CGFloat
     var settingsCategory: SettingsCategory {
@@ -194,6 +195,29 @@ final class MainWindowNavigation {
 
     func dismissSettings() {
         isShowingSettings = false
+    }
+
+    func presentInitialSetupTour() {
+        setupTourMode = .initial
+        isShowingSettings = false
+    }
+
+    func openSetupTour() {
+        setupTourMode = .manual
+        isShowingSettings = false
+        openMainWindow()
+    }
+
+    func dismissSetupTour() {
+        guard setupTourMode == .manual else { return }
+        setupTourMode = nil
+        isShowingSettings = true
+    }
+
+    func completeSetupTour() {
+        let returnsToSettings = setupTourMode == .manual
+        setupTourMode = nil
+        isShowingSettings = returnsToSettings
     }
 
     func openUnprocessedRecordingsFromSettings() {

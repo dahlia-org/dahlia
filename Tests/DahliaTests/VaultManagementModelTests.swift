@@ -12,46 +12,67 @@
         }
 
         @Test
-        func createsAndSelectsDefaultVaultForAnEmptyDatabase() async throws {
+        func setupCreatesAndRegistersTheSelectedVault() async throws {
             let database = try AppDatabaseManager(path: ":memory:")
             let model = VaultManagementModel()
+            await model.configure(appDatabase: database)
             let rootURL = temporaryDirectoryURL()
-            let defaultVaultURL = rootURL.appending(path: "Dahlia", directoryHint: .isDirectory)
+            let selectedURL = rootURL.appending(path: "Selected", directoryHint: .isDirectory)
             defer { try? FileManager.default.removeItem(at: rootURL) }
 
-            let resolution = try #require(await model.resolveStartupVault(
-                appDatabase: database,
-                defaultVaultURL: defaultVaultURL
-            ))
-            let vault = resolution.vault
+            let vault = try #require(await model.createVault(at: selectedURL))
 
-            #expect(resolution.isNewlyCreated)
-            #expect(vault.name == "Default")
-            #expect(vault.url == defaultVaultURL)
-            #expect(vault.lastOpenedAt != .distantPast)
-            #expect(FileManager.default.fileExists(atPath: defaultVaultURL.path))
+            #expect(vault.url == selectedURL)
+            #expect(vault.name == "Selected")
+            #expect(vault.lastOpenedAt == .distantPast)
+            #expect(FileManager.default.fileExists(atPath: selectedURL.path))
             #expect(try MeetingRepository(dbQueue: database.dbQueue).fetchAllVaults().map(\.id) == [vault.id])
         }
 
         @Test
-        func reusesAnExistingDefaultDirectoryWithoutChangingItsContents() async throws {
+        func setupUsesDahliaAsTheDefaultVaultName() async throws {
             let database = try AppDatabaseManager(path: ":memory:")
             let model = VaultManagementModel()
+            await model.configure(appDatabase: database)
             let rootURL = temporaryDirectoryURL()
-            let defaultVaultURL = rootURL.appending(path: "Dahlia", directoryHint: .isDirectory)
-            let existingFileURL = defaultVaultURL.appending(path: "keep.txt")
+            let selectedURL = rootURL.appending(path: "Dahlia", directoryHint: .isDirectory)
             defer { try? FileManager.default.removeItem(at: rootURL) }
-            try FileManager.default.createDirectory(at: defaultVaultURL, withIntermediateDirectories: true)
+
+            let vault = try #require(await model.createVault(at: selectedURL))
+
+            #expect(vault.name == "Dahlia")
+        }
+
+        @Test
+        func setupMarksVaultOpenedOnlyAfterTheExplicitPersistenceStep() async throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            let repository = MeetingRepository(dbQueue: database.dbQueue)
+            let model = VaultManagementModel()
+            await model.configure(appDatabase: database)
+            let rootURL = temporaryDirectoryURL()
+            let selectedURL = rootURL.appending(path: "Dahlia", directoryHint: .isDirectory)
+            defer { try? FileManager.default.removeItem(at: rootURL) }
+            let vault = try #require(await model.createVault(at: selectedURL))
+
+            #expect(try repository.fetchLastOpenedVault() == nil)
+            #expect(await model.markVaultOpened(vault))
+            #expect(try repository.fetchLastOpenedVault()?.id == vault.id)
+            #expect(model.vaults.first(where: { $0.id == vault.id })?.lastOpenedAt != .distantPast)
+        }
+
+        @Test
+        func setupPreservesFilesInAnExistingSelectedFolder() async throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            let model = VaultManagementModel()
+            await model.configure(appDatabase: database)
+            let selectedURL = temporaryDirectoryURL()
+            let existingFileURL = selectedURL.appending(path: "keep.txt")
+            defer { try? FileManager.default.removeItem(at: selectedURL) }
+            try FileManager.default.createDirectory(at: selectedURL, withIntermediateDirectories: true)
             try Data("keep".utf8).write(to: existingFileURL)
 
-            let resolution = try #require(await model.resolveStartupVault(
-                appDatabase: database,
-                defaultVaultURL: defaultVaultURL
-            ))
-            let vault = resolution.vault
+            _ = try #require(await model.createVault(at: selectedURL))
 
-            #expect(resolution.isNewlyCreated)
-            #expect(vault.name == "Default")
             #expect(try String(contentsOf: existingFileURL, encoding: .utf8) == "keep")
         }
 
@@ -64,13 +85,9 @@
             let model = VaultManagementModel()
             let defaultVaultURL = temporaryDirectoryURL().appending(path: "Dahlia", directoryHint: .isDirectory)
 
-            let startupVault = await model.resolveStartupVault(
-                appDatabase: database,
-                defaultVaultURL: defaultVaultURL
-            )
+            let startupVault = await model.resolveExistingStartupVault(appDatabase: database)
 
-            #expect(startupVault?.vault.id == existingVault.id)
-            #expect(startupVault?.isNewlyCreated == false)
+            #expect(startupVault?.id == existingVault.id)
             #expect(try repository.fetchAllVaults().map(\.id) == [existingVault.id])
             #expect(!FileManager.default.fileExists(atPath: defaultVaultURL.path))
         }
@@ -84,10 +101,7 @@
             let model = VaultManagementModel()
             let defaultVaultURL = temporaryDirectoryURL().appending(path: "Dahlia", directoryHint: .isDirectory)
 
-            let startupVault = await model.resolveStartupVault(
-                appDatabase: database,
-                defaultVaultURL: defaultVaultURL
-            )
+            let startupVault = await model.resolveExistingStartupVault(appDatabase: database)
 
             #expect(startupVault == nil)
             #expect(try repository.fetchAllVaults() == [existingVault])
@@ -105,10 +119,8 @@
             try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
             try Data().write(to: blockingFileURL)
 
-            let startupVault = await model.resolveStartupVault(
-                appDatabase: database,
-                defaultVaultURL: defaultVaultURL
-            )
+            await model.configure(appDatabase: database)
+            let startupVault = await model.createVault(at: defaultVaultURL)
 
             #expect(startupVault == nil)
             #expect(model.isShowingError)

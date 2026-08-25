@@ -38,7 +38,10 @@ final class DatabricksAccountController {
         isLoadingProfiles || isSigningIn || isApplyingConfiguration
     }
 
-    func prepare(profileName: String) async -> String? {
+    func prepare(
+        profileName: String,
+        restoreProviderSelectionOnCancellation: Bool = true
+    ) async -> String? {
         let previousProfileName = configuredDatabricksProfileName()
         await loadProfiles()
         guard !Task.isCancelled else { return previousProfileName }
@@ -50,14 +53,21 @@ final class DatabricksAccountController {
         }
         let resolvedProfileName = resolvedProfileName(current: profileName)
         guard resolvedProfileName == profileName else { return resolvedProfileName }
-        await apply(profileName: resolvedProfileName)
+        await apply(
+            profileName: resolvedProfileName,
+            restoreProviderSelectionOnCancellation: restoreProviderSelectionOnCancellation
+        )
         guard isConfigured, configuredProfileName == resolvedProfileName else {
             return restorableProfileName
         }
         return nil
     }
 
-    func signIn(workspaceURL: String, profileName: String) async -> String? {
+    func signIn(
+        workspaceURL: String,
+        profileName: String,
+        restoreProviderSelectionOnCancellation: Bool = true
+    ) async -> String? {
         guard !isBusy else { return nil }
         guard let profileName = profileName.nilIfBlank else {
             errorMessage = L10n.databricksProfileRequired
@@ -97,7 +107,10 @@ final class DatabricksAccountController {
             try await configure(profile: profile, browserLoginCompleted: true)
             return profileName
         } catch is CancellationError {
-            restoreConfiguredStateFromStore(excluding: attemptedProfileName, restoreProviderSelection: true)
+            restoreConfiguredStateFromStore(
+                excluding: attemptedProfileName,
+                restoreProviderSelection: restoreProviderSelectionOnCancellation
+            )
             return nil
         } catch DatabricksCLIError.cliNotInstalled {
             isCLIAvailable = false
@@ -152,7 +165,10 @@ final class DatabricksAccountController {
         profiles.contains { $0.name == current } ? current : profiles.first?.name ?? ""
     }
 
-    private func apply(profileName: String) async {
+    private func apply(
+        profileName: String,
+        restoreProviderSelectionOnCancellation: Bool
+    ) async {
         guard let profile = profile(named: profileName) else {
             errorMessage = L10n.databricksProfileRequired
             return
@@ -166,7 +182,10 @@ final class DatabricksAccountController {
         do {
             try await configure(profile: profile)
         } catch is CancellationError {
-            restoreConfiguredStateFromStore(excluding: profile.name, restoreProviderSelection: true)
+            restoreConfiguredStateFromStore(
+                excluding: profile.name,
+                restoreProviderSelection: restoreProviderSelectionOnCancellation
+            )
             // A newer profile selection superseded this configuration attempt.
         } catch {
             restoreConfiguredStateFromStore(excluding: profile.name)

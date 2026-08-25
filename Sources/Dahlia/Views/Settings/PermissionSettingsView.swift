@@ -1,52 +1,59 @@
 import SwiftUI
 
-struct PermissionGuideWindowView: View {
-    @AppStorage(PermissionGuidePresentationPolicy.userDefaultsKey)
-    private var presentationVersion = 0
-
-    var body: some View {
-        PermissionSettingsView()
-            .onAppear {
-                presentationVersion = PermissionGuidePresentationPolicy.currentVersion
-            }
-    }
-}
-
 struct PermissionSettingsView: View {
     @State private var model: PermissionGuideModel
+    private let permissions: [AppPermission]
+    private let showsDescription: Bool
+    private let showsPermissionFooters: Bool
+    private let prominentLabels: Bool
     @Environment(\.scenePhase) private var scenePhase
 
     @MainActor
-    init(model: PermissionGuideModel = PermissionGuideModel()) {
+    init(
+        permissions: [AppPermission] = AppPermission.allCases,
+        showsDescription: Bool = true,
+        showsPermissionFooters: Bool = true,
+        prominentLabels: Bool = false,
+        model: PermissionGuideModel = PermissionGuideModel()
+    ) {
+        self.permissions = permissions
+        self.showsDescription = showsDescription
+        self.showsPermissionFooters = showsPermissionFooters
+        self.prominentLabels = prominentLabels
         _model = State(initialValue: model)
     }
 
     var body: some View {
         Form {
-            Section {
-                Text(L10n.permissionGuideDescription)
-                    .foregroundStyle(DahliaDesign.secondaryTextColor)
+            if showsDescription {
+                Section {
+                    Text(L10n.permissionGuideDescription)
+                        .foregroundStyle(DahliaDesign.secondaryTextColor)
+                }
             }
 
-            ForEach(AppPermission.allCases) { permission in
+            ForEach(permissions) { permission in
                 Section {
                     PermissionSettingsRow(
                         permission: permission,
                         status: model.status(for: permission),
                         isRequesting: model.requestingPermission == permission,
-                        actionsDisabled: model.requestingPermission != nil
+                        actionsDisabled: model.requestingPermission != nil,
+                        prominentLabel: prominentLabels
                     ) {
                         Task {
                             await model.performPrimaryAction(for: permission)
                         }
                     }
                 } footer: {
-                    VStack(alignment: .leading, spacing: 4) {
-                        if let guidance = permission.guidance(for: model.status(for: permission)) {
-                            Text(guidance)
-                        }
-                        if let footer = permission.footer {
-                            Text(footer)
+                    if showsPermissionFooters {
+                        VStack(alignment: .leading, spacing: 4) {
+                            if let guidance = permission.guidance(for: model.status(for: permission)) {
+                                Text(guidance)
+                            }
+                            if let footer = permission.footer {
+                                Text(footer)
+                            }
                         }
                     }
                 }
@@ -68,23 +75,51 @@ private struct PermissionSettingsRow: View {
     let status: AppPermissionStatus
     let isRequesting: Bool
     let actionsDisabled: Bool
+    let prominentLabel: Bool
     let action: () -> Void
 
     var body: some View {
-        LabeledContent {
-            actionButton
-        } label: {
-            Label {
-                VStack(alignment: .leading) {
-                    Text(permission.title)
+        if prominentLabel {
+            HStack(alignment: .center, spacing: 16) {
+                Image(systemName: permission.systemImage)
+                    .font(.title)
+                    .frame(width: 40)
+                    .dahliaFixedSymbol()
+
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack(alignment: .firstTextBaseline, spacing: 10) {
+                        Text(permission.title)
+                            .font(.title2)
+                            .bold()
+                        Label(status.label, systemImage: status.systemImage)
+                            .foregroundStyle(statusColor)
+                            .fixedSize()
+                    }
                     Text(permission.description)
                         .foregroundStyle(DahliaDesign.secondaryTextColor)
-                    Label(status.label, systemImage: status.systemImage)
-                        .foregroundStyle(statusColor)
                 }
-            } icon: {
-                Image(systemName: permission.systemImage)
-                    .dahliaFixedSymbol()
+                .layoutPriority(1)
+
+                Spacer(minLength: 16)
+
+                actionButton
+            }
+        } else {
+            LabeledContent {
+                actionButton
+            } label: {
+                Label {
+                    VStack(alignment: .leading) {
+                        Text(permission.title)
+                        Text(permission.description)
+                            .foregroundStyle(DahliaDesign.secondaryTextColor)
+                        Label(status.label, systemImage: status.systemImage)
+                            .foregroundStyle(statusColor)
+                    }
+                } icon: {
+                    Image(systemName: permission.systemImage)
+                        .dahliaFixedSymbol()
+                }
             }
         }
     }
@@ -107,7 +142,9 @@ private struct PermissionSettingsRow: View {
     private var baseButton: some View {
         Button(action: action) {
             actionButtonLabel
+                .frame(minWidth: prominentLabel ? 132 : nil, minHeight: prominentLabel ? 28 : nil)
         }
+        .controlSize(prominentLabel ? .large : .regular)
     }
 
     @ViewBuilder

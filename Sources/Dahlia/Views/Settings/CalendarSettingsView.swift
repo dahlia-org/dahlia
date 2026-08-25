@@ -5,60 +5,83 @@ struct CalendarSettingsView: View {
     @ObservedObject private var googleCalendarStore = GoogleCalendarStore.shared
     @ObservedObject private var macCalendarStore = MacCalendarStore.shared
     private let calendarSourceCoordinator = CalendarSourceCoordinator.shared
+    private let showsOnlySourceSetup: Bool
     @State private var googleOAuthConsent = GoogleOAuthConsentState()
+
+    init(showsOnlySourceSetup: Bool = false) {
+        self.showsOnlySourceSetup = showsOnlySourceSetup
+    }
 
     var body: some View {
         Form {
-            Section {
-                Toggle(isOn: $settings.menuBarCalendarEnabled) {
-                    Text(L10n.menuBarCalendarDisplay)
-                    Text(L10n.menuBarCalendarDisplayDescription)
+            if !showsOnlySourceSetup {
+                Section {
+                    Toggle(isOn: $settings.menuBarCalendarEnabled) {
+                        Text(L10n.menuBarCalendarDisplay)
+                        Text(L10n.menuBarCalendarDisplayDescription)
+                    }
+                    .toggleStyle(.switch)
+
+                    Toggle(isOn: $settings.menuBarCalendarShowsEventTitle) {
+                        Text(L10n.menuBarCalendarEventTitle)
+                        Text(L10n.menuBarCalendarEventTitleDescription)
+                    }
+                    .toggleStyle(.switch)
+                    .disabled(!settings.menuBarCalendarEnabled)
+
+                    Toggle(isOn: $settings.menuBarCalendarShowsCountdown) {
+                        Text(L10n.menuBarCalendarCountdown)
+                        Text(L10n.menuBarCalendarCountdownDescription)
+                    }
+                    .toggleStyle(.switch)
+                    .disabled(!settings.menuBarCalendarEnabled)
+                } header: {
+                    Text(L10n.menuBarCalendar)
+                } footer: {
+                    Text(L10n.menuBarCalendarDescription)
                 }
-                .toggleStyle(.switch)
 
-                Toggle(isOn: $settings.menuBarCalendarShowsEventTitle) {
-                    Text(L10n.menuBarCalendarEventTitle)
-                    Text(L10n.menuBarCalendarEventTitleDescription)
-                }
-                .toggleStyle(.switch)
-                .disabled(!settings.menuBarCalendarEnabled)
+                MeetingLinkSettingsView()
 
-                Toggle(isOn: $settings.menuBarCalendarShowsCountdown) {
-                    Text(L10n.menuBarCalendarCountdown)
-                    Text(L10n.menuBarCalendarCountdownDescription)
-                }
-                .toggleStyle(.switch)
-                .disabled(!settings.menuBarCalendarEnabled)
-            } header: {
-                Text(L10n.menuBarCalendar)
-            } footer: {
-                Text(L10n.menuBarCalendarDescription)
-            }
+                CalendarEventFilterSettingsView(settings: settings)
 
-            MeetingLinkSettingsView()
-
-            CalendarEventFilterSettingsView(settings: settings)
-
-            Section {
-                Toggle(isOn: $settings.isAutomaticOrganizationMembershipEnabled) {
-                    Text(L10n.automaticOrganizationMembership)
-                    Text(L10n.automaticOrganizationMembershipDescription)
-                }
-                .toggleStyle(.switch)
-            }
-
-            Section {
-                ForEach([CalendarSource.macOS, .google]) { source in
-                    Toggle(isOn: calendarSourceBinding(for: source)) {
-                        Text(source.displayName)
-                        Text(calendarSourceDescription(for: source))
+                Section {
+                    Toggle(isOn: $settings.isAutomaticOrganizationMembershipEnabled) {
+                        Text(L10n.automaticOrganizationMembership)
+                        Text(L10n.automaticOrganizationMembershipDescription)
                     }
                     .toggleStyle(.switch)
                 }
-            } header: {
-                Text(L10n.calendarSources)
-            } footer: {
-                Text(L10n.calendarSourcesDescription)
+            }
+
+            if showsOnlySourceSetup {
+                Section {
+                    HStack(alignment: .top, spacing: 16) {
+                        ForEach([CalendarSource.macOS, .google]) { source in
+                            CalendarSourceChoiceCard(
+                                source: source,
+                                isSelected: settings.enabledCalendarSources == [source]
+                            ) {
+                                settings.enabledCalendarSources = [source]
+                            }
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+            } else {
+                Section {
+                    ForEach([CalendarSource.macOS, .google]) { source in
+                        Toggle(isOn: calendarSourceBinding(for: source)) {
+                            Text(source.displayName)
+                            Text(calendarSourceDescription(for: source))
+                        }
+                        .toggleStyle(.switch)
+                    }
+                } header: {
+                    Text(L10n.calendarSources)
+                } footer: {
+                    Text(L10n.calendarSourcesDescription)
+                }
             }
 
             if settings.isCalendarSourceEnabled(.macOS) {
@@ -100,6 +123,9 @@ struct CalendarSettingsView: View {
             }
         }
         .task {
+            if showsOnlySourceSetup {
+                settings.enabledCalendarSources = [Self.exclusiveSetupSource(from: settings.enabledCalendarSources)]
+            }
             await refreshEnabledSources()
         }
         .onChange(of: settings.enabledCalendarSourcesJSON) { _, _ in
@@ -120,6 +146,10 @@ struct CalendarSettingsView: View {
             || settings.isCalendarSourceEnabled(.google) && googleCalendarStore.isAuthorized
     }
 
+    static func exclusiveSetupSource(from sources: Set<CalendarSource>) -> CalendarSource {
+        sources.count == 1 ? sources.first ?? .google : .google
+    }
+
     private func startGoogleOAuthIfConsented() {
         guard googleOAuthConsent.consumeConsent() else { return }
         Task {
@@ -137,7 +167,9 @@ struct CalendarSettingsView: View {
         } header: {
             Text(L10n.googleCalendar)
         } footer: {
-            Text(L10n.googleCalendarSettingsDescription)
+            if !showsOnlySourceSetup {
+                Text(L10n.googleCalendarSettingsDescription)
+            }
         }
     }
 
@@ -151,7 +183,9 @@ struct CalendarSettingsView: View {
         } header: {
             Text(L10n.macOSCalendar)
         } footer: {
-            Text(L10n.macOSCalendarSettingsDescription)
+            if !showsOnlySourceSetup {
+                Text(L10n.macOSCalendarSettingsDescription)
+            }
         }
     }
 
@@ -314,20 +348,25 @@ private struct CalendarSourceSelectionView: View {
                 Text(emptyMessage)
                     .foregroundStyle(DahliaDesign.secondaryTextColor)
             } else {
-                ForEach(calendars) { calendar in
-                    Toggle(isOn: selectionBinding(calendar.id)) {
-                        Label {
-                            Text(calendar.title)
-                        } icon: {
-                            Circle()
-                                .fill(calendar.colorHex.map(Color.init(hex:)) ?? Color.accentColor)
-                                .frame(width: 10, height: 10)
-                                .accessibilityHidden(true)
+                ScrollView {
+                    LazyVStack(alignment: .leading) {
+                        ForEach(calendars) { calendar in
+                            Toggle(isOn: selectionBinding(calendar.id)) {
+                                Label {
+                                    Text(calendar.title)
+                                } icon: {
+                                    Circle()
+                                        .fill(calendar.colorHex.map(Color.init(hex:)) ?? Color.accentColor)
+                                        .frame(width: 10, height: 10)
+                                        .accessibilityHidden(true)
+                                }
+                            }
+                            .toggleStyle(.checkbox)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                         }
                     }
-                    .toggleStyle(.checkbox)
-                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
+                .frame(maxHeight: 160)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
