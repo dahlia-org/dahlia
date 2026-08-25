@@ -2442,6 +2442,7 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var summaryDetailConcise: String { String(localized: "Concise", bundle: bundle) }
     static var summaryDetailStandard: String { String(localized: "Standard", bundle: bundle) }
     static var summaryDetailDetailed: String { String(localized: "Detailed", bundle: bundle) }
+    static var summaryDetailEventSession: String { String(localized: "Event Session", bundle: bundle) }
     static var summaryOutputLanguage: String { String(localized: "Output Language", bundle: bundle) }
     static var summaryOutputLanguageDescription: String { String(
         localized: "Select the language used for generated summaries.",

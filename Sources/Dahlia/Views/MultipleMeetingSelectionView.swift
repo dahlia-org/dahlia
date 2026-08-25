@@ -65,6 +65,7 @@ struct MultipleMeetingSelectionView: View {
                 title: L10n.regenerateSelectedSummariesConfirmationTitle,
                 description: L10n.regenerateSelectedSummariesConfirmationDescription,
                 actionTitle: L10n.regenerateSummaries,
+                initialDetailLevel: AppSettings.shared.summaryDetailLevel,
                 onGenerate: regenerateSummaries
             )
         }

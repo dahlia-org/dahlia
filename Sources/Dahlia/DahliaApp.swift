@@ -148,15 +148,16 @@ struct DahliaApp: App {
                     allowsRecordedLanguageSelection: confirmation.allowsRecordedLanguageSelection,
                     initiallyRetainsAudioAfterBatch: confirmation.retainAudioAfterBatch,
                     initiallyGeneratesSummary: confirmation.initiallyGeneratesSummary,
-                    summaryGenerationOptions: AppSettings.shared.batchSummaryGenerationOptions,
+                    summaryGenerationOptions: confirmation.summaryGenerationOptions,
                     isRetranscription: confirmation.isRetranscription,
-                    onStart: { languageSelection, retainAudio, summaryOptions, projectId in
+                    onStart: { languageSelection, retainAudio, generatesSummary, summaryOptions, projectId in
                         if let error = viewModel.assignPendingBatchTranscriptionProject(projectId) {
                             return error
                         }
                         viewModel.confirmBatchTranscription(
                             languageSelection: languageSelection,
                             retainAudioAfterBatch: retainAudio,
+                            generatesSummary: generatesSummary,
                             summaryGenerationOptions: summaryOptions
                         )
                         return nil

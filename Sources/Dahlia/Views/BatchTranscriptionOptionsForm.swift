@@ -8,6 +8,7 @@ struct BatchTranscriptionOptionsForm: View {
     @Binding var languageSelection: BatchTranscriptionLanguageSelection
     @Binding var deleteAudioAfterTranscription: Bool
     @Binding var generateSummaryAfterBatchTranscription: Bool
+    @Binding var summaryDetailLevel: SummaryDetailLevel
     @Binding var exportBatchSummaryToVault: Bool
     @Binding var exportBatchSummaryToGoogleDocs: Bool
     let projects: [FlatProjectRow]
@@ -57,6 +58,7 @@ struct BatchTranscriptionOptionsForm: View {
                 .toggleStyle(.switch)
 
                 SummaryGenerationOptionsControls(
+                    detailLevel: $summaryDetailLevel,
                     exportsToVault: $exportBatchSummaryToVault,
                     exportsToGoogleDocs: $exportBatchSummaryToGoogleDocs,
                     isEnabled: generateSummaryAfterBatchTranscription

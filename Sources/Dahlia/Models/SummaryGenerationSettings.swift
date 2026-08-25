@@ -8,11 +8,14 @@ struct SummaryGenerationSettings: Equatable, Sendable {
     let languageDisplayName: String
 
     @MainActor
-    static func current(_ settings: AppSettings = .shared) -> Self {
+    static func current(
+        _ settings: AppSettings = .shared,
+        detailLevel: SummaryDetailLevel? = nil
+    ) -> Self {
         Self(
             modelID: settings.codexModelID.nilIfBlank,
             reasoningEffort: settings.codexReasoningEffort,
-            detailLevelInstruction: settings.summaryDetailLevel.instruction,
+            detailLevelInstruction: (detailLevel ?? settings.summaryDetailLevel).instruction,
             languageDisplayName: settings.llmSummaryLanguage.displayName
         )
     }

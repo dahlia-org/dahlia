@@ -7,12 +7,13 @@ struct BatchTranscriptionConfirmationView: View {
     let projects: [FlatProjectRow]
     let isRetranscription: Bool
     let allowsRecordedLanguageSelection: Bool
-    let onStart: (BatchTranscriptionLanguageSelection, Bool, SummaryGenerationOptions?, UUID?) -> String?
+    let onStart: (BatchTranscriptionLanguageSelection, Bool, Bool, SummaryGenerationOptions, UUID?) -> String?
     let onPostpone: () -> Void
 
     @State private var languageSelection: BatchTranscriptionLanguageSelection
     @State private var deleteAudioAfterTranscription: Bool
     @State private var generateSummaryAfterBatchTranscription: Bool
+    @State private var summaryDetailLevel: SummaryDetailLevel
     @State private var exportBatchSummaryToVault: Bool
     @State private var exportBatchSummaryToGoogleDocs: Bool
     @State private var selectedProjectId: UUID?
@@ -31,7 +32,7 @@ struct BatchTranscriptionConfirmationView: View {
         initiallyGeneratesSummary: Bool,
         summaryGenerationOptions: SummaryGenerationOptions,
         isRetranscription: Bool,
-        onStart: @escaping (BatchTranscriptionLanguageSelection, Bool, SummaryGenerationOptions?, UUID?) -> String?,
+        onStart: @escaping (BatchTranscriptionLanguageSelection, Bool, Bool, SummaryGenerationOptions, UUID?) -> String?,
         onPostpone: @escaping () -> Void
     ) {
         self.locales = locales
@@ -45,6 +46,7 @@ struct BatchTranscriptionConfirmationView: View {
         _languageSelection = State(initialValue: initialLanguageSelection)
         _deleteAudioAfterTranscription = State(initialValue: !initiallyRetainsAudioAfterBatch)
         _generateSummaryAfterBatchTranscription = State(initialValue: initiallyGeneratesSummary)
+        _summaryDetailLevel = State(initialValue: summaryGenerationOptions.detailLevel ?? .defaultValue)
         _exportBatchSummaryToVault = State(initialValue: summaryGenerationOptions.exportOptions.exportsToVault)
         _exportBatchSummaryToGoogleDocs = State(initialValue: summaryGenerationOptions.exportOptions.exportsToGoogleDocs)
         _selectedProjectId = State(initialValue: initialProjectId)
@@ -75,6 +77,7 @@ struct BatchTranscriptionConfirmationView: View {
                 languageSelection: $languageSelection,
                 deleteAudioAfterTranscription: $deleteAudioAfterTranscription,
                 generateSummaryAfterBatchTranscription: $generateSummaryAfterBatchTranscription,
+                summaryDetailLevel: $summaryDetailLevel,
                 exportBatchSummaryToVault: $exportBatchSummaryToVault,
                 exportBatchSummaryToGoogleDocs: $exportBatchSummaryToGoogleDocs,
                 projects: projects,
@@ -114,17 +117,17 @@ struct BatchTranscriptionConfirmationView: View {
     }
 
     private func startTranscription() {
-        let summaryOptions = generateSummaryAfterBatchTranscription
-            ? SummaryGenerationOptions(
-                exportOptions: SummaryExportOptions(
-                    exportsToVault: exportBatchSummaryToVault,
-                    exportsToGoogleDocs: exportBatchSummaryToGoogleDocs
-                )
-            )
-            : nil
+        let summaryOptions = SummaryGenerationOptions(
+            exportOptions: SummaryExportOptions(
+                exportsToVault: exportBatchSummaryToVault,
+                exportsToGoogleDocs: exportBatchSummaryToGoogleDocs
+            ),
+            detailLevel: summaryDetailLevel
+        )
         errorMessage = onStart(
             languageSelection,
             !deleteAudioAfterTranscription,
+            generateSummaryAfterBatchTranscription,
             summaryOptions,
             selectedProjectId
         )

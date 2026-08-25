@@ -97,15 +97,21 @@ import GRDB
 
         @Test
         func newConfirmationDefaultsToManualSelectedLanguage() {
+            let summaryOptions = SummaryGenerationOptions(
+                exportOptions: .manual,
+                detailLevel: .eventSession
+            )
             let confirmation = BatchTranscriptionConfirmation(
                 sessionId: .v7(),
                 meetingId: .v7(),
                 suggestedLocaleIdentifier: "ja_JP",
-                retainAudioAfterBatch: true
+                retainAudioAfterBatch: true,
+                summaryGenerationOptions: summaryOptions
             )
 
             #expect(confirmation.initialLanguageSelection == .manual(localeIdentifier: "ja_JP"))
             #expect(!confirmation.allowsRecordedLanguageSelection)
+            #expect(confirmation.summaryGenerationOptions == summaryOptions)
 
             let retry = BatchTranscriptionConfirmation(
                 sessionId: confirmation.sessionId,
@@ -113,9 +119,59 @@ import GRDB
                 suggestedLocaleIdentifier: "ja_JP",
                 retainAudioAfterBatch: true,
                 initialLanguageSelection: .automatic,
-                allowsRecordedLanguageSelection: true
+                allowsRecordedLanguageSelection: true,
+                summaryGenerationOptions: confirmation.summaryGenerationOptions
             )
             #expect(retry.allowsRecordedLanguageSelection)
+            #expect(retry.summaryGenerationOptions.detailLevel == .eventSession)
+        }
+
+        @Test
+        func failedConfirmationKeepsDisabledSummaryDetailSelection() async throws {
+            let batch = try BatchAudioTestFixture(
+                name: "failed-confirmation-summary-detail",
+                endedAt: Date(timeIntervalSince1970: 1_776_384_001),
+                duration: 1
+            )
+            defer { batch.removeFiles() }
+            try await batch.recordMicrophoneAudio()
+            try await batch.database.dbQueue.write { db in
+                try db.execute(sql: """
+                CREATE TRIGGER fail_batch_confirmation
+                BEFORE UPDATE OF batchLastAttemptAt ON recording_sessions
+                BEGIN
+                    SELECT RAISE(ABORT, 'forced confirmation failure');
+                END
+                """)
+            }
+            let viewModel = CaptionViewModel()
+            viewModel.configureBatchTranscription(
+                dbQueue: batch.database.dbQueue,
+                managedRootURL: batch.managedRootURL,
+                recoverExistingSessions: false
+            )
+            await viewModel.presentManualBatchTranscription(
+                sessionId: batch.session.id,
+                meetingId: batch.meeting.id,
+                dbQueue: batch.database.dbQueue
+            )
+
+            let selectedOptions = SummaryGenerationOptions(
+                exportOptions: .manual,
+                detailLevel: .eventSession
+            )
+            viewModel.confirmBatchTranscription(
+                languageSelection: .manual(localeIdentifier: "ja_JP"),
+                retainAudioAfterBatch: false,
+                generatesSummary: false,
+                summaryGenerationOptions: selectedOptions
+            )
+
+            #expect(await waitUntil {
+                guard let confirmation = viewModel.pendingBatchTranscriptionConfirmation else { return false }
+                return !confirmation.initiallyGeneratesSummary
+                    && confirmation.summaryGenerationOptions == selectedOptions
+            })
         }
 
         @Test
@@ -154,7 +210,8 @@ import GRDB
             viewModel.confirmBatchTranscription(
                 languageSelection: .manual(localeIdentifier: "ja_JP"),
                 retainAudioAfterBatch: false,
-                summaryGenerationOptions: nil
+                generatesSummary: false,
+                summaryGenerationOptions: .manual
             )
             #expect(viewModel.pendingBatchTranscriptionConfirmation != nil)
             let session = try await batch.database.dbQueue.read { db in

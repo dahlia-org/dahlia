@@ -8,10 +8,16 @@
         func mergingCombinesExports() {
             let merged = SummaryGenerationOptions.merging([
                 SummaryGenerationOptions(
-                    exportOptions: SummaryExportOptions(exportsToVault: true, exportsToGoogleDocs: false)
+                    exportOptions: SummaryExportOptions(exportsToVault: true, exportsToGoogleDocs: false),
+                    detailLevel: .standard
                 ),
                 SummaryGenerationOptions(
-                    exportOptions: SummaryExportOptions(exportsToVault: false, exportsToGoogleDocs: true)
+                    exportOptions: SummaryExportOptions(exportsToVault: false, exportsToGoogleDocs: true),
+                    detailLevel: .eventSession
+                ),
+                SummaryGenerationOptions(
+                    exportOptions: SummaryExportOptions(exportsToVault: false, exportsToGoogleDocs: false),
+                    detailLevel: .detailed
                 ),
             ])
 
@@ -19,6 +25,7 @@
                 exportsToVault: true,
                 exportsToGoogleDocs: true
             ))
+            #expect(merged.detailLevel == .eventSession)
         }
     }
 #endif

@@ -272,7 +272,8 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
             exportOptions: SummaryExportOptions(
                 exportsToVault: exportBatchSummaryToVault,
                 exportsToGoogleDocs: exportBatchSummaryToGoogleDocs
-            )
+            ),
+            detailLevel: summaryDetailLevel
         )
     }
 

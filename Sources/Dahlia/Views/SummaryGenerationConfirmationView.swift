@@ -4,6 +4,7 @@ struct SummaryGenerationConfirmationView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var exportsToVault = SummaryExportOptions.manual.exportsToVault
     @State private var exportsToGoogleDocs = SummaryExportOptions.manual.exportsToGoogleDocs
+    @State private var detailLevel: SummaryDetailLevel
     @State private var selectedProjectId: UUID?
     @State private var errorMessage: String?
 
@@ -19,6 +20,7 @@ struct SummaryGenerationConfirmationView: View {
         actionTitle: String = L10n.generateSummary,
         projects: [FlatProjectRow]? = nil,
         initialProjectId: UUID? = nil,
+        initialDetailLevel: SummaryDetailLevel,
         onGenerate: @escaping (SummaryGenerationOptions, UUID?) -> String?
     ) {
         self.title = title
@@ -26,6 +28,7 @@ struct SummaryGenerationConfirmationView: View {
         self.actionTitle = actionTitle
         self.projects = projects
         self.onGenerate = onGenerate
+        _detailLevel = State(initialValue: initialDetailLevel)
         _selectedProjectId = State(initialValue: initialProjectId)
         _errorMessage = State(initialValue: nil)
     }
@@ -34,9 +37,15 @@ struct SummaryGenerationConfirmationView: View {
         title: String = L10n.summaryGenerationConfirmationTitle,
         description: String = L10n.summaryGenerationConfirmationDescription,
         actionTitle: String = L10n.generateSummary,
+        initialDetailLevel: SummaryDetailLevel,
         onGenerate: @escaping (SummaryGenerationOptions) -> Void
     ) {
-        self.init(title: title, description: description, actionTitle: actionTitle) { options, _ in
+        self.init(
+            title: title,
+            description: description,
+            actionTitle: actionTitle,
+            initialDetailLevel: initialDetailLevel
+        ) { options, _ in
             onGenerate(options)
             return nil
         }
@@ -62,6 +71,7 @@ struct SummaryGenerationConfirmationView: View {
                     }
 
                     SummaryGenerationOptionsControls(
+                        detailLevel: $detailLevel,
                         exportsToVault: $exportsToVault,
                         exportsToGoogleDocs: $exportsToGoogleDocs,
                         isEnabled: true
@@ -98,7 +108,8 @@ struct SummaryGenerationConfirmationView: View {
             exportOptions: SummaryExportOptions(
                 exportsToVault: exportsToVault,
                 exportsToGoogleDocs: exportsToGoogleDocs
-            )
+            ),
+            detailLevel: detailLevel
         ), selectedProjectId)
         if errorMessage == nil {
             dismiss()
