@@ -22,6 +22,8 @@ final class SearchRankingBenchmarkModel {
 
     @ObservationIgnored private let database: AppDatabaseManager?
     @ObservationIgnored private var runTask: Task<Void, Never>?
+    /// 実行ごとの世代。取り消し済みの実行が後続の実行の状態を上書きしないようにする。
+    @ObservationIgnored private var runGeneration = 0
 
     init(database: AppDatabaseManager?) {
         self.database = database
@@ -52,6 +54,7 @@ final class SearchRankingBenchmarkModel {
     func cancel() {
         runTask?.cancel()
         runTask = nil
+        runGeneration &+= 1
         phase = .idle
     }
 
@@ -75,6 +78,8 @@ final class SearchRankingBenchmarkModel {
         // 探索は数百回の検索を発行するため、書き込みキューを塞がない読み取り専用キューを使う。
         let dbQueue = database.searchDBQueue
         phase = reusable == nil ? .generatingJudgments : .evaluating
+        runGeneration &+= 1
+        let generation = runGeneration
         runTask = Task { [weak self] in
             do {
                 let judgments: MeetingSearchJudgmentList
@@ -86,7 +91,7 @@ final class SearchRankingBenchmarkModel {
                         dbQueue: dbQueue
                     )
                     try Task.checkCancellation()
-                    guard let self else { return }
+                    guard let self, self.runGeneration == generation else { return }
                     self.judgmentList = judgments
                     AppSettings.storeMeetingSearchJudgmentList(judgments, in: .standard)
                     self.phase = .evaluating
@@ -105,16 +110,17 @@ final class SearchRankingBenchmarkModel {
                     ).items.map(\.id)
                 }
                 try Task.checkCancellation()
-                guard let self else { return }
+                guard let self, self.runGeneration == generation else { return }
                 self.result = benchmark
                 self.phase = .idle
             } catch is CancellationError {
-                self?.phase = .idle
+                guard let self, self.runGeneration == generation else { return }
+                self.phase = .idle
             } catch {
                 benchmarkLogger.error(
                     "Search ranking benchmark failed: \(error.localizedDescription, privacy: .public)"
                 )
-                guard let self else { return }
+                guard let self, self.runGeneration == generation else { return }
                 self.errorMessage = error.localizedDescription
                 self.phase = .idle
             }
