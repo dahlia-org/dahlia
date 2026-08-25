@@ -7,6 +7,10 @@ struct DebugSettingsView: View {
     var body: some View {
         Form {
             Section {
+                LabeledContent(L10n.codexVersion, value: CodexBundle.version)
+            }
+
+            Section {
                 Button(
                     isAudioProcessMonitorRunning ? L10n.stopAudioProcessActivityMonitor : L10n.startAudioProcessActivityMonitor,
                     systemImage: isAudioProcessMonitorRunning ? "stop.circle" : "waveform.badge.magnifyingglass",
