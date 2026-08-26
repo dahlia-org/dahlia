@@ -24,7 +24,8 @@ struct CodexChatSidebarView: View {
             onShowFullScreen: onShowFullScreen,
             onPopOut: onPopOut,
             reservesSidebarToggle: !isFullScreen,
-            reservesWindowControls: false
+            reservesWindowControls: false,
+            contentMaxWidth: isFullScreen ? DahliaDesign.mainContentMaxWidth : nil
         )
         .task(id: sidebarViewModel.currentVault?.id) {
             sidebarViewModel.loadMeetingReferencesIfNeeded()

@@ -114,8 +114,6 @@ struct ContentView: View {
                                     onPopOut: popOutDockedChat,
                                     onOpenDetachedSession: openDetachedChat
                                 )
-                                .frame(maxWidth: DahliaDesign.mainContentMaxWidth)
-                                .frame(maxWidth: .infinity)
                             } else {
                                 detailView
                             }
