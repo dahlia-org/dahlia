@@ -7,7 +7,7 @@ enum BatchAudioRetentionPeriod: Int, CaseIterable, Identifiable, Sendable {
     case sevenDays = 7
     case fourteenDays = 14
 
-    static let defaultValue: Self = .forever
+    static let defaultValue: Self = .threeDays
 
     var id: Int { rawValue }
 

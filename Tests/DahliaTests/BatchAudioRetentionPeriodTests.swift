@@ -8,10 +8,10 @@ import Foundation
     @Suite(.serialized)
     struct BatchAudioRetentionPeriodTests {
         @Test
-        func exposesExpectedPeriodsAndFallsBackToForever() {
+        func exposesExpectedPeriodsAndFallsBackToThreeDays() {
             #expect(BatchAudioRetentionPeriod.allCases.map(\.rawValue) == [0, 1, 3, 7, 14])
-            #expect(BatchAudioRetentionPeriod.defaultValue == .forever)
-            #expect(BatchAudioRetentionPeriod.resolved(rawValue: 999) == .forever)
+            #expect(BatchAudioRetentionPeriod.defaultValue == .threeDays)
+            #expect(BatchAudioRetentionPeriod.resolved(rawValue: 999) == .threeDays)
         }
 
         @Test
@@ -25,7 +25,7 @@ import Foundation
             UserDefaults.standard.removeObject(forKey: AppSettings.batchAudioRetentionPeriodUserDefaultsKey)
             UserDefaults.standard.set(false, forKey: "retainAudioAfterBatchTranscription")
 
-            #expect(AppSettings().batchAudioRetentionPeriod == .forever)
+            #expect(AppSettings().batchAudioRetentionPeriod == .threeDays)
         }
 
         @Test
