@@ -8,6 +8,7 @@ enum MainWindowLocation: Equatable {
     case meetingDraft(DraftMeeting, noteText: String)
     case projects
     case project(UUID)
+    case chat
 
     var section: MainWindowSection {
         switch self {
@@ -15,6 +16,8 @@ enum MainWindowLocation: Equatable {
             .meetings
         case .projects, .project:
             .projects
+        case .chat:
+            .chat
         }
     }
 }
@@ -342,7 +345,9 @@ final class MainWindowNavigation {
     }
 
     func changeVault(to _: UUID?) {
-        let location: MainWindowLocation = if section == .projects {
+        let location: MainWindowLocation = if section == .chat {
+            .chat
+        } else if section == .projects {
             .projects
         } else if currentLocation == .unprocessedRecordings {
             .unprocessedRecordings

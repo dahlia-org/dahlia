@@ -16,6 +16,37 @@
 
             navigation.showMeetings()
             #expect(navigation.section == .meetings)
+
+            navigation.recordNavigation(to: .chat)
+            #expect(navigation.section == .chat)
+        }
+
+        @Test
+        func navigatesBackwardAndForwardThroughChat() async {
+            let navigation = MainWindowNavigation(openMainWindow: {})
+            navigation.recordNavigation(to: .chat)
+            navigation.recordNavigation(to: .projects)
+
+            await navigateBack(navigation)
+            #expect(navigation.currentLocation == .chat)
+            #expect(navigation.section == .chat)
+
+            await navigateForward(navigation)
+            #expect(navigation.currentLocation == .projects)
+            #expect(navigation.section == .projects)
+        }
+
+        @Test
+        func changingVaultKeepsChatVisible() {
+            let navigation = MainWindowNavigation(openMainWindow: {})
+            navigation.recordNavigation(to: .chat)
+
+            navigation.changeVault(to: .v7())
+
+            #expect(navigation.currentLocation == .chat)
+            #expect(navigation.section == .chat)
+            #expect(!navigation.canGoBack)
+            #expect(!navigation.canGoForward)
         }
 
         @Test

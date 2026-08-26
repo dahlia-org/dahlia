@@ -18,6 +18,8 @@ struct MeetingSidebarProjectSection: View {
     let onToggleExpansion: () -> Void
     let allowsListSelection: Bool
     let onSelectMeeting: (UUID) -> Void
+    let activatesMeetingOnTap: Bool
+    let onActivateMeeting: (UUID) -> Void
     let onOpenProject: (UUID, ProjectNavigationIntent) -> Void
     let onTogglePin: (UUID) -> Void
     let onCreateMeeting: (ProjectOverviewItem) -> Void
@@ -118,6 +120,12 @@ struct MeetingSidebarProjectSection: View {
         if allowsListSelection {
             meetingRowContent(item)
                 .tag(item.meetingId)
+                .simultaneousGesture(TapGesture().onEnded {
+                    onActivateMeeting(item.meetingId)
+                }, including: activatesMeetingOnTap ? .all : .none)
+                .accessibilityAction(named: Text(L10n.open)) {
+                    onSelectMeeting(item.meetingId)
+                }
         } else {
             Button(action: { onSelectMeeting(item.meetingId) }) {
                 meetingRowContent(item)
