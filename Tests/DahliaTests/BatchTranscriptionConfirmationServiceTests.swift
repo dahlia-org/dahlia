@@ -173,7 +173,7 @@ import GRDB
         }
 
         @Test
-        func startupRecoveryPurgesExpiredAudio() async throws {
+        func startupRecoveryKeepsRecentlyRetranscribedAudio() async throws {
             let completedAt = Date(timeIntervalSince1970: 1_776_384_060)
             let fixture = try BatchAudioTestFixture(
                 name: "DeferredAudioDeletion",
@@ -216,7 +216,7 @@ import GRDB
                     .map(\.state)
             }
 
-            #expect(segmentStates == [.purged])
+            #expect(segmentStates == [.ready])
         }
 
         @Test

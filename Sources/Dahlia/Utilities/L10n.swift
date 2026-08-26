@@ -1833,7 +1833,7 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var batchAudioRetentionPeriod: String { String(localized: "Recording Retention", bundle: bundle) }
     static var batchAudioRetentionPeriodDescription: String { String(
         // swiftlint:disable:next line_length
-        localized: "Successfully transcribed batch recordings become eligible for deletion this long after recording ends. Failed or unfinished transcriptions are kept. Real-time transcription does not save audio files.",
+        localized: "Successfully transcribed batch recordings become eligible for deletion this long after both recording and transcription finish. Failed or unfinished transcriptions are kept. Real-time transcription does not save audio files.",
         bundle: bundle
     ) }
     static var forever: String { String(localized: "Forever", bundle: bundle) }

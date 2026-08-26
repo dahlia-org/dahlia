@@ -15,7 +15,7 @@ import Foundation
         }
 
         @Test
-        func ignoresLegacyImmediateDeletionSetting() {
+        func usesThreeDayDefaultWithoutPersistingAnUnselectedValue() {
             let retentionSnapshot = UserDefaultsValueSnapshot(key: AppSettings.batchAudioRetentionPeriodUserDefaultsKey)
             let legacySnapshot = UserDefaultsValueSnapshot(key: "retainAudioAfterBatchTranscription")
             defer {
@@ -26,6 +26,25 @@ import Foundation
             UserDefaults.standard.set(false, forKey: "retainAudioAfterBatchTranscription")
 
             #expect(AppSettings().batchAudioRetentionPeriod == .threeDays)
+            #expect(UserDefaults.standard.object(forKey: AppSettings.batchAudioRetentionPeriodUserDefaultsKey) == nil)
+        }
+
+        @Test
+        func migratesLegacyKeepAudioSelectionToForever() {
+            let retentionSnapshot = UserDefaultsValueSnapshot(key: AppSettings.batchAudioRetentionPeriodUserDefaultsKey)
+            let legacySnapshot = UserDefaultsValueSnapshot(key: "retainAudioAfterBatchTranscription")
+            defer {
+                retentionSnapshot.restore()
+                legacySnapshot.restore()
+            }
+            UserDefaults.standard.removeObject(forKey: AppSettings.batchAudioRetentionPeriodUserDefaultsKey)
+            UserDefaults.standard.set(true, forKey: "retainAudioAfterBatchTranscription")
+
+            #expect(AppSettings().batchAudioRetentionPeriod == .forever)
+            #expect(
+                UserDefaults.standard.integer(forKey: AppSettings.batchAudioRetentionPeriodUserDefaultsKey)
+                    == BatchAudioRetentionPeriod.forever.rawValue
+            )
         }
 
         @Test

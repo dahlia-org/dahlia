@@ -790,6 +790,7 @@ extension BatchTranscriptionCoordinator {
                   AND sessions.batchDiscardedAt IS NULL
                   AND sessions.endedAt IS NOT NULL
                   AND sessions.endedAt <= ?
+                  AND sessions.batchCompletedAt <= ?
                   AND (
                       sessions.batchLastAttemptAt IS NULL
                       OR sessions.batchLastAttemptAt <= sessions.batchCompletedAt
@@ -808,6 +809,7 @@ extension BatchTranscriptionCoordinator {
                 arguments: [
                     TranscriptionMode.batch.rawValue,
                     cutoff,
+                    cutoff,
                     RecordingAudioSegmentState.purged.rawValue,
                     RecordingAudioSegmentState.failed.rawValue,
                 ]
@@ -815,7 +817,7 @@ extension BatchTranscriptionCoordinator {
         }) ?? []
         for sessionId in sessionIds {
             do {
-                try await recordingAudioStore.requestPurge(sessionId: sessionId)
+                try await recordingAudioStore.requestRetentionPurge(sessionId: sessionId, cutoff: cutoff)
             } catch {
                 ErrorReportingService.capture(error, context: ["source": "batchAudioRetention"])
             }

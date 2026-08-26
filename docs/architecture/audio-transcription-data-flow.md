@@ -256,7 +256,7 @@ sequenceDiagram
 これは総処理時間の上限ではない。ready CAF は保持し、起動時は音声整合性の復旧だけを行って batch recognition を自動再開しない。
 前プロセスで queued／running だった処理は中断状態へ移し、ユーザーはミーティング詳細または未処理録音一覧から
 保持音声を明示的に再処理できる。複数の batch recognition は一つずつ直列実行する。
-再試行成功後も、現在の保存期間と recording session の `endedAt` から削除対象を判定する。期限を過ぎていれば、
+再試行成功後も、現在の保存期間を recording session の `endedAt` と `batchCompletedAt` の遅い方から計算して削除対象を判定する。期限を過ぎていれば、
 既存の purge state machine で音声を削除する。
 
 認識途中の結果は正本へ部分反映しない。成功した全結果を `BatchTranscriptionPersistence.complete` が一つの transaction で

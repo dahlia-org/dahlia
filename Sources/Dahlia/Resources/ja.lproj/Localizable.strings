@@ -857,7 +857,7 @@
 "Show the transcript while recording. Accuracy may be lower than transcription after recording, and audio files are not saved. Real-time transcription uses the live subtitle language. Change it in Language settings or from the recording panel." = "録音中に文字起こしを表示します。録音後の文字起こしより精度が低下する場合があり、音声ファイルは保存されません。リアルタイム文字起こしにはライブ字幕言語を使用します。言語設定または録音パネルから変更できます。";
 "Record audio first, then create a higher-accuracy transcript after recording stops." = "先に音声を録音し、録音終了後に高精度な文字起こしを作成します。";
 "Recording Retention" = "録音データの保存期間";
-"Successfully transcribed batch recordings become eligible for deletion this long after recording ends. Failed or unfinished transcriptions are kept. Real-time transcription does not save audio files." = "文字起こしに成功したバッチ録音は、録音終了から指定期間後に削除対象になります。失敗または未完了の文字起こしは保持します。リアルタイム文字起こしでは音声ファイルを保存しません。";
+"Successfully transcribed batch recordings become eligible for deletion this long after both recording and transcription finish. Failed or unfinished transcriptions are kept. Real-time transcription does not save audio files." = "文字起こしに成功したバッチ録音は、録音と文字起こしの両方が完了してから指定期間後に削除対象になります。失敗または未完了の文字起こしは保持します。リアルタイム文字起こしでは音声ファイルを保存しません。";
 "Forever" = "無期限";
 "Shorten Recording Retention?" = "録音データの保存期間を短縮しますか？";
 "Existing batch recordings older than the new retention period may be permanently deleted immediately." = "新しい保存期間を過ぎている既存のバッチ録音は、直ちに完全削除される場合があります。";

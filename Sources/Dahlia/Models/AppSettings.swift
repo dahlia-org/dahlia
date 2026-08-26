@@ -112,6 +112,8 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
     nonisolated static let liveSubtitleTranslationTargetLanguageKey = "transcriptTranslationTargetLanguage"
     nonisolated static let batchTranscriptionStallTimeoutUserDefaultsKey = "batchTranscriptionStallTimeoutMinutes"
     nonisolated static let batchAudioRetentionPeriodUserDefaultsKey = "batchAudioRetentionPeriodDays"
+    private nonisolated static let legacyRetainAudioAfterBatchTranscriptionUserDefaultsKey =
+        "retainAudioAfterBatchTranscription"
     nonisolated static let customerIntelligenceBetaEnabledUserDefaultsKey = "customerIntelligenceBetaEnabled"
     nonisolated static let conversationAnalyticsBetaEnabledUserDefaultsKey = "conversationAnalyticsBetaEnabled"
     nonisolated static let automaticOrganizationMembershipEnabledUserDefaultsKey = "automaticOrganizationMembershipEnabled"
@@ -138,9 +140,15 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
         Self.migrateCalendarEventFilterSettings(in: .standard)
         Self.migrateLiveSubtitleLocaleSetting(in: .standard)
         Self.migrateAppLanguageSettings(in: .standard)
+        Self.migrateBatchAudioRetentionPeriodSetting(in: .standard)
         meetingNotificationPresentationRawValue = meetingNotificationPresentation.rawValue
         batchTranscriptionStallTimeoutRawValue = batchTranscriptionStallTimeout.rawValue
-        batchAudioRetentionPeriodRawValue = batchAudioRetentionPeriod.rawValue
+    }
+
+    private nonisolated static func migrateBatchAudioRetentionPeriodSetting(in defaults: UserDefaults) {
+        guard defaults.object(forKey: batchAudioRetentionPeriodUserDefaultsKey) == nil,
+              defaults.object(forKey: legacyRetainAudioAfterBatchTranscriptionUserDefaultsKey) as? Bool == true else { return }
+        defaults.set(BatchAudioRetentionPeriod.forever.rawValue, forKey: batchAudioRetentionPeriodUserDefaultsKey)
     }
 
     // MARK: - ベータ機能

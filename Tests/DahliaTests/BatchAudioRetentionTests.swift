@@ -29,18 +29,42 @@ import GRDB
         }
 
         @Test
-        func finiteRetentionPurgesAtSessionEndDeadline() async throws {
+        func finiteRetentionStartsAfterBothRecordingAndTranscriptionComplete() async throws {
             let fixture = try completedFixture(name: "Deadline")
             defer { fixture.removeFiles() }
             try await fixture.recordMicrophoneAudio()
             let coordinator = makeCoordinator(fixture, period: .oneDay)
             let endedAt = try #require(fixture.session.endedAt)
-
-            await coordinator.refreshExpiredAudio(now: endedAt.addingTimeInterval(day - 1))
-            #expect(try await segmentState(fixture) == .ready)
+            let completedAt = try #require(fixture.session.batchCompletedAt)
 
             await coordinator.refreshExpiredAudio(now: endedAt.addingTimeInterval(day))
+            #expect(try await segmentState(fixture) == .ready)
+
+            await coordinator.refreshExpiredAudio(now: completedAt.addingTimeInterval(day))
             #expect(try await segmentState(fixture) == .purged)
+        }
+
+        @Test
+        func retentionPurgeRevalidatesRetranscriptionBeforeRecordingIntent() async throws {
+            let fixture = try completedFixture(name: "RetranscriptionRace")
+            defer { fixture.removeFiles() }
+            try await fixture.recordMicrophoneAudio()
+            let completedAt = try #require(fixture.session.batchCompletedAt)
+            let cutoff = completedAt.addingTimeInterval(day)
+            try await fixture.database.dbQueue.write { db in
+                try db.execute(
+                    sql: "UPDATE recording_sessions SET batchLastAttemptAt = ? WHERE id = ?",
+                    arguments: [completedAt.addingTimeInterval(1), fixture.session.id]
+                )
+            }
+            let store = try RecordingAudioStore(
+                dbQueue: fixture.database.dbQueue,
+                managedRootURL: fixture.managedRootURL
+            )
+
+            try await store.requestRetentionPurge(sessionId: fixture.session.id, cutoff: cutoff)
+
+            #expect(try await segmentState(fixture) == .ready)
         }
 
         @Test
