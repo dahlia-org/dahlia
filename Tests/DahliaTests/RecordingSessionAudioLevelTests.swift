@@ -39,7 +39,7 @@
                 .init(
                     sessionId: sessionID,
                     startedAt: .now,
-                    plan: .init(finalMode: .realtime, liveSubtitlesEnabled: false, retainBatchAudio: false),
+                    plan: .init(finalMode: .realtime, liveSubtitlesEnabled: false),
                     locale: Locale(identifier: "ja_JP"),
                     sources: [.init(source: .microphone)]
                 ),
@@ -96,7 +96,7 @@
                 .init(
                     sessionId: sessionID,
                     startedAt: .now,
-                    plan: .init(finalMode: .realtime, liveSubtitlesEnabled: false, retainBatchAudio: false),
+                    plan: .init(finalMode: .realtime, liveSubtitlesEnabled: false),
                     locale: Locale(identifier: "ja_JP"),
                     sources: [.init(source: .microphone)]
                 ),

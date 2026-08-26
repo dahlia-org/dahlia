@@ -12,20 +12,17 @@ enum BatchTranscriptionConfirmationService {
         let languageDetectionMode: BatchLanguageDetectionMode
         let selectedLocaleIdentifier: String?
         let automaticLanguageCandidatesJSON: String?
-        let retainAudioAfterBatch: Bool
     }
 
     static func confirm(
         sessionId: UUID,
         languageSelection: BatchTranscriptionLanguageSelection,
         automaticLanguageCandidates: BatchLanguageDetectionCandidateSnapshot?,
-        retainAudioAfterBatch: Bool,
         dbQueue: DatabaseQueue
     ) async throws -> Result {
         let persistenceOptions = try persistenceOptions(
             languageSelection: languageSelection,
-            automaticLanguageCandidates: automaticLanguageCandidates,
-            retainAudioAfterBatch: retainAudioAfterBatch
+            automaticLanguageCandidates: automaticLanguageCandidates
         )
 
         return try await dbQueue.write { db in
@@ -70,13 +67,11 @@ extension BatchTranscriptionConfirmationService {
         sessionIds: [UUID],
         languageSelection: BatchTranscriptionLanguageSelection,
         automaticLanguageCandidates: BatchLanguageDetectionCandidateSnapshot?,
-        retainAudioAfterBatch: Bool,
         dbQueue: DatabaseQueue
     ) async throws -> Result {
         let options = try persistenceOptions(
             languageSelection: languageSelection,
-            automaticLanguageCandidates: automaticLanguageCandidates,
-            retainAudioAfterBatch: retainAudioAfterBatch
+            automaticLanguageCandidates: automaticLanguageCandidates
         )
 
         return try await dbQueue.write { db in
@@ -94,7 +89,6 @@ extension BatchTranscriptionConfirmationService {
                           && session.endedAt != nil
                           && session.batchCompletedAt != nil
                           && session.batchDiscardedAt == nil
-                          && (session.retainAudioAfterBatch || session.isBatchRetranscriptionPending)
                   }) else {
                 throw CocoaError(.fileNoSuchFile)
             }
@@ -141,13 +135,12 @@ extension BatchTranscriptionConfirmationService {
             }
 
             let cancelledAt = Date.now
-            var arguments: StatementArguments = [RecordingAudioRetentionPolicy.keepInApp.rawValue, cancelledAt]
+            var arguments: StatementArguments = [cancelledAt]
             arguments += StatementArguments(uniqueSessionIds)
             try db.execute(
                 sql: """
                 UPDATE recording_sessions
-                SET retainAudioAfterBatch = 1, audioRetentionPolicy = ?,
-                    batchLastAttemptAt = batchCompletedAt, batchAttemptCount = 0,
+                SET batchLastAttemptAt = batchCompletedAt, batchAttemptCount = 0,
                     batchLastError = NULL, batchFailureKind = NULL, updatedAt = ?
                 WHERE id IN (\(databasePlaceholders(count: uniqueSessionIds.count)))
                 """,
@@ -171,8 +164,7 @@ extension BatchTranscriptionConfirmationService {
 
     private static func persistenceOptions(
         languageSelection: BatchTranscriptionLanguageSelection,
-        automaticLanguageCandidates: BatchLanguageDetectionCandidateSnapshot?,
-        retainAudioAfterBatch: Bool
+        automaticLanguageCandidates: BatchLanguageDetectionCandidateSnapshot?
     ) throws -> PersistenceOptions {
         try PersistenceOptions(
             languageDetectionMode: languageSelection.detectionMode,
@@ -180,8 +172,7 @@ extension BatchTranscriptionConfirmationService {
             automaticLanguageCandidatesJSON: automaticLanguageCandidatesJSON(
                 from: languageSelection,
                 candidates: automaticLanguageCandidates
-            ),
-            retainAudioAfterBatch: retainAudioAfterBatch
+            )
         )
     }
 
@@ -300,17 +291,12 @@ extension BatchTranscriptionConfirmationService {
         try db.execute(
             sql: """
             UPDATE recording_sessions
-            SET retainAudioAfterBatch = ?, audioRetentionPolicy = ?,
-                batchLanguageDetectionMode = ?, batchSelectedLocaleIdentifier = ?,
+            SET batchLanguageDetectionMode = ?, batchSelectedLocaleIdentifier = ?,
                 batchAutomaticLanguageCandidatesJSON = ?, batchLastAttemptAt = ?,
                 batchLastError = NULL, batchFailureKind = NULL, updatedAt = ?
             WHERE id = ?
             """,
             arguments: [
-                options.retainAudioAfterBatch,
-                options.retainAudioAfterBatch
-                    ? RecordingAudioRetentionPolicy.keepInApp.rawValue
-                    : RecordingAudioRetentionPolicy.deleteAfterTranscription.rawValue,
                 options.languageDetectionMode.rawValue,
                 options.selectedLocaleIdentifier,
                 options.automaticLanguageCandidatesJSON,
@@ -330,8 +316,7 @@ extension BatchTranscriptionConfirmationService {
         try db.execute(
             sql: """
             UPDATE recording_sessions
-            SET retainAudioAfterBatch = ?, audioRetentionPolicy = ?,
-                batchLanguageDetectionMode = ?, batchSelectedLocaleIdentifier = ?,
+            SET batchLanguageDetectionMode = ?, batchSelectedLocaleIdentifier = ?,
                 batchAutomaticLanguageCandidatesJSON = ?, batchLastAttemptAt = ?,
                 batchAttemptCount = 0, batchLastError = NULL, batchFailureKind = NULL, updatedAt = ?
             WHERE id = ?
@@ -339,10 +324,6 @@ extension BatchTranscriptionConfirmationService {
               AND batchDiscardedAt IS NULL
             """,
             arguments: [
-                options.retainAudioAfterBatch,
-                options.retainAudioAfterBatch
-                    ? RecordingAudioRetentionPolicy.keepInApp.rawValue
-                    : RecordingAudioRetentionPolicy.deleteAfterTranscription.rawValue,
                 options.languageDetectionMode.rawValue,
                 options.selectedLocaleIdentifier,
                 options.automaticLanguageCandidatesJSON,

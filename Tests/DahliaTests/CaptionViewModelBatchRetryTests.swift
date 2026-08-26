@@ -61,7 +61,6 @@ import GRDB
                 name: "retained-completed-audio",
                 endedAt: Date(timeIntervalSince1970: 1_776_384_001),
                 duration: 1,
-                retainAudioAfterBatch: true,
                 batchCompletedAt: Date(timeIntervalSince1970: 1_776_384_002)
             )
             defer { batch.removeFiles() }
@@ -87,7 +86,6 @@ import GRDB
             let confirmation = try #require(viewModel.pendingBatchTranscriptionConfirmation)
             #expect(confirmation.isRetranscription)
             #expect(confirmation.sessionId == batch.session.id)
-            #expect(confirmation.retainAudioAfterBatch)
             guard case let .retranscription(sessionIds) = confirmation.purpose else {
                 Issue.record("Expected a retranscription confirmation")
                 return
@@ -105,7 +103,6 @@ import GRDB
                 sessionId: .v7(),
                 meetingId: .v7(),
                 suggestedLocaleIdentifier: "ja_JP",
-                retainAudioAfterBatch: true,
                 summaryGenerationOptions: summaryOptions
             )
 
@@ -117,7 +114,6 @@ import GRDB
                 sessionId: confirmation.sessionId,
                 meetingId: confirmation.meetingId,
                 suggestedLocaleIdentifier: "ja_JP",
-                retainAudioAfterBatch: true,
                 initialLanguageSelection: .automatic,
                 allowsRecordedLanguageSelection: true,
                 summaryGenerationOptions: confirmation.summaryGenerationOptions
@@ -162,7 +158,6 @@ import GRDB
             )
             viewModel.confirmBatchTranscription(
                 languageSelection: .manual(localeIdentifier: "ja_JP"),
-                retainAudioAfterBatch: false,
                 generatesSummary: false,
                 summaryGenerationOptions: selectedOptions
             )
@@ -209,7 +204,6 @@ import GRDB
             viewModel.isListening = true
             viewModel.confirmBatchTranscription(
                 languageSelection: .manual(localeIdentifier: "ja_JP"),
-                retainAudioAfterBatch: false,
                 generatesSummary: false,
                 summaryGenerationOptions: .manual
             )
@@ -225,8 +219,7 @@ import GRDB
             let batch = try BatchAudioTestFixture(
                 name: "failed-auto-retry-selection",
                 endedAt: Date(timeIntervalSince1970: 1_776_384_001),
-                duration: 1,
-                retainAudioAfterBatch: false
+                duration: 1
             )
             defer { batch.removeFiles() }
             try await batch.recordMicrophoneAudio()
@@ -260,7 +253,6 @@ import GRDB
             let confirmation = try #require(viewModel.pendingBatchTranscriptionConfirmation)
             #expect(confirmation.sessionId == batch.session.id)
             #expect(confirmation.initialLanguageSelection == .automatic)
-            #expect(!confirmation.retainAudioAfterBatch)
             #expect(confirmation.automaticLanguageCandidateSnapshot?.identifierSet == ["en", "ja"])
         }
 
@@ -299,7 +291,6 @@ import GRDB
                 name: "failed-retranscription",
                 endedAt: Date(timeIntervalSince1970: 1_776_384_001),
                 duration: 1,
-                retainAudioAfterBatch: true,
                 batchCompletedAt: completedAt
             )
             defer { batch.removeFiles() }
@@ -352,7 +343,6 @@ import GRDB
                 name: "interrupted-retranscription",
                 endedAt: Date(timeIntervalSince1970: 1_776_384_001),
                 duration: 1,
-                retainAudioAfterBatch: true,
                 batchCompletedAt: completedAt
             )
             defer { batch.removeFiles() }
@@ -444,7 +434,6 @@ import GRDB
                 name: "failed-multi-session-retranscription",
                 endedAt: Date(timeIntervalSince1970: 1_776_384_001),
                 duration: 1,
-                retainAudioAfterBatch: true,
                 batchCompletedAt: completedAt
             )
             defer { batch.removeFiles() }
@@ -460,7 +449,6 @@ import GRDB
                 createdAt: batch.now,
                 updatedAt: batch.now,
                 transcriptionMode: .batch,
-                retainAudioAfterBatch: true,
                 batchCompletedAt: completedAt
             )
             try await batch.database.dbQueue.write { db in

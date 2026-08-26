@@ -14,7 +14,6 @@ import GRDB
                 name: "CancelRetranscriptionStaleCompletion",
                 endedAt: completedAt.addingTimeInterval(-30),
                 duration: 30,
-                retainAudioAfterBatch: true,
                 batchCompletedAt: completedAt
             )
             defer { fixture.removeFiles() }
@@ -27,7 +26,6 @@ import GRDB
                 sessionIds: [fixture.session.id],
                 languageSelection: .manual(localeIdentifier: "en_US"),
                 automaticLanguageCandidates: nil,
-                retainAudioAfterBatch: false,
                 dbQueue: fixture.database.dbQueue
             )
             _ = try await BatchTranscriptionConfirmationService.cancelRetranscription(
@@ -59,7 +57,6 @@ import GRDB
                 name: "StalledRetranscriptionAudioRecovery",
                 endedAt: completedAt.addingTimeInterval(-30),
                 duration: 30,
-                retainAudioAfterBatch: true,
                 batchCompletedAt: completedAt
             )
             defer { fixture.removeFiles() }
@@ -68,7 +65,6 @@ import GRDB
                 sessionIds: [fixture.session.id],
                 languageSelection: .manual(localeIdentifier: "en_US"),
                 automaticLanguageCandidates: nil,
-                retainAudioAfterBatch: false,
                 dbQueue: fixture.database.dbQueue
             )
             try await fixture.database.dbQueue.write { db in
@@ -112,7 +108,6 @@ import GRDB
                 name: "CancelRetranscriptionStaleFailure",
                 endedAt: completedAt.addingTimeInterval(-30),
                 duration: 30,
-                retainAudioAfterBatch: true,
                 batchCompletedAt: completedAt
             )
             defer { fixture.removeFiles() }
@@ -133,7 +128,6 @@ import GRDB
                 sessionIds: [fixture.session.id],
                 languageSelection: .manual(localeIdentifier: "en_US"),
                 automaticLanguageCandidates: nil,
-                retainAudioAfterBatch: true,
                 onConfirmed: { _ in }
             )
             #expect(await pollUntil { await recognitionGate.didStart })

@@ -21,7 +21,6 @@ struct BatchTranscriptionConfirmation: Identifiable, Equatable {
     let sessionId: UUID
     let meetingId: UUID
     let suggestedLocaleIdentifier: String
-    let retainAudioAfterBatch: Bool
     let initialLanguageSelection: BatchTranscriptionLanguageSelection
     let allowsRecordedLanguageSelection: Bool
     let automaticLanguageCandidateSnapshot: BatchLanguageDetectionCandidateSnapshot?
@@ -34,7 +33,6 @@ struct BatchTranscriptionConfirmation: Identifiable, Equatable {
         sessionId: UUID,
         meetingId: UUID,
         suggestedLocaleIdentifier: String,
-        retainAudioAfterBatch: Bool,
         initialLanguageSelection: BatchTranscriptionLanguageSelection? = nil,
         allowsRecordedLanguageSelection: Bool? = nil,
         automaticLanguageCandidateSnapshot: BatchLanguageDetectionCandidateSnapshot? = nil,
@@ -49,7 +47,6 @@ struct BatchTranscriptionConfirmation: Identifiable, Equatable {
         self.sessionId = sessionId
         self.meetingId = meetingId
         self.suggestedLocaleIdentifier = suggestedLocaleIdentifier
-        self.retainAudioAfterBatch = retainAudioAfterBatch
         let resolvedLanguageSelection = initialLanguageSelection
             ?? .manual(localeIdentifier: suggestedLocaleIdentifier)
         self.initialLanguageSelection = resolvedLanguageSelection

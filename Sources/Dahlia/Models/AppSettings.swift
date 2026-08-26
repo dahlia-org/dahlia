@@ -111,6 +111,7 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
     nonisolated static let liveSubtitleTranslationEnabledKey = "transcriptTranslationEnabled"
     nonisolated static let liveSubtitleTranslationTargetLanguageKey = "transcriptTranslationTargetLanguage"
     nonisolated static let batchTranscriptionStallTimeoutUserDefaultsKey = "batchTranscriptionStallTimeoutMinutes"
+    nonisolated static let batchAudioRetentionPeriodUserDefaultsKey = "batchAudioRetentionPeriodDays"
     nonisolated static let customerIntelligenceBetaEnabledUserDefaultsKey = "customerIntelligenceBetaEnabled"
     nonisolated static let conversationAnalyticsBetaEnabledUserDefaultsKey = "conversationAnalyticsBetaEnabled"
     nonisolated static let automaticOrganizationMembershipEnabledUserDefaultsKey = "automaticOrganizationMembershipEnabled"
@@ -139,6 +140,7 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
         Self.migrateAppLanguageSettings(in: .standard)
         meetingNotificationPresentationRawValue = meetingNotificationPresentation.rawValue
         batchTranscriptionStallTimeoutRawValue = batchTranscriptionStallTimeout.rawValue
+        batchAudioRetentionPeriodRawValue = batchAudioRetentionPeriod.rawValue
     }
 
     // MARK: - ベータ機能
@@ -236,9 +238,10 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
     @AppStorage(AppSettings.liveSubtitleLocaleUserDefaultsKey) var liveSubtitleLocale: String = Locale.current.identifier
     @AppStorage(TranscriptionMode.userDefaultsKey) var transcriptionModeRawValue = TranscriptionMode.defaultMode.rawValue
     @AppStorage("forceEchoCancellationForExternalMicrophone") var forceEchoCancellationForExternalMicrophone = false
-    @AppStorage("retainAudioAfterBatchTranscription") var retainAudioAfterBatchTranscription = false
     @AppStorage(AppSettings.batchTranscriptionStallTimeoutUserDefaultsKey) private var batchTranscriptionStallTimeoutRawValue =
         BatchTranscriptionStallTimeout.defaultValue.rawValue
+    @AppStorage(AppSettings.batchAudioRetentionPeriodUserDefaultsKey) private var batchAudioRetentionPeriodRawValue =
+        BatchAudioRetentionPeriod.defaultValue.rawValue
     @AppStorage(AppSettings.generateSummaryAfterBatchTranscriptionUserDefaultsKey) var generateSummaryAfterBatchTranscription = false
     @AppStorage(AppSettings.exportBatchSummaryToVaultUserDefaultsKey) var exportBatchSummaryToVault = true
     @AppStorage(AppSettings.exportBatchSummaryToGoogleDocsUserDefaultsKey) var exportBatchSummaryToGoogleDocs = false
@@ -266,6 +269,11 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
     var batchTranscriptionStallTimeout: BatchTranscriptionStallTimeout {
         get { BatchTranscriptionStallTimeout.resolved(rawValue: batchTranscriptionStallTimeoutRawValue) }
         set { batchTranscriptionStallTimeoutRawValue = newValue.rawValue }
+    }
+
+    var batchAudioRetentionPeriod: BatchAudioRetentionPeriod {
+        get { BatchAudioRetentionPeriod.resolved(rawValue: batchAudioRetentionPeriodRawValue) }
+        set { batchAudioRetentionPeriodRawValue = newValue.rawValue }
     }
 
     var batchSummaryGenerationOptions: SummaryGenerationOptions {
@@ -865,6 +873,11 @@ extension UserDefaults {
 
     @objc dynamic var liveSubtitleLocale: String? {
         string(forKey: AppSettings.liveSubtitleLocaleUserDefaultsKey)
+    }
+
+    @objc dynamic var batchAudioRetentionPeriodDays: Int {
+        object(forKey: AppSettings.batchAudioRetentionPeriodUserDefaultsKey) as? Int
+            ?? BatchAudioRetentionPeriod.defaultValue.rawValue
     }
 
     @objc dynamic var enabledLanguageIdentifiers: String? {

@@ -83,7 +83,6 @@ final class MeetingPersistenceService {
         recordingSessionId: UUID = .v7(),
         transcriptionMode: TranscriptionMode = .realtime,
         persistencePolicy: TranscriptPersistencePolicy = .streaming,
-        retainAudioAfterBatch: Bool = false,
         now: @escaping () -> Date = { .now }
     ) async throws -> MeetingPersistenceService {
         let meetingId = UUID.v7()
@@ -98,8 +97,7 @@ final class MeetingPersistenceService {
                 allowsCalendarSeriesProjectInheritance: allowsCalendarSeriesProjectInheritance,
                 calendarEvent: calendarEvent,
                 startedAt: startedAt,
-                transcriptionMode: transcriptionMode,
-                retainAudioAfterBatch: retainAudioAfterBatch
+                transcriptionMode: transcriptionMode
             ),
             dbQueue: dbQueue
         )
@@ -127,7 +125,6 @@ final class MeetingPersistenceService {
         recordingSessionId: UUID = .v7(),
         transcriptionMode: TranscriptionMode = .realtime,
         persistencePolicy: TranscriptPersistencePolicy = .streaming,
-        retainAudioAfterBatch: Bool = false,
         now: @escaping () -> Date = { .now }
     ) async throws -> MeetingPersistenceService {
         let prepared = try await MeetingPersistenceStarter.createAppending(
@@ -135,8 +132,7 @@ final class MeetingPersistenceService {
                 meetingId: existingMeetingId,
                 recordingSessionId: recordingSessionId,
                 recordingStartDate: recordingStartDate,
-                transcriptionMode: transcriptionMode,
-                retainAudioAfterBatch: retainAudioAfterBatch
+                transcriptionMode: transcriptionMode
             ),
             dbQueue: dbQueue
         )
@@ -266,7 +262,6 @@ private enum MeetingPersistenceStarter {
         let calendarEvent: CalendarEvent?
         let startedAt: Date
         let transcriptionMode: TranscriptionMode
-        let retainAudioAfterBatch: Bool
     }
 
     struct NewResult {
@@ -280,7 +275,6 @@ private enum MeetingPersistenceStarter {
         let recordingSessionId: UUID
         let recordingStartDate: Date
         let transcriptionMode: TranscriptionMode
-        let retainAudioAfterBatch: Bool
     }
 
     struct AppendResult {
@@ -324,8 +318,7 @@ private enum MeetingPersistenceStarter {
                 meetingId: request.meetingId,
                 startedAt: request.startedAt,
                 offsetSeconds: 0,
-                transcriptionMode: request.transcriptionMode,
-                retainAudioAfterBatch: request.retainAudioAfterBatch
+                transcriptionMode: request.transcriptionMode
             )
             try recordingSession.insert(db)
             let projectName = try projectId.flatMap { id in
@@ -386,8 +379,7 @@ private enum MeetingPersistenceStarter {
                     firstSegmentStartTime: firstSegmentStartTime,
                     lastSegmentEndTime: lastSegmentEndTime
                 ),
-                transcriptionMode: request.transcriptionMode,
-                retainAudioAfterBatch: request.retainAudioAfterBatch
+                transcriptionMode: request.transcriptionMode
             )
             try recordingSession.insert(db)
             return AppendResult(
@@ -424,15 +416,9 @@ private enum MeetingPersistenceStarter {
         meetingId: UUID,
         startedAt: Date,
         offsetSeconds: TimeInterval,
-        transcriptionMode: TranscriptionMode,
-        retainAudioAfterBatch: Bool
+        transcriptionMode: TranscriptionMode
     ) -> RecordingSessionRecord {
-        let audioRetentionPolicy: RecordingAudioRetentionPolicy? = if transcriptionMode == .batch {
-            retainAudioAfterBatch ? .keepInApp : .deleteAfterTranscription
-        } else {
-            nil
-        }
-        return RecordingSessionRecord(
+        RecordingSessionRecord(
             id: id,
             meetingId: meetingId,
             startedAt: startedAt,
@@ -441,9 +427,7 @@ private enum MeetingPersistenceStarter {
             offsetSeconds: offsetSeconds,
             createdAt: startedAt,
             updatedAt: startedAt,
-            transcriptionMode: transcriptionMode,
-            retainAudioAfterBatch: retainAudioAfterBatch,
-            audioRetentionPolicy: audioRetentionPolicy
+            transcriptionMode: transcriptionMode
         )
     }
 }

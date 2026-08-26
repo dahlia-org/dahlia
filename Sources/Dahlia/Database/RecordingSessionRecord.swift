@@ -31,14 +31,11 @@ struct RecordingSessionRecord: Codable, FetchableRecord, PersistableRecord, Equa
     var createdAt: Date
     var updatedAt: Date
     var transcriptionMode: TranscriptionMode = .realtime
-    var retainAudioAfterBatch = false
     var batchCompletedAt: Date?
     var batchLastError: String?
     var batchLastAttemptAt: Date?
     var batchAttemptCount = 0
     var batchDiscardedAt: Date?
-    var audioRetentionPolicy: RecordingAudioRetentionPolicy?
-    var retentionExpiresAt: Date?
     var batchFailureKind: BatchFailureKind?
     var batchLanguageDetectionMode: BatchLanguageDetectionMode = .manual
     var batchSelectedLocaleIdentifier: String?

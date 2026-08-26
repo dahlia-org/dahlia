@@ -17,7 +17,6 @@ import GRDB
             let plan = TranscriptionSessionPlan(
                 finalMode: .realtime,
                 liveSubtitlesEnabled: true,
-                retainBatchAudio: false
             )
 
             TranscriptionEventRouter.routeTranscriptProjection(
@@ -45,7 +44,6 @@ import GRDB
             let plan = TranscriptionSessionPlan(
                 finalMode: .batch,
                 liveSubtitlesEnabled: true,
-                retainBatchAudio: false
             )
 
             TranscriptionEventRouter.routeTranscriptProjection(
@@ -73,7 +71,6 @@ import GRDB
             let plan = TranscriptionSessionPlan(
                 finalMode: .batch,
                 liveSubtitlesEnabled: false,
-                retainBatchAudio: false
             )
 
             TranscriptionEventRouter.routeTranscriptProjection(
@@ -99,7 +96,6 @@ import GRDB
             let plan = TranscriptionSessionPlan(
                 finalMode: .realtime,
                 liveSubtitlesEnabled: false,
-                retainBatchAudio: false
             )
 
             for index in 0 ... TranscriptStore.maximumConfirmedSegmentCount {
@@ -147,7 +143,6 @@ import GRDB
             let plan = TranscriptionSessionPlan(
                 finalMode: .realtime,
                 liveSubtitlesEnabled: false,
-                retainBatchAudio: false
             )
             let pipeline = TranscriptionEventPipeline(
                 uiSink: { events in
@@ -193,7 +188,6 @@ import GRDB
             let plan = TranscriptionSessionPlan(
                 finalMode: .realtime,
                 liveSubtitlesEnabled: false,
-                retainBatchAudio: false
             )
             let preview = TranscriptSegment(
                 id: segmentID,

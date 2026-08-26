@@ -44,7 +44,6 @@
             let plan = TranscriptionSessionPlan(
                 finalMode: .realtime,
                 liveSubtitlesEnabled: true,
-                retainBatchAudio: false
             )
 
             await #expect(throws: RecordingSessionControllerError.self) {
@@ -177,7 +176,6 @@
                     plan: TranscriptionSessionPlan(
                         finalMode: .batch,
                         liveSubtitlesEnabled: true,
-                        retainBatchAudio: false
                     ),
                     locale: Locale(identifier: "ja_JP"),
                     sources: [.init(source: .microphone)],
@@ -220,7 +218,6 @@
                     plan: TranscriptionSessionPlan(
                         finalMode: .realtime,
                         liveSubtitlesEnabled: true,
-                        retainBatchAudio: false
                     ),
                     locale: Locale(identifier: "ja_JP"),
                     sources: [.init(source: .microphone)]
@@ -358,7 +355,6 @@
                     plan: TranscriptionSessionPlan(
                         finalMode: .batch,
                         liveSubtitlesEnabled: true,
-                        retainBatchAudio: true
                     ),
                     locale: Locale(identifier: "ja_JP"),
                     sources: [.init(source: .microphone), .init(source: .system)],
@@ -583,8 +579,7 @@
             let plan = TranscriptionSessionPlan(
                 finalMode: mode,
                 liveSubtitlesEnabled: liveSubtitlesEnabled,
-                liveChatEnabled: liveChatEnabled,
-                retainBatchAudio: mode == .batch
+                liveChatEnabled: liveChatEnabled
             )
             try await controller.prepare(
                 RecordingSessionController.PreparationRequest(

@@ -13,22 +13,18 @@
             let realtimeWithoutSubtitles = TranscriptionSessionPlan(
                 finalMode: .realtime,
                 liveSubtitlesEnabled: false,
-                retainBatchAudio: false
             )
             let realtimeWithSubtitles = TranscriptionSessionPlan(
                 finalMode: .realtime,
                 liveSubtitlesEnabled: true,
-                retainBatchAudio: false
             )
             let batchWithoutSubtitles = TranscriptionSessionPlan(
                 finalMode: .batch,
                 liveSubtitlesEnabled: false,
-                retainBatchAudio: true
             )
             let batchWithSubtitles = TranscriptionSessionPlan(
                 finalMode: .batch,
                 liveSubtitlesEnabled: true,
-                retainBatchAudio: true
             )
 
             #expect(realtimeWithoutSubtitles.requiresLiveRecognition)
@@ -61,7 +57,6 @@
             var plan = TranscriptionSessionPlan(
                 finalMode: .batch,
                 liveSubtitlesEnabled: false,
-                retainBatchAudio: true
             )
 
             plan.liveSubtitlesEnabled = true
@@ -69,7 +64,6 @@
             #expect(plan.finalMode == .batch)
             #expect(plan.requiresLiveRecognition)
             #expect(plan.recordsBatchAudio)
-            #expect(plan.retainBatchAudio)
         }
 
         @Test
@@ -77,8 +71,7 @@
             let plan = TranscriptionSessionPlan(
                 finalMode: .batch,
                 liveSubtitlesEnabled: false,
-                liveChatEnabled: true,
-                retainBatchAudio: true
+                liveChatEnabled: true
             )
 
             #expect(plan.requiresLiveRecognition)

@@ -15,7 +15,6 @@ import GRDB
                 name: "RetranscriptionConfirmation",
                 endedAt: Date(timeIntervalSince1970: 1_776_384_030),
                 duration: 30,
-                retainAudioAfterBatch: true,
                 batchCompletedAt: completedAt
             )
             defer { fixture.removeFiles() }
@@ -34,25 +33,24 @@ import GRDB
             try await fixture.database.dbQueue.write { db in
                 try previousTranscript.insert(db)
             }
+            let legacyRetentionState = try await seedLegacyRetentionState(fixture)
 
             let result = try await BatchTranscriptionConfirmationService.confirmRetranscription(
                 sessionIds: [fixture.session.id],
                 languageSelection: .manual(localeIdentifier: "en_US"),
                 automaticLanguageCandidates: nil,
-                retainAudioAfterBatch: false,
                 dbQueue: fixture.database.dbQueue
             )
             let firstAttempt = try await fixture.database.dbQueue.read { db in
                 try RecordingSessionRecord.fetchOne(db, key: fixture.session.id)
             }
-            #expect(firstAttempt?.retainAudioAfterBatch == false)
             #expect(firstAttempt?.isBatchRetranscriptionPending == true)
+            #expect(try await fetchLegacyRetentionState(fixture) == legacyRetentionState)
 
             _ = try await BatchTranscriptionConfirmationService.confirmRetranscription(
                 sessionIds: [fixture.session.id],
                 languageSelection: .manual(localeIdentifier: "en_US"),
                 automaticLanguageCandidates: nil,
-                retainAudioAfterBatch: true,
                 dbQueue: fixture.database.dbQueue
             )
             let persisted = try await fixture.database.dbQueue.read { db in
@@ -70,6 +68,7 @@ import GRDB
             #expect(persisted.0?.batchAttemptCount == 0)
             #expect(persisted.1?.text == "previous transcript")
             #expect(persisted.2.map(\.localeIdentifier) == ["en_US"])
+            #expect(try await fetchLegacyRetentionState(fixture) == legacyRetentionState)
 
             let replacement = TranscriptSegmentRecord(
                 id: .v7(),
@@ -109,7 +108,6 @@ import GRDB
                 name: "RetranscriptionIncompleteAudio",
                 endedAt: completedAt.addingTimeInterval(-30),
                 duration: 30,
-                retainAudioAfterBatch: true,
                 batchCompletedAt: completedAt
             )
             defer { fixture.removeFiles() }
@@ -126,7 +124,6 @@ import GRDB
                     sessionIds: [fixture.session.id],
                     languageSelection: .manual(localeIdentifier: "en_US"),
                     automaticLanguageCandidates: nil,
-                    retainAudioAfterBatch: true,
                     dbQueue: fixture.database.dbQueue
                 )
             }
@@ -139,18 +136,18 @@ import GRDB
                 name: "CancelRetranscription",
                 endedAt: completedAt.addingTimeInterval(-30),
                 duration: 30,
-                retainAudioAfterBatch: true,
                 batchCompletedAt: completedAt
             )
             defer { fixture.removeFiles() }
             try await fixture.recordMicrophoneAudio()
+            let legacyRetentionState = try await seedLegacyRetentionState(fixture)
             _ = try await BatchTranscriptionConfirmationService.confirmRetranscription(
                 sessionIds: [fixture.session.id],
                 languageSelection: .manual(localeIdentifier: "en_US"),
                 automaticLanguageCandidates: nil,
-                retainAudioAfterBatch: false,
                 dbQueue: fixture.database.dbQueue
             )
+            #expect(try await fetchLegacyRetentionState(fixture) == legacyRetentionState)
             try await fixture.database.dbQueue.write { db in
                 try db.execute(
                     sql: "UPDATE recording_sessions SET batchLastError = ? WHERE id = ?",
@@ -168,22 +165,20 @@ import GRDB
 
             #expect(meetingId == fixture.meeting.id)
             #expect(session?.isBatchRetranscriptionPending == false)
-            #expect(session?.retainAudioAfterBatch == true)
-            #expect(session?.audioRetentionPolicy == .keepInApp)
             #expect(session?.batchLastError == nil)
             #expect(session.flatMap { BatchTranscriptionState.derive(from: $0) } == .completed(
                 sessionId: fixture.session.id
             ))
+            #expect(try await fetchLegacyRetentionState(fixture) == legacyRetentionState)
         }
 
         @Test
-        func startupRecoveryFinishesDeferredAudioDeletion() async throws {
+        func startupRecoveryPurgesExpiredAudio() async throws {
             let completedAt = Date(timeIntervalSince1970: 1_776_384_060)
             let fixture = try BatchAudioTestFixture(
                 name: "DeferredAudioDeletion",
                 endedAt: completedAt.addingTimeInterval(-30),
                 duration: 30,
-                retainAudioAfterBatch: true,
                 batchCompletedAt: completedAt
             )
             defer { fixture.removeFiles() }
@@ -192,7 +187,6 @@ import GRDB
                 sessionIds: [fixture.session.id],
                 languageSelection: .manual(localeIdentifier: "en_US"),
                 automaticLanguageCandidates: nil,
-                retainAudioAfterBatch: false,
                 dbQueue: fixture.database.dbQueue
             )
             let pending = try await fixture.database.dbQueue.read { db in
@@ -210,6 +204,7 @@ import GRDB
                 dbQueue: fixture.database.dbQueue,
                 managedRootURL: fixture.managedRootURL,
                 speechRecognizer: TestBatchSpeechRecognizer(),
+                audioRetentionPeriod: .oneDay,
                 supportedLocalesProvider: { testSupportedSpeechLocales },
                 onStateChange: { _ in }
             )
@@ -236,7 +231,6 @@ import GRDB
                         scope: .selected,
                         languageIdentifiers: []
                     ),
-                    retainAudioAfterBatch: true,
                     dbQueue: queue
                 )
                 Issue.record("Expected automatic confirmation to reject an empty candidate set")
@@ -245,16 +239,10 @@ import GRDB
             }
         }
 
-        @Test(arguments: [
-            (retainsAudio: true, policy: RecordingAudioRetentionPolicy.keepInApp),
-            (retainsAudio: false, policy: RecordingAudioRetentionPolicy.deleteAfterTranscription),
-        ])
-        func confirmsSegmentedRangesAndPersistsRetentionPolicy(
-            retainsAudio: Bool,
-            policy: RecordingAudioRetentionPolicy
-        ) async throws {
+        @Test
+        func confirmsSegmentedRangesAndPersistsLanguageSelection() async throws {
             let fixture = try BatchAudioTestFixture(
-                name: "SegmentedConfirmation-\(retainsAudio)",
+                name: "SegmentedConfirmation",
                 endedAt: Date(timeIntervalSince1970: 1_776_384_060),
                 duration: 60
             )
@@ -287,12 +275,12 @@ import GRDB
             buffer.frameLength = 160
             writer.appendBuffer(buffer)
             try await recorder.finish()
+            let legacyRetentionState = try await seedLegacyRetentionState(fixture)
 
             let confirmation = try await BatchTranscriptionConfirmationService.confirm(
                 sessionId: fixture.session.id,
                 languageSelection: .manual(localeIdentifier: "en_US"),
                 automaticLanguageCandidates: nil,
-                retainAudioAfterBatch: retainsAudio,
                 dbQueue: fixture.database.dbQueue
             )
             let result = try await fixture.database.dbQueue.read { db in
@@ -302,13 +290,12 @@ import GRDB
                 )
             }
             #expect(confirmation.sessionIds == [fixture.session.id])
-            #expect(result.0?.retainAudioAfterBatch == retainsAudio)
-            #expect(result.0?.audioRetentionPolicy == policy)
             #expect(result.0?.batchLastAttemptAt != nil)
             #expect(result.0?.batchLanguageDetectionMode == .manual)
             #expect(result.0?.batchSelectedLocaleIdentifier == "en_US")
             #expect(result.0?.batchAutomaticLanguageCandidatesJSON == nil)
             #expect(result.1.map(\.localeIdentifier) == ["en_US"])
+            #expect(try await fetchLegacyRetentionState(fixture) == legacyRetentionState)
         }
 
         @Test
@@ -346,7 +333,6 @@ import GRDB
                 sessionId: fixture.session.id,
                 languageSelection: .recorded,
                 automaticLanguageCandidates: nil,
-                retainAudioAfterBatch: true,
                 dbQueue: fixture.database.dbQueue
             )
             var persisted = try await fixture.database.dbQueue.read { db in
@@ -369,7 +355,6 @@ import GRDB
                 sessionId: fixture.session.id,
                 languageSelection: .manual(localeIdentifier: "fr_FR"),
                 automaticLanguageCandidates: nil,
-                retainAudioAfterBatch: true,
                 dbQueue: fixture.database.dbQueue
             )
             persisted = try await fixture.database.dbQueue.read { db in
@@ -428,7 +413,6 @@ import GRDB
                     scope: .selected,
                     languageIdentifiers: ["en", "ja"]
                 ),
-                retainAudioAfterBatch: true,
                 dbQueue: fixture.database.dbQueue
             )
 
@@ -440,7 +424,6 @@ import GRDB
                 sessionId: fixture.session.id,
                 languageSelection: .manual(localeIdentifier: "en_US"),
                 automaticLanguageCandidates: nil,
-                retainAudioAfterBatch: false,
                 dbQueue: fixture.database.dbQueue
             )
 
@@ -454,7 +437,6 @@ import GRDB
             #expect(retrySession.batchLanguageDetectionMode == .manual)
             #expect(retrySession.batchSelectedLocaleIdentifier == "en_US")
             #expect(retrySession.batchAutomaticLanguageCandidatesJSON == nil)
-            #expect(!retrySession.retainAudioAfterBatch)
             #expect(retrySession.batchLastError == nil)
             #expect(retrySession.batchFailureKind == nil)
             #expect(retrySession.batchAttemptCount == failedAttemptCount)
@@ -492,6 +474,56 @@ import GRDB
             #expect(candidates.scope == .selected)
             #expect(candidates.identifierSet == ["en", "ja"])
             #expect(result.1.map(\.localeIdentifier) == ["ja_JP"])
+        }
+
+        private struct LegacyRetentionState: Equatable {
+            let retainAudioAfterBatch: Bool
+            let audioRetentionPolicy: String?
+            let retentionExpiresAt: Date?
+        }
+
+        private func seedLegacyRetentionState(_ fixture: BatchAudioTestFixture) async throws -> LegacyRetentionState {
+            let state = LegacyRetentionState(
+                retainAudioAfterBatch: true,
+                audioRetentionPolicy: "legacy-sentinel",
+                retentionExpiresAt: Date(timeIntervalSince1970: 2_000_000_000)
+            )
+            try await fixture.database.dbQueue.write { db in
+                try db.execute(
+                    sql: """
+                    UPDATE recording_sessions
+                    SET retainAudioAfterBatch = ?, audioRetentionPolicy = ?, retentionExpiresAt = ?
+                    WHERE id = ?
+                    """,
+                    arguments: [
+                        state.retainAudioAfterBatch,
+                        state.audioRetentionPolicy,
+                        state.retentionExpiresAt,
+                        fixture.session.id,
+                    ]
+                )
+            }
+            return state
+        }
+
+        private func fetchLegacyRetentionState(_ fixture: BatchAudioTestFixture) async throws -> LegacyRetentionState? {
+            try await fixture.database.dbQueue.read { db in
+                try Row.fetchOne(
+                    db,
+                    sql: """
+                    SELECT retainAudioAfterBatch, audioRetentionPolicy, retentionExpiresAt
+                    FROM recording_sessions
+                    WHERE id = ?
+                    """,
+                    arguments: [fixture.session.id]
+                ).map { row in
+                    LegacyRetentionState(
+                        retainAudioAfterBatch: row["retainAudioAfterBatch"],
+                        audioRetentionPolicy: row["audioRetentionPolicy"],
+                        retentionExpiresAt: row["retentionExpiresAt"]
+                    )
+                }
+            }
         }
 
     }
