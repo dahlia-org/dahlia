@@ -71,7 +71,7 @@ final class CodexChatSessionModel: Identifiable {
     @ObservationIgnored private let streamingUpdateInterval: Duration
     @ObservationIgnored let usageTelemetryReporter: UsageTelemetryReporter
     @ObservationIgnored private var isStopRequested = false
-    @ObservationIgnored var isTurnCleanupPending = false
+    var isTurnCleanupPending = false
     @ObservationIgnored private var isRequestingTurnHandle = false
     @ObservationIgnored var isReleased = false
     @ObservationIgnored private var didUnsubscribe = false
@@ -498,6 +498,7 @@ extension CodexChatSessionModel {
         composerSnapshot: CodexChatComposerSnapshot?,
         liveTranscript: String?,
         context: CodexChatContext?,
+        includesCurrentContext: Bool,
         responseID: String,
         liveModeState: CodexChatLiveModeSubmissionState,
         approvalMethod: CodexChatApprovalMethod,
@@ -526,7 +527,12 @@ extension CodexChatSessionModel {
             let promptContext = liveModeState.isEnabled && !liveModeState.includesContext ? nil : context
             guard images.isEmpty || selectedModelSupportsImages else {
                 noticeMessage = L10n.chatModelDoesNotSupportImages
-                recordFailedSubmission(text: text, images: images, liveTranscript: liveTranscript)
+                recordFailedSubmission(
+                    text: text,
+                    images: images,
+                    liveTranscript: liveTranscript,
+                    includesCurrentContext: includesCurrentContext
+                )
                 return false
             }
             activeTurnSupportsImages = selectedModelSupportsImages
@@ -554,7 +560,11 @@ extension CodexChatSessionModel {
             activeTurnHandleID = turn.id
             var replacementTitleText: String?
             if liveTranscript == nil {
-                let submission = CodexChatManualSubmission(text: text ?? "", images: images)
+                let submission = CodexChatManualSubmission(
+                    text: text ?? "",
+                    images: images,
+                    includesCurrentContext: includesCurrentContext
+                )
                 clearComposer(ifMatching: composerSnapshot)
                 lastSubmittedText = submission.text
                 lastManualSubmission = submission
@@ -606,7 +616,12 @@ extension CodexChatSessionModel {
                 )
             } else if !isStopRequested,
                       errorMessage != nil || liveTranscript != nil {
-                recordFailedSubmission(text: text, images: images, liveTranscript: liveTranscript)
+                recordFailedSubmission(
+                    text: text,
+                    images: images,
+                    liveTranscript: liveTranscript,
+                    includesCurrentContext: includesCurrentContext
+                )
             }
             if replacedLiveModePlaceholderTitle {
                 title = text?.nilIfBlank ?? L10n.chatImage
@@ -619,7 +634,12 @@ extension CodexChatSessionModel {
         } catch {
             guard activeSubmissionID == submissionID else { return false }
             errorMessage = error.localizedDescription
-            recordFailedSubmission(text: text, images: images, liveTranscript: liveTranscript)
+            recordFailedSubmission(
+                text: text,
+                images: images,
+                liveTranscript: liveTranscript,
+                includesCurrentContext: includesCurrentContext
+            )
             updateLimiter.submit(force: true)
             completeTurnResponse(responseID: responseID)
             return false
@@ -1038,7 +1058,8 @@ extension CodexChatSessionModel {
     func recordFailedSubmission(
         text: String?,
         images: [CodexChatImageAttachment] = [],
-        liveTranscript: String?
+        liveTranscript: String?,
+        includesCurrentContext: Bool = true
     ) {
         if let liveTranscript, isLiveModeEnabled {
             recordFailedLiveTranscript(liveTranscript)
@@ -1046,7 +1067,8 @@ extension CodexChatSessionModel {
             let submission = CodexChatManualSubmission(
                 text: text ?? "",
                 images: images,
-                liveModeGeneration: activeManualSubmissionLiveModeGeneration
+                liveModeGeneration: activeManualSubmissionLiveModeGeneration,
+                includesCurrentContext: includesCurrentContext
             )
             recordFailedManualSubmission(submission)
         }

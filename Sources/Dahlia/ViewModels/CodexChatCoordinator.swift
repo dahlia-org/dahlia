@@ -12,6 +12,7 @@ final class CodexChatCoordinator {
     private(set) var historyError: String?
     private(set) var detachedSessionIDs: Set<CodexChatSessionID> = []
     private(set) var dockedSessionID: CodexChatSessionID
+    private(set) var currentMeetingID: UUID?
     var isDockedVisible = false
 
     @ObservationIgnored private let service: any CodexChatServicing
@@ -64,6 +65,7 @@ final class CodexChatCoordinator {
 
     func activateVault(_ vaultID: UUID) {
         guard dockedSession.vaultID != vaultID else { return }
+        currentMeetingID = nil
         contextProvider.update(vaultID: vaultID, meetingID: nil, projectID: nil, draftMeeting: nil, dbQueue: nil)
         let session = makeSession(vaultID: vaultID)
         replaceDockedSession(with: session, isVisible: isDockedVisible)
@@ -170,6 +172,7 @@ final class CodexChatCoordinator {
         draftMeeting: DraftMeeting?,
         dbQueue: DatabaseQueue?
     ) {
+        currentMeetingID = projectID == nil && draftMeeting == nil ? meetingID : nil
         contextProvider.update(
             vaultID: vaultID,
             meetingID: meetingID,

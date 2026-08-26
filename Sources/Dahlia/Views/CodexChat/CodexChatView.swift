@@ -46,6 +46,15 @@ struct CodexChatView: View {
                     showsProjectOrganizationShortcut: session.showsProjectOrganizationShortcut,
                     isProjectOrganizationShortcutEnabled: session.canSendProjectOrganizationShortcut,
                     onOrganizeRecentMeetingsAndProjects: { session.sendProjectOrganizationShortcut() },
+                    meetingReviewShortcutTitle: session.showsMeetingReviewShortcut
+                        ? meetingReviewReference.map { CodexChatMeetingReviewShortcut.title(meetingName: $0.name) }
+                        : nil,
+                    isMeetingReviewShortcutEnabled: session.canSendMeetingReviewShortcut(
+                        meetingID: meetingReviewReference?.id
+                    ),
+                    onReviewMeeting: {
+                        session.sendMeetingReviewShortcut(meetingID: meetingReviewReference?.id)
+                    },
                     onOpenThread: openHistoryThread,
                     onShowAll: showHistory
                 )
@@ -133,6 +142,11 @@ struct CodexChatView: View {
             catalogVaultID: meetingCatalogVaultID,
             isCatalogLoaded: isMeetingCatalogLoaded
         )
+    }
+
+    private var meetingReviewReference: CodexChatMeetingReference? {
+        guard let meetingID = coordinator.currentMeetingID else { return nil }
+        return meetingReferences.first { $0.id == meetingID }
     }
 
     private func showHistory() {

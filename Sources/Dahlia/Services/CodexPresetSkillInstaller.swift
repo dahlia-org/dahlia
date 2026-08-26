@@ -6,6 +6,7 @@ struct BundledCodexPresetSkillInstaller {
         "contacts-organizations-curator",
         "conversation-topics-curator",
         "insights-curator",
+        "meeting-reviewer",
     ]
     nonisolated static let obsoleteSkillNames = ["organize-projects-meetings"]
 

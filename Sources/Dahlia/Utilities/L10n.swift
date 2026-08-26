@@ -3014,6 +3014,18 @@ enum L10n { // swiftlint:disable:this type_body_length
         String(localized: "Organize meetings and Projects from the last \(days) days", bundle: bundle)
     }
 
+    static func chatMeetingReviewShortcutTitle(_ meetingName: String) -> String {
+        String(localized: "Review meeting \(meetingName)", bundle: bundle)
+    }
+
+    static func chatMeetingReviewShortcutPrompt(_ meetingID: String) -> String {
+        String(
+            format: String(localized: "Meeting review chat shortcut prompt", bundle: bundle),
+            locale: .current,
+            meetingID
+        )
+    }
+
     static func chatProjectOrganizationShortcutPrompt(
         days: Int,
         createdFrom: String,
