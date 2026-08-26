@@ -1,17 +1,14 @@
 import SwiftUI
 
 struct CodexChatConversationScrollState: Equatable {
-    let contentHeight: CGFloat
     let isAtBottom: Bool
 
-    func shouldRestoreFollow(from previous: Self, isFollowingLatest: Bool) -> Bool {
-        isFollowingLatest && contentHeight != previous.contentHeight
+    func updatedFollowState(previous: Bool, isResizing: Bool) -> Bool {
+        isResizing ? previous : isAtBottom
     }
 }
 
 struct CodexChatConversationView: View {
-    private static let bottomID = "codex-chat-bottom"
-
     let messages: [CodexChatMessage]
     let showsStandaloneThinking: Bool
     let meetingNamesByID: [UUID: String]
@@ -25,63 +22,40 @@ struct CodexChatConversationView: View {
             from: messages,
             showsStandaloneThinking: showsStandaloneThinking
         )
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 22) {
-                    ForEach(items) { item in
-                        switch item {
-                        case let .contextDivider(_, context):
-                            CodexChatContextDivider(context: context)
-                        case let .message(message, showsInlineActivity):
-                            CodexChatMessageRow(
-                                message: message,
-                                showsInlineActivity: showsInlineActivity,
-                                meetingNamesByID: meetingNamesByID,
-                                meetingReferencesByID: meetingReferencesByID
-                            )
-                        case .thinking:
-                            CodexChatThinkingIndicator()
-                        }
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 22) {
+                ForEach(items) { item in
+                    switch item {
+                    case let .contextDivider(_, context):
+                        CodexChatContextDivider(context: context)
+                    case let .message(message, showsInlineActivity):
+                        CodexChatMessageRow(
+                            message: message,
+                            showsInlineActivity: showsInlineActivity,
+                            meetingNamesByID: meetingNamesByID,
+                            meetingReferencesByID: meetingReferencesByID
+                        )
+                    case .thinking:
+                        CodexChatThinkingIndicator()
                     }
-
-                    Color.clear
-                        .frame(height: 0)
-                        .id(Self.bottomID)
-                }
-                .padding(.horizontal, CodexChatDesign.contentHorizontalPadding)
-                .padding(.vertical, 12)
-            }
-            .defaultScrollAnchor(.bottom, for: .initialOffset)
-            .onChange(of: messages.last) {
-                scrollToLatest(with: proxy)
-            }
-            .onChange(of: showsStandaloneThinking) {
-                scrollToLatest(with: proxy)
-            }
-            .onChange(of: isChatSidebarResizing) { wasResizing, isResizing in
-                guard wasResizing, !isResizing else { return }
-                scrollToLatest(with: proxy)
-            }
-            .onScrollGeometryChange(for: CodexChatConversationScrollState.self) { geometry in
-                let visibleBottom = geometry.contentOffset.y + geometry.containerSize.height
-                return CodexChatConversationScrollState(
-                    contentHeight: geometry.contentSize.height,
-                    isAtBottom: visibleBottom >= geometry.contentSize.height - 24
-                )
-            } action: { previous, current in
-                guard !isChatSidebarResizing else { return }
-                if current.shouldRestoreFollow(from: previous, isFollowingLatest: isFollowingLatest) {
-                    scrollToLatest(with: proxy)
-                } else {
-                    isFollowingLatest = current.isAtBottom
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(.horizontal, CodexChatDesign.contentHorizontalPadding)
+            .padding(.vertical, 12)
         }
-    }
-
-    private func scrollToLatest(with proxy: ScrollViewProxy) {
-        guard isFollowingLatest, !isChatSidebarResizing else { return }
-        proxy.scrollTo(Self.bottomID, anchor: .bottom)
+        .defaultScrollAnchor(.bottom, for: .initialOffset)
+        .defaultScrollAnchor(isFollowingLatest ? .bottom : nil, for: .sizeChanges)
+        .onScrollGeometryChange(for: CodexChatConversationScrollState.self) { geometry in
+            let visibleBottom = geometry.contentOffset.y + geometry.containerSize.height
+            return CodexChatConversationScrollState(
+                isAtBottom: visibleBottom >= geometry.contentSize.height - 24
+            )
+        } action: { _, current in
+            isFollowingLatest = current.updatedFollowState(
+                previous: isFollowingLatest,
+                isResizing: isChatSidebarResizing
+            )
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }

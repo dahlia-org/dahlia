@@ -47,14 +47,10 @@ struct CodexChatView: View {
                     isProjectOrganizationShortcutEnabled: session.canSendProjectOrganizationShortcut,
                     onOrganizeRecentMeetingsAndProjects: { session.sendProjectOrganizationShortcut() },
                     meetingReviewShortcutTitle: session.showsMeetingReviewShortcut
-                        ? meetingReviewReference.map { CodexChatMeetingReviewShortcut.title(meetingName: $0.name) }
+                        ? CodexChatMeetingReviewShortcut.title
                         : nil,
-                    isMeetingReviewShortcutEnabled: session.canSendMeetingReviewShortcut(
-                        meetingID: meetingReviewReference?.id
-                    ),
-                    onReviewMeeting: {
-                        session.sendMeetingReviewShortcut(meetingID: meetingReviewReference?.id)
-                    },
+                    isMeetingReviewShortcutEnabled: session.canSendMeetingReviewShortcut,
+                    onReviewMeeting: session.sendMeetingReviewShortcut,
                     onOpenThread: openHistoryThread,
                     onShowAll: showHistory
                 )
@@ -88,7 +84,18 @@ struct CodexChatView: View {
                     .padding(.vertical, 6)
             }
 
-            if let pendingApproval = session.pendingApproval {
+            if let request = session.pendingUserInput {
+                CodexChatUserInputView(
+                    request: request,
+                    isEnabled: session.respondingUserInputID == nil,
+                    onSubmit: { answer in
+                        session.respondToUserInput(id: request.id, answer: answer)
+                    },
+                    onStop: session.stop
+                )
+                .padding(.horizontal, CodexChatDesign.composerHorizontalPadding)
+                .padding(.bottom, CodexChatDesign.composerBottomPadding)
+            } else if let pendingApproval = session.pendingApproval {
                 CodexChatApprovalView(
                     request: pendingApproval,
                     isDecisionEnabled: session.canDecidePendingApproval,
@@ -142,11 +149,6 @@ struct CodexChatView: View {
             catalogVaultID: meetingCatalogVaultID,
             isCatalogLoaded: isMeetingCatalogLoaded
         )
-    }
-
-    private var meetingReviewReference: CodexChatMeetingReference? {
-        guard let meetingID = coordinator.currentMeetingID else { return nil }
-        return meetingReferences.first { $0.id == meetingID }
     }
 
     private func showHistory() {

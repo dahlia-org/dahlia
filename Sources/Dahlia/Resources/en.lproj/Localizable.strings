@@ -1117,6 +1117,8 @@
 "Update file: %@" = "Update file: %@";
 "Move file: %@ → %@" = "Move file: %@ → %@";
 "Deny" = "Deny";
+"Other" = "Other";
+"Submit" = "Submit";
 "This request is too large to review completely, so it cannot be approved." = "This request is too large to review completely, so it cannot be approved.";
 "This request asks for permissions outside the allowed workspace and cannot be approved." = "This request asks for permissions outside the allowed workspace and cannot be approved.";
 "Open Model Provider Settings" = "Open Model Provider Settings";
@@ -1127,8 +1129,7 @@
 "Presets" = "Presets";
 "Organize meetings and Projects from the last %lld days" = "Organize meetings and Projects from the last %lld days";
 "Project organization chat shortcut prompt" = "Use $projects-optimizer to organize Dahlia Meetings and Projects from the last %1$lld days.\ncreated_from: %2$@\ncreated_before: %3$@\n\nReview the Meetings in this period together with the existing Project hierarchy, improve Project descriptions when supported by evidence, and update Meeting assignments.";
-"Review meeting %@" = "Review “%@”";
-"Meeting review chat shortcut prompt" = "Use $meeting-reviewer to review meeting:%@. Infer three plausible desired outcomes from the Meeting information and confirm one, including a free-text option, before analyzing it.";
+"Review meeting speech" = "Review meeting speech";
 "Copy message" = "Copy message";
 "Copy code" = "Copy code";
 "Thought process" = "Thought process";

@@ -64,6 +64,58 @@ import Foundation
         }
 
         @Test
+        func genericUserInputReturnsTheSelectedAnswer() async throws {
+            let context = try await startTurn()
+            let service = context.service
+            let transport = context.transport
+            await sendUserInput(id: "user-input", turnID: "turn-1", to: transport)
+            #expect(await pollUntil {
+                await service.hasOwnedChatApprovalForTesting(
+                    turnID: context.turn.id,
+                    approvalID: "s:user-input"
+                )
+            })
+
+            try await service.respondToChatUserInput(
+                turnID: context.turn.id,
+                requestID: "s:user-input",
+                answer: "Next steps"
+            )
+            await transport.waitUntilResponded(to: "user-input")
+            let received = try #require(await response(id: "user-input", from: transport))
+            #expect(received["result"]?.objectValue?["answers"] == answers(
+                questionID: "desired_outcome",
+                answer: "Next steps"
+            ))
+
+            try await finishTurn(collection: context.collection, transport: transport)
+            await service.shutdown()
+        }
+
+        @Test
+        func genericUserInputWriteFailureStopsConnection() async throws {
+            let context = try await startTurn(failsApprovalResponses: true)
+            await sendUserInput(id: "user-input", turnID: "turn-1", to: context.transport)
+            #expect(await pollUntil {
+                await context.service.hasOwnedChatApprovalForTesting(
+                    turnID: context.turn.id,
+                    approvalID: "s:user-input"
+                )
+            })
+
+            await #expect(throws: CancellationError.self) {
+                try await context.service.respondToChatUserInput(
+                    turnID: context.turn.id,
+                    requestID: "s:user-input",
+                    answer: "Next steps"
+                )
+            }
+            #expect(await context.transport.isClosed)
+            _ = try? await context.collection.value
+            await context.service.shutdown()
+        }
+
+        @Test
         func permissionRequestRemainsFailClosed() async throws {
             let context = try await startTurn()
             let service = context.service
@@ -144,8 +196,11 @@ import Foundation
             let collection: Task<Void, any Error>
         }
 
-        private func startTurn() async throws -> TurnContext {
-            let transport = TestCodexAppServerTransport(mode: .blockTurnStart)
+        private func startTurn(failsApprovalResponses: Bool = false) async throws -> TurnContext {
+            let transport = TestCodexAppServerTransport(
+                mode: .blockTurnStart,
+                failsApprovalResponses: failsApprovalResponses
+            )
             let service = makeTestCodexAppServerService(transportFactory: { transport })
             let turn = try await service.beginChatTurn(
                 threadID: "thread-1",
@@ -187,11 +242,44 @@ import Foundation
         }
 
         private func answers(_ answer: String) -> JSONValue {
+            answers(questionID: "mcp_tool_call_approval_item-1", answer: answer)
+        }
+
+        private func answers(questionID: String, answer: String) -> JSONValue {
             .object([
-                "mcp_tool_call_approval_item-1": .object([
+                questionID: .object([
                     "answers": .array([.string(answer)]),
                 ]),
             ])
+        }
+
+        private func sendUserInput(
+            id: String,
+            turnID: String,
+            to transport: TestCodexAppServerTransport
+        ) async {
+            await transport.sendFromServer(.object([
+                "id": .string(id),
+                "method": .string("item/tool/requestUserInput"),
+                "params": .object([
+                    "autoResolutionMs": .null,
+                    "isBlocking": .bool(true),
+                    "itemId": .string("item-1"),
+                    "questions": .array([.object([
+                        "header": .string("Outcome"),
+                        "id": .string("desired_outcome"),
+                        "isOther": .bool(true),
+                        "isSecret": .bool(false),
+                        "options": .array([.object([
+                            "description": .string("Agree on next steps."),
+                            "label": .string("Next steps"),
+                        ])]),
+                        "question": .string("What outcome did you want?"),
+                    ])]),
+                    "threadId": .string("thread-1"),
+                    "turnId": .string(turnID),
+                ]),
+            ]))
         }
 
         private func sendMCPToolApproval(

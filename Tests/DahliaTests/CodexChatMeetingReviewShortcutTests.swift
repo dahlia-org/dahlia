@@ -7,17 +7,11 @@ import Foundation
     @MainActor
     struct CodexChatMeetingReviewShortcutTests {
         @Test
-        func promptPinsTheSelectedMeeting() throws {
-            let meetingID = try #require(UUID(uuidString: "019b6f79-18c5-7000-8000-000000000001"))
+        func promptInvokesOnlyTheSkill() {
+            let prompt = CodexChatMeetingReviewShortcut.prompt
 
-            let prompt = CodexChatMeetingReviewShortcut.prompt(meetingID: meetingID)
-
-            #expect(prompt.contains("$meeting-reviewer"))
-            #expect(prompt.contains("meeting:\(meetingID.uuidString.lowercased())"))
-            #expect(
-                CodexChatMeetingReviewShortcut.title(meetingName: "Weekly Review")
-                    == L10n.chatMeetingReviewShortcutTitle("Weekly Review")
-            )
+            #expect(prompt == "$meeting-reviewer")
+            #expect(CodexChatMeetingReviewShortcut.title == L10n.chatMeetingReviewShortcutTitle)
         }
 
         @Test
@@ -27,9 +21,15 @@ import Foundation
             let vault = Self.testVault()
             settings.currentVault = vault
             var telemetryEvents: [UsageTelemetryEvent] = []
+            let reviewMeetingID = UUID.v7()
+            let context = CodexChatContext.meeting(
+                id: reviewMeetingID,
+                name: "Current meeting",
+                calendarEvent: nil
+            )
             let contextProvider = TestCodexChatContextProvider(context: .meeting(
-                id: .v7(),
-                name: "Another meeting",
+                id: reviewMeetingID,
+                name: "Current meeting",
                 calendarEvent: nil
             ))
             let session = CodexChatSessionModel(
@@ -41,26 +41,28 @@ import Foundation
                 usageTelemetryReporter: { telemetryEvents.append($0) }
             )
             let meeting = Self.meetingReference(name: "Keep reference")
-            let reviewMeetingID = UUID.v7()
             let attachment = CodexChatImageAttachment(data: Data([0x01]), mimeType: "image/png")
             session.updateAvailableMeetings([meeting], catalogVaultID: vault.id)
             session.addMeetingReference(meeting)
             session.attachedImages = [attachment]
             session.draft = "Keep draft"
 
-            session.sendMeetingReviewShortcut(meetingID: reviewMeetingID)
+            session.sendMeetingReviewShortcut()
             #expect(await pollUntil { !session.isGenerating })
 
-            #expect(await service.sentTextBlocks == [[CodexChatMeetingReviewShortcut.prompt(meetingID: reviewMeetingID)]])
+            #expect(await service.sentTextBlocks == [CodexChatPromptCodec.encodeTextBlocks(
+                text: CodexChatMeetingReviewShortcut.prompt,
+                context: context
+            )])
             #expect(session.draft == "Keep draft")
             #expect(session.selectedMeetingReferenceIDs == [meeting.id])
             #expect(session.attachedImages == [attachment])
-            #expect(contextProvider.requestCount == 0)
+            #expect(contextProvider.requestCount == 1)
             #expect(telemetryEvents == [.aiChatPromptSubmitted])
         }
 
         @Test
-        func retryKeepsThePinnedMeetingWithoutResolvingCurrentContext() async {
+        func retryResolvesTheCurrentMeetingContextAgain() async {
             let service = TestCodexChatService(mode: .failThenComplete)
             let settings = AppSettings()
             let vault = Self.testVault()
@@ -77,20 +79,22 @@ import Foundation
                 settings: settings,
                 contextProvider: contextProvider
             )
-            let meetingID = UUID.v7()
-            let prompt = CodexChatMeetingReviewShortcut.prompt(meetingID: meetingID)
+            let prompt = CodexChatPromptCodec.encodeTextBlocks(
+                text: CodexChatMeetingReviewShortcut.prompt,
+                context: contextProvider.context
+            )
 
-            session.sendMeetingReviewShortcut(meetingID: meetingID)
+            session.sendMeetingReviewShortcut()
             #expect(await pollUntil { !session.isGenerating })
             session.retry()
             #expect(await pollUntil { await service.sentTextBlocks.count == 2 && !session.isGenerating })
 
-            #expect(await service.sentTextBlocks == [[prompt], [prompt]])
-            #expect(contextProvider.requestCount == 0)
+            #expect(await service.sentTextBlocks == [prompt, prompt])
+            #expect(contextProvider.requestCount == 2)
         }
 
         @Test
-        func requiresATargetCurrentVaultAndIdleSession() async {
+        func requiresCurrentVaultAndIdleSession() async {
             let service = TestCodexChatService(mode: .block)
             let settings = AppSettings()
             let boundVault = Self.testVault()
@@ -105,25 +109,21 @@ import Foundation
                 usageTelemetryReporter: { telemetryEvents.append($0) }
             )
 
-            session.sendMeetingReviewShortcut(meetingID: nil)
-            #expect(!session.isGenerating)
-            #expect(await service.sentTextBlocks.isEmpty)
-
             session.isTurnCleanupPending = true
-            session.sendMeetingReviewShortcut(meetingID: UUID.v7())
+            session.sendMeetingReviewShortcut()
             #expect(!session.isGenerating)
             #expect(await service.sentTextBlocks.isEmpty)
             session.isTurnCleanupPending = false
 
             settings.currentVault = Self.testVault()
-            session.sendMeetingReviewShortcut(meetingID: UUID.v7())
+            session.sendMeetingReviewShortcut()
             #expect(!session.isGenerating)
             #expect(await service.sentTextBlocks.isEmpty)
 
             settings.currentVault = boundVault
-            session.sendMeetingReviewShortcut(meetingID: UUID.v7())
+            session.sendMeetingReviewShortcut()
             #expect(await pollUntil { await service.sentTextBlocks.count == 1 })
-            session.sendMeetingReviewShortcut(meetingID: UUID.v7())
+            session.sendMeetingReviewShortcut()
 
             #expect(await service.sentTextBlocks.count == 1)
             #expect(telemetryEvents == [.aiChatPromptSubmitted])
@@ -148,54 +148,11 @@ import Foundation
 
             #expect(session.messages.isEmpty)
             #expect(!session.showsMeetingReviewShortcut)
-            #expect(!session.canSendMeetingReviewShortcut(meetingID: UUID.v7()))
+            #expect(!session.canSendMeetingReviewShortcut)
 
-            session.sendMeetingReviewShortcut(meetingID: UUID.v7())
+            session.sendMeetingReviewShortcut()
 
             #expect(await service.sentTextBlocks.isEmpty)
-        }
-
-        @Test
-        func coordinatorExposesOnlySavedMeetingContext() {
-            let coordinator = CodexChatCoordinator(
-                service: TestCodexChatService(mode: .staleRollout),
-                settings: AppSettings()
-            )
-            let vaultID = UUID.v7()
-            let meetingID = UUID.v7()
-
-            coordinator.updateCurrentContext(
-                vaultID: vaultID,
-                meetingID: meetingID,
-                draftMeeting: nil,
-                dbQueue: nil
-            )
-            #expect(coordinator.currentMeetingID == meetingID)
-
-            coordinator.updateCurrentContext(
-                vaultID: vaultID,
-                meetingID: nil,
-                projectID: UUID.v7(),
-                draftMeeting: nil,
-                dbQueue: nil
-            )
-            #expect(coordinator.currentMeetingID == nil)
-
-            coordinator.updateCurrentContext(
-                vaultID: vaultID,
-                meetingID: meetingID,
-                draftMeeting: DraftMeeting(id: .v7(), title: "Unsaved draft"),
-                dbQueue: nil
-            )
-            #expect(coordinator.currentMeetingID == nil)
-
-            coordinator.updateCurrentContext(
-                vaultID: vaultID,
-                meetingID: nil,
-                draftMeeting: nil,
-                dbQueue: nil
-            )
-            #expect(coordinator.currentMeetingID == nil)
         }
 
         private static func testVault() -> VaultRecord {

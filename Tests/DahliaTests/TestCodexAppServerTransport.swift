@@ -64,7 +64,8 @@ actor TestCodexAppServerTransport: CodexAppServerTransport {
 
     func sendLine(_ data: Data) async throws {
         let message = try JSONDecoder().decode(JSONValue.self, from: data)
-        let isApprovalResponse = message.objectValue?["result"]?.objectValue?["decision"] != nil
+        let result = message.objectValue?["result"]?.objectValue
+        let isApprovalResponse = result?["decision"] != nil || result?["answers"] != nil
         if failsApprovalResponses, isApprovalResponse {
             throw CancellationError()
         }

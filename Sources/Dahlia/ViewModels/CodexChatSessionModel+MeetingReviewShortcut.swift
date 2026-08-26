@@ -1,25 +1,18 @@
-import Foundation
-
 extension CodexChatSessionModel {
     var showsMeetingReviewShortcut: Bool {
         backendThreadID == nil && messages.isEmpty
     }
 
-    func canSendMeetingReviewShortcut(meetingID: UUID?) -> Bool {
-        meetingID != nil
-            && showsMeetingReviewShortcut
+    var canSendMeetingReviewShortcut: Bool {
+        showsMeetingReviewShortcut
             && isBoundToCurrentVault
             && !isGenerating
             && !isTurnCleanupPending
     }
 
-    func sendMeetingReviewShortcut(meetingID: UUID?) {
-        guard canSendMeetingReviewShortcut(meetingID: meetingID),
-              let meetingID else { return }
+    func sendMeetingReviewShortcut() {
+        guard canSendMeetingReviewShortcut else { return }
         usageTelemetryReporter(.aiChatPromptSubmitted)
-        submit(
-            CodexChatMeetingReviewShortcut.prompt(meetingID: meetingID),
-            includesCurrentContext: false
-        )
+        submit(CodexChatMeetingReviewShortcut.prompt)
     }
 }

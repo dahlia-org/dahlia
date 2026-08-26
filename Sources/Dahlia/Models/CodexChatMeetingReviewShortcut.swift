@@ -1,11 +1,4 @@
-import Foundation
-
 enum CodexChatMeetingReviewShortcut {
-    static func title(meetingName: String) -> String {
-        L10n.chatMeetingReviewShortcutTitle(meetingName)
-    }
-
-    static func prompt(meetingID: UUID) -> String {
-        L10n.chatMeetingReviewShortcutPrompt(meetingID.uuidString.lowercased())
-    }
+    static let prompt = "$meeting-reviewer"
+    static var title: String { L10n.chatMeetingReviewShortcutTitle }
 }

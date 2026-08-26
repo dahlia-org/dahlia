@@ -400,6 +400,14 @@ actor CodexChatService: CodexChatServicing {
         )
     }
 
+    func respondToUserInput(turnID: UUID, id: String, answer: String) async throws {
+        try await appServer.respondToChatUserInput(
+            turnID: turnID,
+            requestID: id,
+            answer: answer
+        )
+    }
+
     func stopTurn(_ turnID: UUID) async {
         await appServer.stopChatTurn(turnID)
     }
@@ -566,7 +574,9 @@ private extension CodexChatService {
             ),
         ]
     }
+}
 
+extension CodexChatService {
     nonisolated static func parseTurnEvent(
         _ value: JSONValue,
         fileChangesByItemID: [String: CodexChatApprovalFileChangeSnapshot] = [:],
@@ -600,20 +610,27 @@ private extension CodexChatService {
             )
         case "item/tool/requestUserInput":
             let prompt = CodexChatMCPApprovalPrompt(params: params)
-            let toolCall = prompt.flatMap { mcpToolCallsByItemID[$0.itemID] }
-            return try parseApprovalRequest(
-                object,
-                params: params,
-                kind: .mcpToolCall,
-                mcpToolCall: toolCall
-            )
+            if let prompt {
+                return try parseApprovalRequest(
+                    object,
+                    params: params,
+                    kind: .mcpToolCall,
+                    mcpToolCall: mcpToolCallsByItemID[prompt.itemID]
+                )
+            }
+            guard let requestID = object["id"].flatMap(CodexAppServerService.approvalID(for:)),
+                  let request = CodexChatUserInputRequest(id: requestID, params: params)
+            else { throw CodexAppServerError.invalidProtocolResponse }
+            return .userInputRequested(request)
         case "turn/completed":
             return try parseTurnCompletion(params)
         default:
             return nil
         }
     }
+}
 
+private extension CodexChatService {
     nonisolated static func parseApprovalRequest(
         _ object: [String: JSONValue],
         params: [String: JSONValue],
