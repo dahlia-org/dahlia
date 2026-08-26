@@ -82,9 +82,9 @@ final class CodexChatCoordinator {
         isDockedVisible = false
     }
 
-    func newDockedChat() {
+    func newDockedChat(showDockedSidebar: Bool = true) {
         let session = makeSession()
-        replaceDockedSession(with: session, isVisible: true)
+        replaceDockedSession(with: session, isVisible: showDockedSidebar)
         Task { await session.prepare() }
         Task { await refreshHistory() }
     }
@@ -116,13 +116,16 @@ final class CodexChatCoordinator {
         return replacementID
     }
 
-    func openHistoryThread(_ thread: CodexChatThreadSummary) async -> CodexChatSessionID {
+    func openHistoryThread(
+        _ thread: CodexChatThreadSummary,
+        showDockedSidebar: Bool = true
+    ) async -> CodexChatSessionID {
         let vaultID = dockedSession.vaultID
         if let existing = sessions.values.first(where: {
             $0.backendThreadID == thread.id && $0.vaultID == vaultID
         }) {
             if !detachedSessionIDs.contains(existing.id) {
-                replaceDockedSession(with: existing, isVisible: true)
+                replaceDockedSession(with: existing, isVisible: showDockedSidebar)
             }
             return existing.id
         }
@@ -132,7 +135,7 @@ final class CodexChatCoordinator {
             backendThreadID: thread.id,
             title: thread.title
         )
-        replaceDockedSession(with: session, isVisible: true)
+        replaceDockedSession(with: session, isVisible: showDockedSidebar)
         await session.restore()
         return session.id
     }

@@ -10,6 +10,7 @@ struct CodexChatView: View {
     var configurationPresentation: Binding<Bool>?
     let onNewChat: () -> Void
     let onOpenHistory: (CodexChatThreadSummary) -> Void
+    let onShowFullScreen: (() -> Void)?
     let onPopOut: (() -> Void)?
     let reservesSidebarToggle: Bool
     let reservesWindowControls: Bool
@@ -23,6 +24,7 @@ struct CodexChatView: View {
                 onBack: hideHistory,
                 onShowHistory: showHistory,
                 onNewChat: startNewChat,
+                onShowFullScreen: onShowFullScreen,
                 onPopOut: onPopOut,
                 reservesSidebarToggle: reservesSidebarToggle,
                 reservesWindowControls: reservesWindowControls

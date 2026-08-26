@@ -5,6 +5,8 @@ struct CodexChatSidebarView: View {
     @Bindable var sidebarViewModel: SidebarViewModel
     @Binding var showsHistory: Bool
     @Binding var showsConfiguration: Bool
+    let isFullScreen: Bool
+    let onShowFullScreen: (() -> Void)?
     let onPopOut: () -> Void
     let onOpenDetachedSession: (CodexChatSessionID) -> Void
 
@@ -19,8 +21,9 @@ struct CodexChatSidebarView: View {
             configurationPresentation: $showsConfiguration,
             onNewChat: startNewChat,
             onOpenHistory: openHistory,
+            onShowFullScreen: onShowFullScreen,
             onPopOut: onPopOut,
-            reservesSidebarToggle: true,
+            reservesSidebarToggle: !isFullScreen,
             reservesWindowControls: false
         )
         .task(id: sidebarViewModel.currentVault?.id) {
@@ -30,12 +33,12 @@ struct CodexChatSidebarView: View {
 
     private func startNewChat() {
         showsConfiguration = false
-        coordinator.newDockedChat()
+        coordinator.newDockedChat(showDockedSidebar: !isFullScreen)
     }
 
     private func openHistory(_ thread: CodexChatThreadSummary) {
         Task {
-            let id = await coordinator.openHistoryThread(thread)
+            let id = await coordinator.openHistoryThread(thread, showDockedSidebar: !isFullScreen)
             if coordinator.detachedSessionIDs.contains(id) {
                 onOpenDetachedSession(id)
             }

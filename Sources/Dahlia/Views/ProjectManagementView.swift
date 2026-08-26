@@ -10,6 +10,7 @@ struct ProjectManagementView: View {
     let appDatabase: AppDatabaseManager?
     var vaultManagementModel: VaultManagementModel
     let onShowUpcomingSchedule: () -> Void
+    let onShowChat: () -> Void
     let onShowUnprocessedRecordings: () -> Void
     let showsCustomerIntelligence: Bool
     let onOpenCustomerIntelligence: () -> Void
@@ -42,6 +43,8 @@ struct ProjectManagementView: View {
                     recordingCoordinator: recordingCoordinator,
                     isShowingUpcomingSchedule: false,
                     onShowUpcomingSchedule: onShowUpcomingSchedule,
+                    isShowingChat: false,
+                    onShowChat: onShowChat,
                     isShowingProjects: true,
                     onShowProjects: onShowProjectCatalog,
                     isShowingUnprocessedRecordings: false,

@@ -2871,6 +2871,7 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var noRecentChats: String { String(localized: "No recent chats", bundle: bundle) }
     static var loadMore: String { String(localized: "Load more", bundle: bundle) }
     static var popOutChat: String { String(localized: "Open chat in a new window", bundle: bundle) }
+    static var showChatFullScreen: String { String(localized: "Show chat full screen", bundle: bundle) }
     static var hideChat: String { String(localized: "Hide chat", bundle: bundle) }
     static var showChat: String { String(localized: "Show chat", bundle: bundle) }
     static var shown: String { String(localized: "Shown", bundle: bundle) }
@@ -2878,7 +2879,7 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var sendMessage: String { String(localized: "Send message", bundle: bundle) }
     static var stopGenerating: String { String(localized: "Stop generating", bundle: bundle) }
     static var chatThinking: String { String(localized: "Thinking", bundle: bundle) }
-    static var messageCodex: String { String(localized: "Message Codex", bundle: bundle) }
+    static var messageDahliaAI: String { String(localized: "Message Dahlia AI", bundle: bundle) }
     static var addToChat: String { String(localized: "Add to chat", bundle: bundle) }
     static var selectModel: String { String(localized: "Select model", bundle: bundle) }
     static var chatImage: String { String(localized: "Image", bundle: bundle) }

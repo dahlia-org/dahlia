@@ -8,6 +8,8 @@ struct MainSidebarNavigationView: View {
     let onStartQuickRecording: () -> Void
     let isShowingUpcomingSchedule: Bool
     let onShowUpcomingSchedule: () -> Void
+    let isShowingChat: Bool
+    let onShowChat: () -> Void
     let isShowingProjects: Bool
     let onShowProjects: () -> Void
     let canCreateProject: Bool
@@ -37,6 +39,17 @@ struct MainSidebarNavigationView: View {
             .buttonStyle(.plain)
             .help(L10n.showUpcomingSchedule)
             .accessibilityAddTraits(isShowingUpcomingSchedule ? .isSelected : [])
+
+            Button(action: onShowChat) {
+                MainSidebarNavigationLabel(
+                    title: L10n.chat,
+                    systemImage: "bubble.left.and.bubble.right",
+                    isSelected: isShowingChat
+                )
+            }
+            .buttonStyle(.plain)
+            .help(L10n.chat)
+            .accessibilityAddTraits(isShowingChat ? .isSelected : [])
 
             if meetingSidebarDisplayMode == .chronological {
                 MainSidebarProjectNavigationRow(

@@ -1079,11 +1079,12 @@
 "No recent chats" = "No recent chats";
 "Load more" = "Load more";
 "Open chat in a new window" = "Open chat in a new window";
+"Show chat full screen" = "Show chat full screen";
 "Hide chat" = "Hide chat";
 "Send message" = "Send message";
 "Stop generating" = "Stop generating";
 "Thinking" = "Thinking";
-"Message Codex" = "Message Codex";
+"Message Dahlia AI" = "Message Dahlia AI";
 "Add to chat" = "Add to chat";
 "Select model" = "Select model";
 "Image" = "Image";
