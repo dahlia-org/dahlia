@@ -299,8 +299,7 @@ import os
                 projectId: nil,
                 initialName: "Batch meeting",
                 transcriptionMode: .batch,
-                persistencePolicy: .deferred,
-                retainAudioAfterBatch: true
+                persistencePolicy: .deferred
             )
             store.addSegment(
                 TranscriptSegment(
@@ -323,7 +322,6 @@ import os
 
             #expect(result.0.status == .transcriptNotFound)
             #expect(result.1.transcriptionMode == .batch)
-            #expect(result.1.retainAudioAfterBatch)
             #expect(result.2 == 0)
         }
 

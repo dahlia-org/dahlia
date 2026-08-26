@@ -1168,7 +1168,6 @@ import GRDB
                 createdAt: startedAt,
                 updatedAt: startedAt,
                 transcriptionMode: .batch,
-                retainAudioAfterBatch: false,
                 batchCompletedAt: startedAt.addingTimeInterval(30)
             )
             try database.dbQueue.write { db in try session.insert(db) }

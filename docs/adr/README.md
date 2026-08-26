@@ -51,3 +51,4 @@ Codex は全 ADR を順番に読まず、最初にこの一覧から現在の作
 | [0039](0039-guide-databricks-cli-installation-and-login.md) | AI runtime / Authentication / Distribution | CLI を外部導入のまま案内し、workspace URL から OAuth profile を作成する | Accepted; amends 0003 and 0021 |
 | [0040](0040-user-configurable-meeting-search-field-weights.md) | Search / Settings | ミーティング検索の順位をユーザー設定のフィールド重みで決める | Accepted; amends 0033 and 0034; amended by 0041 |
 | [0041](0041-exclude-project-context-from-meeting-search.md) | Search / Project context | Project の文脈をミーティング自由文検索と順位から除外する | Accepted; amends 0005, 0033, 0035, 0037, and 0040; builds on 0034 |
+| [0042](0042-apply-global-batch-audio-retention.md) | Recording storage / Settings | 現在の保存期間と録音終了日時からバッチ録音を遡及削除する | Accepted; amends 0004 |

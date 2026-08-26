@@ -490,16 +490,6 @@ actor BackupService {
         ] where try db.tableExists(table) {
             try db.execute(sql: "DELETE FROM \(table)")
         }
-        if try db.tableExists("recording_sessions") {
-            try db.execute(
-                sql: """
-                UPDATE recording_sessions
-                SET retainAudioAfterBatch = 0,
-                    audioRetentionPolicy = NULL,
-                    retentionExpiresAt = NULL
-                """
-            )
-        }
     }
 
     private nonisolated static func unresolvedAudioCount(in db: Database) throws -> Int {

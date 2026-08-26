@@ -36,7 +36,6 @@ import GRDB
                 meetingStatus: .ready,
                 endedAt: Date(timeIntervalSince1970: 1_776_384_060),
                 duration: 60,
-                retainAudioAfterBatch: true,
                 batchCompletedAt: Date(timeIntervalSince1970: 1_776_384_070)
             )
             defer { fixture.removeFiles() }
@@ -122,8 +121,6 @@ import GRDB
                 )
             }
             #expect(result.0 == "Preserved transcript")
-            #expect(!result.1.retainAudioAfterBatch)
-            #expect(result.1.audioRetentionPolicy == nil)
             #expect(result.2 == 0)
             #expect(result.3 == 0)
             #expect(result.4 == 0)

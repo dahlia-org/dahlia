@@ -54,7 +54,6 @@ private struct PersistenceStartRequest {
     let recordingSessionId: UUID
     let transcriptionMode: TranscriptionMode
     let persistencePolicy: TranscriptPersistencePolicy
-    let retainAudioAfterBatch: Bool
     let draftMeeting: DraftMeeting?
     let initialMeetingName: String
 }
@@ -724,6 +723,8 @@ final class CaptionViewModel: ObservableObject {
     private var liveSubtitleLocaleCancellable: AnyCancellable?
     private var liveSubtitleSettingsCancellable: AnyCancellable?
     private var automaticScreenshotSettingsCancellables: Set<AnyCancellable> = []
+    private var audioRetentionCancellables: Set<AnyCancellable> = []
+    private var audioRetentionOperationTask: Task<Void, Never>?
     private var meetingLoadTask: Task<Void, Never>?
     private var meetingLoadGeneration: UInt64 = 0
     private var summaryReloadTask: Task<Void, Never>?
@@ -851,6 +852,26 @@ final class CaptionViewModel: ObservableObject {
             }
 
         UserDefaults.standard
+            .publisher(for: \.batchAudioRetentionPeriodDays)
+            .removeDuplicates()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] rawValue in
+                self?.enqueueAudioRetentionOperation { coordinator in
+                    await coordinator.updateAudioRetentionPeriod(.resolved(rawValue: rawValue))
+                }
+            }
+            .store(in: &audioRetentionCancellables)
+
+        NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.enqueueAudioRetentionOperation { coordinator in
+                    await coordinator.refreshExpiredAudio()
+                }
+            }
+            .store(in: &audioRetentionCancellables)
+
+        UserDefaults.standard
             .publisher(for: \.automaticScreenshotEnabled)
             .removeDuplicates()
             .receive(on: RunLoop.main)
@@ -915,7 +936,8 @@ final class CaptionViewModel: ObservableObject {
         guard batchTranscriptionCoordinator == nil else { return }
         let coordinator = BatchTranscriptionCoordinator(
             dbQueue: dbQueue,
-            managedRootURL: managedRootURL
+            managedRootURL: managedRootURL,
+            audioRetentionPeriod: AppSettings.shared.batchAudioRetentionPeriod
         ) { [weak self] update in
             await self?.handleBatchTranscriptionUpdate(update)
         }
@@ -927,6 +949,17 @@ final class CaptionViewModel: ObservableObject {
 
     func configureSearchIndexer(_ searchIndexer: SearchIndexer) {
         self.searchIndexer = searchIndexer
+    }
+
+    private func enqueueAudioRetentionOperation(
+        _ operation: @escaping @Sendable (BatchTranscriptionCoordinator) async -> Void
+    ) {
+        guard let coordinator = batchTranscriptionCoordinator else { return }
+        let precedingTask = audioRetentionOperationTask
+        audioRetentionOperationTask = Task {
+            await precedingTask?.value
+            await operation(coordinator)
+        }
     }
 
     func retryBatchTranscriptionRecovery() {
@@ -1073,7 +1106,6 @@ final class CaptionViewModel: ObservableObject {
             sessionId: sessionId,
             meetingId: meetingId,
             suggestedLocaleIdentifier: preferences.localeIdentifier,
-            retainAudioAfterBatch: preferences.retainsAudio,
             initialLanguageSelection: preferences.languageSelection,
             automaticLanguageCandidateSnapshot: preferences.automaticLanguageCandidateSnapshot,
             purpose: .retranscription(sessionIds: sessionIds),
@@ -1291,7 +1323,6 @@ final class CaptionViewModel: ObservableObject {
 
     func confirmBatchTranscription(
         languageSelection: BatchTranscriptionLanguageSelection,
-        retainAudioAfterBatch: Bool,
         generatesSummary: Bool,
         summaryGenerationOptions: SummaryGenerationOptions
     ) {
@@ -1308,7 +1339,6 @@ final class CaptionViewModel: ObservableObject {
             sessionId: confirmation.sessionId,
             meetingId: confirmation.meetingId,
             suggestedLocaleIdentifier: confirmation.suggestedLocaleIdentifier,
-            retainAudioAfterBatch: retainAudioAfterBatch,
             initialLanguageSelection: languageSelection,
             allowsRecordedLanguageSelection: confirmation.allowsRecordedLanguageSelection,
             automaticLanguageCandidateSnapshot: automaticLanguageCandidates.snapshot,
@@ -1339,7 +1369,6 @@ final class CaptionViewModel: ObservableObject {
                 coordinator: coordinator,
                 languageSelection: languageSelection,
                 automaticLanguageCandidates: selectedAutomaticLanguageCandidates,
-                retainAudioAfterBatch: retainAudioAfterBatch,
                 retryConfirmation: retryConfirmation,
                 batchSummaryContext: batchSummaryContext
             ))
@@ -1351,7 +1380,6 @@ final class CaptionViewModel: ObservableObject {
         let coordinator: BatchTranscriptionCoordinator
         let languageSelection: BatchTranscriptionLanguageSelection
         let automaticLanguageCandidates: BatchLanguageDetectionCandidateSnapshot?
-        let retainAudioAfterBatch: Bool
         let retryConfirmation: BatchTranscriptionConfirmation
         let batchSummaryContext: BatchSummaryContext?
     }
@@ -1370,7 +1398,6 @@ final class CaptionViewModel: ObservableObject {
                     sessionId: execution.confirmation.sessionId,
                     languageSelection: execution.languageSelection,
                     automaticLanguageCandidates: execution.automaticLanguageCandidates,
-                    retainAudioAfterBatch: execution.retainAudioAfterBatch,
                     onConfirmed: onConfirmed
                 )
             case let .retranscription(sessionIds):
@@ -1378,7 +1405,6 @@ final class CaptionViewModel: ObservableObject {
                     sessionIds: sessionIds,
                     languageSelection: execution.languageSelection,
                     automaticLanguageCandidates: execution.automaticLanguageCandidates,
-                    retainAudioAfterBatch: execution.retainAudioAfterBatch,
                     onConfirmed: onConfirmed
                 )
             }
@@ -1906,7 +1932,6 @@ final class CaptionViewModel: ObservableObject {
                   AND (
                       (
                           sessions.batchCompletedAt IS NOT NULL
-                          AND sessions.retainAudioAfterBatch = 1
                           AND (sessions.batchLastAttemptAt IS NULL OR sessions.batchLastAttemptAt <= sessions.batchCompletedAt)
                       )
                       OR sessions.batchLastError IS NOT NULL
@@ -2831,8 +2856,7 @@ final class CaptionViewModel: ObservableObject {
                 recordingStartDate: request.recordingStartTime,
                 recordingSessionId: request.recordingSessionId,
                 transcriptionMode: request.transcriptionMode,
-                persistencePolicy: request.persistencePolicy,
-                retainAudioAfterBatch: request.retainAudioAfterBatch
+                persistencePolicy: request.persistencePolicy
             )
             persistenceService = service
             installTranscriptionEventPipeline(persistenceService: service)
@@ -2856,8 +2880,7 @@ final class CaptionViewModel: ObservableObject {
             calendarEvent: request.draftMeeting?.linkedCalendarEvent,
             recordingSessionId: request.recordingSessionId,
             transcriptionMode: request.transcriptionMode,
-            persistencePolicy: request.persistencePolicy,
-            retainAudioAfterBatch: request.retainAudioAfterBatch
+            persistencePolicy: request.persistencePolicy
         )
         persistenceService = service
         installTranscriptionEventPipeline(persistenceService: service)
@@ -3099,13 +3122,10 @@ final class CaptionViewModel: ObservableObject {
         pendingRealtimeRecognitionFailure = nil
         pendingLiveSubtitleWarning = nil
         let transcriptionMode = AppSettings.shared.transcriptionMode
-        let retainAudioAfterBatch = transcriptionMode == .batch
-            && AppSettings.shared.retainAudioAfterBatchTranscription
         var transcriptionPlan = TranscriptionSessionPlan(
             finalMode: transcriptionMode,
             liveSubtitlesEnabled: AppSettings.shared.liveSubtitleOverlayEnabled,
-            liveChatEnabled: isChatLiveModeEnabled,
-            retainBatchAudio: retainAudioAfterBatch
+            liveChatEnabled: isChatLiveModeEnabled
         )
         let finalTranscriptionLocale = resolvedTranscriptionLocale()
         let liveRecognitionLocale = resolvedLiveRecognitionLocale(mode: transcriptionMode)
@@ -3144,7 +3164,6 @@ final class CaptionViewModel: ObservableObject {
                     recordingSessionId: recordingSessionId,
                     transcriptionMode: transcriptionMode,
                     persistencePolicy: transcriptionPlan.persistsRealtimeTranscript ? .streaming : .deferred,
-                    retainAudioAfterBatch: retainAudioAfterBatch,
                     draftMeeting: activeDraftMeeting,
                     initialMeetingName: initialMeetingName
                 )
@@ -3551,7 +3570,6 @@ final class CaptionViewModel: ObservableObject {
             sessionId: sessionId,
             meetingId: meetingId,
             suggestedLocaleIdentifier: preferences.localeIdentifier,
-            retainAudioAfterBatch: preferences.retainsAudio,
             initialLanguageSelection: preferences.languageSelection,
             automaticLanguageCandidateSnapshot: preferences.automaticLanguageCandidateSnapshot,
             initiallyGeneratesSummary: AppSettings.shared.generateSummaryAfterBatchTranscription,
@@ -3568,11 +3586,9 @@ final class CaptionViewModel: ObservableObject {
         confirmationSessionIds: [UUID]? = nil
     ) -> (
         localeIdentifier: String,
-        retainsAudio: Bool,
         languageSelection: BatchTranscriptionLanguageSelection,
         automaticLanguageCandidateSnapshot: BatchLanguageDetectionCandidateSnapshot?
     ) {
-        let fallbackRetention = AppSettings.shared.retainAudioAfterBatchTranscription
         guard let dbQueue,
               let stored = try? dbQueue.read({ db -> (RecordingSessionRecord?, String?, Int) in
                   let session = try RecordingSessionRecord.fetchOne(db, key: sessionId)
@@ -3635,7 +3651,6 @@ final class CaptionViewModel: ObservableObject {
               let session = stored.0 else {
             return (
                 suggestedLocaleIdentifier,
-                fallbackRetention,
                 .manual(localeIdentifier: suggestedLocaleIdentifier),
                 nil
             )
@@ -3653,7 +3668,7 @@ final class CaptionViewModel: ObservableObject {
         }
         let automaticLanguageCandidateSnapshot = session.batchAutomaticLanguageCandidatesJSON
             .flatMap { try? BatchLanguageDetectionCandidateSnapshot.decode($0) }
-        return (localeIdentifier, session.retainAudioAfterBatch, languageSelection, automaticLanguageCandidateSnapshot)
+        return (localeIdentifier, languageSelection, automaticLanguageCandidateSnapshot)
     }
 
     private nonisolated static func pendingBatchRetranscriptionSessionIds(

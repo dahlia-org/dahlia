@@ -4,8 +4,6 @@ struct TranscriptionSessionPlan: Equatable {
     let finalMode: TranscriptionMode
     var liveSubtitlesEnabled: Bool
     var liveChatEnabled = false
-    let retainBatchAudio: Bool
-
     /// 正本文字起こし、ライブ字幕、またはライブチャットのために逐次認識が必要か。
     var requiresLiveRecognition: Bool {
         finalMode == .realtime || liveSubtitlesEnabled || liveChatEnabled

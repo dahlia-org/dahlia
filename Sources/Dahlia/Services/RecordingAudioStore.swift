@@ -859,12 +859,50 @@ actor RecordingAudioStore {
     }
 
     func requestPurge(sessionId: UUID, includeFailed: Bool = false, at now: Date = .now) async throws {
+        try await requestPurge(sessionId: sessionId, includeFailed: includeFailed, retentionCutoff: nil, at: now)
+    }
+
+    func requestRetentionPurge(sessionId: UUID, cutoff: Date, at now: Date = .now) async throws {
+        try await requestPurge(sessionId: sessionId, includeFailed: false, retentionCutoff: cutoff, at: now)
+    }
+
+    private func requestPurge(
+        sessionId: UUID,
+        includeFailed: Bool,
+        retentionCutoff: Date?,
+        at now: Date
+    ) async throws {
         guard sessionLeases[sessionId] == nil, readLeaseCounts[sessionId] == nil else {
             throw RecordingAudioStoreError.activeSession
         }
         let temporaryLease = try await acquireTemporarySessionLease(sessionId: sessionId)
         defer { withExtendedLifetime(temporaryLease) {} }
-        try await dbQueue.write { db in
+        let didRequestPurge = try await dbQueue.write { db in
+            if let retentionCutoff {
+                let isEligible = try Bool.fetchOne(
+                    db,
+                    sql: """
+                    SELECT EXISTS (
+                        SELECT 1 FROM recording_sessions
+                        WHERE id = ?
+                          AND transcriptionMode = ?
+                          AND batchCompletedAt IS NOT NULL
+                          AND batchDiscardedAt IS NULL
+                          AND endedAt IS NOT NULL
+                          AND endedAt <= ?
+                          AND batchCompletedAt <= ?
+                          AND (batchLastAttemptAt IS NULL OR batchLastAttemptAt <= batchCompletedAt)
+                    )
+                    """,
+                    arguments: [
+                        sessionId,
+                        TranscriptionMode.batch.rawValue,
+                        retentionCutoff,
+                        retentionCutoff,
+                    ]
+                ) ?? false
+                guard isEligible else { return false }
+            }
             let records = try RecordingAudioSegmentRecord
                 .filter(Column("recordingSessionId") == sessionId)
                 .fetchAll(db)
@@ -884,7 +922,9 @@ actor RecordingAudioStore {
                 record.updatedAt = now
                 try record.update(db)
             }
+            return true
         }
+        guard didRequestPurge else { return }
         try await purgePendingLocked(sessionId: sessionId, includeAmbiguousFailedFiles: includeFailed)
     }
 

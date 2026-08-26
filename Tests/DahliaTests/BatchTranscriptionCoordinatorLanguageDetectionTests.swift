@@ -58,8 +58,7 @@ import GRDB
             let fixture = try BatchAudioTestFixture(
                 name: "AutomaticLanguagePipeline",
                 endedAt: Date(timeIntervalSince1970: 1_776_384_001),
-                duration: 0.0125,
-                retainAudioAfterBatch: true
+                duration: 0.0125
             )
             defer { fixture.removeFiles() }
             try await createSegmentedRecording(fixture: fixture)
@@ -103,8 +102,7 @@ import GRDB
             let fixture = try BatchAudioTestFixture(
                 name: "AutomaticLanguageFallback",
                 endedAt: Date(timeIntervalSince1970: 1_776_384_001),
-                duration: 0.0125,
-                retainAudioAfterBatch: true
+                duration: 0.0125
             )
             defer { fixture.removeFiles() }
             try await createSegmentedRecording(
@@ -146,8 +144,7 @@ import GRDB
             let fixture = try BatchAudioTestFixture(
                 name: "AutomaticRegionalLocale",
                 endedAt: Date(timeIntervalSince1970: 1_776_384_001),
-                duration: 0.0125,
-                retainAudioAfterBatch: true
+                duration: 0.0125
             )
             defer { fixture.removeFiles() }
             try await createSegmentedRecording(
@@ -189,8 +186,7 @@ import GRDB
             let fixture = try BatchAudioTestFixture(
                 name: "AutomaticLanguageFallbackFailure",
                 endedAt: Date(timeIntervalSince1970: 1_776_384_001),
-                duration: 0.0125,
-                retainAudioAfterBatch: true
+                duration: 0.0125
             )
             defer { fixture.removeFiles() }
             try await createSegmentedRecording(
@@ -263,8 +259,7 @@ import GRDB
             let fixture = try BatchAudioTestFixture(
                 name: "AutomaticLanguageRetry",
                 endedAt: Date(timeIntervalSince1970: 1_776_384_001),
-                duration: 0.0125,
-                retainAudioAfterBatch: true
+                duration: 0.0125
             )
             try await createSegmentedRecording(fixture: fixture)
             let audioSegments = try await fixture.database.dbQueue.read { db in

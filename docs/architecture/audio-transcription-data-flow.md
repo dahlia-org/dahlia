@@ -256,7 +256,8 @@ sequenceDiagram
 これは総処理時間の上限ではない。ready CAF は保持し、起動時は音声整合性の復旧だけを行って batch recognition を自動再開しない。
 前プロセスで queued／running だった処理は中断状態へ移し、ユーザーはミーティング詳細または未処理録音一覧から
 保持音声を明示的に再処理できる。複数の batch recognition は一つずつ直列実行する。
-再試行成功後は通常の `retainAudioAfterBatch` 方針に戻り、保持しない設定なら音声を purge する。
+再試行成功後も、現在の保存期間を recording session の `endedAt` と `batchCompletedAt` の遅い方から計算して削除対象を判定する。期限を過ぎていれば、
+既存の purge state machine で音声を削除する。
 
 認識途中の結果は正本へ部分反映しない。成功した全結果を `BatchTranscriptionPersistence.complete` が一つの transaction で
 反映する。再文字起こし中は以前の成功結果を利用でき、新しい一式が成功した時だけ置き換える。
@@ -308,7 +309,7 @@ sequenceDiagram
 | realtime SQLite failure | pending event と順序を writer actor 内で保持 | exponential backoff。停止時にも flush failure を返す |
 | batch recognition failure／アプリ終了による中断 | 旧成功 transcript と ready audio を保持 | failure／interrupted state を保存し、手動再試行を待つ |
 | Apple Speech の無進捗停止 | 旧成功 transcript と ready audio を保持 | 待機時間を含む専用 failure state を保存し、自動再試行せず手動再試行を待つ |
-| batch audio feature extraction failure | 認識済み transcript と通常の purge policy を維持 | sanitized error を報告し、該当 feature columns を `NULL` にする |
+| batch audio feature extraction failure | 認識済み transcript と現在の録音保存期間を維持 | sanitized error を報告し、該当 feature columns を `NULL` にする |
 | crash 中の partial／finalizing CAF | 既存 ready segment を変更しない | startup reconciler が DB state と file を照合 |
 | ready CAF の missing／mismatch | 自動再作成、上書き、削除をしない | `failed` と reconciliation issue を記録 |
 

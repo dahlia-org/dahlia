@@ -6,6 +6,8 @@ struct TranscriptionSettingsView: View {
     @ObservedObject private var settings = AppSettings.shared
     @State private var supportedLocales: [Locale] = []
     @State private var isLoadingLocales = true
+    @State private var pendingShorterAudioRetentionPeriod: BatchAudioRetentionPeriod?
+    @State private var isShowingAudioRetentionConfirmation = false
 
     var body: some View {
         Form {
@@ -43,11 +45,13 @@ struct TranscriptionSettingsView: View {
                         label: \.displayName
                     )
 
-                    Toggle(isOn: $settings.retainAudioAfterBatchTranscription) {
-                        Text(L10n.retainBatchAudio)
-                        Text(L10n.retainBatchAudioDescription)
-                    }
-                    .toggleStyle(.switch)
+                    DahliaMenuPicker(
+                        title: L10n.batchAudioRetentionPeriod,
+                        description: L10n.batchAudioRetentionPeriodDescription,
+                        selection: audioRetentionPeriodSelection,
+                        options: BatchAudioRetentionPeriod.allCases,
+                        label: \.displayName
+                    )
 
                     Toggle(isOn: $settings.generateSummaryAfterBatchTranscription) {
                         Text(L10n.generateSummaryAfterBatchTranscription)
@@ -87,6 +91,16 @@ struct TranscriptionSettingsView: View {
 
         }
         .formStyle(.grouped)
+        .confirmationDialog(
+            L10n.shortenBatchAudioRetentionPeriodTitle,
+            isPresented: $isShowingAudioRetentionConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button(L10n.apply, role: .destructive, action: confirmShorterAudioRetentionPeriod)
+            Button(L10n.cancel, role: .cancel, action: cancelShorterAudioRetentionPeriod)
+        } message: {
+            Text(L10n.shortenBatchAudioRetentionPeriodMessage)
+        }
         .task {
             await loadSupportedLocales()
         }
@@ -99,6 +113,37 @@ struct TranscriptionSettingsView: View {
         case .realtime: L10n.realtimeTranscriptionDescription
         case .batch: L10n.batchTranscriptionDescription
         }
+    }
+
+    private var audioRetentionPeriodSelection: Binding<BatchAudioRetentionPeriod> {
+        Binding(
+            get: { settings.batchAudioRetentionPeriod },
+            set: { applyAudioRetentionPeriodChange($0) }
+        )
+    }
+
+    private func applyAudioRetentionPeriodChange(_ newValue: BatchAudioRetentionPeriod) {
+        guard newValue != settings.batchAudioRetentionPeriod else { return }
+        guard newValue.isShorter(than: settings.batchAudioRetentionPeriod) else {
+            settings.batchAudioRetentionPeriod = newValue
+            return
+        }
+        pendingShorterAudioRetentionPeriod = newValue
+        Task { @MainActor in
+            await Task.yield()
+            guard pendingShorterAudioRetentionPeriod == newValue else { return }
+            isShowingAudioRetentionConfirmation = true
+        }
+    }
+
+    private func confirmShorterAudioRetentionPeriod() {
+        guard let pendingShorterAudioRetentionPeriod else { return }
+        settings.batchAudioRetentionPeriod = pendingShorterAudioRetentionPeriod
+        self.pendingShorterAudioRetentionPeriod = nil
+    }
+
+    private func cancelShorterAudioRetentionPeriod() {
+        pendingShorterAudioRetentionPeriod = nil
     }
 
     private var transcriptionLocaleOptions: [Locale] {

@@ -7,11 +7,10 @@ struct BatchTranscriptionConfirmationView: View {
     let projects: [FlatProjectRow]
     let isRetranscription: Bool
     let allowsRecordedLanguageSelection: Bool
-    let onStart: (BatchTranscriptionLanguageSelection, Bool, Bool, SummaryGenerationOptions, UUID?) -> String?
+    let onStart: (BatchTranscriptionLanguageSelection, Bool, SummaryGenerationOptions, UUID?) -> String?
     let onPostpone: () -> Void
 
     @State private var languageSelection: BatchTranscriptionLanguageSelection
-    @State private var deleteAudioAfterTranscription: Bool
     @State private var generateSummaryAfterBatchTranscription: Bool
     @State private var summaryDetailLevel: SummaryDetailLevel
     @State private var exportBatchSummaryToVault: Bool
@@ -28,11 +27,10 @@ struct BatchTranscriptionConfirmationView: View {
         initialErrorMessage: String?,
         initialLanguageSelection: BatchTranscriptionLanguageSelection,
         allowsRecordedLanguageSelection: Bool,
-        initiallyRetainsAudioAfterBatch: Bool,
         initiallyGeneratesSummary: Bool,
         summaryGenerationOptions: SummaryGenerationOptions,
         isRetranscription: Bool,
-        onStart: @escaping (BatchTranscriptionLanguageSelection, Bool, Bool, SummaryGenerationOptions, UUID?) -> String?,
+        onStart: @escaping (BatchTranscriptionLanguageSelection, Bool, SummaryGenerationOptions, UUID?) -> String?,
         onPostpone: @escaping () -> Void
     ) {
         self.locales = locales
@@ -44,7 +42,6 @@ struct BatchTranscriptionConfirmationView: View {
         self.isRetranscription = isRetranscription
         self.allowsRecordedLanguageSelection = allowsRecordedLanguageSelection
         _languageSelection = State(initialValue: initialLanguageSelection)
-        _deleteAudioAfterTranscription = State(initialValue: !initiallyRetainsAudioAfterBatch)
         _generateSummaryAfterBatchTranscription = State(initialValue: initiallyGeneratesSummary)
         _summaryDetailLevel = State(initialValue: summaryGenerationOptions.detailLevel ?? .defaultValue)
         _exportBatchSummaryToVault = State(initialValue: summaryGenerationOptions.exportOptions.exportsToVault)
@@ -75,7 +72,6 @@ struct BatchTranscriptionConfirmationView: View {
                 displayLocale: displayLocale,
                 allowsRecordedLanguageSelection: allowsRecordedLanguageSelection,
                 languageSelection: $languageSelection,
-                deleteAudioAfterTranscription: $deleteAudioAfterTranscription,
                 generateSummaryAfterBatchTranscription: $generateSummaryAfterBatchTranscription,
                 summaryDetailLevel: $summaryDetailLevel,
                 exportBatchSummaryToVault: $exportBatchSummaryToVault,
@@ -126,7 +122,6 @@ struct BatchTranscriptionConfirmationView: View {
         )
         errorMessage = onStart(
             languageSelection,
-            !deleteAudioAfterTranscription,
             generateSummaryAfterBatchTranscription,
             summaryOptions,
             selectedProjectId

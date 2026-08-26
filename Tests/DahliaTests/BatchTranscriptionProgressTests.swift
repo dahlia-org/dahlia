@@ -114,8 +114,7 @@ import GRDB
             try BatchAudioTestFixture(
                 name: name,
                 endedAt: Date(timeIntervalSince1970: 1_776_384_001),
-                duration: duration,
-                retainAudioAfterBatch: true
+                duration: duration
             )
         }
 

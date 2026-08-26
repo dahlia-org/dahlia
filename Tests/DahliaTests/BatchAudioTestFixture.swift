@@ -21,7 +21,6 @@ import GRDB
             meetingStatus: MeetingStatus = .transcriptNotFound,
             endedAt: Date? = nil,
             duration: TimeInterval? = nil,
-            retainAudioAfterBatch: Bool = false,
             batchCompletedAt: Date? = nil
         ) throws {
             database = try AppDatabaseManager(path: ":memory:")
@@ -52,7 +51,6 @@ import GRDB
                 createdAt: now,
                 updatedAt: now,
                 transcriptionMode: .batch,
-                retainAudioAfterBatch: retainAudioAfterBatch,
                 batchCompletedAt: batchCompletedAt
             )
             try database.dbQueue.write { db in

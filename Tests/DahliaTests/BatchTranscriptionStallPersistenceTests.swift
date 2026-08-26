@@ -20,7 +20,6 @@ import GRDB
                 sessionId: batch.session.id,
                 languageSelection: .manual(localeIdentifier: "ja_JP"),
                 automaticLanguageCandidates: nil,
-                retainAudioAfterBatch: true,
                 dbQueue: batch.database.dbQueue
             )
             let retryProbe = BatchRecognitionCallProbe()
@@ -159,7 +158,6 @@ import GRDB
                     sessionId: batch.session.id,
                     languageSelection: .manual(localeIdentifier: "ja_JP"),
                     automaticLanguageCandidates: nil,
-                    retainAudioAfterBatch: true,
                     onConfirmed: { _ in await confirmationGate.wait() }
                 )
             }
@@ -189,8 +187,7 @@ import GRDB
             let batch = try BatchAudioTestFixture(
                 name: "stalled-recognition",
                 endedAt: Date(timeIntervalSince1970: 1_776_384_001),
-                duration: 1,
-                retainAudioAfterBatch: false
+                duration: 1
             )
             defer { batch.removeFiles() }
             try await batch.recordMicrophoneAudio()

@@ -1405,14 +1405,6 @@ enum L10n { // swiftlint:disable:this type_body_length
         String(localized: "The detected language is not supported for transcription: \(languageIdentifier)", bundle: bundle)
     }
 
-    static var deleteBatchAudioAfterTranscription: String { String(
-        localized: "Delete Recording Files After Transcription",
-        bundle: bundle
-    ) }
-    static var deleteBatchAudioAfterTranscriptionDescription: String { String(
-        localized: "Delete the recording files after batch transcription succeeds. They are kept if transcription fails.",
-        bundle: bundle
-    ) }
     static var generateSummaryAfterBatchTranscription: String { String(
         localized: "Generate Summary After Transcription",
         bundle: bundle
@@ -1838,11 +1830,26 @@ enum L10n { // swiftlint:disable:this type_body_length
         localizedCount(minutes, singular: "%lld minute", plural: "%lld minutes")
     }
 
-    static var retainBatchAudio: String { String(localized: "Keep Audio After Transcription", bundle: bundle) }
-    static var retainBatchAudioDescription: String { String(
-        localized: "Keep the protected audio in Dahlia after batch transcription succeeds.",
+    static var batchAudioRetentionPeriod: String { String(localized: "Recording Retention", bundle: bundle) }
+    static var batchAudioRetentionPeriodDescription: String { String(
+        // swiftlint:disable:next line_length
+        localized: "Successfully transcribed batch recordings become eligible for deletion this long after both recording and transcription finish. Failed or unfinished transcriptions are kept. Real-time transcription does not save audio files.",
         bundle: bundle
     ) }
+    static var forever: String { String(localized: "Forever", bundle: bundle) }
+    static var shortenBatchAudioRetentionPeriodTitle: String { String(
+        localized: "Shorten Recording Retention?",
+        bundle: bundle
+    ) }
+    static var shortenBatchAudioRetentionPeriodMessage: String { String(
+        localized: "Existing batch recordings older than the new retention period may be permanently deleted immediately.",
+        bundle: bundle
+    ) }
+
+    static func days(_ days: Int) -> String {
+        localizedCount(days, singular: "%lld day", plural: "%lld days")
+    }
+
     static var liveSubtitleTranslation: String { String(localized: "Live Subtitle Translation", bundle: bundle) }
     static var liveSubtitleTranslationDescription: String { String(
         localized: "Translate live subtitles into the selected target language. With real-time transcription, translations are also saved.",

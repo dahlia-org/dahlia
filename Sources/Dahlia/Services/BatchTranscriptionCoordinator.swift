@@ -58,6 +58,8 @@ actor BatchTranscriptionCoordinator {
     private var processorTask: Task<Void, Never>?
     private var pendingProgressUpdate: BatchTranscriptionUpdate?
     private var progressNotificationTask: Task<Void, Never>?
+    private var audioRetentionPeriod: BatchAudioRetentionPeriod
+    private var audioRetentionTask: Task<Void, Never>?
     private var isShuttingDown = false
     private var shutdownInterruptionSessionIds: Set<UUID> = []
     private var activeConfirmationCount = 0
@@ -69,6 +71,7 @@ actor BatchTranscriptionCoordinator {
         languageDetector: any BatchLanguageDetecting = WhisperKitBatchLanguageDetector(),
         speechRecognizer: any BatchSpeechRecognizing = AppleBatchSpeechRecognizer(),
         audioFeatureAnalyzer: any BatchTranscriptAudioFeatureAnalyzing = BatchTranscriptAudioFeatureAnalyzer(),
+        audioRetentionPeriod: BatchAudioRetentionPeriod = .defaultValue,
         supportedLocalesProvider: @escaping @Sendable () async -> [Locale] = {
             await SpeechSupportedLocales.load()
         },
@@ -83,6 +86,7 @@ actor BatchTranscriptionCoordinator {
         self.languageDetector = SerializedBatchLanguageDetector(detector: languageDetector)
         self.speechRecognizer = AdaptiveBatchSpeechRecognizer(recognizer: speechRecognizer)
         self.audioFeatureAnalyzer = audioFeatureAnalyzer
+        self.audioRetentionPeriod = audioRetentionPeriod
         self.supportedLocalesProvider = supportedLocalesProvider
         self.languageFallbackReporter = languageFallbackReporter ?? { fallbacks, candidates in
             ErrorReportingService.capture(
@@ -95,7 +99,8 @@ actor BatchTranscriptionCoordinator {
 
     func recoverAndEnqueue() async throws {
         _ = await recordingAudioStore?.reconcileStartup()
-        await recoverCompletedAudioPurges()
+        await purgeExpiredAudio()
+        restartAudioRetentionTask()
         try await markPreviouslyQueuedSessionsInterrupted()
     }
 
@@ -177,6 +182,10 @@ actor BatchTranscriptionCoordinator {
         let task = processorTask
         task?.cancel()
         await task?.value
+        let retentionTask = audioRetentionTask
+        retentionTask?.cancel()
+        await retentionTask?.value
+        audioRetentionTask = nil
 
         var firstError: (any Error)?
         for sessionId in Array(shutdownInterruptionSessionIds) {
@@ -189,6 +198,7 @@ actor BatchTranscriptionCoordinator {
         }
         if let firstError {
             isShuttingDown = false
+            restartAudioRetentionTask()
             throw firstError
         }
     }
@@ -297,17 +307,7 @@ actor BatchTranscriptionCoordinator {
         } catch {
             ErrorReportingService.capture(error, context: ["source": "batchTranscriptExport"])
         }
-        guard !job.session.retainAudioAfterBatch,
-              let recordingAudioStore else { return }
-        do {
-            // A failed tail is intentionally retained after partial recovery. Force-purging it
-            // cannot be resumed safely if deletion is interrupted before its intent is persisted.
-            let hasFailedSegments = try await recordingAudioStore.hasFailedSegments(sessionId: job.session.id)
-            guard !hasFailedSegments else { return }
-            try await recordingAudioStore.requestPurge(sessionId: job.session.id)
-        } catch {
-            ErrorReportingService.capture(error, context: ["source": "batchAudioPurge"])
-        }
+        await purgeExpiredAudio()
     }
 
     private func markAttemptStarted(sessionId: UUID) async throws {
@@ -748,9 +748,37 @@ extension BatchTranscriptionCoordinator {
         )
     }
 
-    /// Resumes the delete-after-transcription policy if the app stopped after committing a result.
-    private func recoverCompletedAudioPurges() async {
-        guard let recordingAudioStore else { return }
+    func updateAudioRetentionPeriod(_ period: BatchAudioRetentionPeriod, now: Date = .now) async {
+        audioRetentionPeriod = period
+        restartAudioRetentionTask()
+        await purgeExpiredAudio(now: now)
+    }
+
+    func refreshExpiredAudio(now: Date = .now) async {
+        await purgeExpiredAudio(now: now)
+    }
+
+    private func restartAudioRetentionTask() {
+        audioRetentionTask?.cancel()
+        audioRetentionTask = nil
+        guard audioRetentionPeriod != .forever, !isShuttingDown else { return }
+        audioRetentionTask = Task { [weak self] in
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(for: .seconds(60 * 60))
+                } catch {
+                    return
+                }
+                guard let self else { return }
+                await self.purgeExpiredAudio()
+            }
+        }
+    }
+
+    private func purgeExpiredAudio(now: Date = .now) async {
+        guard let recordingAudioStore,
+              let retentionInterval = audioRetentionPeriod.retentionInterval else { return }
+        let cutoff = now.addingTimeInterval(-retentionInterval)
         let sessionIds = await (try? dbQueue.read { db in
             try UUID.fetchAll(
                 db,
@@ -760,11 +788,13 @@ extension BatchTranscriptionCoordinator {
                 WHERE sessions.transcriptionMode = ?
                   AND sessions.batchCompletedAt IS NOT NULL
                   AND sessions.batchDiscardedAt IS NULL
+                  AND sessions.endedAt IS NOT NULL
+                  AND sessions.endedAt <= ?
+                  AND sessions.batchCompletedAt <= ?
                   AND (
                       sessions.batchLastAttemptAt IS NULL
                       OR sessions.batchLastAttemptAt <= sessions.batchCompletedAt
                   )
-                  AND sessions.audioRetentionPolicy = ?
                   AND EXISTS (
                       SELECT 1 FROM recording_audio_segments AS segments
                       WHERE segments.recordingSessionId = sessions.id
@@ -778,7 +808,8 @@ extension BatchTranscriptionCoordinator {
                 """,
                 arguments: [
                     TranscriptionMode.batch.rawValue,
-                    RecordingAudioRetentionPolicy.deleteAfterTranscription.rawValue,
+                    cutoff,
+                    cutoff,
                     RecordingAudioSegmentState.purged.rawValue,
                     RecordingAudioSegmentState.failed.rawValue,
                 ]
@@ -786,9 +817,9 @@ extension BatchTranscriptionCoordinator {
         }) ?? []
         for sessionId in sessionIds {
             do {
-                try await recordingAudioStore.requestPurge(sessionId: sessionId)
+                try await recordingAudioStore.requestRetentionPurge(sessionId: sessionId, cutoff: cutoff)
             } catch {
-                ErrorReportingService.capture(error, context: ["source": "batchAudioPurgeRecovery"])
+                ErrorReportingService.capture(error, context: ["source": "batchAudioRetention"])
             }
         }
     }
@@ -797,7 +828,6 @@ extension BatchTranscriptionCoordinator {
         sessionId: UUID,
         languageSelection: BatchTranscriptionLanguageSelection,
         automaticLanguageCandidates: BatchLanguageDetectionCandidateSnapshot?,
-        retainAudioAfterBatch: Bool,
         onConfirmed: @Sendable (BatchTranscriptionConfirmationService.Result) async -> Void
     ) async throws {
         try beginConfirmation()
@@ -806,7 +836,6 @@ extension BatchTranscriptionCoordinator {
             sessionId: sessionId,
             languageSelection: languageSelection,
             automaticLanguageCandidates: automaticLanguageCandidates,
-            retainAudioAfterBatch: retainAudioAfterBatch,
             dbQueue: dbQueue
         )
         await onConfirmed(result)
@@ -820,7 +849,6 @@ extension BatchTranscriptionCoordinator {
         sessionIds: [UUID],
         languageSelection: BatchTranscriptionLanguageSelection,
         automaticLanguageCandidates: BatchLanguageDetectionCandidateSnapshot?,
-        retainAudioAfterBatch: Bool,
         onConfirmed: @Sendable (BatchTranscriptionConfirmationService.Result) async -> Void
     ) async throws {
         try beginConfirmation()
@@ -829,7 +857,6 @@ extension BatchTranscriptionCoordinator {
             sessionIds: sessionIds,
             languageSelection: languageSelection,
             automaticLanguageCandidates: automaticLanguageCandidates,
-            retainAudioAfterBatch: retainAudioAfterBatch,
             dbQueue: dbQueue
         )
         await onConfirmed(result)

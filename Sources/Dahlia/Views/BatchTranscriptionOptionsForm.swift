@@ -6,7 +6,6 @@ struct BatchTranscriptionOptionsForm: View {
     let displayLocale: Locale
     let allowsRecordedLanguageSelection: Bool
     @Binding var languageSelection: BatchTranscriptionLanguageSelection
-    @Binding var deleteAudioAfterTranscription: Bool
     @Binding var generateSummaryAfterBatchTranscription: Bool
     @Binding var summaryDetailLevel: SummaryDetailLevel
     @Binding var exportBatchSummaryToVault: Bool
@@ -41,11 +40,6 @@ struct BatchTranscriptionOptionsForm: View {
                     )
                 }
 
-                Toggle(isOn: $deleteAudioAfterTranscription) {
-                    Text(L10n.deleteBatchAudioAfterTranscription)
-                    Text(L10n.deleteBatchAudioAfterTranscriptionDescription)
-                }
-                .toggleStyle(.checkbox)
             }
 
             Section(L10n.summaryAndExport) {
