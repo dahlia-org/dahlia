@@ -114,6 +114,8 @@ struct ContentView: View {
                                     onPopOut: popOutDockedChat,
                                     onOpenDetachedSession: openDetachedChat
                                 )
+                                .frame(maxWidth: DahliaDesign.mainContentMaxWidth)
+                                .frame(maxWidth: .infinity)
                             } else {
                                 detailView
                             }
@@ -134,7 +136,7 @@ struct ContentView: View {
             .layoutPriority(1)
             .overlay(alignment: .top) {
                 MainWorkspaceHeader(
-                    isVisible: !isShowingSettings,
+                    isVisible: !isShowingSettings && !isShowingFullScreenChat,
                     isSidebarVisible: isSidebarVisible,
                     canGoBack: canGoBack,
                     canGoForward: canGoForward,
