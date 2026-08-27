@@ -101,6 +101,7 @@ final class CodexChatSessionModel: Identifiable {
     @ObservationIgnored private var failedSubmission: CodexChatFailedSubmission?
     @ObservationIgnored private var usesLiveModePlaceholderTitle = false
     @ObservationIgnored private var liveModeChangeHandler: (@MainActor (Bool) -> Void)?
+    @ObservationIgnored private var generationCompletionHandler: (@MainActor () -> Void)?
     @ObservationIgnored private var syncedApprovalMethod: CodexChatApprovalMethod?
     @ObservationIgnored private var approvalMethodUpdateTask: Task<Void, Never>?
     @ObservationIgnored private var approvalMethodUpdateErrorMessage: String?
@@ -108,6 +109,15 @@ final class CodexChatSessionModel: Identifiable {
     @ObservationIgnored private var restoreSelectionGeneration: UInt?
     private var configuredAccountProvider: AIAccountProvider?
     @ObservationIgnored private var settingsObserver: AnyCancellable?
+
+    var hasPendingGenerationWork: Bool {
+        let hasReachablePendingInput = (!pendingManualInputs.isEmpty || pendingLiveTranscript != nil)
+            && (errorMessage == nil || backendThreadID != nil)
+        return isGenerating
+            || isTurnCleanupPending
+            || steerTask != nil
+            || hasReachablePendingInput
+    }
 
     init(
         id: CodexChatSessionID = CodexChatSessionID(),
@@ -426,6 +436,7 @@ final class CodexChatSessionModel: Identifiable {
             isTurnCleanupPending = false
             unsubscribeIfPossible()
             processPendingInputIfPossible()
+            notifyGenerationCompletionIfIdle()
         }
         finalizeActiveResponseForCancellation()
     }
@@ -452,6 +463,10 @@ final class CodexChatSessionModel: Identifiable {
 
     func setLiveModeChangeHandler(_ handler: @escaping @MainActor (Bool) -> Void) {
         liveModeChangeHandler = handler
+    }
+
+    func setGenerationCompletionHandler(_ handler: @escaping @MainActor () -> Void) {
+        generationCompletionHandler = handler
     }
 
     func release() {
@@ -852,6 +867,12 @@ extension CodexChatSessionModel {
         turnTask = nil
         unsubscribeIfPossible()
         processPendingInputIfPossible()
+        notifyGenerationCompletionIfIdle()
+    }
+
+    private func notifyGenerationCompletionIfIdle() {
+        guard !hasPendingGenerationWork else { return }
+        generationCompletionHandler?()
     }
 
     private func rearmNextApprovalAfterInteractionBoundary() {
@@ -1285,6 +1306,7 @@ extension CodexChatSessionModel {
             activeSteerIsLiveTranscript = false
             activeSteeringManualSubmission = nil
             processPendingInputIfPossible()
+            notifyGenerationCompletionIfIdle()
         }
         do {
             guard !input.isLiveTranscript || isLiveModeEnabled else { return }

@@ -55,6 +55,169 @@ import Foundation
         }
 
         @Test
+        func replacingDockedChatKeepsGeneratingSessionAndReusesItFromHistory() async throws {
+            let service = TestCodexChatService(mode: .block)
+            let settings = AppSettings()
+            settings.currentVault = Self.vault(name: "Background")
+            let coordinator = CodexChatCoordinator(service: service, settings: settings)
+            let backgroundSession = coordinator.dockedSession
+
+            backgroundSession.draft = "Long-running question"
+            backgroundSession.sendDraft()
+            await waitUntil {
+                await MainActor.run {
+                    backgroundSession.isGenerating && backgroundSession.backendThreadID == "thread-1"
+                }
+            }
+
+            coordinator.hideDocked()
+            coordinator.newDockedChat()
+
+            #expect(coordinator.session(for: backgroundSession.id) === backgroundSession)
+            let reopenedID = await coordinator.openHistoryThread(Self.threadSummary(id: "thread-1"))
+            #expect(reopenedID == backgroundSession.id)
+            #expect(coordinator.dockedSession === backgroundSession)
+            #expect(backgroundSession.isGenerating)
+
+            backgroundSession.stop()
+            await waitUntil { await MainActor.run { !backgroundSession.isGenerating } }
+        }
+
+        @Test
+        func closingDetachedWindowKeepsGeneratingSessionUntilCompletion() async throws {
+            let service = TestCodexChatService(mode: .block)
+            let settings = AppSettings()
+            settings.currentVault = Self.vault(name: "Detached Background")
+            let coordinator = CodexChatCoordinator(service: service, settings: settings)
+            let backgroundSession = coordinator.dockedSession
+
+            backgroundSession.draft = "Detached question"
+            backgroundSession.sendDraft()
+            await waitUntil {
+                await MainActor.run {
+                    backgroundSession.isGenerating && backgroundSession.backendThreadID == "thread-1"
+                }
+            }
+
+            let detachedID = coordinator.popOutDocked()
+            coordinator.detachedWindowClosed(sessionID: detachedID)
+
+            #expect(coordinator.session(for: detachedID) === backgroundSession)
+            await service.completeBlockedTurn()
+            await waitUntil {
+                await MainActor.run { coordinator.session(for: detachedID) == nil }
+            }
+            await waitUntil { await service.unsubscribedThreadIDs == ["thread-1"] }
+        }
+
+        @Test
+        func hiddenSessionKeepsFollowUpWhenOriginalTurnFinishesDuringSteer() async throws {
+            let service = CoordinatorTestCodexChatService(blocksTurn: true, delaysSteer: true)
+            let settings = AppSettings()
+            settings.currentVault = Self.vault(name: "Background Follow-up")
+            let coordinator = CodexChatCoordinator(service: service, settings: settings)
+            let backgroundSession = coordinator.dockedSession
+
+            backgroundSession.draft = "Original question"
+            backgroundSession.sendDraft()
+            await waitUntil {
+                await MainActor.run {
+                    backgroundSession.isGenerating && backgroundSession.backendThreadID == "new-thread"
+                }
+            }
+
+            backgroundSession.draft = "Follow-up question"
+            backgroundSession.sendDraft()
+            await waitUntil { await service.isSteerWaiting }
+            coordinator.newDockedChat()
+
+            await service.completeBlockedTurn()
+            await waitUntil { await MainActor.run { !backgroundSession.isGenerating } }
+            #expect(coordinator.session(for: backgroundSession.id) === backgroundSession)
+
+            await service.resumeDelayedSteer()
+            await waitUntil {
+                await MainActor.run { coordinator.session(for: backgroundSession.id) == nil }
+            }
+            #expect(await service.steeredTextBlocks == [["Follow-up question"]])
+            #expect(await service.sentTextBlocks == [["Original question"]])
+        }
+
+        @Test
+        func hiddenStoppedSessionIsRemovedAfterStopCleanupCompletes() async throws {
+            let service = TestCodexChatService(mode: .block)
+            let settings = AppSettings()
+            settings.currentVault = Self.vault(name: "Stopped Background")
+            let coordinator = CodexChatCoordinator(service: service, settings: settings)
+            let backgroundSession = coordinator.dockedSession
+
+            backgroundSession.draft = "Stop this question"
+            backgroundSession.sendDraft()
+            await waitUntil {
+                await MainActor.run { backgroundSession.activeTurnID != nil }
+            }
+
+            backgroundSession.stop()
+            coordinator.newDockedChat()
+
+            await waitUntil {
+                await MainActor.run { coordinator.session(for: backgroundSession.id) == nil }
+            }
+            #expect(await service.unsubscribedThreadIDs == ["thread-1"])
+            #expect(await service.interruptCount == 1)
+        }
+
+        @Test
+        func failedPreThreadHiddenSessionIsRemovedWhenQueuedInputCannotResume() async throws {
+            let service = CoordinatorTestCodexChatService(delaysAndFailsThreadStart: true)
+            let settings = AppSettings()
+            settings.currentVault = Self.vault(name: "Failed Background")
+            let coordinator = CodexChatCoordinator(service: service, settings: settings)
+            let backgroundSession = coordinator.dockedSession
+
+            backgroundSession.draft = "Original question"
+            backgroundSession.sendDraft()
+            await waitUntil { await service.isThreadStartWaiting }
+
+            backgroundSession.draft = "Queued follow-up"
+            backgroundSession.sendDraft()
+            coordinator.newDockedChat()
+            #expect(coordinator.session(for: backgroundSession.id) === backgroundSession)
+
+            await service.resumeFailedThreadStart()
+            await waitUntil {
+                await MainActor.run { coordinator.session(for: backgroundSession.id) == nil }
+            }
+            #expect(backgroundSession.backendThreadID == nil)
+            #expect(await service.sentTextBlocks.isEmpty)
+        }
+
+        @Test
+        func vaultSwitchStopsGeneratingSession() async {
+            let service = TestCodexChatService(mode: .block)
+            let settings = AppSettings()
+            settings.currentVault = Self.vault(name: "Old Background")
+            let coordinator = CodexChatCoordinator(service: service, settings: settings)
+            let backgroundSession = coordinator.dockedSession
+
+            backgroundSession.draft = "Old vault question"
+            backgroundSession.sendDraft()
+            await waitUntil {
+                await MainActor.run {
+                    backgroundSession.isGenerating && backgroundSession.backendThreadID == "thread-1"
+                }
+            }
+
+            let newVault = Self.vault(name: "New Background")
+            settings.currentVault = newVault
+            coordinator.activateVault(newVault.id)
+
+            await waitUntil { await MainActor.run { !backgroundSession.isGenerating } }
+            #expect(coordinator.session(for: backgroundSession.id) == nil)
+            #expect(await service.interruptCount == 1)
+        }
+
+        @Test
         func poppingOutDockedChatHidesSidebarAndCreatesReplacementSession() {
             let coordinator = CodexChatCoordinator(service: CoordinatorTestCodexChatService())
             let previousID = coordinator.dockedSessionID
@@ -319,13 +482,31 @@ import Foundation
 
     private actor CoordinatorTestCodexChatService: CodexChatServicing {
         private let failFirstHistoryRequest: Bool
+        private let blocksTurn: Bool
+        private let delaysSteer: Bool
+        private let delaysAndFailsThreadStart: Bool
         private var historyRequestCount = 0
         private(set) var unsubscribedThreadIDs: [String] = []
         private(set) var sentTextBlocks: [[String]] = []
+        private(set) var steeredTextBlocks: [[String]] = []
+        private var blockedTurnContinuation: AsyncThrowingStream<CodexChatTurnEvent, any Error>.Continuation?
+        private var delayedSteerContinuation: CheckedContinuation<Void, Never>?
+        private var delayedThreadStartContinuation: CheckedContinuation<Void, Never>?
 
-        init(failFirstHistoryRequest: Bool = false) {
+        init(
+            failFirstHistoryRequest: Bool = false,
+            blocksTurn: Bool = false,
+            delaysSteer: Bool = false,
+            delaysAndFailsThreadStart: Bool = false
+        ) {
             self.failFirstHistoryRequest = failFirstHistoryRequest
+            self.blocksTurn = blocksTurn
+            self.delaysSteer = delaysSteer
+            self.delaysAndFailsThreadStart = delaysAndFailsThreadStart
         }
+
+        var isSteerWaiting: Bool { delayedSteerContinuation != nil }
+        var isThreadStartWaiting: Bool { delayedThreadStartContinuation != nil }
 
         func models(forceRefresh _: Bool) async throws -> [CodexModel] {
             [Self.model]
@@ -351,7 +532,11 @@ import Foundation
         }
 
         func startThread(model _: String?, effort: String, vaultID _: UUID) async throws -> CodexChatThread {
-            CodexChatThread(id: "new-thread", title: "", messages: [], model: "default-model", reasoningEffort: effort)
+            if delaysAndFailsThreadStart {
+                await withCheckedContinuation { delayedThreadStartContinuation = $0 }
+                throw CodexAppServerError.invalidProtocolResponse
+            }
+            return CodexChatThread(id: "new-thread", title: "", messages: [], model: "default-model", reasoningEffort: effort)
         }
 
         func setThreadName(threadID _: String, name _: String) async {}
@@ -363,12 +548,41 @@ import Foundation
             effort _: String
         ) async throws -> AsyncThrowingStream<CodexChatTurnEvent, any Error> {
             sentTextBlocks.append(inputs.compactMap(\.textValue))
-            return AsyncThrowingStream<CodexChatTurnEvent, any Error> { $0.finish() }
+            return AsyncThrowingStream<CodexChatTurnEvent, any Error> { continuation in
+                if blocksTurn {
+                    continuation.yield(.started(turnID: "turn-1"))
+                    continuation.yield(.delta(itemID: "item-1", text: "Partial"))
+                    blockedTurnContinuation = continuation
+                } else {
+                    continuation.finish()
+                }
+            }
         }
 
         func respondToApproval(id _: String, decision _: CodexChatApprovalDecision) async {}
-        func steer(threadID _: String, turnID _: String, inputs _: [CodexAppServerInput]) async throws {}
+        func steer(threadID _: String, turnID _: String, inputs: [CodexAppServerInput]) async throws {
+            steeredTextBlocks.append(inputs.compactMap(\.textValue))
+            if delaysSteer {
+                await withCheckedContinuation { delayedSteerContinuation = $0 }
+            }
+        }
         func interrupt(threadID _: String, turnID _: String) async {}
+
+        func completeBlockedTurn() {
+            blockedTurnContinuation?.yield(.completed(itemID: nil, text: nil))
+            blockedTurnContinuation?.finish()
+            blockedTurnContinuation = nil
+        }
+
+        func resumeDelayedSteer() {
+            delayedSteerContinuation?.resume()
+            delayedSteerContinuation = nil
+        }
+
+        func resumeFailedThreadStart() {
+            delayedThreadStartContinuation?.resume()
+            delayedThreadStartContinuation = nil
+        }
 
         func unsubscribe(threadID: String) async {
             unsubscribedThreadIDs.append(threadID)

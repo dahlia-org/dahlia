@@ -64,9 +64,16 @@ final class CodexChatCoordinator {
 
     func activateVault(_ vaultID: UUID) {
         guard dockedSession.vaultID != vaultID else { return }
+        for session in sessions.values where session.vaultID != vaultID && session.hasPendingGenerationWork {
+            session.release()
+        }
         contextProvider.update(vaultID: vaultID, meetingID: nil, projectID: nil, draftMeeting: nil, dbQueue: nil)
         let session = makeSession(vaultID: vaultID)
-        replaceDockedSession(with: session, isVisible: isDockedVisible)
+        replaceDockedSession(
+            with: session,
+            isVisible: isDockedVisible,
+            preservesGeneratingPreviousSession: false
+        )
         historyGeneration += 1
         history = []
         historyCursor = nil
@@ -233,27 +240,38 @@ final class CodexChatCoordinator {
         }
     }
 
-    private func removeSessionIfUnused(_ id: CodexChatSessionID) {
+    @discardableResult
+    private func removeSessionIfUnused(
+        _ id: CodexChatSessionID,
+        preservesGeneratingSession: Bool = true
+    ) -> Bool {
         guard id != dockedSessionID,
               !detachedSessionIDs.contains(id),
-              let session = sessions.removeValue(forKey: id)
-        else { return }
+              let session = sessions[id],
+              !preservesGeneratingSession || !session.hasPendingGenerationWork
+        else { return false }
+        sessions.removeValue(forKey: id)
         let wasLive = session.isLiveModeEnabled
         session.release()
         if wasLive {
             notifyLiveModeStatusChanged()
         }
+        return true
     }
 
     private func replaceDockedSession(
         with session: CodexChatSessionModel,
-        isVisible: Bool
+        isVisible: Bool,
+        preservesGeneratingPreviousSession: Bool = true
     ) {
         let previousID = dockedSessionID
         sessions[session.id] = session
         dockedSessionID = session.id
         isDockedVisible = isVisible
-        removeSessionIfUnused(previousID)
+        removeSessionIfUnused(
+            previousID,
+            preservesGeneratingSession: preservesGeneratingPreviousSession
+        )
     }
 
     private func makeSession(
@@ -278,6 +296,12 @@ final class CodexChatCoordinator {
     private func configureLiveModeHandler(for session: CodexChatSessionModel) {
         session.setLiveModeChangeHandler { [weak self] _ in
             self?.notifyLiveModeStatusChanged()
+        }
+        session.setGenerationCompletionHandler { [weak self, weak session] in
+            guard let self, let session,
+                  self.removeSessionIfUnused(session.id)
+            else { return }
+            Task { await self.refreshHistory() }
         }
     }
 
