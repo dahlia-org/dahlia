@@ -17,9 +17,9 @@ struct CodexChatUserInputTests {
     }
 
     @Test
-    func rejectsNonblockingAndOversizedQuestions() {
+    func rejectsInvalidBlockingValueAndOversizedQuestions() {
         #expect(throws: CodexAppServerError.self) {
-            try CodexChatService.parseTurnEvent(request(isBlocking: false))
+            try CodexChatService.parseTurnEvent(request(isBlocking: .string("false")))
         }
         #expect(throws: CodexAppServerError.self) {
             try CodexChatService.parseTurnEvent(request(label: String(repeating: "a", count: 121)))
@@ -27,14 +27,14 @@ struct CodexChatUserInputTests {
     }
 
     private func request(
-        isBlocking: Bool = true,
+        isBlocking: JSONValue = .bool(false),
         label: String = "Next steps"
     ) -> JSONValue {
         .object([
             "id": .string("request-1"),
             "method": .string("item/tool/requestUserInput"),
             "params": .object([
-                "isBlocking": .bool(isBlocking),
+                "isBlocking": isBlocking,
                 "questions": .array([.object([
                     "header": .string("Outcome"),
                     "id": .string("desired_outcome"),

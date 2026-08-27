@@ -29,10 +29,8 @@ struct CodexChatUserInputView: View {
                                     .foregroundStyle(DahliaDesign.secondaryTextColor)
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(10)
-                            .background(.secondary.opacity(0.08), in: .rect(cornerRadius: 8))
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.dahlia())
                         .disabled(!isEnabled)
                     }
 
@@ -42,6 +40,7 @@ struct CodexChatUserInputView: View {
                             Button(L10n.chatUserInputSubmit) {
                                 onSubmit(other)
                             }
+                            .buttonStyle(.dahlia(.primary))
                             .disabled(!isEnabled || other.nilIfBlank == nil)
                         }
                     }
@@ -51,6 +50,7 @@ struct CodexChatUserInputView: View {
             .frame(maxHeight: 360)
 
             Button(L10n.stopGenerating, systemImage: "stop.fill", action: onStop)
+                .buttonStyle(.dahlia(.destructive))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)

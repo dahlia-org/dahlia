@@ -263,7 +263,7 @@ import Foundation
                 "method": .string("item/tool/requestUserInput"),
                 "params": .object([
                     "autoResolutionMs": .null,
-                    "isBlocking": .bool(true),
+                    "isBlocking": .bool(false),
                     "itemId": .string("item-1"),
                     "questions": .array([.object([
                         "header": .string("Outcome"),

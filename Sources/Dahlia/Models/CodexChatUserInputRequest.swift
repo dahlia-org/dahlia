@@ -15,7 +15,7 @@ struct CodexChatUserInputRequest: Identifiable, Equatable, Sendable {
 
     init?(id: String, params: [String: JSONValue]) {
         guard params["autoResolutionMs"] == nil || params["autoResolutionMs"] == .null,
-              params["isBlocking"]?.boolValue == true,
+              params["isBlocking"]?.boolValue != nil,
               let questions = params["questions"]?.arrayValue,
               questions.count == 1,
               let value = questions.first?.objectValue,
