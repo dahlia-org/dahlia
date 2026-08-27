@@ -125,20 +125,20 @@ actor CodexConfigurationManager {
         let tokenCommand = "databricks auth token --profile \(shellQuote(profileName)) --output json "
             + "| /usr/bin/plutil -extract access_token raw -o - -"
         let configuration = """
-        model_provider = "Databricks"
+        model_provider = "databricks"
 
-        [model_providers.Databricks]
+        [model_providers.databricks]
         name = "Databricks AI Gateway"
         base_url = "\(tomlEscape(baseURL))"
         wire_api = "responses"
 
-        [model_providers.Databricks.auth]
+        [model_providers.databricks.auth]
         command = "sh"
         args = ["-c", "\(tomlEscape(tokenCommand))"]
-        timeout_ms = 20000
-        refresh_interval_ms = 1500000
+        timeout_ms = 5000
+        refresh_interval_ms = 1800000
 
-        [model_providers.Databricks.http_headers]
+        [model_providers.databricks.http_headers]
         Databricks-Ai-Gateway-Request-Tags = "{\\\"source\\\": \\\"dahlia\\\"}"
         """ + "\n"
 

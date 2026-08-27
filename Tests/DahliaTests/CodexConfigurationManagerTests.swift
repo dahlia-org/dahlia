@@ -25,15 +25,15 @@ import Foundation
                 .homeURL()
                 .appending(path: "config.toml")
             let configuration = try String(contentsOf: configURL, encoding: .utf8)
-            #expect(configuration.contains(#"model_provider = "Databricks""#))
+            #expect(configuration.contains(#"model_provider = "databricks""#))
             #expect(!configuration.contains("[profiles."))
             #expect(configuration.contains(#"base_url = "https://dbc.example.com/ai-gateway/codex/v1""#))
             #expect(configuration.contains(#"wire_api = "responses""#))
             #expect(configuration.contains(#"--profile 'Team'\"'\"'s Profile'"#))
             #expect(configuration.contains("/usr/bin/plutil -extract access_token raw -o - -"))
             #expect(!configuration.contains("jq"))
-            #expect(configuration.contains("timeout_ms = 20000"))
-            #expect(configuration.contains("refresh_interval_ms = 1500000"))
+            #expect(configuration.contains("timeout_ms = 5000"))
+            #expect(configuration.contains("refresh_interval_ms = 1800000"))
             #expect(configuration.contains(#"Databricks-Ai-Gateway-Request-Tags = "{\"source\": \"dahlia\"}""#))
             let attributes = try FileManager.default.attributesOfItem(atPath: configURL.path)
             #expect((attributes[.posixPermissions] as? NSNumber)?.intValue == 0o600)
@@ -51,8 +51,8 @@ import Foundation
             let configURL = try locator.homeURL().appending(path: "config.toml")
             var originalConfiguration = try String(contentsOf: configURL, encoding: .utf8)
             originalConfiguration = originalConfiguration.replacingOccurrences(
-                of: #"model_provider = "Databricks""#,
-                with: #"model_provider = "Databricks" # selected by Dahlia"#
+                of: #"model_provider = "databricks""#,
+                with: #"model_provider = "databricks" # selected by Dahlia"#
             )
             originalConfiguration += """
 
@@ -65,7 +65,7 @@ import Foundation
             #expect(try await !manager.configureChatGPTSubscription())
             let configuration = try String(contentsOf: configURL, encoding: .utf8)
             #expect(configuration.contains(#"model_provider = "openai" # selected by Dahlia"#))
-            #expect(configuration.contains("[model_providers.Databricks]"))
+            #expect(configuration.contains("[model_providers.databricks]"))
             #expect(configuration.contains(#"base_url = "https://dbc.example.com/ai-gateway/codex/v1""#))
             #expect(configuration.contains("""
             [profiles.work]
