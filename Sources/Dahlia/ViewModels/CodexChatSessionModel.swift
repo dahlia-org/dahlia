@@ -111,11 +111,12 @@ final class CodexChatSessionModel: Identifiable {
     @ObservationIgnored private var settingsObserver: AnyCancellable?
 
     var hasPendingGenerationWork: Bool {
-        isGenerating
+        let hasReachablePendingInput = (!pendingManualInputs.isEmpty || pendingLiveTranscript != nil)
+            && (errorMessage == nil || backendThreadID != nil)
+        return isGenerating
             || isTurnCleanupPending
             || steerTask != nil
-            || !pendingManualInputs.isEmpty
-            || pendingLiveTranscript != nil
+            || hasReachablePendingInput
     }
 
     init(

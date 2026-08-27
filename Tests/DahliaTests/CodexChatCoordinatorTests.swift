@@ -168,6 +168,31 @@ import Foundation
         }
 
         @Test
+        func failedPreThreadHiddenSessionIsRemovedWhenQueuedInputCannotResume() async throws {
+            let service = CoordinatorTestCodexChatService(delaysAndFailsThreadStart: true)
+            let settings = AppSettings()
+            settings.currentVault = Self.vault(name: "Failed Background")
+            let coordinator = CodexChatCoordinator(service: service, settings: settings)
+            let backgroundSession = coordinator.dockedSession
+
+            backgroundSession.draft = "Original question"
+            backgroundSession.sendDraft()
+            await waitUntil { await service.isThreadStartWaiting }
+
+            backgroundSession.draft = "Queued follow-up"
+            backgroundSession.sendDraft()
+            coordinator.newDockedChat()
+            #expect(coordinator.session(for: backgroundSession.id) === backgroundSession)
+
+            await service.resumeFailedThreadStart()
+            await waitUntil {
+                await MainActor.run { coordinator.session(for: backgroundSession.id) == nil }
+            }
+            #expect(backgroundSession.backendThreadID == nil)
+            #expect(await service.sentTextBlocks.isEmpty)
+        }
+
+        @Test
         func vaultSwitchStopsGeneratingSession() async {
             let service = TestCodexChatService(mode: .block)
             let settings = AppSettings()
@@ -459,24 +484,29 @@ import Foundation
         private let failFirstHistoryRequest: Bool
         private let blocksTurn: Bool
         private let delaysSteer: Bool
+        private let delaysAndFailsThreadStart: Bool
         private var historyRequestCount = 0
         private(set) var unsubscribedThreadIDs: [String] = []
         private(set) var sentTextBlocks: [[String]] = []
         private(set) var steeredTextBlocks: [[String]] = []
         private var blockedTurnContinuation: AsyncThrowingStream<CodexChatTurnEvent, any Error>.Continuation?
         private var delayedSteerContinuation: CheckedContinuation<Void, Never>?
+        private var delayedThreadStartContinuation: CheckedContinuation<Void, Never>?
 
         init(
             failFirstHistoryRequest: Bool = false,
             blocksTurn: Bool = false,
-            delaysSteer: Bool = false
+            delaysSteer: Bool = false,
+            delaysAndFailsThreadStart: Bool = false
         ) {
             self.failFirstHistoryRequest = failFirstHistoryRequest
             self.blocksTurn = blocksTurn
             self.delaysSteer = delaysSteer
+            self.delaysAndFailsThreadStart = delaysAndFailsThreadStart
         }
 
         var isSteerWaiting: Bool { delayedSteerContinuation != nil }
+        var isThreadStartWaiting: Bool { delayedThreadStartContinuation != nil }
 
         func models(forceRefresh _: Bool) async throws -> [CodexModel] {
             [Self.model]
@@ -502,7 +532,11 @@ import Foundation
         }
 
         func startThread(model _: String?, effort: String, vaultID _: UUID) async throws -> CodexChatThread {
-            CodexChatThread(id: "new-thread", title: "", messages: [], model: "default-model", reasoningEffort: effort)
+            if delaysAndFailsThreadStart {
+                await withCheckedContinuation { delayedThreadStartContinuation = $0 }
+                throw CodexAppServerError.invalidProtocolResponse
+            }
+            return CodexChatThread(id: "new-thread", title: "", messages: [], model: "default-model", reasoningEffort: effort)
         }
 
         func setThreadName(threadID _: String, name _: String) async {}
@@ -543,6 +577,11 @@ import Foundation
         func resumeDelayedSteer() {
             delayedSteerContinuation?.resume()
             delayedSteerContinuation = nil
+        }
+
+        func resumeFailedThreadStart() {
+            delayedThreadStartContinuation?.resume()
+            delayedThreadStartContinuation = nil
         }
 
         func unsubscribe(threadID: String) async {
