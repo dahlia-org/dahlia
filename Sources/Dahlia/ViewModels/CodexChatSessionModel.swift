@@ -435,6 +435,7 @@ final class CodexChatSessionModel: Identifiable {
             isTurnCleanupPending = false
             unsubscribeIfPossible()
             processPendingInputIfPossible()
+            notifyGenerationCompletionIfIdle()
         }
         finalizeActiveResponseForCancellation()
     }

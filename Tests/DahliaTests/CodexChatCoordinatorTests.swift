@@ -144,6 +144,30 @@ import Foundation
         }
 
         @Test
+        func hiddenStoppedSessionIsRemovedAfterStopCleanupCompletes() async throws {
+            let service = TestCodexChatService(mode: .block)
+            let settings = AppSettings()
+            settings.currentVault = Self.vault(name: "Stopped Background")
+            let coordinator = CodexChatCoordinator(service: service, settings: settings)
+            let backgroundSession = coordinator.dockedSession
+
+            backgroundSession.draft = "Stop this question"
+            backgroundSession.sendDraft()
+            await waitUntil {
+                await MainActor.run { backgroundSession.activeTurnID != nil }
+            }
+
+            backgroundSession.stop()
+            coordinator.newDockedChat()
+
+            await waitUntil {
+                await MainActor.run { coordinator.session(for: backgroundSession.id) == nil }
+            }
+            #expect(await service.unsubscribedThreadIDs == ["thread-1"])
+            #expect(await service.interruptCount == 1)
+        }
+
+        @Test
         func vaultSwitchStopsGeneratingSession() async {
             let service = TestCodexChatService(mode: .block)
             let settings = AppSettings()
