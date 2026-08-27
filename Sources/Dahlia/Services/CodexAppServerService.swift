@@ -965,7 +965,6 @@ private extension CodexAppServerService {
         _ = try await requestOnCurrentConnection(
             method: "initialize",
             params: .object([
-                "capabilities": .object(["experimentalApi": .bool(true)]),
                 "clientInfo": .object([
                     "name": .string("dahlia"),
                     "title": .string("Dahlia"),

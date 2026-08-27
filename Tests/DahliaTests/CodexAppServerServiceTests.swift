@@ -44,7 +44,7 @@ import Foundation
         }
 
         @Test
-        func bootstrapChecksAccountWithoutRefreshingToken() async throws {
+        func bootstrapUsesStableInitializationAndChecksAccountWithoutRefreshingToken() async throws {
             let transport = TestCodexAppServerTransport(mode: .models)
             let service = makeTestCodexAppServerService(transportFactory: { transport })
 
@@ -56,9 +56,7 @@ import Foundation
             let initialize = try #require(await transport.messages().first {
                 $0.objectValue?["method"]?.stringValue == "initialize"
             })
-            #expect(initialize.objectValue?["params"]?.objectValue?["capabilities"] == .object([
-                "experimentalApi": .bool(true),
-            ]))
+            #expect(initialize.objectValue?["params"]?.objectValue?["capabilities"] == nil)
             #expect(accountRead.objectValue?["params"] == .object(["refreshToken": .bool(false)]))
             await service.shutdown()
         }
