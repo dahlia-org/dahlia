@@ -1118,6 +1118,8 @@
 "Update file: %@" = "ファイルを変更：%@";
 "Move file: %@ → %@" = "ファイルを移動：%@ → %@";
 "Deny" = "拒否";
+"Other" = "その他";
+"Submit" = "送信";
 "This request is too large to review completely, so it cannot be approved." = "このリクエストは全体を確認するには大きすぎるため、許可できません。";
 "This request asks for permissions outside the allowed workspace and cannot be approved." = "許可されたワークスペース外の権限を求めているため、この要求は許可できません。";
 "Open Model Provider Settings" = "モデルプロバイダー設定を開く";
@@ -1128,6 +1130,7 @@
 "Presets" = "プリセット";
 "Organize meetings and Projects from the last %lld days" = "直近%lld日のミーティングとProjectを整理";
 "Project organization chat shortcut prompt" = "$projects-optimizer を使って、直近%1$lld日の Dahlia ミーティングと Project を整理してください。\ncreated_from: %2$@\ncreated_before: %3$@\n\nこの期間のミーティングと既存の Project 階層をまとめて確認し、根拠がある場合は Project の説明を改善して、ミーティングの割り当てを更新してください。";
+"Review meeting speech" = "ミーティングの発話をレビュー";
 "Copy message" = "メッセージをコピー";
 "Copy code" = "コードをコピー";
 "Thought process" = "思考プロセス";

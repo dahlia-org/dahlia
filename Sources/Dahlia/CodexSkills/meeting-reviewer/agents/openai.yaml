@@ -1,0 +1,4 @@
+interface:
+  display_name: "Meeting Reviewer"
+  short_description: "Review Dahlia Meetings with timestamped coaching"
+  default_prompt: "Use $meeting-reviewer to review one Dahlia Meeting and suggest better interventions."

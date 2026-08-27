@@ -5,12 +5,23 @@
 
     struct CodexChatConversationScrollStateTests {
         @Test
-        func contentGrowthRestoresOnlyAnActiveBottomFollow() {
-            let previous = CodexChatConversationScrollState(contentHeight: 100, isAtBottom: true)
-            let current = CodexChatConversationScrollState(contentHeight: 140, isAtBottom: false)
+        func followsOnlyWhileAtBottom() {
+            #expect(CodexChatConversationScrollState(isAtBottom: true).updatedFollowState(
+                previous: false,
+                isResizing: false
+            ))
+            #expect(!CodexChatConversationScrollState(isAtBottom: false).updatedFollowState(
+                previous: true,
+                isResizing: false
+            ))
+        }
 
-            #expect(current.shouldRestoreFollow(from: previous, isFollowingLatest: true))
-            #expect(!current.shouldRestoreFollow(from: previous, isFollowingLatest: false))
+        @Test
+        func resizingPreservesTheExistingFollowState() {
+            let state = CodexChatConversationScrollState(isAtBottom: false)
+
+            #expect(state.updatedFollowState(previous: true, isResizing: true))
+            #expect(!state.updatedFollowState(previous: false, isResizing: true))
         }
     }
 #endif

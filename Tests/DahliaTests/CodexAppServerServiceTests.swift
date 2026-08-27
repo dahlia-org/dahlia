@@ -44,7 +44,7 @@ import Foundation
         }
 
         @Test
-        func bootstrapChecksAccountWithoutRefreshingToken() async throws {
+        func bootstrapUsesStableInitializationAndChecksAccountWithoutRefreshingToken() async throws {
             let transport = TestCodexAppServerTransport(mode: .models)
             let service = makeTestCodexAppServerService(transportFactory: { transport })
 
@@ -53,6 +53,10 @@ import Foundation
             let accountRead = try #require(await transport.messages().first {
                 $0.objectValue?["method"]?.stringValue == "account/read"
             })
+            let initialize = try #require(await transport.messages().first {
+                $0.objectValue?["method"]?.stringValue == "initialize"
+            })
+            #expect(initialize.objectValue?["params"]?.objectValue?["capabilities"] == nil)
             #expect(accountRead.objectValue?["params"] == .object(["refreshToken": .bool(false)]))
             await service.shutdown()
         }
@@ -1340,6 +1344,7 @@ import Foundation
             ).objectValue)
             let server = try #require(config["mcp_servers"]?.objectValue?["dahlia"])
 
+            #expect(config["features.default_mode_request_user_input"] == .bool(true))
             #expect(config["features.tool_call_mcp_elicitation"] == .bool(false))
             #expect(server == .object([
                 "args": .array([

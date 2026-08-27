@@ -50,6 +50,11 @@ struct CodexChatView: View {
                         showsProjectOrganizationShortcut: session.showsProjectOrganizationShortcut,
                         isProjectOrganizationShortcutEnabled: session.canSendProjectOrganizationShortcut,
                         onOrganizeRecentMeetingsAndProjects: { session.sendProjectOrganizationShortcut() },
+                        meetingReviewShortcutTitle: session.showsMeetingReviewShortcut
+                            ? CodexChatMeetingReviewShortcut.title
+                            : nil,
+                        isMeetingReviewShortcutEnabled: session.canSendMeetingReviewShortcut,
+                        onReviewMeeting: session.sendMeetingReviewShortcut,
                         onOpenThread: openHistoryThread,
                         onShowAll: showHistory
                     )
@@ -83,7 +88,18 @@ struct CodexChatView: View {
                         .padding(.vertical, 6)
                 }
 
-                if let pendingApproval = session.pendingApproval {
+                if let request = session.pendingUserInput {
+                    CodexChatUserInputView(
+                        request: request,
+                        isEnabled: session.respondingUserInputID == nil,
+                        onSubmit: { answer in
+                            session.respondToUserInput(id: request.id, answer: answer)
+                        },
+                        onStop: session.stop
+                    )
+                    .padding(.horizontal, CodexChatDesign.composerHorizontalPadding)
+                    .padding(.bottom, CodexChatDesign.composerBottomPadding)
+                } else if let pendingApproval = session.pendingApproval {
                     CodexChatApprovalView(
                         request: pendingApproval,
                         isDecisionEnabled: session.canDecidePendingApproval,

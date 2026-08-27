@@ -2971,6 +2971,8 @@ enum L10n { // swiftlint:disable:this type_body_length
     }
 
     static var chatApprovalDeny: String { String(localized: "Deny", bundle: bundle) }
+    static var chatUserInputOther: String { String(localized: "Other", bundle: bundle) }
+    static var chatUserInputSubmit: String { String(localized: "Submit", bundle: bundle) }
     static var chatApprovalMethod: String { String(localized: "Approval method", bundle: bundle) }
     static var chatChangePermissions: String { String(localized: "Change permissions", bundle: bundle) }
     static var chatApprovalAsk: String { String(localized: "Ask for approval", bundle: bundle) }
@@ -3013,6 +3015,10 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var chatPresets: String { String(localized: "Presets", bundle: bundle) }
     static func chatProjectOrganizationShortcutTitle(_ days: Int) -> String {
         String(localized: "Organize meetings and Projects from the last \(days) days", bundle: bundle)
+    }
+
+    static var chatMeetingReviewShortcutTitle: String {
+        String(localized: "Review meeting speech", bundle: bundle)
     }
 
     static func chatProjectOrganizationShortcutPrompt(

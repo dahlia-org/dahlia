@@ -31,7 +31,9 @@ final class CodexChatSessionModel: Identifiable {
     private(set) var activeTurnID: String?
     private(set) var activeTurnHandleID: UUID?
     private(set) var pendingApprovals: [CodexChatApprovalRequest] = []
+    private(set) var pendingUserInput: CodexChatUserInputRequest?
     private(set) var respondingApprovalID: String?
+    private(set) var respondingUserInputID: String?
     var isPreparingTurn = false
     var isAwaitingTurnOutput = false
     var isFinalizingTurn = false
@@ -71,7 +73,7 @@ final class CodexChatSessionModel: Identifiable {
     @ObservationIgnored private let streamingUpdateInterval: Duration
     @ObservationIgnored let usageTelemetryReporter: UsageTelemetryReporter
     @ObservationIgnored private var isStopRequested = false
-    @ObservationIgnored var isTurnCleanupPending = false
+    var isTurnCleanupPending = false
     @ObservationIgnored private var isRequestingTurnHandle = false
     @ObservationIgnored var isReleased = false
     @ObservationIgnored private var didUnsubscribe = false
@@ -372,6 +374,30 @@ final class CodexChatSessionModel: Identifiable {
         }
     }
 
+    func respondToUserInput(id: String, answer: String) {
+        guard respondingUserInputID == nil,
+              pendingUserInput?.id == id,
+              answer.nilIfBlank != nil,
+              let activeTurnHandleID else { return }
+        respondingUserInputID = id
+        Task {
+            do {
+                try await service.respondToUserInput(
+                    turnID: activeTurnHandleID,
+                    id: id,
+                    answer: answer
+                )
+            } catch CodexAppServerError.approvalNoLongerPending {
+                resolvePendingUserInput(id)
+            } catch {
+                errorMessage = error.localizedDescription
+                if respondingUserInputID == id {
+                    respondingUserInputID = nil
+                }
+            }
+        }
+    }
+
     func stop() {
         guard isGenerating, !isStopRequested else { return }
         isStopRequested = true
@@ -498,6 +524,7 @@ extension CodexChatSessionModel {
         composerSnapshot: CodexChatComposerSnapshot?,
         liveTranscript: String?,
         context: CodexChatContext?,
+        includesCurrentContext: Bool,
         responseID: String,
         liveModeState: CodexChatLiveModeSubmissionState,
         approvalMethod: CodexChatApprovalMethod,
@@ -526,7 +553,12 @@ extension CodexChatSessionModel {
             let promptContext = liveModeState.isEnabled && !liveModeState.includesContext ? nil : context
             guard images.isEmpty || selectedModelSupportsImages else {
                 noticeMessage = L10n.chatModelDoesNotSupportImages
-                recordFailedSubmission(text: text, images: images, liveTranscript: liveTranscript)
+                recordFailedSubmission(
+                    text: text,
+                    images: images,
+                    liveTranscript: liveTranscript,
+                    includesCurrentContext: includesCurrentContext
+                )
                 return false
             }
             activeTurnSupportsImages = selectedModelSupportsImages
@@ -554,7 +586,11 @@ extension CodexChatSessionModel {
             activeTurnHandleID = turn.id
             var replacementTitleText: String?
             if liveTranscript == nil {
-                let submission = CodexChatManualSubmission(text: text ?? "", images: images)
+                let submission = CodexChatManualSubmission(
+                    text: text ?? "",
+                    images: images,
+                    includesCurrentContext: includesCurrentContext
+                )
                 clearComposer(ifMatching: composerSnapshot)
                 lastSubmittedText = submission.text
                 lastManualSubmission = submission
@@ -606,7 +642,12 @@ extension CodexChatSessionModel {
                 )
             } else if !isStopRequested,
                       errorMessage != nil || liveTranscript != nil {
-                recordFailedSubmission(text: text, images: images, liveTranscript: liveTranscript)
+                recordFailedSubmission(
+                    text: text,
+                    images: images,
+                    liveTranscript: liveTranscript,
+                    includesCurrentContext: includesCurrentContext
+                )
             }
             if replacedLiveModePlaceholderTitle {
                 title = text?.nilIfBlank ?? L10n.chatImage
@@ -619,7 +660,12 @@ extension CodexChatSessionModel {
         } catch {
             guard activeSubmissionID == submissionID else { return false }
             errorMessage = error.localizedDescription
-            recordFailedSubmission(text: text, images: images, liveTranscript: liveTranscript)
+            recordFailedSubmission(
+                text: text,
+                images: images,
+                liveTranscript: liveTranscript,
+                includesCurrentContext: includesCurrentContext
+            )
             updateLimiter.submit(force: true)
             completeTurnResponse(responseID: responseID)
             return false
@@ -686,8 +732,11 @@ extension CodexChatSessionModel {
                     approvalDecisionReadyID = request.id
                 }
             }
+        case let .userInputRequested(request):
+            pendingUserInput = request
         case let .approvalResolved(id):
             resolvePendingApproval(id)
+            resolvePendingUserInput(id)
         case .interrupted:
             updateLimiter.submit(force: true)
             activeOutputItemIDs.removeAll()
@@ -782,6 +831,7 @@ extension CodexChatSessionModel {
         isGenerating = false
         isPreparingTurn = false
         pendingApprovals.removeAll()
+        pendingUserInput = nil
         approvalDecisionReadyID = nil
         approvalRearmTask?.cancel()
         approvalRearmTask = nil
@@ -792,6 +842,7 @@ extension CodexChatSessionModel {
         activeTurnID = nil
         activeTurnHandleID = nil
         respondingApprovalID = nil
+        respondingUserInputID = nil
         isStopRequested = false
         isActiveTurnLiveTranscript = false
         activeTurnSupportsImages = nil
@@ -829,6 +880,12 @@ extension CodexChatSessionModel {
         if wasPresented {
             rearmNextApprovalAfterInteractionBoundary()
         }
+    }
+
+    private func resolvePendingUserInput(_ id: String) {
+        guard pendingUserInput?.id == id else { return }
+        pendingUserInput = nil
+        respondingUserInputID = nil
     }
 
     private static let maximumEventsBetweenYields = 64
@@ -1038,7 +1095,8 @@ extension CodexChatSessionModel {
     func recordFailedSubmission(
         text: String?,
         images: [CodexChatImageAttachment] = [],
-        liveTranscript: String?
+        liveTranscript: String?,
+        includesCurrentContext: Bool = true
     ) {
         if let liveTranscript, isLiveModeEnabled {
             recordFailedLiveTranscript(liveTranscript)
@@ -1046,7 +1104,8 @@ extension CodexChatSessionModel {
             let submission = CodexChatManualSubmission(
                 text: text ?? "",
                 images: images,
-                liveModeGeneration: activeManualSubmissionLiveModeGeneration
+                liveModeGeneration: activeManualSubmissionLiveModeGeneration,
+                includesCurrentContext: includesCurrentContext
             )
             recordFailedManualSubmission(submission)
         }

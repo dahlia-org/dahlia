@@ -27,6 +27,7 @@ protocol CodexChatServicing: Sendable {
         approvalMethod: CodexChatApprovalMethod
     ) async throws -> CodexChatApprovalMethod
     func decideApproval(turnID: UUID, id: String, decision: CodexChatApprovalDecision) async throws
+    func respondToUserInput(turnID: UUID, id: String, answer: String) async throws
     func stopTurn(_ turnID: UUID) async
     func respondToApproval(id: String, decision: CodexChatApprovalDecision) async
     func steer(threadID: String, turnID: String, inputs: [CodexAppServerInput]) async throws
@@ -73,6 +74,10 @@ extension CodexChatServicing {
 
     func decideApproval(turnID _: UUID, id: String, decision: CodexChatApprovalDecision) async throws {
         await respondToApproval(id: id, decision: decision)
+    }
+
+    func respondToUserInput(turnID _: UUID, id _: String, answer _: String) async throws {
+        throw CodexAppServerError.invalidProtocolResponse
     }
 
     func stopTurn(_: UUID) async {}

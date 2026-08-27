@@ -43,7 +43,8 @@ extension CodexChatSessionModel {
         _ text: String,
         images: [CodexChatImageAttachment] = [],
         composerSnapshot: CodexChatComposerSnapshot? = nil,
-        liveTranscript: String? = nil
+        liveTranscript: String? = nil,
+        includesCurrentContext: Bool = true
     ) {
         guard isBoundToCurrentVault,
               !isRestoring,
@@ -78,6 +79,7 @@ extension CodexChatSessionModel {
                 images: images,
                 composerSnapshot: composerSnapshot,
                 liveTranscript: liveTranscript,
+                includesCurrentContext: includesCurrentContext,
                 liveModeState: liveModeState,
                 approvalMethod: approvalMethod,
                 submissionID: submissionID
@@ -90,7 +92,8 @@ extension CodexChatSessionModel {
         submit(
             submission.text,
             images: submission.images,
-            composerSnapshot: submission.composerSnapshot
+            composerSnapshot: submission.composerSnapshot,
+            includesCurrentContext: submission.includesCurrentContext
         )
         if !isGenerating {
             activeManualSubmissionLiveModeGeneration = nil
@@ -102,6 +105,7 @@ extension CodexChatSessionModel {
         images: [CodexChatImageAttachment],
         composerSnapshot: CodexChatComposerSnapshot?,
         liveTranscript: String?,
+        includesCurrentContext: Bool,
         liveModeState: CodexChatLiveModeSubmissionState,
         approvalMethod: CodexChatApprovalMethod,
         submissionID: UUID
@@ -109,7 +113,7 @@ extension CodexChatSessionModel {
         defer {
             finishGeneration(submissionID: submissionID)
         }
-        let shouldResolveContext = !liveModeState.isEnabled || liveModeState.includesContext
+        let shouldResolveContext = includesCurrentContext && (!liveModeState.isEnabled || liveModeState.includesContext)
         let context: CodexChatContext?
         do {
             context = try await resolveContext(if: shouldResolveContext)
@@ -118,7 +122,12 @@ extension CodexChatSessionModel {
             return
         } catch {
             guard activeSubmissionID == submissionID else { return }
-            recordFailedSubmission(text: text, images: images, liveTranscript: liveTranscript)
+            recordFailedSubmission(
+                text: text,
+                images: images,
+                liveTranscript: liveTranscript,
+                includesCurrentContext: includesCurrentContext
+            )
             errorMessage = error.localizedDescription
             return
         }
@@ -131,6 +140,7 @@ extension CodexChatSessionModel {
             composerSnapshot: composerSnapshot,
             liveTranscript: liveTranscript,
             context: context,
+            includesCurrentContext: includesCurrentContext,
             responseID: responseID,
             liveModeState: liveModeState,
             approvalMethod: approvalMethod,
@@ -177,7 +187,8 @@ extension CodexChatSessionModel {
             text: submission.text,
             images: submission.images,
             composerSnapshot: composerSnapshot,
-            liveModeGeneration: submission.liveModeGeneration
+            liveModeGeneration: submission.liveModeGeneration,
+            includesCurrentContext: submission.includesCurrentContext
         ))
     }
 

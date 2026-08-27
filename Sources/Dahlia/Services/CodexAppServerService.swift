@@ -50,6 +50,7 @@ actor CodexAppServerService {
     private enum ApprovalResponseKind {
         case decision
         case mcpToolCall(questionID: String)
+        case userInput(questionID: String)
     }
 
     private struct PendingApprovalResponse {
@@ -647,6 +648,32 @@ actor CodexAppServerService {
         }
     }
 
+    func respondToChatUserInput(
+        turnID: UUID,
+        requestID: String,
+        answer: String
+    ) async throws {
+        guard let runtime = chatTurnRuntimes[turnID],
+              runtime.generation == connectionGeneration,
+              let pending = runtime.pendingApprovals[requestID],
+              case let .userInput(questionID) = pending.responseKind
+        else { throw CodexAppServerError.approvalNoLongerPending }
+        chatTurnRuntimes[turnID]?.pendingApprovals.removeValue(forKey: requestID)
+        chatTurnRuntimes[turnID]?.respondedApprovalIDs.insert(requestID)
+        do {
+            try await sendUserInputResponse(
+                requestID: pending.requestID,
+                questionID: questionID,
+                answer: answer
+            )
+        } catch {
+            if runtime.generation == connectionGeneration {
+                await stopConnection(error: error)
+            }
+            throw error
+        }
+    }
+
     private func sendApprovalResponse(
         requestID: JSONValue,
         kind: ApprovalResponseKind,
@@ -664,17 +691,32 @@ actor CodexAppServerService {
             } else {
                 "Cancel"
             }
+            try await sendUserInputResponse(
+                requestID: requestID,
+                questionID: questionID,
+                answer: answer
+            )
+        case .userInput:
             try await sendMessage(.object([
                 "id": requestID,
-                "result": .object([
-                    "answers": .object([
-                        questionID: .object([
-                            "answers": .array([.string(answer)]),
-                        ]),
-                    ]),
-                ]),
+                "result": .object(["answers": .object([:])]),
             ]))
         }
+    }
+
+    private func sendUserInputResponse(
+        requestID: JSONValue,
+        questionID: String,
+        answer: String
+    ) async throws {
+        try await sendMessage(.object([
+            "id": requestID,
+            "result": .object([
+                "answers": .object([
+                    questionID: .object(["answers": .array([.string(answer)])]),
+                ]),
+            ]),
+        ]))
     }
 
     func stopChatTurn(_ localTurnID: UUID) async {
@@ -824,6 +866,7 @@ actor CodexAppServerService {
             runtimeProfile: runtimeProfile
         )
         config["mcp_servers"] = .object(servers)
+        config["features.default_mode_request_user_input"] = .bool(true)
         config["features.tool_call_mcp_elicitation"] = .bool(false)
         config["skills.include_instructions"] = .bool(true)
         config["web_search"] = .string("live")
@@ -1313,6 +1356,17 @@ private extension CodexAppServerService {
                     kind: responseKind,
                     decision: .cancel
                 )
+                return
+            }
+            if let params,
+               let requestID = Self.approvalID(for: id),
+               let request = CodexChatUserInputRequest(id: requestID, params: params),
+               await routeChatApprovalRequest(
+                   id: id,
+                   params: params,
+                   message: message,
+                   responseKind: .userInput(questionID: request.questionID)
+               ) {
                 return
             }
             try await sendServerRequestError(
