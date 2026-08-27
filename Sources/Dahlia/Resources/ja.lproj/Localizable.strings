@@ -1079,11 +1079,12 @@
 "No recent chats" = "最近のチャットはありません";
 "Load more" = "さらに読み込む";
 "Open chat in a new window" = "チャットを新しいウィンドウで開く";
+"Show chat full screen" = "チャットを全画面で表示";
 "Hide chat" = "チャットを隠す";
 "Send message" = "メッセージを送信";
 "Stop generating" = "生成を停止";
 "Thinking" = "考えています";
-"Message Codex" = "Codex にメッセージ";
+"Message Dahlia AI" = "Dahlia AI にメッセージ";
 "Add to chat" = "チャットに追加";
 "Select model" = "モデルを選択";
 "Image" = "画像";

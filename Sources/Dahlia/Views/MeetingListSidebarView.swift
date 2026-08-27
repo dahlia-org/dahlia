@@ -8,6 +8,8 @@ struct MeetingListSidebarView: View {
     let recordingCoordinator: RecordingCoordinator
     let isShowingUpcomingSchedule: Bool
     let onShowUpcomingSchedule: () -> Void
+    let isShowingChat: Bool
+    let onShowChat: () -> Void
     let isShowingProjects: Bool
     let onShowProjects: () -> Void
     let isShowingUnprocessedRecordings: Bool
@@ -36,6 +38,9 @@ struct MeetingListSidebarView: View {
             set: { selection in
                 renderedMeetingSelection = selection
                 sidebarViewModel.selectedMeetingIds = selection
+                if selection.count == 1, let meetingID = selection.first {
+                    openMeetingFromChatIfNeeded(meetingID)
+                }
             }
         )
     }
@@ -50,6 +55,8 @@ struct MeetingListSidebarView: View {
                 onStartQuickRecording: recordingCoordinator.startQuickRecording,
                 isShowingUpcomingSchedule: isShowingUpcomingSchedule,
                 onShowUpcomingSchedule: onShowUpcomingSchedule,
+                isShowingChat: isShowingChat,
+                onShowChat: onShowChat,
                 isShowingProjects: isShowingProjects,
                 onShowProjects: onShowProjects,
                 canCreateProject: sidebarViewModel.currentVault != nil,
@@ -336,6 +343,12 @@ struct MeetingListSidebarView: View {
             onCancelRename: cancelRename
         )
         .tag(item.meetingId)
+        .simultaneousGesture(TapGesture().onEnded {
+            openMeetingFromChatIfNeeded(item.meetingId)
+        }, including: isShowingChat ? .all : .none)
+        .accessibilityAction(named: Text(L10n.open)) {
+            selectMeeting(item.meetingId)
+        }
     }
 
     private func projectSection(
@@ -364,7 +377,9 @@ struct MeetingListSidebarView: View {
             onToggleExpansion: { toggleProjectGroupExpansion(group.key) },
             allowsListSelection: !isPinned
                 || mainWindowNavigation.meetingSidebarDisplayMode == .byProject,
-            onSelectMeeting: sidebarViewModel.selectMeeting,
+            onSelectMeeting: selectMeeting,
+            activatesMeetingOnTap: isShowingChat,
+            onActivateMeeting: openMeetingFromChatIfNeeded,
             onOpenProject: onOpenProject,
             onTogglePin: { mainWindowNavigation.toggleProjectPin($0, vaultId: sidebarViewModel.currentVault?.id) },
             onCreateMeeting: recordingCoordinator.createDraftMeeting,
@@ -397,6 +412,22 @@ struct MeetingListSidebarView: View {
 
     private func clearSearch() {
         sidebarViewModel.updateMeetingSearchCriteria(MeetingSearchCriteria())
+    }
+
+    private func openMeetingFromChatIfNeeded(_ meetingID: UUID) {
+        guard isShowingChat else { return }
+        Task { @MainActor in
+            guard isShowingChat,
+                  editingMeetingId != meetingID,
+                  sidebarViewModel.selectedMeetingIds == [meetingID] else { return }
+            mainWindowNavigation.recordNavigation(to: .meeting(meetingID))
+        }
+    }
+
+    private func selectMeeting(_ meetingID: UUID) {
+        guard editingMeetingId != meetingID else { return }
+        sidebarViewModel.selectMeeting(meetingID)
+        openMeetingFromChatIfNeeded(meetingID)
     }
 
     @ViewBuilder

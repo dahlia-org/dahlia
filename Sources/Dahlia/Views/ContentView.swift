@@ -35,7 +35,9 @@ struct ContentView: View {
             contentMinimumWidth: isSidebarVisible || isShowingSettings
                 ? MainSidebarLayout.minimumSplitWidth
                 : MainSidebarLayout.minimumDetailWidth,
-            isVisible: chatCoordinator.isDockedVisible && !isShowingSettings,
+            isVisible: chatCoordinator.isDockedVisible
+                && !isShowingFullScreenChat
+                && !isShowingSettings,
             onWidthChange: mainWindowNavigation.updateChatSidebarWidth
         ) {
             Group {
@@ -50,6 +52,7 @@ struct ContentView: View {
                         appDatabase: appDatabase,
                         vaultManagementModel: vaultManagementModel,
                         onShowUpcomingSchedule: returnToCalendarSchedule,
+                        onShowChat: showFullScreenChat,
                         onShowUnprocessedRecordings: showUnprocessedRecordings,
                         showsCustomerIntelligence: isCustomerIntelligenceBetaEnabled,
                         onOpenCustomerIntelligence: { openWindow(id: WindowID.organizationWorkspace) },
@@ -80,6 +83,8 @@ struct ContentView: View {
                                 recordingCoordinator: recordingCoordinator,
                                 isShowingUpcomingSchedule: isShowingUpcomingSchedule,
                                 onShowUpcomingSchedule: returnToCalendarSchedule,
+                                isShowingChat: isShowingFullScreenChat,
+                                onShowChat: showFullScreenChat,
                                 isShowingProjects: false,
                                 onShowProjects: showProjectCatalog,
                                 isShowingUnprocessedRecordings: isShowingUnprocessedRecordings,
@@ -98,7 +103,20 @@ struct ContentView: View {
                         }
                     } detail: {
                         MainWindowPaneContent(isShowingSettings: isShowingSettings) {
-                            detailView
+                            if isShowingFullScreenChat {
+                                CodexChatSidebarView(
+                                    coordinator: chatCoordinator,
+                                    sidebarViewModel: sidebarViewModel,
+                                    showsHistory: $isShowingChatHistory,
+                                    showsConfiguration: $isShowingChatConfiguration,
+                                    isFullScreen: true,
+                                    onShowFullScreen: nil,
+                                    onPopOut: popOutDockedChat,
+                                    onOpenDetachedSession: openDetachedChat
+                                )
+                            } else {
+                                detailView
+                            }
                         } settingsContent: {
                             SettingsDetailView(
                                 selection: $mainWindowNavigation.settingsCategory,
@@ -116,7 +134,7 @@ struct ContentView: View {
             .layoutPriority(1)
             .overlay(alignment: .top) {
                 MainWorkspaceHeader(
-                    isVisible: !isShowingSettings,
+                    isVisible: !isShowingSettings && !isShowingFullScreenChat,
                     isSidebarVisible: isSidebarVisible,
                     canGoBack: canGoBack,
                     canGoForward: canGoForward,
@@ -143,6 +161,8 @@ struct ContentView: View {
                 sidebarViewModel: sidebarViewModel,
                 showsHistory: $isShowingChatHistory,
                 showsConfiguration: $isShowingChatConfiguration,
+                isFullScreen: false,
+                onShowFullScreen: showFullScreenChat,
                 onPopOut: popOutDockedChat,
                 onOpenDetachedSession: openDetachedChat
             )
@@ -150,7 +170,7 @@ struct ContentView: View {
         .allowsHitTesting(!searchModel.isPresented || isShowingSettings)
         .disabled(searchModel.isPresented && !isShowingSettings)
         .overlay(alignment: .topTrailing) {
-            if !isShowingSettings {
+            if !isShowingSettings, !isShowingFullScreenChat {
                 DahliaWindowHeader(allowsWindowDragging: false, backgroundColor: .clear) {
                     DahliaWindowHeaderIconButton(
                         label: chatCoordinator.isDockedVisible ? L10n.hideChat : L10n.showChat,
@@ -178,7 +198,7 @@ struct ContentView: View {
             }
         }
         .overlay(alignment: .bottomTrailing) {
-            if chatCoordinator.isDockedVisible {
+            if chatCoordinator.isDockedVisible || isShowingFullScreenChat {
                 CodexChatConfigurationOverlay(
                     session: chatCoordinator.dockedSession,
                     isPresented: $isShowingChatConfiguration
@@ -305,10 +325,13 @@ struct ContentView: View {
             syncDraftNavigation()
         }
         .onChange(of: mainWindowNavigation.section) { _, section in
-            if section == .projects {
+            switch section {
+            case .projects:
                 prepareProjectManagement()
-            } else {
+            case .meetings:
                 syncChatContext()
+            case .chat:
+                break
             }
         }
         .onChange(of: sidebarViewModel.workspaceChangeToken) { _, _ in
@@ -323,6 +346,10 @@ struct ContentView: View {
 }
 
 private extension ContentView {
+    private var isShowingFullScreenChat: Bool {
+        mainWindowNavigation.section == .chat
+    }
+
     private func syncDraftNavigation() {
         guard let draftMeeting = viewModel.draftMeeting else { return }
         mainWindowNavigation.updateDraftNavigation(draftMeeting, noteText: viewModel.noteText)
@@ -340,6 +367,16 @@ private extension ContentView {
         } else {
             chatCoordinator.showDocked()
         }
+    }
+
+    private func showFullScreenChat() {
+        mainWindowNavigation.recordNavigation(to: .chat)
+        restoreFullScreenChatPresentation()
+    }
+
+    private func restoreFullScreenChatPresentation() {
+        isSidebarVisible = true
+        chatCoordinator.hideDocked()
     }
 
     private func popOutDockedChat() {
@@ -386,6 +423,7 @@ private extension ContentView {
     }
 
     private func syncChatContext() {
+        guard !isShowingFullScreenChat else { return }
         if mainWindowNavigation.section == .projects {
             let projectID: UUID? = if case let .project(id) = mainWindowNavigation.currentLocation { id } else { nil }
             chatCoordinator.updateCurrentContext(
@@ -419,7 +457,8 @@ private extension ContentView {
     }
 
     private var isShowingUpcomingSchedule: Bool {
-        sidebarViewModel.selectedMeetingIds.isEmpty
+        mainWindowNavigation.section == .meetings
+            && sidebarViewModel.selectedMeetingIds.isEmpty
             && !viewModel.hasDraftMeeting
             && viewModel.currentMeetingId == nil
             && !isShowingUnprocessedRecordings
@@ -691,6 +730,11 @@ private extension ContentView {
             restoreCurrentPresentation()
             return
         }
+        if isShowingFullScreenChat {
+            mainWindowNavigation.initializeNavigationHistoryIfNeeded(to: .chat)
+            restoreFullScreenChatPresentation()
+            return
+        }
         if mainWindowNavigation.section == .projects {
             prepareProjectManagement()
             mainWindowNavigation.initializeNavigationHistoryIfNeeded(
@@ -743,7 +787,7 @@ private extension ContentView {
 
     private func validateNavigation(_ location: MainWindowLocation) async -> Bool {
         switch location {
-        case .upcomingSchedule, .unprocessedRecordings:
+        case .upcomingSchedule, .unprocessedRecordings, .chat:
             return true
         case let .meeting(meetingID):
             let selectedMeetingIds = sidebarViewModel.selectedMeetingIds
@@ -798,6 +842,8 @@ private extension ContentView {
             mainWindowNavigation.showProjects()
         case .project:
             mainWindowNavigation.showProjects()
+        case .chat:
+            restoreFullScreenChatPresentation()
         }
         syncChatContext()
     }

@@ -7,6 +7,7 @@ struct CodexChatHeader: View {
     let onBack: () -> Void
     let onShowHistory: () -> Void
     let onNewChat: () -> Void
+    let onShowFullScreen: (() -> Void)?
     let onPopOut: (() -> Void)?
     let reservesSidebarToggle: Bool
     let reservesWindowControls: Bool
@@ -52,6 +53,14 @@ struct CodexChatHeader: View {
                     label: L10n.popOutChat,
                     systemImage: "rectangle.on.rectangle",
                     action: onPopOut
+                )
+            }
+
+            if let onShowFullScreen {
+                DahliaWindowHeaderIconButton(
+                    label: L10n.showChatFullScreen,
+                    systemImage: "arrow.up.left.and.arrow.down.right",
+                    action: onShowFullScreen
                 )
             }
 

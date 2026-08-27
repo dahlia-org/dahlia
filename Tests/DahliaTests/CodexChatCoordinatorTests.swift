@@ -31,6 +31,30 @@ import Foundation
         }
 
         @Test
+        func fullScreenNewChatKeepsDockedSidebarHidden() {
+            let coordinator = CodexChatCoordinator(service: CoordinatorTestCodexChatService())
+            coordinator.showDocked()
+
+            coordinator.newDockedChat(showDockedSidebar: false)
+
+            #expect(!coordinator.isDockedVisible)
+        }
+
+        @Test
+        func fullScreenHistorySelectionKeepsDockedSidebarHidden() async {
+            let coordinator = CodexChatCoordinator(service: CoordinatorTestCodexChatService())
+            coordinator.showDocked()
+
+            let selectedID = await coordinator.openHistoryThread(
+                Self.threadSummary(id: "full-screen-history"),
+                showDockedSidebar: false
+            )
+
+            #expect(coordinator.session(for: selectedID)?.backendThreadID == "full-screen-history")
+            #expect(!coordinator.isDockedVisible)
+        }
+
+        @Test
         func poppingOutDockedChatHidesSidebarAndCreatesReplacementSession() {
             let coordinator = CodexChatCoordinator(service: CoordinatorTestCodexChatService())
             let previousID = coordinator.dockedSessionID

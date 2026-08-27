@@ -51,6 +51,7 @@ struct MainWorkspaceHeader: View {
                 Spacer(minLength: 12)
             }
         }
+        .allowsHitTesting(isVisible)
         .accessibilityHidden(!isVisible)
     }
 

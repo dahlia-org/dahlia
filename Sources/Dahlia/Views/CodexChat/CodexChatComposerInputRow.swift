@@ -118,7 +118,7 @@ struct CodexChatComposerTextEditor: View {
                     .scrollContentBackground(.hidden)
                     .padding(.leading, 3)
                     .padding(.vertical, 6)
-                    .accessibilityLabel(L10n.messageCodex)
+                    .accessibilityLabel(L10n.messageDahliaAI)
                     .onMoveCommand(perform: onMoveCommand)
                     .onExitCommand(perform: onExitCommand)
                     .onKeyPress(.return, phases: .down, action: handleReturnKey)
@@ -129,7 +129,7 @@ struct CodexChatComposerTextEditor: View {
                     }
 
                 if Self.shouldShowPlaceholder(text: text, isFocused: isFocused) {
-                    Text(L10n.messageCodex)
+                    Text(L10n.messageDahliaAI)
                         .font(.body)
                         .foregroundStyle(DahliaDesign.optionalTextColor)
                         .padding(.leading, 8)

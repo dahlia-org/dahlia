@@ -29,9 +29,11 @@ struct CodexChatWindowView: View {
                     configurationPresentation: nil,
                     onNewChat: startNewChat,
                     onOpenHistory: openHistory,
+                    onShowFullScreen: nil,
                     onPopOut: nil,
                     reservesSidebarToggle: false,
-                    reservesWindowControls: true
+                    reservesWindowControls: true,
+                    contentMaxWidth: nil
                 )
             } else {
                 VStack(spacing: 0) {
