@@ -77,11 +77,10 @@ jobs:
       - name: Validate PostgreSQL migration
         run: pnpm --filter @dahlia-ai/server db:migrate
         env:
-          DAHLIA_RUNTIME: custom
           DAHLIA_AUTH_PROVIDER: accounts
-          DAHLIA_AUTH_DATABASE: postgres
+          DAHLIA_DATABASE_TYPE: postgres
+          DAHLIA_DATABASE_URL: postgresql://dahlia@127.0.0.1:5432/dahlia
           DAHLIA_BASE_URL: https://dahlia.example
-          DATABASE_URL: postgresql://dahlia@127.0.0.1:5432/dahlia
           BETTER_AUTH_SECRET: test-only-better-auth-secret-value
           GOOGLE_CLIENT_ID: test-google-client-id
           GOOGLE_CLIENT_SECRET: test-google-client-secret
@@ -95,10 +94,9 @@ jobs:
       - name: Validate SQLite migration
         run: pnpm --filter @dahlia-ai/server db:migrate
         env:
-          DAHLIA_RUNTIME: custom
           DAHLIA_AUTH_PROVIDER: accounts
-          DAHLIA_AUTH_DATABASE: sqlite
-          DAHLIA_AUTH_SQLITE_PATH: /tmp/dahlia-auth.sqlite
+          DAHLIA_DATABASE_TYPE: sqlite
+          DAHLIA_DATABASE_URL: file:/tmp/dahlia-auth.sqlite
           DAHLIA_BASE_URL: http://localhost:5173
           BETTER_AUTH_SECRET: test-only-better-auth-secret-value
           GOOGLE_CLIENT_ID: test-google-client-id

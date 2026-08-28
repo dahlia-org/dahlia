@@ -30,7 +30,8 @@
     }
   },
   "vars": {
-    "DAHLIA_RUNTIME": "cloudflare",
+    "DAHLIA_AUTH_PROVIDER": "accounts",
+    "DAHLIA_DATABASE_TYPE": "d1",
     "DAHLIA_BASE_URL": "https://{name}.{subdomain}.workers.dev",
     "GOOGLE_CLIENT_ID": "replace-with-google-client-id"
   }

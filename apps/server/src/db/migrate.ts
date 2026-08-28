@@ -1,16 +1,16 @@
 import { initializeDahliaAuth } from "../auth/better-auth";
-import { createNodeAuthStore } from "../auth/node-store";
+import { createNodeApplicationStore } from "../auth/node-store";
 import { loadConfig } from "../config";
 
 const config = loadConfig(process.env);
 
-if (config.authDatabase !== "d1") {
-  const authStore = createNodeAuthStore(config);
+if (config.databaseType !== "d1") {
+  const applicationStore = createNodeApplicationStore(config);
   try {
-    await authStore.migrate();
-    if (config.authProvider === "accounts") await initializeDahliaAuth(config, authStore);
+    await applicationStore.migrate();
+    if (config.authProvider === "accounts") await initializeDahliaAuth(config, applicationStore);
   } finally {
-    await authStore.close?.();
+    await applicationStore.close?.();
   }
   console.info("Dahlia Server application database is up to date");
 } else {

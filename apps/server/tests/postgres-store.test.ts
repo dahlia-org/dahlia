@@ -7,14 +7,12 @@ import { connectAuthDatabase } from "../src/db/client";
 const databaseUrl = process.env.TEST_DATABASE_URL;
 const integration = describe.runIf(databaseUrl);
 const config: AppConfig = {
-  runtime: "custom",
   authProvider: "header",
   authHeader: "X-Forwarded-Email",
-  authDatabase: "postgres",
-  authDatabaseUrl: databaseUrl,
+  databaseType: "postgres",
+  databaseUrl,
   baseUrl: "https://dahlia.example",
   oauthRedirectUris: [],
-  trustedProxyCidrs: [],
   maxRequestBytes: 1024,
 };
 const connection = databaseUrl ? connectAuthDatabase(config) : undefined;

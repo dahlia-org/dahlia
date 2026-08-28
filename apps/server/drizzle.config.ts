@@ -5,6 +5,6 @@ export default defineConfig({
   schema: "./src/db/auth-schema.ts",
   out: "./drizzle",
   dbCredentials: {
-    url: process.env.DATABASE_URL ?? "",
+    url: process.env.DAHLIA_DATABASE_URL ?? "",
   },
 });

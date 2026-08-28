@@ -1,0 +1,25 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "dahlia-server",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-08-08",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*", "/.well-known/*", "/healthz"]
+  },
+  "hyperdrive": [{
+    "binding": "HYPERDRIVE",
+    "id": "00000000000000000000000000000000"
+  }],
+  "observability": {
+    "enabled": false,
+    "logs": { "enabled": false, "invocation_logs": false }
+  },
+  "vars": {
+    "DAHLIA_AUTH_PROVIDER": "accounts",
+    "DAHLIA_DATABASE_TYPE": "hyperdrive",
+    "DAHLIA_BASE_URL": "https://{name}.{subdomain}.workers.dev",
+    "GOOGLE_CLIENT_ID": "replace-with-google-client-id"
+  }
+}

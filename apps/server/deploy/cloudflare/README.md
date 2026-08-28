@@ -1,6 +1,6 @@
 # Deploy Dahlia Server on Cloudflare
 
-This target uses Hono only for the API Worker. React, JavaScript, CSS, and SPA navigation are served directly by Cloudflare Workers Static Assets without invoking Hono or an assets binding. The checked-in `DAHLIA_RUNTIME=cloudflare` preset fixes authentication to `accounts` and storage to D1. The upstream uses the same OpenAI-compatible contract as every runtime. Provider credentials remain Worker secrets, while Model Aliases and administrators use D1; Hyperdrive is not used.
+This target uses Hono only for the API Worker. React, JavaScript, CSS, and SPA navigation are served directly by Cloudflare Workers Static Assets. The default template selects `DAHLIA_DATABASE_TYPE=d1`; the alternate `wrangler.hyperdrive.example.jsonc` selects PostgreSQL through the `HYPERDRIVE` binding. Authentication and the OpenAI-compatible upstream are configured independently.
 
 ```text
 browser ─────────────── Workers Static Assets ── React SPA / JS / CSS
@@ -10,7 +10,7 @@ Hono API Worker ─┬──── D1 ── Better Auth data
                  └──── HTTPS ── Cloudflare AI Gateway
 ```
 
-The checked-in template is [`apps/server/wrangler.example.jsonc`](../../wrangler.example.jsonc). Copy it to the ignored `apps/server/wrangler.jsonc` before deployment. D1 stores Better Auth data, Model Aliases, and administrator emails. Run these commands from the repository root.
+Copy either [`wrangler.example.jsonc`](../../wrangler.example.jsonc) for D1 or [`wrangler.hyperdrive.example.jsonc`](../../wrangler.hyperdrive.example.jsonc) for Hyperdrive to the ignored `apps/server/wrangler.jsonc`. The selected database stores Better Auth data, Model Aliases, and administrator emails.
 
 ## Prerequisites
 
@@ -26,7 +26,7 @@ pnpm install --frozen-lockfile
 pnpm --filter @dahlia-ai/server build:cloudflare
 ```
 
-## 2. Create and migrate D1
+## 2. Configure and migrate the database
 
 ```bash
 cp apps/server/wrangler.example.jsonc apps/server/wrangler.jsonc
@@ -35,6 +35,8 @@ pnpm --filter @dahlia-ai/server exec wrangler d1 migrations apply dahlia_db_prod
 ```
 
 Copy the database name and ID returned by the first command into `d1_databases[0]` in `apps/server/wrangler.jsonc`. Keep the binding name `dahlia_db_prod` and migrations directory `auth-migrations` unchanged. The real configuration stays local and is not committed.
+
+For Hyperdrive, start from the alternate template, replace its Hyperdrive ID, and apply the PostgreSQL SQL under `apps/server/drizzle` to the origin database before deployment. Keep the binding name `HYPERDRIVE` unchanged.
 
 ## 3. Configure authentication
 

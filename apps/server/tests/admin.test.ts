@@ -6,14 +6,12 @@ import type { AppConfig } from "../src/config";
 import { testStore } from "./test-store";
 
 const config: AppConfig = {
-  runtime: "custom",
   authProvider: "header",
   authHeader: "X-Forwarded-Email",
-  authDatabase: "sqlite",
+  databaseType: "sqlite",
   baseUrl: "https://dahlia.example",
   adminEmail: "owner@example.com",
   oauthRedirectUris: [],
-  trustedProxyCidrs: [],
   maxRequestBytes: 1024,
 };
 const ownerHeaders = { "X-Forwarded-Email": "OWNER@example.com", origin: config.baseUrl };

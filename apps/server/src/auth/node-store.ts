@@ -1,49 +1,85 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { mkdirSync, readFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { DatabaseSync } from "node:sqlite";
+import { drizzle } from "drizzle-orm/sqlite-proxy";
 
 import type { AppConfig } from "../config";
-import { connectAuthDatabase, migrateAuthDatabase } from "../db/client";
+import { connectApplicationDatabase, migrateApplicationDatabase } from "../db/client";
 import { serverMigrationManifest, type MigrationManifest } from "../migrations";
-import { createPostgresAuthStore, createSqliteAuthStore, type AuthStore } from "./store";
+import {
+  createPostgresApplicationStore,
+  createSqliteApplicationStore,
+  type ApplicationStore,
+} from "./store";
 
-export interface NodeAuthStore extends AuthStore {
+export interface NodeApplicationStore extends ApplicationStore {
   migrate(): Promise<void>;
 }
 
-export function createNodeAuthStore(
+export function createNodeApplicationStore(
   config: AppConfig,
   migrations: MigrationManifest = serverMigrationManifest,
-): NodeAuthStore {
-  if (config.authDatabase === "postgres") {
-    const connection = connectAuthDatabase(config);
+): NodeApplicationStore {
+  if (config.databaseType === "postgres" || config.databaseType === "lakebase") {
+    const connection = connectApplicationDatabase(config);
     return {
-      ...createPostgresAuthStore(connection.db),
-      migrate: () => migrateAuthDatabase(config, migrations.postgres.directories),
+      ...createPostgresApplicationStore(connection.db),
+      migrate: () => migrateApplicationDatabase(config, migrations.postgres.directories),
       close: connection.close,
     };
   }
-  if (config.authDatabase !== "sqlite" || !config.authSqlitePath) {
-    throw new Error("Node Better Auth supports DAHLIA_AUTH_DATABASE=sqlite or postgres");
+  if (config.databaseType !== "sqlite" || !config.databaseUrl) {
+    throw new Error("Node storage supports DAHLIA_DATABASE_TYPE=sqlite, postgres, or lakebase");
   }
 
-  mkdirSync(dirname(config.authSqlitePath), { recursive: true });
-  const database = new DatabaseSync(config.authSqlitePath);
+  const databasePath = fileURLToPath(new URL(config.databaseUrl, pathToFileURL(`${process.cwd()}/`)));
+  mkdirSync(dirname(databasePath), { recursive: true });
+  const database = new DatabaseSync(databasePath);
   database.exec("PRAGMA foreign_keys = ON");
   database.exec("PRAGMA journal_mode = WAL");
   database.exec("PRAGMA busy_timeout = 5000");
-  const store = createSqliteAuthStore({
-    database,
-    first: <T>(query: string, values: Array<string | number | null>) => Promise.resolve(database.prepare(query).get(...values) as T | null),
-    all: <T>(query: string, values: Array<string | number | null>) => Promise.resolve(database.prepare(query).all(...values) as T[]),
-    run: (query, values) => Promise.resolve(Number(database.prepare(query).run(...values).changes)),
+  const transaction = new AsyncLocalStorage<boolean>();
+  let pending = Promise.resolve();
+  const execute = async (sql: string, params: unknown[], method: "run" | "all" | "get" | "values") => {
+    const query = () => {
+      const statement = database.prepare(sql);
+      statement.setReturnArrays(true);
+      if (method === "run") {
+        statement.run(...params as []);
+        return { rows: [] };
+      }
+      if (method === "get") return { rows: statement.get(...params as []) as unknown as unknown[] };
+      return { rows: statement.all(...params as []) as unknown[] };
+    };
+    if (transaction.getStore()) return query();
+    const result = pending.then(query, query);
+    pending = result.then(() => undefined, () => undefined);
+    return result;
+  };
+  const sqlite = drizzle(execute);
+  const transact = sqlite.transaction.bind(sqlite);
+  const transactionalSqlite = new Proxy(sqlite, {
+    get(target, property, receiver) {
+      if (property !== "transaction") {
+        const value: unknown = Reflect.get(target, property, receiver);
+        return value;
+      }
+      return <T>(callback: Parameters<typeof transact<T>>[0]) => {
+        const result = pending.then(() => transaction.run(true, () => transact(callback)));
+        pending = result.then(() => undefined, () => undefined);
+        return result;
+      };
+    },
+  });
+  const store = createSqliteApplicationStore(transactionalSqlite, true);
+  return {
+    ...store,
     close: () => {
       database.close();
       return Promise.resolve();
     },
-  });
-  return {
-    ...store,
     migrate() {
       database.exec(`CREATE TABLE IF NOT EXISTS "_dahlia_auth_migrations" (
         "name" TEXT PRIMARY KEY NOT NULL, "appliedAt" TEXT NOT NULL
@@ -84,3 +120,8 @@ export function createNodeAuthStore(
     },
   };
 }
+
+/** @deprecated Use NodeApplicationStore. */
+export type NodeAuthStore = NodeApplicationStore;
+/** @deprecated Use createNodeApplicationStore. */
+export const createNodeAuthStore = createNodeApplicationStore;

@@ -148,8 +148,9 @@ UID／RECURRENCE-ID のキー形式、source 対応、Meeting とのカーディ
 
 TypeScript アプリケーションは pnpm workspace で管理します。リポジトリルートから Dahlia Server は `pnpm dev`、
 公開サイトは `pnpm dev:site`、workspace の検証は `pnpm check` で実行します。開発時の環境変数は必要に応じて
-リポジトリルートの `.env.local` を使用します。既定の `DAHLIA_RUNTIME=custom` はアカウント認証にローカル SQLite を使うため、
-`pnpm dev` に PostgreSQL や Docker は不要です。
+リポジトリルートの `.env.local` を使用します。Dahlia Server は既定で `DAHLIA_DATABASE_TYPE=sqlite` と
+`DAHLIA_DATABASE_URL=file:.data/dahlia-auth.sqlite` を使うため、`pnpm dev` に PostgreSQL や Docker は不要です。
+database の選択は AI Gateway の `OPENAI_API_KEY`、`OPENAI_BASE_URL` とは独立しています。
 
 ### プロジェクト構成
 

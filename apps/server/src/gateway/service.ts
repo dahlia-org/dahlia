@@ -2,6 +2,8 @@ import type { AuthStore } from "../auth/store";
 import type { AppConfig } from "../config";
 import { sendOpenAIResponses, type GatewayFetch } from "./adapters";
 
+const DISABLE_UPSTREAM_PAYLOAD_LOGGING = true;
+
 export class GatewayRequestError extends Error {
   constructor(
     message: string,
@@ -67,7 +69,7 @@ export class GatewayService {
         signal: request.signal,
       },
       this.transport,
-      this.config.runtime === "cloudflare",
+      DISABLE_UPSTREAM_PAYLOAD_LOGGING,
     );
     return proxyUpstreamResponse(upstream);
   }

@@ -10,20 +10,18 @@ import {
 import { createPostgresAuthStore } from "../src/auth/store";
 import { requiredGatewayScope } from "../src/app";
 import type { AppConfig } from "../src/config";
-import type { Database } from "../src/db/client";
+import type { PostgresDatabase } from "../src/db/client";
 
 const config: AppConfig = {
-  runtime: "custom",
   authProvider: "accounts",
   authHeader: "X-Forwarded-Email",
-  authDatabase: "postgres",
-  authDatabaseUrl: "postgresql://unused",
+  databaseType: "postgres",
+  databaseUrl: "postgresql://unused",
   baseUrl: "https://new.dahlia.example",
   googleClientId: "google-client",
   googleClientSecret: "google-secret",
   betterAuthSecret: "unused-but-long-enough-for-this-test",
   oauthRedirectUris: ["http://127.0.0.1:1455/oauth/callback"],
-  trustedProxyCidrs: [],
   maxRequestBytes: 1024,
 };
 
@@ -49,12 +47,12 @@ describe("fixed OAuth client policy", () => {
           }),
         })),
       })),
-      query: {
-        oauthResource: {
-          findFirst: vi.fn(async () => ({ id: "resource-id" })),
-        },
-      },
-    } as unknown as Database;
+      select: vi.fn(() => ({
+        from: vi.fn(() => ({
+          where: vi.fn(() => ({ limit: vi.fn(async () => [{ id: "resource-id" }]) })),
+        })),
+      })),
+    } as unknown as PostgresDatabase;
 
     await createPostgresAuthStore(db).seedDahliaClient(config);
 

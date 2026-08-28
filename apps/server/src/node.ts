@@ -1,24 +1,21 @@
-import { getConnInfo } from "@hono/node-server/conninfo";
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
-import type { Context } from "hono";
 import { createServer as createHttp2Server } from "node:http2";
 import type { Socket } from "node:net";
 
 import { createApp } from "./app";
 import { initializeDahliaAuth } from "./auth/better-auth";
-import { createNodeAuthStore } from "./auth/node-store";
+import { createNodeApplicationStore } from "./auth/node-store";
 import { loadConfig } from "./config";
 
 const config = loadConfig(process.env);
-const authStore = createNodeAuthStore(config);
-const auth = config.authProvider === "accounts" ? await initializeDahliaAuth(config, authStore) : undefined;
+const applicationStore = createNodeApplicationStore(config);
+const auth = config.authProvider === "accounts" ? await initializeDahliaAuth(config, applicationStore) : undefined;
 
 const app = createApp({
   config,
   auth,
-  authStore,
-  remoteAddress: (context) => getConnInfo(context as Context).remote.address,
+  authStore: applicationStore,
 });
 
 app.use("*", serveStatic({ root: "./dist/client" }));
@@ -50,7 +47,7 @@ async function shutdown(): Promise<void> {
   deadline.unref();
   await closed;
   clearTimeout(deadline);
-  await authStore?.close?.();
+  await applicationStore.close?.();
 }
 
 function beginShutdown(): void {
