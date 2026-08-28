@@ -39,11 +39,12 @@ struct CodexChatView: View {
                         meetingNamesByID: session.meetingNamesByID,
                         hasMore: coordinator.historyCursor != nil,
                         isLoading: coordinator.isLoadingHistory,
+                        activityForThread: coordinator.activity(for:),
                         onNewChat: startNewChat,
                         onOpenThread: openHistoryThread,
                         onLoadMore: loadMoreHistory
                     )
-                } else if session.messages.isEmpty, !session.showsStandaloneThinking {
+                } else if showsEmptyState {
                     CodexChatEmptyStateView(
                         recentThreads: Array(coordinator.history.prefix(3)),
                         meetingNamesByID: session.meetingNamesByID,
@@ -54,6 +55,7 @@ struct CodexChatView: View {
                             ? CodexChatMeetingReviewShortcut.title
                             : nil,
                         isMeetingReviewShortcutEnabled: session.canSendMeetingReviewShortcut,
+                        activityForThread: coordinator.activity(for:),
                         onReviewMeeting: session.sendMeetingReviewShortcut,
                         onOpenThread: openHistoryThread,
                         onShowAll: showHistory
@@ -72,58 +74,15 @@ struct CodexChatView: View {
                         message: errorMessage,
                         onRetry: session.hasRetryableSubmission ? session.retry : retryConnection
                     )
-                } else if let historyError = coordinator.historyError {
+                } else if let historyError = coordinator.historyError, showsHistory || showsEmptyState {
                     CodexChatErrorView(
                         message: historyError,
                         onRetry: retryHistory
                     )
                 }
 
-                if let noticeMessage = session.noticeMessage {
-                    Label(noticeMessage, systemImage: "info.circle.fill")
-                        .font(.body)
-                        .foregroundStyle(DahliaDesign.secondaryTextColor)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, CodexChatDesign.contentHorizontalPadding)
-                        .padding(.vertical, 6)
-                }
-
-                if let request = session.pendingUserInput {
-                    CodexChatUserInputView(
-                        request: request,
-                        isEnabled: session.respondingUserInputID == nil,
-                        onSubmit: { answer in
-                            session.respondToUserInput(id: request.id, answer: answer)
-                        },
-                        onStop: session.stop
-                    )
-                    .padding(.horizontal, CodexChatDesign.composerHorizontalPadding)
-                    .padding(.bottom, CodexChatDesign.composerBottomPadding)
-                } else if let pendingApproval = session.pendingApproval {
-                    CodexChatApprovalView(
-                        request: pendingApproval,
-                        isDecisionEnabled: session.canDecidePendingApproval,
-                        onDecide: session.respondToApproval
-                    )
-                    .padding(.horizontal, CodexChatDesign.composerHorizontalPadding)
-                    .padding(.bottom, CodexChatDesign.composerBottomPadding)
-                } else {
-                    if session.liveModeEnabled {
-                        CodexChatLiveModeStatusView(
-                            isShortcutEnabled: session.canSendLiveModeShortcut,
-                            onDisable: session.disableLiveMode,
-                            onSubmit: session.sendLiveModeShortcut
-                        )
-                        .padding(.horizontal, CodexChatDesign.liveModeStatusOuterHorizontalPadding)
-                        .padding(.bottom, CodexChatDesign.liveModeStatusBottomPadding)
-                    }
-
-                    CodexChatComposer(
-                        session: session,
-                        configurationPresentation: configurationPresentation
-                    )
-                    .padding(.horizontal, CodexChatDesign.composerHorizontalPadding)
-                    .padding(.bottom, CodexChatDesign.composerBottomPadding)
+                if !showsHistory {
+                    conversationControls
                 }
             }
             .frame(maxWidth: contentMaxWidth ?? .infinity)
@@ -140,6 +99,64 @@ struct CodexChatView: View {
         .onChange(of: isMeetingCatalogLoaded) {
             updateMeetingCatalog()
         }
+        .onChange(of: session.didStartBackendThread) { _, didStartBackendThread in
+            guard showsHistory, didStartBackendThread else { return }
+            Task { await coordinator.refreshHistory() }
+        }
+    }
+
+    @ViewBuilder
+    private var conversationControls: some View {
+        if let noticeMessage = session.noticeMessage {
+            Label(noticeMessage, systemImage: "info.circle.fill")
+                .font(.body)
+                .foregroundStyle(DahliaDesign.secondaryTextColor)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, CodexChatDesign.contentHorizontalPadding)
+                .padding(.vertical, 6)
+        }
+
+        if let request = session.pendingUserInput {
+            CodexChatUserInputView(
+                request: request,
+                isEnabled: session.respondingUserInputID == nil,
+                onSubmit: { answer in
+                    session.respondToUserInput(id: request.id, answer: answer)
+                },
+                onStop: session.stop
+            )
+            .padding(.horizontal, CodexChatDesign.composerHorizontalPadding)
+            .padding(.bottom, CodexChatDesign.composerBottomPadding)
+        } else if let pendingApproval = session.pendingApproval {
+            CodexChatApprovalView(
+                request: pendingApproval,
+                isDecisionEnabled: session.canDecidePendingApproval,
+                onDecide: session.respondToApproval
+            )
+            .padding(.horizontal, CodexChatDesign.composerHorizontalPadding)
+            .padding(.bottom, CodexChatDesign.composerBottomPadding)
+        } else {
+            if session.liveModeEnabled {
+                CodexChatLiveModeStatusView(
+                    isShortcutEnabled: session.canSendLiveModeShortcut,
+                    onDisable: session.disableLiveMode,
+                    onSubmit: session.sendLiveModeShortcut
+                )
+                .padding(.horizontal, CodexChatDesign.liveModeStatusOuterHorizontalPadding)
+                .padding(.bottom, CodexChatDesign.liveModeStatusBottomPadding)
+            }
+
+            CodexChatComposer(
+                session: session,
+                configurationPresentation: configurationPresentation
+            )
+            .padding(.horizontal, CodexChatDesign.composerHorizontalPadding)
+            .padding(.bottom, CodexChatDesign.composerBottomPadding)
+        }
+    }
+
+    private var showsEmptyState: Bool {
+        session.messages.isEmpty && !session.showsStandaloneThinking
     }
 
     private func prepare() async {

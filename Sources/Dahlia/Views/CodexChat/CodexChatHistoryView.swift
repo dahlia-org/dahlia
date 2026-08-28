@@ -5,6 +5,7 @@ struct CodexChatHistoryView: View {
     let meetingNamesByID: [UUID: String]
     let hasMore: Bool
     let isLoading: Bool
+    let activityForThread: (String) -> CodexChatThreadActivity?
     let onNewChat: () -> Void
     let onOpenThread: (CodexChatThreadSummary) -> Void
     let onLoadMore: () -> Void
@@ -29,9 +30,9 @@ struct CodexChatHistoryView: View {
                     } label: {
                         CodexChatThreadRow(
                             thread: thread,
-                            meetingNamesByID: meetingNamesByID
+                            meetingNamesByID: meetingNamesByID,
+                            activity: activityForThread(thread.id)
                         )
-                        .padding(.vertical, 9)
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(DahliaDesign.secondaryTextColor)

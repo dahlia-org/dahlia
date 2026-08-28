@@ -1124,6 +1124,8 @@
 "This request asks for permissions outside the allowed workspace and cannot be approved." = "This request asks for permissions outside the allowed workspace and cannot be approved.";
 "Open Model Provider Settings" = "Open Model Provider Settings";
 "Loading models…" = "Loading models…";
+"Chat is running" = "Chat is running";
+"Waiting for your response or approval" = "Waiting for your response or approval";
 "This chat is no longer available." = "This chat is no longer available.";
 "Resize" = "Resize";
 "Show all chats" = "Show all";

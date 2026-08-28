@@ -8,6 +8,7 @@ final class CodexChatSessionModel: Identifiable {
     let id: CodexChatSessionID
     let vaultID: UUID?
     private(set) var backendThreadID: String?
+    private(set) var didStartBackendThread = false
     private(set) var title: String
     private(set) var messages: [CodexChatMessage]
     var draft = "" {
@@ -101,6 +102,7 @@ final class CodexChatSessionModel: Identifiable {
     @ObservationIgnored private var failedSubmission: CodexChatFailedSubmission?
     @ObservationIgnored private var usesLiveModePlaceholderTitle = false
     @ObservationIgnored private var liveModeChangeHandler: (@MainActor (Bool) -> Void)?
+    @ObservationIgnored private var threadDidStartHandler: (@MainActor () -> Void)?
     @ObservationIgnored private var generationCompletionHandler: (@MainActor () -> Void)?
     @ObservationIgnored private var syncedApprovalMethod: CodexChatApprovalMethod?
     @ObservationIgnored private var approvalMethodUpdateTask: Task<Void, Never>?
@@ -463,6 +465,10 @@ final class CodexChatSessionModel: Identifiable {
 
     func setLiveModeChangeHandler(_ handler: @escaping @MainActor (Bool) -> Void) {
         liveModeChangeHandler = handler
+    }
+
+    func setThreadDidStartHandler(_ handler: @escaping @MainActor () -> Void) {
+        threadDidStartHandler = handler
     }
 
     func setGenerationCompletionHandler(_ handler: @escaping @MainActor () -> Void) {
@@ -1088,6 +1094,8 @@ extension CodexChatSessionModel {
         await service.setThreadName(threadID: thread.id, name: threadTitle)
         usesLiveModePlaceholderTitle = liveTranscript != nil
         try ensureSubmissionCanContinue(submissionID, liveTranscript: liveTranscript)
+        didStartBackendThread = true
+        threadDidStartHandler?()
         return thread.id
     }
 

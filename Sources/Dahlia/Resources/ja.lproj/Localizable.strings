@@ -1124,6 +1124,8 @@
 "This request asks for permissions outside the allowed workspace and cannot be approved." = "許可されたワークスペース外の権限を求めているため、この要求は許可できません。";
 "Open Model Provider Settings" = "モデルプロバイダー設定を開く";
 "Loading models…" = "モデルを読み込み中…";
+"Chat is running" = "チャットを実行中";
+"Waiting for your response or approval" = "回答または承認を待っています";
 "This chat is no longer available." = "このチャットは利用できなくなりました。";
 "Resize" = "サイズを変更";
 "Show all chats" = "すべて表示";

@@ -3009,6 +3009,11 @@ enum L10n { // swiftlint:disable:this type_body_length
 
     static var openAISettings: String { String(localized: "Open Model Provider Settings", bundle: bundle) }
     static var chatModelLoading: String { String(localized: "Loading models…", bundle: bundle) }
+    static var chatThreadRunning: String { String(localized: "Chat is running", bundle: bundle) }
+    static var chatThreadWaitingForUser: String {
+        String(localized: "Waiting for your response or approval", bundle: bundle)
+    }
+
     static var chatWindowUnavailable: String { String(localized: "This chat is no longer available.", bundle: bundle) }
     static var resize: String { String(localized: "Resize", bundle: bundle) }
     static var chatShowAll: String { String(localized: "Show all chats", bundle: bundle) }
