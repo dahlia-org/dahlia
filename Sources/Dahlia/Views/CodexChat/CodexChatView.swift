@@ -14,6 +14,7 @@ struct CodexChatView: View {
     let onPopOut: (() -> Void)?
     let reservesSidebarToggle: Bool
     let reservesWindowControls: Bool
+    let headerLeadingInset: CGFloat
     let contentMaxWidth: CGFloat?
 
     var body: some View {
@@ -28,7 +29,8 @@ struct CodexChatView: View {
                 onShowFullScreen: onShowFullScreen,
                 onPopOut: onPopOut,
                 reservesSidebarToggle: reservesSidebarToggle,
-                reservesWindowControls: reservesWindowControls
+                reservesWindowControls: reservesWindowControls,
+                leadingInset: headerLeadingInset
             )
             .zIndex(1)
 

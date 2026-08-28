@@ -110,6 +110,7 @@ struct ContentView: View {
                                     showsHistory: $isShowingChatHistory,
                                     showsConfiguration: $isShowingChatConfiguration,
                                     isFullScreen: true,
+                                    headerLeadingInset: isSidebarVisible ? 0 : mainWindowNavigation.sidebarWidth,
                                     onShowFullScreen: nil,
                                     onPopOut: popOutDockedChat,
                                     onOpenDetachedSession: openDetachedChat
@@ -134,10 +135,11 @@ struct ContentView: View {
             .layoutPriority(1)
             .overlay(alignment: .top) {
                 MainWorkspaceHeader(
-                    isVisible: !isShowingSettings && !isShowingFullScreenChat,
+                    isVisible: !isShowingSettings,
                     isSidebarVisible: isSidebarVisible,
                     canGoBack: canGoBack,
                     canGoForward: canGoForward,
+                    allowsWindowDragging: !isShowingFullScreenChat,
                     onToggleSidebar: toggleSidebar,
                     onSearch: showSearch,
                     onGoBack: goBack,
@@ -377,6 +379,7 @@ private extension ContentView {
     private func restoreFullScreenChatPresentation() {
         isSidebarVisible = true
         chatCoordinator.hideDocked()
+        sidebarViewModel.clearMeetingSelection()
     }
 
     private func popOutDockedChat() {
@@ -394,9 +397,11 @@ private extension ContentView {
     }
 
     private func openSearchMeeting(_ id: UUID) {
+        let wasShowingFullScreenChat = isShowingFullScreenChat
         mainWindowNavigation.showMeetings()
         isShowingUnprocessedRecordings = false
         sidebarViewModel.selectMeeting(id)
+        mainWindowNavigation.recordMeetingActivationFromChat(id, isShowingChat: wasShowingFullScreenChat)
     }
 
     private func openSearchScreenshot(_ result: ScreenshotSearchResult) {

@@ -5,13 +5,18 @@ struct MainWorkspaceHeader: View {
     let isSidebarVisible: Bool
     let canGoBack: Bool
     let canGoForward: Bool
+    let allowsWindowDragging: Bool
     let onToggleSidebar: () -> Void
     let onSearch: () -> Void
     let onGoBack: () -> Void
     let onGoForward: () -> Void
 
     var body: some View {
-        DahliaWindowHeader(reservesWindowControls: true, backgroundColor: .clear) {
+        DahliaWindowHeader(
+            reservesWindowControls: true,
+            allowsWindowDragging: allowsWindowDragging,
+            backgroundColor: .clear
+        ) {
             if isVisible {
                 DahliaWindowHeaderIconButton(
                     label: sidebarToggleLabel,
