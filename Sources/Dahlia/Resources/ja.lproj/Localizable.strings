@@ -1168,6 +1168,8 @@
 "Another Project operation is already running for this Vault." = "この Vault では別の Project 操作を実行中です。";
 "The agent can read Meeting content and customer intelligence, including names and email addresses, from the selected Vault. Write access also allows creating, updating, and deleting customer intelligence, reorganizing Projects and meeting assignments, and replacing stored meeting summaries." = "Agent は選択した Vault にあるミーティングの内容と、氏名・メールアドレスを含む顧客情報を読み取れます。書き込みを許可すると、顧客情報の作成・更新・削除、Project とミーティング所属の整理、保存済みミーティング要約の置換も可能になります。";
 "Copy Command" = "コマンドをコピー";
+"Copy meeting_id" = "meeting_idをコピー";
+"Copies meeting_id to the clipboard" = "meeting_idをクリップボードにコピーします";
 "Copy Remove Command" = "削除コマンドをコピー";
 "Copied" = "コピーしました";
 "Codex CLI" = "Codex CLI";

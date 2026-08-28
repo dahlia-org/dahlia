@@ -3,6 +3,7 @@ import SwiftUI
 /// ミーティング詳細のタイトル。クリックでインライン編集できる。
 private struct MeetingNameHeader: View {
     let title: String
+    let meetingID: UUID?
     @Binding var isEditing: Bool
     @Binding var editingName: String
     @FocusState.Binding var isFocused: Bool
@@ -10,8 +11,10 @@ private struct MeetingNameHeader: View {
     let onCommit: () -> Void
     let onCancel: () -> Void
     let onEditorTap: () -> Void
-    @State private var isHovered = false
-    @FocusState private var isTitleButtonFocused: Bool
+    @State private var isNameHovered = false
+    @State private var isCopyHovered = false
+    @State private var copyCount = 0
+    @FocusState private var isNameFocused: Bool
 
     private var displayName: String {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -43,26 +46,47 @@ private struct MeetingNameHeader: View {
                         isFocused = true
                     }
             } else {
-                Button(action: onBeginEditing) {
-                    HStack(spacing: 6) {
-                        Text(displayName)
-                            .font(.title)
-                            .foregroundStyle(DahliaDesign.primaryTextColor)
-                            .lineLimit(2)
-                        Image(systemName: "pencil")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(DahliaDesign.optionalTextColor)
-                            .opacity(isHovered || isTitleButtonFocused ? 1 : 0)
+                HStack(spacing: 4) {
+                    Button(action: onBeginEditing) {
+                        HStack(spacing: 6) {
+                            Text(displayName)
+                                .font(.title)
+                                .foregroundStyle(DahliaDesign.primaryTextColor)
+                                .lineLimit(2)
+                            Image(systemName: "pencil")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(DahliaDesign.optionalTextColor)
+                                .opacity(isNameHovered || isNameFocused ? 1 : 0)
+                        }
+                        .contentShape(Rectangle())
                     }
-                    .contentShape(Rectangle())
+                    .buttonStyle(.plain)
+                    .focusable()
+                    .focused($isNameFocused)
+                    .onHover { hovering in
+                        isNameHovered = hovering
+                    }
+                    .help(L10n.rename)
+
+                    if meetingID != nil {
+                        Button(action: copyMeetingID) {
+                            Label(L10n.copyMeetingID, systemImage: "square.on.square")
+                                .labelStyle(.iconOnly)
+                                .symbolEffect(.bounce, options: .speed(1.5), value: copyCount)
+                                .frame(width: 24, height: 24)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(DahliaDesign.optionalTextColor)
+                        .background(
+                            isCopyHovered ? DahliaDesign.contentHighlightColor : .clear,
+                            in: .rect(cornerRadius: DahliaDesign.Highlight.regularCornerRadius)
+                        )
+                        .onHover { isCopyHovered = $0 }
+                        .dahliaHoverHelp(label: L10n.copyMeetingID)
+                        .accessibilityHint(Text(verbatim: L10n.copyMeetingIDHint))
+                    }
                 }
-                .buttonStyle(.plain)
-                .focusable()
-                .focused($isTitleButtonFocused)
-                .onHover { hovering in
-                    isHovered = hovering
-                }
-                .help(L10n.rename)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -70,6 +94,13 @@ private struct MeetingNameHeader: View {
             isEditing = false
             editingName = newTitle
         }
+    }
+
+    private func copyMeetingID() {
+        guard let meetingID else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(meetingID.uuidString, forType: .string)
+        copyCount += 1
     }
 }
 
@@ -94,6 +125,7 @@ struct MeetingDetailHeader: View {
             HStack(spacing: 16) {
                 MeetingNameHeader(
                     title: title,
+                    meetingID: viewModel.currentMeetingId,
                     isEditing: $isEditing,
                     editingName: $editingName,
                     isFocused: $isFocused,
