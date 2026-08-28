@@ -423,7 +423,7 @@ publish_github_release() {
         "${SPARKLE_RELEASE_DIR}/${RELEASE_NOTE_JA_NAME}" \
         "${SPARKLE_RELEASE_DIR}/${RELEASE_NOTE_EN_NAME}" \
         --title "${APP_NAME} ${MARKETING_VERSION}" \
-        --notes-file "$NOTES_FILE_JA" \
+        --notes-file "$NOTES_FILE_EN" \
         "${RELEASE_TARGET_ARGS[@]}"
 }
 

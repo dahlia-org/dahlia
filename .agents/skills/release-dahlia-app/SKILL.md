@@ -45,6 +45,6 @@ Show both note files and the target version to the user. Publishing creates exte
   --notes-file-en .build/release-notes/release-note-en.md
 ```
 
-The script performs deterministic validation and publishing only. It uploads the notes as `release-note-ja.md` and `release-note-en.md`; Sparkle selects `ja` or `en` from the user's app language preferences.
+The script performs deterministic validation and publishing only. The GitHub Release body uses the English notes. It also uploads both notes as `release-note-ja.md` and `release-note-en.md`; Sparkle selects `ja` or `en` from the user's app language preferences.
 
 After completion, report the GitHub Release URL and the exact validation performed. If credentials or permissions block notarization or publishing, stop and provide the manual command without weakening validation.
