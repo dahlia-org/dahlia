@@ -1,6 +1,6 @@
 import type { AuthStore } from "../auth/store";
 import type { AppConfig } from "../config";
-import { listDatabricksModels, sendOpenAIResponses, type GatewayFetch } from "./adapters";
+import { listDatabricksModelServices, sendOpenAIResponses, type GatewayFetch } from "./adapters";
 import { MODEL_ALIAS_PATTERN } from "./model-alias";
 
 interface DatabricksModel {
@@ -125,35 +125,52 @@ export class GatewayService {
   private async databricksModels(request: Request): Promise<DatabricksModel[]> {
     const provider = this.config.provider;
     if (provider?.backend !== "databricks") return [];
-    const response = await listDatabricksModels(
-      provider,
-      forwardedDatabricksAuthorization(request),
-      AbortSignal.any([request.signal, AbortSignal.timeout(DATABRICKS_MODEL_TIMEOUT_MS)]),
-      this.transport,
-    ).catch(() => {
-      throw new GatewayRequestError("Databricks model list is unavailable", 502, "provider_models_unavailable");
-    });
-    if (!response.ok) {
-      throw new GatewayRequestError("Databricks model list is unavailable", 502, "provider_models_unavailable");
-    }
-    const body: unknown = await response.json().catch(() => undefined);
-    if (!body || typeof body !== "object" || !("data" in body) || !Array.isArray(body.data)) {
-      throw new GatewayRequestError("Databricks model list is invalid", 502, "provider_models_invalid");
-    }
-    return body.data.map((entry: unknown) => {
-      if (!entry || typeof entry !== "object" || !("id" in entry) || typeof entry.id !== "string" || !entry.id.trim()) {
+    const authorization = forwardedDatabricksAuthorization(request);
+    const signal = AbortSignal.any([request.signal, AbortSignal.timeout(DATABRICKS_MODEL_TIMEOUT_MS)]);
+    const models: DatabricksModel[] = [];
+    const pageTokens = new Set<string>();
+    let pageToken: string | undefined;
+    do {
+      const response = await listDatabricksModelServices(
+        provider,
+        authorization,
+        signal,
+        this.transport,
+        pageToken,
+      ).catch(() => {
+        throw new GatewayRequestError("Databricks model list is unavailable", 502, "provider_models_unavailable");
+      });
+      if (!response.ok) {
+        throw new GatewayRequestError("Databricks model list is unavailable", 502, "provider_models_unavailable");
+      }
+      const body: unknown = await response.json().catch(() => undefined);
+      if (!body || typeof body !== "object" || !("model_services" in body) || !Array.isArray(body.model_services)) {
         throw new GatewayRequestError("Databricks model list is invalid", 502, "provider_models_invalid");
       }
-      const id = entry.id.trim();
-      if (id.length > 255 || !MODEL_ALIAS_PATTERN.test(databricksModelAlias(id))) {
+      const modelServices = body.model_services as unknown[];
+      for (const entry of modelServices) {
+        if (!entry || typeof entry !== "object" || !("name" in entry) || typeof entry.name !== "string") {
+          throw new GatewayRequestError("Databricks model list is invalid", 502, "provider_models_invalid");
+        }
+        const resourceName = entry.name.trim();
+        const prefix = "model-services/";
+        const id = resourceName.startsWith(prefix) ? resourceName.slice(prefix.length) : "";
+        if (!id.startsWith("system.ai.") || id.length > 255 || !MODEL_ALIAS_PATTERN.test(databricksModelAlias(id))) {
+          throw new GatewayRequestError("Databricks model list is invalid", 502, "provider_models_invalid");
+        }
+        models.push({ id, displayName: null });
+      }
+      const nextPageToken: unknown = "next_page_token" in body ? body.next_page_token : undefined;
+      if (nextPageToken !== undefined && typeof nextPageToken !== "string") {
         throw new GatewayRequestError("Databricks model list is invalid", 502, "provider_models_invalid");
       }
-      const displayName = "display_name" in entry ? entry.display_name : undefined;
-      if (displayName !== undefined && displayName !== null && typeof displayName !== "string") {
+      pageToken = nextPageToken?.trim() || undefined;
+      if (pageToken && pageTokens.has(pageToken)) {
         throw new GatewayRequestError("Databricks model list is invalid", 502, "provider_models_invalid");
       }
-      return { id, displayName: displayName?.trim().slice(0, 100) || null };
-    });
+      if (pageToken) pageTokens.add(pageToken);
+    } while (pageToken);
+    return models;
   }
 }
 

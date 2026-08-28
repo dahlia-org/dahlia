@@ -40,14 +40,18 @@ export function sendOpenAIResponses(
   });
 }
 
-export function listDatabricksModels(
+export function listDatabricksModelServices(
   provider: Extract<ProviderConfig, { backend: "databricks" }>,
   authorization: string,
   signal?: AbortSignal,
   transport: GatewayFetch = fetch,
+  pageToken?: string,
 ): Promise<Response> {
-  const endpoint = new URL(provider.baseUrl);
-  endpoint.pathname = `${endpoint.pathname.replace(/\/$/, "")}/models`;
+  const endpoint = new URL("/api/2.1/unity-catalog/model-services", provider.baseUrl);
+  endpoint.searchParams.set("parent", "schemas/system.ai");
+  endpoint.searchParams.set("view", "BASIC");
+  endpoint.searchParams.set("page_size", "100");
+  if (pageToken) endpoint.searchParams.set("page_token", pageToken);
   return transport(endpoint, {
     cache: "no-store",
     headers: {

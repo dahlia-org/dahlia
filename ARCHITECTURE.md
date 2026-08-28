@@ -127,7 +127,7 @@ Lakebase は公式 `@databricks/lakebase` connector で OAuth credential を更�
 database 選択は認証および AI backend と独立する。`DAHLIA_AI_BACKEND` で Databricks、Cloudflare、OpenAI を選択し、Databricks は Apps proxy の `X-Forwarded-Access-Token`、その他は `OPENAI_API_KEY` と必要に応じて `OPENAI_BASE_URL` を使う。
 Databricks Apps の header identity は sessionless だが、Model Alias と administrator の正本として Lakebase を使用する。Responses request は上限内で検証して upstream model を
 変換し、upstream response body は streaming relay する。request と response の content は DB、cache、analytics、application log
-へ保存しない。Databricks backend の管理画面は forwarded user token で workspace の model service 一覧を都度取得し、一覧自体は保存せず、管理者が有効化した Model Alias だけを application database に保存する。
+へ保存しない。Databricks backend の管理画面は forwarded user token と `unity-catalog` scope で Unity Catalog Model Services API の `system.ai` 一覧を全ページ都度取得し、一覧自体は保存せず、管理者が有効化した Model Alias だけを application database に保存する。
 
 ```text
 Dahlia macOS / bundled Codex 0.148.0

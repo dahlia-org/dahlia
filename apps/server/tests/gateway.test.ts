@@ -51,29 +51,33 @@ describe("AI Gateway", () => {
 
   it("merges Databricks models with stored aliases and hides missing aliases", async () => {
     const configured = { ...alias, alias: "gpt-5-6-luna", upstreamModel: "system.ai.gpt-5-6-luna" };
-    const longDisplayName = "Long display name ".repeat(7);
+    const transport = vi.fn(async (input: RequestInfo | URL) => {
+      const pageToken = new URL(String(input)).searchParams.get("page_token");
+      return pageToken
+        ? Response.json({ model_services: [{ name: "model-services/system.ai.long-name" }] })
+        : Response.json({
+            model_services: [
+              { name: "model-services/system.ai.gpt-5-6-luna" },
+              { name: "model-services/system.ai.gpt-5-6-sol" },
+            ],
+            next_page_token: "next-page",
+          });
+    });
     const service = new GatewayService({
       ...config,
       provider: { backend: "databricks", baseUrl: "https://workspace.example/ai-gateway/mlflow/v1" },
     }, {
       ...registry,
       listModelAliases: () => Promise.resolve([configured, alias]),
-    }, async () => Response.json({
-      object: "list",
-      data: [
-        { id: "system.ai.gpt-5-6-luna", display_name: "GPT 5.6 Luna" },
-        { id: "catalog.schema.custom-model" },
-        { id: "system.ai.long-name", display_name: longDisplayName },
-      ],
-    }));
+    }, transport);
 
     expect(await service.adminModels(new Request("https://dahlia.example/api/admin/models", {
       headers: { "x-forwarded-access-token": "user-token" },
     }))).toEqual([
       { ...configured, configured: true },
       {
-        alias: "catalog.schema.custom-model",
-        upstreamModel: "catalog.schema.custom-model",
+        alias: "gpt-5-6-sol",
+        upstreamModel: "system.ai.gpt-5-6-sol",
         displayName: null,
         enabled: false,
         configured: false,
@@ -81,11 +85,12 @@ describe("AI Gateway", () => {
       {
         alias: "long-name",
         upstreamModel: "system.ai.long-name",
-        displayName: longDisplayName.slice(0, 100),
+        displayName: null,
         enabled: false,
         configured: false,
       },
     ]);
+    expect(transport).toHaveBeenCalledTimes(2);
   });
 
   it("bounds Databricks model discovery", async () => {
@@ -93,7 +98,7 @@ describe("AI Gateway", () => {
     const timeout = vi.spyOn(AbortSignal, "timeout").mockReturnValue(timeoutSignal);
     const transport = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
       expect(init?.signal?.aborted).toBe(true);
-      return Response.json({ data: [] });
+      return Response.json({ model_services: [] });
     });
     const service = new GatewayService({
       ...config,
@@ -119,10 +124,15 @@ describe("AI Gateway", () => {
 
     await expect(new GatewayService(databricks, registry, async () => new Response(null, { status: 503 }))
       .adminModels(request())).rejects.toMatchObject({ status: 502, code: "provider_models_unavailable" });
-    await expect(new GatewayService(databricks, registry, async () => Response.json({ data: [{ name: "missing-id" }] }))
+    await expect(new GatewayService(databricks, registry, async () => Response.json({ model_services: [{}] }))
       .adminModels(request())).rejects.toMatchObject({ status: 502, code: "provider_models_invalid" });
-    await expect(new GatewayService(databricks, registry, async () => Response.json({ data: [{ id: "catalog.bad$name" }] }))
-      .adminModels(request())).rejects.toMatchObject({ status: 502, code: "provider_models_invalid" });
+    await expect(new GatewayService(databricks, registry, async () => Response.json({
+      model_services: [{ name: "model-services/catalog.schema.model" }],
+    })).adminModels(request())).rejects.toMatchObject({ status: 502, code: "provider_models_invalid" });
+    await expect(new GatewayService(databricks, registry, async () => Response.json({
+      model_services: [],
+      next_page_token: "same-page",
+    })).adminModels(request())).rejects.toMatchObject({ status: 502, code: "provider_models_invalid" });
     await expect(new GatewayService(databricks, registry).adminModels(new Request("https://dahlia.example")))
       .rejects.toMatchObject({ status: 401, code: "databricks_access_token_required" });
   });

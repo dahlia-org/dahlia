@@ -20,6 +20,7 @@ resources:
       source_code_path: ../../..
       user_api_scopes:
         - ai-gateway
+        - unity-catalog
         - files
       config:
         command: ["corepack", "pnpm", "--filter", "@dahlia-ai/server", "start:databricks"]

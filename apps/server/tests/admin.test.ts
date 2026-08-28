@@ -120,9 +120,9 @@ describe("administration", () => {
     });
     const upstream = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
       expect(new Headers(init?.headers).get("authorization")).toBe("Bearer user-token");
-      return Response.json({ data: [
-        { id: "system.ai.gpt-5-6-luna", display_name: "Provider name" },
-        { id: "system.ai.gpt-5-6-sol", display_name: "GPT 5.6 Sol" },
+      return Response.json({ model_services: [
+        { name: "model-services/system.ai.gpt-5-6-luna" },
+        { name: "model-services/system.ai.gpt-5-6-sol" },
       ] });
     });
     const app = createApp({
@@ -141,7 +141,7 @@ describe("administration", () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject([
       { alias: "gpt-5-6-luna", displayName: "GPT 5.6 Luna", enabled: true, configured: true },
-      { alias: "gpt-5-6-sol", displayName: "GPT 5.6 Sol", enabled: false, configured: false },
+      { alias: "gpt-5-6-sol", displayName: null, enabled: false, configured: false },
     ]);
     expect(upstream).toHaveBeenCalledOnce();
   });
