@@ -1749,6 +1749,8 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var currentVault: String { String(localized: "Current Vault", bundle: bundle) }
     static var mcp: String { String(localized: "MCP", bundle: bundle) }
     static var copyCommand: String { String(localized: "Copy Command", bundle: bundle) }
+    static var copyMeetingID: String { String(localized: "Copy meeting_id", bundle: bundle) }
+    static var copyMeetingIDHint: String { String(localized: "Copies meeting_id to the clipboard", bundle: bundle) }
     static var copyRemoveCommand: String { String(localized: "Copy Remove Command", bundle: bundle) }
     static var copied: String { String(localized: "Copied", bundle: bundle) }
     static var codexCLI: String { String(localized: "Codex CLI", bundle: bundle) }

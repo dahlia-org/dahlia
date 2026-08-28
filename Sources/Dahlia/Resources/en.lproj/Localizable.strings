@@ -1168,6 +1168,8 @@
 "Another Project operation is already running for this Vault." = "Another Project operation is already running for this Vault.";
 "The agent can read Meeting content and customer intelligence, including names and email addresses, from the selected Vault. Write access also allows creating, updating, and deleting customer intelligence, reorganizing Projects and meeting assignments, and replacing stored meeting summaries." = "The agent can read Meeting content and customer intelligence, including names and email addresses, from the selected Vault. Write access also allows creating, updating, and deleting customer intelligence, reorganizing Projects and meeting assignments, and replacing stored meeting summaries.";
 "Copy Command" = "Copy Command";
+"Copy meeting_id" = "Copy meeting_id";
+"Copies meeting_id to the clipboard" = "Copies meeting_id to the clipboard";
 "Copy Remove Command" = "Copy Remove Command";
 "Copied" = "Copied";
 "Codex CLI" = "Codex CLI";
