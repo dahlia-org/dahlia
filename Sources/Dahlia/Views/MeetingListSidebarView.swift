@@ -38,9 +38,7 @@ struct MeetingListSidebarView: View {
             set: { selection in
                 renderedMeetingSelection = selection
                 sidebarViewModel.selectedMeetingIds = selection
-                if selection.count == 1, let meetingID = selection.first {
-                    openMeetingFromChatIfNeeded(meetingID)
-                }
+                recordMeetingActivationFromChat(selection)
             }
         )
     }
@@ -343,9 +341,6 @@ struct MeetingListSidebarView: View {
             onCancelRename: cancelRename
         )
         .tag(item.meetingId)
-        .simultaneousGesture(TapGesture().onEnded {
-            openMeetingFromChatIfNeeded(item.meetingId)
-        }, including: isShowingChat ? .all : .none)
         .accessibilityAction(named: Text(L10n.open)) {
             selectMeeting(item.meetingId)
         }
@@ -378,8 +373,6 @@ struct MeetingListSidebarView: View {
             allowsListSelection: !isPinned
                 || mainWindowNavigation.meetingSidebarDisplayMode == .byProject,
             onSelectMeeting: selectMeeting,
-            activatesMeetingOnTap: isShowingChat,
-            onActivateMeeting: openMeetingFromChatIfNeeded,
             onOpenProject: onOpenProject,
             onTogglePin: { mainWindowNavigation.toggleProjectPin($0, vaultId: sidebarViewModel.currentVault?.id) },
             onCreateMeeting: recordingCoordinator.createDraftMeeting,
@@ -414,20 +407,15 @@ struct MeetingListSidebarView: View {
         sidebarViewModel.updateMeetingSearchCriteria(MeetingSearchCriteria())
     }
 
-    private func openMeetingFromChatIfNeeded(_ meetingID: UUID) {
-        guard isShowingChat else { return }
-        Task { @MainActor in
-            guard isShowingChat,
-                  editingMeetingId != meetingID,
-                  sidebarViewModel.selectedMeetingIds == [meetingID] else { return }
-            mainWindowNavigation.recordNavigation(to: .meeting(meetingID))
-        }
-    }
-
     private func selectMeeting(_ meetingID: UUID) {
         guard editingMeetingId != meetingID else { return }
         sidebarViewModel.selectMeeting(meetingID)
-        openMeetingFromChatIfNeeded(meetingID)
+        recordMeetingActivationFromChat([meetingID])
+    }
+
+    private func recordMeetingActivationFromChat(_ selection: Set<UUID>) {
+        guard isShowingChat, selection.count == 1, let meetingID = selection.first else { return }
+        mainWindowNavigation.recordNavigation(to: .meeting(meetingID))
     }
 
     @ViewBuilder

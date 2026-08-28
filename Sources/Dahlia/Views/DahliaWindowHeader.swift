@@ -40,6 +40,7 @@ struct DahliaWindowHeader<Content: View>: View {
                     .allowsWindowActivationEvents(true)
             } else {
                 backgroundColor
+                    .allowsHitTesting(false)
             }
         }
         .ignoresSafeArea(.container, edges: .top)

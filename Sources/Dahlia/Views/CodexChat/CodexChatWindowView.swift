@@ -33,6 +33,7 @@ struct CodexChatWindowView: View {
                     onPopOut: nil,
                     reservesSidebarToggle: false,
                     reservesWindowControls: true,
+                    headerLeadingInset: 0,
                     contentMaxWidth: nil
                 )
             } else {

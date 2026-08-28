@@ -11,9 +11,16 @@ struct CodexChatHeader: View {
     let onPopOut: (() -> Void)?
     let reservesSidebarToggle: Bool
     let reservesWindowControls: Bool
+    let leadingInset: CGFloat
 
     var body: some View {
         DahliaWindowHeader(reservesWindowControls: reservesWindowControls) {
+            if leadingInset > 0 {
+                Color.clear
+                    .frame(width: leadingInset - DahliaDesign.windowHeaderGroupSpacing)
+                    .accessibilityHidden(true)
+            }
+
             if showsHistory {
                 DahliaWindowHeaderIconButton(
                     label: L10n.back,

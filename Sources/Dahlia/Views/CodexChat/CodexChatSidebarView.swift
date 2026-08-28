@@ -6,6 +6,7 @@ struct CodexChatSidebarView: View {
     @Binding var showsHistory: Bool
     @Binding var showsConfiguration: Bool
     let isFullScreen: Bool
+    var headerLeadingInset: CGFloat = 0
     let onShowFullScreen: (() -> Void)?
     let onPopOut: () -> Void
     let onOpenDetachedSession: (CodexChatSessionID) -> Void
@@ -25,6 +26,7 @@ struct CodexChatSidebarView: View {
             onPopOut: onPopOut,
             reservesSidebarToggle: !isFullScreen,
             reservesWindowControls: false,
+            headerLeadingInset: headerLeadingInset,
             contentMaxWidth: isFullScreen ? DahliaDesign.mainContentMaxWidth : nil
         )
         .task(id: sidebarViewModel.currentVault?.id) {
