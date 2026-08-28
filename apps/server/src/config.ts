@@ -1,34 +1,30 @@
 import { z } from "zod";
 
 export type AuthProvider = "accounts" | "header";
-export type AuthDatabaseBackend = "sqlite" | "postgres" | "d1";
-export type DahliaRuntime = "cloudflare" | "databricks" | "custom";
+export type DatabaseType = "sqlite" | "postgres" | "lakebase" | "hyperdrive" | "d1";
+/** @deprecated Use DatabaseType. */
+export type AuthDatabaseBackend = DatabaseType;
 
 export interface ProviderConfig {
   apiKey: string;
   baseUrl: string;
 }
 
-export interface DatabricksDatabaseConfig {
-  clientId: string;
-  clientSecret: string;
-  workspaceUrl: string;
+export interface LakebaseDatabaseConfig {
   database: string;
   endpoint: string;
   host: string;
   port: number;
-  sslMode: "allow" | "prefer" | "require" | "verify-full";
+  sslMode: "disable" | "prefer" | "require";
   username: string;
 }
 
 export interface AppConfig {
-  runtime: DahliaRuntime;
   authProvider: AuthProvider;
   authHeader: string;
-  authDatabase: AuthDatabaseBackend;
-  authDatabaseUrl?: string;
-  databricksDatabase?: DatabricksDatabaseConfig;
-  authSqlitePath?: string;
+  databaseType: DatabaseType;
+  databaseUrl?: string;
+  lakebaseDatabase?: LakebaseDatabaseConfig;
   baseUrl: string;
   adminEmail?: string;
   provider?: ProviderConfig;
@@ -36,25 +32,13 @@ export interface AppConfig {
   googleClientSecret?: string;
   betterAuthSecret?: string;
   oauthRedirectUris: string[];
-  trustedProxyCidrs: string[];
   maxRequestBytes: number;
 }
 
 const authProviderSchema = z.enum(["accounts", "header"]);
-const authDatabaseSchema = z.enum(["sqlite", "postgres", "d1"]);
-const customAuthDatabaseSchema = z.enum(["sqlite", "postgres"]);
-const runtimeSchema = z.enum(["cloudflare", "databricks", "custom"]);
+const databaseTypeSchema = z.enum(["sqlite", "postgres", "lakebase", "hyperdrive", "d1"]);
 const LOCAL_BASE_URL = "http://localhost:5173";
-const LOCAL_AUTH_SQLITE_PATH = ".data/dahlia-auth.sqlite";
-
-const runtimeDefaults = {
-  cloudflare: { authProvider: "accounts", authDatabase: "d1" },
-  databricks: { authProvider: "header", authDatabase: "postgres" },
-  custom: { authProvider: "accounts", authDatabase: "sqlite" },
-} as const satisfies Record<DahliaRuntime, {
-  authProvider: AuthProvider;
-  authDatabase: AuthDatabaseBackend;
-}>;
+const LOCAL_DATABASE_URL = "file:.data/dahlia-auth.sqlite";
 
 function csv(value: string | undefined): string[] {
   return value
@@ -84,28 +68,39 @@ function validateBaseUrl(value: string, name: string): string {
   return url.toString().replace(/\/$/, "");
 }
 
-function fixedRuntimeValue(
-  configured: string | undefined,
-  expected: string,
-  name: string,
-  runtime: Exclude<DahliaRuntime, "custom">,
-): string {
-  if (configured && configured !== expected) {
-    throw new Error(`${name} must be ${expected} when DAHLIA_RUNTIME=${runtime}`);
+function loadDatabaseUrl(env: Record<string, string | undefined>, type: DatabaseType): string | undefined {
+  if (type === "sqlite") {
+    const value = env.DAHLIA_DATABASE_URL?.trim() || LOCAL_DATABASE_URL;
+    if (!value.startsWith("file:")) throw new Error("DAHLIA_DATABASE_URL must use file: for SQLite storage");
+    return value;
   }
-  return expected;
+  if (type !== "postgres") return undefined;
+  const value = required(env, "DAHLIA_DATABASE_URL");
+  let protocol: string;
+  try {
+    protocol = new URL(value).protocol;
+  } catch {
+    throw new Error("DAHLIA_DATABASE_URL must use postgres: or postgresql: for PostgreSQL storage");
+  }
+  if (protocol !== "postgres:" && protocol !== "postgresql:") {
+    throw new Error("DAHLIA_DATABASE_URL must use postgres: or postgresql: for PostgreSQL storage");
+  }
+  return value;
 }
 
-function proxyCidrs(
+function loadLakebaseDatabase(
   env: Record<string, string | undefined>,
-  runtime: DahliaRuntime,
-  authProvider: AuthProvider,
-  baseUrl: string,
-): string[] {
-  const configured = csv(env.DAHLIA_TRUSTED_PROXY_CIDRS);
-  if (configured.length > 0 || runtime !== "custom" || authProvider !== "header") return configured;
-  if (isLocalUrl(new URL(baseUrl))) return ["127.0.0.0/8", "::1/128"];
-  throw new Error("DAHLIA_TRUSTED_PROXY_CIDRS is required for custom header authentication");
+  type: DatabaseType,
+): LakebaseDatabaseConfig | undefined {
+  if (type !== "lakebase") return undefined;
+  return {
+    database: required(env, "PGDATABASE"),
+    endpoint: required(env, "LAKEBASE_ENDPOINT"),
+    host: required(env, "PGHOST"),
+    port: z.coerce.number().int().positive().parse(env.PGPORT ?? "5432"),
+    sslMode: z.enum(["disable", "prefer", "require"]).parse(env.PGSSLMODE?.trim() || "require"),
+    username: env.PGUSER?.trim() || required(env, "DATABRICKS_CLIENT_ID"),
+  };
 }
 
 function providerConfig(env: Record<string, string | undefined>): ProviderConfig | undefined {
@@ -118,24 +113,8 @@ function providerConfig(env: Record<string, string | undefined>): ProviderConfig
 }
 
 export function loadConfig(env: Record<string, string | undefined>): AppConfig {
-  const runtime = runtimeSchema.parse(env.DAHLIA_RUNTIME?.trim() || "custom");
-  const defaults = runtimeDefaults[runtime];
-  const authProvider = runtime === "custom"
-    ? authProviderSchema.parse(env.DAHLIA_AUTH_PROVIDER?.trim() || defaults.authProvider)
-    : authProviderSchema.parse(fixedRuntimeValue(
-        env.DAHLIA_AUTH_PROVIDER?.trim(),
-        defaults.authProvider,
-        "DAHLIA_AUTH_PROVIDER",
-        runtime,
-      ));
-  const authDatabase = runtime === "custom"
-    ? customAuthDatabaseSchema.parse(env.DAHLIA_AUTH_DATABASE?.trim() || defaults.authDatabase)
-    : authDatabaseSchema.parse(fixedRuntimeValue(
-        env.DAHLIA_AUTH_DATABASE?.trim(),
-        defaults.authDatabase,
-        "DAHLIA_AUTH_DATABASE",
-        runtime,
-      ));
+  const authProvider = authProviderSchema.parse(env.DAHLIA_AUTH_PROVIDER?.trim() || "accounts");
+  const databaseType = databaseTypeSchema.parse(env.DAHLIA_DATABASE_TYPE?.trim() || "sqlite");
   const baseUrl = validateBaseUrl(env.DAHLIA_BASE_URL?.trim() || LOCAL_BASE_URL, "DAHLIA_BASE_URL");
   const maxRequestBytes = z.coerce
     .number()
@@ -145,37 +124,19 @@ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
     .parse(env.DAHLIA_MAX_REQUEST_BYTES ?? String(16 * 1024 * 1024));
 
   const config: AppConfig = {
-    runtime,
     authProvider,
-    authDatabase,
     authHeader: env.DAHLIA_AUTH_HEADER?.trim() || "X-Forwarded-Email",
+    databaseType,
+    databaseUrl: loadDatabaseUrl(env, databaseType),
+    lakebaseDatabase: loadLakebaseDatabase(env, databaseType),
     baseUrl,
     adminEmail: env.DAHLIA_ADMIN_EMAIL?.trim()
       ? z.email().parse(env.DAHLIA_ADMIN_EMAIL.trim().toLowerCase())
       : undefined,
     provider: providerConfig(env),
     oauthRedirectUris: csv(env.DAHLIA_OAUTH_REDIRECT_URIS),
-    trustedProxyCidrs: proxyCidrs(env, runtime, authProvider, baseUrl),
     maxRequestBytes,
   };
-
-  if (authDatabase === "sqlite") {
-    config.authSqlitePath = env.DAHLIA_AUTH_SQLITE_PATH?.trim() || LOCAL_AUTH_SQLITE_PATH;
-  } else if (authDatabase === "postgres" && runtime === "databricks") {
-    config.databricksDatabase = {
-      workspaceUrl: validateBaseUrl(required(env, "DATABRICKS_HOST"), "DATABRICKS_HOST"),
-      clientId: required(env, "DATABRICKS_CLIENT_ID"),
-      clientSecret: required(env, "DATABRICKS_CLIENT_SECRET"),
-      database: required(env, "PGDATABASE"),
-      endpoint: required(env, "ENDPOINT_NAME"),
-      host: required(env, "PGHOST"),
-      port: z.coerce.number().int().positive().parse(env.PGPORT ?? "5432"),
-      sslMode: z.enum(["allow", "prefer", "require", "verify-full"]).parse(env.PGSSLMODE?.trim() || "require"),
-      username: required(env, "PGUSER"),
-    };
-  } else if (authDatabase === "postgres") {
-    config.authDatabaseUrl = required(env, "DATABASE_URL");
-  }
 
   if (authProvider === "accounts") {
     config.betterAuthSecret = required(env, "BETTER_AUTH_SECRET");

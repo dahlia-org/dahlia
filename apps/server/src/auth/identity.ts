@@ -1,5 +1,3 @@
-import ipaddr from "ipaddr.js";
-
 import { gatewayResource, type AppConfig } from "../config";
 import { createAccessTokenVerifier, type DahliaAuth } from "./better-auth";
 import type { GatewayScope } from "./scopes";
@@ -19,24 +17,6 @@ export class AuthenticationError extends Error {
   }
 }
 
-export function trustedRemoteAddress(remoteAddress: string | undefined, cidrs: string[]): boolean {
-  if (!remoteAddress) return false;
-  let address: ipaddr.IPv4 | ipaddr.IPv6;
-  try {
-    address = ipaddr.process(remoteAddress);
-  } catch {
-    return false;
-  }
-  return cidrs.some((cidr) => {
-    try {
-      const [range, prefix] = ipaddr.parseCIDR(cidr);
-      return address.kind() === range.kind() && address.match(range, prefix);
-    } catch {
-      return false;
-    }
-  });
-}
-
 export class IdentityService {
   private readonly verifyAccessToken?: ReturnType<typeof createAccessTokenVerifier>;
 
@@ -47,7 +27,7 @@ export class IdentityService {
     this.verifyAccessToken = auth ? createAccessTokenVerifier(auth) : undefined;
   }
 
-  async fromBrowser(request: Request, remoteAddress?: string): Promise<Identity> {
+  async fromBrowser(request: Request): Promise<Identity> {
     if (this.config.authProvider === "accounts") {
       if (!this.auth) throw new AuthenticationError("Authentication is unavailable");
       const session = await this.auth.api.getSession({ headers: request.headers });
@@ -60,16 +40,15 @@ export class IdentityService {
         source: "accounts",
       };
     }
-    return this.fromHeader(request, remoteAddress);
+    return this.fromHeader(request);
   }
 
   async fromGateway(
     request: Request,
     requiredScope: GatewayScope,
-    remoteAddress?: string,
   ): Promise<Identity> {
     if (this.config.authProvider !== "accounts") {
-      return this.fromHeader(request, remoteAddress);
+      return this.fromHeader(request);
     }
     if (!this.verifyAccessToken) throw new AuthenticationError("Authentication is unavailable");
     let claims: Awaited<ReturnType<NonNullable<typeof this.verifyAccessToken>>>;
@@ -96,13 +75,7 @@ export class IdentityService {
     };
   }
 
-  private fromHeader(request: Request, remoteAddress?: string): Identity {
-    if (
-      this.config.trustedProxyCidrs.length > 0
-      && !trustedRemoteAddress(remoteAddress, this.config.trustedProxyCidrs)
-    ) {
-      throw new AuthenticationError("Direct access is not allowed for header authentication");
-    }
+  private fromHeader(request: Request): Identity {
     const email = request.headers.get(this.config.authHeader)?.trim().toLowerCase();
     if (!email) throw new AuthenticationError(`${this.config.authHeader} is missing`);
     return {

@@ -1,6 +1,6 @@
 # Deploy Dahlia Server on Databricks Apps
 
-This target uses the checked-in `DAHLIA_RUNTIME=databricks` preset: Databricks Apps header identity and PostgreSQL/Lakebase. The upstream uses the same OpenAI-compatible contract as every runtime. The Apps proxy authenticates browser and U2M requests before they reach Dahlia Server, so no Better Auth session is created.
+This target configures `DAHLIA_AUTH_PROVIDER=header` and `DAHLIA_DATABASE_TYPE=lakebase` independently. The Apps proxy authenticates browser and U2M requests before they reach Dahlia Server, so no Better Auth session is created.
 
 ```text
 browser / Dahlia Codex with U2M token
@@ -24,7 +24,7 @@ Databricks requires `app.yaml` at the deployment source root. Deploy the reposit
 
 ## 1. Create the app and attach Lakebase
 
-Create a Databricks App and add a [Lakebase Autoscaling database resource](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/lakebase). Databricks injects `PGHOST`, `PGDATABASE`, `PGPORT`, `PGSSLMODE`, and `PGUSER` for the first database resource. Keep `DAHLIA_RUNTIME=databricks` in the checked-in `app.yaml`; it fixes authentication to `header` and the database backend to PostgreSQL. `DAHLIA_AUTH_HEADER` defaults to `X-Forwarded-Email`.
+Create a Databricks App and add a [Lakebase Autoscaling database resource](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/lakebase). Databricks injects `PGHOST`, `PGDATABASE`, `PGPORT`, `PGSSLMODE`, and `PGUSER`. The checked-in `app.yaml` selects header authentication and Lakebase. `DAHLIA_AUTH_HEADER` defaults to `X-Forwarded-Email`.
 
 Header authentication itself is sessionless. Lakebase stores Model Aliases and platform administrators, so model listing, Responses routing, and administrator checks query it without changing the identity boundary. Dahlia uses the injected `PG*` connection values and rotates Lakebase OAuth database credentials through the app service principal.
 
@@ -35,11 +35,11 @@ Add the public origin:
     value: https://<app-host>
 ```
 
-Ensure the database resource key is `postgres`. The checked-in `app.yaml` maps that resource to `ENDPOINT_NAME`; Databricks supplies the remaining `PGHOST`, `PGDATABASE`, `PGPORT`, `PGSSLMODE`, and `PGUSER` variables.
+Ensure the database resource key is `postgres`. The checked-in `app.yaml` maps it to `LAKEBASE_ENDPOINT`; Databricks supplies the remaining `PG*` variables.
 
 ## 2. Configure the upstream provider and administrator
 
-Databricks Apps injects `DATABRICKS_HOST`, `DATABRICKS_CLIENT_ID`, and `DATABRICKS_CLIENT_SECRET`; Dahlia uses them only for Lakebase credential generation. Configure the model endpoint separately.
+The official `@databricks/lakebase` connector uses the Databricks Apps service principal to refresh database OAuth credentials. Configure the model endpoint separately.
 
 Add its API key or token as a Databricks App Secret resource with the resource key `openai_api_key`. Keep the credential in its secret scope; do not put it directly in `app.yaml`. Then reference the resource:
 
@@ -104,6 +104,6 @@ Create an alias in `/admin/models`, then complete a real `POST /api/v1/responses
 
 - Databricks Apps identity applies to `/api/**`; authenticated Dahlia endpoints therefore remain under `/api`.
 - Trust `X-Forwarded-Email` only behind the Databricks Apps proxy. Dahlia ignores `X-Forwarded-User`.
-- For another identity-aware proxy, use `DAHLIA_RUNTIME=custom`, set `DAHLIA_AUTH_PROVIDER=header` and `DAHLIA_AUTH_HEADER` to its verified email header, and optionally restrict `DAHLIA_TRUSTED_PROXY_CIDRS`.
+- For another identity-aware proxy, set `DAHLIA_AUTH_PROVIDER=header` and `DAHLIA_AUTH_HEADER` to its verified email header; strip spoofed headers and block direct Server access at the proxy.
 - `/healthz` is process liveness only. Anonymous external access is not guaranteed.
 - Provider credentials live in Databricks-managed app secrets and environment variables; Dahlia Server does not persist them.

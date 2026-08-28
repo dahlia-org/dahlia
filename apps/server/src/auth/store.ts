@@ -1,12 +1,12 @@
-import type { DatabaseSync } from "node:sqlite";
-
 import type { DBAdapterInstance } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { and, asc, desc, eq, gt, isNull } from "drizzle-orm";
+import { drizzle as drizzleD1 } from "drizzle-orm/d1";
 
 import { gatewayResource, type AppConfig } from "../config";
-import type { Database } from "../db/client";
-import * as authSchema from "../db/auth-schema";
+import type { PostgresDatabase, SQLiteDatabase } from "../db/client";
+import * as postgresSchema from "../db/auth-schema";
+import * as sqliteSchema from "../db/sqlite-schema";
 import { OAUTH_SCOPES } from "./scopes";
 
 export interface DahliaOAuthSession {
@@ -40,7 +40,7 @@ export interface PlatformAdminRecord {
   createdAt: Date;
 }
 
-/** The subset of Cloudflare D1 used by Dahlia Server's SQLite adapter. */
+/** The subset of Cloudflare D1 referenced by the package's public Worker types. */
 export interface D1PreparedStatementLike {
   bind(...values: unknown[]): D1PreparedStatementLike;
   first<T = Record<string, unknown>>(): Promise<T | null>;
@@ -48,13 +48,13 @@ export interface D1PreparedStatementLike {
   run(): Promise<{ meta: { changes: number } }>;
 }
 
-/** A package-owned D1 shape so Node consumers do not need Cloudflare globals. */
+/** Keeps Cloudflare globals out of declarations consumed by Node applications. */
 export interface D1DatabaseLike {
   prepare(query: string): D1PreparedStatementLike;
 }
 
-export interface AuthStore {
-  database: DBAdapterInstance | DatabaseSync | D1DatabaseLike;
+export interface ApplicationStore {
+  database: DBAdapterInstance;
   seedDahliaClient(config: AppConfig): Promise<void>;
   listDahliaSessions(userId: string): Promise<DahliaOAuthSession[]>;
   revokeDahliaSession(userId: string, refreshTokenId: string): Promise<boolean>;
@@ -70,16 +70,32 @@ export interface AuthStore {
   close?(): Promise<void>;
 }
 
-export function createPostgresAuthStore(db: Database): AuthStore {
+/** @deprecated Use ApplicationStore. */
+export type AuthStore = ApplicationStore;
+
+export function createPostgresApplicationStore(db: PostgresDatabase): ApplicationStore {
   return {
-    database: drizzleAdapter(db, { provider: "pg", schema: authSchema }),
+    database: drizzleAdapter(db, { provider: "pg", schema: postgresSchema }),
     async seedDahliaClient(config) {
       const now = new Date();
-      await db
-        .insert(authSchema.oauthClient)
-        .values({
-          id: "oauth-client-dahlia-macos",
-          clientId: "dahlia-macos",
+      await db.insert(postgresSchema.oauthClient).values({
+        id: "oauth-client-dahlia-macos",
+        clientId: "dahlia-macos",
+        name: "Dahlia for macOS",
+        tokenEndpointAuthMethod: "none",
+        applicationType: "native",
+        redirectUris: config.oauthRedirectUris,
+        grantTypes: ["authorization_code", "refresh_token"],
+        responseTypes: ["code"],
+        scopes: OAUTH_SCOPES,
+        skipConsent: true,
+        requirePKCE: true,
+        createdAt: now,
+        updatedAt: now,
+      }).onConflictDoUpdate({
+        target: postgresSchema.oauthClient.clientId,
+        set: {
+          disabled: false,
           name: "Dahlia for macOS",
           tokenEndpointAuthMethod: "none",
           applicationType: "native",
@@ -89,303 +105,225 @@ export function createPostgresAuthStore(db: Database): AuthStore {
           scopes: OAUTH_SCOPES,
           skipConsent: true,
           requirePKCE: true,
-          createdAt: now,
           updatedAt: now,
-        })
-        .onConflictDoUpdate({
-          target: authSchema.oauthClient.clientId,
-          set: {
-            disabled: false,
-            name: "Dahlia for macOS",
-            tokenEndpointAuthMethod: "none",
-            applicationType: "native",
-            redirectUris: config.oauthRedirectUris,
-            grantTypes: ["authorization_code", "refresh_token"],
-            responseTypes: ["code"],
-            scopes: OAUTH_SCOPES,
-            skipConsent: true,
-            requirePKCE: true,
-            updatedAt: now,
-          },
-        });
-
-      const resource = gatewayResource(config);
-      const oauthResource = await db.query.oauthResource.findFirst({
-        columns: { id: true },
-        where: eq(authSchema.oauthResource.identifier, resource),
+        },
       });
+      const resource = gatewayResource(config);
+      const [oauthResource] = await db.select({ id: postgresSchema.oauthResource.id })
+        .from(postgresSchema.oauthResource)
+        .where(eq(postgresSchema.oauthResource.identifier, resource)).limit(1);
       if (!oauthResource) throw new Error("Dahlia AI Gateway OAuth resource was not created");
-      await db
-        .insert(authSchema.oauthClientResource)
-        .values({
-          id: "oauth-client-resource-dahlia-macos",
-          clientId: "dahlia-macos",
-          resourceId: resource,
-          createdAt: now,
-        })
-        .onConflictDoUpdate({
-          target: authSchema.oauthClientResource.id,
-          set: { clientId: "dahlia-macos", resourceId: resource },
-        });
+      await db.insert(postgresSchema.oauthClientResource).values({
+        id: "oauth-client-resource-dahlia-macos",
+        clientId: "dahlia-macos",
+        resourceId: resource,
+        createdAt: now,
+      }).onConflictDoUpdate({
+        target: postgresSchema.oauthClientResource.id,
+        set: { clientId: "dahlia-macos", resourceId: resource },
+      });
     },
     async listDahliaSessions(userId) {
-      const rows = await db
-        .select({
-          id: authSchema.oauthRefreshToken.id,
-          sessionId: authSchema.oauthRefreshToken.sessionId,
-          createdAt: authSchema.oauthRefreshToken.createdAt,
-          expiresAt: authSchema.oauthRefreshToken.expiresAt,
-          userAgent: authSchema.session.userAgent,
-        })
-        .from(authSchema.oauthRefreshToken)
-        .leftJoin(authSchema.session, eq(authSchema.oauthRefreshToken.sessionId, authSchema.session.id))
-        .where(
-          and(
-            eq(authSchema.oauthRefreshToken.userId, userId),
-            eq(authSchema.oauthRefreshToken.clientId, "dahlia-macos"),
-            isNull(authSchema.oauthRefreshToken.revoked),
-            gt(authSchema.oauthRefreshToken.expiresAt, new Date()),
-          ),
-        )
-        .orderBy(desc(authSchema.oauthRefreshToken.createdAt));
-      return rows.flatMap((row) => row.createdAt && row.expiresAt ? [{ ...row, createdAt: row.createdAt, expiresAt: row.expiresAt }] : []);
+      const rows = await db.select({
+        id: postgresSchema.oauthRefreshToken.id,
+        sessionId: postgresSchema.oauthRefreshToken.sessionId,
+        createdAt: postgresSchema.oauthRefreshToken.createdAt,
+        expiresAt: postgresSchema.oauthRefreshToken.expiresAt,
+        userAgent: postgresSchema.session.userAgent,
+      }).from(postgresSchema.oauthRefreshToken)
+        .leftJoin(postgresSchema.session, eq(postgresSchema.oauthRefreshToken.sessionId, postgresSchema.session.id))
+        .where(and(
+          eq(postgresSchema.oauthRefreshToken.userId, userId),
+          eq(postgresSchema.oauthRefreshToken.clientId, "dahlia-macos"),
+          isNull(postgresSchema.oauthRefreshToken.revoked),
+          gt(postgresSchema.oauthRefreshToken.expiresAt, new Date()),
+        )).orderBy(desc(postgresSchema.oauthRefreshToken.createdAt));
+      return rows.flatMap((row) => row.createdAt && row.expiresAt
+        ? [{ ...row, createdAt: row.createdAt, expiresAt: row.expiresAt }]
+        : []);
     },
     async revokeDahliaSession(userId, refreshTokenId) {
-      const [revoked] = await db
-        .update(authSchema.oauthRefreshToken)
-        .set({ revoked: new Date() })
-        .where(
-          and(
-            eq(authSchema.oauthRefreshToken.id, refreshTokenId),
-            eq(authSchema.oauthRefreshToken.userId, userId),
-            eq(authSchema.oauthRefreshToken.clientId, "dahlia-macos"),
-            isNull(authSchema.oauthRefreshToken.revoked),
-          ),
-        )
-        .returning({ id: authSchema.oauthRefreshToken.id });
+      const [revoked] = await db.update(postgresSchema.oauthRefreshToken).set({ revoked: new Date() }).where(and(
+        eq(postgresSchema.oauthRefreshToken.id, refreshTokenId),
+        eq(postgresSchema.oauthRefreshToken.userId, userId),
+        eq(postgresSchema.oauthRefreshToken.clientId, "dahlia-macos"),
+        isNull(postgresSchema.oauthRefreshToken.revoked),
+      )).returning({ id: postgresSchema.oauthRefreshToken.id });
       if (!revoked) return false;
-      await db.delete(authSchema.oauthAccessToken).where(eq(authSchema.oauthAccessToken.refreshId, refreshTokenId));
+      await db.delete(postgresSchema.oauthAccessToken)
+        .where(eq(postgresSchema.oauthAccessToken.refreshId, refreshTokenId));
       return true;
     },
-    async listModelAliases() {
-      return db.select().from(authSchema.modelAlias).orderBy(asc(authSchema.modelAlias.alias));
-    },
+    listModelAliases: () => db.select().from(postgresSchema.modelAlias).orderBy(asc(postgresSchema.modelAlias.alias)),
     async getEnabledModelAlias(alias) {
-      const [row] = await db.select().from(authSchema.modelAlias)
-        .where(and(eq(authSchema.modelAlias.alias, alias), eq(authSchema.modelAlias.enabled, true))).limit(1);
+      const [row] = await db.select().from(postgresSchema.modelAlias)
+        .where(and(eq(postgresSchema.modelAlias.alias, alias), eq(postgresSchema.modelAlias.enabled, true))).limit(1);
       return row ?? null;
     },
     async createModelAlias(input) {
-      const [created] = await db.insert(authSchema.modelAlias).values(input).onConflictDoNothing()
-        .returning({ alias: authSchema.modelAlias.alias });
+      const [created] = await db.insert(postgresSchema.modelAlias).values(input).onConflictDoNothing()
+        .returning({ alias: postgresSchema.modelAlias.alias });
       return created !== undefined;
     },
     async updateModelAlias(alias, update) {
-      const [updated] = await db.update(authSchema.modelAlias).set({ ...update, updatedAt: new Date() })
-        .where(eq(authSchema.modelAlias.alias, alias)).returning({ alias: authSchema.modelAlias.alias });
+      const [updated] = await db.update(postgresSchema.modelAlias).set({ ...update, updatedAt: new Date() })
+        .where(eq(postgresSchema.modelAlias.alias, alias)).returning({ alias: postgresSchema.modelAlias.alias });
       return updated !== undefined;
     },
     async deleteModelAlias(alias) {
-      const [deleted] = await db.delete(authSchema.modelAlias).where(eq(authSchema.modelAlias.alias, alias))
-        .returning({ alias: authSchema.modelAlias.alias });
+      const [deleted] = await db.delete(postgresSchema.modelAlias).where(eq(postgresSchema.modelAlias.alias, alias))
+        .returning({ alias: postgresSchema.modelAlias.alias });
       return deleted !== undefined;
     },
-    async listPlatformAdmins() {
-      return db.select().from(authSchema.platformAdmin).orderBy(asc(authSchema.platformAdmin.email));
-    },
+    listPlatformAdmins: () => db.select().from(postgresSchema.platformAdmin)
+      .orderBy(asc(postgresSchema.platformAdmin.email)),
     async isPlatformAdmin(email) {
-      const [row] = await db.select({ email: authSchema.platformAdmin.email }).from(authSchema.platformAdmin)
-        .where(eq(authSchema.platformAdmin.email, email)).limit(1);
+      const [row] = await db.select({ email: postgresSchema.platformAdmin.email }).from(postgresSchema.platformAdmin)
+        .where(eq(postgresSchema.platformAdmin.email, email)).limit(1);
       return row !== undefined;
     },
     async addPlatformAdmin(email) {
-      const [created] = await db.insert(authSchema.platformAdmin).values({ email }).onConflictDoNothing()
-        .returning({ email: authSchema.platformAdmin.email });
+      const [created] = await db.insert(postgresSchema.platformAdmin).values({ email }).onConflictDoNothing()
+        .returning({ email: postgresSchema.platformAdmin.email });
       return created !== undefined;
     },
     async deletePlatformAdmin(email) {
-      const [deleted] = await db.delete(authSchema.platformAdmin).where(eq(authSchema.platformAdmin.email, email))
-        .returning({ email: authSchema.platformAdmin.email });
+      const [deleted] = await db.delete(postgresSchema.platformAdmin).where(eq(postgresSchema.platformAdmin.email, email))
+        .returning({ email: postgresSchema.platformAdmin.email });
       return deleted !== undefined;
     },
   };
 }
 
-type SqlAuthValue = string | number | null;
-
-interface SqlAuthDriver {
-  database: DatabaseSync | D1DatabaseLike;
-  first<T>(query: string, values: SqlAuthValue[]): Promise<T | null>;
-  all<T>(query: string, values: SqlAuthValue[]): Promise<T[]>;
-  run(query: string, values: SqlAuthValue[]): Promise<number>;
-  close?(): Promise<void>;
-}
-
-interface RawSession {
-  id: string;
-  sessionId: string | null;
-  createdAt: string | number;
-  expiresAt: string | number;
-  userAgent: string | null;
-}
-
-interface RawModelAlias {
-  alias: string;
-  upstreamModel: string;
-  displayName: string | null;
-  enabled: number | boolean;
-  createdAt: string | number;
-  updatedAt: string | number;
-}
-
-interface RawPlatformAdmin {
-  email: string;
-  createdAt: string | number;
-}
-
-export function createSqliteAuthStore(driver: SqlAuthDriver): AuthStore {
+export function createSqliteApplicationStore(db: SQLiteDatabase, transactions = false): ApplicationStore {
   return {
-    database: driver.database,
-    close: driver.close ? () => driver.close?.() ?? Promise.resolve() : undefined,
+    database: drizzleAdapter(db, { provider: "sqlite", schema: sqliteSchema, transaction: transactions }),
     async seedDahliaClient(config) {
-      const now = new Date().toISOString();
+      const now = new Date();
+      await db.insert(sqliteSchema.oauthClient).values({
+        id: "oauth-client-dahlia-macos",
+        clientId: "dahlia-macos",
+        name: "Dahlia for macOS",
+        tokenEndpointAuthMethod: "none",
+        applicationType: "native",
+        redirectUris: config.oauthRedirectUris,
+        grantTypes: ["authorization_code", "refresh_token"],
+        responseTypes: ["code"],
+        scopes: [...OAUTH_SCOPES],
+        skipConsent: true,
+        requirePKCE: true,
+        createdAt: now,
+        updatedAt: now,
+      }).onConflictDoUpdate({
+        target: sqliteSchema.oauthClient.clientId,
+        set: {
+          disabled: false,
+          name: "Dahlia for macOS",
+          tokenEndpointAuthMethod: "none",
+          applicationType: "native",
+          redirectUris: config.oauthRedirectUris,
+          grantTypes: ["authorization_code", "refresh_token"],
+          responseTypes: ["code"],
+          scopes: [...OAUTH_SCOPES],
+          skipConsent: true,
+          requirePKCE: true,
+          updatedAt: now,
+        },
+      });
       const resource = gatewayResource(config);
-      const oauthResource = await driver.first<{ id: string }>(
-        'SELECT "id" FROM "oauthResource" WHERE "identifier" = ?',
-        [resource],
-      );
+      const [oauthResource] = await db.select({ id: sqliteSchema.oauthResource.id })
+        .from(sqliteSchema.oauthResource)
+        .where(eq(sqliteSchema.oauthResource.identifier, resource)).limit(1);
       if (!oauthResource) throw new Error("Dahlia AI Gateway OAuth resource was not created");
-
-      await driver.run(
-        `INSERT INTO "oauthClient" (
-          "id", "clientId", "disabled", "skipConsent", "scopes", "createdAt", "updatedAt", "name",
-          "redirectUris", "tokenEndpointAuthMethod", "applicationType", "grantTypes", "responseTypes", "requirePKCE"
-        ) VALUES (?, ?, 0, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
-        ON CONFLICT("clientId") DO UPDATE SET
-          "disabled" = 0, "skipConsent" = 1, "scopes" = excluded."scopes", "updatedAt" = excluded."updatedAt",
-          "name" = excluded."name", "redirectUris" = excluded."redirectUris",
-          "tokenEndpointAuthMethod" = excluded."tokenEndpointAuthMethod", "applicationType" = excluded."applicationType",
-          "grantTypes" = excluded."grantTypes", "responseTypes" = excluded."responseTypes", "requirePKCE" = 1`,
-        [
-          "oauth-client-dahlia-macos",
-          "dahlia-macos",
-          JSON.stringify(OAUTH_SCOPES),
-          now,
-          now,
-          "Dahlia for macOS",
-          JSON.stringify(config.oauthRedirectUris),
-          "none",
-          "native",
-          JSON.stringify(["authorization_code", "refresh_token"]),
-          JSON.stringify(["code"]),
-        ],
-      );
-      await driver.run(
-        `INSERT INTO "oauthClientResource" ("id", "clientId", "resourceId", "createdAt") VALUES (?, ?, ?, ?)
-         ON CONFLICT("id") DO UPDATE SET "clientId" = excluded."clientId", "resourceId" = excluded."resourceId"`,
-        ["oauth-client-resource-dahlia-macos", "dahlia-macos", resource, now],
-      );
+      await db.insert(sqliteSchema.oauthClientResource).values({
+        id: "oauth-client-resource-dahlia-macos",
+        clientId: "dahlia-macos",
+        resourceId: resource,
+        createdAt: now,
+      }).onConflictDoUpdate({
+        target: sqliteSchema.oauthClientResource.id,
+        set: { clientId: "dahlia-macos", resourceId: resource },
+      });
     },
     async listDahliaSessions(userId) {
-      const rows = await driver.all<RawSession>(
-        `SELECT r."id", r."sessionId", r."createdAt", r."expiresAt", s."userAgent"
-         FROM "oauthRefreshToken" r LEFT JOIN "session" s ON r."sessionId" = s."id"
-         WHERE r."userId" = ? AND r."clientId" = 'dahlia-macos' AND r."revoked" IS NULL AND r."expiresAt" > ?
-         ORDER BY r."createdAt" DESC`,
-        [userId, new Date().toISOString()],
-      );
-      return rows.map((row) => ({
-        ...row,
-        createdAt: new Date(row.createdAt),
-        expiresAt: new Date(row.expiresAt),
-      }));
+      const rows = await db.select({
+        id: sqliteSchema.oauthRefreshToken.id,
+        sessionId: sqliteSchema.oauthRefreshToken.sessionId,
+        createdAt: sqliteSchema.oauthRefreshToken.createdAt,
+        expiresAt: sqliteSchema.oauthRefreshToken.expiresAt,
+        userAgent: sqliteSchema.session.userAgent,
+      }).from(sqliteSchema.oauthRefreshToken)
+        .leftJoin(sqliteSchema.session, eq(sqliteSchema.oauthRefreshToken.sessionId, sqliteSchema.session.id))
+        .where(and(
+          eq(sqliteSchema.oauthRefreshToken.userId, userId),
+          eq(sqliteSchema.oauthRefreshToken.clientId, "dahlia-macos"),
+          isNull(sqliteSchema.oauthRefreshToken.revoked),
+          gt(sqliteSchema.oauthRefreshToken.expiresAt, new Date()),
+        )).orderBy(desc(sqliteSchema.oauthRefreshToken.createdAt));
+      return rows.flatMap((row) => row.createdAt && row.expiresAt
+        ? [{ ...row, createdAt: row.createdAt, expiresAt: row.expiresAt }]
+        : []);
     },
     async revokeDahliaSession(userId, refreshTokenId) {
-      const changes = await driver.run(
-        `UPDATE "oauthRefreshToken" SET "revoked" = ?
-         WHERE "id" = ? AND "userId" = ? AND "clientId" = 'dahlia-macos' AND "revoked" IS NULL`,
-        [new Date().toISOString(), refreshTokenId, userId],
-      );
-      if (changes === 0) return false;
-      await driver.run('DELETE FROM "oauthAccessToken" WHERE "refreshId" = ?', [refreshTokenId]);
+      const [revoked] = await db.update(sqliteSchema.oauthRefreshToken).set({ revoked: new Date() }).where(and(
+        eq(sqliteSchema.oauthRefreshToken.id, refreshTokenId),
+        eq(sqliteSchema.oauthRefreshToken.userId, userId),
+        eq(sqliteSchema.oauthRefreshToken.clientId, "dahlia-macos"),
+        isNull(sqliteSchema.oauthRefreshToken.revoked),
+      )).returning({ id: sqliteSchema.oauthRefreshToken.id });
+      if (!revoked) return false;
+      await db.delete(sqliteSchema.oauthAccessToken).where(eq(sqliteSchema.oauthAccessToken.refreshId, refreshTokenId));
       return true;
     },
-    async listModelAliases() {
-      const rows = await driver.all<RawModelAlias>(
-        'SELECT "alias", "upstreamModel", "displayName", "enabled", "createdAt", "updatedAt" FROM "modelAlias" ORDER BY "alias"',
-        [],
-      );
-      return rows.map((row) => ({
-        ...row,
-        enabled: Boolean(row.enabled),
-        createdAt: new Date(row.createdAt),
-        updatedAt: new Date(row.updatedAt),
-      }));
-    },
+    listModelAliases: () => db.select().from(sqliteSchema.modelAlias).orderBy(asc(sqliteSchema.modelAlias.alias)),
     async getEnabledModelAlias(alias) {
-      const row = await driver.first<RawModelAlias>(
-        'SELECT "alias", "upstreamModel", "displayName", "enabled", "createdAt", "updatedAt" FROM "modelAlias" WHERE "alias" = ? AND "enabled" = 1',
-        [alias],
-      );
-      return row ? {
-        ...row,
-        enabled: true,
-        createdAt: new Date(row.createdAt),
-        updatedAt: new Date(row.updatedAt),
-      } : null;
+      const [row] = await db.select().from(sqliteSchema.modelAlias)
+        .where(and(eq(sqliteSchema.modelAlias.alias, alias), eq(sqliteSchema.modelAlias.enabled, true))).limit(1);
+      return row ?? null;
     },
     async createModelAlias(input) {
-      const now = new Date().toISOString();
-      return await driver.run(
-        'INSERT INTO "modelAlias" ("alias", "upstreamModel", "displayName", "enabled", "createdAt", "updatedAt") VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT("alias") DO NOTHING',
-        [input.alias, input.upstreamModel, input.displayName, input.enabled ? 1 : 0, now, now],
-      ) > 0;
+      const now = new Date();
+      const [created] = await db.insert(sqliteSchema.modelAlias).values({ ...input, createdAt: now, updatedAt: now })
+        .onConflictDoNothing().returning({ alias: sqliteSchema.modelAlias.alias });
+      return created !== undefined;
     },
     async updateModelAlias(alias, update) {
-      return await driver.run(
-        'UPDATE "modelAlias" SET "upstreamModel" = ?, "displayName" = ?, "enabled" = ?, "updatedAt" = ? WHERE "alias" = ?',
-        [update.upstreamModel, update.displayName, update.enabled ? 1 : 0, new Date().toISOString(), alias],
-      ) > 0;
+      const [updated] = await db.update(sqliteSchema.modelAlias).set({ ...update, updatedAt: new Date() })
+        .where(eq(sqliteSchema.modelAlias.alias, alias)).returning({ alias: sqliteSchema.modelAlias.alias });
+      return updated !== undefined;
     },
     async deleteModelAlias(alias) {
-      return await driver.run('DELETE FROM "modelAlias" WHERE "alias" = ?', [alias]) > 0;
+      const [deleted] = await db.delete(sqliteSchema.modelAlias).where(eq(sqliteSchema.modelAlias.alias, alias))
+        .returning({ alias: sqliteSchema.modelAlias.alias });
+      return deleted !== undefined;
     },
-    async listPlatformAdmins() {
-      const rows = await driver.all<RawPlatformAdmin>(
-        'SELECT "email", "createdAt" FROM "platformAdmin" ORDER BY "email"',
-        [],
-      );
-      return rows.map((row) => ({ ...row, createdAt: new Date(row.createdAt) }));
-    },
+    listPlatformAdmins: () => db.select().from(sqliteSchema.platformAdmin)
+      .orderBy(asc(sqliteSchema.platformAdmin.email)),
     async isPlatformAdmin(email) {
-      return await driver.first<{ email: string }>(
-        'SELECT "email" FROM "platformAdmin" WHERE "email" = ?',
-        [email],
-      ) !== null;
+      const [row] = await db.select({ email: sqliteSchema.platformAdmin.email }).from(sqliteSchema.platformAdmin)
+        .where(eq(sqliteSchema.platformAdmin.email, email)).limit(1);
+      return row !== undefined;
     },
     async addPlatformAdmin(email) {
-      return await driver.run(
-        'INSERT INTO "platformAdmin" ("email", "createdAt") VALUES (?, ?) ON CONFLICT("email") DO NOTHING',
-        [email, new Date().toISOString()],
-      ) > 0;
+      const [created] = await db.insert(sqliteSchema.platformAdmin).values({ email, createdAt: new Date() })
+        .onConflictDoNothing().returning({ email: sqliteSchema.platformAdmin.email });
+      return created !== undefined;
     },
     async deletePlatformAdmin(email) {
-      return await driver.run('DELETE FROM "platformAdmin" WHERE "email" = ?', [email]) > 0;
+      const [deleted] = await db.delete(sqliteSchema.platformAdmin).where(eq(sqliteSchema.platformAdmin.email, email))
+        .returning({ email: sqliteSchema.platformAdmin.email });
+      return deleted !== undefined;
     },
   };
 }
 
-export function createD1AuthStore(database: D1DatabaseLike): AuthStore {
-  return createSqliteAuthStore({
-    database,
-    async first<T>(query: string, values: SqlAuthValue[]) {
-      return database.prepare(query).bind(...values).first<T>();
-    },
-    async all<T>(query: string, values: SqlAuthValue[]) {
-      return (await database.prepare(query).bind(...values).all<T>()).results;
-    },
-    async run(query, values) {
-      return (await database.prepare(query).bind(...values).run()).meta.changes;
-    },
-  });
+export function createD1ApplicationStore(database: D1DatabaseLike): ApplicationStore {
+  return createSqliteApplicationStore(drizzleD1(database as unknown as D1Database));
 }
+
+/** @deprecated Use createPostgresApplicationStore. */
+export const createPostgresAuthStore = createPostgresApplicationStore;
+/** @deprecated Use createSqliteApplicationStore. */
+export const createSqliteAuthStore = createSqliteApplicationStore;
+/** @deprecated Use createD1ApplicationStore. */
+export const createD1AuthStore = createD1ApplicationStore;

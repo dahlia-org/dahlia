@@ -53,7 +53,6 @@ export interface DahliaServerExtension {
 export interface AppDependencies {
   config: AppConfig;
   fetch?: typeof fetch;
-  remoteAddress?: (context: unknown) => string | undefined;
   auth?: DahliaAuth;
   authStore?: AuthStore;
   extensions?: readonly DahliaServerExtension[];
@@ -86,10 +85,9 @@ export function createApp(dependencies: AppDependencies) {
   const extensions = dependencies.extensions ?? [];
   const identities = new IdentityService(config, auth);
   const gateway = new GatewayService(config, store, dependencies.fetch);
-  const remoteAddress = (context: unknown) => dependencies.remoteAddress?.(context);
   const services: ServerExtensionServices = {
     auth,
-    browserIdentity: (request, context) => identities.fromBrowser(request, remoteAddress(context)),
+    browserIdentity: (request) => identities.fromBrowser(request),
   };
 
   app.use("*", secureHeaders());
@@ -128,7 +126,7 @@ export function createApp(dependencies: AppDependencies) {
   });
 
   app.use("/api/session", async (context, next) => {
-    context.set("identity", await identities.fromBrowser(context.req.raw, remoteAddress(context)));
+    context.set("identity", await identities.fromBrowser(context.req.raw));
     await next();
   });
   app.get("/api/session", async (context) => {
@@ -160,7 +158,7 @@ export function createApp(dependencies: AppDependencies) {
     if (!mutationOriginAllowed(context.req.raw, config.baseUrl)) {
       return context.json({ error: "invalid_origin" }, 403);
     }
-    const identity = await identities.fromBrowser(context.req.raw, remoteAddress(context));
+    const identity = await identities.fromBrowser(context.req.raw);
     if (!await isAdministrator(config, store, identity)) {
       return context.json({ error: "forbidden" }, 403);
     }
@@ -232,7 +230,7 @@ export function createApp(dependencies: AppDependencies) {
     if (!mutationOriginAllowed(context.req.raw, config.baseUrl)) {
       return context.json({ error: "invalid_origin" }, 403);
     }
-    context.set("identity", await identities.fromBrowser(context.req.raw, remoteAddress(context)));
+    context.set("identity", await identities.fromBrowser(context.req.raw));
     await next();
   });
   app.get("/api/sessions", async (context) => {
@@ -265,7 +263,6 @@ export function createApp(dependencies: AppDependencies) {
     context.set("identity", await identities.fromGateway(
       context.req.raw,
       requiredGatewayScope(context.req.path),
-      remoteAddress(context),
     ));
     for (const extension of extensions) {
       const response = await extension.beforeGateway?.({

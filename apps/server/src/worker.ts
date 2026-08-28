@@ -3,22 +3,35 @@ import { secureHeaders } from "hono/secure-headers";
 
 import { createApp } from "./app";
 import { initializeDahliaAuth } from "./auth/better-auth";
-import { createD1AuthStore } from "./auth/store";
-import { loadConfig } from "./config";
+import {
+  createD1ApplicationStore,
+  createPostgresApplicationStore,
+  type ApplicationStore,
+  type D1DatabaseLike,
+} from "./auth/store";
+import { loadConfig, type AppConfig } from "./config";
+import { connectPostgresUrl } from "./db/postgres";
 
 export interface RuntimeSecrets {
-  BETTER_AUTH_SECRET: string;
+  BETTER_AUTH_SECRET?: string;
   DAHLIA_ADMIN_EMAIL?: string;
+  DAHLIA_AUTH_HEADER?: string;
+  DAHLIA_AUTH_PROVIDER?: string;
   DAHLIA_BASE_URL?: string;
+  DAHLIA_DATABASE_TYPE?: string;
+  DAHLIA_DATABASE_URL?: string;
   DAHLIA_MAX_REQUEST_BYTES?: string;
   DAHLIA_OAUTH_REDIRECT_URIS?: string;
-  GOOGLE_CLIENT_ID: string;
-  GOOGLE_CLIENT_SECRET: string;
+  GOOGLE_CLIENT_ID?: string;
+  GOOGLE_CLIENT_SECRET?: string;
   OPENAI_API_KEY?: string;
   OPENAI_BASE_URL?: string;
 }
 
-export type WorkerEnv = Cloudflare.Env & RuntimeSecrets;
+export interface WorkerEnv extends RuntimeSecrets {
+  HYPERDRIVE?: { connectionString: string };
+  dahlia_db_prod?: D1DatabaseLike;
+}
 export type WorkerApp = ReturnType<typeof createApp>;
 export type WorkerAppInitializer = (env: WorkerEnv) => Promise<WorkerApp>;
 
@@ -27,28 +40,52 @@ const healthApp = new Hono();
 healthApp.use("*", secureHeaders());
 healthApp.get("/healthz", (context) => context.json({ status: "ok" }));
 
+function createWorkerApplicationStore(config: AppConfig, env: WorkerEnv): ApplicationStore {
+  if (config.databaseType === "d1") {
+    if (!env.dahlia_db_prod) throw new Error("The dahlia_db_prod D1 binding is required");
+    return createD1ApplicationStore(env.dahlia_db_prod);
+  }
+  if (config.databaseType === "hyperdrive") {
+    if (!env.HYPERDRIVE) throw new Error("The HYPERDRIVE binding is required");
+    const connection = connectPostgresUrl(env.HYPERDRIVE.connectionString, 5);
+    return { ...createPostgresApplicationStore(connection.db), close: connection.close };
+  }
+  if (config.databaseType === "postgres" && config.databaseUrl) {
+    const connection = connectPostgresUrl(config.databaseUrl, 5);
+    return { ...createPostgresApplicationStore(connection.db), close: connection.close };
+  }
+  throw new Error("Worker storage supports DAHLIA_DATABASE_TYPE=d1, hyperdrive, or postgres");
+}
+
 export async function initializeWorkerApp(env: WorkerEnv): Promise<WorkerApp> {
   const config = loadConfig({
-      BETTER_AUTH_SECRET: env.BETTER_AUTH_SECRET,
-      DAHLIA_ADMIN_EMAIL: env.DAHLIA_ADMIN_EMAIL,
-      DAHLIA_BASE_URL: env.DAHLIA_BASE_URL,
-      DAHLIA_MAX_REQUEST_BYTES: String(Math.min(
-        Number(env.DAHLIA_MAX_REQUEST_BYTES ?? WORKER_DEFAULT_MAX_REQUEST_BYTES),
-        WORKER_DEFAULT_MAX_REQUEST_BYTES,
-      )),
-      DAHLIA_OAUTH_REDIRECT_URIS: env.DAHLIA_OAUTH_REDIRECT_URIS,
-      DAHLIA_RUNTIME: env.DAHLIA_RUNTIME,
-      GOOGLE_CLIENT_ID: env.GOOGLE_CLIENT_ID,
-      GOOGLE_CLIENT_SECRET: env.GOOGLE_CLIENT_SECRET,
-      OPENAI_API_KEY: env.OPENAI_API_KEY,
-      OPENAI_BASE_URL: env.OPENAI_BASE_URL,
+    BETTER_AUTH_SECRET: env.BETTER_AUTH_SECRET,
+    DAHLIA_ADMIN_EMAIL: env.DAHLIA_ADMIN_EMAIL,
+    DAHLIA_AUTH_HEADER: env.DAHLIA_AUTH_HEADER,
+    DAHLIA_AUTH_PROVIDER: env.DAHLIA_AUTH_PROVIDER,
+    DAHLIA_BASE_URL: env.DAHLIA_BASE_URL,
+    DAHLIA_DATABASE_TYPE: env.DAHLIA_DATABASE_TYPE,
+    DAHLIA_DATABASE_URL: env.DAHLIA_DATABASE_URL,
+    DAHLIA_MAX_REQUEST_BYTES: String(Math.min(
+      Number(env.DAHLIA_MAX_REQUEST_BYTES ?? WORKER_DEFAULT_MAX_REQUEST_BYTES),
+      WORKER_DEFAULT_MAX_REQUEST_BYTES,
+    )),
+    DAHLIA_OAUTH_REDIRECT_URIS: env.DAHLIA_OAUTH_REDIRECT_URIS,
+    GOOGLE_CLIENT_ID: env.GOOGLE_CLIENT_ID,
+    GOOGLE_CLIENT_SECRET: env.GOOGLE_CLIENT_SECRET,
+    OPENAI_API_KEY: env.OPENAI_API_KEY,
+    OPENAI_BASE_URL: env.OPENAI_BASE_URL,
   });
-  if (config.runtime !== "cloudflare" || config.authDatabase !== "d1") {
-    throw new Error("The Worker entry point requires DAHLIA_RUNTIME=cloudflare");
+  const applicationStore = createWorkerApplicationStore(config, env);
+  try {
+    const auth = config.authProvider === "accounts"
+      ? await initializeDahliaAuth(config, applicationStore)
+      : undefined;
+    return createApp({ config, auth, authStore: applicationStore });
+  } catch (error) {
+    await applicationStore.close?.();
+    throw error;
   }
-  const authStore = createD1AuthStore(env.dahlia_db_prod);
-  const auth = await initializeDahliaAuth(config, authStore);
-  return createApp({ config, auth, authStore });
 }
 
 export function createWorkerHandler(initialize: WorkerAppInitializer = initializeWorkerApp): ExportedHandler<WorkerEnv> {

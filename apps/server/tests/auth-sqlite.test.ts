@@ -14,17 +14,15 @@ const directories: string[] = [];
 
 function testConfig(path: string): AppConfig {
   return {
-    runtime: "custom",
     authProvider: "accounts",
     authHeader: "X-Forwarded-Email",
-    authDatabase: "sqlite",
-    authSqlitePath: path,
+    databaseType: "sqlite",
+    databaseUrl: `file:${path}`,
     baseUrl: "http://localhost:5173",
     googleClientId: "google-client",
     googleClientSecret: "google-secret",
     betterAuthSecret: "test-only-better-auth-secret-value",
     oauthRedirectUris: ["http://127.0.0.1:1455/oauth/callback"],
-    trustedProxyCidrs: [],
     maxRequestBytes: 1024,
   };
 }
@@ -43,7 +41,23 @@ describe("SQLite Better Auth store", () => {
 
     await store.migrate();
     await store.migrate();
-    await initializeDahliaAuth(config, store);
+    const auth = await initializeDahliaAuth(config, store);
+
+    await expect((await auth.$context).adapter.transaction(async (transaction) => {
+      await transaction.create({
+        model: "user",
+        forceAllowId: true,
+        data: {
+          id: "rolled-back-user",
+          name: "Rollback",
+          email: "rollback@example.com",
+          emailVerified: false,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      });
+      throw new Error("rollback");
+    })).rejects.toThrow("rollback");
 
     const database = new DatabaseSync(path);
     expect(database.prepare('SELECT "name" FROM "_dahlia_auth_migrations" ORDER BY "name"').all()).toEqual([
@@ -52,6 +66,7 @@ describe("SQLite Better Auth store", () => {
     ]);
     expect(database.prepare('SELECT "clientId" FROM "oauthClient"').get()).toEqual({ clientId: "dahlia-macos" });
     expect(database.prepare('SELECT "clientId" FROM "oauthClientResource"').get()).toEqual({ clientId: "dahlia-macos" });
+    expect(database.prepare('SELECT 1 FROM "user" WHERE "id" = ?').get("rolled-back-user")).toBeUndefined();
     expect(await store.createModelAlias({
       alias: "summary",
       upstreamModel: "provider/model",

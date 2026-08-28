@@ -6,13 +6,11 @@ import { composeMigrationManifests, serverMigrationManifest } from "../src/migra
 import { testStore } from "./test-store";
 
 const config: AppConfig = {
-  runtime: "custom",
   authProvider: "header",
   authHeader: "X-Forwarded-Email",
-  authDatabase: "sqlite",
+  databaseType: "sqlite",
   baseUrl: "https://dahlia.example",
   oauthRedirectUris: [],
-  trustedProxyCidrs: [],
   maxRequestBytes: 1024,
 };
 const identityHeaders = { "X-Forwarded-Email": "user@example.com" };

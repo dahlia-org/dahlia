@@ -152,8 +152,9 @@ and Meeting cardinality contract.
 
 The TypeScript applications use pnpm workspaces. From the repository root, run `pnpm dev` for Dahlia Server,
 `pnpm dev:site` for the public site, and `pnpm check` for workspace validation. Both development commands use the
-repository-root `.env.local` where applicable. The default `DAHLIA_RUNTIME=custom` preset uses local SQLite for account authentication, so
-`pnpm dev` does not require PostgreSQL or Docker.
+repository-root `.env.local` where applicable. Dahlia Server defaults to `DAHLIA_DATABASE_TYPE=sqlite` with
+`DAHLIA_DATABASE_URL=file:.data/dahlia-auth.sqlite`, so `pnpm dev` does not require PostgreSQL or Docker. Database selection is independent
+from the `OPENAI_API_KEY` and `OPENAI_BASE_URL` AI Gateway configuration.
 
 ### Project Structure
 

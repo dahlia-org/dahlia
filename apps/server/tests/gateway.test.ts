@@ -17,17 +17,15 @@ const registry = {
   getEnabledModelAlias: (model: string) => Promise.resolve(model === alias.alias ? alias : null),
 };
 const config: AppConfig = {
-  runtime: "custom",
   authProvider: "header",
   authHeader: "X-Forwarded-Email",
-  authDatabase: "sqlite",
+  databaseType: "sqlite",
   baseUrl: "https://dahlia.example",
   provider: {
     baseUrl: "https://upstream.example/v1",
     apiKey: "secret",
   },
   oauthRedirectUris: [],
-  trustedProxyCidrs: ["10.0.0.0/8"],
   maxRequestBytes: 1024,
 };
 
@@ -75,12 +73,12 @@ describe("AI Gateway", () => {
     expect(response.headers.get("x-accel-buffering")).toBe("no");
   });
 
-  it("disables upstream payload logging in the Cloudflare runtime", async () => {
+  it("disables upstream payload logging independently of the database backend", async () => {
     const transport = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
       expect(new Headers(init?.headers).get("cf-aig-collect-log-payload")).toBe("false");
       return new Response("{}");
     });
-    const service = new GatewayService({ ...config, runtime: "cloudflare" }, registry, transport);
+    const service = new GatewayService(config, registry, transport);
 
     await service.responses(new Request("https://dahlia.example/api/v1/responses", {
       method: "POST",

@@ -4,18 +4,16 @@ import { describe, expect, it, vi } from "vitest";
 
 import { createApp } from "../src/app";
 import type { AppConfig } from "../src/config";
-import { createWorkerHandler } from "../src/worker";
+import { createWorkerHandler, initializeWorkerApp } from "../src/worker";
 import viteConfig from "../vite.config";
 import { testStore } from "./test-store";
 
 const headerConfig: AppConfig = {
-  runtime: "custom",
   authProvider: "header",
   authHeader: "X-Forwarded-Email",
-  authDatabase: "sqlite",
+  databaseType: "sqlite",
   baseUrl: "https://dahlia.example",
   oauthRedirectUris: [],
-  trustedProxyCidrs: [],
   maxRequestBytes: 1024,
 };
 
@@ -43,8 +41,9 @@ describe("deployment routing", () => {
       migrations_dir: "auth-migrations",
     }));
     expect(wrangler.vars).toEqual({
-      DAHLIA_RUNTIME: "cloudflare",
+      DAHLIA_AUTH_PROVIDER: "accounts",
       DAHLIA_BASE_URL: "https://{name}.{subdomain}.workers.dev",
+      DAHLIA_DATABASE_TYPE: "d1",
       GOOGLE_CLIENT_ID: "replace-with-google-client-id",
     });
     expect(wrangler).not.toHaveProperty("hyperdrive");
@@ -53,6 +52,17 @@ describe("deployment routing", () => {
       logs: { enabled: false, invocation_logs: false },
     });
     expect(readFileSync(new URL("../.gitignore", import.meta.url), "utf8")).toContain("wrangler.jsonc");
+  });
+
+  it("provides a Hyperdrive configuration with the stable binding name", () => {
+    const wrangler = JSON.parse(
+      readFileSync(new URL("../wrangler.hyperdrive.example.jsonc", import.meta.url), "utf8"),
+    ) as { hyperdrive: Array<{ binding: string; id: string }>; vars: Record<string, string> };
+    expect(wrangler.hyperdrive).toEqual([{
+      binding: "HYPERDRIVE",
+      id: "00000000000000000000000000000000",
+    }]);
+    expect(wrangler.vars.DAHLIA_DATABASE_TYPE).toBe("hyperdrive");
   });
 
   it("keeps static assets outside the API-only Worker", () => {
@@ -97,6 +107,16 @@ describe("deployment routing", () => {
     expect(initialize).toHaveBeenCalledTimes(1);
   });
 
+  it.each([
+    ["d1", "dahlia_db_prod D1 binding"],
+    ["hyperdrive", "HYPERDRIVE binding"],
+  ])("requires the selected %s Worker binding", async (databaseType, message) => {
+    await expect(initializeWorkerApp({
+      DAHLIA_AUTH_PROVIDER: "header",
+      DAHLIA_DATABASE_TYPE: databaseType,
+    })).rejects.toThrow(message);
+  });
+
   it("uses the Vite origin for local OAuth and proxies its protocol endpoints", () => {
     const example = readFileSync(new URL("../../../.env.example", import.meta.url), "utf8");
     const packageJson = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as {
@@ -104,12 +124,21 @@ describe("deployment routing", () => {
     };
 
     expect(example).toContain("DAHLIA_BASE_URL=http://localhost:5173");
-    expect(example).toContain("DAHLIA_RUNTIME=custom");
+    expect(example).toContain("DAHLIA_DATABASE_TYPE=sqlite");
+    expect(example).toContain("DAHLIA_DATABASE_URL=file:.data/dahlia-auth.sqlite");
     expect(packageJson.scripts.predev).toBe("pnpm run db:migrate");
     expect(packageJson.scripts["dev:api"]).toContain("--env-file-if-exists=../../.env.local");
     expect(packageJson.scripts["db:migrate"]).toContain("--env-file-if-exists=../../.env.local");
     expect(viteConfig.envDir).toBe("../..");
     expect(viteConfig.server?.proxy).toHaveProperty("/.well-known");
+  });
+
+  it("uses the current database variables in Server CI", () => {
+    const workflow = readFileSync(new URL("../../../.github/workflows/server.yml", import.meta.url), "utf8");
+    expect(workflow).toContain("DAHLIA_DATABASE_TYPE: postgres");
+    expect(workflow).toContain("DAHLIA_DATABASE_URL: postgresql://dahlia@127.0.0.1:5432/dahlia");
+    expect(workflow).toContain("DAHLIA_DATABASE_URL: file:/tmp/dahlia-auth.sqlite");
+    expect(workflow).not.toMatch(/DAHLIA_RUNTIME|DAHLIA_AUTH_DATABASE|DAHLIA_AUTH_SQLITE_PATH|\n\s+DATABASE_URL:/);
   });
 
   it("uses pnpm workspaces and starts the built Server application", () => {
@@ -130,14 +159,16 @@ describe("deployment routing", () => {
     expect(rootPackage.scripts["dev:cloudflare"]).toContain("@dahlia-ai/server");
     expect(workspace).toContain("apps/*");
     expect(appYaml).toContain('command: ["corepack", "pnpm", "--filter", "@dahlia-ai/server", "start:databricks"]');
-    expect(appYaml).toContain("name: DAHLIA_RUNTIME");
-    expect(appYaml).toContain("value: databricks");
+    expect(appYaml).toContain("name: DAHLIA_AUTH_PROVIDER");
+    expect(appYaml).toContain("value: header");
+    expect(appYaml).toContain("name: DAHLIA_DATABASE_TYPE");
+    expect(appYaml).toContain("value: lakebase");
     expect(serverPackage.name).toBe("@dahlia-ai/server");
     expect(serverPackage.exports).toHaveProperty(".");
     expect(serverPackage.exports).toHaveProperty("./client");
     expect(serverPackage.exports).toHaveProperty("./package.json");
     expect(serverPackage.scripts["start:databricks"]).toBe("pnpm run db:migrate:prod && pnpm run start");
-    expect(appYaml).toContain("name: ENDPOINT_NAME");
+    expect(appYaml).toContain("name: LAKEBASE_ENDPOINT");
     expect(appYaml).toContain("valueFrom: postgres");
     expect(serverPackage.scripts["dev:cloudflare"]).toContain("vite.cloudflare.config.ts");
     expect(serverPackage.scripts["preview:cloudflare"]).toContain("vite.cloudflare.config.ts");

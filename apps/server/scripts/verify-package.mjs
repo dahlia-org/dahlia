@@ -73,14 +73,12 @@ try {
 
     const databasePath = fileURLToPath(new URL("./auth.sqlite", import.meta.url));
     const store = createNodeAuthStore({
-      runtime: "custom",
       authProvider: "header",
       authHeader: "X-Forwarded-Email",
-      authDatabase: "sqlite",
-      authSqlitePath: databasePath,
+      databaseType: "sqlite",
+      databaseUrl: "file:" + databasePath,
       baseUrl: "http://localhost:5173",
       oauthRedirectUris: [],
-      trustedProxyCidrs: ["127.0.0.0/8"],
       maxRequestBytes: 1024,
     });
     await store.migrate();

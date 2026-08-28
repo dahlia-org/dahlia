@@ -119,12 +119,12 @@ write-backを発生させない。汎用参照は書き込み時にtarget存在�
 詳細な判断と将来のContact統合条件は
 [ADR-0011](docs/adr/0011-vault-scoped-customer-intelligence.md)を正本とする。
 
-任意の Dahlia Server runtime は内蔵 Codex の provider transport だけを所有し、macOS の録音・文字起こし runtime と
-database を共有しない。`apps/server` は runtime 環境変数から単一の provider credential を読み、application database の公開
-Model Alias を upstream model へ対応付ける。`DAHLIA_RUNTIME` は `custom`（accounts／SQLite）、`cloudflare`
-（accounts／D1）、`databricks`（header／PostgreSQL Lakebase）の一貫した preset を選ぶ。
-`custom` だけは header auth と PostgreSQL へ上書きできる。全runtimeのupstreamは`OPENAI_API_KEY`と、既定値を持つ`OPENAI_BASE_URL`で同じOpenAI Responses互換contractを使う。provider credential と接続先は runtime secret に置き、公開 Model Alias と
-platform administrator は application database に保存する。Better Auth の identity、session、OAuth metadata は `custom` の SQLite／PostgreSQL または Cloudflare D1 に保存する。
+任意の Dahlia Server runtime は内蔵 Codex の provider transport を所有し、macOS の録音・文字起こし critical path には入らない。
+Better Auth、Gateway 管理 metadata、将来の meeting cloud sync は単一の Drizzle application database を共有する。
+`DAHLIA_DATABASE_TYPE` は `sqlite`、`postgres`、`lakebase`、`hyperdrive`、`d1` から選び、SQLite／PostgreSQL の接続先は
+`DAHLIA_DATABASE_URL` で指定する。Node は SQLite／PostgreSQL／Lakebase、Workers は D1／Hyperdrive／PostgreSQL を扱う。
+Lakebase は公式 `@databricks/lakebase` connector で OAuth credential を更新する。
+database 選択は認証および AI backend と独立し、upstream は `OPENAI_API_KEY` と `OPENAI_BASE_URL` だけで設定する。
 Databricks Apps の header identity は sessionless だが、Model Alias と administrator の正本として Lakebase を使用する。Responses request は上限内で検証して upstream model を
 変換し、upstream response body は streaming relay する。request と response の content は DB、cache、analytics、application log
 へ保存しない。
@@ -140,7 +140,7 @@ Dahlia macOS / bundled Codex 0.148.0
         ↓ administrator-owned credential
     upstream Responses API
 
-Application store (custom SQLite/PostgreSQL, Lakebase, or Cloudflare D1)
+Drizzle application store (SQLite, PostgreSQL, Lakebase, Hyperdrive, or D1)
     ├─ Model Alias + platform administrator
     └─ user + session + OAuth metadata (accounts mode)
 ```
@@ -151,7 +151,7 @@ Workers Static Assets が直接配信し、Worker 内から asset binding を呼
 
 Gateway、認証 store、upstream の停止は AI 操作だけを失敗させる。macOS の起動、録音、音声保存、文字起こし、
 閲覧、検索はこの runtime を待たず、音声、SQLite、Vault を upload する API は持たない。runtime と data boundary の判断は
-[ADR-0029](docs/adr/0029-offer-an-optional-codex-ai-gateway.md)を正本とする。
+[ADR-0043](docs/adr/0043-unify-dahlia-server-application-database.md)を正本とする。
 
 ## Workload Classes
 

@@ -1,38 +1,62 @@
-import { drizzle, type PostgresJsDatabase } from "drizzle-orm/postgres-js";
-import { migrate } from "drizzle-orm/postgres-js/migrator";
-import postgres from "postgres";
+import { createHash } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 
-import type { AppConfig, DatabricksDatabaseConfig } from "../config";
+import { getLakebasePgConfig, type DriverTelemetry } from "@databricks/lakebase";
+import { drizzle } from "drizzle-orm/node-postgres";
+import type { NodePgDatabase } from "drizzle-orm/node-postgres";
+import { migrate } from "drizzle-orm/pg-core/async/session";
+import { readMigrationFiles, type MigrationConfig, type MigrationMeta } from "drizzle-orm/migrator";
+import type { SQLiteAsyncDatabase } from "drizzle-orm/sqlite-core/async";
+import pg, { type Pool } from "pg";
+
+import type { AppConfig } from "../config";
 import type { PostgresMigrationDirectory } from "../migrations";
-import * as authSchema from "./auth-schema";
+import { createPostgresPool } from "./postgres";
 
-export type Database = PostgresJsDatabase<typeof authSchema>;
+export type PostgresDatabase = NodePgDatabase;
+export type SQLiteDatabase = SQLiteAsyncDatabase<"sync" | "async", unknown>;
 
-function databaseClient(config: AppConfig, max: number) {
-  if (config.runtime === "databricks") {
-    if (!config.databricksDatabase) {
-      throw new Error("Databricks Lakebase configuration is incomplete");
-    }
-    const database = config.databricksDatabase;
-    return postgres({
-      host: database.host,
-      port: database.port,
+const noOpSpan = {
+  end() {},
+  recordException() {},
+  setAttribute() { return this; },
+  setStatus() { return this; },
+};
+// Lakebase 0.5 instruments SQL even when telemetry is disabled; keep credential refresh without exporting DB content.
+const noOpLakebaseTelemetry = {
+  tracer: { startActiveSpan: (_name: string, _options: unknown, callback: (span: typeof noOpSpan) => unknown) => callback(noOpSpan) },
+  meter: {},
+  tokenRefreshDuration: { record() {} },
+  queryDuration: { record() {} },
+  poolErrors: { add() {} },
+} as unknown as DriverTelemetry;
+
+function createDatabasePool(config: AppConfig, max: number): Pool {
+  if (config.databaseType === "lakebase") {
+    if (!config.lakebaseDatabase) throw new Error("Lakebase configuration is incomplete");
+    const database = config.lakebaseDatabase;
+    return new pg.Pool(getLakebasePgConfig({
       database: database.database,
-      username: database.username,
-      password: databricksDatabasePassword(database, database.endpoint),
-      ssl: database.sslMode,
+      endpoint: database.endpoint,
+      host: database.host,
       max,
-    });
+      port: database.port,
+      sslMode: database.sslMode,
+      user: database.username,
+    }, noOpLakebaseTelemetry));
   }
-  if (!config.authDatabaseUrl) throw new Error("DATABASE_URL is required for PostgreSQL storage");
-  return postgres(config.authDatabaseUrl, { max });
+  if (config.databaseType !== "postgres" || !config.databaseUrl) {
+    throw new Error("Node storage supports DAHLIA_DATABASE_TYPE=sqlite, postgres, or lakebase");
+  }
+  return createPostgresPool(config.databaseUrl, max);
 }
 
-export function connectAuthDatabase(config: AppConfig) {
-  const client = databaseClient(config, 5);
+export function connectApplicationDatabase(config: AppConfig) {
+  const pool = createDatabasePool(config, 5);
   return {
-    db: drizzle(client, { schema: authSchema }),
-    close: async () => client.end(),
+    db: drizzle({ client: pool }),
+    close: () => pool.end(),
   };
 }
 
@@ -49,71 +73,49 @@ export function postgresMigrationConfigs(migrationDirectories: readonly Postgres
   });
 }
 
-export async function migrateAuthDatabase(
+interface LegacyJournal {
+  dialect: string;
+  entries: Array<{ breakpoints: boolean; tag: string; when: number }>;
+}
+
+export function readPostgresMigrations(config: MigrationConfig): MigrationMeta[] {
+  const journalPath = join(config.migrationsFolder, "meta", "_journal.json");
+  if (!existsSync(journalPath)) return readMigrationFiles(config);
+  const journal = JSON.parse(readFileSync(journalPath, "utf8")) as LegacyJournal;
+  if (journal.dialect !== "postgresql") throw new Error("PostgreSQL migration journal has the wrong dialect");
+  return journal.entries.map((entry) => {
+    const sql = readFileSync(join(config.migrationsFolder, `${entry.tag}.sql`), "utf8");
+    return {
+      sql: sql.split("--> statement-breakpoint").map((statement) => statement.trim()).filter(Boolean),
+      folderMillis: entry.when,
+      hash: createHash("sha256").update(sql).digest("hex"),
+      bps: entry.breakpoints,
+      name: entry.tag,
+    };
+  });
+}
+
+export async function migrateApplicationDatabase(
   config: AppConfig,
   migrationDirectories: readonly PostgresMigrationDirectory[] = [{ id: "server", path: "./drizzle" }],
 ): Promise<void> {
-  const client = databaseClient(config, 1);
-  const database = drizzle(client, { schema: authSchema });
-  const lockId = 0x4441484c4941;
+  const pool = createDatabasePool(config, 1);
+  const database = drizzle({ client: pool });
+  const lockId = "75047176522049";
   let locked = false;
   try {
-    await client`SELECT pg_advisory_lock(${lockId})`;
+    await pool.query("SELECT pg_advisory_lock($1)", [lockId]);
     locked = true;
     for (const migrationConfig of postgresMigrationConfigs(migrationDirectories)) {
-      await migrate(database, migrationConfig);
+      await migrate(readPostgresMigrations(migrationConfig), database, migrationConfig);
     }
   } finally {
-    if (locked) await client`SELECT pg_advisory_unlock(${lockId})`;
-    await client.end();
+    if (locked) await pool.query("SELECT pg_advisory_unlock($1)", [lockId]);
+    await pool.end();
   }
 }
 
-export function databricksDatabasePassword(
-  credentials: Pick<DatabricksDatabaseConfig, "workspaceUrl" | "clientId" | "clientSecret">,
-  endpointName: string,
-  transport: typeof fetch = fetch,
-): () => Promise<string> {
-  let cached: { token: string; expiresAt: number } | undefined;
-  let pending: Promise<{ token: string; expiresAt: number }> | undefined;
-  return async () => {
-    if (cached && cached.expiresAt > Date.now() + 60_000) return cached.token;
-    pending ??= fetchDatabricksDatabaseCredential(credentials, endpointName, transport).finally(() => {
-      pending = undefined;
-    });
-    cached = await pending;
-    return cached.token;
-  };
-}
-
-async function fetchDatabricksDatabaseCredential(
-  credentials: Pick<DatabricksDatabaseConfig, "workspaceUrl" | "clientId" | "clientSecret">,
-  endpointName: string,
-  transport: typeof fetch,
-): Promise<{ token: string; expiresAt: number }> {
-  const oauth = await transport(new URL("oidc/v1/token", `${credentials.workspaceUrl}/`), {
-    method: "POST",
-    headers: {
-      authorization: `Basic ${btoa(`${credentials.clientId}:${credentials.clientSecret}`)}`,
-      "content-type": "application/x-www-form-urlencoded",
-    },
-    body: new URLSearchParams({ grant_type: "client_credentials", scope: "all-apis" }),
-  });
-  if (!oauth.ok) throw new Error("Databricks service-principal authentication failed");
-  const oauthBody: { access_token?: string } = await oauth.json();
-  if (!oauthBody.access_token) throw new Error("Databricks service-principal response is invalid");
-
-  const credential = await transport(new URL("api/2.0/postgres/credentials", `${credentials.workspaceUrl}/`), {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${oauthBody.access_token}`,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({ endpoint: endpointName }),
-  });
-  if (!credential.ok) throw new Error("Databricks Lakebase credential generation failed");
-  const body: { token?: string; expire_time?: string } = await credential.json();
-  const expiresAt = Date.parse(body.expire_time ?? "");
-  if (!body.token || !Number.isFinite(expiresAt)) throw new Error("Databricks Lakebase credential response is invalid");
-  return { token: body.token, expiresAt };
-}
+/** @deprecated Use connectApplicationDatabase. */
+export const connectAuthDatabase = connectApplicationDatabase;
+/** @deprecated Use migrateApplicationDatabase. */
+export const migrateAuthDatabase = migrateApplicationDatabase;

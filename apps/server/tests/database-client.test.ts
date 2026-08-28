@@ -1,7 +1,9 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
-import type { DatabricksDatabaseConfig } from "../src/config";
-import { databricksDatabasePassword, postgresMigrationConfigs } from "../src/db/client";
+import { readFileSync } from "node:fs";
+
+import { postgresMigrationConfigs, readPostgresMigrations } from "../src/db/client";
+import { serverMigrationManifest } from "../src/migrations";
 
 describe("PostgreSQL migrations", () => {
   it("tracks each extension directory by stable ledger ID", () => {
@@ -29,31 +31,12 @@ describe("PostgreSQL migrations", () => {
     expect(() => postgresMigrationConfigs([{ id: "Billing v2", path: "billing" }]))
       .toThrow("Invalid PostgreSQL migration ledger ID: Billing v2");
   });
-});
 
-describe("Databricks Lakebase credentials", () => {
-  it("mints and caches a short-lived database password without exposing service credentials", async () => {
-    const credentials: Pick<DatabricksDatabaseConfig, "workspaceUrl" | "clientId" | "clientSecret"> = {
-      workspaceUrl: "https://workspace.cloud.databricks.com",
-      clientId: "service-principal",
-      clientSecret: "service-secret",
-    };
-    const transport = vi.fn<typeof fetch>(async (input, init) => {
-      const url = String(input);
-      if (url.endsWith("/oidc/v1/token")) return Response.json({ access_token: "workspace-token" });
-      expect(new Headers(init?.headers).get("authorization")).toBe("Bearer workspace-token");
-      expect(init?.body).toBe(JSON.stringify({ endpoint: "projects/project/branches/main/endpoints/app" }));
-      return Response.json({ token: "database-token", expire_time: "2099-01-01T00:00:00Z" });
-    });
-    const password = databricksDatabasePassword(
-      credentials,
-      "projects/project/branches/main/endpoints/app",
-      transport,
-    );
-
-    await expect(Promise.all([password(), password()])).resolves.toEqual(["database-token", "database-token"]);
-    await expect(password()).resolves.toBe("database-token");
-    expect(transport).toHaveBeenCalledTimes(2);
-    expect(JSON.stringify(transport.mock.calls)).not.toContain("service-secret");
+  it("reads the committed legacy Drizzle journal without rewriting released migrations", () => {
+    const migrationsFolder = serverMigrationManifest.postgres.directories[0]!.path;
+    const migrations = readPostgresMigrations({ migrationsFolder });
+    expect(migrations.map(({ name }) => name)).toEqual(["0000_solid_ted_forrester", "0001_server"]);
+    expect(migrations.every(({ hash, sql }) => hash.length === 64 && sql.length > 0)).toBe(true);
+    expect(readFileSync(new URL("../src/db/client.ts", import.meta.url), "utf8")).not.toContain("createLakebasePool");
   });
 });

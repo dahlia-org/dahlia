@@ -26,7 +26,7 @@ export const session = pgTable("session", {
 export const account = pgTable("account", {
 					id: text('id').primaryKey(),
 					issuer: text('issuer').notNull(),
- providerAccountId: text('provider_account_id').notNull(),
+ accountId: text('provider_account_id').notNull(),
  providerId: text('provider_id').notNull(),
  userId: text('user_id').notNull().references(()=> user.id, { onDelete: 'cascade' }),
  accessToken: text('access_token'),
@@ -39,7 +39,7 @@ export const account = pgTable("account", {
  createdAt: timestamp('created_at').defaultNow().notNull(),
  updatedAt: timestamp('updated_at').$onUpdate(() => /* @__PURE__ */ new Date()).notNull()
 					}, (table) => [
-  uniqueIndex("account_issuer_providerAccountId_uidx").on(table.issuer, table.providerAccountId),
+  uniqueIndex("account_issuer_providerAccountId_uidx").on(table.issuer, table.accountId),
   index("account_userId_idx").on(table.userId),
 ]);
 
