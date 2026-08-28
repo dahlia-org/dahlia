@@ -43,21 +43,23 @@ final class DatabricksAccountController {
         restoreProviderSelectionOnCancellation: Bool = true
     ) async -> String? {
         let previousProfileName = configuredDatabricksProfileName()
+        let hasSelectedProfile = profileName.nilIfBlank != nil
+        let fallbackProfileName = hasSelectedProfile ? previousProfileName : nil
         await loadProfiles()
-        guard !Task.isCancelled else { return previousProfileName }
-        guard errorMessage == nil else { return previousProfileName }
-        guard !profiles.isEmpty else { return previousProfileName }
+        guard !Task.isCancelled else { return fallbackProfileName }
+        guard errorMessage == nil else { return fallbackProfileName }
+        guard isCLIAvailable == true else { return fallbackProfileName }
+        guard hasSelectedProfile else { return nil }
 
+        guard profiles.contains(where: { $0.name == profileName }) else { return "" }
         let restorableProfileName = previousProfileName.flatMap { previousProfileName in
             profiles.contains { $0.name == previousProfileName } ? previousProfileName : nil
         }
-        let resolvedProfileName = resolvedProfileName(current: profileName)
-        guard resolvedProfileName == profileName else { return resolvedProfileName }
         await apply(
-            profileName: resolvedProfileName,
+            profileName: profileName,
             restoreProviderSelectionOnCancellation: restoreProviderSelectionOnCancellation
         )
-        guard isConfigured, configuredProfileName == resolvedProfileName else {
+        guard isConfigured, configuredProfileName == profileName else {
             return restorableProfileName
         }
         return nil
@@ -159,10 +161,6 @@ final class DatabricksAccountController {
             isCLIAvailable = true
             errorMessage = error.localizedDescription
         }
-    }
-
-    private func resolvedProfileName(current: String) -> String {
-        profiles.contains { $0.name == current } ? current : profiles.first?.name ?? ""
     }
 
     private func apply(

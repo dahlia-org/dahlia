@@ -711,7 +711,11 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
 
     var codexAccountProvider: AIAccountProvider {
         get { AIAccountProvider(rawValue: codexAccountProviderRawValue) ?? .chatGPTSubscription }
-        set { codexAccountProviderRawValue = newValue.rawValue }
+        set {
+            guard codexAccountProviderRawValue != newValue.rawValue else { return }
+            codexDatabricksProfile = ""
+            codexAccountProviderRawValue = newValue.rawValue
+        }
     }
 
     var isCodexAccountConfigurationCurrent: Bool {

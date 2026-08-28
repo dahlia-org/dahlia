@@ -87,7 +87,10 @@ import Foundation
             let service = CodexAppServerService {
                 TestCodexAppServerTransport(mode: .models)
             }
-            let configurationStore = TestCodexAccountConfigurationStore(configuredProvider: .databricks)
+            let configurationStore = TestCodexAccountConfigurationStore(
+                configuredProvider: .databricks,
+                configuredDatabricksProfile: "OLD"
+            )
             let controller = DatabricksAccountController(
                 client: client,
                 configurationManager: CodexConfigurationManager(homeLocator: locator),
@@ -101,8 +104,9 @@ import Foundation
             }
             preparation.cancel()
             release.continuation.yield()
-            _ = await preparation.value
+            let restoredProfile = await preparation.value
 
+            #expect(restoredProfile == "OLD")
             #expect(!FileManager.default.fileExists(atPath: configURL.path))
             #expect(configurationStore.configuredProviderRawValue == AIAccountProvider.databricks.rawValue)
             await service.shutdown()
@@ -215,7 +219,51 @@ import Foundation
 
             #expect(controller.isCLIAvailable == true)
             #expect(controller.profiles.map(\.name) == ["DEFAULT"])
-            #expect(resolvedProfile == "DEFAULT")
+            #expect(resolvedProfile == nil)
+            #expect(await responder.commands == [
+                ["auth", "profiles", "--skip-validate", "--output", "json"],
+                ["auth", "profiles", "--skip-validate", "--output", "json"],
+            ])
+        }
+
+        @Test
+        func missingSelectedProfileIsClearedWithoutAuthenticatingFallbackProfile() async {
+            let response = Data(
+                #"{"profiles":[{"name":"DEFAULT","host":"https://dbc.example.com","auth_type":"databricks-cli"}]}"#.utf8
+            )
+            let responder = ControllerAuthenticationResponder(profileResponse: response)
+            let controller = DatabricksAccountController(
+                client: DatabricksCLIClient { await responder.run($0) },
+                configurationStore: TestCodexAccountConfigurationStore()
+            )
+
+            let resolvedProfile = await controller.prepare(profileName: "MISSING")
+
+            #expect(resolvedProfile?.isEmpty == true)
+            #expect(!controller.isConfigured)
+            #expect(await responder.commands == [
+                ["auth", "profiles", "--skip-validate", "--output", "json"],
+            ])
+        }
+
+        @Test
+        func successfulEmptyProfileListClearsSavedSelection() async {
+            let responder = ControllerAuthenticationResponder(profileResponse: Data(#"{"profiles":[]}"#.utf8))
+            let controller = DatabricksAccountController(
+                client: DatabricksCLIClient { await responder.run($0) },
+                configurationStore: TestCodexAccountConfigurationStore(
+                    configuredProvider: .databricks,
+                    configuredDatabricksProfile: "DEFAULT"
+                )
+            )
+
+            let resolvedProfile = await controller.prepare(profileName: "DEFAULT")
+
+            #expect(resolvedProfile?.isEmpty == true)
+            #expect(!controller.isConfigured)
+            #expect(await responder.commands == [
+                ["auth", "profiles", "--skip-validate", "--output", "json"],
+            ])
         }
 
         @Test
@@ -631,12 +679,14 @@ import Foundation
 
         private actor RecoveringCLIResponder {
             private var isInstalled = false
+            private(set) var commands: [[String]] = []
 
             func install() {
                 isInstalled = true
             }
 
-            func run(_: [String]) throws -> DatabricksCLIClient.CommandOutput {
+            func run(_ arguments: [String]) throws -> DatabricksCLIClient.CommandOutput {
+                commands.append(arguments)
                 guard isInstalled else { throw DatabricksCLIError.cliNotInstalled }
                 let profiles = Data(
                     #"{"profiles":[{"name":"DEFAULT","host":"https://dbc.example.com","auth_type":"databricks-cli"}]}"#.utf8

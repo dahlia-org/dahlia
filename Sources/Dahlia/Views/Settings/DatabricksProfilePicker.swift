@@ -16,8 +16,8 @@ struct DatabricksProfilePicker: View {
             DahliaMenuPicker(
                 title: L10n.databricksProfile,
                 selection: $selection,
-                options: profiles.map(\.name),
-                label: { $0 }
+                options: [""] + profiles.map(\.name),
+                label: { $0.isEmpty ? L10n.notSelected : $0 }
             )
             .labelsHidden()
         }
