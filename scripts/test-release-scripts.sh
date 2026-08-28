@@ -354,6 +354,7 @@ test_release_upload_arguments() {
     printf '%s' 'Japanese notes' > "${release_dir}/release-note-ja.md"
     printf '%s' 'English notes' > "${release_dir}/release-note-en.md"
     printf '%s' 'Japanese notes' > "${TEST_DIR}/upload-notes.ja.md"
+    printf '%s' 'English notes' > "${TEST_DIR}/upload-notes.en.md"
 
     APP_NAME="Dahlia"
     TAG_NAME="v1.2.3"
@@ -361,6 +362,7 @@ test_release_upload_arguments() {
     EXPECTED_DMG_NAME="Dahlia.dmg"
     SPARKLE_RELEASE_DIR="$release_dir"
     NOTES_FILE_JA="${TEST_DIR}/upload-notes.ja.md"
+    NOTES_FILE_EN="${TEST_DIR}/upload-notes.en.md"
     RELEASE_TARGET_ARGS=(--target test-commit)
     gh() {
         printf '<%s>\n' "$@" > "$gh_log"
@@ -378,7 +380,7 @@ test_release_upload_arguments() {
         '<--title>' \
         '<Dahlia 1.2.3>' \
         '<--notes-file>' \
-        "<${TEST_DIR}/upload-notes.ja.md>" \
+        "<${TEST_DIR}/upload-notes.en.md>" \
         '<--target>' \
         '<test-commit>' \
         > "$expected_gh_log"
