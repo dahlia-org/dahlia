@@ -14,9 +14,6 @@ export type ProviderConfig = {
 } | {
   backend: "databricks";
   baseUrl: string;
-  clientId: string;
-  clientSecret: string;
-  tokenUrl: string;
 };
 
 export interface LakebaseDatabaseConfig {
@@ -163,10 +160,7 @@ function providerConfig(
     if (!databricks) throw new Error("Databricks workspace configuration is required");
     return {
       backend,
-      baseUrl: `${databricks.host}/ai-gateway/openai/v1`,
-      clientId: databricks.clientId,
-      clientSecret: databricks.clientSecret,
-      tokenUrl: databricks.tokenUrl,
+      baseUrl: `${databricks.host}/ai-gateway/mlflow/v1`,
     };
   }
   const apiKey = env.OPENAI_API_KEY?.trim();

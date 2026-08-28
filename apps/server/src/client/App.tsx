@@ -68,6 +68,7 @@ interface DeviceSession {
 
 interface ModelAliasInfo {
   alias: string;
+  configured?: boolean;
   upstreamModel: string;
   displayName: string | null;
   enabled: boolean;
@@ -92,9 +93,13 @@ async function json<T>(url: string, init?: RequestInit): Promise<T> {
     headers: init?.body ? { "content-type": "application/json", ...init.headers } : init?.headers,
   });
   if (!response.ok) {
-    const detail = (await response.json().catch(() => null)) as { message?: string; error?: string } | null;
+    const detail = (await response.json().catch(() => null)) as {
+      message?: string;
+      error?: string | { message?: string };
+    } | null;
+    const error = typeof detail?.error === "string" ? detail.error : detail?.error?.message;
     throw new RequestError(
-      detail?.message || detail?.error || `Request failed (${response.status})`,
+      detail?.message || error || `Request failed (${response.status})`,
       response.status,
     );
   }
@@ -368,7 +373,60 @@ function ModelAliasRow({ model, reload }: { model: ModelAliasInfo; reload: () =>
   );
 }
 
-function AdminModels() {
+function DatabricksModelRow({ model }: { model: ModelAliasInfo }) {
+  const [configured, setConfigured] = useState(model.configured ?? true);
+  const [enabled, setEnabled] = useState(model.enabled);
+  const [error, setError] = useState<string>();
+  const [pending, setPending] = useState(false);
+
+  async function toggle(nextEnabled: boolean) {
+    const previousEnabled = enabled;
+    setEnabled(nextEnabled);
+    setPending(true);
+    setError(undefined);
+    try {
+      await json(configured ? `/api/admin/models/${model.alias}` : "/api/admin/models", {
+        method: configured ? "PATCH" : "POST",
+        body: JSON.stringify({
+          ...(configured ? {} : { alias: model.alias }),
+          upstreamModel: model.upstreamModel,
+          displayName: model.displayName,
+          enabled: nextEnabled,
+        }),
+      });
+      setConfigured(true);
+    } catch (caught) {
+      setEnabled(previousEnabled);
+      setError(caught instanceof Error ? caught.message : "Could not update model");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <div className="admin-row provider-model-row">
+      <div className="provider-model-copy">
+        <strong>{model.displayName || model.alias}</strong>
+        <span>{model.upstreamModel}</span>
+      </div>
+      <label className="switch-field">
+        <input
+          type="checkbox"
+          role="switch"
+          aria-label={`Enable ${model.upstreamModel}`}
+          checked={enabled}
+          disabled={pending}
+          onChange={(event) => void toggle(event.target.checked)}
+        />
+        <span className="switch-control" aria-hidden="true" />
+        <span>{enabled ? "Enabled" : "Disabled"}</span>
+      </label>
+      {error && <p className="error">{error}</p>}
+    </div>
+  );
+}
+
+function AdminModels({ databricksModels }: { databricksModels: boolean }) {
   const [models, setModels] = useState<ModelAliasInfo[]>();
   const [alias, setAlias] = useState("");
   const [upstreamModel, setUpstreamModel] = useState("");
@@ -401,22 +459,31 @@ function AdminModels() {
     <>
       <PageHeader title="Models" />
       <section className="section-block">
-        <h2 className="section-label">Model aliases</h2>
+        <h2 className="section-label">{databricksModels ? "Available models" : "Model aliases"}</h2>
         <div className="panel admin-list">
           {!models && !error && <p className="muted">Loading models…</p>}
-          {models?.length === 0 && <div className="empty-state"><strong>No models configured</strong><span>Add an alias below.</span></div>}
-          {models?.map((model) => <ModelAliasRow key={model.alias} model={model} reload={load} />)}
+          {models?.length === 0 && (
+            <div className="empty-state">
+              <strong>{databricksModels ? "No models available" : "No models configured"}</strong>
+              {!databricksModels && <span>Add an alias below.</span>}
+            </div>
+          )}
+          {models?.map((model) => databricksModels
+            ? <DatabricksModelRow key={model.upstreamModel} model={model} />
+            : <ModelAliasRow key={model.alias} model={model} reload={load} />)}
         </div>
       </section>
-      <section className="section-block">
-        <h2 className="section-label">Add model</h2>
-        <form className="panel admin-form" onSubmit={(event) => void create(event)}>
-          <label>Alias<input value={alias} required pattern="[a-z0-9][a-z0-9._-]{0,63}" maxLength={64} placeholder="gpt-5.6-luna" onChange={(event) => setAlias(event.target.value)} /></label>
-          <label>Upstream model<input value={upstreamModel} required maxLength={255} placeholder="openai/gpt-5.6-luna" onChange={(event) => setUpstreamModel(event.target.value)} /></label>
-          <label>Display name<input value={displayName} maxLength={100} placeholder="Optional" onChange={(event) => setDisplayName(event.target.value)} /></label>
-          <button className="primary">Add model</button>
-        </form>
-      </section>
+      {!databricksModels && (
+        <section className="section-block">
+          <h2 className="section-label">Add model</h2>
+          <form className="panel admin-form" onSubmit={(event) => void create(event)}>
+            <label>Alias<input value={alias} required pattern="[a-z0-9][a-z0-9._-]{0,254}" maxLength={255} placeholder="gpt-5.6-luna" onChange={(event) => setAlias(event.target.value)} /></label>
+            <label>Upstream model<input value={upstreamModel} required maxLength={255} placeholder="openai/gpt-5.6-luna" onChange={(event) => setUpstreamModel(event.target.value)} /></label>
+            <label>Display name<input value={displayName} maxLength={100} placeholder="Optional" onChange={(event) => setDisplayName(event.target.value)} /></label>
+            <button className="primary">Add model</button>
+          </form>
+        </section>
+      )}
       {error && <p className="error page-error admin-error">{error}</p>}
     </>
   );
@@ -535,7 +602,9 @@ export function App({ brand = defaultBrand, extensions = [] }: AppProps) {
   if (extensionRoute) {
     const ExtensionPage = extensionRoute.component;
     page = <ExtensionPage session={session} />;
-  } else if (route.page === "admin-models") page = <AdminModels />;
+  } else if (route.page === "admin-models") {
+    page = <AdminModels databricksModels={session.capabilities.databricksModels === true} />;
+  }
   else if (route.page === "admin-members") page = <AdminMembers />;
   else if (route.page === "settings") page = <Settings />;
   else page = <Overview session={session} />;

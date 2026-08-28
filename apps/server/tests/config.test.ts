@@ -42,14 +42,9 @@ describe("configuration", () => {
       DAHLIA_AUTH_TYPE: "header",
       DAHLIA_AI_BACKEND: "databricks",
       DATABRICKS_HOST: "workspace.cloud.databricks.com",
-      DATABRICKS_CLIENT_ID: "app-client-id",
-      DATABRICKS_CLIENT_SECRET: "app-client-secret",
     }).provider).toEqual({
       backend: "databricks",
-      baseUrl: "https://workspace.cloud.databricks.com/ai-gateway/openai/v1",
-      clientId: "app-client-id",
-      clientSecret: "app-client-secret",
-      tokenUrl: "https://workspace.cloud.databricks.com/oidc/v1/token",
+      baseUrl: "https://workspace.cloud.databricks.com/ai-gateway/mlflow/v1",
     });
   });
 

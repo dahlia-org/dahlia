@@ -1,7 +1,14 @@
 import type { AuthStore } from "../auth/store";
 import type { AppConfig } from "../config";
-import { DatabricksTokenError, DatabricksTokenProvider } from "../databricks/token";
-import { sendOpenAIResponses, type GatewayFetch } from "./adapters";
+import { listDatabricksModels, sendOpenAIResponses, type GatewayFetch } from "./adapters";
+import { MODEL_ALIAS_PATTERN } from "./model-alias";
+
+interface DatabricksModel {
+  id: string;
+  displayName: string | null;
+}
+
+const DATABRICKS_MODEL_TIMEOUT_MS = 30_000;
 
 export class GatewayRequestError extends Error {
   constructor(
@@ -14,26 +21,15 @@ export class GatewayRequestError extends Error {
 }
 
 export class GatewayService {
-  private readonly databricksTokens?: DatabricksTokenProvider;
-
   constructor(
     private readonly config: AppConfig,
     private readonly store: Pick<AuthStore, "getEnabledModelAlias" | "listModelAliases">,
     private readonly transport: GatewayFetch = fetch,
-  ) {
-    if (config.provider?.backend === "databricks") {
-      this.databricksTokens = new DatabricksTokenProvider(config.provider, transport);
-    }
-  }
+  ) {}
 
   async models() {
     if (!this.config.provider) return { object: "list", data: [] };
-    let aliases;
-    try {
-      aliases = await this.store.listModelAliases();
-    } catch {
-      throw new GatewayRequestError("Model registry is unavailable", 503, "model_registry_unavailable");
-    }
+    const aliases = await this.modelAliases();
     return {
       object: "list",
       data: aliases.filter((alias) => alias.enabled).map((alias) => ({
@@ -44,6 +40,26 @@ export class GatewayService {
         display_name: alias.displayName || alias.alias,
       })),
     };
+  }
+
+  async adminModels(request: Request) {
+    const aliases = await this.modelAliases();
+    if (this.config.provider?.backend !== "databricks") {
+      return aliases.map((alias) => ({ ...alias, configured: true }));
+    }
+    const models = await this.databricksModels(request);
+    return models.map((model) => {
+      const configured = aliases.find((alias) => alias.upstreamModel === model.id);
+      return configured
+        ? { ...configured, configured: true }
+        : {
+            alias: databricksModelAlias(model.id),
+            upstreamModel: model.id,
+            displayName: model.displayName,
+            enabled: false,
+            configured: false,
+          };
+    });
   }
 
   async responses(request: Request): Promise<Response> {
@@ -68,7 +84,7 @@ export class GatewayService {
     }
     const upstreamBody = JSON.stringify({ ...body, model: alias.upstreamModel });
     const authorization = provider.backend === "databricks"
-      ? `Bearer ${await this.getDatabricksToken()}`
+      ? forwardedDatabricksAuthorization(request)
       : `Bearer ${provider.apiKey}`;
     const upstream = await sendOpenAIResponses(
       provider,
@@ -81,18 +97,6 @@ export class GatewayService {
       this.transport,
     );
     return proxyUpstreamResponse(upstream);
-  }
-
-  private async getDatabricksToken(): Promise<string> {
-    if (!this.databricksTokens) {
-      throw new GatewayRequestError("Databricks authentication failed", 502, "provider_authentication_failed");
-    }
-    try {
-      return await this.databricksTokens.getToken();
-    } catch (error) {
-      if (!(error instanceof DatabricksTokenError)) throw error;
-      throw new GatewayRequestError("Databricks authentication failed", 502, "provider_authentication_failed");
-    }
   }
 
   private assertRequestCanBeRead(request: Request): void {
@@ -109,6 +113,64 @@ export class GatewayService {
       throw new GatewayRequestError("Request body is too large", 413, "request_too_large");
     }
   }
+
+  private async modelAliases() {
+    try {
+      return await this.store.listModelAliases();
+    } catch {
+      throw new GatewayRequestError("Model registry is unavailable", 503, "model_registry_unavailable");
+    }
+  }
+
+  private async databricksModels(request: Request): Promise<DatabricksModel[]> {
+    const provider = this.config.provider;
+    if (provider?.backend !== "databricks") return [];
+    const response = await listDatabricksModels(
+      provider,
+      forwardedDatabricksAuthorization(request),
+      AbortSignal.any([request.signal, AbortSignal.timeout(DATABRICKS_MODEL_TIMEOUT_MS)]),
+      this.transport,
+    ).catch(() => {
+      throw new GatewayRequestError("Databricks model list is unavailable", 502, "provider_models_unavailable");
+    });
+    if (!response.ok) {
+      throw new GatewayRequestError("Databricks model list is unavailable", 502, "provider_models_unavailable");
+    }
+    const body: unknown = await response.json().catch(() => undefined);
+    if (!body || typeof body !== "object" || !("data" in body) || !Array.isArray(body.data)) {
+      throw new GatewayRequestError("Databricks model list is invalid", 502, "provider_models_invalid");
+    }
+    return body.data.map((entry: unknown) => {
+      if (!entry || typeof entry !== "object" || !("id" in entry) || typeof entry.id !== "string" || !entry.id.trim()) {
+        throw new GatewayRequestError("Databricks model list is invalid", 502, "provider_models_invalid");
+      }
+      const id = entry.id.trim();
+      if (id.length > 255 || !MODEL_ALIAS_PATTERN.test(databricksModelAlias(id))) {
+        throw new GatewayRequestError("Databricks model list is invalid", 502, "provider_models_invalid");
+      }
+      const displayName = "display_name" in entry ? entry.display_name : undefined;
+      if (displayName !== undefined && displayName !== null && typeof displayName !== "string") {
+        throw new GatewayRequestError("Databricks model list is invalid", 502, "provider_models_invalid");
+      }
+      return { id, displayName: displayName?.trim().slice(0, 100) || null };
+    });
+  }
+}
+
+function databricksModelAlias(id: string): string {
+  return id.startsWith("system.ai.") ? id.slice("system.ai.".length) : id;
+}
+
+function forwardedDatabricksAuthorization(request: Request): string {
+  const token = request.headers.get("x-forwarded-access-token")?.trim();
+  if (!token) {
+    throw new GatewayRequestError(
+      "Databricks access token is unavailable",
+      401,
+      "databricks_access_token_required",
+    );
+  }
+  return `Bearer ${token}`;
 }
 
 async function parseBoundedJsonObject(request: Request, maximumBytes: number): Promise<Record<string, unknown>> {

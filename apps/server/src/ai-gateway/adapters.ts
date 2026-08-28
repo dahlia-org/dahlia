@@ -39,3 +39,22 @@ export function sendOpenAIResponses(
     signal: request.signal,
   });
 }
+
+export function listDatabricksModels(
+  provider: Extract<ProviderConfig, { backend: "databricks" }>,
+  authorization: string,
+  signal?: AbortSignal,
+  transport: GatewayFetch = fetch,
+): Promise<Response> {
+  const endpoint = new URL(provider.baseUrl);
+  endpoint.pathname = `${endpoint.pathname.replace(/\/$/, "")}/models`;
+  return transport(endpoint, {
+    cache: "no-store",
+    headers: {
+      accept: "application/json",
+      authorization,
+      "user-agent": "dahlia-server/0.1",
+    },
+    signal,
+  });
+}

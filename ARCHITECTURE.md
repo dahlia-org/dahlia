@@ -124,10 +124,10 @@ Better Auth、Gateway 管理 metadata、将来の meeting cloud sync は単一�
 `DAHLIA_DATABASE_TYPE` は `sqlite`、`postgres`、`lakebase`、`hyperdrive`、`d1` から選び、SQLite／PostgreSQL の接続先は
 `DAHLIA_DATABASE_URL` で指定する。Node は SQLite／PostgreSQL／Lakebase、Workers は D1／Hyperdrive／PostgreSQL を扱う。
 Lakebase は公式 `@databricks/lakebase` connector で OAuth credential を更新する。
-database 選択は認証および AI backend と独立する。`DAHLIA_AI_BACKEND` で Databricks、Cloudflare、OpenAI を選択し、Databricks は App service principal、その他は `OPENAI_API_KEY` と必要に応じて `OPENAI_BASE_URL` を使う。
+database 選択は認証および AI backend と独立する。`DAHLIA_AI_BACKEND` で Databricks、Cloudflare、OpenAI を選択し、Databricks は Apps proxy の `X-Forwarded-Access-Token`、その他は `OPENAI_API_KEY` と必要に応じて `OPENAI_BASE_URL` を使う。
 Databricks Apps の header identity は sessionless だが、Model Alias と administrator の正本として Lakebase を使用する。Responses request は上限内で検証して upstream model を
 変換し、upstream response body は streaming relay する。request と response の content は DB、cache、analytics、application log
-へ保存しない。
+へ保存しない。Databricks backend の管理画面は forwarded user token で workspace の model service 一覧を都度取得し、一覧自体は保存せず、管理者が有効化した Model Alias だけを application database に保存する。
 
 ```text
 Dahlia macOS / bundled Codex 0.148.0
@@ -137,7 +137,7 @@ Dahlia macOS / bundled Codex 0.148.0
     └─ Databricks Apps / trusted proxy identity
         ↓ database-backed Model Alias resolution
     OpenAI-compatible upstream adapter
-        ↓ administrator-owned credential
+        ↓ deployment credential or forwarded Databricks user token
     upstream Responses API
 
 Drizzle application store (SQLite, PostgreSQL, Lakebase, Hyperdrive, or D1)
@@ -155,8 +155,9 @@ Workers Static Assets が直接配信し、Worker 内から asset binding を呼
 
 Gateway、認証 store、upstream、artifact storage の停止は Server 操作だけを失敗させる。macOS の起動、録音、音声保存、文字起こし、
 閲覧、検索はこの runtime を待たない。Artifact API は明示的に渡された任意 asset だけを扱い、録音、SQLite、Vault の自動 upload／sync は行わない。runtime と data boundary の判断は
-[ADR-0043](docs/adr/0043-unify-dahlia-server-application-database.md)および
-[ADR-0045](docs/adr/0045-add-owner-scoped-artifact-transport.md)を正本とする。
+[ADR-0043](docs/adr/0043-unify-dahlia-server-application-database.md)、
+[ADR-0045](docs/adr/0045-add-owner-scoped-artifact-transport.md)、および
+[ADR-0046](docs/adr/0046-forward-databricks-user-token-to-ai-gateway.md)を正本とする。
 
 ## Workload Classes
 
