@@ -78,10 +78,13 @@ export class IdentityService {
   private fromHeader(request: Request): Identity {
     const email = request.headers.get(this.config.authHeader)?.trim().toLowerCase();
     if (!email) throw new AuthenticationError(`${this.config.authHeader} is missing`);
+    const userId = request.headers.get("X-Forwarded-User")?.trim() || email;
+    const name = request.headers.get("X-Forwarded-Preferred-Username")?.trim() || undefined;
     return {
-      userId: email,
+      userId,
       email,
-      workspaceId: personalWorkspaceId(email),
+      name,
+      workspaceId: personalWorkspaceId(userId),
       source: "header",
     };
   }

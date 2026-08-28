@@ -16,7 +16,7 @@ Better Auth, Gateway administration, and future meeting cloud sync share one Dri
 | `hyperdrive` | Cloudflare Worker | `HYPERDRIVE` binding |
 | `d1` | Cloudflare Worker | `dahlia_db_prod` binding |
 
-Node supports `sqlite`, `postgres`, and `lakebase`; Workers support `d1`, `hyperdrive`, and direct `postgres`. Lakebase uses the official `@databricks/lakebase` pool for OAuth credential refresh. All queries and Better Auth adapters use Drizzle.
+Node supports `sqlite`, `postgres`, and `lakebase`; Workers support `d1`, `hyperdrive`, and direct `postgres`. PostgreSQL-compatible connections use a `dahlia` schema owned by the connection user. Lakebase uses the official `@databricks/lakebase` pool for OAuth credential refresh. All queries and Better Auth adapters use Drizzle.
 
 ## API contract
 
@@ -34,17 +34,20 @@ Node supports `sqlite`, `postgres`, and `lakebase`; Workers support `d1`, `hyper
 
 OAuth access uses `api.model.read` for `GET /api/v1/models` and `api.model.request` for `POST /api/v1/responses`. The fixed client is allowed to request both scopes; each endpoint verifies its own scope.
 
-`header` reads the authenticated email from `X-Forwarded-Email` by default. Override the name with `DAHLIA_AUTH_HEADER`, for example `Cf-Access-Authenticated-User-Email`. The upstream proxy must remove client-supplied values, write the verified header itself, and prevent direct access to the Server.
+`header` reads the authenticated email from `X-Forwarded-Email` by default. Override the email header name with `DAHLIA_AUTH_HEADER`, for example `Cf-Access-Authenticated-User-Email`. `X-Forwarded-User` supplies the stable user ID and `X-Forwarded-Preferred-Username` supplies the display name; when absent, the email remains the user ID. The upstream proxy must remove client-supplied identity headers, write the verified values itself, and prevent direct access to the Server.
+
+`DAHLIA_APP_URL` sets the canonical public application origin used for OAuth metadata and browser mutation checks. When it is absent, Dahlia uses `DATABRICKS_APP_URL`, then falls back to `http://localhost:5173` for local development.
 
 ## Provider and model configuration
 
-The AI backend uses the OpenAI Responses-compatible contract and is independent of the database. Set `OPENAI_API_KEY`; `OPENAI_BASE_URL` defaults to `https://api.openai.com/v1`. While it is absent, `/api/v1/models` returns an empty list and Responses returns `503 provider_not_configured`.
+The AI backend uses the OpenAI Responses-compatible contract and is independent of the database. Select `databricks`, `cloudflare`, or `openai` with `DAHLIA_AI_BACKEND`; it defaults to `openai`. While the selected non-Databricks backend has no `OPENAI_API_KEY`, `/api/v1/models` returns an empty list and Responses returns `503 provider_not_configured`.
 
 Set the optional `DAHLIA_ADMIN_EMAIL` to bootstrap administration. That email remains an administrator while configured and cannot be removed in the UI. Additional administrator emails are managed under `/admin/members`. Starting with no administrator is allowed.
 
 OpenAI or another OpenAI-compatible provider:
 
 ```dotenv
+DAHLIA_AI_BACKEND=openai
 OPENAI_API_KEY=...
 # OPENAI_BASE_URL=https://api.openai.com/v1
 ```
@@ -54,17 +57,20 @@ Non-local provider URLs must use HTTPS. The database is the only Model Alias sou
 Databricks native OpenAI Responses API:
 
 ```dotenv
-OPENAI_API_KEY=<databricks-pat-or-bearer-token>
-OPENAI_BASE_URL=https://<workspace-host>/ai-gateway/openai/v1
+DAHLIA_AI_BACKEND=databricks
+DATABRICKS_HOST=https://<workspace-host>
+DATABRICKS_CLIENT_ID=<service-principal-client-id>
+DATABRICKS_CLIENT_SECRET=<service-principal-client-secret>
 DAHLIA_DATABASE_TYPE=lakebase
 LAKEBASE_ENDPOINT=<injected from the postgres app resource>
 ```
 
-The Lakebase connector uses the Databricks Apps service principal only for rotating database credentials. Those credentials are not sent to the model endpoint.
+Databricks Apps supplies the three `DATABRICKS_*` variables automatically. Dahlia exchanges the App service principal credentials for a short-lived workspace OAuth token and sends only that token to `DATABRICKS_HOST/ai-gateway/openai/v1`. The Lakebase connector uses the same App identity to rotate database credentials.
 
 Cloudflare AI Gateway:
 
 ```dotenv
+DAHLIA_AI_BACKEND=cloudflare
 OPENAI_API_KEY=<cloudflare-api-token>
 OPENAI_BASE_URL=https://api.cloudflare.com/client/v4/accounts/<account-id>/ai/v1
 ```
@@ -83,11 +89,11 @@ pnpm dev
 
 The development scripts load the repository-root `.env.local`. SQLite at `apps/server/.data/dahlia-auth.sqlite` is the default, so PostgreSQL and Docker are not required locally.
 
-Set `DAHLIA_DATABASE_TYPE=postgres` and `DAHLIA_DATABASE_URL` to move Better Auth and Gateway administration to PostgreSQL, or set `DAHLIA_AUTH_PROVIDER=header` for an identity-aware proxy.
+Set `DAHLIA_DATABASE_TYPE=postgres` and `DAHLIA_DATABASE_URL` to move Better Auth and Gateway administration to PostgreSQL, or set `DAHLIA_AUTH_TYPE=header` for an identity-aware proxy.
 
 For `accounts`, configure the Google OAuth callback as `http://localhost:5173/api/auth/callback/google` locally or `https://<host>/api/auth/callback/google` in production.
 
-For an identity-aware proxy, set `DAHLIA_AUTH_PROVIDER=header` and `DAHLIA_AUTH_HEADER` to the verified email header. Ensure the proxy removes and replaces that header and the application server is not directly reachable.
+For an identity-aware proxy, set `DAHLIA_AUTH_TYPE=header` and `DAHLIA_AUTH_HEADER` to the verified email header. Ensure the proxy removes and replaces that header and the application server is not directly reachable.
 
 The reference production container runs `pnpm db:migrate:prod` before starting Node, including with `header` authentication. PostgreSQL migrations use a session-level advisory lock, so replicas wait for one migrator instead of racing the same DDL.
 

@@ -127,8 +127,7 @@ describe("server extensions", () => {
           { id: "extension", path: "extension/drizzle" },
         ],
         files: [
-          "drizzle/0000_solid_ted_forrester.sql",
-          "drizzle/0001_server.sql",
+          "drizzle/20260828162616_baseline/migration.sql",
           "extension/drizzle/0000.sql",
         ],
       },

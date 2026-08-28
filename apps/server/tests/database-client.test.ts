@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 
 import { postgresMigrationConfigs, readPostgresMigrations } from "../src/db/client";
+import { createPostgresPool } from "../src/db/postgres";
 import { serverMigrationManifest } from "../src/migrations";
 
 describe("PostgreSQL migrations", () => {
@@ -12,15 +13,25 @@ describe("PostgreSQL migrations", () => {
       { id: "billing", path: "billing" },
       { id: "analytics", path: "analytics" },
     ])).toEqual([
-      { migrationsFolder: "server" },
-      { migrationsFolder: "billing", migrationsTable: "__dahlia_billing_migrations" },
-      { migrationsFolder: "analytics", migrationsTable: "__dahlia_analytics_migrations" },
+      { migrationsFolder: "server", migrationsSchema: "dahlia" },
+      { migrationsFolder: "billing", migrationsSchema: "dahlia", migrationsTable: "__dahlia_billing_migrations" },
+      { migrationsFolder: "analytics", migrationsSchema: "dahlia", migrationsTable: "__dahlia_analytics_migrations" },
     ]);
     expect(postgresMigrationConfigs([
       { id: "server", path: "server" },
       { id: "analytics", path: "analytics" },
       { id: "billing", path: "billing" },
-    ])[2]).toEqual({ migrationsFolder: "billing", migrationsTable: "__dahlia_billing_migrations" });
+    ])[2]).toEqual({
+      migrationsFolder: "billing",
+      migrationsSchema: "dahlia",
+      migrationsTable: "__dahlia_billing_migrations",
+    });
+  });
+
+  it("uses the connection owner for the Dahlia PostgreSQL schema", async () => {
+    const pool = createPostgresPool("postgresql://dahlia@127.0.0.1:5432/dahlia", 1);
+    expect(pool.options.options).toBe("-c search_path=dahlia");
+    await pool.end();
   });
 
   it("rejects duplicate or unstable ledger IDs", () => {
@@ -32,11 +43,17 @@ describe("PostgreSQL migrations", () => {
       .toThrow("Invalid PostgreSQL migration ledger ID: Billing v2");
   });
 
-  it("reads the committed legacy Drizzle journal without rewriting released migrations", () => {
+  it("reads the committed auth and Dahlia schema baseline", () => {
     const migrationsFolder = serverMigrationManifest.postgres.directories[0]!.path;
     const migrations = readPostgresMigrations({ migrationsFolder });
-    expect(migrations.map(({ name }) => name)).toEqual(["0000_solid_ted_forrester", "0001_server"]);
+    expect(migrations.map(({ name }) => name)).toEqual(["20260828162616_baseline"]);
     expect(migrations.every(({ hash, sql }) => hash.length === 64 && sql.length > 0)).toBe(true);
+    const sql = migrations.flatMap((migration) => migration.sql).join("\n");
+    expect(sql).toContain('CREATE SCHEMA IF NOT EXISTS "auth"');
+    expect(sql).toContain('CREATE SCHEMA IF NOT EXISTS "dahlia"');
+    expect(sql).toContain('CREATE TABLE "auth"."user"');
+    expect(sql).toContain('CREATE TABLE "dahlia"."model_alias"');
+    expect(sql).not.toContain('"public".');
     expect(readFileSync(new URL("../src/db/client.ts", import.meta.url), "utf8")).not.toContain("createLakebasePool");
   });
 });

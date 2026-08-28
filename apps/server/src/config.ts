@@ -2,13 +2,21 @@ import { z } from "zod";
 
 export type AuthProvider = "accounts" | "header";
 export type DatabaseType = "sqlite" | "postgres" | "lakebase" | "hyperdrive" | "d1";
+export type AIBackend = "databricks" | "cloudflare" | "openai";
 /** @deprecated Use DatabaseType. */
 export type AuthDatabaseBackend = DatabaseType;
 
-export interface ProviderConfig {
+export type ProviderConfig = {
+  backend: "cloudflare" | "openai";
   apiKey: string;
   baseUrl: string;
-}
+} | {
+  backend: "databricks";
+  baseUrl: string;
+  clientId: string;
+  clientSecret: string;
+  tokenUrl: string;
+};
 
 export interface LakebaseDatabaseConfig {
   database: string;
@@ -37,6 +45,7 @@ export interface AppConfig {
 
 const authProviderSchema = z.enum(["accounts", "header"]);
 const databaseTypeSchema = z.enum(["sqlite", "postgres", "lakebase", "hyperdrive", "d1"]);
+const aiBackendSchema = z.enum(["databricks", "cloudflare", "openai"]);
 const LOCAL_BASE_URL = "http://localhost:5173";
 const LOCAL_DATABASE_URL = "file:.data/dahlia-auth.sqlite";
 
@@ -104,18 +113,43 @@ function loadLakebaseDatabase(
 }
 
 function providerConfig(env: Record<string, string | undefined>): ProviderConfig | undefined {
+  const backend = aiBackendSchema.parse(env.DAHLIA_AI_BACKEND?.trim() || "openai");
+  if (backend === "databricks") {
+    const hostValue = required(env, "DATABRICKS_HOST");
+    const host = validateBaseUrl(hostValue.includes("://") ? hostValue : `https://${hostValue}`, "DATABRICKS_HOST");
+    const url = new URL(host);
+    if (url.pathname !== "/") throw new Error("DATABRICKS_HOST must be a workspace origin without a path");
+    return {
+      backend,
+      baseUrl: `${host}/ai-gateway/openai/v1`,
+      clientId: required(env, "DATABRICKS_CLIENT_ID"),
+      clientSecret: required(env, "DATABRICKS_CLIENT_SECRET"),
+      tokenUrl: `${host}/oidc/v1/token`,
+    };
+  }
   const apiKey = env.OPENAI_API_KEY?.trim();
   if (!apiKey) return undefined;
   return {
+    backend,
     apiKey,
-    baseUrl: validateBaseUrl(env.OPENAI_BASE_URL?.trim() || "https://api.openai.com/v1", "OPENAI_BASE_URL"),
+    baseUrl: validateBaseUrl(
+      backend === "cloudflare"
+        ? required(env, "OPENAI_BASE_URL")
+        : env.OPENAI_BASE_URL?.trim() || "https://api.openai.com/v1",
+      "OPENAI_BASE_URL",
+    ),
   };
 }
 
 export function loadConfig(env: Record<string, string | undefined>): AppConfig {
-  const authProvider = authProviderSchema.parse(env.DAHLIA_AUTH_PROVIDER?.trim() || "accounts");
+  const authProvider = authProviderSchema.parse(env.DAHLIA_AUTH_TYPE?.trim() || "accounts");
   const databaseType = databaseTypeSchema.parse(env.DAHLIA_DATABASE_TYPE?.trim() || "sqlite");
-  const baseUrl = validateBaseUrl(env.DAHLIA_BASE_URL?.trim() || LOCAL_BASE_URL, "DAHLIA_BASE_URL");
+  const configuredAppUrl = env.DAHLIA_APP_URL?.trim();
+  const databricksAppUrl = env.DATABRICKS_APP_URL?.trim();
+  const baseUrl = validateBaseUrl(
+    configuredAppUrl || databricksAppUrl || LOCAL_BASE_URL,
+    configuredAppUrl ? "DAHLIA_APP_URL" : databricksAppUrl ? "DATABRICKS_APP_URL" : "DAHLIA_APP_URL",
+  );
   const maxRequestBytes = z.coerce
     .number()
     .int()

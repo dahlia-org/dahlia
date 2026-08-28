@@ -45,8 +45,9 @@ describe("deployment routing", () => {
       migrations_dir: "auth-migrations",
     }));
     expect(wrangler.vars).toEqual({
-      DAHLIA_AUTH_PROVIDER: "accounts",
-      DAHLIA_BASE_URL: "https://{name}.{subdomain}.workers.dev",
+      DAHLIA_AI_BACKEND: "cloudflare",
+      DAHLIA_AUTH_TYPE: "accounts",
+      DAHLIA_APP_URL: "https://{name}.{subdomain}.workers.dev",
       DAHLIA_DATABASE_TYPE: "d1",
       GOOGLE_CLIENT_ID: "replace-with-google-client-id",
     });
@@ -76,6 +77,8 @@ describe("deployment routing", () => {
 
     expect(worker).not.toContain("ASSETS");
     expect(worker).not.toContain("isApplicationPath");
+    expect(worker).toContain("DAHLIA_AI_BACKEND");
+    expect(worker).toContain("DATABRICKS_HOST");
     expect(worker).toContain("OPENAI_API_KEY");
     expect(worker).toContain("OPENAI_BASE_URL");
     expect(cloudflareVite).toContain("cloudflare(");
@@ -117,7 +120,7 @@ describe("deployment routing", () => {
     ["hyperdrive", "HYPERDRIVE binding"],
   ])("requires the selected %s Worker binding", async (databaseType, message) => {
     await expect(initializeWorkerApp({
-      DAHLIA_AUTH_PROVIDER: "header",
+      DAHLIA_AUTH_TYPE: "header",
       DAHLIA_DATABASE_TYPE: databaseType,
     })).rejects.toThrow(message);
   });
@@ -128,7 +131,7 @@ describe("deployment routing", () => {
       scripts: Record<string, string>;
     };
 
-    expect(example).toContain("DAHLIA_BASE_URL=http://localhost:5173");
+    expect(example).toContain("DAHLIA_APP_URL=http://localhost:5173");
     expect(example).toContain("DAHLIA_DATABASE_TYPE=sqlite");
     expect(example).toContain("DAHLIA_DATABASE_URL=file:.data/dahlia-auth.sqlite");
     expect(packageJson.scripts.predev).toBe("pnpm run db:migrate");
@@ -148,8 +151,7 @@ describe("deployment routing", () => {
 
   it("deploys the pnpm workspace as a Databricks App backed by Lakebase", () => {
     const bundle = readText("../../../deploy/databricks/databricks.yml");
-    const appResource = readText("../../../deploy/databricks/resources/dahlia_server.app.yml");
-    const databaseResource = readText("../../../deploy/databricks/resources/dahlia_server.postgres.yml");
+    const resource = readText("../../../deploy/databricks/resources/dahlia_server.yml");
     const rootPackage = JSON.parse(readText("../../../package.json")) as {
       packageManager: string;
       scripts: Record<string, string>;
@@ -166,21 +168,30 @@ describe("deployment routing", () => {
     expect(rootPackage.scripts["dev:cloudflare"]).toContain("@dahlia-ai/server");
     expect(workspace).toContain("apps/*");
     expect(bundle).toContain('databricks_cli_version: ">= 1.4.0"');
-    expect(bundle).toContain("- ../../Vendor/**");
-    expect(bundle).toContain(`      postgres_databases:
-        dahlia_database:
-          lifecycle:
-            prevent_destroy: true`);
-    expect(appResource).toContain("source_code_path: ../..");
-    expect(appResource)
+    expect(bundle).toContain("- ../../apps/server");
+    expect(bundle).toContain("- ../../pnpm-lock.yaml");
+    expect(bundle).toContain("app_name: dahlia-dev");
+    expect(bundle).toContain("app_name: dahlia-prod");
+    expect(bundle).toContain("database_project_id: dahlia-db-dev");
+    expect(bundle).toContain("database_project_id: dahlia-db");
+    expect(bundle).toMatch(/admin_email:\n\s+description: .+\n\s+default: " "/);
+    expect(bundle).not.toContain("postgres_databases:");
+    expect(resource).toContain("source_code_path: ../../..");
+    expect(resource).toContain(`user_api_scopes:
+        - ai-gateway
+        - files`);
+    expect(resource)
       .toContain('command: ["corepack", "pnpm", "--filter", "@dahlia-ai/server", "start:databricks"]');
-    expect(appResource).toContain("value: https://${resources.apps.dahlia_server.url}");
-    expect(appResource).toContain("value_from: postgres");
-    expect(appResource).toContain("value_from: openai_api_key");
-    expect(appResource).toContain("permission: CAN_CONNECT_AND_CREATE");
-    expect(databaseResource).toContain("postgres_projects:");
-    expect(databaseResource).toContain("postgres_roles:");
-    expect(databaseResource).toContain("postgres_databases:");
+    expect(resource).not.toContain("DAHLIA_APP_URL");
+    expect(resource).not.toContain("resources.apps.dahlia_server.url");
+    expect(resource).toContain("value: databricks");
+    expect(resource).toContain("value_from: postgres");
+    expect(resource).not.toContain("openai_api_key");
+    expect(resource).toContain("permission: CAN_CONNECT_AND_CREATE");
+    expect(resource).toContain("postgres_projects:");
+    expect(resource).not.toContain("postgres_roles:");
+    expect(resource).not.toContain("postgres_databases:");
+    expect(resource).toContain("/databases/databricks-postgres");
     expect(serverPackage.name).toBe("@dahlia-ai/server");
     expect(serverPackage.exports).toHaveProperty(".");
     expect(serverPackage.exports).toHaveProperty("./client");
@@ -194,18 +205,25 @@ describe("deployment routing", () => {
       .toContain('VOLUME ["/app/apps/server/.data"]');
     expect(readText("../src/db/client.ts"))
       .toContain("pg_advisory_lock");
+    expect(readText("../src/db/client.ts"))
+      .toContain("migrationsSchema: POSTGRES_SCHEMA");
     expect(serverPackage.scripts["ensure:wrangler"]).toContain("../../deploy/cloudflare/wrangler.example.jsonc");
   });
 
   it("commits only Server application tables after Better Auth", () => {
     const d1 = readText("../auth-migrations/0002_server.sql");
-    const postgres = readText("../drizzle/0001_server.sql");
+    const postgres = readText("../drizzle/20260828162616_baseline/migration.sql");
+    expect(d1).toContain('CREATE TABLE "modelAlias"');
+    expect(d1).toContain('CREATE TABLE "platformAdmin"');
+    expect(postgres).toContain('CREATE TABLE "dahlia"."model_alias"');
+    expect(postgres).toContain('CREATE TABLE "dahlia"."platform_admin"');
     for (const migration of [d1, postgres]) {
-      expect(migration).toContain('CREATE TABLE "model');
-      expect(migration).toContain('CREATE TABLE "platform');
       expect(migration).not.toContain("subscription");
       expect(migration).not.toContain("stripe");
       expect(migration).not.toContain("organization");
     }
+    expect(postgres).toContain('CREATE TABLE "auth"."user"');
+    expect(postgres).not.toContain('CREATE TABLE "dahlia"."user"');
+    expect(postgres).not.toContain('"public".');
   });
 });

@@ -12,7 +12,7 @@ import pg, { type Pool } from "pg";
 
 import type { AppConfig } from "../config";
 import type { PostgresMigrationDirectory } from "../migrations";
-import { createPostgresPool } from "./postgres";
+import { createPostgresPool, POSTGRES_SCHEMA } from "./postgres";
 
 export type PostgresDatabase = NodePgDatabase;
 export type SQLiteDatabase = SQLiteAsyncDatabase<"sync" | "async", unknown>;
@@ -36,15 +36,18 @@ function createDatabasePool(config: AppConfig, max: number): Pool {
   if (config.databaseType === "lakebase") {
     if (!config.lakebaseDatabase) throw new Error("Lakebase configuration is incomplete");
     const database = config.lakebaseDatabase;
-    return new pg.Pool(getLakebasePgConfig({
-      database: database.database,
-      endpoint: database.endpoint,
-      host: database.host,
-      max,
-      port: database.port,
-      sslMode: database.sslMode,
-      user: database.username,
-    }, noOpLakebaseTelemetry));
+    return new pg.Pool({
+      ...getLakebasePgConfig({
+        database: database.database,
+        endpoint: database.endpoint,
+        host: database.host,
+        max,
+        port: database.port,
+        sslMode: database.sslMode,
+        user: database.username,
+      }, noOpLakebaseTelemetry),
+      options: `-c search_path=${POSTGRES_SCHEMA}`,
+    });
   }
   if (config.databaseType !== "postgres" || !config.databaseUrl) {
     throw new Error("Node storage supports DAHLIA_DATABASE_TYPE=sqlite, postgres, or lakebase");
@@ -68,6 +71,7 @@ export function postgresMigrationConfigs(migrationDirectories: readonly Postgres
     ids.add(id);
     return {
       migrationsFolder: path,
+      migrationsSchema: POSTGRES_SCHEMA,
       ...(id === "server" ? {} : { migrationsTable: `__dahlia_${id}_migrations` }),
     };
   });

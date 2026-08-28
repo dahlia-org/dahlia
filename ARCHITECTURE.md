@@ -124,7 +124,7 @@ Better Auth、Gateway 管理 metadata、将来の meeting cloud sync は単一�
 `DAHLIA_DATABASE_TYPE` は `sqlite`、`postgres`、`lakebase`、`hyperdrive`、`d1` から選び、SQLite／PostgreSQL の接続先は
 `DAHLIA_DATABASE_URL` で指定する。Node は SQLite／PostgreSQL／Lakebase、Workers は D1／Hyperdrive／PostgreSQL を扱う。
 Lakebase は公式 `@databricks/lakebase` connector で OAuth credential を更新する。
-database 選択は認証および AI backend と独立し、upstream は `OPENAI_API_KEY` と `OPENAI_BASE_URL` だけで設定する。
+database 選択は認証および AI backend と独立する。`DAHLIA_AI_BACKEND` で Databricks、Cloudflare、OpenAI を選択し、Databricks は App service principal、その他は `OPENAI_API_KEY` と必要に応じて `OPENAI_BASE_URL` を使う。
 Databricks Apps の header identity は sessionless だが、Model Alias と administrator の正本として Lakebase を使用する。Responses request は上限内で検証して upstream model を
 変換し、upstream response body は streaming relay する。request と response の content は DB、cache、analytics、application log
 へ保存しない。

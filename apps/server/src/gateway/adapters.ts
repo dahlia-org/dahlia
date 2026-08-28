@@ -24,12 +24,12 @@ function upstreamHeaders(requestHeaders: Headers, authorization: string): Header
 
 export function sendOpenAIResponses(
   provider: ProviderConfig,
+  authorization: string,
   request: UpstreamRequest,
   transport: GatewayFetch = fetch,
-  disableCloudflarePayloadLogging = false,
 ): Promise<Response> {
-  const headers = upstreamHeaders(request.requestHeaders, `Bearer ${provider.apiKey}`);
-  if (disableCloudflarePayloadLogging) headers.set("cf-aig-collect-log-payload", "false");
+  const headers = upstreamHeaders(request.requestHeaders, authorization);
+  if (provider.backend === "cloudflare") headers.set("cf-aig-collect-log-payload", "false");
   const endpoint = new URL(provider.baseUrl);
   endpoint.pathname = `${endpoint.pathname.replace(/\/$/, "")}/responses`;
   return transport(endpoint, {

@@ -1,43 +1,36 @@
 # Deploy Dahlia Server on Databricks Apps
 
-This bundle creates a Databricks App and a dedicated Lakebase Autoscaling project, role, and database for each target. The Apps proxy authenticates requests before they reach Dahlia Server, so the deployment uses header identity without creating Better Auth sessions.
+This bundle creates a Databricks App and a dedicated Lakebase Autoscaling project for each target. The Apps proxy authenticates requests before they reach Dahlia Server, so the deployment uses header identity without creating Better Auth sessions.
 
 ```text
 browser / Dahlia Codex with U2M token
         │
         ▼
 Databricks Apps proxy
-        │ X-Forwarded-Email
+        │ X-Forwarded-User / X-Forwarded-Preferred-Username / X-Forwarded-Email
         ▼
-Dahlia Server App ─┬─ Databricks Secret ── OpenAI-compatible Responses API
+Dahlia Server App ─┬─ app service principal ── Databricks AI Gateway
                   └─ app service principal ── Lakebase PostgreSQL
 ```
 
 ## Prerequisites
 
 - A Databricks workspace with Databricks Apps and Lakebase Autoscaling enabled.
-- Permission to create Apps and Lakebase projects and to read the configured secret.
+- Permission to create Apps and Lakebase projects and query the configured AI Gateway models.
 - Databricks CLI 1.4.0 or newer, authenticated with a CLI profile or environment variables.
-- An existing Databricks secret containing the upstream API key or bearer token. The bundle references the secret but never stores its value.
 - Node.js 22.13 or newer, Corepack, and pnpm for local validation.
 
 ## Configure
 
-From `deploy/databricks`, export the required bundle variables:
+Optionally bootstrap an administrator:
 
 ```bash
 export BUNDLE_VAR_admin_email="admin@example.com"
-export BUNDLE_VAR_openai_secret_scope="dahlia"
-export BUNDLE_VAR_openai_secret_key="openai-api-key"
 ```
 
-The upstream defaults to the workspace OpenAI-compatible AI Gateway endpoint. Override it for OpenAI or another compatible provider:
+The App requests the `ai-gateway` and `files` user authorization scopes. It uses its Databricks service principal to obtain short-lived OAuth credentials and calls the workspace OpenAI-compatible AI Gateway at `DATABRICKS_HOST/ai-gateway/openai/v1`. No provider secret is required. Dahlia also uses the runtime-provided `DATABRICKS_APP_URL` as its canonical public origin, so the bundle does not need to reference its own App URL.
 
-```bash
-export BUNDLE_VAR_openai_base_url=https://api.openai.com/v1
-```
-
-The default resource names are `dahlia-server-dev` for `dev` and `dahlia-server` for `prod`. Override `BUNDLE_VAR_app_name` and `BUNDLE_VAR_database_project_id` when those names are already in use.
+The default App names are `dahlia-dev` for `dev` and `dahlia-prod` for `prod`. The corresponding Lakebase project IDs are `dahlia-db-dev` and `dahlia-db`. Override `BUNDLE_VAR_app_name` and `BUNDLE_VAR_database_project_id` when those names are already in use.
 
 ## Validate and deploy
 
@@ -48,11 +41,11 @@ databricks bundle run dahlia_server -t dev
 databricks bundle summary -t dev
 ```
 
-Use `-t prod` for production. The production Lakebase project and `dahlia` database have `lifecycle.prevent_destroy: true`; destructive changes fail until an operator deliberately removes that protection. Development deletion uses Lakebase's recoverable soft-delete behavior.
+Use `-t prod` for production. The production Lakebase project has `lifecycle.prevent_destroy: true`; destructive changes fail until an operator deliberately removes that protection. Development deletion uses Lakebase's recoverable soft-delete behavior.
 
 `bundle deploy` creates or updates the resources and uploads source code, but it does not restart an already-running App. Always run `dahlia_server` after deployment.
 
-The App resource grants its service principal `CAN_CONNECT_AND_CREATE` on the generated `dahlia` database. Databricks injects `PGHOST`, `PGDATABASE`, `PGPORT`, `PGSSLMODE`, and `PGUSER`; the `postgres` resource key supplies `LAKEBASE_ENDPOINT`. Dahlia refreshes database OAuth credentials through the official Lakebase connector, applies migrations under an advisory lock, and then starts the Node server.
+The App resource grants its service principal `CAN_CONNECT_AND_CREATE` on the project's default `databricks_postgres` database. Databricks injects `PGHOST`, `PGDATABASE`, `PGPORT`, `PGSSLMODE`, and `PGUSER`; the `postgres` resource key supplies `LAKEBASE_ENDPOINT`. Dahlia creates and owns the `auth` schema for Better Auth tables and the `dahlia` schema for application tables through that service principal, applies migrations under an advisory lock, and then starts the Node server.
 
 ## Smoke test
 
@@ -74,7 +67,7 @@ Sign in as the configured administrator, create a public Model Alias under `/adm
 
 ## Security requirements
 
-- Trust `X-Forwarded-Email` only behind the Databricks Apps proxy. Dahlia ignores `X-Forwarded-User`.
-- Provider credentials are injected from Databricks Secrets and are sent only to the configured upstream endpoint.
+- Trust `X-Forwarded-User`, `X-Forwarded-Preferred-Username`, and `X-Forwarded-Email` only behind the Databricks Apps proxy.
+- Provider credentials are short-lived OAuth tokens obtained with the App service principal and are sent only to the workspace AI Gateway.
 - Responses request and response content is streamed without being persisted or logged.
 - `/healthz` is process liveness only; anonymous external access is not guaranteed.

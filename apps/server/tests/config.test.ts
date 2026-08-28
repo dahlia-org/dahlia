@@ -24,19 +24,44 @@ describe("configuration", () => {
       ...accounts,
       DAHLIA_DATABASE_TYPE: "postgres",
       DAHLIA_DATABASE_URL: "postgresql://dahlia.example/dahlia",
+      DAHLIA_AI_BACKEND: "openai",
       OPENAI_API_KEY: "gateway-secret",
       OPENAI_BASE_URL: "https://provider.example/v1/",
     });
     expect(config).toMatchObject({
       databaseType: "postgres",
       databaseUrl: "postgresql://dahlia.example/dahlia",
-      provider: { apiKey: "gateway-secret", baseUrl: "https://provider.example/v1" },
+      provider: { backend: "openai", apiKey: "gateway-secret", baseUrl: "https://provider.example/v1" },
     });
+  });
+
+  it("builds the Databricks AI Gateway configuration from DATABRICKS_HOST", () => {
+    expect(loadConfig({
+      DAHLIA_AUTH_TYPE: "header",
+      DAHLIA_AI_BACKEND: "databricks",
+      DATABRICKS_HOST: "workspace.cloud.databricks.com",
+      DATABRICKS_CLIENT_ID: "app-client-id",
+      DATABRICKS_CLIENT_SECRET: "app-client-secret",
+    }).provider).toEqual({
+      backend: "databricks",
+      baseUrl: "https://workspace.cloud.databricks.com/ai-gateway/openai/v1",
+      clientId: "app-client-id",
+      clientSecret: "app-client-secret",
+      tokenUrl: "https://workspace.cloud.databricks.com/oidc/v1/token",
+    });
+  });
+
+  it("requires the Cloudflare account endpoint when its backend is configured", () => {
+    expect(() => loadConfig({
+      DAHLIA_AUTH_TYPE: "header",
+      DAHLIA_AI_BACKEND: "cloudflare",
+      OPENAI_API_KEY: "secret",
+    })).toThrow("OPENAI_BASE_URL is required");
   });
 
   it("loads Lakebase connection fields for the official connector", () => {
     expect(loadConfig({
-      DAHLIA_AUTH_PROVIDER: "header",
+      DAHLIA_AUTH_TYPE: "header",
       DAHLIA_DATABASE_TYPE: "lakebase",
       LAKEBASE_ENDPOINT: "projects/project/branches/main/endpoints/app",
       PGDATABASE: "databricks_postgres",
@@ -59,7 +84,7 @@ describe("configuration", () => {
   });
 
   it.each(["d1", "hyperdrive"] as const)("selects %s without a URL", (databaseType) => {
-    expect(loadConfig({ DAHLIA_AUTH_PROVIDER: "header", DAHLIA_DATABASE_TYPE: databaseType }))
+    expect(loadConfig({ DAHLIA_AUTH_TYPE: "header", DAHLIA_DATABASE_TYPE: databaseType }))
       .toMatchObject({ databaseType, databaseUrl: undefined });
   });
 
@@ -95,14 +120,26 @@ describe("configuration", () => {
 
   it("keeps header identity configuration independent from storage", () => {
     expect(loadConfig({
-      DAHLIA_AUTH_PROVIDER: "header",
+      DAHLIA_AUTH_TYPE: "header",
       DAHLIA_AUTH_HEADER: "Cf-Access-Authenticated-User-Email",
-      DAHLIA_BASE_URL: "https://dahlia.example",
+      DAHLIA_APP_URL: "https://dahlia.example",
     })).toMatchObject({
       authProvider: "header",
       authHeader: "Cf-Access-Authenticated-User-Email",
       databaseType: "sqlite",
     });
+  });
+
+  it("uses DATABRICKS_APP_URL unless DAHLIA_APP_URL overrides it", () => {
+    expect(loadConfig({
+      DAHLIA_AUTH_TYPE: "header",
+      DATABRICKS_APP_URL: "https://dahlia-dev.example/",
+    }).baseUrl).toBe("https://dahlia-dev.example");
+    expect(loadConfig({
+      DAHLIA_AUTH_TYPE: "header",
+      DAHLIA_APP_URL: "https://dahlia.example",
+      DATABRICKS_APP_URL: "https://dahlia-dev.example",
+    }).baseUrl).toBe("https://dahlia.example");
   });
 
   it("validates account secrets and provider URLs", () => {
@@ -111,7 +148,8 @@ describe("configuration", () => {
       BETTER_AUTH_SECRET: "replace-with-at-least-32-random-characters",
     })).toThrow("unique random value");
     expect(() => loadConfig({
-      DAHLIA_AUTH_PROVIDER: "header",
+      DAHLIA_AUTH_TYPE: "header",
+      DAHLIA_AI_BACKEND: "openai",
       OPENAI_API_KEY: "secret",
       OPENAI_BASE_URL: "http://provider.example/v1",
     })).toThrow("must use HTTPS");

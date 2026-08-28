@@ -1,6 +1,9 @@
-import { pgTable, text, timestamp, boolean, integer, jsonb, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgSchema, text, timestamp, boolean, integer, jsonb, index, uniqueIndex } from "drizzle-orm/pg-core";
 
-export const user = pgTable("user", {
+const authTable = pgSchema("auth").table;
+const dahliaTable = pgSchema("dahlia").table;
+
+export const user = authTable("user", {
 					id: text('id').primaryKey(),
 					name: text('name').notNull(),
  email: text('email').notNull().unique(),
@@ -10,7 +13,7 @@ export const user = pgTable("user", {
  updatedAt: timestamp('updated_at').defaultNow().$onUpdate(() => /* @__PURE__ */ new Date()).notNull()
 					});
 
-export const session = pgTable("session", {
+export const session = authTable("session", {
 					id: text('id').primaryKey(),
 					expiresAt: timestamp('expires_at').notNull(),
  token: text('token').notNull().unique(),
@@ -23,7 +26,7 @@ export const session = pgTable("session", {
   index("session_userId_idx").on(table.userId),
 ]);
 
-export const account = pgTable("account", {
+export const account = authTable("account", {
 					id: text('id').primaryKey(),
 					issuer: text('issuer').notNull(),
  accountId: text('provider_account_id').notNull(),
@@ -43,7 +46,7 @@ export const account = pgTable("account", {
   index("account_userId_idx").on(table.userId),
 ]);
 
-export const verification = pgTable("verification", {
+export const verification = authTable("verification", {
 					id: text('id').primaryKey(),
 					identifier: text('identifier').notNull(),
  value: text('value').notNull(),
@@ -54,7 +57,7 @@ export const verification = pgTable("verification", {
   index("verification_identifier_idx").on(table.identifier),
 ]);
 
-export const jwks = pgTable("jwks", {
+export const jwks = authTable("jwks", {
 					id: text('id').primaryKey(),
 					publicKey: text('public_key').notNull(),
  privateKey: text('private_key').notNull(),
@@ -64,7 +67,7 @@ export const jwks = pgTable("jwks", {
  crv: text('crv')
 					});
 
-export const oauthClient = pgTable("oauth_client", {
+export const oauthClient = authTable("oauth_client", {
 					id: text('id').primaryKey(),
 					clientId: text('client_id').notNull().unique(),
  clientSecret: text('client_secret'),
@@ -105,7 +108,7 @@ export const oauthClient = pgTable("oauth_client", {
   index("oauthClient_userId_idx").on(table.userId),
 ]);
 
-export const oauthResource = pgTable("oauth_resource", {
+export const oauthResource = authTable("oauth_resource", {
 					id: text('id').primaryKey(),
 					identifier: text('identifier').notNull().unique(),
  name: text('name').notNull(),
@@ -123,7 +126,7 @@ export const oauthResource = pgTable("oauth_resource", {
  metadata: jsonb('metadata')
 					});
 
-export const oauthClientResource = pgTable("oauth_client_resource", {
+export const oauthClientResource = authTable("oauth_client_resource", {
 					id: text('id').primaryKey(),
 					clientId: text('client_id').notNull().references(()=> oauthClient.clientId, { onDelete: 'cascade' }),
  resourceId: text('resource_id').notNull().references(()=> oauthResource.identifier, { onDelete: 'cascade' }),
@@ -135,7 +138,7 @@ export const oauthClientResource = pgTable("oauth_client_resource", {
   index("oauthClientResource_resourceId_idx").on(table.resourceId),
 ]);
 
-export const oauthRefreshToken = pgTable("oauth_refresh_token", {
+export const oauthRefreshToken = authTable("oauth_refresh_token", {
 					id: text('id').primaryKey(),
 					token: text('token').notNull().unique(),
  clientId: text('client_id').notNull().references(()=> oauthClient.clientId, { onDelete: 'cascade' }),
@@ -161,7 +164,7 @@ export const oauthRefreshToken = pgTable("oauth_refresh_token", {
   index("oauthRefreshToken_authorizationCodeId_idx").on(table.authorizationCodeId),
 ]);
 
-export const oauthAccessToken = pgTable("oauth_access_token", {
+export const oauthAccessToken = authTable("oauth_access_token", {
 					id: text('id').primaryKey(),
 					token: text('token').unique(),
  clientId: text('client_id').notNull().references(()=> oauthClient.clientId, { onDelete: 'cascade' }),
@@ -185,7 +188,7 @@ export const oauthAccessToken = pgTable("oauth_access_token", {
   index("oauthAccessToken_refreshId_idx").on(table.refreshId),
 ]);
 
-export const oauthConsent = pgTable("oauth_consent", {
+export const oauthConsent = authTable("oauth_consent", {
 					id: text('id').primaryKey(),
 					clientId: text('client_id').notNull().references(()=> oauthClient.clientId, { onDelete: 'cascade' }),
  userId: text('user_id').references(()=> user.id, { onDelete: 'cascade' }),
@@ -200,13 +203,13 @@ export const oauthConsent = pgTable("oauth_consent", {
   index("oauthConsent_userId_idx").on(table.userId),
 ]);
 
-export const oauthClientAssertion = pgTable("oauth_client_assertion", {
+export const oauthClientAssertion = authTable("oauth_client_assertion", {
 					id: text('id').primaryKey(),
 					expiresAt: timestamp('expires_at').notNull()
 					});
 
 
-export const modelAlias = pgTable("model_alias", {
+export const modelAlias = dahliaTable("model_alias", {
   alias: text("alias").primaryKey(),
   upstreamModel: text("upstream_model").notNull(),
   displayName: text("display_name"),
@@ -215,7 +218,7 @@ export const modelAlias = pgTable("model_alias", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
-export const platformAdmin = pgTable("platform_admin", {
+export const platformAdmin = dahliaTable("platform_admin", {
   email: text("email").primaryKey(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
