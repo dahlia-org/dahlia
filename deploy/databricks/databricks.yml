@@ -27,6 +27,10 @@ targets:
     variables:
       app_name: dahlia-dev
       database_project_id: dahlia-db-dev
+    resources:
+      postgres_projects:
+        dahlia_database_project:
+          purge_on_delete: true
 
   prod:
     mode: production

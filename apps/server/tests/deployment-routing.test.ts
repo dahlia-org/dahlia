@@ -174,6 +174,7 @@ describe("deployment routing", () => {
     expect(bundle).toContain("app_name: dahlia-prod");
     expect(bundle).toContain("database_project_id: dahlia-db-dev");
     expect(bundle).toContain("database_project_id: dahlia-db");
+    expect(bundle).toMatch(/dev:[\s\S]*?purge_on_delete: true[\s\S]*?prod:/);
     expect(bundle).toMatch(/admin_email:\n\s+description: .+\n\s+default: " "/);
     expect(bundle).not.toContain("postgres_databases:");
     expect(resource).toContain("source_code_path: ../../..");
