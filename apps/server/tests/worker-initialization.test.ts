@@ -19,7 +19,7 @@ describe("Worker initialization", () => {
 
   it("closes PostgreSQL when authentication initialization fails", async () => {
     await expect(initializeWorkerApp({
-      DAHLIA_AUTH_PROVIDER: "accounts",
+      DAHLIA_AUTH_TYPE: "accounts",
       DAHLIA_DATABASE_TYPE: "postgres",
       DAHLIA_DATABASE_URL: "postgresql://dahlia.example/dahlia",
       BETTER_AUTH_SECRET: "test-only-better-auth-secret-value",

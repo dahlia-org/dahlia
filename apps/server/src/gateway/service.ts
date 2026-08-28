@@ -1,8 +1,13 @@
 import type { AuthStore } from "../auth/store";
-import type { AppConfig } from "../config";
+import type { AppConfig, ProviderConfig } from "../config";
 import { sendOpenAIResponses, type GatewayFetch } from "./adapters";
 
-const DISABLE_UPSTREAM_PAYLOAD_LOGGING = true;
+interface CachedToken {
+  expiresAt: number;
+  value: string;
+}
+
+const DATABRICKS_TOKEN_TIMEOUT_MS = 30_000;
 
 export class GatewayRequestError extends Error {
   constructor(
@@ -15,6 +20,9 @@ export class GatewayRequestError extends Error {
 }
 
 export class GatewayService {
+  private databricksToken?: CachedToken;
+  private databricksTokenRequest?: Promise<CachedToken>;
+
   constructor(
     private readonly config: AppConfig,
     private readonly store: Pick<AuthStore, "getEnabledModelAlias" | "listModelAliases">,
@@ -57,21 +65,70 @@ export class GatewayService {
     if (!alias) {
       throw new GatewayRequestError(`Model '${model}' is not available`, 404, "model_not_found");
     }
-    if (!this.config.provider) {
+    const provider = this.config.provider;
+    if (!provider) {
       throw new GatewayRequestError("AI provider is not configured", 503, "provider_not_configured");
     }
     const upstreamBody = JSON.stringify({ ...body, model: alias.upstreamModel });
+    const authorization = provider.backend === "databricks"
+      ? `Bearer ${await this.getDatabricksToken(provider)}`
+      : `Bearer ${provider.apiKey}`;
     const upstream = await sendOpenAIResponses(
-      this.config.provider,
+      provider,
+      authorization,
       {
         body: upstreamBody,
         requestHeaders: request.headers,
         signal: request.signal,
       },
       this.transport,
-      DISABLE_UPSTREAM_PAYLOAD_LOGGING,
     );
     return proxyUpstreamResponse(upstream);
+  }
+
+  private async getDatabricksToken(provider: Extract<ProviderConfig, { backend: "databricks" }>): Promise<string> {
+    if (this.databricksToken && this.databricksToken.expiresAt > Date.now() + 60_000) {
+      return this.databricksToken.value;
+    }
+    this.databricksTokenRequest ??= this.requestDatabricksToken(provider);
+    try {
+      this.databricksToken = await this.databricksTokenRequest;
+      return this.databricksToken.value;
+    } finally {
+      this.databricksTokenRequest = undefined;
+    }
+  }
+
+  private async requestDatabricksToken(
+    provider: Extract<ProviderConfig, { backend: "databricks" }>,
+  ): Promise<CachedToken> {
+    let response: Response;
+    try {
+      response = await this.transport(provider.tokenUrl, {
+        method: "POST",
+        headers: {
+          authorization: `Basic ${btoa(`${provider.clientId}:${provider.clientSecret}`)}`,
+          "content-type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({ grant_type: "client_credentials", scope: "all-apis" }),
+        signal: AbortSignal.timeout(DATABRICKS_TOKEN_TIMEOUT_MS),
+      });
+    } catch {
+      throw new GatewayRequestError("Databricks authentication failed", 502, "provider_authentication_failed");
+    }
+    const body: unknown = await response.json().catch(() => undefined);
+    if (
+      !response.ok
+      || !body
+      || typeof body !== "object"
+      || !("access_token" in body)
+      || typeof body.access_token !== "string"
+      || !("expires_in" in body)
+      || typeof body.expires_in !== "number"
+    ) {
+      throw new GatewayRequestError("Databricks authentication failed", 502, "provider_authentication_failed");
+    }
+    return { value: body.access_token, expiresAt: Date.now() + body.expires_in * 1000 };
   }
 
   private assertRequestCanBeRead(request: Request): void {

@@ -1,0 +1,34 @@
+resources:
+  postgres_projects:
+    dahlia_database_project:
+      project_id: ${var.database_project_id}
+      display_name: Dahlia Server ${bundle.target}
+      pg_version: 18
+
+  apps:
+    dahlia_server:
+      name: ${var.app_name}
+      description: Dahlia Server backed by Lakebase.
+      source_code_path: ../../..
+      user_api_scopes:
+        - ai-gateway
+        - files
+      config:
+        command: ["corepack", "pnpm", "--filter", "@dahlia-ai/server", "start:databricks"]
+        env:
+          - name: DAHLIA_ADMIN_EMAIL
+            value: ${var.admin_email}
+          - name: DAHLIA_AUTH_TYPE
+            value: header
+          - name: DAHLIA_AI_BACKEND
+            value: databricks
+          - name: DAHLIA_DATABASE_TYPE
+            value: lakebase
+          - name: LAKEBASE_ENDPOINT
+            value_from: postgres
+      resources:
+        - name: postgres
+          postgres:
+            branch: ${resources.postgres_projects.dahlia_database_project.id}/branches/production
+            database: ${resources.postgres_projects.dahlia_database_project.id}/branches/production/databases/databricks-postgres
+            permission: CAN_CONNECT_AND_CREATE

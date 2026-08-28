@@ -17,9 +17,10 @@
     "logs": { "enabled": false, "invocation_logs": false }
   },
   "vars": {
-    "DAHLIA_AUTH_PROVIDER": "accounts",
+    "DAHLIA_AI_BACKEND": "cloudflare",
+    "DAHLIA_AUTH_TYPE": "accounts",
     "DAHLIA_DATABASE_TYPE": "hyperdrive",
-    "DAHLIA_BASE_URL": "https://{name}.{subdomain}.workers.dev",
+    "DAHLIA_APP_URL": "https://{name}.{subdomain}.workers.dev",
     "GOOGLE_CLIENT_ID": "replace-with-google-client-id"
   }
 }

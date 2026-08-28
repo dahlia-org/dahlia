@@ -62,7 +62,7 @@
     "dev:api": "tsx watch --env-file-if-exists=../../.env.local src/node.ts",
     "dev:client": "vite",
     "dev:cloudflare": "pnpm run ensure:wrangler && WRANGLER_WRITE_LOGS=false WRANGLER_SEND_METRICS=false vite dev --config vite.cloudflare.config.ts",
-    "ensure:wrangler": "node -e \"const fs=require('node:fs');if(!fs.existsSync('wrangler.jsonc'))fs.copyFileSync('wrangler.example.jsonc','wrangler.jsonc')\"",
+    "ensure:wrangler": "node -e \"const fs=require('node:fs');if(!fs.existsSync('wrangler.jsonc'))fs.copyFileSync('../../deploy/cloudflare/wrangler.example.jsonc','wrangler.jsonc')\"",
     "lint": "eslint .",
     "start": "node dist/server/node.js",
     "start:databricks": "pnpm run db:migrate:prod && pnpm run start",

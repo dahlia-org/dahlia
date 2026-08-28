@@ -1,0 +1,44 @@
+bundle:
+  name: dahlia-server
+  databricks_cli_version: ">= 1.4.0"
+
+include:
+  - resources/*.yml
+
+sync:
+  paths:
+    - ../../apps/server
+    - ../../package.json
+    - ../../pnpm-lock.yaml
+    - ../../pnpm-workspace.yaml
+
+variables:
+  app_name:
+    description: Databricks App name.
+  database_project_id:
+    description: Lakebase project ID.
+  admin_email:
+    description: Email address that bootstraps Dahlia Server administration.
+    default: " "
+targets:
+  dev:
+    default: true
+    mode: development
+    variables:
+      app_name: dahlia-dev
+      database_project_id: dahlia-db-dev
+    resources:
+      postgres_projects:
+        dahlia_database_project:
+          purge_on_delete: true
+
+  prod:
+    mode: production
+    variables:
+      app_name: dahlia-prod
+      database_project_id: dahlia-db
+    resources:
+      postgres_projects:
+        dahlia_database_project:
+          lifecycle:
+            prevent_destroy: true

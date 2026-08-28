@@ -1,6 +1,5 @@
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
-import { createServer as createHttp2Server } from "node:http2";
 import type { Socket } from "node:net";
 
 import { createApp } from "./app";
@@ -26,7 +25,6 @@ const server = serve({
   fetch: app.fetch,
   hostname: "0.0.0.0",
   port,
-  ...(process.env.DATABRICKS_APP_PORT ? { createServer: createHttp2Server } : {}),
 }, (info) => {
   console.info(`Dahlia Server is listening on ${info.address}:${info.port}`);
 });

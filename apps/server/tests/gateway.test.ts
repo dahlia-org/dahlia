@@ -22,6 +22,7 @@ const config: AppConfig = {
   databaseType: "sqlite",
   baseUrl: "https://dahlia.example",
   provider: {
+    backend: "openai",
     baseUrl: "https://upstream.example/v1",
     apiKey: "secret",
   },
@@ -78,13 +79,74 @@ describe("AI Gateway", () => {
       expect(new Headers(init?.headers).get("cf-aig-collect-log-payload")).toBe("false");
       return new Response("{}");
     });
-    const service = new GatewayService(config, registry, transport);
+    const service = new GatewayService({
+      ...config,
+      provider: { backend: "cloudflare", baseUrl: "https://upstream.example/v1", apiKey: "secret" },
+    }, registry, transport);
 
     await service.responses(new Request("https://dahlia.example/api/v1/responses", {
       method: "POST",
       body: JSON.stringify({ model: "summary" }),
     }));
     expect(transport).toHaveBeenCalledOnce();
+  });
+
+  it("uses and caches a Databricks service principal OAuth token", async () => {
+    const transport = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith("/oidc/v1/token")) {
+        expect(init?.method).toBe("POST");
+        expect(new Headers(init?.headers).get("authorization")).toMatch(/^Basic /);
+        return Response.json({ access_token: "workspace-token", expires_in: 3600 });
+      }
+      expect(String(input)).toBe("https://workspace.example/ai-gateway/openai/v1/responses");
+      expect(new Headers(init?.headers).get("authorization")).toBe("Bearer workspace-token");
+      return new Response("{}");
+    });
+    const service = new GatewayService({
+      ...config,
+      provider: {
+        backend: "databricks",
+        baseUrl: "https://workspace.example/ai-gateway/openai/v1",
+        clientId: "app-client-id",
+        clientSecret: "app-client-secret",
+        tokenUrl: "https://workspace.example/oidc/v1/token",
+      },
+    }, registry, transport);
+    const request = () => new Request("https://dahlia.example/api/v1/responses", {
+      method: "POST",
+      body: JSON.stringify({ model: "summary" }),
+    });
+
+    await service.responses(request());
+    await service.responses(request());
+
+    expect(transport.mock.calls.filter(([input]) => String(input).endsWith("/oidc/v1/token"))).toHaveLength(1);
+  });
+
+  it("bounds Databricks service principal OAuth token acquisition", async () => {
+    const timeoutSignal = AbortSignal.abort(new Error("timeout"));
+    const timeout = vi.spyOn(AbortSignal, "timeout").mockReturnValue(timeoutSignal);
+    const transport = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      expect(init?.signal).toBe(timeoutSignal);
+      throw timeoutSignal.reason;
+    });
+    const service = new GatewayService({
+      ...config,
+      provider: {
+        backend: "databricks",
+        baseUrl: "https://workspace.example/ai-gateway/openai/v1",
+        clientId: "app-client-id",
+        clientSecret: "app-client-secret",
+        tokenUrl: "https://workspace.example/oidc/v1/token",
+      },
+    }, registry, transport);
+
+    await expect(service.responses(new Request("https://dahlia.example/api/v1/responses", {
+      method: "POST",
+      body: JSON.stringify({ model: "summary" }),
+    }))).rejects.toMatchObject({ status: 502, code: "provider_authentication_failed" });
+    expect(timeout).toHaveBeenCalledWith(30_000);
+    timeout.mockRestore();
   });
 
   it("rejects Codex request compression with an actionable error", async () => {

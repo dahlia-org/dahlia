@@ -31,11 +31,14 @@ const postgres = await generateDrizzleSchema({
 });
 const postgresSchema = postgres.code
   .replace('import { defineRelationsPart } from "drizzle-orm";\n', "")
+  .replace("import { pgTable,", "import { pgSchema,")
+  .replace("export const user = pgTable", 'const authTable = pgSchema("auth").table;\nconst dahliaTable = pgSchema("dahlia").table;\n\nexport const user = authTable')
+  .replaceAll(" = pgTable(", " = authTable(")
   .replace(/\n\nexport const authRelations[\s\S]*$/, "\n")
   .replace("accountId: text('account_id')", "accountId: text('provider_account_id')")
   .replace("account_issuer_accountId_uidx", "account_issuer_providerAccountId_uidx")
   .concat(`
-export const modelAlias = pgTable("model_alias", {
+export const modelAlias = dahliaTable("model_alias", {
   alias: text("alias").primaryKey(),
   upstreamModel: text("upstream_model").notNull(),
   displayName: text("display_name"),
@@ -44,7 +47,7 @@ export const modelAlias = pgTable("model_alias", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
-export const platformAdmin = pgTable("platform_admin", {
+export const platformAdmin = dahliaTable("platform_admin", {
   email: text("email").primaryKey(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });

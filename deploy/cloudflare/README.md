@@ -10,7 +10,7 @@ Hono API Worker ─┬──── D1 ── Better Auth data
                  └──── HTTPS ── Cloudflare AI Gateway
 ```
 
-Copy either [`wrangler.example.jsonc`](../../wrangler.example.jsonc) for D1 or [`wrangler.hyperdrive.example.jsonc`](../../wrangler.hyperdrive.example.jsonc) for Hyperdrive to the ignored `apps/server/wrangler.jsonc`. The selected database stores Better Auth data, Model Aliases, and administrator emails.
+Copy either [`wrangler.example.jsonc`](wrangler.example.jsonc) for D1 or [`wrangler.hyperdrive.example.jsonc`](wrangler.hyperdrive.example.jsonc) for Hyperdrive to the ignored `apps/server/wrangler.jsonc`. The selected database stores Better Auth data, Model Aliases, and administrator emails.
 
 ## Prerequisites
 
@@ -29,30 +29,30 @@ pnpm --filter @dahlia-ai/server build:cloudflare
 ## 2. Configure and migrate the database
 
 ```bash
-cp apps/server/wrangler.example.jsonc apps/server/wrangler.jsonc
+cp deploy/cloudflare/wrangler.example.jsonc apps/server/wrangler.jsonc
 pnpm --filter @dahlia-ai/server exec wrangler d1 create dahlia-db-prod
 pnpm --filter @dahlia-ai/server exec wrangler d1 migrations apply dahlia_db_prod --remote
 ```
 
 Copy the database name and ID returned by the first command into `d1_databases[0]` in `apps/server/wrangler.jsonc`. Keep the binding name `dahlia_db_prod` and migrations directory `auth-migrations` unchanged. The real configuration stays local and is not committed.
 
-For Hyperdrive, start from the alternate template, replace its Hyperdrive ID, and apply the PostgreSQL SQL under `apps/server/drizzle` to the origin database before deployment. Keep the binding name `HYPERDRIVE` unchanged.
+For Hyperdrive, start from the alternate template and replace its Hyperdrive ID, then apply the PostgreSQL SQL under `apps/server/drizzle` as the connection user. The baseline creates the user-owned `auth` and `dahlia` schemas. Keep the binding name `HYPERDRIVE` unchanged.
 
 ## 3. Configure authentication
 
 ```bash
-pnpm --filter @dahlia-ai/server exec wrangler secret put DAHLIA_BASE_URL
+pnpm --filter @dahlia-ai/server exec wrangler secret put DAHLIA_APP_URL
 pnpm --filter @dahlia-ai/server exec wrangler secret put BETTER_AUTH_SECRET
 pnpm --filter @dahlia-ai/server exec wrangler secret put GOOGLE_CLIENT_ID
 pnpm --filter @dahlia-ai/server exec wrangler secret put GOOGLE_CLIENT_SECRET
 ```
 
-Use the final HTTPS Worker or custom-domain origin for `DAHLIA_BASE_URL`; do not include a path.
+Use the final HTTPS Worker or custom-domain origin for `DAHLIA_APP_URL`; do not include a path.
 Optionally set `DAHLIA_ADMIN_EMAIL` to bootstrap `/admin` and add further administrators from `/admin/members`.
 
 ## 4. Configure Cloudflare AI Gateway
 
-Configure Cloudflare's account-level OpenAI-compatible Responses endpoint. Use an API token with AI Gateway permission as `OPENAI_API_KEY` and enter the full account URL as `OPENAI_BASE_URL`:
+The example Wrangler configuration sets `DAHLIA_AI_BACKEND=cloudflare`. Configure Cloudflare's account-level OpenAI-compatible Responses endpoint. Use an API token with AI Gateway permission as `OPENAI_API_KEY` and enter the full account URL as `OPENAI_BASE_URL`:
 
 ```bash
 pnpm --filter @dahlia-ai/server exec wrangler secret put OPENAI_API_KEY

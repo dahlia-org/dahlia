@@ -4,6 +4,7 @@ import type { ProviderConfig } from "../src/config";
 import { sendOpenAIResponses, type GatewayFetch } from "../src/gateway/adapters";
 
 const provider: ProviderConfig = {
+  backend: "openai",
   baseUrl: "https://openai.example/v1",
   apiKey: "provider-secret",
 };
@@ -11,7 +12,7 @@ const provider: ProviderConfig = {
 describe("gateway adapter contract", () => {
   it("uses the OpenAI Responses endpoint without leaking the key into the body", async () => {
     const transport = vi.fn<GatewayFetch>(async () => new Response("{}"));
-    await sendOpenAIResponses(provider, {
+    await sendOpenAIResponses(provider, "Bearer provider-secret", {
       body: '{"model":"upstream-model"}',
       requestHeaders: new Headers({
         "idempotency-key": "request-1",
@@ -33,10 +34,10 @@ describe("gateway adapter contract", () => {
   it("disables Cloudflare payload logging without adding gateway selection headers", async () => {
     const transport = vi.fn<GatewayFetch>(async () => new Response("{}"));
     await sendOpenAIResponses(
-      provider,
+      { ...provider, backend: "cloudflare" },
+      "Bearer provider-secret",
       { body: '{"model":"openai/gpt-5.6-luna"}', requestHeaders: new Headers() },
       transport,
-      true,
     );
 
     const headers = new Headers(transport.mock.calls[0]![1]?.headers);
