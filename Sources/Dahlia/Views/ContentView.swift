@@ -397,9 +397,11 @@ private extension ContentView {
     }
 
     private func openSearchMeeting(_ id: UUID) {
+        let wasShowingFullScreenChat = isShowingFullScreenChat
         mainWindowNavigation.showMeetings()
         isShowingUnprocessedRecordings = false
         sidebarViewModel.selectMeeting(id)
+        mainWindowNavigation.recordMeetingActivationFromChat(id, isShowingChat: wasShowingFullScreenChat)
     }
 
     private func openSearchScreenshot(_ result: ScreenshotSearchResult) {

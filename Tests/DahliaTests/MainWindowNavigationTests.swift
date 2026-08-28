@@ -37,6 +37,23 @@
         }
 
         @Test
+        func meetingActivationFromChatRecordsTheMeetingAndPreservesChatInHistory() async {
+            let navigation = MainWindowNavigation(openMainWindow: {})
+            let meetingID = UUID.v7()
+            navigation.recordNavigation(to: .chat)
+
+            navigation.recordMeetingActivationFromChat(meetingID, isShowingChat: false)
+            #expect(navigation.currentLocation == .chat)
+
+            navigation.showMeetings()
+            navigation.recordMeetingActivationFromChat(meetingID, isShowingChat: true)
+            #expect(navigation.currentLocation == .meeting(meetingID))
+
+            await navigateBack(navigation)
+            #expect(navigation.currentLocation == .chat)
+        }
+
+        @Test
         func changingVaultKeepsChatVisible() {
             let navigation = MainWindowNavigation(openMainWindow: {})
             navigation.recordNavigation(to: .chat)

@@ -414,8 +414,8 @@ struct MeetingListSidebarView: View {
     }
 
     private func recordMeetingActivationFromChat(_ selection: Set<UUID>) {
-        guard isShowingChat, selection.count == 1, let meetingID = selection.first else { return }
-        mainWindowNavigation.recordNavigation(to: .meeting(meetingID))
+        guard selection.count == 1, let meetingID = selection.first else { return }
+        mainWindowNavigation.recordMeetingActivationFromChat(meetingID, isShowingChat: isShowingChat)
     }
 
     @ViewBuilder

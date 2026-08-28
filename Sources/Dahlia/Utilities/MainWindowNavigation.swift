@@ -291,6 +291,11 @@ final class MainWindowNavigation {
         section = location.section
     }
 
+    func recordMeetingActivationFromChat(_ meetingID: UUID, isShowingChat: Bool) {
+        guard isShowingChat else { return }
+        recordNavigation(to: .meeting(meetingID))
+    }
+
     func updateDraftNavigation(_ draftMeeting: DraftMeeting, noteText: String) {
         guard case let .meetingDraft(currentDraft, _) = currentLocation,
               currentDraft.id == draftMeeting.id else { return }
