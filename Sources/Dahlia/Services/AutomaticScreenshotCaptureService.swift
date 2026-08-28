@@ -319,7 +319,7 @@ private struct EncodedScreenshotFrame: Sendable {
     let mimeType: String
 }
 
-private struct PreparedScreenshotFrame: Sendable {
+struct PreparedScreenshotFrame: Sendable {
     let imageToEncode: CGImage
     let fingerprint: ScreenshotFingerprint
 }
@@ -341,7 +341,23 @@ struct AutomaticScreenshotFingerprintBaseline {
 }
 
 actor AutomaticScreenshotFrameProcessor {
-    fileprivate func prepare(
+    private static let maximumSharedContentEdgeDriftRatio: CGFloat = 0.02
+
+    private let detectSharedContentRegion: @Sendable (CGImage) async -> CGRect?
+    private var stableSharedContentRegion: CGRect?
+    private var stableSharedContentImageSize: CGSize?
+    private var didMissPreviousSharedContentDetection = false
+    private var sharedContentRegionGeneration: UInt64 = 0
+
+    init(
+        detectSharedContentRegion: @escaping @Sendable (CGImage) async -> CGRect? = {
+            await ScreenshotSharedContentRegionDetector.region(in: $0)
+        }
+    ) {
+        self.detectSharedContentRegion = detectSharedContentRegion
+    }
+
+    func prepare(
         _ frame: CopiedScreenshotFrame,
         detectsChangesInSharedContentOnly: Bool,
         cropsToSharedContent: Bool
@@ -349,11 +365,19 @@ actor AutomaticScreenshotFrameProcessor {
         guard !Task.isCancelled, let image = frame.makeImage() else { return nil }
         let sharedContentImage: CGImage?
         if detectsChangesInSharedContentOnly || cropsToSharedContent {
+            let generation = sharedContentRegionGeneration
             let state = ScreenshotCaptureMetrics.signposter.beginInterval("SharedContentRegion")
-            let region = await ScreenshotSharedContentRegionDetector.region(in: image)
+            let detectedRegion = await detectSharedContentRegion(image)
             ScreenshotCaptureMetrics.signposter.endInterval("SharedContentRegion", state)
+            guard !Task.isCancelled,
+                  generation == sharedContentRegionGeneration else { return nil }
+            let region = stabilizedSharedContentRegion(
+                detectedRegion,
+                imageSize: CGSize(width: image.width, height: image.height)
+            )
             sharedContentImage = region.flatMap { image.cropping(to: $0) }
         } else {
+            resetSharedContentRegion()
             sharedContentImage = nil
         }
         guard !Task.isCancelled else { return nil }
@@ -374,6 +398,54 @@ actor AutomaticScreenshotFrameProcessor {
             imageToEncode: selectedImages.encoding,
             fingerprint: fingerprint
         )
+    }
+
+    func resetSharedContentRegion() {
+        sharedContentRegionGeneration &+= 1
+        stableSharedContentRegion = nil
+        stableSharedContentImageSize = nil
+        didMissPreviousSharedContentDetection = false
+    }
+
+    func stabilizedSharedContentRegion(
+        _ detectedRegion: CGRect?,
+        imageSize: CGSize
+    ) -> CGRect? {
+        guard let detectedRegion else {
+            guard stableSharedContentImageSize == imageSize,
+                  !didMissPreviousSharedContentDetection,
+                  let stableSharedContentRegion else {
+                resetSharedContentRegion()
+                return nil
+            }
+            didMissPreviousSharedContentDetection = true
+            return stableSharedContentRegion
+        }
+
+        let region: CGRect = if stableSharedContentImageSize == imageSize,
+                                let stableSharedContentRegion,
+                                Self.isNearby(detectedRegion, stableSharedContentRegion, imageSize: imageSize) {
+            stableSharedContentRegion
+        } else {
+            detectedRegion
+        }
+        stableSharedContentRegion = region
+        stableSharedContentImageSize = imageSize
+        didMissPreviousSharedContentDetection = false
+        return region
+    }
+
+    private static func isNearby(
+        _ lhs: CGRect,
+        _ rhs: CGRect,
+        imageSize: CGSize
+    ) -> Bool {
+        let horizontalTolerance = imageSize.width * maximumSharedContentEdgeDriftRatio
+        let verticalTolerance = imageSize.height * maximumSharedContentEdgeDriftRatio
+        return abs(lhs.minX - rhs.minX) <= horizontalTolerance
+            && abs(lhs.maxX - rhs.maxX) <= horizontalTolerance
+            && abs(lhs.minY - rhs.minY) <= verticalTolerance
+            && abs(lhs.maxY - rhs.maxY) <= verticalTolerance
     }
 
     static func selectedImages(
@@ -440,6 +512,7 @@ actor AutomaticScreenshotCaptureService: AutomaticScreenshotCapturing {
     ) async {
         guard var request = desiredRequest else { return }
         let detectionScopeChanged = request.detectsChangesInSharedContentOnly != detectsChangesInSharedContentOnly
+        let sharedContentSettingsChanged = detectionScopeChanged || request.cropsToSharedContent != cropsToSharedContent
         request.intervalSeconds = intervalSeconds
         request.changeThresholdRatio = changeThresholdRatio
         request.detectsChangesInSharedContentOnly = detectsChangesInSharedContentOnly
@@ -448,6 +521,9 @@ actor AutomaticScreenshotCaptureService: AutomaticScreenshotCapturing {
         desiredRequest = request
         if detectionScopeChanged {
             fingerprintBaseline.reset()
+        }
+        if sharedContentSettingsChanged {
+            await frameProcessor.resetSharedContentRegion()
         }
 
         guard let activeCapture,
@@ -475,6 +551,7 @@ actor AutomaticScreenshotCaptureService: AutomaticScreenshotCapturing {
         processingOperation?.task.cancel()
         await stopActiveCapture()
         await processingOperation?.task.value
+        await frameProcessor.resetSharedContentRegion()
     }
 
     private func startStream(generation: UInt64) async {

@@ -1,4 +1,5 @@
 import CoreGraphics
+import Foundation
 @testable import Dahlia
 
 #if canImport(Testing)
@@ -164,6 +165,87 @@ import CoreGraphics
     }
 
     struct AutomaticScreenshotFrameProcessorTests {
+        @Test
+        func stabilizesNearbyStraightAndRoundedDetections() async {
+            let processor = AutomaticScreenshotFrameProcessor()
+            let imageSize = CGSize(width: 3200, height: 2000)
+            let straightRegion = CGRect(x: 400, y: 280, width: 2590, height: 1465)
+            let roundedRegion = CGRect(x: 430, y: 295, width: 2530, height: 1435)
+
+            #expect(await processor.stabilizedSharedContentRegion(straightRegion, imageSize: imageSize) == straightRegion)
+            #expect(await processor.stabilizedSharedContentRegion(roundedRegion, imageSize: imageSize) == straightRegion)
+        }
+
+        @Test
+        func adoptsMaterialRegionAndResolutionChanges() async {
+            let processor = AutomaticScreenshotFrameProcessor()
+            let imageSize = CGSize(width: 1000, height: 800)
+            let initialRegion = CGRect(x: 100, y: 100, width: 800, height: 600)
+            let movedRegion = CGRect(x: 130, y: 100, width: 770, height: 600)
+            let resizedRegion = CGRect(x: 260, y: 200, width: 1540, height: 1200)
+
+            _ = await processor.stabilizedSharedContentRegion(initialRegion, imageSize: imageSize)
+            #expect(await processor.stabilizedSharedContentRegion(movedRegion, imageSize: imageSize) == movedRegion)
+            #expect(await processor.stabilizedSharedContentRegion(
+                resizedRegion,
+                imageSize: CGSize(width: 2000, height: 1600)
+            ) == resizedRegion)
+        }
+
+        @Test
+        func retainsRegionForOneDetectionMissThenFallsBack() async {
+            let processor = AutomaticScreenshotFrameProcessor()
+            let imageSize = CGSize(width: 1000, height: 800)
+            let region = CGRect(x: 100, y: 100, width: 800, height: 600)
+
+            _ = await processor.stabilizedSharedContentRegion(region, imageSize: imageSize)
+            #expect(await processor.stabilizedSharedContentRegion(nil, imageSize: imageSize) == region)
+            #expect(await processor.stabilizedSharedContentRegion(nil, imageSize: imageSize) == nil)
+
+            _ = await processor.stabilizedSharedContentRegion(region, imageSize: imageSize)
+            #expect(await processor.stabilizedSharedContentRegion(
+                nil,
+                imageSize: CGSize(width: 2000, height: 1600)
+            ) == nil)
+        }
+
+        @Test
+        func resetDiscardsStableRegion() async {
+            let processor = AutomaticScreenshotFrameProcessor()
+            let imageSize = CGSize(width: 1000, height: 800)
+            let initialRegion = CGRect(x: 100, y: 100, width: 800, height: 600)
+            let nearbyRegion = CGRect(x: 110, y: 105, width: 780, height: 590)
+
+            _ = await processor.stabilizedSharedContentRegion(initialRegion, imageSize: imageSize)
+            await processor.resetSharedContentRegion()
+
+            #expect(await processor.stabilizedSharedContentRegion(nearbyRegion, imageSize: imageSize) == nearbyRegion)
+        }
+
+        @Test
+        func resetDuringDetectionDiscardsStaleRegion() async {
+            let imageSize = CGSize(width: 100, height: 80)
+            let staleRegion = CGRect(x: 10, y: 10, width: 80, height: 60)
+            let gate = SharedContentRegionDetectionGate(result: staleRegion)
+            let processor = AutomaticScreenshotFrameProcessor { image in
+                await gate.detect(in: image)
+            }
+            let task = Task {
+                await processor.prepare(
+                    makeFrame(width: Int(imageSize.width), height: Int(imageSize.height)),
+                    detectsChangesInSharedContentOnly: true,
+                    cropsToSharedContent: true
+                )
+            }
+
+            await gate.waitUntilStarted()
+            await processor.resetSharedContentRegion()
+            await gate.resume()
+            _ = await task.value
+
+            #expect(await processor.stabilizedSharedContentRegion(nil, imageSize: imageSize) == nil)
+        }
+
         @Test(arguments: [
             (false, false, 100, 100),
             (true, false, 60, 100),
@@ -218,6 +300,48 @@ import CoreGraphics
                 throw TestImageError.imageUnavailable
             }
             return image
+        }
+
+        private func makeFrame(width: Int, height: Int) -> CopiedScreenshotFrame {
+            let bytesPerRow = width * 4
+            return CopiedScreenshotFrame(
+                width: width,
+                height: height,
+                bytesPerRow: bytesPerRow,
+                pixels: Data(repeating: 255, count: bytesPerRow * height),
+                capturedAt: Date(),
+                sourcePixelDimensions: nil
+            )
+        }
+    }
+
+    private actor SharedContentRegionDetectionGate {
+        private let result: CGRect?
+        private var detectionContinuation: CheckedContinuation<CGRect?, Never>?
+        private var startWaiters: [CheckedContinuation<Void, Never>] = []
+
+        init(result: CGRect?) {
+            self.result = result
+        }
+
+        func detect(in _: CGImage) async -> CGRect? {
+            startWaiters.forEach { $0.resume() }
+            startWaiters.removeAll()
+            return await withCheckedContinuation { continuation in
+                detectionContinuation = continuation
+            }
+        }
+
+        func waitUntilStarted() async {
+            guard detectionContinuation == nil else { return }
+            await withCheckedContinuation { continuation in
+                startWaiters.append(continuation)
+            }
+        }
+
+        func resume() {
+            detectionContinuation?.resume(returning: result)
+            detectionContinuation = nil
         }
     }
 
