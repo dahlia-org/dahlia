@@ -1,9 +1,0 @@
-command: ["corepack", "pnpm", "--filter", "@dahlia-ai/server", "start:databricks"]
-
-env:
-  - name: DAHLIA_AUTH_PROVIDER
-    value: header
-  - name: DAHLIA_DATABASE_TYPE
-    value: lakebase
-  - name: LAKEBASE_ENDPOINT
-    valueFrom: postgres

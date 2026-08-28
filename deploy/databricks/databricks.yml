@@ -1,0 +1,80 @@
+bundle:
+  name: dahlia-server
+  databricks_cli_version: ">= 1.4.0"
+
+include:
+  - resources/*.yml
+
+sync:
+  paths:
+    - ../..
+  exclude:
+    - ../../.agents/**
+    - ../../.claude/**
+    - ../../.codex/**
+    - ../../.github/**
+    - ../../.swiftpm/**
+    - ../../BuildTools/**
+    - ../../Resources/**
+    - ../../Sources/**
+    - ../../Tests/**
+    - ../../Tools/**
+    - ../../Vendor/**
+    - ../../apps/site/**
+    - ../../deploy/**
+    - ../../docs/**
+    - ../../scripts/**
+    - ../../.dockerignore
+    - ../../.env.example
+    - ../../.mcp.json
+    - ../../.swiftformat
+    - ../../.swiftlint.yml
+    - ../../.worktreeinclude
+    - ../../*.entitlements
+    - ../../AGENTS.md
+    - ../../ARCHITECTURE.md
+    - ../../CLAUDE.md
+    - ../../Package.resolved
+    - ../../Package.swift
+    - ../../PRODUCT.md
+    - ../../README.md
+    - ../../README_ja.md
+    - ../../skills-lock.json
+
+variables:
+  app_name:
+    description: Databricks App name.
+  database_project_id:
+    description: Lakebase project ID.
+  admin_email:
+    description: Email address that bootstraps Dahlia Server administration.
+  openai_secret_scope:
+    description: Existing Databricks secret scope containing the upstream credential.
+  openai_secret_key:
+    description: Secret key containing the upstream API key or bearer token.
+  openai_base_url:
+    description: OpenAI-compatible Responses API base URL.
+    default: ${workspace.host}/ai-gateway/openai/v1
+
+targets:
+  dev:
+    default: true
+    mode: development
+    variables:
+      app_name: dahlia-server-dev
+      database_project_id: dahlia-server-dev
+
+  prod:
+    mode: production
+    variables:
+      app_name: dahlia-server
+      database_project_id: dahlia-server
+    resources:
+      postgres_projects:
+        dahlia_database_project:
+          lifecycle:
+            prevent_destroy: true
+      postgres_databases:
+        dahlia_database:
+          lifecycle:
+            prevent_destroy: true

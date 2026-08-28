@@ -1,0 +1,19 @@
+resources:
+  postgres_projects:
+    dahlia_database_project:
+      project_id: ${var.database_project_id}
+      display_name: Dahlia Server ${bundle.target}
+      pg_version: 16
+
+  postgres_roles:
+    dahlia_database_owner:
+      parent: ${resources.postgres_projects.dahlia_database_project.id}/branches/production
+      role_id: dahlia-owner
+      postgres_role: dahlia_owner
+
+  postgres_databases:
+    dahlia_database:
+      parent: ${resources.postgres_projects.dahlia_database_project.id}/branches/production
+      database_id: dahlia
+      postgres_database: dahlia
+      role: ${resources.postgres_roles.dahlia_database_owner.id}

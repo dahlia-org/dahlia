@@ -120,8 +120,8 @@ pnpm preview:cloudflare
 
 Deployment guides:
 
-- [Cloudflare Workers + D1 or Hyperdrive](deploy/cloudflare/README.md)
-- [Databricks Apps](deploy/databricks/README.md)
+- [Cloudflare Workers + D1 or Hyperdrive](../../deploy/cloudflare/README.md)
+- [Databricks Apps](../../deploy/databricks/README.md)
 
 ## Codex 0.148.0 manual configuration
 

@@ -10,7 +10,7 @@ Hono API Worker ─┬──── D1 ── Better Auth data
                  └──── HTTPS ── Cloudflare AI Gateway
 ```
 
-Copy either [`wrangler.example.jsonc`](../../wrangler.example.jsonc) for D1 or [`wrangler.hyperdrive.example.jsonc`](../../wrangler.hyperdrive.example.jsonc) for Hyperdrive to the ignored `apps/server/wrangler.jsonc`. The selected database stores Better Auth data, Model Aliases, and administrator emails.
+Copy either [`wrangler.example.jsonc`](wrangler.example.jsonc) for D1 or [`wrangler.hyperdrive.example.jsonc`](wrangler.hyperdrive.example.jsonc) for Hyperdrive to the ignored `apps/server/wrangler.jsonc`. The selected database stores Better Auth data, Model Aliases, and administrator emails.
 
 ## Prerequisites
 
@@ -29,7 +29,7 @@ pnpm --filter @dahlia-ai/server build:cloudflare
 ## 2. Configure and migrate the database
 
 ```bash
-cp apps/server/wrangler.example.jsonc apps/server/wrangler.jsonc
+cp deploy/cloudflare/wrangler.example.jsonc apps/server/wrangler.jsonc
 pnpm --filter @dahlia-ai/server exec wrangler d1 create dahlia-db-prod
 pnpm --filter @dahlia-ai/server exec wrangler d1 migrations apply dahlia_db_prod --remote
 ```
