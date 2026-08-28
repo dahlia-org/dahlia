@@ -200,7 +200,6 @@ describe("deployment routing", () => {
     expect(resource).toContain("source_code_path: ../../..");
     expect(resource).toContain(`user_api_scopes:
         - ai-gateway
-        - unity-catalog
         - files`);
     expect(resource)
       .toContain('command: ["corepack", "pnpm", "--filter", "@dahlia-ai/server", "start:databricks"]');

@@ -74,7 +74,7 @@ LAKEBASE_ENDPOINT=<injected from the postgres app resource>
 
 Databricks Apps supplies `DATABRICKS_HOST` and `X-Forwarded-Access-Token`. Dahlia sends the forwarded user token as Bearer authentication to `DATABRICKS_HOST/ai-gateway/mlflow/v1/responses`; it does not persist, log, or forward the proxy header itself. The Lakebase connector independently uses the App identity to rotate database credentials.
 
-For administrators, `GET /api/admin/models` lists the system-provided model services from `DATABRICKS_HOST/api/2.1/unity-catalog/model-services?parent=schemas/system.ai&view=BASIC`, follows all result pages, and merges their saved enabled state. This discovery call requires the Databricks App's `unity-catalog` user API scope. The Dashboard enables or disables those models directly; it does not show the manual Model Alias form for this backend.
+For administrators, `GET /api/admin/models` lists the system-provided model services from `DATABRICKS_HOST/api/2.1/unity-catalog/model-services?parent=schemas/system.ai&view=BASIC`, follows all result pages, and merges their saved enabled state. Databricks Apps authorizes this Model Services call with the `ai-gateway` user API scope. The Dashboard enables or disables those models directly; it does not show the manual Model Alias form for this backend.
 
 Cloudflare AI Gateway:
 
