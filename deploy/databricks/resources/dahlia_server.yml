@@ -20,7 +20,8 @@ resources:
       source_code_path: ../../..
       user_api_scopes:
         - ai-gateway
-        - model-serving
+        - catalog.catalogs:read
+        - catalog.schemas:read
         - files
       config:
         command: ["corepack", "pnpm", "--filter", "@dahlia-ai/server", "start:databricks"]
