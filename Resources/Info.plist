@@ -9,9 +9,9 @@
     <key>CFBundleIdentifier</key>
     <string>com.dahlia.app</string>
     <key>CFBundleVersion</key>
-    <string>83</string>
+    <string>84</string>
     <key>CFBundleShortVersionString</key>
-    <string>0.19.3</string>
+    <string>0.20.0</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleExecutable</key>
