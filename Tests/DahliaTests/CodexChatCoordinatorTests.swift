@@ -184,7 +184,7 @@ import Foundation
             coordinator.newDockedChat()
             #expect(coordinator.session(for: backgroundSession.id) === backgroundSession)
 
-            await service.resumeFailedThreadStart()
+            await service.resumeThreadStart()
             await waitUntil {
                 await MainActor.run { coordinator.session(for: backgroundSession.id) == nil }
             }
@@ -283,6 +283,122 @@ import Foundation
 
             #expect(session == nil)
             #expect(coordinator.sessions.count == sessionCount)
+        }
+
+        @Test
+        func threadActivityTracksRunningAndUserWaitStates() async throws {
+            let service = CoordinatorTestCodexChatService(blocksTurn: true)
+            let settings = AppSettings()
+            settings.currentVault = Self.vault(name: "Activity")
+            let coordinator = CodexChatCoordinator(service: service, settings: settings)
+            let session = coordinator.dockedSession
+
+            #expect(coordinator.activity(for: "new-thread") == nil)
+            session.draft = "Question"
+            session.sendDraft()
+            await waitUntil { await MainActor.run { coordinator.activity(for: "new-thread") == .running } }
+            coordinator.newDockedChat()
+            #expect(coordinator.activity(for: "new-thread") == .running)
+
+            let userInput = try #require(Self.userInputRequest())
+            await service.yieldBlockedEvent(.userInputRequested(userInput))
+            await waitUntil {
+                await MainActor.run { coordinator.activity(for: "new-thread") == .waitingForUser }
+            }
+
+            await service.yieldBlockedEvent(.approvalResolved(id: userInput.id))
+            await waitUntil { await MainActor.run { coordinator.activity(for: "new-thread") == .running } }
+
+            let approval = CodexChatApprovalRequest(
+                id: "approval-1",
+                kind: .commandExecution,
+                command: "ls"
+            )
+            await service.yieldBlockedEvent(.approvalRequested(approval))
+            await waitUntil {
+                await MainActor.run { coordinator.activity(for: "new-thread") == .waitingForUser }
+            }
+
+            await service.completeBlockedTurn()
+            await waitUntil { await MainActor.run { coordinator.activity(for: "new-thread") == nil } }
+        }
+
+        @Test
+        func backgroundThreadAppearsWhenItsBackendThreadStartsAfterHistoryRefresh() async {
+            let service = CoordinatorTestCodexChatService(
+                blocksTurn: true,
+                delaysThreadStart: true,
+                listsStartedThread: true
+            )
+            let settings = AppSettings()
+            settings.currentVault = Self.vault(name: "Delayed Thread")
+            let coordinator = CodexChatCoordinator(service: service, settings: settings)
+            let backgroundSession = coordinator.dockedSession
+
+            backgroundSession.draft = "Question"
+            backgroundSession.sendDraft()
+            await waitUntil { await service.isThreadStartWaiting }
+
+            coordinator.newDockedChat()
+            await waitUntil {
+                await MainActor.run { coordinator.history.contains { $0.id == "history-thread" } }
+            }
+
+            await service.resumeThreadStart()
+            await waitUntil {
+                await MainActor.run {
+                    coordinator.history.contains { $0.id == "new-thread" && $0.title == "Question" }
+                        && coordinator.activity(for: "new-thread") == .running
+                }
+            }
+
+            await service.completeBlockedTurn()
+        }
+
+        @Test
+        func currentThreadStartDoesNotRefreshHiddenHistory() async {
+            let service = CoordinatorTestCodexChatService(blocksTurn: true)
+            let settings = AppSettings()
+            settings.currentVault = Self.vault(name: "Current Thread")
+            let coordinator = CodexChatCoordinator(service: service, settings: settings)
+            let session = coordinator.dockedSession
+
+            session.draft = "Question"
+            session.sendDraft()
+            await waitUntil {
+                await MainActor.run { session.activeTurnID != nil }
+            }
+
+            #expect(await service.historyRequests == 0)
+            await service.completeBlockedTurn()
+        }
+
+        @Test
+        func detachedThreadAppearsWhenItsBackendThreadStarts() async throws {
+            let service = CoordinatorTestCodexChatService(
+                blocksTurn: true,
+                delaysThreadStart: true,
+                listsStartedThread: true
+            )
+            let settings = AppSettings()
+            settings.currentVault = Self.vault(name: "Detached Thread")
+            let coordinator = CodexChatCoordinator(service: service, settings: settings)
+            let sessionID = coordinator.newDetachedChat()
+            let session = try #require(coordinator.session(for: sessionID))
+
+            session.draft = "Detached question"
+            session.sendDraft()
+            await waitUntil { await service.isThreadStartWaiting }
+
+            await service.resumeThreadStart()
+            await waitUntil {
+                await MainActor.run {
+                    coordinator.history.contains { $0.id == "new-thread" && $0.title == "Detached question" }
+                        && coordinator.activity(for: "new-thread") == .running
+                }
+            }
+
+            await service.completeBlockedTurn()
         }
 
         @Test
@@ -403,6 +519,22 @@ import Foundation
             CodexChatThreadSummary(id: id, title: "History", updatedAt: .now)
         }
 
+        private static func userInputRequest() -> CodexChatUserInputRequest? {
+            CodexChatUserInputRequest(id: "input-1", params: [
+                "isBlocking": .bool(true),
+                "questions": .array([.object([
+                    "header": .string("Answer"),
+                    "id": .string("answer"),
+                    "isOther": .bool(true),
+                    "options": .array([.object([
+                        "description": .string("Continue the chat."),
+                        "label": .string("Continue"),
+                    ])]),
+                    "question": .string("How should the chat continue?"),
+                ])]),
+            ])
+        }
+
         private static func vault(name: String) -> VaultRecord {
             VaultRecord(
                 id: .v7(),
@@ -484,8 +616,12 @@ import Foundation
         private let failFirstHistoryRequest: Bool
         private let blocksTurn: Bool
         private let delaysSteer: Bool
+        private let delaysThreadStart: Bool
         private let delaysAndFailsThreadStart: Bool
+        private let listsStartedThread: Bool
         private var historyRequestCount = 0
+        private var didStartThread = false
+        private var startedThreadName: String?
         private(set) var unsubscribedThreadIDs: [String] = []
         private(set) var sentTextBlocks: [[String]] = []
         private(set) var steeredTextBlocks: [[String]] = []
@@ -497,16 +633,21 @@ import Foundation
             failFirstHistoryRequest: Bool = false,
             blocksTurn: Bool = false,
             delaysSteer: Bool = false,
-            delaysAndFailsThreadStart: Bool = false
+            delaysThreadStart: Bool = false,
+            delaysAndFailsThreadStart: Bool = false,
+            listsStartedThread: Bool = false
         ) {
             self.failFirstHistoryRequest = failFirstHistoryRequest
             self.blocksTurn = blocksTurn
             self.delaysSteer = delaysSteer
+            self.delaysThreadStart = delaysThreadStart
             self.delaysAndFailsThreadStart = delaysAndFailsThreadStart
+            self.listsStartedThread = listsStartedThread
         }
 
         var isSteerWaiting: Bool { delayedSteerContinuation != nil }
         var isThreadStartWaiting: Bool { delayedThreadStartContinuation != nil }
+        var historyRequests: Int { historyRequestCount }
 
         func models(forceRefresh _: Bool) async throws -> [CodexModel] {
             [Self.model]
@@ -517,8 +658,10 @@ import Foundation
             if failFirstHistoryRequest, historyRequestCount == 1 {
                 throw CodexAppServerError.processExited(nil)
             }
+            let threadID = listsStartedThread && didStartThread ? "new-thread" : "history-thread"
+            let title = threadID == "new-thread" ? startedThreadName ?? "" : "History"
             return CodexChatThreadPage(
-                threads: [CodexChatThreadSummary(id: "history-thread", title: "History", updatedAt: .now)],
+                threads: [CodexChatThreadSummary(id: threadID, title: title, updatedAt: .now)],
                 nextCursor: nil
             )
         }
@@ -532,14 +675,21 @@ import Foundation
         }
 
         func startThread(model _: String?, effort: String, vaultID _: UUID) async throws -> CodexChatThread {
-            if delaysAndFailsThreadStart {
+            if delaysThreadStart || delaysAndFailsThreadStart {
                 await withCheckedContinuation { delayedThreadStartContinuation = $0 }
+            }
+            if delaysAndFailsThreadStart {
                 throw CodexAppServerError.invalidProtocolResponse
             }
+            didStartThread = true
             return CodexChatThread(id: "new-thread", title: "", messages: [], model: "default-model", reasoningEffort: effort)
         }
 
-        func setThreadName(threadID _: String, name _: String) async {}
+        func setThreadName(threadID: String, name: String) async {
+            if threadID == "new-thread" {
+                startedThreadName = name
+            }
+        }
 
         func send(
             threadID _: String,
@@ -574,12 +724,16 @@ import Foundation
             blockedTurnContinuation = nil
         }
 
+        func yieldBlockedEvent(_ event: CodexChatTurnEvent) {
+            blockedTurnContinuation?.yield(event)
+        }
+
         func resumeDelayedSteer() {
             delayedSteerContinuation?.resume()
             delayedSteerContinuation = nil
         }
 
-        func resumeFailedThreadStart() {
+        func resumeThreadStart() {
             delayedThreadStartContinuation?.resume()
             delayedThreadStartContinuation = nil
         }

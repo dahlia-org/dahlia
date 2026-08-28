@@ -8,6 +8,7 @@ struct CodexChatEmptyStateView: View {
     let onOrganizeRecentMeetingsAndProjects: () -> Void
     let meetingReviewShortcutTitle: String?
     let isMeetingReviewShortcutEnabled: Bool
+    let activityForThread: (String) -> CodexChatThreadActivity?
     let onReviewMeeting: () -> Void
     let onOpenThread: (CodexChatThreadSummary) -> Void
     let onShowAll: () -> Void
@@ -98,17 +99,20 @@ struct CodexChatEmptyStateView: View {
                 .font(.body)
                 .foregroundStyle(DahliaDesign.optionalTextColor)
 
-            ForEach(recentThreads) { thread in
-                Button {
-                    onOpenThread(thread)
-                } label: {
-                    CodexChatThreadRow(
-                        thread: thread,
-                        meetingNamesByID: meetingNamesByID
-                    )
+            VStack(spacing: 0) {
+                ForEach(recentThreads) { thread in
+                    Button {
+                        onOpenThread(thread)
+                    } label: {
+                        CodexChatThreadRow(
+                            thread: thread,
+                            meetingNamesByID: meetingNamesByID,
+                            activity: activityForThread(thread.id)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(DahliaDesign.secondaryTextColor)
                 }
-                .buttonStyle(.plain)
-                .foregroundStyle(DahliaDesign.secondaryTextColor)
             }
 
             Button(L10n.chatShowAll, action: onShowAll)

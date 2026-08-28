@@ -35,7 +35,7 @@ final class CodexChatCoordinator {
         )
         dockedSessionID = session.id
         sessions[session.id] = session
-        configureLiveModeHandler(for: session)
+        configureSessionHandlers(for: session)
     }
 
     var dockedSession: CodexChatSessionModel {
@@ -47,6 +47,16 @@ final class CodexChatCoordinator {
 
     func session(for id: CodexChatSessionID) -> CodexChatSessionModel? {
         sessions[id]
+    }
+
+    func activity(for threadID: String) -> CodexChatThreadActivity? {
+        guard let session = sessions.values.first(where: {
+            $0.backendThreadID == threadID && $0.vaultID == dockedSession.vaultID
+        }) else { return nil }
+        if session.pendingUserInput != nil || session.pendingApproval != nil {
+            return .waitingForUser
+        }
+        return session.hasPendingGenerationWork ? .running : nil
     }
 
     func ensureDetachedSession(id: CodexChatSessionID) {
@@ -289,13 +299,17 @@ final class CodexChatCoordinator {
             settings: settings,
             contextProvider: contextProvider
         )
-        configureLiveModeHandler(for: session)
+        configureSessionHandlers(for: session)
         return session
     }
 
-    private func configureLiveModeHandler(for session: CodexChatSessionModel) {
+    private func configureSessionHandlers(for session: CodexChatSessionModel) {
         session.setLiveModeChangeHandler { [weak self] _ in
             self?.notifyLiveModeStatusChanged()
+        }
+        session.setThreadDidStartHandler { [weak self, weak session] in
+            guard let self, let session, session.id != self.dockedSessionID else { return }
+            Task { await self.refreshHistory() }
         }
         session.setGenerationCompletionHandler { [weak self, weak session] in
             guard let self, let session,
