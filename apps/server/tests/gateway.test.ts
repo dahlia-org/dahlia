@@ -59,6 +59,7 @@ describe("AI Gateway", () => {
             model_services: [
               { name: "model-services/system.ai.gpt-5-6-luna" },
               { name: "model-services/system.ai.gpt-5-6-sol" },
+              { name: "model-services/system.ai.summary" },
             ],
             next_page_token: "next-page",
           });
@@ -78,6 +79,13 @@ describe("AI Gateway", () => {
       {
         alias: "gpt-5-6-sol",
         upstreamModel: "system.ai.gpt-5-6-sol",
+        displayName: null,
+        enabled: false,
+        configured: false,
+      },
+      {
+        alias: "summary-2",
+        upstreamModel: "system.ai.summary",
         displayName: null,
         enabled: false,
         configured: false,

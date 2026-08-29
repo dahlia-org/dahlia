@@ -48,12 +48,13 @@ export class GatewayService {
       return aliases.map((alias) => ({ ...alias, configured: true }));
     }
     const models = await this.databricksModels(request);
+    const usedAliases = new Set(aliases.map((alias) => alias.alias));
     return models.map((model) => {
       const configured = aliases.find((alias) => alias.upstreamModel === model.id);
       return configured
         ? { ...configured, configured: true }
         : {
-            alias: databricksModelAlias(model.id),
+            alias: availableDatabricksModelAlias(model.id, usedAliases),
             upstreamModel: model.id,
             displayName: model.displayName,
             enabled: false,
@@ -201,6 +202,22 @@ function databricksRequestId(headers: Headers): string | undefined {
 
 function databricksModelAlias(id: string): string {
   return id.startsWith("system.ai.") ? id.slice("system.ai.".length) : id;
+}
+
+function availableDatabricksModelAlias(id: string, usedAliases: Set<string>): string {
+  const preferred = databricksModelAlias(id);
+  if (!usedAliases.has(preferred)) {
+    usedAliases.add(preferred);
+    return preferred;
+  }
+  for (let index = 2; ; index++) {
+    const suffix = `-${index}`;
+    const candidate = `${preferred.slice(0, 255 - suffix.length)}${suffix}`;
+    if (!usedAliases.has(candidate)) {
+      usedAliases.add(candidate);
+      return candidate;
+    }
+  }
 }
 
 function forwardedDatabricksAuthorization(request: Request): string {
