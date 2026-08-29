@@ -10,7 +10,7 @@ This package is an optional AI control plane. It must never become a prerequisit
 - Personal workspaces are deterministic identity claims in this MVP. Do not add organizations, invitations, team sharing, or per-organization providers without a new approved ADR.
 - Better Auth migrations are committed SQL files and run explicitly. Never mutate an existing migration after release.
 
-Validation from the repository root:
+Validation from `apps/server`:
 
 ```bash
 pnpm check

@@ -150,11 +150,11 @@ remediation plan, and UI responsiveness policy. Historical decisions and their s
 See [Calendar event persistence schema](docs/calendar-event-schema.md) for the UID/RECURRENCE-ID key, source mapping,
 and Meeting cardinality contract.
 
-The TypeScript applications use pnpm workspaces. From the repository root, run `pnpm dev` for Dahlia Server,
-`pnpm dev:site` for the public site, and `pnpm check` for workspace validation. Both development commands use the
-repository-root `.env.local` where applicable. Dahlia Server defaults to `DAHLIA_DATABASE_TYPE=sqlite` with
-`DAHLIA_DATABASE_URL=file:.data/dahlia-auth.sqlite`, so `pnpm dev` does not require PostgreSQL or Docker. Database selection is independent
-from the `OPENAI_API_KEY` and `OPENAI_BASE_URL` AI Gateway configuration.
+The TypeScript applications manage pnpm independently. Run `cd apps/server && pnpm dev` for Dahlia Server,
+`cd apps/site && pnpm dev` for the public site, and `cd apps/server && pnpm check` for Server validation. Dahlia Server
+uses `apps/server/.env.local` and defaults to `DAHLIA_DATABASE_TYPE=sqlite` with
+`DAHLIA_DATABASE_URL=file:.data/dahlia-auth.sqlite`, so local development does not require PostgreSQL or Docker.
+Database selection is independent from the `OPENAI_API_KEY` and `OPENAI_BASE_URL` AI Gateway configuration.
 
 ### Project Structure
 

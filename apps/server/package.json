@@ -46,6 +46,7 @@
   "engines": {
     "node": ">=22.13"
   },
+  "packageManager": "pnpm@11.9.0",
   "scripts": {
     "build": "pnpm run build:client && pnpm run build:server && pnpm run build:library-client",
     "build:client": "vite build",
@@ -55,11 +56,11 @@
     "check": "pnpm run lint && pnpm run typecheck && pnpm run test && pnpm run build && pnpm run test:package && pnpm run worker:dry-run",
     "db:generate": "drizzle-kit generate",
     "db:generate-auth": "node scripts/generate-auth-schema.mjs",
-    "db:migrate": "tsx --env-file-if-exists=../../.env.local src/db/migrate.ts",
+    "db:migrate": "tsx --env-file-if-exists=.env.local src/db/migrate.ts",
     "db:migrate:d1:local": "pnpm run ensure:wrangler && WRANGLER_WRITE_LOGS=false WRANGLER_SEND_METRICS=false wrangler d1 migrations apply dahlia_db_prod --local",
     "db:migrate:prod": "node dist/server/db/migrate.js",
     "dev": "concurrently -k -n api,web \"pnpm run dev:api\" \"pnpm run dev:client\"",
-    "dev:api": "tsx watch --env-file-if-exists=../../.env.local src/node.ts",
+    "dev:api": "tsx watch --env-file-if-exists=.env.local src/node.ts",
     "dev:client": "vite",
     "dev:cloudflare": "pnpm run ensure:wrangler && WRANGLER_WRITE_LOGS=false WRANGLER_SEND_METRICS=false vite dev --config vite.cloudflare.config.ts",
     "ensure:wrangler": "node -e \"const fs=require('node:fs');if(!fs.existsSync('wrangler.jsonc'))fs.copyFileSync('../../deploy/cloudflare/wrangler.example.jsonc','wrangler.jsonc')\"",
