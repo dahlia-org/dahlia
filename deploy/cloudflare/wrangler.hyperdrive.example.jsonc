@@ -13,7 +13,7 @@
     "id": "00000000000000000000000000000000"
   }],
   "r2_buckets": [{
-    "binding": "DAHLIA_ARTIFACTS",
+    "binding": "DAHLIA_STORAGE",
     "bucket_name": "replace-with-r2-bucket-name"
   }],
   "observability": {
@@ -22,10 +22,8 @@
   },
   "vars": {
     "DAHLIA_AI_BACKEND": "cloudflare",
-    "DAHLIA_ARTIFACT_BACKEND": "r2",
+    "DAHLIA_STORAGE_BACKEND": "r2",
     "DAHLIA_ARTIFACT_MAX_BYTES": "67108864",
-    "DAHLIA_R2_ACCOUNT_ID": "replace-with-account-id",
-    "DAHLIA_R2_BUCKET": "replace-with-r2-bucket-name",
     "DAHLIA_AUTH_TYPE": "accounts",
     "DAHLIA_DATABASE_TYPE": "hyperdrive",
     "DAHLIA_APP_URL": "https://{name}.{subdomain}.workers.dev",

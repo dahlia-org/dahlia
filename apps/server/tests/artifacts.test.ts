@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { createApp } from "../src/app";
 import type { ArtifactRecord } from "../src/auth/store";
 import type { AppConfig } from "../src/config";
-import { ArtifactStorageError, type ArtifactStorage } from "../src/artifacts/storage";
+import { ObjectStorageError, type ObjectStorage } from "../src/artifacts/storage";
 import { testStore } from "./test-store";
 
 const OWNER = { "X-Forwarded-Email": "owner@example.com", "X-Forwarded-User": "owner" };
@@ -56,7 +56,7 @@ function fixture() {
       return Boolean(artifact && artifact.ownerWorkspaceId === ownerWorkspaceId && records.delete(id));
     },
   });
-  const storage: ArtifactStorage = {
+  const storage: ObjectStorage = {
     put: async (key, body, _contentLength, contentType) => {
       await beforePut?.();
       const bytes = body instanceof Uint8Array
@@ -65,15 +65,19 @@ function fixture() {
       objects.set(key, { body: bytes, contentType });
     },
     exists: async (key) => objects.has(key),
-    read: async (key, method, _request, contentType) => {
+    read: async (key, method) => {
       const object = objects.get(key);
       if (!object) return new Response(null, { status: 404 });
       return new Response(method === "HEAD" ? null : object.body.buffer as ArrayBuffer, {
-        headers: { "content-type": contentType, "content-length": String(object.body.byteLength) },
+        headers: {
+          "content-type": object.contentType,
+          "content-length": String(object.body.byteLength),
+          "x-storage-secret": "do-not-forward",
+        },
       });
     },
     delete: async (key) => {
-      if (deleteFails) throw new ArtifactStorageError();
+      if (deleteFails) throw new ObjectStorageError();
       objects.delete(key);
     },
   };
@@ -103,6 +107,8 @@ describe("artifact API", () => {
 
     const privateRead = await app.request(`/api/v1/artifacts/${ID}`, { headers: OWNER });
     expect(privateRead.status).toBe(200);
+    expect(privateRead.headers.get("content-security-policy")).toBe("sandbox allow-scripts");
+    expect(privateRead.headers.get("x-storage-secret")).toBeNull();
     expect(await privateRead.text()).toBe("hello");
 
     const published = await app.request(`/api/v1/artifacts/${ID}`, {

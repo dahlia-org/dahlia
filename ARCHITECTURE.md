@@ -146,8 +146,7 @@ Drizzle application store (SQLite, PostgreSQL, Lakebase, Hyperdrive, or D1)
 
 /api/v1/artifacts/{artifact_id}
     ├─ private by default; owner-scoped metadata authorization
-    ├─ Cloudflare: R2 bytes → 300-second pre-signed GET/HEAD redirect
-    └─ Databricks: managed Volume bytes → Files API streaming relay
+    └─ local / S3 / R2 / Databricks Volume bytes → authenticated streaming relay
 ```
 
 Cloudflare では Hono Worker は `/api/**`、`/.well-known/**`、`/healthz` だけを処理する。React SPA と静的 asset は

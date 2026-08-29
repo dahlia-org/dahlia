@@ -3,7 +3,15 @@ import { z } from "zod";
 import type { Identity } from "../auth/identity";
 import type { ArtifactRecord, AuthStore } from "../auth/store";
 import { DEFAULT_ARTIFACT_MAX_BYTES, type AppConfig } from "../config";
-import { ArtifactStorageError, artifactStorageKey, type ArtifactReadMethod, type ArtifactStorage } from "./storage";
+import { ObjectStorageError, type ArtifactReadMethod, type ObjectStorage } from "./storage";
+
+const FORWARDED_RESPONSE_HEADERS = [
+  "accept-ranges",
+  "content-length",
+  "content-range",
+  "etag",
+  "last-modified",
+] as const;
 
 const artifactIdSchema = z.uuid();
 const visibilitySchema = z.object({ visibility: z.enum(["private", "public"]) }).strict();
@@ -24,7 +32,7 @@ export class ArtifactService {
       AuthStore,
       "getArtifact" | "createArtifact" | "touchArtifact" | "updateArtifactVisibility" | "deleteArtifact"
     >,
-    private readonly storage?: ArtifactStorage,
+    private readonly storage?: ObjectStorage,
   ) {}
 
   parseId(value: string): string {
@@ -87,12 +95,23 @@ export class ArtifactService {
     request: Request,
   ): Promise<Response> {
     const storage = this.requireStorage();
-    return this.storageCall(() => storage.read(
+    const upstream = await this.storageCall(() => storage.read(
       artifactStorageKey(artifact.id),
       method,
       request,
-      artifact.contentType,
     ));
+    const headers = new Headers({
+      "content-security-policy": "sandbox allow-scripts",
+      "content-type": artifact.contentType,
+    });
+    for (const name of FORWARDED_RESPONSE_HEADERS) {
+      const value = upstream.headers.get(name);
+      if (value) headers.set(name, value);
+    }
+    return new Response(method === "HEAD" ? null : upstream.body, {
+      status: upstream.status,
+      headers,
+    });
   }
 
   async setVisibility(
@@ -132,7 +151,7 @@ export class ArtifactService {
     return artifact;
   }
 
-  private requireStorage(): ArtifactStorage {
+  private requireStorage(): ObjectStorage {
     if (!this.storage) throw new ArtifactRequestError(503, "artifact_storage_not_configured");
     return this.storage;
   }
@@ -150,10 +169,14 @@ export class ArtifactService {
       return await operation();
     } catch (error) {
       if (error instanceof ArtifactRequestError) throw error;
-      const code = error instanceof ArtifactStorageError ? error.code : "artifact_storage_unavailable";
+      const code = error instanceof ObjectStorageError ? error.code : "artifact_storage_unavailable";
       throw new ArtifactRequestError(502, code);
     }
   }
+}
+
+function artifactStorageKey(id: string): string {
+  return `artifacts/${id}`;
 }
 
 function parseContentLength(request: Request, maximum: number): number {

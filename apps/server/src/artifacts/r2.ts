@@ -1,7 +1,12 @@
-import { AwsClient } from "aws4fetch";
+import { ObjectStorageError, parseByteRange, type ArtifactReadMethod, type ObjectStorage } from "./storage";
 
-import type { R2ArtifactConfig } from "../config";
-import { ArtifactStorageError, type ArtifactReadMethod, type ArtifactStorage } from "./storage";
+interface R2ObjectLike {
+  body?: ReadableStream;
+  httpEtag: string;
+  range?: { offset: number; length: number };
+  size: number;
+  uploaded: Date;
+}
 
 export interface R2BucketLike {
   put(
@@ -9,26 +14,13 @@ export interface R2BucketLike {
     value: ReadableStream<Uint8Array> | Uint8Array,
     options: { httpMetadata: { cacheControl: string; contentType: string } },
   ): Promise<unknown>;
-  head(key: string): Promise<unknown>;
+  head(key: string): Promise<R2ObjectLike | null>;
+  get(key: string, options?: { onlyIf?: Headers; range?: Headers }): Promise<R2ObjectLike | null>;
   delete(key: string): Promise<void>;
 }
 
-const PRESIGNED_URL_SECONDS = 300;
-
-export class R2ArtifactStorage implements ArtifactStorage {
-  private readonly signer: AwsClient;
-
-  constructor(
-    private readonly bucket: R2BucketLike,
-    private readonly config: R2ArtifactConfig,
-  ) {
-    this.signer = new AwsClient({
-      accessKeyId: config.accessKeyId,
-      secretAccessKey: config.secretAccessKey,
-      region: "auto",
-      service: "s3",
-    });
-  }
+export class R2ObjectStorage implements ObjectStorage {
+  constructor(private readonly bucket: R2BucketLike) {}
 
   async put(
     key: string,
@@ -41,7 +33,7 @@ export class R2ArtifactStorage implements ArtifactStorage {
         httpMetadata: { cacheControl: "private, no-store", contentType },
       });
     } catch {
-      throw new ArtifactStorageError();
+      throw new ObjectStorageError();
     }
   }
 
@@ -49,32 +41,73 @@ export class R2ArtifactStorage implements ArtifactStorage {
     try {
       return await this.bucket.head(key) !== null;
     } catch {
-      throw new ArtifactStorageError();
+      throw new ObjectStorageError();
     }
   }
 
-  async read(key: string, method: ArtifactReadMethod): Promise<Response> {
-    if (!await this.exists(key)) return new Response(null, { status: 404 });
-    const url = new URL(`https://${this.config.accountId}.r2.cloudflarestorage.com`);
-    url.pathname = `/${this.config.bucket}/${key}`;
-    url.searchParams.set("X-Amz-Expires", String(PRESIGNED_URL_SECONDS));
-    let signed: Request;
+  async read(key: string, method: ArtifactReadMethod, request: Request): Promise<Response> {
     try {
-      signed = await this.signer.sign(new Request(url, { method }), { aws: { signQuery: true } });
+      if (method === "HEAD") {
+        const object = await this.bucket.head(key);
+        if (!object) return new Response(null, { status: 404 });
+        const since = request.headers.get("if-unmodified-since");
+        if (since && object.uploaded.getTime() >= Date.parse(since) + 1000) {
+          return new Response(null, { status: 412 });
+        }
+        const range = parseByteRange(request.headers.get("range"), object.size);
+        if (range === null) {
+          return new Response(null, { status: 416, headers: { "content-range": `bytes */${object.size}` } });
+        }
+        return objectResponse(
+          range ? { ...object, range: { offset: range.start, length: range.end - range.start + 1 } } : object,
+          null,
+          range ? 206 : 200,
+        );
+      }
+      const options = new Headers();
+      for (const name of ["range", "if-unmodified-since"]) {
+        const value = request.headers.get(name);
+        if (value) options.set(name, value);
+      }
+      const rangeHeader = request.headers.get("range");
+      if (rangeHeader) {
+        const metadata = await this.bucket.head(key);
+        if (!metadata) return new Response(null, { status: 404 });
+        const range = parseByteRange(rangeHeader, metadata.size);
+        if (range === null) {
+          return new Response(null, { status: 416, headers: { "content-range": `bytes */${metadata.size}` } });
+        }
+      }
+      const object = await this.bucket.get(key, { onlyIf: options, range: options });
+      if (!object) return new Response(null, { status: 404 });
+      if (!object.body) return new Response(null, { status: 412 });
+      return objectResponse(object, object.body, object.range ? 206 : 200);
     } catch {
-      throw new ArtifactStorageError();
+      throw new ObjectStorageError();
     }
-    return new Response(null, {
-      status: 307,
-      headers: { location: signed.url },
-    });
   }
 
   async delete(key: string): Promise<void> {
     try {
       await this.bucket.delete(key);
     } catch {
-      throw new ArtifactStorageError();
+      throw new ObjectStorageError();
     }
   }
+}
+
+function objectResponse(object: R2ObjectLike, body: ReadableStream | null, status: number): Response {
+  const headers = new Headers({
+    "accept-ranges": "bytes",
+    etag: object.httpEtag,
+    "last-modified": object.uploaded.toUTCString(),
+  });
+  if (object.range) {
+    const end = object.range.offset + object.range.length - 1;
+    headers.set("content-length", String(object.range.length));
+    headers.set("content-range", `bytes ${object.range.offset}-${end}/${object.size}`);
+  } else {
+    headers.set("content-length", String(object.size));
+  }
+  return new Response(body, { status, headers });
 }

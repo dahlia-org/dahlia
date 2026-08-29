@@ -16,7 +16,7 @@ import {
 import type { AuthStore } from "./auth/store";
 import type { AppConfig } from "./config";
 import { ArtifactRequestError, ArtifactService, artifactResponse } from "./artifacts/service";
-import type { ArtifactStorage } from "./artifacts/storage";
+import type { ObjectStorage } from "./artifacts/storage";
 import { gatewayError, GatewayRequestError, GatewayService } from "./gateway/service";
 
 export const AUTH_MAX_REQUEST_BYTES = 64 * 1024;
@@ -65,7 +65,7 @@ export interface AppDependencies {
   auth?: DahliaAuth;
   authStore?: AuthStore;
   extensions?: readonly DahliaServerExtension[];
-  artifactStorage?: ArtifactStorage;
+  artifactStorage?: ObjectStorage;
 }
 
 const aliasSchema = z.string().regex(/^[a-z0-9][a-z0-9._-]{0,63}$/);

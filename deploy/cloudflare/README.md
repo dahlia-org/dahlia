@@ -37,14 +37,7 @@ pnpm --filter @dahlia-ai/server exec wrangler d1 migrations apply dahlia_db_prod
 
 Copy the database name and ID returned by the first command into `d1_databases[0]` in `apps/server/wrangler.jsonc`. Keep the binding name `dahlia_db_prod` and migrations directory `auth-migrations` unchanged. The real configuration stays local and is not committed.
 
-Set the same bucket name in the `DAHLIA_ARTIFACTS` binding and `DAHLIA_R2_BUCKET`, set `DAHLIA_R2_ACCOUNT_ID`, and create an R2 S3 API token scoped to read only that bucket for URL signing:
-
-```bash
-pnpm --filter @dahlia-ai/server exec wrangler secret put DAHLIA_R2_ACCESS_KEY_ID
-pnpm --filter @dahlia-ai/server exec wrangler secret put DAHLIA_R2_SECRET_ACCESS_KEY
-```
-
-The binding performs upload and deletion. The S3 credentials only sign five-minute GET/HEAD URLs and must not have write access.
+Set the bucket name in the `DAHLIA_STORAGE` binding. The Worker uses that binding for upload, download, metadata, and deletion; no S3 credentials are required for the `r2` backend.
 
 For Hyperdrive, start from the alternate template and replace its Hyperdrive ID, then apply the PostgreSQL SQL under `apps/server/drizzle` as the connection user. The baseline creates the user-owned `auth` and `dahlia` schemas. Keep the binding name `HYPERDRIVE` unchanged.
 
@@ -89,7 +82,7 @@ curl -fsS https://<host>/.well-known/oauth-authorization-server
 ```
 
 Then sign in with Google, create a Model Alias, and complete a streaming Responses request through `/api/v1/responses` using that alias.
-Also smoke-test an HTML artifact through private upload/read, public read, private transition, and deletion. Public R2 reads return a `307`; an already issued signed URL can remain valid for up to five minutes.
+Also smoke-test an HTML artifact through private upload/read, public read, Range read, private transition, and deletion. R2 responses stream through the Dahlia API and must not contain a storage URL.
 
 ## Operational notes
 

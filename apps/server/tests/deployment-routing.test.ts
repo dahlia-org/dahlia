@@ -47,17 +47,15 @@ describe("deployment routing", () => {
     }));
     expect(wrangler.vars).toEqual({
       DAHLIA_AI_BACKEND: "cloudflare",
-      DAHLIA_ARTIFACT_BACKEND: "r2",
+      DAHLIA_STORAGE_BACKEND: "r2",
       DAHLIA_ARTIFACT_MAX_BYTES: "67108864",
-      DAHLIA_R2_ACCOUNT_ID: "replace-with-account-id",
-      DAHLIA_R2_BUCKET: "replace-with-r2-bucket-name",
       DAHLIA_AUTH_TYPE: "accounts",
       DAHLIA_APP_URL: "https://{name}.{subdomain}.workers.dev",
       DAHLIA_DATABASE_TYPE: "d1",
       GOOGLE_CLIENT_ID: "replace-with-google-client-id",
     });
     expect(wrangler.r2_buckets).toEqual([{
-      binding: "DAHLIA_ARTIFACTS",
+      binding: "DAHLIA_STORAGE",
       bucket_name: "replace-with-r2-bucket-name",
     }]);
     expect(wrangler).not.toHaveProperty("hyperdrive");
@@ -134,6 +132,14 @@ describe("deployment routing", () => {
     })).rejects.toThrow(message);
   });
 
+  it("rejects local storage in the Worker runtime", async () => {
+    await expect(initializeWorkerApp({
+      DAHLIA_AUTH_TYPE: "header",
+      DAHLIA_DATABASE_TYPE: "d1",
+      dahlia_db_prod: {} as never,
+    })).rejects.toThrow("Storage backend local requires the Node runtime");
+  });
+
   it("uses the Vite origin for local OAuth and proxies its protocol endpoints", () => {
     const example = readText("../../../.env.example");
     const packageJson = JSON.parse(readText("../package.json")) as {
@@ -205,7 +211,9 @@ describe("deployment routing", () => {
     expect(resource).toContain("permission: CAN_CONNECT_AND_CREATE");
     expect(resource).toContain("volume_type: MANAGED");
     expect(resource).toContain("permission: WRITE_VOLUME");
-    expect(resource).toContain("value: databricks-volume");
+    expect(resource).toContain("name: DAHLIA_STORAGE_BACKEND");
+    expect(resource).toContain("value: databricks");
+    expect(resource).toContain("name: DAHLIA_STORAGE_DATABRICKS_VOLUME_PATH");
     expect(resource).toContain("/Volumes/${var.artifact_catalog}/${var.artifact_schema}/${var.artifact_volume_name}");
     expect(resource).toContain("postgres_projects:");
     expect(resource).not.toContain("postgres_roles:");

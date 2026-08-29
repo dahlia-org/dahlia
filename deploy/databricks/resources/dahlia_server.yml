@@ -30,9 +30,9 @@ resources:
             value: header
           - name: DAHLIA_AI_BACKEND
             value: databricks
-          - name: DAHLIA_ARTIFACT_BACKEND
-            value: databricks-volume
-          - name: DAHLIA_ARTIFACT_VOLUME_PATH
+          - name: DAHLIA_STORAGE_BACKEND
+            value: databricks
+          - name: DAHLIA_STORAGE_DATABRICKS_VOLUME_PATH
             value: /Volumes/${var.artifact_catalog}/${var.artifact_schema}/${var.artifact_volume_name}
           - name: DAHLIA_DATABASE_TYPE
             value: lakebase

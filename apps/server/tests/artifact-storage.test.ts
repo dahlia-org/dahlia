@@ -1,13 +1,20 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { describe, expect, it, vi } from "vitest";
 
-import { DatabricksVolumeArtifactStorage } from "../src/artifacts/databricks-volume";
-import { R2ArtifactStorage, type R2BucketLike } from "../src/artifacts/r2";
-import type { ArtifactStorage } from "../src/artifacts/storage";
+import { DatabricksVolumeObjectStorage } from "../src/artifacts/databricks-volume";
+import { LocalObjectStorage } from "../src/artifacts/local";
+import { R2ObjectStorage, type R2BucketLike } from "../src/artifacts/r2";
+import { S3ObjectStorage } from "../src/artifacts/s3";
+import type { ObjectStorage } from "../src/artifacts/storage";
 
 const KEY = "artifacts/019cc4dd-e5c5-7bd4-94e0-98df9cc40db9";
+const UPLOADED = new Date("2026-08-28T00:00:00Z");
 
-describe("R2 artifact storage", () => {
-  it("stores raw bytes and signs method-specific five minute URLs", async () => {
+describe("R2 object storage", () => {
+  it("stores and relays bytes through the binding without a signed redirect", async () => {
     let stored: { key: string; cacheControl: string; contentType: string; body: string } | undefined;
     const bucket: R2BucketLike = {
       put: async (key, value, options) => {
@@ -15,20 +22,20 @@ describe("R2 artifact storage", () => {
           key,
           cacheControl: options.httpMetadata.cacheControl,
           contentType: options.httpMetadata.contentType,
-          body: value instanceof Uint8Array
-            ? new TextDecoder().decode(value)
-            : await new Response(value).text(),
+          body: value instanceof Uint8Array ? new TextDecoder().decode(value) : await new Response(value).text(),
         };
       },
-      head: async () => ({}),
+      head: async () => ({ httpEtag: '"etag"', size: 5, uploaded: UPLOADED }),
+      get: async (_key, options) => ({
+        body: new Response("ell").body!,
+        httpEtag: '"etag"',
+        range: options?.range?.has("range") ? { offset: 1, length: 3 } : undefined,
+        size: 5,
+        uploaded: UPLOADED,
+      }),
       delete: async () => undefined,
     };
-    const storage = new R2ArtifactStorage(bucket, {
-      accountId: "account",
-      accessKeyId: "read-key",
-      bucket: "artifacts",
-      secretAccessKey: "never-return-this-secret",
-    });
+    const storage = new R2ObjectStorage(bucket);
     await storage.put(KEY, new TextEncoder().encode("hello"), 5, "text/html");
     expect(stored).toEqual({
       key: KEY,
@@ -37,44 +44,115 @@ describe("R2 artifact storage", () => {
       body: "hello",
     });
 
-    const signatures: string[] = [];
-    for (const method of ["GET", "HEAD"] as const) {
-      const response = await storage.read(KEY, method);
-      const location = response.headers.get("location")!;
-      const url = new URL(location);
-      expect(response.status).toBe(307);
-      expect(url.pathname).toBe(`/artifacts/${KEY}`);
-      expect(url.searchParams.get("X-Amz-Expires")).toBe("300");
-      expect(url.searchParams.get("X-Amz-Signature")).toBeTruthy();
-      signatures.push(url.searchParams.get("X-Amz-Signature")!);
-      expect(location).not.toContain("never-return-this-secret");
-      expect(url.searchParams.get("X-Amz-Credential")).toContain("read-key");
-    }
-    expect(new Set(signatures).size).toBe(2);
+    const response = await storage.read(KEY, "GET", new Request("https://dahlia.example", {
+      headers: { range: "bytes=1-3" },
+    }));
+    expect(response.status).toBe(206);
+    expect(response.headers.get("location")).toBeNull();
+    expect(response.headers.get("content-range")).toBe("bytes 1-3/5");
+    expect(await response.text()).toBe("ell");
+    const head = await storage.read(KEY, "HEAD", new Request("https://dahlia.example", {
+      headers: { range: "bytes=1-3" },
+    }));
+    expect(head.status).toBe(206);
+    expect(head.headers.get("content-range")).toBe("bytes 1-3/5");
+    expect(await head.text()).toBe("");
   });
 });
 
-describe("Databricks Volume artifact storage", () => {
-  it("uses OAuth, raw PUT, encoded Files API paths, and safe streamed response headers", async () => {
+describe("local object storage", () => {
+  it("persists replacements and serves ranges within its root", async () => {
+    const root = await mkdtemp(join(tmpdir(), "dahlia-storage-"));
+    try {
+      const storage = new LocalObjectStorage(root);
+      await storage.put(KEY, new TextEncoder().encode("hello"), 5, "text/plain");
+      await storage.put(KEY, new TextEncoder().encode("world"), 5, "text/plain");
+      const response = await storage.read(KEY, "GET", new Request("https://dahlia.example", {
+        headers: { range: "bytes=1-3" },
+      }));
+      expect(response.status).toBe(206);
+      expect(response.headers.get("content-range")).toBe("bytes 1-3/5");
+      expect(await response.text()).toBe("orl");
+      const stale = await storage.read(KEY, "GET", new Request("https://dahlia.example", {
+        headers: { "if-unmodified-since": "Thu, 01 Jan 1970 00:00:00 GMT" },
+      }));
+      expect(stale.status).toBe(412);
+      const invalid = await storage.read(KEY, "GET", new Request("https://dahlia.example", {
+        headers: { range: "bytes=9-10" },
+      }));
+      expect(invalid.status).toBe(416);
+      expect(invalid.headers.get("content-range")).toBe("bytes */5");
+      await expect(storage.exists("../escape")).rejects.toThrow();
+      await storage.delete(KEY);
+      expect(await storage.exists(KEY)).toBe(false);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("S3-compatible object storage", () => {
+  it("signs origin requests and relays Range without exposing credentials", async () => {
+    const calls: Request[] = [];
+    const transport = vi.fn(async (input: RequestInfo | URL) => {
+      const request = input as Request;
+      calls.push(request);
+      if (request.method === "PUT") return new Response(null, { status: 200 });
+      return new Response("ell", {
+        status: 206,
+        headers: { "content-length": "3", "content-range": "bytes 1-3/5" },
+      });
+    }) as typeof fetch;
+    const storage = new S3ObjectStorage({
+      accessKeyId: "access-key",
+      bucket: "bucket",
+      endpoint: "https://s3.example",
+      region: "auto",
+      secretAccessKey: "never-return-this-secret",
+      sessionToken: "session-token",
+    }, transport);
+    await storage.put(KEY, new Response("hello").body!, 5, "text/plain");
+    const response = await storage.read(KEY, "GET", new Request("https://dahlia.example", {
+      headers: { range: "bytes=1-3" },
+    }));
+
+    expect(calls[0]!.url).toBe(`https://s3.example/bucket/${KEY}`);
+    expect(calls[0]!.headers.get("authorization")).toContain("Credential=access-key/");
+    expect(calls[0]!.headers.get("x-amz-content-sha256")).toBe("UNSIGNED-PAYLOAD");
+    expect(calls[1]!.headers.get("range")).toBe("bytes=1-3");
+    expect(response.headers.get("location")).toBeNull();
+    expect(JSON.stringify([...response.headers])).not.toContain("never-return-this-secret");
+    expect(await response.text()).toBe("ell");
+
+    const awsCalls: Request[] = [];
+    const aws = new S3ObjectStorage({
+      accessKeyId: "access-key",
+      bucket: "bucket",
+      region: "ap-northeast-1",
+      secretAccessKey: "secret",
+    }, vi.fn(async (input: RequestInfo | URL) => {
+      awsCalls.push(input as Request);
+      return new Response(null, { status: 200 });
+    }));
+    expect(await aws.exists(KEY)).toBe(true);
+    expect(awsCalls[0]!.url).toBe(`https://bucket.s3.ap-northeast-1.amazonaws.com/${KEY}`);
+  });
+});
+
+describe("Databricks Volume object storage", () => {
+  it("uses OAuth, raw PUT, encoded Files API paths, and streaming", async () => {
     const calls: Array<{ url: string; init: RequestInit }> = [];
     const transport = vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
       const url = String(input);
       calls.push({ url, init });
-      if (url.endsWith("/oidc/v1/token")) {
-        return Response.json({ access_token: "token", expires_in: 3600 });
-      }
+      if (url.endsWith("/oidc/v1/token")) return Response.json({ access_token: "token", expires_in: 3600 });
       if (init.method === "PUT") return new Response(null, { status: 204 });
       return new Response("partial", {
         status: 206,
-        headers: {
-          "content-range": "bytes 0-6/7",
-          "content-length": "7",
-          "last-modified": "Fri, 28 Aug 2026 00:00:00 GMT",
-          "x-databricks-secret": "do-not-forward",
-        },
+        headers: { "content-range": "bytes 0-6/7", "content-length": "7" },
       });
     }) as typeof fetch;
-    const storage: ArtifactStorage = new DatabricksVolumeArtifactStorage({
+    const storage: ObjectStorage = new DatabricksVolumeObjectStorage({
       host: "https://workspace.example",
       clientId: "client",
       clientSecret: "secret",
@@ -82,28 +160,15 @@ describe("Databricks Volume artifact storage", () => {
     }, "/Volumes/main/default/assets with spaces", transport);
 
     await storage.put(KEY, new TextEncoder().encode("hello"), 5, "text/html");
-    const request = new Request("https://dahlia.example", {
-      headers: { range: "bytes=0-6", "if-unmodified-since": "Fri, 28 Aug 2026 00:00:00 GMT" },
-    });
-    const response = await storage.read(
-      KEY,
-      "GET",
-      request,
-      "text/html",
-    );
-
+    const request = new Request("https://dahlia.example", { headers: { range: "bytes=0-6" } });
+    const response = await storage.read(KEY, "GET", request);
     expect(calls[1]!.url).toBe(
       `https://workspace.example/api/2.0/fs/files/Volumes/main/default/assets%20with%20spaces/${KEY}?overwrite=true`,
     );
     expect(new Headers(calls[1]!.init.headers).get("authorization")).toBe("Bearer token");
-    expect(calls[2]!.url).not.toContain("overwrite=true");
     expect(new Headers(calls[2]!.init.headers).get("range")).toBe("bytes=0-6");
     expect(calls[2]!.init.signal).toBe(request.signal);
     expect(response.status).toBe(206);
-    expect(response.headers.get("content-type")).toBe("text/html");
-    expect(response.headers.get("content-security-policy")).toBe("sandbox allow-scripts");
-    expect(response.headers.get("content-range")).toBe("bytes 0-6/7");
-    expect(response.headers.get("x-databricks-secret")).toBeNull();
     expect(await response.text()).toBe("partial");
   });
 
@@ -112,19 +177,19 @@ describe("Databricks Volume artifact storage", () => {
     const transport = vi.fn(async (input: RequestInfo | URL) => String(input).endsWith("/oidc/v1/token")
       ? Response.json({ access_token: "token", expires_in: 3600 })
       : new Response("contains a storage path", { status })) as typeof fetch;
-    const storage: ArtifactStorage = new DatabricksVolumeArtifactStorage({
+    const storage: ObjectStorage = new DatabricksVolumeObjectStorage({
       host: "https://workspace.example",
       clientId: "client",
       clientSecret: "secret",
       tokenUrl: "https://workspace.example/oidc/v1/token",
     }, "/Volumes/main/default/artifacts", transport);
 
-    const missing = await storage.read(KEY, "GET", new Request("https://dahlia.example"), "text/plain");
+    const missing = await storage.read(KEY, "GET", new Request("https://dahlia.example"));
     expect(missing.status).toBe(404);
     expect(await missing.text()).toBe("");
     status = 403;
-    await expect(storage.read(KEY, "GET", new Request("https://dahlia.example"), "text/plain")).rejects.toThrow();
+    await expect(storage.read(KEY, "GET", new Request("https://dahlia.example"))).rejects.toThrow();
     status = 500;
-    await expect(storage.read(KEY, "GET", new Request("https://dahlia.example"), "text/plain")).rejects.toThrow();
+    await expect(storage.read(KEY, "GET", new Request("https://dahlia.example"))).rejects.toThrow();
   });
 });

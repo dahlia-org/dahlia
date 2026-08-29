@@ -3,7 +3,7 @@ import { z } from "zod";
 export type AuthProvider = "accounts" | "header";
 export type DatabaseType = "sqlite" | "postgres" | "lakebase" | "hyperdrive" | "d1";
 export type AIBackend = "databricks" | "cloudflare" | "openai";
-export type ArtifactBackend = "r2" | "databricks-volume";
+export type StorageBackend = "databricks" | "local" | "r2" | "s3";
 /** @deprecated Use DatabaseType. */
 export type AuthDatabaseBackend = DatabaseType;
 
@@ -35,11 +35,13 @@ export interface DatabricksWorkspaceConfig {
   tokenUrl: string;
 }
 
-export interface R2ArtifactConfig {
-  accountId: string;
+export interface S3StorageConfig {
   accessKeyId: string;
   bucket: string;
+  endpoint?: string;
+  region: string;
   secretAccessKey: string;
+  sessionToken?: string;
 }
 
 export interface AppConfig {
@@ -56,17 +58,18 @@ export interface AppConfig {
   betterAuthSecret?: string;
   oauthRedirectUris: string[];
   maxRequestBytes: number;
-  artifactBackend?: ArtifactBackend;
+  storageBackend?: StorageBackend;
+  storageLocalPath?: string;
+  storageS3?: S3StorageConfig;
+  storageDatabricksVolumePath?: string;
   artifactMaxBytes?: number;
-  artifactVolumePath?: string;
   databricksWorkspace?: DatabricksWorkspaceConfig;
-  r2Artifact?: R2ArtifactConfig;
 }
 
 const authProviderSchema = z.enum(["accounts", "header"]);
 const databaseTypeSchema = z.enum(["sqlite", "postgres", "lakebase", "hyperdrive", "d1"]);
 const aiBackendSchema = z.enum(["databricks", "cloudflare", "openai"]);
-const artifactBackendSchema = z.enum(["r2", "databricks-volume"]);
+const storageBackendSchema = z.enum(["databricks", "local", "r2", "s3"]);
 const LOCAL_BASE_URL = "http://localhost:5173";
 const LOCAL_DATABASE_URL = "file:.data/dahlia-auth.sqlite";
 export const DEFAULT_ARTIFACT_MAX_BYTES = 64 * 1024 * 1024;
@@ -136,10 +139,10 @@ function loadLakebaseDatabase(
 
 function databricksWorkspaceConfig(
   env: Record<string, string | undefined>,
-  requiredForArtifact: boolean,
+  requiredForStorage: boolean,
 ): DatabricksWorkspaceConfig | undefined {
   const requiredForAI = aiBackendSchema.parse(env.DAHLIA_AI_BACKEND?.trim() || "openai") === "databricks";
-  if (!requiredForAI && !requiredForArtifact) return undefined;
+  if (!requiredForAI && !requiredForStorage) return undefined;
   const hostValue = required(env, "DATABRICKS_HOST");
   const host = validateBaseUrl(hostValue.includes("://") ? hostValue : `https://${hostValue}`, "DATABRICKS_HOST");
   if (new URL(host).pathname !== "/") throw new Error("DATABRICKS_HOST must be a workspace origin without a path");
@@ -181,6 +184,9 @@ function providerConfig(
 }
 
 export function loadConfig(env: Record<string, string | undefined>): AppConfig {
+  if (env.DAHLIA_ARTIFACT_BACKEND?.trim()) {
+    throw new Error("DAHLIA_ARTIFACT_BACKEND was replaced by DAHLIA_STORAGE_BACKEND");
+  }
   const authProvider = authProviderSchema.parse(env.DAHLIA_AUTH_TYPE?.trim() || "accounts");
   const databaseType = databaseTypeSchema.parse(env.DAHLIA_DATABASE_TYPE?.trim() || "sqlite");
   const configuredAppUrl = env.DAHLIA_APP_URL?.trim();
@@ -195,24 +201,29 @@ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
     .positive()
     .max(64 * 1024 * 1024)
     .parse(env.DAHLIA_MAX_REQUEST_BYTES ?? String(16 * 1024 * 1024));
-  const artifactBackend = env.DAHLIA_ARTIFACT_BACKEND?.trim()
-    ? artifactBackendSchema.parse(env.DAHLIA_ARTIFACT_BACKEND.trim())
-    : undefined;
-  const databricksWorkspace = databricksWorkspaceConfig(env, artifactBackend === "databricks-volume");
+  const storageBackend = storageBackendSchema.parse(env.DAHLIA_STORAGE_BACKEND?.trim() || "local");
+  const databricksWorkspace = databricksWorkspaceConfig(env, storageBackend === "databricks");
   const artifactMaxBytes = z.coerce.number().int().positive().max(DEFAULT_ARTIFACT_MAX_BYTES)
     .parse(env.DAHLIA_ARTIFACT_MAX_BYTES ?? String(DEFAULT_ARTIFACT_MAX_BYTES));
-  const artifactVolumePath = artifactBackend === "databricks-volume"
-    ? required(env, "DAHLIA_ARTIFACT_VOLUME_PATH").replace(/\/$/, "")
+  const storageDatabricksVolumePath = storageBackend === "databricks"
+    ? required(env, "DAHLIA_STORAGE_DATABRICKS_VOLUME_PATH").replace(/\/$/, "")
     : undefined;
-  if (artifactVolumePath && !/^\/Volumes\/[^/]+\/[^/]+\/[^/]+$/.test(artifactVolumePath)) {
-    throw new Error("DAHLIA_ARTIFACT_VOLUME_PATH must identify a Unity Catalog Volume");
+  if (storageDatabricksVolumePath && !/^\/Volumes\/[^/]+\/[^/]+\/[^/]+$/.test(storageDatabricksVolumePath)) {
+    throw new Error("DAHLIA_STORAGE_DATABRICKS_VOLUME_PATH must identify a Unity Catalog Volume");
   }
-  const r2Artifact = artifactBackend === "r2" ? {
-    accountId: required(env, "DAHLIA_R2_ACCOUNT_ID"),
-    accessKeyId: required(env, "DAHLIA_R2_ACCESS_KEY_ID"),
-    bucket: required(env, "DAHLIA_R2_BUCKET"),
-    secretAccessKey: required(env, "DAHLIA_R2_SECRET_ACCESS_KEY"),
+  const storageS3 = storageBackend === "s3" ? {
+    accessKeyId: required(env, "AWS_ACCESS_KEY_ID"),
+    bucket: required(env, "DAHLIA_STORAGE_S3_BUCKET"),
+    endpoint: env.DAHLIA_STORAGE_S3_ENDPOINT?.trim()
+      ? validateBaseUrl(env.DAHLIA_STORAGE_S3_ENDPOINT.trim(), "DAHLIA_STORAGE_S3_ENDPOINT")
+      : undefined,
+    region: required(env, "AWS_REGION"),
+    secretAccessKey: required(env, "AWS_SECRET_ACCESS_KEY"),
+    sessionToken: env.AWS_SESSION_TOKEN?.trim() || undefined,
   } : undefined;
+  if (storageS3?.endpoint && new URL(storageS3.endpoint).pathname !== "/") {
+    throw new Error("DAHLIA_STORAGE_S3_ENDPOINT must be an origin without a path");
+  }
 
   const config: AppConfig = {
     authProvider,
@@ -227,11 +238,12 @@ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
     provider: providerConfig(env, databricksWorkspace),
     oauthRedirectUris: csv(env.DAHLIA_OAUTH_REDIRECT_URIS),
     maxRequestBytes,
-    artifactBackend,
+    storageBackend,
+    storageLocalPath: env.DAHLIA_STORAGE_LOCAL_PATH?.trim() || ".data/storage",
+    storageS3,
+    storageDatabricksVolumePath,
     artifactMaxBytes,
-    artifactVolumePath,
     databricksWorkspace,
-    r2Artifact,
   };
 
   if (authProvider === "accounts") {

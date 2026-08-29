@@ -5,16 +5,22 @@ import type { Socket } from "node:net";
 import { createApp } from "./app";
 import { initializeDahliaAuth } from "./auth/better-auth";
 import { createNodeApplicationStore } from "./auth/node-store";
-import { DatabricksVolumeArtifactStorage } from "./artifacts/databricks-volume";
+import { DatabricksVolumeObjectStorage } from "./artifacts/databricks-volume";
+import { LocalObjectStorage } from "./artifacts/local";
+import { S3ObjectStorage } from "./artifacts/s3";
 import { loadConfig } from "./config";
 
 const config = loadConfig(process.env);
 const applicationStore = createNodeApplicationStore(config);
 const auth = config.authProvider === "accounts" ? await initializeDahliaAuth(config, applicationStore) : undefined;
-const artifactStorage = config.artifactBackend === "databricks-volume"
-  ? new DatabricksVolumeArtifactStorage(config.databricksWorkspace!, config.artifactVolumePath!)
-  : undefined;
-if (config.artifactBackend === "r2") throw new Error("R2 artifact storage requires a Worker R2 binding");
+const artifactStorage = config.storageBackend === "databricks"
+  ? new DatabricksVolumeObjectStorage(config.databricksWorkspace!, config.storageDatabricksVolumePath!)
+  : config.storageBackend === "s3"
+    ? new S3ObjectStorage(config.storageS3!)
+    : config.storageBackend === "local"
+      ? new LocalObjectStorage(config.storageLocalPath!)
+      : undefined;
+if (!artifactStorage) throw new Error("R2 storage requires a Worker binding");
 
 const app = createApp({
   config,
