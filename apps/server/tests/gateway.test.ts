@@ -114,6 +114,7 @@ describe("AI Gateway", () => {
   });
 
   it("rejects unavailable or invalid Databricks model lists", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const databricks = {
       ...config,
       provider: { backend: "databricks", baseUrl: "https://workspace.example/ai-gateway/mlflow/v1" } as const,
@@ -122,8 +123,20 @@ describe("AI Gateway", () => {
       headers: { "x-forwarded-access-token": "user-token" },
     });
 
-    await expect(new GatewayService(databricks, registry, async () => new Response(null, { status: 503 }))
+    await expect(new GatewayService(databricks, registry, async () => new Response(JSON.stringify({ error: "private" }), {
+      status: 503,
+      headers: { "x-databricks-request-id": "request-123" },
+    }))
       .adminModels(request())).rejects.toMatchObject({ status: 502, code: "provider_models_unavailable" });
+    expect(JSON.parse(String(consoleError.mock.calls.at(-1)?.[0]))).toEqual({
+      level: "error",
+      event: "databricks_model_list_failed",
+      reason: "upstream_http_error",
+      status: 503,
+      requestId: "request-123",
+    });
+    expect(String(consoleError.mock.calls.at(-1)?.[0])).not.toContain("private");
+    expect(String(consoleError.mock.calls.at(-1)?.[0])).not.toContain("user-token");
     await expect(new GatewayService(databricks, registry, async () => Response.json({ model_services: [{}] }))
       .adminModels(request())).rejects.toMatchObject({ status: 502, code: "provider_models_invalid" });
     await expect(new GatewayService(databricks, registry, async () => Response.json({
@@ -135,6 +148,7 @@ describe("AI Gateway", () => {
     })).adminModels(request())).rejects.toMatchObject({ status: 502, code: "provider_models_invalid" });
     await expect(new GatewayService(databricks, registry).adminModels(new Request("https://dahlia.example")))
       .rejects.toMatchObject({ status: 401, code: "databricks_access_token_required" });
+    consoleError.mockRestore();
   });
 
   it("rewrites only the model and streams the upstream body", async () => {

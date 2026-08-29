@@ -137,41 +137,75 @@ export class GatewayService {
         signal,
         this.transport,
         pageToken,
-      ).catch(() => {
-        throw new GatewayRequestError("Databricks model list is unavailable", 502, "provider_models_unavailable");
+      ).catch((error: unknown) => {
+        throw databricksModelListError("provider_models_unavailable", "transport_error", {
+          errorName: error instanceof Error ? error.name : "UnknownError",
+        });
       });
       if (!response.ok) {
-        throw new GatewayRequestError("Databricks model list is unavailable", 502, "provider_models_unavailable");
+        throw databricksModelListError("provider_models_unavailable", "upstream_http_error", {
+          status: response.status,
+          requestId: databricksRequestId(response.headers),
+        });
       }
       const body: unknown = await response.json().catch(() => undefined);
       if (!body || typeof body !== "object" || !("model_services" in body) || !Array.isArray(body.model_services)) {
-        throw new GatewayRequestError("Databricks model list is invalid", 502, "provider_models_invalid");
+        throw databricksModelListError("provider_models_invalid", "invalid_response_shape", {
+          requestId: databricksRequestId(response.headers),
+        });
       }
       const modelServices = body.model_services as unknown[];
       for (const entry of modelServices) {
         if (!entry || typeof entry !== "object" || !("name" in entry) || typeof entry.name !== "string") {
-          throw new GatewayRequestError("Databricks model list is invalid", 502, "provider_models_invalid");
+          throw databricksModelListError("provider_models_invalid", "invalid_model_entry", {
+            requestId: databricksRequestId(response.headers),
+          });
         }
         const resourceName = entry.name.trim();
         const prefix = "model-services/";
         const id = resourceName.startsWith(prefix) ? resourceName.slice(prefix.length) : "";
         if (!id.startsWith("system.ai.") || id.length > 255 || !MODEL_ALIAS_PATTERN.test(databricksModelAlias(id))) {
-          throw new GatewayRequestError("Databricks model list is invalid", 502, "provider_models_invalid");
+          throw databricksModelListError("provider_models_invalid", "invalid_model_name", {
+            requestId: databricksRequestId(response.headers),
+          });
         }
         models.push({ id, displayName: null });
       }
       const nextPageToken: unknown = "next_page_token" in body ? body.next_page_token : undefined;
       if (nextPageToken !== undefined && typeof nextPageToken !== "string") {
-        throw new GatewayRequestError("Databricks model list is invalid", 502, "provider_models_invalid");
+        throw databricksModelListError("provider_models_invalid", "invalid_page_token", {
+          requestId: databricksRequestId(response.headers),
+        });
       }
       pageToken = nextPageToken?.trim() || undefined;
       if (pageToken && pageTokens.has(pageToken)) {
-        throw new GatewayRequestError("Databricks model list is invalid", 502, "provider_models_invalid");
+        throw databricksModelListError("provider_models_invalid", "repeated_page_token", {
+          requestId: databricksRequestId(response.headers),
+        });
       }
       if (pageToken) pageTokens.add(pageToken);
     } while (pageToken);
     return models;
   }
+}
+
+function databricksModelListError(
+  code: "provider_models_unavailable" | "provider_models_invalid",
+  reason: string,
+  details: Record<string, unknown>,
+): GatewayRequestError {
+  console.error(JSON.stringify({ level: "error", event: "databricks_model_list_failed", reason, ...details }));
+  const message = code === "provider_models_unavailable"
+    ? "Databricks model list is unavailable"
+    : "Databricks model list is invalid";
+  return new GatewayRequestError(message, 502, code);
+}
+
+function databricksRequestId(headers: Headers): string | undefined {
+  return headers.get("x-databricks-request-id")
+    || headers.get("x-request-id")
+    || headers.get("request-id")
+    || undefined;
 }
 
 function databricksModelAlias(id: string): string {
