@@ -1,4 +1,5 @@
-import { pgSchema, text, timestamp, boolean, integer, jsonb, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+import { pgSchema, check, text, timestamp, boolean, integer, jsonb, index, uniqueIndex } from "drizzle-orm/pg-core";
 
 const authTable = pgSchema("auth").table;
 const dahliaTable = pgSchema("dahlia").table;
@@ -221,4 +222,19 @@ export const modelAlias = dahliaTable("model_alias", {
 export const platformAdmin = dahliaTable("platform_admin", {
   email: text("email").primaryKey(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const artifact = dahliaTable("artifact", {
+  id: text("id").primaryKey(),
+  ownerWorkspaceId: text("owner_workspace_id").notNull(),
+  contentType: text("content_type").notNull(),
+  visibility: text("visibility").default("private").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  check("artifact_visibility_check", sql`${table.visibility} IN ('private', 'public')`),
+]);
+
+export const artifactReservation = dahliaTable("artifact_reservation", {
+  id: text("id").primaryKey(),
 });

@@ -1,6 +1,6 @@
 # Dahlia Server
 
-`apps/server` is the optional, self-hostable AI Gateway used by the Codex process embedded in Dahlia. It does not currently receive recordings or transcript records. Responses request content is relayed to the configured provider without being persisted or logged.
+`apps/server` is the optional, self-hostable AI Gateway used by the Codex process embedded in Dahlia. It also accepts explicitly uploaded arbitrary-byte artifacts; it does not automatically receive recordings, transcript records, SQLite databases, or Vault data. Responses request content is relayed to the configured provider without being persisted or logged.
 
 Better Auth, Gateway administration, and future meeting cloud sync share one Drizzle application database. Provider credentials remain separate runtime secrets and are never stored in that database.
 
@@ -28,11 +28,20 @@ Node supports `sqlite`, `postgres`, and `lakebase`; Workers support `d1`, `hyper
 | `/api/admin/**` | Platform administrators only | Platform administrators only |
 | `/api/v1/models` | Dahlia OAuth access token | Platform U2M / proxy authentication |
 | `/api/v1/responses` | Dahlia OAuth access token | Platform U2M / proxy authentication |
+| `/api/v1/artifacts/{uuid}` | Public reads are anonymous; private reads and mutations use Dahlia OAuth | Public reads are anonymous; private reads and mutations use proxy identity |
 | `/healthz` | Minimal liveness | Internal liveness; anonymous external access is not guaranteed |
 
 `accounts` is the default authentication. It serves OAuth/OIDC discovery under `/.well-known/**`. The fixed public client is `dahlia-macos`; it requires authorization code with S256 PKCE and supports rotating refresh tokens and revocation. Dynamic client registration is disabled.
 
-OAuth access uses `api.model.read` for `GET /api/v1/models` and `api.model.request` for `POST /api/v1/responses`. The fixed client is allowed to request both scopes; each endpoint verifies its own scope.
+OAuth access uses `api.model.read` for models, `api.model.request` for Responses, and `api.artifact.read` / `api.artifact.write` for private artifact operations. The fixed client is allowed to request these scopes; each endpoint verifies its own scope.
+
+### Artifact API
+
+`artifact_id` is a canonical lowercase UUID. `PUT` accepts an uncompressed raw body with a required `Content-Length` up to 64 MiB. New records are private; the same owner may replace bytes only with the original `Content-Type`. `PATCH` accepts only `{"visibility":"private"}` or `{"visibility":"public"}`, and `DELETE` removes bytes before metadata so a storage failure can be retried. Deleted IDs remain permanently reserved so an old public URL cannot be reclaimed. There is no list, history, expiry, malware scan, HTML sanitization, or per-user share API.
+
+R2 deployments redirect authorized `GET` and `HEAD` requests with `307` to a five-minute method-specific pre-signed URL on the R2 origin. A URL already issued can remain usable for up to five minutes after making an artifact private or deleting it. Databricks deployments stream the Files API response from a managed Volume, forward `Range` and `If-Unmodified-Since`, and apply a CSP sandbox so uploaded HTML cannot inherit the Dahlia application origin. The stable publish URL is always the Dahlia API URL.
+
+Select `DAHLIA_ARTIFACT_BACKEND=r2` in a Worker with the `DAHLIA_ARTIFACTS` binding and read-only S3 signing credentials, or `DAHLIA_ARTIFACT_BACKEND=databricks-volume` in Node with `DAHLIA_ARTIFACT_VOLUME_PATH=/Volumes/<catalog>/<schema>/<volume>`. If no backend is selected, artifact operations return `503 artifact_storage_not_configured`.
 
 `header` reads the authenticated email from `X-Forwarded-Email` by default. Override the email header name with `DAHLIA_AUTH_HEADER`, for example `Cf-Access-Authenticated-User-Email`. `X-Forwarded-User` supplies the stable user ID and `X-Forwarded-Preferred-Username` supplies the display name; when absent, the email remains the user ID. The upstream proxy must remove client-supplied identity headers, write the verified values itself, and prevent direct access to the Server.
 

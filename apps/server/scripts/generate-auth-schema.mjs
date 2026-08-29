@@ -17,7 +17,16 @@ const plugins = [
   jwt(),
   oauthProvider({
     resources: ["https://dahlia.invalid/api/v1"],
-    scopes: ["openid", "profile", "email", "offline_access", "api.model.read", "api.model.request"],
+    scopes: [
+      "openid",
+      "profile",
+      "email",
+      "offline_access",
+      "api.model.read",
+      "api.model.request",
+      "api.artifact.read",
+      "api.artifact.write",
+    ],
   }),
 ];
 
@@ -30,8 +39,8 @@ const postgres = await generateDrizzleSchema({
   provider: "pg",
 });
 const postgresSchema = postgres.code
-  .replace('import { defineRelationsPart } from "drizzle-orm";\n', "")
-  .replace("import { pgTable,", "import { pgSchema,")
+  .replace('import { defineRelationsPart } from "drizzle-orm";\n', 'import { sql } from "drizzle-orm";\n')
+  .replace("import { pgTable,", "import { pgSchema, check,")
   .replace("export const user = pgTable", 'const authTable = pgSchema("auth").table;\nconst dahliaTable = pgSchema("dahlia").table;\n\nexport const user = authTable')
   .replaceAll(" = pgTable(", " = authTable(")
   .replace(/\n\nexport const authRelations[\s\S]*$/, "\n")
@@ -51,6 +60,21 @@ export const platformAdmin = dahliaTable("platform_admin", {
   email: text("email").primaryKey(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
+
+export const artifact = dahliaTable("artifact", {
+  id: text("id").primaryKey(),
+  ownerWorkspaceId: text("owner_workspace_id").notNull(),
+  contentType: text("content_type").notNull(),
+  visibility: text("visibility").default("private").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  check("artifact_visibility_check", sql\`\${table.visibility} IN ('private', 'public')\`),
+]);
+
+export const artifactReservation = dahliaTable("artifact_reservation", {
+  id: text("id").primaryKey(),
+});
 `);
 await writeFile(postgres.path, postgresSchema);
 
@@ -65,7 +89,7 @@ const sqliteSchema = sqlite.code
   .replace('import { defineRelationsPart, sql } from "drizzle-orm";', 'import { sql } from "drizzle-orm";')
   .replace(
     'import { sqliteTable, text, integer, index, uniqueIndex } from "drizzle-orm/sqlite-core";',
-    'import { customType, sqliteTable, text, integer, index, uniqueIndex } from "drizzle-orm/sqlite-core";',
+    'import { customType, check, sqliteTable, text, integer, index, uniqueIndex } from "drizzle-orm/sqlite-core";',
   )
   .replace(/\n\nexport const authRelations[\s\S]*$/, "\n")
   .replaceAll(/integer\(([^,]+), \{ mode: 'timestamp_ms' \}\)/g, "sqliteDate($1)")
@@ -95,6 +119,21 @@ export const modelAlias = sqliteTable("modelAlias", {
 export const platformAdmin = sqliteTable("platformAdmin", {
   email: text("email").primaryKey(),
   createdAt: sqliteDate("createdAt").default(sql\`CURRENT_TIMESTAMP\`).notNull(),
+});
+
+export const artifact = sqliteTable("artifact", {
+  id: text("id").primaryKey(),
+  ownerWorkspaceId: text("ownerWorkspaceId").notNull(),
+  contentType: text("contentType").notNull(),
+  visibility: text("visibility").default("private").notNull(),
+  createdAt: sqliteDate("createdAt").default(sql\`CURRENT_TIMESTAMP\`).notNull(),
+  updatedAt: sqliteDate("updatedAt").default(sql\`CURRENT_TIMESTAMP\`).notNull(),
+}, (table) => [
+  check("artifact_visibility_check", sql\`\${table.visibility} IN ('private', 'public')\`),
+]);
+
+export const artifactReservation = sqliteTable("artifactReservation", {
+  id: text("id").primaryKey(),
 });
 `);
 await writeFile(sqlite.path, sqliteSchema);

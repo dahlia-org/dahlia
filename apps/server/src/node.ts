@@ -5,16 +5,22 @@ import type { Socket } from "node:net";
 import { createApp } from "./app";
 import { initializeDahliaAuth } from "./auth/better-auth";
 import { createNodeApplicationStore } from "./auth/node-store";
+import { DatabricksVolumeArtifactStorage } from "./artifacts/databricks-volume";
 import { loadConfig } from "./config";
 
 const config = loadConfig(process.env);
 const applicationStore = createNodeApplicationStore(config);
 const auth = config.authProvider === "accounts" ? await initializeDahliaAuth(config, applicationStore) : undefined;
+const artifactStorage = config.artifactBackend === "databricks-volume"
+  ? new DatabricksVolumeArtifactStorage(config.databricksWorkspace!, config.artifactVolumePath!)
+  : undefined;
+if (config.artifactBackend === "r2") throw new Error("R2 artifact storage requires a Worker R2 binding");
 
 const app = createApp({
   config,
   auth,
   authStore: applicationStore,
+  artifactStorage,
 });
 
 app.use("*", serveStatic({ root: "./dist/client" }));

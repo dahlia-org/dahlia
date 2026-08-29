@@ -15,6 +15,11 @@ export function testStore(overrides: Partial<AuthStore> = {}): AuthStore {
     isPlatformAdmin: () => Promise.resolve(false),
     addPlatformAdmin: () => Promise.resolve(false),
     deletePlatformAdmin: () => Promise.resolve(false),
+    getArtifact: () => Promise.resolve(null),
+    createArtifact: () => Promise.resolve(false),
+    touchArtifact: () => Promise.resolve(null),
+    updateArtifactVisibility: () => Promise.resolve(null),
+    deleteArtifact: () => Promise.resolve(false),
     ...overrides,
   };
 }

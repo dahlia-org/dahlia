@@ -141,17 +141,23 @@ Dahlia macOS / bundled Codex 0.148.0
     upstream Responses API
 
 Drizzle application store (SQLite, PostgreSQL, Lakebase, Hyperdrive, or D1)
-    ├─ Model Alias + platform administrator
+    ├─ Model Alias + platform administrator + artifact metadata
     └─ user + session + OAuth metadata (accounts mode)
+
+/api/v1/artifacts/{artifact_id}
+    ├─ private by default; owner-scoped metadata authorization
+    ├─ Cloudflare: R2 bytes → 300-second pre-signed GET/HEAD redirect
+    └─ Databricks: managed Volume bytes → Files API streaming relay
 ```
 
 Cloudflare では Hono Worker は `/api/**`、`/.well-known/**`、`/healthz` だけを処理する。React SPA と静的 asset は
 Workers Static Assets が直接配信し、Worker 内から asset binding を呼ばない。`/dashboard/**` の navigation は
 `index.html` へ fallback する一方、API と discovery の未定義 path は Hono の 404 を維持する。
 
-Gateway、認証 store、upstream の停止は AI 操作だけを失敗させる。macOS の起動、録音、音声保存、文字起こし、
-閲覧、検索はこの runtime を待たず、音声、SQLite、Vault を upload する API は持たない。runtime と data boundary の判断は
-[ADR-0043](docs/adr/0043-unify-dahlia-server-application-database.md)を正本とする。
+Gateway、認証 store、upstream、artifact storage の停止は Server 操作だけを失敗させる。macOS の起動、録音、音声保存、文字起こし、
+閲覧、検索はこの runtime を待たない。Artifact API は明示的に渡された任意 asset だけを扱い、録音、SQLite、Vault の自動 upload／sync は行わない。runtime と data boundary の判断は
+[ADR-0043](docs/adr/0043-unify-dahlia-server-application-database.md)および
+[ADR-0045](docs/adr/0045-add-owner-scoped-artifact-transport.md)を正本とする。
 
 ## Workload Classes
 

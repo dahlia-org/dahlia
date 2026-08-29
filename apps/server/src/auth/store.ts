@@ -40,6 +40,23 @@ export interface PlatformAdminRecord {
   createdAt: Date;
 }
 
+export type ArtifactVisibility = "private" | "public";
+
+export interface ArtifactRecord {
+  id: string;
+  ownerWorkspaceId: string;
+  contentType: string;
+  visibility: ArtifactVisibility;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface ArtifactInput {
+  id: string;
+  ownerWorkspaceId: string;
+  contentType: string;
+}
+
 /** The subset of Cloudflare D1 referenced by the package's public Worker types. */
 export interface D1PreparedStatementLike {
   bind(...values: unknown[]): D1PreparedStatementLike;
@@ -67,6 +84,15 @@ export interface ApplicationStore {
   isPlatformAdmin(email: string): Promise<boolean>;
   addPlatformAdmin(email: string): Promise<boolean>;
   deletePlatformAdmin(email: string): Promise<boolean>;
+  getArtifact(id: string): Promise<ArtifactRecord | null>;
+  createArtifact(input: ArtifactInput): Promise<boolean>;
+  touchArtifact(id: string, ownerWorkspaceId: string): Promise<ArtifactRecord | null>;
+  updateArtifactVisibility(
+    id: string,
+    ownerWorkspaceId: string,
+    visibility: ArtifactVisibility,
+  ): Promise<ArtifactRecord | null>;
+  deleteArtifact(id: string, ownerWorkspaceId: string): Promise<boolean>;
   close?(): Promise<void>;
 }
 
@@ -192,6 +218,41 @@ export function createPostgresApplicationStore(db: PostgresDatabase): Applicatio
         .returning({ email: postgresSchema.platformAdmin.email });
       return deleted !== undefined;
     },
+    async getArtifact(id) {
+      const [row] = await db.select().from(postgresSchema.artifact)
+        .where(eq(postgresSchema.artifact.id, id)).limit(1);
+      return (row as ArtifactRecord | undefined) ?? null;
+    },
+    async createArtifact(input) {
+      const [reserved] = await db.insert(postgresSchema.artifactReservation).values({ id: input.id })
+        .onConflictDoNothing().returning({ id: postgresSchema.artifactReservation.id });
+      if (!reserved) return false;
+      const [created] = await db.insert(postgresSchema.artifact).values(input).onConflictDoNothing()
+        .returning({ id: postgresSchema.artifact.id });
+      return created !== undefined;
+    },
+    async touchArtifact(id, ownerWorkspaceId) {
+      const [updated] = await db.update(postgresSchema.artifact).set({ updatedAt: new Date() }).where(and(
+        eq(postgresSchema.artifact.id, id),
+        eq(postgresSchema.artifact.ownerWorkspaceId, ownerWorkspaceId),
+      )).returning();
+      return (updated as ArtifactRecord | undefined) ?? null;
+    },
+    async updateArtifactVisibility(id, ownerWorkspaceId, visibility) {
+      const [updated] = await db.update(postgresSchema.artifact).set({ visibility, updatedAt: new Date() })
+        .where(and(
+          eq(postgresSchema.artifact.id, id),
+          eq(postgresSchema.artifact.ownerWorkspaceId, ownerWorkspaceId),
+        )).returning();
+      return (updated as ArtifactRecord | undefined) ?? null;
+    },
+    async deleteArtifact(id, ownerWorkspaceId) {
+      const [deleted] = await db.delete(postgresSchema.artifact).where(and(
+        eq(postgresSchema.artifact.id, id),
+        eq(postgresSchema.artifact.ownerWorkspaceId, ownerWorkspaceId),
+      )).returning({ id: postgresSchema.artifact.id });
+      return deleted !== undefined;
+    },
   };
 }
 
@@ -312,6 +373,42 @@ export function createSqliteApplicationStore(db: SQLiteDatabase, transactions = 
     async deletePlatformAdmin(email) {
       const [deleted] = await db.delete(sqliteSchema.platformAdmin).where(eq(sqliteSchema.platformAdmin.email, email))
         .returning({ email: sqliteSchema.platformAdmin.email });
+      return deleted !== undefined;
+    },
+    async getArtifact(id) {
+      const [row] = await db.select().from(sqliteSchema.artifact)
+        .where(eq(sqliteSchema.artifact.id, id)).limit(1);
+      return (row as ArtifactRecord | undefined) ?? null;
+    },
+    async createArtifact(input) {
+      const [reserved] = await db.insert(sqliteSchema.artifactReservation).values({ id: input.id })
+        .onConflictDoNothing().returning({ id: sqliteSchema.artifactReservation.id });
+      if (!reserved) return false;
+      const now = new Date();
+      const [created] = await db.insert(sqliteSchema.artifact).values({ ...input, createdAt: now, updatedAt: now })
+        .onConflictDoNothing().returning({ id: sqliteSchema.artifact.id });
+      return created !== undefined;
+    },
+    async touchArtifact(id, ownerWorkspaceId) {
+      const [updated] = await db.update(sqliteSchema.artifact).set({ updatedAt: new Date() }).where(and(
+        eq(sqliteSchema.artifact.id, id),
+        eq(sqliteSchema.artifact.ownerWorkspaceId, ownerWorkspaceId),
+      )).returning();
+      return (updated as ArtifactRecord | undefined) ?? null;
+    },
+    async updateArtifactVisibility(id, ownerWorkspaceId, visibility) {
+      const [updated] = await db.update(sqliteSchema.artifact).set({ visibility, updatedAt: new Date() })
+        .where(and(
+          eq(sqliteSchema.artifact.id, id),
+          eq(sqliteSchema.artifact.ownerWorkspaceId, ownerWorkspaceId),
+        )).returning();
+      return (updated as ArtifactRecord | undefined) ?? null;
+    },
+    async deleteArtifact(id, ownerWorkspaceId) {
+      const [deleted] = await db.delete(sqliteSchema.artifact).where(and(
+        eq(sqliteSchema.artifact.id, id),
+        eq(sqliteSchema.artifact.ownerWorkspaceId, ownerWorkspaceId),
+      )).returning({ id: sqliteSchema.artifact.id });
       return deleted !== undefined;
     },
   };

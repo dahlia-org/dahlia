@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { secureHeaders } from "hono/secure-headers";
 
 import { createApp } from "./app";
+import { R2ArtifactStorage, type R2BucketLike } from "./artifacts/r2";
 import { initializeDahliaAuth } from "./auth/better-auth";
 import {
   createD1ApplicationStore,
@@ -22,6 +23,12 @@ export interface RuntimeSecrets {
   DAHLIA_DATABASE_TYPE?: string;
   DAHLIA_DATABASE_URL?: string;
   DAHLIA_MAX_REQUEST_BYTES?: string;
+  DAHLIA_ARTIFACT_BACKEND?: string;
+  DAHLIA_ARTIFACT_MAX_BYTES?: string;
+  DAHLIA_R2_ACCESS_KEY_ID?: string;
+  DAHLIA_R2_ACCOUNT_ID?: string;
+  DAHLIA_R2_BUCKET?: string;
+  DAHLIA_R2_SECRET_ACCESS_KEY?: string;
   DAHLIA_OAUTH_REDIRECT_URIS?: string;
   GOOGLE_CLIENT_ID?: string;
   GOOGLE_CLIENT_SECRET?: string;
@@ -34,6 +41,7 @@ export interface RuntimeSecrets {
 }
 
 export interface WorkerEnv extends RuntimeSecrets {
+  DAHLIA_ARTIFACTS?: R2BucketLike;
   HYPERDRIVE?: { connectionString: string };
   dahlia_db_prod?: D1DatabaseLike;
 }
@@ -76,6 +84,12 @@ export async function initializeWorkerApp(env: WorkerEnv): Promise<WorkerApp> {
       Number(env.DAHLIA_MAX_REQUEST_BYTES ?? WORKER_DEFAULT_MAX_REQUEST_BYTES),
       WORKER_DEFAULT_MAX_REQUEST_BYTES,
     )),
+    DAHLIA_ARTIFACT_BACKEND: env.DAHLIA_ARTIFACT_BACKEND,
+    DAHLIA_ARTIFACT_MAX_BYTES: env.DAHLIA_ARTIFACT_MAX_BYTES,
+    DAHLIA_R2_ACCESS_KEY_ID: env.DAHLIA_R2_ACCESS_KEY_ID,
+    DAHLIA_R2_ACCOUNT_ID: env.DAHLIA_R2_ACCOUNT_ID,
+    DAHLIA_R2_BUCKET: env.DAHLIA_R2_BUCKET,
+    DAHLIA_R2_SECRET_ACCESS_KEY: env.DAHLIA_R2_SECRET_ACCESS_KEY,
     DAHLIA_OAUTH_REDIRECT_URIS: env.DAHLIA_OAUTH_REDIRECT_URIS,
     GOOGLE_CLIENT_ID: env.GOOGLE_CLIENT_ID,
     GOOGLE_CLIENT_SECRET: env.GOOGLE_CLIENT_SECRET,
@@ -91,11 +105,22 @@ export async function initializeWorkerApp(env: WorkerEnv): Promise<WorkerApp> {
     const auth = config.authProvider === "accounts"
       ? await initializeDahliaAuth(config, applicationStore)
       : undefined;
-    return createApp({ config, auth, authStore: applicationStore });
+    if (config.artifactBackend === "databricks-volume") {
+      throw new Error("Databricks Volume artifact storage requires the Node runtime");
+    }
+    const artifactStorage = config.artifactBackend === "r2"
+      ? new R2ArtifactStorage(requiredR2Binding(env), config.r2Artifact!)
+      : undefined;
+    return createApp({ config, auth, authStore: applicationStore, artifactStorage });
   } catch (error) {
     await applicationStore.close?.();
     throw error;
   }
+}
+
+function requiredR2Binding(env: WorkerEnv): R2BucketLike {
+  if (!env.DAHLIA_ARTIFACTS) throw new Error("The DAHLIA_ARTIFACTS R2 binding is required");
+  return env.DAHLIA_ARTIFACTS;
 }
 
 export function createWorkerHandler(initialize: WorkerAppInitializer = initializeWorkerApp): ExportedHandler<WorkerEnv> {

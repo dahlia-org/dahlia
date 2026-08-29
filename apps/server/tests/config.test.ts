@@ -51,6 +51,48 @@ describe("configuration", () => {
     });
   });
 
+  it("configures artifact storage independently from the AI backend", () => {
+    expect(loadConfig({
+      DAHLIA_AUTH_TYPE: "header",
+      DAHLIA_ARTIFACT_BACKEND: "databricks-volume",
+      DAHLIA_ARTIFACT_VOLUME_PATH: "/Volumes/main/default/dahlia_artifacts",
+      DATABRICKS_HOST: "workspace.cloud.databricks.com",
+      DATABRICKS_CLIENT_ID: "app-client-id",
+      DATABRICKS_CLIENT_SECRET: "app-client-secret",
+    })).toMatchObject({
+      artifactBackend: "databricks-volume",
+      artifactMaxBytes: 64 * 1024 * 1024,
+      artifactVolumePath: "/Volumes/main/default/dahlia_artifacts",
+      databricksWorkspace: { host: "https://workspace.cloud.databricks.com" },
+    });
+    expect(loadConfig({
+      DAHLIA_AUTH_TYPE: "header",
+      DAHLIA_ARTIFACT_BACKEND: "r2",
+      DAHLIA_R2_ACCOUNT_ID: "account",
+      DAHLIA_R2_ACCESS_KEY_ID: "key",
+      DAHLIA_R2_BUCKET: "bucket",
+      DAHLIA_R2_SECRET_ACCESS_KEY: "secret",
+    })).toMatchObject({
+      artifactBackend: "r2",
+      r2Artifact: { accountId: "account", accessKeyId: "key", bucket: "bucket" },
+    });
+  });
+
+  it("rejects invalid artifact limits and Volume paths", () => {
+    expect(() => loadConfig({
+      DAHLIA_AUTH_TYPE: "header",
+      DAHLIA_ARTIFACT_MAX_BYTES: String(64 * 1024 * 1024 + 1),
+    })).toThrow();
+    expect(() => loadConfig({
+      DAHLIA_AUTH_TYPE: "header",
+      DAHLIA_ARTIFACT_BACKEND: "databricks-volume",
+      DAHLIA_ARTIFACT_VOLUME_PATH: "/Volumes/main/default/volume/nested",
+      DATABRICKS_HOST: "workspace.cloud.databricks.com",
+      DATABRICKS_CLIENT_ID: "app-client-id",
+      DATABRICKS_CLIENT_SECRET: "app-client-secret",
+    })).toThrow("must identify a Unity Catalog Volume");
+  });
+
   it("requires the Cloudflare account endpoint when its backend is configured", () => {
     expect(() => loadConfig({
       DAHLIA_AUTH_TYPE: "header",

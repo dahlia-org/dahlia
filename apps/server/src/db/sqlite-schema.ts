@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { customType, sqliteTable, text, integer, index, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { customType, check, sqliteTable, text, integer, index, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 const sqliteDate = customType<{ data: Date; driverData: string }>({
   dataType: () => "text",
@@ -225,4 +225,19 @@ export const modelAlias = sqliteTable("modelAlias", {
 export const platformAdmin = sqliteTable("platformAdmin", {
   email: text("email").primaryKey(),
   createdAt: sqliteDate("createdAt").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
+export const artifact = sqliteTable("artifact", {
+  id: text("id").primaryKey(),
+  ownerWorkspaceId: text("ownerWorkspaceId").notNull(),
+  contentType: text("contentType").notNull(),
+  visibility: text("visibility").default("private").notNull(),
+  createdAt: sqliteDate("createdAt").default(sql`CURRENT_TIMESTAMP`).notNull(),
+  updatedAt: sqliteDate("updatedAt").default(sql`CURRENT_TIMESTAMP`).notNull(),
+}, (table) => [
+  check("artifact_visibility_check", sql`${table.visibility} IN ('private', 'public')`),
+]);
+
+export const artifactReservation = sqliteTable("artifactReservation", {
+  id: text("id").primaryKey(),
 });

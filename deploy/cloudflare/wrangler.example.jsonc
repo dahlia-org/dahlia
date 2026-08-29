@@ -22,6 +22,10 @@
       "migrations_dir": "auth-migrations"
     }
   ],
+  "r2_buckets": [{
+    "binding": "DAHLIA_ARTIFACTS",
+    "bucket_name": "replace-with-r2-bucket-name"
+  }],
   "observability": {
     "enabled": false,
     "logs": {
@@ -31,6 +35,10 @@
   },
   "vars": {
     "DAHLIA_AI_BACKEND": "cloudflare",
+    "DAHLIA_ARTIFACT_BACKEND": "r2",
+    "DAHLIA_ARTIFACT_MAX_BYTES": "67108864",
+    "DAHLIA_R2_ACCOUNT_ID": "replace-with-account-id",
+    "DAHLIA_R2_BUCKET": "replace-with-r2-bucket-name",
     "DAHLIA_AUTH_TYPE": "accounts",
     "DAHLIA_DATABASE_TYPE": "d1",
     "DAHLIA_APP_URL": "https://{name}.{subdomain}.workers.dev",

@@ -63,6 +63,8 @@ describe("SQLite Better Auth store", () => {
     expect(database.prepare('SELECT "name" FROM "_dahlia_auth_migrations" ORDER BY "name"').all()).toEqual([
       { name: "server/0001_better_auth.sql" },
       { name: "server/0002_server.sql" },
+      { name: "server/0003_artifact.sql" },
+      { name: "server/0004_artifact_reservation.sql" },
     ]);
     expect(database.prepare('SELECT "clientId" FROM "oauthClient"').get()).toEqual({ clientId: "dahlia-macos" });
     expect(database.prepare('SELECT "clientId" FROM "oauthClientResource"').get()).toEqual({ clientId: "dahlia-macos" });
@@ -93,6 +95,34 @@ describe("SQLite Better Auth store", () => {
     expect(await store.listPlatformAdmins()).toMatchObject([{ email: "admin@example.com" }]);
     expect(await store.deletePlatformAdmin("admin@example.com")).toBe(true);
     expect(await store.deleteModelAlias("summary")).toBe(true);
+    expect(await store.createArtifact({
+      id: "019cc4dd-e5c5-7bd4-94e0-98df9cc40db9",
+      ownerWorkspaceId: "personal:user-1",
+      contentType: "text/html",
+    })).toBe(true);
+    expect(await store.getArtifact("019cc4dd-e5c5-7bd4-94e0-98df9cc40db9")).toMatchObject({
+      visibility: "private",
+      contentType: "text/html",
+    });
+    expect(await store.updateArtifactVisibility(
+      "019cc4dd-e5c5-7bd4-94e0-98df9cc40db9",
+      "personal:user-1",
+      "public",
+    )).toMatchObject({ visibility: "public" });
+    expect(await store.deleteArtifact(
+      "019cc4dd-e5c5-7bd4-94e0-98df9cc40db9",
+      "personal:other",
+    )).toBe(false);
+    expect(await store.deleteArtifact(
+      "019cc4dd-e5c5-7bd4-94e0-98df9cc40db9",
+      "personal:user-1",
+    )).toBe(true);
+    expect(await store.createArtifact({
+      id: "019cc4dd-e5c5-7bd4-94e0-98df9cc40db9",
+      ownerWorkspaceId: "personal:other",
+      contentType: "text/html",
+    })).toBe(false);
+    expect(database.prepare('PRAGMA foreign_key_list("artifact")').all()).toEqual([]);
 
     const now = new Date();
     const expiresAt = new Date(now.getTime() + 60_000).toISOString();

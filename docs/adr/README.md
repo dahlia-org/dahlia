@@ -54,3 +54,4 @@ Codex は全 ADR を順番に読まず、最初にこの一覧から現在の作
 | [0042](0042-apply-global-batch-audio-retention.md) | Recording storage / Settings | 現在の保存期間と録音終了日時からバッチ録音を遡及削除する | Accepted; amends 0004 |
 | [0043](0043-unify-dahlia-server-application-database.md) | Server gateway / Database | Server の認証・管理・将来同期を単一の選択可能な Drizzle DB に統一する | Accepted; amends 0029 and 0031; amended by 0044 |
 | [0044](0044-deploy-dahlia-server-to-databricks-apps.md) | Server gateway / Databricks | DAB、Lakebase、App OAuth で Dahlia Server を Databricks Apps に配置する | Accepted; amends 0029 and 0043 |
+| [0045](0045-add-owner-scoped-artifact-transport.md) | Server / Artifact storage | owner-scoped の任意 asset transport を R2 または Volume で提供する | Accepted; amends 0029, 0043, and 0044 |
