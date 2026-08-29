@@ -12,6 +12,9 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: apps/server
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -19,6 +22,7 @@ jobs:
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
         with:
+          package_json_file: apps/server/package.json
           run_install: false
 
       - name: Set up Node.js
@@ -26,19 +30,19 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
+          cache-dependency-path: apps/server/pnpm-lock.yaml
           registry-url: https://registry.npmjs.org
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
       - name: Verify package tag
-        run: node -e 'const expected=`server-v${require("./apps/server/package.json").version}`;if(process.env.GITHUB_REF_NAME!==expected)throw new Error(`Expected tag ${expected}`)'
+        run: node -e 'const expected=`server-v${require("./package.json").version}`;if(process.env.GITHUB_REF_NAME!==expected)throw new Error(`Expected tag ${expected}`)'
 
       - name: Validate Server
-        run: pnpm --filter @dahlia-ai/server check
+        run: pnpm check
 
       - name: Publish package
-        run: pnpm --filter @dahlia-ai/server publish --no-git-checks --access public
+        run: pnpm publish --no-git-checks --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

@@ -146,10 +146,11 @@ Dahlia が何を作り何を作らないかを決める positioning と tenet �
 UID／RECURRENCE-ID のキー形式、source 対応、Meeting とのカーディナリティは
 [カレンダー予定の永続化スキーマ](docs/calendar-event-schema.md)を参照してください。
 
-TypeScript アプリケーションは pnpm workspace で管理します。リポジトリルートから Dahlia Server は `pnpm dev`、
-公開サイトは `pnpm dev:site`、workspace の検証は `pnpm check` で実行します。開発時の環境変数は必要に応じて
-リポジトリルートの `.env.local` を使用します。Dahlia Server は既定で `DAHLIA_DATABASE_TYPE=sqlite` と
-`DAHLIA_DATABASE_URL=file:.data/dahlia-auth.sqlite` を使うため、`pnpm dev` に PostgreSQL や Docker は不要です。
+TypeScript アプリケーションはそれぞれ独立して pnpm を管理します。Dahlia Server は
+`cd apps/server && pnpm dev`、公開サイトは `cd apps/site && pnpm dev`、Server の検証は
+`cd apps/server && pnpm check` で実行します。Dahlia Server の開発用環境変数は
+`apps/server/.env.local` に置きます。既定で `DAHLIA_DATABASE_TYPE=sqlite` と
+`DAHLIA_DATABASE_URL=file:.data/dahlia-auth.sqlite` を使うため、ローカル開発に PostgreSQL や Docker は不要です。
 database の選択は AI Gateway の `OPENAI_API_KEY`、`OPENAI_BASE_URL` とは独立しています。
 
 ### プロジェクト構成

@@ -88,15 +88,17 @@ This uses Cloudflare's account-level OpenAI-compatible REST API and its default 
 
 ## Local Node deployment
 
-Node 22.13 or newer is required. From the repository root:
+Node 22.13 or newer is required. Dahlia Server owns its pnpm version, lockfile, and dependency build allowlist independently from the other applications:
 
 ```bash
+cd apps/server
+corepack enable
 cp .env.example .env.local
 pnpm install --frozen-lockfile
 pnpm dev
 ```
 
-The development scripts load the repository-root `.env.local`. SQLite at `apps/server/.data/dahlia-auth.sqlite` is the default, so PostgreSQL and Docker are not required locally.
+The development scripts load `apps/server/.env.local`. SQLite at `apps/server/.data/dahlia-auth.sqlite` is the default, so PostgreSQL and Docker are not required locally. Existing Server values in the repository-root `.env.local` must be copied manually; that file remains owned by macOS development and release tooling.
 
 Set `DAHLIA_DATABASE_TYPE=postgres` and `DAHLIA_DATABASE_URL` to move Better Auth and Gateway administration to PostgreSQL, or set `DAHLIA_AUTH_TYPE=header` for an identity-aware proxy.
 
@@ -109,10 +111,10 @@ The reference production container runs `pnpm db:migrate:prod` before starting N
 SQLite contains user accounts, OAuth sessions, refresh tokens, and signing keys. Persist it across container replacement with a named volume:
 
 ```bash
-docker build -f apps/server/Dockerfile -t dahlia-server .
+docker build -t dahlia-server apps/server
 docker volume create dahlia-server-data
-docker run --mount source=dahlia-server-data,target=/app/apps/server/.data \
-  --env-file .env.local -p 3000:3000 dahlia-server
+docker run --mount source=dahlia-server-data,target=/app/.data \
+  --env-file apps/server/.env.local -p 3000:3000 dahlia-server
 ```
 
 Back up that volume when using SQLite. PostgreSQL deployments should back up the configured database instead.
@@ -166,7 +168,7 @@ This runs lint, TypeScript checks, unit and adapter contract tests, Node/SPA bui
 
 ## Package consumers
 
-`@dahlia-ai/server` is versioned independently from the macOS app and published to npm from `server-v<version>` tags. Consumers should pin an exact version. Before the first package publication, run `pnpm --filter @dahlia-ai/server build` and then use `pnpm link ../dahlia/apps/server` for active sibling-repository development. To verify the exact published artifact shape, install the tarball produced by `pnpm --filter @dahlia-ai/server pack`; the `prepack` lifecycle builds the artifact automatically.
+`@dahlia-ai/server` is versioned independently from the macOS app and published to npm from `server-v<version>` tags. Consumers should pin an exact version. Build it from `apps/server` with `pnpm build`. For active sibling-repository development, run `pnpm link ../dahlia/apps/server` from the consumer repository. To verify the exact published artifact shape, run `pnpm pack` from `apps/server` and install the resulting tarball; the `prepack` lifecycle builds the artifact automatically.
 
 The tag workflow requires an `NPM_TOKEN` repository secret with publish access to the `@dahlia-ai/server` package.
 

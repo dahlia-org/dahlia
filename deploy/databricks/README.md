@@ -33,6 +33,8 @@ The App requests the `ai-gateway`, `catalog.catalogs:read`, `catalog.schemas:rea
 
 The default App names are `dahlia-dev` for `dev` and `dahlia-prod` for `prod`. The corresponding Lakebase project IDs are `dahlia-db-dev` and `dahlia-db`. The bundle creates separate managed Volumes named `main.default.dahlia_artifacts_dev` and `main.default.dahlia_artifacts`; override the `artifact_catalog`, `artifact_schema`, or `artifact_volume_name` variables when needed.
 
+The bundle syncs only the self-contained `apps/server` package. Its package manifest, pnpm lockfile, runtime configuration, and source are deployed without repository-root pnpm files.
+
 ## Validate and deploy
 
 ```bash

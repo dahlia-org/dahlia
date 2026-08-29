@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
 import { describe, expect, it, vi } from "vitest";
 
@@ -19,6 +19,10 @@ const headerConfig: AppConfig = {
 
 function readText(path: string): string {
   return readFileSync(new URL(path, import.meta.url), "utf8");
+}
+
+function exists(path: string): boolean {
+  return existsSync(new URL(path, import.meta.url));
 }
 
 describe("deployment routing", () => {
@@ -141,7 +145,7 @@ describe("deployment routing", () => {
   });
 
   it("uses the Vite origin for local OAuth and proxies its protocol endpoints", () => {
-    const example = readText("../../../.env.example");
+    const example = readText("../.env.example");
     const packageJson = JSON.parse(readText("../package.json")) as {
       scripts: Record<string, string>;
     };
@@ -150,9 +154,9 @@ describe("deployment routing", () => {
     expect(example).toContain("DAHLIA_DATABASE_TYPE=sqlite");
     expect(example).toContain("DAHLIA_DATABASE_URL=file:.data/dahlia-auth.sqlite");
     expect(packageJson.scripts.predev).toBe("pnpm run db:migrate");
-    expect(packageJson.scripts["dev:api"]).toContain("--env-file-if-exists=../../.env.local");
-    expect(packageJson.scripts["db:migrate"]).toContain("--env-file-if-exists=../../.env.local");
-    expect(viteConfig.envDir).toBe("../..");
+    expect(packageJson.scripts["dev:api"]).toContain("--env-file-if-exists=.env.local");
+    expect(packageJson.scripts["db:migrate"]).toContain("--env-file-if-exists=.env.local");
+    expect(viteConfig.envDir).toBeUndefined();
     expect(viteConfig.server?.proxy).toHaveProperty("/.well-known");
   });
 
@@ -161,30 +165,34 @@ describe("deployment routing", () => {
     expect(workflow).toContain("DAHLIA_DATABASE_TYPE: postgres");
     expect(workflow).toContain("DAHLIA_DATABASE_URL: postgresql://dahlia@127.0.0.1:5432/dahlia");
     expect(workflow).toContain("DAHLIA_DATABASE_URL: file:/tmp/dahlia-auth.sqlite");
+    expect(workflow).toContain("working-directory: apps/server");
+    expect(workflow).toContain("cache-dependency-path: apps/server/pnpm-lock.yaml");
     expect(workflow).not.toMatch(/DAHLIA_RUNTIME|DAHLIA_AUTH_DATABASE|DAHLIA_AUTH_SQLITE_PATH|\n\s+DATABASE_URL:/);
   });
 
-  it("deploys the pnpm workspace as a Databricks App backed by Lakebase", () => {
+  it("deploys the standalone Server package as a Databricks App backed by Lakebase", () => {
     const bundle = readText("../../../deploy/databricks/databricks.yml");
     const resource = readText("../../../deploy/databricks/resources/dahlia_server.yml");
-    const rootPackage = JSON.parse(readText("../../../package.json")) as {
-      packageManager: string;
-      scripts: Record<string, string>;
-    };
     const serverPackage = JSON.parse(readText("../package.json")) as {
       exports: Record<string, unknown>;
       name: string;
+      packageManager: string;
       scripts: Record<string, string>;
     };
-    const workspace = readText("../../../pnpm-workspace.yaml");
+    const packageConfig = readText("../pnpm-workspace.yaml");
 
-    expect(rootPackage.packageManager).toMatch(/^pnpm@/);
-    expect(rootPackage.scripts.dev).toContain("@dahlia-ai/server");
-    expect(rootPackage.scripts["dev:cloudflare"]).toContain("@dahlia-ai/server");
-    expect(workspace).toContain("apps/*");
+    expect(exists("../../../package.json")).toBe(false);
+    expect(exists("../../../pnpm-lock.yaml")).toBe(false);
+    expect(exists("../../../pnpm-workspace.yaml")).toBe(false);
+    expect(exists("../pnpm-lock.yaml")).toBe(true);
+    expect(serverPackage.packageManager).toBe("pnpm@11.9.0");
+    expect(packageConfig).not.toContain("packages:");
+    expect(packageConfig).toContain("esbuild: true");
+    expect(packageConfig).toContain("workerd: true");
     expect(bundle).toContain('databricks_cli_version: ">= 1.4.0"');
     expect(bundle).toContain("- ../../apps/server");
-    expect(bundle).toContain("- ../../pnpm-lock.yaml");
+    expect(bundle).not.toContain("../../pnpm-lock.yaml");
+    expect(bundle).not.toContain("- ../../pnpm-workspace.yaml");
     expect(bundle).toContain("app_name: dahlia-dev");
     expect(bundle).toContain("app_name: dahlia-prod");
     expect(bundle).toContain("database_project_id: dahlia-db-dev");
@@ -197,14 +205,14 @@ describe("deployment routing", () => {
     expect(bundle).toMatch(/dev:[\s\S]*?purge_on_delete: true[\s\S]*?prod:/);
     expect(bundle).toMatch(/admin_email:\n\s+description: .+\n\s+default: " "/);
     expect(bundle).not.toContain("postgres_databases:");
-    expect(resource).toContain("source_code_path: ../../..");
+    expect(resource).toContain("source_code_path: ../../../apps/server");
     expect(resource).toContain(`user_api_scopes:
         - ai-gateway
         - catalog.catalogs:read
         - catalog.schemas:read
         - files`);
     expect(resource)
-      .toContain('command: ["corepack", "pnpm", "--filter", "@dahlia-ai/server", "start:databricks"]');
+      .toContain('command: ["corepack", "pnpm", "start:databricks"]');
     expect(resource).not.toContain("DAHLIA_APP_URL");
     expect(resource).not.toContain("resources.apps.dahlia_server.url");
     expect(resource).toContain("value: databricks");
@@ -231,7 +239,8 @@ describe("deployment routing", () => {
     expect(readText("../Dockerfile"))
       .toContain("pnpm run db:migrate:prod && exec node dist/server/node.js");
     expect(readText("../Dockerfile"))
-      .toContain('VOLUME ["/app/apps/server/.data"]');
+      .toContain('VOLUME ["/app/.data"]');
+    expect(readText("../.dockerignore")).toContain(".env*");
     expect(readText("../src/db/client.ts"))
       .toContain("pg_advisory_lock");
     expect(readText("../src/db/client.ts"))

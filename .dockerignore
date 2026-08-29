@@ -1,9 +1,0 @@
-.git
-**/.env
-**/.env.local
-**/.data
-**/.dev.vars
-**/.wrangler
-**/dist
-**/node_modules
-.pnpm-store

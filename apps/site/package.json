@@ -1,6 +1,7 @@
 {
   "name": "@dahlia/site",
   "private": true,
+  "packageManager": "pnpm@11.9.0",
   "scripts": {
     "dev": "python3 -m http.server 4173 --bind 127.0.0.1"
   }

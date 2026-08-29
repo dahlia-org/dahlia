@@ -17,14 +17,14 @@ resources:
     dahlia_server:
       name: ${var.app_name}
       description: Dahlia Server backed by Lakebase.
-      source_code_path: ../../..
+      source_code_path: ../../../apps/server
       user_api_scopes:
         - ai-gateway
         - catalog.catalogs:read
         - catalog.schemas:read
         - files
       config:
-        command: ["corepack", "pnpm", "--filter", "@dahlia-ai/server", "start:databricks"]
+        command: ["corepack", "pnpm", "start:databricks"]
         env:
           - name: DAHLIA_ADMIN_EMAIL
             value: ${var.admin_email}
