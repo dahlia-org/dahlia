@@ -142,46 +142,37 @@ export class GatewayService {
           errorName: error instanceof Error ? error.name : "UnknownError",
         });
       });
+      const requestId = databricksRequestId(response.headers);
       if (!response.ok) {
         throw databricksModelListError("provider_models_unavailable", "upstream_http_error", {
           status: response.status,
-          requestId: databricksRequestId(response.headers),
+          requestId,
         });
       }
       const body: unknown = await response.json().catch(() => undefined);
       if (!body || typeof body !== "object" || !("model_services" in body) || !Array.isArray(body.model_services)) {
-        throw databricksModelListError("provider_models_invalid", "invalid_response_shape", {
-          requestId: databricksRequestId(response.headers),
-        });
+        throw databricksModelListError("provider_models_invalid", "invalid_response_shape", { requestId });
       }
       const modelServices = body.model_services as unknown[];
       for (const entry of modelServices) {
         if (!entry || typeof entry !== "object" || !("name" in entry) || typeof entry.name !== "string") {
-          throw databricksModelListError("provider_models_invalid", "invalid_model_entry", {
-            requestId: databricksRequestId(response.headers),
-          });
+          throw databricksModelListError("provider_models_invalid", "invalid_model_entry", { requestId });
         }
         const resourceName = entry.name.trim();
         const prefix = "model-services/";
         const id = resourceName.startsWith(prefix) ? resourceName.slice(prefix.length) : "";
         if (!id.startsWith("system.ai.") || id.length > 255 || !MODEL_ALIAS_PATTERN.test(databricksModelAlias(id))) {
-          throw databricksModelListError("provider_models_invalid", "invalid_model_name", {
-            requestId: databricksRequestId(response.headers),
-          });
+          throw databricksModelListError("provider_models_invalid", "invalid_model_name", { requestId });
         }
         models.push({ id, displayName: null });
       }
       const nextPageToken: unknown = "next_page_token" in body ? body.next_page_token : undefined;
       if (nextPageToken !== undefined && typeof nextPageToken !== "string") {
-        throw databricksModelListError("provider_models_invalid", "invalid_page_token", {
-          requestId: databricksRequestId(response.headers),
-        });
+        throw databricksModelListError("provider_models_invalid", "invalid_page_token", { requestId });
       }
       pageToken = nextPageToken?.trim() || undefined;
       if (pageToken && pageTokens.has(pageToken)) {
-        throw databricksModelListError("provider_models_invalid", "repeated_page_token", {
-          requestId: databricksRequestId(response.headers),
-        });
+        throw databricksModelListError("provider_models_invalid", "repeated_page_token", { requestId });
       }
       if (pageToken) pageTokens.add(pageToken);
     } while (pageToken);

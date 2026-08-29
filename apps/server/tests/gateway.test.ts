@@ -128,15 +128,16 @@ describe("AI Gateway", () => {
       headers: { "x-databricks-request-id": "request-123" },
     }))
       .adminModels(request())).rejects.toMatchObject({ status: 502, code: "provider_models_unavailable" });
-    expect(JSON.parse(String(consoleError.mock.calls.at(-1)?.[0]))).toEqual({
+    const loggedError = String(consoleError.mock.calls.at(-1)?.[0]);
+    expect(JSON.parse(loggedError)).toEqual({
       level: "error",
       event: "databricks_model_list_failed",
       reason: "upstream_http_error",
       status: 503,
       requestId: "request-123",
     });
-    expect(String(consoleError.mock.calls.at(-1)?.[0])).not.toContain("private");
-    expect(String(consoleError.mock.calls.at(-1)?.[0])).not.toContain("user-token");
+    expect(loggedError).not.toContain("private");
+    expect(loggedError).not.toContain("user-token");
     await expect(new GatewayService(databricks, registry, async () => Response.json({ model_services: [{}] }))
       .adminModels(request())).rejects.toMatchObject({ status: 502, code: "provider_models_invalid" });
     await expect(new GatewayService(databricks, registry, async () => Response.json({
