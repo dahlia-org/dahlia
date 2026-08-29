@@ -7,6 +7,7 @@ import {
   shouldRedirectToSignIn,
   type DashboardCapabilities,
 } from "./routes";
+import { UPSTREAM_MODEL_MAX_LENGTH } from "../ai-gateway/model-alias";
 
 export interface SessionInfo {
   capabilities: DashboardCapabilities;
@@ -362,7 +363,7 @@ function ModelAliasRow({ model, reload }: { model: ModelAliasInfo; reload: () =>
           Enabled
         </label>
       </div>
-      <label>Upstream model<input value={upstreamModel} required maxLength={255} onChange={(event) => setUpstreamModel(event.target.value)} /></label>
+      <label>Upstream model<input value={upstreamModel} required maxLength={UPSTREAM_MODEL_MAX_LENGTH} onChange={(event) => setUpstreamModel(event.target.value)} /></label>
       <label>Display name<input value={displayName} maxLength={100} placeholder={model.alias} onChange={(event) => setDisplayName(event.target.value)} /></label>
       <div className="row-actions">
         <button className="secondary danger-button" type="button" disabled={pending} onClick={() => void remove()}>Delete</button>
@@ -478,7 +479,7 @@ function AdminModels({ databricksModels }: { databricksModels: boolean }) {
           <h2 className="section-label">Add model</h2>
           <form className="panel admin-form" onSubmit={(event) => void create(event)}>
             <label>Alias<input value={alias} required pattern="[a-z0-9][a-z0-9._-]{0,254}" maxLength={255} placeholder="gpt-5.6-luna" onChange={(event) => setAlias(event.target.value)} /></label>
-            <label>Upstream model<input value={upstreamModel} required maxLength={255} placeholder="openai/gpt-5.6-luna" onChange={(event) => setUpstreamModel(event.target.value)} /></label>
+            <label>Upstream model<input value={upstreamModel} required maxLength={UPSTREAM_MODEL_MAX_LENGTH} placeholder="openai/gpt-5.6-luna" onChange={(event) => setUpstreamModel(event.target.value)} /></label>
             <label>Display name<input value={displayName} maxLength={100} placeholder="Optional" onChange={(event) => setDisplayName(event.target.value)} /></label>
             <button className="primary">Add model</button>
           </form>

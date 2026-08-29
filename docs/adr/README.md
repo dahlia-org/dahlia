@@ -39,7 +39,7 @@ Codex は全 ADR を順番に読まず、最初にこの一覧から現在の作
 | [0026](0026-measure-product-adoption-with-bounded-telemetry.md) | Privacy / Product analytics | 丸めた録音時間と AI chat・内蔵 MCP の利用を固定 allowlist で計測する | Accepted; amends 0025; amended by 0028 |
 | [0027](0027-use-provider-aware-chat-approval-reviewer.md) | AI runtime / Chat / Authentication | ChatGPT Subscription は代理審査、Databricks はユーザー承認を使う | Accepted; amends 0012 and 0022; builds on 0023; amended by 0036 |
 | [0028](0028-remove-automatic-previous-meeting-summary-context.md) | Summary / AI runtime / MCP | 要約生成の過去 meeting 自動参照と要約専用 MCP session を廃止する | Accepted; amends 0003, 0015, 0017, and 0026 |
-| [0029](0029-offer-an-optional-codex-ai-gateway.md) | AI runtime / Server gateway | 内蔵 Codex 用の任意の認証付き AI Gateway を別 runtime で提供する | Accepted; amends 0003; amended by 0031, 0043, 0044, and 0045 |
+| [0029](0029-offer-an-optional-codex-ai-gateway.md) | AI runtime / Server gateway | 内蔵 Codex 用の任意の認証付き AI Gateway を別 runtime で提供する | Accepted; amends 0003; amended by 0031, 0043, 0044, 0045, and 0046 |
 | [0031](0031-publish-dahlia-server-extension-contract.md) | Server gateway / Distribution | 実行可能な Server と versioned extension contract を同じ package で配布する | Accepted; amends 0029; amended by 0043 |
 | [0032](0032-use-local-codex-login-success-page.md) | AI runtime / Authentication | ChatGPT 認証完了に app-server のローカル成功ページを使う | Accepted; amends 0003 |
 | [0033](0033-use-local-fts5-search-projection.md) | Search / Database projection | Lindera と FTS5 による再構築可能なローカル検索索引を使う | Accepted; builds on 0006, 0007, and 0009; amended by 0034, 0040, and 0041 |

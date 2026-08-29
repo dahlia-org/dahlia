@@ -161,7 +161,7 @@ export class GatewayService {
         const resourceName = entry.name.trim();
         const prefix = "model-services/";
         const id = resourceName.startsWith(prefix) ? resourceName.slice(prefix.length) : "";
-        if (!id.startsWith("system.ai.") || id.length > 255 || !MODEL_ALIAS_PATTERN.test(databricksModelAlias(id))) {
+        if (!id.startsWith("system.ai.") || !MODEL_ALIAS_PATTERN.test(databricksModelAlias(id))) {
           throw databricksModelListError("provider_models_invalid", "invalid_model_name", { requestId });
         }
         models.push({ id, displayName: null });

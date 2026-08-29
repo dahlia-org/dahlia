@@ -102,6 +102,7 @@ describe("administration", () => {
 
   it("exposes Databricks models with their saved enabled state", async () => {
     const { models, store } = administrativeStore();
+    const longestAlias = "m".repeat(255);
     const now = new Date();
     models.push({
       alias: "gpt-5-6-luna",
@@ -123,6 +124,7 @@ describe("administration", () => {
       return Response.json({ model_services: [
         { name: "model-services/system.ai.gpt-5-6-luna" },
         { name: "model-services/system.ai.gpt-5-6-sol" },
+        { name: `model-services/system.ai.${longestAlias}` },
       ] });
     });
     const app = createApp({
@@ -142,7 +144,18 @@ describe("administration", () => {
     expect(await response.json()).toMatchObject([
       { alias: "gpt-5-6-luna", displayName: "GPT 5.6 Luna", enabled: true, configured: true },
       { alias: "gpt-5-6-sol", displayName: null, enabled: false, configured: false },
+      { alias: longestAlias, upstreamModel: `system.ai.${longestAlias}`, configured: false },
     ]);
+    expect((await app.request("/api/admin/models", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        alias: longestAlias,
+        upstreamModel: `system.ai.${longestAlias}`,
+        displayName: null,
+        enabled: true,
+      }),
+    })).status).toBe(201);
     expect(upstream).toHaveBeenCalledOnce();
   });
 
@@ -176,6 +189,11 @@ describe("administration", () => {
     const body = JSON.stringify({ alias: "Not Valid", upstreamModel: "model", enabled: true });
 
     expect((await app.request("/api/admin/models", { method: "POST", headers: ownerHeaders, body })).status).toBe(400);
+    expect((await app.request("/api/admin/models", {
+      method: "POST",
+      headers: ownerHeaders,
+      body: JSON.stringify({ alias: "valid", upstreamModel: "m".repeat(768), enabled: true }),
+    })).status).toBe(400);
     expect((await app.request("/api/admin/models", {
       method: "POST",
       headers: { "X-Forwarded-Email": "owner@example.com", origin: "https://attacker.example" },
