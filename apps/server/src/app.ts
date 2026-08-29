@@ -6,6 +6,8 @@ import { z } from "zod";
 import { AuthenticationError, IdentityService, type Identity } from "./auth/identity";
 import { createProtectedResourceMetadata, type DahliaAuth } from "./auth/better-auth";
 import {
+  ARTIFACT_READ_SCOPE,
+  ARTIFACT_WRITE_SCOPE,
   GATEWAY_SCOPES,
   MODEL_READ_SCOPE,
   MODEL_REQUEST_SCOPE,
@@ -13,9 +15,12 @@ import {
 } from "./auth/scopes";
 import type { AuthStore } from "./auth/store";
 import type { AppConfig } from "./config";
+import { ArtifactRequestError, ArtifactService, artifactResponse } from "./artifacts/service";
+import type { ObjectStorage } from "./artifacts/storage";
 import { gatewayError, GatewayRequestError, GatewayService } from "./gateway/service";
 
 export const AUTH_MAX_REQUEST_BYTES = 64 * 1024;
+const ARTIFACT_PATCH_MAX_REQUEST_BYTES = 1024;
 
 export function requiredGatewayScope(path: string): GatewayScope {
   return path === "/api/v1/models" ? MODEL_READ_SCOPE : MODEL_REQUEST_SCOPE;
@@ -23,6 +28,10 @@ export function requiredGatewayScope(path: string): GatewayScope {
 
 export const authBodyLimit = bodyLimit({
   maxSize: AUTH_MAX_REQUEST_BYTES,
+  onError: (context) => context.json({ error: "request_too_large" }, 413),
+});
+const artifactPatchBodyLimit = bodyLimit({
+  maxSize: ARTIFACT_PATCH_MAX_REQUEST_BYTES,
   onError: (context) => context.json({ error: "request_too_large" }, 413),
 });
 
@@ -56,6 +65,7 @@ export interface AppDependencies {
   auth?: DahliaAuth;
   authStore?: AuthStore;
   extensions?: readonly DahliaServerExtension[];
+  artifactStorage?: ObjectStorage;
 }
 
 const aliasSchema = z.string().regex(/^[a-z0-9][a-z0-9._-]{0,63}$/);
@@ -85,6 +95,7 @@ export function createApp(dependencies: AppDependencies) {
   const extensions = dependencies.extensions ?? [];
   const identities = new IdentityService(config, auth);
   const gateway = new GatewayService(config, store, dependencies.fetch);
+  const artifacts = new ArtifactService(config, store, dependencies.artifactStorage);
   const services: ServerExtensionServices = {
     auth,
     browserIdentity: (request) => identities.fromBrowser(request),
@@ -259,6 +270,37 @@ export function createApp(dependencies: AppDependencies) {
     return revoked ? context.body(null, 204) : context.json({ error: "session_not_found" }, 404);
   });
 
+  app.on(["GET", "HEAD"], "/api/v1/artifacts/:artifactId", async (context) => {
+    const id = artifacts.parseId(context.req.param("artifactId"));
+    const artifact = await artifacts.get(id);
+    if (!artifact) return context.json({ error: "artifact_not_found" }, 404);
+    if (artifact.visibility !== "public") {
+      const identity = await identities.fromGateway(context.req.raw, ARTIFACT_READ_SCOPE);
+      if (identity.workspaceId !== artifact.ownerWorkspaceId) {
+        return context.json({ error: "artifact_not_found" }, 404);
+      }
+    }
+    return artifacts.read(artifact, context.req.method as "GET" | "HEAD", context.req.raw);
+  });
+  app.put("/api/v1/artifacts/:artifactId", async (context) => {
+    const id = artifacts.parseId(context.req.param("artifactId"));
+    const identity = await identities.fromGateway(context.req.raw, ARTIFACT_WRITE_SCOPE);
+    const result = await artifacts.put(id, identity, context.req.raw);
+    return context.json(artifactResponse(result.artifact), result.created ? 201 : 200);
+  });
+  app.patch("/api/v1/artifacts/:artifactId", artifactPatchBodyLimit, async (context) => {
+    const id = artifacts.parseId(context.req.param("artifactId"));
+    const identity = await identities.fromGateway(context.req.raw, ARTIFACT_WRITE_SCOPE);
+    const body = await context.req.json<unknown>().catch((): unknown => undefined);
+    return context.json(artifactResponse(await artifacts.setVisibility(id, identity, body, context.req.raw.signal)));
+  });
+  app.delete("/api/v1/artifacts/:artifactId", async (context) => {
+    const id = artifacts.parseId(context.req.param("artifactId"));
+    const identity = await identities.fromGateway(context.req.raw, ARTIFACT_WRITE_SCOPE);
+    await artifacts.delete(id, identity, context.req.raw.signal);
+    return context.body(null, 204);
+  });
+
   app.use("/api/v1/*", async (context, next) => {
     context.set("identity", await identities.fromGateway(
       context.req.raw,
@@ -289,11 +331,22 @@ export function createApp(dependencies: AppDependencies) {
       return context.json({ error: "unauthorized", message: error.message }, 401, { "WWW-Authenticate": challenge });
     }
     if (error instanceof GatewayRequestError) return gatewayError(error);
-    console.error(JSON.stringify({ level: "error", event: "request_failed", path: context.req.path }));
+    if (error instanceof ArtifactRequestError) {
+      return Response.json({ error: error.code }, { status: error.status });
+    }
+    console.error(JSON.stringify({ level: "error", event: "request_failed", route: requestRoute(context.req.path) }));
     return context.json({ error: "internal_server_error" }, 500);
   });
 
   return app;
+}
+
+function requestRoute(path: string): string {
+  if (path.startsWith("/api/v1/artifacts/")) return "/api/v1/artifacts/:artifactId";
+  if (path.startsWith("/api/v1/")) return "/api/v1/*";
+  if (path.startsWith("/api/")) return "/api/*";
+  if (path.startsWith("/.well-known/")) return "/.well-known/*";
+  return "other";
 }
 
 async function isAdministrator(config: AppConfig, store: AuthStore, identity: Identity): Promise<boolean> {

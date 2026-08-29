@@ -1,4 +1,12 @@
 resources:
+  volumes:
+    dahlia_artifacts:
+      catalog_name: ${var.artifact_catalog}
+      schema_name: ${var.artifact_schema}
+      name: ${var.artifact_volume_name}
+      volume_type: MANAGED
+      comment: Dahlia Server artifact bytes for ${bundle.target}
+
   postgres_projects:
     dahlia_database_project:
       project_id: ${var.database_project_id}
@@ -22,6 +30,10 @@ resources:
             value: header
           - name: DAHLIA_AI_BACKEND
             value: databricks
+          - name: DAHLIA_STORAGE_BACKEND
+            value: databricks
+          - name: DAHLIA_STORAGE_DATABRICKS_VOLUME_PATH
+            value: /Volumes/${var.artifact_catalog}/${var.artifact_schema}/${var.artifact_volume_name}
           - name: DAHLIA_DATABASE_TYPE
             value: lakebase
           - name: LAKEBASE_ENDPOINT
@@ -32,3 +44,8 @@ resources:
             branch: ${resources.postgres_projects.dahlia_database_project.id}/branches/production
             database: ${resources.postgres_projects.dahlia_database_project.id}/branches/production/databases/databricks-postgres
             permission: CAN_CONNECT_AND_CREATE
+        - name: artifacts
+          uc_securable:
+            securable_type: VOLUME
+            securable_full_name: ${var.artifact_catalog}.${var.artifact_schema}.${var.artifact_volume_name}
+            permission: WRITE_VOLUME

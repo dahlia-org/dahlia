@@ -59,7 +59,7 @@ try {
     import { fileURLToPath } from "node:url";
 
     if (typeof createApp !== "function" || typeof App !== "function") throw new Error("Package API is incomplete");
-    if (serverMigrationManifest.sqlite.files.length !== 2) {
+    if (serverMigrationManifest.sqlite.files.length !== 5) {
       throw new Error("Migration manifest is incomplete");
     }
     const style = await readFile(new URL(import.meta.resolve("@dahlia-ai/server/client/styles.css")), "utf8");
@@ -67,7 +67,25 @@ try {
       new URL(import.meta.resolve("@dahlia-ai/server/migrations/sqlite/0002_server.sql")),
       "utf8",
     );
-    if (!style.includes(".app-shell") || !migration.includes("modelAlias")) {
+    const artifactMigration = await readFile(
+      new URL(import.meta.resolve("@dahlia-ai/server/migrations/sqlite/0003_artifact.sql")),
+      "utf8",
+    );
+    const reservationMigration = await readFile(
+      new URL(import.meta.resolve("@dahlia-ai/server/migrations/sqlite/0004_artifact_reservation.sql")),
+      "utf8",
+    );
+    const storageKeyMigration = await readFile(
+      new URL(import.meta.resolve("@dahlia-ai/server/migrations/sqlite/0005_artifact_storage_key.sql")),
+      "utf8",
+    );
+    if (
+      !style.includes(".app-shell")
+      || !migration.includes("modelAlias")
+      || !artifactMigration.includes("artifact")
+      || !reservationMigration.includes("artifactReservation")
+      || !storageKeyMigration.includes("storageKey")
+    ) {
       throw new Error("Package assets are incomplete");
     }
 
@@ -86,7 +104,7 @@ try {
     const applied = database.prepare('SELECT "name" FROM "_dahlia_auth_migrations" ORDER BY "name"').all();
     database.close();
     await store.close?.();
-    if (applied.length !== 2 || applied[1]?.name !== "server/0002_server.sql") {
+    if (applied.length !== 5 || applied[4]?.name !== "server/0005_artifact_storage_key.sql") {
       throw new Error("Installed package migrations did not run from the package directory");
     }
   `);

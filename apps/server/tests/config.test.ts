@@ -16,6 +16,8 @@ describe("configuration", () => {
       databaseType: "sqlite",
       databaseUrl: "file:.data/dahlia-auth.sqlite",
       baseUrl: "http://localhost:5173",
+      storageBackend: "local",
+      storageLocalPath: ".data/storage",
     });
   });
 
@@ -49,6 +51,69 @@ describe("configuration", () => {
       clientSecret: "app-client-secret",
       tokenUrl: "https://workspace.cloud.databricks.com/oidc/v1/token",
     });
+  });
+
+  it("configures object storage independently from the AI backend", () => {
+    expect(loadConfig({
+      DAHLIA_AUTH_TYPE: "header",
+      DAHLIA_STORAGE_BACKEND: "databricks",
+      DAHLIA_STORAGE_DATABRICKS_VOLUME_PATH: "/Volumes/main/default/dahlia_artifacts",
+      DATABRICKS_HOST: "workspace.cloud.databricks.com",
+      DATABRICKS_CLIENT_ID: "app-client-id",
+      DATABRICKS_CLIENT_SECRET: "app-client-secret",
+    })).toMatchObject({
+      storageBackend: "databricks",
+      artifactMaxBytes: 64 * 1024 * 1024,
+      storageDatabricksVolumePath: "/Volumes/main/default/dahlia_artifacts",
+      databricksWorkspace: { host: "https://workspace.cloud.databricks.com" },
+    });
+    expect(loadConfig({
+      DAHLIA_AUTH_TYPE: "header",
+      DAHLIA_STORAGE_BACKEND: "r2",
+    })).toMatchObject({
+      storageBackend: "r2",
+    });
+    expect(loadConfig({
+      DAHLIA_AUTH_TYPE: "header",
+      DAHLIA_STORAGE_BACKEND: "s3",
+      DAHLIA_STORAGE_S3_BUCKET: "bucket",
+      DAHLIA_STORAGE_S3_ENDPOINT: "https://s3.example/",
+      AWS_ACCESS_KEY_ID: "key",
+      AWS_REGION: "auto",
+      AWS_SECRET_ACCESS_KEY: "secret",
+      AWS_SESSION_TOKEN: "session",
+    })).toMatchObject({
+      storageBackend: "s3",
+      storageS3: {
+        accessKeyId: "key",
+        bucket: "bucket",
+        endpoint: "https://s3.example",
+        region: "auto",
+        sessionToken: "session",
+      },
+    });
+  });
+
+  it("rejects invalid artifact limits and Volume paths", () => {
+    expect(() => loadConfig({
+      DAHLIA_AUTH_TYPE: "header",
+      DAHLIA_ARTIFACT_MAX_BYTES: String(64 * 1024 * 1024 + 1),
+    })).toThrow();
+    expect(() => loadConfig({
+      DAHLIA_AUTH_TYPE: "header",
+      DAHLIA_STORAGE_BACKEND: "databricks",
+      DAHLIA_STORAGE_DATABRICKS_VOLUME_PATH: "/Volumes/main/default/volume/nested",
+      DATABRICKS_HOST: "workspace.cloud.databricks.com",
+      DATABRICKS_CLIENT_ID: "app-client-id",
+      DATABRICKS_CLIENT_SECRET: "app-client-secret",
+    })).toThrow("must identify a Unity Catalog Volume");
+  });
+
+  it("rejects the replaced artifact backend variable", () => {
+    expect(() => loadConfig({
+      DAHLIA_AUTH_TYPE: "header",
+      DAHLIA_ARTIFACT_BACKEND: "r2",
+    })).toThrow("DAHLIA_ARTIFACT_BACKEND was replaced by DAHLIA_STORAGE_BACKEND");
   });
 
   it("requires the Cloudflare account endpoint when its backend is configured", () => {

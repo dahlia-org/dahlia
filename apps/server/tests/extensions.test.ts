@@ -128,6 +128,9 @@ describe("server extensions", () => {
         ],
         files: [
           "drizzle/20260828162616_baseline/migration.sql",
+          "drizzle/20260828180826_stiff_natasha_romanoff/migration.sql",
+          "drizzle/20260828182417_cool_cerebro/migration.sql",
+          "drizzle/20260829014710_sturdy_korg/migration.sql",
           "extension/drizzle/0000.sql",
         ],
       },
@@ -139,6 +142,9 @@ describe("server extensions", () => {
         files: [
           "auth-migrations/0001_better_auth.sql",
           "auth-migrations/0002_server.sql",
+          "auth-migrations/0003_artifact.sql",
+          "auth-migrations/0004_artifact_reservation.sql",
+          "auth-migrations/0005_artifact_storage_key.sql",
           "extension/auth-migrations/0001.sql",
         ],
       },

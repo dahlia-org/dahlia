@@ -6,7 +6,8 @@ This target uses Hono only for the API Worker. React, JavaScript, CSS, and SPA n
 browser ─────────────── Workers Static Assets ── React SPA / JS / CSS
    │ API, discovery, health
    ▼
-Hono API Worker ─┬──── D1 ── Better Auth data
+Hono API Worker ─┬──── D1 ── Better Auth and artifact metadata
+                 ├──── R2 ── artifact bytes
                  └──── HTTPS ── Cloudflare AI Gateway
 ```
 
@@ -14,7 +15,7 @@ Copy either [`wrangler.example.jsonc`](wrangler.example.jsonc) for D1 or [`wrang
 
 ## Prerequisites
 
-- A Cloudflare account and authenticated Wrangler CLI.
+- A Cloudflare account, an existing private R2 bucket, and authenticated Wrangler CLI.
 - A Google OAuth client with `https://<host>/api/auth/callback/google` registered as a redirect URI.
 - Node.js 22.13 or newer, Corepack, and pnpm.
 
@@ -35,6 +36,8 @@ pnpm --filter @dahlia-ai/server exec wrangler d1 migrations apply dahlia_db_prod
 ```
 
 Copy the database name and ID returned by the first command into `d1_databases[0]` in `apps/server/wrangler.jsonc`. Keep the binding name `dahlia_db_prod` and migrations directory `auth-migrations` unchanged. The real configuration stays local and is not committed.
+
+Set the bucket name in the `DAHLIA_STORAGE` binding. The Worker uses that binding for upload, download, metadata, and deletion; no S3 credentials are required for the `r2` backend.
 
 For Hyperdrive, start from the alternate template and replace its Hyperdrive ID, then apply the PostgreSQL SQL under `apps/server/drizzle` as the connection user. The baseline creates the user-owned `auth` and `dahlia` schemas. Keep the binding name `HYPERDRIVE` unchanged.
 
@@ -79,6 +82,7 @@ curl -fsS https://<host>/.well-known/oauth-authorization-server
 ```
 
 Then sign in with Google, create a Model Alias, and complete a streaming Responses request through `/api/v1/responses` using that alias.
+Also smoke-test an HTML artifact through private upload/read, public read, Range read, private transition, and deletion. R2 responses stream through the Dahlia API and must not contain a storage URL.
 
 ## Operational notes
 
@@ -86,5 +90,6 @@ Then sign in with Google, create a Model Alias, and complete a streaming Respons
 - Matching static files and `/dashboard/**` navigations are handled by Workers Static Assets. The Worker has no `ASSETS` binding and does not fetch assets programmatically.
 - Use `pnpm dev:cloudflare` for workerd, local D1, and production-equivalent asset routing. Local Worker secrets belong in the ignored `apps/server/.dev.vars`; regular `pnpm dev` continues to use the repository-root `.env.local` and Node.
 - Responses requests are capped at 4 MiB on Workers to remain within the isolate memory budget.
+- Artifact uploads have their independent 64 MiB limit and stream directly to the R2 binding.
 - Back up D1 for Better Auth, Model Alias, and administrator recovery. Provider credentials are recovered from the deployment secret store, not D1.
 - Rotate Google and provider credentials independently and redeploy after changing non-secret configuration.

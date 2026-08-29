@@ -31,6 +31,7 @@ describe("deployment routing", () => {
         run_worker_first: string[];
       };
       d1_databases: Array<{ binding: string; migrations_dir: string }>;
+      r2_buckets: Array<{ binding: string; bucket_name: string }>;
       observability: { enabled: boolean; logs: { enabled: boolean; invocation_logs: boolean } };
       vars: Record<string, string>;
     };
@@ -46,11 +47,17 @@ describe("deployment routing", () => {
     }));
     expect(wrangler.vars).toEqual({
       DAHLIA_AI_BACKEND: "cloudflare",
+      DAHLIA_STORAGE_BACKEND: "r2",
+      DAHLIA_ARTIFACT_MAX_BYTES: "67108864",
       DAHLIA_AUTH_TYPE: "accounts",
       DAHLIA_APP_URL: "https://{name}.{subdomain}.workers.dev",
       DAHLIA_DATABASE_TYPE: "d1",
       GOOGLE_CLIENT_ID: "replace-with-google-client-id",
     });
+    expect(wrangler.r2_buckets).toEqual([{
+      binding: "DAHLIA_STORAGE",
+      bucket_name: "replace-with-r2-bucket-name",
+    }]);
     expect(wrangler).not.toHaveProperty("hyperdrive");
     expect(wrangler.observability).toEqual({
       enabled: false,
@@ -125,6 +132,14 @@ describe("deployment routing", () => {
     })).rejects.toThrow(message);
   });
 
+  it("rejects local storage in the Worker runtime", async () => {
+    await expect(initializeWorkerApp({
+      DAHLIA_AUTH_TYPE: "header",
+      DAHLIA_DATABASE_TYPE: "d1",
+      dahlia_db_prod: {} as never,
+    })).rejects.toThrow("Storage backend local requires the Node runtime");
+  });
+
   it("uses the Vite origin for local OAuth and proxies its protocol endpoints", () => {
     const example = readText("../../../.env.example");
     const packageJson = JSON.parse(readText("../package.json")) as {
@@ -174,6 +189,11 @@ describe("deployment routing", () => {
     expect(bundle).toContain("app_name: dahlia-prod");
     expect(bundle).toContain("database_project_id: dahlia-db-dev");
     expect(bundle).toContain("database_project_id: dahlia-db");
+    expect(bundle).toContain("artifact_catalog:");
+    expect(bundle).toContain("default: main");
+    expect(bundle).toContain("artifact_schema:");
+    expect(bundle).toContain("default: default");
+    expect(bundle).toMatch(/prod:[\s\S]*?volumes:[\s\S]*?prevent_destroy: true/);
     expect(bundle).toMatch(/dev:[\s\S]*?purge_on_delete: true[\s\S]*?prod:/);
     expect(bundle).toMatch(/admin_email:\n\s+description: .+\n\s+default: " "/);
     expect(bundle).not.toContain("postgres_databases:");
@@ -189,6 +209,12 @@ describe("deployment routing", () => {
     expect(resource).toContain("value_from: postgres");
     expect(resource).not.toContain("openai_api_key");
     expect(resource).toContain("permission: CAN_CONNECT_AND_CREATE");
+    expect(resource).toContain("volume_type: MANAGED");
+    expect(resource).toContain("permission: WRITE_VOLUME");
+    expect(resource).toContain("name: DAHLIA_STORAGE_BACKEND");
+    expect(resource).toContain("value: databricks");
+    expect(resource).toContain("name: DAHLIA_STORAGE_DATABRICKS_VOLUME_PATH");
+    expect(resource).toContain("/Volumes/${var.artifact_catalog}/${var.artifact_schema}/${var.artifact_volume_name}");
     expect(resource).toContain("postgres_projects:");
     expect(resource).not.toContain("postgres_roles:");
     expect(resource).not.toContain("postgres_databases:");
@@ -226,5 +252,34 @@ describe("deployment routing", () => {
     expect(postgres).toContain('CREATE TABLE "auth"."user"');
     expect(postgres).not.toContain('CREATE TABLE "dahlia"."user"');
     expect(postgres).not.toContain('"public".');
+  });
+
+  it("adds artifact metadata without changing the application baselines", () => {
+    const sqlite = readText("../auth-migrations/0003_artifact.sql");
+    const postgres = readText("../drizzle/20260828180826_stiff_natasha_romanoff/migration.sql");
+    for (const migration of [sqlite, postgres]) {
+      expect(migration).toContain("artifact");
+      expect(migration).toContain("owner");
+      expect(migration).toContain("visibility");
+      expect(migration).not.toContain("FOREIGN KEY");
+    }
+  });
+
+  it("permanently reserves artifact IDs when adding tombstones", () => {
+    const sqlite = readText("../auth-migrations/0004_artifact_reservation.sql");
+    const postgres = readText("../drizzle/20260828182417_cool_cerebro/migration.sql");
+    expect(sqlite).toContain('INSERT INTO "artifactReservation" ("id") SELECT "id" FROM "artifact"');
+    expect(postgres).toContain(
+      'INSERT INTO "dahlia"."artifact_reservation" ("id") SELECT "id" FROM "dahlia"."artifact"',
+    );
+  });
+
+  it("pins artifact metadata to the stored object version", () => {
+    const sqlite = readText("../auth-migrations/0005_artifact_storage_key.sql");
+    const postgres = readText("../drizzle/20260829014710_sturdy_korg/migration.sql");
+    expect(sqlite).toContain("storageKey");
+    expect(postgres).toContain("storage_key");
+    expect(sqlite).toContain("artifacts/");
+    expect(postgres).toContain("artifacts/");
   });
 });

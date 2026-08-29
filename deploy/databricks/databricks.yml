@@ -20,6 +20,14 @@ variables:
   admin_email:
     description: Email address that bootstraps Dahlia Server administration.
     default: " "
+  artifact_catalog:
+    description: Unity Catalog catalog containing the artifact Volume.
+    default: main
+  artifact_schema:
+    description: Unity Catalog schema containing the artifact Volume.
+    default: default
+  artifact_volume_name:
+    description: Managed Volume used for artifact bytes.
 targets:
   dev:
     default: true
@@ -27,6 +35,7 @@ targets:
     variables:
       app_name: dahlia-dev
       database_project_id: dahlia-db-dev
+      artifact_volume_name: dahlia_artifacts_dev
     resources:
       postgres_projects:
         dahlia_database_project:
@@ -37,8 +46,13 @@ targets:
     variables:
       app_name: dahlia-prod
       database_project_id: dahlia-db
+      artifact_volume_name: dahlia_artifacts
     resources:
       postgres_projects:
         dahlia_database_project:
+          lifecycle:
+            prevent_destroy: true
+      volumes:
+        dahlia_artifacts:
           lifecycle:
             prevent_destroy: true

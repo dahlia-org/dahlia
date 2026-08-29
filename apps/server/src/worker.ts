@@ -2,6 +2,8 @@ import { Hono } from "hono";
 import { secureHeaders } from "hono/secure-headers";
 
 import { createApp } from "./app";
+import { R2ObjectStorage, type R2BucketLike } from "./artifacts/r2";
+import { S3ObjectStorage } from "./artifacts/s3";
 import { initializeDahliaAuth } from "./auth/better-auth";
 import {
   createD1ApplicationStore,
@@ -22,6 +24,16 @@ export interface RuntimeSecrets {
   DAHLIA_DATABASE_TYPE?: string;
   DAHLIA_DATABASE_URL?: string;
   DAHLIA_MAX_REQUEST_BYTES?: string;
+  DAHLIA_STORAGE_BACKEND?: string;
+  DAHLIA_ARTIFACT_BACKEND?: string;
+  DAHLIA_STORAGE_LOCAL_PATH?: string;
+  DAHLIA_STORAGE_S3_BUCKET?: string;
+  DAHLIA_STORAGE_S3_ENDPOINT?: string;
+  DAHLIA_ARTIFACT_MAX_BYTES?: string;
+  AWS_ACCESS_KEY_ID?: string;
+  AWS_REGION?: string;
+  AWS_SECRET_ACCESS_KEY?: string;
+  AWS_SESSION_TOKEN?: string;
   DAHLIA_OAUTH_REDIRECT_URIS?: string;
   GOOGLE_CLIENT_ID?: string;
   GOOGLE_CLIENT_SECRET?: string;
@@ -34,6 +46,7 @@ export interface RuntimeSecrets {
 }
 
 export interface WorkerEnv extends RuntimeSecrets {
+  DAHLIA_STORAGE?: R2BucketLike;
   HYPERDRIVE?: { connectionString: string };
   dahlia_db_prod?: D1DatabaseLike;
 }
@@ -76,6 +89,16 @@ export async function initializeWorkerApp(env: WorkerEnv): Promise<WorkerApp> {
       Number(env.DAHLIA_MAX_REQUEST_BYTES ?? WORKER_DEFAULT_MAX_REQUEST_BYTES),
       WORKER_DEFAULT_MAX_REQUEST_BYTES,
     )),
+    DAHLIA_STORAGE_BACKEND: env.DAHLIA_STORAGE_BACKEND,
+    DAHLIA_ARTIFACT_BACKEND: env.DAHLIA_ARTIFACT_BACKEND,
+    DAHLIA_STORAGE_LOCAL_PATH: env.DAHLIA_STORAGE_LOCAL_PATH,
+    DAHLIA_STORAGE_S3_BUCKET: env.DAHLIA_STORAGE_S3_BUCKET,
+    DAHLIA_STORAGE_S3_ENDPOINT: env.DAHLIA_STORAGE_S3_ENDPOINT,
+    DAHLIA_ARTIFACT_MAX_BYTES: env.DAHLIA_ARTIFACT_MAX_BYTES,
+    AWS_ACCESS_KEY_ID: env.AWS_ACCESS_KEY_ID,
+    AWS_REGION: env.AWS_REGION,
+    AWS_SECRET_ACCESS_KEY: env.AWS_SECRET_ACCESS_KEY,
+    AWS_SESSION_TOKEN: env.AWS_SESSION_TOKEN,
     DAHLIA_OAUTH_REDIRECT_URIS: env.DAHLIA_OAUTH_REDIRECT_URIS,
     GOOGLE_CLIENT_ID: env.GOOGLE_CLIENT_ID,
     GOOGLE_CLIENT_SECRET: env.GOOGLE_CLIENT_SECRET,
@@ -91,11 +114,22 @@ export async function initializeWorkerApp(env: WorkerEnv): Promise<WorkerApp> {
     const auth = config.authProvider === "accounts"
       ? await initializeDahliaAuth(config, applicationStore)
       : undefined;
-    return createApp({ config, auth, authStore: applicationStore });
+    if (config.storageBackend === "local" || config.storageBackend === "databricks") {
+      throw new Error(`Storage backend ${config.storageBackend} requires the Node runtime`);
+    }
+    const artifactStorage = config.storageBackend === "r2"
+      ? new R2ObjectStorage(requiredR2Binding(env))
+      : new S3ObjectStorage(config.storageS3!);
+    return createApp({ config, auth, authStore: applicationStore, artifactStorage });
   } catch (error) {
     await applicationStore.close?.();
     throw error;
   }
+}
+
+function requiredR2Binding(env: WorkerEnv): R2BucketLike {
+  if (!env.DAHLIA_STORAGE) throw new Error("The DAHLIA_STORAGE R2 binding is required");
+  return env.DAHLIA_STORAGE;
 }
 
 export function createWorkerHandler(initialize: WorkerAppInitializer = initializeWorkerApp): ExportedHandler<WorkerEnv> {

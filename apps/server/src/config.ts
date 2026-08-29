@@ -3,6 +3,7 @@ import { z } from "zod";
 export type AuthProvider = "accounts" | "header";
 export type DatabaseType = "sqlite" | "postgres" | "lakebase" | "hyperdrive" | "d1";
 export type AIBackend = "databricks" | "cloudflare" | "openai";
+export type StorageBackend = "databricks" | "local" | "r2" | "s3";
 /** @deprecated Use DatabaseType. */
 export type AuthDatabaseBackend = DatabaseType;
 
@@ -27,6 +28,22 @@ export interface LakebaseDatabaseConfig {
   username: string;
 }
 
+export interface DatabricksWorkspaceConfig {
+  host: string;
+  clientId: string;
+  clientSecret: string;
+  tokenUrl: string;
+}
+
+export interface S3StorageConfig {
+  accessKeyId: string;
+  bucket: string;
+  endpoint?: string;
+  region: string;
+  secretAccessKey: string;
+  sessionToken?: string;
+}
+
 export interface AppConfig {
   authProvider: AuthProvider;
   authHeader: string;
@@ -41,13 +58,21 @@ export interface AppConfig {
   betterAuthSecret?: string;
   oauthRedirectUris: string[];
   maxRequestBytes: number;
+  storageBackend?: StorageBackend;
+  storageLocalPath?: string;
+  storageS3?: S3StorageConfig;
+  storageDatabricksVolumePath?: string;
+  artifactMaxBytes?: number;
+  databricksWorkspace?: DatabricksWorkspaceConfig;
 }
 
 const authProviderSchema = z.enum(["accounts", "header"]);
 const databaseTypeSchema = z.enum(["sqlite", "postgres", "lakebase", "hyperdrive", "d1"]);
 const aiBackendSchema = z.enum(["databricks", "cloudflare", "openai"]);
+const storageBackendSchema = z.enum(["databricks", "local", "r2", "s3"]);
 const LOCAL_BASE_URL = "http://localhost:5173";
 const LOCAL_DATABASE_URL = "file:.data/dahlia-auth.sqlite";
+export const DEFAULT_ARTIFACT_MAX_BYTES = 64 * 1024 * 1024;
 
 function csv(value: string | undefined): string[] {
   return value
@@ -112,19 +137,36 @@ function loadLakebaseDatabase(
   };
 }
 
-function providerConfig(env: Record<string, string | undefined>): ProviderConfig | undefined {
+function databricksWorkspaceConfig(
+  env: Record<string, string | undefined>,
+  requiredForStorage: boolean,
+): DatabricksWorkspaceConfig | undefined {
+  const requiredForAI = aiBackendSchema.parse(env.DAHLIA_AI_BACKEND?.trim() || "openai") === "databricks";
+  if (!requiredForAI && !requiredForStorage) return undefined;
+  const hostValue = required(env, "DATABRICKS_HOST");
+  const host = validateBaseUrl(hostValue.includes("://") ? hostValue : `https://${hostValue}`, "DATABRICKS_HOST");
+  if (new URL(host).pathname !== "/") throw new Error("DATABRICKS_HOST must be a workspace origin without a path");
+  return {
+    host,
+    clientId: required(env, "DATABRICKS_CLIENT_ID"),
+    clientSecret: required(env, "DATABRICKS_CLIENT_SECRET"),
+    tokenUrl: `${host}/oidc/v1/token`,
+  };
+}
+
+function providerConfig(
+  env: Record<string, string | undefined>,
+  databricks: DatabricksWorkspaceConfig | undefined,
+): ProviderConfig | undefined {
   const backend = aiBackendSchema.parse(env.DAHLIA_AI_BACKEND?.trim() || "openai");
   if (backend === "databricks") {
-    const hostValue = required(env, "DATABRICKS_HOST");
-    const host = validateBaseUrl(hostValue.includes("://") ? hostValue : `https://${hostValue}`, "DATABRICKS_HOST");
-    const url = new URL(host);
-    if (url.pathname !== "/") throw new Error("DATABRICKS_HOST must be a workspace origin without a path");
+    if (!databricks) throw new Error("Databricks workspace configuration is required");
     return {
       backend,
-      baseUrl: `${host}/ai-gateway/openai/v1`,
-      clientId: required(env, "DATABRICKS_CLIENT_ID"),
-      clientSecret: required(env, "DATABRICKS_CLIENT_SECRET"),
-      tokenUrl: `${host}/oidc/v1/token`,
+      baseUrl: `${databricks.host}/ai-gateway/openai/v1`,
+      clientId: databricks.clientId,
+      clientSecret: databricks.clientSecret,
+      tokenUrl: databricks.tokenUrl,
     };
   }
   const apiKey = env.OPENAI_API_KEY?.trim();
@@ -142,6 +184,9 @@ function providerConfig(env: Record<string, string | undefined>): ProviderConfig
 }
 
 export function loadConfig(env: Record<string, string | undefined>): AppConfig {
+  if (env.DAHLIA_ARTIFACT_BACKEND?.trim()) {
+    throw new Error("DAHLIA_ARTIFACT_BACKEND was replaced by DAHLIA_STORAGE_BACKEND");
+  }
   const authProvider = authProviderSchema.parse(env.DAHLIA_AUTH_TYPE?.trim() || "accounts");
   const databaseType = databaseTypeSchema.parse(env.DAHLIA_DATABASE_TYPE?.trim() || "sqlite");
   const configuredAppUrl = env.DAHLIA_APP_URL?.trim();
@@ -156,6 +201,29 @@ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
     .positive()
     .max(64 * 1024 * 1024)
     .parse(env.DAHLIA_MAX_REQUEST_BYTES ?? String(16 * 1024 * 1024));
+  const storageBackend = storageBackendSchema.parse(env.DAHLIA_STORAGE_BACKEND?.trim() || "local");
+  const databricksWorkspace = databricksWorkspaceConfig(env, storageBackend === "databricks");
+  const artifactMaxBytes = z.coerce.number().int().positive().max(DEFAULT_ARTIFACT_MAX_BYTES)
+    .parse(env.DAHLIA_ARTIFACT_MAX_BYTES ?? String(DEFAULT_ARTIFACT_MAX_BYTES));
+  const storageDatabricksVolumePath = storageBackend === "databricks"
+    ? required(env, "DAHLIA_STORAGE_DATABRICKS_VOLUME_PATH").replace(/\/$/, "")
+    : undefined;
+  if (storageDatabricksVolumePath && !/^\/Volumes\/[^/]+\/[^/]+\/[^/]+$/.test(storageDatabricksVolumePath)) {
+    throw new Error("DAHLIA_STORAGE_DATABRICKS_VOLUME_PATH must identify a Unity Catalog Volume");
+  }
+  const storageS3 = storageBackend === "s3" ? {
+    accessKeyId: required(env, "AWS_ACCESS_KEY_ID"),
+    bucket: required(env, "DAHLIA_STORAGE_S3_BUCKET"),
+    endpoint: env.DAHLIA_STORAGE_S3_ENDPOINT?.trim()
+      ? validateBaseUrl(env.DAHLIA_STORAGE_S3_ENDPOINT.trim(), "DAHLIA_STORAGE_S3_ENDPOINT")
+      : undefined,
+    region: required(env, "AWS_REGION"),
+    secretAccessKey: required(env, "AWS_SECRET_ACCESS_KEY"),
+    sessionToken: env.AWS_SESSION_TOKEN?.trim() || undefined,
+  } : undefined;
+  if (storageS3?.endpoint && new URL(storageS3.endpoint).pathname !== "/") {
+    throw new Error("DAHLIA_STORAGE_S3_ENDPOINT must be an origin without a path");
+  }
 
   const config: AppConfig = {
     authProvider,
@@ -167,9 +235,15 @@ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
     adminEmail: env.DAHLIA_ADMIN_EMAIL?.trim()
       ? z.email().parse(env.DAHLIA_ADMIN_EMAIL.trim().toLowerCase())
       : undefined,
-    provider: providerConfig(env),
+    provider: providerConfig(env, databricksWorkspace),
     oauthRedirectUris: csv(env.DAHLIA_OAUTH_REDIRECT_URIS),
     maxRequestBytes,
+    storageBackend,
+    storageLocalPath: env.DAHLIA_STORAGE_LOCAL_PATH?.trim() || ".data/storage",
+    storageS3,
+    storageDatabricksVolumePath,
+    artifactMaxBytes,
+    databricksWorkspace,
   };
 
   if (authProvider === "accounts") {

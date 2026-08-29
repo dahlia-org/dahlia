@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 
 import { denyOAuthManagement } from "../src/auth/better-auth";
 import {
+  ARTIFACT_READ_SCOPE,
+  ARTIFACT_WRITE_SCOPE,
   GATEWAY_SCOPES,
   MODEL_READ_SCOPE,
   MODEL_REQUEST_SCOPE,
@@ -31,7 +33,14 @@ describe("fixed OAuth client policy", () => {
   });
 
   it("uses separate model read and request scopes", () => {
-    expect(GATEWAY_SCOPES).toEqual(["api.model.read", "api.model.request"]);
+    expect(GATEWAY_SCOPES).toEqual([
+      "api.model.read",
+      "api.model.request",
+      "api.artifact.read",
+      "api.artifact.write",
+    ]);
+    expect(OAUTH_SCOPES).toContain(ARTIFACT_READ_SCOPE);
+    expect(OAUTH_SCOPES).toContain(ARTIFACT_WRITE_SCOPE);
     expect(requiredGatewayScope("/api/v1/models")).toBe(MODEL_READ_SCOPE);
     expect(requiredGatewayScope("/api/v1/responses")).toBe(MODEL_REQUEST_SCOPE);
     expect(requiredGatewayScope("/api/v1/unknown")).toBe(MODEL_REQUEST_SCOPE);
