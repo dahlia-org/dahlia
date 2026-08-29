@@ -50,6 +50,7 @@ describe("PostgreSQL migrations", () => {
       "20260828162616_baseline",
       "20260828180826_stiff_natasha_romanoff",
       "20260828182417_cool_cerebro",
+      "20260829014710_sturdy_korg",
     ]);
     expect(migrations.every(({ hash, sql }) => hash.length === 64 && sql.length > 0)).toBe(true);
     const sql = migrations.flatMap((migration) => migration.sql).join("\n");

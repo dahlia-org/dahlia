@@ -31,19 +31,27 @@ export const serverMigrationManifest: MigrationManifest = {
       "drizzle/20260828162616_baseline/migration.sql",
       "drizzle/20260828180826_stiff_natasha_romanoff/migration.sql",
       "drizzle/20260828182417_cool_cerebro/migration.sql",
+      "drizzle/20260829014710_sturdy_korg/migration.sql",
     ],
   },
   sqlite: {
     directories: [{
       id: "server",
       path: join(packageDirectory, "auth-migrations"),
-      files: ["0001_better_auth.sql", "0002_server.sql", "0003_artifact.sql", "0004_artifact_reservation.sql"],
+      files: [
+        "0001_better_auth.sql",
+        "0002_server.sql",
+        "0003_artifact.sql",
+        "0004_artifact_reservation.sql",
+        "0005_artifact_storage_key.sql",
+      ],
     }],
     files: [
       "auth-migrations/0001_better_auth.sql",
       "auth-migrations/0002_server.sql",
       "auth-migrations/0003_artifact.sql",
       "auth-migrations/0004_artifact_reservation.sql",
+      "auth-migrations/0005_artifact_storage_key.sql",
     ],
   },
 };

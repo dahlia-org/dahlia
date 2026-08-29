@@ -30,7 +30,7 @@ export class ArtifactService {
     private readonly config: AppConfig,
     private readonly store: Pick<
       AuthStore,
-      "getArtifact" | "createArtifact" | "touchArtifact" | "updateArtifactVisibility" | "deleteArtifact"
+      "getArtifact" | "createArtifact" | "commitArtifactStorage" | "updateArtifactVisibility" | "deleteArtifact"
     >,
     private readonly storage?: ObjectStorage,
   ) {}
@@ -74,18 +74,30 @@ export class ArtifactService {
       throw new ArtifactRequestError(409, "artifact_content_type_mismatch");
     }
     const body = request.body ?? new Uint8Array();
+    const previousStorageKey = artifact.storageKey;
+    const storageKey = artifactVersionStorageKey(id);
     await this.storageCall(() => storage.put(
-      artifactStorageKey(id),
+      storageKey,
       body,
       contentLength,
       contentType,
       request.signal,
     ));
-    const updated = await this.metadata(() => this.store.touchArtifact(id, identity.workspaceId));
+    const updated = await this.metadata(() => this.store.commitArtifactStorage(
+      id,
+      identity.workspaceId,
+      previousStorageKey,
+      storageKey,
+    ));
     if (!updated) {
-      await this.storageCall(() => storage.delete(artifactStorageKey(id)));
-      throw new ArtifactRequestError(404, "artifact_not_found");
+      await this.storageCall(() => storage.delete(storageKey));
+      const current = await this.get(id);
+      if (!current || current.ownerWorkspaceId !== identity.workspaceId) {
+        throw new ArtifactRequestError(404, "artifact_not_found");
+      }
+      throw new ArtifactRequestError(409, "artifact_write_conflict");
     }
+    if (previousStorageKey) await this.cleanupReplacedObject(storage, previousStorageKey);
     return { artifact: updated, created };
   }
 
@@ -95,8 +107,10 @@ export class ArtifactService {
     request: Request,
   ): Promise<Response> {
     const storage = this.requireStorage();
+    const storageKey = artifact.storageKey;
+    if (!storageKey) throw new ArtifactRequestError(404, "artifact_not_found");
     const upstream = await this.storageCall(() => storage.read(
-      artifactStorageKey(artifact.id),
+      storageKey,
       method,
       request,
     ));
@@ -124,7 +138,10 @@ export class ArtifactService {
     if (!parsed.success) throw new ArtifactRequestError(400, "invalid_artifact_visibility");
     const artifact = await this.getOwned(id, identity);
     if (parsed.data.visibility === "public" && artifact.visibility !== "public") {
-      const exists = await this.storageCall(() => this.requireStorage().exists(artifactStorageKey(id), signal));
+      const storageKey = artifact.storageKey;
+      const exists = storageKey
+        ? await this.storageCall(() => this.requireStorage().exists(storageKey, signal))
+        : false;
       if (!exists) throw new ArtifactRequestError(409, "artifact_not_uploaded");
     }
     const updated = await this.metadata(() => this.store.updateArtifactVisibility(
@@ -137,10 +154,22 @@ export class ArtifactService {
   }
 
   async delete(id: string, identity: Identity, signal?: AbortSignal): Promise<void> {
-    await this.getOwned(id, identity);
-    await this.storageCall(() => this.requireStorage().delete(artifactStorageKey(id), signal));
-    const deleted = await this.metadata(() => this.store.deleteArtifact(id, identity.workspaceId));
-    if (!deleted) throw new ArtifactRequestError(404, "artifact_not_found");
+    const artifact = await this.getOwned(id, identity);
+    const storageKey = artifact.storageKey;
+    if (storageKey) {
+      await this.storageCall(() => this.requireStorage().delete(storageKey, signal));
+    }
+    const deleted = await this.metadata(() => this.store.deleteArtifact(
+      id,
+      identity.workspaceId,
+      storageKey,
+    ));
+    if (deleted) return;
+    const current = await this.get(id);
+    if (!current || current.ownerWorkspaceId !== identity.workspaceId) {
+      throw new ArtifactRequestError(404, "artifact_not_found");
+    }
+    throw new ArtifactRequestError(409, "artifact_write_conflict");
   }
 
   async getOwned(id: string, identity: Identity): Promise<ArtifactRecord> {
@@ -173,10 +202,18 @@ export class ArtifactService {
       throw new ArtifactRequestError(502, code);
     }
   }
+
+  private async cleanupReplacedObject(storage: ObjectStorage, key: string): Promise<void> {
+    try {
+      await storage.delete(key);
+    } catch {
+      console.error(JSON.stringify({ level: "error", event: "object_storage_cleanup_failed" }));
+    }
+  }
 }
 
-function artifactStorageKey(id: string): string {
-  return `artifacts/${id}`;
+function artifactVersionStorageKey(id: string): string {
+  return `artifacts/${id}/${crypto.randomUUID()}`;
 }
 
 function parseContentLength(request: Request, maximum: number): number {

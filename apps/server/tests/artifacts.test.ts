@@ -28,19 +28,24 @@ function fixture() {
   const objects = new Map<string, { body: Uint8Array; contentType: string }>();
   let deleteFails = false;
   let beforePut: (() => Promise<void>) | undefined;
+  let beforeRead: (() => Promise<void>) | undefined;
   const store = testStore({
     getArtifact: async (id) => records.get(id) ?? null,
     createArtifact: async (input) => {
       if (reservations.has(input.id)) return false;
       reservations.add(input.id);
       const now = new Date();
-      records.set(input.id, { ...input, visibility: "private", createdAt: now, updatedAt: now });
+      records.set(input.id, { ...input, storageKey: null, visibility: "private", createdAt: now, updatedAt: now });
       return true;
     },
-    touchArtifact: async (id, ownerWorkspaceId) => {
+    commitArtifactStorage: async (id, ownerWorkspaceId, expectedStorageKey, storageKey) => {
       const artifact = records.get(id);
-      if (!artifact || artifact.ownerWorkspaceId !== ownerWorkspaceId) return null;
-      const updated = { ...artifact, updatedAt: new Date() };
+      if (
+        !artifact
+        || artifact.ownerWorkspaceId !== ownerWorkspaceId
+        || artifact.storageKey !== expectedStorageKey
+      ) return null;
+      const updated = { ...artifact, storageKey, updatedAt: new Date() };
       records.set(id, updated);
       return updated;
     },
@@ -51,9 +56,14 @@ function fixture() {
       records.set(id, updated);
       return updated;
     },
-    deleteArtifact: async (id, ownerWorkspaceId) => {
+    deleteArtifact: async (id, ownerWorkspaceId, expectedStorageKey) => {
       const artifact = records.get(id);
-      return Boolean(artifact && artifact.ownerWorkspaceId === ownerWorkspaceId && records.delete(id));
+      return Boolean(
+        artifact
+        && artifact.ownerWorkspaceId === ownerWorkspaceId
+        && artifact.storageKey === expectedStorageKey
+        && records.delete(id),
+      );
     },
   });
   const storage: ObjectStorage = {
@@ -67,6 +77,7 @@ function fixture() {
     exists: async (key) => objects.has(key),
     read: async (key, method) => {
       const object = objects.get(key);
+      await beforeRead?.();
       if (!object) return new Response(null, { status: 404 });
       return new Response(method === "HEAD" ? null : object.body.buffer as ArrayBuffer, {
         headers: {
@@ -87,6 +98,7 @@ function fixture() {
     records,
     failDelete(value: boolean) { deleteFails = value; },
     beforePut(callback?: () => Promise<void>) { beforePut = callback; },
+    beforeRead(callback?: () => Promise<void>) { beforeRead = callback; },
   };
 }
 
@@ -174,6 +186,7 @@ describe("artifact API", () => {
       id: OTHER_ID,
       ownerWorkspaceId: "personal:owner",
       contentType: "application/octet-stream",
+      storageKey: null,
       visibility: "private",
       createdAt: now,
       updatedAt: now,
@@ -222,7 +235,7 @@ describe("artifact API", () => {
 
     expect((await replacement).status).toBe(404);
     expect(records.has(ID)).toBe(false);
-    expect(objects.has(`artifacts/${ID}`)).toBe(false);
+    expect(objects.size).toBe(0);
   });
 
   it("does not overwrite a concurrent visibility change after replacement", async () => {
@@ -250,5 +263,38 @@ describe("artifact API", () => {
 
     expect((await replacement).status).toBe(200);
     expect(records.get(ID)?.visibility).toBe("public");
+  });
+
+  it("pins an authorized public read to the version it authorized", async () => {
+    const fixtureValue = fixture();
+    const { app } = fixtureValue;
+    expect((await upload(app)).status).toBe(201);
+    expect((await app.request(`/api/v1/artifacts/${ID}`, {
+      method: "PATCH",
+      headers: { ...OWNER, "content-type": "application/json" },
+      body: JSON.stringify({ visibility: "public" }),
+    })).status).toBe(200);
+
+    let releaseRead!: () => void;
+    const readBlocked = new Promise<void>((resolve) => { releaseRead = resolve; });
+    let readReachedStorage!: () => void;
+    const storageReached = new Promise<void>((resolve) => { readReachedStorage = resolve; });
+    fixtureValue.beforeRead(async () => {
+      readReachedStorage();
+      await readBlocked;
+    });
+    const publicRead = app.request(`/api/v1/artifacts/${ID}`);
+    await storageReached;
+    expect((await app.request(`/api/v1/artifacts/${ID}`, {
+      method: "PATCH",
+      headers: { ...OWNER, "content-type": "application/json" },
+      body: JSON.stringify({ visibility: "private" }),
+    })).status).toBe(200);
+    expect((await upload(app, ID, "private replacement")).status).toBe(200);
+    releaseRead();
+
+    const response = await publicRead;
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe("hello");
   });
 });

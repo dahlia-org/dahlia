@@ -65,6 +65,7 @@ describe("SQLite Better Auth store", () => {
       { name: "server/0002_server.sql" },
       { name: "server/0003_artifact.sql" },
       { name: "server/0004_artifact_reservation.sql" },
+      { name: "server/0005_artifact_storage_key.sql" },
     ]);
     expect(database.prepare('SELECT "clientId" FROM "oauthClient"').get()).toEqual({ clientId: "dahlia-macos" });
     expect(database.prepare('SELECT "clientId" FROM "oauthClientResource"').get()).toEqual({ clientId: "dahlia-macos" });
@@ -109,13 +110,21 @@ describe("SQLite Better Auth store", () => {
       "personal:user-1",
       "public",
     )).toMatchObject({ visibility: "public" });
+    expect(await store.commitArtifactStorage(
+      "019cc4dd-e5c5-7bd4-94e0-98df9cc40db9",
+      "personal:user-1",
+      null,
+      "artifacts/version-1",
+    )).toMatchObject({ storageKey: "artifacts/version-1", visibility: "public" });
     expect(await store.deleteArtifact(
       "019cc4dd-e5c5-7bd4-94e0-98df9cc40db9",
       "personal:other",
+      "artifacts/version-1",
     )).toBe(false);
     expect(await store.deleteArtifact(
       "019cc4dd-e5c5-7bd4-94e0-98df9cc40db9",
       "personal:user-1",
+      "artifacts/version-1",
     )).toBe(true);
     expect(await store.createArtifact({
       id: "019cc4dd-e5c5-7bd4-94e0-98df9cc40db9",

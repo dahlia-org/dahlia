@@ -231,6 +231,7 @@ export const artifact = sqliteTable("artifact", {
   id: text("id").primaryKey(),
   ownerWorkspaceId: text("ownerWorkspaceId").notNull(),
   contentType: text("contentType").notNull(),
+  storageKey: text("storageKey"),
   visibility: text("visibility").default("private").notNull(),
   createdAt: sqliteDate("createdAt").default(sql`CURRENT_TIMESTAMP`).notNull(),
   updatedAt: sqliteDate("updatedAt").default(sql`CURRENT_TIMESTAMP`).notNull(),

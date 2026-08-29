@@ -46,6 +46,7 @@ export interface ArtifactRecord {
   id: string;
   ownerWorkspaceId: string;
   contentType: string;
+  storageKey: string | null;
   visibility: ArtifactVisibility;
   createdAt: Date;
   updatedAt: Date;
@@ -86,13 +87,18 @@ export interface ApplicationStore {
   deletePlatformAdmin(email: string): Promise<boolean>;
   getArtifact(id: string): Promise<ArtifactRecord | null>;
   createArtifact(input: ArtifactInput): Promise<boolean>;
-  touchArtifact(id: string, ownerWorkspaceId: string): Promise<ArtifactRecord | null>;
+  commitArtifactStorage(
+    id: string,
+    ownerWorkspaceId: string,
+    expectedStorageKey: string | null,
+    storageKey: string,
+  ): Promise<ArtifactRecord | null>;
   updateArtifactVisibility(
     id: string,
     ownerWorkspaceId: string,
     visibility: ArtifactVisibility,
   ): Promise<ArtifactRecord | null>;
-  deleteArtifact(id: string, ownerWorkspaceId: string): Promise<boolean>;
+  deleteArtifact(id: string, ownerWorkspaceId: string, expectedStorageKey: string | null): Promise<boolean>;
   close?(): Promise<void>;
 }
 
@@ -231,10 +237,14 @@ export function createPostgresApplicationStore(db: PostgresDatabase): Applicatio
         .returning({ id: postgresSchema.artifact.id });
       return created !== undefined;
     },
-    async touchArtifact(id, ownerWorkspaceId) {
-      const [updated] = await db.update(postgresSchema.artifact).set({ updatedAt: new Date() }).where(and(
+    async commitArtifactStorage(id, ownerWorkspaceId, expectedStorageKey, storageKey) {
+      const expected = expectedStorageKey === null
+        ? isNull(postgresSchema.artifact.storageKey)
+        : eq(postgresSchema.artifact.storageKey, expectedStorageKey);
+      const [updated] = await db.update(postgresSchema.artifact).set({ storageKey, updatedAt: new Date() }).where(and(
         eq(postgresSchema.artifact.id, id),
         eq(postgresSchema.artifact.ownerWorkspaceId, ownerWorkspaceId),
+        expected,
       )).returning();
       return (updated as ArtifactRecord | undefined) ?? null;
     },
@@ -246,10 +256,14 @@ export function createPostgresApplicationStore(db: PostgresDatabase): Applicatio
         )).returning();
       return (updated as ArtifactRecord | undefined) ?? null;
     },
-    async deleteArtifact(id, ownerWorkspaceId) {
+    async deleteArtifact(id, ownerWorkspaceId, expectedStorageKey) {
+      const expected = expectedStorageKey === null
+        ? isNull(postgresSchema.artifact.storageKey)
+        : eq(postgresSchema.artifact.storageKey, expectedStorageKey);
       const [deleted] = await db.delete(postgresSchema.artifact).where(and(
         eq(postgresSchema.artifact.id, id),
         eq(postgresSchema.artifact.ownerWorkspaceId, ownerWorkspaceId),
+        expected,
       )).returning({ id: postgresSchema.artifact.id });
       return deleted !== undefined;
     },
@@ -389,10 +403,14 @@ export function createSqliteApplicationStore(db: SQLiteDatabase, transactions = 
         .onConflictDoNothing().returning({ id: sqliteSchema.artifact.id });
       return created !== undefined;
     },
-    async touchArtifact(id, ownerWorkspaceId) {
-      const [updated] = await db.update(sqliteSchema.artifact).set({ updatedAt: new Date() }).where(and(
+    async commitArtifactStorage(id, ownerWorkspaceId, expectedStorageKey, storageKey) {
+      const expected = expectedStorageKey === null
+        ? isNull(sqliteSchema.artifact.storageKey)
+        : eq(sqliteSchema.artifact.storageKey, expectedStorageKey);
+      const [updated] = await db.update(sqliteSchema.artifact).set({ storageKey, updatedAt: new Date() }).where(and(
         eq(sqliteSchema.artifact.id, id),
         eq(sqliteSchema.artifact.ownerWorkspaceId, ownerWorkspaceId),
+        expected,
       )).returning();
       return (updated as ArtifactRecord | undefined) ?? null;
     },
@@ -404,10 +422,14 @@ export function createSqliteApplicationStore(db: SQLiteDatabase, transactions = 
         )).returning();
       return (updated as ArtifactRecord | undefined) ?? null;
     },
-    async deleteArtifact(id, ownerWorkspaceId) {
+    async deleteArtifact(id, ownerWorkspaceId, expectedStorageKey) {
+      const expected = expectedStorageKey === null
+        ? isNull(sqliteSchema.artifact.storageKey)
+        : eq(sqliteSchema.artifact.storageKey, expectedStorageKey);
       const [deleted] = await db.delete(sqliteSchema.artifact).where(and(
         eq(sqliteSchema.artifact.id, id),
         eq(sqliteSchema.artifact.ownerWorkspaceId, ownerWorkspaceId),
+        expected,
       )).returning({ id: sqliteSchema.artifact.id });
       return deleted !== undefined;
     },

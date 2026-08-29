@@ -273,4 +273,13 @@ describe("deployment routing", () => {
       'INSERT INTO "dahlia"."artifact_reservation" ("id") SELECT "id" FROM "dahlia"."artifact"',
     );
   });
+
+  it("pins artifact metadata to the stored object version", () => {
+    const sqlite = readText("../auth-migrations/0005_artifact_storage_key.sql");
+    const postgres = readText("../drizzle/20260829014710_sturdy_korg/migration.sql");
+    expect(sqlite).toContain("storageKey");
+    expect(postgres).toContain("storage_key");
+    expect(sqlite).toContain("artifacts/");
+    expect(postgres).toContain("artifacts/");
+  });
 });

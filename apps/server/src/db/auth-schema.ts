@@ -228,6 +228,7 @@ export const artifact = dahliaTable("artifact", {
   id: text("id").primaryKey(),
   ownerWorkspaceId: text("owner_workspace_id").notNull(),
   contentType: text("content_type").notNull(),
+  storageKey: text("storage_key"),
   visibility: text("visibility").default("private").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
