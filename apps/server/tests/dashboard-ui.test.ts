@@ -76,4 +76,19 @@ describe("dashboard navigation", () => {
     expect(source).not.toContain('className="nav-label"');
     expect(source).toContain('<svg className="brand-mark"');
   });
+
+  it("uses immediate accessible switches for Databricks models", () => {
+    const source = readFileSync(new URL("../src/client/App.tsx", import.meta.url), "utf8");
+    const styles = readFileSync(new URL("../src/client/styles.css", import.meta.url), "utf8");
+
+    expect(source).toContain('className="switch-field"');
+    expect(source).toContain('role="switch"');
+    expect(source).toContain('aria-label={`Enable ${model.upstreamModel}`}');
+    expect(source).toContain('typeof detail?.error === "string"');
+    expect(source).toContain('method: configured ? "PATCH" : "POST"');
+    expect(source).toContain("setEnabled(previousEnabled)");
+    expect(source).toContain("!databricksModels && (");
+    expect(styles).toContain(".switch-field input:focus-visible + .switch-control");
+    expect(styles).toContain(".provider-model-row { grid-template-columns: 1fr; }");
+  });
 });

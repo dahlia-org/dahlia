@@ -14,9 +14,6 @@ export type ProviderConfig = {
 } | {
   backend: "databricks";
   baseUrl: string;
-  clientId: string;
-  clientSecret: string;
-  tokenUrl: string;
 };
 
 export interface LakebaseDatabaseConfig {
@@ -141,8 +138,7 @@ function databricksWorkspaceConfig(
   env: Record<string, string | undefined>,
   requiredForStorage: boolean,
 ): DatabricksWorkspaceConfig | undefined {
-  const requiredForAI = aiBackendSchema.parse(env.DAHLIA_AI_BACKEND?.trim() || "openai") === "databricks";
-  if (!requiredForAI && !requiredForStorage) return undefined;
+  if (!requiredForStorage) return undefined;
   const hostValue = required(env, "DATABRICKS_HOST");
   const host = validateBaseUrl(hostValue.includes("://") ? hostValue : `https://${hostValue}`, "DATABRICKS_HOST");
   if (new URL(host).pathname !== "/") throw new Error("DATABRICKS_HOST must be a workspace origin without a path");
@@ -160,13 +156,13 @@ function providerConfig(
 ): ProviderConfig | undefined {
   const backend = aiBackendSchema.parse(env.DAHLIA_AI_BACKEND?.trim() || "openai");
   if (backend === "databricks") {
-    if (!databricks) throw new Error("Databricks workspace configuration is required");
+    const hostValue = required(env, "DATABRICKS_HOST");
+    const host = databricks?.host
+      ?? validateBaseUrl(hostValue.includes("://") ? hostValue : `https://${hostValue}`, "DATABRICKS_HOST");
+    if (new URL(host).pathname !== "/") throw new Error("DATABRICKS_HOST must be a workspace origin without a path");
     return {
       backend,
-      baseUrl: `${databricks.host}/ai-gateway/openai/v1`,
-      clientId: databricks.clientId,
-      clientSecret: databricks.clientSecret,
-      tokenUrl: databricks.tokenUrl,
+      baseUrl: `${host}/ai-gateway/mlflow/v1`,
     };
   }
   const apiKey = env.OPENAI_API_KEY?.trim();

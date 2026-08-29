@@ -68,13 +68,13 @@ Databricks native OpenAI Responses API:
 ```dotenv
 DAHLIA_AI_BACKEND=databricks
 DATABRICKS_HOST=https://<workspace-host>
-DATABRICKS_CLIENT_ID=<service-principal-client-id>
-DATABRICKS_CLIENT_SECRET=<service-principal-client-secret>
 DAHLIA_DATABASE_TYPE=lakebase
 LAKEBASE_ENDPOINT=<injected from the postgres app resource>
 ```
 
-Databricks Apps supplies the three `DATABRICKS_*` variables automatically. Dahlia exchanges the App service principal credentials for a short-lived workspace OAuth token and sends only that token to `DATABRICKS_HOST/ai-gateway/openai/v1`. The Lakebase connector uses the same App identity to rotate database credentials.
+Databricks Apps supplies `DATABRICKS_HOST` and `X-Forwarded-Access-Token`. Dahlia sends the forwarded user token as Bearer authentication to `DATABRICKS_HOST/ai-gateway/mlflow/v1/responses`; it does not persist, log, or forward the proxy header itself. The Lakebase connector independently uses the App identity to rotate database credentials.
+
+For administrators, `GET /api/admin/models` lists the system-provided model services from `DATABRICKS_HOST/api/2.1/unity-catalog/model-services?parent=schemas/system.ai&view=BASIC`, follows all result pages, and merges their saved enabled state. The Databricks App requests the `ai-gateway`, `catalog.catalogs:read`, and `catalog.schemas:read` user API scopes for the AI backend. The Dashboard enables or disables those models directly; it does not show the manual Model Alias form for this backend.
 
 Cloudflare AI Gateway:
 

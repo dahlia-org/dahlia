@@ -3,4 +3,4 @@ export * from "./auth/better-auth";
 export * from "./auth/identity";
 export * from "./auth/store";
 export * from "./config";
-export * from "./gateway/service";
+export * from "./ai-gateway/service";

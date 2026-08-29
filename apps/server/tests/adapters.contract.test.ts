@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { ProviderConfig } from "../src/config";
-import { sendOpenAIResponses, type GatewayFetch } from "../src/gateway/adapters";
+import { listDatabricksModelServices, sendOpenAIResponses, type GatewayFetch } from "../src/ai-gateway/adapters";
 
 const provider: ProviderConfig = {
   backend: "openai",
@@ -44,5 +44,32 @@ describe("gateway adapter contract", () => {
     expect(headers.get("cf-aig-collect-log-payload")).toBe("false");
     expect(headers.has("cf-aig-gateway-id")).toBe(false);
     expect(headers.has("databricks-model-provider-service")).toBe(false);
+  });
+
+  it("lists Databricks models with only the Bearer credential", async () => {
+    const transport = vi.fn<GatewayFetch>(async () => new Response('{"model_services":[]}'));
+    await listDatabricksModelServices(
+      { backend: "databricks", baseUrl: "https://workspace.example/ai-gateway/mlflow/v1" },
+      "Bearer user-token",
+      undefined,
+      transport,
+      "next/token",
+    );
+
+    const [url, init] = transport.mock.calls[0]!;
+    const headers = new Headers(init?.headers);
+    const endpoint = new URL(String(url));
+    expect(endpoint.origin + endpoint.pathname)
+      .toBe("https://workspace.example/api/2.1/unity-catalog/model-services");
+    expect(Object.fromEntries(endpoint.searchParams)).toEqual({
+      parent: "schemas/system.ai",
+      view: "BASIC",
+      page_size: "100",
+      page_token: "next/token",
+    });
+    expect(init?.method).toBeUndefined();
+    expect(init?.cache).toBe("no-store");
+    expect(headers.get("authorization")).toBe("Bearer user-token");
+    expect(headers.has("x-forwarded-access-token")).toBe(false);
   });
 });

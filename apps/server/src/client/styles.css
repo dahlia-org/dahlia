@@ -94,6 +94,19 @@ a { color: inherit; text-decoration: none; }
 .model-row .error { grid-column: 1 / -1; margin: 0; }
 .toggle-field { width: fit-content; flex-direction: row !important; align-items: center; color: var(--muted); font-weight: 400 !important; }
 .toggle-field input { width: 14px; min-height: 14px; margin: 0; }
+.provider-model-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px 20px; }
+.provider-model-copy { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.provider-model-copy strong { overflow: hidden; font-size: 13px; text-overflow: ellipsis; }
+.provider-model-copy span { overflow: hidden; color: var(--muted); font-size: 11px; text-overflow: ellipsis; }
+.provider-model-row .error { grid-column: 1 / -1; margin: 0; }
+.switch-field { position: relative; display: inline-flex !important; align-items: center; flex: 0 0 auto; flex-direction: row !important; gap: 8px !important; color: var(--muted); font-weight: 400 !important; cursor: pointer; }
+.switch-field input { position: absolute; width: 1px; min-height: 1px; opacity: 0; }
+.switch-control { position: relative; width: 34px; height: 20px; border-radius: 20px; background: #cfc9c5; transition: background .15s ease; }
+.switch-control::after { position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; border-radius: 50%; background: white; box-shadow: 0 1px 3px rgba(47, 41, 48, .22); content: ""; transition: transform .15s ease; }
+.switch-field input:checked + .switch-control { background: var(--plum); }
+.switch-field input:checked + .switch-control::after { transform: translateX(14px); }
+.switch-field input:focus-visible + .switch-control { outline: 2px solid var(--plum); outline-offset: 2px; }
+.switch-field input:disabled + .switch-control { opacity: .5; }
 .admin-form { display: grid; grid-template-columns: .7fr 1fr 1fr auto; gap: 12px; align-items: end; }
 .member-form { grid-template-columns: 1fr auto; }
 .member-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
@@ -117,6 +130,8 @@ a { color: inherit; text-decoration: none; }
   .row-actions { width: 100%; justify-content: flex-end; }
   .model-row, .admin-form, .member-form { grid-template-columns: 1fr; }
   .model-row .row-actions { width: auto; }
+  .provider-model-row { grid-template-columns: 1fr; }
+  .provider-model-row .error { grid-column: auto; }
 }
 
 @media (max-width: 520px) {

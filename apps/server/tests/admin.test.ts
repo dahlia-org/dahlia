@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { createApp } from "../src/app";
 import type { ModelAliasInput, ModelAliasRecord } from "../src/auth/store";
@@ -100,12 +100,100 @@ describe("administration", () => {
     expect((await app.request("/api/admin/models/summary", { method: "DELETE", headers: ownerHeaders })).status).toBe(204);
   });
 
+  it("exposes Databricks models with their saved enabled state", async () => {
+    const { models, store } = administrativeStore();
+    const longestAlias = "m".repeat(255);
+    const now = new Date();
+    models.push({
+      alias: "gpt-5-6-luna",
+      upstreamModel: "system.ai.gpt-5-6-luna",
+      displayName: "GPT 5.6 Luna",
+      enabled: true,
+      createdAt: now,
+      updatedAt: now,
+    }, {
+      alias: "missing",
+      upstreamModel: "system.ai.missing",
+      displayName: null,
+      enabled: true,
+      createdAt: now,
+      updatedAt: now,
+    });
+    const upstream = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      expect(new Headers(init?.headers).get("authorization")).toBe("Bearer user-token");
+      return Response.json({ model_services: [
+        { name: "model-services/system.ai.gpt-5-6-luna" },
+        { name: "model-services/system.ai.gpt-5-6-sol" },
+        { name: `model-services/system.ai.${longestAlias}` },
+      ] });
+    });
+    const app = createApp({
+      config: {
+        ...config,
+        provider: { backend: "databricks", baseUrl: "https://workspace.example/ai-gateway/mlflow/v1" },
+      },
+      authStore: store,
+      fetch: upstream,
+    });
+    const headers = { ...ownerHeaders, "X-Forwarded-Access-Token": "user-token" };
+
+    expect(await (await app.request("/api/session", { headers })).json())
+      .toMatchObject({ capabilities: { admin: true, databricksModels: true } });
+    const response = await app.request("/api/admin/models", { headers });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject([
+      { alias: "gpt-5-6-luna", displayName: "GPT 5.6 Luna", enabled: true, configured: true },
+      { alias: "gpt-5-6-sol", displayName: null, enabled: false, configured: false },
+      { alias: longestAlias, upstreamModel: `system.ai.${longestAlias}`, configured: false },
+    ]);
+    expect((await app.request("/api/admin/models", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        alias: longestAlias,
+        upstreamModel: `system.ai.${longestAlias}`,
+        displayName: null,
+        enabled: true,
+      }),
+    })).status).toBe(201);
+    expect(upstream).toHaveBeenCalledOnce();
+  });
+
+  it("keeps Databricks model discovery failures private and uncached", async () => {
+    const { store } = administrativeStore();
+    const upstream = vi.fn(async () => new Response("provider details", { status: 503 }));
+    const app = createApp({
+      config: {
+        ...config,
+        provider: { backend: "databricks", baseUrl: "https://workspace.example/ai-gateway/mlflow/v1" },
+      },
+      authStore: store,
+      fetch: upstream,
+    });
+    const response = await app.request("/api/admin/models", {
+      headers: { ...ownerHeaders, "X-Forwarded-Access-Token": "user-token" },
+    });
+
+    expect(response.status).toBe(502);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(await response.json()).toMatchObject({
+      error: { message: "Databricks model list is unavailable", code: "provider_models_unavailable" },
+    });
+    expect((await app.request("/api/admin/models", { headers: ownerHeaders })).status).toBe(401);
+    expect(upstream).toHaveBeenCalledOnce();
+  });
+
   it("validates aliases, origins, and administrator authorization", async () => {
     const { store } = administrativeStore();
     const app = createApp({ config, authStore: store });
     const body = JSON.stringify({ alias: "Not Valid", upstreamModel: "model", enabled: true });
 
     expect((await app.request("/api/admin/models", { method: "POST", headers: ownerHeaders, body })).status).toBe(400);
+    expect((await app.request("/api/admin/models", {
+      method: "POST",
+      headers: ownerHeaders,
+      body: JSON.stringify({ alias: "valid", upstreamModel: "m".repeat(768), enabled: true }),
+    })).status).toBe(400);
     expect((await app.request("/api/admin/models", {
       method: "POST",
       headers: { "X-Forwarded-Email": "owner@example.com", origin: "https://attacker.example" },

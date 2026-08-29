@@ -17,7 +17,8 @@ import type { AuthStore } from "./auth/store";
 import type { AppConfig } from "./config";
 import { ArtifactRequestError, ArtifactService, artifactResponse } from "./artifacts/service";
 import type { ObjectStorage } from "./artifacts/storage";
-import { gatewayError, GatewayRequestError, GatewayService } from "./gateway/service";
+import { MODEL_ALIAS_PATTERN, UPSTREAM_MODEL_MAX_LENGTH } from "./ai-gateway/model-alias";
+import { gatewayError, GatewayRequestError, GatewayService } from "./ai-gateway/service";
 
 export const AUTH_MAX_REQUEST_BYTES = 64 * 1024;
 const ARTIFACT_PATCH_MAX_REQUEST_BYTES = 1024;
@@ -68,9 +69,9 @@ export interface AppDependencies {
   artifactStorage?: ObjectStorage;
 }
 
-const aliasSchema = z.string().regex(/^[a-z0-9][a-z0-9._-]{0,63}$/);
+const aliasSchema = z.string().regex(MODEL_ALIAS_PATTERN);
 const modelFieldsSchema = z.object({
-  upstreamModel: z.string().trim().min(1).max(255),
+  upstreamModel: z.string().trim().min(1).max(UPSTREAM_MODEL_MAX_LENGTH),
   displayName: z.string().trim().min(1).max(100).nullable().optional(),
   enabled: z.boolean(),
 });
@@ -144,6 +145,7 @@ export function createApp(dependencies: AppDependencies) {
     const identity = context.get("identity");
     const capabilities: Record<string, boolean> = {
       admin: await isAdministrator(config, store, identity),
+      databricksModels: config.provider?.backend === "databricks",
       sessions: auth !== undefined,
     };
     for (const extension of extensions) {
@@ -176,7 +178,7 @@ export function createApp(dependencies: AppDependencies) {
     context.set("identity", identity);
     await next();
   });
-  app.get("/api/admin/models", async (context) => context.json(await store.listModelAliases()));
+  app.get("/api/admin/models", async (context) => context.json(await gateway.adminModels(context.req.raw)));
   app.post("/api/admin/models", async (context) => {
     const parsed = createModelSchema.safeParse(await context.req.json().catch(() => null));
     if (!parsed.success) return context.json({ error: "invalid_model_alias" }, 400);

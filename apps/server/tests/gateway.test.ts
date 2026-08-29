@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { ModelAliasRecord } from "../src/auth/store";
 import type { AppConfig } from "../src/config";
-import { GatewayService } from "../src/gateway/service";
+import { GatewayService } from "../src/ai-gateway/service";
 
 const alias: ModelAliasRecord = {
   alias: "summary",
@@ -42,6 +42,122 @@ describe("AI Gateway", () => {
         display_name: "Summary",
       }],
     });
+  });
+
+  it("keeps stored aliases in the non-Databricks administration list", async () => {
+    expect(await new GatewayService(config, registry).adminModels(new Request("https://dahlia.example")))
+      .toEqual([{ ...alias, configured: true }]);
+  });
+
+  it("merges Databricks models with stored aliases and hides missing aliases", async () => {
+    const configured = { ...alias, alias: "gpt-5-6-luna", upstreamModel: "system.ai.gpt-5-6-luna" };
+    const transport = vi.fn(async (input: RequestInfo | URL) => {
+      const pageToken = new URL(String(input)).searchParams.get("page_token");
+      return pageToken
+        ? Response.json({ model_services: [{ name: "model-services/system.ai.long-name" }] })
+        : Response.json({
+            model_services: [
+              { name: "model-services/system.ai.gpt-5-6-luna" },
+              { name: "model-services/system.ai.gpt-5-6-sol" },
+              { name: "model-services/system.ai.summary" },
+            ],
+            next_page_token: "next-page",
+          });
+    });
+    const service = new GatewayService({
+      ...config,
+      provider: { backend: "databricks", baseUrl: "https://workspace.example/ai-gateway/mlflow/v1" },
+    }, {
+      ...registry,
+      listModelAliases: () => Promise.resolve([configured, alias]),
+    }, transport);
+
+    expect(await service.adminModels(new Request("https://dahlia.example/api/admin/models", {
+      headers: { "x-forwarded-access-token": "user-token" },
+    }))).toEqual([
+      { ...configured, configured: true },
+      {
+        alias: "gpt-5-6-sol",
+        upstreamModel: "system.ai.gpt-5-6-sol",
+        displayName: null,
+        enabled: false,
+        configured: false,
+      },
+      {
+        alias: "summary-2",
+        upstreamModel: "system.ai.summary",
+        displayName: null,
+        enabled: false,
+        configured: false,
+      },
+      {
+        alias: "long-name",
+        upstreamModel: "system.ai.long-name",
+        displayName: null,
+        enabled: false,
+        configured: false,
+      },
+    ]);
+    expect(transport).toHaveBeenCalledTimes(2);
+  });
+
+  it("bounds Databricks model discovery", async () => {
+    const timeoutSignal = AbortSignal.abort(new Error("timeout"));
+    const timeout = vi.spyOn(AbortSignal, "timeout").mockReturnValue(timeoutSignal);
+    const transport = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      expect(init?.signal?.aborted).toBe(true);
+      return Response.json({ model_services: [] });
+    });
+    const service = new GatewayService({
+      ...config,
+      provider: { backend: "databricks", baseUrl: "https://workspace.example/ai-gateway/mlflow/v1" },
+    }, registry, transport);
+
+    await service.adminModels(new Request("https://dahlia.example/api/admin/models", {
+      headers: { "x-forwarded-access-token": "user-token" },
+    }));
+
+    expect(timeout).toHaveBeenCalledWith(30_000);
+    timeout.mockRestore();
+  });
+
+  it("rejects unavailable or invalid Databricks model lists", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const databricks = {
+      ...config,
+      provider: { backend: "databricks", baseUrl: "https://workspace.example/ai-gateway/mlflow/v1" } as const,
+    };
+    const request = () => new Request("https://dahlia.example/api/admin/models", {
+      headers: { "x-forwarded-access-token": "user-token" },
+    });
+
+    await expect(new GatewayService(databricks, registry, async () => new Response(JSON.stringify({ error: "private" }), {
+      status: 503,
+      headers: { "x-databricks-request-id": "request-123" },
+    }))
+      .adminModels(request())).rejects.toMatchObject({ status: 502, code: "provider_models_unavailable" });
+    const loggedError = String(consoleError.mock.calls.at(-1)?.[0]);
+    expect(JSON.parse(loggedError)).toEqual({
+      level: "error",
+      event: "databricks_model_list_failed",
+      reason: "upstream_http_error",
+      status: 503,
+      requestId: "request-123",
+    });
+    expect(loggedError).not.toContain("private");
+    expect(loggedError).not.toContain("user-token");
+    await expect(new GatewayService(databricks, registry, async () => Response.json({ model_services: [{}] }))
+      .adminModels(request())).rejects.toMatchObject({ status: 502, code: "provider_models_invalid" });
+    await expect(new GatewayService(databricks, registry, async () => Response.json({
+      model_services: [{ name: "model-services/catalog.schema.model" }],
+    })).adminModels(request())).rejects.toMatchObject({ status: 502, code: "provider_models_invalid" });
+    await expect(new GatewayService(databricks, registry, async () => Response.json({
+      model_services: [],
+      next_page_token: "same-page",
+    })).adminModels(request())).rejects.toMatchObject({ status: 502, code: "provider_models_invalid" });
+    await expect(new GatewayService(databricks, registry).adminModels(new Request("https://dahlia.example")))
+      .rejects.toMatchObject({ status: 401, code: "databricks_access_token_required" });
+    consoleError.mockRestore();
   });
 
   it("rewrites only the model and streams the upstream body", async () => {
@@ -91,62 +207,46 @@ describe("AI Gateway", () => {
     expect(transport).toHaveBeenCalledOnce();
   });
 
-  it("uses and caches a Databricks service principal OAuth token", async () => {
+  it("uses the forwarded Databricks access token", async () => {
     const transport = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      if (String(input).endsWith("/oidc/v1/token")) {
-        expect(init?.method).toBe("POST");
-        expect(new Headers(init?.headers).get("authorization")).toMatch(/^Basic /);
-        return Response.json({ access_token: "workspace-token", expires_in: 3600 });
-      }
-      expect(String(input)).toBe("https://workspace.example/ai-gateway/openai/v1/responses");
-      expect(new Headers(init?.headers).get("authorization")).toBe("Bearer workspace-token");
+      expect(String(input)).toBe("https://workspace.example/ai-gateway/mlflow/v1/responses");
+      const headers = new Headers(init?.headers);
+      expect(headers.get("authorization")).toBe("Bearer user-token");
+      expect(headers.has("x-forwarded-access-token")).toBe(false);
       return new Response("{}");
     });
     const service = new GatewayService({
       ...config,
       provider: {
         backend: "databricks",
-        baseUrl: "https://workspace.example/ai-gateway/openai/v1",
-        clientId: "app-client-id",
-        clientSecret: "app-client-secret",
-        tokenUrl: "https://workspace.example/oidc/v1/token",
+        baseUrl: "https://workspace.example/ai-gateway/mlflow/v1",
       },
     }, registry, transport);
-    const request = () => new Request("https://dahlia.example/api/v1/responses", {
+    const request = new Request("https://dahlia.example/api/v1/responses", {
       method: "POST",
+      headers: { "x-forwarded-access-token": "user-token" },
       body: JSON.stringify({ model: "summary" }),
     });
 
-    await service.responses(request());
-    await service.responses(request());
-
-    expect(transport.mock.calls.filter(([input]) => String(input).endsWith("/oidc/v1/token"))).toHaveLength(1);
+    await service.responses(request);
+    expect(transport).toHaveBeenCalledOnce();
   });
 
-  it("bounds Databricks service principal OAuth token acquisition", async () => {
-    const timeoutSignal = AbortSignal.abort(new Error("timeout"));
-    const timeout = vi.spyOn(AbortSignal, "timeout").mockReturnValue(timeoutSignal);
-    const transport = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
-      expect(init?.signal).toBe(timeoutSignal);
-      throw timeoutSignal.reason;
-    });
+  it("requires the forwarded Databricks access token", async () => {
+    const transport = vi.fn();
     const service = new GatewayService({
       ...config,
       provider: {
         backend: "databricks",
-        baseUrl: "https://workspace.example/ai-gateway/openai/v1",
-        clientId: "app-client-id",
-        clientSecret: "app-client-secret",
-        tokenUrl: "https://workspace.example/oidc/v1/token",
+        baseUrl: "https://workspace.example/ai-gateway/mlflow/v1",
       },
     }, registry, transport);
 
     await expect(service.responses(new Request("https://dahlia.example/api/v1/responses", {
       method: "POST",
       body: JSON.stringify({ model: "summary" }),
-    }))).rejects.toMatchObject({ status: 502, code: "provider_authentication_failed" });
-    expect(timeout).toHaveBeenCalledWith(30_000);
-    timeout.mockRestore();
+    }))).rejects.toMatchObject({ status: 401, code: "databricks_access_token_required" });
+    expect(transport).not.toHaveBeenCalled();
   });
 
   it("rejects Codex request compression with an actionable error", async () => {
