@@ -228,6 +228,14 @@ describe("artifact API", () => {
     });
     expect(await mcpResult(invalidBase64)).toMatchObject({ isError: true, content: [{ text: "invalid_base64" }] });
 
+    const invalidContentType = await mcpRequest(app, "tools/call", {
+      name: "create_artifact",
+      arguments: { content: "hello", content_type: "text/🍣" },
+    });
+    const invalidContentTypeResult = await mcpResult(invalidContentType);
+    expect(invalidContentTypeResult).toMatchObject({ isError: true });
+    expect(JSON.stringify(invalidContentTypeResult)).toContain("invalid_content_type");
+
     const tooLarge = await mcpRequest(app, "tools/call", {
       name: "create_artifact",
       arguments: { content: "x".repeat(8 * 1024 * 1024 + 1), content_type: "text/plain" },

@@ -16,7 +16,11 @@ export const MCP_ARTIFACT_MAX_BYTES = 8 * 1024 * 1024;
 
 const encodingSchema = z.enum(["utf8", "base64"]).default("utf8");
 const contentTypeSchema = z.string().trim().min(1).max(255).refine(
-  (value) => Array.from(value).every((character) => character.charCodeAt(0) >= 32 && character.charCodeAt(0) !== 127),
+  (value) => Array.from(value).every((character) => {
+    const code = character.charCodeAt(0);
+    return code >= 32 && code <= 255 && code !== 127;
+  }),
+  "invalid_content_type",
 );
 const artifactContentSchema = z.object({
   content: z.string(),
