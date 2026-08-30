@@ -166,7 +166,7 @@ describe("deployment routing", () => {
   });
 
   it("uses the current database variables in Server CI", () => {
-    const workflow = readText("../../../.github/workflows/server.yml");
+    const workflow = readText("../../../.github/workflows/server-ci.yml");
     expect(workflow).toContain("DAHLIA_DATABASE_TYPE: postgres");
     expect(workflow).toContain("DAHLIA_DATABASE_URL: postgresql://dahlia@127.0.0.1:5432/dahlia");
     expect(workflow).toContain("DAHLIA_DATABASE_URL: file:/tmp/dahlia-auth.sqlite");

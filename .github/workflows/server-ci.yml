@@ -3,14 +3,14 @@ name: Server CI
 on:
   pull_request:
     paths:
-      - ".github/workflows/server.yml"
+      - ".github/workflows/server-ci.yml"
       - "apps/server/**"
       - "deploy/**"
   push:
     branches:
       - main
     paths:
-      - ".github/workflows/server.yml"
+      - ".github/workflows/server-ci.yml"
       - "apps/server/**"
       - "deploy/**"
 
@@ -22,8 +22,8 @@ permissions:
   contents: read
 
 jobs:
-  validate:
-    name: Validate
+  server-validation:
+    name: Server Validation
     runs-on: ubuntu-latest
     timeout-minutes: 15
     defaults:
