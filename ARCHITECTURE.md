@@ -144,8 +144,10 @@ Drizzle application store (SQLite, PostgreSQL, Lakebase, Hyperdrive, or D1)
     ├─ Model Alias + platform administrator + artifact metadata
     └─ user + session + OAuth metadata (accounts mode)
 
+/api/v1/artifacts
+    └─ POST → Server-generated UUIDv7; private by default
 /api/v1/artifacts/{artifact_id}
-    ├─ private by default; owner-scoped metadata authorization
+    ├─ owner-scoped metadata authorization; PUT replaces existing bytes only
     └─ local / S3 / R2 / Databricks Volume bytes → authenticated streaming relay
 ```
 
@@ -156,7 +158,8 @@ Workers Static Assets が直接配信し、Worker 内から asset binding を呼
 Gateway、認証 store、upstream、artifact storage の停止は Server 操作だけを失敗させる。macOS の起動、録音、音声保存、文字起こし、
 閲覧、検索はこの runtime を待たない。Artifact API は明示的に渡された任意 asset だけを扱い、録音、SQLite、Vault の自動 upload／sync は行わない。runtime と data boundary の判断は
 [ADR-0043](docs/adr/0043-unify-dahlia-server-application-database.md)、
-[ADR-0045](docs/adr/0045-add-owner-scoped-artifact-transport.md)、および
+[ADR-0045](docs/adr/0045-add-owner-scoped-artifact-transport.md)、
+[ADR-0048](docs/adr/0048-issue-artifact-ids-server-side.md)、および
 [ADR-0046](docs/adr/0046-forward-databricks-user-token-to-ai-gateway.md)を正本とする。
 
 ## Workload Classes

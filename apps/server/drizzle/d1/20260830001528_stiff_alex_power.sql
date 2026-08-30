@@ -201,10 +201,6 @@ CREATE TABLE `artifact` (
 	CONSTRAINT "artifact_visibility_check" CHECK("visibility" IN ('private', 'public'))
 );
 --> statement-breakpoint
-CREATE TABLE `artifact_reservation` (
-	`id` text PRIMARY KEY
-);
---> statement-breakpoint
 CREATE TABLE `model_alias` (
 	`alias` text PRIMARY KEY,
 	`upstream_model` text NOT NULL,

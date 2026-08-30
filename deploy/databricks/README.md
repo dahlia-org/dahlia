@@ -66,7 +66,7 @@ curl -fsS \
   https://<app-host>/api/v1/models
 ```
 
-For an artifact smoke test, upload an HTML file with a new lowercase UUID, read it privately, set `visibility` to `public`, read the same stable API URL without authentication, make it private again, and delete it. Use `Content-Length` and keep the bearer token out of shell history.
+For an artifact smoke test, `POST` an HTML file to `/api/v1/artifacts`, read the returned UUIDv7 URL privately, replace it with `PUT`, set `visibility` to `public`, read the same stable API URL without authentication, make it private again, and delete it. Use `Content-Length` and keep the bearer token out of shell history.
 
 Sign in as the configured administrator, enable a discovered model under `/admin/models`, and complete a real `POST /api/v1/responses` request with `stream: true`. Confirm that SSE events arrive incrementally through the Apps proxy. The Models page persists only the administrator's enabled or disabled selection as Dahlia Model Aliases; it does not persist the discovered model list.
 

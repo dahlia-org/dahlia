@@ -30,7 +30,8 @@ Better Auth schemas are generated unmodified into `src/db/generated`; Dahlia tab
 | `/api/admin/**` | Platform administrators only | Platform administrators only |
 | `/api/v1/models` | Dahlia OAuth access token | Platform U2M / proxy authentication |
 | `/api/v1/responses` | Dahlia OAuth access token | Platform U2M / proxy authentication |
-| `/api/v1/artifacts/{uuid}` | Public reads are anonymous; private reads and mutations use Dahlia OAuth | Public reads are anonymous; private reads and mutations use proxy identity |
+| `POST /api/v1/artifacts` | Dahlia OAuth with artifact write scope | Proxy identity |
+| `/api/v1/artifacts/{uuidv7}` | Public reads are anonymous; private reads and mutations use Dahlia OAuth | Public reads are anonymous; private reads and mutations use proxy identity |
 | `/healthz` | Minimal liveness | Internal liveness; anonymous external access is not guaranteed |
 
 `accounts` is the default authentication. It serves OAuth/OIDC discovery under `/.well-known/**`. The fixed public client is `dahlia-macos`; it requires authorization code with S256 PKCE and supports rotating refresh tokens and revocation. Dynamic client registration is disabled.
@@ -39,7 +40,7 @@ OAuth access uses `api.model.read` for models, `api.model.request` for Responses
 
 ### Artifact API
 
-`artifact_id` is a canonical lowercase UUID. `PUT` accepts an uncompressed raw body with a required `Content-Length` up to 64 MiB. New records are private; the same owner may replace bytes only with the original `Content-Type`. `PATCH` accepts only `{"visibility":"private"}` or `{"visibility":"public"}`, and `DELETE` removes bytes before metadata so a storage failure can be retried. Deleted IDs remain permanently reserved so an old public URL cannot be reclaimed. There is no list, history, expiry, malware scan, HTML sanitization, or per-user share API.
+`POST /api/v1/artifacts` accepts an uncompressed raw body with a required `Content-Length` up to 64 MiB, creates a private artifact with a Server-generated canonical lowercase UUIDv7, and returns its stable API URL in `Location`. `PUT /api/v1/artifacts/{uuidv7}` replaces an existing artifact owned by the caller and requires the original `Content-Type`; it never creates a missing ID. `PATCH` accepts only `{"visibility":"private"}` or `{"visibility":"public"}`, and `DELETE` removes bytes before metadata so a storage failure can be retried. There is no list, history, expiry, malware scan, HTML sanitization, or per-user share API.
 
 All storage backends stream authorized `GET` and `HEAD` responses through Dahlia, forward `Range` and `If-Unmodified-Since`, and apply a CSP sandbox so uploaded HTML cannot inherit the Dahlia application origin. Storage URLs and credentials are never returned to clients.
 

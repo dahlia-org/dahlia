@@ -95,7 +95,7 @@ describe("SQLite Better Auth store", () => {
       id: "019cc4dd-e5c5-7bd4-94e0-98df9cc40db9",
       ownerWorkspaceId: "personal:user-1",
       contentType: "text/html",
-    })).toBe(true);
+    })).toMatchObject({ id: "019cc4dd-e5c5-7bd4-94e0-98df9cc40db9", visibility: "private" });
     expect(await store.getArtifact("019cc4dd-e5c5-7bd4-94e0-98df9cc40db9")).toMatchObject({
       visibility: "private",
       contentType: "text/html",
@@ -125,7 +125,7 @@ describe("SQLite Better Auth store", () => {
       id: "019cc4dd-e5c5-7bd4-94e0-98df9cc40db9",
       ownerWorkspaceId: "personal:other",
       contentType: "text/html",
-    })).toBe(false);
+    })).toMatchObject({ id: "019cc4dd-e5c5-7bd4-94e0-98df9cc40db9", visibility: "private" });
     expect(database.prepare('PRAGMA foreign_key_list("artifact")').all()).toEqual([]);
 
     const now = new Date();

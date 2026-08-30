@@ -28,7 +28,3 @@ export const artifact = dahliaSchema.table("artifact", {
 }, (table) => [
   check("artifact_visibility_check", sql`${table.visibility} IN ('private', 'public')`),
 ]);
-
-export const artifactReservation = dahliaSchema.table("artifact_reservation", {
-  id: text("id").primaryKey(),
-});

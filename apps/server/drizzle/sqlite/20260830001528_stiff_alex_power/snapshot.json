@@ -1,7 +1,7 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "9cf9c973-c50e-49d7-9fb5-bb90d3578a37",
+  "id": "7e09c17b-ae37-490d-8a0b-0d7ec63e60d5",
   "prevIds": [
     "00000000-0000-0000-0000-000000000000"
   ],
@@ -56,10 +56,6 @@
     },
     {
       "name": "artifact",
-      "entityType": "tables"
-    },
-    {
-      "name": "artifact_reservation",
       "entityType": "tables"
     },
     {
@@ -1566,16 +1562,6 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "id",
-      "entityType": "columns",
-      "table": "artifact_reservation"
-    },
-    {
-      "type": "text",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
       "name": "alias",
       "entityType": "columns",
       "table": "model_alias"
@@ -1975,15 +1961,6 @@
       "nameExplicit": false,
       "name": "artifact_pk",
       "table": "artifact",
-      "entityType": "pks"
-    },
-    {
-      "columns": [
-        "id"
-      ],
-      "nameExplicit": false,
-      "name": "artifact_reservation_pk",
-      "table": "artifact_reservation",
       "entityType": "pks"
     },
     {

@@ -83,7 +83,7 @@ curl -fsS https://<host>/.well-known/oauth-authorization-server
 ```
 
 Then sign in with Google, create a Model Alias, and complete a streaming Responses request through `/api/v1/responses` using that alias.
-Also smoke-test an HTML artifact through private upload/read, public read, Range read, private transition, and deletion. R2 responses stream through the Dahlia API and must not contain a storage URL.
+Also smoke-test an HTML artifact through POST creation, private read, PUT replacement, public read, Range read, private transition, and deletion. R2 responses stream through the returned Dahlia API URL and must not contain a storage URL.
 
 ## Operational notes
 

@@ -1,7 +1,7 @@
 {
   "version": "8",
   "dialect": "postgres",
-  "id": "10ab4879-2cd4-4ca4-91f6-6c4934c6d9f3",
+  "id": "0957b366-6bb5-45cf-8d06-e0d8b64579d0",
   "prevIds": [
     "00000000-0000-0000-0000-000000000000"
   ],
@@ -89,12 +89,6 @@
     {
       "isRlsEnabled": false,
       "name": "artifact",
-      "entityType": "tables",
-      "schema": "dahlia"
-    },
-    {
-      "isRlsEnabled": false,
-      "name": "artifact_reservation",
       "entityType": "tables",
       "schema": "dahlia"
     },
@@ -2055,19 +2049,6 @@
       "default": null,
       "generated": null,
       "identity": null,
-      "name": "id",
-      "entityType": "columns",
-      "schema": "dahlia",
-      "table": "artifact_reservation"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
       "name": "alias",
       "entityType": "columns",
       "schema": "dahlia",
@@ -2943,16 +2924,6 @@
       "name": "artifact_pkey",
       "schema": "dahlia",
       "table": "artifact",
-      "entityType": "pks"
-    },
-    {
-      "columns": [
-        "id"
-      ],
-      "nameExplicit": false,
-      "name": "artifact_reservation_pkey",
-      "schema": "dahlia",
-      "table": "artifact_reservation",
       "entityType": "pks"
     },
     {

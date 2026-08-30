@@ -88,7 +88,7 @@ export interface ApplicationStore {
   addPlatformAdmin(email: string): Promise<boolean>;
   deletePlatformAdmin(email: string): Promise<boolean>;
   getArtifact(id: string): Promise<ArtifactRecord | null>;
-  createArtifact(input: ArtifactInput): Promise<boolean>;
+  createArtifact(input: ArtifactInput): Promise<ArtifactRecord | null>;
   commitArtifactStorage(
     id: string,
     ownerWorkspaceId: string,
@@ -232,12 +232,9 @@ export function createPostgresApplicationStore(db: PostgresDatabase): Applicatio
       return (row as ArtifactRecord | undefined) ?? null;
     },
     async createArtifact(input) {
-      const [reserved] = await db.insert(postgresSchema.artifactReservation).values({ id: input.id })
-        .onConflictDoNothing().returning({ id: postgresSchema.artifactReservation.id });
-      if (!reserved) return false;
       const [created] = await db.insert(postgresSchema.artifact).values(input).onConflictDoNothing()
-        .returning({ id: postgresSchema.artifact.id });
-      return created !== undefined;
+        .returning();
+      return (created as ArtifactRecord | undefined) ?? null;
     },
     async commitArtifactStorage(id, ownerWorkspaceId, expectedStorageKey, storageKey) {
       const expected = expectedStorageKey === null
@@ -397,13 +394,10 @@ export function createSqliteApplicationStore(db: SQLiteDatabase, transactions = 
       return (row as ArtifactRecord | undefined) ?? null;
     },
     async createArtifact(input) {
-      const [reserved] = await db.insert(sqliteSchema.artifactReservation).values({ id: input.id })
-        .onConflictDoNothing().returning({ id: sqliteSchema.artifactReservation.id });
-      if (!reserved) return false;
       const now = new Date();
       const [created] = await db.insert(sqliteSchema.artifact).values({ ...input, createdAt: now, updatedAt: now })
-        .onConflictDoNothing().returning({ id: sqliteSchema.artifact.id });
-      return created !== undefined;
+        .onConflictDoNothing().returning();
+      return (created as ArtifactRecord | undefined) ?? null;
     },
     async commitArtifactStorage(id, ownerWorkspaceId, expectedStorageKey, storageKey) {
       const expected = expectedStorageKey === null

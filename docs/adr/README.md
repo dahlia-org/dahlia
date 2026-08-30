@@ -54,6 +54,7 @@ Codex は全 ADR を順番に読まず、最初にこの一覧から現在の作
 | [0042](0042-apply-global-batch-audio-retention.md) | Recording storage / Settings | 現在の保存期間と録音終了日時からバッチ録音を遡及削除する | Accepted; amends 0004 |
 | [0043](0043-unify-dahlia-server-application-database.md) | Server gateway / Database | Server の認証・管理・将来同期を単一の選択可能な Drizzle DB に統一する | Accepted; amends 0029 and 0031; amended by 0044 |
 | [0044](0044-deploy-dahlia-server-to-databricks-apps.md) | Server gateway / Databricks | DAB、Lakebase、App OAuth で Dahlia Server を Databricks Apps に配置する | Accepted; amends 0029 and 0043; amended by 0045, 0046, and 0047 |
-| [0045](0045-add-owner-scoped-artifact-transport.md) | Server / Artifact storage | owner-scoped の任意 asset transport を R2 または Volume で提供する | Accepted; amends 0029, 0043, and 0044 |
+| [0045](0045-add-owner-scoped-artifact-transport.md) | Server / Artifact storage | owner-scoped の任意 asset transport を R2 または Volume で提供する | Accepted; amends 0029, 0043, and 0044; amended by 0048 |
 | [0046](0046-forward-databricks-user-token-to-ai-gateway.md) | Server gateway / Databricks | Apps proxy の user token で workspace AI Gateway を呼ぶ | Accepted; amends 0029 and 0044 |
 | [0047](0047-manage-pnpm-dependencies-per-application.md) | Server gateway / Distribution | モノレポ内の各アプリが pnpm manifest と lockfile を独立して所有する | Accepted; amends 0029 and 0044 |
+| [0048](0048-issue-artifact-ids-server-side.md) | Server / Artifact API | UUIDv7 artifact ID を Server で発行し、PUT を置換専用にする | Accepted; amends 0045 |
