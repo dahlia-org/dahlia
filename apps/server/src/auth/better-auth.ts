@@ -80,6 +80,7 @@ export function createDahliaAuth(
             accessTokenTtl: 15 * 60,
             refreshTokenTtl: 30 * 24 * 60 * 60,
             allowedScopes: [...MCP_OAUTH_SCOPES],
+            dpopBoundAccessTokensRequired: true,
           },
         ],
         resourcePrivileges: denyOAuthManagement,

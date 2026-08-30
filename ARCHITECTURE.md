@@ -153,7 +153,7 @@ Drizzle application store (SQLite, PostgreSQL, Lakebase, Hyperdrive, or D1)
     └─ owner-scoped artifact create / replace / visibility / delete tools
 ```
 
-`/mcp` は MCP 2026-07-28 の stateless endpoint とし、accounts mode では exact resource audience と `api.artifact.write` を検証する。Node の authorization server は CIMD を提供し、RFC 7591 DCR は開かない。Databricks Apps の header mode では Apps proxy が OAuth 認証を完了済みのため、転送 identity を owner として使い、artifact 操作で user access token を再利用しない。
+`/mcp` は MCP 2026-07-28 の stateless endpoint とし、accounts mode では DPoP-bound access token、exact resource audience、`api.artifact.write` を必須とする。Node の authorization server は CIMD を提供し、RFC 7591 DCR は開かない。Databricks Apps の header mode では Apps proxy が OAuth 認証を完了済みのため、転送 identity を owner として使い、artifact 操作で user access token を再利用しない。
 
 Cloudflare では Hono Worker は `/api/**`、`/.well-known/**`、`/mcp`、`/healthz` だけを処理する。React SPA と静的 asset は
 Workers Static Assets が直接配信し、Worker 内から asset binding を呼ばない。`/dashboard/**` の navigation は
