@@ -12,10 +12,11 @@ This file applies to the entire repository. Before editing a path covered by a m
 
 | Scope | Additional guidance |
 | --- | --- |
-| `Sources/Dahlia/` | Architecture, concurrency, and UI: `Sources/Dahlia/AGENTS.md` |
-| `Sources/Dahlia/Database/` | GRDB and migrations: `Sources/Dahlia/Database/AGENTS.md` |
-| `Tests/DahliaTests/` | Test implementation and verification: `Tests/DahliaTests/AGENTS.md` |
-| `scripts/` | SwiftPM build, signing, notarization, and lint scripts |
+| `apps/desktop/Sources/Dahlia/` | Architecture, concurrency, and UI: `apps/desktop/Sources/Dahlia/AGENTS.md` |
+| `apps/desktop/Sources/Dahlia/Database/` | GRDB and migrations: `apps/desktop/Sources/Dahlia/Database/AGENTS.md` |
+| `apps/desktop/Tests/DahliaTests/` | Test implementation and verification: `apps/desktop/Tests/DahliaTests/AGENTS.md` |
+| `apps/desktop/scripts/` | SwiftPM build, signing, notarization, and lint implementations |
+| `scripts/` | Root compatibility entrypoints for desktop tooling |
 
 `CLAUDE.md` imports the `AGENTS.md` in the same directory with `@AGENTS.md`. Do not maintain duplicate content.
 
@@ -29,7 +30,7 @@ Use progressive disclosure: read the scoped `AGENTS.md` first, then open only th
 | Current runtime ownership or workload boundaries | [`ARCHITECTURE.md`](ARCHITECTURE.md#runtime-data-flow) |
 | Audio capture, recording, live subtitles, or realtime/batch transcript data flow | [`Audio and Transcription Data Flow`](docs/architecture/audio-transcription-data-flow.md) |
 | Recording, transcription, concurrency, persistence, or failure handling | [`ARCHITECTURE.md`](ARCHITECTURE.md#reliability-scope), then the relevant section |
-| UI interaction, rendering workload, or responsiveness | [`Sources/Dahlia/AGENTS.md`](Sources/Dahlia/AGENTS.md), then [`UI and Interaction Responsiveness`](ARCHITECTURE.md#ui-and-interaction-responsiveness) when workload behavior is affected |
+| UI interaction, rendering workload, or responsiveness | [`apps/desktop/Sources/Dahlia/AGENTS.md`](apps/desktop/Sources/Dahlia/AGENTS.md), then [`UI and Interaction Responsiveness`](ARCHITECTURE.md#ui-and-interaction-responsiveness) when workload behavior is affected |
 | Telemetry, metrics, analytics, Sentry, or external diagnostics | [`Anonymous Telemetry Collection Policy`](docs/telemetry.md), then [ADR-0026](docs/adr/0026-measure-product-adoption-with-bounded-telemetry.md) and [ADR-0025](docs/adr/0025-adopt-allowlisted-nonblocking-telemetry.md) |
 | Code review | [`Code Review Guide`](docs/code-review.md), then the architecture references routed by the closest applicable `AGENTS.md` |
 | Fixing an identified architecture deviation | [`Conformance Status`](ARCHITECTURE.md#conformance-status), then the matching item in [`Remediation Plan`](ARCHITECTURE.md#remediation-plan) |
@@ -48,9 +49,9 @@ conflict, and update the tenet only through a new ADR that the user approves.
 - **IMPORTANT:** Do not write overly defensive code. Always prefer simplicity over pathological complexity.
 - Use Swift 6.2, SwiftUI, macOS 26+, and Swift 6 strict concurrency.
 - Use Swift Package Manager only. Do not generate an Xcode project.
-- The app has exactly eight SwiftPM runtime dependencies: GRDB.swift, sentry-cocoa, TelemetryDeck SwiftSDK, Sparkle, WhisperKit, mlx-swift, mlx-swift-lm, and swift-transformers. Vendored native targets are DahliaAEC3 and the arm64 DahliaLindera static XCFramework (Rust 1.97.0, Lindera 2.0.1, embedded IPADIC, and a committed Cargo.lock). The separate `BuildTools` package pins SwiftFormat. The app also verifies and bundles a pinned official arm64 release of the OpenAI Codex CLI as a runtime helper. Get confirmation before adding or updating dependencies.
+- The app has exactly eight SwiftPM runtime dependencies: GRDB.swift, sentry-cocoa, TelemetryDeck SwiftSDK, Sparkle, WhisperKit, mlx-swift, mlx-swift-lm, and swift-transformers. Vendored native targets are DahliaAEC3 and the arm64 DahliaLindera static XCFramework (Rust 1.97.0, Lindera 2.0.1, embedded IPADIC, and a committed Cargo.lock). The separate `apps/desktop/BuildTools` package pins SwiftFormat. The app also verifies and bundles a pinned official arm64 release of the OpenAI Codex CLI as a runtime helper. Get confirmation before adding or updating dependencies.
 - Telemetry is allowlist-only and best-effort. Follow [`docs/telemetry.md`](docs/telemetry.md): never send content, identifiers, paths, or free text; never wait for delivery; and never call a telemetry SDK outside its designated adapter.
-- Never destroy a released user's database. Do not modify registered migrations; add a new migration according to `Sources/Dahlia/Database/AGENTS.md`.
+- Never destroy a released user's database. Do not modify registered migrations; add a new migration according to `apps/desktop/Sources/Dahlia/Database/AGENTS.md`.
 
 ## Code Review Rules
 

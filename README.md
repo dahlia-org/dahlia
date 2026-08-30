@@ -69,7 +69,7 @@ swift test
 > **Note:** `swift run Dahlia` has no bundled Codex helper and cannot use Data Protection Keychain. Use `run-dev.sh` for full functionality. `run-dev.sh` uses the shared development profile at `~/Library/Application Support/Dahlia-Development`, keeping its database, recording recovery files, Codex state, and process lock separate from the release app. Development builds started by `run-dev.sh` share this profile with each other. On their first run, the app-bundle scripts download the pinned official Codex GitHub Release for `aarch64-apple-darwin`, verify its SHA-256, and cache it under `.build`.
 > If the login Keychain is locked, `run-dev.sh` asks for the macOS login password before building so the signing certificate's private key is available. The password is read directly by macOS and is not stored by the script. Set `CODESIGN_KEYCHAIN` only when the signing identity is stored in a non-default Keychain.
 
-The lint script and pre-commit hook use the exact SwiftFormat version managed by the independent `BuildTools` Swift package. SwiftPM resolves and caches the tool separately from the app's dependencies.
+The lint script and pre-commit hook use the exact SwiftFormat version managed by the independent `apps/desktop/BuildTools` Swift package. SwiftPM resolves and caches the tool separately from the app's dependencies.
 
 If you set `SENTRY_DSN` before running `build-app.sh`, `notarize.sh`, or `run-dev.sh`, the generated app embeds the DSN into `Info.plist` and enables Sentry. Debug events are tagged with the `debug` environment. `swift run Dahlia` and `run-dev.sh` without an explicitly configured DSN do not send Sentry events.
 
@@ -160,18 +160,22 @@ Database selection is independent from the `OPENAI_API_KEY` and `OPENAI_BASE_URL
 
 ```
 apps/
+├── desktop/        # Native macOS app and SwiftPM tests
+│   ├── BuildTools/  # Pinned SwiftFormat package
+│   ├── scripts/     # Desktop build, signing, and lint implementations
+│   ├── Tests/       # SwiftPM tests
+│   └── Sources/Dahlia/
+│       ├── Audio/          # Audio capture (mic & system)
+│       ├── Database/       # GRDB models, migrations, repository
+│       ├── Models/         # Domain models
+│       ├── Services/       # Codex app-server, vault sync, meeting detection, keychain
+│       ├── Speech/         # Speech transcription pipeline
+│       ├── Utilities/      # Helpers (UUID v7, localization, etc.)
+│       ├── ViewModels/     # CaptionViewModel, SidebarViewModel
+│       ├── Views/          # SwiftUI views
+│       └── Resources/      # Localized strings, assets
 ├── server/         # Optional self-hostable TypeScript AI Gateway and authentication UI
 └── site/           # Public static website
-Sources/Dahlia/
-├── Audio/          # Audio capture (mic & system)
-├── Database/       # GRDB models, migrations, repository
-├── Models/         # Domain models
-├── Services/       # Codex app-server, vault sync, meeting detection, keychain
-├── Speech/         # Speech transcription pipeline
-├── Utilities/      # Helpers (UUID v7, localization, etc.)
-├── ViewModels/     # CaptionViewModel, SidebarViewModel
-├── Views/          # SwiftUI views
-└── Resources/      # Localized strings, assets
 ```
 
 ## Dependencies

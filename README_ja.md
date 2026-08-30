@@ -157,18 +157,22 @@ database の選択は AI Gateway の `OPENAI_API_KEY`、`OPENAI_BASE_URL` とは
 
 ```
 apps/
+├── desktop/        # ネイティブ macOS アプリと SwiftPM テスト
+│   ├── BuildTools/  # SwiftFormat の固定用 package
+│   ├── scripts/     # desktop のビルド・署名・lint 実装
+│   ├── Tests/       # SwiftPM テスト
+│   └── Sources/Dahlia/
+│       ├── Audio/          # 音声キャプチャ（マイク & システム）
+│       ├── Database/       # GRDB モデル、マイグレーション、リポジトリ
+│       ├── Models/         # ドメインモデル
+│       ├── Services/       # Codex app-server、Vault 同期、会議検出、Keychain
+│       ├── Speech/         # 音声認識パイプライン
+│       ├── Utilities/      # ヘルパー（UUID v7、ローカライゼーション等）
+│       ├── ViewModels/     # CaptionViewModel、SidebarViewModel
+│       ├── Views/          # SwiftUI ビュー
+│       └── Resources/      # ローカライズ文字列、アセット
 ├── server/         # 任意のセルフホスト対応 TypeScript AI Gateway と認証 UI
 └── site/           # 公開静的サイト
-Sources/Dahlia/
-├── Audio/          # 音声キャプチャ（マイク & システム）
-├── Database/       # GRDB モデル、マイグレーション、リポジトリ
-├── Models/         # ドメインモデル
-├── Services/       # Codex app-server、Vault 同期、会議検出、Keychain
-├── Speech/         # 音声認識パイプライン
-├── Utilities/      # ヘルパー（UUID v7、ローカライゼーション等）
-├── ViewModels/     # CaptionViewModel、SidebarViewModel
-├── Views/          # SwiftUI ビュー
-└── Resources/      # ローカライズ文字列、アセット
 ```
 
 ## 依存ライブラリ

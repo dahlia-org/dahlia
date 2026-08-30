@@ -50,7 +50,7 @@ Accepted; amends 0005 and 0010, builds on 0001
 ### 要約 AST とレンダラーを共有ターゲットへ移す
 
 `update_meeting_summary` は Vault へ書き出し済みの Markdown も更新する。MCP ヘルパーは別プロセスの別ターゲットで
-あり `Sources/Dahlia` を参照できないため、`SummaryDocument` AST、`ObsidianMarkdownSummaryRenderer`、
+あり `apps/desktop/Sources/Dahlia` を参照できないため、`SummaryDocument` AST、`ObsidianMarkdownSummaryRenderer`、
 `VaultSummaryFileLocator` を `DahliaRuntimeSupport` へ移し、アプリとヘルパーが同じ描画実装を使う。
 
 これにより `DahliaMeetingAccess` が持っていた `StoredSummaryDocument` というミラー型が不要になり、読み出しと

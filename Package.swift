@@ -33,7 +33,7 @@ let package = Package(
         ),
         .target(
             name: "DahliaRuntimeSupport",
-            path: "Sources/DahliaRuntimeSupport"
+            path: "apps/desktop/Sources/DahliaRuntimeSupport"
         ),
         .target(
             name: "DahliaMeetingAccess",
@@ -43,7 +43,7 @@ let package = Package(
                 .product(name: "GRDB", package: "GRDB.swift"),
                 .product(name: "GRDBSQLite", package: "GRDB.swift"),
             ],
-            path: "Sources/DahliaMeetingAccess"
+            path: "apps/desktop/Sources/DahliaMeetingAccess"
         ),
         .executableTarget(
             name: "DahliaMCP",
@@ -51,7 +51,7 @@ let package = Package(
                 "DahliaMeetingAccess",
                 .product(name: "TelemetryDeck", package: "SwiftSDK"),
             ],
-            path: "Sources/DahliaMCP"
+            path: "apps/desktop/Sources/DahliaMCP"
         ),
         .executableTarget(
             name: "DahliaSearchRankingBenchmark",
@@ -78,7 +78,7 @@ let package = Package(
                 .product(name: "Hub", package: "swift-transformers"),
                 .product(name: "Tokenizers", package: "swift-transformers"),
             ],
-            path: "Sources/Dahlia",
+            path: "apps/desktop/Sources/Dahlia",
             exclude: [
                 "AGENTS.md",
                 "CLAUDE.md",
@@ -100,7 +100,7 @@ let package = Package(
                 "DahliaRuntimeSupport",
                 "DahliaSearchRankingBenchmark",
             ],
-            path: "Tests/DahliaTests",
+            path: "apps/desktop/Tests/DahliaTests",
             exclude: [
                 "AGENTS.md",
                 "CLAUDE.md",

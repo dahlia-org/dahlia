@@ -47,5 +47,5 @@ ChatGPT Subscription では代理審査を利用できるため、Databricks の
 - ADR-0012: 単一顧客の組織ビューと単数 CRUD による逐次 AI 更新
 - ADR-0022: アプリ内チャットを workspace-write とユーザー承認で実行する
 - ADR-0023: Vault MCP の書き込みをチャット内で承認する
-- `CodexChatService`: `Sources/Dahlia/Services/CodexChatService.swift`
-- account configuration: `Sources/Dahlia/Services/CodexAppServerService.swift`
+- `CodexChatService`: `apps/desktop/Sources/Dahlia/Services/CodexChatService.swift`
+- account configuration: `apps/desktop/Sources/Dahlia/Services/CodexAppServerService.swift`

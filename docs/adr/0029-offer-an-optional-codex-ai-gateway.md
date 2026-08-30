@@ -108,4 +108,4 @@ Gateway、認証、provider の障害は AI 操作だけを失敗させる。録
 - [ADR-0003](0003-use-a-shared-codex-app-server.md): 固定版 Codex app-server と provider ownership
 - [ADR-0021](0021-preserve-user-home-for-databricks-authentication.md): Databricks CLI authentication
 - [OpenAI Codex configuration reference](https://learn.chatgpt.com/docs/config-file/config-reference)
-- [`CodexConfigurationManager`](../../Sources/Dahlia/Services/CodexConfigurationManager.swift)
+- [`CodexConfigurationManager`](../../apps/desktop/Sources/Dahlia/Services/CodexConfigurationManager.swift)

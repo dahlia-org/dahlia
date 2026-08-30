@@ -26,7 +26,7 @@ Dahlia の標準値として妥当である。ただし、本番データ上で�
 ## 20クエリの由来
 
 20クエリはユーザーの実際の検索履歴ではない。
-[MeetingSearchJudgmentService](../../Sources/Dahlia/Services/MeetingSearchJudgmentService.swift) が、最近の会議の
+[MeetingSearchJudgmentService](../../apps/desktop/Sources/Dahlia/Services/MeetingSearchJudgmentService.swift) が、最近の会議の
 タイトル、タグ、カレンダー、概要、要約から端末内で生成した評価用クエリである。生成元の会議を exact とし、
 同じ文字列を含む会議を最大4件 related として採点する。
 
