@@ -69,12 +69,15 @@ describe("AI Gateway", () => {
       expect(new Headers(init?.headers).get("authorization")).toBe("Bearer app-token");
       const pageToken = new URL(String(input)).searchParams.get("page_token");
       return pageToken
-        ? Response.json({ model_services: [{ name: "model-services/system.ai.long-name" }] })
+        ? Response.json({ model_services: [{
+            name: "model-services/system.ai.long-name",
+            update_time: "2026-08-04T00:00:00Z",
+          }] })
         : Response.json({
             model_services: [
-              { name: "model-services/system.ai.gpt-5-6-luna" },
-              { name: "model-services/system.ai.gpt-5-6-sol" },
-              { name: "model-services/system.ai.summary" },
+              { name: "model-services/system.ai.gpt-5-6-luna", update_time: "2026-08-01T00:00:00Z" },
+              { name: "model-services/system.ai.gpt-5-6-sol", update_time: "2026-08-02T00:00:00Z" },
+              { name: "model-services/system.ai.summary", update_time: "2026-08-03T00:00:00Z" },
             ],
             next_page_token: "next-page",
           });
@@ -87,11 +90,12 @@ describe("AI Gateway", () => {
     expect(await service.adminModels(new Request("https://dahlia.example/api/admin/models", {
       headers: { "x-forwarded-access-token": "user-token" },
     }))).toEqual([
-      { ...configured, configured: true },
+      { ...configured, updateTime: "2026-08-01T00:00:00Z", configured: true },
       {
         alias: "gpt-5-6-sol",
         upstreamModel: "system.ai.gpt-5-6-sol",
         displayName: null,
+        updateTime: "2026-08-02T00:00:00Z",
         enabled: false,
         configured: false,
       },
@@ -99,6 +103,7 @@ describe("AI Gateway", () => {
         alias: "summary-2",
         upstreamModel: "system.ai.summary",
         displayName: null,
+        updateTime: "2026-08-03T00:00:00Z",
         enabled: false,
         configured: false,
       },
@@ -106,6 +111,7 @@ describe("AI Gateway", () => {
         alias: "long-name",
         upstreamModel: "system.ai.long-name",
         displayName: null,
+        updateTime: "2026-08-04T00:00:00Z",
         enabled: false,
         configured: false,
       },
