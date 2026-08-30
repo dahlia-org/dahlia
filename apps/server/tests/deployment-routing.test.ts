@@ -224,9 +224,9 @@ describe("deployment routing", () => {
     expect(resource).toContain("source_code_path: ../../../apps/server");
     expect(resource).toContain(`user_api_scopes:
         - ai-gateway
-        - catalog.catalogs:read
-        - catalog.schemas:read
         - files`);
+    expect(resource).not.toContain("catalog.catalogs:read");
+    expect(resource).not.toContain("catalog.schemas:read");
     expect(resource)
       .toContain('command: ["corepack", "pnpm", "start:databricks"]');
     expect(resource).not.toContain("DAHLIA_APP_URL");

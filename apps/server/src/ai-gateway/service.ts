@@ -1,5 +1,6 @@
 import type { AuthStore } from "../auth/store";
 import type { AppConfig } from "../config";
+import { DatabricksTokenProvider } from "../databricks/token";
 import { listDatabricksModelServices, sendOpenAIResponses, type GatewayFetch } from "./adapters";
 import { MODEL_ALIAS_PATTERN } from "./model-alias";
 
@@ -21,11 +22,18 @@ export class GatewayRequestError extends Error {
 }
 
 export class GatewayService {
+  private readonly databricksTokens?: DatabricksTokenProvider;
+
   constructor(
     private readonly config: AppConfig,
     private readonly store: Pick<AuthStore, "getEnabledModelAlias" | "listModelAliases">,
     private readonly transport: GatewayFetch = fetch,
-  ) {}
+  ) {
+    if (config.provider?.backend === "databricks") {
+      if (!config.databricksWorkspace) throw new Error("Databricks workspace credentials are required");
+      this.databricksTokens = new DatabricksTokenProvider(config.databricksWorkspace, transport);
+    }
+  }
 
   async models() {
     if (!this.config.provider) return { object: "list", data: [] };
@@ -126,7 +134,15 @@ export class GatewayService {
   private async databricksModels(request: Request): Promise<DatabricksModel[]> {
     const provider = this.config.provider;
     if (provider?.backend !== "databricks") return [];
-    const authorization = forwardedDatabricksAuthorization(request);
+    let token: string;
+    try {
+      token = await this.databricksTokens!.getToken();
+    } catch (error) {
+      throw databricksModelListError("provider_models_unavailable", "authentication_error", {
+        errorName: error instanceof Error ? error.name : "UnknownError",
+      });
+    }
+    const authorization = `Bearer ${token}`;
     const signal = AbortSignal.any([request.signal, AbortSignal.timeout(DATABRICKS_MODEL_TIMEOUT_MS)]);
     const models: DatabricksModel[] = [];
     const pageTokens = new Set<string>();

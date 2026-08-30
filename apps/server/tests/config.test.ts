@@ -38,14 +38,30 @@ describe("configuration", () => {
   });
 
   it("builds the Databricks AI Gateway configuration from DATABRICKS_HOST", () => {
-    expect(loadConfig({
+    const databricks = {
       DAHLIA_AUTH_TYPE: "header",
       DAHLIA_AI_BACKEND: "databricks",
       DATABRICKS_HOST: "workspace.cloud.databricks.com",
-    }).provider).toEqual({
-      backend: "databricks",
-      baseUrl: "https://workspace.cloud.databricks.com/ai-gateway/mlflow/v1",
+    };
+    expect(loadConfig({
+      ...databricks,
+      DATABRICKS_CLIENT_ID: "app-client-id",
+      DATABRICKS_CLIENT_SECRET: "app-client-secret",
+    })).toMatchObject({
+      provider: {
+        backend: "databricks",
+        baseUrl: "https://workspace.cloud.databricks.com/ai-gateway/mlflow/v1",
+      },
+      databricksWorkspace: {
+        host: "https://workspace.cloud.databricks.com",
+        clientId: "app-client-id",
+      },
     });
+    expect(() => loadConfig(databricks)).toThrow("DATABRICKS_CLIENT_ID is required");
+    expect(() => loadConfig({
+      ...databricks,
+      DATABRICKS_CLIENT_ID: "app-client-id",
+    })).toThrow("DATABRICKS_CLIENT_SECRET is required");
   });
 
   it("configures object storage independently from the AI backend", () => {

@@ -17,7 +17,7 @@ Use progressive disclosure. Read the closest implementation first, then only the
 | Gateway, authentication, upstream relay, or privacy boundary | [ADR-0029](../../docs/adr/0029-offer-an-optional-codex-ai-gateway.md) |
 | Public package exports or extension hooks | [ADR-0031](../../docs/adr/0031-publish-dahlia-server-extension-contract.md) |
 | Application database, identity, or migrations | [ADR-0043](../../docs/adr/0043-unify-dahlia-server-application-database.md) |
-| Databricks Apps, Lakebase, or forwarded user tokens | [ADR-0044](../../docs/adr/0044-deploy-dahlia-server-to-databricks-apps.md), [ADR-0046](../../docs/adr/0046-forward-databricks-user-token-to-ai-gateway.md), and [`deploy/databricks/README.md`](../../deploy/databricks/README.md) |
+| Databricks Apps, Lakebase, or forwarded user tokens | [ADR-0044](../../docs/adr/0044-deploy-dahlia-server-to-databricks-apps.md), [ADR-0046](../../docs/adr/0046-forward-databricks-user-token-to-ai-gateway.md), [ADR-0050](../../docs/adr/0050-use-app-service-principal-for-databricks-model-discovery.md), and [`deploy/databricks/README.md`](../../deploy/databricks/README.md) |
 | Artifact authorization, storage, IDs, or public URLs | [ADR-0045](../../docs/adr/0045-add-owner-scoped-artifact-transport.md), [ADR-0048](../../docs/adr/0048-issue-artifact-ids-server-side.md) |
 | Dependencies, lockfiles, packaging, or deployment source layout | [ADR-0047](../../docs/adr/0047-manage-pnpm-dependencies-per-application.md) |
 
@@ -38,7 +38,7 @@ Use the [ADR index](../../docs/adr/README.md) only when historical rationale or 
 - Read credentials from runtime secrets only. Model Aliases are public configuration; provider credentials are not application data.
 - Enforce request byte limits before parsing or buffering. Stream Responses and artifact bodies without buffering the complete payload.
 - Header authentication is safe only behind a proxy that strips client-supplied identity headers, writes verified values, and prevents direct Server access. Do not weaken that deployment requirement with trust-by-header fallback logic.
-- With the Databricks backend, use `X-Forwarded-Access-Token` only for the current upstream request. Do not store, log, cache, return, or forward that header by name; do not replace it with App client-credential authentication.
+- With the Databricks backend, use `X-Forwarded-Access-Token` only for the current Responses request. Do not store, log, cache, return, or forward that header by name. Model discovery uses the App service principal and must not use the forwarded token.
 - Personal workspaces are deterministic identity claims. Do not add organizations, invitations, team sharing, per-organization providers, automatic recording uploads, or meeting cloud sync without an approved product and architecture decision.
 - Artifact IDs remain server-generated UUIDv7 values, owner-scoped, and default-private. Preserve authorization-before-storage access, streamed reads, the CSP sandbox, and non-disclosure of storage URLs and credentials.
 
