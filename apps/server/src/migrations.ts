@@ -8,7 +8,9 @@ export interface MigrationDirectory {
 
 export type PostgresMigrationDirectory = MigrationDirectory;
 
-export type SQLiteMigrationDirectory = MigrationDirectory;
+export interface SQLiteMigrationDirectory extends MigrationDirectory {
+  files: readonly string[];
+}
 
 export interface MigrationSet<TDirectory = MigrationDirectory> {
   directories: readonly TDirectory[];
@@ -28,7 +30,11 @@ export const serverMigrationManifest: MigrationManifest = {
     files: ["drizzle/postgres/20260830001527_open_blue_shield/migration.sql"],
   },
   sqlite: {
-    directories: [{ id: "server", path: join(packageDirectory, "drizzle/sqlite") }],
+    directories: [{
+      id: "server",
+      path: join(packageDirectory, "drizzle/sqlite"),
+      files: ["20260830001528_stiff_alex_power/migration.sql"],
+    }],
     files: ["drizzle/sqlite/20260830001528_stiff_alex_power/migration.sql"],
   },
 };

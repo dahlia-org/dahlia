@@ -55,7 +55,7 @@
     "check": "pnpm run lint && pnpm run typecheck && pnpm run test && pnpm run build && pnpm run test:package && pnpm run worker:dry-run",
     "db:generate": "pnpm run db:generate:postgres && pnpm run db:generate:sqlite",
     "db:generate:postgres": "drizzle-kit generate --config drizzle.config.ts",
-    "db:generate:sqlite": "drizzle-kit generate --config drizzle.sqlite.config.ts",
+    "db:generate:sqlite": "drizzle-kit generate --config drizzle.sqlite.config.ts && node scripts/sync-d1-migrations.mjs",
     "db:generate-auth": "node scripts/generate-auth-schema.mjs",
     "db:migrate": "tsx --env-file-if-exists=.env.local src/db/migrate.ts",
     "db:migrate:d1:local": "pnpm run ensure:wrangler && WRANGLER_WRITE_LOGS=false WRANGLER_SEND_METRICS=false wrangler d1 migrations apply dahlia_db_prod --local",

@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import { mkdirSync } from "node:fs";
-import { dirname } from "node:path";
+import { existsSync, mkdirSync, readdirSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 import { drizzle } from "drizzle-orm/sqlite-proxy";
@@ -81,10 +81,29 @@ export function createNodeApplicationStore(
   };
   const migrate = async () => {
     const directoryIds = new Set<string>();
-    for (const { id, path } of migrations.sqlite.directories) {
+    const directories = migrations.sqlite.directories.map(({ id, path, files }) => {
       if (!/^[a-z][a-z0-9_]{0,31}$/.test(id)) throw new Error(`Invalid SQLite migration ledger ID: ${id}`);
       if (directoryIds.has(id)) throw new Error(`Duplicate SQLite migration ledger ID: ${id}`);
       directoryIds.add(id);
+      if (files.some((file) => !/^[^/\\]+\/migration\.sql$/.test(file))) {
+        throw new Error(`Invalid SQLite migration file for ledger ${id}`);
+      }
+      const actualFiles = readdirSync(path, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory() && existsSync(join(path, entry.name, "migration.sql")))
+        .map((entry) => `${entry.name}/migration.sql`)
+        .toSorted();
+      if (actualFiles.join("\0") !== files.toSorted().join("\0")) {
+        throw new Error(`SQLite migration files do not match the manifest for ledger ${id}`);
+      }
+      return { id, path, files };
+    });
+    const manifestFiles = migrations.sqlite.files
+      .map((file) => file.split(/[\\/]/).slice(-2).join("/"))
+      .toSorted();
+    if (manifestFiles.join("\0") !== directories.flatMap(({ files }) => files).toSorted().join("\0")) {
+      throw new Error("SQLite migration directory files do not match the manifest");
+    }
+    for (const { id, path } of directories) {
       database.exec("BEGIN IMMEDIATE");
       try {
         await migrateSqlite(transactionalSqlite, applyMigrationQueries, {

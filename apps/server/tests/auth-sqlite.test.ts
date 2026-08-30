@@ -166,10 +166,13 @@ describe("SQLite Better Auth store", () => {
       postgres: { directories: [], files: [] },
       sqlite: {
         directories: [
-          { id: "first", path: first },
-          { id: "second", path: second },
+          { id: "first", path: first, files: ["20260830010000_init/migration.sql"] },
+          { id: "second", path: second, files: ["20260830010000_init/migration.sql"] },
         ],
-        files: ["first/0001_init.sql", "second/0001_init.sql"],
+        files: [
+          "first/20260830010000_init/migration.sql",
+          "second/20260830010000_init/migration.sql",
+        ],
       },
     };
     const path = join(directory, "auth.sqlite");
@@ -185,6 +188,42 @@ describe("SQLite Better Auth store", () => {
       .toEqual({ name: "20260830010000_init" });
     expect(database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE '%Extension' ORDER BY name").all())
       .toEqual([{ name: "firstExtension" }, { name: "secondExtension" }]);
+    database.close();
+    await store.close?.();
+  });
+
+  it("rejects SQLite migration directories that differ from the manifest", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "dahlia-auth-"));
+    directories.push(directory);
+    const migrationsPath = join(directory, "extension");
+    mkdirSync(join(migrationsPath, "20260830010000_listed"), { recursive: true });
+    mkdirSync(join(migrationsPath, "20260830020000_unlisted"), { recursive: true });
+    writeFileSync(join(migrationsPath, "20260830010000_listed", "migration.sql"),
+      'CREATE TABLE "listedExtension" ("id" TEXT PRIMARY KEY);');
+    writeFileSync(join(migrationsPath, "20260830020000_unlisted", "migration.sql"),
+      'CREATE TABLE "unlistedExtension" ("id" TEXT PRIMARY KEY);');
+    const path = join(directory, "auth.sqlite");
+    const store = createNodeAuthStore(testConfig(path), {
+      postgres: { directories: [], files: [] },
+      sqlite: {
+        directories: [{
+          id: "extension",
+          path: migrationsPath,
+          files: [
+            "20260830010000_listed/migration.sql",
+            "20260830030000_missing/migration.sql",
+          ],
+        }],
+        files: [
+          "extension/20260830010000_listed/migration.sql",
+          "extension/20260830030000_missing/migration.sql",
+        ],
+      },
+    });
+
+    await expect(store.migrate()).rejects.toThrow("SQLite migration files do not match the manifest");
+    const database = new DatabaseSync(path);
+    expect(database.prepare("SELECT name FROM sqlite_master WHERE name LIKE '%Extension'").all()).toEqual([]);
     database.close();
     await store.close?.();
   });

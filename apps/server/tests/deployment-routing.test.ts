@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 
 import { describe, expect, it, vi } from "vitest";
 
@@ -34,7 +34,7 @@ describe("deployment routing", () => {
         not_found_handling: string;
         run_worker_first: string[];
       };
-      d1_databases: Array<{ binding: string; migrations_dir: string; migrations_pattern: string }>;
+      d1_databases: Array<{ binding: string; migrations_dir: string }>;
       r2_buckets: Array<{ binding: string; bucket_name: string }>;
       observability: { enabled: boolean; logs: { enabled: boolean; invocation_logs: boolean } };
       vars: Record<string, string>;
@@ -47,9 +47,12 @@ describe("deployment routing", () => {
     expect(wrangler.d1_databases).toContainEqual(expect.objectContaining({
       binding: "dahlia_db_prod",
       database_id: "00000000-0000-0000-0000-000000000000",
-      migrations_dir: "drizzle/sqlite",
-      migrations_pattern: "drizzle/sqlite/*/migration.sql",
+      migrations_dir: "drizzle/d1",
     }));
+    const d1Migrations = readdirSync(new URL("../drizzle/d1", import.meta.url)).toSorted();
+    expect(d1Migrations).toEqual(["20260830001528_stiff_alex_power.sql"]);
+    expect(readText("../drizzle/d1/20260830001528_stiff_alex_power.sql"))
+      .toBe(readText("../drizzle/sqlite/20260830001528_stiff_alex_power/migration.sql"));
     expect(wrangler.vars).toEqual({
       DAHLIA_AI_BACKEND: "cloudflare",
       DAHLIA_STORAGE_BACKEND: "r2",

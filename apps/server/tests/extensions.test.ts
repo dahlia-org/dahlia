@@ -113,7 +113,11 @@ describe("server extensions", () => {
         files: ["extension/drizzle/0000.sql"],
       },
       sqlite: {
-        directories: [{ id: "extension", path: "extension/drizzle/sqlite" }],
+        directories: [{
+          id: "extension",
+          path: "extension/drizzle/sqlite",
+          files: ["0000_baseline/migration.sql"],
+        }],
         files: ["extension/drizzle/sqlite/0000_baseline/migration.sql"],
       },
     })).toEqual({
@@ -130,7 +134,11 @@ describe("server extensions", () => {
       sqlite: {
         directories: [
           ...serverMigrationManifest.sqlite.directories,
-          { id: "extension", path: "extension/drizzle/sqlite" },
+          {
+            id: "extension",
+            path: "extension/drizzle/sqlite",
+            files: ["0000_baseline/migration.sql"],
+          },
         ],
         files: [
           "drizzle/sqlite/20260830001528_stiff_alex_power/migration.sql",
