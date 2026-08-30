@@ -46,9 +46,8 @@ Use the [ADR index](../../docs/adr/README.md) only when historical rationale or 
 
 - Better Auth and Dahlia application tables share one Drizzle application database. Node supports SQLite, PostgreSQL, and Lakebase; Workers support D1, Hyperdrive, and direct PostgreSQL.
 - Released migrations are immutable. Add forward-only migrations; never edit, reorder, or silently omit an existing migration.
-- `scripts/generate-auth-schema.mjs` is the source for generated Better Auth plus Dahlia schema definitions. Change it, run `pnpm db:generate-auth`, then generate a new PostgreSQL migration with `pnpm db:generate` when the schema changes.
-- Add the matching SQLite migration under `auth-migrations/`; register its filename in the Server SQLite directory's `files` and its package-relative path in `sqlite.files` in `src/migrations.ts`.
-- Add each generated `drizzle/<generated>/migration.sql` path to `postgres.files`. Add a `directories` entry only when introducing an independent migration ledger root.
+- `scripts/generate-auth-schema.mjs` regenerates only the Better Auth schemas. Keep Dahlia-owned tables in the dialect-specific app schema files, then run `pnpm db:generate-auth` and `pnpm db:generate`.
+- Drizzle Kit owns both `drizzle/postgres` and `drizzle/sqlite`. Register each generated `migration.sql` package-relative path in `src/migrations.ts`; add a directory only for an independent migration ledger root.
 - Migration execution is explicit. Do not run production migrations or destructive cleanup as an incidental validation step.
 
 ## Configuration and Public Surface

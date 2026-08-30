@@ -113,12 +113,8 @@ describe("server extensions", () => {
         files: ["extension/drizzle/0000.sql"],
       },
       sqlite: {
-        directories: [{
-          id: "extension",
-          path: "extension/auth-migrations",
-          files: ["0001.sql"],
-        }],
-        files: ["extension/auth-migrations/0001.sql"],
+        directories: [{ id: "extension", path: "extension/drizzle/sqlite" }],
+        files: ["extension/drizzle/sqlite/0000_baseline/migration.sql"],
       },
     })).toEqual({
       postgres: {
@@ -127,25 +123,18 @@ describe("server extensions", () => {
           { id: "extension", path: "extension/drizzle" },
         ],
         files: [
-          "drizzle/20260828162616_baseline/migration.sql",
-          "drizzle/20260828180826_stiff_natasha_romanoff/migration.sql",
-          "drizzle/20260828182417_cool_cerebro/migration.sql",
-          "drizzle/20260829014710_sturdy_korg/migration.sql",
+          "drizzle/postgres/20260830001527_open_blue_shield/migration.sql",
           "extension/drizzle/0000.sql",
         ],
       },
       sqlite: {
         directories: [
           ...serverMigrationManifest.sqlite.directories,
-          { id: "extension", path: "extension/auth-migrations", files: ["0001.sql"] },
+          { id: "extension", path: "extension/drizzle/sqlite" },
         ],
         files: [
-          "auth-migrations/0001_better_auth.sql",
-          "auth-migrations/0002_server.sql",
-          "auth-migrations/0003_artifact.sql",
-          "auth-migrations/0004_artifact_reservation.sql",
-          "auth-migrations/0005_artifact_storage_key.sql",
-          "extension/auth-migrations/0001.sql",
+          "drizzle/sqlite/20260830001528_stiff_alex_power/migration.sql",
+          "extension/drizzle/sqlite/0000_baseline/migration.sql",
         ],
       },
     });

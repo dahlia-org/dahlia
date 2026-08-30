@@ -18,5 +18,5 @@
     "target": "ES2023",
     "types": ["node", "vite/client", "vitest/globals"]
   },
-  "include": ["src", "tests", "*.ts", "worker-configuration.d.ts"]
+  "include": ["src", "tests", "scripts/*.ts", "*.ts", "worker-configuration.d.ts"]
 }

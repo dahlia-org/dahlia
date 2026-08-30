@@ -1,11 +1,13 @@
 import type { DBAdapterInstance } from "better-auth";
-import { drizzleAdapter } from "better-auth/adapters/drizzle";
+import { drizzleAdapter } from "@better-auth/drizzle-adapter/relations-v2";
 import { and, asc, desc, eq, gt, isNull } from "drizzle-orm";
 import { drizzle as drizzleD1 } from "drizzle-orm/d1";
 
 import { gatewayResource, type AppConfig } from "../config";
-import type { PostgresDatabase, SQLiteDatabase } from "../db/client";
 import * as postgresSchema from "../db/auth-schema";
+import type { PostgresDatabase, SQLiteDatabase } from "../db/client";
+import * as postgresAuthSchema from "../db/generated/postgres-auth-schema";
+import * as sqliteAuthSchema from "../db/generated/sqlite-auth-schema";
 import * as sqliteSchema from "../db/sqlite-schema";
 import { OAUTH_SCOPES } from "./scopes";
 
@@ -107,7 +109,7 @@ export type AuthStore = ApplicationStore;
 
 export function createPostgresApplicationStore(db: PostgresDatabase): ApplicationStore {
   return {
-    database: drizzleAdapter(db, { provider: "pg", schema: postgresSchema }),
+    database: drizzleAdapter(db, { provider: "pg", schema: postgresAuthSchema }),
     async seedDahliaClient(config) {
       const now = new Date();
       await db.insert(postgresSchema.oauthClient).values({
@@ -272,7 +274,7 @@ export function createPostgresApplicationStore(db: PostgresDatabase): Applicatio
 
 export function createSqliteApplicationStore(db: SQLiteDatabase, transactions = false): ApplicationStore {
   return {
-    database: drizzleAdapter(db, { provider: "sqlite", schema: sqliteSchema, transaction: transactions }),
+    database: drizzleAdapter(db, { provider: "sqlite", schema: sqliteAuthSchema, transaction: transactions }),
     async seedDahliaClient(config) {
       const now = new Date();
       await db.insert(sqliteSchema.oauthClient).values({

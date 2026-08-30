@@ -1,9 +1,10 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import { mkdirSync, readFileSync } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { mkdirSync } from "node:fs";
+import { dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 import { drizzle } from "drizzle-orm/sqlite-proxy";
+import { migrate as migrateSqlite } from "drizzle-orm/sqlite-proxy/migrator";
 
 import type { AppConfig } from "../config";
 import { connectApplicationDatabase, migrateApplicationDatabase } from "../db/client";
@@ -74,6 +75,29 @@ export function createNodeApplicationStore(
     },
   });
   const store = createSqliteApplicationStore(transactionalSqlite, true);
+  const applyMigrationQueries = (queries: string[]) => {
+    for (const query of queries) database.exec(query);
+    return Promise.resolve();
+  };
+  const migrate = async () => {
+    const directoryIds = new Set<string>();
+    for (const { id, path } of migrations.sqlite.directories) {
+      if (!/^[a-z][a-z0-9_]{0,31}$/.test(id)) throw new Error(`Invalid SQLite migration ledger ID: ${id}`);
+      if (directoryIds.has(id)) throw new Error(`Duplicate SQLite migration ledger ID: ${id}`);
+      directoryIds.add(id);
+      database.exec("BEGIN IMMEDIATE");
+      try {
+        await migrateSqlite(transactionalSqlite, applyMigrationQueries, {
+          migrationsFolder: path,
+          ...(id === "server" ? {} : { migrationsTable: `__dahlia_${id}_migrations` }),
+        });
+        database.exec("COMMIT");
+      } catch (error) {
+        database.exec("ROLLBACK");
+        throw error;
+      }
+    }
+  };
   return {
     ...store,
     close: () => {
@@ -81,42 +105,9 @@ export function createNodeApplicationStore(
       return Promise.resolve();
     },
     migrate() {
-      database.exec(`CREATE TABLE IF NOT EXISTS "_dahlia_auth_migrations" (
-        "name" TEXT PRIMARY KEY NOT NULL, "appliedAt" TEXT NOT NULL
-      )`);
-      const directoryIds = new Set<string>();
-      const files = migrations.sqlite.directories.flatMap(({ id, path, files: declaredFiles }) => {
-        if (!/^[a-z][a-z0-9_]{0,31}$/.test(id)) throw new Error(`Invalid SQLite migration ledger ID: ${id}`);
-        if (directoryIds.has(id)) throw new Error(`Duplicate SQLite migration ledger ID: ${id}`);
-        directoryIds.add(id);
-        return declaredFiles.map((name) => {
-          if (basename(name) !== name || !name.endsWith(".sql")) {
-            throw new Error(`Invalid SQLite migration file: ${name}`);
-          }
-          return { id, path, name };
-        });
-      });
-      const manifestNames = migrations.sqlite.files.map((file) => basename(file)).sort();
-      const executionNames = files.map(({ name }) => name).sort();
-      if (manifestNames.join("\0") !== executionNames.join("\0")) {
-        throw new Error("SQLite migration directory files do not match the manifest");
-      }
-      for (const { id, path, name } of files) {
-        const ledgerName = `${id}/${name}`;
-        const applied = database.prepare('SELECT 1 FROM "_dahlia_auth_migrations" WHERE "name" = ?').get(ledgerName);
-        if (applied) continue;
-        database.exec("BEGIN");
-        try {
-          database.exec(readFileSync(join(path, name), "utf8"));
-          database.prepare('INSERT INTO "_dahlia_auth_migrations" ("name", "appliedAt") VALUES (?, ?)')
-            .run(ledgerName, new Date().toISOString());
-          database.exec("COMMIT");
-        } catch (error) {
-          database.exec("ROLLBACK");
-          throw error;
-        }
-      }
-      return Promise.resolve();
+      const result = pending.then(() => transaction.run(true, migrate));
+      pending = result.then(() => undefined, () => undefined);
+      return result;
     },
   };
 }
