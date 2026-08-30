@@ -134,6 +134,7 @@ export class GatewayService {
   private async databricksModels(request: Request): Promise<DatabricksModel[]> {
     const provider = this.config.provider;
     if (provider?.backend !== "databricks") return [];
+    const deadline = AbortSignal.timeout(DATABRICKS_MODEL_TIMEOUT_MS);
     let token: string;
     try {
       token = await this.databricksTokens!.getToken();
@@ -143,7 +144,7 @@ export class GatewayService {
       });
     }
     const authorization = `Bearer ${token}`;
-    const signal = AbortSignal.any([request.signal, AbortSignal.timeout(DATABRICKS_MODEL_TIMEOUT_MS)]);
+    const signal = AbortSignal.any([request.signal, deadline]);
     const models: DatabricksModel[] = [];
     const pageTokens = new Set<string>();
     let pageToken: string | undefined;

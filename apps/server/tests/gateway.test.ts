@@ -114,8 +114,11 @@ describe("AI Gateway", () => {
   });
 
   it("bounds Databricks model discovery", async () => {
-    const timeoutSignal = AbortSignal.abort(new Error("timeout"));
-    const timeout = vi.spyOn(AbortSignal, "timeout").mockReturnValue(timeoutSignal);
+    const deadline = AbortSignal.abort(new Error("timeout"));
+    const tokenTimeout = new AbortController().signal;
+    const timeout = vi.spyOn(AbortSignal, "timeout")
+      .mockReturnValueOnce(deadline)
+      .mockReturnValueOnce(tokenTimeout);
     const transport = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       if (String(input).endsWith("/oidc/v1/token")) {
         return Response.json({ access_token: "app-token", expires_in: 3600 });
@@ -128,6 +131,7 @@ describe("AI Gateway", () => {
     await service.adminModels(new Request("https://dahlia.example/api/admin/models"));
 
     expect(timeout).toHaveBeenCalledWith(30_000);
+    expect(timeout.mock.calls).toHaveLength(2);
     timeout.mockRestore();
   });
 
