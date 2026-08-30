@@ -27,7 +27,7 @@ CREATE TABLE "jwks" (
 --> statement-breakpoint
 CREATE TABLE "oauth_access_token" (
 	"id" text PRIMARY KEY,
-	"token" text NOT NULL UNIQUE,
+	"token" text UNIQUE,
 	"client_id" text NOT NULL,
 	"session_id" text,
 	"user_id" text,
@@ -36,8 +36,8 @@ CREATE TABLE "oauth_access_token" (
 	"resources" text[],
 	"requested_user_info_claims" text[],
 	"refresh_id" text,
-	"expires_at" timestamp NOT NULL,
-	"created_at" timestamp NOT NULL,
+	"expires_at" timestamp,
+	"created_at" timestamp,
 	"revoked" timestamp,
 	"confirmation" jsonb,
 	"scopes" text[] NOT NULL
@@ -103,8 +103,8 @@ CREATE TABLE "oauth_consent" (
 	"resources" text[],
 	"requested_user_info_claims" text[],
 	"scopes" text[] NOT NULL,
-	"created_at" timestamp NOT NULL,
-	"updated_at" timestamp NOT NULL
+	"created_at" timestamp,
+	"updated_at" timestamp
 );
 --> statement-breakpoint
 CREATE TABLE "oauth_refresh_token" (
@@ -117,8 +117,8 @@ CREATE TABLE "oauth_refresh_token" (
 	"authorization_code_id" text,
 	"resources" text[],
 	"requested_user_info_claims" text[],
-	"expires_at" timestamp NOT NULL,
-	"created_at" timestamp NOT NULL,
+	"expires_at" timestamp,
+	"created_at" timestamp,
 	"revoked" timestamp,
 	"rotated_at" timestamp,
 	"rotation_replay_response" text,

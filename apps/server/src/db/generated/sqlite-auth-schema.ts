@@ -1,4 +1,4 @@
-import { sql } from "drizzle-orm";
+import { defineRelationsPart, sql } from "drizzle-orm";
 import {
   sqliteTable,
   text,
@@ -223,8 +223,8 @@ export const oauthRefreshToken = sqliteTable(
     requestedUserInfoClaims: text("requested_user_info_claims", {
       mode: "json",
     }),
-    expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
-    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+    expiresAt: integer("expires_at", { mode: "timestamp_ms" }),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }),
     revoked: integer("revoked", { mode: "timestamp_ms" }),
     rotatedAt: integer("rotated_at", { mode: "timestamp_ms" }),
     rotationReplayResponse: text("rotation_replay_response"),
@@ -249,7 +249,7 @@ export const oauthAccessToken = sqliteTable(
   "oauth_access_token",
   {
     id: text("id").primaryKey(),
-    token: text("token").notNull().unique(),
+    token: text("token").unique(),
     clientId: text("client_id")
       .notNull()
       .references(() => oauthClient.clientId, { onDelete: "cascade" }),
@@ -266,8 +266,8 @@ export const oauthAccessToken = sqliteTable(
     refreshId: text("refresh_id").references(() => oauthRefreshToken.id, {
       onDelete: "cascade",
     }),
-    expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
-    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+    expiresAt: integer("expires_at", { mode: "timestamp_ms" }),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }),
     revoked: integer("revoked", { mode: "timestamp_ms" }),
     confirmation: text("confirmation", { mode: "json" }),
     scopes: text("scopes", { mode: "json" }).notNull(),
@@ -297,8 +297,8 @@ export const oauthConsent = sqliteTable(
       mode: "json",
     }),
     scopes: text("scopes", { mode: "json" }).notNull(),
-    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
-    updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" }),
   },
   (table) => [
     index("oauthConsent_clientId_idx").on(table.clientId),
@@ -310,3 +310,152 @@ export const oauthClientAssertion = sqliteTable("oauth_client_assertion", {
   id: text("id").primaryKey(),
   expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
 });
+
+export const authRelations = defineRelationsPart(
+  {
+    user,
+    session,
+    account,
+    verification,
+    jwks,
+    oauthClient,
+    oauthResource,
+    oauthClientResource,
+    oauthRefreshToken,
+    oauthAccessToken,
+    oauthConsent,
+    oauthClientAssertion,
+  },
+  (r) => ({
+    user: {
+      sessions: r.many.session({
+        from: r.user.id,
+        to: r.session.userId,
+      }),
+      accounts: r.many.account({
+        from: r.user.id,
+        to: r.account.userId,
+      }),
+      oauthClients: r.many.oauthClient({
+        from: r.user.id,
+        to: r.oauthClient.userId,
+      }),
+      oauthRefreshTokens: r.many.oauthRefreshToken({
+        from: r.user.id,
+        to: r.oauthRefreshToken.userId,
+      }),
+      oauthAccessTokens: r.many.oauthAccessToken({
+        from: r.user.id,
+        to: r.oauthAccessToken.userId,
+      }),
+      oauthConsents: r.many.oauthConsent({
+        from: r.user.id,
+        to: r.oauthConsent.userId,
+      }),
+    },
+    session: {
+      user: r.one.user({
+        from: r.session.userId,
+        to: r.user.id,
+      }),
+      oauthRefreshTokens: r.many.oauthRefreshToken({
+        from: r.session.id,
+        to: r.oauthRefreshToken.sessionId,
+      }),
+      oauthAccessTokens: r.many.oauthAccessToken({
+        from: r.session.id,
+        to: r.oauthAccessToken.sessionId,
+      }),
+    },
+    account: {
+      user: r.one.user({
+        from: r.account.userId,
+        to: r.user.id,
+      }),
+    },
+    oauthClient: {
+      user: r.one.user({
+        from: r.oauthClient.userId,
+        to: r.user.id,
+      }),
+      oauthClientResources: r.many.oauthClientResource({
+        from: r.oauthClient.clientId,
+        to: r.oauthClientResource.clientId,
+      }),
+      oauthRefreshTokens: r.many.oauthRefreshToken({
+        from: r.oauthClient.clientId,
+        to: r.oauthRefreshToken.clientId,
+      }),
+      oauthAccessTokens: r.many.oauthAccessToken({
+        from: r.oauthClient.clientId,
+        to: r.oauthAccessToken.clientId,
+      }),
+      oauthConsents: r.many.oauthConsent({
+        from: r.oauthClient.clientId,
+        to: r.oauthConsent.clientId,
+      }),
+    },
+    oauthResource: {
+      oauthClientResources: r.many.oauthClientResource({
+        from: r.oauthResource.identifier,
+        to: r.oauthClientResource.resourceId,
+      }),
+    },
+    oauthClientResource: {
+      oauthClient: r.one.oauthClient({
+        from: r.oauthClientResource.clientId,
+        to: r.oauthClient.clientId,
+      }),
+      oauthResource: r.one.oauthResource({
+        from: r.oauthClientResource.resourceId,
+        to: r.oauthResource.identifier,
+      }),
+    },
+    oauthRefreshToken: {
+      oauthClient: r.one.oauthClient({
+        from: r.oauthRefreshToken.clientId,
+        to: r.oauthClient.clientId,
+      }),
+      session: r.one.session({
+        from: r.oauthRefreshToken.sessionId,
+        to: r.session.id,
+      }),
+      user: r.one.user({
+        from: r.oauthRefreshToken.userId,
+        to: r.user.id,
+      }),
+      oauthAccessTokens: r.many.oauthAccessToken({
+        from: r.oauthRefreshToken.id,
+        to: r.oauthAccessToken.refreshId,
+      }),
+    },
+    oauthAccessToken: {
+      oauthClient: r.one.oauthClient({
+        from: r.oauthAccessToken.clientId,
+        to: r.oauthClient.clientId,
+      }),
+      session: r.one.session({
+        from: r.oauthAccessToken.sessionId,
+        to: r.session.id,
+      }),
+      user: r.one.user({
+        from: r.oauthAccessToken.userId,
+        to: r.user.id,
+      }),
+      oauthRefreshToken: r.one.oauthRefreshToken({
+        from: r.oauthAccessToken.refreshId,
+        to: r.oauthRefreshToken.id,
+      }),
+    },
+    oauthConsent: {
+      oauthClient: r.one.oauthClient({
+        from: r.oauthConsent.clientId,
+        to: r.oauthClient.clientId,
+      }),
+      user: r.one.user({
+        from: r.oauthConsent.userId,
+        to: r.user.id,
+      }),
+    },
+  }),
+);

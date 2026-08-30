@@ -28,7 +28,7 @@ CREATE TABLE `jwks` (
 --> statement-breakpoint
 CREATE TABLE `oauth_access_token` (
 	`id` text PRIMARY KEY,
-	`token` text NOT NULL UNIQUE,
+	`token` text UNIQUE,
 	`client_id` text NOT NULL,
 	`session_id` text,
 	`user_id` text,
@@ -37,8 +37,8 @@ CREATE TABLE `oauth_access_token` (
 	`resources` text,
 	`requested_user_info_claims` text,
 	`refresh_id` text,
-	`expires_at` integer NOT NULL,
-	`created_at` integer NOT NULL,
+	`expires_at` integer,
+	`created_at` integer,
 	`revoked` integer,
 	`confirmation` text,
 	`scopes` text NOT NULL,
@@ -111,8 +111,8 @@ CREATE TABLE `oauth_consent` (
 	`resources` text,
 	`requested_user_info_claims` text,
 	`scopes` text NOT NULL,
-	`created_at` integer NOT NULL,
-	`updated_at` integer NOT NULL,
+	`created_at` integer,
+	`updated_at` integer,
 	CONSTRAINT `fk_oauth_consent_client_id_oauth_client_client_id_fk` FOREIGN KEY (`client_id`) REFERENCES `oauth_client`(`client_id`) ON DELETE CASCADE,
 	CONSTRAINT `fk_oauth_consent_user_id_user_id_fk` FOREIGN KEY (`user_id`) REFERENCES `user`(`id`) ON DELETE CASCADE
 );
@@ -127,8 +127,8 @@ CREATE TABLE `oauth_refresh_token` (
 	`authorization_code_id` text,
 	`resources` text,
 	`requested_user_info_claims` text,
-	`expires_at` integer NOT NULL,
-	`created_at` integer NOT NULL,
+	`expires_at` integer,
+	`created_at` integer,
 	`revoked` integer,
 	`rotated_at` integer,
 	`rotation_replay_response` text,
