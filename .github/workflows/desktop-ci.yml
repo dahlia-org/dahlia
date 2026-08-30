@@ -1,13 +1,19 @@
-name: CI
+name: Desktop CI
 
 on:
   pull_request:
+    paths:
+      - ".github/workflows/desktop-ci.yml"
+      - "apps/desktop/**"
   push:
     branches:
       - main
+    paths:
+      - ".github/workflows/desktop-ci.yml"
+      - "apps/desktop/**"
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: desktop-ci-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -17,8 +23,8 @@ env:
   DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
 
 jobs:
-  lint:
-    name: Lint
+  desktop-lint:
+    name: Desktop Lint
     runs-on: macos-26
 
     steps:
@@ -48,8 +54,8 @@ jobs:
       - name: Test release scripts
         run: ./scripts/test-release-scripts.sh
 
-  unit-tests:
-    name: Unit Tests
+  desktop-unit-tests:
+    name: Desktop Unit Tests
     runs-on: macos-26
     timeout-minutes: 15
 
