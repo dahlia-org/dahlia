@@ -40,7 +40,7 @@ Copy the database name and ID returned by the first command into `d1_databases[0
 
 Set the bucket name in the `DAHLIA_STORAGE` binding. The Worker uses that binding for upload, download, metadata, and deletion; no S3 credentials are required for the `r2` backend.
 
-For Hyperdrive, start from the alternate template and replace its Hyperdrive ID, create the user-owned `dahlia` schema, then apply the unqualified PostgreSQL SQL under `apps/server/drizzle/postgres` with `search_path=dahlia`. Keep the binding name `HYPERDRIVE` unchanged.
+For Hyperdrive, start from the alternate template and replace its Hyperdrive ID, then apply the schema-qualified PostgreSQL SQL under `apps/server/drizzle/postgres`. The migration creates the user-owned `auth` and `dahlia` schemas. Keep the binding name `HYPERDRIVE` unchanged.
 
 ## 3. Configure authentication
 

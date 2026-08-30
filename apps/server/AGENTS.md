@@ -46,8 +46,13 @@ Use the [ADR index](../../docs/adr/README.md) only when historical rationale or 
 
 - Better Auth and Dahlia application tables share one Drizzle application database. Node supports SQLite, PostgreSQL, and Lakebase; Workers support D1, Hyperdrive, and direct PostgreSQL.
 - Released migrations are immutable. Add forward-only migrations; never edit, reorder, or silently omit an existing migration.
-- `scripts/generate-auth-schema.mjs` regenerates only the Better Auth schemas. Keep Dahlia-owned tables in the dialect-specific app schema files, then run `pnpm db:generate-auth` and `pnpm db:generate`.
-- Drizzle Kit owns both `drizzle/postgres` and `drizzle/sqlite`. Register each generated `migration.sql` package-relative path in `src/migrations.ts`; add a directory only for an independent migration ledger root.
+- Treat the Drizzle schemas as the source of truth and use Drizzle Kit to generate migrations. Hand-write SQL only for data migrations or DDL that Drizzle cannot express, using a new custom migration while keeping the declarative schema synchronized.
+- `pnpm db:generate-auth` uses the pinned official Better Auth CLI to regenerate only `src/db/generated/postgres-auth-schema.ts` and `src/db/generated/sqlite-auth-schema.ts`. Keep those outputs unmodified and keep Dahlia-owned tables in the adjacent dialect-specific app schema files.
+- Better Auth tables live in the PostgreSQL `auth` schema and are outside the application RLS policy. SQLite and D1 have no schema namespaces, so their Better Auth tables remain top-level. Do not add RLS or hand-written DDL to generated Better Auth declarations.
+- PostgreSQL tables containing Dahlia-owned user content require declaratively defined RLS policies in addition to application authorization. The policy design must identify the request identity source and account for table-owner and privileged-role RLS bypass.
+- SQLite and D1 do not provide PostgreSQL RLS. Keep equivalent owner checks in the shared application/store layer; never remove them because PostgreSQL has RLS.
+- `dahlia.artifact` and `dahlia.artifact_reservation` are exempt from RLS while they contain only authorization/storage metadata and are reachable only through owner-scoped Server operations. Revisit the exemption before storing user content or exposing another database access path.
+- Drizzle Kit owns both `drizzle/postgres` and `drizzle/sqlite`. Run `pnpm db:generate` after declarative schema changes, preserve generated snapshots after release, and register each generated `migration.sql` package-relative path in `src/migrations.ts`; add a directory only for an independent migration ledger root.
 - Migration execution is explicit. Do not run production migrations or destructive cleanup as an incidental validation step.
 
 ## Configuration and Public Surface

@@ -109,7 +109,7 @@ export type AuthStore = ApplicationStore;
 
 export function createPostgresApplicationStore(db: PostgresDatabase): ApplicationStore {
   return {
-    database: drizzleAdapter(db, { provider: "pg", schema: postgresAuthSchema }),
+    database: drizzleAdapter(db, { provider: "pg", schema: postgresAuthSchema, schemaName: "auth" }),
     async seedDahliaClient(config) {
       const now = new Date();
       await db.insert(postgresSchema.oauthClient).values({

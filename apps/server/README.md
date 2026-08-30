@@ -16,9 +16,9 @@ Better Auth, Gateway administration, and future meeting cloud sync share one Dri
 | `hyperdrive` | Cloudflare Worker | `HYPERDRIVE` binding |
 | `d1` | Cloudflare Worker | `dahlia_db_prod` binding |
 
-Node supports `sqlite`, `postgres`, and `lakebase`; Workers support `d1`, `hyperdrive`, and direct `postgres`. PostgreSQL-compatible connections use one `dahlia` schema owned by the connection user. Lakebase uses the official `@databricks/lakebase` pool for OAuth credential refresh.
+Node supports `sqlite`, `postgres`, and `lakebase`; Workers support `d1`, `hyperdrive`, and direct `postgres`. PostgreSQL-compatible connections keep Better Auth tables in `auth` and Dahlia-owned tables in `dahlia`; both schemas are owned by the connection user. Lakebase uses the official `@databricks/lakebase` pool for OAuth credential refresh.
 
-Better Auth schemas are generated into `src/db/generated`; Dahlia tables remain in the adjacent app schema files. `pnpm db:generate-auth` refreshes the auth definitions and `pnpm db:generate` produces one Drizzle migration stream per dialect under `drizzle/postgres` and `drizzle/sqlite`. The relations-v2 adapter is used with joins disabled. PostgreSQL migrations are intentionally unqualified and run with `search_path=dahlia`.
+Better Auth schemas are generated unmodified into `src/db/generated`; Dahlia tables remain in the adjacent app schema files. `pnpm db:generate-auth` refreshes the auth definitions and `pnpm db:generate` produces one Drizzle migration stream per dialect under `drizzle/postgres` and `drizzle/sqlite`. The relations-v2 adapter is used with joins disabled. PostgreSQL migrations qualify both schemas; SQLite and D1 retain top-level tables and rely on the same application owner checks instead of RLS.
 
 ## API contract
 

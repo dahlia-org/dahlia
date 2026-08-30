@@ -127,7 +127,7 @@ describe("server extensions", () => {
           { id: "extension", path: "extension/drizzle" },
         ],
         files: [
-          "drizzle/postgres/20260830001527_open_blue_shield/migration.sql",
+          "drizzle/postgres/20260830063330_baseline/migration.sql",
           "extension/drizzle/0000.sql",
         ],
       },

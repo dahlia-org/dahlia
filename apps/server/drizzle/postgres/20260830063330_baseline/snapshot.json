@@ -1,106 +1,114 @@
 {
   "version": "8",
   "dialect": "postgres",
-  "id": "2737d6eb-bda8-48d3-b6f2-35cda96b6c62",
+  "id": "10ab4879-2cd4-4ca4-91f6-6c4934c6d9f3",
   "prevIds": [
     "00000000-0000-0000-0000-000000000000"
   ],
   "ddl": [
     {
+      "name": "auth",
+      "entityType": "schemas"
+    },
+    {
+      "name": "dahlia",
+      "entityType": "schemas"
+    },
+    {
       "isRlsEnabled": false,
       "name": "account",
       "entityType": "tables",
-      "schema": "public"
+      "schema": "auth"
     },
     {
       "isRlsEnabled": false,
       "name": "jwks",
       "entityType": "tables",
-      "schema": "public"
+      "schema": "auth"
     },
     {
       "isRlsEnabled": false,
       "name": "oauth_access_token",
       "entityType": "tables",
-      "schema": "public"
+      "schema": "auth"
     },
     {
       "isRlsEnabled": false,
       "name": "oauth_client",
       "entityType": "tables",
-      "schema": "public"
+      "schema": "auth"
     },
     {
       "isRlsEnabled": false,
       "name": "oauth_client_assertion",
       "entityType": "tables",
-      "schema": "public"
+      "schema": "auth"
     },
     {
       "isRlsEnabled": false,
       "name": "oauth_client_resource",
       "entityType": "tables",
-      "schema": "public"
+      "schema": "auth"
     },
     {
       "isRlsEnabled": false,
       "name": "oauth_consent",
       "entityType": "tables",
-      "schema": "public"
+      "schema": "auth"
     },
     {
       "isRlsEnabled": false,
       "name": "oauth_refresh_token",
       "entityType": "tables",
-      "schema": "public"
+      "schema": "auth"
     },
     {
       "isRlsEnabled": false,
       "name": "oauth_resource",
       "entityType": "tables",
-      "schema": "public"
+      "schema": "auth"
     },
     {
       "isRlsEnabled": false,
       "name": "session",
       "entityType": "tables",
-      "schema": "public"
+      "schema": "auth"
     },
     {
       "isRlsEnabled": false,
       "name": "user",
       "entityType": "tables",
-      "schema": "public"
+      "schema": "auth"
     },
     {
       "isRlsEnabled": false,
       "name": "verification",
       "entityType": "tables",
-      "schema": "public"
+      "schema": "auth"
     },
     {
       "isRlsEnabled": false,
       "name": "artifact",
       "entityType": "tables",
-      "schema": "public"
+      "schema": "dahlia"
     },
     {
       "isRlsEnabled": false,
       "name": "artifact_reservation",
       "entityType": "tables",
-      "schema": "public"
+      "schema": "dahlia"
     },
     {
       "isRlsEnabled": false,
       "name": "model_alias",
       "entityType": "tables",
-      "schema": "public"
+      "schema": "dahlia"
     },
     {
       "isRlsEnabled": false,
       "name": "platform_admin",
       "entityType": "tables",
-      "schema": "public"
+      "schema": "dahlia"
     },
     {
       "type": "text",
@@ -112,7 +120,7 @@
       "identity": null,
       "name": "id",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "account"
     },
     {
@@ -125,7 +133,7 @@
       "identity": null,
       "name": "issuer",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "account"
     },
     {
@@ -138,7 +146,7 @@
       "identity": null,
       "name": "account_id",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "account"
     },
     {
@@ -151,7 +159,7 @@
       "identity": null,
       "name": "provider_id",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "account"
     },
     {
@@ -164,7 +172,7 @@
       "identity": null,
       "name": "user_id",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "account"
     },
     {
@@ -177,7 +185,7 @@
       "identity": null,
       "name": "access_token",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "account"
     },
     {
@@ -190,7 +198,7 @@
       "identity": null,
       "name": "refresh_token",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "account"
     },
     {
@@ -203,7 +211,7 @@
       "identity": null,
       "name": "id_token",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "account"
     },
     {
@@ -216,7 +224,7 @@
       "identity": null,
       "name": "access_token_expires_at",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "account"
     },
     {
@@ -229,7 +237,7 @@
       "identity": null,
       "name": "refresh_token_expires_at",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "account"
     },
     {
@@ -242,7 +250,7 @@
       "identity": null,
       "name": "scope",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "account"
     },
     {
@@ -255,7 +263,7 @@
       "identity": null,
       "name": "password",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "account"
     },
     {
@@ -268,7 +276,7 @@
       "identity": null,
       "name": "created_at",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "account"
     },
     {
@@ -281,7 +289,7 @@
       "identity": null,
       "name": "updated_at",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "account"
     },
     {
@@ -294,7 +302,7 @@
       "identity": null,
       "name": "id",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "jwks"
     },
     {
@@ -307,7 +315,7 @@
       "identity": null,
       "name": "public_key",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "jwks"
     },
     {
@@ -320,7 +328,7 @@
       "identity": null,
       "name": "private_key",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "jwks"
     },
     {
@@ -333,7 +341,7 @@
       "identity": null,
       "name": "created_at",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "jwks"
     },
     {
@@ -346,7 +354,7 @@
       "identity": null,
       "name": "expires_at",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "jwks"
     },
     {
@@ -359,7 +367,7 @@
       "identity": null,
       "name": "alg",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "jwks"
     },
     {
@@ -372,7 +380,7 @@
       "identity": null,
       "name": "crv",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "jwks"
     },
     {
@@ -385,7 +393,7 @@
       "identity": null,
       "name": "id",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_access_token"
     },
     {
@@ -398,7 +406,7 @@
       "identity": null,
       "name": "token",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_access_token"
     },
     {
@@ -411,7 +419,7 @@
       "identity": null,
       "name": "client_id",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_access_token"
     },
     {
@@ -424,7 +432,7 @@
       "identity": null,
       "name": "session_id",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_access_token"
     },
     {
@@ -437,7 +445,7 @@
       "identity": null,
       "name": "user_id",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_access_token"
     },
     {
@@ -450,7 +458,7 @@
       "identity": null,
       "name": "reference_id",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_access_token"
     },
     {
@@ -463,7 +471,7 @@
       "identity": null,
       "name": "authorization_code_id",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_access_token"
     },
     {
@@ -476,7 +484,7 @@
       "identity": null,
       "name": "resources",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_access_token"
     },
     {
@@ -489,7 +497,7 @@
       "identity": null,
       "name": "requested_user_info_claims",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_access_token"
     },
     {
@@ -502,7 +510,7 @@
       "identity": null,
       "name": "refresh_id",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_access_token"
     },
     {
@@ -515,7 +523,7 @@
       "identity": null,
       "name": "expires_at",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_access_token"
     },
     {
@@ -528,7 +536,7 @@
       "identity": null,
       "name": "created_at",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_access_token"
     },
     {
@@ -541,7 +549,7 @@
       "identity": null,
       "name": "revoked",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_access_token"
     },
     {
@@ -554,7 +562,7 @@
       "identity": null,
       "name": "confirmation",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_access_token"
     },
     {
@@ -567,7 +575,7 @@
       "identity": null,
       "name": "scopes",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_access_token"
     },
     {
@@ -580,7 +588,7 @@
       "identity": null,
       "name": "id",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_client"
     },
     {
@@ -593,7 +601,7 @@
       "identity": null,
       "name": "client_id",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_client"
     },
     {
@@ -606,7 +614,7 @@
       "identity": null,
       "name": "client_secret",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_client"
     },
     {
@@ -619,7 +627,7 @@
       "identity": null,
       "name": "client_discovery_id",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_client"
     },
     {
@@ -632,7 +640,7 @@
       "identity": null,
       "name": "disabled",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_client"
     },
     {
@@ -645,7 +653,7 @@
       "identity": null,
       "name": "skip_consent",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_client"
     },
     {
@@ -658,7 +666,7 @@
       "identity": null,
       "name": "enable_end_session",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_client"
     },
     {
@@ -671,7 +679,7 @@
       "identity": null,
       "name": "subject_type",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_client"
     },
     {
@@ -684,7 +692,7 @@
       "identity": null,
       "name": "scopes",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_client"
     },
     {
@@ -697,7 +705,7 @@
       "identity": null,
       "name": "client_credentials_scopes",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_client"
     },
     {
@@ -710,7 +718,7 @@
       "identity": null,
       "name": "user_id",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_client"
     },
     {
@@ -723,7 +731,7 @@
       "identity": null,
       "name": "created_at",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_client"
     },
     {
@@ -736,7 +744,7 @@
       "identity": null,
       "name": "updated_at",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_client"
     },
     {
@@ -749,7 +757,7 @@
       "identity": null,
       "name": "name",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_client"
     },
     {
@@ -762,7 +770,7 @@
       "identity": null,
       "name": "uri",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_client"
     },
     {
@@ -775,7 +783,7 @@
       "identity": null,
       "name": "icon",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_client"
     },
     {
@@ -788,7 +796,7 @@
       "identity": null,
       "name": "contacts",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_client"
     },
     {
@@ -801,7 +809,7 @@
       "identity": null,
       "name": "tos",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_client"
     },
     {
@@ -814,7 +822,7 @@
       "identity": null,
       "name": "policy",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_client"
     },
     {
@@ -827,7 +835,7 @@
       "identity": null,
       "name": "software_id",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_client"
     },
     {
@@ -840,7 +848,7 @@
       "identity": null,
       "name": "software_version",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_client"
     },
     {
@@ -853,7 +861,7 @@
       "identity": null,
       "name": "software_statement",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_client"
     },
     {
@@ -866,7 +874,7 @@
       "identity": null,
       "name": "redirect_uris",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_client"
     },
     {
@@ -879,7 +887,7 @@
       "identity": null,
       "name": "post_logout_redirect_uris",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_client"
     },
     {
@@ -892,7 +900,7 @@
       "identity": null,
       "name": "backchannel_logout_uri",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_client"
     },
     {
@@ -905,7 +913,7 @@
       "identity": null,
       "name": "backchannel_logout_session_required",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_client"
     },
     {
@@ -918,7 +926,7 @@
       "identity": null,
       "name": "token_endpoint_auth_method",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_client"
     },
     {
@@ -931,7 +939,7 @@
       "identity": null,
       "name": "application_type",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_client"
     },
     {
@@ -944,7 +952,7 @@
       "identity": null,
       "name": "jwks",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_client"
     },
     {
@@ -957,7 +965,7 @@
       "identity": null,
       "name": "jwks_uri",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_client"
     },
     {
@@ -970,7 +978,7 @@
       "identity": null,
       "name": "grant_types",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_client"
     },
     {
@@ -983,7 +991,7 @@
       "identity": null,
       "name": "response_types",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_client"
     },
     {
@@ -996,7 +1004,7 @@
       "identity": null,
       "name": "require_pkce",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_client"
     },
     {
@@ -1009,7 +1017,7 @@
       "identity": null,
       "name": "dpop_bound_access_tokens",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_client"
     },
     {
@@ -1022,7 +1030,7 @@
       "identity": null,
       "name": "reference_id",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_client"
     },
     {
@@ -1035,7 +1043,7 @@
       "identity": null,
       "name": "metadata",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_client"
     },
     {
@@ -1048,7 +1056,7 @@
       "identity": null,
       "name": "id",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_client_assertion"
     },
     {
@@ -1061,7 +1069,7 @@
       "identity": null,
       "name": "expires_at",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_client_assertion"
     },
     {
@@ -1074,7 +1082,7 @@
       "identity": null,
       "name": "id",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_client_resource"
     },
     {
@@ -1087,7 +1095,7 @@
       "identity": null,
       "name": "client_id",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_client_resource"
     },
     {
@@ -1100,7 +1108,7 @@
       "identity": null,
       "name": "resource_id",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_client_resource"
     },
     {
@@ -1113,7 +1121,7 @@
       "identity": null,
       "name": "metadata",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_client_resource"
     },
     {
@@ -1126,7 +1134,7 @@
       "identity": null,
       "name": "created_at",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_client_resource"
     },
     {
@@ -1139,7 +1147,7 @@
       "identity": null,
       "name": "id",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_consent"
     },
     {
@@ -1152,7 +1160,7 @@
       "identity": null,
       "name": "client_id",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_consent"
     },
     {
@@ -1165,7 +1173,7 @@
       "identity": null,
       "name": "user_id",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_consent"
     },
     {
@@ -1178,7 +1186,7 @@
       "identity": null,
       "name": "reference_id",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_consent"
     },
     {
@@ -1191,7 +1199,7 @@
       "identity": null,
       "name": "resources",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_consent"
     },
     {
@@ -1204,7 +1212,7 @@
       "identity": null,
       "name": "requested_user_info_claims",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_consent"
     },
     {
@@ -1217,7 +1225,7 @@
       "identity": null,
       "name": "scopes",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_consent"
     },
     {
@@ -1230,7 +1238,7 @@
       "identity": null,
       "name": "created_at",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_consent"
     },
     {
@@ -1243,7 +1251,7 @@
       "identity": null,
       "name": "updated_at",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_consent"
     },
     {
@@ -1256,7 +1264,7 @@
       "identity": null,
       "name": "id",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_refresh_token"
     },
     {
@@ -1269,7 +1277,7 @@
       "identity": null,
       "name": "token",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_refresh_token"
     },
     {
@@ -1282,7 +1290,7 @@
       "identity": null,
       "name": "client_id",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_refresh_token"
     },
     {
@@ -1295,7 +1303,7 @@
       "identity": null,
       "name": "session_id",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_refresh_token"
     },
     {
@@ -1308,7 +1316,7 @@
       "identity": null,
       "name": "user_id",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_refresh_token"
     },
     {
@@ -1321,7 +1329,7 @@
       "identity": null,
       "name": "reference_id",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_refresh_token"
     },
     {
@@ -1334,7 +1342,7 @@
       "identity": null,
       "name": "authorization_code_id",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_refresh_token"
     },
     {
@@ -1347,7 +1355,7 @@
       "identity": null,
       "name": "resources",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_refresh_token"
     },
     {
@@ -1360,7 +1368,7 @@
       "identity": null,
       "name": "requested_user_info_claims",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_refresh_token"
     },
     {
@@ -1373,7 +1381,7 @@
       "identity": null,
       "name": "expires_at",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_refresh_token"
     },
     {
@@ -1386,7 +1394,7 @@
       "identity": null,
       "name": "created_at",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_refresh_token"
     },
     {
@@ -1399,7 +1407,7 @@
       "identity": null,
       "name": "revoked",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_refresh_token"
     },
     {
@@ -1412,7 +1420,7 @@
       "identity": null,
       "name": "rotated_at",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_refresh_token"
     },
     {
@@ -1425,7 +1433,7 @@
       "identity": null,
       "name": "rotation_replay_response",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_refresh_token"
     },
     {
@@ -1438,7 +1446,7 @@
       "identity": null,
       "name": "rotation_replay_expires_at",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_refresh_token"
     },
     {
@@ -1451,7 +1459,7 @@
       "identity": null,
       "name": "auth_time",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_refresh_token"
     },
     {
@@ -1464,7 +1472,7 @@
       "identity": null,
       "name": "confirmation",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_refresh_token"
     },
     {
@@ -1477,7 +1485,7 @@
       "identity": null,
       "name": "scopes",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_refresh_token"
     },
     {
@@ -1490,7 +1498,7 @@
       "identity": null,
       "name": "id",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_resource"
     },
     {
@@ -1503,7 +1511,7 @@
       "identity": null,
       "name": "identifier",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_resource"
     },
     {
@@ -1516,7 +1524,7 @@
       "identity": null,
       "name": "name",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_resource"
     },
     {
@@ -1529,7 +1537,7 @@
       "identity": null,
       "name": "access_token_ttl",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_resource"
     },
     {
@@ -1542,7 +1550,7 @@
       "identity": null,
       "name": "refresh_token_ttl",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_resource"
     },
     {
@@ -1555,7 +1563,7 @@
       "identity": null,
       "name": "signing_algorithm",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_resource"
     },
     {
@@ -1568,7 +1576,7 @@
       "identity": null,
       "name": "signing_key_id",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_resource"
     },
     {
@@ -1581,7 +1589,7 @@
       "identity": null,
       "name": "allowed_scopes",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_resource"
     },
     {
@@ -1594,7 +1602,7 @@
       "identity": null,
       "name": "custom_claims",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_resource"
     },
     {
@@ -1607,7 +1615,7 @@
       "identity": null,
       "name": "dpop_bound_access_tokens_required",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_resource"
     },
     {
@@ -1620,7 +1628,7 @@
       "identity": null,
       "name": "disabled",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_resource"
     },
     {
@@ -1633,7 +1641,7 @@
       "identity": null,
       "name": "created_at",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_resource"
     },
     {
@@ -1646,7 +1654,7 @@
       "identity": null,
       "name": "updated_at",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_resource"
     },
     {
@@ -1659,7 +1667,7 @@
       "identity": null,
       "name": "policy_version",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_resource"
     },
     {
@@ -1672,7 +1680,7 @@
       "identity": null,
       "name": "metadata",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_resource"
     },
     {
@@ -1685,7 +1693,7 @@
       "identity": null,
       "name": "id",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "session"
     },
     {
@@ -1698,7 +1706,7 @@
       "identity": null,
       "name": "expires_at",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "session"
     },
     {
@@ -1711,7 +1719,7 @@
       "identity": null,
       "name": "token",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "session"
     },
     {
@@ -1724,7 +1732,7 @@
       "identity": null,
       "name": "created_at",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "session"
     },
     {
@@ -1737,7 +1745,7 @@
       "identity": null,
       "name": "updated_at",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "session"
     },
     {
@@ -1750,7 +1758,7 @@
       "identity": null,
       "name": "ip_address",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "session"
     },
     {
@@ -1763,7 +1771,7 @@
       "identity": null,
       "name": "user_agent",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "session"
     },
     {
@@ -1776,7 +1784,7 @@
       "identity": null,
       "name": "user_id",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "session"
     },
     {
@@ -1789,7 +1797,7 @@
       "identity": null,
       "name": "id",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "user"
     },
     {
@@ -1802,7 +1810,7 @@
       "identity": null,
       "name": "name",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "user"
     },
     {
@@ -1815,7 +1823,7 @@
       "identity": null,
       "name": "email",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "user"
     },
     {
@@ -1828,7 +1836,7 @@
       "identity": null,
       "name": "email_verified",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "user"
     },
     {
@@ -1841,7 +1849,7 @@
       "identity": null,
       "name": "image",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "user"
     },
     {
@@ -1854,7 +1862,7 @@
       "identity": null,
       "name": "created_at",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "user"
     },
     {
@@ -1867,7 +1875,7 @@
       "identity": null,
       "name": "updated_at",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "user"
     },
     {
@@ -1880,7 +1888,7 @@
       "identity": null,
       "name": "id",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "verification"
     },
     {
@@ -1893,7 +1901,7 @@
       "identity": null,
       "name": "identifier",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "verification"
     },
     {
@@ -1906,7 +1914,7 @@
       "identity": null,
       "name": "value",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "verification"
     },
     {
@@ -1919,7 +1927,7 @@
       "identity": null,
       "name": "expires_at",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "verification"
     },
     {
@@ -1932,7 +1940,7 @@
       "identity": null,
       "name": "created_at",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "verification"
     },
     {
@@ -1945,7 +1953,7 @@
       "identity": null,
       "name": "updated_at",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "auth",
       "table": "verification"
     },
     {
@@ -1958,7 +1966,7 @@
       "identity": null,
       "name": "id",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "dahlia",
       "table": "artifact"
     },
     {
@@ -1971,7 +1979,7 @@
       "identity": null,
       "name": "owner_workspace_id",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "dahlia",
       "table": "artifact"
     },
     {
@@ -1984,7 +1992,7 @@
       "identity": null,
       "name": "content_type",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "dahlia",
       "table": "artifact"
     },
     {
@@ -1997,7 +2005,7 @@
       "identity": null,
       "name": "storage_key",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "dahlia",
       "table": "artifact"
     },
     {
@@ -2010,7 +2018,7 @@
       "identity": null,
       "name": "visibility",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "dahlia",
       "table": "artifact"
     },
     {
@@ -2023,7 +2031,7 @@
       "identity": null,
       "name": "created_at",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "dahlia",
       "table": "artifact"
     },
     {
@@ -2036,7 +2044,7 @@
       "identity": null,
       "name": "updated_at",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "dahlia",
       "table": "artifact"
     },
     {
@@ -2049,7 +2057,7 @@
       "identity": null,
       "name": "id",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "dahlia",
       "table": "artifact_reservation"
     },
     {
@@ -2062,7 +2070,7 @@
       "identity": null,
       "name": "alias",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "dahlia",
       "table": "model_alias"
     },
     {
@@ -2075,7 +2083,7 @@
       "identity": null,
       "name": "upstream_model",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "dahlia",
       "table": "model_alias"
     },
     {
@@ -2088,7 +2096,7 @@
       "identity": null,
       "name": "display_name",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "dahlia",
       "table": "model_alias"
     },
     {
@@ -2101,7 +2109,7 @@
       "identity": null,
       "name": "enabled",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "dahlia",
       "table": "model_alias"
     },
     {
@@ -2114,7 +2122,7 @@
       "identity": null,
       "name": "created_at",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "dahlia",
       "table": "model_alias"
     },
     {
@@ -2127,7 +2135,7 @@
       "identity": null,
       "name": "updated_at",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "dahlia",
       "table": "model_alias"
     },
     {
@@ -2140,7 +2148,7 @@
       "identity": null,
       "name": "email",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "dahlia",
       "table": "platform_admin"
     },
     {
@@ -2153,7 +2161,7 @@
       "identity": null,
       "name": "created_at",
       "entityType": "columns",
-      "schema": "public",
+      "schema": "dahlia",
       "table": "platform_admin"
     },
     {
@@ -2181,7 +2189,7 @@
       "concurrently": false,
       "name": "account_issuer_accountId_uidx",
       "entityType": "indexes",
-      "schema": "public",
+      "schema": "auth",
       "table": "account"
     },
     {
@@ -2202,7 +2210,7 @@
       "concurrently": false,
       "name": "account_userId_idx",
       "entityType": "indexes",
-      "schema": "public",
+      "schema": "auth",
       "table": "account"
     },
     {
@@ -2223,7 +2231,7 @@
       "concurrently": false,
       "name": "oauthAccessToken_clientId_idx",
       "entityType": "indexes",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_access_token"
     },
     {
@@ -2244,7 +2252,7 @@
       "concurrently": false,
       "name": "oauthAccessToken_sessionId_idx",
       "entityType": "indexes",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_access_token"
     },
     {
@@ -2265,7 +2273,7 @@
       "concurrently": false,
       "name": "oauthAccessToken_userId_idx",
       "entityType": "indexes",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_access_token"
     },
     {
@@ -2286,7 +2294,7 @@
       "concurrently": false,
       "name": "oauthAccessToken_authorizationCodeId_idx",
       "entityType": "indexes",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_access_token"
     },
     {
@@ -2307,7 +2315,7 @@
       "concurrently": false,
       "name": "oauthAccessToken_refreshId_idx",
       "entityType": "indexes",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_access_token"
     },
     {
@@ -2328,7 +2336,7 @@
       "concurrently": false,
       "name": "oauthClient_userId_idx",
       "entityType": "indexes",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_client"
     },
     {
@@ -2356,7 +2364,7 @@
       "concurrently": false,
       "name": "oauthClientResource_clientId_resourceId_uidx",
       "entityType": "indexes",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_client_resource"
     },
     {
@@ -2377,7 +2385,7 @@
       "concurrently": false,
       "name": "oauthClientResource_clientId_idx",
       "entityType": "indexes",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_client_resource"
     },
     {
@@ -2398,7 +2406,7 @@
       "concurrently": false,
       "name": "oauthClientResource_resourceId_idx",
       "entityType": "indexes",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_client_resource"
     },
     {
@@ -2419,7 +2427,7 @@
       "concurrently": false,
       "name": "oauthConsent_clientId_idx",
       "entityType": "indexes",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_consent"
     },
     {
@@ -2440,7 +2448,7 @@
       "concurrently": false,
       "name": "oauthConsent_userId_idx",
       "entityType": "indexes",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_consent"
     },
     {
@@ -2461,7 +2469,7 @@
       "concurrently": false,
       "name": "oauthRefreshToken_clientId_idx",
       "entityType": "indexes",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_refresh_token"
     },
     {
@@ -2482,7 +2490,7 @@
       "concurrently": false,
       "name": "oauthRefreshToken_sessionId_idx",
       "entityType": "indexes",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_refresh_token"
     },
     {
@@ -2503,7 +2511,7 @@
       "concurrently": false,
       "name": "oauthRefreshToken_userId_idx",
       "entityType": "indexes",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_refresh_token"
     },
     {
@@ -2524,7 +2532,7 @@
       "concurrently": false,
       "name": "oauthRefreshToken_authorizationCodeId_idx",
       "entityType": "indexes",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_refresh_token"
     },
     {
@@ -2545,7 +2553,7 @@
       "concurrently": false,
       "name": "session_userId_idx",
       "entityType": "indexes",
-      "schema": "public",
+      "schema": "auth",
       "table": "session"
     },
     {
@@ -2566,7 +2574,7 @@
       "concurrently": false,
       "name": "verification_identifier_idx",
       "entityType": "indexes",
-      "schema": "public",
+      "schema": "auth",
       "table": "verification"
     },
     {
@@ -2574,7 +2582,7 @@
       "columns": [
         "user_id"
       ],
-      "schemaTo": "public",
+      "schemaTo": "auth",
       "tableTo": "user",
       "columnsTo": [
         "id"
@@ -2583,7 +2591,7 @@
       "onDelete": "CASCADE",
       "name": "account_user_id_user_id_fkey",
       "entityType": "fks",
-      "schema": "public",
+      "schema": "auth",
       "table": "account"
     },
     {
@@ -2591,7 +2599,7 @@
       "columns": [
         "client_id"
       ],
-      "schemaTo": "public",
+      "schemaTo": "auth",
       "tableTo": "oauth_client",
       "columnsTo": [
         "client_id"
@@ -2600,7 +2608,7 @@
       "onDelete": "CASCADE",
       "name": "oauth_access_token_client_id_oauth_client_client_id_fkey",
       "entityType": "fks",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_access_token"
     },
     {
@@ -2608,7 +2616,7 @@
       "columns": [
         "session_id"
       ],
-      "schemaTo": "public",
+      "schemaTo": "auth",
       "tableTo": "session",
       "columnsTo": [
         "id"
@@ -2617,7 +2625,7 @@
       "onDelete": "SET NULL",
       "name": "oauth_access_token_session_id_session_id_fkey",
       "entityType": "fks",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_access_token"
     },
     {
@@ -2625,7 +2633,7 @@
       "columns": [
         "user_id"
       ],
-      "schemaTo": "public",
+      "schemaTo": "auth",
       "tableTo": "user",
       "columnsTo": [
         "id"
@@ -2634,7 +2642,7 @@
       "onDelete": "CASCADE",
       "name": "oauth_access_token_user_id_user_id_fkey",
       "entityType": "fks",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_access_token"
     },
     {
@@ -2642,7 +2650,7 @@
       "columns": [
         "refresh_id"
       ],
-      "schemaTo": "public",
+      "schemaTo": "auth",
       "tableTo": "oauth_refresh_token",
       "columnsTo": [
         "id"
@@ -2651,7 +2659,7 @@
       "onDelete": "CASCADE",
       "name": "oauth_access_token_refresh_id_oauth_refresh_token_id_fkey",
       "entityType": "fks",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_access_token"
     },
     {
@@ -2659,7 +2667,7 @@
       "columns": [
         "user_id"
       ],
-      "schemaTo": "public",
+      "schemaTo": "auth",
       "tableTo": "user",
       "columnsTo": [
         "id"
@@ -2668,7 +2676,7 @@
       "onDelete": "CASCADE",
       "name": "oauth_client_user_id_user_id_fkey",
       "entityType": "fks",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_client"
     },
     {
@@ -2676,7 +2684,7 @@
       "columns": [
         "client_id"
       ],
-      "schemaTo": "public",
+      "schemaTo": "auth",
       "tableTo": "oauth_client",
       "columnsTo": [
         "client_id"
@@ -2685,7 +2693,7 @@
       "onDelete": "CASCADE",
       "name": "oauth_client_resource_client_id_oauth_client_client_id_fkey",
       "entityType": "fks",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_client_resource"
     },
     {
@@ -2693,7 +2701,7 @@
       "columns": [
         "resource_id"
       ],
-      "schemaTo": "public",
+      "schemaTo": "auth",
       "tableTo": "oauth_resource",
       "columnsTo": [
         "identifier"
@@ -2702,7 +2710,7 @@
       "onDelete": "CASCADE",
       "name": "oauth_client_resource_dn2L1gs9Dolm_fkey",
       "entityType": "fks",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_client_resource"
     },
     {
@@ -2710,7 +2718,7 @@
       "columns": [
         "client_id"
       ],
-      "schemaTo": "public",
+      "schemaTo": "auth",
       "tableTo": "oauth_client",
       "columnsTo": [
         "client_id"
@@ -2719,7 +2727,7 @@
       "onDelete": "CASCADE",
       "name": "oauth_consent_client_id_oauth_client_client_id_fkey",
       "entityType": "fks",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_consent"
     },
     {
@@ -2727,7 +2735,7 @@
       "columns": [
         "user_id"
       ],
-      "schemaTo": "public",
+      "schemaTo": "auth",
       "tableTo": "user",
       "columnsTo": [
         "id"
@@ -2736,7 +2744,7 @@
       "onDelete": "CASCADE",
       "name": "oauth_consent_user_id_user_id_fkey",
       "entityType": "fks",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_consent"
     },
     {
@@ -2744,7 +2752,7 @@
       "columns": [
         "client_id"
       ],
-      "schemaTo": "public",
+      "schemaTo": "auth",
       "tableTo": "oauth_client",
       "columnsTo": [
         "client_id"
@@ -2753,7 +2761,7 @@
       "onDelete": "CASCADE",
       "name": "oauth_refresh_token_client_id_oauth_client_client_id_fkey",
       "entityType": "fks",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_refresh_token"
     },
     {
@@ -2761,7 +2769,7 @@
       "columns": [
         "session_id"
       ],
-      "schemaTo": "public",
+      "schemaTo": "auth",
       "tableTo": "session",
       "columnsTo": [
         "id"
@@ -2770,7 +2778,7 @@
       "onDelete": "SET NULL",
       "name": "oauth_refresh_token_session_id_session_id_fkey",
       "entityType": "fks",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_refresh_token"
     },
     {
@@ -2778,7 +2786,7 @@
       "columns": [
         "user_id"
       ],
-      "schemaTo": "public",
+      "schemaTo": "auth",
       "tableTo": "user",
       "columnsTo": [
         "id"
@@ -2787,7 +2795,7 @@
       "onDelete": "CASCADE",
       "name": "oauth_refresh_token_user_id_user_id_fkey",
       "entityType": "fks",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_refresh_token"
     },
     {
@@ -2795,7 +2803,7 @@
       "columns": [
         "user_id"
       ],
-      "schemaTo": "public",
+      "schemaTo": "auth",
       "tableTo": "user",
       "columnsTo": [
         "id"
@@ -2804,7 +2812,7 @@
       "onDelete": "CASCADE",
       "name": "session_user_id_user_id_fkey",
       "entityType": "fks",
-      "schema": "public",
+      "schema": "auth",
       "table": "session"
     },
     {
@@ -2813,7 +2821,7 @@
       ],
       "nameExplicit": false,
       "name": "account_pkey",
-      "schema": "public",
+      "schema": "auth",
       "table": "account",
       "entityType": "pks"
     },
@@ -2823,7 +2831,7 @@
       ],
       "nameExplicit": false,
       "name": "jwks_pkey",
-      "schema": "public",
+      "schema": "auth",
       "table": "jwks",
       "entityType": "pks"
     },
@@ -2833,7 +2841,7 @@
       ],
       "nameExplicit": false,
       "name": "oauth_access_token_pkey",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_access_token",
       "entityType": "pks"
     },
@@ -2843,7 +2851,7 @@
       ],
       "nameExplicit": false,
       "name": "oauth_client_pkey",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_client",
       "entityType": "pks"
     },
@@ -2853,7 +2861,7 @@
       ],
       "nameExplicit": false,
       "name": "oauth_client_assertion_pkey",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_client_assertion",
       "entityType": "pks"
     },
@@ -2863,7 +2871,7 @@
       ],
       "nameExplicit": false,
       "name": "oauth_client_resource_pkey",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_client_resource",
       "entityType": "pks"
     },
@@ -2873,7 +2881,7 @@
       ],
       "nameExplicit": false,
       "name": "oauth_consent_pkey",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_consent",
       "entityType": "pks"
     },
@@ -2883,7 +2891,7 @@
       ],
       "nameExplicit": false,
       "name": "oauth_refresh_token_pkey",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_refresh_token",
       "entityType": "pks"
     },
@@ -2893,7 +2901,7 @@
       ],
       "nameExplicit": false,
       "name": "oauth_resource_pkey",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_resource",
       "entityType": "pks"
     },
@@ -2903,7 +2911,7 @@
       ],
       "nameExplicit": false,
       "name": "session_pkey",
-      "schema": "public",
+      "schema": "auth",
       "table": "session",
       "entityType": "pks"
     },
@@ -2913,7 +2921,7 @@
       ],
       "nameExplicit": false,
       "name": "user_pkey",
-      "schema": "public",
+      "schema": "auth",
       "table": "user",
       "entityType": "pks"
     },
@@ -2923,7 +2931,7 @@
       ],
       "nameExplicit": false,
       "name": "verification_pkey",
-      "schema": "public",
+      "schema": "auth",
       "table": "verification",
       "entityType": "pks"
     },
@@ -2933,7 +2941,7 @@
       ],
       "nameExplicit": false,
       "name": "artifact_pkey",
-      "schema": "public",
+      "schema": "dahlia",
       "table": "artifact",
       "entityType": "pks"
     },
@@ -2943,7 +2951,7 @@
       ],
       "nameExplicit": false,
       "name": "artifact_reservation_pkey",
-      "schema": "public",
+      "schema": "dahlia",
       "table": "artifact_reservation",
       "entityType": "pks"
     },
@@ -2953,7 +2961,7 @@
       ],
       "nameExplicit": false,
       "name": "model_alias_pkey",
-      "schema": "public",
+      "schema": "dahlia",
       "table": "model_alias",
       "entityType": "pks"
     },
@@ -2963,7 +2971,7 @@
       ],
       "nameExplicit": false,
       "name": "platform_admin_pkey",
-      "schema": "public",
+      "schema": "dahlia",
       "table": "platform_admin",
       "entityType": "pks"
     },
@@ -2974,7 +2982,7 @@
       ],
       "nullsNotDistinct": false,
       "name": "oauth_access_token_token_key",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_access_token",
       "entityType": "uniques"
     },
@@ -2985,7 +2993,7 @@
       ],
       "nullsNotDistinct": false,
       "name": "oauth_client_client_id_key",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_client",
       "entityType": "uniques"
     },
@@ -2996,7 +3004,7 @@
       ],
       "nullsNotDistinct": false,
       "name": "oauth_refresh_token_token_key",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_refresh_token",
       "entityType": "uniques"
     },
@@ -3007,7 +3015,7 @@
       ],
       "nullsNotDistinct": false,
       "name": "oauth_resource_identifier_key",
-      "schema": "public",
+      "schema": "auth",
       "table": "oauth_resource",
       "entityType": "uniques"
     },
@@ -3018,7 +3026,7 @@
       ],
       "nullsNotDistinct": false,
       "name": "session_token_key",
-      "schema": "public",
+      "schema": "auth",
       "table": "session",
       "entityType": "uniques"
     },
@@ -3029,7 +3037,7 @@
       ],
       "nullsNotDistinct": false,
       "name": "user_email_key",
-      "schema": "public",
+      "schema": "auth",
       "table": "user",
       "entityType": "uniques"
     },
@@ -3037,7 +3045,7 @@
       "value": "\"visibility\" IN ('private', 'public')",
       "name": "artifact_visibility_check",
       "entityType": "checks",
-      "schema": "public",
+      "schema": "dahlia",
       "table": "artifact"
     }
   ],

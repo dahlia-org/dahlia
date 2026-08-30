@@ -1,6 +1,6 @@
 import { defineRelationsPart } from "drizzle-orm";
 import {
-  pgTable,
+  pgSchema,
   text,
   timestamp,
   boolean,
@@ -10,7 +10,9 @@ import {
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 
-export const user = pgTable("user", {
+export const authSchema = pgSchema("auth");
+
+export const user = authSchema.table("user", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   email: text("email").notNull().unique(),
@@ -23,7 +25,7 @@ export const user = pgTable("user", {
     .notNull(),
 });
 
-export const session = pgTable(
+export const session = authSchema.table(
   "session",
   {
     id: text("id").primaryKey(),
@@ -42,7 +44,7 @@ export const session = pgTable(
   (table) => [index("session_userId_idx").on(table.userId)],
 );
 
-export const account = pgTable(
+export const account = authSchema.table(
   "account",
   {
     id: text("id").primaryKey(),
@@ -73,7 +75,7 @@ export const account = pgTable(
   ],
 );
 
-export const verification = pgTable(
+export const verification = authSchema.table(
   "verification",
   {
     id: text("id").primaryKey(),
@@ -89,7 +91,7 @@ export const verification = pgTable(
   (table) => [index("verification_identifier_idx").on(table.identifier)],
 );
 
-export const jwks = pgTable("jwks", {
+export const jwks = authSchema.table("jwks", {
   id: text("id").primaryKey(),
   publicKey: text("public_key").notNull(),
   privateKey: text("private_key").notNull(),
@@ -99,7 +101,7 @@ export const jwks = pgTable("jwks", {
   crv: text("crv"),
 });
 
-export const oauthClient = pgTable(
+export const oauthClient = authSchema.table(
   "oauth_client",
   {
     id: text("id").primaryKey(),
@@ -146,7 +148,7 @@ export const oauthClient = pgTable(
   (table) => [index("oauthClient_userId_idx").on(table.userId)],
 );
 
-export const oauthResource = pgTable("oauth_resource", {
+export const oauthResource = authSchema.table("oauth_resource", {
   id: text("id").primaryKey(),
   identifier: text("identifier").notNull().unique(),
   name: text("name").notNull(),
@@ -166,7 +168,7 @@ export const oauthResource = pgTable("oauth_resource", {
   metadata: jsonb("metadata"),
 });
 
-export const oauthClientResource = pgTable(
+export const oauthClientResource = authSchema.table(
   "oauth_client_resource",
   {
     id: text("id").primaryKey(),
@@ -189,7 +191,7 @@ export const oauthClientResource = pgTable(
   ],
 );
 
-export const oauthRefreshToken = pgTable(
+export const oauthRefreshToken = authSchema.table(
   "oauth_refresh_token",
   {
     id: text("id").primaryKey(),
@@ -227,7 +229,7 @@ export const oauthRefreshToken = pgTable(
   ],
 );
 
-export const oauthAccessToken = pgTable(
+export const oauthAccessToken = authSchema.table(
   "oauth_access_token",
   {
     id: text("id").primaryKey(),
@@ -263,7 +265,7 @@ export const oauthAccessToken = pgTable(
   ],
 );
 
-export const oauthConsent = pgTable(
+export const oauthConsent = authSchema.table(
   "oauth_consent",
   {
     id: text("id").primaryKey(),
@@ -284,7 +286,7 @@ export const oauthConsent = pgTable(
   ],
 );
 
-export const oauthClientAssertion = pgTable("oauth_client_assertion", {
+export const oauthClientAssertion = authSchema.table("oauth_client_assertion", {
   id: text("id").primaryKey(),
   expiresAt: timestamp("expires_at").notNull(),
 });

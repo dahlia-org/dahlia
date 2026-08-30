@@ -252,9 +252,9 @@ describe("deployment routing", () => {
     expect(serverPackage.scripts["ensure:wrangler"]).toContain("../../deploy/cloudflare/wrangler.example.jsonc");
   });
 
-  it("uses one unqualified Drizzle baseline per dialect", () => {
+  it("uses one Drizzle baseline per dialect with PostgreSQL schema isolation", () => {
     const sqlite = readText("../drizzle/sqlite/20260830001528_stiff_alex_power/migration.sql");
-    const postgres = readText("../drizzle/postgres/20260830001527_open_blue_shield/migration.sql");
+    const postgres = readText("../drizzle/postgres/20260830063330_baseline/migration.sql");
     for (const migration of [sqlite, postgres]) {
       expect(migration).toContain("model_alias");
       expect(migration).toContain("platform_admin");
@@ -264,8 +264,10 @@ describe("deployment routing", () => {
       expect(migration).not.toContain("stripe");
       expect(migration).not.toContain("organization");
     }
-    expect(postgres).toContain('CREATE TABLE "user"');
-    expect(postgres).not.toContain("CREATE SCHEMA");
-    expect(postgres).not.toContain('"dahlia".');
+    expect(postgres).toContain('CREATE TABLE "auth"."user"');
+    expect(postgres).toContain('CREATE TABLE "dahlia"."artifact"');
+    expect(postgres).not.toContain('CREATE TABLE "dahlia"."user"');
+    expect(postgres).not.toContain("ROW LEVEL SECURITY");
+    expect(postgres).not.toContain("CREATE POLICY");
   });
 });

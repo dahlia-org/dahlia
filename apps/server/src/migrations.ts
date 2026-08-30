@@ -27,7 +27,7 @@ const packageDirectory = fileURLToPath(new URL(".", import.meta.resolve("@dahlia
 export const serverMigrationManifest: MigrationManifest = {
   postgres: {
     directories: [{ id: "server", path: join(packageDirectory, "drizzle/postgres") }],
-    files: ["drizzle/postgres/20260830001527_open_blue_shield/migration.sql"],
+    files: ["drizzle/postgres/20260830063330_baseline/migration.sql"],
   },
   sqlite: {
     directories: [{
