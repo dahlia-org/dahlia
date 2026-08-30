@@ -10,6 +10,7 @@ const OWNER = { "X-Forwarded-Email": "owner@example.com", "X-Forwarded-User": "o
 const OTHER = { "X-Forwarded-Email": "other@example.com", "X-Forwarded-User": "other" };
 const ID = "019cc4dd-e5c5-7bd4-94e0-98df9cc40db9";
 const OTHER_ID = "019cc4dd-e5c5-7bd4-94e0-98df9cc40dba";
+const UUID_V4 = "550e8400-e29b-41d4-a716-446655440000";
 
 const config: AppConfig = {
   authProvider: "header",
@@ -24,19 +25,24 @@ const config: AppConfig = {
 
 function fixture() {
   const records = new Map<string, ArtifactRecord>();
-  const reservations = new Set<string>();
   const objects = new Map<string, { body: Uint8Array; contentType: string }>();
   let deleteFails = false;
+  let putFails = false;
+  let commitFails = false;
+  let getCalls = 0;
   let beforePut: (() => Promise<void>) | undefined;
   let beforeRead: (() => Promise<void>) | undefined;
   const store = testStore({
-    getArtifact: async (id) => records.get(id) ?? null,
+    getArtifact: async (id) => {
+      getCalls += 1;
+      return records.get(id) ?? null;
+    },
     createArtifact: async (input) => {
-      if (reservations.has(input.id)) return false;
-      reservations.add(input.id);
+      if (records.has(input.id)) return null;
       const now = new Date();
-      records.set(input.id, { ...input, storageKey: null, visibility: "private", createdAt: now, updatedAt: now });
-      return true;
+      const artifact = { ...input, storageKey: null, visibility: "private" as const, createdAt: now, updatedAt: now };
+      records.set(input.id, artifact);
+      return artifact;
     },
     commitArtifactStorage: async (id, ownerWorkspaceId, expectedStorageKey, storageKey) => {
       const artifact = records.get(id);
@@ -47,6 +53,7 @@ function fixture() {
       ) return null;
       const updated = { ...artifact, storageKey, updatedAt: new Date() };
       records.set(id, updated);
+      if (commitFails) throw new Error("metadata unavailable after commit");
       return updated;
     },
     updateArtifactVisibility: async (id, ownerWorkspaceId, visibility) => {
@@ -68,6 +75,7 @@ function fixture() {
   });
   const storage: ObjectStorage = {
     put: async (key, body, _contentLength, contentType) => {
+      if (putFails) throw new ObjectStorageError();
       await beforePut?.();
       const bytes = body instanceof Uint8Array
         ? body
@@ -96,13 +104,29 @@ function fixture() {
     app: createApp({ config, authStore: store, artifactStorage: storage }),
     objects,
     records,
+    get getCalls() { return getCalls; },
     failDelete(value: boolean) { deleteFails = value; },
+    failPut(value: boolean) { putFails = value; },
+    failCommit(value: boolean) { commitFails = value; },
     beforePut(callback?: () => Promise<void>) { beforePut = callback; },
     beforeRead(callback?: () => Promise<void>) { beforeRead = callback; },
   };
 }
 
-function upload(app: ReturnType<typeof createApp>, id = ID, body = "hello", headers: HeadersInit = {}) {
+function upload(app: ReturnType<typeof createApp>, body = "hello", headers: HeadersInit = {}) {
+  return app.request("/api/v1/artifacts", {
+    method: "POST",
+    headers: { ...OWNER, "content-length": String(new TextEncoder().encode(body).byteLength), ...headers },
+    body,
+  });
+}
+
+function replace(
+  app: ReturnType<typeof createApp>,
+  id: string,
+  body = "replacement",
+  headers: HeadersInit = {},
+) {
   return app.request(`/api/v1/artifacts/${id}`, {
     method: "PUT",
     headers: { ...OWNER, "content-length": String(new TextEncoder().encode(body).byteLength), ...headers },
@@ -110,67 +134,89 @@ function upload(app: ReturnType<typeof createApp>, id = ID, body = "hello", head
   });
 }
 
+async function uploadedId(response: Response): Promise<string> {
+  const body: unknown = await response.clone().json();
+  if (!body || typeof body !== "object" || !("id" in body) || typeof body.id !== "string") {
+    throw new Error("Artifact response is missing an ID");
+  }
+  return body.id;
+}
+
 describe("artifact API", () => {
   it("keeps new artifacts private until the owner publishes them", async () => {
     const { app } = fixture();
-    expect((await upload(app)).status).toBe(201);
-    expect((await app.request(`/api/v1/artifacts/${ID}`)).status).toBe(401);
-    expect((await app.request(`/api/v1/artifacts/${ID}`, { headers: OTHER })).status).toBe(404);
+    const created = await upload(app);
+    const id = await uploadedId(created);
+    const timestamp = Number.parseInt(id.replaceAll("-", "").slice(0, 12), 16);
+    expect(created.status).toBe(201);
+    expect(created.headers.get("location")).toBe(`https://dahlia.example/api/v1/artifacts/${id}`);
+    expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    expect(Math.abs(Date.now() - timestamp)).toBeLessThan(1_000);
+    expect((await app.request(`/api/v1/artifacts/${id}`)).status).toBe(401);
+    expect((await app.request(`/api/v1/artifacts/${id}`, { headers: OTHER })).status).toBe(404);
 
-    const privateRead = await app.request(`/api/v1/artifacts/${ID}`, { headers: OWNER });
+    const privateRead = await app.request(`/api/v1/artifacts/${id}`, { headers: OWNER });
     expect(privateRead.status).toBe(200);
     expect(privateRead.headers.get("content-security-policy")).toBe("sandbox allow-scripts");
     expect(privateRead.headers.get("x-storage-secret")).toBeNull();
     expect(await privateRead.text()).toBe("hello");
 
-    const published = await app.request(`/api/v1/artifacts/${ID}`, {
+    const published = await app.request(`/api/v1/artifacts/${id}`, {
       method: "PATCH",
       headers: { ...OWNER, "content-type": "application/json" },
       body: JSON.stringify({ visibility: "public" }),
     });
     expect(published.status).toBe(200);
-    const publicRead = await app.request(`/api/v1/artifacts/${ID}`);
+    const publicRead = await app.request(`/api/v1/artifacts/${id}`);
     expect(await publicRead.text()).toBe("hello");
 
-    const hidden = await app.request(`/api/v1/artifacts/${ID}`, {
+    const hidden = await app.request(`/api/v1/artifacts/${id}`, {
       method: "PATCH",
       headers: { ...OWNER, "content-type": "application/json" },
       body: JSON.stringify({ visibility: "private" }),
     });
     expect(hidden.status).toBe(200);
-    expect((await app.request(`/api/v1/artifacts/${ID}`)).status).toBe(401);
+    expect((await app.request(`/api/v1/artifacts/${id}`)).status).toBe(401);
   });
 
   it("validates the upload contract and replacement media type", async () => {
     const { app } = fixture();
-    expect((await app.request(`/api/v1/artifacts/${ID}`, { method: "PUT", headers: OWNER, body: "x" })).status)
+    expect((await app.request("/api/v1/artifacts", { method: "POST", headers: OWNER, body: "x" })).status)
       .toBe(411);
-    expect((await upload(app, ID, "x", { "content-encoding": "gzip" })).status).toBe(415);
-    expect((await upload(app, ID, "x", { "content-length": String(64 * 1024 * 1024 + 1) })).status).toBe(413);
-    expect((await upload(app, ID, "x", { "content-length": String(64 * 1024 * 1024) })).status).toBe(201);
-    expect((await upload(app, ID, "replacement")).status).toBe(200);
-    expect((await upload(app, ID, "x", { "content-type": "text/plain" })).status).toBe(409);
-    expect((await upload(app, ID.toUpperCase())).status).toBe(400);
-    expect((await upload(app, "not-a-uuid")).status).toBe(400);
+    expect((await upload(app, "x", { "content-encoding": "gzip" })).status).toBe(415);
+    expect((await upload(app, "x", { "content-length": String(64 * 1024 * 1024 + 1) })).status).toBe(413);
+    const created = await upload(app, "x", { "content-length": String(64 * 1024 * 1024) });
+    const id = await uploadedId(created);
+    expect(created.status).toBe(201);
+    expect((await replace(app, id)).status).toBe(200);
+    expect((await replace(app, id, "x", { "content-type": "text/plain" })).status).toBe(409);
+    expect((await replace(app, id.toUpperCase())).status).toBe(400);
+    expect((await replace(app, UUID_V4)).status).toBe(400);
+    expect((await replace(app, "not-a-uuid")).status).toBe(400);
+    expect((await replace(app, OTHER_ID)).status).toBe(404);
   });
 
   it("does not expose or mutate another owner's artifact", async () => {
     const { app } = fixture();
-    expect((await upload(app)).status).toBe(201);
-    const replace = await app.request(`/api/v1/artifacts/${ID}`, {
+    const created = await upload(app);
+    const id = await uploadedId(created);
+    expect(created.status).toBe(201);
+    const replacement = await app.request(`/api/v1/artifacts/${id}`, {
       method: "PUT",
       headers: { ...OTHER, "content-length": "1" },
       body: "x",
     });
-    expect(replace.status).toBe(404);
-    expect((await app.request(`/api/v1/artifacts/${ID}`, { method: "DELETE", headers: OTHER })).status).toBe(404);
+    expect(replacement.status).toBe(404);
+    expect((await app.request(`/api/v1/artifacts/${id}`, { method: "DELETE", headers: OTHER })).status).toBe(404);
   });
 
-  it("does not allow a deleted public URL to be reclaimed", async () => {
+  it("does not allow PUT to create or reclaim an artifact", async () => {
     const { app } = fixture();
-    expect((await upload(app)).status).toBe(201);
-    expect((await app.request(`/api/v1/artifacts/${ID}`, { method: "DELETE", headers: OWNER })).status).toBe(204);
-    const reclaim = await app.request(`/api/v1/artifacts/${ID}`, {
+    const created = await upload(app);
+    const id = await uploadedId(created);
+    expect(created.status).toBe(201);
+    expect((await app.request(`/api/v1/artifacts/${id}`, { method: "DELETE", headers: OWNER })).status).toBe(204);
+    const reclaim = await app.request(`/api/v1/artifacts/${id}`, {
       method: "PUT",
       headers: { ...OTHER, "content-length": "8" },
       body: "attacker",
@@ -198,13 +244,48 @@ describe("artifact API", () => {
     });
     expect(publishMissing.status).toBe(409);
 
-    expect((await upload(app)).status).toBe(201);
+    const created = await upload(app);
+    const id = await uploadedId(created);
+    expect(created.status).toBe(201);
     fixtureValue.failDelete(true);
-    expect((await app.request(`/api/v1/artifacts/${ID}`, { method: "DELETE", headers: OWNER })).status).toBe(502);
-    expect(records.has(ID)).toBe(true);
+    expect((await app.request(`/api/v1/artifacts/${id}`, { method: "DELETE", headers: OWNER })).status).toBe(502);
+    expect(records.has(id)).toBe(true);
     fixtureValue.failDelete(false);
-    expect((await app.request(`/api/v1/artifacts/${ID}`, { method: "DELETE", headers: OWNER })).status).toBe(204);
-    expect(records.has(ID)).toBe(false);
+    expect((await app.request(`/api/v1/artifacts/${id}`, { method: "DELETE", headers: OWNER })).status).toBe(204);
+    expect(records.has(id)).toBe(false);
+  });
+
+  it("cleans up metadata when a new upload fails", async () => {
+    const fixtureValue = fixture();
+    fixtureValue.failPut(true);
+    expect((await upload(fixtureValue.app)).status).toBe(502);
+    expect(fixtureValue.records.size).toBe(0);
+    expect(fixtureValue.objects.size).toBe(0);
+  });
+
+  it("returns the inserted row without re-reading metadata", async () => {
+    const fixtureValue = fixture();
+    expect((await upload(fixtureValue.app)).status).toBe(201);
+    expect(fixtureValue.getCalls).toBe(0);
+  });
+
+  it("retains metadata when failed-create object cleanup must be retried", async () => {
+    const fixtureValue = fixture();
+    fixtureValue.failCommit(true);
+    fixtureValue.failDelete(true);
+    expect((await upload(fixtureValue.app)).status).toBe(503);
+    expect(fixtureValue.records.size).toBe(1);
+    expect(fixtureValue.objects.size).toBe(1);
+
+    fixtureValue.failCommit(false);
+    fixtureValue.failDelete(false);
+    const [id] = fixtureValue.records.keys();
+    expect((await fixtureValue.app.request(`/api/v1/artifacts/${id}`, {
+      method: "DELETE",
+      headers: OWNER,
+    })).status).toBe(204);
+    expect(fixtureValue.records.size).toBe(0);
+    expect(fixtureValue.objects.size).toBe(0);
   });
 
   it("returns a stable error when storage is not configured", async () => {
@@ -218,7 +299,9 @@ describe("artifact API", () => {
   it("removes replacement bytes when a concurrent delete wins", async () => {
     const fixtureValue = fixture();
     const { app, objects, records } = fixtureValue;
-    expect((await upload(app)).status).toBe(201);
+    const created = await upload(app);
+    const id = await uploadedId(created);
+    expect(created.status).toBe(201);
 
     let releasePut!: () => void;
     const putBlocked = new Promise<void>((resolve) => { releasePut = resolve; });
@@ -228,20 +311,22 @@ describe("artifact API", () => {
       putReachedStorage();
       await putBlocked;
     });
-    const replacement = upload(app, ID, "replacement");
+    const replacement = replace(app, id);
     await storageReached;
-    expect((await app.request(`/api/v1/artifacts/${ID}`, { method: "DELETE", headers: OWNER })).status).toBe(204);
+    expect((await app.request(`/api/v1/artifacts/${id}`, { method: "DELETE", headers: OWNER })).status).toBe(204);
     releasePut();
 
     expect((await replacement).status).toBe(404);
-    expect(records.has(ID)).toBe(false);
+    expect(records.has(id)).toBe(false);
     expect(objects.size).toBe(0);
   });
 
   it("does not overwrite a concurrent visibility change after replacement", async () => {
     const fixtureValue = fixture();
     const { app, records } = fixtureValue;
-    expect((await upload(app)).status).toBe(201);
+    const created = await upload(app);
+    const id = await uploadedId(created);
+    expect(created.status).toBe(201);
 
     let releasePut!: () => void;
     const putBlocked = new Promise<void>((resolve) => { releasePut = resolve; });
@@ -251,9 +336,9 @@ describe("artifact API", () => {
       putReachedStorage();
       await putBlocked;
     });
-    const replacement = upload(app, ID, "replacement");
+    const replacement = replace(app, id);
     await storageReached;
-    const published = await app.request(`/api/v1/artifacts/${ID}`, {
+    const published = await app.request(`/api/v1/artifacts/${id}`, {
       method: "PATCH",
       headers: { ...OWNER, "content-type": "application/json" },
       body: JSON.stringify({ visibility: "public" }),
@@ -262,14 +347,16 @@ describe("artifact API", () => {
     releasePut();
 
     expect((await replacement).status).toBe(200);
-    expect(records.get(ID)?.visibility).toBe("public");
+    expect(records.get(id)?.visibility).toBe("public");
   });
 
   it("pins an authorized public read to the version it authorized", async () => {
     const fixtureValue = fixture();
     const { app } = fixtureValue;
-    expect((await upload(app)).status).toBe(201);
-    expect((await app.request(`/api/v1/artifacts/${ID}`, {
+    const created = await upload(app);
+    const id = await uploadedId(created);
+    expect(created.status).toBe(201);
+    expect((await app.request(`/api/v1/artifacts/${id}`, {
       method: "PATCH",
       headers: { ...OWNER, "content-type": "application/json" },
       body: JSON.stringify({ visibility: "public" }),
@@ -283,14 +370,14 @@ describe("artifact API", () => {
       readReachedStorage();
       await readBlocked;
     });
-    const publicRead = app.request(`/api/v1/artifacts/${ID}`);
+    const publicRead = app.request(`/api/v1/artifacts/${id}`);
     await storageReached;
-    expect((await app.request(`/api/v1/artifacts/${ID}`, {
+    expect((await app.request(`/api/v1/artifacts/${id}`, {
       method: "PATCH",
       headers: { ...OWNER, "content-type": "application/json" },
       body: JSON.stringify({ visibility: "private" }),
     })).status).toBe(200);
-    expect((await upload(app, ID, "private replacement")).status).toBe(200);
+    expect((await replace(app, id, "private replacement")).status).toBe(200);
     releaseRead();
 
     const response = await publicRead;

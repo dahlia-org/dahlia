@@ -54,7 +54,7 @@ describe("PostgreSQL migrations", () => {
     expect(sql).toContain('CREATE TABLE "auth"."user"');
     expect(sql).toContain('CREATE TABLE "dahlia"."model_alias"');
     expect(sql).toContain('CREATE TABLE "dahlia"."artifact"');
-    expect(sql).toContain('CREATE TABLE "dahlia"."artifact_reservation"');
+    expect(sql).not.toContain("artifact_reservation");
     expect(sql).toContain('CREATE SCHEMA IF NOT EXISTS "auth"');
     expect(sql).toContain('CREATE SCHEMA IF NOT EXISTS "dahlia"');
     expect(sql).not.toContain("ROW LEVEL SECURITY");

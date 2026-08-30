@@ -81,7 +81,7 @@ try {
       !style.includes(".app-shell")
       || !migration.includes("model_alias")
       || !migration.includes("artifact")
-      || !migration.includes("artifact_reservation")
+      || migration.includes("artifact_reservation")
       || !migration.includes("storage_key")
     ) {
       throw new Error("Package assets are incomplete");

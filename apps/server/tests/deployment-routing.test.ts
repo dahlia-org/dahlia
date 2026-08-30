@@ -258,7 +258,7 @@ describe("deployment routing", () => {
     for (const migration of [sqlite, postgres]) {
       expect(migration).toContain("model_alias");
       expect(migration).toContain("platform_admin");
-      expect(migration).toContain("artifact_reservation");
+      expect(migration).not.toContain("artifact_reservation");
       expect(migration).toContain("storage_key");
       expect(migration).not.toContain("subscription");
       expect(migration).not.toContain("stripe");

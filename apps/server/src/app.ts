@@ -272,6 +272,13 @@ export function createApp(dependencies: AppDependencies) {
     return revoked ? context.body(null, 204) : context.json({ error: "session_not_found" }, 404);
   });
 
+  app.post("/api/v1/artifacts", async (context) => {
+    const identity = await identities.fromGateway(context.req.raw, ARTIFACT_WRITE_SCOPE);
+    const artifact = await artifacts.create(identity, context.req.raw);
+    return context.json(artifactResponse(artifact), 201, {
+      Location: `${config.baseUrl}/api/v1/artifacts/${artifact.id}`,
+    });
+  });
   app.on(["GET", "HEAD"], "/api/v1/artifacts/:artifactId", async (context) => {
     const id = artifacts.parseId(context.req.param("artifactId"));
     const artifact = await artifacts.get(id);
@@ -287,8 +294,7 @@ export function createApp(dependencies: AppDependencies) {
   app.put("/api/v1/artifacts/:artifactId", async (context) => {
     const id = artifacts.parseId(context.req.param("artifactId"));
     const identity = await identities.fromGateway(context.req.raw, ARTIFACT_WRITE_SCOPE);
-    const result = await artifacts.put(id, identity, context.req.raw);
-    return context.json(artifactResponse(result.artifact), result.created ? 201 : 200);
+    return context.json(artifactResponse(await artifacts.put(id, identity, context.req.raw)));
   });
   app.patch("/api/v1/artifacts/:artifactId", artifactPatchBodyLimit, async (context) => {
     const id = artifacts.parseId(context.req.param("artifactId"));
@@ -344,6 +350,7 @@ export function createApp(dependencies: AppDependencies) {
 }
 
 function requestRoute(path: string): string {
+  if (path === "/api/v1/artifacts") return path;
   if (path.startsWith("/api/v1/artifacts/")) return "/api/v1/artifacts/:artifactId";
   if (path.startsWith("/api/v1/")) return "/api/v1/*";
   if (path.startsWith("/api/")) return "/api/*";
