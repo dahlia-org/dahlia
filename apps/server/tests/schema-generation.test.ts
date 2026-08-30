@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { cpSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -23,26 +23,21 @@ describe("auth schema generation", () => {
     }
   });
 
-  it("reproduces the committed SQLite baseline from the declarative schema", () => {
+  it("keeps the committed SQLite migration history synchronized with the declarative schema", () => {
     const directory = mkdtempSync(join(tmpdir(), "dahlia-sqlite-schema-"));
     const packageDirectory = new URL("..", import.meta.url);
     try {
+      cpSync(new URL("../drizzle/sqlite/", import.meta.url), directory, { recursive: true });
+      const migrations = readdirSync(directory).toSorted();
       const generated = spawnSync("pnpm", [
         "exec", "drizzle-kit", "generate",
         "--dialect", "sqlite",
         "--schema", "./src/db/sqlite-schema.ts",
         "--out", directory,
-        "--name", "baseline",
+        "--name", "schema-drift",
       ], { cwd: packageDirectory, encoding: "utf8" });
       expect(generated.status, generated.stderr || generated.stdout).toBe(0);
-      const migrationDirectory = readdirSync(directory, { withFileTypes: true })
-        .find((entry) => entry.isDirectory())?.name;
-      if (!migrationDirectory) throw new Error("Drizzle Kit did not create a migration directory");
-      expect(readFileSync(join(directory, migrationDirectory, "migration.sql"), "utf8"))
-        .toBe(readFileSync(
-          new URL("../drizzle/sqlite/20260830001528_stiff_alex_power/migration.sql", import.meta.url),
-          "utf8",
-        ));
+      expect(readdirSync(directory).toSorted()).toEqual(migrations);
     } finally {
       rmSync(directory, { force: true, recursive: true });
     }
