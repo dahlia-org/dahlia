@@ -3,8 +3,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
+import { cimd } from "@better-auth/cimd";
 import { afterEach, describe, expect, it } from "vitest";
 
+import { createApp } from "../src/app";
+import { LocalObjectStorage } from "../src/artifacts/local";
 import { initializeDahliaAuth } from "../src/auth/better-auth";
 import { createNodeAuthStore } from "../src/auth/node-store";
 import type { AppConfig } from "../src/config";
@@ -40,7 +43,12 @@ describe("SQLite Better Auth store", () => {
     const store = createNodeAuthStore(config);
 
     await Promise.all([store.migrate(), store.migrate()]);
-    const auth = await initializeDahliaAuth(config, store);
+    const auth = await initializeDahliaAuth(config, store, [{
+      plugins: [cimd({
+        fetchClientMetadataResource: async () => new Response(null, { status: 404 }),
+        metadataProfile: "mcp-2026-07-28",
+      })],
+    }]);
 
     await expect((await auth.$context).adapter.transaction(async (transaction) => {
       await transaction.create({
@@ -64,6 +72,31 @@ describe("SQLite Better Auth store", () => {
     });
     expect(database.prepare('SELECT "client_id" FROM "oauth_client"').get()).toEqual({ client_id: "dahlia-macos" });
     expect(database.prepare('SELECT "client_id" FROM "oauth_client_resource"').get()).toEqual({ client_id: "dahlia-macos" });
+    expect(database.prepare('SELECT "identifier" FROM "oauth_resource" ORDER BY "identifier"').all()).toEqual([
+      { identifier: "http://localhost:5173/api/v1" },
+      { identifier: "http://localhost:5173/mcp" },
+    ]);
+    expect(await auth.api.getOAuthServerConfig()).toMatchObject({ client_id_metadata_document_supported: true });
+    const app = createApp({
+      config,
+      auth,
+      authStore: store,
+      artifactStorage: new LocalObjectStorage(join(directory, "storage")),
+    });
+    const metadata = await app.request("/.well-known/oauth-protected-resource/mcp");
+    expect(await metadata.json()).toMatchObject({
+      resource: "http://localhost:5173/mcp",
+      authorization_servers: ["http://localhost:5173"],
+      scopes_supported: ["api.artifact.write"],
+    });
+    const unauthorizedMcp = await app.request("/mcp", {
+      method: "POST",
+      headers: { "content-length": "2", "content-type": "application/json" },
+      body: "{}",
+    });
+    expect(unauthorizedMcp.status).toBe(401);
+    expect(unauthorizedMcp.headers.get("www-authenticate"))
+      .toContain('resource_metadata="http://localhost:5173/.well-known/oauth-protected-resource/mcp"');
     expect(database.prepare('SELECT 1 FROM "user" WHERE "id" = ?').get("rolled-back-user")).toBeUndefined();
     expect(await store.createModelAlias({
       alias: "summary",

@@ -42,7 +42,7 @@ describe("deployment routing", () => {
 
     expect(wrangler.assets).toEqual({
       not_found_handling: "single-page-application",
-      run_worker_first: ["/api/*", "/.well-known/*", "/healthz"],
+      run_worker_first: ["/api/*", "/.well-known/*", "/mcp", "/healthz"],
     });
     expect(wrangler.d1_databases).toContainEqual(expect.objectContaining({
       binding: "dahlia_db_prod",
@@ -162,6 +162,7 @@ describe("deployment routing", () => {
     expect(packageJson.scripts["db:migrate"]).toContain("--env-file-if-exists=.env.local");
     expect(viteConfig.envDir).toBeUndefined();
     expect(viteConfig.server?.proxy).toHaveProperty("/.well-known");
+    expect(viteConfig.server?.proxy).toHaveProperty("/mcp");
   });
 
   it("uses the current database variables in Server CI", () => {

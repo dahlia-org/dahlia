@@ -10,7 +10,7 @@ import {
   OAUTH_SCOPES,
 } from "../src/auth/scopes";
 import { createPostgresAuthStore } from "../src/auth/store";
-import { requiredGatewayScope } from "../src/app";
+import { authenticateMcpRequest, requiredGatewayScope } from "../src/app";
 import type { AppConfig } from "../src/config";
 import type { PostgresDatabase } from "../src/db/client";
 
@@ -28,6 +28,38 @@ const config: AppConfig = {
 };
 
 describe("fixed OAuth client policy", () => {
+  it("preserves DPoP requests and distinguishes insufficient scope", async () => {
+    const request = new Request("https://new.dahlia.example/mcp", {
+      method: "POST",
+      headers: { Authorization: "DPoP access-token", DPoP: "proof" },
+    });
+    const authInfo = {
+      token: "access-token",
+      clientId: "https://client.example/metadata.json",
+      scopes: [ARTIFACT_WRITE_SCOPE],
+      expiresAt: Math.floor(Date.now() / 1000) + 60,
+      resource: new URL("https://new.dahlia.example/mcp"),
+    };
+    const verifier = vi.fn(async () => authInfo);
+
+    expect(await authenticateMcpRequest(
+      request,
+      verifier,
+      "https://new.dahlia.example/.well-known/oauth-protected-resource/mcp",
+    )).toBe(authInfo);
+    expect(verifier).toHaveBeenCalledWith(request);
+
+    const insufficient = await authenticateMcpRequest(
+      request,
+      async () => ({ ...authInfo, scopes: [] }),
+      "https://new.dahlia.example/.well-known/oauth-protected-resource/mcp",
+    );
+    expect(insufficient).toBeInstanceOf(Response);
+    expect((insufficient as Response).status).toBe(403);
+    expect((insufficient as Response).headers.get("www-authenticate"))
+      .toContain('error="insufficient_scope"');
+  });
+
   it("denies user-managed OAuth clients and resources", () => {
     expect(denyOAuthManagement()).toBe(false);
   });

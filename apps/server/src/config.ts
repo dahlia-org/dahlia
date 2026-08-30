@@ -263,3 +263,7 @@ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
 export function gatewayResource(config: Pick<AppConfig, "baseUrl">): string {
   return `${config.baseUrl}/api/v1`;
 }
+
+export function mcpResource(config: Pick<AppConfig, "baseUrl">): string {
+  return `${config.baseUrl}/mcp`;
+}

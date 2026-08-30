@@ -11,3 +11,4 @@ export const GATEWAY_SCOPES = [
 export type GatewayScope = typeof GATEWAY_SCOPES[number];
 
 export const OAUTH_SCOPES = ["openid", "profile", "email", "offline_access", ...GATEWAY_SCOPES];
+export const MCP_OAUTH_SCOPES = ["openid", "profile", "email", "offline_access", ARTIFACT_WRITE_SCOPE];

@@ -149,9 +149,13 @@ Drizzle application store (SQLite, PostgreSQL, Lakebase, Hyperdrive, or D1)
 /api/v1/artifacts/{artifact_id}
     ├─ owner-scoped metadata authorization; PUT replaces existing bytes only
     └─ local / S3 / R2 / Databricks Volume bytes → authenticated streaming relay
+/mcp
+    └─ owner-scoped artifact create / replace / visibility / delete tools
 ```
 
-Cloudflare では Hono Worker は `/api/**`、`/.well-known/**`、`/healthz` だけを処理する。React SPA と静的 asset は
+`/mcp` は MCP 2026-07-28 の stateless endpoint とし、accounts mode では exact resource audience と `api.artifact.write` を検証する。Node の authorization server は CIMD を提供し、RFC 7591 DCR は開かない。Databricks Apps の header mode では Apps proxy が OAuth 認証を完了済みのため、転送 identity を owner として使い、artifact 操作で user access token を再利用しない。
+
+Cloudflare では Hono Worker は `/api/**`、`/.well-known/**`、`/mcp`、`/healthz` だけを処理する。React SPA と静的 asset は
 Workers Static Assets が直接配信し、Worker 内から asset binding を呼ばない。`/dashboard/**` の navigation は
 `index.html` へ fallback する一方、API と discovery の未定義 path は Hono の 404 を維持する。
 
@@ -159,8 +163,9 @@ Gateway、認証 store、upstream、artifact storage の停止は Server 操作�
 閲覧、検索はこの runtime を待たない。Artifact API は明示的に渡された任意 asset だけを扱い、録音、SQLite、Vault の自動 upload／sync は行わない。runtime と data boundary の判断は
 [ADR-0043](docs/adr/0043-unify-dahlia-server-application-database.md)、
 [ADR-0045](docs/adr/0045-add-owner-scoped-artifact-transport.md)、
-[ADR-0048](docs/adr/0048-issue-artifact-ids-server-side.md)、および
-[ADR-0046](docs/adr/0046-forward-databricks-user-token-to-ai-gateway.md)を正本とする。
+[ADR-0048](docs/adr/0048-issue-artifact-ids-server-side.md)、
+[ADR-0049](docs/adr/0049-expose-artifact-tools-over-remote-mcp.md)、
+および [ADR-0046](docs/adr/0046-forward-databricks-user-token-to-ai-gateway.md)を正本とする。
 
 ## Workload Classes
 

@@ -142,7 +142,132 @@ async function uploadedId(response: Response): Promise<string> {
   return body.id;
 }
 
+function mcpRequest(
+  app: ReturnType<typeof createApp>,
+  method: string,
+  params: Record<string, unknown>,
+  headers: Record<string, string> = OWNER,
+  includeContentLength = true,
+) {
+  const body = JSON.stringify({
+    jsonrpc: "2.0",
+    id: 1,
+    method,
+    params: {
+      ...params,
+      _meta: {
+        "io.modelcontextprotocol/clientCapabilities": {},
+        "io.modelcontextprotocol/clientInfo": { name: "Dahlia tests", version: "1.0.0" },
+        "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+      },
+    },
+  });
+  return app.request("/mcp", {
+    method: "POST",
+    headers: {
+      ...headers,
+      ...(includeContentLength
+        ? { "content-length": String(new TextEncoder().encode(body).byteLength) }
+        : {}),
+      "content-type": "application/json",
+      "mcp-method": method,
+      "mcp-name": method === "tools/call" ? String(params.name) : "",
+      "mcp-protocol-version": "2026-07-28",
+    },
+    body,
+  });
+}
+
+async function mcpResult(response: Response): Promise<Record<string, unknown>> {
+  const envelope: unknown = await response.json();
+  if (
+    !envelope
+    || typeof envelope !== "object"
+    || !("result" in envelope)
+    || !envelope.result
+    || typeof envelope.result !== "object"
+  ) throw new Error(`Missing MCP result: ${JSON.stringify(envelope)}`);
+  return envelope.result as Record<string, unknown>;
+}
+
 describe("artifact API", () => {
+  it("serves owner-scoped artifact tools over modern MCP", async () => {
+    const { app, objects, records } = fixture();
+    const listed = await mcpRequest(app, "tools/list", {});
+    expect(listed.status, await listed.clone().text()).toBe(200);
+    const tools = (await mcpResult(listed)).tools as Array<Record<string, unknown>>;
+    expect(tools).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: "create_artifact" }),
+      expect.objectContaining({ name: "update_artifact_content" }),
+      expect.objectContaining({ name: "update_artifact_visibility" }),
+      expect.objectContaining({ name: "delete_artifact" }),
+    ]));
+    expect(tools.find((tool) => tool.name === "delete_artifact")).toMatchObject({
+      annotations: { destructiveHint: true, idempotentHint: true },
+    });
+
+    const created = await mcpRequest(app, "tools/call", {
+      name: "create_artifact",
+      arguments: { content: "aGVsbG8=", content_type: "text/plain", encoding: "base64" },
+    });
+    expect(created.status).toBe(200);
+    const createResult = await mcpResult(created);
+    const createdArtifact = createResult.structuredContent as Record<string, string>;
+    const id = createdArtifact.artifact_id!;
+    expect(createdArtifact).toEqual({
+      artifact_id: id,
+      url: `https://dahlia.example/api/v1/artifacts/${id}`,
+      content_type: "text/plain",
+      visibility: "private",
+    });
+    expect(Array.from(objects.values())[0]?.body).toEqual(new TextEncoder().encode("hello"));
+
+    const invalidBase64 = await mcpRequest(app, "tools/call", {
+      name: "create_artifact",
+      arguments: { content: "AB==", content_type: "application/octet-stream", encoding: "base64" },
+    });
+    expect(await mcpResult(invalidBase64)).toMatchObject({ isError: true, content: [{ text: "invalid_base64" }] });
+
+    const tooLarge = await mcpRequest(app, "tools/call", {
+      name: "create_artifact",
+      arguments: { content: "x".repeat(8 * 1024 * 1024 + 1), content_type: "text/plain" },
+    });
+    expect(await mcpResult(tooLarge)).toMatchObject({ isError: true, content: [{ text: "artifact_too_large" }] });
+
+    const denied = await mcpRequest(app, "tools/call", {
+      name: "update_artifact_content",
+      arguments: { artifact_id: id, content: "no", content_type: "text/plain" },
+    }, OTHER);
+    expect(await mcpResult(denied)).toMatchObject({ isError: true, content: [{ text: "artifact_not_found" }] });
+
+    const published = await mcpRequest(app, "tools/call", {
+      name: "update_artifact_visibility",
+      arguments: { artifact_id: id, visibility: "public" },
+    });
+    expect((await mcpResult(published)).structuredContent).toMatchObject({ visibility: "public" });
+
+    const deleted = await mcpRequest(app, "tools/call", {
+      name: "delete_artifact",
+      arguments: { artifact_id: id },
+    });
+    expect((await mcpResult(deleted)).structuredContent).toMatchObject({ artifact_id: id, visibility: "public" });
+    expect(records.has(id)).toBe(false);
+    expect(objects.size).toBe(0);
+
+    const withoutContentLength = await mcpRequest(app, "tools/list", {}, OWNER, false);
+    expect(withoutContentLength.status, await withoutContentLength.clone().text()).toBe(200);
+    expect((await app.request("/mcp", {
+      method: "POST",
+      headers: { ...OWNER, "content-length": String(12 * 1024 * 1024 + 1), origin: "https://dahlia.example" },
+      body: "{}",
+    })).status).toBe(413);
+    expect((await app.request("/mcp", {
+      method: "POST",
+      headers: { ...OWNER, "content-length": "2", origin: "https://attacker.example" },
+      body: "{}",
+    })).status).toBe(403);
+  });
+
   it("keeps new artifacts private until the owner publishes them", async () => {
     const { app } = fixture();
     const created = await upload(app);
