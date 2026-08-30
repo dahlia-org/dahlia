@@ -1,6 +1,12 @@
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { secureHeaders } from "hono/secure-headers";
+import {
+  bearerAuthChallengeResponse,
+  OAuthError,
+  OAuthErrorCode,
+  type AuthInfo,
+} from "@modelcontextprotocol/server";
 import { z } from "zod";
 
 import { AuthenticationError, IdentityService, type Identity } from "./auth/identity";
@@ -14,9 +20,10 @@ import {
   type GatewayScope,
 } from "./auth/scopes";
 import type { AuthStore } from "./auth/store";
-import type { AppConfig } from "./config";
+import { mcpResource, type AppConfig } from "./config";
 import { ArtifactRequestError, ArtifactService, artifactResponse } from "./artifacts/service";
 import type { ObjectStorage } from "./artifacts/storage";
+import { createArtifactMcpHandler, MCP_MAX_REQUEST_BYTES } from "./mcp";
 import { MODEL_ALIAS_PATTERN, UPSTREAM_MODEL_MAX_LENGTH } from "./ai-gateway/model-alias";
 import { gatewayError, GatewayRequestError, GatewayService } from "./ai-gateway/service";
 
@@ -33,6 +40,10 @@ export const authBodyLimit = bodyLimit({
 });
 const artifactPatchBodyLimit = bodyLimit({
   maxSize: ARTIFACT_PATCH_MAX_REQUEST_BYTES,
+  onError: (context) => context.json({ error: "request_too_large" }, 413),
+});
+const mcpBodyLimit = bodyLimit({
+  maxSize: MCP_MAX_REQUEST_BYTES,
   onError: (context) => context.json({ error: "request_too_large" }, 413),
 });
 
@@ -69,6 +80,33 @@ export interface AppDependencies {
   artifactStorage?: ObjectStorage;
 }
 
+export async function authenticateMcpRequest(
+  request: Request,
+  verifyAccessToken: (request: Request) => Promise<AuthInfo>,
+  resourceMetadataUrl: string,
+): Promise<AuthInfo | Response> {
+  const options = {
+    requiredScopes: [ARTIFACT_WRITE_SCOPE],
+    resourceMetadataUrl,
+  };
+  let authInfo: AuthInfo;
+  try {
+    authInfo = await verifyAccessToken(request);
+  } catch {
+    return bearerAuthChallengeResponse(
+      new OAuthError(OAuthErrorCode.InvalidToken, "Invalid or expired Dahlia access token"),
+      options,
+    );
+  }
+  if (!authInfo.scopes.includes(ARTIFACT_WRITE_SCOPE)) {
+    return bearerAuthChallengeResponse(
+      new OAuthError(OAuthErrorCode.InsufficientScope, "Insufficient scope"),
+      options,
+    );
+  }
+  return authInfo;
+}
+
 const aliasSchema = z.string().regex(MODEL_ALIAS_PATTERN);
 const modelFieldsSchema = z.object({
   upstreamModel: z.string().trim().min(1).max(UPSTREAM_MODEL_MAX_LENGTH),
@@ -97,6 +135,15 @@ export function createApp(dependencies: AppDependencies) {
   const identities = new IdentityService(config, auth);
   const gateway = new GatewayService(config, store, dependencies.fetch);
   const artifacts = new ArtifactService(config, store, dependencies.artifactStorage);
+  const mcp = createArtifactMcpHandler(config, artifacts);
+  const mcpMetadataUrl = `${config.baseUrl}/.well-known/oauth-protected-resource/mcp`;
+  const mcpRequestAuth = auth
+    ? (request: Request) => authenticateMcpRequest(
+        request,
+        (candidate) => identities.verifyMcpAccessToken(candidate),
+        mcpMetadataUrl,
+      )
+    : undefined;
   const services: ServerExtensionServices = {
     auth,
     browserIdentity: (request) => identities.fromBrowser(request),
@@ -104,6 +151,10 @@ export function createApp(dependencies: AppDependencies) {
 
   app.use("*", secureHeaders());
   app.use("/api/*", async (context, next) => {
+    await next();
+    context.header("Cache-Control", "no-store");
+  });
+  app.use("/mcp", async (context, next) => {
     await next();
     context.header("Cache-Control", "no-store");
   });
@@ -125,6 +176,16 @@ export function createApp(dependencies: AppDependencies) {
         resource: `${config.baseUrl}/api/v1`,
         authorization_servers: [config.baseUrl],
         scopes_supported: [...GATEWAY_SCOPES],
+      }),
+    );
+  });
+  app.get("/.well-known/oauth-protected-resource/mcp", async (context) => {
+    if (!auth) return context.json({ error: "not_found" }, 404);
+    return context.json(
+      await createProtectedResourceMetadata(auth)({
+        resource: mcpResource(config),
+        authorization_servers: [config.baseUrl],
+        scopes_supported: [ARTIFACT_WRITE_SCOPE],
       }),
     );
   });
@@ -309,6 +370,37 @@ export function createApp(dependencies: AppDependencies) {
     return context.body(null, 204);
   });
 
+  app.post("/mcp", mcpBodyLimit, async (context) => {
+    const origin = context.req.header("origin");
+    if (origin && origin !== new URL(config.baseUrl).origin) {
+      return context.json({ error: "invalid_origin" }, 403);
+    }
+    const contentLength = context.req.header("content-length");
+    if (contentLength && !/^\d+$/.test(contentLength)) {
+      return context.json({ error: "invalid_content_length" }, 400);
+    }
+    if (contentLength && Number(contentLength) > MCP_MAX_REQUEST_BYTES) {
+      return context.json({ error: "request_too_large" }, 413);
+    }
+    let authInfo: AuthInfo | Response;
+    if (mcpRequestAuth) {
+      authInfo = await mcpRequestAuth(context.req.raw);
+      if (authInfo instanceof Response) return authInfo;
+    } else {
+      const identity = identities.fromMcpHeader(context.req.raw);
+      authInfo = {
+        token: "",
+        clientId: "trusted-proxy",
+        scopes: [ARTIFACT_WRITE_SCOPE],
+        expiresAt: Math.floor(Date.now() / 1000) + 60,
+        resource: new URL(mcpResource(config)),
+        extra: { identity },
+      };
+    }
+    return mcp.fetch(context.req.raw, { authInfo });
+  });
+  app.all("/mcp", (context) => context.json({ error: "method_not_allowed" }, 405));
+
   app.use("/api/v1/*", async (context, next) => {
     context.set("identity", await identities.fromGateway(
       context.req.raw,
@@ -350,6 +442,7 @@ export function createApp(dependencies: AppDependencies) {
 }
 
 function requestRoute(path: string): string {
+  if (path === "/mcp") return path;
   if (path === "/api/v1/artifacts") return path;
   if (path.startsWith("/api/v1/artifacts/")) return "/api/v1/artifacts/:artifactId";
   if (path.startsWith("/api/v1/")) return "/api/v1/*";

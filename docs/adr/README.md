@@ -58,3 +58,4 @@ Codex は全 ADR を順番に読まず、最初にこの一覧から現在の作
 | [0046](0046-forward-databricks-user-token-to-ai-gateway.md) | Server gateway / Databricks | Apps proxy の user token で workspace AI Gateway を呼ぶ | Accepted; amends 0029 and 0044 |
 | [0047](0047-manage-pnpm-dependencies-per-application.md) | Server gateway / Distribution | モノレポ内の各アプリが pnpm manifest と lockfile を独立して所有する | Accepted; amends 0029 and 0044 |
 | [0048](0048-issue-artifact-ids-server-side.md) | Server / Artifact API | UUIDv7 artifact ID を Server で発行し、PUT を置換専用にする | Accepted; amends 0045 |
+| [0049](0049-expose-artifact-tools-over-remote-mcp.md) | Server / MCP / Authentication | owner-scoped artifact mutation を remote MCP として公開する | Accepted; amends 0029, 0044, 0045, and 0048 |

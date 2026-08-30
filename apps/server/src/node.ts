@@ -1,5 +1,7 @@
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
+import { cimd } from "@better-auth/cimd";
+import { fetchClientMetadataResource } from "@better-auth/cimd/node";
 import type { Socket } from "node:net";
 
 import { createApp } from "./app";
@@ -12,7 +14,11 @@ import { loadConfig } from "./config";
 
 const config = loadConfig(process.env);
 const applicationStore = createNodeApplicationStore(config);
-const auth = config.authProvider === "accounts" ? await initializeDahliaAuth(config, applicationStore) : undefined;
+const auth = config.authProvider === "accounts"
+  ? await initializeDahliaAuth(config, applicationStore, [{
+      plugins: [cimd({ fetchClientMetadataResource, metadataProfile: "mcp-2026-07-28" })],
+    }])
+  : undefined;
 const artifactStorage = config.storageBackend === "databricks"
   ? new DatabricksVolumeObjectStorage(config.databricksWorkspace!, config.storageDatabricksVolumePath!)
   : config.storageBackend === "s3"

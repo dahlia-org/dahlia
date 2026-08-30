@@ -32,9 +32,10 @@ Better Auth schemas are generated unmodified into `src/db/generated`; Dahlia tab
 | `/api/v1/responses` | Dahlia OAuth access token | Platform U2M / proxy authentication |
 | `POST /api/v1/artifacts` | Dahlia OAuth with artifact write scope | Proxy identity |
 | `/api/v1/artifacts/{uuidv7}` | Public reads are anonymous; private reads and mutations use Dahlia OAuth | Public reads are anonymous; private reads and mutations use proxy identity |
+| `POST /mcp` | Dahlia OAuth with artifact write scope | Databricks Apps / trusted proxy identity |
 | `/healthz` | Minimal liveness | Internal liveness; anonymous external access is not guaranteed |
 
-`accounts` is the default authentication. It serves OAuth/OIDC discovery under `/.well-known/**`. The fixed public client is `dahlia-macos`; it requires authorization code with S256 PKCE and supports rotating refresh tokens and revocation. Dynamic client registration is disabled.
+`accounts` is the default authentication. It serves OAuth/OIDC discovery under `/.well-known/**`. The fixed public client is `dahlia-macos`; it requires authorization code with S256 PKCE and supports rotating refresh tokens and revocation. RFC 7591 dynamic client registration remains disabled. Node deployments support MCP 2026-07-28 Client ID Metadata Documents (CIMD) with pinned public-address fetching; the MCP resource is `${DAHLIA_APP_URL}/mcp` and its protected-resource metadata is at `/.well-known/oauth-protected-resource/mcp`.
 
 OAuth access uses `api.model.read` for models, `api.model.request` for Responses, and `api.artifact.read` / `api.artifact.write` for private artifact operations. The fixed client is allowed to request these scopes; each endpoint verifies its own scope.
 
@@ -43,6 +44,12 @@ OAuth access uses `api.model.read` for models, `api.model.request` for Responses
 `POST /api/v1/artifacts` accepts an uncompressed raw body with a required `Content-Length` up to 64 MiB, creates a private artifact with a Server-generated canonical lowercase UUIDv7, and returns its stable API URL in `Location`. `PUT /api/v1/artifacts/{uuidv7}` replaces an existing artifact owned by the caller and requires the original `Content-Type`; it never creates a missing ID. `PATCH` accepts only `{"visibility":"private"}` or `{"visibility":"public"}`, and `DELETE` removes bytes before metadata so a storage failure can be retried. There is no list, history, expiry, malware scan, HTML sanitization, or per-user share API.
 
 All storage backends stream authorized `GET` and `HEAD` responses through Dahlia, forward `Range` and `If-Unmodified-Since`, and apply a CSP sandbox so uploaded HTML cannot inherit the Dahlia application origin. Storage URLs and credentials are never returned to clients.
+
+### Artifact MCP
+
+`POST /mcp` is a stateless, modern-only MCP 2026-07-28 endpoint. It exposes `create_artifact`, `update_artifact_content`, `update_artifact_visibility`, and `delete_artifact`; all operations use the same owner checks and private-by-default metadata as the Artifact REST API. Tool content is UTF-8 or canonical RFC 4648 base64, decoded to at most 8 MiB. MCP requests are rejected above 12 MiB before JSON parsing, including streamed requests without `Content-Length`. Tool results contain the artifact ID, canonical Dahlia URL, content type, visibility, and a resource link, never artifact bytes or storage URLs. Streaming uploads larger than 8 MiB remain available through the REST API.
+
+In `accounts` mode, `/mcp` requires a DPoP-bound access token for the exact MCP resource and `api.artifact.write`. In `header` mode, authentication is delegated to the trusted proxy and Dahlia derives ownership from its verified forwarded identity headers. Databricks Apps exposes custom MCP servers at `/mcp`; its proxy has already authenticated the request, and `X-Forwarded-Access-Token` is not used for artifact storage. A present `Origin` must match the configured application origin; non-browser clients may omit it.
 
 `DAHLIA_STORAGE_BACKEND` selects `local`, `s3`, `databricks`, or `r2`. Node defaults to `local` under `DAHLIA_STORAGE_LOCAL_PATH=.data/storage`. Databricks uses `DAHLIA_STORAGE_DATABRICKS_VOLUME_PATH=/Volumes/<catalog>/<schema>/<volume>`. S3 uses `DAHLIA_STORAGE_S3_BUCKET`, optional `DAHLIA_STORAGE_S3_ENDPOINT`, and the standard `AWS_*` credential variables. Workers must explicitly select `r2` with the `DAHLIA_STORAGE` binding or `s3`; they reject the local default.
 

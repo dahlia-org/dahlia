@@ -171,7 +171,7 @@ export class ArtifactService {
     return updated;
   }
 
-  async delete(id: string, identity: Identity, signal?: AbortSignal): Promise<void> {
+  async delete(id: string, identity: Identity, signal?: AbortSignal): Promise<ArtifactRecord> {
     const artifact = await this.getOwned(id, identity);
     const storageKey = artifact.storageKey;
     if (storageKey) {
@@ -182,7 +182,7 @@ export class ArtifactService {
       identity.workspaceId,
       storageKey,
     ));
-    if (deleted) return;
+    if (deleted) return artifact;
     const current = await this.get(id);
     if (!current || current.ownerWorkspaceId !== identity.workspaceId) {
       throw new ArtifactRequestError(404, "artifact_not_found");

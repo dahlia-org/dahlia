@@ -3,10 +3,10 @@ import { oauthProviderResourceClient } from "@better-auth/oauth-provider/resourc
 import { betterAuth, type BetterAuthOptions } from "better-auth";
 import { jwt } from "better-auth/plugins";
 
-import { gatewayResource, type AppConfig } from "../config";
+import { gatewayResource, mcpResource, type AppConfig } from "../config";
 import type { AuthStore } from "./store";
 import { personalWorkspaceId } from "./workspace";
-import { OAUTH_SCOPES } from "./scopes";
+import { ARTIFACT_WRITE_SCOPE, MCP_OAUTH_SCOPES, OAUTH_SCOPES } from "./scopes";
 
 export function denyOAuthManagement(): false {
   return false;
@@ -27,6 +27,7 @@ export function createDahliaAuth(
     throw new Error("Better Auth configuration is incomplete");
   }
   const resource = gatewayResource(config);
+  const mcp = mcpResource(config);
   return betterAuth({
     advanced: { database: { joins: false } },
     appName: "Dahlia Server",
@@ -53,6 +54,8 @@ export function createDahliaAuth(
         allowDynamicClientRegistration: false,
         allowUnauthenticatedClientRegistration: false,
         cachedTrustedClients: new Set(["dahlia-macos"]),
+        clientRegistrationDefaultResources: [mcp],
+        clientRegistrationDefaultScopes: [ARTIFACT_WRITE_SCOPE],
         clientPrivileges: denyOAuthManagement,
         consentPage: "/oauth/consent",
         customAccessTokenClaims: ({ user }) => {
@@ -70,6 +73,14 @@ export function createDahliaAuth(
             accessTokenTtl: 15 * 60,
             refreshTokenTtl: 30 * 24 * 60 * 60,
             allowedScopes: [...OAUTH_SCOPES],
+          },
+          {
+            identifier: mcp,
+            name: "Dahlia MCP",
+            accessTokenTtl: 15 * 60,
+            refreshTokenTtl: 30 * 24 * 60 * 60,
+            allowedScopes: [...MCP_OAUTH_SCOPES],
+            dpopBoundAccessTokensRequired: true,
           },
         ],
         resourcePrivileges: denyOAuthManagement,

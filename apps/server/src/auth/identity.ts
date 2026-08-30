@@ -1,4 +1,6 @@
-import { gatewayResource, type AppConfig } from "../config";
+import type { AuthInfo } from "@modelcontextprotocol/server";
+
+import { gatewayResource, mcpResource, type AppConfig } from "../config";
 import { createAccessTokenVerifier, type DahliaAuth } from "./better-auth";
 import type { GatewayScope } from "./scopes";
 import { personalWorkspaceId } from "./workspace";
@@ -72,6 +74,59 @@ export class IdentityService {
       email,
       workspaceId: claims.workspace_id,
       source: "accounts",
+    };
+  }
+
+  fromMcpHeader(request: Request): Identity {
+    return this.fromHeader(request);
+  }
+
+  async verifyMcpAccessToken(request: Request): Promise<AuthInfo> {
+    if (!this.verifyAccessToken) throw new AuthenticationError("Authentication is unavailable", true);
+    const resource = mcpResource(this.config);
+    let claims: Record<string, unknown>;
+    try {
+      claims = await this.verifyAccessToken(new Request(resource, {
+        method: request.method,
+        headers: request.headers,
+      }), {
+        requiredScopes: [],
+        verifyOptions: {
+          audience: resource,
+          issuer: this.config.baseUrl,
+        },
+      });
+    } catch {
+      throw new AuthenticationError("Invalid or expired Dahlia access token", true);
+    }
+    const clientId = typeof claims.client_id === "string"
+      ? claims.client_id
+      : typeof claims.azp === "string" ? claims.azp : undefined;
+    if (
+      typeof claims.sub !== "string"
+      || typeof claims.workspace_id !== "string"
+      || !clientId
+      || typeof claims.exp !== "number"
+    ) {
+      throw new AuthenticationError("Access token is missing Dahlia MCP claims", true);
+    }
+    const token = request.headers.get("authorization")?.trim().split(/\s+/, 2)[1];
+    if (!token) throw new AuthenticationError("Access token is missing", true);
+    const scopes = typeof claims.scope === "string" ? claims.scope.split(" ").filter(Boolean) : [];
+    return {
+      token,
+      clientId,
+      scopes,
+      expiresAt: claims.exp,
+      resource: new URL(resource),
+      extra: {
+        identity: {
+          userId: claims.sub,
+          email: typeof claims.email === "string" ? claims.email : undefined,
+          workspaceId: claims.workspace_id,
+          source: "accounts",
+        } satisfies Identity,
+      },
     };
   }
 

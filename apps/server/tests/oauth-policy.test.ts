@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { denyOAuthManagement } from "../src/auth/better-auth";
+import { IdentityService } from "../src/auth/identity";
 import {
   ARTIFACT_READ_SCOPE,
   ARTIFACT_WRITE_SCOPE,
@@ -10,7 +11,7 @@ import {
   OAUTH_SCOPES,
 } from "../src/auth/scopes";
 import { createPostgresAuthStore } from "../src/auth/store";
-import { requiredGatewayScope } from "../src/app";
+import { authenticateMcpRequest, requiredGatewayScope } from "../src/app";
 import type { AppConfig } from "../src/config";
 import type { PostgresDatabase } from "../src/db/client";
 
@@ -28,6 +29,67 @@ const config: AppConfig = {
 };
 
 describe("fixed OAuth client policy", () => {
+  it("verifies DPoP against the canonical public MCP URL", async () => {
+    const identities = new IdentityService(config);
+    const verifier = vi.fn(async (request: Request) => {
+      expect(request).toBeInstanceOf(Request);
+      return {
+        sub: "user-1",
+        workspace_id: "personal:user-1",
+        client_id: "https://client.example/metadata.json",
+        exp: Math.floor(Date.now() / 1000) + 60,
+        scope: ARTIFACT_WRITE_SCOPE,
+      };
+    });
+    Object.assign(identities, { verifyAccessToken: verifier });
+    const internalRequest = new Request("http://internal-proxy:3000/mcp", {
+      method: "POST",
+      headers: { Authorization: "DPoP access-token", DPoP: "proof" },
+    });
+
+    await expect(identities.verifyMcpAccessToken(internalRequest)).resolves.toMatchObject({
+      token: "access-token",
+      scopes: [ARTIFACT_WRITE_SCOPE],
+    });
+    const verificationRequest = verifier.mock.calls[0]?.[0] as Request;
+    expect(verificationRequest.url).toBe("https://new.dahlia.example/mcp");
+    expect(verificationRequest.method).toBe("POST");
+    expect(verificationRequest.headers.get("authorization")).toBe("DPoP access-token");
+    expect(verificationRequest.headers.get("dpop")).toBe("proof");
+  });
+
+  it("preserves DPoP requests and distinguishes insufficient scope", async () => {
+    const request = new Request("https://new.dahlia.example/mcp", {
+      method: "POST",
+      headers: { Authorization: "DPoP access-token", DPoP: "proof" },
+    });
+    const authInfo = {
+      token: "access-token",
+      clientId: "https://client.example/metadata.json",
+      scopes: [ARTIFACT_WRITE_SCOPE],
+      expiresAt: Math.floor(Date.now() / 1000) + 60,
+      resource: new URL("https://new.dahlia.example/mcp"),
+    };
+    const verifier = vi.fn(async () => authInfo);
+
+    expect(await authenticateMcpRequest(
+      request,
+      verifier,
+      "https://new.dahlia.example/.well-known/oauth-protected-resource/mcp",
+    )).toBe(authInfo);
+    expect(verifier).toHaveBeenCalledWith(request);
+
+    const insufficient = await authenticateMcpRequest(
+      request,
+      async () => ({ ...authInfo, scopes: [] }),
+      "https://new.dahlia.example/.well-known/oauth-protected-resource/mcp",
+    );
+    expect(insufficient).toBeInstanceOf(Response);
+    expect((insufficient as Response).status).toBe(403);
+    expect((insufficient as Response).headers.get("www-authenticate"))
+      .toContain('error="insufficient_scope"');
+  });
+
   it("denies user-managed OAuth clients and resources", () => {
     expect(denyOAuthManagement()).toBe(false);
   });
