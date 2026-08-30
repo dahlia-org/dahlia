@@ -16,7 +16,7 @@ resources:
   postgres_projects:
     dahlia_database_project:
       project_id: ${var.database_project_id}
-      display_name: Dahlia Server ${bundle.target}
+      display_name: Dahlia DB ${bundle.target}
       pg_version: 18
 
   apps:
