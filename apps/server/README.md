@@ -78,13 +78,15 @@ Databricks native OpenAI Responses API:
 ```dotenv
 DAHLIA_AI_BACKEND=databricks
 DATABRICKS_HOST=https://<workspace-host>
+DATABRICKS_CLIENT_ID=<app-service-principal-client-id>
+DATABRICKS_CLIENT_SECRET=<app-service-principal-secret>
 DAHLIA_DATABASE_TYPE=lakebase
 LAKEBASE_ENDPOINT=<injected from the postgres app resource>
 ```
 
-Databricks Apps supplies `DATABRICKS_HOST` and `X-Forwarded-Access-Token`. Dahlia sends the forwarded user token as Bearer authentication to `DATABRICKS_HOST/ai-gateway/mlflow/v1/responses`; it does not persist, log, or forward the proxy header itself. The Lakebase connector independently uses the App identity to rotate database credentials.
+Databricks Apps supplies `DATABRICKS_HOST`, App service principal credentials, and `X-Forwarded-Access-Token`. Dahlia sends the forwarded user token as Bearer authentication only to `DATABRICKS_HOST/ai-gateway/mlflow/v1/responses`; it does not persist, log, or forward the proxy header itself. The Lakebase connector and model discovery independently use the App identity.
 
-For administrators, `GET /api/admin/models` lists the system-provided model services from `DATABRICKS_HOST/api/2.1/unity-catalog/model-services?parent=schemas/system.ai&view=BASIC`, follows all result pages, and merges their saved enabled state. The Databricks App requests the `ai-gateway`, `catalog.catalogs:read`, and `catalog.schemas:read` user API scopes for the AI backend. The Dashboard enables or disables those models directly; it does not show the manual Model Alias form for this backend.
+For administrators, `GET /api/admin/models` uses the App service principal to list the system-provided model services from `DATABRICKS_HOST/api/2.1/unity-catalog/model-services?parent=schemas/system.ai&view=BASIC`, follows all result pages, and merges their saved enabled state. `DAHLIA_AI_BACKEND=databricks` therefore requires `DATABRICKS_CLIENT_ID` and `DATABRICKS_CLIENT_SECRET`; Databricks Apps injects both at runtime. The App requests only the `ai-gateway` user API scope for Responses. The Dashboard enables or disables those models directly; it does not show the manual Model Alias form for this backend.
 
 Cloudflare AI Gateway:
 

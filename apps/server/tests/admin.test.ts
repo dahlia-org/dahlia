@@ -15,6 +15,16 @@ const config: AppConfig = {
   maxRequestBytes: 1024,
 };
 const ownerHeaders = { "X-Forwarded-Email": "OWNER@example.com", origin: config.baseUrl };
+const databricksConfig: AppConfig = {
+  ...config,
+  provider: { backend: "databricks", baseUrl: "https://workspace.example/ai-gateway/mlflow/v1" },
+  databricksWorkspace: {
+    host: "https://workspace.example",
+    clientId: "app-client-id",
+    clientSecret: "app-client-secret",
+    tokenUrl: "https://workspace.example/oidc/v1/token",
+  },
+};
 
 function administrativeStore() {
   const models: ModelAliasRecord[] = [];
@@ -119,8 +129,11 @@ describe("administration", () => {
       createdAt: now,
       updatedAt: now,
     });
-    const upstream = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
-      expect(new Headers(init?.headers).get("authorization")).toBe("Bearer user-token");
+    const upstream = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith("/oidc/v1/token")) {
+        return Response.json({ access_token: "app-token", expires_in: 3600 });
+      }
+      expect(new Headers(init?.headers).get("authorization")).toBe("Bearer app-token");
       return Response.json({ model_services: [
         { name: "model-services/system.ai.gpt-5-6-luna" },
         { name: "model-services/system.ai.gpt-5-6-sol" },
@@ -128,14 +141,11 @@ describe("administration", () => {
       ] });
     });
     const app = createApp({
-      config: {
-        ...config,
-        provider: { backend: "databricks", baseUrl: "https://workspace.example/ai-gateway/mlflow/v1" },
-      },
+      config: databricksConfig,
       authStore: store,
       fetch: upstream,
     });
-    const headers = { ...ownerHeaders, "X-Forwarded-Access-Token": "user-token" };
+    const headers = ownerHeaders;
 
     expect(await (await app.request("/api/session", { headers })).json())
       .toMatchObject({ capabilities: { admin: true, databricksModels: true } });
@@ -156,22 +166,21 @@ describe("administration", () => {
         enabled: true,
       }),
     })).status).toBe(201);
-    expect(upstream).toHaveBeenCalledOnce();
+    expect(upstream).toHaveBeenCalledTimes(2);
   });
 
   it("keeps Databricks model discovery failures private and uncached", async () => {
     const { store } = administrativeStore();
-    const upstream = vi.fn(async () => new Response("provider details", { status: 503 }));
+    const upstream = vi.fn(async (input: RequestInfo | URL) => String(input).endsWith("/oidc/v1/token")
+      ? Response.json({ access_token: "app-token", expires_in: 3600 })
+      : new Response("provider details", { status: 503 }));
     const app = createApp({
-      config: {
-        ...config,
-        provider: { backend: "databricks", baseUrl: "https://workspace.example/ai-gateway/mlflow/v1" },
-      },
+      config: databricksConfig,
       authStore: store,
       fetch: upstream,
     });
     const response = await app.request("/api/admin/models", {
-      headers: { ...ownerHeaders, "X-Forwarded-Access-Token": "user-token" },
+      headers: ownerHeaders,
     });
 
     expect(response.status).toBe(502);
@@ -179,8 +188,8 @@ describe("administration", () => {
     expect(await response.json()).toMatchObject({
       error: { message: "Databricks model list is unavailable", code: "provider_models_unavailable" },
     });
-    expect((await app.request("/api/admin/models", { headers: ownerHeaders })).status).toBe(401);
-    expect(upstream).toHaveBeenCalledOnce();
+    expect((await app.request("/api/admin/models", { headers: ownerHeaders })).status).toBe(502);
+    expect(upstream).toHaveBeenCalledTimes(3);
   });
 
   it("validates aliases, origins, and administrator authorization", async () => {

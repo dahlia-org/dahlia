@@ -152,9 +152,9 @@ function databricksWorkspaceConfig(
 
 function providerConfig(
   env: Record<string, string | undefined>,
+  backend: AIBackend,
   databricks: DatabricksWorkspaceConfig | undefined,
 ): ProviderConfig | undefined {
-  const backend = aiBackendSchema.parse(env.DAHLIA_AI_BACKEND?.trim() || "openai");
   if (backend === "databricks") {
     const hostValue = required(env, "DATABRICKS_HOST");
     const host = databricks?.host
@@ -197,8 +197,12 @@ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
     .positive()
     .max(64 * 1024 * 1024)
     .parse(env.DAHLIA_MAX_REQUEST_BYTES ?? String(16 * 1024 * 1024));
+  const aiBackend = aiBackendSchema.parse(env.DAHLIA_AI_BACKEND?.trim() || "openai");
   const storageBackend = storageBackendSchema.parse(env.DAHLIA_STORAGE_BACKEND?.trim() || "local");
-  const databricksWorkspace = databricksWorkspaceConfig(env, storageBackend === "databricks");
+  const databricksWorkspace = databricksWorkspaceConfig(
+    env,
+    storageBackend === "databricks" || aiBackend === "databricks",
+  );
   const artifactMaxBytes = z.coerce.number().int().positive().max(DEFAULT_ARTIFACT_MAX_BYTES)
     .parse(env.DAHLIA_ARTIFACT_MAX_BYTES ?? String(DEFAULT_ARTIFACT_MAX_BYTES));
   const storageDatabricksVolumePath = storageBackend === "databricks"
@@ -231,7 +235,7 @@ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
     adminEmail: env.DAHLIA_ADMIN_EMAIL?.trim()
       ? z.email().parse(env.DAHLIA_ADMIN_EMAIL.trim().toLowerCase())
       : undefined,
-    provider: providerConfig(env, databricksWorkspace),
+    provider: providerConfig(env, aiBackend, databricksWorkspace),
     oauthRedirectUris: csv(env.DAHLIA_OAUTH_REDIRECT_URIS),
     maxRequestBytes,
     storageBackend,

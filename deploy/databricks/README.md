@@ -9,7 +9,8 @@ browser / Dahlia Codex with U2M token
 Databricks Apps proxy
         │ identity headers + X-Forwarded-Access-Token
         ▼
-Dahlia Server App ─┬─ forwarded user token ── Databricks AI Gateway
+Dahlia Server App ─┬─ forwarded user token ── Databricks AI Gateway Responses
+                  ├─ app service principal ── Model Services discovery
                   ├─ app service principal ── Lakebase PostgreSQL
                   └─ app service principal ── managed Volume / Files API
 ```
@@ -29,7 +30,7 @@ Optionally bootstrap an administrator:
 export BUNDLE_VAR_admin_email="admin@example.com"
 ```
 
-The App requests the `ai-gateway`, `catalog.catalogs:read`, `catalog.schemas:read`, and `files` user authorization scopes. It uses the Apps proxy's `X-Forwarded-Access-Token` as Bearer authentication for both the workspace OpenAI-compatible AI Gateway at `DATABRICKS_HOST/ai-gateway/mlflow/v1/responses` and system model discovery through the Unity Catalog Model Services API. No provider secret is required. Dahlia also uses the runtime-provided `DATABRICKS_APP_URL` as its canonical public origin, so the bundle does not need to reference its own App URL. `/mcp` needs no additional user API scope: the Apps proxy authenticates the caller and supplies verified identity headers, while artifact bytes use the App service principal's existing Volume permission.
+The App requests the `ai-gateway` and `files` user authorization scopes. It uses the Apps proxy's `X-Forwarded-Access-Token` as Bearer authentication only for the workspace OpenAI-compatible Responses API at `DATABRICKS_HOST/ai-gateway/mlflow/v1/responses`. System model discovery uses a short-lived App service principal token obtained from the runtime-injected `DATABRICKS_CLIENT_ID` and `DATABRICKS_CLIENT_SECRET`; no provider secret is stored in the bundle. Dahlia also uses the runtime-provided `DATABRICKS_APP_URL` as its canonical public origin, so the bundle does not need to reference its own App URL. `/mcp` needs no additional user API scope: the Apps proxy authenticates the caller and supplies verified identity headers, while artifact bytes use the App service principal's existing Volume permission.
 
 The default App names are `dahlia-dev` for `dev` and `dahlia-prod` for `prod`. The corresponding Lakebase project IDs are `dahlia-db-dev` and `dahlia-db`. In the existing `main` catalog, the bundle creates `dahlia_dev` and `dahlia` schemas for the respective targets, each with a managed Volume named `artifacts`; override the `catalog`, `schema`, or `volume_name` variables when needed. Development uses the new Volume immediately. Production also provisions `main.dahlia.artifacts`, but the App remains bound to `main.default.dahlia_artifacts` until its bytes are copied and verified; switch the `dahlia_artifacts` resource and App binding only as part of that explicit migration.
 
@@ -75,7 +76,7 @@ Sign in as the configured administrator, enable a discovered model under `/admin
 ## Security requirements
 
 - Trust `X-Forwarded-User`, `X-Forwarded-Preferred-Username`, and `X-Forwarded-Email` only behind the Databricks Apps proxy.
-- `X-Forwarded-Access-Token` is trusted only behind the Databricks Apps proxy, converted to the upstream Bearer credential, and never persisted or logged.
+- `X-Forwarded-Access-Token` is trusted only behind the Databricks Apps proxy, converted to the Responses upstream Bearer credential, and never persisted or logged. Model discovery never uses it.
 - Responses request and response content is streamed without being persisted or logged.
 - Artifact bytes are content-agnostic and are not inspected or sanitized. Metadata is owner-scoped and private by default.
 - `/healthz` is process liveness only; anonymous external access is not guaranteed.
