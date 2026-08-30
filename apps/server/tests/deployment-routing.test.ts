@@ -202,10 +202,21 @@ describe("deployment routing", () => {
     expect(bundle).toContain("app_name: dahlia-prod");
     expect(bundle).toContain("database_project_id: dahlia-db-dev");
     expect(bundle).toContain("database_project_id: dahlia-db");
-    expect(bundle).toContain("artifact_catalog:");
+    expect(bundle).toContain("catalog:");
     expect(bundle).toContain("default: main");
-    expect(bundle).toContain("artifact_schema:");
-    expect(bundle).toContain("default: default");
+    expect(bundle).toContain("schema:");
+    expect(bundle).toContain("schema: dahlia_dev");
+    expect(bundle).toContain("schema: dahlia");
+    expect(bundle).toContain("volume_name:");
+    expect(bundle).toContain("default: artifacts");
+    expect(bundle).toContain(`dahlia_artifacts:
+          catalog_name: \${var.catalog}
+          schema_name: default
+          name: dahlia_artifacts`);
+    expect(bundle).toContain(`artifacts:
+          catalog_name: \${var.catalog}
+          schema_name: \${resources.schemas.dahlia.name}
+          name: \${var.volume_name}`);
     expect(bundle).toMatch(/prod:[\s\S]*?volumes:[\s\S]*?prevent_destroy: true/);
     expect(bundle).toMatch(/dev:[\s\S]*?purge_on_delete: true[\s\S]*?prod:/);
     expect(bundle).toMatch(/admin_email:\n\s+description: .+\n\s+default: " "/);
@@ -229,7 +240,8 @@ describe("deployment routing", () => {
     expect(resource).toContain("name: DAHLIA_STORAGE_BACKEND");
     expect(resource).toContain("value: databricks");
     expect(resource).toContain("name: DAHLIA_STORAGE_DATABRICKS_VOLUME_PATH");
-    expect(resource).toContain("/Volumes/${var.artifact_catalog}/${var.artifact_schema}/${var.artifact_volume_name}");
+    expect(resource).toContain("/Volumes/${resources.volumes.dahlia_artifacts.catalog_name}/${resources.volumes.dahlia_artifacts.schema_name}/${resources.volumes.dahlia_artifacts.name}");
+    expect(resource).toContain("securable_full_name: ${resources.volumes.dahlia_artifacts.catalog_name}.${resources.volumes.dahlia_artifacts.schema_name}.${resources.volumes.dahlia_artifacts.name}");
     expect(resource).toContain("postgres_projects:");
     expect(resource).not.toContain("postgres_roles:");
     expect(resource).not.toContain("postgres_databases:");
