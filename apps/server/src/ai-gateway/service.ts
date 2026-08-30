@@ -7,6 +7,7 @@ import { MODEL_ALIAS_PATTERN } from "./model-alias";
 interface DatabricksModel {
   id: string;
   displayName: string | null;
+  updateTime?: string;
 }
 
 const DATABRICKS_MODEL_TIMEOUT_MS = 30_000;
@@ -60,11 +61,12 @@ export class GatewayService {
     return models.map((model) => {
       const configured = aliases.find((alias) => alias.upstreamModel === model.id);
       return configured
-        ? { ...configured, configured: true }
+        ? { ...configured, updateTime: model.updateTime, configured: true }
         : {
             alias: availableDatabricksModelAlias(model.id, usedAliases),
             upstreamModel: model.id,
             displayName: model.displayName,
+            updateTime: model.updateTime,
             enabled: false,
             configured: false,
           };
@@ -182,7 +184,10 @@ export class GatewayService {
         if (!id.startsWith("system.ai.") || !MODEL_ALIAS_PATTERN.test(databricksModelAlias(id))) {
           throw databricksModelListError("provider_models_invalid", "invalid_model_name", { requestId });
         }
-        models.push({ id, displayName: null });
+        const updateTime = "update_time" in entry && typeof entry.update_time === "string"
+          ? entry.update_time
+          : undefined;
+        models.push({ id, displayName: null, updateTime });
       }
       const nextPageToken: unknown = "next_page_token" in body ? body.next_page_token : undefined;
       if (nextPageToken !== undefined && typeof nextPageToken !== "string") {

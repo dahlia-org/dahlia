@@ -7,6 +7,7 @@ import {
   shouldRedirectToSignIn,
   type DashboardCapabilities,
 } from "./routes";
+import { filterAndSortModels, type ModelAliasInfo } from "./model-list";
 import { UPSTREAM_MODEL_MAX_LENGTH } from "../ai-gateway/model-alias";
 
 export interface SessionInfo {
@@ -65,14 +66,6 @@ interface DeviceSession {
   expiresAt: string;
   userAgent?: string;
   current: boolean;
-}
-
-interface ModelAliasInfo {
-  alias: string;
-  configured?: boolean;
-  upstreamModel: string;
-  displayName: string | null;
-  enabled: boolean;
 }
 
 interface AdminMember {
@@ -374,7 +367,13 @@ function ModelAliasRow({ model, reload }: { model: ModelAliasInfo; reload: () =>
   );
 }
 
-function DatabricksModelRow({ model }: { model: ModelAliasInfo }) {
+function DatabricksModelRow({
+  model,
+  onUpdated,
+}: {
+  model: ModelAliasInfo;
+  onUpdated: (enabled: boolean) => void;
+}) {
   const [configured, setConfigured] = useState(model.configured ?? true);
   const [enabled, setEnabled] = useState(model.enabled);
   const [error, setError] = useState<string>();
@@ -396,6 +395,7 @@ function DatabricksModelRow({ model }: { model: ModelAliasInfo }) {
         }),
       });
       setConfigured(true);
+      onUpdated(nextEnabled);
     } catch (caught) {
       setEnabled(previousEnabled);
       setError(caught instanceof Error ? caught.message : "Could not update model");
@@ -432,6 +432,7 @@ function AdminModels({ databricksModels }: { databricksModels: boolean }) {
   const [alias, setAlias] = useState("");
   const [upstreamModel, setUpstreamModel] = useState("");
   const [displayName, setDisplayName] = useState("");
+  const [query, setQuery] = useState("");
   const [error, setError] = useState<string>();
   const load = useCallback(() => {
     setError(undefined);
@@ -456,11 +457,29 @@ function AdminModels({ databricksModels }: { databricksModels: boolean }) {
     }
   }
 
+  function updateModel(upstreamModel: string, enabled: boolean) {
+    setModels((current) => current?.map((model) => model.upstreamModel === upstreamModel
+      ? { ...model, configured: true, enabled }
+      : model));
+  }
+
+  const displayedModels = models && filterAndSortModels(models, query);
+
   return (
     <>
       <PageHeader title="Models" />
       <section className="section-block">
         <h2 className="section-label">{databricksModels ? "Available models" : "Model aliases"}</h2>
+        {models && models.length > 0 && (
+          <input
+            className="model-search"
+            type="search"
+            aria-label="Search models"
+            placeholder="Search models"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+        )}
         <div className="panel admin-list">
           {!models && !error && <p className="muted">Loading models…</p>}
           {models?.length === 0 && (
@@ -469,8 +488,15 @@ function AdminModels({ databricksModels }: { databricksModels: boolean }) {
               {!databricksModels && <span>Add an alias below.</span>}
             </div>
           )}
-          {models?.map((model) => databricksModels
-            ? <DatabricksModelRow key={model.upstreamModel} model={model} />
+          {models && models.length > 0 && displayedModels?.length === 0 && (
+            <div className="empty-state"><strong>No models match your search</strong></div>
+          )}
+          {displayedModels?.map((model) => databricksModels
+            ? <DatabricksModelRow
+                key={model.upstreamModel}
+                model={model}
+                onUpdated={(enabled) => updateModel(model.upstreamModel, enabled)}
+              />
             : <ModelAliasRow key={model.alias} model={model} reload={load} />)}
         </div>
       </section>

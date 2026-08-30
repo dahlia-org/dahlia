@@ -84,6 +84,7 @@ a { color: inherit; text-decoration: none; }
 .row-actions { display: flex; flex: 0 0 auto !important; flex-direction: row !important; align-items: center; gap: 10px !important; }
 .empty-state { display: flex; align-items: baseline; gap: 8px; padding: 16px 0; color: var(--muted); font-size: 12px; }
 .empty-state strong { color: var(--ink); font-size: 13px; }
+.model-search { margin-bottom: 9px; }
 .admin-list { padding: 0 20px; }
 .admin-row { padding: 16px 0; border-bottom: 1px solid #eeeae6; }
 .admin-row:last-child { border-bottom: 0; }

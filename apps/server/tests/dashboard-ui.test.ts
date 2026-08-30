@@ -2,7 +2,11 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
-import { resolveDashboardExtensionRoute, type DashboardExtension } from "../src/client/App";
+import {
+  resolveDashboardExtensionRoute,
+  type DashboardExtension,
+} from "../src/client/App";
+import { filterAndSortModels, type ModelAliasInfo } from "../src/client/model-list";
 import { resolveDashboardRoute, shouldRedirectToSignIn } from "../src/client/routes";
 
 const ExtensionPage = () => null;
@@ -90,5 +94,25 @@ describe("dashboard navigation", () => {
     expect(source).toContain("!databricksModels && (");
     expect(styles).toContain(".switch-field input:focus-visible + .switch-control");
     expect(styles).toContain(".provider-model-row { grid-template-columns: 1fr; }");
+  });
+
+  it("filters models by name and applies the default sort order", () => {
+    const model = (alias: string, displayName: string, enabled: boolean, updateTime: string): ModelAliasInfo => ({
+      alias,
+      upstreamModel: `system.ai.${alias}`,
+      displayName,
+      enabled,
+      updateTime,
+    });
+    const models = [
+      model("alpha-old", "Alpha", false, "2026-08-01T00:00:00Z"),
+      model("zulu", "Zulu", true, "2026-08-01T00:00:00Z"),
+      model("alpha-new", "Alpha", false, "2026-08-02T00:00:00Z"),
+    ];
+
+    expect(filterAndSortModels(models, "").map(({ alias }) => alias))
+      .toEqual(["zulu", "alpha-new", "alpha-old"]);
+    expect(filterAndSortModels(models, "SYSTEM.AI.ALPHA").map(({ alias }) => alias))
+      .toEqual(["alpha-new", "alpha-old"]);
   });
 });
