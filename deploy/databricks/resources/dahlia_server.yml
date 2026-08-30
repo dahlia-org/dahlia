@@ -41,7 +41,7 @@ resources:
           - name: DAHLIA_STORAGE_BACKEND
             value: databricks
           - name: DAHLIA_STORAGE_DATABRICKS_VOLUME_PATH
-            value: /Volumes/${var.catalog}/${var.schema}/${var.volume_name}
+            value: /Volumes/${resources.volumes.dahlia_artifacts.catalog_name}/${resources.volumes.dahlia_artifacts.schema_name}/${resources.volumes.dahlia_artifacts.name}
           - name: DAHLIA_DATABASE_TYPE
             value: lakebase
           - name: LAKEBASE_ENDPOINT
@@ -55,5 +55,5 @@ resources:
         - name: artifacts
           uc_securable:
             securable_type: VOLUME
-            securable_full_name: ${var.catalog}.${var.schema}.${var.volume_name}
+            securable_full_name: ${resources.volumes.dahlia_artifacts.catalog_name}.${resources.volumes.dahlia_artifacts.schema_name}.${resources.volumes.dahlia_artifacts.name}
             permission: WRITE_VOLUME

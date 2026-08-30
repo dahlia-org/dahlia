@@ -58,5 +58,16 @@ targets:
             prevent_destroy: true
       volumes:
         dahlia_artifacts:
+          catalog_name: ${var.catalog}
+          schema_name: default
+          name: dahlia_artifacts
+          lifecycle:
+            prevent_destroy: true
+        artifacts:
+          catalog_name: ${var.catalog}
+          schema_name: ${resources.schemas.dahlia.name}
+          name: ${var.volume_name}
+          volume_type: MANAGED
+          comment: Dahlia Server artifact bytes for ${bundle.target}
           lifecycle:
             prevent_destroy: true
