@@ -32,12 +32,11 @@
       "types": "./dist/server/migrations.d.ts",
       "import": "./dist/server/migrations.js"
     },
-    "./migrations/sqlite/*": "./auth-migrations/*",
-    "./migrations/postgres/*": "./drizzle/*",
+    "./migrations/sqlite/*": "./drizzle/sqlite/*",
+    "./migrations/postgres/*": "./drizzle/postgres/*",
     "./package.json": "./package.json"
   },
   "files": [
-    "auth-migrations",
     "dist/client",
     "dist/client-library",
     "dist/server",
@@ -54,7 +53,9 @@
     "build:server": "tsup --config tsup.config.ts",
     "build:library-client": "tsup --config tsup.client.config.ts && cp src/client/styles.css dist/client-library/styles.css",
     "check": "pnpm run lint && pnpm run typecheck && pnpm run test && pnpm run build && pnpm run test:package && pnpm run worker:dry-run",
-    "db:generate": "drizzle-kit generate",
+    "db:generate": "pnpm run db:generate:postgres && pnpm run db:generate:sqlite",
+    "db:generate:postgres": "drizzle-kit generate --config drizzle.config.ts",
+    "db:generate:sqlite": "drizzle-kit generate --config drizzle.sqlite.config.ts && node scripts/sync-d1-migrations.mjs",
     "db:generate-auth": "node scripts/generate-auth-schema.mjs",
     "db:migrate": "tsx --env-file-if-exists=.env.local src/db/migrate.ts",
     "db:migrate:d1:local": "pnpm run ensure:wrangler && WRANGLER_WRITE_LOGS=false WRANGLER_SEND_METRICS=false wrangler d1 migrations apply dahlia_db_prod --local",
@@ -79,6 +80,7 @@
     "worker:types": "pnpm run ensure:wrangler && WRANGLER_WRITE_LOGS=false WRANGLER_SEND_METRICS=false wrangler types worker-configuration.d.ts"
   },
   "dependencies": {
+    "@better-auth/drizzle-adapter": "1.7.1",
     "@better-auth/oauth-provider": "1.7.1",
     "@databricks/lakebase": "0.5.0",
     "@hono/node-server": "^2.1.0",
@@ -101,6 +103,7 @@
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
     "@vitejs/plugin-react": "^6.0.5",
+    "auth": "1.7.1",
     "concurrently": "^10.0.4",
     "drizzle-kit": "1.0.0-rc.4",
     "eslint": "^10.8.0",

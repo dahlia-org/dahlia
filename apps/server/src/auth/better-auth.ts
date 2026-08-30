@@ -28,6 +28,7 @@ export function createDahliaAuth(
   }
   const resource = gatewayResource(config);
   return betterAuth({
+    advanced: { database: { joins: false } },
     appName: "Dahlia Server",
     basePath: "/api/auth",
     baseURL: config.baseUrl,

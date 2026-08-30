@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 
 import { describe, expect, it, vi } from "vitest";
 
@@ -47,8 +47,12 @@ describe("deployment routing", () => {
     expect(wrangler.d1_databases).toContainEqual(expect.objectContaining({
       binding: "dahlia_db_prod",
       database_id: "00000000-0000-0000-0000-000000000000",
-      migrations_dir: "auth-migrations",
+      migrations_dir: "drizzle/d1",
     }));
+    const d1Migrations = readdirSync(new URL("../drizzle/d1", import.meta.url)).toSorted();
+    expect(d1Migrations).toEqual(["20260830001528_stiff_alex_power.sql"]);
+    expect(readText("../drizzle/d1/20260830001528_stiff_alex_power.sql"))
+      .toBe(readText("../drizzle/sqlite/20260830001528_stiff_alex_power/migration.sql"));
     expect(wrangler.vars).toEqual({
       DAHLIA_AI_BACKEND: "cloudflare",
       DAHLIA_STORAGE_BACKEND: "r2",
@@ -248,49 +252,20 @@ describe("deployment routing", () => {
     expect(serverPackage.scripts["ensure:wrangler"]).toContain("../../deploy/cloudflare/wrangler.example.jsonc");
   });
 
-  it("commits only Server application tables after Better Auth", () => {
-    const d1 = readText("../auth-migrations/0002_server.sql");
-    const postgres = readText("../drizzle/20260828162616_baseline/migration.sql");
-    expect(d1).toContain('CREATE TABLE "modelAlias"');
-    expect(d1).toContain('CREATE TABLE "platformAdmin"');
-    expect(postgres).toContain('CREATE TABLE "dahlia"."model_alias"');
-    expect(postgres).toContain('CREATE TABLE "dahlia"."platform_admin"');
-    for (const migration of [d1, postgres]) {
+  it("uses one unqualified Drizzle baseline per dialect", () => {
+    const sqlite = readText("../drizzle/sqlite/20260830001528_stiff_alex_power/migration.sql");
+    const postgres = readText("../drizzle/postgres/20260830001527_open_blue_shield/migration.sql");
+    for (const migration of [sqlite, postgres]) {
+      expect(migration).toContain("model_alias");
+      expect(migration).toContain("platform_admin");
+      expect(migration).toContain("artifact_reservation");
+      expect(migration).toContain("storage_key");
       expect(migration).not.toContain("subscription");
       expect(migration).not.toContain("stripe");
       expect(migration).not.toContain("organization");
     }
-    expect(postgres).toContain('CREATE TABLE "auth"."user"');
-    expect(postgres).not.toContain('CREATE TABLE "dahlia"."user"');
-    expect(postgres).not.toContain('"public".');
-  });
-
-  it("adds artifact metadata without changing the application baselines", () => {
-    const sqlite = readText("../auth-migrations/0003_artifact.sql");
-    const postgres = readText("../drizzle/20260828180826_stiff_natasha_romanoff/migration.sql");
-    for (const migration of [sqlite, postgres]) {
-      expect(migration).toContain("artifact");
-      expect(migration).toContain("owner");
-      expect(migration).toContain("visibility");
-      expect(migration).not.toContain("FOREIGN KEY");
-    }
-  });
-
-  it("permanently reserves artifact IDs when adding tombstones", () => {
-    const sqlite = readText("../auth-migrations/0004_artifact_reservation.sql");
-    const postgres = readText("../drizzle/20260828182417_cool_cerebro/migration.sql");
-    expect(sqlite).toContain('INSERT INTO "artifactReservation" ("id") SELECT "id" FROM "artifact"');
-    expect(postgres).toContain(
-      'INSERT INTO "dahlia"."artifact_reservation" ("id") SELECT "id" FROM "dahlia"."artifact"',
-    );
-  });
-
-  it("pins artifact metadata to the stored object version", () => {
-    const sqlite = readText("../auth-migrations/0005_artifact_storage_key.sql");
-    const postgres = readText("../drizzle/20260829014710_sturdy_korg/migration.sql");
-    expect(sqlite).toContain("storageKey");
-    expect(postgres).toContain("storage_key");
-    expect(sqlite).toContain("artifacts/");
-    expect(postgres).toContain("artifacts/");
+    expect(postgres).toContain('CREATE TABLE "user"');
+    expect(postgres).not.toContain("CREATE SCHEMA");
+    expect(postgres).not.toContain('"dahlia".');
   });
 });

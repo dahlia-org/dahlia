@@ -36,11 +36,11 @@ pnpm exec wrangler d1 create dahlia-db-prod
 pnpm exec wrangler d1 migrations apply dahlia_db_prod --remote
 ```
 
-Copy the database name and ID returned by the first command into `d1_databases[0]` in `apps/server/wrangler.jsonc`. Keep the binding name `dahlia_db_prod` and migrations directory `auth-migrations` unchanged. The real configuration stays local and is not committed.
+Copy the database name and ID returned by the first command into `d1_databases[0]` in `apps/server/wrangler.jsonc`. Keep the binding name `dahlia_db_prod` and `migrations_dir=drizzle/d1` unchanged. `pnpm db:generate:sqlite` refreshes this Wrangler-compatible flat mirror from the Drizzle SQLite migrations. The real configuration stays local and is not committed.
 
 Set the bucket name in the `DAHLIA_STORAGE` binding. The Worker uses that binding for upload, download, metadata, and deletion; no S3 credentials are required for the `r2` backend.
 
-For Hyperdrive, start from the alternate template and replace its Hyperdrive ID, then apply the PostgreSQL SQL under `apps/server/drizzle` as the connection user. The baseline creates the user-owned `auth` and `dahlia` schemas. Keep the binding name `HYPERDRIVE` unchanged.
+For Hyperdrive, start from the alternate template and replace its Hyperdrive ID, create the user-owned `dahlia` schema, then apply the unqualified PostgreSQL SQL under `apps/server/drizzle/postgres` with `search_path=dahlia`. Keep the binding name `HYPERDRIVE` unchanged.
 
 ## 3. Configure authentication
 

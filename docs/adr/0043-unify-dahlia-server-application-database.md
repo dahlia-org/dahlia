@@ -11,7 +11,9 @@ Dahlia Server の Better Auth と Gateway 管理データは配置ごとに異�
 ## Decision
 
 - Better Auth、Model Alias、platform administrator、および将来追加する meeting sync は単一の application database と migration 順序を共有する。
-- database access は Drizzle に統一する。既存 migration は変更せず、将来の schema 変更は追加 migration とする。
+- database access と migration 管理は Drizzle に統一する。Better Auth schema は生成物、application table は Dahlia 管理の schema 定義とし、SQLite/PostgreSQL の両方を Drizzle Kit から生成する。
+- PostgreSQL は Better Auth と application table を同じ `dahlia` schema に置く。migration SQL に schema 修飾を持たせず、runner が schema を作成して `search_path=dahlia` で適用する。
+- 初回リリース前の未適用 migration は dialect ごとの単一 baseline に置き換える。リリース後は既存 migration を変更せず、forward-only migration を追加する。
 - `DAHLIA_DATABASE_TYPE` は `sqlite`、`postgres`、`lakebase`、`hyperdrive`、`d1` を受け取る。SQLite と PostgreSQL の実体は `DAHLIA_DATABASE_URL` で指定する。
 - Node は SQLite、PostgreSQL、Lakebase を、Cloudflare Workers は D1、Hyperdrive、直接 PostgreSQL を実行する。D1 binding は `dahlia_db_prod`、Hyperdrive binding は `HYPERDRIVE` とする。
 - Lakebase は PostgreSQL dialect とし、公式 `@databricks/lakebase` package の接続設定と OAuth credential refresh を使う。AppKit 全体は追加しない。

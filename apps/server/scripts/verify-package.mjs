@@ -50,41 +50,39 @@ try {
     type: "module",
   }));
   await writeFile(join(directory, "verify.mjs"), `
-    import { createApp } from "@dahlia-ai/server";
-    import { createNodeAuthStore } from "@dahlia-ai/server/node";
+    import * as server from "@dahlia-ai/server";
+    import {
+      createNodeAuthStore,
+      createPostgresApplicationStore,
+      createPostgresAuthStore,
+    } from "@dahlia-ai/server/node";
     import { App } from "@dahlia-ai/server/client";
     import { serverMigrationManifest } from "@dahlia-ai/server/migrations";
     import { readFile } from "node:fs/promises";
     import { DatabaseSync } from "node:sqlite";
     import { fileURLToPath } from "node:url";
 
-    if (typeof createApp !== "function" || typeof App !== "function") throw new Error("Package API is incomplete");
-    if (serverMigrationManifest.sqlite.files.length !== 5) {
+    if (typeof server.createApp !== "function" || typeof App !== "function") throw new Error("Package API is incomplete");
+    if ("createPostgresApplicationStore" in server || "createPostgresAuthStore" in server) {
+      throw new Error("Unsafe PostgreSQL store factory leaked from the package root");
+    }
+    if (typeof createPostgresApplicationStore !== "function" || typeof createPostgresAuthStore !== "function") {
+      throw new Error("PostgreSQL store factories are missing from the Node package export");
+    }
+    if (serverMigrationManifest.sqlite.files.length !== 1) {
       throw new Error("Migration manifest is incomplete");
     }
     const style = await readFile(new URL(import.meta.resolve("@dahlia-ai/server/client/styles.css")), "utf8");
     const migration = await readFile(
-      new URL(import.meta.resolve("@dahlia-ai/server/migrations/sqlite/0002_server.sql")),
-      "utf8",
-    );
-    const artifactMigration = await readFile(
-      new URL(import.meta.resolve("@dahlia-ai/server/migrations/sqlite/0003_artifact.sql")),
-      "utf8",
-    );
-    const reservationMigration = await readFile(
-      new URL(import.meta.resolve("@dahlia-ai/server/migrations/sqlite/0004_artifact_reservation.sql")),
-      "utf8",
-    );
-    const storageKeyMigration = await readFile(
-      new URL(import.meta.resolve("@dahlia-ai/server/migrations/sqlite/0005_artifact_storage_key.sql")),
+      new URL(import.meta.resolve("@dahlia-ai/server/migrations/sqlite/20260830001528_stiff_alex_power/migration.sql")),
       "utf8",
     );
     if (
       !style.includes(".app-shell")
-      || !migration.includes("modelAlias")
-      || !artifactMigration.includes("artifact")
-      || !reservationMigration.includes("artifactReservation")
-      || !storageKeyMigration.includes("storageKey")
+      || !migration.includes("model_alias")
+      || !migration.includes("artifact")
+      || !migration.includes("artifact_reservation")
+      || !migration.includes("storage_key")
     ) {
       throw new Error("Package assets are incomplete");
     }
@@ -101,16 +99,20 @@ try {
     });
     await store.migrate();
     const database = new DatabaseSync(databasePath);
-    const applied = database.prepare('SELECT "name" FROM "_dahlia_auth_migrations" ORDER BY "name"').all();
+    const applied = database.prepare('SELECT "name" FROM "__drizzle_migrations"').all();
     database.close();
     await store.close?.();
-    if (applied.length !== 5 || applied[4]?.name !== "server/0005_artifact_storage_key.sql") {
+    if (applied.length !== 1 || applied[0]?.name !== "20260830001528_stiff_alex_power") {
       throw new Error("Installed package migrations did not run from the package directory");
     }
   `);
   await writeFile(join(directory, "verify.ts"), `
     import { createD1AuthStore, type D1DatabaseLike } from "@dahlia-ai/server";
-    import { createNodeAuthStore } from "@dahlia-ai/server/node";
+    import {
+      createNodeAuthStore,
+      createPostgresApplicationStore,
+      createPostgresAuthStore,
+    } from "@dahlia-ai/server/node";
     import type { App } from "@dahlia-ai/server/client";
 
     declare const database: D1DatabaseLike;
@@ -119,6 +121,8 @@ try {
     void store;
     void client;
     void createNodeAuthStore;
+    void createPostgresApplicationStore;
+    void createPostgresAuthStore;
   `);
   await writeFile(join(directory, "tsconfig.json"), JSON.stringify({
     compilerOptions: {

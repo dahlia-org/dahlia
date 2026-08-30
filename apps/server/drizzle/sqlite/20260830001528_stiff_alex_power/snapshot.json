@@ -1,2694 +1,1863 @@
 {
-  "version": "8",
-  "dialect": "postgres",
-  "id": "4eb3bc07-bd13-413a-817b-9040d955cb2d",
+  "version": "7",
+  "dialect": "sqlite",
+  "id": "9cf9c973-c50e-49d7-9fb5-bb90d3578a37",
   "prevIds": [
     "00000000-0000-0000-0000-000000000000"
   ],
   "ddl": [
     {
-      "isRlsEnabled": false,
       "name": "account",
-      "entityType": "tables",
-      "schema": "auth"
+      "entityType": "tables"
     },
     {
-      "isRlsEnabled": false,
       "name": "jwks",
-      "entityType": "tables",
-      "schema": "auth"
+      "entityType": "tables"
     },
     {
-      "isRlsEnabled": false,
-      "name": "model_alias",
-      "entityType": "tables",
-      "schema": "dahlia"
-    },
-    {
-      "isRlsEnabled": false,
       "name": "oauth_access_token",
-      "entityType": "tables",
-      "schema": "auth"
+      "entityType": "tables"
     },
     {
-      "isRlsEnabled": false,
       "name": "oauth_client",
-      "entityType": "tables",
-      "schema": "auth"
+      "entityType": "tables"
     },
     {
-      "isRlsEnabled": false,
       "name": "oauth_client_assertion",
-      "entityType": "tables",
-      "schema": "auth"
+      "entityType": "tables"
     },
     {
-      "isRlsEnabled": false,
       "name": "oauth_client_resource",
-      "entityType": "tables",
-      "schema": "auth"
+      "entityType": "tables"
     },
     {
-      "isRlsEnabled": false,
       "name": "oauth_consent",
-      "entityType": "tables",
-      "schema": "auth"
+      "entityType": "tables"
     },
     {
-      "isRlsEnabled": false,
       "name": "oauth_refresh_token",
-      "entityType": "tables",
-      "schema": "auth"
+      "entityType": "tables"
     },
     {
-      "isRlsEnabled": false,
       "name": "oauth_resource",
-      "entityType": "tables",
-      "schema": "auth"
+      "entityType": "tables"
     },
     {
-      "isRlsEnabled": false,
-      "name": "platform_admin",
-      "entityType": "tables",
-      "schema": "dahlia"
-    },
-    {
-      "isRlsEnabled": false,
       "name": "session",
-      "entityType": "tables",
-      "schema": "auth"
+      "entityType": "tables"
     },
     {
-      "isRlsEnabled": false,
       "name": "user",
-      "entityType": "tables",
-      "schema": "auth"
+      "entityType": "tables"
     },
     {
-      "isRlsEnabled": false,
       "name": "verification",
-      "entityType": "tables",
-      "schema": "auth"
+      "entityType": "tables"
+    },
+    {
+      "name": "artifact",
+      "entityType": "tables"
+    },
+    {
+      "name": "artifact_reservation",
+      "entityType": "tables"
+    },
+    {
+      "name": "model_alias",
+      "entityType": "tables"
+    },
+    {
+      "name": "platform_admin",
+      "entityType": "tables"
     },
     {
       "type": "text",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
+      "notNull": false,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "id",
       "entityType": "columns",
-      "schema": "auth",
       "table": "account"
     },
     {
       "type": "text",
-      "typeSchema": null,
       "notNull": true,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "issuer",
       "entityType": "columns",
-      "schema": "auth",
       "table": "account"
     },
     {
       "type": "text",
-      "typeSchema": null,
       "notNull": true,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
-      "name": "provider_account_id",
+      "name": "account_id",
       "entityType": "columns",
-      "schema": "auth",
       "table": "account"
     },
     {
       "type": "text",
-      "typeSchema": null,
       "notNull": true,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "provider_id",
       "entityType": "columns",
-      "schema": "auth",
       "table": "account"
     },
     {
       "type": "text",
-      "typeSchema": null,
       "notNull": true,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "user_id",
       "entityType": "columns",
-      "schema": "auth",
       "table": "account"
     },
     {
       "type": "text",
-      "typeSchema": null,
       "notNull": false,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "access_token",
       "entityType": "columns",
-      "schema": "auth",
       "table": "account"
     },
     {
       "type": "text",
-      "typeSchema": null,
       "notNull": false,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "refresh_token",
       "entityType": "columns",
-      "schema": "auth",
       "table": "account"
     },
     {
       "type": "text",
-      "typeSchema": null,
       "notNull": false,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "id_token",
       "entityType": "columns",
-      "schema": "auth",
       "table": "account"
     },
     {
-      "type": "timestamp",
-      "typeSchema": null,
+      "type": "integer",
       "notNull": false,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "access_token_expires_at",
       "entityType": "columns",
-      "schema": "auth",
       "table": "account"
     },
     {
-      "type": "timestamp",
-      "typeSchema": null,
+      "type": "integer",
       "notNull": false,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "refresh_token_expires_at",
       "entityType": "columns",
-      "schema": "auth",
       "table": "account"
     },
     {
       "type": "text",
-      "typeSchema": null,
       "notNull": false,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "scope",
       "entityType": "columns",
-      "schema": "auth",
       "table": "account"
     },
     {
       "type": "text",
-      "typeSchema": null,
       "notNull": false,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "password",
       "entityType": "columns",
-      "schema": "auth",
       "table": "account"
     },
     {
-      "type": "timestamp",
-      "typeSchema": null,
+      "type": "integer",
       "notNull": true,
-      "dimensions": 0,
-      "default": "now()",
+      "autoincrement": false,
+      "default": "(cast(unixepoch('subsecond') * 1000 as integer))",
       "generated": null,
-      "identity": null,
       "name": "created_at",
       "entityType": "columns",
-      "schema": "auth",
       "table": "account"
     },
     {
-      "type": "timestamp",
-      "typeSchema": null,
+      "type": "integer",
       "notNull": true,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "updated_at",
       "entityType": "columns",
-      "schema": "auth",
       "table": "account"
     },
     {
       "type": "text",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
+      "notNull": false,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "id",
       "entityType": "columns",
-      "schema": "auth",
       "table": "jwks"
     },
     {
       "type": "text",
-      "typeSchema": null,
       "notNull": true,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "public_key",
       "entityType": "columns",
-      "schema": "auth",
       "table": "jwks"
     },
     {
       "type": "text",
-      "typeSchema": null,
       "notNull": true,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "private_key",
       "entityType": "columns",
-      "schema": "auth",
       "table": "jwks"
     },
     {
-      "type": "timestamp",
-      "typeSchema": null,
+      "type": "integer",
       "notNull": true,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "created_at",
       "entityType": "columns",
-      "schema": "auth",
       "table": "jwks"
     },
     {
-      "type": "timestamp",
-      "typeSchema": null,
+      "type": "integer",
       "notNull": false,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "expires_at",
       "entityType": "columns",
-      "schema": "auth",
       "table": "jwks"
     },
     {
       "type": "text",
-      "typeSchema": null,
       "notNull": false,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "alg",
       "entityType": "columns",
-      "schema": "auth",
       "table": "jwks"
     },
     {
       "type": "text",
-      "typeSchema": null,
       "notNull": false,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "crv",
       "entityType": "columns",
-      "schema": "auth",
       "table": "jwks"
     },
     {
       "type": "text",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "alias",
-      "entityType": "columns",
-      "schema": "dahlia",
-      "table": "model_alias"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "upstream_model",
-      "entityType": "columns",
-      "schema": "dahlia",
-      "table": "model_alias"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
       "notNull": false,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
-      "name": "display_name",
-      "entityType": "columns",
-      "schema": "dahlia",
-      "table": "model_alias"
-    },
-    {
-      "type": "boolean",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": "true",
-      "generated": null,
-      "identity": null,
-      "name": "enabled",
-      "entityType": "columns",
-      "schema": "dahlia",
-      "table": "model_alias"
-    },
-    {
-      "type": "timestamp",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": "now()",
-      "generated": null,
-      "identity": null,
-      "name": "created_at",
-      "entityType": "columns",
-      "schema": "dahlia",
-      "table": "model_alias"
-    },
-    {
-      "type": "timestamp",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": "now()",
-      "generated": null,
-      "identity": null,
-      "name": "updated_at",
-      "entityType": "columns",
-      "schema": "dahlia",
-      "table": "model_alias"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
       "name": "id",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_access_token"
     },
     {
       "type": "text",
-      "typeSchema": null,
       "notNull": false,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "token",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_access_token"
     },
     {
       "type": "text",
-      "typeSchema": null,
       "notNull": true,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "client_id",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_access_token"
     },
     {
       "type": "text",
-      "typeSchema": null,
       "notNull": false,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "session_id",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_access_token"
     },
     {
       "type": "text",
-      "typeSchema": null,
       "notNull": false,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "user_id",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_access_token"
     },
     {
       "type": "text",
-      "typeSchema": null,
       "notNull": false,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "reference_id",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_access_token"
     },
     {
       "type": "text",
-      "typeSchema": null,
       "notNull": false,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "authorization_code_id",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_access_token"
     },
     {
       "type": "text",
-      "typeSchema": null,
       "notNull": false,
-      "dimensions": 1,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "resources",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_access_token"
     },
     {
       "type": "text",
-      "typeSchema": null,
       "notNull": false,
-      "dimensions": 1,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "requested_user_info_claims",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_access_token"
     },
     {
       "type": "text",
-      "typeSchema": null,
       "notNull": false,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "refresh_id",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_access_token"
     },
     {
-      "type": "timestamp",
-      "typeSchema": null,
+      "type": "integer",
       "notNull": false,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "expires_at",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_access_token"
     },
     {
-      "type": "timestamp",
-      "typeSchema": null,
+      "type": "integer",
       "notNull": false,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "created_at",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_access_token"
     },
     {
-      "type": "timestamp",
-      "typeSchema": null,
+      "type": "integer",
       "notNull": false,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "revoked",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_access_token"
     },
     {
-      "type": "jsonb",
-      "typeSchema": null,
+      "type": "text",
       "notNull": false,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "confirmation",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_access_token"
     },
     {
       "type": "text",
-      "typeSchema": null,
       "notNull": true,
-      "dimensions": 1,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "scopes",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_access_token"
     },
     {
       "type": "text",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
+      "notNull": false,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "id",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_client"
     },
     {
       "type": "text",
-      "typeSchema": null,
       "notNull": true,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "client_id",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_client"
     },
     {
       "type": "text",
-      "typeSchema": null,
       "notNull": false,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "client_secret",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_client"
     },
     {
       "type": "text",
-      "typeSchema": null,
       "notNull": false,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "client_discovery_id",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_client"
     },
     {
-      "type": "boolean",
-      "typeSchema": null,
+      "type": "integer",
       "notNull": false,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": "false",
       "generated": null,
-      "identity": null,
       "name": "disabled",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_client"
     },
     {
-      "type": "boolean",
-      "typeSchema": null,
+      "type": "integer",
       "notNull": false,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "skip_consent",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_client"
     },
     {
-      "type": "boolean",
-      "typeSchema": null,
+      "type": "integer",
       "notNull": false,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "enable_end_session",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_client"
     },
     {
       "type": "text",
-      "typeSchema": null,
       "notNull": false,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "subject_type",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_client"
     },
     {
       "type": "text",
-      "typeSchema": null,
       "notNull": false,
-      "dimensions": 1,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "scopes",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_client"
     },
     {
       "type": "text",
-      "typeSchema": null,
       "notNull": false,
-      "dimensions": 1,
-      "default": "'{}'",
+      "autoincrement": false,
+      "default": "'[]'",
       "generated": null,
-      "identity": null,
       "name": "client_credentials_scopes",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_client"
     },
     {
       "type": "text",
-      "typeSchema": null,
       "notNull": false,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "user_id",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_client"
     },
     {
-      "type": "timestamp",
-      "typeSchema": null,
+      "type": "integer",
       "notNull": false,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "created_at",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_client"
     },
     {
-      "type": "timestamp",
-      "typeSchema": null,
+      "type": "integer",
       "notNull": false,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "updated_at",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_client"
     },
     {
       "type": "text",
-      "typeSchema": null,
       "notNull": false,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "name",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_client"
     },
     {
       "type": "text",
-      "typeSchema": null,
       "notNull": false,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "uri",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_client"
     },
     {
       "type": "text",
-      "typeSchema": null,
       "notNull": false,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "icon",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_client"
     },
     {
       "type": "text",
-      "typeSchema": null,
       "notNull": false,
-      "dimensions": 1,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "contacts",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_client"
     },
     {
       "type": "text",
-      "typeSchema": null,
       "notNull": false,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "tos",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_client"
     },
     {
       "type": "text",
-      "typeSchema": null,
       "notNull": false,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "policy",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_client"
     },
     {
       "type": "text",
-      "typeSchema": null,
       "notNull": false,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "software_id",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_client"
     },
     {
       "type": "text",
-      "typeSchema": null,
       "notNull": false,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "software_version",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_client"
     },
     {
       "type": "text",
-      "typeSchema": null,
       "notNull": false,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "software_statement",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_client"
     },
     {
       "type": "text",
-      "typeSchema": null,
       "notNull": true,
-      "dimensions": 1,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "redirect_uris",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_client"
     },
     {
       "type": "text",
-      "typeSchema": null,
       "notNull": false,
-      "dimensions": 1,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "post_logout_redirect_uris",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_client"
     },
     {
       "type": "text",
-      "typeSchema": null,
       "notNull": false,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "backchannel_logout_uri",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_client"
     },
     {
-      "type": "boolean",
-      "typeSchema": null,
+      "type": "integer",
       "notNull": false,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "backchannel_logout_session_required",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_client"
     },
     {
       "type": "text",
-      "typeSchema": null,
       "notNull": false,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "token_endpoint_auth_method",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_client"
     },
     {
       "type": "text",
-      "typeSchema": null,
       "notNull": false,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "application_type",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_client"
     },
     {
       "type": "text",
-      "typeSchema": null,
       "notNull": false,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "jwks",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_client"
     },
     {
       "type": "text",
-      "typeSchema": null,
       "notNull": false,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "jwks_uri",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_client"
     },
     {
       "type": "text",
-      "typeSchema": null,
       "notNull": false,
-      "dimensions": 1,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "grant_types",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_client"
     },
     {
       "type": "text",
-      "typeSchema": null,
       "notNull": false,
-      "dimensions": 1,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "response_types",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_client"
     },
     {
-      "type": "boolean",
-      "typeSchema": null,
+      "type": "integer",
       "notNull": false,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "require_pkce",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_client"
     },
     {
-      "type": "boolean",
-      "typeSchema": null,
+      "type": "integer",
       "notNull": false,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": "false",
       "generated": null,
-      "identity": null,
       "name": "dpop_bound_access_tokens",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_client"
     },
     {
       "type": "text",
-      "typeSchema": null,
       "notNull": false,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "reference_id",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_client"
     },
     {
-      "type": "jsonb",
-      "typeSchema": null,
+      "type": "text",
       "notNull": false,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "metadata",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_client"
     },
     {
       "type": "text",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
+      "notNull": false,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "id",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_client_assertion"
     },
     {
-      "type": "timestamp",
-      "typeSchema": null,
+      "type": "integer",
       "notNull": true,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "expires_at",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_client_assertion"
     },
     {
       "type": "text",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
+      "notNull": false,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "id",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_client_resource"
     },
     {
       "type": "text",
-      "typeSchema": null,
       "notNull": true,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "client_id",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_client_resource"
     },
     {
       "type": "text",
-      "typeSchema": null,
       "notNull": true,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "resource_id",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_client_resource"
     },
     {
-      "type": "jsonb",
-      "typeSchema": null,
+      "type": "text",
       "notNull": false,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "metadata",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_client_resource"
     },
     {
-      "type": "timestamp",
-      "typeSchema": null,
+      "type": "integer",
       "notNull": false,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "created_at",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_client_resource"
     },
     {
       "type": "text",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
+      "notNull": false,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "id",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_consent"
     },
     {
       "type": "text",
-      "typeSchema": null,
       "notNull": true,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "client_id",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_consent"
     },
     {
       "type": "text",
-      "typeSchema": null,
       "notNull": false,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "user_id",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_consent"
     },
     {
       "type": "text",
-      "typeSchema": null,
       "notNull": false,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "reference_id",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_consent"
     },
     {
       "type": "text",
-      "typeSchema": null,
       "notNull": false,
-      "dimensions": 1,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "resources",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_consent"
     },
     {
       "type": "text",
-      "typeSchema": null,
       "notNull": false,
-      "dimensions": 1,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "requested_user_info_claims",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_consent"
     },
     {
       "type": "text",
-      "typeSchema": null,
       "notNull": true,
-      "dimensions": 1,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "scopes",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_consent"
     },
     {
-      "type": "timestamp",
-      "typeSchema": null,
+      "type": "integer",
       "notNull": false,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "created_at",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_consent"
     },
     {
-      "type": "timestamp",
-      "typeSchema": null,
+      "type": "integer",
       "notNull": false,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "updated_at",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_consent"
     },
     {
       "type": "text",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
+      "notNull": false,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "id",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_refresh_token"
     },
     {
       "type": "text",
-      "typeSchema": null,
       "notNull": true,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "token",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_refresh_token"
     },
     {
       "type": "text",
-      "typeSchema": null,
       "notNull": true,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "client_id",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_refresh_token"
     },
     {
       "type": "text",
-      "typeSchema": null,
       "notNull": false,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "session_id",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_refresh_token"
     },
     {
       "type": "text",
-      "typeSchema": null,
       "notNull": true,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "user_id",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_refresh_token"
     },
     {
       "type": "text",
-      "typeSchema": null,
       "notNull": false,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "reference_id",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_refresh_token"
     },
     {
       "type": "text",
-      "typeSchema": null,
       "notNull": false,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "authorization_code_id",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_refresh_token"
     },
     {
       "type": "text",
-      "typeSchema": null,
       "notNull": false,
-      "dimensions": 1,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "resources",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_refresh_token"
     },
     {
       "type": "text",
-      "typeSchema": null,
       "notNull": false,
-      "dimensions": 1,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "requested_user_info_claims",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_refresh_token"
     },
     {
-      "type": "timestamp",
-      "typeSchema": null,
+      "type": "integer",
       "notNull": false,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "expires_at",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_refresh_token"
     },
     {
-      "type": "timestamp",
-      "typeSchema": null,
+      "type": "integer",
       "notNull": false,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "created_at",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_refresh_token"
     },
     {
-      "type": "timestamp",
-      "typeSchema": null,
+      "type": "integer",
       "notNull": false,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "revoked",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_refresh_token"
     },
     {
-      "type": "timestamp",
-      "typeSchema": null,
+      "type": "integer",
       "notNull": false,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "rotated_at",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_refresh_token"
     },
     {
       "type": "text",
-      "typeSchema": null,
       "notNull": false,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "rotation_replay_response",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_refresh_token"
     },
     {
-      "type": "timestamp",
-      "typeSchema": null,
+      "type": "integer",
       "notNull": false,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "rotation_replay_expires_at",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_refresh_token"
     },
     {
-      "type": "timestamp",
-      "typeSchema": null,
+      "type": "integer",
       "notNull": false,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "auth_time",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_refresh_token"
     },
     {
-      "type": "jsonb",
-      "typeSchema": null,
+      "type": "text",
       "notNull": false,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "confirmation",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_refresh_token"
     },
     {
       "type": "text",
-      "typeSchema": null,
       "notNull": true,
-      "dimensions": 1,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "scopes",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_refresh_token"
     },
     {
       "type": "text",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
+      "notNull": false,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "id",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_resource"
     },
     {
       "type": "text",
-      "typeSchema": null,
       "notNull": true,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "identifier",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_resource"
     },
     {
       "type": "text",
-      "typeSchema": null,
       "notNull": true,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "name",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_resource"
     },
     {
       "type": "integer",
-      "typeSchema": null,
       "notNull": false,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "access_token_ttl",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_resource"
     },
     {
       "type": "integer",
-      "typeSchema": null,
       "notNull": false,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "refresh_token_ttl",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_resource"
     },
     {
       "type": "text",
-      "typeSchema": null,
       "notNull": false,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "signing_algorithm",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_resource"
     },
     {
       "type": "text",
-      "typeSchema": null,
       "notNull": false,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "signing_key_id",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_resource"
     },
     {
       "type": "text",
-      "typeSchema": null,
       "notNull": false,
-      "dimensions": 1,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "allowed_scopes",
       "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_resource"
     },
     {
-      "type": "jsonb",
-      "typeSchema": null,
+      "type": "text",
       "notNull": false,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
       "name": "custom_claims",
       "entityType": "columns",
-      "schema": "auth",
-      "table": "oauth_resource"
-    },
-    {
-      "type": "boolean",
-      "typeSchema": null,
-      "notNull": false,
-      "dimensions": 0,
-      "default": "false",
-      "generated": null,
-      "identity": null,
-      "name": "dpop_bound_access_tokens_required",
-      "entityType": "columns",
-      "schema": "auth",
-      "table": "oauth_resource"
-    },
-    {
-      "type": "boolean",
-      "typeSchema": null,
-      "notNull": false,
-      "dimensions": 0,
-      "default": "false",
-      "generated": null,
-      "identity": null,
-      "name": "disabled",
-      "entityType": "columns",
-      "schema": "auth",
-      "table": "oauth_resource"
-    },
-    {
-      "type": "timestamp",
-      "typeSchema": null,
-      "notNull": false,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "created_at",
-      "entityType": "columns",
-      "schema": "auth",
-      "table": "oauth_resource"
-    },
-    {
-      "type": "timestamp",
-      "typeSchema": null,
-      "notNull": false,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "updated_at",
-      "entityType": "columns",
-      "schema": "auth",
       "table": "oauth_resource"
     },
     {
       "type": "integer",
-      "typeSchema": null,
       "notNull": false,
-      "dimensions": 0,
-      "default": "1",
-      "generated": null,
-      "identity": null,
-      "name": "policy_version",
-      "entityType": "columns",
-      "schema": "auth",
-      "table": "oauth_resource"
-    },
-    {
-      "type": "jsonb",
-      "typeSchema": null,
-      "notNull": false,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "metadata",
-      "entityType": "columns",
-      "schema": "auth",
-      "table": "oauth_resource"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "email",
-      "entityType": "columns",
-      "schema": "dahlia",
-      "table": "platform_admin"
-    },
-    {
-      "type": "timestamp",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": "now()",
-      "generated": null,
-      "identity": null,
-      "name": "created_at",
-      "entityType": "columns",
-      "schema": "dahlia",
-      "table": "platform_admin"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "id",
-      "entityType": "columns",
-      "schema": "auth",
-      "table": "session"
-    },
-    {
-      "type": "timestamp",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "expires_at",
-      "entityType": "columns",
-      "schema": "auth",
-      "table": "session"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "token",
-      "entityType": "columns",
-      "schema": "auth",
-      "table": "session"
-    },
-    {
-      "type": "timestamp",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": "now()",
-      "generated": null,
-      "identity": null,
-      "name": "created_at",
-      "entityType": "columns",
-      "schema": "auth",
-      "table": "session"
-    },
-    {
-      "type": "timestamp",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "updated_at",
-      "entityType": "columns",
-      "schema": "auth",
-      "table": "session"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": false,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "ip_address",
-      "entityType": "columns",
-      "schema": "auth",
-      "table": "session"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": false,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "user_agent",
-      "entityType": "columns",
-      "schema": "auth",
-      "table": "session"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "user_id",
-      "entityType": "columns",
-      "schema": "auth",
-      "table": "session"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "id",
-      "entityType": "columns",
-      "schema": "auth",
-      "table": "user"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "name",
-      "entityType": "columns",
-      "schema": "auth",
-      "table": "user"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "email",
-      "entityType": "columns",
-      "schema": "auth",
-      "table": "user"
-    },
-    {
-      "type": "boolean",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
+      "autoincrement": false,
       "default": "false",
       "generated": null,
-      "identity": null,
-      "name": "email_verified",
+      "name": "dpop_bound_access_tokens_required",
       "entityType": "columns",
-      "schema": "auth",
-      "table": "user"
+      "table": "oauth_resource"
     },
     {
-      "type": "text",
-      "typeSchema": null,
+      "type": "integer",
       "notNull": false,
-      "dimensions": 0,
+      "autoincrement": false,
+      "default": "false",
+      "generated": null,
+      "name": "disabled",
+      "entityType": "columns",
+      "table": "oauth_resource"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
-      "name": "image",
-      "entityType": "columns",
-      "schema": "auth",
-      "table": "user"
-    },
-    {
-      "type": "timestamp",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": "now()",
-      "generated": null,
-      "identity": null,
       "name": "created_at",
       "entityType": "columns",
-      "schema": "auth",
-      "table": "user"
+      "table": "oauth_resource"
     },
     {
-      "type": "timestamp",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": "now()",
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
       "generated": null,
-      "identity": null,
       "name": "updated_at",
       "entityType": "columns",
-      "schema": "auth",
-      "table": "user"
+      "table": "oauth_resource"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": "1",
+      "generated": null,
+      "name": "policy_version",
+      "entityType": "columns",
+      "table": "oauth_resource"
     },
     {
       "type": "text",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
+      "notNull": false,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "identity": null,
+      "name": "metadata",
+      "entityType": "columns",
+      "table": "oauth_resource"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
       "name": "id",
       "entityType": "columns",
-      "schema": "auth",
-      "table": "verification"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "identifier",
-      "entityType": "columns",
-      "schema": "auth",
-      "table": "verification"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "value",
-      "entityType": "columns",
-      "schema": "auth",
-      "table": "verification"
-    },
-    {
-      "type": "timestamp",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "expires_at",
-      "entityType": "columns",
-      "schema": "auth",
-      "table": "verification"
-    },
-    {
-      "type": "timestamp",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": "now()",
-      "generated": null,
-      "identity": null,
-      "name": "created_at",
-      "entityType": "columns",
-      "schema": "auth",
-      "table": "verification"
-    },
-    {
-      "type": "timestamp",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": "now()",
-      "generated": null,
-      "identity": null,
-      "name": "updated_at",
-      "entityType": "columns",
-      "schema": "auth",
-      "table": "verification"
-    },
-    {
-      "nameExplicit": true,
-      "columns": [
-        {
-          "value": "issuer",
-          "isExpression": false,
-          "asc": true,
-          "nullsFirst": false,
-          "opclass": null
-        },
-        {
-          "value": "provider_account_id",
-          "isExpression": false,
-          "asc": true,
-          "nullsFirst": false,
-          "opclass": null
-        }
-      ],
-      "isUnique": true,
-      "where": null,
-      "with": "",
-      "method": "btree",
-      "concurrently": false,
-      "name": "account_issuer_providerAccountId_uidx",
-      "entityType": "indexes",
-      "schema": "auth",
-      "table": "account"
-    },
-    {
-      "nameExplicit": true,
-      "columns": [
-        {
-          "value": "user_id",
-          "isExpression": false,
-          "asc": true,
-          "nullsFirst": false,
-          "opclass": null
-        }
-      ],
-      "isUnique": false,
-      "where": null,
-      "with": "",
-      "method": "btree",
-      "concurrently": false,
-      "name": "account_userId_idx",
-      "entityType": "indexes",
-      "schema": "auth",
-      "table": "account"
-    },
-    {
-      "nameExplicit": true,
-      "columns": [
-        {
-          "value": "client_id",
-          "isExpression": false,
-          "asc": true,
-          "nullsFirst": false,
-          "opclass": null
-        }
-      ],
-      "isUnique": false,
-      "where": null,
-      "with": "",
-      "method": "btree",
-      "concurrently": false,
-      "name": "oauthAccessToken_clientId_idx",
-      "entityType": "indexes",
-      "schema": "auth",
-      "table": "oauth_access_token"
-    },
-    {
-      "nameExplicit": true,
-      "columns": [
-        {
-          "value": "session_id",
-          "isExpression": false,
-          "asc": true,
-          "nullsFirst": false,
-          "opclass": null
-        }
-      ],
-      "isUnique": false,
-      "where": null,
-      "with": "",
-      "method": "btree",
-      "concurrently": false,
-      "name": "oauthAccessToken_sessionId_idx",
-      "entityType": "indexes",
-      "schema": "auth",
-      "table": "oauth_access_token"
-    },
-    {
-      "nameExplicit": true,
-      "columns": [
-        {
-          "value": "user_id",
-          "isExpression": false,
-          "asc": true,
-          "nullsFirst": false,
-          "opclass": null
-        }
-      ],
-      "isUnique": false,
-      "where": null,
-      "with": "",
-      "method": "btree",
-      "concurrently": false,
-      "name": "oauthAccessToken_userId_idx",
-      "entityType": "indexes",
-      "schema": "auth",
-      "table": "oauth_access_token"
-    },
-    {
-      "nameExplicit": true,
-      "columns": [
-        {
-          "value": "authorization_code_id",
-          "isExpression": false,
-          "asc": true,
-          "nullsFirst": false,
-          "opclass": null
-        }
-      ],
-      "isUnique": false,
-      "where": null,
-      "with": "",
-      "method": "btree",
-      "concurrently": false,
-      "name": "oauthAccessToken_authorizationCodeId_idx",
-      "entityType": "indexes",
-      "schema": "auth",
-      "table": "oauth_access_token"
-    },
-    {
-      "nameExplicit": true,
-      "columns": [
-        {
-          "value": "refresh_id",
-          "isExpression": false,
-          "asc": true,
-          "nullsFirst": false,
-          "opclass": null
-        }
-      ],
-      "isUnique": false,
-      "where": null,
-      "with": "",
-      "method": "btree",
-      "concurrently": false,
-      "name": "oauthAccessToken_refreshId_idx",
-      "entityType": "indexes",
-      "schema": "auth",
-      "table": "oauth_access_token"
-    },
-    {
-      "nameExplicit": true,
-      "columns": [
-        {
-          "value": "user_id",
-          "isExpression": false,
-          "asc": true,
-          "nullsFirst": false,
-          "opclass": null
-        }
-      ],
-      "isUnique": false,
-      "where": null,
-      "with": "",
-      "method": "btree",
-      "concurrently": false,
-      "name": "oauthClient_userId_idx",
-      "entityType": "indexes",
-      "schema": "auth",
-      "table": "oauth_client"
-    },
-    {
-      "nameExplicit": true,
-      "columns": [
-        {
-          "value": "client_id",
-          "isExpression": false,
-          "asc": true,
-          "nullsFirst": false,
-          "opclass": null
-        },
-        {
-          "value": "resource_id",
-          "isExpression": false,
-          "asc": true,
-          "nullsFirst": false,
-          "opclass": null
-        }
-      ],
-      "isUnique": true,
-      "where": null,
-      "with": "",
-      "method": "btree",
-      "concurrently": false,
-      "name": "oauthClientResource_clientId_resourceId_uidx",
-      "entityType": "indexes",
-      "schema": "auth",
-      "table": "oauth_client_resource"
-    },
-    {
-      "nameExplicit": true,
-      "columns": [
-        {
-          "value": "client_id",
-          "isExpression": false,
-          "asc": true,
-          "nullsFirst": false,
-          "opclass": null
-        }
-      ],
-      "isUnique": false,
-      "where": null,
-      "with": "",
-      "method": "btree",
-      "concurrently": false,
-      "name": "oauthClientResource_clientId_idx",
-      "entityType": "indexes",
-      "schema": "auth",
-      "table": "oauth_client_resource"
-    },
-    {
-      "nameExplicit": true,
-      "columns": [
-        {
-          "value": "resource_id",
-          "isExpression": false,
-          "asc": true,
-          "nullsFirst": false,
-          "opclass": null
-        }
-      ],
-      "isUnique": false,
-      "where": null,
-      "with": "",
-      "method": "btree",
-      "concurrently": false,
-      "name": "oauthClientResource_resourceId_idx",
-      "entityType": "indexes",
-      "schema": "auth",
-      "table": "oauth_client_resource"
-    },
-    {
-      "nameExplicit": true,
-      "columns": [
-        {
-          "value": "client_id",
-          "isExpression": false,
-          "asc": true,
-          "nullsFirst": false,
-          "opclass": null
-        }
-      ],
-      "isUnique": false,
-      "where": null,
-      "with": "",
-      "method": "btree",
-      "concurrently": false,
-      "name": "oauthConsent_clientId_idx",
-      "entityType": "indexes",
-      "schema": "auth",
-      "table": "oauth_consent"
-    },
-    {
-      "nameExplicit": true,
-      "columns": [
-        {
-          "value": "user_id",
-          "isExpression": false,
-          "asc": true,
-          "nullsFirst": false,
-          "opclass": null
-        }
-      ],
-      "isUnique": false,
-      "where": null,
-      "with": "",
-      "method": "btree",
-      "concurrently": false,
-      "name": "oauthConsent_userId_idx",
-      "entityType": "indexes",
-      "schema": "auth",
-      "table": "oauth_consent"
-    },
-    {
-      "nameExplicit": true,
-      "columns": [
-        {
-          "value": "client_id",
-          "isExpression": false,
-          "asc": true,
-          "nullsFirst": false,
-          "opclass": null
-        }
-      ],
-      "isUnique": false,
-      "where": null,
-      "with": "",
-      "method": "btree",
-      "concurrently": false,
-      "name": "oauthRefreshToken_clientId_idx",
-      "entityType": "indexes",
-      "schema": "auth",
-      "table": "oauth_refresh_token"
-    },
-    {
-      "nameExplicit": true,
-      "columns": [
-        {
-          "value": "session_id",
-          "isExpression": false,
-          "asc": true,
-          "nullsFirst": false,
-          "opclass": null
-        }
-      ],
-      "isUnique": false,
-      "where": null,
-      "with": "",
-      "method": "btree",
-      "concurrently": false,
-      "name": "oauthRefreshToken_sessionId_idx",
-      "entityType": "indexes",
-      "schema": "auth",
-      "table": "oauth_refresh_token"
-    },
-    {
-      "nameExplicit": true,
-      "columns": [
-        {
-          "value": "user_id",
-          "isExpression": false,
-          "asc": true,
-          "nullsFirst": false,
-          "opclass": null
-        }
-      ],
-      "isUnique": false,
-      "where": null,
-      "with": "",
-      "method": "btree",
-      "concurrently": false,
-      "name": "oauthRefreshToken_userId_idx",
-      "entityType": "indexes",
-      "schema": "auth",
-      "table": "oauth_refresh_token"
-    },
-    {
-      "nameExplicit": true,
-      "columns": [
-        {
-          "value": "authorization_code_id",
-          "isExpression": false,
-          "asc": true,
-          "nullsFirst": false,
-          "opclass": null
-        }
-      ],
-      "isUnique": false,
-      "where": null,
-      "with": "",
-      "method": "btree",
-      "concurrently": false,
-      "name": "oauthRefreshToken_authorizationCodeId_idx",
-      "entityType": "indexes",
-      "schema": "auth",
-      "table": "oauth_refresh_token"
-    },
-    {
-      "nameExplicit": true,
-      "columns": [
-        {
-          "value": "user_id",
-          "isExpression": false,
-          "asc": true,
-          "nullsFirst": false,
-          "opclass": null
-        }
-      ],
-      "isUnique": false,
-      "where": null,
-      "with": "",
-      "method": "btree",
-      "concurrently": false,
-      "name": "session_userId_idx",
-      "entityType": "indexes",
-      "schema": "auth",
       "table": "session"
     },
     {
-      "nameExplicit": true,
-      "columns": [
-        {
-          "value": "identifier",
-          "isExpression": false,
-          "asc": true,
-          "nullsFirst": false,
-          "opclass": null
-        }
-      ],
-      "isUnique": false,
-      "where": null,
-      "with": "",
-      "method": "btree",
-      "concurrently": false,
-      "name": "verification_identifier_idx",
-      "entityType": "indexes",
-      "schema": "auth",
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "expires_at",
+      "entityType": "columns",
+      "table": "session"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "token",
+      "entityType": "columns",
+      "table": "session"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "(cast(unixepoch('subsecond') * 1000 as integer))",
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "session"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "updated_at",
+      "entityType": "columns",
+      "table": "session"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "ip_address",
+      "entityType": "columns",
+      "table": "session"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "user_agent",
+      "entityType": "columns",
+      "table": "session"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "user_id",
+      "entityType": "columns",
+      "table": "session"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "user"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "name",
+      "entityType": "columns",
+      "table": "user"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "email",
+      "entityType": "columns",
+      "table": "user"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "false",
+      "generated": null,
+      "name": "email_verified",
+      "entityType": "columns",
+      "table": "user"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "image",
+      "entityType": "columns",
+      "table": "user"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "(cast(unixepoch('subsecond') * 1000 as integer))",
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "user"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "(cast(unixepoch('subsecond') * 1000 as integer))",
+      "generated": null,
+      "name": "updated_at",
+      "entityType": "columns",
+      "table": "user"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
       "table": "verification"
     },
     {
-      "nameExplicit": false,
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "identifier",
+      "entityType": "columns",
+      "table": "verification"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "value",
+      "entityType": "columns",
+      "table": "verification"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "expires_at",
+      "entityType": "columns",
+      "table": "verification"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "(cast(unixepoch('subsecond') * 1000 as integer))",
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "verification"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "(cast(unixepoch('subsecond') * 1000 as integer))",
+      "generated": null,
+      "name": "updated_at",
+      "entityType": "columns",
+      "table": "verification"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "artifact"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "owner_workspace_id",
+      "entityType": "columns",
+      "table": "artifact"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "content_type",
+      "entityType": "columns",
+      "table": "artifact"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "storage_key",
+      "entityType": "columns",
+      "table": "artifact"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "'private'",
+      "generated": null,
+      "name": "visibility",
+      "entityType": "columns",
+      "table": "artifact"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "(cast(unixepoch('subsecond') * 1000 as integer))",
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "artifact"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "(cast(unixepoch('subsecond') * 1000 as integer))",
+      "generated": null,
+      "name": "updated_at",
+      "entityType": "columns",
+      "table": "artifact"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "artifact_reservation"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "alias",
+      "entityType": "columns",
+      "table": "model_alias"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "upstream_model",
+      "entityType": "columns",
+      "table": "model_alias"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "display_name",
+      "entityType": "columns",
+      "table": "model_alias"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "true",
+      "generated": null,
+      "name": "enabled",
+      "entityType": "columns",
+      "table": "model_alias"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "(cast(unixepoch('subsecond') * 1000 as integer))",
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "model_alias"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "(cast(unixepoch('subsecond') * 1000 as integer))",
+      "generated": null,
+      "name": "updated_at",
+      "entityType": "columns",
+      "table": "model_alias"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "email",
+      "entityType": "columns",
+      "table": "platform_admin"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "(cast(unixepoch('subsecond') * 1000 as integer))",
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "platform_admin"
+    },
+    {
       "columns": [
         "user_id"
       ],
-      "schemaTo": "auth",
       "tableTo": "user",
       "columnsTo": [
         "id"
       ],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
-      "name": "account_user_id_user_id_fkey",
+      "nameExplicit": false,
+      "name": "fk_account_user_id_user_id_fk",
       "entityType": "fks",
-      "schema": "auth",
       "table": "account"
     },
     {
-      "nameExplicit": false,
       "columns": [
         "client_id"
       ],
-      "schemaTo": "auth",
       "tableTo": "oauth_client",
       "columnsTo": [
         "client_id"
       ],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
-      "name": "oauth_access_token_client_id_oauth_client_client_id_fkey",
+      "nameExplicit": false,
+      "name": "fk_oauth_access_token_client_id_oauth_client_client_id_fk",
       "entityType": "fks",
-      "schema": "auth",
       "table": "oauth_access_token"
     },
     {
-      "nameExplicit": false,
       "columns": [
         "session_id"
       ],
-      "schemaTo": "auth",
       "tableTo": "session",
       "columnsTo": [
         "id"
       ],
       "onUpdate": "NO ACTION",
       "onDelete": "SET NULL",
-      "name": "oauth_access_token_session_id_session_id_fkey",
+      "nameExplicit": false,
+      "name": "fk_oauth_access_token_session_id_session_id_fk",
       "entityType": "fks",
-      "schema": "auth",
       "table": "oauth_access_token"
     },
     {
-      "nameExplicit": false,
       "columns": [
         "user_id"
       ],
-      "schemaTo": "auth",
       "tableTo": "user",
       "columnsTo": [
         "id"
       ],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
-      "name": "oauth_access_token_user_id_user_id_fkey",
+      "nameExplicit": false,
+      "name": "fk_oauth_access_token_user_id_user_id_fk",
       "entityType": "fks",
-      "schema": "auth",
       "table": "oauth_access_token"
     },
     {
-      "nameExplicit": false,
       "columns": [
         "refresh_id"
       ],
-      "schemaTo": "auth",
       "tableTo": "oauth_refresh_token",
       "columnsTo": [
         "id"
       ],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
-      "name": "oauth_access_token_refresh_id_oauth_refresh_token_id_fkey",
+      "nameExplicit": false,
+      "name": "fk_oauth_access_token_refresh_id_oauth_refresh_token_id_fk",
       "entityType": "fks",
-      "schema": "auth",
       "table": "oauth_access_token"
     },
     {
-      "nameExplicit": false,
       "columns": [
         "user_id"
       ],
-      "schemaTo": "auth",
       "tableTo": "user",
       "columnsTo": [
         "id"
       ],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
-      "name": "oauth_client_user_id_user_id_fkey",
+      "nameExplicit": false,
+      "name": "fk_oauth_client_user_id_user_id_fk",
       "entityType": "fks",
-      "schema": "auth",
       "table": "oauth_client"
     },
     {
-      "nameExplicit": false,
       "columns": [
         "client_id"
       ],
-      "schemaTo": "auth",
       "tableTo": "oauth_client",
       "columnsTo": [
         "client_id"
       ],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
-      "name": "oauth_client_resource_client_id_oauth_client_client_id_fkey",
+      "nameExplicit": false,
+      "name": "fk_oauth_client_resource_client_id_oauth_client_client_id_fk",
       "entityType": "fks",
-      "schema": "auth",
       "table": "oauth_client_resource"
     },
     {
-      "nameExplicit": false,
       "columns": [
         "resource_id"
       ],
-      "schemaTo": "auth",
       "tableTo": "oauth_resource",
       "columnsTo": [
         "identifier"
       ],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
-      "name": "oauth_client_resource_dn2L1gs9Dolm_fkey",
+      "nameExplicit": false,
+      "name": "fk_oauth_client_resource_resource_id_oauth_resource_identifier_fk",
       "entityType": "fks",
-      "schema": "auth",
       "table": "oauth_client_resource"
     },
     {
-      "nameExplicit": false,
       "columns": [
         "client_id"
       ],
-      "schemaTo": "auth",
       "tableTo": "oauth_client",
       "columnsTo": [
         "client_id"
       ],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
-      "name": "oauth_consent_client_id_oauth_client_client_id_fkey",
+      "nameExplicit": false,
+      "name": "fk_oauth_consent_client_id_oauth_client_client_id_fk",
       "entityType": "fks",
-      "schema": "auth",
       "table": "oauth_consent"
     },
     {
-      "nameExplicit": false,
       "columns": [
         "user_id"
       ],
-      "schemaTo": "auth",
       "tableTo": "user",
       "columnsTo": [
         "id"
       ],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
-      "name": "oauth_consent_user_id_user_id_fkey",
+      "nameExplicit": false,
+      "name": "fk_oauth_consent_user_id_user_id_fk",
       "entityType": "fks",
-      "schema": "auth",
       "table": "oauth_consent"
     },
     {
-      "nameExplicit": false,
       "columns": [
         "client_id"
       ],
-      "schemaTo": "auth",
       "tableTo": "oauth_client",
       "columnsTo": [
         "client_id"
       ],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
-      "name": "oauth_refresh_token_client_id_oauth_client_client_id_fkey",
+      "nameExplicit": false,
+      "name": "fk_oauth_refresh_token_client_id_oauth_client_client_id_fk",
       "entityType": "fks",
-      "schema": "auth",
       "table": "oauth_refresh_token"
     },
     {
-      "nameExplicit": false,
       "columns": [
         "session_id"
       ],
-      "schemaTo": "auth",
       "tableTo": "session",
       "columnsTo": [
         "id"
       ],
       "onUpdate": "NO ACTION",
       "onDelete": "SET NULL",
-      "name": "oauth_refresh_token_session_id_session_id_fkey",
+      "nameExplicit": false,
+      "name": "fk_oauth_refresh_token_session_id_session_id_fk",
       "entityType": "fks",
-      "schema": "auth",
       "table": "oauth_refresh_token"
     },
     {
-      "nameExplicit": false,
       "columns": [
         "user_id"
       ],
-      "schemaTo": "auth",
       "tableTo": "user",
       "columnsTo": [
         "id"
       ],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
-      "name": "oauth_refresh_token_user_id_user_id_fkey",
+      "nameExplicit": false,
+      "name": "fk_oauth_refresh_token_user_id_user_id_fk",
       "entityType": "fks",
-      "schema": "auth",
       "table": "oauth_refresh_token"
     },
     {
-      "nameExplicit": false,
       "columns": [
         "user_id"
       ],
-      "schemaTo": "auth",
       "tableTo": "user",
       "columnsTo": [
         "id"
       ],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
-      "name": "session_user_id_user_id_fkey",
+      "nameExplicit": false,
+      "name": "fk_session_user_id_user_id_fk",
       "entityType": "fks",
-      "schema": "auth",
       "table": "session"
     },
     {
@@ -2696,8 +1865,7 @@
         "id"
       ],
       "nameExplicit": false,
-      "name": "account_pkey",
-      "schema": "auth",
+      "name": "account_pk",
       "table": "account",
       "entityType": "pks"
     },
@@ -2706,19 +1874,8 @@
         "id"
       ],
       "nameExplicit": false,
-      "name": "jwks_pkey",
-      "schema": "auth",
+      "name": "jwks_pk",
       "table": "jwks",
-      "entityType": "pks"
-    },
-    {
-      "columns": [
-        "alias"
-      ],
-      "nameExplicit": false,
-      "name": "model_alias_pkey",
-      "schema": "dahlia",
-      "table": "model_alias",
       "entityType": "pks"
     },
     {
@@ -2726,8 +1883,7 @@
         "id"
       ],
       "nameExplicit": false,
-      "name": "oauth_access_token_pkey",
-      "schema": "auth",
+      "name": "oauth_access_token_pk",
       "table": "oauth_access_token",
       "entityType": "pks"
     },
@@ -2736,8 +1892,7 @@
         "id"
       ],
       "nameExplicit": false,
-      "name": "oauth_client_pkey",
-      "schema": "auth",
+      "name": "oauth_client_pk",
       "table": "oauth_client",
       "entityType": "pks"
     },
@@ -2746,8 +1901,7 @@
         "id"
       ],
       "nameExplicit": false,
-      "name": "oauth_client_assertion_pkey",
-      "schema": "auth",
+      "name": "oauth_client_assertion_pk",
       "table": "oauth_client_assertion",
       "entityType": "pks"
     },
@@ -2756,8 +1910,7 @@
         "id"
       ],
       "nameExplicit": false,
-      "name": "oauth_client_resource_pkey",
-      "schema": "auth",
+      "name": "oauth_client_resource_pk",
       "table": "oauth_client_resource",
       "entityType": "pks"
     },
@@ -2766,8 +1919,7 @@
         "id"
       ],
       "nameExplicit": false,
-      "name": "oauth_consent_pkey",
-      "schema": "auth",
+      "name": "oauth_consent_pk",
       "table": "oauth_consent",
       "entityType": "pks"
     },
@@ -2776,8 +1928,7 @@
         "id"
       ],
       "nameExplicit": false,
-      "name": "oauth_refresh_token_pkey",
-      "schema": "auth",
+      "name": "oauth_refresh_token_pk",
       "table": "oauth_refresh_token",
       "entityType": "pks"
     },
@@ -2786,9 +1937,62 @@
         "id"
       ],
       "nameExplicit": false,
-      "name": "oauth_resource_pkey",
-      "schema": "auth",
+      "name": "oauth_resource_pk",
       "table": "oauth_resource",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "session_pk",
+      "table": "session",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "user_pk",
+      "table": "user",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "verification_pk",
+      "table": "verification",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "artifact_pk",
+      "table": "artifact",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "artifact_reservation_pk",
+      "table": "artifact_reservation",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "alias"
+      ],
+      "nameExplicit": false,
+      "name": "model_alias_pk",
+      "table": "model_alias",
       "entityType": "pks"
     },
     {
@@ -2796,106 +2000,343 @@
         "email"
       ],
       "nameExplicit": false,
-      "name": "platform_admin_pkey",
-      "schema": "dahlia",
+      "name": "platform_admin_pk",
       "table": "platform_admin",
       "entityType": "pks"
     },
     {
       "columns": [
-        "id"
+        {
+          "value": "issuer",
+          "isExpression": false
+        },
+        {
+          "value": "account_id",
+          "isExpression": false
+        }
       ],
-      "nameExplicit": false,
-      "name": "session_pkey",
-      "schema": "auth",
-      "table": "session",
-      "entityType": "pks"
+      "isUnique": true,
+      "where": null,
+      "origin": "manual",
+      "name": "account_issuer_accountId_uidx",
+      "entityType": "indexes",
+      "table": "account"
     },
     {
       "columns": [
-        "id"
+        {
+          "value": "user_id",
+          "isExpression": false
+        }
       ],
-      "nameExplicit": false,
-      "name": "user_pkey",
-      "schema": "auth",
-      "table": "user",
-      "entityType": "pks"
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "account_userId_idx",
+      "entityType": "indexes",
+      "table": "account"
     },
     {
       "columns": [
-        "id"
+        {
+          "value": "client_id",
+          "isExpression": false
+        }
       ],
-      "nameExplicit": false,
-      "name": "verification_pkey",
-      "schema": "auth",
-      "table": "verification",
-      "entityType": "pks"
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "oauthAccessToken_clientId_idx",
+      "entityType": "indexes",
+      "table": "oauth_access_token"
     },
     {
-      "nameExplicit": false,
+      "columns": [
+        {
+          "value": "session_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "oauthAccessToken_sessionId_idx",
+      "entityType": "indexes",
+      "table": "oauth_access_token"
+    },
+    {
+      "columns": [
+        {
+          "value": "user_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "oauthAccessToken_userId_idx",
+      "entityType": "indexes",
+      "table": "oauth_access_token"
+    },
+    {
+      "columns": [
+        {
+          "value": "authorization_code_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "oauthAccessToken_authorizationCodeId_idx",
+      "entityType": "indexes",
+      "table": "oauth_access_token"
+    },
+    {
+      "columns": [
+        {
+          "value": "refresh_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "oauthAccessToken_refreshId_idx",
+      "entityType": "indexes",
+      "table": "oauth_access_token"
+    },
+    {
+      "columns": [
+        {
+          "value": "user_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "oauthClient_userId_idx",
+      "entityType": "indexes",
+      "table": "oauth_client"
+    },
+    {
+      "columns": [
+        {
+          "value": "client_id",
+          "isExpression": false
+        },
+        {
+          "value": "resource_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "where": null,
+      "origin": "manual",
+      "name": "oauthClientResource_clientId_resourceId_uidx",
+      "entityType": "indexes",
+      "table": "oauth_client_resource"
+    },
+    {
+      "columns": [
+        {
+          "value": "client_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "oauthClientResource_clientId_idx",
+      "entityType": "indexes",
+      "table": "oauth_client_resource"
+    },
+    {
+      "columns": [
+        {
+          "value": "resource_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "oauthClientResource_resourceId_idx",
+      "entityType": "indexes",
+      "table": "oauth_client_resource"
+    },
+    {
+      "columns": [
+        {
+          "value": "client_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "oauthConsent_clientId_idx",
+      "entityType": "indexes",
+      "table": "oauth_consent"
+    },
+    {
+      "columns": [
+        {
+          "value": "user_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "oauthConsent_userId_idx",
+      "entityType": "indexes",
+      "table": "oauth_consent"
+    },
+    {
+      "columns": [
+        {
+          "value": "client_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "oauthRefreshToken_clientId_idx",
+      "entityType": "indexes",
+      "table": "oauth_refresh_token"
+    },
+    {
+      "columns": [
+        {
+          "value": "session_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "oauthRefreshToken_sessionId_idx",
+      "entityType": "indexes",
+      "table": "oauth_refresh_token"
+    },
+    {
+      "columns": [
+        {
+          "value": "user_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "oauthRefreshToken_userId_idx",
+      "entityType": "indexes",
+      "table": "oauth_refresh_token"
+    },
+    {
+      "columns": [
+        {
+          "value": "authorization_code_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "oauthRefreshToken_authorizationCodeId_idx",
+      "entityType": "indexes",
+      "table": "oauth_refresh_token"
+    },
+    {
+      "columns": [
+        {
+          "value": "user_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "session_userId_idx",
+      "entityType": "indexes",
+      "table": "session"
+    },
+    {
+      "columns": [
+        {
+          "value": "identifier",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "verification_identifier_idx",
+      "entityType": "indexes",
+      "table": "verification"
+    },
+    {
       "columns": [
         "token"
       ],
-      "nullsNotDistinct": false,
-      "name": "oauth_access_token_token_key",
-      "schema": "auth",
-      "table": "oauth_access_token",
-      "entityType": "uniques"
+      "nameExplicit": false,
+      "name": "oauth_access_token_token_unique",
+      "entityType": "uniques",
+      "table": "oauth_access_token"
     },
     {
-      "nameExplicit": false,
       "columns": [
         "client_id"
       ],
-      "nullsNotDistinct": false,
-      "name": "oauth_client_client_id_key",
-      "schema": "auth",
-      "table": "oauth_client",
-      "entityType": "uniques"
+      "nameExplicit": false,
+      "name": "oauth_client_client_id_unique",
+      "entityType": "uniques",
+      "table": "oauth_client"
     },
     {
-      "nameExplicit": false,
       "columns": [
         "token"
       ],
-      "nullsNotDistinct": false,
-      "name": "oauth_refresh_token_token_key",
-      "schema": "auth",
-      "table": "oauth_refresh_token",
-      "entityType": "uniques"
+      "nameExplicit": false,
+      "name": "oauth_refresh_token_token_unique",
+      "entityType": "uniques",
+      "table": "oauth_refresh_token"
     },
     {
-      "nameExplicit": false,
       "columns": [
         "identifier"
       ],
-      "nullsNotDistinct": false,
-      "name": "oauth_resource_identifier_key",
-      "schema": "auth",
-      "table": "oauth_resource",
-      "entityType": "uniques"
+      "nameExplicit": false,
+      "name": "oauth_resource_identifier_unique",
+      "entityType": "uniques",
+      "table": "oauth_resource"
     },
     {
-      "nameExplicit": false,
       "columns": [
         "token"
       ],
-      "nullsNotDistinct": false,
-      "name": "session_token_key",
-      "schema": "auth",
-      "table": "session",
-      "entityType": "uniques"
+      "nameExplicit": false,
+      "name": "session_token_unique",
+      "entityType": "uniques",
+      "table": "session"
     },
     {
-      "nameExplicit": false,
       "columns": [
         "email"
       ],
-      "nullsNotDistinct": false,
-      "name": "user_email_key",
-      "schema": "auth",
-      "table": "user",
-      "entityType": "uniques"
+      "nameExplicit": false,
+      "name": "user_email_unique",
+      "entityType": "uniques",
+      "table": "user"
+    },
+    {
+      "value": "\"visibility\" IN ('private', 'public')",
+      "name": "artifact_visibility_check",
+      "entityType": "checks",
+      "table": "artifact"
     }
   ],
   "renames": []

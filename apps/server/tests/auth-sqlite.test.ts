@@ -39,8 +39,7 @@ describe("SQLite Better Auth store", () => {
     const config = testConfig(path);
     const store = createNodeAuthStore(config);
 
-    await store.migrate();
-    await store.migrate();
+    await Promise.all([store.migrate(), store.migrate()]);
     const auth = await initializeDahliaAuth(config, store);
 
     await expect((await auth.$context).adapter.transaction(async (transaction) => {
@@ -60,15 +59,11 @@ describe("SQLite Better Auth store", () => {
     })).rejects.toThrow("rollback");
 
     const database = new DatabaseSync(path);
-    expect(database.prepare('SELECT "name" FROM "_dahlia_auth_migrations" ORDER BY "name"').all()).toEqual([
-      { name: "server/0001_better_auth.sql" },
-      { name: "server/0002_server.sql" },
-      { name: "server/0003_artifact.sql" },
-      { name: "server/0004_artifact_reservation.sql" },
-      { name: "server/0005_artifact_storage_key.sql" },
-    ]);
-    expect(database.prepare('SELECT "clientId" FROM "oauthClient"').get()).toEqual({ clientId: "dahlia-macos" });
-    expect(database.prepare('SELECT "clientId" FROM "oauthClientResource"').get()).toEqual({ clientId: "dahlia-macos" });
+    expect(database.prepare('SELECT "name" FROM "__drizzle_migrations"').get()).toEqual({
+      name: "20260830001528_stiff_alex_power",
+    });
+    expect(database.prepare('SELECT "client_id" FROM "oauth_client"').get()).toEqual({ client_id: "dahlia-macos" });
+    expect(database.prepare('SELECT "client_id" FROM "oauth_client_resource"').get()).toEqual({ client_id: "dahlia-macos" });
     expect(database.prepare('SELECT 1 FROM "user" WHERE "id" = ?').get("rolled-back-user")).toBeUndefined();
     expect(await store.createModelAlias({
       alias: "summary",
@@ -134,25 +129,25 @@ describe("SQLite Better Auth store", () => {
     expect(database.prepare('PRAGMA foreign_key_list("artifact")').all()).toEqual([]);
 
     const now = new Date();
-    const expiresAt = new Date(now.getTime() + 60_000).toISOString();
+    const expiresAt = now.getTime() + 60_000;
     database.prepare(
-      'INSERT INTO "user" ("id", "name", "email", "emailVerified", "createdAt", "updatedAt") VALUES (?, ?, ?, ?, ?, ?)',
-    ).run("user-1", "User", "user@example.com", 1, now.toISOString(), now.toISOString());
+      'INSERT INTO "user" ("id", "name", "email", "email_verified", "created_at", "updated_at") VALUES (?, ?, ?, ?, ?, ?)',
+    ).run("user-1", "User", "user@example.com", 1, now.getTime(), now.getTime());
     database.prepare(
-      'INSERT INTO "session" ("id", "expiresAt", "token", "createdAt", "updatedAt", "userAgent", "userId") VALUES (?, ?, ?, ?, ?, ?, ?)',
-    ).run("session-1", expiresAt, "browser-token", now.toISOString(), now.toISOString(), "Dahlia", "user-1");
+      'INSERT INTO "session" ("id", "expires_at", "token", "created_at", "updated_at", "user_agent", "user_id") VALUES (?, ?, ?, ?, ?, ?, ?)',
+    ).run("session-1", expiresAt, "browser-token", now.getTime(), now.getTime(), "Dahlia", "user-1");
     database.prepare(
-      'INSERT INTO "oauthRefreshToken" ("id", "token", "clientId", "sessionId", "userId", "expiresAt", "createdAt", "scopes") VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-    ).run("refresh-1", "refresh-token", "dahlia-macos", "session-1", "user-1", expiresAt, now.toISOString(), "[\"api.model.read\",\"api.model.request\"]");
+      'INSERT INTO "oauth_refresh_token" ("id", "token", "client_id", "session_id", "user_id", "expires_at", "created_at", "scopes") VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    ).run("refresh-1", "refresh-token", "dahlia-macos", "session-1", "user-1", expiresAt, now.getTime(), "[\"api.model.read\",\"api.model.request\"]");
     database.prepare(
-      'INSERT INTO "oauthAccessToken" ("id", "token", "clientId", "sessionId", "userId", "refreshId", "expiresAt", "createdAt", "scopes") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-    ).run("access-1", "access-token", "dahlia-macos", "session-1", "user-1", "refresh-1", expiresAt, now.toISOString(), "[\"api.model.read\",\"api.model.request\"]");
+      'INSERT INTO "oauth_access_token" ("id", "token", "client_id", "session_id", "user_id", "refresh_id", "expires_at", "created_at", "scopes") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    ).run("access-1", "access-token", "dahlia-macos", "session-1", "user-1", "refresh-1", expiresAt, now.getTime(), "[\"api.model.read\",\"api.model.request\"]");
 
     expect(await store.listDahliaSessions("user-1")).toMatchObject([
       { id: "refresh-1", sessionId: "session-1", userAgent: "Dahlia" },
     ]);
     expect(await store.revokeDahliaSession("user-1", "refresh-1")).toBe(true);
-    expect(database.prepare('SELECT 1 FROM "oauthAccessToken" WHERE "id" = ?').get("access-1")).toBeUndefined();
+    expect(database.prepare('SELECT 1 FROM "oauth_access_token" WHERE "id" = ?').get("access-1")).toBeUndefined();
     expect(await store.listDahliaSessions("user-1")).toEqual([]);
     database.close();
     await store.close?.();
@@ -163,19 +158,21 @@ describe("SQLite Better Auth store", () => {
     directories.push(directory);
     const first = join(directory, "first");
     const second = join(directory, "second");
-    mkdirSync(first);
-    mkdirSync(second);
-    writeFileSync(join(first, "0001_init.sql"), 'CREATE TABLE "firstExtension" ("id" TEXT PRIMARY KEY);');
-    writeFileSync(join(first, "draft.sql"), 'CREATE TABLE "unlistedDraft" ("id" TEXT PRIMARY KEY);');
-    writeFileSync(join(second, "0001_init.sql"), 'CREATE TABLE "secondExtension" ("id" TEXT PRIMARY KEY);');
+    mkdirSync(join(first, "20260830010000_init"), { recursive: true });
+    mkdirSync(join(second, "20260830010000_init"), { recursive: true });
+    writeFileSync(join(first, "20260830010000_init", "migration.sql"), 'CREATE TABLE "firstExtension" ("id" TEXT PRIMARY KEY);');
+    writeFileSync(join(second, "20260830010000_init", "migration.sql"), 'CREATE TABLE "secondExtension" ("id" TEXT PRIMARY KEY);');
     const migrations: MigrationManifest = {
       postgres: { directories: [], files: [] },
       sqlite: {
         directories: [
-          { id: "first", path: first, files: ["0001_init.sql"] },
-          { id: "second", path: second, files: ["0001_init.sql"] },
+          { id: "first", path: first, files: ["20260830010000_init/migration.sql"] },
+          { id: "second", path: second, files: ["20260830010000_init/migration.sql"] },
         ],
-        files: ["first/0001_init.sql", "second/0001_init.sql"],
+        files: [
+          "first/20260830010000_init/migration.sql",
+          "second/20260830010000_init/migration.sql",
+        ],
       },
     };
     const path = join(directory, "auth.sqlite");
@@ -185,13 +182,48 @@ describe("SQLite Better Auth store", () => {
     await store.migrate();
 
     const database = new DatabaseSync(path);
-    expect(database.prepare('SELECT "name" FROM "_dahlia_auth_migrations" ORDER BY "name"').all()).toEqual([
-      { name: "first/0001_init.sql" },
-      { name: "second/0001_init.sql" },
-    ]);
+    expect(database.prepare('SELECT "name" FROM "__dahlia_first_migrations"').get())
+      .toEqual({ name: "20260830010000_init" });
+    expect(database.prepare('SELECT "name" FROM "__dahlia_second_migrations"').get())
+      .toEqual({ name: "20260830010000_init" });
     expect(database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE '%Extension' ORDER BY name").all())
       .toEqual([{ name: "firstExtension" }, { name: "secondExtension" }]);
-    expect(database.prepare("SELECT name FROM sqlite_master WHERE name = 'unlistedDraft'").get()).toBeUndefined();
+    database.close();
+    await store.close?.();
+  });
+
+  it("rejects SQLite migration directories that differ from the manifest", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "dahlia-auth-"));
+    directories.push(directory);
+    const migrationsPath = join(directory, "extension");
+    mkdirSync(join(migrationsPath, "20260830010000_listed"), { recursive: true });
+    mkdirSync(join(migrationsPath, "20260830020000_unlisted"), { recursive: true });
+    writeFileSync(join(migrationsPath, "20260830010000_listed", "migration.sql"),
+      'CREATE TABLE "listedExtension" ("id" TEXT PRIMARY KEY);');
+    writeFileSync(join(migrationsPath, "20260830020000_unlisted", "migration.sql"),
+      'CREATE TABLE "unlistedExtension" ("id" TEXT PRIMARY KEY);');
+    const path = join(directory, "auth.sqlite");
+    const store = createNodeAuthStore(testConfig(path), {
+      postgres: { directories: [], files: [] },
+      sqlite: {
+        directories: [{
+          id: "extension",
+          path: migrationsPath,
+          files: [
+            "20260830010000_listed/migration.sql",
+            "20260830030000_missing/migration.sql",
+          ],
+        }],
+        files: [
+          "extension/20260830010000_listed/migration.sql",
+          "extension/20260830030000_missing/migration.sql",
+        ],
+      },
+    });
+
+    await expect(store.migrate()).rejects.toThrow("SQLite migration files do not match the manifest");
+    const database = new DatabaseSync(path);
+    expect(database.prepare("SELECT name FROM sqlite_master WHERE name LIKE '%Extension'").all()).toEqual([]);
     database.close();
     await store.close?.();
   });

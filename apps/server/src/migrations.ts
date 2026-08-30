@@ -26,33 +26,16 @@ const packageDirectory = fileURLToPath(new URL(".", import.meta.resolve("@dahlia
 
 export const serverMigrationManifest: MigrationManifest = {
   postgres: {
-    directories: [{ id: "server", path: join(packageDirectory, "drizzle") }],
-    files: [
-      "drizzle/20260828162616_baseline/migration.sql",
-      "drizzle/20260828180826_stiff_natasha_romanoff/migration.sql",
-      "drizzle/20260828182417_cool_cerebro/migration.sql",
-      "drizzle/20260829014710_sturdy_korg/migration.sql",
-    ],
+    directories: [{ id: "server", path: join(packageDirectory, "drizzle/postgres") }],
+    files: ["drizzle/postgres/20260830001527_open_blue_shield/migration.sql"],
   },
   sqlite: {
     directories: [{
       id: "server",
-      path: join(packageDirectory, "auth-migrations"),
-      files: [
-        "0001_better_auth.sql",
-        "0002_server.sql",
-        "0003_artifact.sql",
-        "0004_artifact_reservation.sql",
-        "0005_artifact_storage_key.sql",
-      ],
+      path: join(packageDirectory, "drizzle/sqlite"),
+      files: ["20260830001528_stiff_alex_power/migration.sql"],
     }],
-    files: [
-      "auth-migrations/0001_better_auth.sql",
-      "auth-migrations/0002_server.sql",
-      "auth-migrations/0003_artifact.sql",
-      "auth-migrations/0004_artifact_reservation.sql",
-      "auth-migrations/0005_artifact_storage_key.sql",
-    ],
+    files: ["drizzle/sqlite/20260830001528_stiff_alex_power/migration.sql"],
   },
 };
 

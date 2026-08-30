@@ -110,6 +110,7 @@ export async function migrateApplicationDatabase(
   try {
     await pool.query("SELECT pg_advisory_lock($1)", [lockId]);
     locked = true;
+    await pool.query(`CREATE SCHEMA IF NOT EXISTS "${POSTGRES_SCHEMA}"`);
     for (const migrationConfig of postgresMigrationConfigs(migrationDirectories)) {
       await migrate(readPostgresMigrations(migrationConfig), database, migrationConfig);
     }

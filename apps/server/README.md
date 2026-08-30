@@ -16,7 +16,9 @@ Better Auth, Gateway administration, and future meeting cloud sync share one Dri
 | `hyperdrive` | Cloudflare Worker | `HYPERDRIVE` binding |
 | `d1` | Cloudflare Worker | `dahlia_db_prod` binding |
 
-Node supports `sqlite`, `postgres`, and `lakebase`; Workers support `d1`, `hyperdrive`, and direct `postgres`. PostgreSQL-compatible connections use a `dahlia` schema owned by the connection user. Lakebase uses the official `@databricks/lakebase` pool for OAuth credential refresh. All queries and Better Auth adapters use Drizzle.
+Node supports `sqlite`, `postgres`, and `lakebase`; Workers support `d1`, `hyperdrive`, and direct `postgres`. PostgreSQL-compatible connections use one `dahlia` schema owned by the connection user. Lakebase uses the official `@databricks/lakebase` pool for OAuth credential refresh.
+
+Better Auth schemas are generated into `src/db/generated`; Dahlia tables remain in the adjacent app schema files. `pnpm db:generate-auth` refreshes the auth definitions and `pnpm db:generate` produces one Drizzle migration stream per dialect under `drizzle/postgres` and `drizzle/sqlite`. The relations-v2 adapter is used with joins disabled. PostgreSQL migrations are intentionally unqualified and run with `search_path=dahlia`.
 
 ## API contract
 
@@ -172,4 +174,4 @@ This runs lint, TypeScript checks, unit and adapter contract tests, Node/SPA bui
 
 The tag workflow requires an `NPM_TOKEN` repository secret with publish access to the `@dahlia-ai/server` package.
 
-The Worker-safe package root exports the backend extension contract from `@dahlia-ai/server`; Node-only APIs such as `createNodeAuthStore` are exported from `@dahlia-ai/server/node`. Dashboard components come from `@dahlia-ai/server/client`, shared styles from `@dahlia-ai/server/client/styles.css`, and the migration manifest from `@dahlia-ai/server/migrations`. Server migrations must run before consumer migrations. Give every SQLite and PostgreSQL migration directory a stable lowercase ledger ID; never derive it from manifest position. Each SQLite directory explicitly lists the SQL filenames to apply; other files in that directory are ignored.
+The Worker-safe package root exports the backend extension contract from `@dahlia-ai/server`; Node-only APIs such as `createNodeAuthStore` are exported from `@dahlia-ai/server/node`. Dashboard components come from `@dahlia-ai/server/client`, shared styles from `@dahlia-ai/server/client/styles.css`, and the migration manifest from `@dahlia-ai/server/migrations`. Server migrations must run before consumer migrations. Give every SQLite and PostgreSQL Drizzle migration directory a stable lowercase ledger ID; never derive it from manifest position.
