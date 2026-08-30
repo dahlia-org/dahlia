@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { denyOAuthManagement } from "../src/auth/better-auth";
+import { IdentityService } from "../src/auth/identity";
 import {
   ARTIFACT_READ_SCOPE,
   ARTIFACT_WRITE_SCOPE,
@@ -28,6 +29,35 @@ const config: AppConfig = {
 };
 
 describe("fixed OAuth client policy", () => {
+  it("verifies DPoP against the canonical public MCP URL", async () => {
+    const identities = new IdentityService(config);
+    const verifier = vi.fn(async (request: Request) => {
+      expect(request).toBeInstanceOf(Request);
+      return {
+        sub: "user-1",
+        workspace_id: "personal:user-1",
+        client_id: "https://client.example/metadata.json",
+        exp: Math.floor(Date.now() / 1000) + 60,
+        scope: ARTIFACT_WRITE_SCOPE,
+      };
+    });
+    Object.assign(identities, { verifyAccessToken: verifier });
+    const internalRequest = new Request("http://internal-proxy:3000/mcp", {
+      method: "POST",
+      headers: { Authorization: "DPoP access-token", DPoP: "proof" },
+    });
+
+    await expect(identities.verifyMcpAccessToken(internalRequest)).resolves.toMatchObject({
+      token: "access-token",
+      scopes: [ARTIFACT_WRITE_SCOPE],
+    });
+    const verificationRequest = verifier.mock.calls[0]?.[0] as Request;
+    expect(verificationRequest.url).toBe("https://new.dahlia.example/mcp");
+    expect(verificationRequest.method).toBe("POST");
+    expect(verificationRequest.headers.get("authorization")).toBe("DPoP access-token");
+    expect(verificationRequest.headers.get("dpop")).toBe("proof");
+  });
+
   it("preserves DPoP requests and distinguishes insufficient scope", async () => {
     const request = new Request("https://new.dahlia.example/mcp", {
       method: "POST",

@@ -86,7 +86,10 @@ export class IdentityService {
     const resource = mcpResource(this.config);
     let claims: Record<string, unknown>;
     try {
-      claims = await this.verifyAccessToken(request, {
+      claims = await this.verifyAccessToken(new Request(resource, {
+        method: request.method,
+        headers: request.headers,
+      }), {
         requiredScopes: [],
         verifyOptions: {
           audience: resource,
