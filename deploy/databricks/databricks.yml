@@ -9,6 +9,9 @@ sync:
   paths:
     - ../../apps/server
 
+experimental:
+  skip_name_prefix_for_schema: true
+
 variables:
   app_name:
     description: Databricks App name.
@@ -17,14 +20,14 @@ variables:
   admin_email:
     description: Email address that bootstraps Dahlia Server administration.
     default: " "
-  artifact_catalog:
+  catalog:
     description: Unity Catalog catalog containing the artifact Volume.
     default: main
-  artifact_schema:
+  schema:
     description: Unity Catalog schema containing the artifact Volume.
-    default: default
-  artifact_volume_name:
+  volume_name:
     description: Managed Volume used for artifact bytes.
+    default: artifacts
 targets:
   dev:
     default: true
@@ -32,7 +35,7 @@ targets:
     variables:
       app_name: dahlia-dev
       database_project_id: dahlia-db-dev
-      artifact_volume_name: dahlia_artifacts_dev
+      schema: dahlia_dev
     resources:
       postgres_projects:
         dahlia_database_project:
@@ -43,10 +46,14 @@ targets:
     variables:
       app_name: dahlia-prod
       database_project_id: dahlia-db
-      artifact_volume_name: dahlia_artifacts
+      schema: dahlia
     resources:
       postgres_projects:
         dahlia_database_project:
+          lifecycle:
+            prevent_destroy: true
+      schemas:
+        dahlia:
           lifecycle:
             prevent_destroy: true
       volumes:
