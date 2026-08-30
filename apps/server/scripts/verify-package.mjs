@@ -51,7 +51,11 @@ try {
   }));
   await writeFile(join(directory, "verify.mjs"), `
     import * as server from "@dahlia-ai/server";
-    import { createNodeAuthStore } from "@dahlia-ai/server/node";
+    import {
+      createNodeAuthStore,
+      createPostgresApplicationStore,
+      createPostgresAuthStore,
+    } from "@dahlia-ai/server/node";
     import { App } from "@dahlia-ai/server/client";
     import { serverMigrationManifest } from "@dahlia-ai/server/migrations";
     import { readFile } from "node:fs/promises";
@@ -61,6 +65,9 @@ try {
     if (typeof server.createApp !== "function" || typeof App !== "function") throw new Error("Package API is incomplete");
     if ("createPostgresApplicationStore" in server || "createPostgresAuthStore" in server) {
       throw new Error("Unsafe PostgreSQL store factory leaked from the package root");
+    }
+    if (typeof createPostgresApplicationStore !== "function" || typeof createPostgresAuthStore !== "function") {
+      throw new Error("PostgreSQL store factories are missing from the Node package export");
     }
     if (serverMigrationManifest.sqlite.files.length !== 1) {
       throw new Error("Migration manifest is incomplete");
@@ -101,7 +108,11 @@ try {
   `);
   await writeFile(join(directory, "verify.ts"), `
     import { createD1AuthStore, type D1DatabaseLike } from "@dahlia-ai/server";
-    import { createNodeAuthStore } from "@dahlia-ai/server/node";
+    import {
+      createNodeAuthStore,
+      createPostgresApplicationStore,
+      createPostgresAuthStore,
+    } from "@dahlia-ai/server/node";
     import type { App } from "@dahlia-ai/server/client";
 
     declare const database: D1DatabaseLike;
@@ -110,6 +121,8 @@ try {
     void store;
     void client;
     void createNodeAuthStore;
+    void createPostgresApplicationStore;
+    void createPostgresAuthStore;
   `);
   await writeFile(join(directory, "tsconfig.json"), JSON.stringify({
     compilerOptions: {
