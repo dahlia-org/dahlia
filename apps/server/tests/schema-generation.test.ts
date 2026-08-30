@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { cpSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -18,6 +18,26 @@ describe("auth schema generation", () => {
         expect(schema).toMatch(/import \{ defineRelationsPart(?:, sql)? \} from "drizzle-orm";/);
         expect(schema).toContain("export const authRelations = defineRelationsPart(");
       }
+    } finally {
+      rmSync(directory, { force: true, recursive: true });
+    }
+  });
+
+  it("keeps the committed SQLite migration history synchronized with the declarative schema", () => {
+    const directory = mkdtempSync(join(tmpdir(), "dahlia-sqlite-schema-"));
+    const packageDirectory = new URL("..", import.meta.url);
+    try {
+      cpSync(new URL("../drizzle/sqlite/", import.meta.url), directory, { recursive: true });
+      const migrations = readdirSync(directory).toSorted();
+      const generated = spawnSync("pnpm", [
+        "exec", "drizzle-kit", "generate",
+        "--dialect", "sqlite",
+        "--schema", "./src/db/sqlite-schema.ts",
+        "--out", directory,
+        "--name", "schema-drift",
+      ], { cwd: packageDirectory, encoding: "utf8" });
+      expect(generated.status, generated.stderr || generated.stdout).toBe(0);
+      expect(readdirSync(directory).toSorted()).toEqual(migrations);
     } finally {
       rmSync(directory, { force: true, recursive: true });
     }

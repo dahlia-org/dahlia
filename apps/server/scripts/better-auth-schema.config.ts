@@ -14,7 +14,10 @@ export const auth = betterAuth({
   advanced: { database: { joins: false } },
   baseURL: "https://dahlia.invalid",
   // Resource seeding is runtime-only, so schema generation needs no database connection.
-  database: drizzleAdapter({}, { provider }),
+  database: drizzleAdapter({}, {
+    provider,
+    ...(provider === "pg" ? { schemaName: "auth" } : {}),
+  }),
   plugins: [
     jwt(),
     oauthProvider({

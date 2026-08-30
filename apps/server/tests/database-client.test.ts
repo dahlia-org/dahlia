@@ -47,17 +47,18 @@ describe("PostgreSQL migrations", () => {
     const migrationsFolder = serverMigrationManifest.postgres.directories[0]!.path;
     const migrations = readPostgresMigrations({ migrationsFolder });
     expect(migrations.map(({ name }) => name)).toEqual([
-      "20260830001527_open_blue_shield",
+      "20260830063330_baseline",
     ]);
     expect(migrations.every(({ hash, sql }) => hash.length === 64 && sql.length > 0)).toBe(true);
     const sql = migrations.flatMap((migration) => migration.sql).join("\n");
-    expect(sql).toContain('CREATE TABLE "user"');
-    expect(sql).toContain('CREATE TABLE "model_alias"');
-    expect(sql).toContain('CREATE TABLE "artifact"');
-    expect(sql).toContain('CREATE TABLE "artifact_reservation"');
-    expect(sql).not.toContain("CREATE SCHEMA");
-    expect(sql).not.toContain('"auth".');
-    expect(sql).not.toContain('"dahlia".');
+    expect(sql).toContain('CREATE TABLE "auth"."user"');
+    expect(sql).toContain('CREATE TABLE "dahlia"."model_alias"');
+    expect(sql).toContain('CREATE TABLE "dahlia"."artifact"');
+    expect(sql).toContain('CREATE TABLE "dahlia"."artifact_reservation"');
+    expect(sql).toContain('CREATE SCHEMA IF NOT EXISTS "auth"');
+    expect(sql).toContain('CREATE SCHEMA IF NOT EXISTS "dahlia"');
+    expect(sql).not.toContain("ROW LEVEL SECURITY");
+    expect(sql).not.toContain("CREATE POLICY");
     expect(sql).not.toContain('FOREIGN KEY ("owner_workspace_id")');
     expect(sql).not.toContain('"public".');
     expect(readFileSync(new URL("../src/db/client.ts", import.meta.url), "utf8")).not.toContain("createLakebasePool");
