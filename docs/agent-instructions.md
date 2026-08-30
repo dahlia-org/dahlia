@@ -26,9 +26,9 @@ GPT-5.6 には、手順を細かく固定するより、成果、重要な制約
 ## 階層
 
 - ルートの `AGENTS.md`: リポジトリ全体の目的、権限境界、技術的前提、共通の完了条件
-- `Sources/Dahlia/AGENTS.md`: アプリ固有の所有関係、並行処理、UI とローカライズ
-- `Sources/Dahlia/Database/AGENTS.md`: データ保全とマイグレーション
-- `Tests/DahliaTests/AGENTS.md`: テストの隔離、実装規約、実行結果の判定
+- `apps/desktop/Sources/Dahlia/AGENTS.md`: アプリ固有の所有関係、並行処理、UI とローカライズ
+- `apps/desktop/Sources/Dahlia/Database/AGENTS.md`: データ保全とマイグレーション
+- `apps/desktop/Tests/DahliaTests/AGENTS.md`: テストの隔離、実装規約、実行結果の判定
 - `docs/code-review.md`: 複数のレビュー手段で共有する finding の採用基準、チェックリスト、保守手順
 
 同じルールが複数階層に必要に見える場合は、上位に成果または制約を置き、下位にはその階層でだけ必要な実装条件を置く。`CLAUDE.md` は `AGENTS.md` へのシンボリックリンクなので直接編集しない。

@@ -31,5 +31,5 @@ ADR-0003 の共有 app-server、専用 `CODEX_HOME`、明示ログイン、HTTPS
 
 - [ADR-0003](0003-use-a-shared-codex-app-server.md)
 - [OpenAI Codex App Server manual](https://learn.chatgpt.com/docs/app-server.md)
-- `Sources/Dahlia/Services/CodexAppServerService.swift`
-- `Tests/DahliaTests/CodexAppServerServiceTests.swift`
+- `apps/desktop/Sources/Dahlia/Services/CodexAppServerService.swift`
+- `apps/desktop/Tests/DahliaTests/CodexAppServerServiceTests.swift`

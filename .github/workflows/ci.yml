@@ -36,8 +36,8 @@ jobs:
       - name: Cache BuildTools
         uses: actions/cache@v5
         with:
-          path: BuildTools/.build
-          key: buildtools-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.hash }}-${{ hashFiles('BuildTools/Package.resolved') }}
+          path: apps/desktop/BuildTools/.build
+          key: buildtools-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.hash }}-${{ hashFiles('apps/desktop/BuildTools/Package.resolved') }}
 
       - name: Install lint tools
         run: brew install swiftlint

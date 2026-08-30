@@ -1,21 +1,5 @@
 #!/bin/bash
-# Git pre-commit hook: ステージ済み .swift ファイルを SwiftFormat でフォーマット
 set -euo pipefail
 
-REPO_ROOT=$(git rev-parse --show-toplevel)
-SWIFTFORMAT="$REPO_ROOT/scripts/run-swiftformat.sh"
-
-# ステージ済み Swift ファイルを取得
-STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep '\.swift$' || true)
-
-if [ -z "$STAGED_FILES" ]; then
-    exit 0
-fi
-
-# フォーマットして再ステージ
-echo "$STAGED_FILES" | while read -r file; do
-    if [ -f "$file" ]; then
-        "$SWIFTFORMAT" "$file"
-        git add "$file"
-    fi
-done
+repo_root="$(git rev-parse --show-toplevel)"
+exec "${repo_root}/apps/desktop/scripts/pre-commit" "$@"
