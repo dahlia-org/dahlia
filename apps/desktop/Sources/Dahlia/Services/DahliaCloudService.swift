@@ -361,6 +361,7 @@ actor DahliaCloudService {
             throw DahliaCloudError.tokenRequestFailed(response.statusCode)
         }
         guard let payload = try? JSONDecoder().decode(CloudTokenPayload.self, from: data),
+              !payload.accessToken.isEmpty,
               payload.tokenType.caseInsensitiveCompare("Bearer") == .orderedSame,
               payload.expiresIn > 0
         else {
@@ -476,11 +477,15 @@ actor DahliaCloudService {
         return code
     }
 
-    private static func sameOrigin(_ resource: String, _ origin: String) -> Bool {
+    static func sameOrigin(_ resource: String, _ origin: String) -> Bool {
         guard let resourceURL = URL(string: resource), let originURL = URL(string: origin) else { return false }
         return resourceURL.scheme?.lowercased() == originURL.scheme?.lowercased()
             && resourceURL.host?.lowercased() == originURL.host?.lowercased()
-            && resourceURL.port == originURL.port
+            && effectivePort(resourceURL) == effectivePort(originURL)
+    }
+
+    private static func effectivePort(_ url: URL) -> Int? {
+        url.port ?? ["http": 80, "https": 443][url.scheme?.lowercased() ?? ""]
     }
 
     private static func origin(for resource: String) -> String {

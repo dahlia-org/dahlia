@@ -35,6 +35,22 @@
         }
 
         @Test
+        func originComparisonNormalizesDefaultPorts() {
+            #expect(DahliaCloudService.sameOrigin(
+                "https://server.example.com/api/v1",
+                "https://server.example.com:443"
+            ))
+            #expect(DahliaCloudService.sameOrigin(
+                "http://localhost/api/v1",
+                "http://localhost:80"
+            ))
+            #expect(!DahliaCloudService.sameOrigin(
+                "https://server.example.com:8443/api/v1",
+                "https://server.example.com"
+            ))
+        }
+
+        @Test
         func authorizationRequestUsesFixedCallbackPKCEStateAndResource() throws {
             let configuration = try #require(DahliaCloudConfiguration.make(
                 urlString: "https://cloud.example.com",
@@ -176,6 +192,22 @@
             await #expect(throws: DahliaCloudError.invalidTokenResponse) {
                 try await service.signIn()
             }
+        }
+
+        @Test
+        func refreshRejectsEmptyAccessTokenWithoutReplacingCredential() async throws {
+            let oldCredential = makeCredential(expirationDate: .distantPast)
+            let store = CloudCredentialStoreFake(credential: oldCredential)
+            let service = makeService(
+                recorder: CloudRequestRecorder(mode: .refresh, tokenAccessToken: ""),
+                store: store
+            )
+
+            await #expect(throws: DahliaCloudError.invalidTokenResponse) {
+                try await service.validAccessToken()
+            }
+            #expect(store.credential == oldCredential)
+            #expect(store.saveCount == 0)
         }
 
         @Test
@@ -458,6 +490,7 @@
 
         let mode: Mode
         let tokenScope: String?
+        let tokenAccessToken: String?
         let tokenStatusCode: Int
         private let lock = NSLock()
         private var recordedRequests: [URLRequest] = []
@@ -465,9 +498,10 @@
         private var recordedTokenRequestCount = 0
         private var recordedTokenRequestBody: String?
 
-        init(mode: Mode, tokenScope: String? = nil, tokenStatusCode: Int = 200) {
+        init(mode: Mode, tokenScope: String? = nil, tokenAccessToken: String? = nil, tokenStatusCode: Int = 200) {
             self.mode = mode
             self.tokenScope = tokenScope
+            self.tokenAccessToken = tokenAccessToken
             self.tokenStatusCode = tokenStatusCode
         }
 
@@ -502,9 +536,10 @@
                 """
             case "/token":
                 let scope = tokenScope.map { ",\"scope\":\"\($0)\"" } ?? ""
+                let accessToken = tokenAccessToken ?? (mode == .refresh ? "new-access" : "signed-access")
                 body = mode == .refresh
-                    ? "{\"access_token\":\"new-access\",\"refresh_token\":\"new-refresh\",\"token_type\":\"Bearer\",\"expires_in\":3600\(scope)}"
-                    : "{\"access_token\":\"signed-access\",\"refresh_token\":\"signed-refresh\",\"token_type\":\"Bearer\",\"expires_in\":3600\(scope)}"
+                    ? "{\"access_token\":\"\(accessToken)\",\"refresh_token\":\"new-refresh\",\"token_type\":\"Bearer\",\"expires_in\":3600\(scope)}"
+                    : "{\"access_token\":\"\(accessToken)\",\"refresh_token\":\"signed-refresh\",\"token_type\":\"Bearer\",\"expires_in\":3600\(scope)}"
             case "/userinfo":
                 body = "{\"sub\":\"user-1\",\"name\":\"User One\",\"email\":\"user@example.com\"}"
             case "/api/session":
