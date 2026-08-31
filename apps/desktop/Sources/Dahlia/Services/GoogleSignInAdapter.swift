@@ -32,7 +32,7 @@ enum GoogleOAuthScope {
     }
 }
 
-enum GoogleAuthSessionKind: CaseIterable {
+enum GoogleAuthSessionKind: CaseIterable, Sendable {
     case calendar
     case drive
 
@@ -137,10 +137,43 @@ enum GoogleSignInError: LocalizedError {
     }
 }
 
+actor GoogleKeychainWorker {
+    private var generation: UInt64 = 0
+    private var activeDisconnectCount = 0
+
+    func perform<Value: Sendable>(_ operation: @Sendable () throws -> Value) rethrows -> Value {
+        try operation()
+    }
+
+    func snapshot<Value: Sendable>(_ operation: @Sendable () throws -> Value) rethrows -> (Value, UInt64) {
+        try (operation(), generation)
+    }
+
+    func performIfCurrent(generation expectedGeneration: UInt64, _ operation: @Sendable () throws -> Void) rethrows -> Bool {
+        guard activeDisconnectCount == 0, generation == expectedGeneration else { return false }
+        try operation()
+        return true
+    }
+
+    func beginDisconnect() {
+        generation &+= 1
+        activeDisconnectCount += 1
+    }
+
+    func finishDisconnect() {
+        activeDisconnectCount -= 1
+        generation &+= 1
+    }
+
+    func isCurrent(generation expectedGeneration: UInt64) -> Bool {
+        generation == expectedGeneration
+    }
+}
+
 @MainActor
 protocol GoogleSignInProviding: AnyObject {
     var isConfigured: Bool { get }
-    var hasPreviousSignIn: Bool { get }
+    var hasPreviousSignIn: Bool { get async }
     var sessionDidChangeNotification: Notification.Name { get }
 
     func restorePreviousSignIn() async throws -> GoogleSession
@@ -151,7 +184,8 @@ protocol GoogleSignInProviding: AnyObject {
 
 @MainActor
 final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
-    private static let legacyKeychainKey = "googleOAuthSession"
+    private nonisolated static let legacyKeychainKey = "googleOAuthSession"
+    private nonisolated static let keychainWorker = GoogleKeychainWorker()
     private static let disconnectPendingUserDefaultsKeyPrefix = "googleOAuthDisconnectPending"
     private static let authorizationEndpoint = URL(string: "https://accounts.google.com/o/oauth2/v2/auth")!
     private static let tokenEndpoint = URL(string: "https://oauth2.googleapis.com/token")!
@@ -167,10 +201,16 @@ final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
     }
 
     var hasPreviousSignIn: Bool {
-        Self.shouldRestoreStoredSession(
-            disconnectPending: isDisconnectPending,
-            hasStoredSession: storedSession != nil
-        )
+        get async {
+            let disconnectPending = isDisconnectPending
+            guard !disconnectPending else { return false }
+            let sessionKind = sessionKind
+            let hasStoredSession = await Self.loadStoredSessionSnapshot(sessionKind: sessionKind).lookup != nil
+            return Self.shouldRestoreStoredSession(
+                disconnectPending: isDisconnectPending,
+                hasStoredSession: hasStoredSession
+            )
+        }
     }
 
     var sessionDidChangeNotification: Notification.Name {
@@ -184,13 +224,17 @@ final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
     }
 
     func restorePreviousSignIn() async throws -> GoogleSession {
-        guard let storedSessionLookup else {
+        guard let storedSessionLookup = await storedSessionLookup() else {
             throw GoogleSignInError.noPreviousSignIn
         }
 
         let refreshed = try await refreshedSession(from: storedSessionLookup.session)
-        save(refreshed)
-        deleteLegacySessionIfNeeded(storedSessionLookup)
+        guard !isDisconnectPending else {
+            throw GoogleSignInError.noPreviousSignIn
+        }
+        guard await save(refreshed, migrating: storedSessionLookup, generation: storedSessionLookup.generation) else {
+            throw GoogleSignInError.noPreviousSignIn
+        }
         return refreshed.session
     }
 
@@ -199,9 +243,11 @@ final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
             throw GoogleSignInError.notConfigured
         }
 
-        let previousSessionLookup = storedSessionLookup
+        let sessionKind = sessionKind
+        let previousSessionSnapshot = await Self.loadStoredSessionSnapshot(sessionKind: sessionKind)
+        let previousSessionLookup = isDisconnectPending ? nil : previousSessionSnapshot.lookup
         let authorizationScopes = authorizationScopesForSignIn(requestedScopes: requestedScopes)
-        let clientSecret = GoogleCalendarConfiguration.clientSecret
+        let clientSecret = await Self.loadClientSecret()
         let pkce = PKCE.generate()
         let state = PKCE.randomURLSafeString(length: 32)
         let redirectServer = try await LoopbackRedirectServer()
@@ -239,30 +285,34 @@ final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
             expirationDate: tokenResponse.expirationDate,
             grantedScopes: authorizationScopes
         )
-        save(session)
+        guard await save(session, migrating: previousSessionLookup, generation: previousSessionSnapshot.generation) else {
+            throw CancellationError()
+        }
         clearDisconnectPending()
-        if let previousSessionLookup {
-            deleteLegacySessionIfNeeded(previousSessionLookup)
+        guard await Self.keychainWorker.isCurrent(generation: previousSessionSnapshot.generation) else {
+            Self.markAllDisconnectsPending()
+            throw CancellationError()
         }
         NotificationCenter.default.post(name: sessionDidChangeNotification, object: nil)
         return session.session
     }
 
     func refreshCurrentSession() async throws -> GoogleSession? {
-        guard let storedSessionLookup else {
+        guard let storedSessionLookup = await storedSessionLookup() else {
             return nil
         }
 
         let refreshed = try await refreshedSession(from: storedSessionLookup.session)
-        save(refreshed)
-        deleteLegacySessionIfNeeded(storedSessionLookup)
+        guard !isDisconnectPending else { return nil }
+        guard await save(refreshed, migrating: storedSessionLookup, generation: storedSessionLookup.generation) else { return nil }
         return refreshed.session
     }
 
     func disconnect() async throws {
         Self.markAllDisconnectsPending()
+        await Self.keychainWorker.beginDisconnect()
         var firstRevocationError: Error?
-        for tokens in revocationTokensByAccount() {
+        for tokens in await Self.revocationTokensByAccount() {
             var accountWasRevoked = false
             var accountError: Error?
             for token in tokens {
@@ -279,39 +329,85 @@ final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
             }
         }
 
+        let deletionError: Error?
         do {
-            try clearAllStoredSessions()
+            try await clearAllStoredSessions()
+            deletionError = nil
         } catch {
-            throw error
+            deletionError = error
+        }
+        await Self.keychainWorker.finishDisconnect()
+        if let deletionError {
+            throw deletionError
         }
         if let firstRevocationError {
             throw firstRevocationError
         }
     }
 
-    private var storedSession: StoredGoogleSession? {
-        storedSessionLookup?.session
-    }
-
-    private var storedSessionLookup: StoredGoogleSessionLookup? {
+    private func storedSessionLookup() async -> StoredGoogleSessionLookup? {
         guard !isDisconnectPending else { return nil }
-        if let session = Self.loadStoredSession(key: sessionKind.keychainKey) {
-            return StoredGoogleSessionLookup(session: session, keychainKey: sessionKind.keychainKey)
-        }
-
-        guard let legacySession = Self.loadStoredSession(key: Self.legacyKeychainKey),
-              sessionKind.canAdoptLegacySession(legacySession)
-        else {
-            return nil
-        }
-        return StoredGoogleSessionLookup(session: legacySession, keychainKey: Self.legacyKeychainKey)
+        let sessionKind = sessionKind
+        let snapshot = await Self.loadStoredSessionSnapshot(sessionKind: sessionKind)
+        return isDisconnectPending ? nil : snapshot.lookup
     }
 
-    private func save(_ session: StoredGoogleSession) {
-        save(session, key: sessionKind.keychainKey)
+    private nonisolated static func loadStoredSessionSnapshot(
+        sessionKind: GoogleAuthSessionKind
+    ) async -> StoredGoogleSessionSnapshot {
+        let (lookup, generation) = await keychainWorker.snapshot { () -> StoredGoogleSessionLookup? in
+            if let session = loadStoredSession(key: sessionKind.keychainKey) {
+                return StoredGoogleSessionLookup(session: session, keychainKey: sessionKind.keychainKey)
+            }
+
+            guard let legacySession = loadStoredSession(key: legacyKeychainKey),
+                  sessionKind.canAdoptLegacySession(legacySession)
+            else {
+                return nil
+            }
+            return StoredGoogleSessionLookup(session: legacySession, keychainKey: legacyKeychainKey)
+        }
+        let currentLookup = lookup.map {
+            StoredGoogleSessionLookup(session: $0.session, keychainKey: $0.keychainKey, generation: generation)
+        }
+        return StoredGoogleSessionSnapshot(lookup: currentLookup, generation: generation)
     }
 
-    private func save(_ session: StoredGoogleSession, key: String) {
+    private func save(
+        _ session: StoredGoogleSession,
+        migrating lookup: StoredGoogleSessionLookup?,
+        generation: UInt64
+    ) async -> Bool {
+        let key = sessionKind.keychainKey
+        let sessionKind = sessionKind
+        return await Self.save(session, key: key, migrating: lookup, sessionKind: sessionKind, generation: generation)
+    }
+
+    private nonisolated static func save(
+        _ session: StoredGoogleSession,
+        key: String,
+        migrating lookup: StoredGoogleSessionLookup?,
+        sessionKind: GoogleAuthSessionKind,
+        generation: UInt64
+    ) async -> Bool {
+        let operation: @Sendable () -> Void = {
+            saveStoredSession(session, key: key)
+            guard let lookup, lookup.keychainKey == legacyKeychainKey else { return }
+
+            // 旧セッションは Calendar/Drive 共用の可能性があるため、削除する前に
+            // 採用可能な他サービスのキーへ複製して、もう一方が締め出されるのを防ぐ。
+            for kind in GoogleAuthSessionKind.allCases
+                where kind != sessionKind
+                && kind.canAdoptLegacySession(lookup.session)
+                && loadStoredSession(key: kind.keychainKey) == nil {
+                saveStoredSession(lookup.session, key: kind.keychainKey)
+            }
+            KeychainService.delete(key: legacyKeychainKey)
+        }
+        return await keychainWorker.performIfCurrent(generation: generation, operation)
+    }
+
+    private nonisolated static func saveStoredSession(_ session: StoredGoogleSession, key: String) {
         guard let data = try? JSONEncoder().encode(session),
               let json = String(data: data, encoding: .utf8)
         else { return }
@@ -319,7 +415,7 @@ final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
         try? KeychainService.save(key: key, value: json)
     }
 
-    private static func loadStoredSession(key: String) -> StoredGoogleSession? {
+    private nonisolated static func loadStoredSession(key: String) -> StoredGoogleSession? {
         guard let json = KeychainService.load(key: key),
               let data = json.data(using: .utf8)
         else {
@@ -352,29 +448,18 @@ final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
         !disconnectPending && hasStoredSession
     }
 
-    private func deleteLegacySessionIfNeeded(_ lookup: StoredGoogleSessionLookup) {
-        guard lookup.keychainKey == Self.legacyKeychainKey else { return }
-        // 旧セッションは Calendar/Drive 共用の可能性があるため、削除する前に
-        // 採用可能な他サービスのキーへ複製して、もう一方が締め出されるのを防ぐ。
-        for kind in GoogleAuthSessionKind.allCases
-            where kind != sessionKind
-            && kind.canAdoptLegacySession(lookup.session)
-            && Self.loadStoredSession(key: kind.keychainKey) == nil {
-            save(lookup.session, key: kind.keychainKey)
+    private nonisolated static func revocationTokensByAccount() async -> [[String]] {
+        await keychainWorker.perform {
+            let keys = [legacyKeychainKey] + GoogleAuthSessionKind.allCases.map(\.keychainKey)
+            let sessions = keys.compactMap { key -> (accountID: String, token: String)? in
+                guard let session = loadStoredSession(key: key) else { return nil }
+                return (session.account.id, session.refreshToken ?? session.accessToken)
+            }
+            return groupRevocationTokens(sessions)
         }
-        KeychainService.delete(key: Self.legacyKeychainKey)
     }
 
-    private func revocationTokensByAccount() -> [[String]] {
-        let keys = [Self.legacyKeychainKey] + GoogleAuthSessionKind.allCases.map(\.keychainKey)
-        let sessions = keys.compactMap { key -> (accountID: String, token: String)? in
-            guard let session = Self.loadStoredSession(key: key) else { return nil }
-            return (session.account.id, session.refreshToken ?? session.accessToken)
-        }
-        return Self.groupRevocationTokens(sessions)
-    }
-
-    static func groupRevocationTokens(_ sessions: [(accountID: String, token: String)]) -> [[String]] {
+    nonisolated static func groupRevocationTokens(_ sessions: [(accountID: String, token: String)]) -> [[String]] {
         var tokensByAccount: [String: Set<String>] = [:]
         for session in sessions {
             tokensByAccount[session.accountID, default: []].insert(session.token)
@@ -384,24 +469,32 @@ final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
         }
     }
 
-    private func clearAllStoredSessions() throws {
-        let keys = [Self.legacyKeychainKey] + GoogleAuthSessionKind.allCases.map(\.keychainKey)
-        var firstError: Error?
-        for key in keys {
-            do {
-                try KeychainService.deleteOrThrow(key: key)
-            } catch {
-                firstError = firstError ?? error
+    private func clearAllStoredSessions() async throws {
+        defer {
+            for kind in GoogleAuthSessionKind.allCases {
+                NotificationCenter.default.post(
+                    name: kind.sessionDidChangeNotification,
+                    object: GoogleAuthSessionChangeReason.disconnected
+                )
             }
         }
-        for kind in GoogleAuthSessionKind.allCases {
-            NotificationCenter.default.post(
-                name: kind.sessionDidChangeNotification,
-                object: GoogleAuthSessionChangeReason.disconnected
-            )
-        }
-        if let firstError {
-            throw firstError
+        try await Self.deleteAllStoredSessions()
+    }
+
+    private nonisolated static func deleteAllStoredSessions() async throws {
+        try await keychainWorker.perform {
+            let keys = [legacyKeychainKey] + GoogleAuthSessionKind.allCases.map(\.keychainKey)
+            var firstError: Error?
+            for key in keys {
+                do {
+                    try KeychainService.deleteOrThrow(key: key)
+                } catch {
+                    firstError = firstError ?? error
+                }
+            }
+            if let firstError {
+                throw firstError
+            }
         }
     }
 
@@ -420,9 +513,10 @@ final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
             return storedSession
         }
 
+        let clientSecret = await Self.loadClientSecret()
         let tokenResponse = try await refreshAccessToken(
             clientID: clientID,
-            clientSecret: GoogleCalendarConfiguration.clientSecret,
+            clientSecret: clientSecret,
             refreshToken: refreshToken
         )
         return StoredGoogleSession(
@@ -432,6 +526,12 @@ final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
             expirationDate: tokenResponse.expirationDate,
             grantedScopes: storedSession.grantedScopes
         )
+    }
+
+    private nonisolated static func loadClientSecret() async -> String? {
+        await keychainWorker.perform {
+            GoogleCalendarConfiguration.clientSecret
+        }
     }
 
     private func exchangeAuthorizationCode(
@@ -637,7 +737,7 @@ final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
     }
 }
 
-private struct StoredGoogleSession: Codable {
+private struct StoredGoogleSession: Codable, Sendable {
     let account: GoogleCalendarAccount
     let accessToken: String
     let refreshToken: String?
@@ -649,9 +749,21 @@ private struct StoredGoogleSession: Codable {
     }
 }
 
-private struct StoredGoogleSessionLookup {
+private struct StoredGoogleSessionLookup: Sendable {
     let session: StoredGoogleSession
     let keychainKey: String
+    let generation: UInt64
+
+    init(session: StoredGoogleSession, keychainKey: String, generation: UInt64 = 0) {
+        self.session = session
+        self.keychainKey = keychainKey
+        self.generation = generation
+    }
+}
+
+private struct StoredGoogleSessionSnapshot: Sendable {
+    let lookup: StoredGoogleSessionLookup?
+    let generation: UInt64
 }
 
 private struct TokenPayload: Decodable {
