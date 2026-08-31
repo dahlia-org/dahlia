@@ -51,7 +51,15 @@ final class DahliaCloudAccountController {
         }
     }
 
-    var isSigningIn: Bool { activeOperation == .signingIn }
+    var isSigningIn: Bool {
+        switch activeOperation {
+        case .signingIn, .reauthenticating:
+            true
+        default:
+            false
+        }
+    }
+
     var isBusy: Bool { activeOperation != nil }
 
     var cloudConnection: DahliaAccountConnection? {
@@ -102,6 +110,11 @@ final class DahliaCloudAccountController {
 
     @discardableResult
     func startSignIn(configuration: DahliaCloudConfiguration) -> Task<Void, Never>? {
+        if let connection = connections.first(where: {
+            DahliaCloudService.sameOrigin($0.origin, configuration.origin)
+        }) {
+            return startReauthentication(connectionID: connection.id)
+        }
         guard let generation = beginOperation(.signingIn) else { return nil }
         let task = Task { [weak self] in
             guard let self else { return }

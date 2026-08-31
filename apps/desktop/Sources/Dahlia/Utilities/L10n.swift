@@ -1819,8 +1819,6 @@ enum L10n { // swiftlint:disable:this type_body_length
         localized: "Manage the Dahlia Cloud and Server sign-ins used by Dahlia.",
         bundle: bundle
     ) }
-    static var addDahliaServer: String { String(localized: "Add Server", bundle: bundle) }
-    static var manageDahliaAccounts: String { String(localized: "Manage Accounts", bundle: bundle) }
     static func dahliaAccountCount(_ count: Int) -> String { String(
         localized: "\(count) Dahlia accounts",
         bundle: bundle

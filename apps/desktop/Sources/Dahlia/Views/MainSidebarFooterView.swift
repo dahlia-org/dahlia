@@ -85,7 +85,11 @@ struct MainSidebarFooterView: View {
     }
 
     private func accountAction() {
-        mainWindowNavigation.openSettings(category: .dahliaAccounts)
+        if let connection = Self.accountPresentation(for: dahliaAccountController.connections).connection {
+            dahliaAccountController.startSignOut(connectionID: connection.id)
+        } else {
+            mainWindowNavigation.openDahliaSignIn()
+        }
     }
 
     static func accountPresentation(

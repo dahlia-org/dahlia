@@ -527,8 +527,6 @@
 "Dahlia credentials could not be saved securely." = "Dahlia credentials could not be saved securely.";
 "A Dahlia connection already exists for this server." = "A Dahlia connection already exists for this server.";
 "Manage the Dahlia Cloud and Server sign-ins used by Dahlia." = "Manage the Dahlia Cloud and Server sign-ins used by Dahlia.";
-"Add Server" = "Add Server";
-"Manage Accounts" = "Manage Accounts";
 "%lld Dahlia accounts" = "%lld Dahlia accounts";
 "Sign In Again" = "Sign In Again";
 "Sign-in required" = "Sign-in required";

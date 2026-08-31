@@ -83,8 +83,8 @@ struct MainSidebarAccountRootMenuView: View {
                 .padding(.vertical, 4)
 
             MainSidebarAccountMenuRow(
-                title: L10n.manageDahliaAccounts,
-                image: Image(systemName: "person.crop.circle"),
+                title: account == nil ? L10n.dahliaSignIn : L10n.signOut,
+                image: Image(systemName: account == nil ? "person" : "rectangle.portrait.and.arrow.right"),
                 isKeyboardHighlighted: navigation.activeMenu == .root && navigation.rootSelection == menuOffset + 3,
                 onHoverStart: { hover(index: menuOffset + 3, submenu: nil, action: onDismissSubmenu) },
                 onHoverEnd: cancelPendingHover,

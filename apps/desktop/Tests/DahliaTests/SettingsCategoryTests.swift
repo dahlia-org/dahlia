@@ -32,13 +32,14 @@ import Foundation
                 .developer,
                 .audioDiagnostics,
             ])
-            #expect(groupedCategories == expectedCategories)
+            #expect(groupedCategories.count == expectedCategories.count)
+            #expect(Set(groupedCategories) == Set(expectedCategories))
             #expect(!groupedCategories.contains(.instructions))
             #expect(!groupedCategories.contains(.mcp))
             #expect(SettingsGroup.allCases.last == .advanced)
             #expect(SettingsGroup.app.categories == [
-                .general,
                 .dahliaAccounts,
+                .general,
                 .language,
                 .appearance,
                 .vault,

@@ -306,6 +306,38 @@
 
         @MainActor
         @Test
+        func signInReauthenticatesExistingConnectionForTheSameOrigin() async throws {
+            let manager = try AppDatabaseManager(path: ":memory:")
+            let repository = MeetingRepository(dbQueue: manager.dbQueue)
+            let connection = DahliaAccountConnectionRecord(
+                id: .v7(),
+                origin: "https://cloud.example.com",
+                clientID: "desktop-client",
+                createdAt: .now
+            )
+            try await repository.insertDahliaAccountConnection(connection)
+            let store = CloudCredentialStoreFake()
+            let service = makeService(recorder: CloudRequestRecorder(mode: .userInfo), store: store)
+            let configuration = try #require(DahliaCloudConfiguration.make(
+                urlString: connection.origin,
+                clientID: connection.clientID
+            ))
+            let controller = DahliaCloudAccountController(
+                configuration: configuration,
+                serviceFactory: { _, _ in service }
+            )
+            await controller.configure(appDatabase: manager)
+
+            let signIn = try #require(controller.startSignIn(configuration: configuration))
+            await signIn.value
+
+            #expect(try await repository.fetchDahliaAccountConnections().map(\.id) == [connection.id])
+            #expect(controller.connections.first?.account?.id == "user-1")
+            #expect(controller.errorMessage == nil)
+        }
+
+        @MainActor
+        @Test
         func cancellationDuringCredentialSaveRollsBackNewConnection() async throws {
             let manager = try AppDatabaseManager(path: ":memory:")
             let repository = MeetingRepository(dbQueue: manager.dbQueue)

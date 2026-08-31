@@ -12,25 +12,11 @@ struct DahliaAccountsSettingsView: View {
     var body: some View {
         Form {
             Section {
-                if let connection = controller.cloudConnection {
-                    connectionRow(connection)
-                } else {
-                    Button(
-                        DahliaServerSignInView.cloudActionTitle(
-                            isConfigured: controller.defaultConfiguration != nil
-                        ),
-                        action: onShowSignIn
-                    )
-                    .disabled(controller.isBusy || controller.defaultConfiguration == nil)
-                }
-            }
-
-            Section {
-                ForEach(controller.serverConnections) { connection in
+                ForEach(controller.connections) { connection in
                     connectionRow(connection)
                 }
 
-                Button(L10n.addDahliaServer, action: onShowSignIn)
+                Button(L10n.dahliaSignIn, action: onShowSignIn)
                     .disabled(controller.isBusy)
             } footer: {
                 Text(L10n.dahliaAccountsDescription)

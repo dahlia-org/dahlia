@@ -162,7 +162,7 @@
         }
 
         @Test
-        func keyboardAccountRowsOpenAndManageDahliaAccounts() {
+        func keyboardAccountRowsOpenSettingsAndPerformAccountAction() {
             let account = DahliaCloudAccount(id: "user", name: "User", email: nil)
             var openedCategory: SettingsCategory?
             var didManageAccounts = false

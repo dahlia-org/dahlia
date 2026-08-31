@@ -532,7 +532,7 @@ extension MainSidebarAccountMenuCoordinator {
         case .root:
             let accountServiceName = isCloudAccount == true ? L10n.dahliaCloud : L10n.dahliaServer
             let titles = (account == nil ? [] : [accountServiceName])
-                + [L10n.vault, L10n.language, L10n.settings, L10n.manageDahliaAccounts]
+                + [L10n.vault, L10n.language, L10n.settings, account == nil ? L10n.dahliaSignIn : L10n.signOut]
             title = navigation.rootSelection.flatMap { titles.indices.contains($0) ? titles[$0] : nil }
         case .vaults:
             guard let selection = navigation.submenuSelection else { return }

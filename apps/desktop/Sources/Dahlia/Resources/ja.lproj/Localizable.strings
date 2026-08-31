@@ -502,7 +502,7 @@
 "Ultra" = "ウルトラ";
 "Developer Settings" = "開発者設定";
 "Vault" = "保管庫";
-"Dahlia Account" = "Dahlia Account";
+"Dahlia Account" = "Dahlia アカウント";
 "Dahlia Cloud" = "Dahlia Cloud";
 "Dahlia Server" = "Dahlia Server";
 "%@ - %@" = "%@ - %@";
@@ -527,8 +527,6 @@
 "Dahlia credentials could not be saved securely." = "Dahlia の認証情報を安全に保存できませんでした。";
 "A Dahlia connection already exists for this server." = "この Server への Dahlia 接続はすでに存在します。";
 "Manage the Dahlia Cloud and Server sign-ins used by Dahlia." = "Dahlia が使用する Dahlia Cloud と Server のサインインを管理します。";
-"Add Server" = "Server を追加";
-"Manage Accounts" = "アカウントを管理";
 "%lld Dahlia accounts" = "%lld 件の Dahlia アカウント";
 "Sign In Again" = "再サインイン";
 "Sign-in required" = "再サインインが必要";
