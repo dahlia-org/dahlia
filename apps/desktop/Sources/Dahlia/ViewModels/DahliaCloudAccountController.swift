@@ -28,7 +28,8 @@ final class DahliaCloudAccountController {
     var isBusy: Bool { isRefreshing || isSigningIn || isSigningOut }
 
     var isConnectedToDahliaCloud: Bool {
-        connectionOrigin != nil && connectionOrigin == defaultConfiguration?.origin
+        guard let connectionOrigin, let cloudOrigin = defaultConfiguration?.origin else { return false }
+        return DahliaCloudService.sameOrigin(connectionOrigin, cloudOrigin)
     }
 
     var connectionServiceName: String? {

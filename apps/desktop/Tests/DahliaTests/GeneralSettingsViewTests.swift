@@ -114,7 +114,7 @@
         @Test
         func dahliaConnectionPresentationDistinguishesCloudAndServer() async throws {
             let cloudConfiguration = try #require(DahliaCloudConfiguration.make(
-                urlString: "https://cloud.example.com",
+                urlString: "https://cloud.example.com:443",
                 clientID: "desktop-client"
             ))
             let account = DahliaCloudAccount(id: "user", name: "Kazuki Matsuda", email: nil)
