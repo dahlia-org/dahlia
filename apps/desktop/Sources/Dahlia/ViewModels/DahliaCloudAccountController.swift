@@ -172,11 +172,18 @@ final class DahliaCloudAccountController {
                 clientID: configuration.clientID,
                 createdAt: .now
             )
-            try await repository.insertDahliaAccountConnection(record)
             do {
+                try await repository.insertDahliaAccountConnection(record)
+                try Task.checkCancellation()
                 try await service.persist(credential)
+                try Task.checkCancellation()
             } catch {
-                try? await repository.deleteDahliaAccountConnection(id: id)
+                await rollbackNewConnection(
+                    repository: repository,
+                    id: id,
+                    service: service,
+                    credential: credential
+                )
                 throw error
             }
             guard isCurrentOperation(generation) else { return }
@@ -188,6 +195,28 @@ final class DahliaCloudAccountController {
             guard isCurrentOperation(generation) else { return }
             errorMessage = error.localizedDescription
         }
+    }
+
+    private func rollbackNewConnection(
+        repository: MeetingRepository,
+        id: UUID,
+        service: DahliaCloudService,
+        credential: DahliaCloudCredential
+    ) async {
+        // The sign-in task may already be cancelled, but credential and database cleanup must still run.
+        await Task { @MainActor in
+            let deletedLocalCredential: Bool
+            do {
+                try await service.deleteLocalCredential()
+                deletedLocalCredential = true
+            } catch {
+                deletedLocalCredential = false
+            }
+            if deletedLocalCredential {
+                try? await repository.deleteDahliaAccountConnection(id: id)
+            }
+            await service.revokeIfPossible(credential)
+        }.value
     }
 
     private func reauthenticate(connectionID: UUID, generation: Int) async {

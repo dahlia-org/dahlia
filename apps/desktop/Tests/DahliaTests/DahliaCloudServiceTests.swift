@@ -288,6 +288,52 @@
         }
 
         @Test
+        func issuedCredentialCanBeRevokedWithoutBeingPersisted() async throws {
+            let recorder = CloudRequestRecorder(mode: .refresh)
+            let store = CloudCredentialStoreFake()
+            let service = makeService(recorder: recorder, store: store)
+            let credential = makeCredential(
+                expirationDate: .distantFuture,
+                revocationEndpoint: URL(string: "https://accounts.example.com/revoke")
+            )
+
+            await service.revokeIfPossible(credential)
+
+            #expect(store.credential == nil)
+            let request = try #require(recorder.requests.first { $0.url?.path == "/revoke" })
+            #expect(CloudRequestRecorder.bodyString(for: request)?.contains("token=old-refresh") == true)
+        }
+
+        @MainActor
+        @Test
+        func cancellationDuringCredentialSaveRollsBackNewConnection() async throws {
+            let manager = try AppDatabaseManager(path: ":memory:")
+            let repository = MeetingRepository(dbQueue: manager.dbQueue)
+            let recorder = CloudRequestRecorder(mode: .userInfo, advertisesRevocationEndpoint: true)
+            let cancellation = CloudCancellationTrigger()
+            let store = CloudCredentialStoreFake(onSave: cancellation.fire)
+            let service = makeService(recorder: recorder, store: store)
+            let configuration = try #require(DahliaCloudConfiguration.make(
+                urlString: "https://cloud.example.com",
+                clientID: "desktop-client"
+            ))
+            let controller = DahliaCloudAccountController(
+                configuration: configuration,
+                serviceFactory: { _, _ in service }
+            )
+            await controller.configure(appDatabase: manager)
+
+            let signIn = try #require(controller.startSignIn(configuration: configuration))
+            cancellation.set { signIn.cancel() }
+            await signIn.value
+
+            #expect(store.credential == nil)
+            #expect(try await repository.fetchDahliaAccountConnections().isEmpty)
+            #expect(controller.connections.isEmpty)
+            #expect(recorder.requests.contains { $0.url?.path == "/revoke" })
+        }
+
+        @Test
         func refreshCannotRestoreCredentialAfterSignOut() async throws {
             let tokenResponseGate = CloudTokenResponseGate()
             let recorder = CloudRequestRecorder(mode: .refresh, tokenResponseGate: tokenResponseGate)
@@ -435,11 +481,17 @@
         private let lock = NSLock()
         private var storedCredential: DahliaCloudCredential?
         private let saveError: Error?
+        private let onSave: (@Sendable () -> Void)?
         private(set) var saveCount = 0
 
-        init(credential: DahliaCloudCredential? = nil, saveError: Error? = nil) {
+        init(
+            credential: DahliaCloudCredential? = nil,
+            saveError: Error? = nil,
+            onSave: (@Sendable () -> Void)? = nil
+        ) {
             storedCredential = credential
             self.saveError = saveError
+            self.onSave = onSave
         }
 
         var credential: DahliaCloudCredential? {
@@ -450,6 +502,7 @@
             DahliaCloudCredentialStorage(
                 load: { self.lock.withLock { self.storedCredential } },
                 save: { value in
+                    self.onSave?()
                     try self.lock.withLock {
                         if let saveError = self.saveError { throw saveError }
                         self.storedCredential = value
@@ -458,6 +511,20 @@
                 },
                 delete: { self.lock.withLock { self.storedCredential = nil } }
             )
+        }
+    }
+
+    private final class CloudCancellationTrigger: @unchecked Sendable {
+        private let lock = NSLock()
+        private var action: (@Sendable () -> Void)?
+
+        func set(_ action: @escaping @Sendable () -> Void) {
+            lock.withLock { self.action = action }
+        }
+
+        func fire() {
+            let currentAction: (@Sendable () -> Void)? = lock.withLock { self.action }
+            currentAction?()
         }
     }
 
@@ -496,6 +563,7 @@
         let revocationStatusCode: Int
         let tokenResponseGate: CloudTokenResponseGate?
         let revocationResponseGate: CloudTokenResponseGate?
+        let advertisesRevocationEndpoint: Bool
         private let lock = NSLock()
         private var recordedRequests: [URLRequest] = []
         private var recordedAuthorizationURL: URL?
@@ -509,7 +577,8 @@
             tokenStatusCode: Int = 200,
             revocationStatusCode: Int = 200,
             tokenResponseGate: CloudTokenResponseGate? = nil,
-            revocationResponseGate: CloudTokenResponseGate? = nil
+            revocationResponseGate: CloudTokenResponseGate? = nil,
+            advertisesRevocationEndpoint: Bool = false
         ) {
             self.mode = mode
             self.tokenScope = tokenScope
@@ -518,6 +587,7 @@
             self.revocationStatusCode = revocationStatusCode
             self.tokenResponseGate = tokenResponseGate
             self.revocationResponseGate = revocationResponseGate
+            self.advertisesRevocationEndpoint = advertisesRevocationEndpoint
         }
 
         var requests: [URLRequest] { lock.withLock { recordedRequests } }
@@ -551,8 +621,11 @@
                 """
             case "/.well-known/oauth-authorization-server":
                 let userInfo = mode == .userInfo ? ",\"userinfo_endpoint\":\"https://accounts.example.com/userinfo\"" : ""
+                let revocation = advertisesRevocationEndpoint
+                    ? ",\"revocation_endpoint\":\"https://accounts.example.com/revoke\""
+                    : ""
                 body = """
-                {"issuer":"https://accounts.example.com","authorization_endpoint":"https://accounts.example.com/authorize","token_endpoint":"https://accounts.example.com/token","code_challenge_methods_supported":["S256"]\(userInfo)}
+                {"issuer":"https://accounts.example.com","authorization_endpoint":"https://accounts.example.com/authorize","token_endpoint":"https://accounts.example.com/token","code_challenge_methods_supported":["S256"]\(userInfo)\(revocation)}
                 """
             case "/token":
                 let scope = tokenScope.map { ",\"scope\":\"\($0)\"" } ?? ""
@@ -581,7 +654,7 @@
             return (response, Data(body.utf8))
         }
 
-        private static func bodyString(for request: URLRequest) -> String? {
+        static func bodyString(for request: URLRequest) -> String? {
             if let body = request.httpBody { return String(data: body, encoding: .utf8) }
             guard let stream = request.httpBodyStream else { return nil }
             stream.open()

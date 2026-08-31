@@ -284,17 +284,10 @@ actor DahliaCloudService {
         defer { isSigningOut = false }
         cancelRefresh()
         var revocationError: Error?
-        if let endpoint = credential.revocationEndpoint {
-            do {
-                try await revoke(
-                    credential.refreshToken ?? credential.accessToken,
-                    tokenTypeHint: credential.refreshToken == nil ? "access_token" : "refresh_token",
-                    clientID: credential.clientID,
-                    endpoint: endpoint
-                )
-            } catch {
-                revocationError = error
-            }
+        do {
+            try await revoke(credential)
+        } catch {
+            revocationError = error
         }
         try deleteLocalCredential()
         if let revocationError { throw revocationError }
@@ -305,6 +298,10 @@ actor DahliaCloudService {
         try storage.delete()
         credential = nil
         didLoadCredential = true
+    }
+
+    func revokeIfPossible(_ issuedCredential: DahliaCloudCredential) async {
+        try? await revoke(issuedCredential)
     }
 
     private func loadCredentialIfNeeded() throws {
@@ -447,6 +444,16 @@ actor DahliaCloudService {
             throw DahliaCloudError.invalidIdentityResponse
         }
         return payload.user
+    }
+
+    private func revoke(_ credential: DahliaCloudCredential) async throws {
+        guard let endpoint = credential.revocationEndpoint else { return }
+        try await revoke(
+            credential.refreshToken ?? credential.accessToken,
+            tokenTypeHint: credential.refreshToken == nil ? "access_token" : "refresh_token",
+            clientID: credential.clientID,
+            endpoint: endpoint
+        )
     }
 
     private func revoke(_ token: String, tokenTypeHint: String, clientID: String, endpoint: URL) async throws {
