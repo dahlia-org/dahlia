@@ -64,6 +64,7 @@ struct CodexChatView: View {
                     )
                 } else {
                     CodexChatConversationView(
+                        conversationID: session.id,
                         messages: session.messages,
                         showsStandaloneThinking: session.showsStandaloneThinking,
                         meetingNamesByID: session.meetingNamesByID,

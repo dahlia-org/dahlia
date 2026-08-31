@@ -2872,6 +2872,8 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var recentChats: String { String(localized: "Recent chats", bundle: bundle) }
     static var noRecentChats: String { String(localized: "No recent chats", bundle: bundle) }
     static var loadMore: String { String(localized: "Load more", bundle: bundle) }
+    static var chatEarlierMessages: String { String(localized: "Earlier messages", bundle: bundle) }
+    static var chatLaterMessages: String { String(localized: "Later messages", bundle: bundle) }
     static var popOutChat: String { String(localized: "Open chat in a new window", bundle: bundle) }
     static var showChatFullScreen: String { String(localized: "Show chat full screen", bundle: bundle) }
     static var hideChat: String { String(localized: "Hide chat", bundle: bundle) }
