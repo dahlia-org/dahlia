@@ -38,6 +38,7 @@ struct ContentView: View {
             isVisible: chatCoordinator.isDockedVisible
                 && !isShowingFullScreenChat
                 && !isShowingSettings,
+            animatesVisibilityChanges: !isShowingFullScreenChat,
             onWidthChange: mainWindowNavigation.updateChatSidebarWidth
         ) {
             Group {
