@@ -132,7 +132,10 @@ struct DahliaApp: App {
                 if mainWindowNavigation.isShowingDahliaSignIn {
                     DahliaServerSignInView(
                         cloudConfiguration: dahliaAccountController.defaultConfiguration,
-                        onCancel: mainWindowNavigation.dismissDahliaSignIn,
+                        isBusy: dahliaAccountController.isBusy,
+                        isSigningIn: dahliaAccountController.isSigningIn,
+                        errorMessage: dahliaAccountController.errorMessage,
+                        onCancel: cancelDahliaSignIn,
                         onSignIn: signInToDahlia
                     )
                 }
@@ -144,6 +147,11 @@ struct DahliaApp: App {
             )
             .dahliaSimpleWindowStyle()
             .task { await dahliaAccountController.activate() }
+            .onChange(of: dahliaAccountController.account) { _, account in
+                if account != nil {
+                    mainWindowNavigation.dismissDahliaSignIn()
+                }
+            }
             .alert(
                 L10n.vaultOperationFailed,
                 isPresented: Binding(
@@ -380,7 +388,11 @@ struct DahliaApp: App {
     }
 
     private func signInToDahlia(_ configuration: DahliaCloudConfiguration) {
-        guard dahliaAccountController.startSignIn(configuration: configuration) != nil else { return }
+        dahliaAccountController.startSignIn(configuration: configuration)
+    }
+
+    private func cancelDahliaSignIn() {
+        dahliaAccountController.cancelAccountTask()
         mainWindowNavigation.dismissDahliaSignIn()
     }
 

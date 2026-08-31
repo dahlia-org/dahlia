@@ -3,6 +3,9 @@ import SwiftUI
 
 struct DahliaServerSignInView: View {
     let cloudConfiguration: DahliaCloudConfiguration?
+    let isBusy: Bool
+    let isSigningIn: Bool
+    let errorMessage: String?
     let onCancel: () -> Void
     let onSignIn: (DahliaCloudConfiguration) -> Void
 
@@ -36,37 +39,59 @@ struct DahliaServerSignInView: View {
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
 
-                Button(action: signInToCloud) {
-                    Text(Self.cloudActionTitle(isConfigured: cloudConfiguration != nil))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 4)
-                }
-                .buttonStyle(.dahlia(.primary))
-                .disabled(cloudConfiguration == nil)
-
-                ZStack {
-                    Divider()
-                    Text(L10n.orConnectToServer)
-                        .font(.caption)
+                if isSigningIn {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text(L10n.dahliaWaitingForBrowser)
                         .foregroundStyle(.secondary)
-                        .padding(.horizontal)
-                        .background(.background)
-                }
 
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(L10n.serverURL)
-                        .font(.body)
-                    TextField("https://dahlia.example.com", text: $serverURL)
-                        .textContentType(.URL)
-                        .onSubmit(connect)
+                    Button(L10n.cancelSignIn, action: onCancel)
+                        .buttonStyle(.dahlia())
+                } else {
+                    if let errorMessage {
+                        SettingsStatusMessage(
+                            text: errorMessage,
+                            systemImage: "exclamationmark.triangle.fill",
+                            tint: .red
+                        )
+                    } else if isBusy {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
 
-                    Button(action: connect) {
-                        Text(L10n.connect)
+                    Button(action: signInToCloud) {
+                        Text(Self.cloudActionTitle(isConfigured: cloudConfiguration != nil))
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 4)
                     }
-                    .buttonStyle(.dahlia())
-                    .disabled(serverConfiguration == nil)
+                    .buttonStyle(.dahlia(.primary))
+                    .disabled(isBusy || cloudConfiguration == nil)
+
+                    ZStack {
+                        Divider()
+                        Text(L10n.orConnectToServer)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal)
+                            .background(.background)
+                    }
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(L10n.serverURL)
+                            .font(.body)
+                        TextField("https://dahlia.example.com", text: $serverURL)
+                            .textContentType(.URL)
+                            .onSubmit(connect)
+                            .disabled(isBusy)
+
+                        Button(action: connect) {
+                            Text(L10n.connect)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 4)
+                        }
+                        .buttonStyle(.dahlia())
+                        .disabled(isBusy || serverConfiguration == nil)
+                    }
                 }
             }
             .padding(28)

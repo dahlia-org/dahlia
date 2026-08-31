@@ -395,6 +395,32 @@
             #expect(controller.account?.id == "user-1")
         }
 
+        @MainActor
+        @Test
+        func cancellingSignInClearsBusyStateWithoutAnError() async throws {
+            let recorder = CloudRequestRecorder(mode: .userInfo)
+            let gate = CloudAuthorizationGate()
+            let service = makeService(
+                recorder: recorder,
+                store: CloudCredentialStoreFake(),
+                authorize: { url in try await gate.authorize(url) }
+            )
+            let configuration = try #require(DahliaCloudConfiguration.make(
+                urlString: "https://cloud.example.com",
+                clientID: "desktop-client"
+            ))
+            let controller = DahliaCloudAccountController(configuration: configuration, service: service)
+
+            let task = try #require(controller.startSignIn(configuration: configuration))
+            await gate.waitUntilStarted()
+            controller.cancelAccountTask()
+            await task.value
+
+            #expect(!controller.isBusy)
+            #expect(controller.account == nil)
+            #expect(controller.errorMessage == nil)
+        }
+
         @Test
         func signOutWithoutRevocationDeletesOnlyLocalCredential() async throws {
             let recorder = CloudRequestRecorder(mode: .refresh)
