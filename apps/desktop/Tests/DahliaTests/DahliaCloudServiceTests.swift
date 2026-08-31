@@ -333,6 +333,71 @@
             #expect(recorder.requests.contains { $0.url?.path == "/revoke" })
         }
 
+        @MainActor
+        @Test
+        func failedReauthenticationSaveDiscardsIssuedCredential() async throws {
+            let manager = try AppDatabaseManager(path: ":memory:")
+            let repository = MeetingRepository(dbQueue: manager.dbQueue)
+            let connection = DahliaAccountConnectionRecord(
+                id: .v7(),
+                origin: "https://cloud.example.com",
+                clientID: "desktop-client",
+                createdAt: .now
+            )
+            try await repository.insertDahliaAccountConnection(connection)
+            let configuration = try #require(DahliaCloudConfiguration.make(
+                urlString: connection.origin,
+                clientID: connection.clientID
+            ))
+            let recorder = CloudRequestRecorder(mode: .userInfo, advertisesRevocationEndpoint: true)
+            let store = CloudCredentialStoreFake(saveError: DahliaCloudError.credentialStorageFailed)
+            let service = makeService(recorder: recorder, store: store)
+            let controller = DahliaCloudAccountController(
+                configuration: configuration,
+                serviceFactory: { _, _ in service }
+            )
+            await controller.configure(appDatabase: manager)
+
+            let signIn = try #require(controller.startReauthentication(connectionID: connection.id))
+            await signIn.value
+
+            #expect(store.credential == nil)
+            #expect(controller.connections.map(\.id) == [connection.id])
+            #expect(controller.errorMessage != nil)
+            #expect(recorder.requests.contains { $0.url?.path == "/revoke" })
+        }
+
+        @MainActor
+        @Test
+        func failedRollbackPublishesRetainedConnection() async throws {
+            let manager = try AppDatabaseManager(path: ":memory:")
+            let repository = MeetingRepository(dbQueue: manager.dbQueue)
+            let configuration = try #require(DahliaCloudConfiguration.make(
+                urlString: "https://cloud.example.com",
+                clientID: "desktop-client"
+            ))
+            let recorder = CloudRequestRecorder(mode: .userInfo, advertisesRevocationEndpoint: true)
+            let store = CloudCredentialStoreFake(
+                saveError: DahliaCloudError.credentialStorageFailed,
+                deleteError: DahliaCloudError.credentialStorageFailed
+            )
+            let service = makeService(recorder: recorder, store: store)
+            let controller = DahliaCloudAccountController(
+                configuration: configuration,
+                serviceFactory: { _, _ in service }
+            )
+            await controller.configure(appDatabase: manager)
+
+            let signIn = try #require(controller.startSignIn(configuration: configuration))
+            await signIn.value
+
+            let retained = try await repository.fetchDahliaAccountConnections()
+            #expect(retained.count == 1)
+            #expect(controller.connections.map(\.id) == retained.map(\.id))
+            #expect(controller.errorMessage != nil)
+            #expect(recorder.requests.contains { $0.url?.path == "/revoke" })
+        }
+
         @Test
         func refreshCannotRestoreCredentialAfterSignOut() async throws {
             let tokenResponseGate = CloudTokenResponseGate()
@@ -481,16 +546,19 @@
         private let lock = NSLock()
         private var storedCredential: DahliaCloudCredential?
         private let saveError: Error?
+        private let deleteError: Error?
         private let onSave: (@Sendable () -> Void)?
         private(set) var saveCount = 0
 
         init(
             credential: DahliaCloudCredential? = nil,
             saveError: Error? = nil,
+            deleteError: Error? = nil,
             onSave: (@Sendable () -> Void)? = nil
         ) {
             storedCredential = credential
             self.saveError = saveError
+            self.deleteError = deleteError
             self.onSave = onSave
         }
 
@@ -509,7 +577,12 @@
                         self.saveCount += 1
                     }
                 },
-                delete: { self.lock.withLock { self.storedCredential = nil } }
+                delete: {
+                    try self.lock.withLock {
+                        if let deleteError = self.deleteError { throw deleteError }
+                        self.storedCredential = nil
+                    }
+                }
             )
         }
     }
