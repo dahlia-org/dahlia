@@ -89,6 +89,53 @@ import Security
         }
 
         @Test
+        func googleKeychainWorkerRunsOutsideTheMainThread() async {
+            let worker = GoogleKeychainWorker()
+
+            let runsOnMainThread = await worker.perform { Thread.isMainThread }
+
+            #expect(!runsOnMainThread)
+        }
+
+        @Test
+        func googleKeychainWorkerRejectsACommitFromBeforeDisconnect() async {
+            let worker = GoogleKeychainWorker()
+            let (_, generation) = await worker.snapshot {}
+            await worker.beginDisconnect()
+
+            let committed = await worker.performIfCurrent(generation: generation) {}
+
+            #expect(!committed)
+        }
+
+        @Test
+        func googleKeychainWorkerRejectsCommitsStartedDuringDisconnect() async {
+            let worker = GoogleKeychainWorker()
+            await worker.beginDisconnect()
+            let (_, generation) = await worker.snapshot {}
+
+            #expect(await worker.performIfCurrent(generation: generation) {} == false)
+
+            await worker.finishDisconnect()
+            #expect(await worker.performIfCurrent(generation: generation) {} == false)
+        }
+
+        @Test
+        func googleKeychainWorkerWaitsForAllOverlappingDisconnects() async {
+            let worker = GoogleKeychainWorker()
+            await worker.beginDisconnect()
+            await worker.beginDisconnect()
+            await worker.finishDisconnect()
+            let (_, generation) = await worker.snapshot {}
+
+            #expect(await worker.performIfCurrent(generation: generation) {} == false)
+
+            await worker.finishDisconnect()
+            let (_, currentGeneration) = await worker.snapshot {}
+            #expect(await worker.performIfCurrent(generation: currentGeneration) {})
+        }
+
+        @Test
         func disconnectSuppressionIsScopedPerGoogleService() {
             let calendarKey = GoogleSignInAdapter.disconnectPendingUserDefaultsKey(for: .calendar)
             let driveKey = GoogleSignInAdapter.disconnectPendingUserDefaultsKey(for: .drive)

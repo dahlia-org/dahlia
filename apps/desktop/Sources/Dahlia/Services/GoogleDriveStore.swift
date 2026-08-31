@@ -64,7 +64,7 @@ final class GoogleDriveStore: ObservableObject {
             return
         }
 
-        guard signInProvider.hasPreviousSignIn else {
+        guard await signInProvider.hasPreviousSignIn else {
             lastErrorMessage = nil
             recomputeState()
             return
@@ -219,7 +219,7 @@ final class GoogleDriveStore: ObservableObject {
 
     private func handleAuthSessionChanged(forceSignOut: Bool) async {
         didAttemptRestore = false
-        guard !forceSignOut, signInProvider.hasPreviousSignIn else {
+        guard !forceSignOut, await signInProvider.hasPreviousSignIn else {
             settings.clearGoogleDriveExportFolder()
             clearRuntimeState()
             exportFolderErrorMessage = nil

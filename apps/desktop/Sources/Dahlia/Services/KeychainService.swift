@@ -1,5 +1,6 @@
 import Foundation
 import Security
+import Synchronization
 
 /// macOS Keychain への保存・読み込み・削除を行うラッパー。
 /// エンタイトルメント付き署名済みビルドでは Data Protection Keychain を使用し、
@@ -17,10 +18,8 @@ enum KeychainService {
         errSecInternalComponent, // -2070
     ]
 
-    /// Data Protection Keychain が利用���能かのプロセスライフタイムキャッシュ。
-    /// 初回操作で判定し、以降は無駄な LAContext 生成と IPC を省略する。
-    /// 全呼び出しサイトが @MainActor 上のため、実質的にシングルスレッドアクセス。
-    private nonisolated(unsafe) static var dataProtectionAvailable: Bool?
+    /// Data Protection Keychain の利用可否をキャッシュする。
+    private static let keychainState = Mutex<Bool?>(nil)
 
     enum KeychainError: Error {
         case unexpectedStatus(OSStatus)
@@ -37,14 +36,14 @@ enum KeychainService {
         // 既存アイテムを両方のキーチェーンから削除（マイグレーション対応）
         deleteFromBothKeychains(key: key)
 
-        if dataProtectionAvailable != false {
+        if keychainState.withLock({ $0 }) != false {
             let status = saveProtected(key: key, data: data)
             if status == errSecSuccess {
-                dataProtectionAvailable = true
+                keychainState.withLock { $0 = true }
                 return
             }
             if fallbackErrors.contains(status) {
-                dataProtectionAvailable = false
+                keychainState.withLock { $0 = false }
             } else {
                 throw KeychainError.unexpectedStatus(status)
             }
@@ -57,17 +56,17 @@ enum KeychainService {
     }
 
     static func load(key: String) -> String? {
-        if dataProtectionAvailable != false {
+        if keychainState.withLock({ $0 }) != false {
             let (data, status) = loadProtected(key: key)
             if status == errSecSuccess, let data {
-                dataProtectionAvailable = true
+                keychainState.withLock { $0 = true }
                 return String(data: data, encoding: .utf8)
             }
             if status == errSecAuthFailed || status == errSecUserCanceled {
                 return nil
             }
             if fallbackErrors.contains(status) {
-                dataProtectionAvailable = false
+                keychainState.withLock { $0 = false }
             }
             // errSecItemNotFound: protected は利用可能だがアイテムが無い → legacy にフォールスルー
         }
