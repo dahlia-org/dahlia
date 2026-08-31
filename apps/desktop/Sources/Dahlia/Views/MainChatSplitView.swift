@@ -11,6 +11,7 @@ struct MainChatSplitView<Content: View, Sidebar: View>: View {
     let width: CGFloat
     let contentMinimumWidth: CGFloat
     let isVisible: Bool
+    let animatesVisibilityChanges: Bool
     let onWidthChange: (CGFloat) -> Void
     @ViewBuilder let content: Content
     @ViewBuilder let sidebar: Sidebar
@@ -32,6 +33,9 @@ struct MainChatSplitView<Content: View, Sidebar: View>: View {
                 contentMinimumWidth: contentMinimumWidth
             )
             let visibleSidebarWidth = isVisible ? sidebarWidth : 0
+            let visibilityTransition: AnyTransition = animatesVisibilityChanges
+                ? .move(edge: .trailing)
+                : .identity
 
             ZStack(alignment: .trailing) {
                 content
@@ -54,19 +58,24 @@ struct MainChatSplitView<Content: View, Sidebar: View>: View {
                                 .fill(Color(nsColor: .separatorColor))
                                 .frame(width: 1)
                         }
-                        .transition(.move(edge: .trailing))
+                        .transition(visibilityTransition)
 
                     resizeHandle(
                         currentWidth: sidebarWidth,
                         restingWidth: restingSidebarWidth,
                         availableWidth: geometry.size.width
                     )
-                    .transition(.move(edge: .trailing))
+                    .transition(visibilityTransition)
                 }
             }
             .frame(width: geometry.size.width, height: geometry.size.height)
             .clipped()
-            .animation(reduceMotion ? nil : .smooth(duration: Self.animationDuration), value: isVisible)
+            .animation(
+                reduceMotion || !animatesVisibilityChanges
+                    ? nil
+                    : .smooth(duration: Self.animationDuration),
+                value: isVisible
+            )
         }
         .frame(minWidth: isVisible ? MainChatSidebarLayout.minimumWidth + contentMinimumWidth : contentMinimumWidth)
     }
