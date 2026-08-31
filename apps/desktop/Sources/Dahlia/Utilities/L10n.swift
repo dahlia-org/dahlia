@@ -1781,9 +1781,49 @@ enum L10n { // swiftlint:disable:this type_body_length
     }
 
     static var currentVaultDescription: String { String(localized: "Choose the vault used for recordings and sync.", bundle: bundle) }
+    static var accountAndVaultMenuDescription: String { String(localized: "Open the account and vault menu.", bundle: bundle) }
     static var noVaultSelected: String { String(localized: "No vault selected", bundle: bundle) }
     static var dahliaAccount: String { String(localized: "Dahlia Account", bundle: bundle) }
-    static var dahliaAccountDescription: String { String(localized: "Manage your account and billing.", bundle: bundle) }
+    static var dahliaCloud: String { String(localized: "Dahlia Cloud", bundle: bundle) }
+    static var dahliaServer: String { String(localized: "Dahlia Server", bundle: bundle) }
+    static var dahliaServerNotConfigured: String { String(localized: "Dahlia Server is not configured.", bundle: bundle) }
+    static var dahliaNotSignedIn: String { String(localized: "Not signed in", bundle: bundle) }
+    static var dahliaWaitingForBrowser: String { String(localized: "Waiting for browser sign-in…", bundle: bundle) }
+    static var dahliaSignIn: String { String(localized: "Sign In", bundle: bundle) }
+    static var dahliaSignInDescription: String { String(
+        localized: "Connect to Dahlia Cloud or an existing Dahlia Server.",
+        bundle: bundle
+    ) }
+    static var signInToDahliaCloud: String { String(localized: "Sign In to Dahlia Cloud", bundle: bundle) }
+    static var dahliaCloudComingSoon: String { String(localized: "Dahlia Cloud (Coming Soon)", bundle: bundle) }
+    static var orConnectToServer: String { String(localized: "Or connect to a server", bundle: bundle) }
+    static var connectToDahliaServer: String { String(localized: "Connect to Dahlia Server", bundle: bundle) }
+    static var serverURL: String { String(localized: "Server URL", bundle: bundle) }
+    static var connect: String { String(localized: "Connect", bundle: bundle) }
+    static var dahliaUnknownAccount: String { String(localized: "Dahlia account", bundle: bundle) }
+    static var dahliaCloudBrowserCouldNotOpen: String { String(localized: "The sign-in page could not be opened.", bundle: bundle) }
+    static var dahliaAuthorizationTimedOut: String { String(localized: "Dahlia sign-in timed out.", bundle: bundle) }
+    static var dahliaUnexpectedResponse: String { String(localized: "Dahlia returned an unexpected response.", bundle: bundle) }
+    static var dahliaCloudInvalidTokenResponse: String { String(localized: "Dahlia OAuth returned an invalid token response.", bundle: bundle) }
+    static var dahliaCloudInvalidSessionResponse: String { String(localized: "Dahlia Server returned an invalid session response.", bundle: bundle) }
+    static var dahliaAuthorizationDenied: String { String(localized: "Dahlia sign-in was not authorized.", bundle: bundle) }
+    static var dahliaCredentialStorageFailed: String { String(
+        localized: "Dahlia credentials could not be saved securely.",
+        bundle: bundle
+    ) }
+
+    static func dahliaSignedInAs(_ name: String) -> String {
+        String(format: String(localized: "Signed in as %@", bundle: bundle), name)
+    }
+
+    static func dahliaConnection(_ service: String, _ account: String) -> String {
+        String(format: String(localized: "%@ - %@", bundle: bundle), service, account)
+    }
+
+    static func dahliaHTTPError(_ status: Int) -> String {
+        String(format: String(localized: "Dahlia request failed (HTTP %lld).", bundle: bundle), status)
+    }
+
     static var comingSoon: String { String(localized: "Coming Soon", bundle: bundle) }
     static var loadingVaults: String { String(localized: "Loading Vaults…", bundle: bundle) }
     static var removingVault: String { String(localized: "Removing Vault…", bundle: bundle) }

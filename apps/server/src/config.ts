@@ -257,7 +257,7 @@ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
     config.googleClientId = required(env, "GOOGLE_CLIENT_ID");
     config.googleClientSecret = required(env, "GOOGLE_CLIENT_SECRET");
     if (config.oauthRedirectUris.length === 0) {
-      config.oauthRedirectUris = ["http://127.0.0.1:1455/oauth/callback"];
+      config.oauthRedirectUris = ["http://127.0.0.1:1455/oauth/callback", "http://localhost:8020"];
     }
   }
 

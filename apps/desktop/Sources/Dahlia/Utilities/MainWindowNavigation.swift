@@ -43,6 +43,7 @@ final class MainWindowNavigation {
     private(set) var isNavigatingHistory = false
     private(set) var hasInitializedNavigationHistory = false
     private(set) var isShowingSettings = false
+    private(set) var isShowingDahliaSignIn = false
     private(set) var setupTourMode: SetupTourMode?
     private(set) var sidebarWidth: CGFloat
     private(set) var chatSidebarWidth: CGFloat
@@ -196,7 +197,17 @@ final class MainWindowNavigation {
         openMainWindow()
     }
 
+    func openDahliaSignIn() {
+        isShowingDahliaSignIn = true
+        openMainWindow()
+    }
+
+    func dismissDahliaSignIn() {
+        isShowingDahliaSignIn = false
+    }
+
     func dismissSettings() {
+        dismissDahliaSignIn()
         isShowingSettings = false
     }
 

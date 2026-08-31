@@ -253,7 +253,7 @@ final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
         let clientSecret = await Self.loadClientSecret()
         let pkce = PKCE.generate()
         let state = PKCE.randomURLSafeString(length: 32)
-        let redirectServer = try await LoopbackRedirectServer()
+        let redirectServer = try await OAuthLoopbackRedirectServer()
         let redirect = redirectServer.redirectURL
         let authorizationURL = Self.makeAuthorizationURL(
             clientID: clientID,
@@ -844,16 +844,22 @@ enum GoogleOAuthLoopbackRequest: Equatable {
 
 enum GoogleOAuthLoopbackRequestParser {
     static func parse(_ request: String) -> GoogleOAuthLoopbackRequest {
+        OAuthLoopbackRequestParser.parse(request, callbackPath: "/oauth2redirect")
+    }
+}
+
+enum OAuthLoopbackRequestParser {
+    static func parse(_ request: String, callbackPath: String) -> GoogleOAuthLoopbackRequest {
         guard let firstLine = request.split(separator: "\r\n").first else { return .invalid }
         let components = firstLine.split(separator: " ")
         guard components.count >= 2, components[0] == "GET" else { return .invalid }
         guard let url = URL(string: "http://127.0.0.1\(components[1])") else { return .invalid }
-        guard url.path == "/oauth2redirect" else { return .unrelated }
+        guard url.path == callbackPath else { return .unrelated }
         return .callback(url)
     }
 }
 
-private final class LoopbackRedirectServer: @unchecked Sendable {
+final class OAuthLoopbackRedirectServer: @unchecked Sendable {
     private static let callbackTimeout: TimeInterval = 300
     private static let maximumRequestLength = 16384
     private static let headerTerminator = Data("\r\n\r\n".utf8)
@@ -867,10 +873,12 @@ private final class LoopbackRedirectServer: @unchecked Sendable {
     private var callbackCompleted = false
     private var callbackTimeoutWorkItem: DispatchWorkItem?
     private var readinessContinuation: CheckedContinuation<Void, Error>?
+    private let callbackPath: String
 
-    init() async throws {
+    init(port: NWEndpoint.Port = .any, callbackPath: String = "/oauth2redirect") async throws {
+        self.callbackPath = callbackPath
         let parameters = NWParameters.tcp
-        parameters.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: .any)
+        parameters.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: port)
         let listener = try NWListener(using: parameters)
         self.listener = listener
         redirectURL = URL(string: "http://127.0.0.1")!
@@ -883,6 +891,11 @@ private final class LoopbackRedirectServer: @unchecked Sendable {
                 case .ready:
                     self?.readinessContinuation?.resume()
                     self?.readinessContinuation = nil
+                case let .waiting(error):
+                    if let continuation = self?.readinessContinuation {
+                        self?.readinessContinuation = nil
+                        continuation.resume(throwing: error)
+                    }
                 case let .failed(error):
                     if let continuation = self?.readinessContinuation {
                         self?.readinessContinuation = nil
@@ -906,7 +919,11 @@ private final class LoopbackRedirectServer: @unchecked Sendable {
             throw GoogleSignInError.invalidAuthorizationResponse
         }
 
-        redirectURL = URL(string: "http://127.0.0.1:\(port)/oauth2redirect")!
+        redirectURL = URL(string: "http://127.0.0.1:\(port)\(callbackPath)")!
+    }
+
+    deinit {
+        listener.cancel()
     }
 
     func waitForCallback() async throws -> URL {
@@ -971,9 +988,9 @@ private final class LoopbackRedirectServer: @unchecked Sendable {
                 return
             }
 
-            switch GoogleOAuthLoopbackRequestParser.parse(request) {
+            switch OAuthLoopbackRequestParser.parse(request, callbackPath: callbackPath) {
             case let .callback(url):
-                reply(to: connection, status: "200 OK", body: "Dahlia authorization completed. You can close this window.")
+                reply(to: connection, status: "200 OK", body: Self.callbackResponseBody(for: url))
                 completeCallback(with: .success(url))
             case .unrelated:
                 reply(to: connection, status: "404 Not Found", body: "Not found.")
@@ -982,6 +999,14 @@ private final class LoopbackRedirectServer: @unchecked Sendable {
                 completeCallback(with: .failure(GoogleSignInError.invalidAuthorizationResponse))
             }
         }
+    }
+
+    static func callbackResponseBody(for url: URL) -> String {
+        let failed = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?
+            .contains(where: { $0.name == "error" }) == true
+        return failed
+            ? "Dahlia authorization failed. Return to the app for details."
+            : "Dahlia authorization completed. You can close this window."
     }
 
     private func completeCallback(with result: Result<URL, Error>) {

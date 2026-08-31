@@ -1,6 +1,6 @@
 import type { DBAdapterInstance } from "better-auth";
 import { drizzleAdapter } from "@better-auth/drizzle-adapter/relations-v2";
-import { and, asc, desc, eq, gt, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNull } from "drizzle-orm";
 import { drizzle as drizzleD1 } from "drizzle-orm/d1";
 
 import { gatewayResource, type AppConfig } from "../config";
@@ -10,6 +10,10 @@ import * as postgresAuthSchema from "../db/generated/postgres-auth-schema";
 import * as sqliteAuthSchema from "../db/generated/sqlite-auth-schema";
 import * as sqliteSchema from "../db/sqlite-schema";
 import { OAUTH_SCOPES } from "./scopes";
+
+const DAHLIA_DESKTOP_CLIENT_ID = "databricks-cli";
+const LEGACY_DAHLIA_DESKTOP_CLIENT_ID = "dahlia-macos";
+const DAHLIA_DESKTOP_SESSION_CLIENT_IDS = [DAHLIA_DESKTOP_CLIENT_ID, LEGACY_DAHLIA_DESKTOP_CLIENT_ID];
 
 export interface DahliaOAuthSession {
   id: string;
@@ -113,8 +117,8 @@ export function createPostgresApplicationStore(db: PostgresDatabase): Applicatio
     async seedDahliaClient(config) {
       const now = new Date();
       await db.insert(postgresSchema.oauthClient).values({
-        id: "oauth-client-dahlia-macos",
-        clientId: "dahlia-macos",
+        id: "oauth-client-databricks-cli",
+        clientId: DAHLIA_DESKTOP_CLIENT_ID,
         name: "Dahlia for macOS",
         tokenEndpointAuthMethod: "none",
         applicationType: "native",
@@ -142,19 +146,21 @@ export function createPostgresApplicationStore(db: PostgresDatabase): Applicatio
           updatedAt: now,
         },
       });
+      await db.update(postgresSchema.oauthClient).set({ disabled: true, updatedAt: now })
+        .where(eq(postgresSchema.oauthClient.clientId, LEGACY_DAHLIA_DESKTOP_CLIENT_ID));
       const resource = gatewayResource(config);
       const [oauthResource] = await db.select({ id: postgresSchema.oauthResource.id })
         .from(postgresSchema.oauthResource)
         .where(eq(postgresSchema.oauthResource.identifier, resource)).limit(1);
       if (!oauthResource) throw new Error("Dahlia AI Gateway OAuth resource was not created");
       await db.insert(postgresSchema.oauthClientResource).values({
-        id: "oauth-client-resource-dahlia-macos",
-        clientId: "dahlia-macos",
+        id: "oauth-client-resource-databricks-cli",
+        clientId: DAHLIA_DESKTOP_CLIENT_ID,
         resourceId: resource,
         createdAt: now,
       }).onConflictDoUpdate({
         target: postgresSchema.oauthClientResource.id,
-        set: { clientId: "dahlia-macos", resourceId: resource },
+        set: { clientId: DAHLIA_DESKTOP_CLIENT_ID, resourceId: resource },
       });
     },
     async listDahliaSessions(userId) {
@@ -168,7 +174,7 @@ export function createPostgresApplicationStore(db: PostgresDatabase): Applicatio
         .leftJoin(postgresSchema.session, eq(postgresSchema.oauthRefreshToken.sessionId, postgresSchema.session.id))
         .where(and(
           eq(postgresSchema.oauthRefreshToken.userId, userId),
-          eq(postgresSchema.oauthRefreshToken.clientId, "dahlia-macos"),
+          inArray(postgresSchema.oauthRefreshToken.clientId, DAHLIA_DESKTOP_SESSION_CLIENT_IDS),
           isNull(postgresSchema.oauthRefreshToken.revoked),
           gt(postgresSchema.oauthRefreshToken.expiresAt, new Date()),
         )).orderBy(desc(postgresSchema.oauthRefreshToken.createdAt));
@@ -180,7 +186,7 @@ export function createPostgresApplicationStore(db: PostgresDatabase): Applicatio
       const [revoked] = await db.update(postgresSchema.oauthRefreshToken).set({ revoked: new Date() }).where(and(
         eq(postgresSchema.oauthRefreshToken.id, refreshTokenId),
         eq(postgresSchema.oauthRefreshToken.userId, userId),
-        eq(postgresSchema.oauthRefreshToken.clientId, "dahlia-macos"),
+        inArray(postgresSchema.oauthRefreshToken.clientId, DAHLIA_DESKTOP_SESSION_CLIENT_IDS),
         isNull(postgresSchema.oauthRefreshToken.revoked),
       )).returning({ id: postgresSchema.oauthRefreshToken.id });
       if (!revoked) return false;
@@ -275,8 +281,8 @@ export function createSqliteApplicationStore(db: SQLiteDatabase, transactions = 
     async seedDahliaClient(config) {
       const now = new Date();
       await db.insert(sqliteSchema.oauthClient).values({
-        id: "oauth-client-dahlia-macos",
-        clientId: "dahlia-macos",
+        id: "oauth-client-databricks-cli",
+        clientId: DAHLIA_DESKTOP_CLIENT_ID,
         name: "Dahlia for macOS",
         tokenEndpointAuthMethod: "none",
         applicationType: "native",
@@ -304,19 +310,21 @@ export function createSqliteApplicationStore(db: SQLiteDatabase, transactions = 
           updatedAt: now,
         },
       });
+      await db.update(sqliteSchema.oauthClient).set({ disabled: true, updatedAt: now })
+        .where(eq(sqliteSchema.oauthClient.clientId, LEGACY_DAHLIA_DESKTOP_CLIENT_ID));
       const resource = gatewayResource(config);
       const [oauthResource] = await db.select({ id: sqliteSchema.oauthResource.id })
         .from(sqliteSchema.oauthResource)
         .where(eq(sqliteSchema.oauthResource.identifier, resource)).limit(1);
       if (!oauthResource) throw new Error("Dahlia AI Gateway OAuth resource was not created");
       await db.insert(sqliteSchema.oauthClientResource).values({
-        id: "oauth-client-resource-dahlia-macos",
-        clientId: "dahlia-macos",
+        id: "oauth-client-resource-databricks-cli",
+        clientId: DAHLIA_DESKTOP_CLIENT_ID,
         resourceId: resource,
         createdAt: now,
       }).onConflictDoUpdate({
         target: sqliteSchema.oauthClientResource.id,
-        set: { clientId: "dahlia-macos", resourceId: resource },
+        set: { clientId: DAHLIA_DESKTOP_CLIENT_ID, resourceId: resource },
       });
     },
     async listDahliaSessions(userId) {
@@ -330,7 +338,7 @@ export function createSqliteApplicationStore(db: SQLiteDatabase, transactions = 
         .leftJoin(sqliteSchema.session, eq(sqliteSchema.oauthRefreshToken.sessionId, sqliteSchema.session.id))
         .where(and(
           eq(sqliteSchema.oauthRefreshToken.userId, userId),
-          eq(sqliteSchema.oauthRefreshToken.clientId, "dahlia-macos"),
+          inArray(sqliteSchema.oauthRefreshToken.clientId, DAHLIA_DESKTOP_SESSION_CLIENT_IDS),
           isNull(sqliteSchema.oauthRefreshToken.revoked),
           gt(sqliteSchema.oauthRefreshToken.expiresAt, new Date()),
         )).orderBy(desc(sqliteSchema.oauthRefreshToken.createdAt));
@@ -342,7 +350,7 @@ export function createSqliteApplicationStore(db: SQLiteDatabase, transactions = 
       const [revoked] = await db.update(sqliteSchema.oauthRefreshToken).set({ revoked: new Date() }).where(and(
         eq(sqliteSchema.oauthRefreshToken.id, refreshTokenId),
         eq(sqliteSchema.oauthRefreshToken.userId, userId),
-        eq(sqliteSchema.oauthRefreshToken.clientId, "dahlia-macos"),
+        inArray(sqliteSchema.oauthRefreshToken.clientId, DAHLIA_DESKTOP_SESSION_CLIENT_IDS),
         isNull(sqliteSchema.oauthRefreshToken.revoked),
       )).returning({ id: sqliteSchema.oauthRefreshToken.id });
       if (!revoked) return false;

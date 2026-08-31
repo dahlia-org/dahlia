@@ -64,6 +64,20 @@ configure_google_calendar_plist() {
     fi
 }
 
+configure_dahlia_cloud_plist() {
+    local plist_path="$1"
+
+    /usr/libexec/PlistBuddy -c "Delete :DAHLIA_CLOUD_URL" "$plist_path" >/dev/null 2>&1 || true
+    /usr/libexec/PlistBuddy -c "Delete :DAHLIA_CLOUD_OAUTH_CLIENT_ID" "$plist_path" >/dev/null 2>&1 || true
+
+    if [ -n "${DAHLIA_CLOUD_URL:-}" ]; then
+        /usr/libexec/PlistBuddy -c "Add :DAHLIA_CLOUD_URL string ${DAHLIA_CLOUD_URL}" "$plist_path"
+    fi
+    if [ -n "${DAHLIA_CLOUD_OAUTH_CLIENT_ID:-}" ]; then
+        /usr/libexec/PlistBuddy -c "Add :DAHLIA_CLOUD_OAUTH_CLIENT_ID string ${DAHLIA_CLOUD_OAUTH_CLIENT_ID}" "$plist_path"
+    fi
+}
+
 configure_sentry_plist() {
     local plist_path="$1"
 

@@ -10,6 +10,7 @@ struct SettingsDetailView: View {
     let onShowUnprocessedRecordings: (UUID) -> Void
 
     @ObservedObject private var appSettings = AppSettings.shared
+    @State private var dahliaAccountController = DahliaCloudAccountController.shared
 
     var body: some View {
         VStack(spacing: 0) {
@@ -39,13 +40,21 @@ struct SettingsDetailView: View {
             selectedSettings
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .onChange(of: selection) { _, selection in
+            if selection != .general { dismissDahliaSignIn() }
+        }
     }
 
     @ViewBuilder
     private var selectedSettings: some View {
         switch selection {
         case .general:
-            GeneralSettingsView()
+            GeneralSettingsView(
+                dahliaAccountController: dahliaAccountController,
+                onShowDahliaSignIn: showDahliaSignIn,
+                onCancelDahliaSignIn: dahliaAccountController.cancelAccountTask,
+                onDahliaSignOut: signOutOfDahlia
+            )
         case .language:
             LanguageSettingsView()
         case .appearance:
@@ -95,5 +104,17 @@ struct SettingsDetailView: View {
     private func updateCurrentVaultIfNeeded(_ vault: VaultRecord) {
         guard appSettings.currentVault?.id == vault.id else { return }
         appSettings.currentVault = vault
+    }
+
+    private func showDahliaSignIn() {
+        mainWindowNavigation.openDahliaSignIn()
+    }
+
+    private func dismissDahliaSignIn() {
+        mainWindowNavigation.dismissDahliaSignIn()
+    }
+
+    private func signOutOfDahlia() {
+        dahliaAccountController.startSignOut()
     }
 }

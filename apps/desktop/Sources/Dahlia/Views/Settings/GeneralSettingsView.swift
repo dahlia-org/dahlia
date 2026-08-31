@@ -2,19 +2,21 @@ import SwiftUI
 
 /// 設定画面「一般」タブ。アカウント、録音、通知の基本設定を管理する。
 struct GeneralSettingsView: View {
+    let dahliaAccountController: DahliaCloudAccountController
+    let onShowDahliaSignIn: () -> Void
+    let onCancelDahliaSignIn: () -> Void
+    let onDahliaSignOut: () -> Void
+
     @ObservedObject private var settings = AppSettings.shared
 
     var body: some View {
         Form {
-            Section {
-                LabeledContent {
-                    Button(L10n.comingSoon) {}
-                        .disabled(true)
-                } label: {
-                    Text(L10n.dahliaAccount)
-                    Text(L10n.dahliaAccountDescription)
-                }
-            }
+            DahliaCloudAccountSettingsView(
+                controller: dahliaAccountController,
+                onShowSignIn: onShowDahliaSignIn,
+                onCancelSignIn: onCancelDahliaSignIn,
+                onSignOut: onDahliaSignOut
+            )
 
             Section {
                 AppLanguageSelectionRow()

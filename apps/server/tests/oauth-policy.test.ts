@@ -118,6 +118,9 @@ describe("fixed OAuth client policy", () => {
           }),
         })),
       })),
+      update: vi.fn(() => ({
+        set: vi.fn(() => ({ where: vi.fn(async () => []) })),
+      })),
       select: vi.fn(() => ({
         from: vi.fn(() => ({
           where: vi.fn(() => ({ limit: vi.fn(async () => [{ id: "resource-id" }]) })),
@@ -129,7 +132,7 @@ describe("fixed OAuth client policy", () => {
 
     expect(upserts[1]).toMatchObject({
       set: {
-        clientId: "dahlia-macos",
+        clientId: "databricks-cli",
         resourceId: "https://new.dahlia.example/api/v1",
       },
     });

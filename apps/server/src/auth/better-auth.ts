@@ -53,7 +53,7 @@ export function createDahliaAuth(
         accessTokenExpiresIn: 15 * 60,
         allowDynamicClientRegistration: false,
         allowUnauthenticatedClientRegistration: false,
-        cachedTrustedClients: new Set(["dahlia-macos"]),
+        cachedTrustedClients: new Set(["databricks-cli"]),
         clientRegistrationDefaultResources: [mcp],
         clientRegistrationDefaultScopes: [ARTIFACT_WRITE_SCOPE],
         clientPrivileges: denyOAuthManagement,

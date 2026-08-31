@@ -11,18 +11,23 @@ struct MainSidebarFooterView: View {
     @State private var isAccountMenuHovered = false
     @State private var isHelpHovered = false
     @State private var isMCPPresented = false
+    @State private var dahliaAccountController = DahliaCloudAccountController.shared
 
     var body: some View {
         HStack(spacing: 4) {
             MainSidebarAccountMenuButton(
                 vaults: vaults,
                 currentVault: currentVault,
+                account: dahliaAccountController.account,
+                accountOrigin: dahliaAccountController.connectionOrigin,
+                isCloudAccount: dahliaAccountController.account == nil ? nil : dahliaAccountController.isConnectedToDahliaCloud,
                 onSelectVault: onSelectVault,
                 onManageVaults: showVaultManager,
-                onOpenSettings: showSettings
+                onOpenSettings: showSettings,
+                onAccountAction: accountAction
             )
             .frame(maxWidth: .infinity, alignment: .leading)
-            .frame(height: 30)
+            .frame(height: 44)
             .background(
                 isAccountMenuHovered ? DahliaDesign.sidebarHighlightColor : .clear,
                 in: .rect(cornerRadius: DahliaDesign.Highlight.compactCornerRadius)
@@ -31,7 +36,7 @@ struct MainSidebarFooterView: View {
             .onContinuousHover { phase in
                 isAccountMenuHovered = phase != .ended
             }
-            .help(L10n.currentVaultDescription)
+            .help(L10n.accountAndVaultMenuDescription)
 
             if updateController.isUpdateAvailable {
                 MainSidebarUpdateBadge(updateController: updateController)
@@ -70,7 +75,15 @@ struct MainSidebarFooterView: View {
         isMCPPresented = true
     }
 
-    private func showSettings() {
-        mainWindowNavigation.openSettings()
+    private func showSettings(_ category: SettingsCategory?) {
+        mainWindowNavigation.openSettings(category: category)
+    }
+
+    private func accountAction() {
+        if dahliaAccountController.account == nil {
+            mainWindowNavigation.openDahliaSignIn()
+        } else {
+            dahliaAccountController.startSignOut()
+        }
     }
 }

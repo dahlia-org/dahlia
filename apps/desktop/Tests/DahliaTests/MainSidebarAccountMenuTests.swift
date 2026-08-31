@@ -17,6 +17,25 @@
         }
 
         @Test
+        func footerTitleShowsAccountAndVaultOnSeparateLines() {
+            let title = MainSidebarAccountMenuButton.footerTitle(
+                accountName: "Kazuki Matsuda",
+                vaultName: "Obsidian Vault"
+            )
+
+            #expect(title.string.contains("Kazuki Matsuda"))
+            #expect(title.string.contains("Obsidian Vault"))
+            #expect(title.string.contains("\n"))
+            #expect(!title.string.contains("\u{FFFC}"))
+
+            let accountRange = (title.string as NSString).range(of: "Kazuki Matsuda")
+            let vaultRange = (title.string as NSString).range(of: "Obsidian Vault")
+            let accountFont = title.attribute(.font, at: accountRange.location, effectiveRange: nil) as? NSFont
+            let vaultFont = title.attribute(.font, at: vaultRange.location, effectiveRange: nil) as? NSFont
+            #expect(accountFont?.pointSize ?? 0 > vaultFont?.pointSize ?? 0)
+        }
+
+        @Test
         func submenuAppearsOnRightAndFlipsLeftAtTheScreenEdge() {
             let panelSize = CGSize(width: 180, height: 100)
             let screenFrame = CGRect(x: 0, y: 0, width: 1000, height: 800)
@@ -34,6 +53,31 @@
 
             #expect(fitsOnRight == CGPoint(x: 286, y: 220))
             #expect(flipsToLeft == CGPoint(x: 614, y: 220))
+        }
+
+        @Test
+        func submenuAlignsWithTheHoveredRootRow() {
+            let mainPanelFrame = CGRect(x: 100, y: 200, width: 180, height: 120)
+            let origin = MainSidebarAccountMenuLayout.submenuOrigin(
+                panelSize: CGSize(width: 180, height: 100),
+                mainPanelFrame: mainPanelFrame,
+                screenFrame: CGRect(x: 0, y: 0, width: 1000, height: 800),
+                anchorY: MainSidebarAccountMenuLayout.submenuAnchorY(rowMinY: 38, mainPanelFrame: mainPanelFrame)
+            )
+
+            #expect(origin == CGPoint(x: 286, y: 182))
+        }
+
+        @Test
+        func accountHelpCentersBelowTheRowAndStaysOnScreen() {
+            let origin = MainSidebarAccountMenuLayout.helpOrigin(
+                panelSize: CGSize(width: 240, height: 36),
+                rowFrame: CGRect(x: 6, y: 36, width: 268, height: 30),
+                mainPanelFrame: CGRect(x: 700, y: 200, width: 280, height: 180),
+                screenFrame: CGRect(x: 0, y: 0, width: 1000, height: 800)
+            )
+
+            #expect(origin == CGPoint(x: 720, y: 272))
         }
 
         @Test

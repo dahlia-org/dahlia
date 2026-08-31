@@ -33,13 +33,11 @@ enum KeychainService {
             throw KeychainError.encodingFailed
         }
 
-        // 既存アイテムを両方のキーチェーンから削除（マイグレーション対応）
-        deleteFromBothKeychains(key: key)
-
         if keychainState.withLock({ $0 }) != false {
-            let status = saveProtected(key: key, data: data)
+            let status = upsertProtected(key: key, data: data)
             if status == errSecSuccess {
                 keychainState.withLock { $0 = true }
+                _ = deleteLegacy(key: key)
                 return
             }
             if fallbackErrors.contains(status) {
@@ -49,7 +47,7 @@ enum KeychainService {
             }
         }
 
-        let legacyStatus = saveLegacy(key: key, data: data)
+        let legacyStatus = upsertLegacy(key: key, data: data)
         guard legacyStatus == errSecSuccess else {
             throw KeychainError.unexpectedStatus(legacyStatus)
         }
@@ -115,7 +113,18 @@ enum KeychainService {
 
     // MARK: - Data Protection Keychain (Protected)
 
-    private static func saveProtected(key: String, data: Data) -> OSStatus {
+    private static func upsertProtected(key: String, data: Data) -> OSStatus {
+        var updateQuery = baseQuery(key: key)
+        updateQuery[kSecUseDataProtectionKeychain as String] = true
+        let updateStatus = SecItemUpdate(
+            updateQuery as CFDictionary,
+            [
+                kSecValueData as String: data,
+                kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
+            ] as CFDictionary
+        )
+        guard updateStatus == errSecItemNotFound else { return updateStatus }
+
         var query = baseQuery(key: key)
         query[kSecValueData as String] = data
         query[kSecUseDataProtectionKeychain as String] = true
@@ -141,7 +150,16 @@ enum KeychainService {
 
     // MARK: - Legacy Keychain (Fallback)
 
-    private static func saveLegacy(key: String, data: Data) -> OSStatus {
+    private static func upsertLegacy(key: String, data: Data) -> OSStatus {
+        let updateStatus = SecItemUpdate(
+            baseQuery(key: key) as CFDictionary,
+            [
+                kSecValueData as String: data,
+                kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
+            ] as CFDictionary
+        )
+        guard updateStatus == errSecItemNotFound else { return updateStatus }
+
         var query = baseQuery(key: key)
         query[kSecValueData as String] = data
         query[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly

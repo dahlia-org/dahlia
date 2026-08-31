@@ -44,6 +44,10 @@ describe("SQLite Better Auth store", () => {
     const store = createNodeAuthStore(config);
 
     await Promise.all([store.migrate(), store.migrate()]);
+    const database = new DatabaseSync(path);
+    database.prepare(
+      'INSERT INTO "oauth_client" ("id", "client_id", "redirect_uris", "disabled") VALUES (?, ?, ?, ?)',
+    ).run("oauth-client-dahlia-macos", "dahlia-macos", "[]", 0);
     const auth = await initializeDahliaAuth(config, store, [{
       plugins: [cimd({
         fetchClientMetadataResource: async () => new Response(null, { status: 404 }),
@@ -67,12 +71,14 @@ describe("SQLite Better Auth store", () => {
       throw new Error("rollback");
     })).rejects.toThrow("rollback");
 
-    const database = new DatabaseSync(path);
     expect(database.prepare('SELECT "name" FROM "__drizzle_migrations"').get()).toEqual({
       name: "20260830001528_stiff_alex_power",
     });
-    expect(database.prepare('SELECT "client_id" FROM "oauth_client"').get()).toEqual({ client_id: "dahlia-macos" });
-    expect(database.prepare('SELECT "client_id" FROM "oauth_client_resource"').get()).toEqual({ client_id: "dahlia-macos" });
+    expect(database.prepare('SELECT "client_id" FROM "oauth_client" WHERE "client_id" = ?').get("databricks-cli"))
+      .toEqual({ client_id: "databricks-cli" });
+    expect(database.prepare('SELECT "disabled" FROM "oauth_client" WHERE "client_id" = ?').get("dahlia-macos"))
+      .toEqual({ disabled: 1 });
+    expect(database.prepare('SELECT "client_id" FROM "oauth_client_resource"').get()).toEqual({ client_id: "databricks-cli" });
     expect(database.prepare(
       'SELECT "identifier", "dpop_bound_access_tokens_required" FROM "oauth_resource" ORDER BY "identifier"',
     ).all()).toEqual([

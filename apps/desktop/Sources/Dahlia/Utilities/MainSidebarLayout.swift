@@ -8,7 +8,7 @@ enum MainSidebarLayout {
     static let minimumDetailWidth: CGFloat = 500
     static let minimumSplitWidth = minimumWidth + minimumDetailWidth
     static let tintOpacity = 0.7
-    static let footerHeight: CGFloat = 46
+    static let footerHeight: CGFloat = 58
 
     static func clampedWidth(_ width: CGFloat) -> CGFloat {
         min(max(width, minimumWidth), maximumWidth)
