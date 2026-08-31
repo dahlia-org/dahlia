@@ -160,5 +160,58 @@
             #expect(MainSidebarAccountMenuCoordinator.shouldPassThroughKeyEvent(modifierFlags: [.command, .option]))
             #expect(MainSidebarAccountMenuCoordinator.shouldPassThroughKeyEvent(modifierFlags: [.control]))
         }
+
+        @Test
+        func keyboardAccountRowsOpenSettingsAndPerformAccountAction() {
+            let account = DahliaCloudAccount(id: "user", name: "User", email: nil)
+            var openedCategory: SettingsCategory?
+            var didManageAccounts = false
+            let coordinator = MainSidebarAccountMenuCoordinator(
+                vaults: [],
+                currentVault: nil,
+                account: account,
+                accountOrigin: "https://cloud.example.com",
+                isCloudAccount: true,
+                onSelectVault: { _ in },
+                onManageVaults: {},
+                onOpenSettings: { openedCategory = $0 },
+                onAccountAction: { didManageAccounts = true }
+            )
+
+            coordinator.moveSelection(1)
+            coordinator.activateSelection()
+            #expect(openedCategory == .dahliaAccounts)
+
+            coordinator.moveSelection(-1)
+            coordinator.activateSelection()
+            #expect(didManageAccounts)
+        }
+
+        @Test
+        func footerUsesSingleServerAndSummarizesMultipleAccounts() {
+            let server = makeConnection(origin: "https://server.example.com", isCloud: false)
+            let cloud = makeConnection(origin: "https://cloud.example.com", isCloud: true)
+
+            let serverOnly = MainSidebarFooterView.accountPresentation(for: [server])
+            #expect(serverOnly.connection?.id == server.id)
+            #expect(serverOnly.count == 1)
+
+            let multiple = MainSidebarFooterView.accountPresentation(for: [cloud, server])
+            #expect(multiple.connection == nil)
+            #expect(multiple.count == 2)
+        }
+
+        private func makeConnection(origin: String, isCloud: Bool) -> DahliaAccountConnection {
+            DahliaAccountConnection(
+                record: DahliaAccountConnectionRecord(
+                    id: .v7(),
+                    origin: origin,
+                    clientID: "desktop-client",
+                    createdAt: .now
+                ),
+                account: DahliaCloudAccount(id: origin, name: origin, email: nil),
+                isCloud: isCloud
+            )
+        }
     }
 #endif

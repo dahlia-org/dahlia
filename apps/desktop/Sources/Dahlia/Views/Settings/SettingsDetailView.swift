@@ -41,7 +41,7 @@ struct SettingsDetailView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .onChange(of: selection) { _, selection in
-            if selection != .general { dismissDahliaSignIn() }
+            if selection != .dahliaAccounts { mainWindowNavigation.dismissDahliaSignIn() }
         }
     }
 
@@ -49,11 +49,11 @@ struct SettingsDetailView: View {
     private var selectedSettings: some View {
         switch selection {
         case .general:
-            GeneralSettingsView(
-                dahliaAccountController: dahliaAccountController,
-                onShowDahliaSignIn: showDahliaSignIn,
-                onCancelDahliaSignIn: dahliaAccountController.cancelAccountTask,
-                onDahliaSignOut: signOutOfDahlia
+            GeneralSettingsView()
+        case .dahliaAccounts:
+            DahliaAccountsSettingsView(
+                controller: dahliaAccountController,
+                onShowSignIn: mainWindowNavigation.openDahliaSignIn
             )
         case .language:
             LanguageSettingsView()
@@ -106,15 +106,4 @@ struct SettingsDetailView: View {
         appSettings.currentVault = vault
     }
 
-    private func showDahliaSignIn() {
-        mainWindowNavigation.openDahliaSignIn()
-    }
-
-    private func dismissDahliaSignIn() {
-        mainWindowNavigation.dismissDahliaSignIn()
-    }
-
-    private func signOutOfDahlia() {
-        dahliaAccountController.startSignOut()
-    }
 }

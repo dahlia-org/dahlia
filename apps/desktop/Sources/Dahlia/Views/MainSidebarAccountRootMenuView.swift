@@ -43,7 +43,7 @@ struct MainSidebarAccountRootMenuView: View {
                         cancelPendingHover()
                         onDismissAccountHelp()
                     },
-                    action: { activate(index: 0, action: { onOpenSettings(.general) }) }
+                    action: { activate(index: 0, action: { onOpenSettings(.dahliaAccounts) }) }
                 )
 
                 Divider()

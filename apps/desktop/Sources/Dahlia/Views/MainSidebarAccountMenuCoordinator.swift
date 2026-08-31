@@ -356,7 +356,7 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
     }
 }
 
-private extension MainSidebarAccountMenuCoordinator {
+extension MainSidebarAccountMenuCoordinator {
     func handleKeyDown(_ event: NSEvent) -> NSEvent? {
         if Self.shouldPassThroughKeyEvent(modifierFlags: event.modifierFlags) {
             dismissMenu()
@@ -496,7 +496,7 @@ private extension MainSidebarAccountMenuCoordinator {
     func activateRootSelection() {
         guard let selection = navigation.rootSelection else { return }
         if account != nil, selection == 0 {
-            openSettings(category: .general)
+            openSettings(category: .dahliaAccounts)
             return
         }
         switch selection - rootMenuOffset {

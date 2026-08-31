@@ -32,6 +32,10 @@
             #expect(configuration.baseURL.absoluteString == "https://cloud.example.com")
             #expect(configuration.clientID == "desktop-client")
             #expect(DahliaCloudConfiguration.defaultClientID == "databricks-cli")
+            #expect(DahliaCloudConfiguration.make(
+                urlString: "https://Cloud.Example.com:443/",
+                clientID: "client"
+            )?.origin == "https://cloud.example.com")
         }
 
         @Test
@@ -137,9 +141,9 @@
                 clientID: DahliaCloudConfiguration.defaultClientID
             )
 
-            let account = try await service.signIn()
+            let credential = try await service.signIn()
 
-            #expect(account == DahliaCloudAccount(id: "user-1", name: "User One", email: "user@example.com"))
+            #expect(credential.account == DahliaCloudAccount(id: "user-1", name: "User One", email: "user@example.com"))
             let requests = recorder.requests
             #expect(requests.contains { $0.url?.path == "/userinfo" })
             #expect(!requests.contains { $0.url?.path == "/api/session" })
@@ -163,9 +167,9 @@
                 clientID: DahliaCloudConfiguration.defaultClientID
             )
 
-            let account = try await service.signIn()
+            let credential = try await service.signIn()
 
-            #expect(account.id == "db-user")
+            #expect(credential.account.id == "db-user")
             #expect(recorder.requests.contains { $0.url?.path == "/api/session" })
             let authorizationURL = try #require(recorder.authorizationURL)
             #expect(URLComponents(url: authorizationURL, resolvingAgainstBaseURL: false)?.queryItems?
@@ -262,23 +266,221 @@
             ))
             let restored = makeService(recorder: recorder, store: store)
 
-            #expect(try await restored.storedConnection()?.account.id == "saved-user")
+            #expect(try await restored.storedCredential()?.account.id == "saved-user")
             try await restored.signOut()
             #expect(store.credential == nil)
             #expect(recorder.requests.contains { $0.url?.path == "/revoke" })
         }
 
         @Test
-        func customServerCredentialRestoresWithoutConfiguredCloud() async throws {
+        func revocationFailureStillDeletesLocalCredential() async throws {
+            let recorder = CloudRequestRecorder(mode: .refresh, revocationStatusCode: 503)
+            let store = CloudCredentialStoreFake(credential: makeCredential(
+                expirationDate: .distantFuture,
+                revocationEndpoint: URL(string: "https://accounts.example.com/revoke")
+            ))
+            let service = makeService(recorder: recorder, store: store)
+
+            await #expect(throws: DahliaCloudError.tokenRequestFailed(503)) {
+                try await service.signOut()
+            }
+            #expect(store.credential == nil)
+        }
+
+        @Test
+        func issuedCredentialCanBeRevokedWithoutBeingPersisted() async throws {
+            let recorder = CloudRequestRecorder(mode: .refresh)
+            let store = CloudCredentialStoreFake()
+            let service = makeService(recorder: recorder, store: store)
             let credential = makeCredential(
                 expirationDate: .distantFuture,
-                clientID: DahliaCloudConfiguration.defaultClientID
+                revocationEndpoint: URL(string: "https://accounts.example.com/revoke")
             )
-            let store = CloudCredentialStoreFake(credential: credential)
-            let service = DahliaCloudService(configuration: nil, storage: store.storage)
 
-            #expect(try await service.storedConnection()?.account == credential.account)
-            #expect(try await service.validAccessToken() == credential.accessToken)
+            await service.revokeIfPossible(credential)
+
+            #expect(store.credential == nil)
+            let request = try #require(recorder.requests.first { $0.url?.path == "/revoke" })
+            #expect(CloudRequestRecorder.bodyString(for: request)?.contains("token=old-refresh") == true)
+        }
+
+        @MainActor
+        @Test
+        func signInReauthenticatesExistingConnectionForTheSameOrigin() async throws {
+            let manager = try AppDatabaseManager(path: ":memory:")
+            let repository = MeetingRepository(dbQueue: manager.dbQueue)
+            let connection = DahliaAccountConnectionRecord(
+                id: .v7(),
+                origin: "https://cloud.example.com",
+                clientID: "desktop-client",
+                createdAt: .now
+            )
+            try await repository.insertDahliaAccountConnection(connection)
+            let store = CloudCredentialStoreFake()
+            let service = makeService(recorder: CloudRequestRecorder(mode: .userInfo), store: store)
+            let configuration = try #require(DahliaCloudConfiguration.make(
+                urlString: connection.origin,
+                clientID: connection.clientID
+            ))
+            let controller = DahliaCloudAccountController(
+                configuration: configuration,
+                serviceFactory: { _, _ in service }
+            )
+            await controller.configure(appDatabase: manager)
+
+            let signIn = try #require(controller.startSignIn(configuration: configuration))
+            await signIn.value
+
+            #expect(try await repository.fetchDahliaAccountConnections().map(\.id) == [connection.id])
+            #expect(controller.connections.first?.account?.id == "user-1")
+            #expect(controller.errorMessage == nil)
+        }
+
+        @MainActor
+        @Test
+        func cancellationDuringCredentialSaveRollsBackNewConnection() async throws {
+            let manager = try AppDatabaseManager(path: ":memory:")
+            let repository = MeetingRepository(dbQueue: manager.dbQueue)
+            let recorder = CloudRequestRecorder(mode: .userInfo, advertisesRevocationEndpoint: true)
+            let cancellation = CloudCancellationTrigger()
+            let store = CloudCredentialStoreFake(onSave: cancellation.fire)
+            let service = makeService(recorder: recorder, store: store)
+            let configuration = try #require(DahliaCloudConfiguration.make(
+                urlString: "https://cloud.example.com",
+                clientID: "desktop-client"
+            ))
+            let controller = DahliaCloudAccountController(
+                configuration: configuration,
+                serviceFactory: { _, _ in service }
+            )
+            await controller.configure(appDatabase: manager)
+
+            let signIn = try #require(controller.startSignIn(configuration: configuration))
+            cancellation.set { signIn.cancel() }
+            await signIn.value
+
+            #expect(store.credential == nil)
+            #expect(try await repository.fetchDahliaAccountConnections().isEmpty)
+            #expect(controller.connections.isEmpty)
+            #expect(recorder.requests.contains { $0.url?.path == "/revoke" })
+        }
+
+        @MainActor
+        @Test
+        func failedReauthenticationSaveDiscardsIssuedCredential() async throws {
+            let manager = try AppDatabaseManager(path: ":memory:")
+            let repository = MeetingRepository(dbQueue: manager.dbQueue)
+            let connection = DahliaAccountConnectionRecord(
+                id: .v7(),
+                origin: "https://cloud.example.com",
+                clientID: "desktop-client",
+                createdAt: .now
+            )
+            try await repository.insertDahliaAccountConnection(connection)
+            let configuration = try #require(DahliaCloudConfiguration.make(
+                urlString: connection.origin,
+                clientID: connection.clientID
+            ))
+            let recorder = CloudRequestRecorder(mode: .userInfo, advertisesRevocationEndpoint: true)
+            let store = CloudCredentialStoreFake(saveError: DahliaCloudError.credentialStorageFailed)
+            let service = makeService(recorder: recorder, store: store)
+            let controller = DahliaCloudAccountController(
+                configuration: configuration,
+                serviceFactory: { _, _ in service }
+            )
+            await controller.configure(appDatabase: manager)
+
+            let signIn = try #require(controller.startReauthentication(connectionID: connection.id))
+            await signIn.value
+
+            #expect(store.credential == nil)
+            #expect(controller.connections.map(\.id) == [connection.id])
+            #expect(controller.errorMessage != nil)
+            #expect(recorder.requests.contains { $0.url?.path == "/revoke" })
+        }
+
+        @MainActor
+        @Test
+        func failedRollbackPublishesRetainedConnection() async throws {
+            let manager = try AppDatabaseManager(path: ":memory:")
+            let repository = MeetingRepository(dbQueue: manager.dbQueue)
+            let configuration = try #require(DahliaCloudConfiguration.make(
+                urlString: "https://cloud.example.com",
+                clientID: "desktop-client"
+            ))
+            let recorder = CloudRequestRecorder(mode: .userInfo, advertisesRevocationEndpoint: true)
+            let store = CloudCredentialStoreFake(
+                saveError: DahliaCloudError.credentialStorageFailed,
+                deleteError: DahliaCloudError.credentialStorageFailed
+            )
+            let service = makeService(recorder: recorder, store: store)
+            let controller = DahliaCloudAccountController(
+                configuration: configuration,
+                serviceFactory: { _, _ in service }
+            )
+            await controller.configure(appDatabase: manager)
+
+            let signIn = try #require(controller.startSignIn(configuration: configuration))
+            await signIn.value
+
+            let retained = try await repository.fetchDahliaAccountConnections()
+            #expect(retained.count == 1)
+            #expect(controller.connections.map(\.id) == retained.map(\.id))
+            #expect(controller.errorMessage != nil)
+            #expect(recorder.requests.contains { $0.url?.path == "/revoke" })
+        }
+
+        @Test
+        func refreshCannotRestoreCredentialAfterSignOut() async throws {
+            let tokenResponseGate = CloudTokenResponseGate()
+            let recorder = CloudRequestRecorder(mode: .refresh, tokenResponseGate: tokenResponseGate)
+            let store = CloudCredentialStoreFake(credential: makeCredential(expirationDate: .distantPast))
+            let service = makeService(recorder: recorder, store: store)
+            let refresh = Task { try await service.validAccessToken() }
+            defer {
+                tokenResponseGate.release()
+                refresh.cancel()
+            }
+
+            let refreshStarted = await tokenResponseGate.waitUntilStarted()
+            #expect(refreshStarted)
+            guard refreshStarted else { return }
+
+            try await service.signOut()
+            tokenResponseGate.release()
+            _ = await refresh.result
+
+            #expect(store.credential == nil)
+            #expect(store.saveCount == 0)
+        }
+
+        @Test
+        func signOutRejectsRefreshWhileRevocationIsInFlight() async throws {
+            let revocationResponseGate = CloudTokenResponseGate()
+            let recorder = CloudRequestRecorder(mode: .refresh, revocationResponseGate: revocationResponseGate)
+            let store = CloudCredentialStoreFake(credential: makeCredential(
+                expirationDate: .distantPast,
+                revocationEndpoint: URL(string: "https://accounts.example.com/revoke")
+            ))
+            let service = makeService(recorder: recorder, store: store)
+            let signOut = Task { try await service.signOut() }
+            defer {
+                revocationResponseGate.release()
+                signOut.cancel()
+            }
+
+            let revocationStarted = await revocationResponseGate.waitUntilStarted()
+            #expect(revocationStarted)
+            guard revocationStarted else { return }
+
+            await #expect(throws: DahliaCloudError.noCredential) {
+                try await service.validAccessToken()
+            }
+            #expect(recorder.tokenRequestCount == 0)
+
+            revocationResponseGate.release()
+            try await signOut.value
+            #expect(store.credential == nil)
         }
 
         @Test
@@ -290,7 +492,7 @@
             ))
             let service = makeService(recorder: recorder, store: store)
 
-            #expect(try await service.storedConnection() == nil)
+            #expect(try await service.storedCredential() == nil)
             await #expect(throws: DahliaCloudError.noCredential) {
                 try await service.validAccessToken()
             }
@@ -300,125 +502,18 @@
         func storedCredentialFromDifferentConfiguredOriginIsNotReused() async throws {
             let store = CloudCredentialStoreFake(credential: makeCredential(expirationDate: .distantFuture))
             let service = DahliaCloudService(
-                configuration: DahliaCloudConfiguration.make(
+                configuration: try #require(DahliaCloudConfiguration.make(
                     urlString: "https://replacement.example.com",
                     clientID: "desktop-client"
-                ),
+                )),
                 storage: store.storage
             )
 
-            #expect(try await service.storedConnection() == nil)
+            #expect(try await service.storedCredential() == nil)
             await #expect(throws: DahliaCloudError.noCredential) {
                 try await service.validAccessToken()
             }
             #expect(store.credential != nil)
-        }
-
-        @MainActor
-        @Test
-        func failedStartupRefreshDoesNotPublishConnectedAccount() async throws {
-            let recorder = CloudRequestRecorder(mode: .refresh, tokenStatusCode: 401)
-            let store = CloudCredentialStoreFake(credential: makeCredential(expirationDate: .distantPast))
-            let service = makeService(recorder: recorder, store: store)
-            let configuration = try #require(DahliaCloudConfiguration.make(
-                urlString: "https://cloud.example.com",
-                clientID: "desktop-client"
-            ))
-            let controller = DahliaCloudAccountController(configuration: configuration, service: service)
-
-            await controller.activate()
-
-            #expect(controller.account == nil)
-            #expect(controller.connectionOrigin == nil)
-            #expect(controller.errorMessage != nil)
-        }
-
-        @MainActor
-        @Test
-        func startupRestorationRejectsSignInUntilItFinishes() async throws {
-            let gate = CloudCredentialLoadGate()
-            let credential = makeCredential(expirationDate: .distantFuture)
-            let service = DahliaCloudService(
-                configuration: DahliaCloudConfiguration.make(
-                    urlString: "https://cloud.example.com",
-                    clientID: "desktop-client"
-                ),
-                storage: DahliaCloudCredentialStorage(
-                    load: {
-                        gate.wait()
-                        return credential
-                    },
-                    save: { _ in },
-                    delete: {}
-                )
-            )
-            let configuration = try #require(DahliaCloudConfiguration.make(
-                urlString: "https://cloud.example.com",
-                clientID: "desktop-client"
-            ))
-            let controller = DahliaCloudAccountController(configuration: configuration, service: service)
-
-            let activation = Task { await controller.activate() }
-            #expect(await pollUntil { gate.hasStarted })
-            #expect(controller.isRefreshing)
-            #expect(controller.startSignIn(configuration: configuration) == nil)
-            gate.release()
-            await activation.value
-
-            #expect(controller.account?.id == "saved-user")
-        }
-
-        @MainActor
-        @Test
-        func repeatedSignInDoesNotCancelTheActiveAuthorization() async throws {
-            let recorder = CloudRequestRecorder(mode: .userInfo)
-            let gate = CloudAuthorizationGate()
-            let service = makeService(
-                recorder: recorder,
-                store: CloudCredentialStoreFake(),
-                authorize: { url in try await gate.authorize(url) }
-            )
-            let configuration = try #require(DahliaCloudConfiguration.make(
-                urlString: "https://cloud.example.com",
-                clientID: "desktop-client"
-            ))
-            let controller = DahliaCloudAccountController(configuration: configuration, service: service)
-
-            let firstTask = try #require(controller.startSignIn(configuration: configuration))
-            #expect(controller.isSigningIn)
-            await gate.waitUntilStarted()
-
-            #expect(controller.startSignIn(configuration: configuration) == nil)
-            await gate.succeed()
-            await firstTask.value
-
-            #expect(controller.account?.id == "user-1")
-        }
-
-        @MainActor
-        @Test
-        func cancellingSignInClearsBusyStateWithoutAnError() async throws {
-            let recorder = CloudRequestRecorder(mode: .userInfo)
-            let gate = CloudAuthorizationGate()
-            let service = makeService(
-                recorder: recorder,
-                store: CloudCredentialStoreFake(),
-                authorize: { url in try await gate.authorize(url) }
-            )
-            let configuration = try #require(DahliaCloudConfiguration.make(
-                urlString: "https://cloud.example.com",
-                clientID: "desktop-client"
-            ))
-            let controller = DahliaCloudAccountController(configuration: configuration, service: service)
-
-            let task = try #require(controller.startSignIn(configuration: configuration))
-            await gate.waitUntilStarted()
-            controller.cancelAccountTask()
-            await task.value
-
-            #expect(!controller.isBusy)
-            #expect(controller.account == nil)
-            #expect(controller.errorMessage == nil)
         }
 
         @Test
@@ -452,7 +547,7 @@
                 configuration: DahliaCloudConfiguration.make(
                     urlString: "https://cloud.example.com",
                     clientID: clientID
-                ),
+                )!,
                 session: URLSession(configuration: configuration),
                 storage: store.storage,
                 authorize: authorizationHandler
@@ -483,11 +578,20 @@
         private let lock = NSLock()
         private var storedCredential: DahliaCloudCredential?
         private let saveError: Error?
+        private let deleteError: Error?
+        private let onSave: (@Sendable () -> Void)?
         private(set) var saveCount = 0
 
-        init(credential: DahliaCloudCredential? = nil, saveError: Error? = nil) {
+        init(
+            credential: DahliaCloudCredential? = nil,
+            saveError: Error? = nil,
+            deleteError: Error? = nil,
+            onSave: (@Sendable () -> Void)? = nil
+        ) {
             storedCredential = credential
             self.saveError = saveError
+            self.deleteError = deleteError
+            self.onSave = onSave
         }
 
         var credential: DahliaCloudCredential? {
@@ -498,79 +602,59 @@
             DahliaCloudCredentialStorage(
                 load: { self.lock.withLock { self.storedCredential } },
                 save: { value in
+                    self.onSave?()
                     try self.lock.withLock {
                         if let saveError = self.saveError { throw saveError }
                         self.storedCredential = value
                         self.saveCount += 1
                     }
                 },
-                delete: { self.lock.withLock { self.storedCredential = nil } }
+                delete: {
+                    try self.lock.withLock {
+                        if let deleteError = self.deleteError { throw deleteError }
+                        self.storedCredential = nil
+                    }
+                }
             )
         }
     }
 
-    private final class CloudCredentialLoadGate: @unchecked Sendable {
-        private let condition = NSCondition()
-        private var started = false
-        private var released = false
+    private final class CloudCancellationTrigger: @unchecked Sendable {
+        private let lock = NSLock()
+        private var action: (@Sendable () -> Void)?
 
-        var hasStarted: Bool {
-            condition.withLock { started }
+        func set(_ action: @escaping @Sendable () -> Void) {
+            lock.withLock { self.action = action }
         }
 
-        func wait() {
-            condition.lock()
-            started = true
-            condition.broadcast()
-            while !released {
-                condition.wait()
-            }
-            condition.unlock()
-        }
-
-        func release() {
-            condition.withLock {
-                released = true
-                condition.broadcast()
-            }
+        func fire() {
+            let currentAction: (@Sendable () -> Void)? = lock.withLock { self.action }
+            currentAction?()
         }
     }
 
-    private actor CloudAuthorizationGate {
-        private var requestURL: URL?
-        private var continuation: CheckedContinuation<URL, Error>?
-        private var startedContinuation: CheckedContinuation<Void, Never>?
+    private final class CloudTokenResponseGate: @unchecked Sendable {
+        private let lock = NSLock()
+        private let semaphore = DispatchSemaphore(value: 0)
+        private var started = false
 
-        func authorize(_ url: URL) async throws -> URL {
-            requestURL = url
-            startedContinuation?.resume()
-            startedContinuation = nil
-            return try await withTaskCancellationHandler {
-                try await withCheckedThrowingContinuation { continuation = $0 }
-            } onCancel: {
-                Task { await self.cancel() }
+        func block() {
+            lock.withLock { started = true }
+            semaphore.wait()
+        }
+
+        func waitUntilStarted() async -> Bool {
+            let clock = ContinuousClock()
+            let deadline = clock.now.advanced(by: .seconds(2))
+            while clock.now < deadline {
+                if lock.withLock({ started }) { return true }
+                try? await Task.sleep(for: .milliseconds(10))
             }
+            return lock.withLock { started }
         }
 
-        func waitUntilStarted() async {
-            guard requestURL == nil else { return }
-            await withCheckedContinuation { startedContinuation = $0 }
-        }
-
-        func succeed() {
-            guard let requestURL, let continuation else { return }
-            let state = URLComponents(url: requestURL, resolvingAgainstBaseURL: false)?.queryItems?
-                .first(where: { $0.name == "state" })?.value ?? ""
-            self.continuation = nil
-            continuation.resume(returning: URL(
-                string: "http://127.0.0.1:8020/?code=authorization-code&state=\(state)"
-            )!)
-        }
-
-        private func cancel() {
-            guard let continuation else { return }
-            self.continuation = nil
-            continuation.resume(throwing: CancellationError())
+        func release() {
+            semaphore.signal()
         }
     }
 
@@ -581,17 +665,34 @@
         let tokenScope: String?
         let tokenAccessToken: String?
         let tokenStatusCode: Int
+        let revocationStatusCode: Int
+        let tokenResponseGate: CloudTokenResponseGate?
+        let revocationResponseGate: CloudTokenResponseGate?
+        let advertisesRevocationEndpoint: Bool
         private let lock = NSLock()
         private var recordedRequests: [URLRequest] = []
         private var recordedAuthorizationURL: URL?
         private var recordedTokenRequestCount = 0
         private var recordedTokenRequestBody: String?
 
-        init(mode: Mode, tokenScope: String? = nil, tokenAccessToken: String? = nil, tokenStatusCode: Int = 200) {
+        init(
+            mode: Mode,
+            tokenScope: String? = nil,
+            tokenAccessToken: String? = nil,
+            tokenStatusCode: Int = 200,
+            revocationStatusCode: Int = 200,
+            tokenResponseGate: CloudTokenResponseGate? = nil,
+            revocationResponseGate: CloudTokenResponseGate? = nil,
+            advertisesRevocationEndpoint: Bool = false
+        ) {
             self.mode = mode
             self.tokenScope = tokenScope
             self.tokenAccessToken = tokenAccessToken
             self.tokenStatusCode = tokenStatusCode
+            self.revocationStatusCode = revocationStatusCode
+            self.tokenResponseGate = tokenResponseGate
+            self.revocationResponseGate = revocationResponseGate
+            self.advertisesRevocationEndpoint = advertisesRevocationEndpoint
         }
 
         var requests: [URLRequest] { lock.withLock { recordedRequests } }
@@ -611,6 +712,11 @@
                     recordedTokenRequestBody = requestBody
                 }
             }
+            if request.url?.path == "/token" {
+                tokenResponseGate?.block()
+            } else if request.url?.path == "/revoke" {
+                revocationResponseGate?.block()
+            }
             let body: String
             switch request.url?.path {
             case "/.well-known/oauth-protected-resource":
@@ -620,8 +726,11 @@
                 """
             case "/.well-known/oauth-authorization-server":
                 let userInfo = mode == .userInfo ? ",\"userinfo_endpoint\":\"https://accounts.example.com/userinfo\"" : ""
+                let revocation = advertisesRevocationEndpoint
+                    ? ",\"revocation_endpoint\":\"https://accounts.example.com/revoke\""
+                    : ""
                 body = """
-                {"issuer":"https://accounts.example.com","authorization_endpoint":"https://accounts.example.com/authorize","token_endpoint":"https://accounts.example.com/token","code_challenge_methods_supported":["S256"]\(userInfo)}
+                {"issuer":"https://accounts.example.com","authorization_endpoint":"https://accounts.example.com/authorize","token_endpoint":"https://accounts.example.com/token","code_challenge_methods_supported":["S256"]\(userInfo)\(revocation)}
                 """
             case "/token":
                 let scope = tokenScope.map { ",\"scope\":\"\($0)\"" } ?? ""
@@ -636,16 +745,21 @@
             default:
                 body = "{}"
             }
+            let statusCode = switch request.url?.path {
+            case "/token": tokenStatusCode
+            case "/revoke": revocationStatusCode
+            default: 200
+            }
             let response = HTTPURLResponse(
                 url: request.url!,
-                statusCode: request.url?.path == "/token" ? tokenStatusCode : 200,
+                statusCode: statusCode,
                 httpVersion: "HTTP/1.1",
                 headerFields: ["Content-Type": "application/json"]
             )!
             return (response, Data(body.utf8))
         }
 
-        private static func bodyString(for request: URLRequest) -> String? {
+        static func bodyString(for request: URLRequest) -> String? {
             if let body = request.httpBody { return String(data: body, encoding: .utf8) }
             guard let stream = request.httpBodyStream else { return nil }
             stream.open()

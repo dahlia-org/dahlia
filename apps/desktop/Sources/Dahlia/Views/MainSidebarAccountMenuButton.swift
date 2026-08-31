@@ -9,6 +9,7 @@ struct MainSidebarAccountMenuButton: NSViewRepresentable {
     let account: DahliaCloudAccount?
     let accountOrigin: String?
     let isCloudAccount: Bool?
+    let accountSummary: String?
     let onSelectVault: (VaultRecord) -> Void
     let onManageVaults: () -> Void
     let onOpenSettings: (SettingsCategory?) -> Void
@@ -63,7 +64,7 @@ struct MainSidebarAccountMenuButton: NSViewRepresentable {
 
     private func configure(_ button: NSButton) {
         _ = dynamicTypeSize
-        let accountTitle = account?.displayName ?? L10n.dahliaNotSignedIn
+        let accountTitle = accountSummary ?? account?.displayName ?? L10n.dahliaNotSignedIn
         let vaultTitle = currentVault?.name ?? L10n.noVaultSelected
         button.attributedTitle = Self.footerTitle(
             accountName: accountTitle,
@@ -76,6 +77,7 @@ struct MainSidebarAccountMenuButton: NSViewRepresentable {
     }
 
     private var accountSystemImage: String {
+        if accountSummary != nil { return "person.2" }
         guard account != nil else { return "icloud.slash" }
         return isCloudAccount == true ? "icloud" : "xserve"
     }

@@ -14,13 +14,18 @@ struct MainSidebarFooterView: View {
     @State private var dahliaAccountController = DahliaCloudAccountController.shared
 
     var body: some View {
+        let accountPresentation = Self.accountPresentation(for: dahliaAccountController.connections)
+        let connection = accountPresentation.connection
         HStack(spacing: 4) {
             MainSidebarAccountMenuButton(
                 vaults: vaults,
                 currentVault: currentVault,
-                account: dahliaAccountController.account,
-                accountOrigin: dahliaAccountController.connectionOrigin,
-                isCloudAccount: dahliaAccountController.account == nil ? nil : dahliaAccountController.isConnectedToDahliaCloud,
+                account: connection?.account,
+                accountOrigin: connection?.origin,
+                isCloudAccount: connection?.isCloud,
+                accountSummary: accountPresentation.count > 1
+                    ? L10n.dahliaAccountCount(accountPresentation.count)
+                    : nil,
                 onSelectVault: onSelectVault,
                 onManageVaults: showVaultManager,
                 onOpenSettings: showSettings,
@@ -80,10 +85,20 @@ struct MainSidebarFooterView: View {
     }
 
     private func accountAction() {
-        if dahliaAccountController.account == nil {
-            mainWindowNavigation.openDahliaSignIn()
+        if let connection = Self.accountPresentation(for: dahliaAccountController.connections).connection {
+            dahliaAccountController.startSignOut(connectionID: connection.id)
         } else {
-            dahliaAccountController.startSignOut()
+            mainWindowNavigation.openDahliaSignIn()
         }
+    }
+
+    static func accountPresentation(
+        for connections: [DahliaAccountConnection]
+    ) -> (connection: DahliaAccountConnection?, count: Int) {
+        let signedInConnections = connections.filter(\.isSignedIn)
+        return (
+            signedInConnections.count == 1 ? signedInConnections[0] : nil,
+            signedInConnections.count
+        )
     }
 }

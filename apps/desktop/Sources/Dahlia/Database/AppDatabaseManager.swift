@@ -252,6 +252,10 @@ final class AppDatabaseManager: Sendable {
             try ScreenshotOCRSearchMigration.migrate(in: db)
         }
 
+        migrator.registerMigration("v39_dahliaAccountConnections") { db in
+            try DahliaAccountConnectionsMigration.migrate(in: db)
+        }
+
         return migrator
     }()
 

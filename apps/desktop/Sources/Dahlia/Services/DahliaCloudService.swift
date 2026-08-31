@@ -43,6 +43,11 @@ struct DahliaCloudConfiguration: Equatable, Sendable {
         }
 
         var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        components?.scheme = scheme
+        components?.host = url.host?.lowercased()
+        if (scheme == "https" && url.port == 443) || (scheme == "http" && url.port == 80) {
+            components?.port = nil
+        }
         components?.path = ""
         guard let normalizedURL = components?.url else { return nil }
         return Self(baseURL: normalizedURL, clientID: clientID)
@@ -83,24 +88,33 @@ struct DahliaCloudCredentialStorage: Sendable {
     let save: @Sendable (DahliaCloudCredential) throws -> Void
     let delete: @Sendable () throws -> Void
 
-    static let keychain = Self(
-        load: {
-            guard let value = KeychainService.load(key: "dahliaCloudOAuthCredential"),
-                  let data = value.data(using: .utf8)
-            else { return nil }
-            return try JSONDecoder().decode(DahliaCloudCredential.self, from: data)
-        },
-        save: { credential in
-            let data = try JSONEncoder().encode(credential)
-            guard let value = String(data: data, encoding: .utf8) else {
-                throw DahliaCloudError.credentialStorageFailed
+    static func keychain(connectionID: UUID) -> Self {
+        let key = "dahliaCloudOAuthCredential.\(connectionID.uuidString.lowercased())"
+        return Self(
+            load: {
+                guard let value = KeychainService.load(key: key),
+                      let data = value.data(using: .utf8)
+                else { return nil }
+                return try JSONDecoder().decode(DahliaCloudCredential.self, from: data)
+            },
+            save: { credential in
+                let data = try JSONEncoder().encode(credential)
+                guard let value = String(data: data, encoding: .utf8) else {
+                    throw DahliaCloudError.credentialStorageFailed
+                }
+                try KeychainService.save(key: key, value: value)
+            },
+            delete: {
+                try KeychainService.deleteOrThrow(key: key)
             }
-            try KeychainService.save(key: "dahliaCloudOAuthCredential", value: value)
-        },
-        delete: {
-            try KeychainService.deleteOrThrow(key: "dahliaCloudOAuthCredential")
-        }
-    )
+        )
+    }
+
+    static func deleteLegacyCredential() async {
+        _ = await Task.detached {
+            KeychainService.delete(key: "dahliaCloudOAuthCredential")
+        }.value
+    }
 }
 
 enum DahliaCloudError: LocalizedError, Equatable {
@@ -118,6 +132,7 @@ enum DahliaCloudError: LocalizedError, Equatable {
     case invalidIdentityResponse
     case noCredential
     case credentialStorageFailed
+    case duplicateConnection
 
     var errorDescription: String? {
         switch self {
@@ -141,31 +156,32 @@ enum DahliaCloudError: LocalizedError, Equatable {
             L10n.dahliaNotSignedIn
         case .credentialStorageFailed:
             L10n.dahliaCredentialStorageFailed
+        case .duplicateConnection:
+            L10n.dahliaConnectionAlreadyExists
         }
     }
 }
 
 actor DahliaCloudService {
-    static let shared = DahliaCloudService(configuration: .current)
-
     typealias AuthorizationHandler = @Sendable (URL) async throws -> URL
 
     private static let redirectURL = URL(string: "http://localhost:8020")!
     private static let refreshLeeway: TimeInterval = 60
     private static let identityScopes = ["openid", "profile", "email", "offline_access"]
 
-    private var configuration: DahliaCloudConfiguration?
+    private let configuration: DahliaCloudConfiguration
     private let session: URLSession
     private let storage: DahliaCloudCredentialStorage
     private let authorize: AuthorizationHandler
     private var credential: DahliaCloudCredential?
     private var didLoadCredential = false
     private var refreshTask: Task<String, Error>?
+    private var isSigningOut = false
 
     init(
-        configuration: DahliaCloudConfiguration?,
+        configuration: DahliaCloudConfiguration,
         session: URLSession = .shared,
-        storage: DahliaCloudCredentialStorage = .keychain,
+        storage: DahliaCloudCredentialStorage,
         authorize: @escaping AuthorizationHandler = DahliaCloudService.authorizeInBrowser
     ) {
         self.configuration = configuration
@@ -174,16 +190,12 @@ actor DahliaCloudService {
         self.authorize = authorize
     }
 
-    var isConfigured: Bool { configuration != nil }
-
-    func storedConnection() throws -> (account: DahliaCloudAccount, origin: String)? {
+    func storedCredential() throws -> DahliaCloudCredential? {
         try loadCredentialIfNeeded()
-        guard let credential else { return nil }
-        return (credential.account, Self.origin(for: credential.resource))
+        return credential
     }
 
-    func signIn(configuration selectedConfiguration: DahliaCloudConfiguration? = nil) async throws -> DahliaCloudAccount {
-        guard let configuration = selectedConfiguration ?? configuration else { throw DahliaCloudError.notConfigured }
+    func authorize() async throws -> DahliaCloudCredential {
         let discovery = try await discover(configuration: configuration)
         let pkce = CloudPKCE.generate()
         let state = CloudPKCE.randomURLSafeString(byteCount: 32)
@@ -219,7 +231,7 @@ actor DahliaCloudService {
             baseURL: configuration.baseURL,
             usesProxySession: discovery.usesProxySession
         )
-        let newCredential = DahliaCloudCredential(
+        return DahliaCloudCredential(
             accessToken: token.accessToken,
             refreshToken: token.refreshToken,
             expirationDate: token.expirationDate,
@@ -231,14 +243,26 @@ actor DahliaCloudService {
             revocationEndpoint: discovery.authorizationServer.revocationEndpoint,
             account: account
         )
+    }
+
+    func persist(_ newCredential: DahliaCloudCredential) throws {
+        guard credentialMatchesConfiguration(newCredential),
+              newCredential.grantedScopes.contains("all-apis") == false
+        else { throw DahliaCloudError.invalidTokenResponse }
+        cancelRefresh()
         try storage.save(newCredential)
         credential = newCredential
-        self.configuration = configuration
         didLoadCredential = true
-        return account
+    }
+
+    func signIn() async throws -> DahliaCloudCredential {
+        let newCredential = try await authorize()
+        try persist(newCredential)
+        return newCredential
     }
 
     func validAccessToken() async throws -> String {
+        guard !isSigningOut else { throw DahliaCloudError.noCredential }
         try loadCredentialIfNeeded()
         guard let credential else { throw DahliaCloudError.noCredential }
         guard credential.expirationDate.timeIntervalSinceNow <= Self.refreshLeeway else {
@@ -256,16 +280,28 @@ actor DahliaCloudService {
     func signOut() async throws {
         try loadCredentialIfNeeded()
         guard let credential else { return }
-        if let endpoint = credential.revocationEndpoint {
-            try await revoke(
-                credential.refreshToken ?? credential.accessToken,
-                tokenTypeHint: credential.refreshToken == nil ? "access_token" : "refresh_token",
-                clientID: credential.clientID,
-                endpoint: endpoint
-            )
+        isSigningOut = true
+        defer { isSigningOut = false }
+        cancelRefresh()
+        var revocationError: Error?
+        do {
+            try await revoke(credential)
+        } catch {
+            revocationError = error
         }
+        try deleteLocalCredential()
+        if let revocationError { throw revocationError }
+    }
+
+    func deleteLocalCredential() throws {
+        cancelRefresh()
         try storage.delete()
-        self.credential = nil
+        credential = nil
+        didLoadCredential = true
+    }
+
+    func revokeIfPossible(_ issuedCredential: DahliaCloudCredential) async {
+        try? await revoke(issuedCredential)
     }
 
     private func loadCredentialIfNeeded() throws {
@@ -280,10 +316,7 @@ actor DahliaCloudService {
     }
 
     private func credentialMatchesConfiguration(_ credential: DahliaCloudCredential) -> Bool {
-        guard let configuration else {
-            return credential.clientID == DahliaCloudConfiguration.defaultClientID
-        }
-        return credential.clientID == configuration.clientID
+        credential.clientID == configuration.clientID
             && Self.sameOrigin(credential.resource, configuration.origin)
     }
 
@@ -300,6 +333,8 @@ actor DahliaCloudService {
             ],
             allowedScopes: oldCredential.grantedScopes
         )
+        try Task.checkCancellation()
+        guard credential == oldCredential else { throw CancellationError() }
         let updated = DahliaCloudCredential(
             accessToken: token.accessToken,
             refreshToken: token.refreshToken ?? refreshToken,
@@ -315,6 +350,11 @@ actor DahliaCloudService {
         try storage.save(updated)
         credential = updated
         return updated.accessToken
+    }
+
+    private func cancelRefresh() {
+        refreshTask?.cancel()
+        refreshTask = nil
     }
 
     private func discover(configuration: DahliaCloudConfiguration) async throws -> CloudDiscovery {
@@ -406,6 +446,16 @@ actor DahliaCloudService {
         return payload.user
     }
 
+    private func revoke(_ credential: DahliaCloudCredential) async throws {
+        guard let endpoint = credential.revocationEndpoint else { return }
+        try await revoke(
+            credential.refreshToken ?? credential.accessToken,
+            tokenTypeHint: credential.refreshToken == nil ? "access_token" : "refresh_token",
+            clientID: credential.clientID,
+            endpoint: endpoint
+        )
+    }
+
     private func revoke(_ token: String, tokenTypeHint: String, clientID: String, endpoint: URL) async throws {
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
@@ -486,16 +536,6 @@ actor DahliaCloudService {
 
     private static func effectivePort(_ url: URL) -> Int? {
         url.port ?? ["http": 80, "https": 443][url.scheme?.lowercased() ?? ""]
-    }
-
-    private static func origin(for resource: String) -> String {
-        guard let url = URL(string: resource),
-              var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
-        else { return resource }
-        components.path = ""
-        components.query = nil
-        components.fragment = nil
-        return components.url?.absoluteString.trimmingCharacters(in: CharacterSet(charactersIn: "/")) ?? resource
     }
 
     private static func isSecureEndpoint(_ url: URL) -> Bool {

@@ -502,7 +502,7 @@
 "Ultra" = "ウルトラ";
 "Developer Settings" = "開発者設定";
 "Vault" = "保管庫";
-"Dahlia Account" = "Dahlia Account";
+"Dahlia Account" = "Dahlia アカウント";
 "Dahlia Cloud" = "Dahlia Cloud";
 "Dahlia Server" = "Dahlia Server";
 "%@ - %@" = "%@ - %@";
@@ -525,6 +525,15 @@
 "Dahlia Server returned an invalid session response." = "Dahlia Server から無効なセッション応答が返されました。";
 "Dahlia sign-in was not authorized." = "Dahlia へのサインインが許可されませんでした。";
 "Dahlia credentials could not be saved securely." = "Dahlia の認証情報を安全に保存できませんでした。";
+"A Dahlia connection already exists for this server." = "この Server への Dahlia 接続はすでに存在します。";
+"Manage the Dahlia Cloud and Server sign-ins used by Dahlia." = "Dahlia が使用する Dahlia Cloud と Server のサインインを管理します。";
+"%lld Dahlia accounts" = "%lld 件の Dahlia アカウント";
+"Sign In Again" = "再サインイン";
+"Sign-in required" = "再サインインが必要";
+"Sign out of %@?" = "%@ からサインアウトしますか？";
+"Only this connection's credentials will be removed." = "この接続の認証情報だけを削除します。";
+"Remove Dahlia connection %@?" = "Dahlia 接続 %@ を削除しますか？";
+"The connection will be removed. Local meeting data will not be deleted." = "接続を削除します。ローカルの会議データは削除されません。";
 "Signed in as %@" = "%@ としてサインイン済み";
 "Dahlia request failed (HTTP %lld)." = "Dahlia へのリクエストに失敗しました（HTTP %lld）。";
 "Coming Soon" = "準備中";

@@ -12,6 +12,7 @@ import Foundation
 
             #expect(SettingsCategory.allCases == [
                 .general,
+                .dahliaAccounts,
                 .language,
                 .appearance,
                 .vault,
@@ -31,11 +32,21 @@ import Foundation
                 .developer,
                 .audioDiagnostics,
             ])
-            #expect(groupedCategories == expectedCategories)
+            #expect(groupedCategories.count == expectedCategories.count)
+            #expect(Set(groupedCategories) == Set(expectedCategories))
             #expect(!groupedCategories.contains(.instructions))
             #expect(!groupedCategories.contains(.mcp))
             #expect(SettingsGroup.allCases.last == .advanced)
-            #expect(SettingsGroup.app.categories == [.general, .language, .appearance, .vault, .permissions, .backups, .search])
+            #expect(SettingsGroup.app.categories == [
+                .dahliaAccounts,
+                .general,
+                .language,
+                .appearance,
+                .vault,
+                .permissions,
+                .backups,
+                .search,
+            ])
             #expect(SettingsGroup.meetings.label == L10n.meetings)
             #expect(SettingsGroup.meetings.categories == [.transcription, .liveSubtitles, .screenshots])
             #expect(SettingsGroup.advanced.categories == [.betaFeatures, .developer, .audioDiagnostics])
@@ -78,6 +89,9 @@ import Foundation
         @Test
         func storedCategoryIdentifiersStayStable() {
             #expect(SettingsCategory.modelProvider.rawValue == "accounts")
+            #expect(SettingsCategory.dahliaAccounts.rawValue == "dahliaAccounts")
+            #expect(SettingsCategory.dahliaAccounts.label == L10n.dahliaAccount)
+            #expect(SettingsCategory.dahliaAccounts.systemImage == "person.crop.circle")
             #expect(SettingsCategory.vault.rawValue == "vault")
             #expect(SettingsCategory.vault.label == L10n.vault)
             #expect(SettingsCategory.vault.systemImage == "externaldrive")
