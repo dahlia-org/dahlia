@@ -1078,6 +1078,8 @@
 "Recent chats" = "最近のチャット";
 "No recent chats" = "最近のチャットはありません";
 "Load more" = "さらに読み込む";
+"Earlier messages" = "前のメッセージ";
+"Later messages" = "次のメッセージ";
 "Open chat in a new window" = "チャットを新しいウィンドウで開く";
 "Show chat full screen" = "チャットを全画面で表示";
 "Hide chat" = "チャットを隠す";

@@ -166,6 +166,24 @@ import Foundation
         }
 
         @Test
+        func pagedConversationUsesThePreviousContextForItsFirstMessage() throws {
+            let context = try CodexChatContext.meeting(
+                id: #require(UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")),
+                name: "Meeting",
+                calendarEvent: nil
+            )
+            let message = CodexChatMessage(id: "continued", role: .user, text: "Continue", context: context)
+
+            let items = CodexChatConversationItem.build(
+                from: [message],
+                previousUserContext: context,
+                hasPreviousUserMessage: true
+            )
+
+            #expect(items == [.message(message)])
+        }
+
+        @Test
         func materializingSameCalendarDraftDoesNotStartNewSection() throws {
             let start = Date(timeIntervalSince1970: 1_704_067_200)
             let calendarEvent = CodexChatCalendarEventContext(

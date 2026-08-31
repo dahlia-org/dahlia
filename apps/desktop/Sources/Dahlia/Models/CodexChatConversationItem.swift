@@ -18,11 +18,13 @@ enum CodexChatConversationItem: Identifiable, Equatable {
 
     static func build(
         from messages: [CodexChatMessage],
-        showsStandaloneThinking: Bool = false
+        showsStandaloneThinking: Bool = false,
+        previousUserContext initialPreviousUserContext: CodexChatContext? = nil,
+        hasPreviousUserMessage initialHasPreviousUserMessage: Bool = false
     ) -> [Self] {
         var items: [Self] = []
-        var previousUserContext: CodexChatContext?
-        var hasPreviousUserMessage = false
+        var previousUserContext = initialPreviousUserContext
+        var hasPreviousUserMessage = initialHasPreviousUserMessage
 
         for message in messages {
             if message.role == .user {
