@@ -27,7 +27,7 @@ struct MainSidebarFooterView: View {
                 onAccountAction: accountAction
             )
             .frame(maxWidth: .infinity, alignment: .leading)
-            .frame(minHeight: 44)
+            .frame(height: 44)
             .background(
                 isAccountMenuHovered ? DahliaDesign.sidebarHighlightColor : .clear,
                 in: .rect(cornerRadius: DahliaDesign.Highlight.compactCornerRadius)
@@ -53,7 +53,7 @@ struct MainSidebarFooterView: View {
                 .onHover { isHelpHovered = $0 }
         }
         .padding(.horizontal, 10)
-        .frame(minHeight: MainSidebarLayout.footerHeight)
+        .frame(height: MainSidebarLayout.footerHeight)
         .overlay(alignment: .top) {
             Rectangle()
                 .fill(Color(nsColor: .separatorColor))
