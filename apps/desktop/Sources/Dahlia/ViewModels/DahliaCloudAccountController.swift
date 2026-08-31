@@ -4,18 +4,23 @@ import Observation
 @MainActor
 @Observable
 final class DahliaCloudAccountController {
+    private enum AccountOperation {
+        case refreshing
+        case signingIn
+        case signingOut
+    }
+
     static let shared = DahliaCloudAccountController()
 
     private(set) var account: DahliaCloudAccount?
     private(set) var connectionOrigin: String?
-    private(set) var isRefreshing = false
-    private(set) var isSigningIn = false
-    private(set) var isSigningOut = false
     private(set) var errorMessage: String?
+    private var activeOperation: AccountOperation?
 
     let defaultConfiguration: DahliaCloudConfiguration?
     private let service: DahliaCloudService
     @ObservationIgnored private var accountTask: Task<Void, Never>?
+    @ObservationIgnored private var operationGeneration = 0
 
     init(
         configuration: DahliaCloudConfiguration? = .current,
@@ -25,7 +30,10 @@ final class DahliaCloudAccountController {
         self.service = service ?? .shared
     }
 
-    var isBusy: Bool { isRefreshing || isSigningIn || isSigningOut }
+    var isRefreshing: Bool { activeOperation == .refreshing }
+    var isSigningIn: Bool { activeOperation == .signingIn }
+    var isSigningOut: Bool { activeOperation == .signingOut }
+    var isBusy: Bool { activeOperation != nil }
 
     var isConnectedToDahliaCloud: Bool {
         guard let connectionOrigin, let cloudOrigin = defaultConfiguration?.origin else { return false }
@@ -53,85 +61,101 @@ final class DahliaCloudAccountController {
     }
 
     func activate() async {
-        guard !isBusy else { return }
-        errorMessage = nil
+        guard let generation = beginOperation(.refreshing) else { return }
+        defer { finishOperation(generation) }
         do {
             let connection = try await service.storedConnection()
+            guard isCurrentOperation(generation) else { return }
             guard let connection else {
                 account = nil
                 connectionOrigin = nil
                 return
             }
-            isRefreshing = true
-            defer { isRefreshing = false }
             _ = try await service.validAccessToken()
+            guard isCurrentOperation(generation) else { return }
             account = connection.account
             connectionOrigin = connection.origin
         } catch is CancellationError {
             // SwiftUI cancels settings work when the view disappears.
         } catch {
+            guard isCurrentOperation(generation) else { return }
             account = nil
             connectionOrigin = nil
             errorMessage = error.localizedDescription
         }
     }
 
-    func signIn(configuration: DahliaCloudConfiguration) async {
-        guard !isBusy else { return }
-        isSigningIn = true
-        errorMessage = nil
-        defer { isSigningIn = false }
+    private func signIn(configuration: DahliaCloudConfiguration, generation: Int) async {
+        defer { finishOperation(generation) }
         do {
-            account = try await service.signIn(configuration: configuration)
+            let signedInAccount = try await service.signIn(configuration: configuration)
+            guard isCurrentOperation(generation) else { return }
+            account = signedInAccount
             connectionOrigin = configuration.origin
         } catch is CancellationError {
             // User cancelled browser sign-in or left the settings screen.
         } catch {
+            guard isCurrentOperation(generation) else { return }
             errorMessage = error.localizedDescription
         }
     }
 
-    func signOut() async {
-        guard !isBusy else { return }
-        isSigningOut = true
-        errorMessage = nil
-        defer { isSigningOut = false }
+    private func signOut(generation: Int) async {
+        defer { finishOperation(generation) }
         do {
             try await service.signOut()
+            guard isCurrentOperation(generation) else { return }
             account = nil
             connectionOrigin = nil
         } catch is CancellationError {
             // SwiftUI cancels settings work when the view disappears.
         } catch {
+            guard isCurrentOperation(generation) else { return }
             errorMessage = error.localizedDescription
         }
     }
 
     @discardableResult
     func startSignIn(configuration: DahliaCloudConfiguration) -> Task<Void, Never>? {
-        startAccountTask { [weak self] in
-            await self?.signIn(configuration: configuration)
+        guard let generation = beginOperation(.signingIn) else { return nil }
+        let task = Task { [weak self] in
+            guard let self else { return }
+            await signIn(configuration: configuration, generation: generation)
         }
+        accountTask = task
+        return task
     }
 
     @discardableResult
     func startSignOut() -> Task<Void, Never>? {
-        startAccountTask { [weak self] in
-            await self?.signOut()
+        guard let generation = beginOperation(.signingOut) else { return nil }
+        let task = Task { [weak self] in
+            guard let self else { return }
+            await signOut(generation: generation)
         }
+        accountTask = task
+        return task
     }
 
     func cancelAccountTask() {
         accountTask?.cancel()
     }
 
-    private func startAccountTask(_ operation: @escaping @MainActor () async -> Void) -> Task<Void, Never>? {
-        guard accountTask == nil, !isBusy else { return nil }
-        let task = Task { [weak self] in
-            await operation()
-            self?.accountTask = nil
-        }
-        accountTask = task
-        return task
+    private func beginOperation(_ operation: AccountOperation) -> Int? {
+        guard activeOperation == nil else { return nil }
+        operationGeneration += 1
+        activeOperation = operation
+        errorMessage = nil
+        return operationGeneration
+    }
+
+    private func isCurrentOperation(_ generation: Int) -> Bool {
+        activeOperation != nil && operationGeneration == generation
+    }
+
+    private func finishOperation(_ generation: Int) {
+        guard isCurrentOperation(generation) else { return }
+        activeOperation = nil
+        accountTask = nil
     }
 }

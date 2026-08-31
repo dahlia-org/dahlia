@@ -380,8 +380,8 @@ struct DahliaApp: App {
     }
 
     private func signInToDahlia(_ configuration: DahliaCloudConfiguration) {
+        guard dahliaAccountController.startSignIn(configuration: configuration) != nil else { return }
         mainWindowNavigation.dismissDahliaSignIn()
-        dahliaAccountController.startSignIn(configuration: configuration)
     }
 
     private func completeSetupTour(_ vault: VaultRecord) async -> Bool {

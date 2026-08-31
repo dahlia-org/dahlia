@@ -335,6 +335,41 @@
 
         @MainActor
         @Test
+        func startupRestorationRejectsSignInUntilItFinishes() async throws {
+            let gate = CloudCredentialLoadGate()
+            let credential = makeCredential(expirationDate: .distantFuture)
+            let service = DahliaCloudService(
+                configuration: DahliaCloudConfiguration.make(
+                    urlString: "https://cloud.example.com",
+                    clientID: "desktop-client"
+                ),
+                storage: DahliaCloudCredentialStorage(
+                    load: {
+                        gate.wait()
+                        return credential
+                    },
+                    save: { _ in },
+                    delete: {}
+                )
+            )
+            let configuration = try #require(DahliaCloudConfiguration.make(
+                urlString: "https://cloud.example.com",
+                clientID: "desktop-client"
+            ))
+            let controller = DahliaCloudAccountController(configuration: configuration, service: service)
+
+            let activation = Task { await controller.activate() }
+            #expect(await pollUntil { gate.hasStarted })
+            #expect(controller.isRefreshing)
+            #expect(controller.startSignIn(configuration: configuration) == nil)
+            gate.release()
+            await activation.value
+
+            #expect(controller.account?.id == "saved-user")
+        }
+
+        @MainActor
+        @Test
         func repeatedSignInDoesNotCancelTheActiveAuthorization() async throws {
             let recorder = CloudRequestRecorder(mode: .userInfo)
             let gate = CloudAuthorizationGate()
@@ -350,6 +385,7 @@
             let controller = DahliaCloudAccountController(configuration: configuration, service: service)
 
             let firstTask = try #require(controller.startSignIn(configuration: configuration))
+            #expect(controller.isSigningIn)
             await gate.waitUntilStarted()
 
             #expect(controller.startSignIn(configuration: configuration) == nil)
@@ -444,6 +480,33 @@
                 },
                 delete: { self.lock.withLock { self.storedCredential = nil } }
             )
+        }
+    }
+
+    private final class CloudCredentialLoadGate: @unchecked Sendable {
+        private let condition = NSCondition()
+        private var started = false
+        private var released = false
+
+        var hasStarted: Bool {
+            condition.withLock { started }
+        }
+
+        func wait() {
+            condition.lock()
+            started = true
+            condition.broadcast()
+            while !released {
+                condition.wait()
+            }
+            condition.unlock()
+        }
+
+        func release() {
+            condition.withLock {
+                released = true
+                condition.broadcast()
+            }
         }
     }
 
