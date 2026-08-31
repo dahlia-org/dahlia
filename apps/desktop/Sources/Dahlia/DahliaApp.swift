@@ -29,6 +29,7 @@ struct DahliaApp: App {
     @State private var menuBarCalendarViewModel: MenuBarCalendarViewModel
     @State private var chatCoordinator: CodexChatCoordinator
     @State private var vaultManagementModel: VaultManagementModel
+    @State private var dahliaAccountController = DahliaCloudAccountController.shared
     private let mainWindowNavigation: MainWindowNavigation
     @State private var appDatabase: AppDatabaseManager?
     @State private var isInitializingVault = true
@@ -81,46 +82,58 @@ struct DahliaApp: App {
 
     var body: some Scene {
         Window(L10n.dahlia, id: WindowID.main) {
-            Group {
-                if isInitializingVault {
-                    VStack(spacing: 0) {
-                        DahliaWindowHeader(reservesWindowControls: true) {
-                            Spacer()
+            ZStack {
+                Group {
+                    if isInitializingVault {
+                        VStack(spacing: 0) {
+                            DahliaWindowHeader(reservesWindowControls: true) {
+                                Spacer()
+                            }
+                            ProgressView(L10n.loadingVaults)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
                         }
-                        ProgressView(L10n.loadingVaults)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else if let setupTourMode = mainWindowNavigation.setupTourMode {
+                        SetupTourView(
+                            mode: setupTourMode,
+                            currentVault: AppSettings.shared.currentVault,
+                            vaultManagementModel: vaultManagementModel,
+                            canComplete: { viewModel.canSwitchVault },
+                            onComplete: completeSetupTour
+                        )
+                    } else if showVaultPicker {
+                        VaultPickerView(
+                            appDatabase: appDatabase,
+                            model: vaultManagementModel,
+                            canSwitchVault: viewModel.canSwitchVault,
+                            captionViewModel: viewModel,
+                            sidebarViewModel: sidebarViewModel,
+                            mainWindowNavigation: mainWindowNavigation,
+                            updateController: updateController
+                        ) { vault in
+                            openVault(vault)
+                        }
+                    } else {
+                        ContentView(
+                            viewModel: viewModel,
+                            updateController: updateController,
+                            sidebarViewModel: sidebarViewModel,
+                            recordingCoordinator: recordingCoordinator,
+                            chatCoordinator: chatCoordinator,
+                            mainWindowNavigation: mainWindowNavigation,
+                            appDatabase: appDatabase,
+                            vaultManagementModel: vaultManagementModel,
+                            onSelectVault: { vault in openVault(vault) }
+                        )
                     }
-                } else if let setupTourMode = mainWindowNavigation.setupTourMode {
-                    SetupTourView(
-                        mode: setupTourMode,
-                        currentVault: AppSettings.shared.currentVault,
-                        vaultManagementModel: vaultManagementModel,
-                        canComplete: { viewModel.canSwitchVault },
-                        onComplete: completeSetupTour
-                    )
-                } else if showVaultPicker {
-                    VaultPickerView(
-                        appDatabase: appDatabase,
-                        model: vaultManagementModel,
-                        canSwitchVault: viewModel.canSwitchVault,
-                        captionViewModel: viewModel,
-                        sidebarViewModel: sidebarViewModel,
-                        mainWindowNavigation: mainWindowNavigation,
-                        updateController: updateController
-                    ) { vault in
-                        openVault(vault)
-                    }
-                } else {
-                    ContentView(
-                        viewModel: viewModel,
-                        updateController: updateController,
-                        sidebarViewModel: sidebarViewModel,
-                        recordingCoordinator: recordingCoordinator,
-                        chatCoordinator: chatCoordinator,
-                        mainWindowNavigation: mainWindowNavigation,
-                        appDatabase: appDatabase,
-                        vaultManagementModel: vaultManagementModel,
-                        onSelectVault: { vault in openVault(vault) }
+                }
+                .disabled(mainWindowNavigation.isShowingDahliaSignIn)
+                .accessibilityHidden(mainWindowNavigation.isShowingDahliaSignIn)
+
+                if mainWindowNavigation.isShowingDahliaSignIn {
+                    DahliaServerSignInView(
+                        cloudConfiguration: dahliaAccountController.defaultConfiguration,
+                        onCancel: mainWindowNavigation.dismissDahliaSignIn,
+                        onSignIn: signInToDahlia
                     )
                 }
             }
@@ -130,6 +143,7 @@ struct DahliaApp: App {
                 minHeight: MainWindowMetrics.minimumHeight
             )
             .dahliaSimpleWindowStyle()
+            .task { await dahliaAccountController.activate() }
             .alert(
                 L10n.vaultOperationFailed,
                 isPresented: Binding(
@@ -190,7 +204,11 @@ struct DahliaApp: App {
             CommandGroup(replacing: .newItem) {
                 Button(L10n.createNewMeeting, action: recordingCoordinator.createEmptyMeeting)
                     .keyboardShortcut("n", modifiers: .command)
-                    .disabled(showVaultPicker || mainWindowNavigation.isShowingSettings)
+                    .disabled(
+                        showVaultPicker
+                            || mainWindowNavigation.isShowingSettings
+                            || mainWindowNavigation.isShowingDahliaSignIn
+                    )
             }
             SettingsCommands(mainWindowNavigation: mainWindowNavigation)
             CommandGroup(after: .appInfo) {
@@ -359,6 +377,11 @@ struct DahliaApp: App {
         viewModel.prepareAnalyzer()
         showVaultPicker = false
         return true
+    }
+
+    private func signInToDahlia(_ configuration: DahliaCloudConfiguration) {
+        mainWindowNavigation.dismissDahliaSignIn()
+        dahliaAccountController.startSignIn(configuration: configuration)
     }
 
     private func completeSetupTour(_ vault: VaultRecord) async -> Bool {

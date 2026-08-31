@@ -67,6 +67,7 @@ fi
 cp "Resources/Info.plist" "${CONTENTS}/Info.plist"
 cp -R "Resources/en.lproj" "Resources/ja.lproj" "${CONTENTS}/Resources/"
 configure_google_calendar_plist "${CONTENTS}/Info.plist"
+configure_dahlia_cloud_plist "${CONTENTS}/Info.plist"
 configure_sentry_plist "${CONTENTS}/Info.plist"
 configure_telemetrydeck_plist "${CONTENTS}/Info.plist"
 

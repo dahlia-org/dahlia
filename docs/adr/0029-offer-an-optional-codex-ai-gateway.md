@@ -31,7 +31,7 @@ Gateway は次の境界を持つ。
 
 認証は配置環境ごとに次のいずれか一つを起動時に選ぶ。
 
-- Better Auth mode は Google sign-in を使い、固定 public client `dahlia-macos` に authorization code + S256 PKCE、短期 access token、rotating refresh token、revocation を提供する。動的 client registration は行わない。
+- Better Auth mode は Google sign-in を使い、固定 public client に authorization code + S256 PKCE、短期 access token、rotating refresh token、revocation を提供する。動的 client registration は行わない。client ID は ADR-0051 で `databricks-cli` に更新した。
 - OAuth scopeはOpenAI互換の`api.model.read`と`api.model.request`を公開し、model listingとResponses requestでそれぞれ必要なscopeだけを検証する。
 - Trusted proxy mode は、直接到達できない `/api/**` で proxy が上書きした user ID と email header だけを受理する。Databricks Apps では Dahlia が Databricks U2M token で `/api/v1` を呼び、Apps proxy の検証後に付与される `X-Forwarded-User` と `X-Forwarded-Email` を identity とする。
 - `X-Forwarded-Access-Token` は保存せず、AI provider へ転送しない。上流はデプロイ管理者が設定した`OPENAI_API_KEY`をBearer credentialとして呼び出し、`OPENAI_BASE_URL`未指定時はOpenAI APIを使う。

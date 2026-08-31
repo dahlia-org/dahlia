@@ -60,3 +60,4 @@ Codex は全 ADR を順番に読まず、最初にこの一覧から現在の作
 | [0048](0048-issue-artifact-ids-server-side.md) | Server / Artifact API | UUIDv7 artifact ID を Server で発行し、PUT を置換専用にする | Accepted; amends 0045 |
 | [0049](0049-expose-artifact-tools-over-remote-mcp.md) | Server / MCP / Authentication | owner-scoped artifact mutation を remote MCP として公開する | Accepted; amends 0029, 0044, 0045, and 0048 |
 | [0050](0050-use-app-service-principal-for-databricks-model-discovery.md) | Server gateway / Databricks | モデル発見だけを App service principal で実行する | Accepted; amends 0044 and 0046 |
+| [0051](0051-add-desktop-cloud-oauth.md) | Desktop / Cloud authentication | protected-resource discovery と deployment-bound credential で Cloud に接続する | Accepted; builds on 0044 and 0049 |

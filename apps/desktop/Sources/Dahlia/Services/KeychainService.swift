@@ -17,11 +17,6 @@ enum KeychainService {
         errSecInternalComponent, // -2070
     ]
 
-    /// Data Protection Keychain が利用���能かのプロセスライフタイムキャッシュ。
-    /// 初回操作で判定し、以降は無駄な LAContext 生成と IPC を省略する。
-    /// 全呼び出しサイトが @MainActor 上のため、実質的にシングルスレッドアクセス。
-    private nonisolated(unsafe) static var dataProtectionAvailable: Bool?
-
     enum KeychainError: Error {
         case unexpectedStatus(OSStatus)
         case encodingFailed
@@ -34,43 +29,30 @@ enum KeychainService {
             throw KeychainError.encodingFailed
         }
 
-        // 既存アイテムを両方のキーチェーンから削除（マイグレーション対応）
-        deleteFromBothKeychains(key: key)
-
-        if dataProtectionAvailable != false {
-            let status = saveProtected(key: key, data: data)
-            if status == errSecSuccess {
-                dataProtectionAvailable = true
-                return
-            }
-            if fallbackErrors.contains(status) {
-                dataProtectionAvailable = false
-            } else {
-                throw KeychainError.unexpectedStatus(status)
-            }
+        let status = upsertProtected(key: key, data: data)
+        if status == errSecSuccess {
+            _ = deleteLegacy(key: key)
+            return
+        }
+        if !fallbackErrors.contains(status) {
+            throw KeychainError.unexpectedStatus(status)
         }
 
-        let legacyStatus = saveLegacy(key: key, data: data)
+        let legacyStatus = upsertLegacy(key: key, data: data)
         guard legacyStatus == errSecSuccess else {
             throw KeychainError.unexpectedStatus(legacyStatus)
         }
     }
 
     static func load(key: String) -> String? {
-        if dataProtectionAvailable != false {
-            let (data, status) = loadProtected(key: key)
-            if status == errSecSuccess, let data {
-                dataProtectionAvailable = true
-                return String(data: data, encoding: .utf8)
-            }
-            if status == errSecAuthFailed || status == errSecUserCanceled {
-                return nil
-            }
-            if fallbackErrors.contains(status) {
-                dataProtectionAvailable = false
-            }
-            // errSecItemNotFound: protected は利用可能だがアイテムが無い → legacy にフォールスルー
+        let (data, status) = loadProtected(key: key)
+        if status == errSecSuccess, let data {
+            return String(data: data, encoding: .utf8)
         }
+        if status == errSecAuthFailed || status == errSecUserCanceled {
+            return nil
+        }
+        // errSecItemNotFound または entitlement 不足なら legacy にフォールスルーする。
 
         let (legacyData, legacyStatus) = loadLegacy(key: key)
         if legacyStatus == errSecSuccess, let data = legacyData {
@@ -116,7 +98,18 @@ enum KeychainService {
 
     // MARK: - Data Protection Keychain (Protected)
 
-    private static func saveProtected(key: String, data: Data) -> OSStatus {
+    private static func upsertProtected(key: String, data: Data) -> OSStatus {
+        var updateQuery = baseQuery(key: key)
+        updateQuery[kSecUseDataProtectionKeychain as String] = true
+        let updateStatus = SecItemUpdate(
+            updateQuery as CFDictionary,
+            [
+                kSecValueData as String: data,
+                kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
+            ] as CFDictionary
+        )
+        guard updateStatus == errSecItemNotFound else { return updateStatus }
+
         var query = baseQuery(key: key)
         query[kSecValueData as String] = data
         query[kSecUseDataProtectionKeychain as String] = true
@@ -142,7 +135,16 @@ enum KeychainService {
 
     // MARK: - Legacy Keychain (Fallback)
 
-    private static func saveLegacy(key: String, data: Data) -> OSStatus {
+    private static func upsertLegacy(key: String, data: Data) -> OSStatus {
+        let updateStatus = SecItemUpdate(
+            baseQuery(key: key) as CFDictionary,
+            [
+                kSecValueData as String: data,
+                kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
+            ] as CFDictionary
+        )
+        guard updateStatus == errSecItemNotFound else { return updateStatus }
+
         var query = baseQuery(key: key)
         query[kSecValueData as String] = data
         query[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly

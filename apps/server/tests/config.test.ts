@@ -16,6 +16,7 @@ describe("configuration", () => {
       databaseType: "sqlite",
       databaseUrl: "file:.data/dahlia-auth.sqlite",
       baseUrl: "http://localhost:5173",
+      oauthRedirectUris: ["http://127.0.0.1:1455/oauth/callback", "http://localhost:8020"],
       storageBackend: "local",
       storageLocalPath: ".data/storage",
     });

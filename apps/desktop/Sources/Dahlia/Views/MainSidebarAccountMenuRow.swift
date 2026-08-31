@@ -7,11 +7,15 @@ struct MainSidebarAccountMenuRow: View {
     var selectionState: Bool?
     var isEnabled = true
     var isKeyboardHighlighted = false
+    var help: String?
+    var showsHelp = true
     var onHoverStart: (() -> Void)?
+    var onHoverStartAtY: ((CGFloat) -> Void)?
     var onHoverEnd: (() -> Void)?
     let action: () -> Void
 
     @State private var isHovered = false
+    @State private var minY: CGFloat = 0
 
     var body: some View {
         Button(action: action) {
@@ -59,12 +63,18 @@ struct MainSidebarAccountMenuRow: View {
         .buttonStyle(.plain)
         .disabled(!isEnabled)
         .opacity(isEnabled ? 1 : 0.5)
-        .help(title)
+        .help(showsHelp ? (help ?? title) : "")
         .accessibilityAddTraits(selectionState == true ? .isSelected : [])
+        .onGeometryChange(for: CGFloat.self) { proxy in
+            proxy.frame(in: .global).minY
+        } action: {
+            minY = $0
+        }
         .onHover { hovered in
             isHovered = hovered
             if hovered {
                 onHoverStart?()
+                onHoverStartAtY?(minY)
             } else {
                 onHoverEnd?()
             }
