@@ -17,6 +17,8 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
     private let navigation = MainSidebarAccountMenuNavigationState()
     private var mainPanel: NSPanel?
     private var submenuPanel: NSPanel?
+    private var accountHelpPanel: NSPanel?
+    private var accountHelpTask: Task<Void, Never>?
     private var localEventMonitor: Any?
     private var globalEventMonitor: Any?
     private var typeAheadResetTask: Task<Void, Never>?
@@ -86,6 +88,7 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
 
     func dismissMenu() {
         stopMonitoring()
+        dismissAccountHelp()
         closeSubmenu()
         closePanel(&mainPanel)
         navigation.reset()
@@ -104,6 +107,8 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
                 onShowVaults: { [weak self] in self?.presentVaultMenu(anchorMinY: $0) },
                 onShowLanguages: { [weak self] in self?.presentLanguageMenu(anchorMinY: $0) },
                 onDismissSubmenu: { [weak self] in self?.closeSubmenu() },
+                onShowAccountHelp: { [weak self] label, frame in self?.scheduleAccountHelp(label: label, rowFrame: frame) },
+                onDismissAccountHelp: { [weak self] in self?.dismissAccountHelp() },
                 onOpenSettings: { [weak self] in self?.openSettings(category: $0) },
                 onAccountAction: { [weak self] in self?.performAccountAction() }
             )
@@ -144,6 +149,7 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
         anchorMinY: CGFloat?
     ) {
         guard let mainPanel else { return }
+        dismissAccountHelp()
         resetTypeAhead()
         closePanel(&submenuPanel)
         navigation.showSubmenu(menu)
@@ -221,6 +227,36 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
             parentWindow.addChildWindow(panel, ordered: .above)
         }
         panel.orderFront(nil)
+    }
+
+    private func scheduleAccountHelp(label: String, rowFrame: CGRect) {
+        dismissAccountHelp()
+        accountHelpTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(700))
+            guard !Task.isCancelled else { return }
+            self?.presentAccountHelp(label: label, rowFrame: rowFrame)
+        }
+    }
+
+    private func presentAccountHelp(label: String, rowFrame: CGRect) {
+        guard let mainPanel else { return }
+        accountHelpTask = nil
+        let panel = makePanel(content: DahliaWindowHeaderHelp(label: label, shortcut: nil))
+        panel.ignoresMouseEvents = true
+        panel.setFrameOrigin(MainSidebarAccountMenuLayout.helpOrigin(
+            panelSize: panel.frame.size,
+            rowFrame: rowFrame,
+            mainPanelFrame: mainPanel.frame,
+            screenFrame: visibleScreenFrame(containing: mainPanel.frame)
+        ))
+        attach(panel, to: button?.window)
+        accountHelpPanel = panel
+    }
+
+    private func dismissAccountHelp() {
+        accountHelpTask?.cancel()
+        accountHelpTask = nil
+        closePanel(&accountHelpPanel)
     }
 
     private func selectVault(_ vault: VaultRecord) {

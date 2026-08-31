@@ -69,6 +69,18 @@
         }
 
         @Test
+        func accountHelpCentersBelowTheRowAndStaysOnScreen() {
+            let origin = MainSidebarAccountMenuLayout.helpOrigin(
+                panelSize: CGSize(width: 240, height: 36),
+                rowFrame: CGRect(x: 6, y: 36, width: 268, height: 30),
+                mainPanelFrame: CGRect(x: 700, y: 200, width: 280, height: 180),
+                screenFrame: CGRect(x: 0, y: 0, width: 1000, height: 800)
+            )
+
+            #expect(origin == CGPoint(x: 720, y: 272))
+        }
+
+        @Test
         func mainMenuAlignsItsLeftEdgeWithTheButton() {
             let origin = MainSidebarAccountMenuLayout.mainMenuOrigin(
                 panelSize: CGSize(width: 180, height: 100),

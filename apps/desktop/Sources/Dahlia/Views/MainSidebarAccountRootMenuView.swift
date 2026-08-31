@@ -9,6 +9,8 @@ struct MainSidebarAccountRootMenuView: View {
     let onShowVaults: (CGFloat?) -> Void
     let onShowLanguages: (CGFloat?) -> Void
     let onDismissSubmenu: () -> Void
+    let onShowAccountHelp: (String, CGRect) -> Void
+    let onDismissAccountHelp: () -> Void
     let onOpenSettings: (SettingsCategory?) -> Void
     let onAccountAction: () -> Void
 
@@ -30,9 +32,17 @@ struct MainSidebarAccountRootMenuView: View {
                     image: Image(systemName: accountSystemImage),
                     isKeyboardHighlighted: navigation.activeMenu == .root && navigation.rootSelection == 0,
                     help: accountOrigin,
-                    showsHelp: isCloudAccount != true,
+                    showsHelp: false,
                     onHoverStart: { hover(index: 0, submenu: nil, action: onDismissSubmenu) },
-                    onHoverEnd: cancelPendingHover,
+                    onHoverStartInFrame: { frame in
+                        if let accountOrigin, isCloudAccount != true {
+                            onShowAccountHelp(accountOrigin, frame)
+                        }
+                    },
+                    onHoverEnd: {
+                        cancelPendingHover()
+                        onDismissAccountHelp()
+                    },
                     action: { activate(index: 0, action: { onOpenSettings(.general) }) }
                 )
 
