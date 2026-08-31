@@ -119,21 +119,21 @@
             ))
             let account = DahliaCloudAccount(id: "user", name: "Kazuki Matsuda", email: nil)
 
-            func controller(resource: String) async -> DahliaCloudAccountController {
+            func controller(resource: String, isCloud: Bool) async -> DahliaCloudAccountController {
                 let credential = DahliaCloudCredential(
                     accessToken: "access",
                     refreshToken: "refresh",
                     expirationDate: .distantFuture,
                     resource: resource,
                     issuer: "https://accounts.example.com",
-                    clientID: "desktop-client",
+                    clientID: isCloud ? "desktop-client" : DahliaCloudConfiguration.defaultClientID,
                     grantedScopes: ["openid"],
                     tokenEndpoint: URL(string: "https://accounts.example.com/token")!,
                     revocationEndpoint: nil,
                     account: account
                 )
                 let service = DahliaCloudService(
-                    configuration: cloudConfiguration,
+                    configuration: isCloud ? cloudConfiguration : nil,
                     storage: DahliaCloudCredentialStorage(load: { credential }, save: { _ in }, delete: {})
                 )
                 let controller = DahliaCloudAccountController(configuration: cloudConfiguration, service: service)
@@ -141,13 +141,13 @@
                 return controller
             }
 
-            let cloud = await controller(resource: "https://cloud.example.com/")
+            let cloud = await controller(resource: "https://cloud.example.com/", isCloud: true)
             #expect(cloud.connectionStatus == "Dahlia Cloud - Kazuki Matsuda")
             #expect(cloud.connectionDetail == nil)
             #expect(cloud.connectionServiceName == "Dahlia Cloud")
             #expect(cloud.connectionSystemImage == "icloud")
 
-            let server = await controller(resource: "https://server.example.com/api")
+            let server = await controller(resource: "https://server.example.com/api", isCloud: false)
             #expect(server.connectionStatus == "Dahlia Server - Kazuki Matsuda")
             #expect(server.connectionDetail == "(https://server.example.com)")
             #expect(server.connectionServiceName == "Dahlia Server")
@@ -164,6 +164,15 @@
         func dahliaCloudActionShowsComingSoonOnlyWhenUnconfigured() {
             #expect(DahliaServerSignInView.cloudActionTitle(isConfigured: true) == L10n.signInToDahliaCloud)
             #expect(DahliaServerSignInView.cloudActionTitle(isConfigured: false) == L10n.dahliaCloudComingSoon)
+        }
+
+        @Test
+        func manuallyEnteredServerUsesFixedClientID() throws {
+            let configuration = try #require(DahliaServerSignInView.serverConfiguration(
+                urlString: "https://server.example.com"
+            ))
+
+            #expect(configuration.clientID == DahliaCloudConfiguration.defaultClientID)
         }
     }
 #endif

@@ -1,5 +1,6 @@
 import Foundation
 import Security
+import Synchronization
 
 /// macOS Keychain への保存・読み込み・削除を行うラッパー。
 /// エンタイトルメント付き署名済みビルドでは Data Protection Keychain を使用し、
@@ -17,6 +18,9 @@ enum KeychainService {
         errSecInternalComponent, // -2070
     ]
 
+    /// Data Protection Keychain の利用可否をキャッシュする。
+    private static let keychainState = Mutex<Bool?>(nil)
+
     enum KeychainError: Error {
         case unexpectedStatus(OSStatus)
         case encodingFailed
@@ -29,13 +33,18 @@ enum KeychainService {
             throw KeychainError.encodingFailed
         }
 
-        let status = upsertProtected(key: key, data: data)
-        if status == errSecSuccess {
-            _ = deleteLegacy(key: key)
-            return
-        }
-        if !fallbackErrors.contains(status) {
-            throw KeychainError.unexpectedStatus(status)
+        if keychainState.withLock({ $0 }) != false {
+            let status = upsertProtected(key: key, data: data)
+            if status == errSecSuccess {
+                keychainState.withLock { $0 = true }
+                _ = deleteLegacy(key: key)
+                return
+            }
+            if fallbackErrors.contains(status) {
+                keychainState.withLock { $0 = false }
+            } else {
+                throw KeychainError.unexpectedStatus(status)
+            }
         }
 
         let legacyStatus = upsertLegacy(key: key, data: data)
@@ -45,14 +54,20 @@ enum KeychainService {
     }
 
     static func load(key: String) -> String? {
-        let (data, status) = loadProtected(key: key)
-        if status == errSecSuccess, let data {
-            return String(data: data, encoding: .utf8)
+        if keychainState.withLock({ $0 }) != false {
+            let (data, status) = loadProtected(key: key)
+            if status == errSecSuccess, let data {
+                keychainState.withLock { $0 = true }
+                return String(data: data, encoding: .utf8)
+            }
+            if status == errSecAuthFailed || status == errSecUserCanceled {
+                return nil
+            }
+            if fallbackErrors.contains(status) {
+                keychainState.withLock { $0 = false }
+            }
+            // errSecItemNotFound: protected は利用可能だがアイテムが無い → legacy にフォールスルー
         }
-        if status == errSecAuthFailed || status == errSecUserCanceled {
-            return nil
-        }
-        // errSecItemNotFound または entitlement 不足なら legacy にフォールスルーする。
 
         let (legacyData, legacyStatus) = loadLegacy(key: key)
         if legacyStatus == errSecSuccess, let data = legacyData {

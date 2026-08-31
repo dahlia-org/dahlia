@@ -271,11 +271,20 @@ actor DahliaCloudService {
     private func loadCredentialIfNeeded() throws {
         guard !didLoadCredential else { return }
         let storedCredential = try storage.load()
-        if storedCredential?.clientID == (configuration?.clientID ?? DahliaCloudConfiguration.configuredClientID),
-           storedCredential?.grantedScopes.contains("all-apis") != true {
+        if let storedCredential,
+           storedCredential.grantedScopes.contains("all-apis") == false,
+           credentialMatchesConfiguration(storedCredential) {
             credential = storedCredential
         }
         didLoadCredential = true
+    }
+
+    private func credentialMatchesConfiguration(_ credential: DahliaCloudCredential) -> Bool {
+        guard let configuration else {
+            return credential.clientID == DahliaCloudConfiguration.defaultClientID
+        }
+        return credential.clientID == configuration.clientID
+            && Self.sameOrigin(credential.resource, configuration.origin)
     }
 
     private func refreshAndPersist(_ oldCredential: DahliaCloudCredential) async throws -> String {

@@ -264,6 +264,24 @@
             }
         }
 
+        @Test
+        func storedCredentialFromDifferentConfiguredOriginIsNotReused() async throws {
+            let store = CloudCredentialStoreFake(credential: makeCredential(expirationDate: .distantFuture))
+            let service = DahliaCloudService(
+                configuration: DahliaCloudConfiguration.make(
+                    urlString: "https://replacement.example.com",
+                    clientID: "desktop-client"
+                ),
+                storage: store.storage
+            )
+
+            #expect(try await service.storedConnection() == nil)
+            await #expect(throws: DahliaCloudError.noCredential) {
+                try await service.validAccessToken()
+            }
+            #expect(store.credential != nil)
+        }
+
         @MainActor
         @Test
         func failedStartupRefreshDoesNotPublishConnectedAccount() async throws {

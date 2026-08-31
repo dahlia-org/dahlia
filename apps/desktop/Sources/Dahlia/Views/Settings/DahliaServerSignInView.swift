@@ -97,10 +97,7 @@ struct DahliaServerSignInView: View {
     }
 
     private var serverConfiguration: DahliaCloudConfiguration? {
-        DahliaCloudConfiguration.make(
-            urlString: serverURL,
-            clientID: DahliaCloudConfiguration.configuredClientID
-        )
+        Self.serverConfiguration(urlString: serverURL)
     }
 
     private func connect() {
@@ -115,5 +112,9 @@ struct DahliaServerSignInView: View {
 
     static func cloudActionTitle(isConfigured: Bool) -> String {
         isConfigured ? L10n.signInToDahliaCloud : L10n.dahliaCloudComingSoon
+    }
+
+    static func serverConfiguration(urlString: String) -> DahliaCloudConfiguration? {
+        DahliaCloudConfiguration.make(urlString: urlString, clientID: DahliaCloudConfiguration.defaultClientID)
     }
 }
