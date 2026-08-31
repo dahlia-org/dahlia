@@ -356,7 +356,7 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
     }
 }
 
-private extension MainSidebarAccountMenuCoordinator {
+extension MainSidebarAccountMenuCoordinator {
     func handleKeyDown(_ event: NSEvent) -> NSEvent? {
         if Self.shouldPassThroughKeyEvent(modifierFlags: event.modifierFlags) {
             dismissMenu()
@@ -496,7 +496,7 @@ private extension MainSidebarAccountMenuCoordinator {
     func activateRootSelection() {
         guard let selection = navigation.rootSelection else { return }
         if account != nil, selection == 0 {
-            openSettings(category: .general)
+            openSettings(category: .dahliaAccounts)
             return
         }
         switch selection - rootMenuOffset {
@@ -532,7 +532,7 @@ private extension MainSidebarAccountMenuCoordinator {
         case .root:
             let accountServiceName = isCloudAccount == true ? L10n.dahliaCloud : L10n.dahliaServer
             let titles = (account == nil ? [] : [accountServiceName])
-                + [L10n.vault, L10n.language, L10n.settings, account == nil ? L10n.dahliaSignIn : L10n.signOut]
+                + [L10n.vault, L10n.language, L10n.settings, L10n.manageDahliaAccounts]
             title = navigation.rootSelection.flatMap { titles.indices.contains($0) ? titles[$0] : nil }
         case .vaults:
             guard let selection = navigation.submenuSelection else { return }

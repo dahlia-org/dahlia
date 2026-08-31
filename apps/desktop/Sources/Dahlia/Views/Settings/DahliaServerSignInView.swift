@@ -3,6 +3,7 @@ import SwiftUI
 
 struct DahliaServerSignInView: View {
     let cloudConfiguration: DahliaCloudConfiguration?
+    let allowsCloudSignIn: Bool
     let isBusy: Bool
     let isSigningIn: Bool
     let errorMessage: String?
@@ -59,21 +60,23 @@ struct DahliaServerSignInView: View {
                             .controlSize(.small)
                     }
 
-                    Button(action: signInToCloud) {
-                        Text(Self.cloudActionTitle(isConfigured: cloudConfiguration != nil))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 4)
-                    }
-                    .buttonStyle(.dahlia(.primary))
-                    .disabled(isBusy || cloudConfiguration == nil)
+                    if allowsCloudSignIn {
+                        Button(action: signInToCloud) {
+                            Text(Self.cloudActionTitle(isConfigured: cloudConfiguration != nil))
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 4)
+                        }
+                        .buttonStyle(.dahlia(.primary))
+                        .disabled(isBusy || cloudConfiguration == nil)
 
-                    ZStack {
-                        Divider()
-                        Text(L10n.orConnectToServer)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal)
-                            .background(.background)
+                        ZStack {
+                            Divider()
+                            Text(L10n.orConnectToServer)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal)
+                                .background(.background)
+                        }
                     }
 
                     VStack(alignment: .leading, spacing: 8) {
@@ -98,7 +101,6 @@ struct DahliaServerSignInView: View {
             .frame(maxWidth: 440, maxHeight: .infinity)
             .frame(width: 500, height: 400)
             .overlay(alignment: .topTrailing) {
-
                 Button(L10n.close, systemImage: "xmark", action: onCancel)
                     .labelStyle(.iconOnly)
                     .dahliaFixedSymbol()

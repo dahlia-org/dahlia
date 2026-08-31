@@ -43,7 +43,7 @@ struct MainSidebarAccountRootMenuView: View {
                         cancelPendingHover()
                         onDismissAccountHelp()
                     },
-                    action: { activate(index: 0, action: { onOpenSettings(.general) }) }
+                    action: { activate(index: 0, action: { onOpenSettings(.dahliaAccounts) }) }
                 )
 
                 Divider()
@@ -83,8 +83,8 @@ struct MainSidebarAccountRootMenuView: View {
                 .padding(.vertical, 4)
 
             MainSidebarAccountMenuRow(
-                title: account == nil ? L10n.dahliaSignIn : L10n.signOut,
-                image: Image(systemName: account == nil ? "person" : "rectangle.portrait.and.arrow.right"),
+                title: L10n.manageDahliaAccounts,
+                image: Image(systemName: "person.crop.circle"),
                 isKeyboardHighlighted: navigation.activeMenu == .root && navigation.rootSelection == menuOffset + 3,
                 onHoverStart: { hover(index: menuOffset + 3, submenu: nil, action: onDismissSubmenu) },
                 onHoverEnd: cancelPendingHover,

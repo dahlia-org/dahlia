@@ -120,6 +120,10 @@ write-backを発生させない。汎用参照は書き込み時にtarget存在�
 [ADR-0011](docs/adr/0011-vault-scoped-customer-intelligence.md)を正本とする。
 
 任意の Dahlia Server runtime は内蔵 Codex の provider transport を所有し、macOS の録音・文字起こし critical path には入らない。
+macOS の Dahlia アカウントは Vault の所有者ではなく、アプリ共有の接続として SQLite に登録する。OAuth credential と remote identity は
+接続 UUID ごとに Keychain が所有し、token 利用側は connection ID を明示する。sign-out は選択した credential だけを削除する。現在は接続を
+消費する自動 upload／sync がないため Vault 関連を永続化せず、sync 実装時に Vault 側の任意参照と Vault ごとの設定を同じ変更で追加する。この境界は
+[ADR-0052](docs/adr/0052-separate-desktop-account-connections-from-vaults.md)を正本とする。
 Better Auth、Gateway 管理 metadata、将来の meeting cloud sync は単一の Drizzle application database を共有する。
 `DAHLIA_DATABASE_TYPE` は `sqlite`、`postgres`、`lakebase`、`hyperdrive`、`d1` から選び、SQLite／PostgreSQL の接続先は
 `DAHLIA_DATABASE_URL` で指定する。Node は SQLite／PostgreSQL／Lakebase、Workers は D1／Hyperdrive／PostgreSQL を扱う。

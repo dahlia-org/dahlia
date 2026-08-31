@@ -1811,6 +1811,40 @@ enum L10n { // swiftlint:disable:this type_body_length
         localized: "Dahlia credentials could not be saved securely.",
         bundle: bundle
     ) }
+    static var dahliaConnectionAlreadyExists: String { String(
+        localized: "A Dahlia connection already exists for this server.",
+        bundle: bundle
+    ) }
+    static var dahliaAccountsDescription: String { String(
+        localized: "Manage the Dahlia Cloud and Server sign-ins used by Dahlia.",
+        bundle: bundle
+    ) }
+    static var addDahliaServer: String { String(localized: "Add Server", bundle: bundle) }
+    static var manageDahliaAccounts: String { String(localized: "Manage Accounts", bundle: bundle) }
+    static func dahliaAccountCount(_ count: Int) -> String { String(
+        localized: "\(count) Dahlia accounts",
+        bundle: bundle
+    ) }
+    static var reauthenticate: String { String(localized: "Sign In Again", bundle: bundle) }
+    static var signInRequired: String { String(localized: "Sign-in required", bundle: bundle) }
+
+    static func signOutDahliaConnection(_ name: String) -> String {
+        String(format: String(localized: "Sign out of %@?", bundle: bundle), name)
+    }
+
+    static var signOutDahliaConnectionDescription: String { String(
+        localized: "Only this connection's credentials will be removed.",
+        bundle: bundle
+    ) }
+
+    static func removeDahliaConnection(_ name: String) -> String {
+        String(format: String(localized: "Remove Dahlia connection %@?", bundle: bundle), name)
+    }
+
+    static var removeDahliaConnectionDescription: String { String(
+        localized: "The connection will be removed. Local meeting data will not be deleted.",
+        bundle: bundle
+    ) }
 
     static func dahliaSignedInAs(_ name: String) -> String {
         String(format: String(localized: "Signed in as %@", bundle: bundle), name)
