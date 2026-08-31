@@ -235,6 +235,9 @@ final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
         guard await save(refreshed, migrating: storedSessionLookup, generation: storedSessionLookup.generation) else {
             throw GoogleSignInError.noPreviousSignIn
         }
+        guard !isDisconnectPending else {
+            throw GoogleSignInError.noPreviousSignIn
+        }
         return refreshed.session
     }
 
@@ -293,6 +296,9 @@ final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
             Self.markAllDisconnectsPending()
             throw CancellationError()
         }
+        guard !isDisconnectPending else {
+            throw CancellationError()
+        }
         NotificationCenter.default.post(name: sessionDidChangeNotification, object: nil)
         return session.session
     }
@@ -305,6 +311,7 @@ final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
         let refreshed = try await refreshedSession(from: storedSessionLookup.session)
         guard !isDisconnectPending else { return nil }
         guard await save(refreshed, migrating: storedSessionLookup, generation: storedSessionLookup.generation) else { return nil }
+        guard !isDisconnectPending else { return nil }
         return refreshed.session
     }
 
