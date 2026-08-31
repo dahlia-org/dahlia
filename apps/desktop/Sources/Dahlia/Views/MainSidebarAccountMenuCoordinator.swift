@@ -242,6 +242,7 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
         guard let mainPanel else { return }
         accountHelpTask = nil
         let panel = makePanel(content: DahliaWindowHeaderHelp(label: label, shortcut: nil))
+        panel.hasShadow = false
         panel.ignoresMouseEvents = true
         panel.setFrameOrigin(MainSidebarAccountMenuLayout.helpOrigin(
             panelSize: panel.frame.size,
