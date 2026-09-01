@@ -10,46 +10,54 @@ struct CodexChatConfigurationPanel: View {
             if showsModels {
                 CodexChatModelPickerPanel(
                     session: session,
+                    height: panelHeight,
                     onSelect: onDismiss
                 )
 
                 Divider()
             }
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(L10n.responsePerformance)
-                    .font(.body)
-                    .foregroundStyle(DahliaDesign.optionalTextColor)
-                    .padding(.horizontal, 8)
-                    .padding(.bottom, 2)
+            ScrollView {
+                VStack(alignment: .leading, spacing: CodexChatDesign.configurationRowSpacing) {
+                    Text(L10n.responsePerformance)
+                        .font(.body)
+                        .foregroundStyle(DahliaDesign.optionalTextColor)
+                        .padding(.horizontal, 8)
+                        .padding(.bottom, 2)
 
-                ForEach(session.effortOptions) { effort in
+                    ForEach(session.effortOptions) { effort in
+                        CodexChatConfigurationRow(
+                            title: effort.displayName,
+                            isSelected: effort.reasoningEffort == session.selectedEffort,
+                            action: { selectEffort(effort.reasoningEffort) }
+                        )
+                    }
+
+                    Divider()
+                        .padding(.vertical, 4)
+
                     CodexChatConfigurationRow(
-                        title: effort.displayName,
-                        isSelected: effort.reasoningEffort == session.selectedEffort,
-                        action: { selectEffort(effort.reasoningEffort) }
+                        title: selectedModelName,
+                        isSelected: false,
+                        trailingSystemImage: "chevron.right",
+                        action: toggleModels
                     )
                 }
-
-                Divider()
-                    .padding(.vertical, 4)
-
-                CodexChatConfigurationRow(
-                    title: selectedModelName,
-                    isSelected: false,
-                    trailingSystemImage: "chevron.right",
-                    action: toggleModels
-                )
+                .padding(10)
             }
-            .padding(10)
+            .scrollIndicators(.hidden)
             .frame(
                 width: CodexChatDesign.configurationPanelWidth,
-                height: CodexChatDesign.configurationPanelHeight,
+                height: panelHeight,
                 alignment: .topLeading
             )
         }
-        .frame(height: CodexChatDesign.configurationPanelHeight)
+        .frame(height: panelHeight)
         .codexChatPanelStyle()
+    }
+
+    private var panelHeight: CGFloat {
+        CodexChatDesign.configurationPanelHeight(effortCount: session.effortOptions.count)
     }
 
     private var selectedModelName: String {

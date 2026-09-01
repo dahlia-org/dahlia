@@ -483,6 +483,7 @@
 "Notifications" = "Notifications";
 "Calendar" = "Calendar";
 "AI Summary" = "AI Summary";
+"Model" = "Model";
 "Reasoning Effort" = "Reasoning Effort";
 "Controls how much reasoning Codex uses for each summary." = "Controls how much reasoning Codex uses for each summary.";
 "Summary Output" = "Summary Output";

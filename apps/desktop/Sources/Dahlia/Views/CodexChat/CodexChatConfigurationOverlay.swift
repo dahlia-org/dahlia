@@ -7,7 +7,7 @@ struct CodexChatConfigurationOverlay: View {
     @State private var showsModels = false
 
     var body: some View {
-        Group {
+        ZStack(alignment: .bottomTrailing) {
             if isPresented {
                 CodexChatConfigurationPanel(
                     session: session,
@@ -21,6 +21,7 @@ struct CodexChatConfigurationOverlay: View {
                 .zIndex(2)
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
         .onChange(of: isPresented) { _, isPresented in
             if !isPresented {
                 showsModels = false

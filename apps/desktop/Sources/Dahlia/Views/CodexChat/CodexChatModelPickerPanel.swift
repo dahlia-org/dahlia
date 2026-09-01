@@ -2,11 +2,12 @@ import SwiftUI
 
 struct CodexChatModelPickerPanel: View {
     @Bindable var session: CodexChatSessionModel
+    let height: CGFloat
     let onSelect: () -> Void
 
     var body: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 2) {
+            LazyVStack(alignment: .leading, spacing: CodexChatDesign.configurationRowSpacing) {
                 Text(L10n.model)
                     .font(.body)
                     .foregroundStyle(DahliaDesign.optionalTextColor)
@@ -26,7 +27,7 @@ struct CodexChatModelPickerPanel: View {
         .scrollIndicators(.hidden)
         .frame(
             width: CodexChatDesign.modelPanelWidth,
-            height: CodexChatDesign.configurationPanelHeight
+            height: height
         )
     }
 

@@ -28,10 +28,20 @@ enum CodexChatDesign {
     static let attachmentThumbnailSize: CGFloat = 64
     static let messageImageSize: CGFloat = 120
     static let configurationPanelWidth: CGFloat = 252
-    static let configurationPanelHeight: CGFloat = 278
+    static let configurationPanelBaseHeight: CGFloat = 78
+    static let configurationPanelMaximumHeight: CGFloat = 278
+    static let configurationRowHeight: CGFloat = 30
+    static let configurationRowSpacing: CGFloat = 2
     static let modelPanelWidth: CGFloat = 216
     static let contextDividerSpacing: CGFloat = 8
     static let contextLabelHorizontalPadding: CGFloat = 8
     static let contextLabelVerticalPadding: CGFloat = 4
     static let contextLabelCornerRadius: CGFloat = 5
+
+    static func configurationPanelHeight(effortCount: Int) -> CGFloat {
+        min(
+            configurationPanelBaseHeight + CGFloat(effortCount) * (configurationRowHeight + configurationRowSpacing),
+            configurationPanelMaximumHeight
+        )
+    }
 }
