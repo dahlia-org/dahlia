@@ -28,6 +28,7 @@ variables:
   volume_name:
     description: Managed Volume used for Dahlia storage.
     default: storage
+
 targets:
   dev:
     default: true
@@ -40,7 +41,6 @@ targets:
       postgres_projects:
         dahlia_database_project:
           purge_on_delete: true
-
   prod:
     mode: production
     variables:
