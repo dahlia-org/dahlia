@@ -9,6 +9,7 @@ struct DahliaServerSignInView: View {
     let errorMessage: String?
     let onCancel: () -> Void
     let onSignIn: (DahliaCloudConfiguration) -> Void
+    var cloudActionTitle: String?
     var isEmbedded = false
     var onContinueLocally: (() -> Void)?
 
@@ -66,7 +67,7 @@ struct DahliaServerSignInView: View {
 
                     if allowsCloudSignIn {
                         Button(action: signInToCloud) {
-                            Text(Self.cloudActionTitle(isConfigured: cloudConfiguration != nil))
+                            Text(cloudActionTitle ?? Self.cloudActionTitle(isConfigured: cloudConfiguration != nil))
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 4)
                         }

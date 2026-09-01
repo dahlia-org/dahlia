@@ -145,12 +145,15 @@ struct SetupTourView: View {
         case .account:
             DahliaServerSignInView(
                 cloudConfiguration: accountController.defaultConfiguration,
-                allowsCloudSignIn: accountController.cloudConnection == nil,
+                allowsCloudSignIn: true,
                 isBusy: accountController.isBusy,
                 isSigningIn: accountController.isSigningIn,
                 errorMessage: accountController.errorMessage,
                 onCancel: accountController.cancelAccountTask,
-                onSignIn: signInToDahlia,
+                onSignIn: selectOrSignInToDahlia,
+                cloudActionTitle: existingCloudConnection.map {
+                    "\($0.displayName) · \(L10n.dahliaCloud)"
+                },
                 isEmbedded: true,
                 onContinueLocally: continueWithLocalAccount
             )
@@ -187,6 +190,15 @@ struct SetupTourView: View {
         model.advance()
     }
 
+    private func selectOrSignInToDahlia(_ configuration: DahliaCloudConfiguration) {
+        if let connection = accountController.signedInConnection(matching: configuration) {
+            model.selectAccountConnection(connection.id)
+            model.advance()
+        } else {
+            signInToDahlia(configuration)
+        }
+    }
+
     private func signInToDahlia(_ configuration: DahliaCloudConfiguration) {
         guard let task = accountController.startSignIn(configuration: configuration) else { return }
         Task { @MainActor in
@@ -210,6 +222,11 @@ struct SetupTourView: View {
     private func dismissTour() {
         accountController.cancelAccountTask()
         mainWindowNavigation.dismissSetupTour()
+    }
+
+    private var existingCloudConnection: DahliaAccountConnection? {
+        guard let configuration = accountController.defaultConfiguration else { return nil }
+        return accountController.signedInConnection(matching: configuration)
     }
 
     private func completeTour() {
