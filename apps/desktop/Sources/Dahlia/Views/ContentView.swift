@@ -99,6 +99,10 @@ struct ContentView: View {
                         } settingsContent: {
                             SettingsSidebarView(
                                 selection: $mainWindowNavigation.settingsCategory,
+                                vaults: vaultManagementModel.vaults,
+                                currentVault: sidebarViewModel.currentVault,
+                                updateController: updateController,
+                                onSelectVault: onSelectVault,
                                 onReturnToApp: mainWindowNavigation.dismissSettings
                             )
                         }

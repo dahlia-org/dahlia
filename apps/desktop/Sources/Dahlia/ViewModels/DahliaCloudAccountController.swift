@@ -6,22 +6,26 @@ struct DahliaAccountConnection: Identifiable, Equatable, Sendable {
     let account: DahliaCloudAccount?
     let isCloud: Bool
     let vaultCount: Int
+    let grantedScopes: Set<String>
 
     init(
         record: DahliaAccountConnectionRecord,
         account: DahliaCloudAccount?,
         isCloud: Bool,
-        vaultCount: Int = 0
+        vaultCount: Int = 0,
+        grantedScopes: Set<String> = []
     ) {
         self.record = record
         self.account = account
         self.isCloud = isCloud
         self.vaultCount = vaultCount
+        self.grantedScopes = grantedScopes
     }
 
     var id: UUID { record.id }
     var origin: String { record.origin }
     var isSignedIn: Bool { account != nil }
+    var supportsArtifactExport: Bool { grantedScopes.contains(DahliaArtifactExportService.requiredScope) }
     var displayName: String { account?.displayName ?? origin }
 }
 
@@ -118,7 +122,8 @@ final class DahliaCloudAccountController {
                     record: record,
                     account: credential?.account,
                     isCloud: isCloudOrigin(record.origin),
-                    vaultCount: vaultCounts[record.id, default: 0]
+                    vaultCount: vaultCounts[record.id, default: 0],
+                    grantedScopes: credential?.grantedScopes ?? []
                 ))
             }
             connections = loadedConnections
@@ -375,6 +380,8 @@ final class DahliaCloudAccountController {
                 }
             }
             try await service(for: connection.record).deleteLocalCredential()
+            try await GoogleSignInAdapter.deleteDriveSession(scope: .dahlia(connectionID))
+            AppSettings.shared.clearGoogleDriveExportFolder(scope: .dahlia(connectionID))
             try await repository.deleteDahliaAccountConnection(id: connectionID)
             try codexHomeLocator.removeHome(connectionID: connectionID)
             services.removeValue(forKey: connectionID)

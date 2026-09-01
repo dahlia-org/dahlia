@@ -17,6 +17,7 @@ final class GoogleDriveStore: ObservableObject {
     @Published private(set) var account: GoogleCalendarAccount?
     @Published private(set) var lastErrorMessage: String?
     @Published private(set) var exportFolderErrorMessage: String?
+    @Published private(set) var accountScope: AppAccountScope
 
     var isConfigured: Bool {
         signInProvider.isConfigured
@@ -30,41 +31,74 @@ final class GoogleDriveStore: ObservableObject {
         state == .loading
     }
 
-    private let signInProvider: any GoogleSignInProviding
-    private let exportFolderConfiguration: any GoogleDriveExportFolderConfiguring
+    private var signInProvider: any GoogleSignInProviding
+    private var exportFolderConfiguration: any GoogleDriveExportFolderConfiguring
     private let settings: any GoogleDriveExportFolderSettingsProviding
     private let presentingWindowProvider: @MainActor () -> NSWindow?
     private var currentSession: GoogleSession?
     private var didAttemptRestore = false
     private var authChangeObserver: GoogleAuthSessionObserver?
+    private let supportsAccountSwitching: Bool
+    private var activationGeneration = 0
 
     init(
-        signInProvider: any GoogleSignInProviding = GoogleSignInAdapter(sessionKind: .drive),
-        exportFolderConfiguration: any GoogleDriveExportFolderConfiguring = GoogleDriveExportFolderConfigurationService.shared,
+        scope: AppAccountScope = .local,
+        signInProvider: (any GoogleSignInProviding)? = nil,
+        exportFolderConfiguration: (any GoogleDriveExportFolderConfiguring)? = nil,
         settings: any GoogleDriveExportFolderSettingsProviding = AppSettings.shared,
         presentingWindowProvider: @escaping @MainActor () -> NSWindow? = { NSApp.keyWindow ?? NSApp.mainWindow }
     ) {
-        self.signInProvider = signInProvider
+        self.accountScope = scope
+        self.signInProvider = signInProvider ?? GoogleSignInAdapter(sessionKind: .drive(scope))
         self.exportFolderConfiguration = exportFolderConfiguration
+            ?? GoogleDriveExportFolderConfigurationService(settings: settings, scope: scope)
         self.settings = settings
+        supportsAccountSwitching = signInProvider == nil && exportFolderConfiguration == nil
         self.presentingWindowProvider = presentingWindowProvider
-        let sessionDidChangeNotification = signInProvider.sessionDidChangeNotification
-        self.state = signInProvider.isConfigured ? .signedOut : .unconfigured
+        let sessionDidChangeNotification = self.signInProvider.sessionDidChangeNotification
+        self.state = self.signInProvider.isConfigured ? .signedOut : .unconfigured
         authChangeObserver = GoogleAuthSessionObserver(notificationName: sessionDidChangeNotification) { [weak self] forceSignOut in
             await self?.handleAuthSessionChanged(forceSignOut: forceSignOut)
         }
     }
 
+    func activate(scope: AppAccountScope) async {
+        guard accountScope != scope else {
+            await restoreSessionIfNeeded()
+            return
+        }
+        guard supportsAccountSwitching else { return }
+        activationGeneration += 1
+        accountScope = scope
+        signInProvider = GoogleSignInAdapter(sessionKind: .drive(scope))
+        exportFolderConfiguration = GoogleDriveExportFolderConfigurationService(settings: settings, scope: scope)
+        authChangeObserver = GoogleAuthSessionObserver(
+            notificationName: signInProvider.sessionDidChangeNotification
+        ) { [weak self] forceSignOut in
+            await self?.handleAuthSessionChanged(forceSignOut: forceSignOut)
+        }
+        didAttemptRestore = false
+        lastErrorMessage = nil
+        exportFolderErrorMessage = nil
+        clearRuntimeState()
+        recomputeState()
+        await restoreSessionIfNeeded()
+    }
+
     func restoreSessionIfNeeded() async {
         guard !didAttemptRestore else { return }
         didAttemptRestore = true
+        let generation = activationGeneration
+        let provider = signInProvider
+        let configuration = exportFolderConfiguration
 
         guard isConfigured else {
             transitionToUnconfiguredState()
             return
         }
 
-        guard await signInProvider.hasPreviousSignIn else {
+        guard await provider.hasPreviousSignIn else {
+            guard generation == activationGeneration else { return }
             lastErrorMessage = nil
             recomputeState()
             return
@@ -73,13 +107,20 @@ final class GoogleDriveStore: ObservableObject {
         lastErrorMessage = nil
         state = .loading
         do {
-            let session = try await signInProvider.restorePreviousSignIn()
+            let session = try await provider.restorePreviousSignIn()
+            guard generation == activationGeneration else { return }
             applySession(session)
-            await configureExportFolderIfNeeded(for: session)
+            await configureExportFolderIfNeeded(
+                for: session,
+                generation: generation,
+                configuration: configuration
+            )
         } catch GoogleSignInError.noPreviousSignIn {
+            guard generation == activationGeneration else { return }
             clearRuntimeState()
             recomputeState()
         } catch {
+            guard generation == activationGeneration else { return }
             didAttemptRestore = false
             handle(error)
             recomputeStateIfNeeded()
@@ -99,27 +140,44 @@ final class GoogleDriveStore: ObservableObject {
 
         lastErrorMessage = nil
         state = .loading
+        let generation = activationGeneration
+        let provider = signInProvider
+        let configuration = exportFolderConfiguration
         do {
-            let session = try await signInProvider.signIn(
+            let session = try await provider.signIn(
                 withPresentingWindow: presentingWindow,
                 requestedScopes: GoogleOAuthScope.drive
             )
+            guard generation == activationGeneration else { return }
             applySession(session)
-            await configureExportFolderIfNeeded(for: session)
+            await configureExportFolderIfNeeded(
+                for: session,
+                generation: generation,
+                configuration: configuration
+            )
         } catch {
+            guard generation == activationGeneration else { return }
             handle(error)
             recomputeStateIfNeeded()
         }
     }
 
     func disconnect() async {
+        let generation = activationGeneration
+        let scope = accountScope
+        let provider = signInProvider
         state = .loading
+        var disconnectError: Error?
         do {
-            try await signInProvider.disconnect()
+            try await provider.disconnect()
         } catch {
-            handle(error)
+            disconnectError = error
         }
-        settings.clearGoogleDriveExportFolder()
+        settings.clearGoogleDriveExportFolder(scope: scope)
+        guard generation == activationGeneration, accountScope == scope else { return }
+        if let disconnectError {
+            handle(disconnectError)
+        }
         clearRuntimeState()
         exportFolderErrorMessage = nil
         recomputeState()
@@ -127,10 +185,18 @@ final class GoogleDriveStore: ObservableObject {
 
     func refreshExportFolderConfiguration() async {
         guard isAuthorized else { return }
+        let generation = activationGeneration
+        let provider = signInProvider
+        let configuration = exportFolderConfiguration
         do {
-            let session = try await refreshedAuthorizedSession()
-            await configureExportFolderIfNeeded(for: session)
+            let session = try await refreshedAuthorizedSession(using: provider, generation: generation)
+            await configureExportFolderIfNeeded(
+                for: session,
+                generation: generation,
+                configuration: configuration
+            )
         } catch {
+            guard generation == activationGeneration else { return }
             recordExportFolderError(error)
         }
     }
@@ -138,14 +204,25 @@ final class GoogleDriveStore: ObservableObject {
     func performAuthorizedOperation<T: Sendable>(
         _ operation: @Sendable (GoogleSession) async throws -> T
     ) async throws -> T {
-        let session = try await refreshedAuthorizedSession()
+        let generation = activationGeneration
+        let provider = signInProvider
+        let session = try await refreshedAuthorizedSession(using: provider, generation: generation)
         state = .loading
-        defer { recomputeState() }
+        defer {
+            if generation == activationGeneration {
+                recomputeState()
+            }
+        }
         return try await operation(session)
     }
 
-    private func refreshedAuthorizedSession() async throws -> GoogleSession {
-        guard let session = try await signInProvider.refreshCurrentSession() ?? currentSession,
+    private func refreshedAuthorizedSession(
+        using provider: any GoogleSignInProviding,
+        generation: Int
+    ) async throws -> GoogleSession {
+        let refreshedSession = try await provider.refreshCurrentSession()
+        guard generation == activationGeneration else { throw CancellationError() }
+        guard let session = refreshedSession ?? currentSession,
               session.hasScopes(GoogleOAuthScope.drive) else {
             throw GoogleSignInError.noPreviousSignIn
         }
@@ -165,14 +242,24 @@ final class GoogleDriveStore: ObservableObject {
         if account != nil { account = nil }
     }
 
-    private func configureExportFolderIfNeeded(for session: GoogleSession) async {
+    private func configureExportFolderIfNeeded(
+        for session: GoogleSession,
+        generation: Int,
+        configuration: any GoogleDriveExportFolderConfiguring
+    ) async {
         guard session.hasScopes(GoogleOAuthScope.drive) else { return }
         state = .loading
-        defer { recomputeState() }
+        defer {
+            if generation == activationGeneration {
+                recomputeState()
+            }
+        }
         do {
-            try await exportFolderConfiguration.configureIfNeeded(session: session)
+            try await configuration.configureIfNeeded(session: session)
+            guard generation == activationGeneration else { return }
             exportFolderErrorMessage = nil
         } catch {
+            guard generation == activationGeneration else { return }
             recordExportFolderError(error)
         }
     }
@@ -218,14 +305,19 @@ final class GoogleDriveStore: ObservableObject {
     }
 
     private func handleAuthSessionChanged(forceSignOut: Bool) async {
+        let generation = activationGeneration
+        let scope = accountScope
+        let provider = signInProvider
         didAttemptRestore = false
-        guard !forceSignOut, await signInProvider.hasPreviousSignIn else {
-            settings.clearGoogleDriveExportFolder()
+        guard !forceSignOut, await provider.hasPreviousSignIn else {
+            guard generation == activationGeneration, accountScope == scope else { return }
+            settings.clearGoogleDriveExportFolder(scope: scope)
             clearRuntimeState()
             exportFolderErrorMessage = nil
             recomputeState()
             return
         }
+        guard generation == activationGeneration, accountScope == scope else { return }
         await restoreSessionIfNeeded()
     }
 }

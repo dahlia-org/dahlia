@@ -75,6 +75,62 @@ import GRDB
         }
 
         @Test
+        func artifactExportDeletesANewArtifactWhenSummaryChangesDuringUpload() async throws {
+            let fixture = try SummaryGenerationFixture()
+            defer { fixture.removeFiles() }
+            let exporter = BlockingArtifactSummaryExporter()
+            let deleter = ArtifactDeleteRecorder()
+            let viewModel = CaptionViewModel(
+                artifactSummaryExporter: exporter.export,
+                artifactSummaryDeleter: { url, connectionID, origin in
+                    await deleter.delete(url: url, connectionID: connectionID, origin: origin)
+                }
+            )
+            let repository = MeetingRepository(dbQueue: fixture.database.dbQueue)
+            try repository.applyGeneratedSummary(
+                toMeetingId: fixture.first.id,
+                document: SummaryDocument(title: "Original", sections: []),
+                tags: []
+            )
+            await fixture.select(fixture.first, in: viewModel, note: "note")
+            #expect(await waitUntil { viewModel.currentSummaryDocument?.title == "Original" })
+            let connection = DahliaAccountConnection(
+                record: DahliaAccountConnectionRecord(
+                    id: .v7(),
+                    origin: "https://dahlia.example",
+                    clientID: "desktop",
+                    createdAt: .now
+                ),
+                account: DahliaCloudAccount(id: "user", name: "User", email: nil),
+                isCloud: false,
+                grantedScopes: [DahliaArtifactExportService.requiredScope]
+            )
+            let artifactURL = try #require(URL(
+                string: "https://dahlia.example/api/v1/artifacts/019cc4dd-e5c5-7bd4-94e0-98df9cc40db9"
+            ))
+
+            let export = Task { await viewModel.exportCurrentSummaryToDahliaArtifact(connection: connection) }
+            await exporter.waitForCall()
+            try repository.applyGeneratedSummary(
+                toMeetingId: fixture.first.id,
+                document: SummaryDocument(title: "Corrected", sections: []),
+                tags: []
+            )
+            await exporter.complete(result: DahliaArtifactExportResult(url: artifactURL, wasCreated: true))
+
+            #expect(await export.value == false)
+            #expect(await deleter.deletedURLs == [artifactURL])
+            let artifactExport = try await fixture.database.dbQueue.read { db in
+                try SummaryExportRecord.fetchOne(
+                    meetingId: fixture.first.id,
+                    type: .dahliaArtifact,
+                    in: db
+                )
+            }
+            #expect(artifactExport == nil)
+        }
+
+        @Test
         func manualSummaryUsesProjectSelectedBeforeGeneration() async throws {
             let fixture = try SummaryGenerationFixture()
             defer { fixture.removeFiles() }
@@ -1073,6 +1129,37 @@ import GRDB
         func complete(fileId: String) {
             continuation?.resume(returning: fileId)
             continuation = nil
+        }
+    }
+
+    private actor BlockingArtifactSummaryExporter {
+        private var continuation: CheckedContinuation<DahliaArtifactExportResult, Never>?
+        private var callWaiter: CheckedContinuation<Void, Never>?
+
+        func export(_: String, _: UUID, _: String, _: URL?) async throws -> DahliaArtifactExportResult {
+            await withCheckedContinuation { continuation in
+                self.continuation = continuation
+                callWaiter?.resume()
+                callWaiter = nil
+            }
+        }
+
+        func waitForCall() async {
+            if continuation != nil { return }
+            await withCheckedContinuation { callWaiter = $0 }
+        }
+
+        func complete(result: DahliaArtifactExportResult) {
+            continuation?.resume(returning: result)
+            continuation = nil
+        }
+    }
+
+    private actor ArtifactDeleteRecorder {
+        private(set) var deletedURLs: [URL] = []
+
+        func delete(url: URL, connectionID _: UUID, origin _: String) {
+            deletedURLs.append(url)
         }
     }
 

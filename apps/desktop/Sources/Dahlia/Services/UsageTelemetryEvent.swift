@@ -76,6 +76,7 @@ enum UsageTelemetryEvent: Equatable, Sendable {
     enum ExportDestination: String, CaseIterable, Sendable {
         case vault
         case googleDocs
+        case dahliaArtifacts
         case localFiles
     }
 

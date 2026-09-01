@@ -292,19 +292,19 @@ import Foundation
     private final class MockGoogleDriveExportFolderSettings: GoogleDriveExportFolderSettingsProviding {
         private var folderIDs: [String: String] = [:]
 
-        func googleDriveExportFolderID(forAccountID accountID: String) -> String? {
+        func googleDriveExportFolderID(forAccountID accountID: String, scope _: AppAccountScope) -> String? {
             folderIDs[accountID]
         }
 
-        func setGoogleDriveExportFolder(id: String, accountID: String) {
+        func setGoogleDriveExportFolder(id: String, accountID: String, scope _: AppAccountScope) {
             folderIDs[accountID] = id
         }
 
-        func clearGoogleDriveExportFolderID(forAccountID accountID: String) {
+        func clearGoogleDriveExportFolderID(forAccountID accountID: String, scope _: AppAccountScope) {
             folderIDs.removeValue(forKey: accountID)
         }
 
-        func clearGoogleDriveExportFolder() {
+        func clearGoogleDriveExportFolder(scope _: AppAccountScope) {
             folderIDs.removeAll()
         }
     }

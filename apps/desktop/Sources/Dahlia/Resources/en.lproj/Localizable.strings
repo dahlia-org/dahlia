@@ -732,6 +732,12 @@
 "Share" = "Share";
 "Share Summary" = "Share Summary";
 "Export to Google Docs" = "Export to Google Docs";
+"Export to Dahlia Artifacts" = "Export to Dahlia Artifacts";
+"Reconnect to Export to Dahlia Artifacts" = "Reconnect to Export to Dahlia Artifacts";
+"Exported privately to Dahlia Artifacts." = "Exported privately to Dahlia Artifacts.";
+"Could not export to Dahlia Artifacts." = "Could not export to Dahlia Artifacts.";
+"Dahlia Server returned an unexpected response." = "Dahlia Server returned an unexpected response.";
+"Dahlia Artifacts export failed (HTTP %lld)." = "Dahlia Artifacts export failed (HTTP %lld).";
 "Could not export the summary to Google Docs." = "Could not export the summary to Google Docs.";
 "Copy for Google Docs" = "Copy for Google Docs";
 "Copy for Slack" = "Copy for Slack";
@@ -865,7 +871,7 @@
 "Google Drive" = "Google Drive";
 "Notion" = "Notion";
 "Export summaries to Notion." = "Export summaries to Notion.";
-"Connect a Google account to export summaries, including images, to Google Docs from the Share menu." = "Connect a Google account to export summaries, including images, to Google Docs from the Share menu.";
+"The Google Drive connection is saved for the current Dahlia or Local Account. Export summaries, including images, to Google Docs from the Share menu." = "The Google Drive connection is saved for the current Dahlia or Local Account. Export summaries, including images, to Google Docs from the Share menu.";
 "Sign in with Google to export summaries to Google Docs." = "Sign in with Google to export summaries to Google Docs.";
 "Google Docs connected" = "Google Docs connected";
 "Export Folder" = "Export Folder";
@@ -1602,7 +1608,7 @@
 "Or continue without signing in" = "Or continue without signing in";
 "Switching AI account…" = "Switching AI account…";
 "Choose the AI account used by this Vault." = "Choose the AI account used by this Vault.";
-"This account is used by %lld Vaults. Those Vaults will use the Local Account, and this account's Codex data will be deleted." = "This account is used by %lld Vaults. Those Vaults will use the Local Account, and this account's Codex data will be deleted.";
+"This account is used by %lld Vaults. Those Vaults will use the Local Account, and this account's Codex and Google Drive connection data will be deleted." = "This account is used by %lld Vaults. Those Vaults will use the Local Account, and this account's Codex and Google Drive connection data will be deleted.";
 "Dahlia stores meeting data and generated files in a local Vault." = "Dahlia stores meeting data and generated files in a local Vault.";
 "Choose the languages Dahlia should recognize and the primary language for AI output." = "Choose the languages Dahlia should recognize and the primary language for AI output.";
 "Recognition and OCR Languages" = "Recognition and OCR Languages";

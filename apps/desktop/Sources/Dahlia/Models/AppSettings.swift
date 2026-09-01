@@ -141,6 +141,7 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
         Self.migrateLiveSubtitleLocaleSetting(in: .standard)
         Self.migrateAppLanguageSettings(in: .standard)
         Self.migrateBatchAudioRetentionPeriodSetting(in: .standard)
+        migrateGoogleDriveExportFolderSetting()
         meetingNotificationPresentationRawValue = meetingNotificationPresentation.rawValue
         batchTranscriptionStallTimeoutRawValue = batchTranscriptionStallTimeout.rawValue
     }
@@ -183,19 +184,27 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
     @AppStorage("googleDriveExportFolderName") private var storedGoogleDriveExportFolderName = AppSettings.defaultGoogleDriveExportFolderName
     @AppStorage("googleDriveExportFolderID") private var googleDriveExportFolderID = ""
     @AppStorage("googleDriveExportFolderAccountID") private var googleDriveExportFolderAccountID = ""
+    @AppStorage("googleDriveExportFoldersByAccountScope") private var googleDriveExportFoldersByAccountScope = "{}"
 
-    func googleDriveExportFolderID(forAccountID accountID: String) -> String? {
-        Self.validatedGoogleDriveExportFolderID(
-            storedID: googleDriveExportFolderID,
-            storedAccountID: googleDriveExportFolderAccountID,
-            storedFolderName: storedGoogleDriveExportFolderName,
+    private struct GoogleDriveExportFolder: Codable {
+        let id: String
+        let accountID: String
+        let name: String
+    }
+
+    func googleDriveExportFolderID(forAccountID accountID: String, scope: AppAccountScope) -> String? {
+        guard let folder = googleDriveExportFolders[scope.storageKey], folder.accountID == accountID else { return nil }
+        return Self.validatedGoogleDriveExportFolderID(
+            storedID: folder.id,
+            storedAccountID: folder.accountID,
+            storedFolderName: folder.name,
             accountID: accountID
         )
     }
 
-    func googleDriveExportFolderName(forAccountID accountID: String) -> String? {
-        guard googleDriveExportFolderID(forAccountID: accountID) != nil else { return nil }
-        return storedGoogleDriveExportFolderName
+    func googleDriveExportFolderName(forAccountID accountID: String, scope: AppAccountScope = .local) -> String? {
+        guard googleDriveExportFolderID(forAccountID: accountID, scope: scope) != nil else { return nil }
+        return googleDriveExportFolders[scope.storageKey]?.name
     }
 
     nonisolated static func validatedGoogleDriveExportFolderID(
@@ -210,8 +219,8 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
         return storedID.nilIfBlank
     }
 
-    func googleDriveExportFolderURL(forAccountID accountID: String) -> URL? {
-        guard let folderID = googleDriveExportFolderID(forAccountID: accountID) else { return nil }
+    func googleDriveExportFolderURL(forAccountID accountID: String, scope: AppAccountScope = .local) -> URL? {
+        guard let folderID = googleDriveExportFolderID(forAccountID: accountID, scope: scope) else { return nil }
         return Self.googleDriveExportFolderURL(folderID: folderID)
     }
 
@@ -223,19 +232,50 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
 
     func setGoogleDriveExportFolder(
         id: String,
-        accountID: String
+        accountID: String,
+        scope: AppAccountScope
     ) {
-        storedGoogleDriveExportFolderName = Self.defaultGoogleDriveExportFolderName
-        googleDriveExportFolderID = id
-        googleDriveExportFolderAccountID = accountID
+        var folders = googleDriveExportFolders
+        folders[scope.storageKey] = GoogleDriveExportFolder(
+            id: id,
+            accountID: accountID,
+            name: Self.defaultGoogleDriveExportFolderName
+        )
+        googleDriveExportFolders = folders
     }
 
-    func clearGoogleDriveExportFolderID(forAccountID accountID: String) {
-        guard googleDriveExportFolderAccountID == accountID else { return }
-        googleDriveExportFolderID = ""
+    func clearGoogleDriveExportFolderID(forAccountID accountID: String, scope: AppAccountScope) {
+        guard googleDriveExportFolders[scope.storageKey]?.accountID == accountID else { return }
+        clearGoogleDriveExportFolder(scope: scope)
     }
 
-    func clearGoogleDriveExportFolder() {
+    func clearGoogleDriveExportFolder(scope: AppAccountScope) {
+        var folders = googleDriveExportFolders
+        folders.removeValue(forKey: scope.storageKey)
+        googleDriveExportFolders = folders
+    }
+
+    private var googleDriveExportFolders: [String: GoogleDriveExportFolder] {
+        get {
+            guard let data = googleDriveExportFoldersByAccountScope.data(using: .utf8) else { return [:] }
+            return (try? JSONDecoder().decode([String: GoogleDriveExportFolder].self, from: data)) ?? [:]
+        }
+        set {
+            guard let data = try? JSONEncoder().encode(newValue),
+                  let value = String(data: data, encoding: .utf8) else { return }
+            googleDriveExportFoldersByAccountScope = value
+        }
+    }
+
+    private func migrateGoogleDriveExportFolderSetting() {
+        guard googleDriveExportFolders.isEmpty,
+              let id = Self.validatedGoogleDriveExportFolderID(
+                  storedID: googleDriveExportFolderID,
+                  storedAccountID: googleDriveExportFolderAccountID,
+                  storedFolderName: storedGoogleDriveExportFolderName,
+                  accountID: googleDriveExportFolderAccountID
+              ) else { return }
+        setGoogleDriveExportFolder(id: id, accountID: googleDriveExportFolderAccountID, scope: .local)
         googleDriveExportFolderID = ""
         googleDriveExportFolderAccountID = ""
     }

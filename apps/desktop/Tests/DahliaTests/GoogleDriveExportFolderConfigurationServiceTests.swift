@@ -7,6 +7,7 @@ import Foundation
     import Testing
 
     @MainActor
+    @Suite(.serialized)
     struct GoogleDriveExportFolderConfigurationServiceTests {
         @Test
         func initialConfigurationStoresDahliaFolderForConnectedAccount() async throws {
@@ -26,6 +27,65 @@ import Foundation
 
             #expect(url?.absoluteString == "https://drive.google.com/drive/folders/folder-1_abc")
             #expect(AppSettings.googleDriveExportFolderURL(folderID: "") == nil)
+        }
+
+        @Test
+        func exportFoldersAreIsolatedByAppAccount() {
+            let defaults = UserDefaults.standard
+            let key = "googleDriveExportFoldersByAccountScope"
+            let previous = defaults.object(forKey: key)
+            defer {
+                if let previous {
+                    defaults.set(previous, forKey: key)
+                } else {
+                    defaults.removeObject(forKey: key)
+                }
+            }
+            defaults.set("{}", forKey: key)
+            let settings = AppSettings()
+            let first = AppAccountScope.dahlia(UUID.v7())
+            let second = AppAccountScope.dahlia(UUID.v7())
+
+            settings.setGoogleDriveExportFolder(id: "local-folder", accountID: "local-user", scope: .local)
+            settings.setGoogleDriveExportFolder(id: "first-folder", accountID: "first-user", scope: first)
+            settings.setGoogleDriveExportFolder(id: "second-folder", accountID: "second-user", scope: second)
+
+            #expect(settings.googleDriveExportFolderID(forAccountID: "local-user", scope: .local) == "local-folder")
+            #expect(settings.googleDriveExportFolderID(forAccountID: "first-user", scope: first) == "first-folder")
+            #expect(settings.googleDriveExportFolderID(forAccountID: "second-user", scope: second) == "second-folder")
+            #expect(settings.googleDriveExportFolderID(forAccountID: "first-user", scope: second) == nil)
+        }
+
+        @Test
+        func legacyExportFolderMigratesToLocalAccount() {
+            let defaults = UserDefaults.standard
+            let keys = [
+                "googleDriveExportFoldersByAccountScope",
+                "googleDriveExportFolderName",
+                "googleDriveExportFolderID",
+                "googleDriveExportFolderAccountID",
+            ]
+            var previous: [String: Any] = [:]
+            for key in keys {
+                previous[key] = defaults.object(forKey: key)
+            }
+            defer {
+                for key in keys {
+                    if let value = previous[key] {
+                        defaults.set(value, forKey: key)
+                    } else {
+                        defaults.removeObject(forKey: key)
+                    }
+                }
+            }
+            defaults.set("{}", forKey: keys[0])
+            defaults.set("Dahlia", forKey: keys[1])
+            defaults.set("legacy-folder", forKey: keys[2])
+            defaults.set("legacy-user", forKey: keys[3])
+
+            let settings = AppSettings()
+
+            #expect(settings.googleDriveExportFolderID(forAccountID: "legacy-user", scope: .local) == "legacy-folder")
         }
 
         @Test
@@ -192,21 +252,21 @@ import Foundation
         private var folderID: String?
         private var accountID: String?
 
-        func googleDriveExportFolderID(forAccountID accountID: String) -> String? {
+        func googleDriveExportFolderID(forAccountID accountID: String, scope _: AppAccountScope) -> String? {
             self.accountID == accountID ? folderID : nil
         }
 
-        func setGoogleDriveExportFolder(id: String, accountID: String) {
+        func setGoogleDriveExportFolder(id: String, accountID: String, scope _: AppAccountScope) {
             folderID = id
             self.accountID = accountID
         }
 
-        func clearGoogleDriveExportFolderID(forAccountID accountID: String) {
+        func clearGoogleDriveExportFolderID(forAccountID accountID: String, scope _: AppAccountScope) {
             guard self.accountID == accountID else { return }
             folderID = nil
         }
 
-        func clearGoogleDriveExportFolder() {
+        func clearGoogleDriveExportFolder(scope _: AppAccountScope) {
             folderID = nil
             accountID = nil
         }

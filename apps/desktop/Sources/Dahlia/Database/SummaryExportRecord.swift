@@ -6,7 +6,7 @@ struct SummaryExportRecord: Codable, FetchableRecord, PersistableRecord, Equatab
 
     var meetingId: UUID
     var type: SummaryExportType
-    /// `vault` は Vault 相対 URL、`google_docs` は完全な URL。
+    /// `vault` は Vault 相対 URL、それ以外は完全な URL。
     var url: String
     var createdAt: Date
     var updatedAt: Date

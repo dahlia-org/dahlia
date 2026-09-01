@@ -7,6 +7,11 @@ struct CloudStorageSettingsView: View {
     @State private var exportFolderAlertMessage = ""
     @State private var isShowingExportFolderAlert = false
     @State private var googleOAuthConsent = GoogleOAuthConsentState()
+    @State private var vaultSettings = VaultAISettingsModel.shared
+
+    private var accountScope: AppAccountScope {
+        AppAccountScope(connectionID: vaultSettings.accountConnectionID)
+    }
 
     var body: some View {
         Form {
@@ -67,8 +72,8 @@ struct CloudStorageSettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .task {
-            await driveStore.restoreSessionIfNeeded()
+        .task(id: accountScope) {
+            await driveStore.activate(scope: accountScope)
             await driveStore.refreshExportFolderConfiguration()
             if let message = driveStore.exportFolderErrorMessage {
                 presentExportFolderError(message)
@@ -146,12 +151,12 @@ struct CloudStorageSettingsView: View {
 
     private var exportFolderURL: URL? {
         guard let accountID = driveStore.account?.id else { return nil }
-        return settings.googleDriveExportFolderURL(forAccountID: accountID)
+        return settings.googleDriveExportFolderURL(forAccountID: accountID, scope: accountScope)
     }
 
     private var exportFolderName: String {
         guard let accountID = driveStore.account?.id else { return AppSettings.defaultGoogleDriveExportFolderName }
-        return settings.googleDriveExportFolderName(forAccountID: accountID)
+        return settings.googleDriveExportFolderName(forAccountID: accountID, scope: accountScope)
             ?? AppSettings.defaultGoogleDriveExportFolderName
     }
 

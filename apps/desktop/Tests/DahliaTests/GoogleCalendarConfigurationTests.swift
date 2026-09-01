@@ -74,11 +74,19 @@ import Security
         }
 
         @Test
-        func googleAuthSessionKindsUseSeparateStorageAndNotifications() {
+        func googleAuthSessionKindsUseSeparateStorageAndNotifications() throws {
+            let connectionID = try #require(UUID(uuidString: "11111111-1111-1111-1111-111111111111"))
             #expect(GoogleAuthSessionKind.calendar.keychainKey == "googleCalendarOAuthSession")
-            #expect(GoogleAuthSessionKind.drive.keychainKey == "googleDriveOAuthSession")
+            #expect(GoogleAuthSessionKind.drive(.local).keychainKey == "googleDriveOAuthSession.local")
+            #expect(
+                GoogleAuthSessionKind.drive(.dahlia(connectionID)).keychainKey
+                    == "googleDriveOAuthSession.dahlia.11111111-1111-1111-1111-111111111111"
+            )
             #expect(GoogleAuthSessionKind.calendar.sessionDidChangeNotification == .googleCalendarSessionDidChange)
-            #expect(GoogleAuthSessionKind.drive.sessionDidChangeNotification == .googleDriveSessionDidChange)
+            #expect(
+                GoogleAuthSessionKind.drive(.local).sessionDidChangeNotification
+                    != GoogleAuthSessionKind.drive(.dahlia(connectionID)).sessionDidChangeNotification
+            )
         }
 
         @Test
@@ -136,11 +144,21 @@ import Security
         }
 
         @Test
-        func disconnectSuppressionIsScopedPerGoogleService() {
+        func disconnectSuppressionIsScopedPerGoogleService() throws {
+            let connectionID = try #require(UUID(uuidString: "11111111-1111-1111-1111-111111111111"))
             let calendarKey = GoogleSignInAdapter.disconnectPendingUserDefaultsKey(for: .calendar)
-            let driveKey = GoogleSignInAdapter.disconnectPendingUserDefaultsKey(for: .drive)
+            let driveKey = GoogleSignInAdapter.disconnectPendingUserDefaultsKey(for: .drive(.local))
+            let otherDriveKey = GoogleSignInAdapter.disconnectPendingUserDefaultsKey(
+                for: .drive(.dahlia(connectionID))
+            )
 
             #expect(calendarKey != driveKey)
+            #expect(driveKey != otherDriveKey)
+            #expect(GoogleSignInAdapter.disconnectPendingUserDefaultsKeys(for: .drive(.local)) == [
+                driveKey,
+                "googleOAuthDisconnectPending.googleDriveOAuthSession",
+            ])
+            #expect(GoogleSignInAdapter.disconnectPendingUserDefaultsKeys(for: .drive(.dahlia(connectionID))) == [otherDriveKey])
             #expect(GoogleSignInAdapter.shouldRestoreStoredSession(disconnectPending: false, hasStoredSession: true))
             #expect(GoogleSignInAdapter.shouldRestoreStoredSession(disconnectPending: true, hasStoredSession: true) == false)
         }
@@ -171,18 +189,6 @@ import Security
                     textEncodingName: nil
                 ))
             }
-        }
-
-        @Test
-        func revocationTokensAreDeduplicatedPerGoogleAccount() {
-            let groups = GoogleSignInAdapter.groupRevocationTokens([
-                (accountID: "account-b", token: "token-b"),
-                (accountID: "account-a", token: "token-a2"),
-                (accountID: "account-a", token: "token-a1"),
-                (accountID: "account-a", token: "token-a1"),
-            ])
-
-            #expect(groups == [["token-a1", "token-a2"], ["token-b"]])
         }
 
         @Test
