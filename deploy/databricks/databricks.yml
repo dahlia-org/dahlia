@@ -28,6 +28,12 @@ variables:
   volume_name:
     description: Managed Volume used for Dahlia storage.
     default: storage
+  legacy_artifact_catalog:
+    description: Existing production catalog retained until artifact bytes are migrated.
+    default: main
+  legacy_artifact_volume_name:
+    description: Existing production Volume retained until artifact bytes are migrated.
+    default: dahlia_artifacts
 
 targets:
   dev:
@@ -50,5 +56,26 @@ targets:
     resources:
       postgres_projects:
         dahlia_database_project:
+          lifecycle:
+            prevent_destroy: true
+      schemas:
+        dahlia:
+          catalog_name: ${var.legacy_artifact_catalog}
+          name: dahlia
+          lifecycle:
+            prevent_destroy: true
+      volumes:
+        dahlia_artifacts:
+          catalog_name: ${var.legacy_artifact_catalog}
+          schema_name: default
+          name: ${var.legacy_artifact_volume_name}
+          lifecycle:
+            prevent_destroy: true
+        artifacts:
+          catalog_name: ${var.legacy_artifact_catalog}
+          schema_name: ${resources.schemas.dahlia.name}
+          name: artifacts
+          volume_type: MANAGED
+          comment: Legacy Dahlia Server artifact bytes
           lifecycle:
             prevent_destroy: true
