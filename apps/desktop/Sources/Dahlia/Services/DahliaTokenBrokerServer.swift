@@ -1,39 +1,82 @@
 import DahliaRuntimeSupport
 import Darwin
 import Foundation
-import Security
 import Synchronization
 
 final class DahliaTokenBrokerAuthorization: Sendable {
     static let shared = DahliaTokenBrokerAuthorization()
 
+    struct Client: Sendable {
+        let executableURL: URL
+        let parentPID: pid_t
+    }
+
+    typealias ClientResolver = @Sendable (Int32) -> Client?
+
     private struct Grant {
-        let capability: String
+        let appServerPID: pid_t
         let connectionID: UUID
+        let helperURL: URL
     }
 
     private let grants = Mutex<[String: Grant]>([:])
+    private let clientResolver: ClientResolver
 
-    func rotate(profile: DahliaRuntimeProfile, connectionID: UUID) throws -> String {
-        var bytes = [UInt8](repeating: 0, count: 32)
-        guard SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes) == errSecSuccess else {
-            throw POSIXError(.EIO)
-        }
-        let capability = Data(bytes).base64EncodedString()
-        grants.withLock { $0[profile.rawValue] = Grant(capability: capability, connectionID: connectionID) }
-        return capability
+    init() {
+        clientResolver = Self.resolveClient
     }
 
-    func matches(_ candidate: String, profile: DahliaRuntimeProfile, connectionID: UUID) -> Bool {
-        guard let grant = grants.withLock({ $0[profile.rawValue] }), grant.connectionID == connectionID else { return false }
-        let candidateBytes = Array(candidate.utf8)
-        let expectedBytes = Array(grant.capability.utf8)
-        guard candidateBytes.count == expectedBytes.count else { return false }
-        return zip(candidateBytes, expectedBytes).reduce(UInt8(0)) { $0 | ($1.0 ^ $1.1) } == 0
+    init(clientResolver: @escaping ClientResolver) {
+        self.clientResolver = clientResolver
+    }
+
+    func register(profile: DahliaRuntimeProfile, connectionID: UUID, appServerPID: pid_t, helperURL: URL) {
+        grants.withLock {
+            $0[profile.rawValue] = Grant(
+                appServerPID: appServerPID,
+                connectionID: connectionID,
+                helperURL: helperURL.resolvingSymlinksInPath()
+            )
+        }
+    }
+
+    func authorizes(_ descriptor: Int32, profile: DahliaRuntimeProfile, connectionID: UUID) -> Bool {
+        guard let grant = grants.withLock({ $0[profile.rawValue] }),
+              grant.connectionID == connectionID,
+              let client = clientResolver(descriptor)
+        else { return false }
+        return client.parentPID == grant.appServerPID
+            && client.executableURL.resolvingSymlinksInPath() == grant.helperURL
     }
 
     func clear(profile: DahliaRuntimeProfile) {
         _ = grants.withLock { $0.removeValue(forKey: profile.rawValue) }
+    }
+
+    private static func resolveClient(descriptor: Int32) -> Client? {
+        var peerPID: pid_t = 0
+        var peerPIDLength = socklen_t(MemoryLayout<pid_t>.size)
+        guard getsockopt(descriptor, SOL_LOCAL, LOCAL_PEERPID, &peerPID, &peerPIDLength) == 0 else { return nil }
+
+        var info = proc_bsdinfo()
+        guard proc_pidinfo(
+            peerPID,
+            PROC_PIDTBSDINFO,
+            0,
+            &info,
+            Int32(MemoryLayout<proc_bsdinfo>.size)
+        ) == MemoryLayout<proc_bsdinfo>.size else { return nil }
+
+        var path = [CChar](repeating: 0, count: Int(PATH_MAX))
+        let pathLength = proc_pidpath(peerPID, &path, UInt32(path.count))
+        guard pathLength > 0 else { return nil }
+        return Client(
+            executableURL: URL(filePath: String(
+                decoding: path.prefix(Int(pathLength)).map { UInt8(bitPattern: $0) },
+                as: UTF8.self
+            )),
+            parentPID: pid_t(info.pbi_ppid)
+        )
     }
 }
 
@@ -152,11 +195,7 @@ final class DahliaTokenBrokerServer: @unchecked Sendable {
         do {
             let data = try DahliaTokenBrokerProtocol.readLine(from: descriptor)
             let request = try JSONDecoder().decode(DahliaTokenBrokerProtocol.Request.self, from: data)
-            guard authorization.matches(
-                request.capability,
-                profile: profile,
-                connectionID: request.connectionID
-            ) else {
+            guard authorization.authorizes(descriptor, profile: profile, connectionID: request.connectionID) else {
                 throw POSIXError(.EACCES)
             }
             let result = Mutex<Resolution?>(nil)

@@ -36,20 +36,25 @@ struct BundledCodexAppServerLauncher {
             .appending(path: "codex-code-mode-host")
             .path
         let profile = DahliaApplicationSupport.profile()
-        if let connectionID = runtimeProvider.accountConnectionID {
-            environment[DahliaTokenBrokerProtocol.capabilityEnvironmentKey] = try tokenBrokerAuthorization.rotate(
-                profile: profile,
-                connectionID: connectionID
-            )
-        } else {
-            tokenBrokerAuthorization.clear(profile: profile)
-            environment.removeValue(forKey: DahliaTokenBrokerProtocol.capabilityEnvironmentKey)
-        }
+        tokenBrokerAuthorization.clear(profile: profile)
         environment["PATH"] = CommandLineToolLocator.searchPath(environment: environment)
+        let onLaunch: (@Sendable (pid_t) -> Void)? = if let connectionID = runtimeProvider.accountConnectionID {
+            { appServerPID in
+                tokenBrokerAuthorization.register(
+                    profile: profile,
+                    connectionID: connectionID,
+                    appServerPID: appServerPID,
+                    helperURL: DahliaMCPBundle.expectedExecutableURL()
+                )
+            }
+        } else {
+            nil
+        }
         return try CodexAppServerProcessTransport(
             executableURL: executableURL,
             environment: environment,
-            currentDirectoryURL: homeURL
+            currentDirectoryURL: homeURL,
+            onLaunch: onLaunch
         )
     }
 }

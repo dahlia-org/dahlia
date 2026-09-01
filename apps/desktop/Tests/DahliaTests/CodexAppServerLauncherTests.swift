@@ -74,14 +74,13 @@ import DahliaRuntimeSupport
         }
 
         @Test
-        func dahliaLaunchUsesItsPrivateHomeAndScopedBrokerCapability() async throws {
+        func dahliaLaunchUsesItsPrivateHomeWithoutExposingBrokerAuthorization() async throws {
             let rootURL = URL.temporaryDirectory
                 .appending(path: "dahlia-codex-account-launcher-\(UUID().uuidString)", directoryHint: .isDirectory)
             defer { try? FileManager.default.removeItem(at: rootURL) }
             try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
             let executableURL = rootURL.appending(path: "print-account-environment")
-            let capabilityKey = DahliaTokenBrokerProtocol.capabilityEnvironmentKey
-            try Data("#!/bin/sh\n/usr/bin/printenv CODEX_HOME\n/usr/bin/printenv \(capabilityKey)\n".utf8)
+            try Data("#!/bin/sh\n/usr/bin/printenv CODEX_HOME\n/usr/bin/printenv DAHLIA_TOKEN_BROKER_CAPABILITY || /bin/echo missing\n".utf8)
                 .write(to: executableURL)
             try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: executableURL.path)
             let connectionID = UUID.v7()
@@ -99,18 +98,7 @@ import DahliaRuntimeSupport
                 from: transport,
                 equals: locator.homeURL(connectionID: connectionID).path
             )
-            let capabilityData = try #require(await transport.receiveLine())
-            let capability = try #require(String(data: capabilityData, encoding: .utf8))
-            #expect(authorization.matches(
-                capability,
-                profile: DahliaApplicationSupport.profile(),
-                connectionID: connectionID
-            ))
-            #expect(!authorization.matches(
-                capability,
-                profile: DahliaApplicationSupport.profile(),
-                connectionID: UUID.v7()
-            ))
+            try await expectNextLine(from: transport, equals: "missing")
             await transport.close()
         }
 
