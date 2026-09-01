@@ -473,6 +473,7 @@ final class CaptionViewModel: ObservableObject {
         let screenshots = screenshotStore.records
         let actionItemsHeading = L10n.actionItems
         let dbQueue = currentDbQueue
+        let existingArtifactURL = currentSummaryArtifactURL
         do {
             let expectedDocument = try document.databaseJSONString()
             let html = await Task.detached(priority: .userInitiated) {
@@ -487,7 +488,7 @@ final class CaptionViewModel: ObservableObject {
                 html,
                 connection.id,
                 connection.origin,
-                currentSummaryArtifactURL
+                existingArtifactURL
             )
             do {
                 let summaryIsCurrent = if let dbQueue {
@@ -507,7 +508,9 @@ final class CaptionViewModel: ObservableObject {
                 }
                 throw error
             }
-            currentSummaryArtifactURL = result.url
+            if currentMeetingId == meetingId {
+                currentSummaryArtifactURL = result.url
+            }
             usageTelemetryReporter(.export(.completed, destination: .dahliaArtifacts, trigger: .manual))
             return true
         } catch {

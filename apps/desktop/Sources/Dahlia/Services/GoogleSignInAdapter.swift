@@ -191,7 +191,6 @@ final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
     private static let disconnectPendingUserDefaultsKeyPrefix = "googleOAuthDisconnectPending"
     private static let authorizationEndpoint = URL(string: "https://accounts.google.com/o/oauth2/v2/auth")!
     private static let tokenEndpoint = URL(string: "https://oauth2.googleapis.com/token")!
-    private static let revokeEndpoint = URL(string: "https://oauth2.googleapis.com/revoke")!
     private static let userInfoEndpoint = URL(string: "https://openidconnect.googleapis.com/v1/userinfo")!
     private static let tokenRefreshLeeway: TimeInterval = 60
 
@@ -320,16 +319,6 @@ final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
     func disconnect() async throws {
         Self.markDisconnectPending(for: sessionKind)
         await Self.keychainWorker.beginDisconnect()
-        let token = await Self.revocationToken(for: sessionKind)
-        var revocationError: Error?
-        if let token {
-            do {
-                try await revoke(token: token)
-            } catch {
-                revocationError = error
-            }
-        }
-
         let deletionError: Error?
         do {
             try await clearStoredSession()
@@ -340,9 +329,6 @@ final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
         await Self.keychainWorker.finishDisconnect()
         if let deletionError {
             throw deletionError
-        }
-        if let revocationError {
-            throw revocationError
         }
     }
 
@@ -487,13 +473,6 @@ final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
         if let deletionError { throw deletionError }
         for key in disconnectPendingUserDefaultsKeys(for: kind) {
             UserDefaults.standard.removeObject(forKey: key)
-        }
-    }
-
-    private nonisolated static func revocationToken(for kind: GoogleAuthSessionKind) async -> String? {
-        await keychainWorker.perform {
-            let session = loadStoredSession(key: kind.keychainKey)
-            return session?.refreshToken ?? session?.accessToken
         }
     }
 
@@ -642,29 +621,6 @@ final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
             displayName: payload.name ?? payload.email ?? L10n.googleAccountUnknown,
             email: payload.email ?? ""
         )
-    }
-
-    private func revoke(token: String) async throws {
-        var request = URLRequest(url: Self.revokeEndpoint)
-        request.httpMethod = "POST"
-        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-        request.httpBody = Self.formEncoded(["token": token]).data(using: .utf8)
-        let (data, response) = try await urlSession.data(for: request)
-        try Self.validateRevocationResponse(response, data: data)
-    }
-
-    static func validateRevocationResponse(_ response: URLResponse, data: Data = Data()) throws {
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw GoogleSignInError.invalidAuthorizationResponse
-        }
-        if httpResponse.statusCode == 400, responseDetail(from: data) == "invalid_token" {
-            return
-        }
-        guard (200 ..< 300).contains(httpResponse.statusCode) else {
-            throw GoogleSignInError.authorizationFailed(
-                L10n.googleAccountHTTPError(httpResponse.statusCode, L10n.googleAccountUnexpectedResponse)
-            )
-        }
     }
 
     private static func makeAuthorizationURL(

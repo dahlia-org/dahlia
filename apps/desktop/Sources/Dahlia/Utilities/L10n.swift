@@ -2156,16 +2156,16 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var googleOAuthDisclosureManageAndDelete: String { String(localized: "Manage and Delete", bundle: bundle) }
     static var googleCalendarOAuthDisclosureDeletion: String { String(
         localized: """
-        Disconnecting Calendar or Drive removes both local OAuth sessions and attempts to revoke all Dahlia Google access, \
-        which disconnects both services and clears saved Calendar and Drive selection identifiers. \
+        Disconnecting Calendar removes only its local OAuth session and saved calendar selection identifiers. \
+        It does not disconnect Drive. \
         Delete linked meetings to remove saved calendar details from the active database, and delete database backups separately.
         """,
         bundle: bundle
     ) }
     static var googleDriveOAuthDisclosureDeletion: String { String(
         localized: """
-        Disconnecting Calendar or Drive removes both local OAuth sessions and attempts to revoke all Dahlia Google access, \
-        which disconnects both services and clears saved Calendar and Drive selection identifiers. \
+        Disconnecting Drive removes only its local OAuth session and saved export-folder identifiers. \
+        It does not disconnect Calendar. \
         Exported documents remain in Drive; delete them there, and delete related meetings and database backups to remove local document references.
         """,
         bundle: bundle

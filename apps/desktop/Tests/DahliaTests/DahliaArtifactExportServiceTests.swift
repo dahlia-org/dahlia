@@ -2,6 +2,7 @@ import Foundation
 @testable import Dahlia
 
 #if canImport(Testing)
+    import Synchronization
     import Testing
 
     @Suite(.serialized)
@@ -64,6 +65,44 @@ import Foundation
         }
 
         @Test
+        func recreatesAnArtifactMissingDuringReplacement() async throws {
+            let existingURL = try #require(URL(string: "https://dahlia.example/api/v1/artifacts/\(artifactID)"))
+            let replacementID = "019cc4dd-e5c5-7bd4-94e0-98df9cc40dba"
+            let requestCount = Mutex(0)
+            let session = makeSession { request in
+                let index = requestCount.withLock { count in
+                    defer { count += 1 }
+                    return count
+                }
+                if index == 0 {
+                    #expect(request.httpMethod == "PUT")
+                    #expect(request.url == existingURL)
+                    return (404, [:], Data())
+                }
+                #expect(request.httpMethod == "POST")
+                #expect(request.url?.absoluteString == "https://dahlia.example/api/v1/artifacts")
+                return (
+                    201,
+                    ["Location": "https://dahlia.example/api/v1/artifacts/\(replacementID)"],
+                    responseBody(id: replacementID)
+                )
+            }
+
+            let result = try await DahliaArtifactExportService.export(
+                html: "<p>Updated</p>",
+                connectionID: .v7(),
+                origin: "https://dahlia.example",
+                existingURL: existingURL,
+                urlSession: session,
+                tokenProvider: { _ in "access-token" }
+            )
+
+            #expect(result.url.absoluteString == "https://dahlia.example/api/v1/artifacts/\(replacementID)")
+            #expect(result.wasCreated)
+            #expect(requestCount.withLock { $0 } == 2)
+        }
+
+        @Test
         func rejectsLocationThatDoesNotMatchCreatedArtifactID() async {
             let session = makeSession { _ in
                 (
@@ -102,8 +141,8 @@ import Foundation
             )
         }
 
-        private func responseBody() -> Data {
-            Data(#"{"id":"\#(artifactID)","visibility":"private","contentType":"text/html"}"#.utf8)
+        private func responseBody(id: String? = nil) -> Data {
+            Data(#"{"id":"\#(id ?? artifactID)","visibility":"private","contentType":"text/html"}"#.utf8)
         }
 
         private func makeSession(

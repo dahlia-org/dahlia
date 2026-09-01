@@ -253,7 +253,7 @@ private struct SummarySharePopover: View {
                     .foregroundStyle(.green)
                     .padding(.horizontal, 20)
                     .padding(.bottom, 10)
-            } else if let errorMessage = viewModel.artifactExportError {
+            } else if let errorMessage = viewModel.artifactExportError ?? accountController.errorMessage {
                 Text(errorMessage)
                     .font(.callout)
                     .foregroundStyle(.red)

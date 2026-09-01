@@ -164,34 +164,6 @@ import Security
         }
 
         @Test
-        func revocationRequiresASuccessfulHTTPResponse() throws {
-            let url = try #require(URL(string: "https://oauth2.googleapis.com/revoke"))
-            let success = try #require(HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil))
-            let failure = try #require(HTTPURLResponse(url: url, statusCode: 400, httpVersion: nil, headerFields: nil))
-            let serverFailure = try #require(HTTPURLResponse(url: url, statusCode: 503, httpVersion: nil, headerFields: nil))
-
-            try GoogleSignInAdapter.validateRevocationResponse(success)
-            try GoogleSignInAdapter.validateRevocationResponse(
-                failure,
-                data: Data(#"{"error":"invalid_token"}"#.utf8)
-            )
-            #expect(throws: GoogleSignInError.self) {
-                try GoogleSignInAdapter.validateRevocationResponse(failure)
-            }
-            #expect(throws: GoogleSignInError.self) {
-                try GoogleSignInAdapter.validateRevocationResponse(serverFailure)
-            }
-            #expect(throws: GoogleSignInError.self) {
-                try GoogleSignInAdapter.validateRevocationResponse(URLResponse(
-                    url: url,
-                    mimeType: nil,
-                    expectedContentLength: 0,
-                    textEncodingName: nil
-                ))
-            }
-        }
-
-        @Test
         func keychainDeletionAcceptsMissingItems() throws {
             try KeychainService.validateDeletionStatuses(
                 protectedStatus: errSecItemNotFound,

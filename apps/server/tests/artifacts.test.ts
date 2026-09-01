@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { createApp } from "../src/app";
 import { ARTIFACT_METADATA_MEDIA_TYPE } from "../src/artifacts/service";
@@ -301,8 +301,10 @@ describe("artifact API", () => {
     expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
     expect(Math.abs(Date.now() - timestamp)).toBeLessThan(1_000);
     const [storageKey] = objects.keys();
-    const versionTimestamp = Number(storageKey?.split("/").at(-1)?.replace(".txt", ""));
-    expect(storageKey).toMatch(new RegExp(`^artifacts/${id}/\\d{13}\\.txt$`));
+    const versionTimestamp = Number(storageKey?.split("/").at(-1)?.split("-", 1)[0]);
+    expect(storageKey).toMatch(new RegExp(
+      `^artifacts/${id}/\\d{13}-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\\.txt$`,
+    ));
     expect(Math.abs(Date.now() - versionTimestamp)).toBeLessThan(1_000);
     expect((await app.request(`/api/v1/artifacts/${id}`)).status).toBe(401);
     expect((await app.request(`/api/v1/artifacts/${id}`, { headers: OTHER })).status).toBe(404);
@@ -425,8 +427,29 @@ describe("artifact API", () => {
     });
     const htmlId = await uploadedId(html);
     expect([...objects.keys()]).toContainEqual(
-      expect.stringMatching(new RegExp(`^artifacts/${htmlId}/\\d{13}\\.html$`)),
+      expect.stringMatching(new RegExp(
+        `^artifacts/${htmlId}/\\d{13}-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\\.html$`,
+      )),
     );
+  });
+
+  it("keeps same-millisecond replacements on distinct storage keys", async () => {
+    const fixtureValue = fixture();
+    const now = vi.spyOn(Date, "now").mockReturnValue(1_700_000_000_000);
+    try {
+      const created = await upload(fixtureValue.app);
+      const id = await uploadedId(created);
+      const originalKey = [...fixtureValue.objects.keys()][0];
+      expect((await replace(fixtureValue.app, id)).status).toBe(200);
+      expect(fixtureValue.objects.size).toBe(1);
+      const replacementKey = [...fixtureValue.objects.keys()][0];
+      expect(replacementKey).not.toBe(originalKey);
+      expect(replacementKey).toMatch(
+        new RegExp(`^artifacts/${id}/1700000000000-`),
+      );
+    } finally {
+      now.mockRestore();
+    }
   });
 
   it("does not expose or mutate another owner's artifact", async () => {

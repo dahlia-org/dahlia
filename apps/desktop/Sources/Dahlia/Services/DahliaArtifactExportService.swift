@@ -50,6 +50,15 @@ enum DahliaArtifactExportService {
         guard let response = response as? HTTPURLResponse else {
             throw DahliaArtifactExportError.invalidResponse
         }
+        if replacementURL != nil, response.statusCode == 404 {
+            return try await export(
+                html: html,
+                connectionID: connectionID,
+                origin: origin,
+                urlSession: urlSession,
+                tokenProvider: { _ in accessToken }
+            )
+        }
         let expectedStatus = replacementURL == nil ? 201 : 200
         guard response.statusCode == expectedStatus else {
             throw DahliaArtifactExportError.httpError(response.statusCode)

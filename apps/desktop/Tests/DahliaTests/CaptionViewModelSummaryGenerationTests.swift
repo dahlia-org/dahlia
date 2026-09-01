@@ -131,6 +131,53 @@ import GRDB
         }
 
         @Test
+        func artifactExportDoesNotReplaceTheVisibleMeetingsArtifactURL() async throws {
+            let fixture = try SummaryGenerationFixture()
+            defer { fixture.removeFiles() }
+            let exporter = BlockingArtifactSummaryExporter()
+            let viewModel = CaptionViewModel(artifactSummaryExporter: exporter.export)
+            let repository = MeetingRepository(dbQueue: fixture.database.dbQueue)
+            let firstDocument = SummaryDocument(title: "First summary", sections: [])
+            let secondDocument = SummaryDocument(title: "Second summary", sections: [])
+            let firstURL = try #require(URL(
+                string: "https://dahlia.example/api/v1/artifacts/019cc4dd-e5c5-7bd4-94e0-98df9cc40db9"
+            ))
+            let secondURL = try #require(URL(
+                string: "https://dahlia.example/api/v1/artifacts/019cc4dd-e5c5-7bd4-94e0-98df9cc40dba"
+            ))
+            try repository.applyGeneratedSummary(toMeetingId: fixture.first.id, document: firstDocument, tags: [])
+            try repository.applyGeneratedSummary(toMeetingId: fixture.second.id, document: secondDocument, tags: [])
+            #expect(try await repository.updateSummaryArtifactURL(
+                forMeetingId: fixture.second.id,
+                url: secondURL.absoluteString,
+                expectedDocument: secondDocument.databaseJSONString()
+            ))
+            await fixture.select(fixture.first, in: viewModel, note: "first")
+            #expect(await waitUntil { viewModel.currentSummaryDocument?.title == firstDocument.title })
+            let connection = DahliaAccountConnection(
+                record: DahliaAccountConnectionRecord(
+                    id: .v7(),
+                    origin: "https://dahlia.example",
+                    clientID: "desktop",
+                    createdAt: .now
+                ),
+                account: DahliaCloudAccount(id: "user", name: "User", email: nil),
+                isCloud: false,
+                grantedScopes: [DahliaArtifactExportService.requiredScope]
+            )
+
+            let export = Task { await viewModel.exportCurrentSummaryToDahliaArtifact(connection: connection) }
+            await exporter.waitForCall()
+            await fixture.select(fixture.second, in: viewModel, note: "second")
+            #expect(await waitUntil { viewModel.currentSummaryArtifactURL == secondURL })
+            await exporter.complete(result: DahliaArtifactExportResult(url: firstURL, wasCreated: true))
+
+            #expect(await export.value)
+            #expect(viewModel.currentMeetingId == fixture.second.id)
+            #expect(viewModel.currentSummaryArtifactURL == secondURL)
+        }
+
+        @Test
         func manualSummaryUsesProjectSelectedBeforeGeneration() async throws {
             let fixture = try SummaryGenerationFixture()
             defer { fixture.removeFiles() }

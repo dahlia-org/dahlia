@@ -32,7 +32,7 @@ export BUNDLE_VAR_admin_email="admin@example.com"
 
 The App requests the `ai-gateway` and `files` user authorization scopes. It uses the Apps proxy's `X-Forwarded-Access-Token` as Bearer authentication only for the workspace OpenAI-compatible Responses API at `DATABRICKS_HOST/ai-gateway/mlflow/v1/responses`. System model discovery uses a short-lived App service principal token obtained from the runtime-injected `DATABRICKS_CLIENT_ID` and `DATABRICKS_CLIENT_SECRET`; no provider secret is stored in the bundle. Dahlia also uses the runtime-provided `DATABRICKS_APP_URL` as its canonical public origin, so the bundle does not need to reference its own App URL. `/mcp` needs no additional user API scope: the Apps proxy authenticates the caller and supplies verified identity headers, while artifact bytes use the App service principal's existing Volume permission.
 
-The default App names are `dahlia-dev` for `dev` and `dahlia-prod` for `prod`. The corresponding Lakebase project IDs are `dahlia-db-dev` and `dahlia-db`. The bundle uses the `dahlia_dev` catalog for development and `dahlia` for production, with a `server` schema and managed `storage` Volume in each target. Override `catalog`, `schema`, or `volume_name` when needed.
+The default App names are `dahlia-dev` for `dev` and `dahlia-prod` for `prod`. The corresponding Lakebase project IDs are `dahlia-db-dev` and `dahlia-db`. The bundle uses the `dahlia_dev` catalog for development and `dahlia` for production, with a `server` schema and managed `storage` Volume in each target. Override `catalog`, `schema`, or `volume_name` when needed. Production provisions the new storage Volume but retains both legacy Volume resources, and the App remains bound to `${catalog}.default.dahlia_artifacts` until existing bytes are copied and verified. Remove the legacy resources and switch the App binding only as part of that explicit migration.
 
 The bundle syncs only the self-contained `apps/server` package. Its package manifest, pnpm lockfile, runtime configuration, and source are deployed without repository-root pnpm files.
 
@@ -45,7 +45,7 @@ databricks bundle run dahlia_server -t dev
 databricks bundle summary -t dev
 ```
 
-Use `-t prod` for production. The production Lakebase project, schema, and storage Volume have `lifecycle.prevent_destroy: true`; destructive changes fail until an operator deliberately removes that protection. Development uses separate disposable resources.
+Use `-t prod` for production. The production Lakebase project, legacy artifact Volumes, new storage Volume, and schema have `lifecycle.prevent_destroy: true`; destructive changes fail until an operator deliberately removes that protection. Development uses separate disposable resources.
 
 `bundle deploy` creates or updates the resources and uploads source code, but it does not restart an already-running App. Always run `dahlia_server` after deployment.
 
