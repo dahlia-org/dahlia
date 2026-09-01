@@ -7,41 +7,34 @@ struct AccountSettingsView: View {
     @State private var databricksController = DatabricksAccountController()
 
     var body: some View {
-        Form {
-            Section {
-                if vaultSettings.isLocalAccount {
-                    DahliaMenuPicker(
-                        title: L10n.provider,
-                        description: L10n.aiAccountDescription,
-                        selection: $vaultSettings.localProvider,
-                        options: AIAccountProvider.allCases,
-                        label: \.displayName
-                    )
-                    .disabled(
-                        chatGPTController.isBusy
-                            || databricksController.isBusy
-                            || vaultSettings.isSwitchingRuntime
-                    )
-                } else {
-                    LabeledContent(L10n.provider, value: L10n.dahliaAccount)
+        if vaultSettings.isLocalAccount {
+            switch vaultSettings.localProvider {
+            case .chatGPTSubscription:
+                ChatGPTAccountSettingsView(
+                    controller: chatGPTController,
+                    title: L10n.localAccount,
+                    footer: localProviderFooter
+                ) {
+                    providerPicker
                 }
-
-                LabeledContent(L10n.codexVersion, value: CodexBundle.version)
+            case .databricks:
+                DatabricksAccountSettingsView(
+                    controller: databricksController,
+                    title: L10n.localAccount,
+                    footer: localProviderFooter
+                ) {
+                    providerPicker
+                }
+            }
+        } else {
+            Section {
+                LabeledContent(L10n.modelProvider, value: L10n.dahliaAccount)
             } header: {
-                Text(L10n.modelProvider)
-            } footer: {
-                Text(L10n.aiAccountSettingsDescription)
+                Text(L10n.dahliaAccount)
             }
 
-            if vaultSettings.isLocalAccount {
-                switch vaultSettings.localProvider {
-                case .chatGPTSubscription:
-                    ChatGPTAccountSettingsView(controller: chatGPTController)
-                case .databricks:
-                    DatabricksAccountSettingsView(controller: databricksController)
-                }
-            } else if let connectionID = vaultSettings.accountConnectionID,
-                      let connection = dahliaController.connections.first(where: { $0.id == connectionID }) {
+            if let connectionID = vaultSettings.accountConnectionID,
+               let connection = dahliaController.connections.first(where: { $0.id == connectionID }) {
                 Section {
                     SettingsStatusMessage(
                         text: connection.isSignedIn ? connection.origin : L10n.signInRequired,
@@ -52,17 +45,44 @@ struct AccountSettingsView: View {
                     Text(connection.displayName)
                 }
             }
+        }
 
-            if let errorMessage = vaultSettings.errorMessage {
-                Section {
-                    SettingsStatusMessage(
-                        text: errorMessage,
-                        systemImage: "exclamationmark.triangle.fill",
-                        tint: .red
-                    )
-                }
+        if let errorMessage = vaultSettings.errorMessage {
+            Section {
+                SettingsStatusMessage(
+                    text: errorMessage,
+                    systemImage: "exclamationmark.triangle.fill",
+                    tint: .red
+                )
             }
         }
-        .formStyle(.grouped)
+    }
+
+    private var providerPicker: some View {
+        DahliaMenuPicker(
+            title: L10n.modelProvider,
+            description: L10n.aiAccountDescription,
+            selection: $vaultSettings.localProvider,
+            options: AIAccountProvider.allCases,
+            label: \.displayName
+        )
+        .disabled(
+            chatGPTController.isBusy
+                || databricksController.isBusy
+                || vaultSettings.isSwitchingRuntime
+        )
+    }
+
+    private var localProviderFooter: String {
+        "\(L10n.aiAccountSettingsDescription)\n\(localProviderDescription)"
+    }
+
+    private var localProviderDescription: String {
+        switch vaultSettings.localProvider {
+        case .chatGPTSubscription:
+            L10n.codexAccountDescription
+        case .databricks:
+            L10n.databricksCodexDescription
+        }
     }
 }

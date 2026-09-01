@@ -5,7 +5,6 @@ enum SettingsGroup: CaseIterable, Identifiable {
     case app
     case meetings
     case integrations
-    case ai
     case advanced
 
     var id: Self { self }
@@ -15,7 +14,6 @@ enum SettingsGroup: CaseIterable, Identifiable {
         case .app: L10n.app
         case .meetings: L10n.meetings
         case .integrations: L10n.integrations
-        case .ai: L10n.ai
         case .advanced: L10n.advanced
         }
     }
@@ -23,9 +21,8 @@ enum SettingsGroup: CaseIterable, Identifiable {
     var categories: [SettingsCategory] {
         switch self {
         case .app: [.accountsAndVaults, .general, .language, .appearance, .permissions, .backups, .search]
-        case .meetings: [.transcription, .liveSubtitles, .screenshots]
+        case .meetings: [.transcription, .liveSubtitles, .screenshots, .aiSummary]
         case .integrations: [.calendar, .cloudStorage]
-        case .ai: [.modelProvider, .aiSummary]
         case .advanced: [.betaFeatures, .developer, .audioDiagnostics]
         }
     }

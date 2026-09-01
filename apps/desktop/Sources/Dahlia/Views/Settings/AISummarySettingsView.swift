@@ -51,7 +51,7 @@ struct AISummarySettingsView: View {
                         .disabled(catalog.isLoading)
                 }
             } header: {
-                Text(L10n.aiSummary)
+                Text(L10n.summary)
             } footer: {
                 Text(L10n.codexSummaryModelFooter)
             }

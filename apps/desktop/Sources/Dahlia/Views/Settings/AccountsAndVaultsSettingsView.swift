@@ -23,6 +23,7 @@ struct AccountsAndVaultsSettingsView: View {
                 onRenameVault: onUpdateVault,
                 onUpdateVaultAccount: onUpdateCurrentVaultAccount
             )
+            AccountSettingsView()
         }
         .formStyle(.grouped)
         .onChange(of: accountController.connections.map(\.id)) {
