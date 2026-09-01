@@ -13,6 +13,8 @@ final class SetupTourModel {
     private(set) var isCompleting = false
     private(set) var errorMessage: String?
     private(set) var selectedVaultURL: URL
+    private(set) var selectedAccountConnectionID: UUID?
+    private(set) var isAccountSelectionConfirmed: Bool
     private let progressDefaults: UserDefaults?
 
     nonisolated static func newVaultURL(named proposedName: String) -> URL? {
@@ -23,10 +25,16 @@ final class SetupTourModel {
     init(
         mode: SetupTourMode,
         currentVault: VaultRecord?,
+        signedInAccountConnectionIDs: Set<UUID> = [],
         progressDefaults: UserDefaults? = nil
     ) {
         self.mode = mode
         originalVault = currentVault
+        selectedAccountConnectionID = currentVault?.accountConnectionId
+        isAccountSelectionConfirmed = currentVault.map { vault in
+            guard let connectionID = vault.accountConnectionId else { return true }
+            return signedInAccountConnectionIDs.contains(connectionID)
+        } ?? false
         self.progressDefaults = progressDefaults
 
         if mode == .initial, currentVault == nil, let progressDefaults {
@@ -34,24 +42,48 @@ final class SetupTourModel {
             let restoredVaultConfirmed = restoredVaultURL != nil
                 && SetupTourPresentationPolicy.isRestoredVaultConfirmed(in: progressDefaults)
             let restoredStep = SetupTourPresentationPolicy.restoredStep(in: progressDefaults)
-            currentStep = restoredStep.rawValue > SetupTourStep.vault.rawValue && !restoredVaultConfirmed
-                ? .vault
-                : restoredStep
+            let restoredConnectionID = SetupTourPresentationPolicy.restoredAccountConnectionID(in: progressDefaults)
+            let restoredAccountConfirmed = SetupTourPresentationPolicy.isAccountSelectionConfirmed(in: progressDefaults)
+                && (restoredConnectionID.map(signedInAccountConnectionIDs.contains) ?? true)
+            currentStep = if !restoredAccountConfirmed {
+                .account
+            } else if restoredStep != .account,
+                      restoredStep != .vault,
+                      !restoredVaultConfirmed {
+                .vault
+            } else {
+                restoredStep
+            }
+            selectedAccountConnectionID = restoredConnectionID
+            isAccountSelectionConfirmed = restoredAccountConfirmed
             selectedVaultURL = restoredVaultURL ?? VaultManagementModel.defaultVaultURL
             isVaultLocationConfirmed = restoredVaultConfirmed
         } else {
-            currentStep = .vault
+            currentStep = .account
             selectedVaultURL = currentVault?.url ?? VaultManagementModel.defaultVaultURL
             isVaultLocationConfirmed = currentVault != nil
         }
     }
 
     var canGoBack: Bool {
-        currentStep != .vault && !isCompleting
+        currentStep != .account && !isCompleting
     }
 
     var canContinue: Bool {
-        !isCompleting && (currentStep != .vault || isVaultLocationConfirmed)
+        !isCompleting
+            && (currentStep != .account || isAccountSelectionConfirmed)
+            && (currentStep != .vault || isVaultLocationConfirmed)
+    }
+
+    var visibleSteps: [SetupTourStep] {
+        SetupTourStep.allCases.filter { selectedAccountConnectionID == nil || $0 != .modelProvider }
+    }
+
+    func selectAccountConnection(_ connectionID: UUID?) {
+        selectedAccountConnectionID = connectionID
+        isAccountSelectionConfirmed = true
+        errorMessage = nil
+        persistProgress()
     }
 
     func selectVaultURL(_ url: URL) {
@@ -69,16 +101,18 @@ final class SetupTourModel {
 
     func advance() {
         guard canContinue,
-              let next = SetupTourStep(rawValue: currentStep.rawValue + 1) else { return }
-        currentStep = next
+              let currentIndex = visibleSteps.firstIndex(of: currentStep),
+              visibleSteps.indices.contains(currentIndex + 1) else { return }
+        currentStep = visibleSteps[currentIndex + 1]
         errorMessage = nil
         persistProgress()
     }
 
     func goBack() {
         guard canGoBack,
-              let previous = SetupTourStep(rawValue: currentStep.rawValue - 1) else { return }
-        currentStep = previous
+              let currentIndex = visibleSteps.firstIndex(of: currentStep),
+              visibleSteps.indices.contains(currentIndex - 1) else { return }
+        currentStep = visibleSteps[currentIndex - 1]
         errorMessage = nil
         persistProgress()
     }
@@ -94,7 +128,10 @@ final class SetupTourModel {
     }
 
     func returnToStep(_ step: SetupTourStep) {
-        guard step.rawValue < currentStep.rawValue, !isCompleting else { return }
+        guard let stepIndex = visibleSteps.firstIndex(of: step),
+              let currentIndex = visibleSteps.firstIndex(of: currentStep),
+              stepIndex < currentIndex,
+              !isCompleting else { return }
         currentStep = step
         errorMessage = nil
         persistProgress()
@@ -106,6 +143,8 @@ final class SetupTourModel {
             step: currentStep,
             vaultURL: selectedVaultURL,
             isVaultConfirmed: isVaultLocationConfirmed,
+            accountConnectionID: selectedAccountConnectionID,
+            isAccountSelectionConfirmed: isAccountSelectionConfirmed,
             in: progressDefaults
         )
     }

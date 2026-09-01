@@ -9,19 +9,24 @@ struct DahliaServerSignInView: View {
     let errorMessage: String?
     let onCancel: () -> Void
     let onSignIn: (DahliaCloudConfiguration) -> Void
+    var cloudActionTitle: String?
+    var isEmbedded = false
+    var onContinueLocally: (() -> Void)?
 
     @State private var serverURL = ""
     @State private var isCloseHovered = false
 
     var body: some View {
         ZStack {
-            Button(action: onCancel) {
-                Color.black.opacity(0.16)
-                    .ignoresSafeArea()
+            if !isEmbedded {
+                Button(action: onCancel) {
+                    Color.black.opacity(0.16)
+                        .ignoresSafeArea()
+                }
+                .buttonStyle(.plain)
+                .focusable(false)
+                .accessibilityHidden(true)
             }
-            .buttonStyle(.plain)
-            .focusable(false)
-            .accessibilityHidden(true)
 
             VStack(spacing: 20) {
                 HStack(spacing: 12) {
@@ -62,7 +67,7 @@ struct DahliaServerSignInView: View {
 
                     if allowsCloudSignIn {
                         Button(action: signInToCloud) {
-                            Text(Self.cloudActionTitle(isConfigured: cloudConfiguration != nil))
+                            Text(cloudActionTitle ?? Self.cloudActionTitle(isConfigured: cloudConfiguration != nil))
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 4)
                         }
@@ -95,30 +100,51 @@ struct DahliaServerSignInView: View {
                         .buttonStyle(.dahlia())
                         .disabled(isBusy || serverConfiguration == nil)
                     }
+
+                    if let onContinueLocally {
+                        ZStack {
+                            Divider()
+                            Text(L10n.orContinueWithoutSigningIn)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal)
+                                .background(.background)
+                        }
+
+                        Button(action: onContinueLocally) {
+                            Text(L10n.continueWithLocalAccount)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 4)
+                        }
+                        .buttonStyle(.dahlia())
+                        .disabled(isBusy)
+                    }
                 }
             }
             .padding(28)
             .frame(maxWidth: 440, maxHeight: .infinity)
-            .frame(width: 500, height: 400)
+            .frame(width: 500, height: onContinueLocally == nil ? 400 : 480)
             .overlay(alignment: .topTrailing) {
-                Button(L10n.close, systemImage: "xmark", action: onCancel)
-                    .labelStyle(.iconOnly)
-                    .dahliaFixedSymbol()
-                    .buttonStyle(.plain)
-                    .frame(width: 28, height: 28)
-                    .contentShape(.rect)
-                    .background(
-                        isCloseHovered ? DahliaDesign.contentHighlightColor : .clear,
-                        in: .rect(cornerRadius: DahliaDesign.Highlight.regularCornerRadius)
-                    )
-                    .onHover { isCloseHovered = $0 }
-                    .keyboardShortcut(.cancelAction)
-                    .help(L10n.close)
-                    .padding(12)
+                if !isEmbedded {
+                    Button(L10n.close, systemImage: "xmark", action: onCancel)
+                        .labelStyle(.iconOnly)
+                        .dahliaFixedSymbol()
+                        .buttonStyle(.plain)
+                        .frame(width: 28, height: 28)
+                        .contentShape(.rect)
+                        .background(
+                            isCloseHovered ? DahliaDesign.contentHighlightColor : .clear,
+                            in: .rect(cornerRadius: DahliaDesign.Highlight.regularCornerRadius)
+                        )
+                        .onHover { isCloseHovered = $0 }
+                        .keyboardShortcut(.cancelAction)
+                        .help(L10n.close)
+                        .padding(12)
+                }
             }
-            .background(Color(nsColor: .windowBackgroundColor))
-            .clipShape(.rect(cornerRadius: DahliaDesign.Card.regularCornerRadius))
-            .shadow(color: .black.opacity(0.24), radius: 28, y: 12)
+            .background(isEmbedded ? Color.clear : Color(nsColor: .windowBackgroundColor))
+            .clipShape(.rect(cornerRadius: isEmbedded ? 0 : DahliaDesign.Card.regularCornerRadius))
+            .shadow(color: isEmbedded ? .clear : .black.opacity(0.24), radius: 28, y: 12)
         }
         .transition(.identity)
     }

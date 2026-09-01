@@ -7,6 +7,8 @@ enum SetupTourPresentationPolicy {
     static let vaultConfirmedUserDefaultsKey = "setupTourVaultConfirmed"
     static let providerUserDefaultsKey = "setupTourProvider"
     static let databricksProfileUserDefaultsKey = "setupTourDatabricksProfile"
+    static let accountConnectionIDUserDefaultsKey = "setupTourAccountConnectionID"
+    static let accountSelectionConfirmedUserDefaultsKey = "setupTourAccountSelectionConfirmed"
     static let currentVersion = 1
 
     static func shouldPresentAutomatically(
@@ -24,7 +26,8 @@ enum SetupTourPresentationPolicy {
     }
 
     static func restoredStep(in defaults: UserDefaults = .standard) -> SetupTourStep {
-        SetupTourStep(rawValue: defaults.integer(forKey: progressStepUserDefaultsKey)) ?? .vault
+        guard defaults.object(forKey: progressStepUserDefaultsKey) != nil else { return .account }
+        return SetupTourStep(rawValue: defaults.integer(forKey: progressStepUserDefaultsKey)) ?? .account
     }
 
     static func restoredVaultURL(in defaults: UserDefaults = .standard) -> URL? {
@@ -36,11 +39,23 @@ enum SetupTourPresentationPolicy {
         step: SetupTourStep,
         vaultURL: URL,
         isVaultConfirmed: Bool,
+        accountConnectionID: UUID? = nil,
+        isAccountSelectionConfirmed: Bool = false,
         in defaults: UserDefaults = .standard
     ) {
         defaults.set(step.rawValue, forKey: progressStepUserDefaultsKey)
         defaults.set(vaultURL.path, forKey: vaultPathUserDefaultsKey)
         defaults.set(isVaultConfirmed, forKey: vaultConfirmedUserDefaultsKey)
+        defaults.set(accountConnectionID?.uuidString, forKey: accountConnectionIDUserDefaultsKey)
+        defaults.set(isAccountSelectionConfirmed, forKey: accountSelectionConfirmedUserDefaultsKey)
+    }
+
+    static func restoredAccountConnectionID(in defaults: UserDefaults = .standard) -> UUID? {
+        defaults.string(forKey: accountConnectionIDUserDefaultsKey).flatMap(UUID.init(uuidString:))
+    }
+
+    static func isAccountSelectionConfirmed(in defaults: UserDefaults = .standard) -> Bool {
+        defaults.bool(forKey: accountSelectionConfirmedUserDefaultsKey)
     }
 
     static func saveProviderDraft(
@@ -74,5 +89,7 @@ enum SetupTourPresentationPolicy {
         defaults.removeObject(forKey: vaultConfirmedUserDefaultsKey)
         defaults.removeObject(forKey: providerUserDefaultsKey)
         defaults.removeObject(forKey: databricksProfileUserDefaultsKey)
+        defaults.removeObject(forKey: accountConnectionIDUserDefaultsKey)
+        defaults.removeObject(forKey: accountSelectionConfirmedUserDefaultsKey)
     }
 }

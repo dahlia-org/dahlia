@@ -1601,6 +1601,8 @@
 "Continue" = "続ける";
 "Start Dahlia" = "Dahliaを始める";
 "Local Account" = "ローカルアカウント";
+"Continue with Local Account" = "ローカルアカウントで続ける";
+"Or continue without signing in" = "またはログインせずに続ける";
 "Switching AI account…" = "AIアカウントを切り替えています…";
 "Choose the AI account used by this Vault." = "この保管庫で使用するAIアカウントを選びます。";
 "This account is used by %lld Vaults. Those Vaults will use the Local Account, and this account's Codex data will be deleted." = "このアカウントは%lld個の保管庫で使用されています。対象の保管庫はローカルアカウントへ戻り、このアカウントのCodexデータは削除されます。";

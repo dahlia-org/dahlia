@@ -4,28 +4,32 @@ struct SetupTourView: View {
     @Environment(MainWindowNavigation.self) private var mainWindowNavigation
     @ObservedObject private var settings = AppSettings.shared
     @State private var model: SetupTourModel
+    @State private var accountController: DahliaCloudAccountController
     @State private var isLanguageMenuHovered = false
     @State private var isCloseHovered = false
 
     private let vaultManagementModel: VaultManagementModel
     private let canComplete: () -> Bool
-    private let onComplete: (VaultRecord) async -> Bool
+    private let onComplete: (VaultRecord, UUID?) async -> Bool
     private let vaultStepReferenceHeight: CGFloat = 476
 
     init(
         mode: SetupTourMode,
         currentVault: VaultRecord?,
         vaultManagementModel: VaultManagementModel,
+        accountController: DahliaCloudAccountController,
         canComplete: @escaping () -> Bool,
-        onComplete: @escaping (VaultRecord) async -> Bool
+        onComplete: @escaping (VaultRecord, UUID?) async -> Bool
     ) {
         self.vaultManagementModel = vaultManagementModel
         self.canComplete = canComplete
         self.onComplete = onComplete
+        _accountController = State(initialValue: accountController)
         let initialVault = mode == .initial ? currentVault : currentVault ?? vaultManagementModel.vaults.first
         _model = State(initialValue: SetupTourModel(
             mode: mode,
             currentVault: initialVault,
+            signedInAccountConnectionIDs: Set(accountController.connections.filter(\.isSignedIn).map(\.id)),
             progressDefaults: .standard
         ))
     }
@@ -43,7 +47,9 @@ struct SetupTourView: View {
                 ZStack(alignment: .topTrailing) {
                     ScrollView {
                         VStack(spacing: 28) {
-                            SetupTourStepHeaderView(step: model.currentStep)
+                            if model.currentStep != .account {
+                                SetupTourStepHeaderView(step: model.currentStep)
+                            }
 
                             stepContent
                                 .frame(maxWidth: 900)
@@ -91,7 +97,7 @@ struct SetupTourView: View {
                         .accessibilityValue(settings.appLanguage.displayName)
 
                         if model.mode == .manual {
-                            Button(action: mainWindowNavigation.dismissSetupTour) {
+                            Button(action: dismissTour) {
                                 Label(L10n.close, systemImage: "xmark")
                                     .labelStyle(.iconOnly)
                                     .font(.body)
@@ -118,6 +124,7 @@ struct SetupTourView: View {
 
             SetupTourActionBarView(
                 step: model.currentStep,
+                steps: model.visibleSteps,
                 canGoBack: model.canGoBack,
                 canContinue: canContinue,
                 isCompleting: model.isCompleting,
@@ -128,12 +135,29 @@ struct SetupTourView: View {
         .id(settings.appLanguage)
         .background(Color(nsColor: .windowBackgroundColor))
         .accessibilityElement(children: .contain)
-        .windowDismissBehavior(model.mode == .initial || model.isCompleting ? .disabled : .automatic)
+        .windowDismissBehavior(
+            model.mode == .initial || model.isCompleting || accountController.isBusy ? .disabled : .automatic
+        )
     }
 
     @ViewBuilder
     private var stepContent: some View {
         switch model.currentStep {
+        case .account:
+            DahliaServerSignInView(
+                cloudConfiguration: accountController.defaultConfiguration,
+                allowsCloudSignIn: true,
+                isBusy: accountController.isBusy,
+                isSigningIn: accountController.isSigningIn,
+                errorMessage: accountController.errorMessage,
+                onCancel: accountController.cancelAccountTask,
+                onSignIn: selectOrSignInToDahlia,
+                cloudActionTitle: existingCloudConnection.map {
+                    "\($0.displayName) · \(L10n.dahliaCloud)"
+                },
+                isEmbedded: true,
+                onContinueLocally: continueWithLocalAccount
+            )
         case .vault:
             VaultSetupStepView(model: model, vaultManagementModel: vaultManagementModel)
         case .workingLanguages:
@@ -162,11 +186,48 @@ struct SetupTourView: View {
         }
     }
 
+    private func continueWithLocalAccount() {
+        model.selectAccountConnection(nil)
+        model.advance()
+    }
+
+    private func selectOrSignInToDahlia(_ configuration: DahliaCloudConfiguration) {
+        if let connection = accountController.signedInConnection(matching: configuration) {
+            model.selectAccountConnection(connection.id)
+            model.advance()
+        } else {
+            signInToDahlia(configuration)
+        }
+    }
+
+    private func signInToDahlia(_ configuration: DahliaCloudConfiguration) {
+        guard let task = accountController.startSignIn(configuration: configuration) else { return }
+        Task { @MainActor in
+            await task.value
+            guard model.currentStep == .account,
+                  accountController.errorMessage == nil,
+                  let connection = accountController.completedSignInConnection(matching: configuration) else { return }
+            model.selectAccountConnection(connection.id)
+            model.advance()
+        }
+    }
+
     private var canContinue: Bool {
         guard model.canContinue else { return false }
+        guard model.currentStep != .account || !accountController.isBusy else { return false }
         guard model.currentStep == .workingLanguages,
               settings.appLanguageScope == .selected else { return true }
         return !settings.enabledLanguageIdentifiers.isEmpty
+    }
+
+    private func dismissTour() {
+        accountController.cancelAccountTask()
+        mainWindowNavigation.dismissSetupTour()
+    }
+
+    private var existingCloudConnection: DahliaAccountConnection? {
+        guard let configuration = accountController.defaultConfiguration else { return nil }
+        return accountController.signedInConnection(matching: configuration)
     }
 
     private func completeTour() {
@@ -192,7 +253,7 @@ struct SetupTourView: View {
                 model.finishCompletion(errorMessage: vaultManagementModel.errorMessage)
                 return
             }
-            guard await onComplete(vault) else {
+            guard await onComplete(vault, model.selectedAccountConnectionID) else {
                 model.finishCompletion(errorMessage: L10n.vaultOperationFailed)
                 return
             }
