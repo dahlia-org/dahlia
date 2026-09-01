@@ -1,4 +1,7 @@
-import type { AuthStore } from "../auth/store";
+import codexFallback from "./codex-0.149.1-fallback.json";
+import codexCatalog from "./codex-0.149.1-models.json";
+
+import type { AuthStore, ModelAliasRecord } from "../auth/store";
 import type { AppConfig } from "../config";
 import { DatabricksTokenProvider } from "../databricks/token";
 import { listDatabricksModelServices, sendOpenAIResponses, type GatewayFetch } from "./adapters";
@@ -11,6 +14,23 @@ interface DatabricksModel {
 }
 
 const DATABRICKS_MODEL_TIMEOUT_MS = 30_000;
+export const LATEST_CODEX_CLIENT_VERSION = "0.149.1";
+
+interface CodexModelWire {
+  [key: string]: unknown;
+  slug: string;
+  display_name: string;
+  description: string | null;
+  default_reasoning_level?: string | null;
+  supported_reasoning_levels: Array<{ effort: string; description: string }>;
+  shell_type: string;
+  visibility: string;
+  supported_in_api: boolean;
+  priority: number;
+  model_messages?: { instructions_template?: string | null; [key: string]: unknown };
+}
+
+const bundledCodexModels = (codexCatalog as { models: CodexModelWire[] }).models;
 
 export class GatewayRequestError extends Error {
   constructor(
@@ -36,18 +56,23 @@ export class GatewayService {
     }
   }
 
-  async models() {
-    if (!this.config.provider) return { object: "list", data: [] };
+  async models(request?: Request) {
+    requireSupportedCodexClient(request);
+    if (!this.config.provider) {
+      return { object: "list", data: [], models: codexModels([]) };
+    }
     const aliases = await this.modelAliases();
+    const enabledAliases = aliases.filter((alias) => alias.enabled);
     return {
       object: "list",
-      data: aliases.filter((alias) => alias.enabled).map((alias) => ({
+      data: enabledAliases.map((alias) => ({
         id: alias.alias,
         object: "model",
         created: Math.floor(alias.createdAt.getTime() / 1000),
         owned_by: "dahlia",
         display_name: alias.displayName || alias.alias,
       })),
+      models: codexModels(enabledAliases),
     };
   }
 
@@ -201,6 +226,116 @@ export class GatewayService {
     } while (pageToken);
     return models;
   }
+}
+
+function requireSupportedCodexClient(request?: Request): void {
+  if (!request) return;
+  const version = new URL(request.url).searchParams.get("client_version")
+    ?? LATEST_CODEX_CLIENT_VERSION;
+  if (version !== LATEST_CODEX_CLIENT_VERSION) {
+    throw new GatewayRequestError(
+      `Codex client version '${version}' is not supported`,
+      400,
+      "unsupported_codex_client_version",
+    );
+  }
+}
+
+function codexModels(aliases: ModelAliasRecord[]): CodexModelWire[] {
+  const models = new Map(bundledCodexModels.map((model) => [
+    model.slug,
+    hiddenCodexModel(model.slug),
+  ]));
+  aliases.forEach((alias, priority) => {
+    const model = knownCodexModel(alias.upstreamModel)
+      ?? knownCodexModel(alias.alias)
+      ?? fallbackCodexModel(alias.alias);
+    models.set(alias.alias, {
+      ...model,
+      slug: alias.alias,
+      display_name: alias.displayName || alias.alias,
+      visibility: "list",
+      supported_in_api: true,
+      priority,
+    });
+  });
+  return [...models.values()];
+}
+
+function hiddenCodexModel(slug: string): CodexModelWire {
+  const model = fallbackCodexModel(slug);
+  return {
+    ...model,
+    visibility: "hide",
+    model_messages: { ...model.model_messages, instructions_template: "" },
+  };
+}
+
+function knownCodexModel(value: string): CodexModelWire | undefined {
+  const normalized = value.trim().toLowerCase().replace(/^system\.ai\./, "");
+  const model = bundledCodexModels.find((model) =>
+    normalized === model.slug || normalized === model.slug.replaceAll(".", "-")
+  );
+  if (!model) return undefined;
+  // Keep picker/runtime metadata without opting custom providers into OpenAI-internal transports.
+  return {
+    ...fallbackCodexModel(model.slug),
+    description: model.description,
+    default_reasoning_level: model.default_reasoning_level,
+    supported_reasoning_levels: model.supported_reasoning_levels,
+    shell_type: model.shell_type,
+    model_messages: model.model_messages,
+    include_skills_usage_instructions: model.include_skills_usage_instructions,
+    include_plugin_usage_instructions: model.include_plugin_usage_instructions,
+    include_apps_usage_instructions: model.include_apps_usage_instructions,
+    default_reasoning_summary: model.default_reasoning_summary,
+    support_verbosity: model.support_verbosity,
+    default_verbosity: model.default_verbosity,
+    apply_patch_tool_type: model.apply_patch_tool_type,
+    truncation_policy: model.truncation_policy,
+    supports_image_detail_original: model.supports_image_detail_original,
+    context_window: model.context_window,
+    max_context_window: model.max_context_window,
+    auto_compact_token_limit: model.auto_compact_token_limit,
+    comp_hash: model.comp_hash,
+    effective_context_window_percent: model.effective_context_window_percent,
+    input_modalities: model.input_modalities,
+    model_specialty: model.model_specialty,
+    multi_agent_version: model.multi_agent_version,
+  };
+}
+
+function fallbackCodexModel(slug: string): CodexModelWire {
+  return {
+    slug,
+    display_name: slug,
+    description: null,
+    default_reasoning_level: null,
+    supported_reasoning_levels: [],
+    shell_type: "default",
+    visibility: "list",
+    supported_in_api: true,
+    priority: 99,
+    availability_nux: null,
+    upgrade: null,
+    model_messages: {
+      instructions_template: codexFallback.base_instructions,
+      instructions_variables: null,
+      approvals: null,
+      collaboration_modes: null,
+      auto_review: null,
+      permissions: null,
+      multi_agent: null,
+    },
+    include_apps_usage_instructions: false,
+    support_verbosity: false,
+    default_verbosity: null,
+    apply_patch_tool_type: null,
+    truncation_policy: { mode: "bytes", limit: 10_000 },
+    context_window: 272_000,
+    max_context_window: 272_000,
+    experimental_supported_tools: [],
+  };
 }
 
 function databricksModelListError(

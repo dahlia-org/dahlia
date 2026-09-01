@@ -416,7 +416,7 @@ export function createApp(dependencies: AppDependencies) {
     }
     await next();
   });
-  app.get("/api/v1/models", async (context) => context.json(await gateway.models()));
+  app.get("/api/v1/models", async (context) => context.json(await gateway.models(context.req.raw)));
   app.post("/api/v1/responses", async (context) => gateway.responses(context.req.raw));
 
   for (const extension of extensions) extension.registerRoutes?.(app, services);
