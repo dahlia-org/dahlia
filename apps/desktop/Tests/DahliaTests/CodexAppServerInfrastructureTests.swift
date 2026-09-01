@@ -150,7 +150,7 @@ import Foundation
 
             #expect(catalog.resolvedSelection(current: " default-model ") == "default-model")
             #expect(catalog.resolvedSelection(current: "missing") == "default-model")
-            #expect(catalog.selectionToPersist(current: "missing") == nil)
+            #expect(catalog.selectionToPersist(current: "missing") == "default-model")
             #expect(catalog.selectionToPersist(current: "") == "default-model")
             #expect(catalog.effortOptions(modelID: "default-model").map(\.reasoningEffort) == [
                 "low",

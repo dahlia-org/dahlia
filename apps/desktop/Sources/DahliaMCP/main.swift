@@ -1,4 +1,5 @@
 import DahliaMeetingAccess
+import DahliaRuntimeSupport
 import Foundation
 
 private func fail(_ message: String) -> Never {
@@ -7,6 +8,27 @@ private func fail(_ message: String) -> Never {
 }
 
 let arguments = Array(CommandLine.arguments.dropFirst())
+if arguments.first == "auth" {
+    guard arguments.count == 6,
+          arguments[1] == "token",
+          arguments[2] == "--connection-id",
+          let connectionID = UUID(uuidString: arguments[3]),
+          arguments[4] == "--profile",
+          let profile = DahliaRuntimeProfile(rawValue: arguments[5])
+    else {
+        fail("Usage: dahlia-mcp auth token --connection-id <UUID> --profile <production|development>")
+    }
+    do {
+        try print(DahliaTokenBrokerProtocol.requestToken(
+            connectionID: connectionID,
+            profile: profile
+        ))
+        exit(EXIT_SUCCESS)
+    } catch {
+        fail(error.localizedDescription)
+    }
+}
+
 guard arguments.count >= 2, arguments[0] == "--vault-id" else {
     fail("Usage: dahlia-mcp --vault-id <UUID> [--write]")
 }

@@ -29,7 +29,7 @@ import GRDB
             )
             let segmentID = UUID()
             try queue.write { db in
-                try vault.insert(db)
+                try insertLegacyVault(vault, in: db)
                 try db.execute(
                     sql: """
                     INSERT INTO meetings (id, vaultId, projectId, name, status, duration, createdAt, updatedAt)

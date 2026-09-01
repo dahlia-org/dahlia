@@ -20,7 +20,7 @@ import GRDB
             )
             let organizationID = UUID.v7()
             try queue.write { db in
-                try vault.insert(db)
+                try insertLegacyVault(vault, in: db)
                 try db.execute(
                     sql: """
                     INSERT INTO organizations (

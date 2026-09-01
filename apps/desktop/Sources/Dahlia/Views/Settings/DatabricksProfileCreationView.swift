@@ -2,7 +2,6 @@ import SwiftUI
 
 struct DatabricksProfileCreationView: View {
     let controller: DatabricksAccountController
-    var restoresProviderSelection = true
     let onCreated: (String) -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -51,12 +50,6 @@ struct DatabricksProfileCreationView: View {
                             .controlSize(.small)
                             .accessibilityLabel(L10n.codexWaitingForBrowserSignIn)
                     }
-                } else if controller.isApplyingConfiguration {
-                    LabeledContent(L10n.codexConfiguration) {
-                        ProgressView()
-                            .controlSize(.small)
-                            .accessibilityLabel(L10n.codexConfiguration)
-                    }
                 }
 
                 if controller.isCLIAvailable == false {
@@ -95,9 +88,6 @@ struct DatabricksProfileCreationView: View {
         .onDisappear {
             signInTask?.cancel()
             signInTask = nil
-            if restoresProviderSelection {
-                controller.restoreSelectedProvider()
-            }
         }
     }
 
@@ -113,8 +103,7 @@ struct DatabricksProfileCreationView: View {
         signInTask = Task {
             guard let createdProfileName = await controller.signIn(
                 workspaceURL: workspaceURL,
-                profileName: profileName,
-                restoreProviderSelectionOnCancellation: restoresProviderSelection
+                profileName: profileName
             ), !Task.isCancelled
             else {
                 return

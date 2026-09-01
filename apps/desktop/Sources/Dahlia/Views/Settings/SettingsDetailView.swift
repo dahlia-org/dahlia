@@ -41,7 +41,7 @@ struct SettingsDetailView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .onChange(of: selection) { _, selection in
-            if selection != .dahliaAccounts { mainWindowNavigation.dismissDahliaSignIn() }
+            if selection != .accountsAndVaults { mainWindowNavigation.dismissDahliaSignIn() }
         }
     }
 
@@ -50,22 +50,20 @@ struct SettingsDetailView: View {
         switch selection {
         case .general:
             GeneralSettingsView()
-        case .dahliaAccounts:
-            DahliaAccountsSettingsView(
-                controller: dahliaAccountController,
-                onShowSignIn: mainWindowNavigation.openDahliaSignIn
+        case .accountsAndVaults, .dahliaAccounts, .vault:
+            AccountsAndVaultsSettingsView(
+                appDatabase: appDatabase,
+                vaultModel: vaultManagementModel,
+                currentVault: appSettings.currentVault,
+                accountController: dahliaAccountController,
+                onShowSignIn: mainWindowNavigation.openDahliaSignIn,
+                onUpdateVault: updateCurrentVaultIfNeeded,
+                onUpdateCurrentVaultAccount: updateCurrentVaultAccountIfNeeded
             )
         case .language:
             LanguageSettingsView()
         case .appearance:
             AppearanceSettingsView()
-        case .vault:
-            VaultSettingsView(
-                appDatabase: appDatabase,
-                model: vaultManagementModel,
-                currentVault: appSettings.currentVault,
-                onRenameVault: updateCurrentVaultIfNeeded
-            )
         case .permissions:
             PermissionSettingsView()
         case .backups:
@@ -104,6 +102,12 @@ struct SettingsDetailView: View {
     private func updateCurrentVaultIfNeeded(_ vault: VaultRecord) {
         guard appSettings.currentVault?.id == vault.id else { return }
         appSettings.currentVault = vault
+    }
+
+    private func updateCurrentVaultAccountIfNeeded(_ vault: VaultRecord) {
+        guard appSettings.currentVault?.id == vault.id else { return }
+        appSettings.currentVault = vault
+        VaultAISettingsModel.shared.activate(vault: vault)
     }
 
 }

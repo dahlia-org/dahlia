@@ -5,6 +5,8 @@ enum SetupTourPresentationPolicy {
     static let progressStepUserDefaultsKey = "setupTourProgressStep"
     static let vaultPathUserDefaultsKey = "setupTourVaultPath"
     static let vaultConfirmedUserDefaultsKey = "setupTourVaultConfirmed"
+    static let providerUserDefaultsKey = "setupTourProvider"
+    static let databricksProfileUserDefaultsKey = "setupTourDatabricksProfile"
     static let currentVersion = 1
 
     static func shouldPresentAutomatically(
@@ -41,6 +43,23 @@ enum SetupTourPresentationPolicy {
         defaults.set(isVaultConfirmed, forKey: vaultConfirmedUserDefaultsKey)
     }
 
+    static func saveProviderDraft(
+        provider: AIAccountProvider,
+        databricksProfile: String,
+        in defaults: UserDefaults = .standard
+    ) {
+        defaults.set(provider.rawValue, forKey: providerUserDefaultsKey)
+        defaults.set(databricksProfile, forKey: databricksProfileUserDefaultsKey)
+    }
+
+    static func restoredProvider(in defaults: UserDefaults = .standard) -> AIAccountProvider? {
+        defaults.string(forKey: providerUserDefaultsKey).flatMap(AIAccountProvider.init(rawValue:))
+    }
+
+    static func restoredDatabricksProfile(in defaults: UserDefaults = .standard) -> String {
+        defaults.string(forKey: databricksProfileUserDefaultsKey) ?? ""
+    }
+
     static func isRestoredVaultConfirmed(in defaults: UserDefaults = .standard) -> Bool {
         defaults.bool(forKey: vaultConfirmedUserDefaultsKey)
     }
@@ -53,5 +72,7 @@ enum SetupTourPresentationPolicy {
         defaults.removeObject(forKey: progressStepUserDefaultsKey)
         defaults.removeObject(forKey: vaultPathUserDefaultsKey)
         defaults.removeObject(forKey: vaultConfirmedUserDefaultsKey)
+        defaults.removeObject(forKey: providerUserDefaultsKey)
+        defaults.removeObject(forKey: databricksProfileUserDefaultsKey)
     }
 }

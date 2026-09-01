@@ -10,8 +10,10 @@ actor CodexAppServerService {
     typealias ConfigurationReadiness = @Sendable () async -> Bool
     typealias AccountProviderResolver = @Sendable () async -> AIAccountProvider?
     typealias ProviderAuthenticationPreparation = @Sendable (
+        _ provider: CodexRuntimeProvider,
         _ authenticationMayChange: @Sendable () async -> Void
     ) async throws -> Bool
+    typealias RuntimeProviderResolver = @Sendable () -> CodexRuntimeProvider
 
     struct AccountStatus: Equatable {
         let isAuthenticated: Bool
@@ -105,6 +107,7 @@ actor CodexAppServerService {
 
     struct ProviderAuthenticationPreparationState {
         let id: UUID
+        let provider: CodexRuntimeProvider
         let task: Task<Void, Error>
         var waiters: Set<UUID>
     }
@@ -117,6 +120,7 @@ actor CodexAppServerService {
     private let transportFactory: TransportFactory
     private let configurationReadiness: ConfigurationReadiness
     private let accountProviderResolver: AccountProviderResolver
+    let runtimeProviderResolver: RuntimeProviderResolver
     private let clock: any CodexAppServerClock
     private let transportTimeout: Duration
     private let summaryTimeout: Duration
@@ -176,12 +180,13 @@ actor CodexAppServerService {
         providerAuthenticationPreparation: @escaping ProviderAuthenticationPreparation =
             CodexAppServerService.prepareConfiguredDatabricksAuthentication,
         configurationReadiness: @escaping ConfigurationReadiness = {
-            await MainActor.run { AppSettings.shared.isCodexAccountConfigurationCurrent }
+            await VaultAISettingsModel.shared.waitForRuntimeContext()
         },
         accountProviderResolver: @escaping AccountProviderResolver = {
-            await MainActor.run {
-                AppSettings.shared.configuredCodexAccountProvider
-            }
+            CodexRuntimeContextStore.shared.provider.localAccountProvider
+        },
+        runtimeProviderResolver: @escaping RuntimeProviderResolver = {
+            CodexRuntimeContextStore.shared.provider
         }
     ) {
         transportFactory = { try launcher.launch() }
@@ -191,6 +196,7 @@ actor CodexAppServerService {
         self.transportTimeout = transportTimeout
         self.summaryTimeout = summaryTimeout
         self.providerAuthenticationPreparation = providerAuthenticationPreparation
+        self.runtimeProviderResolver = runtimeProviderResolver
     }
 
     init(
@@ -198,9 +204,10 @@ actor CodexAppServerService {
         clock: any CodexAppServerClock = ContinuousCodexAppServerClock(),
         transportTimeout: Duration = .seconds(15),
         summaryTimeout: Duration = .seconds(270),
-        providerAuthenticationPreparation: @escaping ProviderAuthenticationPreparation = { _ in false },
+        providerAuthenticationPreparation: @escaping ProviderAuthenticationPreparation = { _, _ in false },
         configurationReadiness: @escaping ConfigurationReadiness = { true },
-        accountProviderResolver: @escaping AccountProviderResolver = { nil }
+        accountProviderResolver: @escaping AccountProviderResolver = { nil },
+        runtimeProviderResolver: @escaping RuntimeProviderResolver = { .chatGPTSubscription }
     ) {
         self.transportFactory = transportFactory
         self.configurationReadiness = configurationReadiness
@@ -209,6 +216,7 @@ actor CodexAppServerService {
         self.transportTimeout = transportTimeout
         self.summaryTimeout = summaryTimeout
         self.providerAuthenticationPreparation = providerAuthenticationPreparation
+        self.runtimeProviderResolver = runtimeProviderResolver
     }
 
     func start() async throws {
@@ -256,10 +264,19 @@ actor CodexAppServerService {
         isStarting = false
     }
 
-    func reloadConfiguration() async throws {
+    func reloadConfiguration(
+        applyingContext: (@Sendable () -> Void)? = nil
+    ) async throws {
         guard !isShuttingDown else { throw CancellationError() }
         if isConfigurationReloading {
-            try await waitForConfigurationReloadToFinish()
+            do {
+                try await waitForConfigurationReloadToFinish()
+            } catch is CancellationError {
+                guard !Task.isCancelled, applyingContext != nil else { throw CancellationError() }
+            }
+            if let applyingContext {
+                try await reloadConfiguration(applyingContext: applyingContext)
+            }
             return
         }
 
@@ -270,6 +287,10 @@ actor CodexAppServerService {
             try await waitForChatTurnsToFinish()
             await stopConnection(error: CancellationError())
             try Task.checkCancellation()
+            applyingContext?()
+            cachedModels = nil
+            cachedAccountStatus = nil
+            cachedConfigReadResult = nil
             try await start()
             providerAuthenticationReloadRequired = false
             finishConfigurationReload()
@@ -298,8 +319,12 @@ actor CodexAppServerService {
         bypassProviderAuthenticationPreparation: Bool = false,
         bypassConfigurationReloadAdmission: Bool = false
     ) async throws -> [CodexModel] {
+        if !bypassConfigurationCheck {
+            try await requireCurrentConfiguration()
+        }
+        let runtimeProvider = runtimeProviderResolver()
         if !bypassProviderAuthenticationPreparation {
-            try await prepareProviderAuthentication()
+            try await prepareProviderAuthentication(for: runtimeProvider)
         }
         if !bypassConfigurationCheck {
             try await requireCurrentConfiguration()
@@ -308,6 +333,9 @@ actor CodexAppServerService {
             bypassingAdmission: bypassConfigurationReloadAdmission
         )
         defer { finishCodexOperation(operationID) }
+        guard runtimeProviderResolver() == runtimeProvider else {
+            throw CodexConfigurationError.providerChanged(runtimeProvider.displayName)
+        }
         let account = try await accountStatus(forceRefresh: false)
         guard account.canUseCodex else { throw CodexAppServerError.notLoggedIn }
         if !forceRefresh, let cachedModels { return cachedModels }
@@ -796,23 +824,45 @@ actor CodexAppServerService {
     }
 
     func withChatOperation<Result: Sendable>(
+        expectedProvider: CodexRuntimeProvider? = nil,
         _ operation: @Sendable (isolated CodexAppServerService) async throws -> Result
     ) async throws -> Result {
-        try await prepareProviderAuthentication()
+        try await requireCurrentConfiguration()
+        let runtimeProvider = runtimeProviderResolver()
+        if let expectedProvider, expectedProvider != runtimeProvider {
+            throw CodexConfigurationError.providerChanged(expectedProvider.displayName)
+        }
+        try await prepareProviderAuthentication(for: runtimeProvider)
+        try await requireCurrentConfiguration()
         let operationID = try await beginCodexOperation()
         defer { finishCodexOperation(operationID) }
+        guard runtimeProviderResolver() == runtimeProvider else {
+            throw CodexConfigurationError.providerChanged(runtimeProvider.displayName)
+        }
         return try await operation(self)
     }
 
     func generate(
         _ request: CodexAppServerRequest,
-        bypassConfigurationCheck: Bool = false
+        bypassConfigurationCheck: Bool = false,
+        retryDahliaAuthentication: Bool = true,
+        expectedProvider: CodexRuntimeProvider? = nil
     ) async throws -> String {
-        try await prepareProviderAuthentication()
+        if !bypassConfigurationCheck {
+            try await requireCurrentConfiguration()
+        }
+        let runtimeProvider = runtimeProviderResolver()
+        guard expectedProvider == nil || expectedProvider == runtimeProvider else {
+            throw CodexConfigurationError.accountNotReady
+        }
+        try await prepareProviderAuthentication(for: runtimeProvider)
         if !bypassConfigurationCheck {
             try await requireCurrentConfiguration()
         }
         try await waitForConfigurationReloadToFinish()
+        guard runtimeProviderResolver() == runtimeProvider else {
+            throw CodexConfigurationError.accountNotReady
+        }
         let generationID = UUID()
         generations[generationID] = GenerationContext()
 
@@ -832,6 +882,22 @@ actor CodexAppServerService {
                 generationID,
                 interrupt: Self.isSummaryTimeout(error)
             )
+            if retryDahliaAuthentication,
+               error as? CodexAppServerError == .notLoggedIn,
+               case let .dahlia(connectionID) = runtimeProvider {
+                _ = try await DahliaCloudTokenServiceRegistry.shared.validAccessToken(
+                    connectionID: connectionID,
+                    forceRefresh: true
+                )
+                guard runtimeProviderResolver() == runtimeProvider else { throw error }
+                try await reloadConfiguration()
+                return try await generate(
+                    request,
+                    bypassConfigurationCheck: bypassConfigurationCheck,
+                    retryDahliaAuthentication: false,
+                    expectedProvider: runtimeProvider
+                )
+            }
             throw error
         }
     }
@@ -979,12 +1045,16 @@ private extension CodexAppServerService {
             "method": .string("initialized"),
             "params": .object([:]),
         ]))
-        let accountResult = try await requestOnCurrentConnection(
-            method: "account/read",
-            params: .object(["refreshToken": .bool(false)]),
-            timeout: transportTimeout
-        )
-        cachedAccountStatus = try Self.parseAccountStatus(accountResult)
+        if runtimeProviderResolver() == .chatGPTSubscription {
+            let accountResult = try await requestOnCurrentConnection(
+                method: "account/read",
+                params: .object(["refreshToken": .bool(false)]),
+                timeout: transportTimeout
+            )
+            cachedAccountStatus = try Self.parseAccountStatus(accountResult)
+        } else {
+            cachedAccountStatus = AccountStatus(isAuthenticated: false, requiresOpenAIAuth: false, label: nil)
+        }
     }
 
     private func performGeneration(

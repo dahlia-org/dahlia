@@ -62,3 +62,4 @@ Codex は全 ADR を順番に読まず、最初にこの一覧から現在の作
 | [0050](0050-use-app-service-principal-for-databricks-model-discovery.md) | Server gateway / Databricks | モデル発見だけを App service principal で実行する | Accepted; amends 0044 and 0046 |
 | [0051](0051-add-desktop-cloud-oauth.md) | Desktop / Cloud authentication | protected-resource discovery と deployment-bound credential で Cloud に接続する | Accepted; builds on 0044 and 0049; amended by 0052 |
 | [0052](0052-separate-desktop-account-connections-from-vaults.md) | Desktop / Authentication / Vault | 接続をアプリ共有にし、Vault 関連は sync consumer と同時に追加する | Accepted; amends 0051, builds on 0043 |
+| [0053](0053-scope-codex-accounts-to-vaults.md) | Desktop / AI runtime / Authentication / Vault | Vault ごとにローカルまたは Dahlia アカウントの Codex home とモデル設定を選択する | Accepted; partially supersedes 0051 and 0052, builds on 0021 and 0029 |

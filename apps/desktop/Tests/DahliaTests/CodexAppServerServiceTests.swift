@@ -350,6 +350,66 @@ import Foundation
         }
 
         @Test
+        func contextChangingReloadRunsAfterAnExistingReload() async throws {
+            let first = TestCodexAppServerTransport(mode: .generationBlocks)
+            let second = TestCodexAppServerTransport(mode: .models)
+            let third = TestCodexAppServerTransport(mode: .models)
+            let transports = Mutex([first, second, third])
+            let appliedContext = Mutex(false)
+            let service = makeTestCodexAppServerService(transportFactory: {
+                transports.withLock { $0.removeFirst() }
+            })
+            let generation = Task {
+                try await service.generate(.init(
+                    model: nil,
+                    developerInstructions: "Summarize.",
+                    inputs: [.text("Transcript")],
+                    outputSchema: Data(#"{"type":"object"}"#.utf8)
+                ))
+            }
+
+            await service.waitUntilActiveTurnForTesting()
+            let firstReload = Task { try await service.reloadConfiguration() }
+            await service.waitUntilConfigurationReloadIsWaitingForTesting()
+            let contextReload = Task {
+                try await service.reloadConfiguration {
+                    appliedContext.withLock { $0 = true }
+                }
+            }
+
+            await first.sendFromServer(.object([
+                "method": .string("item/completed"),
+                "params": .object([
+                    "threadId": .string("thread-1"),
+                    "turnId": .string("turn-1"),
+                    "item": .object([
+                        "type": .string("agentMessage"),
+                        "text": .string(#"{"status":"ok"}"#),
+                    ]),
+                ]),
+            ]))
+            await first.sendFromServer(.object([
+                "method": .string("turn/completed"),
+                "params": .object([
+                    "threadId": .string("thread-1"),
+                    "turn": .object([
+                        "id": .string("turn-1"),
+                        "status": .string("completed"),
+                    ]),
+                ]),
+            ]))
+
+            _ = try await generation.value
+            try await firstReload.value
+            try await contextReload.value
+            #expect(appliedContext.withLock { $0 })
+            #expect(await first.isClosed)
+            #expect(await second.isClosed)
+            #expect(await !third.isClosed)
+            await service.shutdown()
+        }
+
+        @Test
         func browserLoginReloadsConfigurationBeforeGeneration() async throws {
             let first = TestCodexAppServerTransport(mode: .models)
             let second = TestCodexAppServerTransport(mode: .generationCompletes)
@@ -361,7 +421,7 @@ import Foundation
                     launchCount.withLock { $0 += 1 }
                     return transports.withLock { $0.removeFirst() }
                 },
-                providerAuthenticationPreparation: { _ in
+                providerAuthenticationPreparation: { _, _ in
                     preparationCount.withLock { $0 += 1 }
                     return true
                 }
@@ -392,7 +452,7 @@ import Foundation
             let releasePreparation = AsyncStream.makeStream(of: Void.self)
             let service = makeTestCodexAppServerService(
                 transportFactory: { transports.withLock { $0.removeFirst() } },
-                providerAuthenticationPreparation: { _ in
+                providerAuthenticationPreparation: { _, _ in
                     preparationCount.withLock { $0 += 1 }
                     preparationStarted.continuation.yield()
                     for await _ in releasePreparation.stream {
@@ -429,7 +489,7 @@ import Foundation
             let releasePreparation = AsyncStream.makeStream(of: Void.self)
             let service = makeTestCodexAppServerService(
                 transportFactory: { transports.withLock { $0.removeFirst() } },
-                providerAuthenticationPreparation: { _ in
+                providerAuthenticationPreparation: { _, _ in
                     preparationCount.withLock { $0 += 1 }
                     preparationStarted.continuation.yield()
                     for await _ in releasePreparation.stream {
@@ -470,7 +530,7 @@ import Foundation
             let preparationStarted = AsyncStream.makeStream(of: Void.self)
             let service = makeTestCodexAppServerService(
                 transportFactory: { transport },
-                providerAuthenticationPreparation: { _ in
+                providerAuthenticationPreparation: { _, _ in
                     preparationStarted.continuation.yield()
                     do {
                         try await Task.sleep(for: .seconds(60))
@@ -504,7 +564,7 @@ import Foundation
             let cancellationCompletion = CompletionGate()
             let service = makeTestCodexAppServerService(
                 transportFactory: { transport },
-                providerAuthenticationPreparation: { _ in
+                providerAuthenticationPreparation: { _, _ in
                     let attempt = preparationCount.withLock { count in
                         count += 1
                         return count
@@ -552,7 +612,7 @@ import Foundation
             let preparationCount = Mutex(0)
             let service = makeTestCodexAppServerService(
                 transportFactory: { transports.withLock { $0.removeFirst() } },
-                providerAuthenticationPreparation: { authenticationMayChange in
+                providerAuthenticationPreparation: { _, authenticationMayChange in
                     let attempt = preparationCount.withLock { count in
                         count += 1
                         return count

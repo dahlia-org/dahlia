@@ -24,7 +24,7 @@ import Foundation
             let releasePreparation = AsyncStream.makeStream(of: Void.self)
             let appServer = makeTestCodexAppServerService(
                 transportFactory: { transport },
-                providerAuthenticationPreparation: { _ in
+                providerAuthenticationPreparation: { _, _ in
                     preparationStarted.continuation.yield()
                     for await _ in releasePreparation.stream {
                         break
@@ -61,7 +61,7 @@ import Foundation
             let transport = TestCodexChatAppServerTransport()
             let appServer = makeTestCodexAppServerService(
                 transportFactory: { transport },
-                providerAuthenticationPreparation: { _ in throw AuthenticationFailure() }
+                providerAuthenticationPreparation: { _, _ in throw AuthenticationFailure() }
             )
             let service = CodexChatService(appServer: appServer)
 
@@ -78,6 +78,83 @@ import Foundation
         }
 
         @Test
+        func turnDoesNotStartWhenPreparedProviderChangesDuringReadinessWait() async {
+            let transport = TestCodexChatAppServerTransport()
+            let provider = Mutex(CodexRuntimeProvider.chatGPTSubscription)
+            let ready = Mutex(false)
+            let readinessStarted = AsyncStream.makeStream(of: Void.self)
+            let appServer = makeTestCodexAppServerService(
+                transportFactory: { transport },
+                configurationReadiness: {
+                    readinessStarted.continuation.yield()
+                    while !ready.withLock({ $0 }) { await Task.yield() }
+                    return true
+                },
+                runtimeProviderResolver: { provider.withLock { $0 } }
+            )
+            let service = CodexChatService(appServer: appServer)
+            let turn = Task {
+                try await service.beginTurn(
+                    threadID: "thread-1",
+                    inputs: [.text("Do not send")],
+                    model: "default-model",
+                    effort: "medium",
+                    approvalMethod: .autoReview,
+                    expectedProvider: .chatGPTSubscription
+                )
+            }
+            for await _ in readinessStarted.stream { break }
+            provider.withLock { $0 = .databricks(profile: "WORK") }
+            ready.withLock { $0 = true }
+
+            await #expect(throws: CodexConfigurationError.self) { _ = try await turn.value }
+            #expect(await transport.messages().isEmpty)
+            await appServer.shutdown()
+        }
+
+        @Test
+        func authenticationPreparesProviderSelectedAfterReadinessWait() async throws {
+            let transport = TestCodexChatAppServerTransport()
+            let provider = Mutex(CodexRuntimeProvider.chatGPTSubscription)
+            let preparedProviders = Mutex<[CodexRuntimeProvider]>([])
+            let ready = Mutex(false)
+            let readinessStarted = AsyncStream.makeStream(of: Void.self)
+            let appServer = makeTestCodexAppServerService(
+                transportFactory: { transport },
+                providerAuthenticationPreparation: { preparedProvider, _ in
+                    preparedProviders.withLock { $0.append(preparedProvider) }
+                    return false
+                },
+                configurationReadiness: {
+                    readinessStarted.continuation.yield()
+                    while !ready.withLock({ $0 }) { await Task.yield() }
+                    return true
+                },
+                runtimeProviderResolver: { provider.withLock { $0 } }
+            )
+            let service = CodexChatService(appServer: appServer)
+            let send = Task {
+                try await service.send(
+                    threadID: "thread-1",
+                    inputs: [.text("Hi")],
+                    model: "default-model",
+                    effort: "medium"
+                )
+            }
+            for await _ in readinessStarted.stream { break }
+            provider.withLock { $0 = .databricks(profile: "WORK") }
+            ready.withLock { $0 = true }
+
+            let stream = try await send.value
+            for try await _ in stream {}
+            #expect(preparedProviders.withLock { $0 } == [.databricks(profile: "WORK")])
+            #expect(await transport.messages().contains {
+                $0.objectValue?["method"]?.stringValue == "turn/start"
+            })
+            await appServer.shutdown()
+        }
+
+        @Test
         func chatHistoryOperationsShareAuthenticationBeforeSendingRequests() async throws {
             let first = TestCodexChatAppServerTransport()
             let second = TestCodexChatAppServerTransport()
@@ -87,7 +164,7 @@ import Foundation
             let releasePreparation = AsyncStream.makeStream(of: Void.self)
             let appServer = makeTestCodexAppServerService(
                 transportFactory: { transports.withLock { $0.removeFirst() } },
-                providerAuthenticationPreparation: { _ in
+                providerAuthenticationPreparation: { _, _ in
                     preparationCount.withLock { $0 += 1 }
                     preparationStarted.continuation.yield()
                     for await _ in releasePreparation.stream {

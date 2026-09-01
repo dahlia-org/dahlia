@@ -8,6 +8,7 @@ final class CodexModelCatalog {
     private(set) var isLoading = false
     private(set) var hasAttemptedLoad = false
     private(set) var errorMessage: String?
+    @ObservationIgnored private var loadGeneration = 0
 
     private let service: CodexAppServerService
 
@@ -16,19 +17,30 @@ final class CodexModelCatalog {
     }
 
     func load(forceRefresh: Bool = false) async {
+        loadGeneration += 1
+        let generation = loadGeneration
         hasAttemptedLoad = true
         isLoading = true
         errorMessage = nil
-        defer { isLoading = false }
+        defer {
+            if loadGeneration == generation {
+                isLoading = false
+            }
+        }
 
         do {
-            models = try await service.models(forceRefresh: forceRefresh)
+            let loadedModels = try await service.models(forceRefresh: forceRefresh)
+            guard loadGeneration == generation, !Task.isCancelled else { return }
+            models = loadedModels
             if models.isEmpty {
                 errorMessage = L10n.codexNoModels
             }
         } catch is CancellationError {
-            errorMessage = nil
+            if loadGeneration == generation {
+                errorMessage = nil
+            }
         } catch {
+            guard loadGeneration == generation else { return }
             models = []
             errorMessage = error.localizedDescription
         }
@@ -47,8 +59,8 @@ final class CodexModelCatalog {
     }
 
     func selectionToPersist(current: String) -> String? {
-        guard current.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
-        return resolvedSelection(current: current)
+        let resolved = resolvedSelection(current: current)
+        return resolved == current.trimmingCharacters(in: .whitespacesAndNewlines) ? nil : resolved
     }
 
     func effortOptions(modelID: String) -> [CodexReasoningEffortOption] {

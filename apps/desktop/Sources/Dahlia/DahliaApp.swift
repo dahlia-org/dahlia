@@ -30,6 +30,7 @@ struct DahliaApp: App {
     @State private var chatCoordinator: CodexChatCoordinator
     @State private var vaultManagementModel: VaultManagementModel
     @State private var dahliaAccountController = DahliaCloudAccountController.shared
+    @State private var tokenBroker = DahliaTokenBrokerServer()
     private let mainWindowNavigation: MainWindowNavigation
     @State private var appDatabase: AppDatabaseManager?
     @State private var isInitializingVault = true
@@ -331,15 +332,30 @@ struct DahliaApp: App {
             return
         }
         appDatabase = db
+        let vaultAISettings = VaultAISettingsModel.shared
+        vaultAISettings.configure(dbQueue: db.dbQueue)
+        await CodexRuntimeContextCoordinator.shared.configure(dbQueue: db.dbQueue)
+        do {
+            try await MeetingRepository(dbQueue: db.dbQueue)
+                .backfillVaultAISettings(VaultAISettingsLegacyValues(settings: .shared))
+        } catch {
+            ErrorReportingService.capture(error, context: ["source": "vaultAISettingsBackfill"])
+        }
         await DahliaCloudCredentialStorage.deleteLegacyCredential()
         await dahliaAccountController.configure(appDatabase: db)
+        do {
+            try tokenBroker.start()
+        } catch {
+            ErrorReportingService.capture(error, context: ["source": "dahliaTokenBroker"])
+        }
         await db.searchIndexer.start()
         sidebarViewModel.setAppDatabase(db)
         viewModel.configureSearchIndexer(db.searchIndexer)
         viewModel.configureBatchTranscription(dbQueue: db.dbQueue) { [weak sidebarViewModel] in
             await sidebarViewModel?.refreshUnprocessedRecordings()
         }
-        appDelegate.terminationHandler = { [weak viewModel, weak db] in
+        appDelegate.terminationHandler = { [weak viewModel, weak db, weak tokenBroker] in
+            tokenBroker?.stop()
             await db?.searchIndexer.stop()
             return await viewModel?.prepareForTermination()
         }
@@ -374,6 +390,7 @@ struct DahliaApp: App {
         viewModel.clearCurrentMeeting()
         mainWindowNavigation.changeVault(to: vault.id)
         AppSettings.shared.currentVault = vault
+        VaultAISettingsModel.shared.activate(vault: vault)
         chatCoordinator.activateVault(vault.id)
         sidebarViewModel.setAppDatabase(db)
         if recordsLastOpened {
@@ -385,10 +402,28 @@ struct DahliaApp: App {
     }
 
     private func signInToDahlia(_ configuration: DahliaCloudConfiguration) {
+        let targetVaultID = AppSettings.shared.currentVault?.id
         guard let task = dahliaAccountController.startSignIn(configuration: configuration) else { return }
         Task { @MainActor in
             await task.value
-            if dahliaAccountController.errorMessage == nil {
+            if dahliaAccountController.errorMessage == nil,
+               let connection = dahliaAccountController.signedInConnection(matching: configuration) {
+                if let targetVaultID,
+                   let db = appDatabase {
+                    do {
+                        if let vault = try await MeetingRepository(dbQueue: db.dbQueue).updateVaultAccountConnection(
+                            id: targetVaultID,
+                            connectionID: connection.id
+                        ), AppSettings.shared.currentVault?.id == targetVaultID {
+                            AppSettings.shared.currentVault = vault
+                            VaultAISettingsModel.shared.activate(vault: vault)
+                        }
+                        await dahliaAccountController.reload()
+                    } catch {
+                        dahliaAccountController.reportAccountLinkingError(error)
+                        return
+                    }
+                }
                 mainWindowNavigation.dismissDahliaSignIn()
             }
         }

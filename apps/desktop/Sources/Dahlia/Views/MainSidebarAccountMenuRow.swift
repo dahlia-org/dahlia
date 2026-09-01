@@ -2,6 +2,7 @@ import SwiftUI
 
 struct MainSidebarAccountMenuRow: View {
     let title: String
+    var subtitle: String?
     var image: Image?
     var showsDisclosure = false
     var selectionState: Bool?
@@ -29,8 +30,16 @@ struct MainSidebarAccountMenuRow: View {
                         .frame(width: 18)
                 }
 
-                Text(title)
-                    .lineLimit(1)
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    Text(title)
+                        .lineLimit(1)
+                    if let subtitle {
+                        Text(subtitle)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
 
                 Spacer(minLength: 12)
 

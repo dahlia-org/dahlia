@@ -1,9 +1,8 @@
 import SwiftUI
 
 struct DatabricksAccountSettingsView: View {
-    @ObservedObject private var settings = AppSettings.shared
+    @Bindable private var vaultSettings = VaultAISettingsModel.shared
     let controller: DatabricksAccountController
-    let restoresProviderSelection: Bool
     let showsDescription: Bool
     @State private var refreshTask: Task<Void, Never>?
     @State private var isShowingInstallGuide = false
@@ -14,11 +13,9 @@ struct DatabricksAccountSettingsView: View {
 
     init(
         controller: DatabricksAccountController = DatabricksAccountController(),
-        restoresProviderSelection: Bool = true,
         showsDescription: Bool = true
     ) {
         self.controller = controller
-        self.restoresProviderSelection = restoresProviderSelection
         self.showsDescription = showsDescription
     }
 
@@ -50,7 +47,7 @@ struct DatabricksAccountSettingsView: View {
                 .buttonStyle(.dahlia(.primary))
                 .disabled(controller.isBusy)
 
-                if let profile = controller.profile(named: settings.codexDatabricksProfile) {
+                if let profile = controller.profile(named: vaultSettings.databricksProfile) {
                     LabeledContent(L10n.databricksWorkspaceID, value: profile.workspaceID ?? L10n.workspaceIDUnavailableFromProfile)
                 }
             }
@@ -60,12 +57,6 @@ struct DatabricksAccountSettingsView: View {
                     ProgressView()
                         .controlSize(.small)
                         .accessibilityLabel(L10n.codexWaitingForBrowserSignIn)
-                }
-            } else if controller.isApplyingConfiguration {
-                LabeledContent(L10n.codexConfiguration) {
-                    ProgressView()
-                        .controlSize(.small)
-                        .accessibilityLabel(L10n.codexConfiguration)
                 }
             } else if controller.isConfigured {
                 SettingsStatusMessage(
@@ -89,18 +80,16 @@ struct DatabricksAccountSettingsView: View {
                 Text(L10n.databricksCodexDescription)
             }
         }
-        .task(id: settings.codexDatabricksProfile) {
-            let requestedProfileName = settings.codexDatabricksProfile
+        .task(id: vaultSettings.databricksProfile) {
+            let requestedProfileName = vaultSettings.databricksProfile
             if controller.configuredProfileName == requestedProfileName {
                 return
             }
-            let resolvedProfile = await controller.prepare(
-                profileName: requestedProfileName,
-                restoreProviderSelectionOnCancellation: restoresProviderSelection
-            )
+            let resolvedProfile = await controller.prepare(profileName: requestedProfileName)
             if let resolvedProfile,
-               settings.codexDatabricksProfile == requestedProfileName {
-                settings.codexDatabricksProfile = resolvedProfile
+               resolvedProfile.isEmpty,
+               vaultSettings.databricksProfile == requestedProfileName {
+                vaultSettings.databricksProfile = resolvedProfile
             }
         }
         .onChange(of: scenePhase) { _, newPhase in
@@ -112,10 +101,9 @@ struct DatabricksAccountSettingsView: View {
         }
         .sheet(isPresented: $isShowingProfileCreation) {
             DatabricksProfileCreationView(
-                controller: controller,
-                restoresProviderSelection: restoresProviderSelection
+                controller: controller
             ) { profileName in
-                settings.codexDatabricksProfile = profileName
+                vaultSettings.databricksProfile = profileName
             }
         }
         .alert(L10n.databricksCLIInstallation, isPresented: $isShowingInstallationAlert) {} message: {
@@ -124,10 +112,6 @@ struct DatabricksAccountSettingsView: View {
         .onDisappear {
             refreshTask?.cancel()
             refreshTask = nil
-            if restoresProviderSelection,
-               settings.codexAccountProvider == .databricks {
-                controller.restoreSelectedProvider()
-            }
         }
     }
 
@@ -135,7 +119,7 @@ struct DatabricksAccountSettingsView: View {
         LabeledContent {
             HStack {
                 DatabricksProfilePicker(
-                    selection: $settings.codexDatabricksProfile,
+                    selection: $vaultSettings.databricksProfile,
                     profiles: controller.profiles,
                     isLoading: controller.isLoadingProfiles
                 )
@@ -160,14 +144,12 @@ struct DatabricksAccountSettingsView: View {
     private func refreshProfiles() {
         refreshTask?.cancel()
         refreshTask = Task {
-            let requestedProfileName = settings.codexDatabricksProfile
-            let resolvedProfile = await controller.prepare(
-                profileName: requestedProfileName,
-                restoreProviderSelectionOnCancellation: restoresProviderSelection
-            )
+            let requestedProfileName = vaultSettings.databricksProfile
+            let resolvedProfile = await controller.prepare(profileName: requestedProfileName)
             if let resolvedProfile,
-               settings.codexDatabricksProfile == requestedProfileName {
-                settings.codexDatabricksProfile = resolvedProfile
+               resolvedProfile.isEmpty,
+               vaultSettings.databricksProfile == requestedProfileName {
+                vaultSettings.databricksProfile = resolvedProfile
             }
         }
     }

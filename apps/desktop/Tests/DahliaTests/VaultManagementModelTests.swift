@@ -30,6 +30,34 @@
         }
 
         @Test
+        func setupPersistsProviderDraftBeforeTheFirstVaultIsActive() async throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            let model = VaultManagementModel()
+            await model.configure(appDatabase: database)
+            let rootURL = temporaryDirectoryURL()
+            let selectedURL = rootURL.appending(path: "Selected", directoryHint: .isDirectory)
+            defer { try? FileManager.default.removeItem(at: rootURL) }
+            let settings = VaultAISettingsModel.shared
+            let originalProvider = settings.localProvider
+            let originalProfile = settings.databricksProfile
+            settings.clear()
+            settings.localProvider = .databricks
+            settings.databricksProfile = "setup-profile"
+            defer {
+                settings.localProvider = originalProvider
+                settings.databricksProfile = originalProfile
+            }
+
+            let vault = try #require(await model.createVault(at: selectedURL))
+            let storedVault = try #require(MeetingRepository(dbQueue: database.dbQueue).fetchAllVaults().first)
+
+            #expect(vault.localProvider == .databricks)
+            #expect(vault.databricksProfile == "setup-profile")
+            #expect(storedVault.localProvider == .databricks)
+            #expect(storedVault.databricksProfile == "setup-profile")
+        }
+
+        @Test
         func setupUsesDahliaAsTheDefaultVaultName() async throws {
             let database = try AppDatabaseManager(path: ":memory:")
             let model = VaultManagementModel()
@@ -230,6 +258,29 @@
             #expect(renamedVault.name == "Customer Interviews")
             #expect(model.vaults.first?.name == "Customer Interviews")
             #expect(try MeetingRepository(dbQueue: database.dbQueue).fetchAllVaults().first?.name == "Customer Interviews")
+        }
+
+        @Test
+        func updatesTheAccountConnectionForOneVault() async throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            let repository = MeetingRepository(dbQueue: database.dbQueue)
+            let connection = DahliaAccountConnectionRecord(
+                id: .v7(),
+                origin: "https://server.example.com",
+                clientID: "desktop-client",
+                createdAt: .now
+            )
+            try await repository.insertDahliaAccountConnection(connection)
+            let vault = makeVault(name: "Account", lastOpenedAt: .now)
+            try repository.insertVault(vault)
+            let model = VaultManagementModel()
+            await model.configure(appDatabase: database)
+
+            let updated = try #require(await model.updateAccountConnection(for: vault, connectionID: connection.id))
+
+            #expect(updated.accountConnectionId == connection.id)
+            #expect(model.vaults.first?.accountConnectionId == connection.id)
+            #expect(try repository.fetchAllVaults().first?.accountConnectionId == connection.id)
         }
 
         @Test

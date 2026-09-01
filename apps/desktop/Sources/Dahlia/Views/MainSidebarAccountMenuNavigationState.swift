@@ -6,7 +6,6 @@ import Observation
 final class MainSidebarAccountMenuNavigationState {
     enum ActiveMenu {
         case root
-        case vaults
         case languages
     }
 

@@ -502,6 +502,7 @@
 "Ultra" = "Ultra";
 "Developer Settings" = "Developer Settings";
 "Vault" = "Vault";
+"Accounts and Vaults" = "Accounts and Vaults";
 "Dahlia Account" = "Dahlia Account";
 "Dahlia Cloud" = "Dahlia Cloud";
 "Dahlia Server" = "Dahlia Server";
@@ -784,7 +785,7 @@
 /* Sidebar Footer */
 "Switch Vault" = "Switch Vault";
 "MCP Settings" = "MCP Settings";
-"Manage Vaults..." = "Manage Vaults...";
+"Manage Vaults" = "Manage Vaults";
 "Manage Projects..." = "Manage Projects...";
 "Settings" = "Settings";
 "Help" = "Help";
@@ -1099,6 +1100,7 @@
 "Could not update the Codex configuration: %@" = "Could not update the Codex configuration: %@";
 "Codex is configured for Databricks" = "Codex is configured for Databricks";
 "The selected AI account is not ready. Open Model Provider in Settings and finish its configuration." = "The selected AI account is not ready. Open Model Provider in Settings and finish its configuration.";
+"This chat uses %@. Start a new chat to use the current account." = "This chat uses %@. Start a new chat to use the current account.";
 "Codex uses this Databricks CLI profile. Browser sign-in opens when authentication expires." = "Codex uses this Databricks CLI profile. Browser sign-in opens when authentication expires.";
 "Codex returned no available models. Try again." = "Codex returned no available models. Try again.";
 "Models are loaded from the bundled Codex app-server." = "Models are loaded from the bundled Codex app-server.";
@@ -1597,6 +1599,10 @@
 "Setup Complete" = "Setup Complete";
 "Continue" = "Continue";
 "Start Dahlia" = "Start Dahlia";
+"Local Account" = "Local Account";
+"Switching AI account…" = "Switching AI account…";
+"Choose the AI account used by this Vault." = "Choose the AI account used by this Vault.";
+"This account is used by %lld Vaults. Those Vaults will use the Local Account, and this account's Codex data will be deleted." = "This account is used by %lld Vaults. Those Vaults will use the Local Account, and this account's Codex data will be deleted.";
 "Dahlia stores meeting data and generated files in a local Vault." = "Dahlia stores meeting data and generated files in a local Vault.";
 "Choose the languages Dahlia should recognize and the primary language for AI output." = "Choose the languages Dahlia should recognize and the primary language for AI output.";
 "Recognition and OCR Languages" = "Recognition and OCR Languages";

@@ -24,7 +24,7 @@ import GRDB
             let firstObservedAt = Date(timeIntervalSince1970: 1_700_000_000)
             let lastObservedAt = firstObservedAt.addingTimeInterval(600)
             try queue.write { db in
-                try vault.insert(db)
+                try insertLegacyVault(vault, in: db)
                 try insertRootOrganization(firstOrganizationID, vaultID: vault.id, in: db)
                 try insertRootOrganization(secondOrganizationID, vaultID: vault.id, in: db)
                 try db.execute(
@@ -109,7 +109,7 @@ import GRDB
                     sql: "SELECT identifier FROM grdb_migrations ORDER BY rowid DESC LIMIT 1"
                 )
             }
-            #expect(applied == "v39_dahliaAccountConnections")
+            #expect(applied == "v41_vaultAISettingsBackfill")
         }
 
         private func insertRootOrganization(

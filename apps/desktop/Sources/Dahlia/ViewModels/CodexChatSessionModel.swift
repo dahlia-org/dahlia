@@ -1,4 +1,3 @@
-import Combine
 import Foundation
 import Observation
 
@@ -110,7 +109,9 @@ final class CodexChatSessionModel: Identifiable {
     @ObservationIgnored private var approvalMethodSelectionGeneration: UInt = 0
     @ObservationIgnored private var restoreSelectionGeneration: UInt?
     private var configuredAccountProvider: AIAccountProvider?
-    @ObservationIgnored private var settingsObserver: AnyCancellable?
+    @ObservationIgnored private let vaultSettings: VaultAISettingsModel
+    @ObservationIgnored private let runtimeProviderResolver: @Sendable () -> CodexRuntimeProvider
+    @ObservationIgnored private var preparedRuntimeProvider: CodexRuntimeProvider?
 
     var hasPendingGenerationWork: Bool {
         let hasReachablePendingInput = (!pendingManualInputs.isEmpty || pendingLiveTranscript != nil)
@@ -132,6 +133,10 @@ final class CodexChatSessionModel: Identifiable {
         approvalMethod: CodexChatApprovalMethod? = nil,
         service: any CodexChatServicing = CodexChatService.shared,
         settings: AppSettings = .shared,
+        vaultSettings: VaultAISettingsModel = .shared,
+        runtimeProviderResolver: @escaping @Sendable () -> CodexRuntimeProvider = {
+            CodexRuntimeContextStore.shared.provider
+        },
         contextProvider: any CodexChatContextProviding = CodexChatContextProvider(),
         streamingUpdateInterval: Duration = .milliseconds(50),
         usageTelemetryReporter: @escaping UsageTelemetryReporter = { event in
@@ -139,26 +144,39 @@ final class CodexChatSessionModel: Identifiable {
         }
     ) {
         self.id = id
-        self.vaultID = vaultID ?? settings.currentVault?.id
+        let resolvedVaultID = vaultID ?? settings.currentVault?.id
+        let usesVaultSettings = vaultSettings.vaultID == resolvedVaultID
+        self.vaultID = resolvedVaultID
         self.backendThreadID = backendThreadID
         self.title = title
         self.messages = messages
-        self.selectedModelID = modelID ?? settings.codexChatModelID
-        self.selectedEffort = effort ?? settings.codexChatReasoningEffort
+        self.selectedModelID = modelID ?? (usesVaultSettings ? vaultSettings.chatModelID : settings.codexChatModelID)
+        self.selectedEffort = effort ?? (usesVaultSettings ? vaultSettings.chatReasoningEffort : settings.codexChatReasoningEffort)
+        let accountProvider: AIAccountProvider? = if usesVaultSettings {
+            vaultSettings.isLocalAccount ? vaultSettings.localProvider : nil
+        } else {
+            settings.configuredCodexAccountProvider
+        }
         self.selectedApprovalMethod = approvalMethod
-            ?? CodexChatApprovalMethod.defaultMethod(for: settings.configuredCodexAccountProvider)
+            ?? CodexChatApprovalMethod.defaultMethod(for: accountProvider)
         self.needsRestore = backendThreadID != nil && messages.isEmpty && approvalMethod == nil
         self.service = service
         self.settings = settings
+        self.vaultSettings = vaultSettings
+        self.runtimeProviderResolver = runtimeProviderResolver
         self.contextProvider = contextProvider
         self.streamingUpdateInterval = streamingUpdateInterval
         self.usageTelemetryReporter = usageTelemetryReporter
-        self.configuredAccountProvider = settings.configuredCodexAccountProvider
-        observeConfiguredAccountProvider()
+        self.configuredAccountProvider = accountProvider
     }
 
     func prepare(forceRefresh: Bool = false) async {
-        guard models.isEmpty || forceRefresh else { return }
+        let runtimeProvider = runtimeProviderResolver()
+        if let preparedRuntimeProvider, preparedRuntimeProvider != runtimeProvider {
+            errorMessage = CodexConfigurationError.providerChanged(preparedRuntimeProvider.displayName).localizedDescription
+            return
+        }
+        guard models.isEmpty || forceRefresh || preparedRuntimeProvider != runtimeProvider else { return }
         isLoading = true
         errorMessage = nil
         defer {
@@ -166,7 +184,10 @@ final class CodexChatSessionModel: Identifiable {
             unsubscribeIfPossible()
         }
         do {
-            models = try await service.models(forceRefresh: forceRefresh)
+            let loadedModels = try await service.models(forceRefresh: forceRefresh || preparedRuntimeProvider != runtimeProvider)
+            guard runtimeProvider == runtimeProviderResolver() else { return }
+            models = loadedModels
+            preparedRuntimeProvider = runtimeProvider
             resolveSelections()
         } catch is CancellationError {
             return
@@ -220,14 +241,14 @@ final class CodexChatSessionModel: Identifiable {
 
     func selectModel(_ modelID: String) {
         selectedModelID = modelID
-        settings.codexChatModelID = modelID
+        persistChatModelID(modelID)
         resolveEffort()
         processPendingInputIfPossible()
     }
 
     func selectEffort(_ effort: String) {
         selectedEffort = effort
-        settings.codexChatReasoningEffort = effort
+        persistChatReasoningEffort(effort)
     }
 
     var canUseAutoReview: Bool {
@@ -239,12 +260,12 @@ final class CodexChatSessionModel: Identifiable {
     }
 
     func selectApprovalMethod(_ approvalMethod: CodexChatApprovalMethod) {
-        let approvalMethod = approvalMethod.availableMethod(for: settings.configuredCodexAccountProvider)
+        let approvalMethod = approvalMethod.availableMethod(for: currentAccountProvider)
         updateSelectedApprovalMethod(approvalMethod, recordsSelectionIntent: true)
     }
 
     func refreshApprovalMethodAvailability() {
-        configuredAccountProviderDidChange(to: settings.configuredCodexAccountProvider)
+        configuredAccountProviderDidChange(to: currentAccountProvider)
         let approvalMethod = selectedApprovalMethod.availableMethod(for: configuredAccountProvider)
         updateSelectedApprovalMethod(approvalMethod)
     }
@@ -478,7 +499,6 @@ final class CodexChatSessionModel: Identifiable {
     func release() {
         guard !isReleased else { return }
         isReleased = true
-        settingsObserver = nil
         steerTask?.cancel()
         steerTask = nil
         pendingManualInputs.removeAll()
@@ -558,9 +578,7 @@ extension CodexChatSessionModel {
             self?.updateTurnResponse(id: responseID, from: accumulator)
         }
         do {
-            if models.isEmpty {
-                await prepare()
-            }
+            await prepare()
             try ensureSubmissionCanContinue(submissionID, liveTranscript: liveTranscript)
             let backendThreadID = try await ensureBackendThread(
                 text: text,
@@ -984,18 +1002,9 @@ extension CodexChatSessionModel {
             inputs: inputs,
             model: model,
             effort: effort,
-            approvalMethod: approvalMethod
+            approvalMethod: approvalMethod,
+            expectedProvider: preparedRuntimeProvider ?? runtimeProviderResolver()
         )
-    }
-
-    private func observeConfiguredAccountProvider() {
-        settingsObserver = settings.objectWillChange.sink { [weak self] _ in
-            Task { @MainActor [weak self] in
-                await Task.yield()
-                guard let self, !isReleased else { return }
-                configuredAccountProviderDidChange(to: settings.configuredCodexAccountProvider)
-            }
-        }
     }
 
     private func restoreApprovalMethod(
@@ -1111,6 +1120,10 @@ extension CodexChatSessionModel {
         guard liveTranscript == nil || isLiveModeEnabled, !isStopRequested else {
             throw CancellationError()
         }
+        if let preparedRuntimeProvider,
+           preparedRuntimeProvider != runtimeProviderResolver() {
+            throw CodexConfigurationError.providerChanged(preparedRuntimeProvider.displayName)
+        }
     }
 
     func prepareFailureStateForSubmission(liveTranscript: String?) {
@@ -1190,7 +1203,7 @@ extension CodexChatSessionModel {
         guard !models.isEmpty else { return }
         if !models.contains(where: { $0.model == selectedModelID }) {
             selectedModelID = models.first(where: \CodexModel.isDefault)?.model ?? models[0].model
-            settings.codexChatModelID = selectedModelID
+            persistChatModelID(selectedModelID)
         }
         resolveEffort()
     }
@@ -1203,7 +1216,34 @@ extension CodexChatSessionModel {
                 ?? models.first(where: { $0.model == selectedModelID })?.defaultReasoningEffort
                 ?? options[0].reasoningEffort
         }
-        settings.codexChatReasoningEffort = selectedEffort
+        persistChatReasoningEffort(selectedEffort)
+    }
+
+    private var currentAccountProvider: AIAccountProvider? {
+        if usesVaultSettings {
+            return vaultSettings.isLocalAccount ? vaultSettings.localProvider : nil
+        }
+        return settings.configuredCodexAccountProvider
+    }
+
+    private func persistChatModelID(_ modelID: String) {
+        if usesVaultSettings {
+            vaultSettings.chatModelID = modelID
+        } else {
+            settings.codexChatModelID = modelID
+        }
+    }
+
+    private func persistChatReasoningEffort(_ effort: String) {
+        if usesVaultSettings {
+            vaultSettings.chatReasoningEffort = effort
+        } else {
+            settings.codexChatReasoningEffort = effort
+        }
+    }
+
+    private var usesVaultSettings: Bool {
+        vaultSettings.vaultID == vaultID
     }
 }
 

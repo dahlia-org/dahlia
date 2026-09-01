@@ -15,6 +15,8 @@ enum SettingsNavigation {
 
     static func visibleSelection(_ selection: SettingsCategory) -> SettingsCategory {
         switch selection {
+        case .dahliaAccounts, .vault:
+            .accountsAndVaults
         case .instructions, .mcp:
             .aiSummary
         default:

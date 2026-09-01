@@ -36,6 +36,7 @@ actor CodexAppServerProcessTransport: CodexAppServerTransport {
         arguments: [String] = ["app-server"],
         environment: [String: String]? = nil,
         currentDirectoryURL: URL? = nil,
+        onLaunch: (@Sendable (pid_t) -> Void)? = nil,
         baseMaximumOutputLineBytes: Int = CodexAppServerProcessTransport.defaultMaximumOutputLineBytes
     ) throws {
         let process = Process()
@@ -54,6 +55,7 @@ actor CodexAppServerProcessTransport: CodexAppServerTransport {
 
         do {
             try process.run()
+            onLaunch?(process.processIdentifier)
         } catch {
             throw CodexAppServerError.launchFailed(error.localizedDescription)
         }

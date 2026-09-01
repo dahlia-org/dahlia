@@ -4,9 +4,12 @@ import Foundation
 import GRDB
 
 actor SearchIndexer {
+    typealias RuntimeProviderResolver = @Sendable () -> CodexRuntimeProvider
+
     private let dbQueue: DatabaseQueue
     private let vectorIndexer: VectorSearchIndexer?
     private let screenshotAnalyzer: any ScreenshotAnalyzing
+    private let runtimeProviderResolver: RuntimeProviderResolver
     private let observationQueue = DispatchQueue(label: "app.dahlia.search-indexer", qos: .utility)
     private var workerTask: Task<Void, Never>?
     private var observationDrainTask: Task<Void, Never>?
@@ -24,11 +27,13 @@ actor SearchIndexer {
     init(
         dbQueue: DatabaseQueue,
         vectorIndexer: VectorSearchIndexer? = nil,
-        screenshotAnalyzer: any ScreenshotAnalyzing = CodexScreenshotAnalysisService()
+        screenshotAnalyzer: any ScreenshotAnalyzing = CodexScreenshotAnalysisService(),
+        runtimeProviderResolver: @escaping RuntimeProviderResolver = { CodexRuntimeContextStore.shared.provider }
     ) {
         self.dbQueue = dbQueue
         self.vectorIndexer = vectorIndexer
         self.screenshotAnalyzer = screenshotAnalyzer
+        self.runtimeProviderResolver = runtimeProviderResolver
     }
 
     func start() async {
@@ -520,21 +525,35 @@ private extension SearchIndexer {
     func processScreenshotJobsConcurrently(_ jobs: [SearchIndexJob]) async throws -> Bool {
         let inputs = try await dbQueue.read { db in
             try Dictionary(uniqueKeysWithValues: jobs.compactMap { job -> (UUID, ScreenshotAnalysisInput)? in
-                guard let screenshot = try MeetingScreenshotRecord.fetchOne(db, key: job.targetID) else { return nil }
+                guard let screenshot = try MeetingScreenshotRecord.fetchOne(db, key: job.targetID),
+                      let meeting = try MeetingRecord.fetchOne(db, key: screenshot.meetingId),
+                      let vault = try VaultRecord.fetchOne(db, key: meeting.vaultId)
+                else { return nil }
                 return (job.targetID, ScreenshotAnalysisInput(
                     id: screenshot.id,
                     imageData: screenshot.imageData,
-                    mimeType: screenshot.mimeType
+                    mimeType: screenshot.mimeType,
+                    runtimeProvider: CodexRuntimeProvider(
+                        accountConnectionID: vault.accountConnectionId,
+                        localProvider: vault.localProvider,
+                        databricksProfile: vault.databricksProfile
+                    )
                 ))
             })
         }
         var outcomes = jobs.compactMap { job in
             inputs[job.targetID] == nil ? ScreenshotJobOutcome.missing(job) : nil
         }
+        let runtimeProvider = runtimeProviderResolver()
+        let deferredJobs = jobs.filter { job in
+            guard let input = inputs[job.targetID] else { return false }
+            return input.runtimeProvider != runtimeProvider
+        }
+        try await deferScreenshotJobsForRuntime(deferredJobs)
         var prerequisiteError: (any Error)?
         await withTaskGroup(of: ScreenshotJobOutcome.self) { group in
             for job in jobs {
-                guard let input = inputs[job.targetID] else { continue }
+                guard let input = inputs[job.targetID], input.runtimeProvider == runtimeProvider else { continue }
                 group.addTask(priority: .utility) { [screenshotAnalyzer] in
                     do {
                         let results = try await screenshotAnalyzer.analyze([input])
@@ -857,6 +876,27 @@ private extension SearchIndexer {
                 """,
                 arguments: [retryAt, String(describing: type(of: error)), Date()]
             )
+        }
+    }
+
+    private func deferScreenshotJobsForRuntime(_ jobs: [SearchIndexJob]) async throws {
+        guard !jobs.isEmpty else { return }
+        let retryAt = Date().addingTimeInterval(60)
+        try await dbQueue.write { db in
+            for job in jobs {
+                try db.execute(
+                    sql: """
+                    UPDATE search_index_jobs
+                    SET status = 'pending', attempts = max(0, attempts - 1), availableAt = ?,
+                        claimedAt = NULL, leaseExpiresAt = NULL, lastErrorCode = ?, updatedAt = ?
+                    WHERE indexKind = 'fts' AND targetKind = ? AND targetKey = ? AND generation = ?
+                    """,
+                    arguments: [
+                        retryAt, "runtimeProviderMismatch", Date(),
+                        job.targetKind, job.targetID, job.generation,
+                    ]
+                )
+            }
         }
     }
 

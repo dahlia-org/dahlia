@@ -1,22 +1,32 @@
+import DahliaRuntimeSupport
 import Foundation
 
 struct BundledCodexAppServerLauncher {
+    typealias RuntimeProviderResolver = @Sendable () -> CodexRuntimeProvider
+
     private let executableLocator: any CodexExecutableLocating
     private let homeLocator: ApplicationSupportCodexHomeLocator
     private let presetSkillInstaller: BundledCodexPresetSkillInstaller
+    private let tokenBrokerAuthorization: DahliaTokenBrokerAuthorization
+    private let runtimeProviderResolver: RuntimeProviderResolver
 
     init(
         executableLocator: any CodexExecutableLocating = BundleCodexExecutableLocator(),
         homeLocator: ApplicationSupportCodexHomeLocator = ApplicationSupportCodexHomeLocator(),
-        presetSkillInstaller: BundledCodexPresetSkillInstaller = BundledCodexPresetSkillInstaller()
+        presetSkillInstaller: BundledCodexPresetSkillInstaller = BundledCodexPresetSkillInstaller(),
+        tokenBrokerAuthorization: DahliaTokenBrokerAuthorization = .shared,
+        runtimeProviderResolver: @escaping RuntimeProviderResolver = { CodexRuntimeContextStore.shared.provider }
     ) {
         self.executableLocator = executableLocator
         self.homeLocator = homeLocator
         self.presetSkillInstaller = presetSkillInstaller
+        self.tokenBrokerAuthorization = tokenBrokerAuthorization
+        self.runtimeProviderResolver = runtimeProviderResolver
     }
 
     func launch() throws -> any CodexAppServerTransport {
-        let homeURL = try homeLocator.homeURL()
+        let runtimeProvider = runtimeProviderResolver()
+        let homeURL = try homeLocator.homeURL(connectionID: runtimeProvider.accountConnectionID)
         try presetSkillInstaller.install(into: homeURL)
         let executableURL = try executableLocator.executableURL()
         var environment = ProcessInfo.processInfo.environment
@@ -25,11 +35,26 @@ struct BundledCodexAppServerLauncher {
             .deletingLastPathComponent()
             .appending(path: "codex-code-mode-host")
             .path
+        let profile = DahliaApplicationSupport.profile()
+        tokenBrokerAuthorization.clear(profile: profile)
         environment["PATH"] = CommandLineToolLocator.searchPath(environment: environment)
+        let onLaunch: (@Sendable (pid_t) -> Void)? = if let connectionID = runtimeProvider.accountConnectionID {
+            { appServerPID in
+                tokenBrokerAuthorization.register(
+                    profile: profile,
+                    connectionID: connectionID,
+                    appServerPID: appServerPID,
+                    helperURL: DahliaMCPBundle.expectedExecutableURL()
+                )
+            }
+        } else {
+            nil
+        }
         return try CodexAppServerProcessTransport(
             executableURL: executableURL,
             environment: environment,
-            currentDirectoryURL: homeURL
+            currentDirectoryURL: homeURL,
+            onLaunch: onLaunch
         )
     }
 }

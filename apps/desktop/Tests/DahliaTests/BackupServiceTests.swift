@@ -323,7 +323,7 @@ import GRDB
                 reason: .manual
             )
             try await oldQueue.write { db in
-                try vault.insert(db)
+                try insertLegacyVault(vault, in: db)
                 try db.execute(
                     sql: """
                     CREATE TABLE dahlia_backup_metadata (

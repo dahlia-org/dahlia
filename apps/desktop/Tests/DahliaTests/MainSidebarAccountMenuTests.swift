@@ -32,7 +32,35 @@
             let vaultRange = (title.string as NSString).range(of: "Obsidian Vault")
             let accountFont = title.attribute(.font, at: accountRange.location, effectiveRange: nil) as? NSFont
             let vaultFont = title.attribute(.font, at: vaultRange.location, effectiveRange: nil) as? NSFont
+            let paragraphStyle = title.attribute(
+                .paragraphStyle,
+                at: accountRange.location,
+                effectiveRange: nil
+            ) as? NSParagraphStyle
             #expect(accountFont?.pointSize ?? 0 > vaultFont?.pointSize ?? 0)
+            #expect(paragraphStyle?.firstLineHeadIndent == 6)
+            #expect(paragraphStyle?.headIndent == 6)
+        }
+
+        @Test
+        func accountVaultsUseCreationOrderAndExcludeOtherAccounts() {
+            let connectionID = UUID.v7()
+            let first = makeVault(name: "First", accountConnectionID: connectionID, createdAt: .distantPast)
+            let local = makeVault(name: "Local", accountConnectionID: nil)
+            let second = makeVault(name: "Second", accountConnectionID: connectionID, createdAt: .now)
+
+            #expect(MainSidebarFooterView.vaults([second, local, first], linkedTo: connectionID) == [first, second])
+            #expect(MainSidebarFooterView.vaults([first, local, second], linkedTo: nil) == [local])
+            #expect(MainSidebarFooterView.vaultToSelect(
+                from: [first, local, second],
+                currentVault: local,
+                connectionID: connectionID
+            ) == first)
+            #expect(MainSidebarFooterView.vaultToSelect(
+                from: [first, local, second],
+                currentVault: first,
+                connectionID: connectionID
+            ) == nil)
         }
 
         @Test
@@ -143,9 +171,9 @@
             #expect(navigation.rootSelection == 2)
             #expect(navigation.submenuSelection == nil)
 
-            navigation.showSubmenu(.vaults)
+            navigation.showSubmenu(.languages)
             navigation.selectSubmenu(1)
-            #expect(navigation.activeMenu == .vaults)
+            #expect(navigation.activeMenu == .languages)
             #expect(navigation.submenuSelection == 1)
 
             navigation.reset()
@@ -162,25 +190,41 @@
         }
 
         @Test
-        func keyboardAccountRowsOpenSettingsAndPerformAccountAction() {
-            let account = DahliaCloudAccount(id: "user", name: "User", email: nil)
-            var openedCategory: SettingsCategory?
+        func keyboardAccountRowsSwitchAccountsAndPerformAccountAction() {
+            let cloud = makeConnection(origin: "https://cloud.example.com", isCloud: true)
+            let server = makeConnection(origin: "https://server.example.com", isCloud: false)
+            var selectedConnectionID: UUID?
+            var didSelectAccount = false
             var didManageAccounts = false
             let coordinator = MainSidebarAccountMenuCoordinator(
                 vaults: [],
                 currentVault: nil,
-                account: account,
-                accountOrigin: "https://cloud.example.com",
-                isCloudAccount: true,
+                connections: [cloud, server],
+                accountSelection: MainSidebarAccountSelection(
+                    connectionID: cloud.id,
+                    isLocal: false,
+                    isLocalAvailable: true
+                ),
                 onSelectVault: { _ in },
-                onManageVaults: {},
-                onOpenSettings: { openedCategory = $0 },
+                onOpenSettings: { _ in },
+                onSelectAccount: {
+                    didSelectAccount = true
+                    selectedConnectionID = $0?.id
+                },
                 onAccountAction: { didManageAccounts = true }
             )
 
             coordinator.moveSelection(1)
+            coordinator.moveSelection(1)
             coordinator.activateSelection()
-            #expect(openedCategory == .dahliaAccounts)
+            #expect(selectedConnectionID == server.id)
+
+            coordinator.moveSelection(1)
+            coordinator.moveSelection(1)
+            coordinator.moveSelection(1)
+            coordinator.activateSelection()
+            #expect(didSelectAccount)
+            #expect(selectedConnectionID == nil)
 
             coordinator.moveSelection(-1)
             coordinator.activateSelection()
@@ -188,20 +232,72 @@
         }
 
         @Test
-        func footerUsesSingleServerAndSummarizesMultipleAccounts() {
-            let server = makeConnection(origin: "https://server.example.com", isCloud: false)
-            let cloud = makeConnection(origin: "https://cloud.example.com", isCloud: true)
+        func keyboardSelectionSkipsAccountsWithoutVaults() {
+            let unavailable = makeConnection(origin: "https://unused.example.com", isCloud: false, vaultCount: 0)
+            let available = makeConnection(origin: "https://used.example.com", isCloud: false)
+            var selectedConnectionID: UUID?
+            let coordinator = MainSidebarAccountMenuCoordinator(
+                vaults: [],
+                currentVault: nil,
+                connections: [unavailable, available],
+                accountSelection: MainSidebarAccountSelection(
+                    connectionID: nil,
+                    isLocal: true,
+                    isLocalAvailable: true
+                ),
+                onSelectVault: { _ in },
+                onOpenSettings: { _ in },
+                onSelectAccount: { selectedConnectionID = $0?.id },
+                onAccountAction: {}
+            )
 
-            let serverOnly = MainSidebarFooterView.accountPresentation(for: [server])
-            #expect(serverOnly.connection?.id == server.id)
-            #expect(serverOnly.count == 1)
+            coordinator.moveSelection(1)
+            coordinator.activateSelection()
 
-            let multiple = MainSidebarFooterView.accountPresentation(for: [cloud, server])
-            #expect(multiple.connection == nil)
-            #expect(multiple.count == 2)
+            #expect(selectedConnectionID == available.id)
         }
 
-        private func makeConnection(origin: String, isCloud: Bool) -> DahliaAccountConnection {
+        @Test
+        func currentVaultRemainsSelectableButDoesNothing() {
+            let current = makeVault(name: "Current", accountConnectionID: nil)
+            let other = makeVault(name: "Other", accountConnectionID: nil)
+            var selectedVault: VaultRecord?
+            var openedCategory: SettingsCategory?
+            let coordinator = MainSidebarAccountMenuCoordinator(
+                vaults: [current, other],
+                currentVault: current,
+                connections: [],
+                accountSelection: MainSidebarAccountSelection(
+                    connectionID: nil,
+                    isLocal: true,
+                    isLocalAvailable: true
+                ),
+                onSelectVault: { selectedVault = $0 },
+                onOpenSettings: { openedCategory = $0 },
+                onSelectAccount: { _ in },
+                onAccountAction: {}
+            )
+
+            coordinator.moveSelection(1)
+            coordinator.moveSelection(1)
+            coordinator.activateSelection()
+            #expect(selectedVault == nil)
+
+            coordinator.moveSelection(1)
+            coordinator.moveSelection(1)
+            coordinator.moveSelection(1)
+            coordinator.activateSelection()
+            #expect(selectedVault == other)
+
+            coordinator.moveSelection(1)
+            coordinator.moveSelection(1)
+            coordinator.moveSelection(1)
+            coordinator.moveSelection(1)
+            coordinator.activateSelection()
+            #expect(openedCategory == .accountsAndVaults)
+        }
+
+        private func makeConnection(origin: String, isCloud: Bool, vaultCount: Int = 1) -> DahliaAccountConnection {
             DahliaAccountConnection(
                 record: DahliaAccountConnectionRecord(
                     id: .v7(),
@@ -210,7 +306,23 @@
                     createdAt: .now
                 ),
                 account: DahliaCloudAccount(id: origin, name: origin, email: nil),
-                isCloud: isCloud
+                isCloud: isCloud,
+                vaultCount: vaultCount
+            )
+        }
+
+        private func makeVault(
+            name: String,
+            accountConnectionID: UUID?,
+            createdAt: Date = .now
+        ) -> VaultRecord {
+            VaultRecord(
+                id: .v7(),
+                path: "/tmp/\(name)",
+                name: name,
+                createdAt: createdAt,
+                lastOpenedAt: .now,
+                accountConnectionId: accountConnectionID
             )
         }
     }

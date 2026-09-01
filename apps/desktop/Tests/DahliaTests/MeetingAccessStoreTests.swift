@@ -2608,7 +2608,7 @@ import ImageIO
             let queue = try DatabaseQueue(path: databaseURL.path)
             try AppDatabaseManager.migrator.migrate(queue, upTo: "v24_projectWorkspaceHierarchy")
             try queue.write { db in
-                try vault.insert(db)
+                try insertLegacyVault(vault, in: db)
             }
             let store = try MeetingAccessStore(databaseURL: databaseURL, vaultID: vault.id)
 
@@ -2629,7 +2629,7 @@ import ImageIO
             let vault = customerIntelligenceVault(name: "Before v35")
             let queue = try DatabaseQueue(path: databaseURL.path)
             try AppDatabaseManager.migrator.migrate(queue, upTo: "v34_meetingRecordingStartedAt")
-            try queue.write { try vault.insert($0) }
+            try queue.write { try insertLegacyVault(vault, in: $0) }
             let store = try MeetingAccessStore(databaseURL: databaseURL, vaultID: vault.id)
 
             #expect(throws: MeetingAccessError.databaseUpgradeRequired) {
@@ -2649,7 +2649,7 @@ import ImageIO
             let vault = customerIntelligenceVault(name: "Before v36")
             let queue = try DatabaseQueue(path: databaseURL.path)
             try AppDatabaseManager.migrator.migrate(queue, upTo: "v35_searchDocuments")
-            try queue.write { try vault.insert($0) }
+            try queue.write { try insertLegacyVault(vault, in: $0) }
             let store = try MeetingAccessStore(databaseURL: databaseURL, vaultID: vault.id)
 
             #expect(throws: MeetingAccessError.databaseUpgradeRequired) {
@@ -2666,7 +2666,7 @@ import ImageIO
             let vault = customerIntelligenceVault(name: "Before v26")
             let queue = try DatabaseQueue(path: databaseURL.path)
             try AppDatabaseManager.migrator.migrate(queue, upTo: "v25_customerIntelligence")
-            try queue.write { try vault.insert($0) }
+            try queue.write { try insertLegacyVault(vault, in: $0) }
             let store = try MeetingAccessStore(databaseURL: databaseURL, vaultID: vault.id)
 
             #expect(throws: MeetingAccessError.databaseUpgradeRequired) {
@@ -2688,7 +2688,7 @@ import ImageIO
             let queue = try DatabaseQueue(path: databaseURL.path)
             try AppDatabaseManager.migrator.migrate(queue, upTo: "v29_customerIntelligenceDirectCRUD")
             try queue.write { db in
-                try vault.insert(db)
+                try insertLegacyVault(vault, in: db)
                 try db.execute(
                     sql: """
                     INSERT INTO organizations (

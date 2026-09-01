@@ -12,19 +12,23 @@ final class CodexAccountController {
 
     private let service: CodexAppServerService
     private let urlOpener: any CodexLoginURLOpening
-    private let configurationManager: CodexConfigurationManager
-    private let configurationStore: any CodexAccountConfigurationStoring
+    private let hasActiveVault: @MainActor @Sendable () -> Bool
+    private let runtimeReadiness: @MainActor @Sendable () async -> Bool
 
     init(
         service: CodexAppServerService = .shared,
         urlOpener: any CodexLoginURLOpening = WorkspaceCodexLoginURLOpener(),
-        configurationManager: CodexConfigurationManager = CodexConfigurationManager(),
-        configurationStore: any CodexAccountConfigurationStoring = AppSettings.shared
+        hasActiveVault: @escaping @MainActor @Sendable () -> Bool = {
+            VaultAISettingsModel.shared.vaultID != nil
+        },
+        runtimeReadiness: @escaping @MainActor @Sendable () async -> Bool = {
+            await VaultAISettingsModel.shared.waitForRuntimeContext()
+        }
     ) {
         self.service = service
         self.urlOpener = urlOpener
-        self.configurationManager = configurationManager
-        self.configurationStore = configurationStore
+        self.hasActiveVault = hasActiveVault
+        self.runtimeReadiness = runtimeReadiness
     }
 
     var isBusy: Bool {
@@ -38,16 +42,11 @@ final class CodexAccountController {
 
         do {
             try Task.checkCancellation()
-            configurationStore.invalidateCodexAccountConfiguration()
-            if try await configurationManager.configureChatGPTSubscription() {
-                try await service.reloadConfiguration()
+            if hasActiveVault() {
+                guard await runtimeReadiness() else { throw CodexConfigurationError.accountNotReady }
             }
             accountStatus = try await service.accountStatus(forceRefresh: true)
             try Task.checkCancellation()
-            configurationStore.markCodexAccountConfigurationCurrent(
-                provider: .chatGPTSubscription,
-                databricksProfile: ""
-            )
         } catch is CancellationError {
             // SwiftUI cancels this operation when the settings screen disappears.
         } catch {

@@ -1,4 +1,5 @@
 import Foundation
+import os
 @testable import Dahlia
 
 #if canImport(Testing)
@@ -39,63 +40,61 @@ import Foundation
         }
 
         @Test
-        func activatingChatGPTSelectsOpenAIAndReloadsStatus() async throws {
-            let rootURL = FileManager.default.temporaryDirectory
-                .appending(path: "dahlia-chatgpt-activation-\(UUID().uuidString)", directoryHint: .isDirectory)
-            defer { try? FileManager.default.removeItem(at: rootURL) }
-            let locator = ApplicationSupportCodexHomeLocator(applicationSupportURL: rootURL)
-            let configURL = try locator.homeURL().appending(path: "config.toml")
-            try Data("model_provider = \"Databricks\"\ncustom_setting = true\n".utf8).write(to: configURL)
+        func activatingChatGPTWaitsForTheVaultRuntimeAndReloadsStatus() async {
             let service = CodexAppServerService {
                 TestCodexAppServerTransport(mode: .models)
             }
-            let configurationStore = TestCodexAccountConfigurationStore(configuredProvider: .databricks)
+            let readinessChecked = OSAllocatedUnfairLock(initialState: false)
             let controller = CodexAccountController(
                 service: service,
-                configurationManager: CodexConfigurationManager(homeLocator: locator),
-                configurationStore: configurationStore
+                hasActiveVault: { true },
+                runtimeReadiness: {
+                    readinessChecked.withLock { $0 = true }
+                    return true
+                }
             )
 
             await controller.activateChatGPTSubscription()
 
             #expect(controller.accountStatus?.isAuthenticated == true)
             #expect(controller.errorMessage == nil)
-            let configuration = try String(contentsOf: configURL, encoding: .utf8)
-            #expect(configuration.contains(#"model_provider = "openai""#))
-            #expect(configuration.contains("custom_setting = true"))
-            #expect(configurationStore.configuredProviderRawValue == AIAccountProvider.chatGPTSubscription.rawValue)
-            #expect(configurationStore.configuredDatabricksProfile.isEmpty)
+            #expect(readinessChecked.withLock { $0 })
             await service.shutdown()
         }
 
         @Test
-        func cancelledChatGPTActivationLeavesConfigurationNotReady() async throws {
-            let rootURL = FileManager.default.temporaryDirectory
-                .appending(path: "dahlia-chatgpt-cancellation-\(UUID().uuidString)", directoryHint: .isDirectory)
-            defer { try? FileManager.default.removeItem(at: rootURL) }
-            let locator = ApplicationSupportCodexHomeLocator(applicationSupportURL: rootURL)
-            let configURL = try locator.homeURL().appending(path: "config.toml")
-            try Data("model_provider = \"Databricks\"\n".utf8).write(to: configURL)
-            let transport = TestCodexAppServerTransport(mode: .blockInitialize)
-            let service = makeTestCodexAppServerService(transportFactory: { transport })
-            let configurationStore = TestCodexAccountConfigurationStore(
-                configuredProvider: .databricks,
-                configuredDatabricksProfile: "DEFAULT"
-            )
+        func unavailableVaultRuntimeLeavesChatGPTStatusUnloaded() async {
+            let service = makeTestCodexAppServerService(transportFactory: {
+                TestCodexAppServerTransport(mode: .models)
+            })
             let controller = CodexAccountController(
                 service: service,
-                configurationManager: CodexConfigurationManager(homeLocator: locator),
-                configurationStore: configurationStore
+                hasActiveVault: { true },
+                runtimeReadiness: { false }
             )
 
-            let activation = Task { await controller.activateChatGPTSubscription() }
-            await transport.waitUntilSent("initialize")
-            activation.cancel()
-            await activation.value
+            await controller.activateChatGPTSubscription()
 
-            #expect(try String(contentsOf: configURL, encoding: .utf8).contains(#"model_provider = "openai""#))
-            #expect(configurationStore.configuredProviderRawValue.isEmpty)
-            #expect(configurationStore.configuredDatabricksProfile.isEmpty)
+            #expect(controller.accountStatus == nil)
+            #expect(controller.errorMessage == L10n.codexAccountConfigurationNotReady)
+            await service.shutdown()
+        }
+
+        @Test
+        func firstRunWithoutAVaultCanLoadChatGPTStatus() async {
+            let service = CodexAppServerService {
+                TestCodexAppServerTransport(mode: .models)
+            }
+            let controller = CodexAccountController(
+                service: service,
+                hasActiveVault: { false },
+                runtimeReadiness: { false }
+            )
+
+            await controller.activateChatGPTSubscription()
+
+            #expect(controller.accountStatus?.isAuthenticated == true)
+            #expect(controller.errorMessage == nil)
             await service.shutdown()
         }
     }

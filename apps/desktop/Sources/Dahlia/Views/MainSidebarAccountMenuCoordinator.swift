@@ -1,18 +1,25 @@
 import AppKit
 import SwiftUI
 
+struct MainSidebarAccountSelection {
+    let connectionID: UUID?
+    let isLocal: Bool
+    let isLocalAvailable: Bool
+}
+
 @MainActor
 final class MainSidebarAccountMenuCoordinator: NSObject {
     weak var button: NSButton?
 
     private var vaults: [VaultRecord]
     private var currentVault: VaultRecord?
-    private var account: DahliaCloudAccount?
-    private var accountOrigin: String?
-    private var isCloudAccount: Bool?
+    private var connections: [DahliaAccountConnection]
+    private var currentConnectionID: UUID?
+    private var isLocalAccount: Bool
+    private var isLocalAccountAvailable: Bool
     private var onSelectVault: (VaultRecord) -> Void
-    private var onManageVaults: () -> Void
     private var onOpenSettings: (SettingsCategory?) -> Void
+    private var onSelectAccount: (DahliaAccountConnection?) -> Void
     private var onAccountAction: () -> Void
     private let navigation = MainSidebarAccountMenuNavigationState()
     private var mainPanel: NSPanel?
@@ -27,22 +34,22 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
     init(
         vaults: [VaultRecord],
         currentVault: VaultRecord?,
-        account: DahliaCloudAccount?,
-        accountOrigin: String?,
-        isCloudAccount: Bool?,
+        connections: [DahliaAccountConnection],
+        accountSelection: MainSidebarAccountSelection,
         onSelectVault: @escaping (VaultRecord) -> Void,
-        onManageVaults: @escaping () -> Void,
         onOpenSettings: @escaping (SettingsCategory?) -> Void,
+        onSelectAccount: @escaping (DahliaAccountConnection?) -> Void,
         onAccountAction: @escaping () -> Void
     ) {
         self.vaults = vaults
         self.currentVault = currentVault
-        self.account = account
-        self.accountOrigin = accountOrigin
-        self.isCloudAccount = isCloudAccount
+        self.connections = connections
+        currentConnectionID = accountSelection.connectionID
+        isLocalAccount = accountSelection.isLocal
+        isLocalAccountAvailable = accountSelection.isLocalAvailable
         self.onSelectVault = onSelectVault
-        self.onManageVaults = onManageVaults
         self.onOpenSettings = onOpenSettings
+        self.onSelectAccount = onSelectAccount
         self.onAccountAction = onAccountAction
     }
 
@@ -53,28 +60,23 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
     func update(
         vaults: [VaultRecord],
         currentVault: VaultRecord?,
-        account: DahliaCloudAccount?,
-        accountOrigin: String?,
-        isCloudAccount: Bool?,
+        connections: [DahliaAccountConnection],
+        accountSelection: MainSidebarAccountSelection,
         onSelectVault: @escaping (VaultRecord) -> Void,
-        onManageVaults: @escaping () -> Void,
         onOpenSettings: @escaping (SettingsCategory?) -> Void,
+        onSelectAccount: @escaping (DahliaAccountConnection?) -> Void,
         onAccountAction: @escaping () -> Void
     ) {
-        let refreshVaultMenu = navigation.activeMenu == .vaults &&
-            (self.vaults != vaults || self.currentVault != currentVault)
         self.vaults = vaults
         self.currentVault = currentVault
-        self.account = account
-        self.accountOrigin = accountOrigin
-        self.isCloudAccount = isCloudAccount
+        self.connections = connections
+        currentConnectionID = accountSelection.connectionID
+        isLocalAccount = accountSelection.isLocal
+        isLocalAccountAvailable = accountSelection.isLocalAvailable
         self.onSelectVault = onSelectVault
-        self.onManageVaults = onManageVaults
         self.onOpenSettings = onOpenSettings
+        self.onSelectAccount = onSelectAccount
         self.onAccountAction = onAccountAction
-        if refreshVaultMenu {
-            presentVaultMenu()
-        }
     }
 
     @objc
@@ -101,15 +103,20 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
         let content = MainSidebarAccountMenuPanel(width: MainSidebarAccountMenuLayout.rootMenuWidth) {
             MainSidebarAccountRootMenuView(
                 navigation: navigation,
-                account: account,
-                accountOrigin: accountOrigin,
-                isCloudAccount: isCloudAccount,
-                onShowVaults: { [weak self] in self?.presentVaultMenu(anchorMinY: $0) },
+                connections: connections,
+                currentConnectionID: currentConnectionID,
+                isLocalAccount: isLocalAccount,
+                isLocalAccountAvailable: isLocalAccountAvailable,
+                vaults: vaults,
+                currentVault: currentVault,
                 onShowLanguages: { [weak self] in self?.presentLanguageMenu(anchorMinY: $0) },
                 onDismissSubmenu: { [weak self] in self?.closeSubmenu() },
                 onShowAccountHelp: { [weak self] label, frame in self?.scheduleAccountHelp(label: label, rowFrame: frame) },
                 onDismissAccountHelp: { [weak self] in self?.dismissAccountHelp() },
                 onOpenSettings: { [weak self] in self?.openSettings(category: $0) },
+                onSelectAccount: { [weak self] in self?.selectAccount($0) },
+                onSelectVault: { [weak self] in self?.selectVault($0) },
+                onManageVaults: { [weak self] in self?.manageVaults() },
                 onAccountAction: { [weak self] in self?.performAccountAction() }
             )
         }
@@ -118,19 +125,6 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
         attach(panel, to: button.window)
         mainPanel = panel
         startMonitoring()
-    }
-
-    private func presentVaultMenu(anchorMinY: CGFloat? = nil) {
-        let content = MainSidebarAccountMenuPanel(width: MainSidebarAccountMenuLayout.menuWidth) {
-            MainSidebarAccountVaultMenuView(
-                navigation: navigation,
-                vaults: vaults,
-                currentVault: currentVault,
-                onSelectVault: { [weak self] vault in self?.selectVault(vault) },
-                onManageVaults: { [weak self] in self?.manageVaults() }
-            )
-        }
-        presentSubmenu(content, menu: .vaults, anchorMinY: anchorMinY)
     }
 
     private func presentLanguageMenu(anchorMinY: CGFloat? = nil) {
@@ -158,7 +152,7 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
         positionSubmenu(panel, relativeTo: mainPanel, anchorMinY: anchorMinY)
         attach(panel, to: button?.window)
         submenuPanel = panel
-        announce(menu == .vaults ? L10n.vault : L10n.language)
+        announce(L10n.language)
     }
 
     private func makePanel(content: some View) -> NSPanel {
@@ -262,12 +256,12 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
 
     private func selectVault(_ vault: VaultRecord) {
         dismissMenu()
+        guard vault.id != currentVault?.id else { return }
         onSelectVault(vault)
     }
 
     private func manageVaults() {
-        dismissMenu()
-        onManageVaults()
+        openSettings(category: .accountsAndVaults)
     }
 
     private func openSettings(category: SettingsCategory? = nil) {
@@ -278,6 +272,11 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
     private func performAccountAction() {
         dismissMenu()
         onAccountAction()
+    }
+
+    private func selectAccount(_ connection: DahliaAccountConnection?) {
+        dismissMenu()
+        onSelectAccount(connection)
     }
 
     private func closeSubmenu() {
@@ -409,11 +408,6 @@ extension MainSidebarAccountMenuCoordinator {
         switch navigation.activeMenu {
         case .root:
             return false
-        case .vaults:
-            titles = vaults.map(\.name) + [L10n.manageVaults]
-            isEnabled = { [vaults, currentVault] index in
-                index == vaults.count || vaults[index].id != currentVault?.id
-            }
         case .languages:
             let languages = AppLanguage.allCases
             titles = languages.map(\.displayName)
@@ -451,17 +445,8 @@ extension MainSidebarAccountMenuCoordinator {
             navigation.rootSelection = MainSidebarAccountMenuNavigationState.nextEnabledIndex(
                 from: navigation.rootSelection,
                 direction: direction,
-                count: 4 + rootMenuOffset,
-                isEnabled: { _ in true }
-            )
-        case .vaults:
-            navigation.submenuSelection = MainSidebarAccountMenuNavigationState.nextEnabledIndex(
-                from: navigation.submenuSelection,
-                direction: direction,
-                count: vaults.count + 1,
-                isEnabled: { [vaults, currentVault] index in
-                    index == vaults.count || vaults[index].id != currentVault?.id
-                }
+                count: menuOffset + 3,
+                isEnabled: isRootIndexEnabled
             )
         case .languages:
             let languages = AppLanguage.allCases
@@ -478,42 +463,43 @@ extension MainSidebarAccountMenuCoordinator {
 
     func openSelectedSubmenu() {
         guard navigation.activeMenu == .root, let selection = navigation.rootSelection else { return }
-        switch selection - rootMenuOffset {
-        case 0: presentVaultMenu()
-        case 1: presentLanguageMenu()
-        default: break
-        }
+        guard selection == menuOffset else { return }
+        presentLanguageMenu()
     }
 
     func activateSelection() {
         switch navigation.activeMenu {
         case .root: activateRootSelection()
-        case .vaults: activateVaultSelection()
         case .languages: activateLanguageSelection()
         }
     }
 
     func activateRootSelection() {
         guard let selection = navigation.rootSelection else { return }
-        if account != nil, selection == 0 {
-            openSettings(category: .dahliaAccounts)
+        if connections.indices.contains(selection) {
+            guard connections[selection].vaultCount > 0 else { return }
+            selectAccount(connections[selection])
             return
         }
-        switch selection - rootMenuOffset {
-        case 0: presentVaultMenu()
-        case 1: presentLanguageMenu()
-        case 2: openSettings(category: nil)
-        case 3: performAccountAction()
-        default: break
+        if selection == connections.count {
+            guard isLocalAccountAvailable else { return }
+            selectAccount(nil)
+            return
         }
-    }
-
-    func activateVaultSelection() {
-        guard let selection = navigation.submenuSelection else { return }
-        if selection == vaults.count {
+        let vaultIndex = selection - vaultOffset
+        if vaults.indices.contains(vaultIndex) {
+            selectVault(vaults[vaultIndex])
+            return
+        }
+        if selection == manageVaultsIndex {
             manageVaults()
-        } else if vaults.indices.contains(selection), vaults[selection].id != currentVault?.id {
-            selectVault(vaults[selection])
+            return
+        }
+        switch selection - menuOffset {
+        case 0: presentLanguageMenu()
+        case 1: openSettings(category: nil)
+        case 2: performAccountAction()
+        default: break
         }
     }
 
@@ -530,19 +516,10 @@ extension MainSidebarAccountMenuCoordinator {
         let title: String?
         switch navigation.activeMenu {
         case .root:
-            let accountServiceName = isCloudAccount == true ? L10n.dahliaCloud : L10n.dahliaServer
-            let titles = (account == nil ? [] : [accountServiceName])
-                + [L10n.vault, L10n.language, L10n.settings, account == nil ? L10n.dahliaSignIn : L10n.signOut]
+            let titles = connections.map(\.displayName) + [L10n.localAccount]
+                + vaults.map(\.name)
+                + [L10n.manageVaults, L10n.language, L10n.settings, hasCurrentConnection ? L10n.signOut : L10n.dahliaSignIn]
             title = navigation.rootSelection.flatMap { titles.indices.contains($0) ? titles[$0] : nil }
-        case .vaults:
-            guard let selection = navigation.submenuSelection else { return }
-            title = if selection == vaults.count {
-                L10n.manageVaults
-            } else if vaults.indices.contains(selection) {
-                vaults[selection].name
-            } else {
-                nil
-            }
         case .languages:
             title = navigation.submenuSelection.flatMap {
                 AppLanguage.allCases.indices.contains($0) ? AppLanguage.allCases[$0].displayName : nil
@@ -564,5 +541,18 @@ extension MainSidebarAccountMenuCoordinator {
         )
     }
 
-    var rootMenuOffset: Int { account == nil ? 0 : 1 }
+    var hasCurrentConnection: Bool {
+        connections.contains { $0.id == currentConnectionID }
+    }
+
+    var vaultOffset: Int { connections.count + 1 }
+    var manageVaultsIndex: Int { vaultOffset + vaults.count }
+    var menuOffset: Int { manageVaultsIndex + 1 }
+
+    private func isRootIndexEnabled(_ index: Int) -> Bool {
+        if connections.indices.contains(index) { return connections[index].vaultCount > 0 }
+        if index == connections.count { return isLocalAccountAvailable }
+        return true
+    }
+
 }

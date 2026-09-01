@@ -10,6 +10,12 @@ extension MeetingRepository {
         }
     }
 
+    nonisolated func fetchDahliaAccountConnection(id: UUID) async throws -> DahliaAccountConnectionRecord? {
+        try await dbQueue.read { db in
+            try DahliaAccountConnectionRecord.fetchOne(db, key: id)
+        }
+    }
+
     nonisolated func insertDahliaAccountConnection(_ connection: DahliaAccountConnectionRecord) async throws {
         try await dbQueue.write { db in
             try connection.insert(db)

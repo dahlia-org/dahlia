@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SetupCompletionStepView: View {
     @ObservedObject private var settings = AppSettings.shared
+    @Bindable private var vaultSettings = VaultAISettingsModel.shared
     @Environment(\.scenePhase) private var scenePhase
     @State private var permissionModel = PermissionGuideModel()
     var model: SetupTourModel
@@ -19,7 +20,7 @@ struct SetupCompletionStepView: View {
                     )
                 )
                 LabeledContent(L10n.primaryLanguage, value: settings.llmSummaryLanguage.displayName)
-                LabeledContent(L10n.modelProvider, value: settings.codexAccountProvider.displayName)
+                LabeledContent(L10n.modelProvider, value: vaultSettings.localProvider.displayName)
             }
 
             Section(L10n.permissions) {

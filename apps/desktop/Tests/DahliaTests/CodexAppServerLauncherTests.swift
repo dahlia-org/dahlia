@@ -1,5 +1,6 @@
 import Foundation
 @testable import Dahlia
+import DahliaRuntimeSupport
 
 #if canImport(Testing)
     import Testing
@@ -69,6 +70,35 @@ import Foundation
                 #expect(try permissions(of: installedSkillURL.appending(path: "agents/openai.yaml")) == 0o600)
             }
             #expect(!FileManager.default.fileExists(atPath: obsoleteSkillURL.path))
+            await transport.close()
+        }
+
+        @Test
+        func dahliaLaunchUsesItsPrivateHomeWithoutExposingBrokerAuthorization() async throws {
+            let rootURL = URL.temporaryDirectory
+                .appending(path: "dahlia-codex-account-launcher-\(UUID().uuidString)", directoryHint: .isDirectory)
+            defer { try? FileManager.default.removeItem(at: rootURL) }
+            try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+            let executableURL = rootURL.appending(path: "print-account-environment")
+            try Data("#!/bin/sh\n/usr/bin/printenv CODEX_HOME\n/usr/bin/printenv DAHLIA_TOKEN_BROKER_CAPABILITY || /bin/echo missing\n".utf8)
+                .write(to: executableURL)
+            try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: executableURL.path)
+            let connectionID = UUID.v7()
+            let authorization = DahliaTokenBrokerAuthorization()
+            let locator = ApplicationSupportCodexHomeLocator(applicationSupportURL: rootURL)
+            let launcher = BundledCodexAppServerLauncher(
+                executableLocator: FixedCodexExecutableLocator(url: executableURL),
+                homeLocator: locator,
+                tokenBrokerAuthorization: authorization,
+                runtimeProviderResolver: { .dahlia(connectionID: connectionID) }
+            )
+
+            let transport = try launcher.launch()
+            try await expectNextLine(
+                from: transport,
+                equals: locator.homeURL(connectionID: connectionID).path
+            )
+            try await expectNextLine(from: transport, equals: "missing")
             await transport.close()
         }
 

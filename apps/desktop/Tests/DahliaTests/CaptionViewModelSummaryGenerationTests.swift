@@ -385,13 +385,20 @@ import GRDB
             let runner = BlockingSummaryRunner()
             let sleeper = ControlledSummaryJobSleeper()
             let settings = AppSettings.shared
+            let vaultSettings = VaultAISettingsModel.shared
             let originalModel = settings.codexModelID
             let originalEffort = settings.codexReasoningEffort
+            let originalVaultModel = vaultSettings.summaryModelID
+            let originalVaultEffort = vaultSettings.summaryReasoningEffort
             settings.codexModelID = "frozen-model"
             settings.codexReasoningEffort = "high"
+            vaultSettings.summaryModelID = "frozen-model"
+            vaultSettings.summaryReasoningEffort = "high"
             defer {
                 settings.codexModelID = originalModel
                 settings.codexReasoningEffort = originalEffort
+                vaultSettings.summaryModelID = originalVaultModel
+                vaultSettings.summaryReasoningEffort = originalVaultEffort
             }
             let viewModel = CaptionViewModel(
                 summaryGenerationRunner: runner.run,
@@ -407,6 +414,8 @@ import GRDB
             await runner.waitForCallCount(1)
             settings.codexModelID = "changed-model"
             settings.codexReasoningEffort = "low"
+            vaultSettings.summaryModelID = "changed-model"
+            vaultSettings.summaryReasoningEffort = "low"
             #expect(runner.calls[0].settings.modelID == "frozen-model")
             #expect(runner.calls[0].settings.reasoningEffort == "high")
             #expect(runner.calls[0].settings.detailLevelInstruction == SummaryDetailLevel.eventSession.instruction)
@@ -430,6 +439,44 @@ import GRDB
 
             viewModel.dismissSummaryGenerationJob(failedJobID)
             #expect(viewModel.summaryGenerationJobs.isEmpty)
+        }
+
+        @Test
+        func pendingAutomaticSummaryKeepsItsSourceVaultProvider() async throws {
+            let fixture = try SummaryGenerationFixture()
+            defer { fixture.removeFiles() }
+            let runner = BlockingSummaryRunner()
+            let viewModel = CaptionViewModel(summaryGenerationRunner: runner.run)
+            let options = SummaryGenerationOptions(
+                exportOptions: SummaryExportOptions(exportsToVault: false, exportsToGoogleDocs: false)
+            )
+            let sessionID = UUID.v7()
+            let sourceSettings = SummaryGenerationSettings(
+                modelID: "source-model",
+                reasoningEffort: "high",
+                detailLevelInstruction: SummaryDetailLevel.concise.instruction,
+                languageDisplayName: "Japanese",
+                runtimeProvider: .dahlia(connectionID: UUID.v7())
+            )
+            viewModel.registerPendingBatchSummaryForTesting(
+                sessionID: sessionID,
+                meetingID: fixture.first.id,
+                options: options,
+                dbQueue: fixture.database.dbQueue,
+                vaultURL: fixture.vaultURL,
+                generationSettings: sourceSettings
+            )
+
+            await viewModel.handleBatchTranscriptionUpdate(.init(
+                meetingId: fixture.first.id,
+                state: .completed(sessionId: sessionID)
+            ))
+            await runner.waitForCallCount(1)
+
+            #expect(runner.calls[0].settings.modelID == "source-model")
+            #expect(runner.calls[0].settings.runtimeProvider == sourceSettings.runtimeProvider)
+            runner.complete(meetingID: fixture.first.id, title: "Source summary")
+            #expect(await waitUntil { !viewModel.isSummaryGenerating(meetingId: fixture.first.id) })
         }
 
         @Test

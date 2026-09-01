@@ -12,9 +12,10 @@ func makeTestCodexAppServerService(
     transportFactory: @escaping CodexAppServerService.TransportFactory,
     clock: any CodexAppServerClock = ContinuousCodexAppServerClock(),
     summaryTimeout: Duration = .seconds(270),
-    providerAuthenticationPreparation: @escaping CodexAppServerService.ProviderAuthenticationPreparation = { _ in false },
+    providerAuthenticationPreparation: @escaping CodexAppServerService.ProviderAuthenticationPreparation = { _, _ in false },
     configurationReadiness: @escaping CodexAppServerService.ConfigurationReadiness = { true },
-    accountProviderResolver: @escaping CodexAppServerService.AccountProviderResolver = { nil }
+    accountProviderResolver: @escaping CodexAppServerService.AccountProviderResolver = { nil },
+    runtimeProviderResolver: @escaping CodexAppServerService.RuntimeProviderResolver = { .chatGPTSubscription }
 ) -> CodexAppServerService {
     CodexAppServerService(
         transportFactory: transportFactory,
@@ -23,6 +24,7 @@ func makeTestCodexAppServerService(
         summaryTimeout: summaryTimeout,
         providerAuthenticationPreparation: providerAuthenticationPreparation,
         configurationReadiness: configurationReadiness,
-        accountProviderResolver: accountProviderResolver
+        accountProviderResolver: accountProviderResolver,
+        runtimeProviderResolver: runtimeProviderResolver
     )
 }

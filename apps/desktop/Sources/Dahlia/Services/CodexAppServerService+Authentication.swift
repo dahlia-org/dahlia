@@ -2,16 +2,24 @@ import Foundation
 
 extension CodexAppServerService {
     func prepareProviderAuthentication() async throws {
-        guard !isShuttingDown else { throw CancellationError() }
+        try await prepareProviderAuthentication(for: runtimeProviderResolver())
+    }
 
-        if let state = providerAuthenticationPreparationState, state.waiters.isEmpty {
+    func prepareProviderAuthentication(for expectedProvider: CodexRuntimeProvider) async throws {
+        guard !isShuttingDown else { throw CancellationError() }
+        guard runtimeProviderResolver() == expectedProvider else {
+            throw CodexConfigurationError.providerChanged(expectedProvider.displayName)
+        }
+
+        if let state = providerAuthenticationPreparationState,
+           state.waiters.isEmpty || state.provider != expectedProvider {
             do {
                 try await Self.waitCancellably(for: state.task)
             } catch {
                 try Task.checkCancellation()
             }
             finishProviderAuthenticationPreparation(state.id)
-            return try await prepareProviderAuthentication()
+            return try await prepareProviderAuthentication(for: expectedProvider)
         }
 
         let waiterID = UUID()
@@ -27,7 +35,7 @@ extension CodexAppServerService {
             let preparation = providerAuthenticationPreparation
             task = Task { [weak self] in
                 guard let self else { throw CancellationError() }
-                let requiresReload = try await preparation { [self] in
+                let requiresReload = try await preparation(expectedProvider) { [self] in
                     await markProviderAuthenticationReloadRequired()
                 }
                 if requiresReload {
@@ -39,6 +47,7 @@ extension CodexAppServerService {
             }
             providerAuthenticationPreparationState = ProviderAuthenticationPreparationState(
                 id: preparationID,
+                provider: expectedProvider,
                 task: task,
                 waiters: [waiterID]
             )
@@ -57,6 +66,9 @@ extension CodexAppServerService {
             finishProviderAuthenticationWaiter(waiterID, preparationID: preparationID)
             finishProviderAuthenticationPreparation(preparationID)
             try Task.checkCancellation()
+            guard runtimeProviderResolver() == expectedProvider else {
+                throw CodexConfigurationError.providerChanged(expectedProvider.displayName)
+            }
         } catch {
             if Task.isCancelled {
                 cancelProviderAuthenticationWaiter(waiterID, preparationID: preparationID)
@@ -69,16 +81,10 @@ extension CodexAppServerService {
     }
 
     nonisolated static func prepareConfiguredDatabricksAuthentication(
+        provider: CodexRuntimeProvider,
         authenticationMayChange: @Sendable () async -> Void
     ) async throws -> Bool {
-        let profileName = await MainActor.run { () -> String? in
-            let settings = AppSettings.shared
-            guard settings.codexAccountProvider == .databricks,
-                  settings.isCodexAccountConfigurationCurrent
-            else { return nil }
-            return settings.codexDatabricksProfile.nilIfBlank
-        }
-        guard let profileName else { return false }
+        guard case let .databricks(profileName) = provider else { return false }
 
         let result = try await DatabricksCLIClient().ensureAuthenticated(
             profileName: profileName,

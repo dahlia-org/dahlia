@@ -36,7 +36,7 @@ enum SummaryService {
             developerInstructions: systemPrompt,
             inputs: inputs,
             outputSchema: SummaryDocumentResponse.outputSchema
-        ))
+        ), expectedProvider: generationSettings.runtimeProvider)
 
         let context = SummaryRenderContext(
             meetingId: promptContext.meetingId,
