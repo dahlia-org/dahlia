@@ -31,7 +31,7 @@ const config: AppConfig = {
 };
 const databricksConfig: AppConfig = {
   ...config,
-  provider: { backend: "databricks", baseUrl: "https://workspace.example/ai-gateway/mlflow/v1" },
+  provider: { backend: "databricks", baseUrl: "https://workspace.example/ai-gateway/codex/v1" },
   databricksWorkspace: {
     host: "https://workspace.example",
     clientId: "app-client-id",
@@ -96,6 +96,30 @@ describe("AI Gateway", () => {
     expect(model).not.toHaveProperty("supports_search_tool");
     expect(model).not.toHaveProperty("service_tiers");
     expect(model).toMatchObject({ availability_nux: null, upgrade: null });
+  });
+
+  it("uses DeepSeek reasoning metadata for Databricks model services", async () => {
+    const deepSeekAlias = {
+      ...alias,
+      alias: "deepseek",
+      upstreamModel: "system.ai.deepseek-v4-flash-0731",
+      displayName: "DeepSeek",
+    };
+    const response = await new GatewayService(config, {
+      ...registry,
+      listModelAliases: () => Promise.resolve([deepSeekAlias]),
+    }).models(new Request(`https://dahlia.example/api/v1/models?client_version=${LATEST_CODEX_CLIENT_VERSION}`));
+    const model = response.models.find((entry) => entry.slug === "deepseek");
+
+    expect(model).toMatchObject({
+      default_reasoning_level: "max",
+      display_name: "DeepSeek",
+      input_modalities: ["text"],
+      priority: 0,
+      visibility: "list",
+    });
+    expect(model?.supported_reasoning_levels.map((option) => option.effort))
+      .toEqual(["low", "high", "max"]);
   });
 
   it("does not expose canonical upgrade targets through aliases", async () => {
@@ -269,12 +293,20 @@ describe("AI Gateway", () => {
     const response = await service.responses(new Request("https://dahlia.example/api/v1/responses", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ model: "summary", stream: true, tools: [{ type: "function", name: "note" }] }),
+      body: JSON.stringify({
+        model: "summary",
+        reasoning: { effort: "high" },
+        stream: true,
+        tool_choice: "auto",
+        tools: [{ type: "function", name: "note" }],
+      }),
     }));
 
     expect(JSON.parse(sentBody)).toEqual({
       model: "provider/model-v2",
+      reasoning: { effort: "high" },
       stream: true,
+      tool_choice: "auto",
       tools: [{ type: "function", name: "note" }],
     });
     expect(response.body).toBeInstanceOf(ReadableStream);
@@ -301,17 +333,28 @@ describe("AI Gateway", () => {
 
   it("uses the forwarded Databricks access token", async () => {
     const transport = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      expect(String(input)).toBe("https://workspace.example/ai-gateway/mlflow/v1/responses");
+      expect(String(input)).toBe("https://workspace.example/ai-gateway/codex/v1/responses");
       const headers = new Headers(init?.headers);
       expect(headers.get("authorization")).toBe("Bearer user-token");
       expect(headers.has("x-forwarded-access-token")).toBe(false);
+      expect(JSON.parse(String(init?.body))).toEqual({
+        model: "provider/model-v2",
+        reasoning: { effort: "high" },
+        tool_choice: "auto",
+        tools: [{ type: "function", name: "note" }],
+      });
       return new Response("{}");
     });
     const service = new GatewayService(databricksConfig, registry, transport);
     const request = new Request("https://dahlia.example/api/v1/responses", {
       method: "POST",
       headers: { "x-forwarded-access-token": "user-token" },
-      body: JSON.stringify({ model: "summary" }),
+      body: JSON.stringify({
+        model: "summary",
+        reasoning: { effort: "high" },
+        tool_choice: "auto",
+        tools: [{ type: "function", name: "note" }],
+      }),
     });
 
     await service.responses(request);

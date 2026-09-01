@@ -49,7 +49,7 @@ describe("gateway adapter contract", () => {
   it("lists Databricks models with only the Bearer credential", async () => {
     const transport = vi.fn<GatewayFetch>(async () => new Response('{"model_services":[]}'));
     await listDatabricksModelServices(
-      { backend: "databricks", baseUrl: "https://workspace.example/ai-gateway/mlflow/v1" },
+      { backend: "databricks", baseUrl: "https://workspace.example/ai-gateway/codex/v1" },
       "Bearer user-token",
       undefined,
       transport,

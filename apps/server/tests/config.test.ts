@@ -51,7 +51,7 @@ describe("configuration", () => {
     })).toMatchObject({
       provider: {
         backend: "databricks",
-        baseUrl: "https://workspace.cloud.databricks.com/ai-gateway/mlflow/v1",
+        baseUrl: "https://workspace.cloud.databricks.com/ai-gateway/codex/v1",
       },
       databricksWorkspace: {
         host: "https://workspace.cloud.databricks.com",

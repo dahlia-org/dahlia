@@ -247,7 +247,8 @@ function codexModels(aliases: ModelAliasRecord[]): CodexModelWire[] {
     hiddenCodexModel(model.slug),
   ]));
   aliases.forEach((alias, priority) => {
-    const model = knownCodexModel(alias.upstreamModel)
+    const model = deepSeekModel(alias.upstreamModel)
+      ?? knownCodexModel(alias.upstreamModel)
       ?? knownCodexModel(alias.alias)
       ?? fallbackCodexModel(alias.alias);
     models.set(alias.alias, {
@@ -271,8 +272,19 @@ function hiddenCodexModel(slug: string): CodexModelWire {
   };
 }
 
+function deepSeekModel(value: string): CodexModelWire | undefined {
+  const normalized = normalizedModelName(value);
+  if (normalized !== "deepseek-v4-flash-0731") return undefined;
+  return {
+    ...fallbackCodexModel(normalized),
+    default_reasoning_level: "max",
+    supported_reasoning_levels: ["low", "high", "max"].map((effort) => ({ effort, description: "" })),
+    input_modalities: ["text"],
+  };
+}
+
 function knownCodexModel(value: string): CodexModelWire | undefined {
-  const normalized = value.trim().toLowerCase().replace(/^system\.ai\./, "");
+  const normalized = normalizedModelName(value);
   const model = bundledCodexModels.find((model) =>
     normalized === model.slug || normalized === model.slug.replaceAll(".", "-")
   );
@@ -303,6 +315,10 @@ function knownCodexModel(value: string): CodexModelWire | undefined {
     model_specialty: model.model_specialty,
     multi_agent_version: model.multi_agent_version,
   };
+}
+
+function normalizedModelName(value: string): string {
+  return value.trim().toLowerCase().replace(/^system\.ai\./, "");
 }
 
 function fallbackCodexModel(slug: string): CodexModelWire {

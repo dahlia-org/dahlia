@@ -162,7 +162,7 @@ function providerConfig(
     if (new URL(host).pathname !== "/") throw new Error("DATABRICKS_HOST must be a workspace origin without a path");
     return {
       backend,
-      baseUrl: `${host}/ai-gateway/mlflow/v1`,
+      baseUrl: `${host}/ai-gateway/codex/v1`,
     };
   }
   const apiKey = env.OPENAI_API_KEY?.trim();

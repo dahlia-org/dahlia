@@ -17,7 +17,7 @@ const config: AppConfig = {
 const ownerHeaders = { "X-Forwarded-Email": "OWNER@example.com", origin: config.baseUrl };
 const databricksConfig: AppConfig = {
   ...config,
-  provider: { backend: "databricks", baseUrl: "https://workspace.example/ai-gateway/mlflow/v1" },
+  provider: { backend: "databricks", baseUrl: "https://workspace.example/ai-gateway/codex/v1" },
   databricksWorkspace: {
     host: "https://workspace.example",
     clientId: "app-client-id",

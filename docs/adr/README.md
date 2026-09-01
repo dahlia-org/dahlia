@@ -53,12 +53,13 @@ Codex は全 ADR を順番に読まず、最初にこの一覧から現在の作
 | [0041](0041-exclude-project-context-from-meeting-search.md) | Search / Project context | Project の文脈をミーティング自由文検索と順位から除外する | Accepted; amends 0005, 0033, 0035, 0037, and 0040; builds on 0034 |
 | [0042](0042-apply-global-batch-audio-retention.md) | Recording storage / Settings | 現在の保存期間と録音終了日時からバッチ録音を遡及削除する | Accepted; amends 0004 |
 | [0043](0043-unify-dahlia-server-application-database.md) | Server gateway / Database | Server の認証・管理・将来同期を単一の選択可能な Drizzle DB に統一する | Accepted; amends 0029 and 0031; amended by 0044 |
-| [0044](0044-deploy-dahlia-server-to-databricks-apps.md) | Server gateway / Databricks | DAB、Lakebase、App OAuth で Dahlia Server を Databricks Apps に配置する | Accepted; amends 0029 and 0043; amended by 0045, 0046, 0047, and 0050 |
+| [0044](0044-deploy-dahlia-server-to-databricks-apps.md) | Server gateway / Databricks | DAB、Lakebase、App OAuth で Dahlia Server を Databricks Apps に配置する | Accepted; amends 0029 and 0043; amended by 0045, 0046, 0047, 0050, and 0054 |
 | [0045](0045-add-owner-scoped-artifact-transport.md) | Server / Artifact storage | owner-scoped の任意 asset transport を R2 または Volume で提供する | Accepted; amends 0029, 0043, and 0044; amended by 0048 |
-| [0046](0046-forward-databricks-user-token-to-ai-gateway.md) | Server gateway / Databricks | Apps proxy の user token で workspace AI Gateway を呼ぶ | Accepted; amends 0029 and 0044; amended by 0050 |
+| [0046](0046-forward-databricks-user-token-to-ai-gateway.md) | Server gateway / Databricks | Apps proxy の user token で workspace AI Gateway を呼ぶ | Accepted; amends 0029 and 0044; amended by 0050 and 0054 |
 | [0047](0047-manage-pnpm-dependencies-per-application.md) | Server gateway / Distribution | モノレポ内の各アプリが pnpm manifest と lockfile を独立して所有する | Accepted; amends 0029 and 0044 |
 | [0048](0048-issue-artifact-ids-server-side.md) | Server / Artifact API | UUIDv7 artifact ID を Server で発行し、PUT を置換専用にする | Accepted; amends 0045 |
 | [0049](0049-expose-artifact-tools-over-remote-mcp.md) | Server / MCP / Authentication | owner-scoped artifact mutation を remote MCP として公開する | Accepted; amends 0029, 0044, 0045, and 0048 |
 | [0050](0050-use-app-service-principal-for-databricks-model-discovery.md) | Server gateway / Databricks | モデル発見だけを App service principal で実行する | Accepted; amends 0044 and 0046 |
 | [0051](0051-add-desktop-cloud-oauth.md) | Desktop / Cloud authentication | protected-resource discovery と deployment-bound credential で Cloud に接続する | Accepted; builds on 0044 and 0049; amended by 0052 |
 | [0052](0052-separate-desktop-account-connections-from-vaults.md) | Desktop / Authentication / Vault | 接続をアプリ共有にし、Vault 関連は sync consumer と同時に追加する | Accepted; amends 0051, builds on 0043 |
+| [0054](0054-route-databricks-models-through-codex-gateway.md) | Server gateway / Databricks | 全 Databricks model を Codex 専用 Gateway 経由で呼び出す | Accepted; amends 0044 and 0046 |
