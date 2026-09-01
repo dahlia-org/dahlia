@@ -91,22 +91,24 @@ struct SetupTourView: View {
                         .accessibilityValue(settings.appLanguage.displayName)
 
                         if model.mode == .manual {
-                            Button(L10n.close, systemImage: "xmark", action: mainWindowNavigation.dismissSetupTour)
-                                .labelStyle(.iconOnly)
-                                .font(.body)
-                                .frame(
-                                    width: DahliaDesign.windowHeaderControlSize,
-                                    height: DahliaDesign.windowHeaderControlSize
-                                )
-                                .contentShape(.rect)
-                                .buttonStyle(.plain)
-                                .background(
-                                    isCloseHovered ? DahliaDesign.contentHighlightColor : .clear,
-                                    in: .rect(cornerRadius: DahliaDesign.Highlight.regularCornerRadius)
-                                )
-                                .onHover { isCloseHovered = $0 }
-                                .accessibilityLabel(L10n.close)
-                                .disabled(model.isCompleting)
+                            Button(action: mainWindowNavigation.dismissSetupTour) {
+                                Label(L10n.close, systemImage: "xmark")
+                                    .labelStyle(.iconOnly)
+                                    .font(.body)
+                                    .frame(
+                                        width: DahliaDesign.windowHeaderControlSize,
+                                        height: DahliaDesign.windowHeaderControlSize
+                                    )
+                                    .contentShape(.rect)
+                            }
+                            .buttonStyle(.plain)
+                            .background(
+                                isCloseHovered ? DahliaDesign.contentHighlightColor : .clear,
+                                in: .rect(cornerRadius: DahliaDesign.Highlight.regularCornerRadius)
+                            )
+                            .onHover { isCloseHovered = $0 }
+                            .accessibilityLabel(L10n.close)
+                            .disabled(model.isCompleting)
                         }
                     }
                     .padding(.top, 8)

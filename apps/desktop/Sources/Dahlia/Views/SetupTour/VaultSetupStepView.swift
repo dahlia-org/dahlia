@@ -38,21 +38,32 @@ struct VaultSetupStepView: View {
                         .font(.title2)
                         .bold()
 
-                    HStack(alignment: .top, spacing: 24) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(L10n.vaultName)
-                                .font(.headline)
-                            Text(L10n.vaultNameDescription)
-                                .foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack(alignment: .top, spacing: 24) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(L10n.vaultName)
+                                    .font(.headline)
+                                Text(L10n.vaultNameDescription)
+                                    .foregroundStyle(.secondary)
+                            }
+
+                            Spacer()
+
+                            TextField(L10n.vaultName, text: $vaultName)
+                                .textFieldStyle(.roundedBorder)
+                                .controlSize(.large)
+                                .frame(width: 220)
+                                .onSubmit(createVaultSelection)
                         }
 
-                        Spacer()
-
-                        TextField(L10n.vaultName, text: $vaultName)
-                            .textFieldStyle(.roundedBorder)
-                            .controlSize(.large)
-                            .frame(width: 220)
-                            .onSubmit(createVaultSelection)
+                        if let newVaultURL {
+                            Text(newVaultURL.path(percentEncoded: false))
+                                .font(.footnote.monospaced())
+                                .foregroundStyle(.secondary)
+                                .lineLimit(2)
+                                .truncationMode(.middle)
+                                .textSelection(.enabled)
+                        }
                     }
                     .padding(22)
                     .background(
