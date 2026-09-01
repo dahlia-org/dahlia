@@ -86,9 +86,7 @@ final class VaultManagementModel {
             createdAt: now,
             lastOpenedAt: markAsOpened ? now : .distantPast
         )
-        if let inheritedSettings = VaultAISettingsModel.shared.snapshot {
-            inheritedSettings.apply(to: &vault)
-        }
+        VaultAISettingsModel.shared.snapshot(for: vault.id).apply(to: &vault)
 
         do {
             try await repository.insertVaultAsync(vault)

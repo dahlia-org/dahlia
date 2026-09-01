@@ -54,7 +54,11 @@ final class VaultAISettingsModel {
 
     var snapshot: VaultAISettingsSnapshot? {
         guard let vaultID else { return nil }
-        return VaultAISettingsSnapshot(
+        return snapshot(for: vaultID)
+    }
+
+    func snapshot(for vaultID: UUID) -> VaultAISettingsSnapshot {
+        VaultAISettingsSnapshot(
             vaultID: vaultID,
             accountConnectionID: accountConnectionID,
             localProvider: localProvider,
