@@ -1,0 +1,20 @@
+Dahlia Server includes modified catalog material from Codex CLI 0.149.1.
+
+Source: https://github.com/openai/codex
+Release: rust-v0.149.1
+Commit: ff29a44391deccde0aba0f8390337d7f3c319ea4
+Sources: codex-rs/models-manager/models.json and codex-rs/models-manager/prompt.md
+
+The catalog copy omits fields that Codex 0.149.1 does not consume. Dahlia Server
+maps enabled model aliases onto this metadata at runtime.
+
+OpenAI Codex
+Copyright 2025 OpenAI
+
+This project includes code derived from Ratatui (https://github.com/ratatui/ratatui),
+licensed under the MIT license.
+Copyright (c) 2016-2022 Florian Dehau
+Copyright (c) 2023-2025 The Ratatui Developers
+
+Codex is licensed under the Apache License 2.0. The complete license text is
+included alongside this notice.

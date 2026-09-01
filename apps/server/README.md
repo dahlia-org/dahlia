@@ -59,7 +59,9 @@ In `accounts` mode, `/mcp` requires a DPoP-bound access token for the exact MCP 
 
 ## Provider and model configuration
 
-The AI backend uses the OpenAI Responses-compatible contract and is independent of the database. Select `databricks`, `cloudflare`, or `openai` with `DAHLIA_AI_BACKEND`; it defaults to `openai`. While the selected non-Databricks backend has no `OPENAI_API_KEY`, `/api/v1/models` returns an empty list and Responses returns `503 provider_not_configured`.
+The AI backend uses the OpenAI Responses-compatible contract and is independent of the database. Select `databricks`, `cloudflare`, or `openai` with `DAHLIA_AI_BACKEND`; it defaults to `openai`. While the selected non-Databricks backend has no `OPENAI_API_KEY`, `/api/v1/models` returns an empty standard model list and a Codex catalog with no picker-visible models, while Responses returns `503 provider_not_configured`.
+
+`GET /api/v1/models` returns the standard OpenAI `object` and `data` fields together with the `models` catalog required by Dahlia's bundled Codex. Omitting `client_version` selects the latest supported bundled version, currently `0.149.1`; callers may also request `client_version=0.149.1` explicitly. Other explicit versions return `400 unsupported_codex_client_version`. The enabled Model Alias rows remain the source of truth for both representations. Codex picker and runtime metadata is inferred from the upstream model or alias when it matches the pinned catalog; OpenAI-internal transport, hosted-tool, service-tier, and canonical-model lifecycle fields are not inherited by aliases. Unknown aliases use conservative fallback metadata without reasoning-effort options. Updating the bundled Codex requires updating this Server catalog and its contract test in the same change.
 
 Set the optional `DAHLIA_ADMIN_EMAIL` to bootstrap administration. That email remains an administrator while configured and cannot be removed in the UI. Additional administrator emails are managed under `/admin/members`. Starting with no administrator is allowed.
 
@@ -152,7 +154,7 @@ Deployment guides:
 - [Cloudflare Workers + D1 or Hyperdrive](../../deploy/cloudflare/README.md)
 - [Databricks Apps](../../deploy/databricks/README.md)
 
-## Codex 0.148.0 manual configuration
+## Codex 0.149.1 manual configuration
 
 ```toml
 model = "<alias-configured-in-admin>"
@@ -161,14 +163,19 @@ model_provider = "dahlia-server"
 [model_providers.dahlia-server]
 name = "Dahlia Server"
 base_url = "https://<host>/api/v1"
-env_key = "DAHLIA_ACCESS_TOKEN"
 wire_api = "responses"
+
+[model_providers.dahlia-server.auth]
+command = "/path/to/short-lived-token-helper"
+args = []
+timeout_ms = 10000
+refresh_interval_ms = 300000
 
 [features]
 enable_request_compression = false
 ```
 
-With `accounts`, use an access token issued to `databricks-cli`. With Databricks Apps `header` authentication, use a current Databricks U2M access token. Request compression remains disabled because the service validates the uncompressed JSON body before forwarding it.
+The auth command prints a current bearer token to stdout; do not place that token in this file, an environment variable, or logs. With `accounts`, use an access token issued to `databricks-cli`. With Databricks Apps `header` authentication, use a current Databricks U2M access token. Request compression remains disabled because the service validates the uncompressed JSON body before forwarding it.
 
 ## Validation
 
@@ -176,7 +183,7 @@ With `accounts`, use an access token issued to `databricks-cli`. With Databricks
 pnpm check
 ```
 
-This runs lint, TypeScript checks, unit and adapter contract tests, Node/SPA builds, and a Workers dry-run. Live credentials are tested separately with a pinned Codex 0.148.0 tool-call session and, on Databricks Apps, an SSE streaming smoke test.
+This runs lint, TypeScript checks, unit and adapter contract tests, Node/SPA builds, and a Workers dry-run. Live credentials are tested separately with a pinned Codex 0.149.1 model-list and tool-call session and, on Databricks Apps, an SSE streaming smoke test.
 
 ## Package consumers
 

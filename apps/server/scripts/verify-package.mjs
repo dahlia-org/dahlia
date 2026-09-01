@@ -73,12 +73,18 @@ try {
       throw new Error("Migration manifest is incomplete");
     }
     const style = await readFile(new URL(import.meta.resolve("@dahlia-ai/server/client/styles.css")), "utf8");
+    const packageUrl = new URL(import.meta.resolve("@dahlia-ai/server/package.json"));
+    const codexLicense = await readFile(new URL("./Codex-LICENSE", packageUrl), "utf8");
+    const codexNotice = await readFile(new URL("./Codex-NOTICE.txt", packageUrl), "utf8");
     const migration = await readFile(
       new URL(import.meta.resolve("@dahlia-ai/server/migrations/sqlite/20260830001528_stiff_alex_power/migration.sql")),
       "utf8",
     );
     if (
       !style.includes(".app-shell")
+      || !codexLicense.includes("Apache License")
+      || !codexNotice.includes("OpenAI Codex\\nCopyright 2025 OpenAI")
+      || !codexNotice.includes("codex-rs/models-manager/models.json")
       || !migration.includes("model_alias")
       || !migration.includes("artifact")
       || migration.includes("artifact_reservation")

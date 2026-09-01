@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { ModelAliasRecord } from "../src/auth/store";
 import type { AppConfig } from "../src/config";
-import { GatewayService } from "../src/ai-gateway/service";
+import { GatewayService, LATEST_CODEX_CLIENT_VERSION } from "../src/ai-gateway/service";
 
 const alias: ModelAliasRecord = {
   alias: "summary",
@@ -42,7 +42,8 @@ const databricksConfig: AppConfig = {
 
 describe("AI Gateway", () => {
   it("exposes enabled database aliases", async () => {
-    expect(await new GatewayService(config, registry).models()).toEqual({
+    const response = await new GatewayService(config, registry).models();
+    expect(response).toMatchObject({
       object: "list",
       data: [{
         id: "summary",
@@ -52,6 +53,71 @@ describe("AI Gateway", () => {
         display_name: "Summary",
       }],
     });
+    expect(response.models.filter((model) => model.visibility === "list")).toEqual([
+      expect.objectContaining({
+        slug: "summary",
+        display_name: "Summary",
+        default_reasoning_level: null,
+        include_apps_usage_instructions: false,
+        supported_reasoning_levels: [],
+        priority: 0,
+      }),
+    ]);
+    expect(response.models.find((model) => model.slug === "gpt-5.6-sol")).toMatchObject({
+      visibility: "hide",
+      model_messages: { instructions_template: "" },
+    });
+  });
+
+  it("uses known Codex metadata for Databricks model services", async () => {
+    const knownAlias = {
+      ...alias,
+      alias: "chat",
+      upstreamModel: "system.ai.gpt-5-6-luna",
+      displayName: "Chat",
+    };
+    const response = await new GatewayService(config, {
+      ...registry,
+      listModelAliases: () => Promise.resolve([knownAlias]),
+    }).models(new Request(`https://dahlia.example/api/v1/models?client_version=${LATEST_CODEX_CLIENT_VERSION}`));
+    const model = response.models.find((entry) => entry.slug === "chat");
+
+    expect(model).toMatchObject({
+      display_name: "Chat",
+      default_reasoning_level: "medium",
+      input_modalities: ["text", "image"],
+      priority: 0,
+      visibility: "list",
+    });
+    expect(model?.supported_reasoning_levels.map((option) => option.effort))
+      .toEqual(["low", "medium", "high", "xhigh", "max"]);
+    expect(model).not.toHaveProperty("use_responses_lite");
+    expect(model).not.toHaveProperty("tool_mode");
+    expect(model).not.toHaveProperty("supports_search_tool");
+    expect(model).not.toHaveProperty("service_tiers");
+    expect(model).toMatchObject({ availability_nux: null, upgrade: null });
+  });
+
+  it("does not expose canonical upgrade targets through aliases", async () => {
+    const response = await new GatewayService(config, {
+      ...registry,
+      listModelAliases: () => Promise.resolve([{
+        ...alias,
+        alias: "legacy-chat",
+        upstreamModel: "system.ai.gpt-5-4",
+      }]),
+    }).models();
+
+    expect(response.models.find((entry) => entry.slug === "legacy-chat"))
+      .toMatchObject({ availability_nux: null, upgrade: null });
+  });
+
+  it("rejects unsupported explicit Codex client versions", async () => {
+    const service = new GatewayService(config, registry);
+
+    await expect(service.models(new Request(
+      "https://dahlia.example/api/v1/models?client_version=0.150.0",
+    ))).rejects.toMatchObject({ status: 400, code: "unsupported_codex_client_version" });
   });
 
   it("keeps stored aliases in the non-Databricks administration list", async () => {

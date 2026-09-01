@@ -50,7 +50,14 @@ describe("server extensions", () => {
     expect((await app.request("/api/v1/extension")).status).toBe(401);
     const core = await app.request("/api/v1/models", { headers: identityHeaders });
     expect(core.status).toBe(200);
-    expect(await core.json()).toEqual({ object: "list", data: [] });
+    expect(await core.json()).toMatchObject({ object: "list", data: [] });
+    const unsupported = await app.request("/api/v1/models?client_version=0.150.0", {
+      headers: identityHeaders,
+    });
+    expect(unsupported.status).toBe(400);
+    expect(await unsupported.json()).toMatchObject({
+      error: { code: "unsupported_codex_client_version" },
+    });
     expect((await app.request("/api/v1/extension", { headers: identityHeaders })).status).toBe(200);
   });
 

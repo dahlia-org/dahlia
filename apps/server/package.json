@@ -37,6 +37,8 @@
     "./package.json": "./package.json"
   },
   "files": [
+    "Codex-LICENSE",
+    "Codex-NOTICE.txt",
     "dist/client",
     "dist/client-library",
     "dist/server",
