@@ -1792,7 +1792,7 @@ private extension CodexAppServerService {
         let generation = connectionGeneration
         let timeoutTask = Task { [weak self, clock] in
             do {
-                try await clock.sleep(for: CodexAppServerService.turnRecoveryTimeout)
+                try await clock.sleep(for: Self.turnRecoveryTimeout)
                 guard let self else { return }
                 await self.resetConnectionForDiscoveredChatTurnTimeout(key, generation: generation)
             } catch {
@@ -2119,7 +2119,7 @@ private extension CodexAppServerService {
         chatTurnRuntimes[localTurnID]?.timeoutTask?.cancel()
         chatTurnRuntimes[localTurnID]?.timeoutTask = Task { [weak self, clock] in
             do {
-                try await clock.sleep(for: CodexAppServerService.turnRecoveryTimeout)
+                try await clock.sleep(for: Self.turnRecoveryTimeout)
                 guard let self else { return }
                 await self.resetConnectionForChatTurnTimeout(localTurnID, generation: generation)
             } catch {
