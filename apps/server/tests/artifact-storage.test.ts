@@ -173,10 +173,14 @@ describe("Databricks Volume object storage", () => {
   });
 
   it("maps missing files and upstream failures without relaying error bodies", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
     let status = 404;
     const transport = vi.fn(async (input: RequestInfo | URL) => String(input).endsWith("/oidc/v1/token")
       ? Response.json({ access_token: "token", expires_in: 3600 })
-      : new Response("contains a storage path", { status })) as typeof fetch;
+      : new Response("contains a storage path", {
+          status,
+          headers: { "x-databricks-request-id": "request-123" },
+        })) as typeof fetch;
     const storage: ObjectStorage = new DatabricksVolumeObjectStorage({
       host: "https://workspace.example",
       clientId: "client",
@@ -189,7 +193,42 @@ describe("Databricks Volume object storage", () => {
     expect(await missing.text()).toBe("");
     status = 403;
     await expect(storage.read(KEY, "GET", new Request("https://dahlia.example"))).rejects.toThrow();
+    const loggedError = String(consoleError.mock.calls.at(-1)?.[0]);
+    expect(JSON.parse(loggedError)).toEqual({
+      level: "error",
+      event: "databricks_artifact_storage_failed",
+      reason: "upstream_http_error",
+      operation: "get",
+      status: 403,
+      requestId: "request-123",
+    });
+    expect(loggedError).not.toContain("contains a storage path");
+    expect(loggedError).not.toContain(KEY);
     status = 500;
     await expect(storage.read(KEY, "GET", new Request("https://dahlia.example"))).rejects.toThrow();
+    consoleError.mockRestore();
+  });
+
+  it("logs sanitized service principal authentication failures", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const storage = new DatabricksVolumeObjectStorage({
+      host: "https://workspace.example",
+      clientId: "client",
+      clientSecret: "secret",
+      tokenUrl: "https://workspace.example/oidc/v1/token",
+    }, "/Volumes/main/default/artifacts", vi.fn(async () => new Response("private", { status: 401 })));
+
+    await expect(storage.put(KEY, new TextEncoder().encode("hello"), 5, "text/html")).rejects.toThrow();
+    const loggedError = String(consoleError.mock.calls.at(-1)?.[0]);
+    expect(JSON.parse(loggedError)).toEqual({
+      level: "error",
+      event: "databricks_artifact_storage_failed",
+      reason: "authentication_failed",
+      operation: "put",
+    });
+    expect(loggedError).not.toContain("private");
+    expect(loggedError).not.toContain("secret");
+    expect(loggedError).not.toContain(KEY);
+    consoleError.mockRestore();
   });
 });
