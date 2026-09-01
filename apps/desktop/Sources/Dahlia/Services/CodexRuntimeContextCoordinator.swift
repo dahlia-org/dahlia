@@ -9,6 +9,7 @@ actor CodexRuntimeContextCoordinator {
     private let databricksClient: DatabricksCLIClient
     private let service: CodexAppServerService
     private let contextStore: CodexRuntimeContextStore
+    private var configuredProvider: CodexRuntimeProvider?
 
     init(
         configurationManager: CodexConfigurationManager = CodexConfigurationManager(),
@@ -32,7 +33,10 @@ actor CodexRuntimeContextCoordinator {
             localProvider: settings.localProvider,
             databricksProfile: settings.databricksProfile
         )
-        guard !contextStore.isConfigured || contextStore.provider != provider else { return }
+        guard !contextStore.isConfigured
+            || contextStore.provider != provider
+            || configuredProvider != provider
+        else { return }
 
         switch provider {
         case let .dahlia(connectionID):
@@ -54,6 +58,7 @@ actor CodexRuntimeContextCoordinator {
             else { throw CodexConfigurationError.databricksProfileRequired }
             _ = try await configurationManager.configureDatabricks(profile: profile)
         }
+        configuredProvider = provider
 
         try await service.reloadConfiguration {
             self.contextStore.apply(provider)

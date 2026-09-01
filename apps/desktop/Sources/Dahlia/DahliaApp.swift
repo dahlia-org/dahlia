@@ -406,11 +406,10 @@ struct DahliaApp: App {
         guard let task = dahliaAccountController.startSignIn(configuration: configuration) else { return }
         Task { @MainActor in
             await task.value
-            if dahliaAccountController.errorMessage == nil {
+            if dahliaAccountController.errorMessage == nil,
+               let connection = dahliaAccountController.signedInConnection(matching: configuration) {
                 if let targetVaultID,
-                   let connection = dahliaAccountController.connections.first(where: {
-                       DahliaCloudService.sameOrigin($0.origin, configuration.origin)
-                   }), let db = appDatabase {
+                   let db = appDatabase {
                     do {
                         if let vault = try await MeetingRepository(dbQueue: db.dbQueue).updateVaultAccountConnection(
                             id: targetVaultID,

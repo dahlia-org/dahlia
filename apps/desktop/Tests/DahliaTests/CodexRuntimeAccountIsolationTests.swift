@@ -85,7 +85,92 @@ struct CodexRuntimeAccountIsolationTests {
 
         cancelledReload.cancel()
         await #expect(throws: CancellationError.self) { try await cancelledReload.value }
-        await first.sendFromServer(.object([
+        await completeGeneration(on: first)
+
+        _ = try await generation.value
+        try await contextReload.value
+        #expect(appliedContext.withLock { $0 })
+        #expect(await first.isClosed)
+        #expect(await !second.isClosed)
+        await service.shutdown()
+    }
+
+    @Test
+    func cancelledProviderSwitchRestoresThePreviouslyActiveConfiguration() async throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appending(path: "dahlia-codex-context-\(UUID().uuidString)", directoryHint: .isDirectory)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+        let locator = ApplicationSupportCodexHomeLocator(applicationSupportURL: rootURL)
+        let configurationManager = CodexConfigurationManager(homeLocator: locator)
+        let profilesResponse = try JSONSerialization.data(withJSONObject: [
+            "profiles": [[
+                "name": "WORK",
+                "host": "https://dbc.example.com",
+                "auth_type": "databricks-cli",
+            ]],
+        ])
+        let databricksClient = DatabricksCLIClient { _ in
+            .init(standardOutput: profilesResponse, standardError: Data(), terminationStatus: 0)
+        }
+        let first = TestCodexAppServerTransport(mode: .generationBlocks)
+        let second = TestCodexAppServerTransport(mode: .models)
+        let transports = Mutex([first, second])
+        let service = makeTestCodexAppServerService {
+            transports.withLock { $0.removeFirst() }
+        }
+        let contextStore = CodexRuntimeContextStore()
+        contextStore.apply(.chatGPTSubscription)
+        let coordinator = CodexRuntimeContextCoordinator(
+            configurationManager: configurationManager,
+            databricksClient: databricksClient,
+            service: service,
+            contextStore: contextStore
+        )
+        let localVault = VaultRecord(
+            id: .v7(),
+            path: "/tmp/local-context",
+            name: "Local",
+            createdAt: .now,
+            lastOpenedAt: .now
+        )
+        var databricksVault = localVault
+        databricksVault.id = .v7()
+        databricksVault.localProvider = .databricks
+        databricksVault.databricksProfile = "WORK"
+        let generation = Task {
+            try await service.generate(.init(
+                model: nil,
+                developerInstructions: "Summarize.",
+                inputs: [.text("Transcript")],
+                outputSchema: Data(#"{"type":"object"}"#.utf8)
+            ))
+        }
+        await service.waitUntilActiveTurnForTesting()
+        let databricksActivation = Task {
+            try await coordinator.activate(VaultAISettingsSnapshot(vault: databricksVault))
+        }
+        await service.waitUntilConfigurationReloadIsWaitingForTesting()
+
+        databricksActivation.cancel()
+        await #expect(throws: CancellationError.self) { try await databricksActivation.value }
+        let localActivation = Task {
+            try await coordinator.activate(VaultAISettingsSnapshot(vault: localVault))
+        }
+        await completeGeneration(on: first)
+
+        _ = try await generation.value
+        try await localActivation.value
+        let configuration = try String(
+            contentsOf: locator.homeURL().appending(path: "config.toml"),
+            encoding: .utf8
+        )
+        #expect(configuration.contains(#"model_provider = "openai""#))
+        #expect(contextStore.provider == .chatGPTSubscription)
+        await service.shutdown()
+    }
+
+    private func completeGeneration(on transport: TestCodexAppServerTransport) async {
+        await transport.sendFromServer(.object([
             "method": .string("item/completed"),
             "params": .object([
                 "threadId": .string("thread-1"),
@@ -96,7 +181,7 @@ struct CodexRuntimeAccountIsolationTests {
                 ]),
             ]),
         ]))
-        await first.sendFromServer(.object([
+        await transport.sendFromServer(.object([
             "method": .string("turn/completed"),
             "params": .object([
                 "threadId": .string("thread-1"),
@@ -106,12 +191,5 @@ struct CodexRuntimeAccountIsolationTests {
                 ]),
             ]),
         ]))
-
-        _ = try await generation.value
-        try await contextReload.value
-        #expect(appliedContext.withLock { $0 })
-        #expect(await first.isClosed)
-        #expect(await !second.isClosed)
-        await service.shutdown()
     }
 }

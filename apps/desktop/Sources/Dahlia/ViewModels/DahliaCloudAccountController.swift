@@ -188,6 +188,12 @@ final class DahliaCloudAccountController {
         return try await service(for: connection.record).validAccessToken()
     }
 
+    func signedInConnection(matching configuration: DahliaCloudConfiguration) -> DahliaAccountConnection? {
+        connections.first {
+            $0.isSignedIn && DahliaCloudService.sameOrigin($0.origin, configuration.origin)
+        }
+    }
+
     func reportAccountLinkingError(_ error: any Error) {
         errorMessage = error.localizedDescription
     }
