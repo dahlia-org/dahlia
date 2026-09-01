@@ -35,7 +35,7 @@ struct CodexChatConfigurationRow: View {
                 }
             }
             .padding(.horizontal, 10)
-            .frame(height: 30)
+            .frame(height: CodexChatDesign.configurationRowHeight)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
