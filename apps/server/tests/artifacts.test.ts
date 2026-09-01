@@ -288,7 +288,7 @@ describe("artifact API", () => {
   });
 
   it("keeps new artifacts private until the owner publishes them", async () => {
-    const { app } = fixture();
+    const { app, objects } = fixture();
     const created = await upload(app);
     const id = await uploadedId(created);
     const timestamp = Number.parseInt(id.replaceAll("-", "").slice(0, 12), 16);
@@ -300,6 +300,11 @@ describe("artifact API", () => {
     });
     expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
     expect(Math.abs(Date.now() - timestamp)).toBeLessThan(1_000);
+    expect([...objects.keys()]).toEqual([
+      expect.stringMatching(new RegExp(
+        `^artifacts/${id}/[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\\.txt$`,
+      )),
+    ]);
     expect((await app.request(`/api/v1/artifacts/${id}`)).status).toBe(401);
     expect((await app.request(`/api/v1/artifacts/${id}`, { headers: OTHER })).status).toBe(404);
 
@@ -400,7 +405,7 @@ describe("artifact API", () => {
   });
 
   it("validates the upload contract and replacement media type", async () => {
-    const { app } = fixture();
+    const { app, objects } = fixture();
     expect((await app.request("/api/v1/artifacts", { method: "POST", headers: OWNER, body: "x" })).status)
       .toBe(411);
     expect((await upload(app, "x", { "content-encoding": "gzip" })).status).toBe(415);
@@ -414,6 +419,17 @@ describe("artifact API", () => {
     expect((await replace(app, UUID_V4)).status).toBe(400);
     expect((await replace(app, "not-a-uuid")).status).toBe(400);
     expect((await replace(app, OTHER_ID)).status).toBe(404);
+
+    const html = await upload(app, "<p>summary</p>", {
+      "content-type": "text/html",
+      "content-disposition": "attachment; filename=\"summary.html\"",
+    });
+    const htmlId = await uploadedId(html);
+    expect([...objects.keys()]).toContainEqual(
+      expect.stringMatching(new RegExp(
+        `^artifacts/${htmlId}/[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\\.html$`,
+      )),
+    );
   });
 
   it("does not expose or mutate another owner's artifact", async () => {

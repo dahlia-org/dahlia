@@ -43,6 +43,7 @@ enum DahliaArtifactExportService {
         request.httpBody = body
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         request.setValue("text/html", forHTTPHeaderField: "Content-Type")
+        request.setValue("attachment; filename=\"summary.html\"", forHTTPHeaderField: "Content-Disposition")
         request.setValue(String(body.count), forHTTPHeaderField: "Content-Length")
 
         let (data, response) = try await urlSession.data(for: request)

@@ -17,6 +17,7 @@ import Foundation
                 #expect(request.url?.absoluteString == "https://dahlia.example/api/v1/artifacts")
                 #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer access-token")
                 #expect(request.value(forHTTPHeaderField: "Content-Type") == "text/html")
+                #expect(request.value(forHTTPHeaderField: "Content-Disposition") == "attachment; filename=\"summary.html\"")
                 #expect(request.value(forHTTPHeaderField: "Content-Length") == String(Data(html.utf8).count))
                 return (
                     201,

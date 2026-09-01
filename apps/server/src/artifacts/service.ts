@@ -22,6 +22,7 @@ export const ARTIFACT_METADATA_MEDIA_TYPE = "application/vnd.dahlia.artifact+jso
 interface ArtifactUpload {
   contentLength: number;
   contentType: string;
+  extension: string;
 }
 
 export class ArtifactRequestError extends Error {
@@ -84,7 +85,7 @@ export class ArtifactService {
         contentType: upload.contentType,
       }));
       if (!artifact) continue;
-      const storageKey = artifactVersionStorageKey(id);
+      const storageKey = artifactVersionStorageKey(id, upload.extension);
       try {
         return await this.write(artifact, request, upload, storage, storageKey);
       } catch (error) {
@@ -102,7 +103,7 @@ export class ArtifactService {
     if (artifact.contentType !== upload.contentType) {
       throw new ArtifactRequestError(409, "artifact_content_type_mismatch");
     }
-    return this.write(artifact, request, upload, storage, artifactVersionStorageKey(id));
+    return this.write(artifact, request, upload, storage, artifactVersionStorageKey(id, upload.extension));
   }
 
   private async write(
@@ -290,8 +291,8 @@ export class ArtifactService {
   }
 }
 
-function artifactVersionStorageKey(id: string): string {
-  return `artifacts/${id}/${crypto.randomUUID()}`;
+function artifactVersionStorageKey(id: string, extension: string): string {
+  return `artifacts/${id}/${uuidV7()}.${extension}`;
 }
 
 function uuidV7(): string {
@@ -315,7 +316,18 @@ function parseUpload(request: Request, maximum: number): ArtifactUpload {
   }
   const contentType = request.headers.get("content-type") || "application/octet-stream";
   if (contentType.length > 255) throw new ArtifactRequestError(400, "invalid_content_type");
-  return { contentLength, contentType };
+  return { contentLength, contentType, extension: artifactFileExtension(request, contentType) };
+}
+
+function artifactFileExtension(request: Request, contentType: string): string {
+  const disposition = request.headers.get("content-disposition");
+  const filename = disposition && disposition.length <= 1024
+    ? /(?:^|;)\s*filename="[^"]*\.([a-z0-9]{1,16})"\s*(?:;|$)/i.exec(disposition)?.[1]
+    : undefined;
+  if (filename) return filename.toLowerCase();
+  const mediaType = contentType.split(";", 1)[0]!.trim().toLowerCase();
+  if (mediaType === "text/html") return "html";
+  return mediaType.startsWith("text/") ? "txt" : "bin";
 }
 
 function parseContentLength(request: Request, maximum: number): number {
