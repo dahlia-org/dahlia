@@ -68,6 +68,16 @@ store, repository, or global worker.
 - Add UI strings as computed properties in `Utilities/L10n.swift`, then add the same key to both `Resources/ja.lproj` and `Resources/en.lproj`. Japanese is the primary localization.
 - Settings screens use `Form` with `.formStyle(.grouped)`, `Section`, `LabeledContent`, and standard controls. Do not add custom cards, custom rows, or fixed-width control frames. Use `.toggleStyle(.switch)` for toggles and `.checkbox` for multiple selection.
 
+### Interaction Conventions
+
+- Buttons and button-like controls must provide visible hover feedback. Use the existing button style or control pattern before adding a new one.
+- The clickable hit area must match the full area that shows hover feedback, not only the icon or text glyph. For custom SwiftUI buttons,
+  put the padded `frame` and `contentShape` inside the `Button` label; see `CodexChatIconButton` and `ScreenshotOverlayControlButton`.
+- Present app-owned popup modal cards as an in-window modal overlay rather than a standard SwiftUI `.sheet`. Use a dimming backdrop and
+  a centered card, following `ProjectEditorPresentation`, `ProjectDeletionDialog`, and `DahliaServerSignInView`.
+- Clicking the backdrop outside an in-window modal card must invoke the same cancellation path as its Cancel or Close action. While an
+  operation cannot safely be interrupted, keep both paths consistently disabled until cancellation is safe.
+
 ## Verification
 
 - Run tests for the changed layer first. Recording-pipeline changes must cover start, stop, reconfiguration, per-source routing, and batch-persistence boundaries as applicable.
