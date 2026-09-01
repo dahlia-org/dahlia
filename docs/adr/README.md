@@ -64,3 +64,4 @@ Codex は全 ADR を順番に読まず、最初にこの一覧から現在の作
 | [0052](0052-separate-desktop-account-connections-from-vaults.md) | Desktop / Authentication / Vault | 接続をアプリ共有にし、Vault 関連は sync consumer と同時に追加する | Accepted; amends 0051, builds on 0043 |
 | [0053](0053-scope-codex-accounts-to-vaults.md) | Desktop / AI runtime / Authentication / Vault | Vault ごとにローカルまたは Dahlia アカウントの Codex home とモデル設定を選択する | Accepted; partially supersedes 0051 and 0052, builds on 0021 and 0029 |
 | [0054](0054-align-ai-runtime-timeouts.md) | Desktop / AI runtime / Server gateway | 要約と RPC の timeout を upstream execution と応答遅延に合わせる | Accepted; amends 0003 and 0029 |
+| [0055](0055-add-artifact-browser-pages.md) | Server / Artifact UI | owner-scoped artifact の一覧・表示ページと browser read 認証を追加する | Accepted; amends 0045, 0048, and 0049 |

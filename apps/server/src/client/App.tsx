@@ -2,6 +2,7 @@ import { createAuthClient } from "better-auth/react";
 import { useCallback, useEffect, useState, type ComponentType, type ReactNode } from "react";
 
 import {
+  artifactViewerId,
   isCoreDashboardPath,
   resolveDashboardRoute,
   shouldRedirectToSignIn,
@@ -44,6 +45,7 @@ export interface AppProps {
 }
 
 const defaultBrand: DashboardBrand = { name: "Dahlia", product: "Server" };
+const artifactMetadataMediaType = "application/vnd.dahlia.artifact+json";
 
 export function resolveDashboardExtensionRoute(
   path: string,
@@ -75,6 +77,19 @@ interface AdminMember {
   removable: boolean;
 }
 
+interface ArtifactInfo {
+  id: string;
+  visibility: "private" | "public";
+  contentType: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface ArtifactPage {
+  items: ArtifactInfo[];
+  nextCursor?: string;
+}
+
 class RequestError extends Error {
   constructor(message: string, readonly status?: number) {
     super(message);
@@ -100,6 +115,17 @@ async function json<T>(url: string, init?: RequestInit): Promise<T> {
   return (response.status === 204 ? undefined : await response.json()) as T;
 }
 
+async function beginSignIn(callbackURL: string): Promise<string | undefined> {
+  try {
+    const authClient = createAuthClient({ baseURL: window.location.origin });
+    const result = await authClient.signIn.social({ provider: "google", callbackURL });
+    if (!result.error) return undefined;
+    return result.error.message || "Sign in failed";
+  } catch (caught) {
+    return caught instanceof Error ? caught.message : "Sign in failed";
+  }
+}
+
 function Brand({ brand }: { brand: DashboardBrand }) {
   return (
     <a className="brand" href="/dashboard" aria-label={`${brand.name} ${brand.product} home`}>
@@ -121,16 +147,9 @@ function SignIn({ brand }: { brand: DashboardBrand }) {
 
   async function signIn() {
     setError(undefined);
-    try {
-      const callbackURL = window.location.search
-        ? `/api/auth/oauth2/authorize${window.location.search}`
-        : "/dashboard";
-      const authClient = createAuthClient({ baseURL: window.location.origin });
-      const result = await authClient.signIn.social({ provider: "google", callbackURL });
-      if (result.error) setError(result.error.message || "Sign in failed");
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Sign in failed");
-    }
+    setError(await beginSignIn(window.location.search
+      ? `/api/auth/oauth2/authorize${window.location.search}`
+      : "/dashboard"));
   }
 
   return (
@@ -207,6 +226,7 @@ function Shell({
         <Brand brand={brand} />
         <nav aria-label="Account navigation">
           <a className={route === "/dashboard" ? "active" : ""} href="/dashboard">Overview</a>
+          <a className={route === "/artifacts" ? "active" : ""} href="/artifacts">Artifacts</a>
           {extensions.flatMap((extension) => extension.navigation ?? []).map((item) => (
             (!item.capability || session.capabilities[item.capability])
               ? <a className={route === item.path ? "active" : ""} href={item.path} key={item.path}>{item.label}</a>
@@ -307,6 +327,136 @@ function Settings() {
         <p className="section-note">Revoked access can remain valid for up to 15 minutes.</p>
       </section>
     </>
+  );
+}
+
+function Artifacts() {
+  const [artifacts, setArtifacts] = useState<ArtifactInfo[]>();
+  const [nextCursor, setNextCursor] = useState<string>();
+  const [error, setError] = useState<string>();
+  const [loadingMore, setLoadingMore] = useState(false);
+
+  const load = useCallback(async (cursor?: string) => {
+    setError(undefined);
+    if (cursor) setLoadingMore(true);
+    try {
+      const page = await json<ArtifactPage>(`/api/v1/artifacts${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`);
+      setArtifacts((current) => cursor ? [...(current ?? []), ...page.items] : page.items);
+      setNextCursor(page.nextCursor);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not load artifacts");
+    } finally {
+      setLoadingMore(false);
+    }
+  }, []);
+  useEffect(() => { void load(); }, [load]);
+
+  return (
+    <>
+      <PageHeader title="Artifacts" />
+      <section className="section-block">
+        <h2 className="section-label">Exported artifacts</h2>
+        <div className="panel artifact-list">
+          {!artifacts && !error && <p className="muted">Loading artifacts…</p>}
+          {artifacts?.length === 0 && (
+            <div className="empty-state">
+              <strong>No artifacts yet</strong><span>Artifacts exported by your AI will appear here.</span>
+            </div>
+          )}
+          {artifacts?.map((artifact) => (
+            <a className="artifact-row" href={`/artifacts/${artifact.id}`} key={artifact.id}>
+              <span className="artifact-copy">
+                <strong>{artifact.id}</strong>
+                <span>{artifact.contentType} · Updated {new Date(artifact.updatedAt).toLocaleString()}</span>
+              </span>
+              <span className={`status ${artifact.visibility === "public" ? "good" : ""}`}>
+                {artifact.visibility}
+              </span>
+            </a>
+          ))}
+        </div>
+        {error && <p className="error artifact-error">{error}</p>}
+        {nextCursor && (
+          <button className="secondary load-more" disabled={loadingMore} onClick={() => void load(nextCursor)}>
+            {loadingMore ? "Loading…" : "Load more"}
+          </button>
+        )}
+      </section>
+    </>
+  );
+}
+
+export function canEmbedArtifact(contentType: string): boolean {
+  const type = contentType.split(";", 1)[0]!.trim().toLowerCase();
+  return type.startsWith("text/")
+    || type.startsWith("image/")
+    || type.startsWith("audio/")
+    || type.startsWith("video/")
+    || ["application/json", "application/pdf", "application/xml", "application/xhtml+xml"].includes(type);
+}
+
+function ArtifactViewer({ brand, id }: { brand: DashboardBrand; id: string }) {
+  const [artifact, setArtifact] = useState<ArtifactInfo>();
+  const [loadError, setLoadError] = useState<Error>();
+  const [signInError, setSignInError] = useState<string>();
+  const load = useCallback(async () => {
+    setLoadError(undefined);
+    try {
+      setArtifact(await json<ArtifactInfo>(`/api/v1/artifacts/${encodeURIComponent(id)}`, {
+        headers: { accept: artifactMetadataMediaType },
+      }));
+    } catch (caught) {
+      setLoadError(caught instanceof Error ? caught : new Error("Could not load artifact"));
+    }
+  }, [id]);
+  useEffect(() => { void load(); }, [load]);
+
+  const contentURL = `/api/v1/artifacts/${encodeURIComponent(id)}/content`;
+  const requiresSignIn = loadError instanceof RequestError && loadError.status === 401;
+  return (
+    <main className="artifact-viewer">
+      <header className="viewer-header">
+        <Brand brand={brand} />
+        <a className="secondary viewer-back" href="/artifacts">All artifacts</a>
+      </header>
+      {!artifact && !loadError && <div className="viewer-state muted">Loading artifact…</div>}
+      {requiresSignIn && (
+        <div className="viewer-state panel">
+          <strong>Sign in to view this artifact</strong>
+          <span>This artifact is private.</span>
+          <button className="primary" onClick={() => void beginSignIn(window.location.pathname).then(setSignInError)}>
+            Continue with Google
+          </button>
+          {signInError && <span className="error">{signInError}</span>}
+        </div>
+      )}
+      {loadError && !requiresSignIn && (
+        <div className="viewer-state panel">
+          <strong>Artifact unavailable</strong><span>{loadError.message}</span>
+          <button className="secondary" onClick={() => void load()}>Try again</button>
+        </div>
+      )}
+      {artifact && (
+        <>
+          <section className="viewer-title">
+            <div>
+              <span className="eyebrow">{artifact.visibility} artifact</span>
+              <h1>{artifact.id}</h1>
+              <p>{artifact.contentType} · Updated {new Date(artifact.updatedAt).toLocaleString()}</p>
+            </div>
+            <a className="secondary" href={contentURL} download={artifact.id}>Download</a>
+          </section>
+          {canEmbedArtifact(artifact.contentType)
+            ? <iframe className="artifact-frame" src={contentURL} sandbox="allow-scripts" title={`Artifact ${artifact.id}`} />
+            : (
+                <div className="viewer-state panel">
+                  <strong>Preview unavailable</strong>
+                  <span>Download this artifact to open it in a compatible application.</span>
+                </div>
+              )}
+        </>
+      )}
+    </main>
   );
 }
 
@@ -578,13 +728,14 @@ function AdminMembers() {
 
 export function App({ brand = defaultBrand, extensions = [] }: AppProps) {
   const path = window.location.pathname;
+  const viewerId = artifactViewerId(path);
   const [session, setSession] = useState<SessionInfo>();
   const [sessionError, setSessionError] = useState<string>();
   const [unauthorized, setUnauthorized] = useState(false);
   const [sessionAttempt, setSessionAttempt] = useState(0);
 
   useEffect(() => {
-    if (path === "/sign-in" || path === "/oauth/consent") return;
+    if (path === "/sign-in" || path === "/oauth/consent" || viewerId) return;
     setSessionError(undefined);
     void json<SessionInfo>("/api/session")
       .then(setSession)
@@ -595,10 +746,11 @@ export function App({ brand = defaultBrand, extensions = [] }: AppProps) {
         }
         setSessionError(caught instanceof Error ? caught.message : "Could not load your account");
       });
-  }, [path, sessionAttempt]);
+  }, [path, sessionAttempt, viewerId]);
 
   if (path === "/sign-in") return <SignIn brand={brand} />;
   if (path === "/oauth/consent") return <Consent brand={brand} />;
+  if (viewerId) return <ArtifactViewer brand={brand} id={viewerId} />;
   if (unauthorized) {
     window.location.replace("/sign-in");
     return null;
@@ -633,6 +785,7 @@ export function App({ brand = defaultBrand, extensions = [] }: AppProps) {
     page = <AdminModels databricksModels={session.capabilities.databricksModels === true} />;
   }
   else if (route.page === "admin-members") page = <AdminMembers />;
+  else if (route.page === "artifacts") page = <Artifacts />;
   else if (route.page === "settings") page = <Settings />;
   else page = <Overview session={session} />;
   return <Shell brand={brand} extensions={extensions} session={session}>{page}</Shell>;

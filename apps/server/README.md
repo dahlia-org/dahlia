@@ -24,14 +24,16 @@ Better Auth schemas are generated unmodified into `src/db/generated`; Dahlia tab
 
 | Path | `accounts` | `header` |
 | --- | --- | --- |
-| `/`, `/sign-in`, `/dashboard/**` | Static SPA | Static SPA |
+| `/`, `/sign-in`, `/dashboard/**`, `/artifacts/**` | Static SPA | Static SPA |
 | `/api/auth/**` | Google sign-in and OAuth 2.1 endpoints | Disabled |
 | `/api/session` | Account session and capabilities | Validated email-header identity and capabilities |
 | `/api/admin/**` | Platform administrators only | Platform administrators only |
 | `/api/v1/models` | Dahlia OAuth access token | Platform U2M / proxy authentication |
 | `/api/v1/responses` | Dahlia OAuth access token | Platform U2M / proxy authentication |
+| `GET /api/v1/artifacts` | Dahlia OAuth with artifact read scope or browser session | Proxy identity |
 | `POST /api/v1/artifacts` | Dahlia OAuth with artifact write scope | Proxy identity |
-| `/api/v1/artifacts/{uuidv7}` | Public reads are anonymous; private reads and mutations use Dahlia OAuth | Public reads are anonymous; private reads and mutations use proxy identity |
+| `/api/v1/artifacts/{uuidv7}` | Public reads are anonymous; private reads use Dahlia OAuth or browser session; mutations use Dahlia OAuth | Public reads are anonymous; private reads and mutations use proxy identity |
+| `/api/v1/artifacts/{uuidv7}/content` | Public reads are anonymous; private reads use Dahlia OAuth or browser session | Public reads are anonymous; private reads use proxy identity |
 | `POST /mcp` | Dahlia OAuth with artifact write scope | Databricks Apps / trusted proxy identity |
 | `/healthz` | Minimal liveness | Internal liveness; anonymous external access is not guaranteed |
 
@@ -41,13 +43,15 @@ OAuth access uses `api.model.read` for models, `api.model.request` for Responses
 
 ### Artifact API
 
-`POST /api/v1/artifacts` accepts an uncompressed raw body with a required `Content-Length` up to 64 MiB, creates a private artifact with a Server-generated canonical lowercase UUIDv7, and returns its stable API URL in `Location`. `PUT /api/v1/artifacts/{uuidv7}` replaces an existing artifact owned by the caller and requires the original `Content-Type`; it never creates a missing ID. `PATCH` accepts only `{"visibility":"private"}` or `{"visibility":"public"}`, and `DELETE` removes bytes before metadata so a storage failure can be retried. There is no list, history, expiry, malware scan, HTML sanitization, or per-user share API.
+`POST /api/v1/artifacts` accepts an uncompressed raw body with a required `Content-Length` up to 64 MiB, creates a private artifact with a Server-generated canonical lowercase UUIDv7, and returns its mutable `/api/v1/artifacts/{uuidv7}` resource in `Location`. The response `viewerUrl` contains the human-facing `/artifacts/{uuidv7}` URL. `PUT /api/v1/artifacts/{uuidv7}` replaces an existing artifact owned by the caller and requires the original `Content-Type`; it never creates a missing ID. `PATCH` accepts only `{"visibility":"private"}` or `{"visibility":"public"}`, and `DELETE` removes bytes before metadata so a storage failure can be retried. There is no history, expiry, malware scan, HTML sanitization, or per-user share API.
 
-All storage backends stream authorized `GET` and `HEAD` responses through Dahlia, forward `Range` and `If-Unmodified-Since`, and apply a CSP sandbox so uploaded HTML cannot inherit the Dahlia application origin. Storage URLs and credentials are never returned to clients.
+`GET /api/v1/artifacts` lists the current personal workspace in descending UUIDv7 order, 50 records at a time. Pass the opaque `nextCursor` response as `cursor` to fetch the next page. `GET /api/v1/artifacts/{uuidv7}` keeps its existing raw-byte response; request `Accept: application/vnd.dahlia.artifact+json` for metadata. `GET` and `HEAD` on `/api/v1/artifacts/{uuidv7}/content` always return bytes and are used by the browser viewer. If an `Authorization` header is present, read endpoints validate only that OAuth credential; otherwise they accept the signed-in browser session. Browser sessions do not authorize artifact mutations.
+
+All storage backends stream authorized `GET` and `HEAD` responses through Dahlia, forward `Range` and `If-Unmodified-Since`, and apply a CSP sandbox so uploaded HTML cannot inherit the Dahlia application origin. Storage URLs and credentials are never returned to clients. `/artifacts` lists only artifacts owned by the signed-in user; `/artifacts/{uuidv7}` renders browser-supported content in a sandboxed frame and offers other content as a download.
 
 ### Artifact MCP
 
-`POST /mcp` is a stateless, modern-only MCP 2026-07-28 endpoint. It exposes `create_artifact`, `update_artifact_content`, `update_artifact_visibility`, and `delete_artifact`; all operations use the same owner checks and private-by-default metadata as the Artifact REST API. Tool content is UTF-8 or canonical RFC 4648 base64, decoded to at most 8 MiB. MCP requests are rejected above 12 MiB before JSON parsing, including streamed requests without `Content-Length`. Tool results contain the artifact ID, canonical Dahlia URL, content type, visibility, and a resource link, never artifact bytes or storage URLs. Streaming uploads larger than 8 MiB remain available through the REST API.
+`POST /mcp` is a stateless, modern-only MCP 2026-07-28 endpoint. It exposes `create_artifact`, `update_artifact_content`, `update_artifact_visibility`, and `delete_artifact`; all operations use the same owner checks and private-by-default metadata as the Artifact REST API. Tool content is UTF-8 or canonical RFC 4648 base64, decoded to at most 8 MiB. MCP requests are rejected above 12 MiB before JSON parsing, including streamed requests without `Content-Length`. Tool results contain the artifact ID, canonical viewer URL, content type, visibility, and a resource link to the content endpoint, never artifact bytes or storage URLs. Streaming uploads larger than 8 MiB remain available through the REST API.
 
 In `accounts` mode, `/mcp` requires a DPoP-bound access token for the exact MCP resource and `api.artifact.write`. In `header` mode, authentication is delegated to the trusted proxy and Dahlia derives ownership from its verified forwarded identity headers. Databricks Apps exposes custom MCP servers at `/mcp`; its proxy has already authenticated the request, and `X-Forwarded-Access-Token` is not used for artifact storage. A present `Origin` must match the configured application origin; non-browser clients may omit it.
 

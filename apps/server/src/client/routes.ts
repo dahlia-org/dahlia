@@ -13,6 +13,7 @@ const coreDashboardPaths = new Set([
   "/sessions",
   "/dashboard",
   "/dashboard/settings",
+  "/artifacts",
   "/admin",
   "/admin/models",
   "/admin/members",
@@ -25,10 +26,11 @@ export function isCoreDashboardPath(path: string): boolean {
 export function resolveDashboardRoute(
   path: string,
   capabilities: DashboardCapabilities,
-): { page?: "overview" | "settings" | "admin-models" | "admin-members"; redirect?: string } {
+): { page?: "overview" | "settings" | "artifacts" | "admin-models" | "admin-members"; redirect?: string } {
   if (path === "/") return { redirect: "/dashboard" };
   if (path === "/sessions") return { redirect: "/dashboard/settings" };
   if (path === "/dashboard") return { page: "overview" };
+  if (path === "/artifacts") return { page: "artifacts" };
   if (path === "/dashboard/settings") {
     return capabilities.sessions ? { page: "settings" } : { redirect: "/dashboard" };
   }
@@ -40,4 +42,8 @@ export function resolveDashboardRoute(
     return capabilities.admin ? { page: "admin-members" } : { redirect: "/dashboard" };
   }
   return { redirect: "/dashboard" };
+}
+
+export function artifactViewerId(path: string): string | undefined {
+  return path.match(/^\/artifacts\/([^/]+)$/)?.[1];
 }
