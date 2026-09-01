@@ -108,10 +108,10 @@ import Security
         @Test
         func googleKeychainWorkerRejectsACommitFromBeforeDisconnect() async {
             let worker = GoogleKeychainWorker()
-            let (_, generation) = await worker.snapshot {}
-            await worker.beginDisconnect()
+            let (_, generation) = await worker.snapshot(for: .calendar) {}
+            await worker.beginDisconnect(for: .calendar)
 
-            let committed = await worker.performIfCurrent(generation: generation) {}
+            let committed = await worker.performIfCurrent(for: .calendar, generation: generation) {}
 
             #expect(!committed)
         }
@@ -119,28 +119,43 @@ import Security
         @Test
         func googleKeychainWorkerRejectsCommitsStartedDuringDisconnect() async {
             let worker = GoogleKeychainWorker()
-            await worker.beginDisconnect()
-            let (_, generation) = await worker.snapshot {}
+            await worker.beginDisconnect(for: .calendar)
+            let (_, generation) = await worker.snapshot(for: .calendar) {}
 
-            #expect(await worker.performIfCurrent(generation: generation) {} == false)
+            #expect(await worker.performIfCurrent(for: .calendar, generation: generation) {} == false)
 
-            await worker.finishDisconnect()
-            #expect(await worker.performIfCurrent(generation: generation) {} == false)
+            await worker.finishDisconnect(for: .calendar)
+            #expect(await worker.performIfCurrent(for: .calendar, generation: generation) {} == false)
         }
 
         @Test
         func googleKeychainWorkerWaitsForAllOverlappingDisconnects() async {
             let worker = GoogleKeychainWorker()
-            await worker.beginDisconnect()
-            await worker.beginDisconnect()
-            await worker.finishDisconnect()
-            let (_, generation) = await worker.snapshot {}
+            await worker.beginDisconnect(for: .calendar)
+            await worker.beginDisconnect(for: .calendar)
+            await worker.finishDisconnect(for: .calendar)
+            let (_, generation) = await worker.snapshot(for: .calendar) {}
 
-            #expect(await worker.performIfCurrent(generation: generation) {} == false)
+            #expect(await worker.performIfCurrent(for: .calendar, generation: generation) {} == false)
 
-            await worker.finishDisconnect()
-            let (_, currentGeneration) = await worker.snapshot {}
-            #expect(await worker.performIfCurrent(generation: currentGeneration) {})
+            await worker.finishDisconnect(for: .calendar)
+            let (_, currentGeneration) = await worker.snapshot(for: .calendar) {}
+            #expect(await worker.performIfCurrent(for: .calendar, generation: currentGeneration) {})
+        }
+
+        @Test
+        func googleKeychainWorkerKeepsOtherSessionCurrentDuringDisconnect() async {
+            let worker = GoogleKeychainWorker()
+            let (_, calendarGeneration) = await worker.snapshot(for: .calendar) {}
+            let (_, driveGeneration) = await worker.snapshot(for: .drive(.local)) {}
+
+            await worker.beginDisconnect(for: .calendar)
+
+            #expect(await worker.performIfCurrent(for: .calendar, generation: calendarGeneration) {} == false)
+            #expect(await worker.performIfCurrent(for: .drive(.local), generation: driveGeneration) {})
+            #expect(await worker.isCurrent(for: .drive(.local), generation: driveGeneration))
+
+            await worker.finishDisconnect(for: .calendar)
         }
 
         @Test
