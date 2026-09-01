@@ -594,7 +594,7 @@ import GRDB
                 mimeType: "image/png"
             )
             try queue.write { db in
-                try vault.insert(db)
+                try insertLegacyVault(vault, in: db)
                 try meeting.insert(db)
                 try db.execute(
                     sql: """

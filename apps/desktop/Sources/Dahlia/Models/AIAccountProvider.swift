@@ -1,6 +1,6 @@
 import Foundation
 
-enum AIAccountProvider: String, CaseIterable, Identifiable {
+enum AIAccountProvider: String, CaseIterable, Identifiable, Sendable {
     case chatGPTSubscription
     case databricks
 

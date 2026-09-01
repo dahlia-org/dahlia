@@ -2,6 +2,7 @@ import Foundation
 
 /// 設定画面のカテゴリ。
 enum SettingsCategory: String, CaseIterable, Identifiable {
+    case accountsAndVaults
     case general
     case dahliaAccounts
     case language
@@ -27,6 +28,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
+        case .accountsAndVaults: L10n.accountsAndVaults
         case .general: L10n.general
         case .dahliaAccounts: L10n.dahliaAccount
         case .language: L10n.language
@@ -52,6 +54,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
 
     var systemImage: String {
         switch self {
+        case .accountsAndVaults: "person.2"
         case .general: "gearshape"
         case .dahliaAccounts: "person.crop.circle"
         case .language: "globe"

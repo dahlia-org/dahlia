@@ -3,8 +3,10 @@ import SwiftUI
 /// Codex model and output settings for AI summaries.
 struct AISummarySettingsView: View {
     @ObservedObject private var settings = AppSettings.shared
+    @Bindable private var vaultSettings = VaultAISettingsModel.shared
     @State private var catalog = CodexModelCatalog()
     @State private var retryTask: Task<Void, Never>?
+    @State private var preservesEffortForNextModelChange = false
 
     var body: some View {
         Form {
@@ -25,8 +27,8 @@ struct AISummarySettingsView: View {
                     }
                     .pickerStyle(.menu)
 
-                    Picker(selection: $settings.codexReasoningEffort) {
-                        ForEach(catalog.effortOptions(modelID: settings.codexModelID)) { effort in
+                    Picker(selection: $vaultSettings.summaryReasoningEffort) {
+                        ForEach(catalog.effortOptions(modelID: vaultSettings.summaryModelID)) { effort in
                             Text(effort.displayName).tag(effort.reasoningEffort)
                         }
                     } label: {
@@ -79,10 +81,14 @@ struct AISummarySettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .task {
-            await loadModels(forceRefresh: false)
+        .task(id: modelCatalogContext) {
+            await loadModels(forceRefresh: true, context: modelCatalogContext)
         }
-        .onChange(of: settings.codexModelID) {
+        .onChange(of: vaultSettings.summaryModelID) {
+            if preservesEffortForNextModelChange {
+                preservesEffortForNextModelChange = false
+                return
+            }
             resolveEffortSelection()
         }
         .onDisappear {
@@ -92,33 +98,52 @@ struct AISummarySettingsView: View {
 
     private func reload() {
         retryTask?.cancel()
-        retryTask = Task { await loadModels(forceRefresh: true) }
+        let context = modelCatalogContext
+        retryTask = Task { await loadModels(forceRefresh: true, context: context) }
     }
 
-    private func loadModels(forceRefresh: Bool) async {
+    private func loadModels(forceRefresh: Bool, context: ModelCatalogContext) async {
         await catalog.load(forceRefresh: forceRefresh)
-        guard !catalog.models.isEmpty else { return }
-        if let selection = catalog.selectionToPersist(current: settings.codexModelID) {
-            settings.codexModelID = selection
+        guard context == modelCatalogContext, !catalog.models.isEmpty else { return }
+        if let selection = catalog.selectionToPersist(current: vaultSettings.summaryModelID) {
+            preservesEffortForNextModelChange = true
+            vaultSettings.summaryModelID = selection
+        } else {
+            resolveEffortSelection()
         }
-        resolveEffortSelection()
     }
 
     private func resolveEffortSelection() {
         guard let effort = catalog.resolvedEffort(
-            current: settings.codexReasoningEffort,
-            modelID: settings.codexModelID
+            current: vaultSettings.summaryReasoningEffort,
+            modelID: vaultSettings.summaryModelID
         ) else { return }
-        settings.codexReasoningEffort = effort
+        vaultSettings.summaryReasoningEffort = effort
     }
 
     private var modelSelection: Binding<String> {
         Binding(
             get: {
-                catalog.resolvedSelection(current: settings.codexModelID)
-                    ?? settings.codexModelID
+                catalog.resolvedSelection(current: vaultSettings.summaryModelID)
+                    ?? vaultSettings.summaryModelID
             },
-            set: { settings.codexModelID = $0 }
+            set: { vaultSettings.summaryModelID = $0 }
         )
+    }
+
+    private var modelCatalogContext: ModelCatalogContext {
+        ModelCatalogContext(
+            vaultID: vaultSettings.vaultID,
+            provider: CodexRuntimeProvider(
+                accountConnectionID: vaultSettings.accountConnectionID,
+                localProvider: vaultSettings.localProvider,
+                databricksProfile: vaultSettings.databricksProfile
+            )
+        )
+    }
+
+    private struct ModelCatalogContext: Hashable {
+        let vaultID: UUID?
+        let provider: CodexRuntimeProvider
     }
 }

@@ -233,6 +233,29 @@
         }
 
         @Test
+        func updatesTheAccountConnectionForOneVault() async throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            let repository = MeetingRepository(dbQueue: database.dbQueue)
+            let connection = DahliaAccountConnectionRecord(
+                id: .v7(),
+                origin: "https://server.example.com",
+                clientID: "desktop-client",
+                createdAt: .now
+            )
+            try await repository.insertDahliaAccountConnection(connection)
+            let vault = makeVault(name: "Account", lastOpenedAt: .now)
+            try repository.insertVault(vault)
+            let model = VaultManagementModel()
+            await model.configure(appDatabase: database)
+
+            let updated = try #require(await model.updateAccountConnection(for: vault, connectionID: connection.id))
+
+            #expect(updated.accountConnectionId == connection.id)
+            #expect(model.vaults.first?.accountConnectionId == connection.id)
+            #expect(try repository.fetchAllVaults().first?.accountConnectionId == connection.id)
+        }
+
+        @Test
         func doesNotRenameAVaultToABlankName() async throws {
             let database = try AppDatabaseManager(path: ":memory:")
             let model = VaultManagementModel()

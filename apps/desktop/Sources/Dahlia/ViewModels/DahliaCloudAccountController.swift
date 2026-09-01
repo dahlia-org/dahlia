@@ -5,6 +5,19 @@ struct DahliaAccountConnection: Identifiable, Equatable, Sendable {
     let record: DahliaAccountConnectionRecord
     let account: DahliaCloudAccount?
     let isCloud: Bool
+    let vaultCount: Int
+
+    init(
+        record: DahliaAccountConnectionRecord,
+        account: DahliaCloudAccount?,
+        isCloud: Bool,
+        vaultCount: Int = 0
+    ) {
+        self.record = record
+        self.account = account
+        self.isCloud = isCloud
+        self.vaultCount = vaultCount
+    }
 
     var id: UUID { record.id }
     var origin: String { record.origin }
@@ -32,6 +45,7 @@ final class DahliaCloudAccountController {
 
     let defaultConfiguration: DahliaCloudConfiguration?
     private let serviceFactory: ServiceFactory
+    private let codexHomeLocator: ApplicationSupportCodexHomeLocator
     private var services: [UUID: DahliaCloudService] = [:]
     private var repository: MeetingRepository?
     private weak var appDatabase: AppDatabaseManager?
@@ -40,9 +54,11 @@ final class DahliaCloudAccountController {
 
     init(
         configuration: DahliaCloudConfiguration? = .current,
-        serviceFactory: ServiceFactory? = nil
+        serviceFactory: ServiceFactory? = nil,
+        codexHomeLocator: ApplicationSupportCodexHomeLocator = ApplicationSupportCodexHomeLocator()
     ) {
         defaultConfiguration = configuration
+        self.codexHomeLocator = codexHomeLocator
         self.serviceFactory = serviceFactory ?? { id, configuration in
             DahliaCloudService(
                 configuration: configuration,
@@ -91,13 +107,17 @@ final class DahliaCloudAccountController {
         }
         do {
             let records = try await repository.fetchDahliaAccountConnections()
+            let vaultCounts = try await repository.vaultCountsByAccountConnectionID()
             var loadedConnections: [DahliaAccountConnection] = []
             for record in records {
-                let credential = try? await service(for: record).storedCredential()
+                let service = try service(for: record)
+                await DahliaCloudTokenServiceRegistry.shared.register(service, connectionID: record.id)
+                let credential = try? await service.storedCredential()
                 loadedConnections.append(DahliaAccountConnection(
                     record: record,
                     account: credential?.account,
-                    isCloud: isCloudOrigin(record.origin)
+                    isCloud: isCloudOrigin(record.origin),
+                    vaultCount: vaultCounts[record.id, default: 0]
                 ))
             }
             connections = loadedConnections
@@ -168,6 +188,10 @@ final class DahliaCloudAccountController {
         return try await service(for: connection.record).validAccessToken()
     }
 
+    func reportAccountLinkingError(_ error: any Error) {
+        errorMessage = error.localizedDescription
+    }
+
     private func addConnection(configuration: DahliaCloudConfiguration, generation: Int) async {
         defer { finishOperation(generation) }
         do {
@@ -203,6 +227,7 @@ final class DahliaCloudAccountController {
             }
             guard isCurrentOperation(generation) else { return }
             services[id] = service
+            await DahliaCloudTokenServiceRegistry.shared.register(service, connectionID: id)
             await reload()
         } catch is CancellationError {
             return
@@ -268,6 +293,7 @@ final class DahliaCloudAccountController {
                 throw error
             }
             guard isCurrentOperation(generation) else { return }
+            try await reloadCodexAuthenticationIfActive(connectionID)
             await reload()
         } catch is CancellationError {
             return
@@ -281,18 +307,38 @@ final class DahliaCloudAccountController {
         defer { finishOperation(generation) }
         do {
             guard let connection = connections.first(where: { $0.id == connectionID }) else { return }
-            try await service(for: connection.record).signOut()
+            do {
+                try await service(for: connection.record).signOut()
+            } catch {
+                guard isCurrentOperation(generation) else { return }
+                _ = await refreshAfterSignOut(connectionID: connectionID)
+                throw error
+            }
             guard isCurrentOperation(generation) else { return }
-            await reload()
+            if let refreshError = await refreshAfterSignOut(connectionID: connectionID) {
+                throw refreshError
+            }
         } catch is CancellationError {
             guard isCurrentOperation(generation) else { return }
-            await reload()
             return
         } catch {
             guard isCurrentOperation(generation) else { return }
             await reload()
             errorMessage = error.localizedDescription
         }
+    }
+
+    private func refreshAfterSignOut(connectionID: UUID) async -> Error? {
+        await Task { @MainActor in
+            var refreshError: Error?
+            do {
+                try await reloadCodexAuthenticationIfActive(connectionID)
+            } catch {
+                refreshError = error
+            }
+            await reload()
+            return refreshError
+        }.value
     }
 
     private func remove(connectionID: UUID, generation: Int) async {
@@ -302,9 +348,17 @@ final class DahliaCloudAccountController {
                   !connection.isSignedIn,
                   let repository
             else { return }
+            if VaultAISettingsModel.shared.accountConnectionID == connectionID {
+                VaultAISettingsModel.shared.accountConnectionID = nil
+                guard await VaultAISettingsModel.shared.waitForRuntimeContext() else {
+                    throw CodexConfigurationError.accountNotReady
+                }
+            }
             try await service(for: connection.record).deleteLocalCredential()
             try await repository.deleteDahliaAccountConnection(id: connectionID)
+            try codexHomeLocator.removeHome(connectionID: connectionID)
             services.removeValue(forKey: connectionID)
+            await DahliaCloudTokenServiceRegistry.shared.remove(connectionID: connectionID)
             guard isCurrentOperation(generation) else { return }
             await reload()
         } catch is CancellationError {
@@ -321,6 +375,11 @@ final class DahliaCloudAccountController {
         let service = serviceFactory(record.id, configuration)
         services[record.id] = service
         return service
+    }
+
+    private func reloadCodexAuthenticationIfActive(_ connectionID: UUID) async throws {
+        guard VaultAISettingsModel.shared.accountConnectionID == connectionID else { return }
+        try await CodexAppServerService.shared.reloadConfiguration()
     }
 
     private func configuration(for record: DahliaAccountConnectionRecord) -> DahliaCloudConfiguration? {

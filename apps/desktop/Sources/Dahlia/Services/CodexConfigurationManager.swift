@@ -1,3 +1,4 @@
+import DahliaRuntimeSupport
 import Foundation
 
 actor CodexConfigurationManager {
@@ -145,6 +146,36 @@ actor CodexConfigurationManager {
         return try writeIfChanged(Data(configuration.utf8))
     }
 
+    @discardableResult
+    func configureDahlia(
+        connectionID: UUID,
+        origin: String,
+        helperURL: URL,
+        runtimeProfile: DahliaRuntimeProfile
+    ) throws -> Bool {
+        guard let baseURL = URL(string: origin)?.appending(path: "api/v1") else {
+            throw CodexConfigurationError.updateFailed(L10n.dahliaServerNotConfigured)
+        }
+        let configuration = """
+        model_provider = "dahlia"
+
+        [features]
+        enable_request_compression = false
+
+        [model_providers.dahlia]
+        name = "Dahlia"
+        base_url = "\(tomlEscape(baseURL.absoluteString))"
+        wire_api = "responses"
+
+        [model_providers.dahlia.auth]
+        command = "\(tomlEscape(helperURL.path))"
+        args = ["auth", "token", "--connection-id", "\(connectionID.uuidString)", "--profile", "\(runtimeProfile.rawValue)"]
+        timeout_ms = 10000
+        refresh_interval_ms = 300000
+        """ + "\n"
+        return try writeIfChanged(Data(configuration.utf8), connectionID: connectionID)
+    }
+
     nonisolated func validateDatabricks(profile: DatabricksCLIClient.Profile) throws {
         _ = try validatedDatabricksValues(profile: profile)
     }
@@ -202,12 +233,12 @@ actor CodexConfigurationManager {
         return url
     }
 
-    private func configURL() throws -> URL {
-        try homeLocator.homeURL().appending(path: "config.toml")
+    private func configURL(connectionID: UUID? = nil) throws -> URL {
+        try homeLocator.homeURL(connectionID: connectionID).appending(path: "config.toml")
     }
 
-    private func writeIfChanged(_ data: Data) throws -> Bool {
-        let configURL = try configURL()
+    private func writeIfChanged(_ data: Data, connectionID: UUID? = nil) throws -> Bool {
+        let configURL = try configURL(connectionID: connectionID)
         if FileManager.default.contents(atPath: configURL.path) == data { return false }
 
         do {

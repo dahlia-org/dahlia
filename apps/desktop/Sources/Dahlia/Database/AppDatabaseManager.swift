@@ -256,6 +256,14 @@ final class AppDatabaseManager: Sendable {
             try DahliaAccountConnectionsMigration.migrate(in: db)
         }
 
+        migrator.registerMigration("v40_vaultAIAccounts") { db in
+            try VaultAIAccountsMigration.migrate(in: db)
+        }
+
+        migrator.registerMigration("v41_vaultAISettingsBackfill") { db in
+            try VaultAISettingsBackfillMigration.migrate(in: db)
+        }
+
         return migrator
     }()
 

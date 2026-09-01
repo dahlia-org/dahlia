@@ -502,6 +502,7 @@
 "Ultra" = "ウルトラ";
 "Developer Settings" = "開発者設定";
 "Vault" = "保管庫";
+"Accounts and Vaults" = "アカウントと保管庫";
 "Dahlia Account" = "Dahlia アカウント";
 "Dahlia Cloud" = "Dahlia Cloud";
 "Dahlia Server" = "Dahlia Server";
@@ -784,7 +785,7 @@
 /* Sidebar Footer */
 "Switch Vault" = "保管庫を切り替え";
 "MCP Settings" = "MCP の設定";
-"Manage Vaults..." = "保管庫を管理...";
+"Manage Vaults" = "保管庫を管理";
 "Manage Projects..." = "プロジェクトを管理...";
 "Settings" = "設定";
 "Help" = "ヘルプ";
@@ -1099,6 +1100,7 @@
 "Could not update the Codex configuration: %@" = "Codex 設定を更新できませんでした: %@";
 "Codex is configured for Databricks" = "Codex を Databricks 用に設定しました";
 "The selected AI account is not ready. Open Model Provider in Settings and finish its configuration." = "選択した AI アカウントの準備が完了していません。設定の「モデルプロバイダー」を開き、設定を完了してください。";
+"This chat uses %@. Start a new chat to use the current account." = "このチャットは %@ を使用しています。現在のアカウントを使用するには新しいチャットを開始してください。";
 "Codex uses this Databricks CLI profile. Browser sign-in opens when authentication expires." = "Codex はこの Databricks CLI プロファイルを使用します。認証の有効期限が切れた場合は、ブラウザでのサインインを開きます。";
 "Codex returned no available models. Try again." = "Codex から利用可能なモデルが返されませんでした。再試行してください。";
 "Models are loaded from the bundled Codex app-server." = "モデルは同梱 Codex app-server から取得します。";
@@ -1597,6 +1599,10 @@
 "Setup Complete" = "セットアップ完了";
 "Continue" = "続ける";
 "Start Dahlia" = "Dahliaを始める";
+"Local Account" = "ローカルアカウント";
+"Switching AI account…" = "AIアカウントを切り替えています…";
+"Choose the AI account used by this Vault." = "この保管庫で使用するAIアカウントを選びます。";
+"This account is used by %lld Vaults. Those Vaults will use the Local Account, and this account's Codex data will be deleted." = "このアカウントは%lld個の保管庫で使用されています。対象の保管庫はローカルアカウントへ戻り、このアカウントのCodexデータは削除されます。";
 "Dahlia stores meeting data and generated files in a local Vault." = "Dahliaはミーティングデータと生成ファイルをローカルのVaultに保存します。";
 "Choose the languages Dahlia should recognize and the primary language for AI output." = "Dahliaが認識する言語と、AI出力で主に使う言語を選びます。";
 "Recognition and OCR Languages" = "認識・OCR対象の言語";

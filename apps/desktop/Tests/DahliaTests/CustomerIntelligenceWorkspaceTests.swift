@@ -22,7 +22,7 @@ import GRDB
             let createdAt = Date.now.addingTimeInterval(-60)
             let updatedAt = Date.now
             try queue.write { db in
-                try vault.insert(db)
+                try insertLegacyVault(vault, in: db)
                 try db.execute(
                     sql: """
                     INSERT INTO organizations
@@ -136,8 +136,8 @@ import GRDB
             let referenceID = UUID.v7()
             let insightID = UUID.v7()
             try queue.write { db in
-                try vault.insert(db)
-                try otherVault.insert(db)
+                try insertLegacyVault(vault, in: db)
+                try insertLegacyVault(otherVault, in: db)
                 try project.insert(db)
                 try db.execute(
                     sql: """

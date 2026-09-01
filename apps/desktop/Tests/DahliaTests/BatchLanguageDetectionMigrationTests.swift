@@ -92,7 +92,7 @@ import GRDB
                 transcriptionMode: .batch
             )
             try queue.write { db in
-                try vault.insert(db)
+                try insertLegacyVault(vault, in: db)
                 try insertLegacyMeeting(meeting, into: db)
                 try insertLegacySession(session, into: db)
                 try insertLegacyAudioRanges(for: session, at: now, into: db)

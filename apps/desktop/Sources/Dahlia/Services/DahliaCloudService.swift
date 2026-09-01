@@ -261,11 +261,14 @@ actor DahliaCloudService {
         return newCredential
     }
 
-    func validAccessToken() async throws -> String {
+    func validAccessToken(
+        minimumValidity: TimeInterval = DahliaCloudService.refreshLeeway,
+        forceRefresh: Bool = false
+    ) async throws -> String {
         guard !isSigningOut else { throw DahliaCloudError.noCredential }
         try loadCredentialIfNeeded()
         guard let credential else { throw DahliaCloudError.noCredential }
-        guard credential.expirationDate.timeIntervalSinceNow <= Self.refreshLeeway else {
+        guard forceRefresh || credential.expirationDate.timeIntervalSinceNow <= minimumValidity else {
             return credential.accessToken
         }
         guard credential.refreshToken != nil else { throw DahliaCloudError.noCredential }

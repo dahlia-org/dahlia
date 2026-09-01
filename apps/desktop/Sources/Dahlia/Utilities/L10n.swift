@@ -1783,7 +1783,14 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var currentVaultDescription: String { String(localized: "Choose the vault used for recordings and sync.", bundle: bundle) }
     static var accountAndVaultMenuDescription: String { String(localized: "Open the account and vault menu.", bundle: bundle) }
     static var noVaultSelected: String { String(localized: "No vault selected", bundle: bundle) }
+    static var accountsAndVaults: String { String(localized: "Accounts and Vaults", bundle: bundle) }
     static var dahliaAccount: String { String(localized: "Dahlia Account", bundle: bundle) }
+    static var localAccount: String { String(localized: "Local Account", bundle: bundle) }
+    static var switchingAIAccount: String { String(localized: "Switching AI account…", bundle: bundle) }
+    static var vaultAIAccountDescription: String { String(
+        localized: "Choose the AI account used by this Vault.",
+        bundle: bundle
+    ) }
     static var dahliaCloud: String { String(localized: "Dahlia Cloud", bundle: bundle) }
     static var dahliaServer: String { String(localized: "Dahlia Server", bundle: bundle) }
     static var dahliaServerNotConfigured: String { String(localized: "Dahlia Server is not configured.", bundle: bundle) }
@@ -1828,6 +1835,16 @@ enum L10n { // swiftlint:disable:this type_body_length
 
     static func signOutDahliaConnection(_ name: String) -> String {
         String(format: String(localized: "Sign out of %@?", bundle: bundle), name)
+    }
+
+    static func removeDahliaConnectionDescription(vaultCount: Int) -> String {
+        String(
+            format: String(
+                localized: "This account is used by %lld Vaults. Those Vaults will use the Local Account, and this account's Codex data will be deleted.",
+                bundle: bundle
+            ),
+            vaultCount
+        )
     }
 
     static var signOutDahliaConnectionDescription: String { String(
@@ -2538,6 +2555,10 @@ enum L10n { // swiftlint:disable:this type_body_length
         localized: "The selected AI account is not ready. Open Model Provider in Settings and finish its configuration.",
         bundle: bundle
     ) }
+    static func codexChatProviderChanged(_ provider: String) -> String { String(
+        localized: "This chat uses \(provider). Start a new chat to use the current account.",
+        bundle: bundle
+    ) }
     static var databricksCodexDescription: String { String(
         localized: "Codex uses this Databricks CLI profile. Browser sign-in opens when authentication expires.",
         bundle: bundle
@@ -2812,7 +2833,7 @@ enum L10n { // swiftlint:disable:this type_body_length
 
     static var switchVault: String { String(localized: "Switch Vault", bundle: bundle) }
     static var mcpSettings: String { String(localized: "MCP Settings", bundle: bundle) }
-    static var manageVaults: String { String(localized: "Manage Vaults...", bundle: bundle) }
+    static var manageVaults: String { String(localized: "Manage Vaults", bundle: bundle) }
     static var manageProjects: String { String(localized: "Manage Projects...", bundle: bundle) }
     static var settings: String { String(localized: "Settings", bundle: bundle) }
     static var help: String { String(localized: "Help", bundle: bundle) }

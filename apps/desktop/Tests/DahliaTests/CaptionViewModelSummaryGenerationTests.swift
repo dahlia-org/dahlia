@@ -385,13 +385,20 @@ import GRDB
             let runner = BlockingSummaryRunner()
             let sleeper = ControlledSummaryJobSleeper()
             let settings = AppSettings.shared
+            let vaultSettings = VaultAISettingsModel.shared
             let originalModel = settings.codexModelID
             let originalEffort = settings.codexReasoningEffort
+            let originalVaultModel = vaultSettings.summaryModelID
+            let originalVaultEffort = vaultSettings.summaryReasoningEffort
             settings.codexModelID = "frozen-model"
             settings.codexReasoningEffort = "high"
+            vaultSettings.summaryModelID = "frozen-model"
+            vaultSettings.summaryReasoningEffort = "high"
             defer {
                 settings.codexModelID = originalModel
                 settings.codexReasoningEffort = originalEffort
+                vaultSettings.summaryModelID = originalVaultModel
+                vaultSettings.summaryReasoningEffort = originalVaultEffort
             }
             let viewModel = CaptionViewModel(
                 summaryGenerationRunner: runner.run,
@@ -407,6 +414,8 @@ import GRDB
             await runner.waitForCallCount(1)
             settings.codexModelID = "changed-model"
             settings.codexReasoningEffort = "low"
+            vaultSettings.summaryModelID = "changed-model"
+            vaultSettings.summaryReasoningEffort = "low"
             #expect(runner.calls[0].settings.modelID == "frozen-model")
             #expect(runner.calls[0].settings.reasoningEffort == "high")
             #expect(runner.calls[0].settings.detailLevelInstruction == SummaryDetailLevel.eventSession.instruction)

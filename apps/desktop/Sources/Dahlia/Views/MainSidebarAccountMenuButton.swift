@@ -6,25 +6,24 @@ struct MainSidebarAccountMenuButton: NSViewRepresentable {
 
     let vaults: [VaultRecord]
     let currentVault: VaultRecord?
-    let account: DahliaCloudAccount?
-    let accountOrigin: String?
-    let isCloudAccount: Bool?
-    let accountSummary: String?
+    let connections: [DahliaAccountConnection]
+    let currentConnectionID: UUID?
+    let isLocalAccount: Bool
+    let isLocalAccountAvailable: Bool
     let onSelectVault: (VaultRecord) -> Void
-    let onManageVaults: () -> Void
     let onOpenSettings: (SettingsCategory?) -> Void
+    let onSelectAccount: (DahliaAccountConnection?) -> Void
     let onAccountAction: () -> Void
 
     func makeCoordinator() -> MainSidebarAccountMenuCoordinator {
         MainSidebarAccountMenuCoordinator(
             vaults: vaults,
             currentVault: currentVault,
-            account: account,
-            accountOrigin: accountOrigin,
-            isCloudAccount: isCloudAccount,
+            connections: connections,
+            accountSelection: accountSelection,
             onSelectVault: onSelectVault,
-            onManageVaults: onManageVaults,
             onOpenSettings: onOpenSettings,
+            onSelectAccount: onSelectAccount,
             onAccountAction: onAccountAction
         )
     }
@@ -47,12 +46,11 @@ struct MainSidebarAccountMenuButton: NSViewRepresentable {
         context.coordinator.update(
             vaults: vaults,
             currentVault: currentVault,
-            account: account,
-            accountOrigin: accountOrigin,
-            isCloudAccount: isCloudAccount,
+            connections: connections,
+            accountSelection: accountSelection,
             onSelectVault: onSelectVault,
-            onManageVaults: onManageVaults,
             onOpenSettings: onOpenSettings,
+            onSelectAccount: onSelectAccount,
             onAccountAction: onAccountAction
         )
         configure(button)
@@ -64,7 +62,10 @@ struct MainSidebarAccountMenuButton: NSViewRepresentable {
 
     private func configure(_ button: NSButton) {
         _ = dynamicTypeSize
-        let accountTitle = accountSummary ?? account?.displayName ?? L10n.dahliaNotSignedIn
+        let currentConnection = connections.first { $0.id == currentConnectionID }
+        let accountTitle = isLocalAccount
+            ? L10n.localAccount
+            : currentConnection?.displayName ?? L10n.dahliaNotSignedIn
         let vaultTitle = currentVault?.name ?? L10n.noVaultSelected
         button.attributedTitle = Self.footerTitle(
             accountName: accountTitle,
@@ -77,9 +78,19 @@ struct MainSidebarAccountMenuButton: NSViewRepresentable {
     }
 
     private var accountSystemImage: String {
-        if accountSummary != nil { return "person.2" }
-        guard account != nil else { return "icloud.slash" }
-        return isCloudAccount == true ? "icloud" : "xserve"
+        if isLocalAccount { return "person.2" }
+        guard let currentConnection = connections.first(where: { $0.id == currentConnectionID }) else {
+            return "icloud.slash"
+        }
+        return currentConnection.isCloud ? "icloud" : "xserve"
+    }
+
+    private var accountSelection: MainSidebarAccountSelection {
+        MainSidebarAccountSelection(
+            connectionID: currentConnectionID,
+            isLocal: isLocalAccount,
+            isLocalAvailable: isLocalAccountAvailable
+        )
     }
 
     static func footerTitle(accountName: String, vaultName: String) -> NSAttributedString {
@@ -90,6 +101,10 @@ struct MainSidebarAccountMenuButton: NSViewRepresentable {
         ))
         result.append(NSAttributedString(string: "\n"))
         result.append(vaultLine(title: vaultName))
+        let paragraphStyle = NSMutableParagraphStyle()
+        paragraphStyle.firstLineHeadIndent = 6
+        paragraphStyle.headIndent = 6
+        result.addAttribute(.paragraphStyle, value: paragraphStyle, range: NSRange(location: 0, length: result.length))
         return result
     }
 

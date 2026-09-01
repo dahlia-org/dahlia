@@ -8,9 +8,11 @@ import Foundation
         @Test
         func groupsContainEveryCategoryOnce() {
             let groupedCategories = SettingsGroup.allCases.flatMap(\.categories)
-            let expectedCategories = SettingsCategory.allCases.filter { $0 != .instructions && $0 != .mcp }
+            let hiddenCategories: Set<SettingsCategory> = [.dahliaAccounts, .vault, .instructions, .mcp]
+            let expectedCategories = SettingsCategory.allCases.filter { !hiddenCategories.contains($0) }
 
             #expect(SettingsCategory.allCases == [
+                .accountsAndVaults,
                 .general,
                 .dahliaAccounts,
                 .language,
@@ -36,13 +38,14 @@ import Foundation
             #expect(Set(groupedCategories) == Set(expectedCategories))
             #expect(!groupedCategories.contains(.instructions))
             #expect(!groupedCategories.contains(.mcp))
+            #expect(!groupedCategories.contains(.dahliaAccounts))
+            #expect(!groupedCategories.contains(.vault))
             #expect(SettingsGroup.allCases.last == .advanced)
             #expect(SettingsGroup.app.categories == [
-                .dahliaAccounts,
+                .accountsAndVaults,
                 .general,
                 .language,
                 .appearance,
-                .vault,
                 .permissions,
                 .backups,
                 .search,
@@ -59,6 +62,8 @@ import Foundation
         func hiddenSelectionsOpenAISummarySettings() {
             #expect(SettingsNavigation.visibleSelection(.instructions) == .aiSummary)
             #expect(SettingsNavigation.visibleSelection(.mcp) == .aiSummary)
+            #expect(SettingsNavigation.visibleSelection(.dahliaAccounts) == .accountsAndVaults)
+            #expect(SettingsNavigation.visibleSelection(.vault) == .accountsAndVaults)
             #expect(SettingsNavigation.visibleSelection(.calendar) == .calendar)
         }
 
@@ -73,6 +78,9 @@ import Foundation
             defaults.set(SettingsCategory.instructions.rawValue, forKey: SettingsNavigation.selectedCategoryDefaultsKey)
 
             #expect(SettingsNavigation.savedSelection(in: defaults) == .aiSummary)
+
+            defaults.set(SettingsCategory.dahliaAccounts.rawValue, forKey: SettingsNavigation.selectedCategoryDefaultsKey)
+            #expect(SettingsNavigation.savedSelection(in: defaults) == .accountsAndVaults)
         }
 
         @Test
@@ -89,6 +97,9 @@ import Foundation
         @Test
         func storedCategoryIdentifiersStayStable() {
             #expect(SettingsCategory.modelProvider.rawValue == "accounts")
+            #expect(SettingsCategory.accountsAndVaults.rawValue == "accountsAndVaults")
+            #expect(SettingsCategory.accountsAndVaults.label == L10n.accountsAndVaults)
+            #expect(SettingsCategory.accountsAndVaults.systemImage == "person.2")
             #expect(SettingsCategory.dahliaAccounts.rawValue == "dahliaAccounts")
             #expect(SettingsCategory.dahliaAccounts.label == L10n.dahliaAccount)
             #expect(SettingsCategory.dahliaAccounts.systemImage == "person.crop.circle")

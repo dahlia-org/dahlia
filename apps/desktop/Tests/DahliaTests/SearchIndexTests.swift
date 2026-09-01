@@ -805,7 +805,7 @@ import GRDB
             meeting.projectId = project.id
             let segment = Self.makeSegment(meetingID: meeting.id, text: "移行前の文字起こし", offset: 10)
             try queue.write { db in
-                try vault.insert(db)
+                try insertLegacyVault(vault, in: db)
                 try project.insert(db)
                 try meeting.insert(db)
                 try segment.insert(db)
@@ -836,7 +836,7 @@ import GRDB
             let vault = Self.makeVault()
             let meeting = Self.makeMeeting(vaultID: vault.id)
             try await queue.write { db in
-                try vault.insert(db)
+                try insertLegacyVault(vault, in: db)
                 try meeting.insert(db)
                 try SummaryRecord(
                     meetingId: meeting.id,

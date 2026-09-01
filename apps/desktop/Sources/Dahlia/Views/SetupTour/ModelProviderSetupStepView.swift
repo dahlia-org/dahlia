@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct ModelProviderSetupStepView: View {
-    @ObservedObject private var settings = AppSettings.shared
+    @Bindable private var vaultSettings = VaultAISettingsModel.shared
     @State private var chatGPTController = CodexAccountController()
     @State private var databricksController = DatabricksAccountController()
 
@@ -12,16 +12,16 @@ struct ModelProviderSetupStepView: View {
                     ForEach(AIAccountProvider.allCases) { provider in
                         ModelProviderChoiceCard(
                             provider: provider,
-                            isSelected: settings.codexAccountProvider == provider
+                            isSelected: vaultSettings.localProvider == provider
                         ) {
-                            settings.codexAccountProvider = provider
+                            vaultSettings.localProvider = provider
                         }
                     }
                 }
                 .frame(maxWidth: .infinity)
             }
 
-            switch settings.codexAccountProvider {
+            switch vaultSettings.localProvider {
             case .chatGPTSubscription:
                 ChatGPTAccountSettingsView(
                     controller: chatGPTController,
@@ -30,7 +30,6 @@ struct ModelProviderSetupStepView: View {
             case .databricks:
                 DatabricksAccountSettingsView(
                     controller: databricksController,
-                    restoresProviderSelection: false,
                     showsDescription: false
                 )
             }

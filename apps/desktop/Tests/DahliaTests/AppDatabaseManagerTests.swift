@@ -132,7 +132,7 @@ import os
                 updatedAt: .now
             )
             try manager.dbQueue.write { db in
-                try vault.insert(db)
+                try insertLegacyVault(vault, in: db)
                 try meeting.insert(db)
                 try db.execute(sql: "DROP INDEX meetings_on_vaultId_createdAt_id")
                 try db.execute(
@@ -174,13 +174,14 @@ import os
             let secondRecordingStartedAt = createdAt.addingTimeInterval(120)
 
             try queue.write { db in
-                try VaultRecord(
+                let vault = VaultRecord(
                     id: vaultID,
                     path: "/tmp/recording-start-migration",
                     name: "Vault",
                     createdAt: createdAt,
                     lastOpenedAt: createdAt
-                ).insert(db)
+                )
+                try insertLegacyVault(vault, in: db)
                 try db.execute(
                     sql: """
                     INSERT INTO meetings (id, vaultId, name, createdAt, updatedAt)

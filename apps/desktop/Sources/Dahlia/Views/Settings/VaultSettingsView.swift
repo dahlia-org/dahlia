@@ -4,7 +4,9 @@ struct VaultSettingsView: View {
     let appDatabase: AppDatabaseManager?
     var model: VaultManagementModel
     let currentVault: VaultRecord?
+    let accountConnections: [DahliaAccountConnection]
     let onRenameVault: (VaultRecord) -> Void
+    let onUpdateVaultAccount: (VaultRecord) -> Void
 
     @State private var isShowingFolderPicker = false
     @State private var isShowingRenameAlert = false
@@ -13,101 +15,110 @@ struct VaultSettingsView: View {
     @State private var proposedName = ""
 
     var body: some View {
-        Form {
-            Section {
-                if model.isLoading, model.vaults.isEmpty {
-                    ProgressView(L10n.loadingVaults)
-                } else if model.vaults.isEmpty {
-                    Label(L10n.noVaults, systemImage: "externaldrive.badge.plus")
-                        .foregroundStyle(DahliaDesign.secondaryTextColor)
-                } else {
-                    ForEach(model.vaults) { vault in
-                        LabeledContent {
-                            vaultActions(for: vault)
-                        } label: {
-                            Label {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(vault.name)
-                                    Text(vault.path)
-                                        .font(.footnote)
-                                        .foregroundStyle(DahliaDesign.secondaryTextColor)
-                                        .lineLimit(1)
-                                        .truncationMode(.middle)
-                                        .textSelection(.enabled)
-                                }
-                            } icon: {
-                                Image(systemName: "externaldrive")
-                                    .dahliaFixedSymbol()
-                                    .foregroundStyle(DahliaDesign.secondaryTextColor)
-                            }
-                            .help(vault.path)
-                        }
+        sections
+            .disabled(model.isRemovingVault || model.isRenamingVault || model.updatingVaultAccountID != nil)
+            .overlay {
+                if model.isRemovingVault {
+                    ProgressView(L10n.removingVault)
+                }
+            }
+            .onChange(of: currentVault?.id) {
+                if pendingRemoval?.id == currentVault?.id {
+                    pendingRemoval = nil
+                }
+            }
+            .task(id: appDatabase != nil) {
+                await model.configure(appDatabase: appDatabase)
+            }
+            .fileImporter(
+                isPresented: $isShowingFolderPicker,
+                allowedContentTypes: [.folder],
+                allowsMultipleSelection: false,
+                onCompletion: handleFolderImport
+            )
+            .fileDialogDefaultDirectory(VaultManagementModel.defaultVaultURL)
+            .alert(
+                pendingRename.map { L10n.renameVault($0.name) } ?? L10n.rename,
+                isPresented: $isShowingRenameAlert
+            ) {
+                TextField(L10n.vaultName, text: $proposedName)
+                Button(L10n.save, action: renameVault)
+                    .disabled(proposedName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                Button(L10n.cancel, role: .cancel, action: clearRenameRequest)
+            }
+            .confirmationDialog(
+                pendingRemoval.map { L10n.removeVaultConfirmation($0.name) } ?? "",
+                isPresented: Binding(
+                    get: { pendingRemoval != nil },
+                    set: { if !$0 { pendingRemoval = nil } }
+                ),
+                titleVisibility: .visible
+            ) {
+                if let vault = pendingRemoval {
+                    Button(L10n.removeVault, role: .destructive) {
+                        removeVault(vault)
                     }
                 }
-            } header: {
-                HStack {
-                    Text(L10n.registeredVaults)
+                Button(L10n.cancel, role: .cancel) {}
+            } message: {
+                Text(L10n.removeVaultConfirmationDescription)
+            }
+    }
 
-                    Spacer()
+    private var sections: some View {
+        Section {
+            if model.isLoading, model.vaults.isEmpty {
+                ProgressView(L10n.loadingVaults)
+            } else if model.vaults.isEmpty {
+                Label(L10n.noVaults, systemImage: "externaldrive.badge.plus")
+                    .foregroundStyle(DahliaDesign.secondaryTextColor)
+            } else {
+                ForEach(model.vaults) { vault in
+                    HStack {
+                        HStack {
+                            Image(systemName: "externaldrive")
+                                .dahliaFixedSymbol()
+                                .foregroundStyle(DahliaDesign.secondaryTextColor)
+                                .accessibilityHidden(true)
 
-                    Button(L10n.addVault, systemImage: "plus", action: showFolderPicker)
-                        .buttonStyle(.dahlia(.primary))
-                        .controlSize(.small)
-                        .help(L10n.openFolderAsVaultDescription)
-                }
-            } footer: {
-                if model.vaults.isEmpty, !model.isLoading {
-                    Text(L10n.noVaultsDescription)
-                }
-            }
-        }
-        .formStyle(.grouped)
-        .disabled(model.isRemovingVault || model.isRenamingVault)
-        .overlay {
-            if model.isRemovingVault {
-                ProgressView(L10n.removingVault)
-            }
-        }
-        .onChange(of: currentVault?.id) {
-            if pendingRemoval?.id == currentVault?.id {
-                pendingRemoval = nil
-            }
-        }
-        .task(id: appDatabase != nil) {
-            await model.configure(appDatabase: appDatabase)
-        }
-        .fileImporter(
-            isPresented: $isShowingFolderPicker,
-            allowedContentTypes: [.folder],
-            allowsMultipleSelection: false,
-            onCompletion: handleFolderImport
-        )
-        .fileDialogDefaultDirectory(VaultManagementModel.defaultVaultURL)
-        .alert(
-            pendingRename.map { L10n.renameVault($0.name) } ?? L10n.rename,
-            isPresented: $isShowingRenameAlert
-        ) {
-            TextField(L10n.vaultName, text: $proposedName)
-            Button(L10n.save, action: renameVault)
-                .disabled(proposedName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            Button(L10n.cancel, role: .cancel, action: clearRenameRequest)
-        }
-        .confirmationDialog(
-            pendingRemoval.map { L10n.removeVaultConfirmation($0.name) } ?? "",
-            isPresented: Binding(
-                get: { pendingRemoval != nil },
-                set: { if !$0 { pendingRemoval = nil } }
-            ),
-            titleVisibility: .visible
-        ) {
-            if let vault = pendingRemoval {
-                Button(L10n.removeVault, role: .destructive) {
-                    removeVault(vault)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(vault.name)
+                                Text(vault.path)
+                                    .font(.footnote)
+                                    .foregroundStyle(DahliaDesign.secondaryTextColor)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                    .textSelection(.enabled)
+                            }
+                        }
+                        .help(vault.path)
+
+                        Spacer()
+
+                        VaultAccountPicker(
+                            vault: vault,
+                            connections: accountConnections,
+                            onSelect: { await updateAccountConnection(for: vault, connectionID: $0) }
+                        )
+                        vaultActions(for: vault)
+                    }
                 }
             }
-            Button(L10n.cancel, role: .cancel) {}
-        } message: {
-            Text(L10n.removeVaultConfirmationDescription)
+        } header: {
+            HStack {
+                Text(L10n.vault)
+
+                Spacer()
+
+                Button(L10n.addVault, systemImage: "plus", action: showFolderPicker)
+                    .buttonStyle(.dahlia(.primary))
+                    .controlSize(.small)
+                    .help(L10n.openFolderAsVaultDescription)
+            }
+        } footer: {
+            if model.vaults.isEmpty, !model.isLoading {
+                Text(L10n.noVaultsDescription)
+            }
         }
     }
 
@@ -172,5 +183,13 @@ struct VaultSettingsView: View {
             _ = await model.removeVault(vault, currentVaultId: currentVault?.id)
             pendingRemoval = nil
         }
+    }
+
+    private func updateAccountConnection(for vault: VaultRecord, connectionID: UUID?) async -> UUID? {
+        guard let updatedVault = await model.updateAccountConnection(for: vault, connectionID: connectionID) else {
+            return vault.accountConnectionId
+        }
+        onUpdateVaultAccount(updatedVault)
+        return updatedVault.accountConnectionId
     }
 }

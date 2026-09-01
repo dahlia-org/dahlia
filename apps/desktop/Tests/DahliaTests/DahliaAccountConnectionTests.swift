@@ -7,26 +7,125 @@
     @MainActor
     struct DahliaAccountConnectionTests {
         @Test
-        func migrationPreservesVaultsWithoutAddingVaultAssignmentState() throws {
+        func migrationAddsLocalAISettingsAndSetsDeletedConnectionToLocal() async throws {
             let queue = try DatabaseQueue()
-            try AppDatabaseManager.migrator.migrate(queue, upTo: "v38_screenshotOCRSearch")
+            try AppDatabaseManager.migrator.migrate(queue, upTo: "v39_dahliaAccountConnections")
             let vault = makeVault(name: "Existing")
-            try queue.write { db in try vault.insert(db) }
+            let connection = makeConnection(origin: "https://server.example.com")
+            try await queue.write { db in
+                try connection.insert(db)
+                try db.execute(
+                    sql: """
+                    INSERT INTO vaults (id, path, name, createdAt, lastOpenedAt)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    arguments: [vault.id, vault.path, vault.name, vault.createdAt, vault.lastOpenedAt]
+                )
+            }
 
             try AppDatabaseManager.migrator.migrate(queue)
 
-            let result = try queue.read { db in
-                try (
-                    VaultRecord.fetchOne(db, key: vault.id),
-                    DahliaAccountConnectionRecord.fetchCount(db),
-                    db.tableExists("vault_account_connections")
-                )
+            let repository = MeetingRepository(dbQueue: queue)
+            var migrated = try #require(try await queue.read { db in try VaultRecord.fetchOne(db, key: vault.id) })
+            #expect(migrated.accountConnectionId == nil)
+            #expect(migrated.localProvider == .chatGPTSubscription)
+            #expect(migrated.summaryModelID == "gpt-5.6-luna")
+            #expect(!migrated.aiSettingsBackfilled)
+
+            var settings = VaultAISettingsSnapshot(vault: migrated)
+            settings.accountConnectionID = connection.id
+            _ = try await repository.updateVaultAISettings(settings)
+            try await repository.deleteDahliaAccountConnection(id: connection.id)
+
+            migrated = try #require(try await queue.read { db in try VaultRecord.fetchOne(db, key: vault.id) })
+            #expect(migrated.accountConnectionId == nil)
+        }
+
+        @Test
+        func backfillMarkerMigrationPreservesV40VaultsAsPending() throws {
+            let queue = try DatabaseQueue()
+            try AppDatabaseManager.migrator.migrate(queue, upTo: "v40_vaultAIAccounts")
+            let vault = makeVault(name: "V40")
+            try queue.write { db in
+                try insertLegacyVault(vault, in: db)
             }
-            #expect(result.0?.id == vault.id)
-            #expect(result.0?.path == vault.path)
-            #expect(result.0?.name == vault.name)
-            #expect(result.1 == 0)
-            #expect(result.2 == false)
+
+            try AppDatabaseManager.migrator.migrate(queue)
+
+            let migrated = try #require(try queue.read { db in try VaultRecord.fetchOne(db, key: vault.id) })
+            #expect(!migrated.aiSettingsBackfilled)
+            #expect(migrated.summaryModelID == "gpt-5.6-luna")
+        }
+
+        @Test
+        func legacyAISettingsBackfillUpdatesEveryExistingVault() async throws {
+            let manager = try AppDatabaseManager(path: ":memory:")
+            let repository = MeetingRepository(dbQueue: manager.dbQueue)
+            let first = makeVault(name: "First")
+            let second = makeVault(name: "Second")
+            try await manager.dbQueue.write { db in
+                try insertLegacyVault(first, in: db)
+                try insertLegacyVault(second, in: db)
+            }
+
+            try await repository.backfillVaultAISettings(VaultAISettingsLegacyValues(
+                localProvider: .databricks,
+                databricksProfile: "work",
+                summaryModelID: "summary-model",
+                summaryReasoningEffort: "medium",
+                chatModelID: "chat-model",
+                chatReasoningEffort: "low"
+            ))
+
+            let vaults = try await repository.fetchAllVaultsAsync()
+            #expect(vaults.count == 2)
+            #expect(vaults.allSatisfy { $0.localProvider == .databricks })
+            #expect(vaults.allSatisfy { $0.databricksProfile == "work" })
+            #expect(vaults.allSatisfy { $0.summaryModelID == "summary-model" })
+            #expect(vaults.allSatisfy { $0.chatModelID == "chat-model" })
+            #expect(vaults.allSatisfy { $0.aiSettingsBackfilled })
+
+            try await repository.backfillVaultAISettings(VaultAISettingsLegacyValues(
+                localProvider: .chatGPTSubscription,
+                databricksProfile: "ignored",
+                summaryModelID: "ignored",
+                summaryReasoningEffort: "low",
+                chatModelID: "ignored",
+                chatReasoningEffort: "high"
+            ))
+            let unchanged = try await repository.fetchAllVaultsAsync()
+            #expect(unchanged.allSatisfy { $0.localProvider == .databricks })
+            #expect(unchanged.allSatisfy { $0.summaryModelID == "summary-model" })
+        }
+
+        @Test
+        func explicitVaultSettingsAreNotOverwrittenByLaterLegacyBackfill() async throws {
+            let manager = try AppDatabaseManager(path: ":memory:")
+            let repository = MeetingRepository(dbQueue: manager.dbQueue)
+            let pending = makeVault(name: "Pending")
+            try await manager.dbQueue.write { db in
+                try insertLegacyVault(pending, in: db)
+            }
+            var settings = VaultAISettingsSnapshot(vault: try #require(
+                try await manager.dbQueue.read { db in try VaultRecord.fetchOne(db, key: pending.id) }
+            ))
+            settings.summaryModelID = "explicit-model"
+
+            _ = try await repository.updateVaultAISettings(settings)
+            try await repository.backfillVaultAISettings(VaultAISettingsLegacyValues(
+                localProvider: .databricks,
+                databricksProfile: "legacy",
+                summaryModelID: "legacy-model",
+                summaryReasoningEffort: "low",
+                chatModelID: "legacy-chat",
+                chatReasoningEffort: "low"
+            ))
+
+            let stored = try #require(
+                try await manager.dbQueue.read { db in try VaultRecord.fetchOne(db, key: pending.id) }
+            )
+            #expect(stored.aiSettingsBackfilled)
+            #expect(stored.summaryModelID == "explicit-model")
         }
 
         @Test

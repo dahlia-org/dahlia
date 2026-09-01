@@ -13,6 +13,7 @@ final class VaultManagementModel {
     private(set) var isLoading = false
     private(set) var isRemovingVault = false
     private(set) var isRenamingVault = false
+    private(set) var updatingVaultAccountID: UUID?
     var isShowingError = false
 
     private var appDatabase: AppDatabaseManager?
@@ -78,13 +79,16 @@ final class VaultManagementModel {
         }
 
         let now = Date.now
-        let vault = VaultRecord(
+        var vault = VaultRecord(
             id: .v7(),
             path: normalizedURL.path,
             name: normalizedURL.lastPathComponent,
             createdAt: now,
             lastOpenedAt: markAsOpened ? now : .distantPast
         )
+        if let inheritedSettings = VaultAISettingsModel.shared.snapshot {
+            inheritedSettings.apply(to: &vault)
+        }
 
         do {
             try await repository.insertVaultAsync(vault)
@@ -160,6 +164,34 @@ final class VaultManagementModel {
             return renamedVault
         } catch {
             presentError(L10n.vaultRenameFailed, error: error, source: "renameVault")
+            return nil
+        }
+    }
+
+    func updateAccountConnection(for vault: VaultRecord, connectionID: UUID?) async -> VaultRecord? {
+        guard vault.accountConnectionId != connectionID else { return vault }
+        guard updatingVaultAccountID == nil else { return nil }
+        guard let repository else {
+            presentError(L10n.vaultOperationFailed, source: "updateAccountConnection")
+            return nil
+        }
+
+        updatingVaultAccountID = vault.id
+        defer { updatingVaultAccountID = nil }
+        do {
+            guard let updatedVault = try await repository.updateVaultAccountConnection(
+                id: vault.id,
+                connectionID: connectionID
+            ) else {
+                presentError(L10n.vaultOperationFailed, source: "updateAccountConnection")
+                return nil
+            }
+            if let index = vaults.firstIndex(where: { $0.id == vault.id }) {
+                vaults[index] = updatedVault
+            }
+            return updatedVault
+        } catch {
+            presentError(L10n.vaultOperationFailed, error: error, source: "updateAccountConnection")
             return nil
         }
     }

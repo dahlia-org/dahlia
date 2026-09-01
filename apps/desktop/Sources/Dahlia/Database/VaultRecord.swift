@@ -10,6 +10,19 @@ struct VaultRecord: Codable, FetchableRecord, PersistableRecord, Identifiable, E
     var name: String
     var createdAt: Date
     var lastOpenedAt: Date
+    var accountConnectionId: UUID?
+    var localAIProvider: String = AIAccountProvider.chatGPTSubscription.rawValue
+    var databricksProfile = ""
+    var summaryModelID = "gpt-5.6-luna"
+    var summaryReasoningEffort = "high"
+    var chatModelID = ""
+    var chatReasoningEffort: String = CodexReasoningEffortOption.defaultValue
+    var aiSettingsBackfilled = true
+
+    var localProvider: AIAccountProvider {
+        get { AIAccountProvider(rawValue: localAIProvider) ?? .chatGPTSubscription }
+        set { localAIProvider = newValue.rawValue }
+    }
 
     /// 保管庫ディレクトリの URL。
     var url: URL {

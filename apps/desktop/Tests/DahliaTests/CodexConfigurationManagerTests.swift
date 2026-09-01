@@ -6,6 +6,41 @@ import Foundation
 
     struct CodexConfigurationManagerTests {
         @Test
+        func dahliaConfigurationUsesPrivateConnectionHomeAndDynamicTokenHelper() async throws {
+            let rootURL = FileManager.default.temporaryDirectory
+                .appending(path: "dahlia-codex-config-\(UUID().uuidString)", directoryHint: .isDirectory)
+            defer { try? FileManager.default.removeItem(at: rootURL) }
+            let locator = ApplicationSupportCodexHomeLocator(applicationSupportURL: rootURL)
+            let manager = CodexConfigurationManager(homeLocator: locator)
+            let connectionID = UUID()
+            let helperURL = URL(filePath: "/Applications/Dahlia.app/Contents/Helpers/dahlia-mcp")
+
+            #expect(try await manager.configureDahlia(
+                connectionID: connectionID,
+                origin: "https://cloud.example.com",
+                helperURL: helperURL,
+                runtimeProfile: .development
+            ))
+
+            let localHome = try locator.homeURL(connectionID: nil)
+            let accountHome = try locator.homeURL(connectionID: connectionID)
+            let configURL = accountHome.appending(path: "config.toml")
+            let configuration = try String(contentsOf: configURL, encoding: .utf8)
+            #expect(localHome != accountHome)
+            #expect(configuration.contains(#"model_provider = "dahlia""#))
+            #expect(configuration.contains(#"base_url = "https://cloud.example.com/api/v1""#))
+            #expect(configuration.contains(#"command = "/Applications/Dahlia.app/Contents/Helpers/dahlia-mcp""#))
+            #expect(configuration.contains("--connection-id"))
+            #expect(configuration.contains(connectionID.uuidString))
+            #expect(configuration.contains(#"--profile", "development""#))
+            #expect(!configuration.localizedCaseInsensitiveContains("token ="))
+            let homeAttributes = try FileManager.default.attributesOfItem(atPath: accountHome.path)
+            let configAttributes = try FileManager.default.attributesOfItem(atPath: configURL.path)
+            #expect((homeAttributes[.posixPermissions] as? NSNumber)?.intValue == 0o700)
+            #expect((configAttributes[.posixPermissions] as? NSNumber)?.intValue == 0o600)
+        }
+
+        @Test
         func databricksConfigurationUsesSelectedCLIProfile() async throws {
             let rootURL = FileManager.default.temporaryDirectory
                 .appending(path: "dahlia-codex-config-\(UUID().uuidString)", directoryHint: .isDirectory)

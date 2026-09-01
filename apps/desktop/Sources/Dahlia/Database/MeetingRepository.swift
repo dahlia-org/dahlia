@@ -106,6 +106,54 @@ final class MeetingRepository {
         }
     }
 
+    nonisolated func updateVaultAISettings(_ settings: VaultAISettingsSnapshot) async throws -> VaultRecord? {
+        try await dbQueue.write { db in
+            guard var vault = try VaultRecord.fetchOne(db, key: settings.vaultID) else { return nil }
+            settings.apply(to: &vault)
+            try vault.update(db)
+            return vault
+        }
+    }
+
+    nonisolated func updateVaultAccountConnection(id: UUID, connectionID: UUID?) async throws -> VaultRecord? {
+        try await dbQueue.write { db in
+            guard var vault = try VaultRecord.fetchOne(db, key: id) else { return nil }
+            vault.accountConnectionId = connectionID
+            try vault.update(db)
+            return vault
+        }
+    }
+
+    nonisolated func backfillVaultAISettings(_ settings: VaultAISettingsLegacyValues) async throws {
+        try await dbQueue.write { db in
+            var vaults = try VaultRecord.filter(Column("aiSettingsBackfilled") == false).fetchAll(db)
+            for index in vaults.indices {
+                settings.apply(to: &vaults[index])
+                vaults[index].aiSettingsBackfilled = true
+                try vaults[index].update(db)
+            }
+        }
+    }
+
+    nonisolated func vaultCountsByAccountConnectionID() async throws -> [UUID: Int] {
+        try await dbQueue.read { db in
+            let rows = try Row.fetchAll(
+                db,
+                sql: """
+                SELECT accountConnectionId, COUNT(*) AS vaultCount
+                FROM vaults
+                WHERE accountConnectionId IS NOT NULL
+                GROUP BY accountConnectionId
+                """
+            )
+            return Dictionary(uniqueKeysWithValues: rows.compactMap { row in
+                guard let connectionID: UUID = row["accountConnectionId"] else { return nil }
+                let count: Int = row["vaultCount"]
+                return (connectionID, count)
+            })
+        }
+    }
+
     /// 保管庫を登録解除する（関連プロジェクト・ミーティングもカスケード削除）。
     nonisolated func deleteVault(id: UUID) throws {
         let meetingIds = try meetingIds(vaultId: id)

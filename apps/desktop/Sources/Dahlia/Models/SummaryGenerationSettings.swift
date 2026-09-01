@@ -10,11 +10,17 @@ struct SummaryGenerationSettings: Equatable, Sendable {
     @MainActor
     static func current(
         _ settings: AppSettings = .shared,
+        vaultAISettings: VaultAISettingsModel = .shared,
         detailLevel: SummaryDetailLevel? = nil
     ) -> Self {
-        Self(
-            modelID: settings.codexModelID.nilIfBlank,
-            reasoningEffort: settings.codexReasoningEffort,
+        let usesVaultSettings = vaultAISettings.vaultID == settings.currentVault?.id
+        return Self(
+            modelID: usesVaultSettings
+                ? vaultAISettings.summaryModelID.nilIfBlank
+                : settings.codexModelID.nilIfBlank,
+            reasoningEffort: usesVaultSettings
+                ? vaultAISettings.summaryReasoningEffort
+                : settings.codexReasoningEffort,
             detailLevelInstruction: (detailLevel ?? settings.summaryDetailLevel).instruction,
             languageDisplayName: settings.llmSummaryLanguage.displayName
         )

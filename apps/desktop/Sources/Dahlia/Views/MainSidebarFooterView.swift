@@ -12,25 +12,28 @@ struct MainSidebarFooterView: View {
     @State private var isHelpHovered = false
     @State private var isMCPPresented = false
     @State private var dahliaAccountController = DahliaCloudAccountController.shared
+    @State private var vaultAISettings = VaultAISettingsModel.shared
 
     var body: some View {
-        let accountPresentation = Self.accountPresentation(for: dahliaAccountController.connections)
-        let connection = accountPresentation.connection
+        let connection = vaultAISettings.accountConnectionID.flatMap { connectionID in
+            dahliaAccountController.connections.first(where: { $0.id == connectionID })
+        }
+        let signedInConnections = dahliaAccountController.connections.filter(\.isSignedIn)
+        let accountVaults = Self.vaults(vaults, linkedTo: vaultAISettings.accountConnectionID)
         HStack(spacing: 4) {
             MainSidebarAccountMenuButton(
-                vaults: vaults,
+                vaults: accountVaults,
                 currentVault: currentVault,
-                account: connection?.account,
-                accountOrigin: connection?.origin,
-                isCloudAccount: connection?.isCloud,
-                accountSummary: accountPresentation.count > 1
-                    ? L10n.dahliaAccountCount(accountPresentation.count)
-                    : nil,
+                connections: signedInConnections,
+                currentConnectionID: connection?.id,
+                isLocalAccount: vaultAISettings.isLocalAccount,
+                isLocalAccountAvailable: vaults.contains { $0.accountConnectionId == nil },
                 onSelectVault: onSelectVault,
-                onManageVaults: showVaultManager,
                 onOpenSettings: showSettings,
+                onSelectAccount: selectAccount,
                 onAccountAction: accountAction
             )
+            .disabled(vaultAISettings.isSwitchingRuntime)
             .frame(maxWidth: .infinity, alignment: .leading)
             .frame(height: 44)
             .background(
@@ -42,6 +45,12 @@ struct MainSidebarFooterView: View {
                 isAccountMenuHovered = phase != .ended
             }
             .help(L10n.accountAndVaultMenuDescription)
+
+            if vaultAISettings.isSwitchingRuntime {
+                ProgressView()
+                    .controlSize(.small)
+                    .help(L10n.switchingAIAccount)
+            }
 
             if updateController.isUpdateAvailable {
                 MainSidebarUpdateBadge(updateController: updateController)
@@ -72,10 +81,6 @@ struct MainSidebarFooterView: View {
         }
     }
 
-    private func showVaultManager() {
-        mainWindowNavigation.openSettings(category: .vault)
-    }
-
     private func showMCP() {
         isMCPPresented = true
     }
@@ -85,20 +90,41 @@ struct MainSidebarFooterView: View {
     }
 
     private func accountAction() {
-        if let connection = Self.accountPresentation(for: dahliaAccountController.connections).connection {
-            dahliaAccountController.startSignOut(connectionID: connection.id)
+        if let connectionID = vaultAISettings.accountConnectionID,
+           let connection = dahliaAccountController.connections.first(where: { $0.id == connectionID }) {
+            if connection.isSignedIn {
+                dahliaAccountController.startSignOut(connectionID: connection.id)
+            } else {
+                dahliaAccountController.startReauthentication(connectionID: connection.id)
+            }
         } else {
             mainWindowNavigation.openDahliaSignIn()
         }
     }
 
-    static func accountPresentation(
-        for connections: [DahliaAccountConnection]
-    ) -> (connection: DahliaAccountConnection?, count: Int) {
-        let signedInConnections = connections.filter(\.isSignedIn)
-        return (
-            signedInConnections.count == 1 ? signedInConnections[0] : nil,
-            signedInConnections.count
-        )
+    private func selectAccount(_ connection: DahliaAccountConnection?) {
+        guard let vault = Self.vaultToSelect(
+            from: vaults,
+            currentVault: currentVault,
+            connectionID: connection?.id
+        ) else { return }
+        onSelectVault(vault)
+    }
+
+    static func vaults(_ vaults: [VaultRecord], linkedTo connectionID: UUID?) -> [VaultRecord] {
+        vaults
+            .filter { $0.accountConnectionId == connectionID }
+            .sorted {
+                ($0.createdAt, $0.id.uuidString) < ($1.createdAt, $1.id.uuidString)
+            }
+    }
+
+    static func vaultToSelect(
+        from vaults: [VaultRecord],
+        currentVault: VaultRecord?,
+        connectionID: UUID?
+    ) -> VaultRecord? {
+        guard currentVault?.accountConnectionId != connectionID else { return nil }
+        return Self.vaults(vaults, linkedTo: connectionID).first
     }
 }

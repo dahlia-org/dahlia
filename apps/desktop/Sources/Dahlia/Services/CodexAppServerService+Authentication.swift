@@ -71,14 +71,7 @@ extension CodexAppServerService {
     nonisolated static func prepareConfiguredDatabricksAuthentication(
         authenticationMayChange: @Sendable () async -> Void
     ) async throws -> Bool {
-        let profileName = await MainActor.run { () -> String? in
-            let settings = AppSettings.shared
-            guard settings.codexAccountProvider == .databricks,
-                  settings.isCodexAccountConfigurationCurrent
-            else { return nil }
-            return settings.codexDatabricksProfile.nilIfBlank
-        }
-        guard let profileName else { return false }
+        guard case let .databricks(profileName) = CodexRuntimeContextStore.shared.provider else { return false }
 
         let result = try await DatabricksCLIClient().ensureAuthenticated(
             profileName: profileName,

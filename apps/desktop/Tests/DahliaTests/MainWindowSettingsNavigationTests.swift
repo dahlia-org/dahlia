@@ -72,7 +72,7 @@
             navigation.openSettings(category: .vault)
 
             #expect(navigation.isShowingSettings)
-            #expect(navigation.settingsCategory == .vault)
+            #expect(navigation.settingsCategory == .accountsAndVaults)
             #expect(navigation.currentLocation == .meeting(meetingID))
         }
 
