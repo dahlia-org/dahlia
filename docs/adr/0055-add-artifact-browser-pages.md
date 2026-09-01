@@ -24,6 +24,8 @@ private bytes を表示できない。
   `GET|HEAD /api/v1/artifacts/{artifact_id}/content` も提供する。
 - Browser session は read にだけ追加する。artifact mutation は既存の OAuth または trusted proxy identity を維持し、
   browser mutation が必要になるまで cookie と CSRF surface を増やさない。
+- `POST /api/v1/artifacts` の `Location` は後続の `PUT`、`PATCH`、`DELETE` に使う mutable API resource を維持し、
+  response の `viewerUrl` で人向け URL を返す。
 - 人が共有する正準 URL は `/artifacts/{artifact_id}` とする。MCP resource link は content endpoint を指し、storage URL
   と credential は引き続き公開しない。
 

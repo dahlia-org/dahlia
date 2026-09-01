@@ -293,7 +293,11 @@ describe("artifact API", () => {
     const id = await uploadedId(created);
     const timestamp = Number.parseInt(id.replaceAll("-", "").slice(0, 12), 16);
     expect(created.status).toBe(201);
-    expect(created.headers.get("location")).toBe(`https://dahlia.example/artifacts/${id}`);
+    expect(created.headers.get("location")).toBe(`https://dahlia.example/api/v1/artifacts/${id}`);
+    expect(await created.clone().json()).toMatchObject({
+      id,
+      viewerUrl: `https://dahlia.example/artifacts/${id}`,
+    });
     expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
     expect(Math.abs(Date.now() - timestamp)).toBeLessThan(1_000);
     expect((await app.request(`/api/v1/artifacts/${id}`)).status).toBe(401);

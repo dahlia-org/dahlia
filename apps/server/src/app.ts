@@ -361,8 +361,11 @@ export function createApp(dependencies: AppDependencies) {
   app.post("/api/v1/artifacts", async (context) => {
     const identity = await identities.fromGateway(context.req.raw, ARTIFACT_WRITE_SCOPE);
     const artifact = await artifacts.create(identity, context.req.raw);
-    return context.json(artifactResponse(artifact), 201, {
-      Location: `${config.baseUrl}/artifacts/${artifact.id}`,
+    return context.json({
+      ...artifactResponse(artifact),
+      viewerUrl: `${config.baseUrl}/artifacts/${artifact.id}`,
+    }, 201, {
+      Location: `${config.baseUrl}/api/v1/artifacts/${artifact.id}`,
     });
   });
   app.on(["GET", "HEAD"], "/api/v1/artifacts/:artifactId", async (context) => {
