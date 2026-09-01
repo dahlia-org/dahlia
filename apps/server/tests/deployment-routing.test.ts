@@ -209,23 +209,13 @@ describe("deployment routing", () => {
     expect(bundle).toContain("default: server");
     expect(bundle).toContain("volume_name:");
     expect(bundle).toContain("default: storage");
-    expect(bundle).toContain("legacy_artifact_catalog:");
-    expect(bundle).toContain("default: main");
-    expect(bundle).toContain("legacy_artifact_volume_name:");
-    expect(bundle).toContain("default: dahlia_artifacts");
-    expect(bundle).toContain(`dahlia_artifacts:
-          catalog_name: \${var.legacy_artifact_catalog}
-          schema_name: default
-          name: \${var.legacy_artifact_volume_name}`);
-    expect(bundle).toContain(`artifacts:
-          catalog_name: \${var.legacy_artifact_catalog}
-          schema_name: \${resources.schemas.dahlia.name}
-          name: artifacts`);
-    expect(resource).toContain(`dahlia_artifacts:
+    expect(bundle).not.toContain("legacy_artifact_catalog:");
+    expect(bundle).not.toContain("legacy_artifact_volume_name:");
+    expect(resource).toContain(`dahlia_storage:
       catalog_name: \${var.catalog}
       schema_name: \${resources.schemas.dahlia.name}
       name: \${var.volume_name}`);
-    expect(bundle).toMatch(/prod:[\s\S]*?volumes:[\s\S]*?prevent_destroy: true/);
+    expect(bundle).not.toContain("prevent_destroy: true");
     expect(bundle).toMatch(/dev:[\s\S]*?purge_on_delete: true[\s\S]*?prod:/);
     expect(bundle).toMatch(/admin_email:\n\s+description: .+\n\s+default: " "/);
     expect(bundle).not.toContain("postgres_databases:");
@@ -248,8 +238,8 @@ describe("deployment routing", () => {
     expect(resource).toContain("name: DAHLIA_STORAGE_BACKEND");
     expect(resource).toContain("value: databricks");
     expect(resource).toContain("name: DAHLIA_STORAGE_DATABRICKS_VOLUME_PATH");
-    expect(resource).toContain("/Volumes/${resources.volumes.dahlia_artifacts.catalog_name}/${resources.volumes.dahlia_artifacts.schema_name}/${resources.volumes.dahlia_artifacts.name}");
-    expect(resource).toContain("securable_full_name: ${resources.volumes.dahlia_artifacts.catalog_name}.${resources.volumes.dahlia_artifacts.schema_name}.${resources.volumes.dahlia_artifacts.name}");
+    expect(resource).toContain("/Volumes/${resources.volumes.dahlia_storage.catalog_name}/${resources.volumes.dahlia_storage.schema_name}/${resources.volumes.dahlia_storage.name}");
+    expect(resource).toContain("securable_full_name: ${resources.volumes.dahlia_storage.catalog_name}.${resources.volumes.dahlia_storage.schema_name}.${resources.volumes.dahlia_storage.name}");
     expect(resource).toContain("postgres_projects:");
     expect(resource).not.toContain("postgres_roles:");
     expect(resource).not.toContain("postgres_databases:");

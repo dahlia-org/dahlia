@@ -6,7 +6,7 @@ resources:
       comment: Dahlia Server resources for ${bundle.target}
 
   volumes:
-    dahlia_artifacts:
+    dahlia_storage:
       catalog_name: ${var.catalog}
       schema_name: ${resources.schemas.dahlia.name}
       name: ${var.volume_name}
@@ -39,7 +39,7 @@ resources:
           - name: DAHLIA_STORAGE_BACKEND
             value: databricks
           - name: DAHLIA_STORAGE_DATABRICKS_VOLUME_PATH
-            value: /Volumes/${resources.volumes.dahlia_artifacts.catalog_name}/${resources.volumes.dahlia_artifacts.schema_name}/${resources.volumes.dahlia_artifacts.name}
+            value: /Volumes/${resources.volumes.dahlia_storage.catalog_name}/${resources.volumes.dahlia_storage.schema_name}/${resources.volumes.dahlia_storage.name}
           - name: DAHLIA_DATABASE_TYPE
             value: lakebase
           - name: LAKEBASE_ENDPOINT
@@ -53,5 +53,5 @@ resources:
         - name: storage
           uc_securable:
             securable_type: VOLUME
-            securable_full_name: ${resources.volumes.dahlia_artifacts.catalog_name}.${resources.volumes.dahlia_artifacts.schema_name}.${resources.volumes.dahlia_artifacts.name}
+            securable_full_name: ${resources.volumes.dahlia_storage.catalog_name}.${resources.volumes.dahlia_storage.schema_name}.${resources.volumes.dahlia_storage.name}
             permission: WRITE_VOLUME
