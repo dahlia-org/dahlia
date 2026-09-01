@@ -52,30 +52,3 @@ targets:
         dahlia_database_project:
           lifecycle:
             prevent_destroy: true
-      schemas:
-        dahlia:
-          lifecycle:
-            prevent_destroy: true
-      volumes:
-        dahlia_artifacts:
-          catalog_name: ${var.catalog}
-          schema_name: default
-          name: dahlia_artifacts
-          lifecycle:
-            prevent_destroy: true
-        artifacts:
-          catalog_name: ${var.catalog}
-          schema_name: dahlia
-          name: artifacts
-          volume_type: MANAGED
-          comment: Legacy Dahlia Server artifact bytes
-          lifecycle:
-            prevent_destroy: true
-        storage:
-          catalog_name: ${var.catalog}
-          schema_name: ${resources.schemas.dahlia.name}
-          name: ${var.volume_name}
-          volume_type: MANAGED
-          comment: Dahlia Server storage for ${bundle.target}
-          lifecycle:
-            prevent_destroy: true
