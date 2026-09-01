@@ -21,13 +21,13 @@
                 record: record,
                 account: account,
                 isCloud: false,
-                grantedScopes: ["iam.current-user:read"]
+                grantedScopes: ["files"]
             ).supportsArtifactExport)
             #expect(!DahliaAccountConnection(
                 record: record,
                 account: account,
                 isCloud: false,
-                grantedScopes: ["openid"]
+                grantedScopes: ["iam.current-user:read"]
             ).supportsArtifactExport)
         }
 
