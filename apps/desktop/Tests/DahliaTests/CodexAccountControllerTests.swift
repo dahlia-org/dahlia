@@ -47,6 +47,7 @@ import os
             let readinessChecked = OSAllocatedUnfairLock(initialState: false)
             let controller = CodexAccountController(
                 service: service,
+                hasActiveVault: { true },
                 runtimeReadiness: {
                     readinessChecked.withLock { $0 = true }
                     return true
@@ -68,6 +69,7 @@ import os
             })
             let controller = CodexAccountController(
                 service: service,
+                hasActiveVault: { true },
                 runtimeReadiness: { false }
             )
 
@@ -75,6 +77,24 @@ import os
 
             #expect(controller.accountStatus == nil)
             #expect(controller.errorMessage == L10n.codexAccountConfigurationNotReady)
+            await service.shutdown()
+        }
+
+        @Test
+        func firstRunWithoutAVaultCanLoadChatGPTStatus() async {
+            let service = CodexAppServerService {
+                TestCodexAppServerTransport(mode: .models)
+            }
+            let controller = CodexAccountController(
+                service: service,
+                hasActiveVault: { false },
+                runtimeReadiness: { false }
+            )
+
+            await controller.activateChatGPTSubscription()
+
+            #expect(controller.accountStatus?.isAuthenticated == true)
+            #expect(controller.errorMessage == nil)
             await service.shutdown()
         }
     }

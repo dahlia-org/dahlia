@@ -12,17 +12,22 @@ final class CodexAccountController {
 
     private let service: CodexAppServerService
     private let urlOpener: any CodexLoginURLOpening
+    private let hasActiveVault: @MainActor @Sendable () -> Bool
     private let runtimeReadiness: @MainActor @Sendable () async -> Bool
 
     init(
         service: CodexAppServerService = .shared,
         urlOpener: any CodexLoginURLOpening = WorkspaceCodexLoginURLOpener(),
+        hasActiveVault: @escaping @MainActor @Sendable () -> Bool = {
+            VaultAISettingsModel.shared.vaultID != nil
+        },
         runtimeReadiness: @escaping @MainActor @Sendable () async -> Bool = {
             await VaultAISettingsModel.shared.waitForRuntimeContext()
         }
     ) {
         self.service = service
         self.urlOpener = urlOpener
+        self.hasActiveVault = hasActiveVault
         self.runtimeReadiness = runtimeReadiness
     }
 
@@ -37,7 +42,9 @@ final class CodexAccountController {
 
         do {
             try Task.checkCancellation()
-            guard await runtimeReadiness() else { throw CodexConfigurationError.accountNotReady }
+            if hasActiveVault() {
+                guard await runtimeReadiness() else { throw CodexConfigurationError.accountNotReady }
+            }
             accountStatus = try await service.accountStatus(forceRefresh: true)
             try Task.checkCancellation()
         } catch is CancellationError {

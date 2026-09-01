@@ -442,6 +442,44 @@ import GRDB
         }
 
         @Test
+        func pendingAutomaticSummaryKeepsItsSourceVaultProvider() async throws {
+            let fixture = try SummaryGenerationFixture()
+            defer { fixture.removeFiles() }
+            let runner = BlockingSummaryRunner()
+            let viewModel = CaptionViewModel(summaryGenerationRunner: runner.run)
+            let options = SummaryGenerationOptions(
+                exportOptions: SummaryExportOptions(exportsToVault: false, exportsToGoogleDocs: false)
+            )
+            let sessionID = UUID.v7()
+            let sourceSettings = SummaryGenerationSettings(
+                modelID: "source-model",
+                reasoningEffort: "high",
+                detailLevelInstruction: SummaryDetailLevel.concise.instruction,
+                languageDisplayName: "Japanese",
+                runtimeProvider: .dahlia(connectionID: UUID.v7())
+            )
+            viewModel.registerPendingBatchSummaryForTesting(
+                sessionID: sessionID,
+                meetingID: fixture.first.id,
+                options: options,
+                dbQueue: fixture.database.dbQueue,
+                vaultURL: fixture.vaultURL,
+                generationSettings: sourceSettings
+            )
+
+            await viewModel.handleBatchTranscriptionUpdate(.init(
+                meetingId: fixture.first.id,
+                state: .completed(sessionId: sessionID)
+            ))
+            await runner.waitForCallCount(1)
+
+            #expect(runner.calls[0].settings.modelID == "source-model")
+            #expect(runner.calls[0].settings.runtimeProvider == sourceSettings.runtimeProvider)
+            runner.complete(meetingID: fixture.first.id, title: "Source summary")
+            #expect(await waitUntil { !viewModel.isSummaryGenerating(meetingId: fixture.first.id) })
+        }
+
+        @Test
         func automaticRequestsWaitForTheirSessionsAndCoalesceAfterTheActiveJob() async throws {
             let fixture = try SummaryGenerationFixture()
             defer { fixture.removeFiles() }

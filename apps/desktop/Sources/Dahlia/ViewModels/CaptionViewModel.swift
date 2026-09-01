@@ -1460,7 +1460,8 @@ final class CaptionViewModel: ObservableObject {
             options: options,
             dbQueue: context.dbQueue,
             vaultURL: context.vaultURL,
-            job: job
+            job: job,
+            generationSettings: .current(detailLevel: options.detailLevel)
         )
         summaryGenerationJobs.append(job)
     }
@@ -3772,6 +3773,7 @@ final class CaptionViewModel: ObservableObject {
         let dbQueue: DatabaseQueue
         let vaultURL: URL
         let job: SummaryGenerationJob
+        let generationSettings: SummaryGenerationSettings
         var sessionIDs: Set<UUID>
         var completedSessionIDs: Set<UUID> = []
         var transcriptionProgressBySessionID: [UUID: Double] = [:]
@@ -3782,13 +3784,15 @@ final class CaptionViewModel: ObservableObject {
             options: SummaryGenerationOptions,
             dbQueue: DatabaseQueue,
             vaultURL: URL,
-            job: SummaryGenerationJob
+            job: SummaryGenerationJob,
+            generationSettings: SummaryGenerationSettings
         ) {
             self.meetingId = meetingId
             self.options = options
             self.dbQueue = dbQueue
             self.vaultURL = vaultURL
             self.job = job
+            self.generationSettings = generationSettings
             sessionIDs = [sessionID]
         }
 
@@ -3811,6 +3815,7 @@ final class CaptionViewModel: ObservableObject {
         func hasSamePersistenceContext(as other: PendingBatchSummaryRequest) -> Bool {
             dbQueue === other.dbQueue
                 && vaultURL.standardizedFileURL == other.vaultURL.standardizedFileURL
+                && generationSettings.runtimeProvider == other.generationSettings.runtimeProvider
         }
 
         @MainActor
@@ -3863,7 +3868,8 @@ final class CaptionViewModel: ObservableObject {
             meetingID: UUID,
             options: SummaryGenerationOptions,
             dbQueue: DatabaseQueue,
-            vaultURL: URL
+            vaultURL: URL,
+            generationSettings: SummaryGenerationSettings? = nil
         ) {
             let meetingName = (try? MeetingRepository(dbQueue: dbQueue).fetchMeeting(id: meetingID)?.name.nilIfBlank)
                 ?? L10n.newMeeting
@@ -3878,7 +3884,8 @@ final class CaptionViewModel: ObservableObject {
                 options: options,
                 dbQueue: dbQueue,
                 vaultURL: vaultURL,
-                job: job
+                job: job,
+                generationSettings: generationSettings ?? .current(detailLevel: options.detailLevel)
             )
             summaryGenerationJobs.append(job)
         }
@@ -4010,7 +4017,9 @@ final class CaptionViewModel: ObservableObject {
                 && request.meetingId == meetingId
                 && !request.job.hasFailure
                 && precedingAutomaticRequest.dbQueue === request.dbQueue
-                && precedingAutomaticRequest.vaultURL.standardizedFileURL == request.vaultURL.standardizedFileURL {
+                && precedingAutomaticRequest.vaultURL.standardizedFileURL == request.vaultURL.standardizedFileURL
+                && precedingAutomaticRequest.generationSettings.runtimeProvider
+                == request.generationSettings.runtimeProvider {
                 request.mergeOptions(precedingAutomaticRequest.options)
             }
         }
@@ -4028,6 +4037,7 @@ final class CaptionViewModel: ObservableObject {
             completedRequests.first { request in
                 precedingRequest.dbQueue === request.dbQueue
                     && precedingRequest.vaultURL.standardizedFileURL == request.vaultURL.standardizedFileURL
+                    && precedingRequest.generationSettings.runtimeProvider == request.generationSettings.runtimeProvider
             }
         } ?? completedRequests.first
         guard let first else { return }
@@ -4043,6 +4053,7 @@ final class CaptionViewModel: ObservableObject {
                 dbQueue: first.dbQueue,
                 vaultURL: first.vaultURL,
                 options: options,
+                generationSettings: first.generationSettings.applying(detailLevel: options.detailLevel),
                 telemetryTrigger: .automaticAfterBatch
             )
             removePendingBatchSummaryRequests(pendingRequests)
@@ -4083,6 +4094,7 @@ final class CaptionViewModel: ObservableObject {
         dbQueue: DatabaseQueue,
         vaultURL: URL,
         options: SummaryGenerationOptions,
+        generationSettings: SummaryGenerationSettings? = nil,
         telemetryTrigger: UsageTelemetryEvent.SummaryTrigger
     ) throws -> SummaryGenerationRequest {
         let snapshot = try dbQueue.read { db in
@@ -4109,7 +4121,7 @@ final class CaptionViewModel: ObservableObject {
             noteText: snapshot.2?.text.nilIfBlank,
             recordingSessions: snapshot.3.map(RecordingSessionTimeline.init),
             options: options,
-            generationSettings: .current(detailLevel: options.detailLevel),
+            generationSettings: generationSettings ?? .current(detailLevel: options.detailLevel),
             retriesFailedPersistence: false,
             telemetryTrigger: telemetryTrigger
         )
