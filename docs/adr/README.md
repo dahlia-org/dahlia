@@ -13,7 +13,7 @@ Codex は全 ADR を順番に読まず、最初にこの一覧から現在の作
 | --- | --- | --- | --- |
 | [0001](0001-summary-document-ast.md) | Summary | `SummaryDocument` AST をサマリーの正準表現にする | Accepted; amended by 0024 |
 | [0002](0002-isolate-recording-critical-path-from-main-actor.md) | Recording / Concurrency | 録音と確定データの保存を MainActor の UI projection から分離する | Accepted; partially superseded by 0006 and 0009 |
-| [0003](0003-use-a-shared-codex-app-server.md) | AI runtime | Codex app-server をアプリ共有の長寿命 backend として使う | Accepted; amended by 0013, 0015, 0019, 0020, 0021, 0022, 0028, 0032, and 0039 |
+| [0003](0003-use-a-shared-codex-app-server.md) | AI runtime | Codex app-server をアプリ共有の長寿命 backend として使う | Accepted; amended by 0013, 0015, 0019, 0020, 0021, 0022, 0028, 0032, 0039, and 0054 |
 | [0004](0004-protect-recordings-with-segmented-immutable-storage.md) | Recording storage | 録音データを分割された immutable segment として保全する | Accepted |
 | [0005](0005-vault-scoped-meeting-access-mcp.md) | Meeting access | Vault 固定・read-only の local MCP で meeting data を公開する | Accepted; amended by 0010, 0034, and 0041 |
 | [0006](0006-bounded-transcript-projection.md) | Transcript UI | SQLite を正本とし、文字起こし表示を bounded projection と keyset pagination にする | Accepted; partially supersedes 0002 |
@@ -39,7 +39,7 @@ Codex は全 ADR を順番に読まず、最初にこの一覧から現在の作
 | [0026](0026-measure-product-adoption-with-bounded-telemetry.md) | Privacy / Product analytics | 丸めた録音時間と AI chat・内蔵 MCP の利用を固定 allowlist で計測する | Accepted; amends 0025; amended by 0028 |
 | [0027](0027-use-provider-aware-chat-approval-reviewer.md) | AI runtime / Chat / Authentication | ChatGPT Subscription は代理審査、Databricks はユーザー承認を使う | Accepted; amends 0012 and 0022; builds on 0023; amended by 0036 |
 | [0028](0028-remove-automatic-previous-meeting-summary-context.md) | Summary / AI runtime / MCP | 要約生成の過去 meeting 自動参照と要約専用 MCP session を廃止する | Accepted; amends 0003, 0015, 0017, and 0026 |
-| [0029](0029-offer-an-optional-codex-ai-gateway.md) | AI runtime / Server gateway | 内蔵 Codex 用の任意の認証付き AI Gateway を別 runtime で提供する | Accepted; amends 0003; amended by 0031, 0043, 0044, 0045, 0046, and 0047 |
+| [0029](0029-offer-an-optional-codex-ai-gateway.md) | AI runtime / Server gateway | 内蔵 Codex 用の任意の認証付き AI Gateway を別 runtime で提供する | Accepted; amends 0003; amended by 0031, 0043, 0044, 0045, 0046, 0047, and 0054 |
 | [0031](0031-publish-dahlia-server-extension-contract.md) | Server gateway / Distribution | 実行可能な Server と versioned extension contract を同じ package で配布する | Accepted; amends 0029; amended by 0043 |
 | [0032](0032-use-local-codex-login-success-page.md) | AI runtime / Authentication | ChatGPT 認証完了に app-server のローカル成功ページを使う | Accepted; amends 0003 |
 | [0033](0033-use-local-fts5-search-projection.md) | Search / Database projection | Lindera と FTS5 による再構築可能なローカル検索索引を使う | Accepted; builds on 0006, 0007, and 0009; amended by 0034, 0040, and 0041 |
@@ -63,3 +63,4 @@ Codex は全 ADR を順番に読まず、最初にこの一覧から現在の作
 | [0051](0051-add-desktop-cloud-oauth.md) | Desktop / Cloud authentication | protected-resource discovery と deployment-bound credential で Cloud に接続する | Accepted; builds on 0044 and 0049; amended by 0052 |
 | [0052](0052-separate-desktop-account-connections-from-vaults.md) | Desktop / Authentication / Vault | 接続をアプリ共有にし、Vault 関連は sync consumer と同時に追加する | Accepted; amends 0051, builds on 0043 |
 | [0053](0053-scope-codex-accounts-to-vaults.md) | Desktop / AI runtime / Authentication / Vault | Vault ごとにローカルまたは Dahlia アカウントの Codex home とモデル設定を選択する | Accepted; partially supersedes 0051 and 0052, builds on 0021 and 0029 |
+| [0054](0054-align-ai-runtime-timeouts.md) | Desktop / AI runtime / Server gateway | 要約と RPC の timeout を upstream execution と応答遅延に合わせる | Accepted; amends 0003 and 0029 |

@@ -177,6 +177,12 @@ import Foundation
         }
 
         @Test
+        func defaultTimeoutsMatchRuntimeContracts() {
+            #expect(CodexAppServerService.defaultTransportTimeout == .seconds(30))
+            #expect(CodexAppServerService.defaultSummaryTimeout == .seconds(610))
+        }
+
+        @Test
         func lightweightRequestTimeoutDoesNotInterruptActiveSummary() async throws {
             let transport = TestCodexAppServerTransport(mode: .generationBlocks)
             let service = makeTestCodexAppServerService(transportFactory: { transport })
@@ -1129,6 +1135,7 @@ import Foundation
                 try await start.value
             }
             await transport.waitUntilSent("turn/interrupt")
+            #expect(await pollUntil { await clock.hasSleep(for: .seconds(15)) })
             await clock.fireAllSleeps()
 
             #expect(await pollUntil { await transport.isClosed })
@@ -1735,9 +1742,11 @@ import Foundation
 
     private actor DiscoveredChatTurnStopTestClock: CodexAppServerClock {
         private var firesImmediately = false
+        private var sleepDurations: [Duration] = []
         private var sleeps: [UUID: CheckedContinuation<Void, any Error>] = [:]
 
-        func sleep(for _: Duration) async throws {
+        func sleep(for duration: Duration) async throws {
+            sleepDurations.append(duration)
             if firesImmediately { return }
             let id = UUID.v7()
             try await withTaskCancellationHandler {
@@ -1758,6 +1767,10 @@ import Foundation
             let continuations = sleeps.values
             sleeps.removeAll()
             continuations.forEach { $0.resume() }
+        }
+
+        func hasSleep(for duration: Duration) -> Bool {
+            sleepDurations.contains(duration)
         }
 
         private func cancelSleep(_ id: UUID) {
