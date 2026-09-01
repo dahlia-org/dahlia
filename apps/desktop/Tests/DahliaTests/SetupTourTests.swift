@@ -113,8 +113,20 @@
             model.selectAccountConnection(connectionID)
             model.advance()
 
-            let restoredModel = SetupTourModel(mode: .initial, currentVault: nil, progressDefaults: defaults)
+            let signedOutRestoredModel = SetupTourModel(
+                mode: .initial,
+                currentVault: nil,
+                progressDefaults: defaults
+            )
+            let restoredModel = SetupTourModel(
+                mode: .initial,
+                currentVault: nil,
+                signedInAccountConnectionIDs: [connectionID],
+                progressDefaults: defaults
+            )
 
+            #expect(signedOutRestoredModel.currentStep == .account)
+            #expect(!signedOutRestoredModel.isAccountSelectionConfirmed)
             #expect(restoredModel.currentStep == .vault)
             #expect(restoredModel.selectedAccountConnectionID == connectionID)
             #expect(restoredModel.isAccountSelectionConfirmed)
@@ -127,6 +139,7 @@
             let defaults = try #require(UserDefaults(suiteName: suiteName))
             defer { defaults.removePersistentDomain(forName: suiteName) }
             defaults.set(SetupTourStep.modelProvider.rawValue, forKey: SetupTourPresentationPolicy.progressStepUserDefaultsKey)
+            defaults.set(true, forKey: SetupTourPresentationPolicy.accountSelectionConfirmedUserDefaultsKey)
 
             let restoredModel = SetupTourModel(mode: .initial, currentVault: nil, progressDefaults: defaults)
 
@@ -279,6 +292,34 @@
             #expect(!model.isVaultLocationConfirmed)
             #expect(model.currentStep == .vault)
             #expect(!model.canContinue)
+        }
+
+        @Test
+        func signedOutVaultAccountRequiresReauthentication() {
+            let connectionID = UUID.v7()
+            let currentVault = VaultRecord(
+                id: .v7(),
+                path: "/tmp/Current",
+                name: "Current",
+                createdAt: .now,
+                lastOpenedAt: .now,
+                accountConnectionId: connectionID
+            )
+            let signedOutModel = SetupTourModel(mode: .manual, currentVault: currentVault)
+            let signedInModel = SetupTourModel(
+                mode: .manual,
+                currentVault: currentVault,
+                signedInAccountConnectionIDs: [connectionID]
+            )
+
+            #expect(signedOutModel.selectedAccountConnectionID == connectionID)
+            #expect(!signedOutModel.isAccountSelectionConfirmed)
+            #expect(!signedOutModel.canContinue)
+            signedOutModel.advance()
+            #expect(signedOutModel.currentStep == .account)
+
+            #expect(signedInModel.isAccountSelectionConfirmed)
+            #expect(signedInModel.canContinue)
         }
 
         @Test

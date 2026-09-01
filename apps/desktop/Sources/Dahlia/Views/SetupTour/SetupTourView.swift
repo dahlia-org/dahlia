@@ -29,6 +29,7 @@ struct SetupTourView: View {
         _model = State(initialValue: SetupTourModel(
             mode: mode,
             currentVault: initialVault,
+            signedInAccountConnectionIDs: Set(accountController.connections.filter(\.isSignedIn).map(\.id)),
             progressDefaults: .standard
         ))
     }

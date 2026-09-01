@@ -25,12 +25,16 @@ final class SetupTourModel {
     init(
         mode: SetupTourMode,
         currentVault: VaultRecord?,
+        signedInAccountConnectionIDs: Set<UUID> = [],
         progressDefaults: UserDefaults? = nil
     ) {
         self.mode = mode
         originalVault = currentVault
         selectedAccountConnectionID = currentVault?.accountConnectionId
-        isAccountSelectionConfirmed = currentVault != nil
+        isAccountSelectionConfirmed = currentVault.map { vault in
+            guard let connectionID = vault.accountConnectionId else { return true }
+            return signedInAccountConnectionIDs.contains(connectionID)
+        } ?? false
         self.progressDefaults = progressDefaults
 
         if mode == .initial, currentVault == nil, let progressDefaults {
@@ -38,11 +42,20 @@ final class SetupTourModel {
             let restoredVaultConfirmed = restoredVaultURL != nil
                 && SetupTourPresentationPolicy.isRestoredVaultConfirmed(in: progressDefaults)
             let restoredStep = SetupTourPresentationPolicy.restoredStep(in: progressDefaults)
-            currentStep = restoredStep != .account && restoredStep != .vault && !restoredVaultConfirmed
-                ? .vault
-                : restoredStep
-            selectedAccountConnectionID = SetupTourPresentationPolicy.restoredAccountConnectionID(in: progressDefaults)
-            isAccountSelectionConfirmed = SetupTourPresentationPolicy.isAccountSelectionConfirmed(in: progressDefaults)
+            let restoredConnectionID = SetupTourPresentationPolicy.restoredAccountConnectionID(in: progressDefaults)
+            let restoredAccountConfirmed = SetupTourPresentationPolicy.isAccountSelectionConfirmed(in: progressDefaults)
+                && (restoredConnectionID.map(signedInAccountConnectionIDs.contains) ?? true)
+            currentStep = if !restoredAccountConfirmed {
+                .account
+            } else if restoredStep != .account,
+                      restoredStep != .vault,
+                      !restoredVaultConfirmed {
+                .vault
+            } else {
+                restoredStep
+            }
+            selectedAccountConnectionID = restoredConnectionID
+            isAccountSelectionConfirmed = restoredAccountConfirmed
             selectedVaultURL = restoredVaultURL ?? VaultManagementModel.defaultVaultURL
             isVaultLocationConfirmed = restoredVaultConfirmed
         } else {
