@@ -6,6 +6,10 @@ import Foundation
 import OSLog
 
 actor CodexAppServerService {
+    nonisolated static let defaultTransportTimeout = Duration.seconds(30)
+    nonisolated static let defaultSummaryTimeout = Duration.seconds(610)
+    private nonisolated static let turnRecoveryTimeout = Duration.seconds(15)
+
     typealias TransportFactory = @Sendable () throws -> any CodexAppServerTransport
     typealias ConfigurationReadiness = @Sendable () async -> Bool
     typealias AccountProviderResolver = @Sendable () async -> AIAccountProvider?
@@ -175,8 +179,8 @@ actor CodexAppServerService {
     init(
         launcher: BundledCodexAppServerLauncher = BundledCodexAppServerLauncher(),
         clock: any CodexAppServerClock = ContinuousCodexAppServerClock(),
-        transportTimeout: Duration = .seconds(15),
-        summaryTimeout: Duration = .seconds(270),
+        transportTimeout: Duration = CodexAppServerService.defaultTransportTimeout,
+        summaryTimeout: Duration = CodexAppServerService.defaultSummaryTimeout,
         providerAuthenticationPreparation: @escaping ProviderAuthenticationPreparation =
             CodexAppServerService.prepareConfiguredDatabricksAuthentication,
         configurationReadiness: @escaping ConfigurationReadiness = {
@@ -202,8 +206,8 @@ actor CodexAppServerService {
     init(
         transportFactory: @escaping TransportFactory,
         clock: any CodexAppServerClock = ContinuousCodexAppServerClock(),
-        transportTimeout: Duration = .seconds(15),
-        summaryTimeout: Duration = .seconds(270),
+        transportTimeout: Duration = CodexAppServerService.defaultTransportTimeout,
+        summaryTimeout: Duration = CodexAppServerService.defaultSummaryTimeout,
         providerAuthenticationPreparation: @escaping ProviderAuthenticationPreparation = { _, _ in false },
         configurationReadiness: @escaping ConfigurationReadiness = { true },
         accountProviderResolver: @escaping AccountProviderResolver = { nil },
@@ -1786,9 +1790,9 @@ private extension CodexAppServerService {
         else { return }
 
         let generation = connectionGeneration
-        let timeoutTask = Task { [weak self, clock, transportTimeout] in
+        let timeoutTask = Task { [weak self, clock] in
             do {
-                try await clock.sleep(for: transportTimeout)
+                try await clock.sleep(for: CodexAppServerService.turnRecoveryTimeout)
                 guard let self else { return }
                 await self.resetConnectionForDiscoveredChatTurnTimeout(key, generation: generation)
             } catch {
@@ -2113,9 +2117,9 @@ private extension CodexAppServerService {
 
     private func armChatTurnStopTimeout(_ localTurnID: UUID, generation: Int) {
         chatTurnRuntimes[localTurnID]?.timeoutTask?.cancel()
-        chatTurnRuntimes[localTurnID]?.timeoutTask = Task { [weak self, clock, transportTimeout] in
+        chatTurnRuntimes[localTurnID]?.timeoutTask = Task { [weak self, clock] in
             do {
-                try await clock.sleep(for: transportTimeout)
+                try await clock.sleep(for: CodexAppServerService.turnRecoveryTimeout)
                 guard let self else { return }
                 await self.resetConnectionForChatTurnTimeout(localTurnID, generation: generation)
             } catch {

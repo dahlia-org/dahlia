@@ -86,7 +86,7 @@ import Foundation
 
         @Test
         func timedOutConcurrentGenerationDoesNotInterruptTheOther() async throws {
-            let timeout = Duration.seconds(270)
+            let timeout = CodexAppServerService.defaultSummaryTimeout
             let clock = SummaryTimeoutTestClock(summaryTimeout: timeout)
             let transport = TestCodexAppServerTransport(mode: .generationBlocks)
             let service = makeTestCodexAppServerService(
