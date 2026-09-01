@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { createApp } from "../src/app";
+import { ARTIFACT_METADATA_MEDIA_TYPE } from "../src/artifacts/service";
 import type { ArtifactRecord } from "../src/auth/store";
 import type { AppConfig } from "../src/config";
 import { ObjectStorageError, type ObjectStorage } from "../src/artifacts/storage";
@@ -33,6 +34,12 @@ function fixture() {
   let beforePut: (() => Promise<void>) | undefined;
   let beforeRead: (() => Promise<void>) | undefined;
   const store = testStore({
+    listArtifacts: async (ownerWorkspaceId, cursor, limit) => [...records.values()]
+      .filter((artifact) => artifact.ownerWorkspaceId === ownerWorkspaceId
+        && artifact.storageKey !== null
+        && (!cursor || artifact.id < cursor))
+      .toSorted((left, right) => right.id.localeCompare(left.id))
+      .slice(0, limit),
     getArtifact: async (id) => {
       getCalls += 1;
       return records.get(id) ?? null;
@@ -216,10 +223,14 @@ describe("artifact API", () => {
     const id = createdArtifact.artifact_id!;
     expect(createdArtifact).toEqual({
       artifact_id: id,
-      url: `https://dahlia.example/api/v1/artifacts/${id}`,
+      url: `https://dahlia.example/artifacts/${id}`,
       content_type: "text/plain",
       visibility: "private",
     });
+    expect(createResult.content).toContainEqual(expect.objectContaining({
+      type: "resource_link",
+      uri: `https://dahlia.example/api/v1/artifacts/${id}/content`,
+    }));
     expect(Array.from(objects.values())[0]?.body).toEqual(new TextEncoder().encode("hello"));
 
     const invalidBase64 = await mcpRequest(app, "tools/call", {
@@ -282,7 +293,7 @@ describe("artifact API", () => {
     const id = await uploadedId(created);
     const timestamp = Number.parseInt(id.replaceAll("-", "").slice(0, 12), 16);
     expect(created.status).toBe(201);
-    expect(created.headers.get("location")).toBe(`https://dahlia.example/api/v1/artifacts/${id}`);
+    expect(created.headers.get("location")).toBe(`https://dahlia.example/artifacts/${id}`);
     expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
     expect(Math.abs(Date.now() - timestamp)).toBeLessThan(1_000);
     expect((await app.request(`/api/v1/artifacts/${id}`)).status).toBe(401);
@@ -290,9 +301,30 @@ describe("artifact API", () => {
 
     const privateRead = await app.request(`/api/v1/artifacts/${id}`, { headers: OWNER });
     expect(privateRead.status).toBe(200);
+    expect(privateRead.headers.get("vary")).toBe("Accept");
     expect(privateRead.headers.get("content-security-policy")).toBe("sandbox allow-scripts");
     expect(privateRead.headers.get("x-storage-secret")).toBeNull();
     expect(await privateRead.text()).toBe("hello");
+
+    const metadata = await app.request(`/api/v1/artifacts/${id}`, {
+      headers: { ...OWNER, accept: ARTIFACT_METADATA_MEDIA_TYPE },
+    });
+    expect(metadata.status).toBe(200);
+    expect(metadata.headers.get("content-type")).toBe(ARTIFACT_METADATA_MEDIA_TYPE);
+    expect(metadata.headers.get("vary")).toBe("Accept");
+    expect(await metadata.json()).toMatchObject({ id, contentType: "text/plain;charset=UTF-8", visibility: "private" });
+    const caseInsensitiveMetadata = await app.request(`/api/v1/artifacts/${id}`, {
+      headers: { ...OWNER, accept: "Application/Vnd.Dahlia.Artifact+Json" },
+    });
+    expect(await caseInsensitiveMetadata.json()).toMatchObject({ id });
+    const declinedMetadata = await app.request(`/api/v1/artifacts/${id}`, {
+      headers: { ...OWNER, accept: `${ARTIFACT_METADATA_MEDIA_TYPE};q=0` },
+    });
+    expect(await declinedMetadata.text()).toBe("hello");
+    const content = await app.request(`/api/v1/artifacts/${id}/content`, { headers: OWNER });
+    expect(content.status).toBe(200);
+    expect(content.headers.get("content-security-policy")).toBe("sandbox allow-scripts");
+    expect(await content.text()).toBe("hello");
 
     const published = await app.request(`/api/v1/artifacts/${id}`, {
       method: "PATCH",
@@ -302,6 +334,13 @@ describe("artifact API", () => {
     expect(published.status).toBe(200);
     const publicRead = await app.request(`/api/v1/artifacts/${id}`);
     expect(await publicRead.text()).toBe("hello");
+    expect(await (await app.request(`/api/v1/artifacts/${id}/content`)).text()).toBe("hello");
+    expect((await app.request(`/api/v1/artifacts/${id}`, {
+      headers: { authorization: "Bearer invalid" },
+    })).status).toBe(401);
+    expect((await app.request(`/api/v1/artifacts/${id}/content`, {
+      headers: { authorization: "Bearer invalid" },
+    })).status).toBe(401);
 
     const hidden = await app.request(`/api/v1/artifacts/${id}`, {
       method: "PATCH",
@@ -310,6 +349,50 @@ describe("artifact API", () => {
     });
     expect(hidden.status).toBe(200);
     expect((await app.request(`/api/v1/artifacts/${id}`)).status).toBe(401);
+  });
+
+  it("lists only owned artifacts with bounded keyset pagination", async () => {
+    const { app, records } = fixture();
+    const now = new Date();
+    for (let index = 0; index < 52; index += 1) {
+      const timestamp = (0x019cc4dde5c5n + BigInt(index)).toString(16).padStart(12, "0");
+      const id = `${timestamp.slice(0, 8)}-${timestamp.slice(8)}-7bd4-94e0-${index.toString(16).padStart(12, "0")}`;
+      records.set(id, {
+        id,
+        ownerWorkspaceId: "personal:owner",
+        contentType: "text/plain",
+        storageKey: `artifacts/${id}`,
+        visibility: "private",
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+    records.set(OTHER_ID, {
+      id: OTHER_ID,
+      ownerWorkspaceId: "personal:other",
+      contentType: "text/plain",
+      storageKey: "artifacts/other",
+      visibility: "public",
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    expect((await app.request("/api/v1/artifacts")).status).toBe(401);
+    const first: { items: Array<{ id: string; ownerWorkspaceId?: string }>; nextCursor: string } =
+      await (await app.request("/api/v1/artifacts", { headers: OWNER })).json();
+    expect(first.items).toHaveLength(50);
+    expect(first.items.every((artifact) => artifact.ownerWorkspaceId === undefined)).toBe(true);
+    expect(first.nextCursor).toBe(first.items.at(-1)?.id);
+
+    const second: { items: Array<{ id: string }>; nextCursor?: string } = await (await app.request(
+      `/api/v1/artifacts?cursor=${first.nextCursor}`,
+      { headers: OWNER },
+    )).json();
+    expect(second.items).toHaveLength(2);
+    expect(second).not.toHaveProperty("nextCursor");
+    expect((await app.request("/api/v1/artifacts?cursor=not-a-uuid", { headers: OWNER })).status).toBe(400);
+    expect(await (await app.request("/api/v1/artifacts", { headers: OTHER })).json())
+      .toMatchObject({ items: [expect.objectContaining({ id: OTHER_ID })] });
   });
 
   it("validates the upload contract and replacement media type", async () => {

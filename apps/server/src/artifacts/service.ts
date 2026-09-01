@@ -16,6 +16,8 @@ const FORWARDED_RESPONSE_HEADERS = [
 const artifactIdSchema = z.uuidv7();
 const visibilitySchema = z.object({ visibility: z.enum(["private", "public"]) }).strict();
 const ID_GENERATION_ATTEMPTS = 3;
+export const ARTIFACT_LIST_PAGE_SIZE = 50;
+export const ARTIFACT_METADATA_MEDIA_TYPE = "application/vnd.dahlia.artifact+json";
 
 interface ArtifactUpload {
   contentLength: number;
@@ -36,7 +38,8 @@ export class ArtifactService {
     private readonly config: AppConfig,
     private readonly store: Pick<
       AuthStore,
-      "getArtifact" | "createArtifact" | "commitArtifactStorage" | "updateArtifactVisibility" | "deleteArtifact"
+      "listArtifacts" | "getArtifact" | "createArtifact" | "commitArtifactStorage" | "updateArtifactVisibility"
+      | "deleteArtifact"
     >,
     private readonly storage?: ObjectStorage,
   ) {}
@@ -51,6 +54,23 @@ export class ArtifactService {
   async get(id: string): Promise<ArtifactRecord | null> {
     this.requireStorage();
     return this.metadata(() => this.store.getArtifact(id));
+  }
+
+  async list(ownerWorkspaceId: string, cursor?: string): Promise<{
+    items: ArtifactRecord[];
+    nextCursor?: string;
+  }> {
+    const parsedCursor = cursor === undefined ? undefined : this.parseId(cursor);
+    const records = await this.metadata(() => this.store.listArtifacts(
+      ownerWorkspaceId,
+      parsedCursor,
+      ARTIFACT_LIST_PAGE_SIZE + 1,
+    ));
+    const items = records.slice(0, ARTIFACT_LIST_PAGE_SIZE);
+    return {
+      items,
+      ...(records.length > ARTIFACT_LIST_PAGE_SIZE ? { nextCursor: items.at(-1)!.id } : {}),
+    };
   }
 
   async create(identity: Identity, request: Request): Promise<ArtifactRecord> {

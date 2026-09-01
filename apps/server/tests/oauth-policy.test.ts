@@ -108,6 +108,28 @@ describe("fixed OAuth client policy", () => {
     expect(requiredGatewayScope("/api/v1/unknown")).toBe(MODEL_REQUEST_SCOPE);
   });
 
+  it("does not fall back to a browser session when an Authorization header is present", async () => {
+    const identities = new IdentityService(config);
+    const gateway = vi.spyOn(identities, "fromGateway").mockRejectedValue(new Error("invalid token"));
+    const browser = vi.spyOn(identities, "fromBrowser").mockResolvedValue({
+      userId: "browser-user",
+      workspaceId: "personal:browser-user",
+      source: "accounts",
+    });
+
+    await expect(identities.fromBrowserOrGateway(new Request("https://new.dahlia.example/api/v1/artifacts", {
+      headers: { authorization: "Bearer invalid" },
+    }), ARTIFACT_READ_SCOPE)).rejects.toThrow("invalid token");
+    expect(gateway).toHaveBeenCalledOnce();
+    expect(browser).not.toHaveBeenCalled();
+
+    await expect(identities.fromBrowserOrGateway(
+      new Request("https://new.dahlia.example/api/v1/artifacts"),
+      ARTIFACT_READ_SCOPE,
+    )).resolves.toMatchObject({ userId: "browser-user" });
+    expect(browser).toHaveBeenCalledOnce();
+  });
+
   it("relinks the fixed client when the deployment resource URL changes", async () => {
     const upserts: Array<Record<string, unknown>> = [];
     const db = {

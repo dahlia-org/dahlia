@@ -21,7 +21,12 @@ import {
 } from "./auth/scopes";
 import type { AuthStore } from "./auth/store";
 import { mcpResource, type AppConfig } from "./config";
-import { ArtifactRequestError, ArtifactService, artifactResponse } from "./artifacts/service";
+import {
+  ARTIFACT_METADATA_MEDIA_TYPE,
+  ArtifactRequestError,
+  ArtifactService,
+  artifactResponse,
+} from "./artifacts/service";
 import type { ObjectStorage } from "./artifacts/storage";
 import { createArtifactMcpHandler, MCP_MAX_REQUEST_BYTES } from "./mcp";
 import { MODEL_ALIAS_PATTERN, UPSTREAM_MODEL_MAX_LENGTH } from "./ai-gateway/model-alias";
@@ -119,6 +124,18 @@ const memberSchema = z.object({ email: z.string().trim().email().transform((valu
 export function mutationOriginAllowed(request: Request, baseUrl: string): boolean {
   if (["GET", "HEAD", "OPTIONS"].includes(request.method)) return true;
   return request.headers.get("origin") === new URL(baseUrl).origin;
+}
+
+function acceptsArtifactMetadata(accept: string | undefined): boolean {
+  return accept?.split(",").some((representation) => {
+    const [mediaType, ...parameters] = representation.split(";").map((value) => value.trim());
+    if (mediaType?.toLowerCase() !== ARTIFACT_METADATA_MEDIA_TYPE) return false;
+    const quality = parameters.find((parameter) => /^q\s*=/i.test(parameter));
+    if (!quality) return true;
+    const match = /^q\s*=\s*(\d(?:\.\d+)?)$/i.exec(quality);
+    const value = match ? Number(match[1]) : 0;
+    return value > 0 && value <= 1;
+  }) ?? false;
 }
 
 export function createApp(dependencies: AppDependencies) {
@@ -333,23 +350,37 @@ export function createApp(dependencies: AppDependencies) {
     return revoked ? context.body(null, 204) : context.json({ error: "session_not_found" }, 404);
   });
 
+  app.get("/api/v1/artifacts", async (context) => {
+    const identity = await identities.fromBrowserOrGateway(context.req.raw, ARTIFACT_READ_SCOPE);
+    const page = await artifacts.list(identity.workspaceId, context.req.query("cursor"));
+    return context.json({
+      items: page.items.map(artifactResponse),
+      ...(page.nextCursor ? { nextCursor: page.nextCursor } : {}),
+    });
+  });
   app.post("/api/v1/artifacts", async (context) => {
     const identity = await identities.fromGateway(context.req.raw, ARTIFACT_WRITE_SCOPE);
     const artifact = await artifacts.create(identity, context.req.raw);
     return context.json(artifactResponse(artifact), 201, {
-      Location: `${config.baseUrl}/api/v1/artifacts/${artifact.id}`,
+      Location: `${config.baseUrl}/artifacts/${artifact.id}`,
     });
   });
   app.on(["GET", "HEAD"], "/api/v1/artifacts/:artifactId", async (context) => {
-    const id = artifacts.parseId(context.req.param("artifactId"));
-    const artifact = await artifacts.get(id);
+    const artifact = await getReadableArtifact(context.req.raw, context.req.param("artifactId"));
     if (!artifact) return context.json({ error: "artifact_not_found" }, 404);
-    if (artifact.visibility !== "public") {
-      const identity = await identities.fromGateway(context.req.raw, ARTIFACT_READ_SCOPE);
-      if (identity.workspaceId !== artifact.ownerWorkspaceId) {
-        return context.json({ error: "artifact_not_found" }, 404);
-      }
+    if (context.req.method === "GET" && acceptsArtifactMetadata(context.req.header("accept"))) {
+      return context.json(artifactResponse(artifact), 200, {
+        "Content-Type": ARTIFACT_METADATA_MEDIA_TYPE,
+        Vary: "Accept",
+      });
     }
+    const response = await artifacts.read(artifact, context.req.method as "GET" | "HEAD", context.req.raw);
+    if (context.req.method === "GET") response.headers.set("Vary", "Accept");
+    return response;
+  });
+  app.on(["GET", "HEAD"], "/api/v1/artifacts/:artifactId/content", async (context) => {
+    const artifact = await getReadableArtifact(context.req.raw, context.req.param("artifactId"));
+    if (!artifact) return context.json({ error: "artifact_not_found" }, 404);
     return artifacts.read(artifact, context.req.method as "GET" | "HEAD", context.req.raw);
   });
   app.put("/api/v1/artifacts/:artifactId", async (context) => {
@@ -437,6 +468,17 @@ export function createApp(dependencies: AppDependencies) {
     console.error(JSON.stringify({ level: "error", event: "request_failed", route: requestRoute(context.req.path) }));
     return context.json({ error: "internal_server_error" }, 500);
   });
+
+  async function getReadableArtifact(request: Request, value: string) {
+    const artifact = await artifacts.get(artifacts.parseId(value));
+    if (!artifact) return null;
+    if (artifact.visibility === "public" && !request.headers.has("authorization")) return artifact;
+    const identity = await identities.fromBrowserOrGateway(request, ARTIFACT_READ_SCOPE);
+    if (artifact.visibility !== "public" && identity.workspaceId !== artifact.ownerWorkspaceId) {
+      throw new ArtifactRequestError(404, "artifact_not_found");
+    }
+    return artifact;
+  }
 
   return app;
 }

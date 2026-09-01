@@ -133,7 +133,7 @@ function uploadRequest(config: AppConfig, bytes: Uint8Array, contentType: string
 }
 
 function artifactResult(config: AppConfig, artifact: ArtifactRecord) {
-  const url = `${config.baseUrl}/api/v1/artifacts/${artifact.id}`;
+  const url = `${config.baseUrl}/artifacts/${artifact.id}`;
   return {
     artifact_id: artifact.id,
     url,
@@ -142,7 +142,7 @@ function artifactResult(config: AppConfig, artifact: ArtifactRecord) {
     resource: {
       type: "resource_link" as const,
       name: `Artifact ${artifact.id}`,
-      uri: url,
+      uri: `${config.baseUrl}/api/v1/artifacts/${artifact.id}/content`,
       mimeType: artifact.contentType,
     },
   };

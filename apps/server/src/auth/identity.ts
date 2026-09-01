@@ -77,6 +77,15 @@ export class IdentityService {
     };
   }
 
+  async fromBrowserOrGateway(
+    request: Request,
+    requiredScope: GatewayScope,
+  ): Promise<Identity> {
+    return request.headers.has("authorization")
+      ? this.fromGateway(request, requiredScope)
+      : this.fromBrowser(request);
+  }
+
   fromMcpHeader(request: Request): Identity {
     return this.fromHeader(request);
   }

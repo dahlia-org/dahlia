@@ -3,11 +3,12 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import {
+  canEmbedArtifact,
   resolveDashboardExtensionRoute,
   type DashboardExtension,
 } from "../src/client/App";
 import { filterAndSortModels, type ModelAliasInfo } from "../src/client/model-list";
-import { resolveDashboardRoute, shouldRedirectToSignIn } from "../src/client/routes";
+import { artifactViewerId, resolveDashboardRoute, shouldRedirectToSignIn } from "../src/client/routes";
 
 const ExtensionPage = () => null;
 
@@ -21,6 +22,21 @@ describe("dashboard navigation", () => {
   it("routes the authenticated home to Overview", () => {
     expect(resolveDashboardRoute("/", { admin: false, sessions: false })).toEqual({ redirect: "/dashboard" });
     expect(resolveDashboardRoute("/dashboard", { admin: false, sessions: false })).toEqual({ page: "overview" });
+  });
+
+  it("routes the artifact repository and recognizes only item viewer paths", () => {
+    expect(resolveDashboardRoute("/artifacts", { admin: false, sessions: false })).toEqual({ page: "artifacts" });
+    expect(artifactViewerId("/artifacts/019cc4dd-e5c5-7bd4-94e0-98df9cc40db9"))
+      .toBe("019cc4dd-e5c5-7bd4-94e0-98df9cc40db9");
+    expect(artifactViewerId("/artifacts")).toBeUndefined();
+    expect(artifactViewerId("/artifacts/id/content")).toBeUndefined();
+  });
+
+  it("embeds browser-native artifact types and downloads other bytes", () => {
+    expect(canEmbedArtifact("text/html; charset=utf-8")).toBe(true);
+    expect(canEmbedArtifact("image/png")).toBe(true);
+    expect(canEmbedArtifact("application/pdf")).toBe(true);
+    expect(canEmbedArtifact("application/zip")).toBe(false);
   });
 
   it("gates Settings with the session capability", () => {
@@ -79,6 +95,9 @@ describe("dashboard navigation", () => {
     expect(source).not.toContain("On-Demand Usage");
     expect(source).not.toContain('className="nav-label"');
     expect(source).toContain('<svg className="brand-mark"');
+    expect(source).toContain('sandbox="allow-scripts"');
+    expect(source).toContain("application/vnd.dahlia.artifact+json");
+    expect(source).toContain("Loading artifacts…");
   });
 
   it("uses immediate accessible switches for Databricks models", () => {

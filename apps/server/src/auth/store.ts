@@ -1,6 +1,6 @@
 import type { DBAdapterInstance } from "better-auth";
 import { drizzleAdapter } from "@better-auth/drizzle-adapter/relations-v2";
-import { and, asc, desc, eq, gt, inArray, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lt } from "drizzle-orm";
 import { drizzle as drizzleD1 } from "drizzle-orm/d1";
 
 import { gatewayResource, type AppConfig } from "../config";
@@ -91,6 +91,7 @@ export interface ApplicationStore {
   isPlatformAdmin(email: string): Promise<boolean>;
   addPlatformAdmin(email: string): Promise<boolean>;
   deletePlatformAdmin(email: string): Promise<boolean>;
+  listArtifacts(ownerWorkspaceId: string, cursor: string | undefined, limit: number): Promise<ArtifactRecord[]>;
   getArtifact(id: string): Promise<ArtifactRecord | null>;
   createArtifact(input: ArtifactInput): Promise<ArtifactRecord | null>;
   commitArtifactStorage(
@@ -236,6 +237,15 @@ export function createPostgresApplicationStore(db: PostgresDatabase): Applicatio
       const [row] = await db.select().from(postgresSchema.artifact)
         .where(eq(postgresSchema.artifact.id, id)).limit(1);
       return (row as ArtifactRecord | undefined) ?? null;
+    },
+    async listArtifacts(ownerWorkspaceId, cursor, limit) {
+      const ownedAndStored = and(
+        eq(postgresSchema.artifact.ownerWorkspaceId, ownerWorkspaceId),
+        isNotNull(postgresSchema.artifact.storageKey),
+      );
+      return db.select().from(postgresSchema.artifact)
+        .where(cursor ? and(ownedAndStored, lt(postgresSchema.artifact.id, cursor)) : ownedAndStored)
+        .orderBy(desc(postgresSchema.artifact.id)).limit(limit) as Promise<ArtifactRecord[]>;
     },
     async createArtifact(input) {
       const [created] = await db.insert(postgresSchema.artifact).values(input).onConflictDoNothing()
@@ -400,6 +410,15 @@ export function createSqliteApplicationStore(db: SQLiteDatabase, transactions = 
       const [row] = await db.select().from(sqliteSchema.artifact)
         .where(eq(sqliteSchema.artifact.id, id)).limit(1);
       return (row as ArtifactRecord | undefined) ?? null;
+    },
+    async listArtifacts(ownerWorkspaceId, cursor, limit) {
+      const ownedAndStored = and(
+        eq(sqliteSchema.artifact.ownerWorkspaceId, ownerWorkspaceId),
+        isNotNull(sqliteSchema.artifact.storageKey),
+      );
+      return db.select().from(sqliteSchema.artifact)
+        .where(cursor ? and(ownedAndStored, lt(sqliteSchema.artifact.id, cursor)) : ownedAndStored)
+        .orderBy(desc(sqliteSchema.artifact.id)).limit(limit) as Promise<ArtifactRecord[]>;
     },
     async createArtifact(input) {
       const now = new Date();

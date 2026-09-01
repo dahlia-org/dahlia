@@ -180,17 +180,36 @@ describe("SQLite Better Auth store", () => {
       visibility: "private",
       contentType: "text/html",
     });
-    expect(await store.updateArtifactVisibility(
-      "019cc4dd-e5c5-7bd4-94e0-98df9cc40db9",
-      "personal:user-1",
-      "public",
-    )).toMatchObject({ visibility: "public" });
+    expect(await store.createArtifact({
+      id: "019cc4dd-e5c6-7bd4-94e0-98df9cc40dba",
+      ownerWorkspaceId: "personal:user-1",
+      contentType: "text/plain",
+    })).not.toBeNull();
+    expect(await store.listArtifacts("personal:user-1", undefined, 2)).toEqual([]);
     expect(await store.commitArtifactStorage(
       "019cc4dd-e5c5-7bd4-94e0-98df9cc40db9",
       "personal:user-1",
       null,
       "artifacts/version-1",
-    )).toMatchObject({ storageKey: "artifacts/version-1", visibility: "public" });
+    )).toMatchObject({ storageKey: "artifacts/version-1" });
+    expect(await store.commitArtifactStorage(
+      "019cc4dd-e5c6-7bd4-94e0-98df9cc40dba",
+      "personal:user-1",
+      null,
+      "artifacts/version-2",
+    )).toMatchObject({ storageKey: "artifacts/version-2" });
+    expect((await store.listArtifacts("personal:user-1", undefined, 1)).map(({ id }) => id))
+      .toEqual(["019cc4dd-e5c6-7bd4-94e0-98df9cc40dba"]);
+    expect((await store.listArtifacts(
+      "personal:user-1",
+      "019cc4dd-e5c6-7bd4-94e0-98df9cc40dba",
+      2,
+    )).map(({ id }) => id)).toEqual(["019cc4dd-e5c5-7bd4-94e0-98df9cc40db9"]);
+    expect(await store.updateArtifactVisibility(
+      "019cc4dd-e5c5-7bd4-94e0-98df9cc40db9",
+      "personal:user-1",
+      "public",
+    )).toMatchObject({ visibility: "public" });
     expect(await store.deleteArtifact(
       "019cc4dd-e5c5-7bd4-94e0-98df9cc40db9",
       "personal:other",
