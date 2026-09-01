@@ -292,7 +292,7 @@ export class ArtifactService {
 }
 
 function artifactVersionStorageKey(id: string, extension: string): string {
-  return `artifacts/${id}/${uuidV7()}.${extension}`;
+  return `artifacts/${id}/${Date.now()}.${extension}`;
 }
 
 function uuidV7(): string {

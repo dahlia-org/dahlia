@@ -300,11 +300,10 @@ describe("artifact API", () => {
     });
     expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
     expect(Math.abs(Date.now() - timestamp)).toBeLessThan(1_000);
-    expect([...objects.keys()]).toEqual([
-      expect.stringMatching(new RegExp(
-        `^artifacts/${id}/[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\\.txt$`,
-      )),
-    ]);
+    const [storageKey] = objects.keys();
+    const versionTimestamp = Number(storageKey?.split("/").at(-1)?.replace(".txt", ""));
+    expect(storageKey).toMatch(new RegExp(`^artifacts/${id}/\\d{13}\\.txt$`));
+    expect(Math.abs(Date.now() - versionTimestamp)).toBeLessThan(1_000);
     expect((await app.request(`/api/v1/artifacts/${id}`)).status).toBe(401);
     expect((await app.request(`/api/v1/artifacts/${id}`, { headers: OTHER })).status).toBe(404);
 
@@ -426,9 +425,7 @@ describe("artifact API", () => {
     });
     const htmlId = await uploadedId(html);
     expect([...objects.keys()]).toContainEqual(
-      expect.stringMatching(new RegExp(
-        `^artifacts/${htmlId}/[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\\.html$`,
-      )),
+      expect.stringMatching(new RegExp(`^artifacts/${htmlId}/\\d{13}\\.html$`)),
     );
   });
 
