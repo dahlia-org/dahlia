@@ -1,9 +1,11 @@
 import SwiftUI
 
-struct DatabricksAccountSettingsView: View {
+struct DatabricksAccountSettingsView<LeadingContent: View>: View {
     @Bindable private var vaultSettings = VaultAISettingsModel.shared
     let controller: DatabricksAccountController
-    let showsDescription: Bool
+    let title: String
+    let footer: String?
+    let leadingContent: LeadingContent
     @State private var refreshTask: Task<Void, Never>?
     @State private var isShowingInstallGuide = false
     @State private var isShowingProfileCreation = false
@@ -12,72 +14,26 @@ struct DatabricksAccountSettingsView: View {
     @Environment(\.scenePhase) private var scenePhase
 
     init(
-        controller: DatabricksAccountController = DatabricksAccountController(),
-        showsDescription: Bool = true
+        controller: DatabricksAccountController,
+        title: String,
+        footer: String? = nil,
+        @ViewBuilder leadingContent: () -> LeadingContent
     ) {
         self.controller = controller
-        self.showsDescription = showsDescription
+        self.title = title
+        self.footer = footer
+        self.leadingContent = leadingContent()
     }
 
     var body: some View {
         Section {
-            if controller.isCLIAvailable == false {
-                SettingsStatusMessage(
-                    text: L10n.databricksCLINotInstalled,
-                    systemImage: "exclamationmark.triangle.fill",
-                    tint: .orange
-                )
-
-                HStack {
-                    Button(L10n.installDatabricksCLI, systemImage: "terminal") {
-                        isShowingInstallGuide = true
-                    }
-                    .buttonStyle(.dahlia(.primary))
-
-                    Button(L10n.retry, systemImage: "arrow.clockwise", action: refreshProfiles)
-                        .buttonStyle(.dahlia())
-                        .disabled(controller.isBusy)
-                }
-            } else {
-                profilePickerRow
-
-                Button(L10n.createNewDatabricksProfile, systemImage: "plus") {
-                    isShowingProfileCreation = true
-                }
-                .buttonStyle(.dahlia(.primary))
-                .disabled(controller.isBusy)
-
-                if let profile = controller.profile(named: vaultSettings.databricksProfile) {
-                    LabeledContent(L10n.databricksWorkspaceID, value: profile.workspaceID ?? L10n.workspaceIDUnavailableFromProfile)
-                }
-            }
-
-            if controller.isSigningIn {
-                LabeledContent(L10n.codexConfiguration) {
-                    ProgressView()
-                        .controlSize(.small)
-                        .accessibilityLabel(L10n.codexWaitingForBrowserSignIn)
-                }
-            } else if controller.isConfigured {
-                SettingsStatusMessage(
-                    text: L10n.databricksConfigured,
-                    systemImage: "checkmark.circle.fill",
-                    tint: .green
-                )
-            }
-
-            if let errorMessage = controller.errorMessage {
-                SettingsStatusMessage(
-                    text: errorMessage,
-                    systemImage: "exclamationmark.triangle.fill",
-                    tint: .red
-                )
-            }
+            leadingContent
+            content
         } header: {
-            Text(L10n.databricks)
+            Text(title)
         } footer: {
-            if showsDescription {
-                Text(L10n.databricksCodexDescription)
+            if let footer {
+                Text(footer)
             }
         }
         .task(id: vaultSettings.databricksProfile) {
@@ -112,6 +68,62 @@ struct DatabricksAccountSettingsView: View {
         .onDisappear {
             refreshTask?.cancel()
             refreshTask = nil
+        }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        if controller.isCLIAvailable == false {
+            SettingsStatusMessage(
+                text: L10n.databricksCLINotInstalled,
+                systemImage: "exclamationmark.triangle.fill",
+                tint: .orange
+            )
+
+            HStack {
+                Button(L10n.installDatabricksCLI, systemImage: "terminal") {
+                    isShowingInstallGuide = true
+                }
+                .buttonStyle(.dahlia(.primary))
+
+                Button(L10n.retry, systemImage: "arrow.clockwise", action: refreshProfiles)
+                    .buttonStyle(.dahlia())
+                    .disabled(controller.isBusy)
+            }
+        } else {
+            profilePickerRow
+
+            Button(L10n.createNewDatabricksProfile, systemImage: "plus") {
+                isShowingProfileCreation = true
+            }
+            .buttonStyle(.dahlia(.primary))
+            .disabled(controller.isBusy)
+
+            if let profile = controller.profile(named: vaultSettings.databricksProfile) {
+                LabeledContent(L10n.databricksWorkspaceID, value: profile.workspaceID ?? L10n.workspaceIDUnavailableFromProfile)
+            }
+        }
+
+        if controller.isSigningIn {
+            LabeledContent(L10n.codexConfiguration) {
+                ProgressView()
+                    .controlSize(.small)
+                    .accessibilityLabel(L10n.codexWaitingForBrowserSignIn)
+            }
+        } else if controller.isConfigured {
+            SettingsStatusMessage(
+                text: L10n.databricksConfigured,
+                systemImage: "checkmark.circle.fill",
+                tint: .green
+            )
+        }
+
+        if let errorMessage = controller.errorMessage {
+            SettingsStatusMessage(
+                text: errorMessage,
+                systemImage: "exclamationmark.triangle.fill",
+                tint: .red
+            )
         }
     }
 
@@ -164,5 +176,16 @@ struct DatabricksAccountSettingsView: View {
             installationAlertMessage = L10n.databricksCLIInstallFailed
         }
         isShowingInstallationAlert = true
+    }
+}
+
+extension DatabricksAccountSettingsView where LeadingContent == EmptyView {
+    init(controller: DatabricksAccountController = DatabricksAccountController()) {
+        self.init(
+            controller: controller,
+            title: L10n.databricks
+        ) {
+            EmptyView()
+        }
     }
 }

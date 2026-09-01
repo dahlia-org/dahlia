@@ -23,15 +23,9 @@ struct ModelProviderSetupStepView: View {
 
             switch vaultSettings.localProvider {
             case .chatGPTSubscription:
-                ChatGPTAccountSettingsView(
-                    controller: chatGPTController,
-                    showsDescription: false
-                )
+                ChatGPTAccountSettingsView(controller: chatGPTController)
             case .databricks:
-                DatabricksAccountSettingsView(
-                    controller: databricksController,
-                    showsDescription: false
-                )
+                DatabricksAccountSettingsView(controller: databricksController)
             }
         }
         .formStyle(.grouped)

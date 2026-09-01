@@ -8,7 +8,7 @@ import Foundation
         @Test
         func groupsContainEveryCategoryOnce() {
             let groupedCategories = SettingsGroup.allCases.flatMap(\.categories)
-            let hiddenCategories: Set<SettingsCategory> = [.dahliaAccounts, .vault, .instructions, .mcp]
+            let hiddenCategories: Set<SettingsCategory> = [.dahliaAccounts, .vault, .modelProvider, .instructions, .mcp]
             let expectedCategories = SettingsCategory.allCases.filter { !hiddenCategories.contains($0) }
 
             #expect(SettingsCategory.allCases == [
@@ -51,7 +51,7 @@ import Foundation
                 .search,
             ])
             #expect(SettingsGroup.meetings.label == L10n.meetings)
-            #expect(SettingsGroup.meetings.categories == [.transcription, .liveSubtitles, .screenshots])
+            #expect(SettingsGroup.meetings.categories == [.transcription, .liveSubtitles, .screenshots, .aiSummary])
             #expect(SettingsGroup.advanced.categories == [.betaFeatures, .developer, .audioDiagnostics])
             #expect(!AppSettings.defaultCustomerIntelligenceBetaEnabled)
             #expect(!AppSettings.defaultConversationAnalyticsBetaEnabled)
@@ -59,11 +59,12 @@ import Foundation
         }
 
         @Test
-        func hiddenSelectionsOpenAISummarySettings() {
+        func hiddenSelectionsResolveToVisibleSettings() {
             #expect(SettingsNavigation.visibleSelection(.instructions) == .aiSummary)
             #expect(SettingsNavigation.visibleSelection(.mcp) == .aiSummary)
             #expect(SettingsNavigation.visibleSelection(.dahliaAccounts) == .accountsAndVaults)
             #expect(SettingsNavigation.visibleSelection(.vault) == .accountsAndVaults)
+            #expect(SettingsNavigation.visibleSelection(.modelProvider) == .accountsAndVaults)
             #expect(SettingsNavigation.visibleSelection(.calendar) == .calendar)
         }
 
@@ -116,6 +117,7 @@ import Foundation
             #expect(SettingsCategory.language.systemImage == "globe")
             #expect(SettingsCategory.modelProvider.label == L10n.modelProvider)
             #expect(SettingsCategory.modelProvider.systemImage == "sparkles")
+            #expect(SettingsCategory.aiSummary.label == L10n.summary)
             #expect(SettingsCategory.aiSummary.systemImage == "list.bullet.clipboard")
             #expect(SettingsCategory.liveSubtitles.rawValue == "liveSubtitles")
             #expect(SettingsCategory.liveSubtitles.label == L10n.liveSubtitles)
@@ -148,6 +150,9 @@ import Foundation
             #expect(!L10n.changesSaveAutomatically.isEmpty)
             #expect(!L10n.instructionTitleRequired.isEmpty)
             #expect(L10n.deleteInstructionConfirmation(instructionName).contains(instructionName))
+            #expect(L10n.aiAccountDescription.contains(L10n.localAccount))
+            #expect(L10n.aiAccountDescription.localizedCaseInsensitiveContains(L10n.currentVault))
+            #expect(L10n.aiAccountSettingsDescription.localizedCaseInsensitiveContains(L10n.currentVault))
             #expect(!L10n.deleteInstructionWarning.isEmpty)
             #expect(!L10n.googleOAuthClientIDOverrideDescription.contains("GOOGLE_CLIENT_ID"))
             #expect(!L10n.googleOAuthClientSecretOverrideDescription.contains("GOOGLE_CLIENT_SECRET"))

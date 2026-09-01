@@ -482,7 +482,6 @@
 "Diagnostics" = "Diagnostics";
 "Notifications" = "Notifications";
 "Calendar" = "Calendar";
-"AI Summary" = "AI Summary";
 "Model" = "Model";
 "Reasoning Effort" = "Reasoning Effort";
 "Controls how much reasoning Codex uses for each summary." = "Controls how much reasoning Codex uses for each summary.";
@@ -1033,7 +1032,7 @@
 "Stopped" = "Stopped";
 "The bundled Codex helper is unavailable. Run Dahlia with scripts/run-dev.sh or install a signed app build." = "The bundled Codex helper is unavailable. Run Dahlia with scripts/run-dev.sh or install a signed app build.";
 "Could not start Codex: %@" = "Could not start Codex: %@";
-"Codex is not signed in. Open Model Provider in Settings and sign in, then try again." = "Codex is not signed in. Open Model Provider in Settings and sign in, then try again.";
+"Codex is not signed in. Open Accounts and Vaults in Settings and sign in, then try again." = "Codex is not signed in. Open Accounts and Vaults in Settings and sign in, then try again.";
 "Codex sign-in failed: %@" = "Codex sign-in failed: %@";
 "Codex sign-in failed." = "Codex sign-in failed.";
 "Could not open the Codex sign-in page." = "Could not open the Codex sign-in page.";
@@ -1048,11 +1047,9 @@
 "The AI backend was restarted to stop an unconfirmed operation safely." = "The AI backend was restarted to stop an unconfirmed operation safely.";
 "This approval request is no longer pending." = "This approval request is no longer pending.";
 "Unknown Codex app-server error." = "Unknown Codex app-server error.";
-"Codex Version" = "Codex Version";
 "Account" = "Account";
-"Provider" = "Provider";
-"Choose the account used by Codex." = "Choose the account used by Codex.";
-"AI summaries use the selected account and its available models." = "AI summaries use the selected account and its available models.";
+"Choose the model provider used by the current vault's Local Account." = "Choose the model provider used by the current vault's Local Account.";
+"This setting applies only to the current vault." = "This setting applies only to the current vault.";
 "ChatGPT Subscription" = "ChatGPT Subscription";
 "Databricks" = "Databricks";
 "Codex Account" = "Codex Account";
@@ -1100,7 +1097,7 @@
 "Codex Configuration" = "Codex Configuration";
 "Could not update the Codex configuration: %@" = "Could not update the Codex configuration: %@";
 "Codex is configured for Databricks" = "Codex is configured for Databricks";
-"The selected AI account is not ready. Open Model Provider in Settings and finish its configuration." = "The selected AI account is not ready. Open Model Provider in Settings and finish its configuration.";
+"The selected AI account is not ready. Open Accounts and Vaults in Settings and finish its configuration." = "The selected AI account is not ready. Open Accounts and Vaults in Settings and finish its configuration.";
 "This chat uses %@. Start a new chat to use the current account." = "This chat uses %@. Start a new chat to use the current account.";
 "Codex uses this Databricks CLI profile. Browser sign-in opens when authentication expires." = "Codex uses this Databricks CLI profile. Browser sign-in opens when authentication expires.";
 "Codex returned no available models. Try again." = "Codex returned no available models. Try again.";
@@ -1160,7 +1157,7 @@
 "Submit" = "Submit";
 "This request is too large to review completely, so it cannot be approved." = "This request is too large to review completely, so it cannot be approved.";
 "This request asks for permissions outside the allowed workspace and cannot be approved." = "This request asks for permissions outside the allowed workspace and cannot be approved.";
-"Open Model Provider Settings" = "Open Model Provider Settings";
+"Open Accounts and Vaults Settings" = "Open Accounts and Vaults Settings";
 "Loading models…" = "Loading models…";
 "Chat is running" = "Chat is running";
 "Waiting for your response or approval" = "Waiting for your response or approval";

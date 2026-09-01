@@ -1743,7 +1743,6 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var notifications: String { String(localized: "Notifications", bundle: bundle) }
     static var calendar: String { String(localized: "Calendar", bundle: bundle) }
     static var cloudStorage: String { String(localized: "Cloud Storage", bundle: bundle) }
-    static var aiSummary: String { String(localized: "AI Summary", bundle: bundle) }
     static var developerSettings: String { String(localized: "Developer Settings", bundle: bundle) }
     static var vault: String { String(localized: "Vault", bundle: bundle) }
     static var currentVault: String { String(localized: "Current Vault", bundle: bundle) }
@@ -2399,7 +2398,7 @@ enum L10n { // swiftlint:disable:this type_body_length
         bundle: bundle
     ) }
     static var codexNotLoggedIn: String { String(
-        localized: "Codex is not signed in. Open Model Provider in Settings and sign in, then try again.",
+        localized: "Codex is not signed in. Open Accounts and Vaults in Settings and sign in, then try again.",
         bundle: bundle
     ) }
     static func codexLoginFailed(_ detail: String) -> String { String(
@@ -2440,17 +2439,16 @@ enum L10n { // swiftlint:disable:this type_body_length
     }
 
     static var codexUnknownError: String { String(localized: "Unknown Codex app-server error.", bundle: bundle) }
-    static var codexVersion: String { String(localized: "Codex Version", bundle: bundle) }
     static var account: String { String(localized: "Account", bundle: bundle) }
-    static var provider: String { String(localized: "Provider", bundle: bundle) }
     static var aiAccountDescription: String { String(
-        localized: "Choose the account used by Codex.",
+        localized: "Choose the model provider used by the current vault's Local Account.",
         bundle: bundle
     ) }
     static var aiAccountSettingsDescription: String { String(
-        localized: "AI summaries use the selected account and its available models.",
+        localized: "This setting applies only to the current vault.",
         bundle: bundle
     ) }
+
     static var chatGPTSubscription: String { String(localized: "ChatGPT Subscription", bundle: bundle) }
     static var databricks: String { String(localized: "Databricks", bundle: bundle) }
     static var codexAccount: String { String(localized: "Codex Account", bundle: bundle) }
@@ -2555,7 +2553,7 @@ enum L10n { // swiftlint:disable:this type_body_length
     ) }
     static var databricksConfigured: String { String(localized: "Codex is configured for Databricks", bundle: bundle) }
     static var codexAccountConfigurationNotReady: String { String(
-        localized: "The selected AI account is not ready. Open Model Provider in Settings and finish its configuration.",
+        localized: "The selected AI account is not ready. Open Accounts and Vaults in Settings and finish its configuration.",
         bundle: bundle
     ) }
     static func codexChatProviderChanged(_ provider: String) -> String { String(
@@ -3107,7 +3105,7 @@ enum L10n { // swiftlint:disable:this type_body_length
         String(localized: "This request asks for permissions outside the allowed workspace and cannot be approved.", bundle: bundle)
     }
 
-    static var openAISettings: String { String(localized: "Open Model Provider Settings", bundle: bundle) }
+    static var openAISettings: String { String(localized: "Open Accounts and Vaults Settings", bundle: bundle) }
     static var chatModelLoading: String { String(localized: "Loading models…", bundle: bundle) }
     static var chatThreadRunning: String { String(localized: "Chat is running", bundle: bundle) }
     static var chatThreadWaitingForUser: String {

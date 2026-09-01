@@ -43,7 +43,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .calendar: L10n.calendar
         case .cloudStorage: L10n.export
         case .modelProvider: L10n.modelProvider
-        case .aiSummary: L10n.aiSummary
+        case .aiSummary: L10n.summary
         case .mcp: L10n.mcp
         case .instructions: L10n.instructions
         case .betaFeatures: L10n.betaFeatures

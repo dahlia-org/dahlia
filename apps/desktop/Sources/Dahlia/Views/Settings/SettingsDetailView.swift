@@ -50,7 +50,7 @@ struct SettingsDetailView: View {
         switch selection {
         case .general:
             GeneralSettingsView()
-        case .accountsAndVaults, .dahliaAccounts, .vault:
+        case .accountsAndVaults, .dahliaAccounts, .vault, .modelProvider:
             AccountsAndVaultsSettingsView(
                 appDatabase: appDatabase,
                 vaultModel: vaultManagementModel,
@@ -84,8 +84,6 @@ struct SettingsDetailView: View {
             CalendarSettingsView()
         case .cloudStorage:
             CloudStorageSettingsView()
-        case .modelProvider:
-            AccountSettingsView()
         case .aiSummary, .mcp:
             AISummarySettingsView()
         case .instructions:
