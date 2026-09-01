@@ -203,20 +203,17 @@ describe("deployment routing", () => {
     expect(bundle).toContain("database_project_id: dahlia-db-dev");
     expect(bundle).toContain("database_project_id: dahlia-db");
     expect(bundle).toContain("catalog:");
-    expect(bundle).toContain("default: main");
+    expect(bundle).not.toContain("default: main");
+    expect(bundle).toContain("catalog: dahlia_dev");
+    expect(bundle).toContain("catalog: dahlia");
     expect(bundle).toContain("schema:");
-    expect(bundle).toContain("schema: dahlia_dev");
-    expect(bundle).toContain("schema: dahlia");
+    expect(bundle).toContain("default: server");
     expect(bundle).toContain("volume_name:");
     expect(bundle).toContain("default: storage");
-    expect(bundle).toContain(`dahlia_storage:
-          catalog_name: \${var.catalog}
-          schema_name: default
-          name: dahlia_artifacts`);
-    expect(bundle).toContain(`storage:
-          catalog_name: \${var.catalog}
-          schema_name: \${resources.schemas.dahlia.name}
-          name: \${var.volume_name}`);
+    expect(resource).toContain(`dahlia_storage:
+      catalog_name: \${var.catalog}
+      schema_name: \${resources.schemas.dahlia.name}
+      name: \${var.volume_name}`);
     expect(bundle).toMatch(/prod:[\s\S]*?volumes:[\s\S]*?prevent_destroy: true/);
     expect(bundle).toMatch(/dev:[\s\S]*?purge_on_delete: true[\s\S]*?prod:/);
     expect(bundle).toMatch(/admin_email:\n\s+description: .+\n\s+default: " "/);

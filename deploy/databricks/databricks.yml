@@ -21,10 +21,10 @@ variables:
     description: Email address that bootstraps Dahlia Server administration.
     default: " "
   catalog:
-    description: Unity Catalog catalog containing the storage Volume.
-    default: main
+    description: Unity Catalog catalog used for Dahlia.
   schema:
-    description: Unity Catalog schema containing the storage Volume.
+    description: Unity Catalog schema used for Dahlia Server.
+    default: server
   volume_name:
     description: Managed Volume used for Dahlia storage.
     default: storage
@@ -35,7 +35,7 @@ targets:
     variables:
       app_name: dahlia-dev
       database_project_id: dahlia-db-dev
-      schema: dahlia_dev
+      catalog: dahlia_dev
     resources:
       postgres_projects:
         dahlia_database_project:
@@ -46,7 +46,7 @@ targets:
     variables:
       app_name: dahlia-prod
       database_project_id: dahlia-db
-      schema: dahlia
+      catalog: dahlia
     resources:
       postgres_projects:
         dahlia_database_project:
@@ -58,16 +58,5 @@ targets:
             prevent_destroy: true
       volumes:
         dahlia_storage:
-          catalog_name: ${var.catalog}
-          schema_name: default
-          name: dahlia_artifacts
-          lifecycle:
-            prevent_destroy: true
-        storage:
-          catalog_name: ${var.catalog}
-          schema_name: ${resources.schemas.dahlia.name}
-          name: ${var.volume_name}
-          volume_type: MANAGED
-          comment: Dahlia Server storage for ${bundle.target}
           lifecycle:
             prevent_destroy: true
