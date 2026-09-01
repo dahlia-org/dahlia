@@ -732,8 +732,7 @@
 "Share" = "Share";
 "Share Summary" = "Share Summary";
 "Export to Google Docs" = "Export to Google Docs";
-"Export to Dahlia Artifacts" = "Export to Dahlia Artifacts";
-"Reconnect to Export to Dahlia Artifacts" = "Reconnect to Export to Dahlia Artifacts";
+"Export to Dahlia Artifacts" = "Export to Dahlia Server as an Artifact";
 "Exported privately to Dahlia Artifacts." = "Exported privately to Dahlia Artifacts.";
 "Could not export to Dahlia Artifacts." = "Could not export to Dahlia Artifacts.";
 "Dahlia Server returned an unexpected response." = "Dahlia Server returned an unexpected response.";

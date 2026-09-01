@@ -202,9 +202,7 @@ private struct SummarySharePopover: View {
                 if let connection = artifactConnection {
                     let isReauthenticating = accountController.isBusy(connectionID: connection.id)
                     SummarySharePopoverRow(
-                        title: connection.supportsArtifactExport
-                            ? L10n.exportToDahliaArtifacts
-                            : L10n.reconnectToExportToDahliaArtifacts,
+                        title: L10n.exportToDahliaArtifacts,
                         systemImage: didExportDahliaArtifact ? "checkmark.circle.fill" : "server.rack",
                         isDisabled: viewModel.isExportingCurrentSummaryToDahliaArtifact || isReauthenticating,
                         isLoading: viewModel.isExportingCurrentSummaryToDahliaArtifact || isReauthenticating

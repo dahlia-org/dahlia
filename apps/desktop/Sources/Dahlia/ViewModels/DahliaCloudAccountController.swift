@@ -25,7 +25,11 @@ struct DahliaAccountConnection: Identifiable, Equatable, Sendable {
     var id: UUID { record.id }
     var origin: String { record.origin }
     var isSignedIn: Bool { account != nil }
-    var supportsArtifactExport: Bool { grantedScopes.contains(DahliaArtifactExportService.requiredScope) }
+    var supportsArtifactExport: Bool {
+        grantedScopes.contains(DahliaArtifactExportService.requiredScope)
+            || grantedScopes.contains("iam.current-user:read")
+    }
+
     var displayName: String { account?.displayName ?? origin }
 }
 

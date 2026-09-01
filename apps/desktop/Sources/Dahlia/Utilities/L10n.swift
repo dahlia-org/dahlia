@@ -2617,10 +2617,6 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var exportToGoogleDocs: String { String(localized: "Export to Google Docs", bundle: bundle) }
     static var exportToDahliaArtifacts: String { String(localized: "Export to Dahlia Artifacts", bundle: bundle) }
 
-    static var reconnectToExportToDahliaArtifacts: String {
-        String(localized: "Reconnect to Export to Dahlia Artifacts", bundle: bundle)
-    }
-
     static var dahliaArtifactExportCompleted: String {
         String(localized: "Exported privately to Dahlia Artifacts.", bundle: bundle)
     }

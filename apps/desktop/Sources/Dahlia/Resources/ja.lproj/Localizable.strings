@@ -732,8 +732,7 @@
 "Share" = "共有";
 "Share Summary" = "要約を共有";
 "Export to Google Docs" = "Google Docs に書き出す";
-"Export to Dahlia Artifacts" = "Dahlia Artifacts に書き出す";
-"Reconnect to Export to Dahlia Artifacts" = "再接続して Dahlia Artifacts に書き出す";
+"Export to Dahlia Artifacts" = "Artifact として Dahlia Server に書き出す";
 "Exported privately to Dahlia Artifacts." = "Dahlia Artifacts に非公開で書き出しました。";
 "Could not export to Dahlia Artifacts." = "Dahlia Artifacts に書き出せませんでした。";
 "Dahlia Server returned an unexpected response." = "Dahlia Server から予期しない応答が返されました。";
