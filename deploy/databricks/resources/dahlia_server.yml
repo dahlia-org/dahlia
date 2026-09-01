@@ -3,7 +3,7 @@ resources:
     dahlia:
       catalog_name: ${var.catalog}
       name: ${var.schema}
-      comment: Dahlia Server resources for ${bundle.target}
+      comment: Resources for Dahlia Server ${bundle.target}
 
   volumes:
     dahlia_storage:
@@ -11,7 +11,7 @@ resources:
       schema_name: ${resources.schemas.dahlia.name}
       name: ${var.volume_name}
       volume_type: MANAGED
-      comment: Dahlia Server storage for ${bundle.target}
+      comment: Storage for Dahlia Server ${bundle.target}
 
   postgres_projects:
     dahlia_database_project:
