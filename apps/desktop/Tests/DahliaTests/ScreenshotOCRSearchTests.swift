@@ -10,11 +10,18 @@ import GRDB
     struct ScreenshotOCRSearchTests {
         @Test
         func storesOCRAndReturnsTheImageWithoutMergingItsMeeting() async throws {
+            let analyzer = StubScreenshotAnalyzer(text: "画像だけの固有検索語")
             let database = try AppDatabaseManager(
                 path: ":memory:",
-                screenshotAnalyzer: StubScreenshotAnalyzer(text: "画像だけの固有検索語")
+                screenshotAnalyzer: analyzer,
+                screenshotRuntimeProviderResolver: { .databricks(profile: "WORK") }
             )
-            let vault = makeVault()
+            let vault = {
+                var vault = makeVault()
+                vault.localProvider = .databricks
+                vault.databricksProfile = "WORK"
+                return vault
+            }()
             let meeting = makeMeeting(vaultID: vault.id)
             let screenshot = MeetingScreenshotRecord(
                 id: .v7(),
@@ -24,10 +31,28 @@ import GRDB
                 imageData: Data([1, 2, 3]),
                 mimeType: "image/png"
             )
+            let localVault = {
+                var vault = makeVault()
+                vault.path = "/tmp/screenshot-ocr-search-local-vault"
+                vault.name = "Local Search"
+                return vault
+            }()
+            let localMeeting = makeMeeting(vaultID: localVault.id)
+            let localScreenshot = MeetingScreenshotRecord(
+                id: .v7(),
+                meetingId: localMeeting.id,
+                sessionId: nil,
+                capturedAt: .now,
+                imageData: Data([4, 5, 6]),
+                mimeType: "image/png"
+            )
             try await database.dbQueue.write { db in
                 try vault.insert(db)
                 try meeting.insert(db)
                 try screenshot.insert(db)
+                try localVault.insert(db)
+                try localMeeting.insert(db)
+                try localScreenshot.insert(db)
             }
 
             let coreSearchHasPriority = try await database.dbQueue.read { db in
@@ -77,6 +102,11 @@ import GRDB
             #expect(screenshotPage.items.first?.meetingID == meeting.id)
             #expect(screenshotPage.items.first?.meetingDescription == "検索対象のミーティング説明")
             #expect(meetingPage.items.isEmpty)
+            #expect(await analyzer.runtimeProviders[screenshot.id] == .databricks(profile: "WORK"))
+            #expect(await analyzer.runtimeProviders[localScreenshot.id] == nil)
+            #expect(try await database.dbQueue.read { db in
+                try MeetingScreenshotRecord.fetchOne(db, key: localScreenshot.id)?.ocrText
+            } == nil)
         }
 
         @Test
@@ -749,10 +779,19 @@ import GRDB
         }
     }
 
-    private struct StubScreenshotAnalyzer: ScreenshotAnalyzing {
+    private actor StubScreenshotAnalyzer: ScreenshotAnalyzing {
         let text: String
+        private(set) var runtimeProviders: [UUID: CodexRuntimeProvider] = [:]
+
+        init(text: String) {
+            self.text = text
+        }
+
         func analyze(_ screenshots: [ScreenshotAnalysisInput]) async throws -> [ScreenshotAnalysis] {
-            screenshots.map {
+            for screenshot in screenshots {
+                runtimeProviders[screenshot.id] = screenshot.runtimeProvider
+            }
+            return screenshots.map {
                 ScreenshotAnalysis(screenshotID: $0.id, ocrText: text, caption: "画像の説明")
             }
         }

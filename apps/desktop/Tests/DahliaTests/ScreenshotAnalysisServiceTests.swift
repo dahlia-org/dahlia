@@ -13,7 +13,12 @@ import Foundation
                     await Task.yield()
                 }
                 return try await CodexScreenshotAnalysisService.codexInputs(for: [
-                    ScreenshotAnalysisInput(id: .v7(), imageData: Data([1]), mimeType: "image/png"),
+                    ScreenshotAnalysisInput(
+                        id: .v7(),
+                        imageData: Data([1]),
+                        mimeType: "image/png",
+                        runtimeProvider: .chatGPTSubscription
+                    ),
                 ])
             }
             preparation.cancel()
@@ -40,13 +45,23 @@ import Foundation
             let analyzer = CodexScreenshotAnalysisService(appServer: appServer)
 
             let results = try await analyzer.analyze([
-                ScreenshotAnalysisInput(id: screenshotID, imageData: Data([1]), mimeType: "image/png"),
+                ScreenshotAnalysisInput(
+                    id: screenshotID,
+                    imageData: Data([1]),
+                    mimeType: "image/png",
+                    runtimeProvider: .chatGPTSubscription
+                ),
             ])
 
             #expect(results.map(\.screenshotID) == [screenshotID])
             #expect(results.map(\.caption) == ["Visible caption"])
             _ = try await analyzer.analyze([
-                ScreenshotAnalysisInput(id: screenshotID, imageData: Data([1]), mimeType: "image/png"),
+                ScreenshotAnalysisInput(
+                    id: screenshotID,
+                    imageData: Data([1]),
+                    mimeType: "image/png",
+                    runtimeProvider: .chatGPTSubscription
+                ),
             ])
             let messages = await transport.messages()
             #expect(messages.count(where: { $0.objectValue?["method"]?.stringValue == "model/list" }) == 1)
@@ -69,8 +84,18 @@ import Foundation
 
             await #expect(throws: ScreenshotAnalysisError.invalidBatchSize) {
                 _ = try await analyzer.analyze([
-                    ScreenshotAnalysisInput(id: .v7(), imageData: Data([1]), mimeType: "image/png"),
-                    ScreenshotAnalysisInput(id: .v7(), imageData: Data([2]), mimeType: "image/png"),
+                    ScreenshotAnalysisInput(
+                        id: .v7(),
+                        imageData: Data([1]),
+                        mimeType: "image/png",
+                        runtimeProvider: .chatGPTSubscription
+                    ),
+                    ScreenshotAnalysisInput(
+                        id: .v7(),
+                        imageData: Data([2]),
+                        mimeType: "image/png",
+                        runtimeProvider: .chatGPTSubscription
+                    ),
                 ])
             }
         }
@@ -93,7 +118,12 @@ import Foundation
 
             await #expect(throws: ScreenshotAnalysisError.invalidResponse) {
                 _ = try await analyzer.analyze([
-                    ScreenshotAnalysisInput(id: screenshotID, imageData: Data([1]), mimeType: "image/png"),
+                    ScreenshotAnalysisInput(
+                        id: screenshotID,
+                        imageData: Data([1]),
+                        mimeType: "image/png",
+                        runtimeProvider: .chatGPTSubscription
+                    ),
                 ])
             }
             await appServer.shutdown()

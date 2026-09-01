@@ -23,7 +23,10 @@ final class AppDatabaseManager: Sendable {
     init(
         path: String,
         enablesConcurrentSearch: Bool = false,
-        screenshotAnalyzer: any ScreenshotAnalyzing = CodexScreenshotAnalysisService()
+        screenshotAnalyzer: any ScreenshotAnalyzing = CodexScreenshotAnalysisService(),
+        screenshotRuntimeProviderResolver: @escaping SearchIndexer.RuntimeProviderResolver = {
+            CodexRuntimeContextStore.shared.provider
+        }
     ) throws {
         if path != ":memory:" {
             let dbURL = URL(fileURLWithPath: path)
@@ -57,7 +60,8 @@ final class AppDatabaseManager: Sendable {
         searchIndexer = SearchIndexer(
             dbQueue: dbQueue,
             vectorIndexer: vectorSearchIndexer,
-            screenshotAnalyzer: screenshotAnalyzer
+            screenshotAnalyzer: screenshotAnalyzer,
+            runtimeProviderResolver: screenshotRuntimeProviderResolver
         )
         if path != ":memory:" {
             try FileManager.default.setAttributes(

@@ -5,6 +5,7 @@ struct ScreenshotAnalysisInput: Sendable {
     let id: UUID
     let imageData: Data
     let mimeType: String
+    let runtimeProvider: CodexRuntimeProvider
 }
 
 struct ScreenshotAnalysis: Equatable, Sendable {
@@ -52,7 +53,7 @@ actor CodexScreenshotAnalysisService: ScreenshotAnalyzing {
             ),
             inputs: inputs,
             outputSchema: ScreenshotAnalysisResponse.outputSchema
-        ))
+        ), expectedProvider: screenshots[0].runtimeProvider)
         guard let data = response.data(using: .utf8),
               let decoded = try? JSONDecoder().decode(ScreenshotAnalysisResponse.self, from: data)
         else { throw ScreenshotAnalysisError.invalidResponse }
