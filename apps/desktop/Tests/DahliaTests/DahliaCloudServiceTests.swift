@@ -176,12 +176,9 @@
                 .first(where: { $0.name == "client_id" })?.value == "databricks-cli")
             let scope = URLComponents(url: authorizationURL, resolvingAgainstBaseURL: false)?.queryItems?
                 .first(where: { $0.name == "scope" })?.value ?? ""
-            #expect(scope.contains("iam.current-user:read"))
-            #expect(scope.contains("offline_access"))
-            #expect(!scope.contains("openid"))
-            #expect(!scope.contains("profile"))
-            #expect(!scope.contains("email"))
-            #expect(!scope.contains("all-apis"))
+            #expect(Set(scope.split(separator: " ").map(String.init)) == [
+                "ai-gateway", "files", "iam.current-user:read", "offline_access",
+            ])
             let tokenBody = try #require(recorder.tokenRequestBody)
             let tokenScope = URLComponents(string: "?\(tokenBody)")?.queryItems?
                 .first(where: { $0.name == "scope" })?.value ?? ""

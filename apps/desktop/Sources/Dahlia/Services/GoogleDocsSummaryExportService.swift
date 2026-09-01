@@ -7,7 +7,7 @@ enum GoogleDocsSummaryExportService {
         document: SummaryDocument,
         context: SummaryRenderContext,
         fileName: String,
-        driveStore: GoogleDriveStore = .shared,
+        driveStore: GoogleDriveStore? = nil,
         apiClient: any GoogleDriveAPIClientProviding = GoogleDriveAPIClient(),
         settings: any GoogleDriveExportFolderSettingsProviding = AppSettings.shared
     ) async throws -> String {
@@ -25,13 +25,18 @@ enum GoogleDocsSummaryExportService {
             "dahliaKind": "summary",
             "dahliaMeetingId": context.meetingId.uuidString,
         ]
-        guard let accountID = driveStore.account?.id,
-              let exportFolderID = settings.googleDriveExportFolderID(forAccountID: accountID) else {
+        let operationStore = driveStore ?? GoogleDriveStore(scope: context.accountScope)
+        await operationStore.restoreSessionIfNeeded()
+        guard let accountID = operationStore.account?.id,
+              let exportFolderID = settings.googleDriveExportFolderID(
+                  forAccountID: accountID,
+                  scope: context.accountScope
+              ) else {
             throw GoogleDriveAPIError.exportFolderNotConfigured
         }
 
         do {
-            return try await driveStore.performAuthorizedOperation { session in
+            return try await operationStore.performAuthorizedOperation { session in
                 guard session.account.id == accountID else {
                     throw GoogleDriveAPIError.exportFolderNotConfigured
                 }
@@ -47,7 +52,7 @@ enum GoogleDocsSummaryExportService {
         } catch {
             if case let .httpError(statusCode, _) = error as? GoogleDriveAPIError,
                [403, 404].contains(statusCode) {
-                settings.clearGoogleDriveExportFolderID(forAccountID: accountID)
+                settings.clearGoogleDriveExportFolderID(forAccountID: accountID, scope: context.accountScope)
                 throw GoogleDriveAPIError.exportFolderNotConfigured
             }
             throw error

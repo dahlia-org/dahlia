@@ -694,6 +694,19 @@ final class MeetingRepository {
         }
     }
 
+    nonisolated func updateSummaryArtifactURL(
+        forMeetingId meetingId: UUID,
+        url: String,
+        expectedDocument: String
+    ) async throws -> Bool {
+        try await dbQueue.write { db in
+            guard let summary = try SummaryRecord.fetchOne(db, key: meetingId),
+                  try summary.loadDocument().databaseJSONString() == expectedDocument else { return false }
+            try SummaryExportRecord.setURL(url, meetingId: meetingId, type: .dahliaArtifact, in: db)
+            return true
+        }
+    }
+
     nonisolated func updateSummaryVaultRelativePath(forMeetingId meetingId: UUID, relativePath: String?) throws {
         try dbQueue.write { db in
             guard try SummaryRecord.fetchOne(db, key: meetingId) != nil else { return }

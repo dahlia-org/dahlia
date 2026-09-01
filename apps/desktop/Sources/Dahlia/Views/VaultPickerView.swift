@@ -50,6 +50,10 @@ struct VaultPickerView: View {
             } settingsContent: {
                 SettingsSidebarView(
                     selection: $mainWindowNavigation.settingsCategory,
+                    vaults: model.vaults,
+                    currentVault: settings.currentVault,
+                    updateController: updateController,
+                    onSelectVault: onVaultSelected,
                     onReturnToApp: mainWindowNavigation.dismissSettings
                 )
             }

@@ -629,8 +629,8 @@
 "When you generate a summary, enable automatic summary generation, or use AI chat, the linked event's title, description, and dates may be sent to the AI provider you configured. Dahlia does not use Google data to train general-purpose AI models." = "When you generate a summary, enable automatic summary generation, or use AI chat, the linked event's title, description, and dates may be sent to the AI provider you configured. Dahlia does not use Google data to train general-purpose AI models.";
 "When you request an export, the summary and included images are sent directly from this Mac to Google Drive. Dahlia does not send unrelated Drive content to an AI provider or developer server." = "When you request an export, the summary and included images are sent directly from this Mac to Google Drive. Dahlia does not send unrelated Drive content to an AI provider or developer server.";
 "Manage and Delete" = "Manage and Delete";
-"Disconnecting Calendar or Drive removes both local OAuth sessions and attempts to revoke all Dahlia Google access, which disconnects both services and clears saved Calendar and Drive selection identifiers. Delete linked meetings to remove saved calendar details from the active database, and delete database backups separately." = "Disconnecting Calendar or Drive removes both local OAuth sessions and attempts to revoke all Dahlia Google access, which disconnects both services and clears saved Calendar and Drive selection identifiers. Delete linked meetings to remove saved calendar details from the active database, and delete database backups separately.";
-"Disconnecting Calendar or Drive removes both local OAuth sessions and attempts to revoke all Dahlia Google access, which disconnects both services and clears saved Calendar and Drive selection identifiers. Exported documents remain in Drive; delete them there, and delete related meetings and database backups to remove local document references." = "Disconnecting Calendar or Drive removes both local OAuth sessions and attempts to revoke all Dahlia Google access, which disconnects both services and clears saved Calendar and Drive selection identifiers. Exported documents remain in Drive; delete them there, and delete related meetings and database backups to remove local document references.";
+"Disconnecting Calendar removes only its local OAuth session and saved calendar selection identifiers. It does not disconnect Drive. Delete linked meetings to remove saved calendar details from the active database, and delete database backups separately." = "Disconnecting Calendar removes only its local OAuth session and saved calendar selection identifiers. It does not disconnect Drive. Delete linked meetings to remove saved calendar details from the active database, and delete database backups separately.";
+"Disconnecting Drive removes only its local OAuth session and saved export-folder identifiers. It does not disconnect Calendar. Exported documents remain in Drive; delete them there, and delete related meetings and database backups to remove local document references." = "Disconnecting Drive removes only its local OAuth session and saved export-folder identifiers. It does not disconnect Calendar. Exported documents remain in Drive; delete them there, and delete related meetings and database backups to remove local document references.";
 "View Privacy Policy" = "View Privacy Policy";
 "Continue to Google" = "Continue to Google";
 "Connect Google Calendar from Settings to show your upcoming events on Home." = "Connect Google Calendar from Settings to show your upcoming events on Home.";
@@ -732,6 +732,11 @@
 "Share" = "Share";
 "Share Summary" = "Share Summary";
 "Export to Google Docs" = "Export to Google Docs";
+"Export to Dahlia Artifacts" = "Export to Dahlia Server as an Artifact";
+"Exported privately to Dahlia Artifacts." = "Exported privately to Dahlia Artifacts.";
+"Could not export to Dahlia Artifacts." = "Could not export to Dahlia Artifacts.";
+"Dahlia Server returned an unexpected response." = "Dahlia Server returned an unexpected response.";
+"Dahlia Artifacts export failed (HTTP %lld)." = "Dahlia Artifacts export failed (HTTP %lld).";
 "Could not export the summary to Google Docs." = "Could not export the summary to Google Docs.";
 "Copy for Google Docs" = "Copy for Google Docs";
 "Copy for Slack" = "Copy for Slack";
@@ -865,7 +870,7 @@
 "Google Drive" = "Google Drive";
 "Notion" = "Notion";
 "Export summaries to Notion." = "Export summaries to Notion.";
-"Connect a Google account to export summaries, including images, to Google Docs from the Share menu." = "Connect a Google account to export summaries, including images, to Google Docs from the Share menu.";
+"The Google Drive connection is saved for the current Dahlia or Local Account. Export summaries, including images, to Google Docs from the Share menu." = "The Google Drive connection is saved for the current Dahlia or Local Account. Export summaries, including images, to Google Docs from the Share menu.";
 "Sign in with Google to export summaries to Google Docs." = "Sign in with Google to export summaries to Google Docs.";
 "Google Docs connected" = "Google Docs connected";
 "Export Folder" = "Export Folder";
@@ -1602,7 +1607,7 @@
 "Or continue without signing in" = "Or continue without signing in";
 "Switching AI account…" = "Switching AI account…";
 "Choose the AI account used by this Vault." = "Choose the AI account used by this Vault.";
-"This account is used by %lld Vaults. Those Vaults will use the Local Account, and this account's Codex data will be deleted." = "This account is used by %lld Vaults. Those Vaults will use the Local Account, and this account's Codex data will be deleted.";
+"This account is used by %lld Vaults. Those Vaults will use the Local Account, and this account's Codex and Google Drive connection data will be deleted." = "This account is used by %lld Vaults. Those Vaults will use the Local Account, and this account's Codex and Google Drive connection data will be deleted.";
 "Dahlia stores meeting data and generated files in a local Vault." = "Dahlia stores meeting data and generated files in a local Vault.";
 "Choose the languages Dahlia should recognize and the primary language for AI output." = "Choose the languages Dahlia should recognize and the primary language for AI output.";
 "Recognition and OCR Languages" = "Recognition and OCR Languages";

@@ -27,9 +27,11 @@ struct SummaryGenerationRunnerInput {
 typealias SummaryGenerationRunner = @MainActor (SummaryGenerationRunnerInput) async throws -> SummaryService.GeneratedSummary
 typealias SummaryJobSleeper = @Sendable (Duration) async throws -> Void
 typealias SummaryGoogleDocsExporter = @MainActor (SummaryDocument, SummaryRenderContext, String) async throws -> String
+typealias SummaryArtifactExporter = @Sendable (String, UUID, String, URL?) async throws -> DahliaArtifactExportResult
+typealias SummaryArtifactDeleter = @Sendable (URL, UUID, String) async throws -> Void
 typealias SummaryDocumentLoader = @MainActor (UUID, DatabaseQueue) async throws -> SummaryDocument?
 
-private enum SummaryGoogleDocsExportError: Error {
+private enum SummaryExternalExportError: Error {
     case summaryChanged
 }
 
@@ -229,6 +231,7 @@ final class CaptionViewModel: ObservableObject {
     private var batchSummaryContextsBySessionId: [UUID: BatchSummaryContext] = [:]
     @Published private var summaryErrorsByMeetingId: [UUID: String] = [:]
     @Published private var googleDocsExportErrorsByMeetingId: [UUID: String] = [:]
+    @Published private var artifactExportErrorsByMeetingId: [UUID: String] = [:]
     var isSummaryGenerating: Bool {
         currentMeetingId.map(isSummaryGenerating(meetingId:)) ?? false
     }
@@ -241,11 +244,17 @@ final class CaptionViewModel: ObservableObject {
         currentMeetingId.flatMap { googleDocsExportErrorsByMeetingId[$0] }
     }
 
+    var artifactExportError: String? {
+        currentMeetingId.flatMap { artifactExportErrorsByMeetingId[$0] }
+    }
+
     private var isExportingCurrentSummaryToGoogleDocs = false
+    @Published private(set) var isExportingCurrentSummaryToDahliaArtifact = false
     private var isGoogleDocsExportBusy = false
     private var googleDocsExportWaiters: [CheckedContinuation<Void, Never>] = []
     @Published var lastSummaryURL: URL?
     @Published var currentSummaryGoogleFileId: String?
+    @Published private(set) var currentSummaryArtifactURL: URL?
     @Published var currentSummaryDocument: SummaryDocument?
 
     var canRetranscribeBatchAudio: Bool {
@@ -411,7 +420,8 @@ final class CaptionViewModel: ObservableObject {
         let context = SummaryRenderContext(
             meetingId: meetingId,
             createdAt: store.timeBase,
-            screenshots: screenshotStore.records
+            screenshots: screenshotStore.records,
+            accountScope: AppAccountScope(connectionID: VaultAISettingsModel.shared.accountConnectionID)
         )
         let fileName = lastSummaryURL?.lastPathComponent
             ?? "\(document.title.nilIfBlank ?? L10n.summary).rtf"
@@ -443,6 +453,71 @@ final class CaptionViewModel: ObservableObject {
             googleDocsExportErrorsByMeetingId[meetingId] = message
             ErrorReportingService.captureSanitized(.googleDocsExport)
             usageTelemetryReporter(.export(.failed(.export), destination: .googleDocs, trigger: .manual))
+            return false
+        }
+    }
+
+    @discardableResult
+    func exportCurrentSummaryToDahliaArtifact(connection: DahliaAccountConnection) async -> Bool {
+        guard connection.isSignedIn,
+              !isExportingCurrentSummaryToDahliaArtifact,
+              let document = currentSummaryDocument,
+              let meetingId = currentMeetingId,
+              canShareCurrentSummary else { return false }
+
+        isExportingCurrentSummaryToDahliaArtifact = true
+        artifactExportErrorsByMeetingId.removeValue(forKey: meetingId)
+        defer { isExportingCurrentSummaryToDahliaArtifact = false }
+        usageTelemetryReporter(.export(.started, destination: .dahliaArtifacts, trigger: .manual))
+
+        let screenshots = screenshotStore.records
+        let actionItemsHeading = L10n.actionItems
+        let dbQueue = currentDbQueue
+        let existingArtifactURL = currentSummaryArtifactURL
+        do {
+            let expectedDocument = try document.databaseJSONString()
+            let html = await Task.detached(priority: .userInitiated) {
+                SummaryShareRenderer.render(
+                    document: document,
+                    actionItemsHeading: actionItemsHeading,
+                    for: .googleDocs,
+                    screenshots: screenshots
+                ).html
+            }.value
+            let result = try await artifactSummaryExporter(
+                html,
+                connection.id,
+                connection.origin,
+                existingArtifactURL
+            )
+            do {
+                let summaryIsCurrent = if let dbQueue {
+                    try await MeetingRepository(dbQueue: dbQueue).updateSummaryArtifactURL(
+                        forMeetingId: meetingId,
+                        url: result.url.absoluteString,
+                        expectedDocument: expectedDocument
+                    )
+                } else {
+                    try currentMeetingId == meetingId
+                        && currentSummaryDocument?.databaseJSONString() == expectedDocument
+                }
+                guard summaryIsCurrent else { throw SummaryExternalExportError.summaryChanged }
+            } catch {
+                if result.wasCreated {
+                    try? await artifactSummaryDeleter(result.url, connection.id, connection.origin)
+                }
+                throw error
+            }
+            if currentMeetingId == meetingId {
+                currentSummaryArtifactURL = result.url
+            }
+            usageTelemetryReporter(.export(.completed, destination: .dahliaArtifacts, trigger: .manual))
+            return true
+        } catch {
+            artifactExportErrorsByMeetingId[meetingId] = (error as? LocalizedError)?.errorDescription?.nilIfBlank
+                ?? L10n.dahliaArtifactExportFailed
+            ErrorReportingService.captureSanitized(.dahliaArtifactExport)
+            usageTelemetryReporter(.export(.failed(.export), destination: .dahliaArtifacts, trigger: .manual))
             return false
         }
     }
@@ -736,6 +811,8 @@ final class CaptionViewModel: ObservableObject {
     private let summaryGenerationRunner: SummaryGenerationRunner
     private let summaryJobSleeper: SummaryJobSleeper
     private let googleDocsSummaryExporter: SummaryGoogleDocsExporter
+    private let artifactSummaryExporter: SummaryArtifactExporter
+    private let artifactSummaryDeleter: SummaryArtifactDeleter
     private let summaryDocumentLoader: SummaryDocumentLoader
     private let usageTelemetryReporter: UsageTelemetryReporter
 
@@ -773,6 +850,21 @@ final class CaptionViewModel: ObservableObject {
                 fileName: fileName
             )
         },
+        artifactSummaryExporter: @escaping SummaryArtifactExporter = { html, connectionID, origin, existingURL in
+            try await DahliaArtifactExportService.export(
+                html: html,
+                connectionID: connectionID,
+                origin: origin,
+                existingURL: existingURL
+            )
+        },
+        artifactSummaryDeleter: @escaping SummaryArtifactDeleter = { url, connectionID, origin in
+            try await DahliaArtifactExportService.delete(
+                url: url,
+                connectionID: connectionID,
+                origin: origin
+            )
+        },
         summaryDocumentLoader: @escaping SummaryDocumentLoader = { meetingId, dbQueue in
             try await Task.detached(priority: .userInitiated) {
                 try dbQueue.read { db in
@@ -791,6 +883,8 @@ final class CaptionViewModel: ObservableObject {
         self.summaryGenerationRunner = summaryGenerationRunner
         self.summaryJobSleeper = summaryJobSleeper
         self.googleDocsSummaryExporter = googleDocsSummaryExporter
+        self.artifactSummaryExporter = artifactSummaryExporter
+        self.artifactSummaryDeleter = artifactSummaryDeleter
         self.summaryDocumentLoader = summaryDocumentLoader
         self.usageTelemetryReporter = usageTelemetryReporter
         bindStoreSegments()
@@ -1809,6 +1903,7 @@ final class CaptionViewModel: ObservableObject {
         let screenshots: [MeetingScreenshotRecord]
         let summaryDocument: SummaryDocument?
         let googleFileId: String?
+        let artifactURL: URL?
         let lastSummaryURL: URL?
         let note: MeetingNoteRecord?
         let eligibleBatchAudioSessionIds: [UUID]
@@ -1829,6 +1924,7 @@ final class CaptionViewModel: ObservableObject {
         )
         let vaultExport = detail.summaryExports.first(where: { $0.type == .vault })
         let googleDocsExport = detail.summaryExports.first(where: { $0.type == .googleDocs })
+        let artifactExport = detail.summaryExports.first(where: { $0.type == .dahliaArtifact })
 
         let lastSummaryURL: URL? = if detail.summary != nil {
             SummaryService.findSummaryFile(
@@ -1853,6 +1949,7 @@ final class CaptionViewModel: ObservableObject {
             screenshots: detail.screenshots,
             summaryDocument: detail.summary?.loadDocument(),
             googleFileId: googleDocsExport?.googleDocumentID,
+            artifactURL: artifactExport.flatMap { URL(string: $0.url) },
             lastSummaryURL: lastSummaryURL,
             note: detail.note,
             eligibleBatchAudioSessionIds: eligibleBatchAudioSessionIds
@@ -2402,6 +2499,7 @@ final class CaptionViewModel: ObservableObject {
         if summaryProjectionGeneration == expectedProjectionGeneration {
             currentSummaryDocument = loaded.summaryDocument
             currentSummaryGoogleFileId = loaded.googleFileId
+            currentSummaryArtifactURL = loaded.artifactURL
             lastSummaryURL = loaded.lastSummaryURL
         }
         noteText = loaded.note?.text ?? ""
@@ -2479,6 +2577,7 @@ final class CaptionViewModel: ObservableObject {
         summaryProjectionGeneration &+= 1
         currentSummaryDocument = nil
         currentSummaryGoogleFileId = nil
+        currentSummaryArtifactURL = nil
         lastSummaryURL = nil
         requestShowSummaryTab = false
     }
@@ -4238,6 +4337,7 @@ final class CaptionViewModel: ObservableObject {
                 summaryProjectionGeneration &+= 1
                 currentSummaryDocument = generatedSummary.document
                 currentSummaryGoogleFileId = nil
+                currentSummaryArtifactURL = nil
             }
         }
 
@@ -4305,7 +4405,10 @@ final class CaptionViewModel: ObservableObject {
                     context: SummaryRenderContext(
                         meetingId: meetingId,
                         createdAt: request.recordingStartedAt,
-                        screenshots: screenshots
+                        screenshots: screenshots,
+                        accountScope: AppAccountScope(
+                            connectionID: request.generationSettings.runtimeProvider.accountConnectionID
+                        )
                     ),
                     fileName: generatedSummary.fileName
                 )
@@ -4384,7 +4487,7 @@ final class CaptionViewModel: ObservableObject {
             try currentMeetingId == meetingId
                 && currentSummaryDocument?.databaseJSONString() == expectedDocument
         }
-        guard summaryIsCurrent else { throw SummaryGoogleDocsExportError.summaryChanged }
+        guard summaryIsCurrent else { throw SummaryExternalExportError.summaryChanged }
         if currentMeetingId == meetingId {
             currentSummaryGoogleFileId = fileId
         }

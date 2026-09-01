@@ -27,7 +27,7 @@ Dahlia が追加できるイベントとパラメータは以下だけとする�
 | `Dahlia.Recording.started`, `.completed`, `.failed` | `transcriptionMode`: `realtime` / `batch`; `audioSources`: 録音開始時の `microphone` / `systemAudio` / `microphoneAndSystemAudio`（terminal でも同値）; `meetingScope`: 最初の録音 session なら `new`、再開なら `continued`; Quick Recording またはカレンダー自動録音のみ `trigger`: `quick` / `scheduled`（開始成功後の terminal でも同値）; 失敗時のみ `stage`: `start` / `capture` / `stop` / `persistence`; 完了時のみ `floatValue`: 永続化済み録音時間を分単位に四捨五入して 0〜360 に制限した値 |
 | `Dahlia.Transcription.started`, `.completed`, `.failed` | `transcriptionMode`: `realtime` / `batch`; 失敗時のみ `stage`: `start` / `persistence` / `transcription` |
 | `Dahlia.Summary.started`, `.completed`, `.failed` | `trigger`: `manual` / `automaticAfterBatch`; 失敗時のみ `stage`: `generation` |
-| `Dahlia.Export.started`, `.completed`, `.failed` | `destination`: `vault` / `googleDocs` / `localFiles`; `trigger`: `manual` / `summaryGeneration`; 失敗時のみ `stage`: `export` |
+| `Dahlia.Export.started`, `.completed`, `.failed` | `destination`: `vault` / `googleDocs` / `dahliaArtifacts` / `localFiles`; `trigger`: `manual` / `summaryGeneration`; 失敗時のみ `stage`: `export` |
 | `Dahlia.AIChat.promptSubmitted`, `.liveModeEnabled` | なし。新規の手動 prompt と Live Mode の false→true 遷移だけを数え、retry と live transcript segment は数えない |
 | `Dahlia.MCP.ToolCall.completed`, `.failed` | `origin`: `codexChat`; `category`: `meeting` / `project` / `customerIntelligence` / `unknown`; `operation`: `read` / `write` |
 

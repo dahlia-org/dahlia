@@ -159,7 +159,10 @@ private struct SummarySharePopover: View {
     @ObservedObject var viewModel: CaptionViewModel
     @ObservedObject private var driveStore = GoogleDriveStore.shared
     @ObservedObject private var settings = AppSettings.shared
+    @State private var accountController = DahliaCloudAccountController.shared
+    @State private var vaultSettings = VaultAISettingsModel.shared
     @State private var isGoogleDocsExportRunning = false
+    @State private var didExportDahliaArtifact = false
     @State private var exportFolderAlertMessage = ""
     @State private var isShowingExportFolderAlert = false
     let dismiss: () -> Void
@@ -196,6 +199,21 @@ private struct SummarySharePopover: View {
                 .padding(.horizontal, 20)
 
             VStack(spacing: 2) {
+                if let connection = artifactConnection {
+                    let isReauthenticating = accountController.isBusy(connectionID: connection.id)
+                    SummarySharePopoverRow(
+                        title: L10n.exportToDahliaArtifacts,
+                        systemImage: didExportDahliaArtifact ? "checkmark.circle.fill" : "server.rack",
+                        isDisabled: viewModel.isExportingCurrentSummaryToDahliaArtifact || isReauthenticating,
+                        isLoading: viewModel.isExportingCurrentSummaryToDahliaArtifact || isReauthenticating
+                    ) {
+                        if connection.supportsArtifactExport {
+                            exportToDahliaArtifacts(connection: connection)
+                        } else {
+                            accountController.startReauthentication(connectionID: connection.id)
+                        }
+                    }
+                }
                 SummarySharePopoverRow(
                     title: L10n.exportToGoogleDocs,
                     systemImage: "doc.badge.arrow.up",
@@ -229,6 +247,19 @@ private struct SummarySharePopover: View {
                     .padding(.horizontal, 20)
                     .padding(.bottom, 10)
             }
+            if didExportDahliaArtifact {
+                Text(L10n.dahliaArtifactExportCompleted)
+                    .font(.callout)
+                    .foregroundStyle(.green)
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 10)
+            } else if let errorMessage = viewModel.artifactExportError ?? accountController.errorMessage {
+                Text(errorMessage)
+                    .font(.callout)
+                    .foregroundStyle(.red)
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 10)
+            }
         }
         .frame(width: 320)
         .padding(.vertical, 8)
@@ -236,6 +267,9 @@ private struct SummarySharePopover: View {
             guard let message = driveStore.exportFolderErrorMessage else { return }
             exportFolderAlertMessage = message
             isShowingExportFolderAlert = true
+        }
+        .task(id: vaultSettings.accountConnectionID) {
+            await driveStore.activate(scope: AppAccountScope(connectionID: vaultSettings.accountConnectionID))
         }
         .onChange(of: driveStore.exportFolderErrorMessage) { _, message in
             guard let message else { return }
@@ -255,6 +289,18 @@ private struct SummarySharePopover: View {
         dismiss()
     }
 
+    private var artifactConnection: DahliaAccountConnection? {
+        guard let connectionID = vaultSettings.accountConnectionID else { return nil }
+        return accountController.connections.first { $0.id == connectionID && $0.isSignedIn }
+    }
+
+    private func exportToDahliaArtifacts(connection: DahliaAccountConnection) {
+        didExportDahliaArtifact = false
+        Task { @MainActor in
+            didExportDahliaArtifact = await viewModel.exportCurrentSummaryToDahliaArtifact(connection: connection)
+        }
+    }
+
     private var googleDocsErrorMessage: String? {
         viewModel.googleDocsExportError ?? driveStore.exportFolderErrorMessage ?? driveStore.lastErrorMessage
     }
@@ -263,7 +309,10 @@ private struct SummarySharePopover: View {
         guard driveStore.isAuthorized,
               driveStore.exportFolderErrorMessage == nil,
               let accountID = driveStore.account?.id else { return false }
-        return settings.googleDriveExportFolderID(forAccountID: accountID) != nil
+        return settings.googleDriveExportFolderID(
+            forAccountID: accountID,
+            scope: AppAccountScope(connectionID: vaultSettings.accountConnectionID)
+        ) != nil
     }
 
     private var needsGoogleDriveSetup: Bool {

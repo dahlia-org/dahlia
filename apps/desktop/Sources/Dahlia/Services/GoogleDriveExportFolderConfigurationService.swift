@@ -6,14 +6,17 @@ final class GoogleDriveExportFolderConfigurationService: GoogleDriveExportFolder
 
     private let apiClient: any GoogleDriveAPIClientProviding
     private let settings: any GoogleDriveExportFolderSettingsProviding
+    private let scope: AppAccountScope
     private var inFlightConfiguration: (id: UUID, key: String, task: Task<Void, Error>)?
 
     init(
         apiClient: any GoogleDriveAPIClientProviding = GoogleDriveAPIClient(),
-        settings: any GoogleDriveExportFolderSettingsProviding = AppSettings.shared
+        settings: any GoogleDriveExportFolderSettingsProviding = AppSettings.shared,
+        scope: AppAccountScope = .local
     ) {
         self.apiClient = apiClient
         self.settings = settings
+        self.scope = scope
     }
 
     func configureIfNeeded(session: GoogleSession) async throws {
@@ -23,7 +26,7 @@ final class GoogleDriveExportFolderConfigurationService: GoogleDriveExportFolder
         try await performSingleFlight(
             key: configurationKey(accountID: session.account.id)
         ) {
-            if let folderID = settings.googleDriveExportFolderID(forAccountID: session.account.id) {
+            if let folderID = settings.googleDriveExportFolderID(forAccountID: session.account.id, scope: self.scope) {
                 let isAvailable = try await apiClient.isExportFolderAvailable(
                     accessToken: session.accessToken,
                     folderID: folderID
@@ -31,7 +34,7 @@ final class GoogleDriveExportFolderConfigurationService: GoogleDriveExportFolder
                 if isAvailable {
                     return
                 }
-                settings.clearGoogleDriveExportFolderID(forAccountID: session.account.id)
+                settings.clearGoogleDriveExportFolderID(forAccountID: session.account.id, scope: self.scope)
             }
 
             let folderID = try await apiClient.resolveExportFolderID(
@@ -40,7 +43,8 @@ final class GoogleDriveExportFolderConfigurationService: GoogleDriveExportFolder
             )
             settings.setGoogleDriveExportFolder(
                 id: folderID,
-                accountID: session.account.id
+                accountID: session.account.id,
+                scope: self.scope
             )
         }
     }
@@ -72,6 +76,6 @@ final class GoogleDriveExportFolderConfigurationService: GoogleDriveExportFolder
     }
 
     private func configurationKey(accountID: String) -> String {
-        "default\u{0}\(accountID)"
+        "\(scope.storageKey)\u{0}\(accountID)"
     }
 }
