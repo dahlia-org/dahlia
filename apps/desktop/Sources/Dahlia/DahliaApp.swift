@@ -98,6 +98,7 @@ struct DahliaApp: App {
                             mode: setupTourMode,
                             currentVault: AppSettings.shared.currentVault,
                             vaultManagementModel: vaultManagementModel,
+                            accountController: dahliaAccountController,
                             canComplete: { viewModel.canSwitchVault },
                             onComplete: completeSetupTour
                         )
@@ -407,7 +408,7 @@ struct DahliaApp: App {
         Task { @MainActor in
             await task.value
             if dahliaAccountController.errorMessage == nil,
-               let connection = dahliaAccountController.signedInConnection(matching: configuration) {
+               let connection = dahliaAccountController.completedSignInConnection(matching: configuration) {
                 if let targetVaultID,
                    let db = appDatabase {
                     do {
@@ -434,9 +435,15 @@ struct DahliaApp: App {
         mainWindowNavigation.dismissDahliaSignIn()
     }
 
-    private func completeSetupTour(_ vault: VaultRecord) async -> Bool {
-        guard openVault(vault, recordsLastOpened: false),
-              await vaultManagementModel.markVaultOpened(vault) else { return false }
+    private func completeSetupTour(_ vault: VaultRecord, accountConnectionID: UUID?) async -> Bool {
+        guard let configuredVault = await vaultManagementModel.updateAccountConnection(
+            for: vault,
+            connectionID: accountConnectionID
+        ),
+            openVault(configuredVault, recordsLastOpened: false),
+            await vaultManagementModel.markVaultOpened(configuredVault)
+        else { return false }
+        await dahliaAccountController.reload()
         SetupTourPresentationPolicy.markCompleted()
         mainWindowNavigation.completeSetupTour()
         return true

@@ -333,6 +333,7 @@
 
             #expect(try await repository.fetchDahliaAccountConnections().map(\.id) == [connection.id])
             #expect(controller.connections.first?.account?.id == "user-1")
+            #expect(controller.completedSignInConnection(matching: configuration)?.id == connection.id)
             #expect(controller.errorMessage == nil)
         }
 
@@ -396,6 +397,41 @@
 
             #expect(controller.errorMessage == nil)
             #expect(controller.signedInConnection(matching: configuration) == nil)
+        }
+
+        @MainActor
+        @Test
+        func cancelledReauthenticationDoesNotReportTheExistingConnectionAsCompleted() async throws {
+            let manager = try AppDatabaseManager(path: ":memory:")
+            let repository = MeetingRepository(dbQueue: manager.dbQueue)
+            let connection = DahliaAccountConnectionRecord(
+                id: .v7(),
+                origin: "https://cloud.example.com",
+                clientID: "desktop-client",
+                createdAt: .now
+            )
+            try await repository.insertDahliaAccountConnection(connection)
+            let cancellation = CloudCancellationTrigger()
+            let store = CloudCredentialStoreFake(
+                credential: makeCredential(expirationDate: .distantFuture),
+                onSave: cancellation.fire
+            )
+            let service = makeService(recorder: CloudRequestRecorder(mode: .userInfo), store: store)
+            let configuration = try #require(DahliaCloudConfiguration.make(
+                urlString: connection.origin,
+                clientID: connection.clientID
+            ))
+            let controller = DahliaCloudAccountController(
+                configuration: configuration,
+                serviceFactory: { _, _ in service }
+            )
+            await controller.configure(appDatabase: manager)
+
+            let signIn = try #require(controller.startSignIn(configuration: configuration))
+            cancellation.set { signIn.cancel() }
+            await signIn.value
+
+            #expect(controller.completedSignInConnection(matching: configuration) == nil)
         }
 
         @MainActor

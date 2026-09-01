@@ -1601,6 +1601,8 @@
 "Continue" = "Continue";
 "Start Dahlia" = "Start Dahlia";
 "Local Account" = "Local Account";
+"Continue with Local Account" = "Continue with Local Account";
+"Or continue without signing in" = "Or continue without signing in";
 "Switching AI account…" = "Switching AI account…";
 "Choose the AI account used by this Vault." = "Choose the AI account used by this Vault.";
 "This account is used by %lld Vaults. Those Vaults will use the Local Account, and this account's Codex data will be deleted." = "This account is used by %lld Vaults. Those Vaults will use the Local Account, and this account's Codex data will be deleted.";

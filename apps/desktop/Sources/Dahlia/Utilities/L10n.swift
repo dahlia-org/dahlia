@@ -1786,6 +1786,9 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var accountsAndVaults: String { String(localized: "Accounts and Vaults", bundle: bundle) }
     static var dahliaAccount: String { String(localized: "Dahlia Account", bundle: bundle) }
     static var localAccount: String { String(localized: "Local Account", bundle: bundle) }
+    static var continueWithLocalAccount: String { String(localized: "Continue with Local Account", bundle: bundle) }
+    static var orContinueWithoutSigningIn: String { String(localized: "Or continue without signing in", bundle: bundle) }
+    static var connected: String { String(localized: "Connected", bundle: bundle) }
     static var switchingAIAccount: String { String(localized: "Switching AI account…", bundle: bundle) }
     static var vaultAIAccountDescription: String { String(
         localized: "Choose the AI account used by this Vault.",

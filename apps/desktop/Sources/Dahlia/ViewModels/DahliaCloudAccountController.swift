@@ -51,6 +51,7 @@ final class DahliaCloudAccountController {
     private weak var appDatabase: AppDatabaseManager?
     @ObservationIgnored private var accountTask: Task<Void, Never>?
     @ObservationIgnored private var operationGeneration = 0
+    @ObservationIgnored private var completedSignInConnectionID: UUID?
 
     init(
         configuration: DahliaCloudConfiguration? = .current,
@@ -194,6 +195,15 @@ final class DahliaCloudAccountController {
         }
     }
 
+    func completedSignInConnection(matching configuration: DahliaCloudConfiguration) -> DahliaAccountConnection? {
+        guard let completedSignInConnectionID else { return nil }
+        return connections.first {
+            $0.id == completedSignInConnectionID
+                && $0.isSignedIn
+                && DahliaCloudService.sameOrigin($0.origin, configuration.origin)
+        }
+    }
+
     func reportAccountLinkingError(_ error: any Error) {
         errorMessage = error.localizedDescription
     }
@@ -235,6 +245,8 @@ final class DahliaCloudAccountController {
             services[id] = service
             await DahliaCloudTokenServiceRegistry.shared.register(service, connectionID: id)
             await reload()
+            guard !Task.isCancelled, isCurrentOperation(generation) else { return }
+            completedSignInConnectionID = id
         } catch is CancellationError {
             return
         } catch {
@@ -301,6 +313,8 @@ final class DahliaCloudAccountController {
             guard isCurrentOperation(generation) else { return }
             try await reloadCodexAuthenticationIfActive(connectionID)
             await reload()
+            guard !Task.isCancelled, isCurrentOperation(generation) else { return }
+            completedSignInConnectionID = connectionID
         } catch is CancellationError {
             return
         } catch {
@@ -402,6 +416,12 @@ final class DahliaCloudAccountController {
         operationGeneration += 1
         activeOperation = operation
         errorMessage = nil
+        switch operation {
+        case .signingIn, .reauthenticating:
+            completedSignInConnectionID = nil
+        default:
+            break
+        }
         return operationGeneration
     }
 

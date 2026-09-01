@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SetupTourActionBarView: View {
     let step: SetupTourStep
+    let steps: [SetupTourStep]
     let canGoBack: Bool
     let canContinue: Bool
     let isCompleting: Bool
@@ -38,7 +39,7 @@ struct SetupTourActionBarView: View {
                 .disabled(!canContinue)
             }
 
-            SetupTourProgressOverlayView(currentStep: step)
+            SetupTourProgressOverlayView(currentStep: step, steps: steps)
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 16)

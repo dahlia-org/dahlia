@@ -57,6 +57,8 @@
             #expect(defaults.object(forKey: SetupTourPresentationPolicy.vaultConfirmedUserDefaultsKey) == nil)
             #expect(defaults.object(forKey: SetupTourPresentationPolicy.providerUserDefaultsKey) == nil)
             #expect(defaults.object(forKey: SetupTourPresentationPolicy.databricksProfileUserDefaultsKey) == nil)
+            #expect(defaults.object(forKey: SetupTourPresentationPolicy.accountConnectionIDUserDefaultsKey) == nil)
+            #expect(defaults.object(forKey: SetupTourPresentationPolicy.accountSelectionConfirmedUserDefaultsKey) == nil)
         }
 
         @Test
@@ -88,6 +90,8 @@
             let selectedURL = URL(filePath: "/tmp/Selected Dahlia", directoryHint: .isDirectory)
             let model = SetupTourModel(mode: .initial, currentVault: nil, progressDefaults: defaults)
 
+            model.selectAccountConnection(nil)
+            model.advance()
             model.selectVaultURL(selectedURL)
             model.confirmVaultSelection()
             model.advance()
@@ -96,6 +100,25 @@
             #expect(restoredModel.currentStep == .workingLanguages)
             #expect(restoredModel.selectedVaultURL == selectedURL)
             #expect(restoredModel.isVaultLocationConfirmed)
+        }
+
+        @Test
+        func interruptedInitialTourRestoresItsDahliaAccount() throws {
+            let suiteName = "SetupTourAccountProgressTests-\(UUID())"
+            let defaults = try #require(UserDefaults(suiteName: suiteName))
+            defer { defaults.removePersistentDomain(forName: suiteName) }
+            let connectionID = UUID.v7()
+            let model = SetupTourModel(mode: .initial, currentVault: nil, progressDefaults: defaults)
+
+            model.selectAccountConnection(connectionID)
+            model.advance()
+
+            let restoredModel = SetupTourModel(mode: .initial, currentVault: nil, progressDefaults: defaults)
+
+            #expect(restoredModel.currentStep == .vault)
+            #expect(restoredModel.selectedAccountConnectionID == connectionID)
+            #expect(restoredModel.isAccountSelectionConfirmed)
+            #expect(!restoredModel.visibleSteps.contains(.modelProvider))
         }
 
         @Test
@@ -114,6 +137,9 @@
         @Test
         func vaultStepRequiresExplicitConfirmationBeforeAdvancing() {
             let model = SetupTourModel(mode: .initial, currentVault: nil)
+
+            model.selectAccountConnection(nil)
+            model.advance()
 
             #expect(model.currentStep == .vault)
             #expect(!model.isVaultLocationConfirmed)
@@ -146,6 +172,7 @@
         @Test
         func setupUsesTheRequestedConfigurationOrder() {
             #expect(SetupTourStep.allCases == [
+                .account,
                 .vault,
                 .workingLanguages,
                 .permissions,
@@ -153,7 +180,7 @@
                 .calendar,
                 .completion,
             ])
-            #expect(SetupTourModel(mode: .initial, currentVault: nil).currentStep == .vault)
+            #expect(SetupTourModel(mode: .initial, currentVault: nil).currentStep == .account)
         }
 
         @Test
@@ -161,6 +188,8 @@
             let model = SetupTourModel(mode: .initial, currentVault: nil)
 
             #expect(!model.canGoBack)
+            model.selectAccountConnection(nil)
+            model.advance()
             model.confirmVaultSelection()
             model.advance()
             #expect(model.currentStep == .workingLanguages)
@@ -170,6 +199,8 @@
         @Test
         func navigationMovesSequentiallyAndNeverPastCompletion() {
             let model = SetupTourModel(mode: .initial, currentVault: nil)
+            model.selectAccountConnection(nil)
+            model.advance()
             model.confirmVaultSelection()
             model.advance()
             model.advance()
@@ -191,6 +222,23 @@
             #expect(model.currentStep == .workingLanguages)
             model.returnToStep(.completion)
             #expect(model.currentStep == .workingLanguages)
+        }
+
+        @Test
+        func dahliaAccountSkipsLocalModelProviderSetup() {
+            let model = SetupTourModel(mode: .initial, currentVault: nil)
+            let connectionID = UUID.v7()
+
+            model.selectAccountConnection(connectionID)
+            model.advance()
+            model.confirmVaultSelection()
+            model.advance()
+            model.advance()
+            model.advance()
+
+            #expect(model.selectedAccountConnectionID == connectionID)
+            #expect(!model.visibleSteps.contains(.modelProvider))
+            #expect(model.currentStep == .calendar)
         }
 
         @Test
@@ -221,6 +269,8 @@
             let model = SetupTourModel(mode: .manual, currentVault: currentVault)
 
             #expect(model.isVaultLocationConfirmed)
+            #expect(model.currentStep == .account)
+            model.advance()
             #expect(model.currentStep == .vault)
             #expect(model.canContinue)
 

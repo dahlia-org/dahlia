@@ -20,7 +20,11 @@ struct SetupCompletionStepView: View {
                     )
                 )
                 LabeledContent(L10n.primaryLanguage, value: settings.llmSummaryLanguage.displayName)
-                LabeledContent(L10n.modelProvider, value: vaultSettings.localProvider.displayName)
+                if model.selectedAccountConnectionID == nil {
+                    LabeledContent(L10n.modelProvider, value: vaultSettings.localProvider.displayName)
+                } else {
+                    LabeledContent(L10n.dahliaAccount, value: L10n.connected)
+                }
             }
 
             Section(L10n.permissions) {
