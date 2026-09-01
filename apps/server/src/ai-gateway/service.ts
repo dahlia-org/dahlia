@@ -31,6 +31,12 @@ interface CodexModelWire {
 }
 
 const bundledCodexModels = (codexCatalog as { models: CodexModelWire[] }).models;
+const ossReasoningLevels = [
+  { effort: "none", description: "Fast responses without reasoning" },
+  { effort: "low", description: "Fast responses with lighter reasoning" },
+  { effort: "high", description: "Greater reasoning depth for complex problems" },
+  { effort: "max", description: "Maximum reasoning depth for the hardest problems" },
+];
 
 export class GatewayRequestError extends Error {
   constructor(
@@ -249,7 +255,7 @@ function codexModels(aliases: ModelAliasRecord[]): CodexModelWire[] {
   aliases.forEach((alias, priority) => {
     const model = knownCodexModel(alias.upstreamModel)
       ?? knownCodexModel(alias.alias)
-      ?? fallbackCodexModel(alias.alias);
+      ?? ossCodexModel(alias.alias);
     models.set(alias.alias, {
       ...model,
       slug: alias.alias,
@@ -302,6 +308,14 @@ function knownCodexModel(value: string): CodexModelWire | undefined {
     input_modalities: model.input_modalities,
     model_specialty: model.model_specialty,
     multi_agent_version: model.multi_agent_version,
+  };
+}
+
+function ossCodexModel(slug: string): CodexModelWire {
+  return {
+    ...fallbackCodexModel(slug),
+    default_reasoning_level: "max",
+    supported_reasoning_levels: ossReasoningLevels,
   };
 }
 

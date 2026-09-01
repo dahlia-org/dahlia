@@ -57,9 +57,14 @@ describe("AI Gateway", () => {
       expect.objectContaining({
         slug: "summary",
         display_name: "Summary",
-        default_reasoning_level: null,
+        default_reasoning_level: "max",
         include_apps_usage_instructions: false,
-        supported_reasoning_levels: [],
+        supported_reasoning_levels: [
+          expect.objectContaining({ effort: "none" }),
+          expect.objectContaining({ effort: "low" }),
+          expect.objectContaining({ effort: "high" }),
+          expect.objectContaining({ effort: "max" }),
+        ],
         priority: 0,
       }),
     ]);
@@ -96,6 +101,23 @@ describe("AI Gateway", () => {
     expect(model).not.toHaveProperty("supports_search_tool");
     expect(model).not.toHaveProperty("service_tiers");
     expect(model).toMatchObject({ availability_nux: null, upgrade: null });
+  });
+
+  it("uses the OSS reasoning default for Databricks models without bundled metadata", async () => {
+    const response = await new GatewayService(config, {
+      ...registry,
+      listModelAliases: () => Promise.resolve([
+        { ...alias, alias: "kimi", upstreamModel: "system.ai.kimi-k3" },
+        { ...alias, alias: "deepseek", upstreamModel: "system.ai.deepseek-v4-pro-0813" },
+      ]),
+    }).models();
+
+    for (const slug of ["kimi", "deepseek"]) {
+      const model = response.models.find((entry) => entry.slug === slug);
+      expect(model?.default_reasoning_level).toBe("max");
+      expect(model?.supported_reasoning_levels.map((option) => option.effort))
+        .toEqual(["none", "low", "high", "max"]);
+    }
   });
 
   it("does not expose canonical upgrade targets through aliases", async () => {
