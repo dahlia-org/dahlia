@@ -177,6 +177,8 @@
             let scope = URLComponents(url: authorizationURL, resolvingAgainstBaseURL: false)?.queryItems?
                 .first(where: { $0.name == "scope" })?.value ?? ""
             #expect(scope.contains("iam.current-user:read"))
+            #expect(scope.contains("ai-gateway"))
+            #expect(scope.contains("files"))
             #expect(scope.contains("offline_access"))
             #expect(!scope.contains("openid"))
             #expect(!scope.contains("profile"))
