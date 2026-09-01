@@ -32,13 +32,32 @@
             #expect(migrated.summaryModelID == "gpt-5.6-luna")
             #expect(!migrated.aiSettingsBackfilled)
 
-            var settings = VaultAISettingsSnapshot(vault: migrated)
-            settings.accountConnectionID = connection.id
-            _ = try await repository.updateVaultAISettings(settings)
+            _ = try await repository.updateVaultAccountConnection(id: migrated.id, connectionID: connection.id)
             try await repository.deleteDahliaAccountConnection(id: connection.id)
 
             migrated = try #require(try await queue.read { db in try VaultRecord.fetchOne(db, key: vault.id) })
             #expect(migrated.accountConnectionId == nil)
+        }
+
+        @Test
+        func staleAISettingsDoNotOverwriteANewerAccountConnection() async throws {
+            let manager = try AppDatabaseManager(path: ":memory:")
+            let repository = MeetingRepository(dbQueue: manager.dbQueue)
+            let connection = makeConnection(origin: "https://server.example.com")
+            let vault = makeVault(name: "Account")
+            try await repository.insertDahliaAccountConnection(connection)
+            try repository.insertVault(vault)
+            var staleSettings = VaultAISettingsSnapshot(vault: vault)
+            staleSettings.summaryModelID = "new-summary-model"
+
+            _ = try await repository.updateVaultAccountConnection(id: vault.id, connectionID: connection.id)
+            _ = try await repository.updateVaultAISettings(staleSettings)
+
+            let stored = try #require(try await manager.dbQueue.read { db in
+                try VaultRecord.fetchOne(db, key: vault.id)
+            })
+            #expect(stored.accountConnectionId == connection.id)
+            #expect(stored.summaryModelID == "new-summary-model")
         }
 
         @Test

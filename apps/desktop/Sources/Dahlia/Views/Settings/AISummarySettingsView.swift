@@ -108,6 +108,7 @@ struct AISummarySettingsView: View {
         if let selection = catalog.selectionToPersist(current: vaultSettings.summaryModelID) {
             preservesEffortForNextModelChange = true
             vaultSettings.summaryModelID = selection
+            resolveEffortSelection()
         } else {
             resolveEffortSelection()
         }

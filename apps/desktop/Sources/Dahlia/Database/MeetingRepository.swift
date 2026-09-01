@@ -109,7 +109,7 @@ final class MeetingRepository {
     nonisolated func updateVaultAISettings(_ settings: VaultAISettingsSnapshot) async throws -> VaultRecord? {
         try await dbQueue.write { db in
             guard var vault = try VaultRecord.fetchOne(db, key: settings.vaultID) else { return nil }
-            settings.apply(to: &vault)
+            settings.applyAISettings(to: &vault)
             try vault.update(db)
             return vault
         }

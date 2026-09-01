@@ -1203,9 +1203,8 @@ extension CodexChatSessionModel {
         if !models.contains(where: { $0.model == selectedModelID }) {
             selectedModelID = models.first(where: \CodexModel.isDefault)?.model ?? models[0].model
             persistChatModelID(selectedModelID)
-        } else {
-            resolveEffort()
         }
+        resolveEffort()
     }
 
     private func resolveEffort() {

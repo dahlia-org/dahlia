@@ -6,6 +6,30 @@ import Testing
 @MainActor
 struct CodexRuntimeAccountIsolationTests {
     @Test
+    func prepareNormalizesEffortAfterFallingBackToAnAvailableModel() async {
+        let service = TestCodexChatService(mode: .complete)
+        let settings = AppSettings()
+        settings.currentVault = VaultRecord(
+            id: .v7(),
+            path: "/tmp/model-fallback",
+            name: "Model Fallback",
+            createdAt: .now,
+            lastOpenedAt: .now
+        )
+        let session = CodexChatSessionModel(
+            modelID: "unavailable-model",
+            effort: "high",
+            service: service,
+            settings: settings
+        )
+
+        await session.prepare()
+
+        #expect(session.selectedModelID == "default-model")
+        #expect(session.selectedEffort == "medium")
+    }
+
+    @Test
     func existingChatDoesNotSendAfterRuntimeProviderChanges() async {
         let service = TestCodexChatService(mode: .complete)
         let provider = Mutex(CodexRuntimeProvider.chatGPTSubscription)

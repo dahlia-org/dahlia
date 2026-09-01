@@ -12,6 +12,10 @@ struct VaultAISettingsSnapshot: Equatable, Sendable {
 
     func apply(to vault: inout VaultRecord) {
         vault.accountConnectionId = accountConnectionID
+        applyAISettings(to: &vault)
+    }
+
+    func applyAISettings(to vault: inout VaultRecord) {
         vault.localProvider = localProvider
         vault.databricksProfile = databricksProfile
         vault.summaryModelID = summaryModelID
