@@ -209,17 +209,6 @@ describe("deployment routing", () => {
     expect(bundle).toContain("schema: dahlia");
     expect(bundle).toContain("volume_name:");
     expect(bundle).toContain("default: artifacts");
-    expect(bundle).toContain(`dev:
-    default: true
-    mode: development
-    variables:
-      app_name: dahlia-dev
-      database_project_id: dahlia-db-dev
-      catalog: dahlia_prod_catalog`);
-    expect(bundle).toContain(`dahlia_artifacts:
-          catalog_name: \${var.catalog}
-          schema_name: default
-          name: dahlia_artifacts_dev`);
     expect(bundle).toContain(`dahlia_artifacts:
           catalog_name: \${var.catalog}
           schema_name: default

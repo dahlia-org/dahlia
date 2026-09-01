@@ -35,17 +35,11 @@ targets:
     variables:
       app_name: dahlia-dev
       database_project_id: dahlia-db-dev
-      catalog: dahlia_prod_catalog
       schema: dahlia_dev
     resources:
       postgres_projects:
         dahlia_database_project:
           purge_on_delete: true
-      volumes:
-        dahlia_artifacts:
-          catalog_name: ${var.catalog}
-          schema_name: default
-          name: dahlia_artifacts_dev
 
   prod:
     mode: production
