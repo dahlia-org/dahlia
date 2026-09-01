@@ -2,11 +2,15 @@ import Darwin
 import Foundation
 
 public enum DahliaTokenBrokerProtocol {
+    public static let capabilityEnvironmentKey = "DAHLIA_TOKEN_BROKER_CAPABILITY"
+
     public struct Request: Codable, Sendable {
         public let connectionID: UUID
+        public let capability: String
 
-        public init(connectionID: UUID) {
+        public init(connectionID: UUID, capability: String) {
             self.connectionID = connectionID
+            self.capability = capability
         }
     }
 
@@ -35,11 +39,13 @@ public enum DahliaTokenBrokerProtocol {
 
     public static func requestToken(
         connectionID: UUID,
-        profile: DahliaRuntimeProfile
+        profile: DahliaRuntimeProfile,
+        capability: String
     ) throws -> String {
         try requestToken(
             connectionID: connectionID,
             profile: profile,
+            capability: capability,
             applicationSupportDirectory: .applicationSupportDirectory
         )
     }
@@ -47,6 +53,7 @@ public enum DahliaTokenBrokerProtocol {
     public static func requestToken(
         connectionID: UUID,
         profile: DahliaRuntimeProfile,
+        capability: String,
         applicationSupportDirectory: URL
     ) throws -> String {
         let descriptor = socket(AF_UNIX, SOCK_STREAM, 0)
@@ -62,7 +69,7 @@ public enum DahliaTokenBrokerProtocol {
         }
         guard result == 0 else { throw POSIXError(.init(rawValue: errno) ?? .ECONNREFUSED) }
 
-        var payload = try JSONEncoder().encode(Request(connectionID: connectionID))
+        var payload = try JSONEncoder().encode(Request(connectionID: connectionID, capability: capability))
         payload.append(0x0A)
         try writeAll(payload, to: descriptor)
         let response = try JSONDecoder().decode(Response.self, from: readLine(from: descriptor))

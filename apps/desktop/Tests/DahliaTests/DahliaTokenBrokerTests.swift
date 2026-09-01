@@ -1,6 +1,7 @@
 #if canImport(Testing)
     import DahliaRuntimeSupport
     import Foundation
+    import Synchronization
     import Testing
     @testable import Dahlia
 
@@ -10,22 +11,48 @@
             let rootURL = URL(filePath: "/tmp/dahlia-token-broker-\(UUID().uuidString.prefix(8))", directoryHint: .isDirectory)
             defer { try? FileManager.default.removeItem(at: rootURL) }
             let connectionID = UUID()
-            let server = DahliaTokenBrokerServer { requestedID in
+            let authorization = DahliaTokenBrokerAuthorization()
+            let capability = try authorization.rotate(profile: .development, connectionID: connectionID)
+            let requestedIDs = Mutex<[UUID]>([])
+            let server = DahliaTokenBrokerServer(authorization: authorization) { requestedID in
+                requestedIDs.withLock { $0.append(requestedID) }
                 #expect(requestedID == connectionID)
                 return "short-lived-token"
             }
             try server.start(profile: .development, applicationSupportDirectory: rootURL)
             defer { server.stop() }
 
+            await #expect(throws: (any Error).self) {
+                try await Task.detached {
+                    try DahliaTokenBrokerProtocol.requestToken(
+                        connectionID: connectionID,
+                        profile: .development,
+                        capability: "invalid-capability",
+                        applicationSupportDirectory: rootURL
+                    )
+                }.value
+            }
+            await #expect(throws: (any Error).self) {
+                try await Task.detached {
+                    try DahliaTokenBrokerProtocol.requestToken(
+                        connectionID: UUID(),
+                        profile: .development,
+                        capability: capability,
+                        applicationSupportDirectory: rootURL
+                    )
+                }.value
+            }
             let token = try await Task.detached {
                 try DahliaTokenBrokerProtocol.requestToken(
                     connectionID: connectionID,
                     profile: .development,
+                    capability: capability,
                     applicationSupportDirectory: rootURL
                 )
             }.value
 
             #expect(token == "short-lived-token")
+            #expect(requestedIDs.withLock { $0 } == [connectionID])
             let socketURL = DahliaTokenBrokerProtocol.socketURL(
                 profile: .development,
                 applicationSupportDirectory: rootURL

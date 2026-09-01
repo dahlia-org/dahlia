@@ -75,6 +75,34 @@ import Foundation
         }
 
         @Test
+        func providerConfigurationWritesOnlyToItsTargetHome() async throws {
+            let rootURL = FileManager.default.temporaryDirectory
+                .appending(path: "dahlia-codex-target-home-\(UUID().uuidString)", directoryHint: .isDirectory)
+            defer { try? FileManager.default.removeItem(at: rootURL) }
+            let locator = ApplicationSupportCodexHomeLocator(applicationSupportURL: rootURL)
+            let manager = CodexConfigurationManager(homeLocator: locator)
+            let connectionID = UUID.v7()
+            _ = try await manager.configureDahlia(
+                connectionID: connectionID,
+                origin: "https://cloud.example.com",
+                helperURL: URL(filePath: "/Applications/Dahlia.app/Contents/Helpers/dahlia-mcp"),
+                runtimeProfile: .production
+            )
+            _ = try await manager.configureDatabricks(
+                profile: try await databricksProfile(name: "WORK", host: "https://dbc.example.com")
+            )
+
+            let accountConfigURL = try locator.homeURL(connectionID: connectionID).appending(path: "config.toml")
+            let localConfigURL = try locator.homeURL(connectionID: nil).appending(path: "config.toml")
+            #expect(try String(contentsOf: accountConfigURL, encoding: .utf8).contains(#"model_provider = "dahlia""#))
+            #expect(try String(contentsOf: localConfigURL, encoding: .utf8).contains(#"model_provider = "databricks""#))
+
+            _ = try await manager.configureChatGPTSubscription()
+            #expect(try String(contentsOf: accountConfigURL, encoding: .utf8).contains(#"model_provider = "dahlia""#))
+            #expect(try String(contentsOf: localConfigURL, encoding: .utf8).contains(#"model_provider = "openai""#))
+        }
+
+        @Test
         func chatGPTConfigurationPreservesDatabricksConfiguration() async throws {
             let rootURL = FileManager.default.temporaryDirectory
                 .appending(path: "dahlia-codex-config-\(UUID().uuidString)", directoryHint: .isDirectory)

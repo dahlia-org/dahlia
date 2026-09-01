@@ -19,7 +19,14 @@ if arguments.first == "auth" {
         fail("Usage: dahlia-mcp auth token --connection-id <UUID> --profile <production|development>")
     }
     do {
-        try print(DahliaTokenBrokerProtocol.requestToken(connectionID: connectionID, profile: profile))
+        guard let capability = ProcessInfo.processInfo.environment[DahliaTokenBrokerProtocol.capabilityEnvironmentKey],
+              !capability.isEmpty
+        else { fail("Token broker authorization is unavailable") }
+        try print(DahliaTokenBrokerProtocol.requestToken(
+            connectionID: connectionID,
+            profile: profile,
+            capability: capability
+        ))
         exit(EXIT_SUCCESS)
     } catch {
         fail(error.localizedDescription)

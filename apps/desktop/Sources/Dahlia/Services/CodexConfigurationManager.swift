@@ -18,7 +18,7 @@ actor CodexConfigurationManager {
     @discardableResult
     func configureChatGPTSubscription() throws -> Bool {
         let configuration: String
-        if let data = try configurationData() {
+        if let data = try configurationData(connectionID: nil) {
             guard let decodedConfiguration = String(data: data, encoding: .utf8) else {
                 throw CodexConfigurationError.updateFailed(CocoaError(.fileReadInapplicableStringEncoding).localizedDescription)
             }
@@ -40,7 +40,7 @@ actor CodexConfigurationManager {
         } else {
             openAIModelProvider + "\n\n" + configuration
         }
-        return try writeIfChanged(Data(updatedConfiguration.utf8))
+        return try writeIfChanged(Data(updatedConfiguration.utf8), connectionID: nil)
     }
 
     private nonisolated func rootConfigurationEnd(in configuration: String) -> String.Index {
@@ -143,7 +143,7 @@ actor CodexConfigurationManager {
         Databricks-Ai-Gateway-Request-Tags = "{\\\"source\\\": \\\"dahlia\\\"}"
         """ + "\n"
 
-        return try writeIfChanged(Data(configuration.utf8))
+        return try writeIfChanged(Data(configuration.utf8), connectionID: nil)
     }
 
     @discardableResult
@@ -180,8 +180,8 @@ actor CodexConfigurationManager {
         _ = try validatedDatabricksValues(profile: profile)
     }
 
-    func configurationData() throws -> Data? {
-        let configURL = try configURL()
+    func configurationData(connectionID: UUID? = nil) throws -> Data? {
+        let configURL = try configURL(connectionID: connectionID)
         guard FileManager.default.fileExists(atPath: configURL.path) else { return nil }
         do {
             return try Data(contentsOf: configURL)
@@ -191,9 +191,9 @@ actor CodexConfigurationManager {
     }
 
     func restoreConfiguration(_ data: Data?) throws {
-        let configURL = try configURL()
+        let configURL = try configURL(connectionID: nil)
         if let data {
-            _ = try writeIfChanged(data)
+            _ = try writeIfChanged(data, connectionID: nil)
         } else if FileManager.default.fileExists(atPath: configURL.path) {
             try FileManager.default.removeItem(at: configURL)
         }
@@ -233,11 +233,11 @@ actor CodexConfigurationManager {
         return url
     }
 
-    private func configURL(connectionID: UUID? = nil) throws -> URL {
+    private func configURL(connectionID: UUID?) throws -> URL {
         try homeLocator.homeURL(connectionID: connectionID).appending(path: "config.toml")
     }
 
-    private func writeIfChanged(_ data: Data, connectionID: UUID? = nil) throws -> Bool {
+    private func writeIfChanged(_ data: Data, connectionID: UUID?) throws -> Bool {
         let configURL = try configURL(connectionID: connectionID)
         if FileManager.default.contents(atPath: configURL.path) == data { return false }
 
