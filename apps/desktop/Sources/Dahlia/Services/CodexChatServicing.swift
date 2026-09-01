@@ -20,7 +20,8 @@ protocol CodexChatServicing: Sendable {
         inputs: [CodexAppServerInput],
         model: String?,
         effort: String,
-        approvalMethod: CodexChatApprovalMethod
+        approvalMethod: CodexChatApprovalMethod,
+        expectedProvider: CodexRuntimeProvider?
     ) async throws -> CodexChatTurnHandle
     func updateApprovalMethod(
         threadID: String,
@@ -37,20 +38,13 @@ protocol CodexChatServicing: Sendable {
 }
 
 extension CodexChatServicing {
-    func acquireThreadLease(threadID _: String) async -> UUID {
-        UUID.v7()
-    }
-
-    func releaseThreadLease(threadID: String, leaseID _: UUID) async {
-        await unsubscribe(threadID: threadID)
-    }
-
     func beginTurn(
         threadID: String,
         inputs: [CodexAppServerInput],
         model: String?,
         effort: String,
-        approvalMethod: CodexChatApprovalMethod
+        approvalMethod: CodexChatApprovalMethod,
+        expectedProvider _: CodexRuntimeProvider? = nil
     ) async throws -> CodexChatTurnHandle {
         let events = try await send(
             threadID: threadID,
@@ -63,6 +57,14 @@ extension CodexChatServicing {
             events: events,
             approvalMethod: approvalMethod
         )
+    }
+
+    func acquireThreadLease(threadID _: String) async -> UUID {
+        UUID.v7()
+    }
+
+    func releaseThreadLease(threadID: String, leaseID _: UUID) async {
+        await unsubscribe(threadID: threadID)
     }
 
     func updateApprovalMethod(

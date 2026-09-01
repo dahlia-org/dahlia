@@ -51,8 +51,6 @@ actor CodexChatService: CodexChatServicing {
     }
 
     func listThreads(cursor: String? = nil, vaultID: UUID) async throws -> CodexChatThreadPage {
-        try await appServer.prepareProviderAuthentication()
-
         let workspaceURL = try workspaceLocator.workspaceURL(vaultID: vaultID)
         var params: [String: JSONValue] = [
             "archived": .bool(false),
@@ -66,8 +64,15 @@ actor CodexChatService: CodexChatServicing {
         if let cursor {
             params["cursor"] = .string(cursor)
         }
+        let requestParams = params
 
-        let result = try await appServer.chatRequest(method: "thread/list", params: .object(params))
+        let result = try await appServer.withChatOperation { appServer in
+            try await appServer.chatRequest(
+                method: "thread/list",
+                params: .object(requestParams),
+                bypassConfigurationReloadAdmission: true
+            )
+        }
         guard let object = result.objectValue,
               let data = object["data"]?.arrayValue
         else {
@@ -81,15 +86,16 @@ actor CodexChatService: CodexChatServicing {
     }
 
     func loadThread(id: String) async throws -> CodexChatThread {
-        try await appServer.prepareProviderAuthentication()
-
-        let result = try await appServer.chatRequest(
-            method: "thread/read",
-            params: .object([
-                "includeTurns": .bool(true),
-                "threadId": .string(id),
-            ])
-        )
+        let result = try await appServer.withChatOperation { appServer in
+            try await appServer.chatRequest(
+                method: "thread/read",
+                params: .object([
+                    "includeTurns": .bool(true),
+                    "threadId": .string(id),
+                ]),
+                bypassConfigurationReloadAdmission: true
+            )
+        }
         guard let thread = result.objectValue?["thread"]?.objectValue else {
             throw CodexAppServerError.invalidProtocolResponse
         }
@@ -211,9 +217,12 @@ actor CodexChatService: CodexChatServicing {
         inputs: [CodexAppServerInput],
         model: String?,
         effort: String,
-        approvalMethod: CodexChatApprovalMethod
+        approvalMethod: CodexChatApprovalMethod,
+        expectedProvider: CodexRuntimeProvider? = nil
     ) async throws -> CodexChatTurnHandle {
-        let (turn, effectiveApprovalMethod) = try await appServer.withChatOperation { appServer in
+        let (turn, effectiveApprovalMethod) = try await appServer.withChatOperation(
+            expectedProvider: expectedProvider
+        ) { appServer in
             let provider = await appServer.configuredAccountProvider()
             let approvalMethod = approvalMethod.availableMethod(for: provider)
 

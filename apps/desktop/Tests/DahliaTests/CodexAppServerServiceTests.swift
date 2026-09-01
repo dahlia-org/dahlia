@@ -421,7 +421,7 @@ import Foundation
                     launchCount.withLock { $0 += 1 }
                     return transports.withLock { $0.removeFirst() }
                 },
-                providerAuthenticationPreparation: { _ in
+                providerAuthenticationPreparation: { _, _ in
                     preparationCount.withLock { $0 += 1 }
                     return true
                 }
@@ -452,7 +452,7 @@ import Foundation
             let releasePreparation = AsyncStream.makeStream(of: Void.self)
             let service = makeTestCodexAppServerService(
                 transportFactory: { transports.withLock { $0.removeFirst() } },
-                providerAuthenticationPreparation: { _ in
+                providerAuthenticationPreparation: { _, _ in
                     preparationCount.withLock { $0 += 1 }
                     preparationStarted.continuation.yield()
                     for await _ in releasePreparation.stream {
@@ -489,7 +489,7 @@ import Foundation
             let releasePreparation = AsyncStream.makeStream(of: Void.self)
             let service = makeTestCodexAppServerService(
                 transportFactory: { transports.withLock { $0.removeFirst() } },
-                providerAuthenticationPreparation: { _ in
+                providerAuthenticationPreparation: { _, _ in
                     preparationCount.withLock { $0 += 1 }
                     preparationStarted.continuation.yield()
                     for await _ in releasePreparation.stream {
@@ -530,7 +530,7 @@ import Foundation
             let preparationStarted = AsyncStream.makeStream(of: Void.self)
             let service = makeTestCodexAppServerService(
                 transportFactory: { transport },
-                providerAuthenticationPreparation: { _ in
+                providerAuthenticationPreparation: { _, _ in
                     preparationStarted.continuation.yield()
                     do {
                         try await Task.sleep(for: .seconds(60))
@@ -564,7 +564,7 @@ import Foundation
             let cancellationCompletion = CompletionGate()
             let service = makeTestCodexAppServerService(
                 transportFactory: { transport },
-                providerAuthenticationPreparation: { _ in
+                providerAuthenticationPreparation: { _, _ in
                     let attempt = preparationCount.withLock { count in
                         count += 1
                         return count
@@ -612,7 +612,7 @@ import Foundation
             let preparationCount = Mutex(0)
             let service = makeTestCodexAppServerService(
                 transportFactory: { transports.withLock { $0.removeFirst() } },
-                providerAuthenticationPreparation: { authenticationMayChange in
+                providerAuthenticationPreparation: { _, authenticationMayChange in
                     let attempt = preparationCount.withLock { count in
                         count += 1
                         return count

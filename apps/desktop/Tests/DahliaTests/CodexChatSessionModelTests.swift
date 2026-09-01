@@ -1619,7 +1619,8 @@ import Foundation
             inputs: [CodexAppServerInput],
             model: String?,
             effort: String,
-            approvalMethod: CodexChatApprovalMethod
+            approvalMethod: CodexChatApprovalMethod,
+            expectedProvider _: CodexRuntimeProvider? = nil
         ) async throws -> CodexChatTurnHandle {
             turnApprovalMethods.append(approvalMethod)
             let stream = try await send(

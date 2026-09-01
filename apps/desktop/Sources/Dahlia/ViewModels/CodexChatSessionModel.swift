@@ -1002,7 +1002,8 @@ extension CodexChatSessionModel {
             inputs: inputs,
             model: model,
             effort: effort,
-            approvalMethod: approvalMethod
+            approvalMethod: approvalMethod,
+            expectedProvider: preparedRuntimeProvider ?? runtimeProviderResolver()
         )
     }
 
