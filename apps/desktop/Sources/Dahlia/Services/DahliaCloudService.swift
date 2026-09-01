@@ -200,7 +200,7 @@ actor DahliaCloudService {
         let pkce = CloudPKCE.generate()
         let state = CloudPKCE.randomURLSafeString(byteCount: 32)
         let scopes = discovery.usesProxySession
-            ? Set(["apps", "iam.current-user:read", "offline_access"])
+            ? Set(["ai-gateway", "files", "iam.current-user:read", "offline_access"])
             : Set(discovery.protectedResource.scopesSupported ?? [])
             .union(Self.identityScopes)
             .subtracting(["all-apis"])
