@@ -55,6 +55,29 @@
             #expect(defaults.object(forKey: SetupTourPresentationPolicy.progressStepUserDefaultsKey) == nil)
             #expect(defaults.object(forKey: SetupTourPresentationPolicy.vaultPathUserDefaultsKey) == nil)
             #expect(defaults.object(forKey: SetupTourPresentationPolicy.vaultConfirmedUserDefaultsKey) == nil)
+            #expect(defaults.object(forKey: SetupTourPresentationPolicy.providerUserDefaultsKey) == nil)
+            #expect(defaults.object(forKey: SetupTourPresentationPolicy.databricksProfileUserDefaultsKey) == nil)
+        }
+
+        @Test
+        func interruptedInitialTourRestoresItsProviderDraft() throws {
+            let suiteName = "SetupTourProviderProgressTests-\(UUID())"
+            let defaults = try #require(UserDefaults(suiteName: suiteName))
+            defer { defaults.removePersistentDomain(forName: suiteName) }
+            SetupTourPresentationPolicy.saveProgress(
+                step: .modelProvider,
+                vaultURL: URL(filePath: "/tmp/Dahlia", directoryHint: .isDirectory),
+                isVaultConfirmed: true,
+                in: defaults
+            )
+            let draft = VaultAISettingsModel(setupDefaults: defaults)
+            draft.localProvider = .databricks
+            draft.databricksProfile = "setup-profile"
+
+            let restored = VaultAISettingsModel(setupDefaults: defaults)
+
+            #expect(restored.localProvider == .databricks)
+            #expect(restored.databricksProfile == "setup-profile")
         }
 
         @Test

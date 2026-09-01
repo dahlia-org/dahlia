@@ -17,6 +17,7 @@ final class VaultAISettingsModel {
 
     var localProvider: AIAccountProvider {
         didSet {
+            persistSetupProviderDraftIfChanged(oldValue, localProvider)
             persistIfChanged(oldValue, localProvider)
             scheduleRuntimeActivationIfChanged(oldValue, localProvider)
         }
@@ -24,6 +25,7 @@ final class VaultAISettingsModel {
 
     var databricksProfile: String {
         didSet {
+            persistSetupProviderDraftIfChanged(oldValue, databricksProfile)
             persistIfChanged(oldValue, databricksProfile)
             scheduleRuntimeActivationIfChanged(oldValue, databricksProfile)
         }
@@ -41,11 +43,13 @@ final class VaultAISettingsModel {
     @ObservationIgnored private var activationGeneration = 0
     @ObservationIgnored private var saveTask: Task<Void, Never>?
     @ObservationIgnored private var runtimeTask: Task<Bool, Never>?
+    @ObservationIgnored private let setupDefaults: UserDefaults
 
-    private init() {
+    init(setupDefaults: UserDefaults = .standard) {
+        self.setupDefaults = setupDefaults
         accountConnectionID = nil
-        localProvider = .chatGPTSubscription
-        databricksProfile = ""
+        localProvider = SetupTourPresentationPolicy.restoredProvider(in: setupDefaults) ?? .chatGPTSubscription
+        databricksProfile = SetupTourPresentationPolicy.restoredDatabricksProfile(in: setupDefaults)
         summaryModelID = "gpt-5.6-luna"
         summaryReasoningEffort = "high"
         chatModelID = ""
@@ -144,6 +148,18 @@ final class VaultAISettingsModel {
                 }
             }
         }
+    }
+
+    private func persistSetupProviderDraftIfChanged<T: Equatable>(_ oldValue: T, _ newValue: T) {
+        guard vaultID == nil,
+              oldValue != newValue,
+              SetupTourPresentationPolicy.hasSavedProgress(in: setupDefaults)
+        else { return }
+        SetupTourPresentationPolicy.saveProviderDraft(
+            provider: localProvider,
+            databricksProfile: databricksProfile,
+            in: setupDefaults
+        )
     }
 
     private func scheduleRuntimeActivationIfChanged<T: Equatable>(_ oldValue: T, _ newValue: T) {

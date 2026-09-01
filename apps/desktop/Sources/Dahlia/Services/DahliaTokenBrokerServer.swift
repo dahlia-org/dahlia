@@ -40,13 +40,16 @@ final class DahliaTokenBrokerAuthorization: Sendable {
         }
     }
 
-    func authorizes(_ descriptor: Int32, profile: DahliaRuntimeProfile, connectionID: UUID) -> Bool {
+    func authorizesClient(_ descriptor: Int32, profile: DahliaRuntimeProfile) -> Bool {
         guard let grant = grants.withLock({ $0[profile.rawValue] }),
-              grant.connectionID == connectionID,
               let client = clientResolver(descriptor)
         else { return false }
         return client.parentPID == grant.appServerPID
             && client.executableURL.resolvingSymlinksInPath() == grant.helperURL
+    }
+
+    func authorizesConnection(_ connectionID: UUID, profile: DahliaRuntimeProfile) -> Bool {
+        grants.withLock { $0[profile.rawValue]?.connectionID == connectionID }
     }
 
     func clear(profile: DahliaRuntimeProfile) {
@@ -181,6 +184,17 @@ final class DahliaTokenBrokerServer: @unchecked Sendable {
                 Darwin.close(client)
                 continue
             }
+            var readTimeout = timeval(tv_sec: 1, tv_usec: 0)
+            guard setsockopt(
+                client,
+                SOL_SOCKET,
+                SO_RCVTIMEO,
+                &readTimeout,
+                socklen_t(MemoryLayout.size(ofValue: readTimeout))
+            ) == 0 else {
+                Darwin.close(client)
+                continue
+            }
             handle(client, profile: profile)
             Darwin.close(client)
         }
@@ -189,13 +203,16 @@ final class DahliaTokenBrokerServer: @unchecked Sendable {
     private func handle(_ descriptor: Int32, profile: DahliaRuntimeProfile) {
         var peerUID: uid_t = 0
         var peerGID: gid_t = 0
-        guard getpeereid(descriptor, &peerUID, &peerGID) == 0, peerUID == getuid() else { return }
+        guard getpeereid(descriptor, &peerUID, &peerGID) == 0,
+              peerUID == getuid(),
+              authorization.authorizesClient(descriptor, profile: profile)
+        else { return }
 
         let response: DahliaTokenBrokerProtocol.Response
         do {
             let data = try DahliaTokenBrokerProtocol.readLine(from: descriptor)
             let request = try JSONDecoder().decode(DahliaTokenBrokerProtocol.Request.self, from: data)
-            guard authorization.authorizes(descriptor, profile: profile, connectionID: request.connectionID) else {
+            guard authorization.authorizesConnection(request.connectionID, profile: profile) else {
                 throw POSIXError(.EACCES)
             }
             let result = Mutex<Resolution?>(nil)

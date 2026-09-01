@@ -52,6 +52,14 @@ public enum DahliaTokenBrokerProtocol {
         let descriptor = socket(AF_UNIX, SOCK_STREAM, 0)
         guard descriptor >= 0 else { throw POSIXError(.init(rawValue: errno) ?? .EIO) }
         defer { Darwin.close(descriptor) }
+        var noSignal: Int32 = 1
+        guard setsockopt(
+            descriptor,
+            SOL_SOCKET,
+            SO_NOSIGPIPE,
+            &noSignal,
+            socklen_t(MemoryLayout.size(ofValue: noSignal))
+        ) == 0 else { throw POSIXError(.init(rawValue: errno) ?? .EIO) }
 
         let socketURL = socketURL(profile: profile, applicationSupportDirectory: applicationSupportDirectory)
         var address = try unixAddress(path: socketURL.path)
