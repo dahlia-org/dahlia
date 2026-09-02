@@ -495,6 +495,37 @@ import Foundation
         }
 
         @Test
+        func enteringFullScreenClearsImplicitContextFromSharedSession() async {
+            let service = CoordinatorTestCodexChatService()
+            let settings = AppSettings()
+            let vault = Self.vault(name: "Cleared Context")
+            settings.currentVault = vault
+            let coordinator = CodexChatCoordinator(service: service, settings: settings)
+            coordinator.updateCurrentContext(
+                vaultID: vault.id,
+                meetingID: nil,
+                draftMeeting: DraftMeeting(id: UUID.v7(), title: "Previous meeting"),
+                dbQueue: nil
+            )
+
+            coordinator.dockedSession.draft = "Meeting question"
+            coordinator.dockedSession.sendDraft()
+            await waitUntil { await MainActor.run { !coordinator.dockedSession.isGenerating } }
+
+            coordinator.showDocked()
+            #expect(coordinator.isDockedVisible)
+            coordinator.enterFullScreen(vaultID: vault.id)
+            coordinator.dockedSession.draft = "Full-screen question"
+            coordinator.dockedSession.sendDraft()
+            await waitUntil { await MainActor.run { !coordinator.dockedSession.isGenerating } }
+
+            let prompts = await service.sentTextBlocks
+            let contextNames = prompts.map { CodexChatPromptCodec.decodeTextBlocks($0).context?.meetingName }
+            #expect(contextNames == ["Previous meeting", nil])
+            #expect(!coordinator.isDockedVisible)
+        }
+
+        @Test
         func liveModeStatusRemainsEnabledUntilTheLastSessionTurnsItOff() throws {
             let settings = AppSettings()
             settings.currentVault = Self.vault(name: "Live")
