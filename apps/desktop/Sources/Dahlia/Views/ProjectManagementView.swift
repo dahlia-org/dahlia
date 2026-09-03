@@ -23,6 +23,8 @@ struct ProjectManagementView: View {
     let onOpenSidebarProject: (UUID, ProjectNavigationIntent) -> Void
     let onSelectVault: (VaultRecord) -> Void
 
+    private var canEdit: Bool { sidebarViewModel.canEditCurrentVault }
+
     var body: some View {
         let isShowingSettings = mainWindowNavigation.isShowingSettings
 
@@ -128,6 +130,7 @@ struct ProjectManagementView: View {
                     mainWindowNavigation.setProjectDetailDisplayMode($0, vaultId: sidebarViewModel.currentVault?.id)
                 },
                 onBack: onShowProjectCatalog,
+                canEdit: canEdit,
                 onEdit: { onEditProject(project) },
                 onOpenMeeting: onOpenMeeting
             )
@@ -135,7 +138,8 @@ struct ProjectManagementView: View {
             ProjectCatalogView(
                 projects: sidebarViewModel.allProjectItems,
                 pinnedProjectIDs: Set(mainWindowNavigation.pinnedProjectIDs(vaultId: sidebarViewModel.currentVault?.id)),
-                canCreateMeeting: !captionViewModel.isRecordingStartPending && !captionViewModel.isFinalizingRecording,
+                canEdit: canEdit,
+                canCreateMeeting: canEdit && !captionViewModel.isRecordingStartPending && !captionViewModel.isFinalizingRecording,
                 appearanceForProject: projectAppearance,
                 onOpenProject: { onOpenProject($0.projectId) },
                 onEditProject: onEditProject,

@@ -2,6 +2,7 @@ import SwiftUI
 
 private struct MeetingActionsMenu: View {
     @ObservedObject var viewModel: CaptionViewModel
+    let canEdit: Bool
     let onRename: () -> Void
     let onDelete: () -> Void
 
@@ -11,32 +12,36 @@ private struct MeetingActionsMenu: View {
 
     var body: some View {
         Menu {
-            Button(L10n.rename, systemImage: "pencil", action: onRename)
+            if canEdit {
+                Button(L10n.rename, systemImage: "pencil", action: onRename)
+            }
 
             if canOpenSummary {
                 SummaryOpenMenu(viewModel: viewModel)
             }
 
-            if viewModel.canStartOrResumeBatchTranscription {
-                Button(
-                    viewModel.batchTranscriptionActionTitle,
-                    systemImage: "waveform",
-                    action: viewModel.presentAvailableBatchRetranscription
-                )
-            } else if viewModel.canRetranscribeBatchAudio {
-                Button(
-                    L10n.retranscribe,
-                    systemImage: "arrow.clockwise",
-                    action: viewModel.presentAvailableBatchRetranscription
-                )
-            }
+            if canEdit {
+                if viewModel.canStartOrResumeBatchTranscription {
+                    Button(
+                        viewModel.batchTranscriptionActionTitle,
+                        systemImage: "waveform",
+                        action: viewModel.presentAvailableBatchRetranscription
+                    )
+                } else if viewModel.canRetranscribeBatchAudio {
+                    Button(
+                        L10n.retranscribe,
+                        systemImage: "arrow.clockwise",
+                        action: viewModel.presentAvailableBatchRetranscription
+                    )
+                }
 
-            Divider()
+                Divider()
 
-            Button(role: .destructive, action: onDelete) {
-                Label(L10n.delete, systemImage: "trash")
+                Button(role: .destructive, action: onDelete) {
+                    Label(L10n.delete, systemImage: "trash")
+                }
+                .disabled(viewModel.currentMeetingId == nil)
             }
-            .disabled(viewModel.currentMeetingId == nil)
         } label: {
             Label(L10n.actions, systemImage: "ellipsis.circle")
         }
@@ -48,6 +53,7 @@ private struct MeetingActionsMenu: View {
 struct MeetingDetailNavigationBar: View {
     @Binding var selection: DetailTab
     @ObservedObject var viewModel: CaptionViewModel
+    let canEdit: Bool
     let onRename: () -> Void
     let onDelete: () -> Void
 
@@ -64,6 +70,7 @@ struct MeetingDetailNavigationBar: View {
             if showsActions {
                 MeetingActionsMenu(
                     viewModel: viewModel,
+                    canEdit: canEdit,
                     onRename: onRename,
                     onDelete: onDelete
                 )

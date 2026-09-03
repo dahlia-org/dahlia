@@ -43,6 +43,15 @@
                 try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('sync_entity_state')")
             }
             #expect(stateColumns == ["vaultId", "entity", "entityId", "confirmedRevision"])
+            let stateVaultForeignKey = try database.dbQueue.read { db in
+                try Row.fetchOne(
+                    db,
+                    sql: "SELECT \"table\", \"from\", on_delete FROM pragma_foreign_key_list('sync_entity_state')"
+                )
+            }
+            #expect(stateVaultForeignKey?["table"] as String? == "vaults")
+            #expect(stateVaultForeignKey?["from"] as String? == "vaultId")
+            #expect(stateVaultForeignKey?["on_delete"] as String? == "CASCADE")
         }
 
         @Test
@@ -108,6 +117,47 @@
             #expect(try await database.dbQueue.read { db in
                 try String.fetchOne(db, sql: "SELECT blockedReason FROM sync_transactions WHERE id = ?", arguments: [claimed.id])
             } == "conflict")
+        }
+
+        @Test
+        func acceptingServerVersionForcesCanonicalReconciliation() async throws {
+            let (database, vault) = try await syncedDatabase()
+            try await database.dbQueue.write { db in
+                try db.execute(
+                    sql: "INSERT INTO sync_entity_state(vaultId, entity, entityId, confirmedRevision) VALUES (?, 'vault', ?, 3)",
+                    arguments: [vault.id, vault.id]
+                )
+                var edited = vault
+                edited.name = "Rejected local name"
+                try edited.update(db)
+                try SyncTransactionRecorder.record(
+                    vaultId: vault.id,
+                    operations: [SyncInitialSnapshotBuilder.vaultOperation(edited, action: .update)],
+                    in: db
+                )
+            }
+            let claimed = try #require(try await SyncTransactionQueue.claim(dbQueue: database.dbQueue))
+            try await SyncTransactionQueue.block(
+                claimed,
+                reason: .conflict,
+                response: Data("""
+                {"conflicts":[{"entity":"vault","id":"\(vault.id.uuidString)","serverRevision":4}]}
+                """.utf8),
+                dbQueue: database.dbQueue
+            )
+
+            try await SyncTransactionQueue.acceptServerVersion(vaultId: vault.id, dbQueue: database.dbQueue)
+
+            let state = try await database.dbQueue.read { db in
+                try (
+                    Int.fetchOne(db, sql: "SELECT count(*) FROM sync_transactions WHERE vaultId = ?", arguments: [vault.id]),
+                    Int.fetchOne(db, sql: "SELECT count(*) FROM sync_entity_state WHERE vaultId = ?", arguments: [vault.id]),
+                    VaultRecord.fetchOne(db, key: vault.id)?.syncPullCursor
+                )
+            }
+            #expect(state.0 == 0)
+            #expect(state.1 == 0)
+            #expect(state.2 == nil)
         }
 
         @Test
@@ -560,6 +610,67 @@
             #expect(changes.map(\.entityId) == [rootId, childId, meetingId, deletedMeetingId])
             #expect(changes[2].revision == 3)
             #expect(changes.last?.action == "delete")
+        }
+
+        @Test
+        func freshPullReconcilesExistingProjectsBeforeApplyingCanonicalHierarchy() async throws {
+            let (database, vault) = try await syncedDatabase()
+            let firstRoot = UUID.v7()
+            let secondRoot = UUID.v7()
+            let retiredChild = UUID.v7()
+            try await database.dbQueue.write { db in
+                try ProjectRecord(
+                    id: firstRoot,
+                    vaultId: vault.id,
+                    parentProjectId: nil,
+                    name: "First",
+                    createdAt: .now,
+                    projectType: .undefined
+                ).insert(db)
+                try ProjectRecord(
+                    id: secondRoot,
+                    vaultId: vault.id,
+                    parentProjectId: nil,
+                    name: "Second",
+                    createdAt: .now,
+                    projectType: .undefined
+                ).insert(db)
+                try ProjectRecord(
+                    id: retiredChild,
+                    vaultId: vault.id,
+                    parentProjectId: firstRoot,
+                    name: "Retired",
+                    createdAt: .now,
+                    projectType: nil
+                ).insert(db)
+            }
+            let page = try SyncJSON.decoder.decode(SyncChangePage.self, from: Data("""
+            {
+              "items": [
+                {"sequence":1,"entity":"project","entityId":"\(retiredChild.uuidString)","action":"delete","revision":null},
+                {"sequence":2,"entity":"project","entityId":"\(secondRoot.uuidString)","action":"upsert","revision":2,
+                 "record":{"name":"Root","projectType":"undefined","createdAt":"2026-09-03T12:00:00Z"}},
+                {"sequence":3,"entity":"project","entityId":"\(firstRoot.uuidString)","action":"upsert","revision":2,
+                 "record":{"parentProjectId":"\(secondRoot.uuidString)","name":"Child","createdAt":"2026-09-03T12:00:00Z"}}
+              ],
+              "cursor":"v1.snapshot",
+              "hasMore":false
+            }
+            """.utf8))
+            let snapshot = SyncWorker.initialSnapshotChanges(page.items)
+
+            #expect(try await RemoteChangeApplier.reconcileProjectSnapshot(
+                snapshot,
+                vaultId: vault.id,
+                dbQueue: database.dbQueue
+            ))
+
+            let projects = try await database.dbQueue.read { db in
+                try ProjectRecord.filter(Column("vaultId") == vault.id).fetchAll(db)
+            }
+            #expect(Set(projects.map(\.id)) == Set([firstRoot, secondRoot]))
+            #expect(projects.first(where: { $0.id == secondRoot })?.parentProjectId == nil)
+            #expect(projects.first(where: { $0.id == firstRoot })?.parentProjectId == secondRoot)
         }
 
         @Test

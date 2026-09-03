@@ -36,8 +36,12 @@ struct VaultRecord: Codable, FetchableRecord, PersistableRecord, Identifiable, E
 }
 
 extension VaultRecord {
+    var allowsCanonicalEdits: Bool {
+        syncRole != "member"
+    }
+
     var requiresServerDeletionBeforeRemoval: Bool {
-        syncRole != "member" && (syncEnabled || syncConfirmedConnectionId != nil)
+        allowsCanonicalEdits && (syncEnabled || syncConfirmedConnectionId != nil)
     }
 }
 

@@ -62,7 +62,7 @@ enum MeetingSyncMigration {
         ON sync_operations(entity, entityId, transactionId);
 
     CREATE TABLE sync_entity_state (
-        vaultId BLOB NOT NULL,
+        vaultId BLOB NOT NULL REFERENCES vaults(id) ON DELETE CASCADE,
         entity TEXT NOT NULL,
         entityId BLOB NOT NULL,
         confirmedRevision INTEGER,

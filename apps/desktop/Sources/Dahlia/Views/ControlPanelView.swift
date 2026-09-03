@@ -81,6 +81,7 @@ struct ControlPanelView: View {
                 MeetingDetailNavigationBar(
                     selection: $selectedTab,
                     viewModel: viewModel,
+                    canEdit: sidebarViewModel.canEditCurrentVault,
                     onRename: beginMeetingRename,
                     onDelete: requestCurrentMeetingDeletion
                 )
@@ -279,7 +280,8 @@ struct ControlPanelView: View {
             isSelecting: $isSelectingScreenshots,
             selectedScreenshotIDs: $selectedScreenshotIds,
             referencedScreenshotIDs: referencedScreenshotIds,
-            isDeletionDisabled: viewModel.isSummaryGenerating || viewModel.isDeletingScreenshots,
+            isDeletionDisabled: !sidebarViewModel.canEditCurrentVault
+                || viewModel.isSummaryGenerating || viewModel.isDeletingScreenshots,
             open: { openScreenshot($0, previewImage: $1, scope: .allScreenshots) },
             download: viewModel.downloadScreenshot,
             delete: viewModel.deleteScreenshot,
@@ -321,10 +323,12 @@ struct ControlPanelView: View {
     }
 
     private func deleteSelectedScreenshots() {
+        guard sidebarViewModel.canEditCurrentVault else { return }
         isConfirmingScreenshotDeletion = true
     }
 
     private func confirmDeleteSelectedScreenshots() {
+        guard sidebarViewModel.canEditCurrentVault else { return }
         viewModel.deleteScreenshots(ids: selectedScreenshotIds)
         selectedScreenshotIds.removeAll()
         isSelectingScreenshots = false
@@ -427,6 +431,7 @@ struct ControlPanelView: View {
     }
 
     private func beginMeetingRename() {
+        guard sidebarViewModel.canEditCurrentVault else { return }
         editingMeetingName = displayedMeetingTitle ?? ""
         isEditingMeetingName = true
         didTapInsideMeetingNameEditor = false
@@ -458,6 +463,7 @@ struct ControlPanelView: View {
     }
 
     private func requestCurrentMeetingDeletion() {
+        guard sidebarViewModel.canEditCurrentVault else { return }
         guard let meetingId = viewModel.currentMeetingId else { return }
         pendingMeetingDeletion = MeetingDeletionRequest(
             meetingIds: [meetingId],

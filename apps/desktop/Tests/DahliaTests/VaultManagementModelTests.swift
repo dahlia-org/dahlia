@@ -172,6 +172,32 @@
         }
 
         @Test
+        func cloudVaultDiscoveryContinuesAfterOneConnectionFails() async throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            let repository = MeetingRepository(dbQueue: database.dbQueue)
+            let failing = DahliaAccountConnectionRecord(
+                id: .v7(), origin: "https://failing.example.com", clientID: "desktop-client", createdAt: .now
+            )
+            let healthy = DahliaAccountConnectionRecord(
+                id: .v7(), origin: "https://healthy.example.com", clientID: "desktop-client", createdAt: .now
+            )
+            try await repository.insertDahliaAccountConnection(failing)
+            try await repository.insertDahliaAccountConnection(healthy)
+            let cloudVault = CloudVaultRecord(
+                vaultId: .v7(), connectionId: healthy.id, name: "Shared", createdAt: .now, revision: 1, role: "member"
+            )
+            let model = VaultManagementModel { connection in
+                if connection.id == failing.id { throw URLError(.cannotConnectToHost) }
+                return [cloudVault]
+            }
+
+            await model.configure(appDatabase: database)
+
+            #expect(model.hasLoadedVaults)
+            #expect(model.cloudVaults == [cloudVault])
+        }
+
+        @Test
         func registeringTheSameFolderReturnsTheExistingVault() async throws {
             let database = try AppDatabaseManager(path: ":memory:")
             let model = VaultManagementModel()
@@ -257,13 +283,22 @@
             vault.syncConfirmedConnectionId = connection.id
             vault.syncEnabled = true
             vault.syncRole = "member"
+            let vaultID = vault.id
             try await repository.insertDahliaAccountConnection(connection)
             try await repository.insertCloudVaultAsync(vault, revision: 1)
+            #expect(try await database.dbQueue.read { db in
+                try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_entity_state WHERE vaultId = ?", arguments: [vaultID])
+            } == 1)
 
             let didRemove = await model.removeVault(vault, currentVaultId: nil)
 
             #expect(didRemove)
             #expect(try repository.fetchAllVaults().isEmpty)
+            #expect(try await database.dbQueue.read { db in
+                try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_entity_state WHERE vaultId = ?", arguments: [vaultID])
+            } == 0)
+            try await repository.insertCloudVaultAsync(vault, revision: 1)
+            #expect(try repository.fetchAllVaults().map(\.id) == [vaultID])
         }
 
         @Test
@@ -281,6 +316,29 @@
             #expect(renamedVault.name == "Customer Interviews")
             #expect(model.vaults.first?.name == "Customer Interviews")
             #expect(try MeetingRepository(dbQueue: database.dbQueue).fetchAllVaults().first?.name == "Customer Interviews")
+        }
+
+        @Test
+        func doesNotRenameAnImportedMemberVault() async throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            let repository = MeetingRepository(dbQueue: database.dbQueue)
+            let connection = DahliaAccountConnectionRecord(
+                id: .v7(), origin: "https://server.example.com", clientID: "desktop-client", createdAt: .now
+            )
+            var vault = makeVault(name: "Shared", lastOpenedAt: .now)
+            vault.accountConnectionId = connection.id
+            vault.syncConfirmedConnectionId = connection.id
+            vault.syncEnabled = true
+            vault.syncRole = "member"
+            try await repository.insertDahliaAccountConnection(connection)
+            try await repository.insertCloudVaultAsync(vault, revision: 1)
+            let model = VaultManagementModel()
+            await model.configure(appDatabase: database)
+
+            let renamed = await model.renameVault(vault, to: "Rejected")
+
+            #expect(renamed == nil)
+            #expect(try repository.fetchAllVaults().first?.name == "Shared")
         }
 
         @Test

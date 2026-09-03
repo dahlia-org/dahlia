@@ -8,6 +8,7 @@ struct ProjectCatalogView: View {
 
     let projects: [ProjectOverviewItem]
     let pinnedProjectIDs: Set<UUID>
+    let canEdit: Bool
     let canCreateMeeting: Bool
     let appearanceForProject: (UUID) -> ProjectAppearance
     let onOpenProject: (ProjectOverviewItem) -> Void
@@ -44,6 +45,7 @@ struct ProjectCatalogView: View {
                     Text(L10n.createFirstProjectDescription)
                 } actions: {
                     Button(L10n.newProject, systemImage: "plus", action: onCreateProject)
+                        .disabled(!canEdit)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if visibleProjects.isEmpty {
@@ -67,6 +69,7 @@ struct ProjectCatalogView: View {
                                     project: project,
                                     appearance: appearanceForProject(project.projectId),
                                     isPinned: pinnedProjectIDs.contains(project.projectId),
+                                    canEdit: canEdit,
                                     canCreateMeeting: canCreateMeeting,
                                     onOpen: { onOpenProject(project) },
                                     onEdit: { onEditProject(project) },

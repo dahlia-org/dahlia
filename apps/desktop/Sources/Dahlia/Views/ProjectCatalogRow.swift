@@ -4,6 +4,7 @@ struct ProjectCatalogRow: View {
     let project: ProjectOverviewItem
     let appearance: ProjectAppearance
     let isPinned: Bool
+    let canEdit: Bool
     let canCreateMeeting: Bool
     let onOpen: () -> Void
     let onEdit: () -> Void
@@ -35,15 +36,17 @@ struct ProjectCatalogRow: View {
             .buttonStyle(.plain)
 
             HStack(spacing: 4) {
-                Menu(L10n.projectOptions, systemImage: "ellipsis") {
-                    Button(L10n.editProject, systemImage: "pencil", action: onEdit)
-                    Button(L10n.deleteProject, systemImage: "trash", role: .destructive, action: onDelete)
+                if canEdit {
+                    Menu(L10n.projectOptions, systemImage: "ellipsis") {
+                        Button(L10n.editProject, systemImage: "pencil", action: onEdit)
+                        Button(L10n.deleteProject, systemImage: "trash", role: .destructive, action: onDelete)
+                    }
+                    .labelStyle(.iconOnly)
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .fixedSize()
+                    .projectCatalogIconHoverHighlight()
                 }
-                .labelStyle(.iconOnly)
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .fixedSize()
-                .projectCatalogIconHoverHighlight()
 
                 Button(isPinned ? L10n.unpinProject : L10n.pinProject, systemImage: isPinned ? "pin.fill" : "pin", action: onTogglePin)
                     .labelStyle(.iconOnly)

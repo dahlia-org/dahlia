@@ -5,6 +5,7 @@ struct MeetingSidebarProjectHeader: View {
     let appearance: ProjectAppearance
     let isPinned: Bool
     let isExpanded: Bool
+    let canEditProject: Bool
     let canCreateMeeting: Bool
     let onToggleExpansion: () -> Void
     let onOpen: (ProjectNavigationIntent) -> Void
@@ -44,8 +45,10 @@ struct MeetingSidebarProjectHeader: View {
                         systemImage: isPinned ? "pin.slash" : "pin",
                         action: onTogglePin
                     )
-                    Button(L10n.editProject, systemImage: "gearshape", action: { onOpen(.edit) })
-                    Button(L10n.deleteProject, systemImage: "trash", role: .destructive, action: { onOpen(.delete) })
+                    if canEditProject {
+                        Button(L10n.editProject, systemImage: "gearshape", action: { onOpen(.edit) })
+                        Button(L10n.deleteProject, systemImage: "trash", role: .destructive, action: { onOpen(.delete) })
+                    }
                 } label: {
                     Label(L10n.projectOptions, systemImage: "ellipsis")
                         .labelStyle(.iconOnly)

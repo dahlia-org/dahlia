@@ -629,14 +629,14 @@ enum SyncTransactionQueue {
             guard let blocked = try Row.fetchOne(
                 db,
                 sql: """
-                SELECT sequence, serverResponseJSON FROM sync_transactions
+                SELECT sequence FROM sync_transactions
                 WHERE vaultId = ? AND blockedReason IS NOT NULL ORDER BY sequence LIMIT 1
                 """,
                 arguments: [vaultId]
             ) else { return }
             let sequence: Int64 = blocked["sequence"]
-            applyConflictRevision(blocked["serverResponseJSON"], vaultId: vaultId, in: db)
             try discard(vaultId: vaultId, fromSequence: sequence, in: db)
+            try db.execute(sql: "DELETE FROM sync_entity_state WHERE vaultId = ?", arguments: [vaultId])
             try db.execute(sql: "UPDATE vaults SET syncPullCursor = NULL WHERE id = ?", arguments: [vaultId])
         }
     }

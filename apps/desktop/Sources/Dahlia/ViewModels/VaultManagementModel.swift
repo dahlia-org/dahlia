@@ -5,6 +5,8 @@ import Observation
 @MainActor
 @Observable
 final class VaultManagementModel {
+    typealias CloudVaultFetcher = (DahliaAccountConnectionRecord) async throws -> [CloudVaultRecord]
+
     static let defaultVaultURL = URL.documentsDirectory
         .appending(path: "Dahlia", directoryHint: .isDirectory)
 
@@ -22,6 +24,11 @@ final class VaultManagementModel {
     private var appDatabase: AppDatabaseManager?
     private(set) var hasLoadedVaults = false
     private var repository: MeetingRepository?
+    private let cloudVaultFetcher: CloudVaultFetcher?
+
+    init(cloudVaultFetcher: CloudVaultFetcher? = nil) {
+        self.cloudVaultFetcher = cloudVaultFetcher
+    }
 
     func configure(appDatabase: AppDatabaseManager?) async {
         if self.appDatabase === appDatabase, hasLoadedVaults {
@@ -70,23 +77,33 @@ final class VaultManagementModel {
 
         var result: [CloudVaultRecord] = []
         for connection in try await repository.fetchDahliaAccountConnections() {
-            guard let origin = URL(string: connection.origin),
-                  let url = URL(string: "api/v1/vaults", relativeTo: origin)?.absoluteURL else { continue }
-            var request = URLRequest(url: url)
-            let token = try await DahliaCloudTokenServiceRegistry.shared.validAccessToken(connectionID: connection.id)
-            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-            let (data, response) = try await URLSession.shared.data(for: request)
-            guard (response as? HTTPURLResponse)?.statusCode == 200 else { continue }
-            let items = try SyncJSON.decoder.decode(Response.self, from: data).items
-            result += items.map {
-                CloudVaultRecord(
-                    vaultId: $0.vaultId,
-                    connectionId: connection.id,
-                    name: $0.name,
-                    createdAt: $0.createdAt,
-                    revision: $0.revision,
-                    role: $0.role
-                )
+            do {
+                if let cloudVaultFetcher {
+                    result += try await cloudVaultFetcher(connection)
+                    continue
+                }
+                guard let origin = URL(string: connection.origin),
+                      let url = URL(string: "api/v1/vaults", relativeTo: origin)?.absoluteURL else { continue }
+                var request = URLRequest(url: url)
+                let token = try await DahliaCloudTokenServiceRegistry.shared.validAccessToken(connectionID: connection.id)
+                request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+                let (data, response) = try await URLSession.shared.data(for: request)
+                guard (response as? HTTPURLResponse)?.statusCode == 200 else { continue }
+                let items = try SyncJSON.decoder.decode(Response.self, from: data).items
+                result += items.map {
+                    CloudVaultRecord(
+                        vaultId: $0.vaultId,
+                        connectionId: connection.id,
+                        name: $0.name,
+                        createdAt: $0.createdAt,
+                        revision: $0.revision,
+                        role: $0.role
+                    )
+                }
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                continue
             }
         }
         return result.sorted { ($0.name, $0.vaultId.uuidString) < ($1.name, $1.vaultId.uuidString) }
@@ -211,6 +228,7 @@ final class VaultManagementModel {
     }
 
     func renameVault(_ vault: VaultRecord, to proposedName: String) async -> VaultRecord? {
+        guard vault.allowsCanonicalEdits else { return nil }
         let name = proposedName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { return nil }
         guard name != vault.name else { return vault }

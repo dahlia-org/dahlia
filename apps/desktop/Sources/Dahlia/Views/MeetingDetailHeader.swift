@@ -4,6 +4,7 @@ import SwiftUI
 private struct MeetingNameHeader: View {
     let title: String
     let meetingID: UUID?
+    let canEdit: Bool
     @Binding var isEditing: Bool
     @Binding var editingName: String
     @FocusState.Binding var isFocused: Bool
@@ -61,6 +62,7 @@ private struct MeetingNameHeader: View {
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .disabled(!canEdit)
                     .focusable()
                     .focused($isNameFocused)
                     .onHover { hovering in
@@ -126,6 +128,7 @@ struct MeetingDetailHeader: View {
                 MeetingNameHeader(
                     title: title,
                     meetingID: viewModel.currentMeetingId,
+                    canEdit: sidebarViewModel.canEditCurrentVault,
                     isEditing: $isEditing,
                     editingName: $editingName,
                     isFocused: $isFocused,

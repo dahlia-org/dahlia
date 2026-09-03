@@ -422,8 +422,16 @@ actor SyncWorker {
                 cursor = page.cursor
                 if !page.hasMore { break }
             } while true
+            let snapshot = Self.initialSnapshotChanges(Array(changes.values))
+            guard try await RemoteChangeApplier.reconcileProjectSnapshot(
+                snapshot,
+                vaultId: target.vaultId,
+                dbQueue: dbQueue
+            ) else {
+                return
+            }
             _ = try await apply(
-                Self.initialSnapshotChanges(Array(changes.values)),
+                snapshot,
                 cursor: cursor,
                 target: target
             )
@@ -728,6 +736,62 @@ actor SyncWorker {
 }
 
 enum RemoteChangeApplier {
+    static func reconcileProjectSnapshot(
+        _ changes: [SyncChangePage.Change],
+        vaultId: UUID,
+        dbQueue: DatabaseQueue
+    ) async throws -> Bool {
+        guard !changes.contains(where: { $0.entity == .vault && $0.action == "reset" }) else { return true }
+        let projects = changes.filter { $0.entity == .project }
+        let meetings = changes.filter { $0.entity == .meeting && $0.action == "upsert" }
+        return try await dbQueue.write { db in
+            guard try !SyncTransactionQueue.hasPending(vaultId: vaultId, in: db) else { return false }
+
+            try db.execute(sql: "UPDATE meetings SET projectId = NULL WHERE vaultId = ?", arguments: [vaultId])
+            try db.execute(
+                sql: "DELETE FROM projects WHERE vaultId = ? AND parentProjectId IS NOT NULL",
+                arguments: [vaultId]
+            )
+            try db.execute(
+                sql: "DELETE FROM projects WHERE vaultId = ? AND parentProjectId IS NULL",
+                arguments: [vaultId]
+            )
+            try db.execute(
+                sql: "DELETE FROM sync_entity_state WHERE vaultId = ? AND entity = 'project'",
+                arguments: [vaultId]
+            )
+
+            for change in projects where change.action == "upsert" {
+                guard let record = change.record else { continue }
+                try SyncTransactionQueue.applyCanonical(
+                    .project,
+                    id: change.entityId,
+                    vaultId: vaultId,
+                    value: record,
+                    in: db
+                )
+            }
+            for change in projects {
+                try db.execute(
+                    sql: """
+                    INSERT INTO sync_entity_state(vaultId, entity, entityId, confirmedRevision)
+                    VALUES (?, 'project', ?, ?)
+                    ON CONFLICT(vaultId, entity, entityId) DO UPDATE SET
+                        confirmedRevision = excluded.confirmedRevision
+                    """,
+                    arguments: [vaultId, change.entityId, change.revision]
+                )
+            }
+            for change in meetings {
+                try db.execute(
+                    sql: "UPDATE meetings SET projectId = ? WHERE id = ? AND vaultId = ?",
+                    arguments: [change.record?.projectId, change.entityId, vaultId]
+                )
+            }
+            return true
+        }
+    }
+
     static func apply(
         _ changes: [SyncChangePage.Change],
         screenshots: [UUID: Data],

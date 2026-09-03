@@ -15,6 +15,10 @@ final class SidebarViewModel {
     nonisolated static let meetingPageSize = 50
     nonisolated static let maximumVisibleMeetings = 500
 
+    var canEditCurrentVault: Bool {
+        currentVault?.allowsCanonicalEdits == true
+    }
+
     // MARK: - Observed State
 
     /// 現在の vault に属する全 project のフラット一覧。
@@ -694,7 +698,7 @@ final class SidebarViewModel {
         projectType: ProjectType? = nil,
         description: String = ""
     ) -> ProjectRecord? {
-        guard let projectWorkspaceService else { return nil }
+        guard canEditCurrentVault, let projectWorkspaceService else { return nil }
         do {
             let project = try projectWorkspaceService.createProject(
                 name: name,
@@ -715,7 +719,7 @@ final class SidebarViewModel {
         newName: String,
         expectedRevision: Int? = nil
     ) -> ProjectRecord? {
-        guard let projectWorkspaceService else { return nil }
+        guard canEditCurrentVault, let projectWorkspaceService else { return nil }
         do {
             let project = try projectWorkspaceService.renameProject(
                 id: id,
@@ -735,7 +739,7 @@ final class SidebarViewModel {
         parentProjectId: UUID?,
         expectedRevision: Int? = nil
     ) -> ProjectRecord? {
-        guard let projectWorkspaceService else { return nil }
+        guard canEditCurrentVault, let projectWorkspaceService else { return nil }
         do {
             let project = try projectWorkspaceService.reparentProject(
                 id: id,
@@ -755,7 +759,7 @@ final class SidebarViewModel {
         projectType: ProjectType,
         expectedRevision: Int? = nil
     ) -> ProjectRecord? {
-        guard let projectWorkspaceService else { return nil }
+        guard canEditCurrentVault, let projectWorkspaceService else { return nil }
         do {
             let project = try projectWorkspaceService.updateRootProjectType(
                 id: id,
@@ -778,7 +782,7 @@ final class SidebarViewModel {
         description: String,
         expectedRevision: Int
     ) async -> ProjectRecord? {
-        guard let projectWorkspaceService else { return nil }
+        guard canEditCurrentVault, let projectWorkspaceService else { return nil }
         do {
             let project = try await Task.detached(priority: .userInitiated) {
                 try projectWorkspaceService.updateProject(
@@ -804,7 +808,7 @@ final class SidebarViewModel {
         meetingDisposition: ProjectMeetingDisposition,
         deletesSummaryFiles: Bool = false
     ) async -> Bool {
-        guard let projectWorkspaceService else { return false }
+        guard canEditCurrentVault, let projectWorkspaceService else { return false }
         do {
             try await projectWorkspaceService.deleteProjectHierarchy(
                 id: id,
@@ -821,7 +825,8 @@ final class SidebarViewModel {
 
     /// プロジェクトを取得または作成し、派生する Summary 書き出し先 URL を返す。
     func fetchOrCreateProject(name: String) -> (record: ProjectRecord, url: URL)? {
-        guard let vault = currentVault,
+        guard canEditCurrentVault,
+              let vault = currentVault,
               let projectWorkspaceService else { return nil }
 
         do {

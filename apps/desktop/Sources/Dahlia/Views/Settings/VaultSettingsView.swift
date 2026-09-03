@@ -192,7 +192,9 @@ struct VaultSettingsView: View {
 
     private func vaultActions(for vault: VaultRecord) -> some View {
         Menu(L10n.actions, systemImage: "ellipsis.circle") {
-            Button(L10n.rename, systemImage: "pencil", action: { requestRename(vault) })
+            if vault.allowsCanonicalEdits {
+                Button(L10n.rename, systemImage: "pencil", action: { requestRename(vault) })
+            }
 
             if model.blockedSyncVaultIDs.contains(vault.id) {
                 Button(L10n.useServerVersion, systemImage: "icloud.and.arrow.down") {
@@ -242,6 +244,7 @@ struct VaultSettingsView: View {
     }
 
     private func requestRename(_ vault: VaultRecord) {
+        guard vault.allowsCanonicalEdits else { return }
         pendingRename = vault
         proposedName = vault.name
         isShowingRenameAlert = true
