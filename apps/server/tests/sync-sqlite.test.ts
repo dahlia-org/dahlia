@@ -99,6 +99,35 @@ describe("SQLite canonical sync", () => {
     await store.close?.();
   });
 
+  it("starts a recreated Vault change feed after its latest reset", async () => {
+    const { store } = await setup();
+    await createVault(store);
+    await commit(store, owner, transaction("019d4a01-1100-7000-8000-000000000001", [{
+      id: "019d4a01-1100-7000-8000-000000000002",
+      entity: "vault",
+      action: "reset",
+      entityId: vaultId,
+      baseRevision: 1,
+      data: {},
+    }]));
+    const recreatedId = "019d4a01-1100-7000-8000-000000000003";
+    await commit(store, owner, transaction(recreatedId, [{
+      id: "019d4a01-1100-7000-8000-000000000004",
+      entity: "vault",
+      action: "create",
+      entityId: vaultId,
+      baseRevision: null,
+      data: { name: "Restored", createdAt: now },
+    }]));
+
+    const changes = await store.sync.withIdentity(owner, (sync) => sync.listChanges(vaultId, 0, 100));
+    expect(changes).toHaveLength(1);
+    expect(changes[0]).toMatchObject({ transactionId: recreatedId, action: "upsert", entity: "vault" });
+    const existingClientChanges = await store.sync.withIdentity(owner, (sync) => sync.listChanges(vaultId, 1, 100));
+    expect(existingClientChanges.map(({ action }) => action)).toEqual(["reset", "upsert"]);
+    await store.close?.();
+  });
+
   it("applies explicit project, meeting, summary, and transcript patch operations", async () => {
     const { store } = await setup();
     await createVault(store);
@@ -374,6 +403,75 @@ describe("SQLite canonical sync", () => {
     expect(existsSync(objectPath)).toBe(false);
     expect((await upload()).status).toBe(200);
     expect(readFileSync(objectPath)).toEqual(Buffer.from(bytes));
+    await store.close?.();
+  });
+
+  it("does not accept a restored screenshot while its old storage deletion is pending", async () => {
+    const { store } = await setup();
+    await createVault(store);
+    await commit(store, owner, transaction("019d4a01-4200-7000-8000-000000000001", [{
+      id: "019d4a01-4200-7000-8000-000000000002",
+      entity: "meeting",
+      action: "create",
+      entityId: meetingId,
+      baseRevision: null,
+      data: { ...meetingData(), projectId: null },
+    }]));
+    const storageKey = `meetings/${meetingId}/screenshots/${screenshotId}.png`;
+    expect(await store.sync.withIdentity(owner, (sync) => sync.createScreenshot({
+      screenshotId,
+      vaultId,
+      meetingId,
+      capturedAt: now,
+      contentType: "image/png",
+      storageKey,
+      contentLength: 3,
+      contentHash: "039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81",
+      ocrText: null,
+      caption: null,
+      revision: 0,
+    }))).toBe(true);
+    await commit(store, owner, transaction("019d4a01-4200-7000-8000-000000000003", [{
+      id: "019d4a01-4200-7000-8000-000000000004",
+      entity: "vault",
+      action: "reset",
+      entityId: vaultId,
+      baseRevision: 1,
+      data: {},
+    }]));
+    await commit(store, owner, transaction("019d4a01-4200-7000-8000-000000000005", [{
+      id: "019d4a01-4200-7000-8000-000000000006",
+      entity: "vault",
+      action: "create",
+      entityId: vaultId,
+      baseRevision: null,
+      data: { name: "Restored", createdAt: now },
+    }, {
+      id: "019d4a01-4200-7000-8000-000000000007",
+      entity: "meeting",
+      action: "create",
+      entityId: meetingId,
+      baseRevision: null,
+      data: { ...meetingData(), projectId: null },
+    }]));
+    const storage = {
+      put: async () => undefined,
+      exists: async () => true,
+      read: async () => new Response(new Uint8Array([1, 2, 3])),
+      delete: () => new Promise<void>(() => undefined),
+    };
+    const service = new MeetingSyncService(store.sync, storage);
+    await expect(service.putScreenshot(owner, vaultId, meetingId, screenshotId, new Request("https://server.test", {
+      method: "PUT",
+      headers: {
+        "content-length": "3",
+        "content-type": "image/png",
+        "x-dahlia-captured-at": now.toISOString(),
+        "x-dahlia-content-sha256": "039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81",
+      },
+      body: new Uint8Array([1, 2, 3]),
+    }))).rejects.toMatchObject({ status: 503, code: "screenshot_storage_delete_pending" });
+    expect(await store.sync.hasStorageDelete(storageKey)).toBe(true);
     await store.close?.();
   });
 

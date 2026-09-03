@@ -126,6 +126,7 @@ export function createUnavailableMeetingSyncStore(): MeetingSyncStore {
     isAvailable: () => Promise.resolve(false),
     withIdentity: () => Promise.reject(new SyncStoreUnavailableError()),
     claimStorageDeletes: () => Promise.reject(new SyncStoreUnavailableError()),
+    hasStorageDelete: () => Promise.reject(new SyncStoreUnavailableError()),
     enqueueStorageDelete: () => Promise.reject(new SyncStoreUnavailableError()),
     completeStorageDelete: () => Promise.reject(new SyncStoreUnavailableError()),
     failStorageDelete: () => Promise.reject(new SyncStoreUnavailableError()),
@@ -134,6 +135,11 @@ export function createUnavailableMeetingSyncStore(): MeetingSyncStore {
 
 function createStorageDeleteStore(db: PostgresDatabase, schema: SyncSchema, isPostgres: boolean) {
   return {
+    async hasStorageDelete(storageKey: string): Promise<boolean> {
+      const [row] = await db.select({ key: schema.storageDeleteJob.storageKey })
+        .from(schema.storageDeleteJob).where(eq(schema.storageDeleteJob.storageKey, storageKey)).limit(1);
+      return row !== undefined;
+    },
     async enqueueStorageDelete(storageKey: string): Promise<void> {
       await db.insert(schema.storageDeleteJob).values({ storageKey }).onConflictDoNothing();
     },
@@ -1154,10 +1160,17 @@ function createIdentityStore(
       gt(schema.syncChange.sequence, after),
     )).limit(1);
     if (!vault && resetExists.length === 0) throw new SyncTransactionError(404, "vault_not_found");
+    const [latestReset] = vault ? await db.select({ sequence: schema.syncChange.sequence })
+      .from(schema.syncChange).where(and(
+        eq(schema.syncChange.vaultId, vaultId),
+        eq(schema.syncChange.ownerUserId, vault.ownerUserId),
+        eq(schema.syncChange.action, "reset"),
+      )).orderBy(desc(schema.syncChange.sequence)).limit(1) : [];
+    const effectiveAfter = after === 0 ? Number(latestReset?.sequence ?? 0) : after;
     const rows = await db.select().from(schema.syncChange).where(and(
       eq(schema.syncChange.vaultId, vaultId),
       eq(schema.syncChange.ownerUserId, vault?.ownerUserId ?? userPrincipalId),
-      gt(schema.syncChange.sequence, after),
+      gt(schema.syncChange.sequence, effectiveAfter),
     )).orderBy(asc(schema.syncChange.sequence)).limit(limit);
     const changes: SyncChangeRecord[] = [];
     const canonicalRecords = new Map<string, SyncCanonicalRecord>();

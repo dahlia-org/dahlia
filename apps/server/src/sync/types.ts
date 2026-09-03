@@ -222,6 +222,7 @@ export interface MeetingSyncStore {
   isAvailable(): Promise<boolean>;
   withIdentity<T>(identity: Identity, action: (store: IdentitySyncStore) => Promise<T>): Promise<T>;
   claimStorageDeletes(limit: number): Promise<string[]>;
+  hasStorageDelete(storageKey: string): Promise<boolean>;
   enqueueStorageDelete(storageKey: string): Promise<void>;
   completeStorageDelete(storageKey: string): Promise<void>;
   failStorageDelete(storageKey: string, code: string): Promise<void>;

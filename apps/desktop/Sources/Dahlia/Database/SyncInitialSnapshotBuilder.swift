@@ -2,6 +2,9 @@ import Foundation
 import GRDB
 
 enum SyncInitialSnapshotBuilder {
+    private static let maximumProjectTransactionBytes = 6 * 1024 * 1024
+    private static let maximumProjectOperationsPerTransaction = 1000
+
     static func enqueuePending(in db: Database) throws {
         // Existing transactions keep draining during recording, but constructing a full initial
         // snapshot must not monopolize the same SQLite writer used by finalized transcript ingress.
@@ -64,23 +67,41 @@ enum SyncInitialSnapshotBuilder {
                 let right = $1.path.split(separator: "/").count
                 return left == right ? $0.id.uuidString < $1.id.uuidString : left < right
             }
-        if !projects.isEmpty {
+        var projectOperations: [SyncOperationDraft] = []
+        var projectBytes = 0
+        for project in projects {
+            let operation = try operation(
+                entity: .project,
+                action: .create,
+                id: project.id,
+                payload: [
+                    "parentProjectId": json(project.parentProjectId),
+                    "name": project.name,
+                    "description": project.description,
+                    "projectType": json(project.projectType?.rawValue),
+                    "createdAt": project.createdAt.ISO8601Format(),
+                ]
+            )
+            let operationBytes = (operation.payloadJSON?.count ?? 0) + 256
+            if !projectOperations.isEmpty,
+               projectBytes + operationBytes > maximumProjectTransactionBytes
+               || projectOperations.count == maximumProjectOperationsPerTransaction {
+                try SyncTransactionRecorder.record(
+                    vaultId: vaultId,
+                    operations: projectOperations,
+                    allowAfterReset: allowAfterReset,
+                    in: db
+                )
+                projectOperations.removeAll(keepingCapacity: true)
+                projectBytes = 0
+            }
+            projectOperations.append(operation)
+            projectBytes += operationBytes
+        }
+        if !projectOperations.isEmpty {
             try SyncTransactionRecorder.record(
                 vaultId: vaultId,
-                operations: projects.map { project in
-                    try operation(
-                        entity: .project,
-                        action: .create,
-                        id: project.id,
-                        payload: [
-                            "parentProjectId": json(project.parentProjectId),
-                            "name": project.name,
-                            "description": project.description,
-                            "projectType": json(project.projectType?.rawValue),
-                            "createdAt": project.createdAt.ISO8601Format(),
-                        ]
-                    )
-                },
+                operations: projectOperations,
                 allowAfterReset: allowAfterReset,
                 in: db
             )

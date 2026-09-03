@@ -468,6 +468,12 @@ enum SyncTransactionQueue {
                 sql: "UPDATE vaults SET syncLastCommittedCursor = ? WHERE id = ?",
                 arguments: [response.cursor, transaction.vaultId]
             )
+            if resetOperation {
+                try db.execute(
+                    sql: "UPDATE vaults SET syncPullCursor = ? WHERE id = ?",
+                    arguments: [response.cursor, transaction.vaultId]
+                )
+            }
             try db.execute(sql: "DELETE FROM sync_transactions WHERE id = ?", arguments: [transaction.id])
             if resetOperation, !hasLaterTransaction {
                 try db.execute(

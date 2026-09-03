@@ -325,24 +325,27 @@ export class MeetingSyncService {
     }
     const storageKey = `meetings/${meetingId}/screenshots/${screenshotId}.${extension}`;
     return this.withScreenshotUpload(storageKey, async () => {
+      if (await this.store.hasStorageDelete(storageKey)) {
+        throw new ArtifactRequestError(503, "screenshot_storage_delete_pending");
+      }
       const reservation = await this.store.withIdentity(identity, async (scoped) => {
-      if (!await scoped.ensureUploadTarget(vaultId, meetingId)) return null;
-      const existing = await scoped.getScreenshot(vaultId, meetingId, screenshotId);
-      if (existing) return { existing, created: false };
-      const record: SyncScreenshotRecord = {
-        screenshotId,
-        vaultId,
-        meetingId,
-        capturedAt: capturedAt.data,
-        contentType: upload.contentType,
-        storageKey,
-        contentLength: upload.contentLength,
-        contentHash,
-        ocrText: null,
-        caption: null,
-        revision: 0,
-      };
-      return await scoped.createScreenshot(record) ? { existing: record, created: true } : null;
+        if (!await scoped.ensureUploadTarget(vaultId, meetingId)) return null;
+        const existing = await scoped.getScreenshot(vaultId, meetingId, screenshotId);
+        if (existing) return { existing, created: false };
+        const record: SyncScreenshotRecord = {
+          screenshotId,
+          vaultId,
+          meetingId,
+          capturedAt: capturedAt.data,
+          contentType: upload.contentType,
+          storageKey,
+          contentLength: upload.contentLength,
+          contentHash,
+          ocrText: null,
+          caption: null,
+          revision: 0,
+        };
+        return await scoped.createScreenshot(record) ? { existing: record, created: true } : null;
       });
       if (!reservation) throw new ArtifactRequestError(409, "screenshot_id_conflict");
       if (

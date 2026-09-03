@@ -437,6 +437,32 @@
         }
 
         @Test
+        func restoredVaultSeedsPullCursorPastItsAcknowledgedReset() async throws {
+            let (database, vault) = try await syncedDatabase()
+            try await SyncInitialSnapshotBuilder.prepareRestore(dbQueue: database.dbQueue)
+            let reset = try #require(try await SyncTransactionQueue.claim(dbQueue: database.dbQueue))
+            #expect(reset.operations.contains { $0.entity == .vault && $0.action == .reset })
+
+            try await SyncTransactionQueue.complete(
+                reset,
+                response: SyncTransactionResponse(
+                    id: reset.id,
+                    status: "committed",
+                    cursor: "reset-cursor",
+                    records: [.init(entity: .vault, id: vault.id, revision: nil, record: nil)]
+                ),
+                dbQueue: database.dbQueue
+            )
+
+            let restored = try #require(try await database.dbQueue.read { db in
+                try VaultRecord.fetchOne(db, key: vault.id)
+            })
+            #expect(restored.syncEnabled)
+            #expect(restored.syncPullCursor == "reset-cursor")
+            #expect(restored.syncLastCommittedCursor == "reset-cursor")
+        }
+
+        @Test
         func initialSnapshotIsDerivedWithoutASeparateBootstrapFlag() async throws {
             let (database, vault) = try await syncedDatabase()
             try await database.dbQueue.write { db in
@@ -466,6 +492,42 @@
             #expect(try await database.dbQueue.read { db in
                 try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_transactions")
             } == 0)
+        }
+
+        @Test
+        func initialSnapshotSplitsLargeProjectCollectionsBelowTheRequestLimit() async throws {
+            let (database, vault) = try await syncedDatabase()
+            let description = String(repeating: "x", count: 20_000)
+            try await database.dbQueue.write { db in
+                for index in 0 ..< 330 {
+                    try ProjectRecord(
+                        id: .v7(),
+                        vaultId: vault.id,
+                        parentProjectId: nil,
+                        name: "Project \(index)",
+                        createdAt: .now,
+                        description: description,
+                        projectType: .undefined
+                    ).insert(db)
+                }
+                try SyncInitialSnapshotBuilder.enqueue(vaultId: vault.id, in: db)
+            }
+
+            let batches = try database.dbQueue.read { db in
+                try Row.fetchAll(
+                    db,
+                    sql: """
+                    SELECT count(*) AS operationCount, sum(length(o.payloadJSON)) AS payloadBytes
+                    FROM sync_transactions t
+                    JOIN sync_operations o ON o.transactionId = t.id
+                    WHERE o.entity = 'project'
+                    GROUP BY t.id
+                    """
+                )
+            }
+            #expect(batches.count == 2)
+            #expect(batches.reduce(0) { $0 + ($1["operationCount"] as Int) } == 330)
+            #expect(batches.allSatisfy { ($0["payloadBytes"] as Int) < 8 * 1024 * 1024 })
         }
 
         @Test
