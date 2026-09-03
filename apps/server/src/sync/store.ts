@@ -194,6 +194,7 @@ async function roleSupportsRls(db: PostgresDatabase): Promise<boolean> {
     const tables = [
       "core.vaults",
       "core.projects",
+      "core.transaction_receipts",
       "content.meetings",
       "content.transcript_segments",
       "content.transcript_patch_chunks",

@@ -34,7 +34,7 @@ private struct SyncTransactionBody: Encodable {
     let operations: [SyncOperationBody]
 }
 
-private struct TranscriptChunkBody: Codable {
+struct TranscriptChunkBody: Codable {
     struct Segment: Codable {
         let segmentId: UUID
         let startTime: Date
@@ -107,6 +107,7 @@ private struct SyncTarget: Sendable {
 
 actor SyncWorker {
     private static let transcriptChunkSize = 500
+    private static let transcriptChunkMaximumBytes = 6 * 1024 * 1024
 
     private let dbQueue: DatabaseQueue
     private let session: URLSession
@@ -288,27 +289,10 @@ actor SyncWorker {
     ) async throws -> Data {
         let snapshot = try await SyncTransactionQueue.transcriptPatch(operationId: operation.id, dbQueue: dbQueue)
         var chunks: [TranscriptPatchData.Chunk] = []
-        let count = max(snapshot.segments.count, snapshot.deletions.count)
-        for offset in stride(from: 0, to: max(count, 1), by: Self.transcriptChunkSize) {
-            let segmentEnd = min(offset + Self.transcriptChunkSize, snapshot.segments.count)
-            let deletionEnd = min(offset + Self.transcriptChunkSize, snapshot.deletions.count)
-            let body = TranscriptChunkBody(
-                segments: offset < segmentEnd ? snapshot.segments[offset ..< segmentEnd].map {
-                    .init(
-                        segmentId: $0.segmentId,
-                        startTime: $0.startTime,
-                        endTime: $0.endTime,
-                        text: $0.text,
-                        isConfirmed: $0.isConfirmed,
-                        audioSource: $0.audioSource,
-                        speakerLabel: $0.speakerLabel
-                    )
-                } : [],
-                deletions: offset < deletionEnd ? Array(snapshot.deletions[offset ..< deletionEnd]) : []
-            )
-            let data = try SyncJSON.encoder.encode(body)
+        for (index, chunk) in try Self.transcriptChunks(snapshot).enumerated() {
+            let body = chunk.body
+            let data = chunk.data
             let hash = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
-            let index = offset / Self.transcriptChunkSize
             var upload = try request(
                 origin: origin,
                 path: "api/v1/vaults/\(transaction.vaultId.lowercase)/meetings/\(operation.entityId.lowercase)/transcripts/\(operation.id.lowercase)/chunks/\(index)",
@@ -333,6 +317,83 @@ actor SyncWorker {
         ))
     }
 
+    static func transcriptChunks(
+        _ snapshot: SyncTranscriptPatchSnapshot
+    ) throws -> [(body: TranscriptChunkBody, data: Data)] {
+        let segments = snapshot.segments.map {
+            TranscriptChunkBody.Segment(
+                segmentId: $0.segmentId,
+                startTime: $0.startTime,
+                endTime: $0.endTime,
+                text: $0.text,
+                isConfirmed: $0.isConfirmed,
+                audioSource: $0.audioSource,
+                speakerLabel: $0.speakerLabel
+            )
+        }
+        var segmentOffset = 0
+        var deletionOffset = 0
+        var chunks: [(body: TranscriptChunkBody, data: Data)] = []
+        repeat {
+            let segmentEnd = min(segmentOffset + transcriptChunkSize, segments.count)
+            let deletionEnd = min(deletionOffset + transcriptChunkSize, snapshot.deletions.count)
+            let combined = TranscriptChunkBody(
+                segments: Array(segments[segmentOffset ..< segmentEnd]),
+                deletions: Array(snapshot.deletions[deletionOffset ..< deletionEnd])
+            )
+            let combinedData = try SyncJSON.encoder.encode(combined)
+            if combinedData.count <= transcriptChunkMaximumBytes {
+                chunks.append((combined, combinedData))
+                segmentOffset = segmentEnd
+                deletionOffset = deletionEnd
+                continue
+            }
+
+            if segmentOffset < segmentEnd {
+                let chunk = try largestTranscriptChunk(maximumCount: segmentEnd - segmentOffset) { count in
+                    TranscriptChunkBody(
+                        segments: Array(segments[segmentOffset ..< segmentOffset + count]),
+                        deletions: []
+                    )
+                }
+                chunks.append(chunk)
+                segmentOffset += chunk.body.segments.count
+            } else {
+                let chunk = try largestTranscriptChunk(maximumCount: deletionEnd - deletionOffset) { count in
+                    TranscriptChunkBody(
+                        segments: [],
+                        deletions: Array(snapshot.deletions[deletionOffset ..< deletionOffset + count])
+                    )
+                }
+                chunks.append(chunk)
+                deletionOffset += chunk.body.deletions.count
+            }
+        } while segmentOffset < segments.count || deletionOffset < snapshot.deletions.count || chunks.isEmpty
+        return chunks
+    }
+
+    private static func largestTranscriptChunk(
+        maximumCount: Int,
+        body: (Int) -> TranscriptChunkBody
+    ) throws -> (body: TranscriptChunkBody, data: Data) {
+        var lower = 1
+        var upper = maximumCount
+        var result: (body: TranscriptChunkBody, data: Data)?
+        while lower <= upper {
+            let count = (lower + upper) / 2
+            let candidate = body(count)
+            let data = try SyncJSON.encoder.encode(candidate)
+            if data.count <= transcriptChunkMaximumBytes {
+                result = (candidate, data)
+                lower = count + 1
+            } else {
+                upper = count - 1
+            }
+        }
+        guard let result else { throw SyncTransactionQueueError.invalidReceipt }
+        return result
+    }
+
     private func pullRemoteChanges() async throws {
         guard !isPulling else { return }
         isPulling = true
@@ -349,63 +410,124 @@ actor SyncWorker {
     }
 
     private func pullRemoteChanges(for target: SyncTarget) async throws {
+        if target.cursor == nil {
+            var cursor: String?
+            var changes: [String: SyncChangePage.Change] = [:]
+            repeat {
+                let page = try await loadChangePage(target: target, cursor: cursor)
+                for change in page.items {
+                    changes["\(change.entity.rawValue):\(change.entityId.uuidString)"] = change
+                }
+                cursor = page.cursor
+                if !page.hasMore { break }
+            } while true
+            _ = try await apply(
+                Self.initialSnapshotChanges(Array(changes.values)),
+                cursor: cursor,
+                target: target
+            )
+            return
+        }
+
         var cursor = target.cursor
         repeat {
-            var components = URLComponents()
-            components.path = "/api/v1/vaults/\(target.vaultId.lowercase)/changes"
-            if let cursor { components.queryItems = [URLQueryItem(name: "cursor", value: cursor)] }
-            guard let path = components.string else { throw URLError(.badURL) }
-            let data = try await sendData(
-                request(origin: target.origin, path: path, method: "GET"),
-                connectionId: target.connectionId
-            )
-            let page = try SyncJSON.decoder.decode(SyncChangePage.self, from: data)
-            let changes = coalesced(page.items)
-            var appliedAll = true
-            for (index, change) in changes.enumerated() {
-                guard try await !SyncTransactionQueue.hasPending(
-                    vaultId: target.vaultId,
-                    dbQueue: dbQueue
-                ) else {
-                    appliedAll = false
-                    break
-                }
-                let pageCursor = index == changes.indices.last ? page.cursor : nil
-                if try await SyncTransactionQueue.isConfirmed(
-                    vaultId: target.vaultId,
-                    entity: change.entity,
-                    entityId: change.entityId,
-                    revision: change.revision,
-                    dbQueue: dbQueue
-                ) {
-                    if let pageCursor,
-                       try await !SyncTransactionQueue.advancePullCursor(
-                           pageCursor,
-                           vaultId: target.vaultId,
-                           dbQueue: dbQueue
-                       ) {
-                        appliedAll = false
-                        break
-                    }
-                    continue
-                }
-                let supplemental = try await loadSupplemental([change], target: target)
-                guard try await RemoteChangeApplier.apply(
-                    [change],
-                    screenshots: supplemental.screenshots,
-                    transcripts: supplemental.transcripts,
-                    cursor: pageCursor,
-                    vaultId: target.vaultId,
-                    dbQueue: dbQueue
-                ) else {
-                    appliedAll = false
-                    break
-                }
-            }
+            let page = try await loadChangePage(target: target, cursor: cursor)
+            let appliedAll = try await apply(coalesced(page.items), cursor: page.cursor, target: target)
             guard appliedAll else { break }
             cursor = page.cursor
             if !page.hasMore { break }
         } while true
+    }
+
+    private func loadChangePage(target: SyncTarget, cursor: String?) async throws -> SyncChangePage {
+        var components = URLComponents()
+        components.path = "/api/v1/vaults/\(target.vaultId.lowercase)/changes"
+        if let cursor { components.queryItems = [URLQueryItem(name: "cursor", value: cursor)] }
+        guard let path = components.string else { throw URLError(.badURL) }
+        let data = try await sendData(
+            request(origin: target.origin, path: path, method: "GET"),
+            connectionId: target.connectionId
+        )
+        return try SyncJSON.decoder.decode(SyncChangePage.self, from: data)
+    }
+
+    private func apply(
+        _ changes: [SyncChangePage.Change],
+        cursor: String?,
+        target: SyncTarget
+    ) async throws -> Bool {
+        guard !changes.isEmpty else {
+            guard let cursor else { return true }
+            return try await SyncTransactionQueue.advancePullCursor(
+                cursor,
+                vaultId: target.vaultId,
+                dbQueue: dbQueue
+            )
+        }
+        for (index, change) in changes.enumerated() {
+            guard try await !SyncTransactionQueue.hasPending(
+                vaultId: target.vaultId,
+                dbQueue: dbQueue
+            ) else { return false }
+            let appliedCursor = index == changes.indices.last ? cursor : nil
+            if try await SyncTransactionQueue.isConfirmed(
+                vaultId: target.vaultId,
+                entity: change.entity,
+                entityId: change.entityId,
+                revision: change.revision,
+                dbQueue: dbQueue
+            ) {
+                if let appliedCursor,
+                   try await !SyncTransactionQueue.advancePullCursor(
+                       appliedCursor,
+                       vaultId: target.vaultId,
+                       dbQueue: dbQueue
+                   ) { return false }
+                continue
+            }
+            let supplemental = try await loadSupplemental([change], target: target)
+            guard try await RemoteChangeApplier.apply(
+                [change],
+                screenshots: supplemental.screenshots,
+                transcripts: supplemental.transcripts,
+                cursor: appliedCursor,
+                vaultId: target.vaultId,
+                dbQueue: dbQueue
+            ) else { return false }
+        }
+        return true
+    }
+
+    static func initialSnapshotChanges(_ changes: [SyncChangePage.Change]) -> [SyncChangePage.Change] {
+        if let reset = changes.last(where: { $0.entity == .vault && $0.action == "reset" }) {
+            return [reset]
+        }
+        var current: [String: SyncChangePage.Change] = [:]
+        for change in changes {
+            current["\(change.entity.rawValue):\(change.entityId.uuidString)"] = change
+        }
+        let upserts = current.values.filter { $0.action == "upsert" && $0.record != nil }
+        var projects = upserts.filter { $0.entity == .project }
+        var orderedProjects: [SyncChangePage.Change] = []
+        while !projects.isEmpty {
+            let projectIDs = Set(projects.map(\.entityId))
+            let ready = projects.filter { change in
+                guard let parent = change.record?.parentProjectId else { return true }
+                return !projectIDs.contains(parent)
+            }.sorted { $0.entityId.uuidString < $1.entityId.uuidString }
+            guard !ready.isEmpty else {
+                orderedProjects.append(contentsOf: projects.sorted { $0.entityId.uuidString < $1.entityId.uuidString })
+                break
+            }
+            let readyIDs = Set(ready.map(\.entityId))
+            orderedProjects.append(contentsOf: ready)
+            projects.removeAll { readyIDs.contains($0.entityId) }
+        }
+        func sorted(_ entity: SyncEntity) -> [SyncChangePage.Change] {
+            upserts.filter { $0.entity == entity }.sorted { $0.entityId.uuidString < $1.entityId.uuidString }
+        }
+        return sorted(.vault) + orderedProjects + sorted(.meeting) + sorted(.summary)
+            + sorted(.transcript) + sorted(.screenshot)
     }
 
     private func coalesced(_ changes: [SyncChangePage.Change]) -> [SyncChangePage.Change] {

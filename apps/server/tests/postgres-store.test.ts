@@ -83,6 +83,7 @@ integration("PostgreSQL application store", () => {
       where (namespace.nspname, class.relname) in (
         ('core', 'vaults'),
         ('core', 'projects'),
+        ('core', 'transaction_receipts'),
         ('content', 'meetings'),
         ('content', 'transcript_segments'),
         ('content', 'transcript_patch_chunks'),
@@ -92,7 +93,7 @@ integration("PostgreSQL application store", () => {
       )
       order by namespace.nspname, class.relname
     `);
-    expect(protectedTables.rows).toHaveLength(8);
+    expect(protectedTables.rows).toHaveLength(9);
     expect(protectedTables.rows.every(({ rls, force_rls }) => rls && force_rls)).toBe(true);
     const legacyOwnerColumns = await connection!.db.execute(sql`
       select 1 from information_schema.columns
@@ -186,6 +187,10 @@ integration("PostgreSQL application store", () => {
       select count(*)::text as count from content.search_documents where vault_id = ${vaultId}
     `);
     expect(searchWithoutContext.rows[0]?.count).toBe("0");
+    const receiptsWithoutContext = await connection!.db.execute<{ count: string }>(sql`
+      select count(*)::text as count from core.transaction_receipts where vault_id = ${vaultId}
+    `);
+    expect(receiptsWithoutContext.rows[0]?.count).toBe("0");
     await store.sync.withIdentity(owner, (sync) => sync.beginVaultDeletion(vaultId, 25));
     expect(await store.sync.withIdentity(owner, (sync) => sync.finishVaultDeletion(vaultId))).toBe(true);
   });

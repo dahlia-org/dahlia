@@ -275,10 +275,15 @@ $$;
 --> statement-breakpoint
 ALTER TABLE "core"."vaults" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "core"."vaults" FORCE ROW LEVEL SECURITY;
+ALTER TABLE "core"."transaction_receipts" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "core"."transaction_receipts" FORCE ROW LEVEL SECURITY;
 CREATE POLICY "vault_select" ON "core"."vaults" FOR SELECT USING ("core"."current_identity_can_read_vault"("vault_id"));
 CREATE POLICY "vault_insert" ON "core"."vaults" FOR INSERT WITH CHECK (coalesce(current_setting('app.user_id', true), '') <> '');
 CREATE POLICY "vault_update" ON "core"."vaults" FOR UPDATE USING ("core"."current_identity_owns_vault"("vault_id")) WITH CHECK ("core"."current_identity_owns_vault"("vault_id"));
 CREATE POLICY "vault_delete" ON "core"."vaults" FOR DELETE USING ("core"."current_identity_owns_vault"("vault_id"));
+CREATE POLICY "transaction_receipt_owner" ON "core"."transaction_receipts" FOR ALL
+  USING ("owner_user_id" = current_setting('app.user_id', true))
+  WITH CHECK ("owner_user_id" = current_setting('app.user_id', true));
 --> statement-breakpoint
 ALTER TABLE "core"."projects" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "core"."projects" FORCE ROW LEVEL SECURITY;

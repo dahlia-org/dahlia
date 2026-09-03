@@ -531,6 +531,65 @@
         }
 
         @Test
+        func freshPullCollapsesHistoryAndOrdersProjectDependenciesBeforeMeetings() throws {
+            let rootId = UUID.v7()
+            let childId = UUID.v7()
+            let meetingId = UUID.v7()
+            let json = """
+            {
+              "items": [
+                {"entity":"meeting","entityId":"\(meetingId.uuidString.lowercased())","action":"upsert","revision":2,
+                 "record":{"projectId":"\(childId.uuidString.lowercased())","name":"Current"}},
+                {"entity":"project","entityId":"\(childId.uuidString.lowercased())","action":"upsert","revision":1,
+                 "record":{"parentProjectId":"\(rootId.uuidString.lowercased())","name":"Child"}},
+                {"entity":"project","entityId":"\(rootId.uuidString.lowercased())","action":"upsert","revision":1,
+                 "record":{"name":"Root"}},
+                {"entity":"meeting","entityId":"\(meetingId.uuidString.lowercased())","action":"upsert","revision":3,
+                 "record":{"projectId":"\(childId.uuidString.lowercased())","name":"Latest"}}
+              ],
+              "cursor":"v1.cursor",
+              "hasMore":false
+            }
+            """
+            let page = try SyncJSON.decoder.decode(SyncChangePage.self, from: Data(json.utf8))
+
+            let changes = SyncWorker.initialSnapshotChanges(page.items)
+
+            #expect(changes.map(\.entityId) == [rootId, childId, meetingId])
+            #expect(changes.last?.revision == 3)
+        }
+
+        @Test
+        func transcriptChunksStayBelowTheServerRequestLimit() throws {
+            let meetingId = UUID.v7()
+            let segments = (0 ..< 70).map { index in
+                SyncTranscriptPatchSegment(TranscriptSegmentRecord(
+                    id: .v7(),
+                    meetingId: meetingId,
+                    sessionId: nil,
+                    startTime: Date(timeIntervalSince1970: Double(index)),
+                    endTime: nil,
+                    text: String(repeating: "x", count: 100_000),
+                    translatedText: nil,
+                    isConfirmed: true,
+                    audioSource: "mic",
+                    speakerLabel: nil,
+                    audioFeatureVersion: nil,
+                    audioActiveRmsDecibels: nil,
+                    audioMedianPitchHertz: nil,
+                    audioVoicedFrameRatio: nil,
+                    audioPitchSpreadHertz: nil
+                ))
+            }
+
+            let chunks = try SyncWorker.transcriptChunks(.init(segments: segments, deletions: []))
+
+            #expect(chunks.count > 1)
+            #expect(chunks.allSatisfy { $0.data.count < 8 * 1024 * 1024 })
+            #expect(chunks.reduce(0) { $0 + $1.body.segments.count } == segments.count)
+        }
+
+        @Test
         func initialSnapshotDefersOnlyConstructionWhileRecordingIsActive() async throws {
             let (database, vault) = try await syncedDatabase()
             let meeting = MeetingRecord(
