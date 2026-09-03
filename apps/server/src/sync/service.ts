@@ -95,8 +95,10 @@ const QUERY_EMBEDDING_CONCURRENCY = 8;
 const SCREENSHOT_PROJECTION_BATCH_SIZE = 64;
 const permissionPrincipalSchema = z.string().trim().min(1).max(200);
 export const SYNC_READ_PAGE_SIZE = 200;
+const TRANSCRIPT_READ_PAGE_SIZE = 10_000;
 const meetingCursorSchema = z.tuple([dateSchema, uuidSchema]);
 const screenshotCursorSchema = z.tuple([dateSchema, uuidSchema]);
+const transcriptCursorSchema = z.tuple([dateSchema, uuidSchema]);
 
 export class MeetingSyncService {
   private readonly activeQueryEmbeddingUsers = new Set<string>();
@@ -368,8 +370,29 @@ export class MeetingSyncService {
     return this.store.withIdentity(identity, (scoped) => scoped.getMeeting(vaultId, meetingId));
   }
 
-  listTranscript(identity: Identity, vaultId: string, meetingId: string) {
-    return this.store.withIdentity(identity, (scoped) => scoped.listTranscript(vaultId, meetingId, 10_000));
+  async listTranscript(identity: Identity, vaultId: string, meetingId: string, cursor?: string) {
+    const parsedCursor = this.parseTranscriptCursor(cursor);
+    const records = await this.store.withIdentity(identity, (scoped) => scoped.listTranscript(
+      vaultId,
+      meetingId,
+      TRANSCRIPT_READ_PAGE_SIZE + 1,
+      parsedCursor,
+    ));
+    const items = records.slice(0, TRANSCRIPT_READ_PAGE_SIZE);
+    const last = items.at(-1);
+    return {
+      items,
+      ...(records.length > TRANSCRIPT_READ_PAGE_SIZE && last
+        ? { nextCursor: `${last.startTime.toISOString()},${last.segmentId}` }
+        : {}),
+    };
+  }
+
+  private parseTranscriptCursor(cursor?: string) {
+    if (cursor === undefined) return undefined;
+    const parsed = transcriptCursorSchema.safeParse(cursor.split(","));
+    if (!parsed.success) throw new ArtifactRequestError(400, "invalid_sync_cursor");
+    return { startTime: parsed.data[0], segmentId: parsed.data[1] };
   }
 
   async listScreenshots(

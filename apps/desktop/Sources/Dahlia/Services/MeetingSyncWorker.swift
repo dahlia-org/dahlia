@@ -377,10 +377,11 @@ actor MeetingSyncWorker {
                 try db.execute(
                     sql: """
                     UPDATE vaults SET syncDeletionMode = NULL, syncDeletionApproved = 0,
-                        syncDeletionConnectionId = NULL
+                        syncDeletionConnectionId = NULL,
+                        syncConfirmedConnectionId = CASE WHEN ? = 'deleteOnly' THEN NULL ELSE syncConfirmedConnectionId END
                     WHERE id = ?
                     """,
-                    arguments: [deletion.id]
+                    arguments: [deletion.mode, deletion.id]
                 )
                 if deletion.mode == MeetingSyncDeletionMode.replaceAfterRestore.rawValue {
                     try db.execute(

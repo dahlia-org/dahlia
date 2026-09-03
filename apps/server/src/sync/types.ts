@@ -39,6 +39,11 @@ export interface SyncTranscriptSegment {
   speakerLabel: string | null;
 }
 
+export interface SyncTranscriptCursor {
+  startTime: Date;
+  segmentId: string;
+}
+
 export interface SyncVaultManifest {
   vaultId: string;
   name: string;
@@ -169,7 +174,12 @@ export interface IdentitySyncStore {
     cursor?: SyncMeetingCursor,
   ): Promise<SyncMeetingRecord[]>;
   getMeeting(vaultId: string, meetingId: string): Promise<SyncMeetingRecord | null>;
-  listTranscript(vaultId: string, meetingId: string, limit: number): Promise<SyncTranscriptSegment[]>;
+  listTranscript(
+    vaultId: string,
+    meetingId: string,
+    limit: number,
+    cursor?: SyncTranscriptCursor,
+  ): Promise<SyncTranscriptSegment[]>;
   listScreenshots(
     vaultId: string,
     meetingId: string,

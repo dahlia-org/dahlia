@@ -548,7 +548,7 @@ export function createApp(dependencies: AppDependencies) {
     const identity = await identities.fromBrowserOrGateway(context.req.raw, SYNC_READ_SCOPE);
     const vaultId = sync.parseId(context.req.param("vaultId"));
     const meetingId = sync.parseId(context.req.param("meetingId"));
-    return context.json({ items: await sync.listTranscript(identity, vaultId, meetingId) });
+    return context.json(await sync.listTranscript(identity, vaultId, meetingId, context.req.query("cursor")));
   });
   app.get("/api/v1/vaults/:vaultId/meetings/:meetingId/screenshots", async (context) => {
     const identity = await identities.fromBrowserOrGateway(context.req.raw, SYNC_READ_SCOPE);

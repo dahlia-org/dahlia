@@ -8,10 +8,12 @@ import { DatabaseSync } from "node:sqlite";
 import type { Identity } from "../src/auth/identity";
 import { createNodeApplicationStore } from "../src/auth/node-store";
 import { LocalObjectStorage } from "../src/artifacts/local";
+import { ObjectStorageError, type ObjectStorage } from "../src/artifacts/storage";
 import { ArtifactRequestError } from "../src/artifacts/upload";
 import { createApp } from "../src/app";
 import type { AppConfig } from "../src/config";
 import { MeetingSyncService } from "../src/sync/service";
+import type { IdentitySyncStore, MeetingSyncStore, SyncTranscriptSegment } from "../src/sync/types";
 
 const directories: string[] = [];
 const owner: Identity = {
@@ -214,6 +216,44 @@ describe("SQLite meeting sync", () => {
     await store.close?.();
   });
 
+  it("paginates transcripts beyond the first read page", async () => {
+    const segments: SyncTranscriptSegment[] = Array.from({ length: 10_001 }, (_, index) => ({
+      segmentId: crypto.randomUUID(),
+      startTime: new Date(Date.UTC(2026, 8, 2, 0, 0, index)),
+      endTime: null,
+      text: `${index}`,
+      isConfirmed: true,
+      audioSource: "system",
+      speakerLabel: null,
+    }));
+    const listTranscript = vi.fn((
+      _vaultId: string,
+      _meetingId: string,
+      limit: number,
+      cursor?: { startTime: Date; segmentId: string },
+    ) => Promise.resolve(segments.filter((segment) => !cursor
+      || segment.startTime > cursor.startTime
+      || (segment.startTime.getTime() === cursor.startTime.getTime() && segment.segmentId > cursor.segmentId))
+    .slice(0, limit)));
+    const store = {
+      withIdentity: <T>(_identity: Identity, action: (sync: IdentitySyncStore) => Promise<T>) => action({
+        listTranscript,
+      } as unknown as IdentitySyncStore),
+    } as MeetingSyncStore;
+    const service = new MeetingSyncService(store);
+
+    const first = await service.listTranscript(owner, vaultId, meetingId);
+    if (!first.nextCursor) throw new Error("expected a continuation cursor");
+    const second = await service.listTranscript(owner, vaultId, meetingId, first.nextCursor);
+
+    expect(first.items).toHaveLength(10_000);
+    expect(second.items).toHaveLength(1);
+    expect(second.nextCursor).toBeUndefined();
+    expect(listTranscript).toHaveBeenLastCalledWith(vaultId, meetingId, 10_001, expect.objectContaining({
+      segmentId: first.items.at(-1)?.segmentId,
+    }));
+  });
+
   it("derives the deterministic object key from an allowlisted MIME type and relays safe headers", async () => {
     const { directory, store } = await setup();
     const storage = new LocalObjectStorage(join(directory, "objects"));
@@ -333,6 +373,48 @@ describe("SQLite meeting sync", () => {
         status: 415,
         code: "unsupported_screenshot_type",
       }));
+    await store.close?.();
+  });
+
+  it("hides omitted screenshots before object deletion succeeds", async () => {
+    const { directory, store } = await setup();
+    const local = new LocalObjectStorage(join(directory, "objects"));
+    const service = new MeetingSyncService(store.sync, local);
+    const bytes = new TextEncoder().encode("png");
+    await service.putScreenshot(owner, vaultId, meetingId, screenshotId, new Request("http://localhost/upload", {
+      method: "PUT",
+      headers: {
+        "content-length": String(bytes.byteLength),
+        "content-type": "image/png",
+        "x-dahlia-captured-at": "2026-09-02T00:00:00.000Z",
+      },
+      body: bytes,
+    }));
+    await service.commitManifest(owner, vaultId, meetingId, manifestBody([{
+      screenshotId,
+      capturedAt: "2026-09-02T00:00:00.000Z",
+      ocrText: null,
+      caption: null,
+    }]));
+    const failingStorage: ObjectStorage = {
+      put: (...arguments_) => local.put(...arguments_),
+      exists: (key) => local.exists(key),
+      read: (...arguments_) => local.read(...arguments_),
+      delete: () => Promise.reject(new ObjectStorageError()),
+    };
+    const failingService = new MeetingSyncService(store.sync, failingStorage);
+
+    await expect(failingService.commitManifest(owner, vaultId, meetingId, manifestBody([])))
+      .rejects.toEqual(expect.objectContaining({ status: 502 }));
+    expect((await service.listScreenshots(owner, vaultId, meetingId)).items).toEqual([]);
+    await expect(service.readScreenshot(
+      owner,
+      vaultId,
+      meetingId,
+      screenshotId,
+      "GET",
+      new Request("http://localhost/content"),
+    )).rejects.toEqual(expect.objectContaining({ status: 404, code: "screenshot_not_found" }));
     await store.close?.();
   });
 
@@ -932,6 +1014,27 @@ async function createVault(
     createdAt: new Date("2026-09-02T00:00:00Z"),
     projects: [],
   }))).toBe(true);
+}
+
+function manifestBody(screenshots: Array<{
+  screenshotId: string;
+  capturedAt: string;
+  ocrText: string | null;
+  caption: string | null;
+}>) {
+  return {
+    projectId: null,
+    name: "Meeting",
+    description: "",
+    status: "READY",
+    duration: 60,
+    recordingStartedAt: "2026-09-02T00:00:00.000Z",
+    createdAt: "2026-09-02T00:00:00.000Z",
+    updatedAt: "2026-09-02T00:00:00.000Z",
+    summary: null,
+    activeTranscriptGeneration: null,
+    screenshots,
+  };
 }
 
 function manifest(

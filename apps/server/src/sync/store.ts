@@ -247,9 +247,16 @@ function createIdentityStore(
       if (projectId) directCounts.set(projectId, (directCounts.get(projectId) ?? 0) + 1);
     }
     const byId = new Map(projects.map((project) => [project.projectId, project]));
+    const childrenByParent = new Map<string, typeof projects>();
+    for (const project of projects) {
+      if (!project.parentProjectId) continue;
+      const siblings = childrenByParent.get(project.parentProjectId) ?? [];
+      siblings.push(project);
+      childrenByParent.set(project.parentProjectId, siblings);
+    }
     return projects.map((project) => {
       const root = project.parentProjectId ? byId.get(project.parentProjectId) : project;
-      const children = project.parentProjectId ? [] : projects.filter(({ parentProjectId }) => parentProjectId === project.projectId);
+      const children = project.parentProjectId ? [] : childrenByParent.get(project.projectId) ?? [];
       return {
         ...project,
         projectType: project.projectType as SyncProjectView["projectType"],
@@ -696,6 +703,12 @@ function createIdentityStore(
       const screenshotIds = manifest.screenshots.map((screenshot) => screenshot.screenshotId);
       const activeScreenshotIds = new Set(screenshotIds);
       const obsolete = existingScreenshots.filter(({ screenshotId }) => !activeScreenshotIds.has(screenshotId));
+      if (obsolete.length > 0) {
+        await db.update(schema.syncedScreenshot).set({ active: false, updatedAt: now }).where(and(
+          eq(schema.syncedScreenshot.vaultId, manifest.vaultId),
+          inArray(schema.syncedScreenshot.screenshotId, obsolete.map(({ screenshotId }) => screenshotId)),
+        ));
+      }
       return { committed: true, missingScreenshotContent: false, obsoleteScreenshots: obsolete };
     },
     async putTranscriptChunk(vaultId, meetingId, generation, segments) {
@@ -837,7 +850,7 @@ function createIdentityStore(
       )).limit(1);
       return row ?? null;
     },
-    async listTranscript(vaultId, meetingId, limit) {
+    async listTranscript(vaultId, meetingId, limit, cursor) {
       const [meeting] = await db.select({ generation: schema.syncedMeeting.activeTranscriptGeneration })
         .from(schema.syncedMeeting).where(and(
           readableMeeting(vaultId, meetingId),
@@ -858,6 +871,13 @@ function createIdentityStore(
         eq(schema.syncedTranscriptSegment.vaultId, vaultId),
         eq(schema.syncedTranscriptSegment.meetingId, meetingId),
         eq(schema.syncedTranscriptSegment.generation, meeting.generation),
+        ...(cursor ? [or(
+          gt(schema.syncedTranscriptSegment.startTime, cursor.startTime),
+          and(
+            eq(schema.syncedTranscriptSegment.startTime, cursor.startTime),
+            gt(schema.syncedTranscriptSegment.segmentId, cursor.segmentId),
+          ),
+        )] : []),
       )).orderBy(asc(schema.syncedTranscriptSegment.startTime), asc(schema.syncedTranscriptSegment.segmentId))
         .limit(limit);
     },

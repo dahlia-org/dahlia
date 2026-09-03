@@ -54,6 +54,8 @@ Desktop sends `PUT /api/v1/vaults/{vaultId}/manifest` before meeting data. That 
 
 `GET /api/v1/vaults/{vaultId}/meetings/{meetingId}/screenshots` likewise returns at most 200 screenshots. Pass `nextCursor` as `cursor` to continue chronological listings; MCP `get_meeting_screenshots` accepts the same cursor and emits the next cursor as JSON text before its resource links. Screenshot search remains a bounded page without a cursor.
 
+`GET /api/v1/vaults/{vaultId}/meetings/{meetingId}/transcript` returns up to 10,000 segments in chronological order. Pass `nextCursor` as `cursor` to continue; MCP `get_meeting_transcript` uses the same page contract.
+
 Explicit Organization and Team sharing is disabled unless `DAHLIA_SYNC_SHARING_ENABLED=true`. Disabled deployments do not expose permission mutations or member reads; owner sync and owner reads remain available.
 
 In accounts mode, owners use Better Auth Organizations, invitations, and Teams. In header mode, every validated proxy user is projected into the visible `external` Organization; the first user is its immutable owner and belongs to the `External` default Team, while later users join only the Organization. Organization owners manage Team membership from the same Web page. Vault owners explicitly grant read-only access through `PUT|DELETE /api/v1/vaults/{vaultId}/permissions/organizations/{organizationId}` or `/permissions/teams/{teamId}`; direct user member rows remain schema-only. PostgreSQL/Lakebase always migrate the generated `auth` baseline before the application baseline. RLS receives only transaction-local `app.user_id` and resolves current membership from `auth.member` and `auth.team_member`.

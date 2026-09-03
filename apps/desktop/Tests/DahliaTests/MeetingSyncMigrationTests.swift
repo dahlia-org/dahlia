@@ -117,6 +117,44 @@
         }
 
         @Test
+        func switchingConnectionPreservesServerDeletionControl() async throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            let repository = MeetingRepository(dbQueue: database.dbQueue)
+            let original = DahliaAccountConnectionRecord(
+                id: .v7(), origin: "https://original.example.com", clientID: "desktop-client", createdAt: .now
+            )
+            let replacement = DahliaAccountConnectionRecord(
+                id: .v7(), origin: "https://replacement.example.com", clientID: "desktop-client", createdAt: .now
+            )
+            var vault = VaultRecord(id: .v7(), path: "/tmp/sync", name: "Sync", createdAt: .now, lastOpenedAt: .now)
+            vault.accountConnectionId = original.id
+            vault.syncConfirmedConnectionId = original.id
+            vault.syncEnabled = true
+            let savedVault = vault
+            try await database.dbQueue.write { db in
+                try original.insert(db)
+                try replacement.insert(db)
+                try savedVault.insert(db)
+            }
+
+            let switched = try #require(try await repository.updateVaultAccountConnection(
+                id: savedVault.id,
+                connectionID: replacement.id
+            ))
+            #expect(switched.accountConnectionId == replacement.id)
+            #expect(switched.syncConfirmedConnectionId == original.id)
+            #expect(!switched.syncEnabled)
+            #expect(try await repository.updateVaultSync(id: savedVault.id, isEnabled: true) == nil)
+            #expect(try await repository.connectionHasPendingServerDeletion(id: original.id))
+
+            let deleting = try #require(try await repository.requestServerVaultDeletion(id: savedVault.id))
+            #expect(deleting.syncDeletionConnectionId == original.id)
+            await #expect(throws: DahliaAccountConnectionError.self) {
+                try await repository.deleteDahliaAccountConnection(id: original.id)
+            }
+        }
+
+        @Test
         func successfulSyncIsNotRequeuedUntilTheMeetingChanges() async throws {
             let (database, _, meeting) = try await syncedMeetingDatabase()
             let job = try #require(try await MeetingSyncQueue.claim(dbQueue: database.dbQueue))

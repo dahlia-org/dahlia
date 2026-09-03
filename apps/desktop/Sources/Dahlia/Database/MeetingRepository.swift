@@ -121,7 +121,6 @@ final class MeetingRepository {
             guard vault.syncDeletionMode == nil || vault.accountConnectionId == connectionID else { return nil }
             if vault.accountConnectionId != connectionID {
                 vault.syncEnabled = false
-                vault.syncConfirmedConnectionId = nil
                 try db.execute(
                     sql: """
                     UPDATE screenshots SET syncUploadedConnectionId = NULL
@@ -139,7 +138,10 @@ final class MeetingRepository {
     nonisolated func updateVaultSync(id: UUID, isEnabled: Bool) async throws -> VaultRecord? {
         try await dbQueue.write { db in
             guard var vault = try VaultRecord.fetchOne(db, key: id),
-                  !isEnabled || vault.accountConnectionId != nil else { return nil }
+                  !isEnabled || (
+                      vault.accountConnectionId != nil
+                          && (vault.syncConfirmedConnectionId == nil || vault.syncConfirmedConnectionId == vault.accountConnectionId)
+                  ) else { return nil }
             vault.syncEnabled = isEnabled
             vault.syncConfirmedConnectionId = isEnabled ? vault.accountConnectionId : vault.syncConfirmedConnectionId
             try vault.update(db)
@@ -150,7 +152,7 @@ final class MeetingRepository {
     nonisolated func requestServerVaultDeletion(id: UUID) async throws -> VaultRecord? {
         try await dbQueue.write { db in
             guard var vault = try VaultRecord.fetchOne(db, key: id),
-                  let connectionId = vault.accountConnectionId else { return nil }
+                  let connectionId = vault.syncConfirmedConnectionId else { return nil }
             vault.syncEnabled = false
             vault.syncDeletionMode = MeetingSyncDeletionMode.deleteOnly.rawValue
             vault.syncDeletionApproved = true

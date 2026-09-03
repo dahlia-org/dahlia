@@ -141,12 +141,13 @@ export function createArtifactMcpHandler(
       }));
       server.registerTool("get_meeting_transcript", {
         description: "Get the active transcript for a synchronized meeting you can read.",
-        inputSchema: meetingInput,
+        inputSchema: meetingInput.extend({ cursor: z.string().optional() }),
         annotations: { readOnlyHint: true },
-      }, async ({ vault_id, meeting_id }) => jsonToolResult(async () => sync.listTranscript(
+      }, async ({ vault_id, meeting_id, cursor }) => jsonToolResult(async () => sync.listTranscript(
         identity,
         sync.parseId(vault_id),
         sync.parseId(meeting_id),
+        cursor,
       )));
       server.registerTool("query_screenshots", {
         description: "Search screenshot OCR and captions in a synchronized meeting you can read.",

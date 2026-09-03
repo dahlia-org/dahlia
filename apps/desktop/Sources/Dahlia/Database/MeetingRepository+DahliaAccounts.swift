@@ -40,8 +40,8 @@ extension MeetingRepository {
     private nonisolated static func connectionHasPendingServerDeletion(id: UUID, in db: Database) throws -> Bool {
         try Bool.fetchOne(
             db,
-            sql: "SELECT EXISTS (SELECT 1 FROM vaults WHERE syncDeletionConnectionId = ?)",
-            arguments: [id]
+            sql: "SELECT EXISTS (SELECT 1 FROM vaults WHERE syncDeletionConnectionId = ? OR syncConfirmedConnectionId = ?)",
+            arguments: [id, id]
         ) ?? false
     }
 }
