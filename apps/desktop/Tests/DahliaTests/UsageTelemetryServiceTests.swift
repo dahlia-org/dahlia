@@ -107,7 +107,12 @@ import Foundation
             #expect(UsageTelemetryEvent.ExportFailureStage.allCases.map(\.rawValue) == ["export"])
             #expect(UsageTelemetryEvent.SummaryTrigger.allCases.map(\.rawValue) == ["manual", "automaticAfterBatch"])
             #expect(UsageTelemetryEvent.ExportTrigger.allCases.map(\.rawValue) == ["manual", "summaryGeneration"])
-            #expect(UsageTelemetryEvent.ExportDestination.allCases.map(\.rawValue) == ["vault", "googleDocs", "localFiles"])
+            #expect(UsageTelemetryEvent.ExportDestination.allCases.map(\.rawValue) == [
+                "vault",
+                "googleDocs",
+                "dahliaArtifacts",
+                "localFiles",
+            ])
         }
 
         @Test

@@ -99,6 +99,17 @@ final class CodexChatCoordinator {
         isDockedVisible = false
     }
 
+    func enterFullScreen(vaultID: UUID?) {
+        isDockedVisible = false
+        contextProvider.update(
+            vaultID: vaultID,
+            meetingID: nil,
+            projectID: nil,
+            draftMeeting: nil,
+            dbQueue: nil
+        )
+    }
+
     func newDockedChat(showDockedSidebar: Bool = true) {
         let session = makeSession()
         replaceDockedSession(with: session, isVisible: showDockedSidebar)

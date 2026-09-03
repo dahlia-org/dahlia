@@ -13,6 +13,11 @@ struct MeetingSyncJob: Sendable {
     let targetKind: String
     let generation: Int
     let attempts: Int
+    let segmentCount: Int
+    let maxSegmentId: UUID?
+    let confirmedCount: Int
+    let recordingEndedAt: Date?
+    let batchCompletedAt: Date?
 }
 
 struct VaultSyncJob: Sendable {
@@ -212,7 +217,17 @@ enum MeetingSyncQueue {
                 db,
                 sql: """
                 SELECT meeting_sync_jobs.id, meeting_sync_jobs.vaultId, meeting_sync_jobs.meetingId,
-                       targetKind, generation, attempts
+                       targetKind, generation, attempts,
+                       (SELECT count(*) FROM transcript_segments
+                           WHERE meetingId = meeting_sync_jobs.meetingId) AS segmentCount,
+                       (SELECT max(id) FROM transcript_segments
+                           WHERE meetingId = meeting_sync_jobs.meetingId) AS maxSegmentId,
+                       (SELECT count(*) FROM transcript_segments
+                           WHERE meetingId = meeting_sync_jobs.meetingId AND isConfirmed = 1) AS confirmedCount,
+                       (SELECT max(endedAt) FROM recording_sessions
+                           WHERE meetingId = meeting_sync_jobs.meetingId) AS recordingEndedAt,
+                       (SELECT max(batchCompletedAt) FROM recording_sessions
+                           WHERE meetingId = meeting_sync_jobs.meetingId) AS batchCompletedAt
                 FROM meeting_sync_jobs
                 JOIN vaults ON vaults.id = meeting_sync_jobs.vaultId
                 WHERE vaults.syncEnabled = 1 AND vaults.syncDeletionMode IS NULL
@@ -241,7 +256,12 @@ enum MeetingSyncQueue {
                 meetingId: row["meetingId"],
                 targetKind: row["targetKind"],
                 generation: row["generation"],
-                attempts: (row["attempts"] as Int) + 1
+                attempts: (row["attempts"] as Int) + 1,
+                segmentCount: row["segmentCount"],
+                maxSegmentId: row["maxSegmentId"],
+                confirmedCount: row["confirmedCount"],
+                recordingEndedAt: row["recordingEndedAt"],
+                batchCompletedAt: row["batchCompletedAt"]
             )
             try db.execute(
                 sql: """
@@ -267,20 +287,16 @@ enum MeetingSyncQueue {
                     INSERT INTO meeting_sync_success(
                         meetingId, segmentCount, maxSegmentId, confirmedCount, recordingEndedAt, batchCompletedAt
                     )
-                    SELECT meetings.id,
-                        (SELECT count(*) FROM transcript_segments WHERE meetingId = meetings.id),
-                        (SELECT max(id) FROM transcript_segments WHERE meetingId = meetings.id),
-                        (SELECT count(*) FROM transcript_segments
-                            WHERE meetingId = meetings.id AND isConfirmed = 1),
-                        (SELECT max(endedAt) FROM recording_sessions WHERE meetingId = meetings.id),
-                        (SELECT max(batchCompletedAt) FROM recording_sessions WHERE meetingId = meetings.id)
-                    FROM meetings WHERE meetings.id = ?
+                    VALUES (?, ?, ?, ?, ?, ?)
                     ON CONFLICT(meetingId) DO UPDATE SET
                         segmentCount = excluded.segmentCount, maxSegmentId = excluded.maxSegmentId,
                         confirmedCount = excluded.confirmedCount, recordingEndedAt = excluded.recordingEndedAt,
                         batchCompletedAt = excluded.batchCompletedAt
                     """,
-                    arguments: [job.meetingId]
+                    arguments: [
+                        job.meetingId, job.segmentCount, job.maxSegmentId, job.confirmedCount,
+                        job.recordingEndedAt, job.batchCompletedAt,
+                    ]
                 )
             }
             if job.targetKind == "meetingDelete" {

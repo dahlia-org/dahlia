@@ -640,8 +640,8 @@
 "When you generate a summary, enable automatic summary generation, or use AI chat, the linked event's title, description, and dates may be sent to the AI provider you configured. Dahlia does not use Google data to train general-purpose AI models." = "要約を生成する場合、自動要約を有効にした場合、または AI チャットを使用する場合、関連付けた予定のタイトル、説明、日時を設定済み AI プロバイダーへ送信することがあります。Dahlia は Google データを汎用 AI モデルの学習に利用しません。";
 "When you request an export, the summary and included images are sent directly from this Mac to Google Drive. Dahlia does not send unrelated Drive content to an AI provider or developer server." = "ユーザーが書き出しを要求すると、要約と含まれる画像をこの Mac から Google Drive へ直接送信します。Dahlia は無関係な Drive の内容を AI プロバイダーや開発者のサーバーへ送りません。";
 "Manage and Delete" = "管理と削除";
-"Disconnecting Calendar or Drive removes both local OAuth sessions and attempts to revoke all Dahlia Google access, which disconnects both services and clears saved Calendar and Drive selection identifiers. Delete linked meetings to remove saved calendar details from the active database, and delete database backups separately." = "Calendar または Drive の接続を解除すると、両方のローカル OAuth セッションを削除し、Dahlia のすべての Google アクセスの取り消しを試みます。両サービスが切断され、保存した Calendar と Drive の選択識別子も削除されます。保存済み予定の詳細は関連する会議を削除すると使用中の DB から消えます。DB バックアップは別途削除してください。";
-"Disconnecting Calendar or Drive removes both local OAuth sessions and attempts to revoke all Dahlia Google access, which disconnects both services and clears saved Calendar and Drive selection identifiers. Exported documents remain in Drive; delete them there, and delete related meetings and database backups to remove local document references." = "Calendar または Drive の接続を解除すると、両方のローカル OAuth セッションを削除し、Dahlia のすべての Google アクセスの取り消しを試みます。両サービスが切断され、保存した Calendar と Drive の選択識別子も削除されます。書き出した文書は Drive に残るため Drive 上で削除し、ローカルの文書参照は関連する会議と DB バックアップを削除してください。";
+"Disconnecting Calendar removes only its local OAuth session and saved calendar selection identifiers. It does not disconnect Drive. Delete linked meetings to remove saved calendar details from the active database, and delete database backups separately." = "Calendar の接続を解除すると、Calendar のローカル OAuth セッションと保存したカレンダー選択識別子だけが削除されます。Drive の接続は解除されません。保存済み予定の詳細は関連する会議を削除すると使用中の DB から消えます。DB バックアップは別途削除してください。";
+"Disconnecting Drive removes only its local OAuth session and saved export-folder identifiers. It does not disconnect Calendar. Exported documents remain in Drive; delete them there, and delete related meetings and database backups to remove local document references." = "Drive の接続を解除すると、Drive のローカル OAuth セッションと保存した書き出しフォルダ識別子だけが削除されます。Calendar の接続は解除されません。書き出した文書は Drive に残るため Drive 上で削除し、ローカルの文書参照は関連する会議と DB バックアップを削除してください。";
 "View Privacy Policy" = "プライバシーポリシーを表示";
 "Continue to Google" = "Google に進む";
 "Connect Google Calendar from Settings to show your upcoming events on Home." = "Home に予定を表示するには設定画面から Google カレンダーを接続してください。";
@@ -743,6 +743,11 @@
 "Share" = "共有";
 "Share Summary" = "要約を共有";
 "Export to Google Docs" = "Google Docs に書き出す";
+"Export to Dahlia Artifacts" = "Artifact として Dahlia Server に書き出す";
+"Exported privately to Dahlia Artifacts." = "Dahlia Artifacts に非公開で書き出しました。";
+"Could not export to Dahlia Artifacts." = "Dahlia Artifacts に書き出せませんでした。";
+"Dahlia Server returned an unexpected response." = "Dahlia Server から予期しない応答が返されました。";
+"Dahlia Artifacts export failed (HTTP %lld)." = "Dahlia Artifacts への書き出しに失敗しました（HTTP %lld）。";
 "Could not export the summary to Google Docs." = "要約を Google Docs に書き出せませんでした。";
 "Copy for Google Docs" = "Google Docs 用にコピー";
 "Copy for Slack" = "Slack 用にコピー";
@@ -876,7 +881,7 @@
 "Google Drive" = "Google Drive";
 "Notion" = "Notion";
 "Export summaries to Notion." = "要約を Notion に書き出します。";
-"Connect a Google account to export summaries, including images, to Google Docs from the Share menu." = "Google アカウントを接続し、共有メニューから画像を含む要約を Google Docs に書き出します。";
+"The Google Drive connection is saved for the current Dahlia or Local Account. Export summaries, including images, to Google Docs from the Share menu." = "Google Drive 連携は現在の Dahlia またはローカルアカウントごとに保存されます。共有メニューから画像を含む要約を Google Docs に書き出せます。";
 "Sign in with Google to export summaries to Google Docs." = "Google にサインインして要約を Google Docs に書き出します。";
 "Google Docs connected" = "Google Docs 接続済み";
 "Export Folder" = "書き出しフォルダ";
@@ -1613,7 +1618,7 @@
 "Or continue without signing in" = "またはログインせずに続ける";
 "Switching AI account…" = "AIアカウントを切り替えています…";
 "Choose the AI account used by this Vault." = "この保管庫で使用するAIアカウントを選びます。";
-"This account is used by %lld Vaults. Those Vaults will use the Local Account, and this account's Codex data will be deleted." = "このアカウントは%lld個の保管庫で使用されています。対象の保管庫はローカルアカウントへ戻り、このアカウントのCodexデータは削除されます。";
+"This account is used by %lld Vaults. Those Vaults will use the Local Account, and this account's Codex and Google Drive connection data will be deleted." = "このアカウントは%lld個の保管庫で使用されています。対象の保管庫はローカルアカウントへ戻り、このアカウントのCodexデータとGoogle Drive連携情報は削除されます。";
 "Dahlia stores meeting data and generated files in a local Vault." = "Dahliaはミーティングデータと生成ファイルをローカルのVaultに保存します。";
 "Choose the languages Dahlia should recognize and the primary language for AI output." = "Dahliaが認識する言語と、AI出力で主に使う言語を選びます。";
 "Recognition and OCR Languages" = "認識・OCR対象の言語";

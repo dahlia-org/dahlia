@@ -210,10 +210,12 @@ describe("deployment routing", () => {
     expect(bundle).toContain("default: server");
     expect(bundle).toContain("volume_name:");
     expect(bundle).toContain("default: storage");
-    expect(bundle).toContain(`dahlia_storage:
-          catalog_name: \${var.catalog}
-          schema_name: \${resources.schemas.dahlia.name}
-          name: \${var.volume_name}`);
+    expect(bundle).not.toContain("legacy_artifact_catalog:");
+    expect(bundle).not.toContain("legacy_artifact_volume_name:");
+    expect(resource).toContain(`dahlia_storage:
+      catalog_name: \${var.catalog}
+      schema_name: \${resources.schemas.dahlia.name}
+      name: \${var.volume_name}`);
     expect(bundle).toContain("sync_sharing_enabled:");
     expect(bundle).toMatch(/sync_sharing_enabled:[\s\S]*?default: "false"/);
     expect(bundle).toMatch(/dev:[\s\S]*?sync_sharing_enabled: "true"[\s\S]*?prod:/);

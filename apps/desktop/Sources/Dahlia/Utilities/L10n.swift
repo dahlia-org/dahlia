@@ -1850,7 +1850,7 @@ enum L10n { // swiftlint:disable:this type_body_length
     static func removeDahliaConnectionDescription(vaultCount: Int) -> String {
         String(
             format: String(
-                localized: "This account is used by %lld Vaults. Those Vaults will use the Local Account, and this account's Codex data will be deleted.",
+                localized: "This account is used by %lld Vaults. Those Vaults will use the Local Account, and this account's Codex and Google Drive connection data will be deleted.",
                 bundle: bundle
             ),
             vaultCount
@@ -2102,7 +2102,7 @@ enum L10n { // swiftlint:disable:this type_body_length
         bundle: bundle
     ) }
     static var googleDocsSettingsDescription: String { String(
-        localized: "Connect a Google account to export summaries, including images, to Google Docs from the Share menu.",
+        localized: "The Google Drive connection is saved for the current Dahlia or Local Account. Export summaries, including images, to Google Docs from the Share menu.",
         bundle: bundle
     ) }
     static var googleCalendarDisplayCalendars: String { String(localized: "Display Calendars", bundle: bundle) }
@@ -2189,16 +2189,16 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var googleOAuthDisclosureManageAndDelete: String { String(localized: "Manage and Delete", bundle: bundle) }
     static var googleCalendarOAuthDisclosureDeletion: String { String(
         localized: """
-        Disconnecting Calendar or Drive removes both local OAuth sessions and attempts to revoke all Dahlia Google access, \
-        which disconnects both services and clears saved Calendar and Drive selection identifiers. \
+        Disconnecting Calendar removes only its local OAuth session and saved calendar selection identifiers. \
+        It does not disconnect Drive. \
         Delete linked meetings to remove saved calendar details from the active database, and delete database backups separately.
         """,
         bundle: bundle
     ) }
     static var googleDriveOAuthDisclosureDeletion: String { String(
         localized: """
-        Disconnecting Calendar or Drive removes both local OAuth sessions and attempts to revoke all Dahlia Google access, \
-        which disconnects both services and clears saved Calendar and Drive selection identifiers. \
+        Disconnecting Drive removes only its local OAuth session and saved export-folder identifiers. \
+        It does not disconnect Calendar. \
         Exported documents remain in Drive; delete them there, and delete related meetings and database backups to remove local document references.
         """,
         bundle: bundle
@@ -2648,6 +2648,27 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var share: String { String(localized: "Share", bundle: bundle) }
     static var shareSummary: String { String(localized: "Share Summary", bundle: bundle) }
     static var exportToGoogleDocs: String { String(localized: "Export to Google Docs", bundle: bundle) }
+    static var exportToDahliaArtifacts: String { String(localized: "Export to Dahlia Artifacts", bundle: bundle) }
+
+    static var dahliaArtifactExportCompleted: String {
+        String(localized: "Exported privately to Dahlia Artifacts.", bundle: bundle)
+    }
+
+    static var dahliaArtifactExportFailed: String {
+        String(localized: "Could not export to Dahlia Artifacts.", bundle: bundle)
+    }
+
+    static var dahliaArtifactUnexpectedResponse: String {
+        String(localized: "Dahlia Server returned an unexpected response.", bundle: bundle)
+    }
+
+    static func dahliaArtifactHTTPError(_ statusCode: Int) -> String {
+        String(
+            format: String(localized: "Dahlia Artifacts export failed (HTTP %lld).", bundle: bundle),
+            Int64(statusCode)
+        )
+    }
+
     static var googleDocsExportFailed: String { String(localized: "Could not export the summary to Google Docs.", bundle: bundle) }
     static var copySummaryForGoogleDocs: String { String(localized: "Copy for Google Docs", bundle: bundle) }
     static var copySummaryForSlack: String { String(localized: "Copy for Slack", bundle: bundle) }

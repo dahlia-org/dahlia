@@ -89,7 +89,7 @@ describe("SQLite meeting sync", () => {
       expect.objectContaining({ projectId: childId, path: "Customers/Dahlia", directMeetingCount: 1, effectiveType: "customer" }),
     ]);
     expect(await service.listMeetings(owner, vaultId, undefined, undefined, rootId))
-      .toEqual([expect.objectContaining({ meetingId, projectId: childId })]);
+      .toEqual({ items: [expect.objectContaining({ meetingId, projectId: childId })] });
 
     await service.commitVaultManifest(owner, vaultId, {
       name: "Research Vault",
@@ -102,6 +102,43 @@ describe("SQLite meeting sync", () => {
       createdAt,
       projects: [{ projectId: rootId, parentProjectId: rootId, name: "Cycle", description: "", projectType: null, revision: 3, createdAt }],
     })).rejects.toEqual(expect.objectContaining({ status: 400, code: "invalid_vault_manifest" }));
+    await store.close?.();
+  });
+
+  it("paginates meetings beyond the first read page", async () => {
+    const { store } = await setup();
+    const service = new MeetingSyncService(store.sync);
+    await store.sync.withIdentity(owner, async (sync) => {
+      for (let index = 0; index < 201; index += 1) {
+        const id = crypto.randomUUID();
+        const createdAt = new Date(Date.UTC(2026, 8, 2, 0, 0, index));
+        expect(await sync.ensureUploadTarget(vaultId, id)).toBe(true);
+        expect((await sync.commitManifest({
+          ...manifest(null),
+          meetingId: id,
+          name: `Meeting ${index}`,
+          createdAt,
+          updatedAt: createdAt,
+        })).committed).toBe(true);
+      }
+    });
+
+    const first = await service.listMeetings(owner, vaultId);
+    if (!first.nextCursor) throw new Error("expected a continuation cursor");
+    const second = await service.listMeetings(owner, vaultId, undefined, undefined, undefined, first.nextCursor);
+
+    expect(first.items).toHaveLength(200);
+    expect(first.nextCursor).toBeTypeOf("string");
+    expect(second.items).toHaveLength(1);
+    expect(second.nextCursor).toBeUndefined();
+    expect(new Set([...first.items, ...second.items].map(({ meetingId }) => meetingId)).size).toBe(201);
+
+    const app = createApp({ config: testConfig("file::memory:"), authStore: store });
+    const response = await app.request(`/api/v1/vaults/${vaultId}/meetings?cursor=${encodeURIComponent(first.nextCursor)}`, {
+      headers: { "x-forwarded-email": "owner@example.com", "x-forwarded-user": owner.userId },
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ items: [expect.anything()] });
     await store.close?.();
   });
 
@@ -328,9 +365,9 @@ describe("SQLite meeting sync", () => {
       }],
     });
 
-    expect(await service.listMeetings(owner, vaultId, "alpha roadmap")).toHaveLength(1);
-    expect(await service.listMeetings(owner, vaultId, "budget approved")).toHaveLength(1);
-    expect(await service.listMeetings(owner, vaultId, "transcriptsecret")).toEqual([]);
+    expect((await service.listMeetings(owner, vaultId, "alpha roadmap")).items).toHaveLength(1);
+    expect((await service.listMeetings(owner, vaultId, "budget approved")).items).toHaveLength(1);
+    expect((await service.listMeetings(owner, vaultId, "transcriptsecret")).items).toEqual([]);
     expect(await service.listScreenshots(owner, vaultId, meetingId, "revenue chart")).toHaveLength(1);
     const app = createApp({
       config: testConfig(join(directory, "server.sqlite")),
@@ -365,8 +402,8 @@ describe("SQLite meeting sync", () => {
         caption: null,
       }],
     });
-    expect(await service.listMeetings(owner, vaultId, "budget")).toEqual([]);
-    expect(await service.listMeetings(owner, vaultId, "replacement")).toHaveLength(1);
+    expect((await service.listMeetings(owner, vaultId, "budget")).items).toEqual([]);
+    expect((await service.listMeetings(owner, vaultId, "replacement")).items).toHaveLength(1);
     expect(await service.listScreenshots(owner, vaultId, meetingId, "revenue")).toEqual([]);
     expect(await service.listScreenshots(owner, vaultId, meetingId, "replacement")).toHaveLength(1);
 
@@ -374,7 +411,7 @@ describe("SQLite meeting sync", () => {
     database.exec("INSERT INTO content_search_documents_fts(content_search_documents_fts) VALUES('integrity-check')");
     database.close();
     expect(await service.deleteMeeting(owner, vaultId, meetingId)).toBe(true);
-    expect(await service.listMeetings(owner, vaultId, "replacement")).toEqual([]);
+    expect((await service.listMeetings(owner, vaultId, "replacement")).items).toEqual([]);
     await store.close?.();
   });
 
@@ -431,7 +468,7 @@ describe("SQLite meeting sync", () => {
       expect(typeof document?.contentHash).toBe("string");
       expect(await store.searchIndex!.save(document!, "embedding-model", 32, vector)).toBe(true);
     }
-    expect((await service.listMeetings(owner, vaultId, "semantic-only-query")).map(({ meetingId }) => meetingId))
+    expect((await service.listMeetings(owner, vaultId, "semantic-only-query")).items.map(({ meetingId }) => meetingId))
       .toEqual([newerMeetingId, meetingId]);
     const embedQuery = vi.fn(() => Promise.resolve(vector));
     const noTokenService = new MeetingSyncService(
@@ -440,7 +477,7 @@ describe("SQLite meeting sync", () => {
       { tokenize: () => [] },
       { ...embedder, embedQuery },
     );
-    expect(await noTokenService.listMeetings(owner, vaultId, "!!!")).toEqual([]);
+    expect((await noTokenService.listMeetings(owner, vaultId, "!!!")).items).toEqual([]);
     expect(embedQuery).not.toHaveBeenCalled();
 
     const guardedEmbedQuery = vi.fn(() => Promise.resolve(vector));
@@ -448,7 +485,7 @@ describe("SQLite meeting sync", () => {
       ...embedder,
       embedQuery: guardedEmbedQuery,
     });
-    expect(await guardedService.listMeetings(otherOwner, vaultId, "planning")).toEqual([]);
+    expect((await guardedService.listMeetings(otherOwner, vaultId, "planning")).items).toEqual([]);
     expect(guardedEmbedQuery).not.toHaveBeenCalled();
 
     vi.useFakeTimers();
@@ -463,10 +500,10 @@ describe("SQLite meeting sync", () => {
         embedQuery,
       });
       const result = slowService.listMeetings(owner, vaultId, "planning");
-      await expect(slowService.listMeetings(owner, vaultId, "planning")).resolves.toHaveLength(2);
+      await expect(slowService.listMeetings(owner, vaultId, "planning")).resolves.toMatchObject({ items: { length: 2 } });
       expect(embedQuery).toHaveBeenCalledTimes(1);
       await vi.advanceTimersByTimeAsync(2_000);
-      expect(await result).toHaveLength(2);
+      expect((await result).items).toHaveLength(2);
       expect(embeddingSignal?.aborted).toBe(true);
     } finally {
       vi.useRealTimers();

@@ -3,7 +3,7 @@ resources:
     dahlia:
       catalog_name: ${var.catalog}
       name: ${var.schema}
-      comment: Dahlia Server resources for ${bundle.target}
+      comment: Resources for Dahlia Server ${bundle.target}
 
   volumes:
     dahlia_storage:

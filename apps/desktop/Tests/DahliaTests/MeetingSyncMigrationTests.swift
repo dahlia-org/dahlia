@@ -132,6 +132,32 @@
         }
 
         @Test
+        func transcriptChangeDuringUploadIsRequeued() async throws {
+            let (database, _, meeting) = try await syncedMeetingDatabase()
+            let job = try #require(try await MeetingSyncQueue.claim(dbQueue: database.dbQueue))
+            try await database.dbQueue.write { db in
+                try db.execute(
+                    sql: """
+                    INSERT INTO transcript_segments(id, meetingId, startTime, text, isConfirmed, audioSource)
+                    VALUES (?, ?, ?, 'Late segment', 1, 'mic')
+                    """,
+                    arguments: [UUID.v7(), meeting.id, Date()]
+                )
+            }
+
+            try await MeetingSyncQueue.complete(job, dbQueue: database.dbQueue)
+            try await MeetingSyncQueue.reconcile(dbQueue: database.dbQueue)
+
+            #expect(try await database.dbQueue.read { db in
+                try Int.fetchOne(
+                    db,
+                    sql: "SELECT count(*) FROM meeting_sync_jobs WHERE meetingId = ? AND targetKind = 'upload'",
+                    arguments: [meeting.id]
+                )
+            } == 1)
+        }
+
+        @Test
         func vaultManifestJobBlocksItsMeetingsUntilCompleted() async throws {
             let (database, vault, _) = try await syncedMeetingDatabase()
             try await MeetingSyncQueue.reconcile(dbQueue: database.dbQueue)

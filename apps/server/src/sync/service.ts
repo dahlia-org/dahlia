@@ -95,6 +95,7 @@ const QUERY_EMBEDDING_CONCURRENCY = 8;
 const SCREENSHOT_PROJECTION_BATCH_SIZE = 64;
 const permissionPrincipalSchema = z.string().trim().min(1).max(200);
 export const SYNC_READ_PAGE_SIZE = 200;
+const meetingCursorSchema = z.tuple([dateSchema, uuidSchema]);
 
 export class MeetingSyncService {
   private readonly activeQueryEmbeddingUsers = new Set<string>();
@@ -319,12 +320,47 @@ export class MeetingSyncService {
     return this.store.withIdentity(identity, (scoped) => scoped.getProject(vaultId, projectId));
   }
 
-  async listMeetings(identity: Identity, vaultId: string, query?: string, signal?: AbortSignal, projectId?: string) {
+  async listMeetings(
+    identity: Identity,
+    vaultId: string,
+    query?: string,
+    signal?: AbortSignal,
+    projectId?: string,
+    cursor?: string,
+  ) {
     const search = this.parseSearchQuery(query);
     if (search?.tokens.length && this.embedder
-      && !await this.store.withIdentity(identity, (scoped) => scoped.getVault(vaultId))) return [];
-    return this.search(identity, search, (scoped, prepared) =>
-      scoped.listMeetings(vaultId, prepared, SYNC_READ_PAGE_SIZE, projectId), (meeting) => meeting.meetingId, signal);
+      && !await this.store.withIdentity(identity, (scoped) => scoped.getVault(vaultId))) return { items: [] };
+    if (search) {
+      return {
+        items: await this.search(identity, search, (scoped, prepared) =>
+          scoped.listMeetings(vaultId, prepared, SYNC_READ_PAGE_SIZE, projectId),
+        (meeting) => meeting.meetingId, signal),
+      };
+    }
+    const parsedCursor = this.parseMeetingCursor(cursor);
+    const records = await this.store.withIdentity(identity, (scoped) => scoped.listMeetings(
+      vaultId,
+      undefined,
+      SYNC_READ_PAGE_SIZE + 1,
+      projectId,
+      parsedCursor,
+    ));
+    const items = records.slice(0, SYNC_READ_PAGE_SIZE);
+    const last = items.at(-1);
+    return {
+      items,
+      ...(records.length > SYNC_READ_PAGE_SIZE && last
+        ? { nextCursor: `${last.createdAt.toISOString()},${last.meetingId}` }
+        : {}),
+    };
+  }
+
+  private parseMeetingCursor(cursor?: string) {
+    if (cursor === undefined) return undefined;
+    const parsed = meetingCursorSchema.safeParse(cursor.split(","));
+    if (!parsed.success) throw new ArtifactRequestError(400, "invalid_sync_cursor");
+    return { createdAt: parsed.data[0], meetingId: parsed.data[1] };
   }
 
   getMeeting(identity: Identity, vaultId: string, meetingId: string) {

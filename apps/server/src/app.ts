@@ -526,15 +526,14 @@ export function createApp(dependencies: AppDependencies) {
   app.get("/api/v1/vaults/:vaultId/meetings", async (context) => {
     const identity = await identities.fromBrowserOrGateway(context.req.raw, SYNC_READ_SCOPE);
     const vaultId = sync.parseId(context.req.param("vaultId"));
-    return context.json({
-      items: await sync.listMeetings(
-        identity,
-        vaultId,
-        context.req.query("q"),
-        context.req.raw.signal,
-        context.req.query("projectId") ? sync.parseId(context.req.query("projectId")!) : undefined,
-      ),
-    });
+    return context.json(await sync.listMeetings(
+      identity,
+      vaultId,
+      context.req.query("q"),
+      context.req.raw.signal,
+      context.req.query("projectId") ? sync.parseId(context.req.query("projectId")!) : undefined,
+      context.req.query("cursor"),
+    ));
   });
   app.get("/api/v1/vaults/:vaultId/meetings/:meetingId", async (context) => {
     const identity = await identities.fromBrowserOrGateway(context.req.raw, SYNC_READ_SCOPE);

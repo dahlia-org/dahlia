@@ -73,7 +73,7 @@ export class ArtifactService {
         contentType: upload.contentType,
       }));
       if (!artifact) continue;
-      const storageKey = artifactVersionStorageKey(id);
+      const storageKey = artifactVersionStorageKey(id, upload.extension);
       try {
         return await this.write(artifact, request, upload, storage, storageKey);
       } catch (error) {
@@ -91,7 +91,7 @@ export class ArtifactService {
     if (artifact.contentType !== upload.contentType) {
       throw new ArtifactRequestError(409, "artifact_content_type_mismatch");
     }
-    return this.write(artifact, request, upload, storage, artifactVersionStorageKey(id));
+    return this.write(artifact, request, upload, storage, artifactVersionStorageKey(id, upload.extension));
   }
 
   private async write(
@@ -279,8 +279,8 @@ export class ArtifactService {
   }
 }
 
-function artifactVersionStorageKey(id: string): string {
-  return `artifacts/${id}/${crypto.randomUUID()}`;
+function artifactVersionStorageKey(id: string, extension: string): string {
+  return `artifacts/${id}/${Date.now()}-${crypto.randomUUID()}.${extension}`;
 }
 
 function uuidV7(): string {

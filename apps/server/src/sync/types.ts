@@ -102,6 +102,11 @@ export interface SyncMeetingRecord {
   activeTranscriptGeneration: string | null;
 }
 
+export interface SyncMeetingCursor {
+  createdAt: Date;
+  meetingId: string;
+}
+
 export interface SyncScreenshotRecord {
   screenshotId: string;
   vaultId: string;
@@ -151,7 +156,13 @@ export interface IdentitySyncStore {
   getVault(vaultId: string): Promise<SyncVaultRecord | null>;
   listProjects(vaultId: string): Promise<SyncProjectView[]>;
   getProject(vaultId: string, projectId: string): Promise<SyncProjectView | null>;
-  listMeetings(vaultId: string, query: SyncSearchQuery | undefined, limit: number, projectId?: string): Promise<SyncMeetingRecord[]>;
+  listMeetings(
+    vaultId: string,
+    query: SyncSearchQuery | undefined,
+    limit: number,
+    projectId?: string,
+    cursor?: SyncMeetingCursor,
+  ): Promise<SyncMeetingRecord[]>;
   getMeeting(vaultId: string, meetingId: string): Promise<SyncMeetingRecord | null>;
   listTranscript(vaultId: string, meetingId: string, limit: number): Promise<SyncTranscriptSegment[]>;
   listScreenshots(vaultId: string, meetingId: string, query: SyncSearchQuery | undefined, limit: number): Promise<SyncScreenshotRecord[]>;

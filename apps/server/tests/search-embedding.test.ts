@@ -143,7 +143,7 @@ describe("search embeddings", () => {
       },
     );
     await expect(service.listMeetings({ userId: "owner", workspaceId: "personal:owner", source: "header" },
-      meeting.vaultId, "roadmap")).resolves.toEqual([meeting]);
+      meeting.vaultId, "roadmap")).resolves.toEqual({ items: [meeting] });
     expect(listMeetings).toHaveBeenCalledTimes(2);
     warn.mockRestore();
   });

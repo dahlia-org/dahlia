@@ -155,6 +155,11 @@ interface SyncedMeetingInfo {
   summaryDocument?: string;
 }
 
+interface SyncedMeetingPage {
+  items: SyncedMeetingInfo[];
+  nextCursor?: string;
+}
+
 interface SyncedTranscriptSegmentInfo {
   segmentId: string;
   startTime: string;
@@ -629,28 +634,37 @@ function VaultMeetings({ session, vaultId }: { session: SessionInfo; vaultId: st
   const [meetings, setMeetings] = useState<SyncedMeetingInfo[]>();
   const [query, setQuery] = useState("");
   const [projectId, setProjectId] = useState("");
+  const [nextCursor, setNextCursor] = useState<string>();
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string>();
+  const loadMeetings = useCallback(async (cursor?: string, signal?: AbortSignal) => {
+    const params = new URLSearchParams();
+    if (query) params.set("q", query);
+    if (projectId) params.set("projectId", projectId);
+    if (cursor) params.set("cursor", cursor);
+    if (cursor) setLoadingMore(true);
+    try {
+      const page = await json<SyncedMeetingPage>(
+        `/api/v1/vaults/${vaultId}/meetings${params.size ? `?${params}` : ""}`,
+        { signal },
+      );
+      setError(undefined);
+      setMeetings((current) => cursor ? [...(current ?? []), ...page.items] : page.items);
+      setNextCursor(page.nextCursor);
+    } catch (caught) {
+      if (caught instanceof Error && caught.name !== "AbortError") setError(caught.message);
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [projectId, query, vaultId]);
   useEffect(() => {
     const controller = new AbortController();
-    const timer = setTimeout(() => {
-      const params = new URLSearchParams();
-      if (query) params.set("q", query);
-      if (projectId) params.set("projectId", projectId);
-      const suffix = params.size ? `?${params}` : "";
-      void json<{ items: SyncedMeetingInfo[] }>(`/api/v1/vaults/${vaultId}/meetings${suffix}`, {
-        signal: controller.signal,
-      }).then(({ items }) => {
-        setError(undefined);
-        setMeetings(items);
-      }).catch((caught: Error) => {
-        if (caught.name !== "AbortError") setError(caught.message);
-      });
-    }, 250);
+    const timer = setTimeout(() => void loadMeetings(undefined, controller.signal), 250);
     return () => {
       clearTimeout(timer);
       controller.abort();
     };
-  }, [projectId, query, vaultId]);
+  }, [loadMeetings]);
   useEffect(() => {
     void Promise.all([
       json<SyncedVaultInfo>(`/api/v1/vaults/${vaultId}`),
@@ -696,6 +710,11 @@ function VaultMeetings({ session, vaultId }: { session: SessionInfo; vaultId: st
           ))}
         </div>
         {error && <p className="error artifact-error">{error}</p>}
+        {nextCursor && (
+          <button className="secondary load-more" disabled={loadingMore} onClick={() => void loadMeetings(nextCursor)}>
+            {loadingMore ? "Loading…" : "Load more"}
+          </button>
+        )}
       </section>
       {projects.length > 0 && (
         <section className="section-block">
@@ -717,20 +736,32 @@ function VaultMeetings({ session, vaultId }: { session: SessionInfo; vaultId: st
 function SyncedProject({ vaultId, projectId }: { vaultId: string; projectId: string }) {
   const [project, setProject] = useState<SyncedProjectInfo>();
   const [meetings, setMeetings] = useState<SyncedMeetingInfo[]>([]);
+  const [nextCursor, setNextCursor] = useState<string>();
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string>();
+  const loadMeetings = useCallback(async (cursor?: string, signal?: AbortSignal) => {
+    const params = new URLSearchParams({ projectId });
+    if (cursor) params.set("cursor", cursor);
+    if (cursor) setLoadingMore(true);
+    try {
+      const page = await json<SyncedMeetingPage>(`/api/v1/vaults/${vaultId}/meetings?${params}`, { signal });
+      setMeetings((current) => cursor ? [...current, ...page.items] : page.items);
+      setNextCursor(page.nextCursor);
+    } catch (caught) {
+      if (caught instanceof Error && caught.name !== "AbortError") setError(caught.message);
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [projectId, vaultId]);
   useEffect(() => {
     const controller = new AbortController();
-    void Promise.all([
-      json<SyncedProjectInfo>(`/api/v1/vaults/${vaultId}/projects/${projectId}`, { signal: controller.signal }),
-      json<{ items: SyncedMeetingInfo[] }>(`/api/v1/vaults/${vaultId}/meetings?projectId=${projectId}`, { signal: controller.signal }),
-    ]).then(([projectValue, meetingPage]) => {
-      setProject(projectValue);
-      setMeetings(meetingPage.items);
-    }).catch((caught: Error) => {
+    void json<SyncedProjectInfo>(`/api/v1/vaults/${vaultId}/projects/${projectId}`, { signal: controller.signal })
+      .then(setProject).catch((caught: Error) => {
       if (caught.name !== "AbortError") setError(caught.message);
     });
+    void loadMeetings(undefined, controller.signal);
     return () => controller.abort();
-  }, [projectId, vaultId]);
+  }, [loadMeetings, projectId, vaultId]);
   return <>
     <PageHeader title={project?.path ?? "Project"} />
     <a className="secondary viewer-back" href={`/vaults/${vaultId}`}>Back to Vault</a>
@@ -745,6 +776,11 @@ function SyncedProject({ vaultId, projectId }: { vaultId: string; projectId: str
         <span className="artifact-copy"><strong>{meeting.name}</strong><span>{new Date(meeting.createdAt).toLocaleString()}</span></span>
       </a>)}
     </div></section>
+    {nextCursor && (
+      <button className="secondary load-more" disabled={loadingMore} onClick={() => void loadMeetings(nextCursor)}>
+        {loadingMore ? "Loading…" : "Load more"}
+      </button>
+    )}
   </>;
 }
 

@@ -25,6 +25,11 @@ struct DahliaAccountConnection: Identifiable, Equatable, Sendable {
     var id: UUID { record.id }
     var origin: String { record.origin }
     var isSignedIn: Bool { account != nil }
+    var supportsArtifactExport: Bool {
+        grantedScopes.contains(DahliaArtifactExportService.requiredScope)
+            || grantedScopes.contains("files")
+    }
+
     var displayName: String { account?.displayName ?? origin }
     var supportsVaultSync: Bool {
         grantedScopes.contains("api.sync.write") || grantedScopes.contains("all-apis") || grantedScopes.contains("files")
@@ -393,6 +398,8 @@ final class DahliaCloudAccountController {
                 }
             }
             try await service(for: connection.record).deleteLocalCredential()
+            try await GoogleSignInAdapter.deleteDriveSession(scope: .dahlia(connectionID))
+            AppSettings.shared.clearGoogleDriveExportFolder(scope: .dahlia(connectionID))
             try await repository.deleteDahliaAccountConnection(id: connectionID)
             try codexHomeLocator.removeHome(connectionID: connectionID)
             services.removeValue(forKey: connectionID)

@@ -202,8 +202,10 @@ actor DahliaCloudService {
         let discovery = try await discover(configuration: configuration)
         let pkce = CloudPKCE.generate()
         let state = CloudPKCE.randomURLSafeString(byteCount: 32)
-        let scopes = Set(discovery.protectedResource.scopesSupported ?? [])
-            .union(discovery.usesProxySession ? ["offline_access"] : Self.identityScopes)
+        let scopes = discovery.usesProxySession
+            ? Set(["ai-gateway", "files", "iam.current-user:read", "offline_access"])
+            : Set(discovery.protectedResource.scopesSupported ?? [])
+            .union(Self.identityScopes)
             .subtracting(["all-apis"])
         let authorizationURL = try Self.authorizationURL(
             endpoint: discovery.authorizationServer.authorizationEndpoint,

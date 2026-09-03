@@ -49,7 +49,6 @@ targets:
       postgres_projects:
         dahlia_database_project:
           purge_on_delete: true
-
   prod:
     mode: production
     variables:

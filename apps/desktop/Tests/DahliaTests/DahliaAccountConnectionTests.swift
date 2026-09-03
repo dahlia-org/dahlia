@@ -25,6 +25,31 @@
         }
 
         @Test
+        func artifactExportAcceptsDedicatedAndDatabricksProxyScopes() {
+            let record = makeConnection(origin: "https://server.example.com")
+            let account = DahliaCloudAccount(id: "user", name: "User", email: nil)
+
+            #expect(DahliaAccountConnection(
+                record: record,
+                account: account,
+                isCloud: false,
+                grantedScopes: [DahliaArtifactExportService.requiredScope]
+            ).supportsArtifactExport)
+            #expect(DahliaAccountConnection(
+                record: record,
+                account: account,
+                isCloud: false,
+                grantedScopes: ["files"]
+            ).supportsArtifactExport)
+            #expect(!DahliaAccountConnection(
+                record: record,
+                account: account,
+                isCloud: false,
+                grantedScopes: ["iam.current-user:read"]
+            ).supportsArtifactExport)
+        }
+
+        @Test
         func migrationAddsLocalAISettingsAndSetsDeletedConnectionToLocal() async throws {
             let queue = try DatabaseQueue()
             try AppDatabaseManager.migrator.migrate(queue, upTo: "v39_dahliaAccountConnections")

@@ -99,6 +99,10 @@ struct ContentView: View {
                         } settingsContent: {
                             SettingsSidebarView(
                                 selection: $mainWindowNavigation.settingsCategory,
+                                vaults: vaultManagementModel.vaults,
+                                currentVault: sidebarViewModel.currentVault,
+                                updateController: updateController,
+                                onSelectVault: onSelectVault,
                                 onReturnToApp: mainWindowNavigation.dismissSettings
                             )
                         }
@@ -379,7 +383,7 @@ private extension ContentView {
 
     private func restoreFullScreenChatPresentation() {
         isSidebarVisible = true
-        chatCoordinator.hideDocked()
+        chatCoordinator.enterFullScreen(vaultID: sidebarViewModel.currentVault?.id)
         sidebarViewModel.clearMeetingSelection()
     }
 
@@ -429,7 +433,10 @@ private extension ContentView {
     }
 
     private func syncChatContext() {
-        guard !isShowingFullScreenChat else { return }
+        if isShowingFullScreenChat {
+            chatCoordinator.enterFullScreen(vaultID: sidebarViewModel.currentVault?.id)
+            return
+        }
         if mainWindowNavigation.section == .projects {
             let projectID: UUID? = if case let .project(id) = mainWindowNavigation.currentLocation { id } else { nil }
             chatCoordinator.updateCurrentContext(

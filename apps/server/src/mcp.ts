@@ -100,14 +100,16 @@ export function createArtifactMcpHandler(
           vault_id: z.string(),
           query: z.string().optional(),
           project_id: z.string().optional(),
+          cursor: z.string().optional(),
         }).strict(),
         annotations: { readOnlyHint: true },
-      }, async ({ vault_id, query, project_id }) => jsonToolResult(async () => sync.listMeetings(
+      }, async ({ vault_id, query, project_id, cursor }) => jsonToolResult(async () => sync.listMeetings(
         identity,
         sync.parseId(vault_id),
         query,
         undefined,
         project_id ? sync.parseId(project_id) : undefined,
+        cursor,
       )));
       server.registerTool("query_projects", {
         description: "List the complete synchronized Project hierarchy in a Vault you can read.",

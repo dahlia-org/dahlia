@@ -141,11 +141,13 @@ describe("S3-compatible object storage", () => {
 
 describe("Databricks Volume object storage", () => {
   it("uses OAuth, raw PUT, encoded Files API paths, and streaming", async () => {
+    const key = `${KEY}/1700000000000-summary.html`;
     const calls: Array<{ url: string; init: RequestInit }> = [];
     const transport = vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
       const url = String(input);
       calls.push({ url, init });
       if (url.endsWith("/oidc/v1/token")) return Response.json({ access_token: "token", expires_in: 3600 });
+      if (url.includes("/api/2.0/fs/directories")) return new Response(null, { status: 204 });
       if (init.method === "PUT") return new Response(null, { status: 204 });
       return new Response("partial", {
         status: 206,
@@ -159,24 +161,31 @@ describe("Databricks Volume object storage", () => {
       tokenUrl: "https://workspace.example/oidc/v1/token",
     }, "/Volumes/main/default/assets with spaces", transport);
 
-    await storage.put(KEY, new TextEncoder().encode("hello"), 5, "text/html");
+    await storage.put(key, new TextEncoder().encode("hello"), 5, "text/html");
     const request = new Request("https://dahlia.example", { headers: { range: "bytes=0-6" } });
-    const response = await storage.read(KEY, "GET", request);
+    const response = await storage.read(key, "GET", request);
     expect(calls[1]!.url).toBe(
-      `https://workspace.example/api/2.0/fs/files/Volumes/main/default/assets%20with%20spaces/${KEY}?overwrite=true`,
+      `https://workspace.example/api/2.0/fs/directories/Volumes/main/default/assets%20with%20spaces/${KEY}/`,
     );
-    expect(new Headers(calls[1]!.init.headers).get("authorization")).toBe("Bearer token");
-    expect(new Headers(calls[2]!.init.headers).get("range")).toBe("bytes=0-6");
-    expect(calls[2]!.init.signal).toBe(request.signal);
+    expect(calls[2]!.url).toBe(
+      `https://workspace.example/api/2.0/fs/files/Volumes/main/default/assets%20with%20spaces/${key}?overwrite=true`,
+    );
+    expect(new Headers(calls[2]!.init.headers).get("authorization")).toBe("Bearer token");
+    expect(new Headers(calls[3]!.init.headers).get("range")).toBe("bytes=0-6");
+    expect(calls[3]!.init.signal).toBe(request.signal);
     expect(response.status).toBe(206);
     expect(await response.text()).toBe("partial");
   });
 
   it("maps missing files and upstream failures without relaying error bodies", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
     let status = 404;
     const transport = vi.fn(async (input: RequestInfo | URL) => String(input).endsWith("/oidc/v1/token")
       ? Response.json({ access_token: "token", expires_in: 3600 })
-      : new Response("contains a storage path", { status })) as typeof fetch;
+      : new Response("contains a storage path", {
+          status,
+          headers: { "x-databricks-request-id": "request-123" },
+        })) as typeof fetch;
     const storage: ObjectStorage = new DatabricksVolumeObjectStorage({
       host: "https://workspace.example",
       clientId: "client",
@@ -189,7 +198,42 @@ describe("Databricks Volume object storage", () => {
     expect(await missing.text()).toBe("");
     status = 403;
     await expect(storage.read(KEY, "GET", new Request("https://dahlia.example"))).rejects.toThrow();
+    const loggedError = String(consoleError.mock.calls.at(-1)?.[0]);
+    expect(JSON.parse(loggedError)).toEqual({
+      level: "error",
+      event: "databricks_artifact_storage_failed",
+      reason: "upstream_http_error",
+      operation: "get",
+      status: 403,
+      requestId: "request-123",
+    });
+    expect(loggedError).not.toContain("contains a storage path");
+    expect(loggedError).not.toContain(KEY);
     status = 500;
     await expect(storage.read(KEY, "GET", new Request("https://dahlia.example"))).rejects.toThrow();
+    consoleError.mockRestore();
+  });
+
+  it("logs sanitized service principal authentication failures", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const storage = new DatabricksVolumeObjectStorage({
+      host: "https://workspace.example",
+      clientId: "client",
+      clientSecret: "secret",
+      tokenUrl: "https://workspace.example/oidc/v1/token",
+    }, "/Volumes/main/default/artifacts", vi.fn(async () => new Response("private", { status: 401 })));
+
+    await expect(storage.put(KEY, new TextEncoder().encode("hello"), 5, "text/html")).rejects.toThrow();
+    const loggedError = String(consoleError.mock.calls.at(-1)?.[0]);
+    expect(JSON.parse(loggedError)).toEqual({
+      level: "error",
+      event: "databricks_artifact_storage_failed",
+      reason: "authentication_failed",
+      operation: "create_directory",
+    });
+    expect(loggedError).not.toContain("private");
+    expect(loggedError).not.toContain("secret");
+    expect(loggedError).not.toContain(KEY);
+    consoleError.mockRestore();
   });
 });

@@ -7,6 +7,7 @@ import {
   inArray,
   isNotNull,
   isNull,
+  lt,
   ne,
   notInArray,
   or,
@@ -787,7 +788,7 @@ function createIdentityStore(
     async getProject(vaultId, projectId) {
       return (await projectViews(vaultId)).find((project) => project.projectId === projectId) ?? null;
     },
-    async listMeetings(vaultId, query, limit, projectId) {
+    async listMeetings(vaultId, query, limit, projectId, cursor) {
       if (query && query.tokens.length === 0) return [];
       const projectIds = projectId
         ? (await projectViews(vaultId)).filter((project) =>
@@ -797,6 +798,13 @@ function createIdentityStore(
       const filter = and(
         readableMeeting(vaultId),
         ...(projectIds ? [inArray(schema.syncedMeeting.projectId, projectIds)] : []),
+        ...(cursor ? [or(
+          lt(schema.syncedMeeting.createdAt, cursor.createdAt),
+          and(
+            eq(schema.syncedMeeting.createdAt, cursor.createdAt),
+            lt(schema.syncedMeeting.meetingId, cursor.meetingId),
+          ),
+        )] : []),
         isNotNull(schema.syncedMeeting.manifestReceivedAt),
         isNull(schema.syncedMeeting.deletingAt),
       );
