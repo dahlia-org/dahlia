@@ -59,10 +59,11 @@ describe("PostgreSQL migrations", () => {
     } as AppConfig);
     const statements = query.mock.calls.map(([statement]) => statement);
     expect(statements).toContain(`CREATE EXTENSION IF NOT EXISTS ${extension}`);
+    const vectorType = databaseType === "lakebase" ? "vector(32)" : "public.vector(32)";
+    const operatorClass = databaseType === "lakebase" ? "vector_cosine_ops" : "public.vector_cosine_ops";
     expect(statements.some((statement) => statement.includes(`USING ${method}`)
-      && statement.includes("embedding::vector(32)")
-      && statement.includes("vector_cosine_ops"))).toBe(true);
-    expect(statements.every((statement) => !statement.includes("public.vector"))).toBe(true);
+      && statement.includes(`embedding::${vectorType}`)
+      && statement.includes(operatorClass))).toBe(true);
     if (databaseType === "lakebase") {
       expect(statements).toContain("CREATE EXTENSION IF NOT EXISTS lakebase_text");
       expect(statements.some((statement) => statement.includes("USING lakebase_bm25"))).toBe(true);

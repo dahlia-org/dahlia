@@ -203,7 +203,7 @@ struct VaultSettingsView: View {
                 }
             }
 
-            if vault.syncConfirmedConnectionId != nil {
+            if vault.syncConfirmedConnectionId != nil, vault.syncRole != "member" {
                 Button(L10n.deleteServerCopy, systemImage: "icloud.slash", role: .destructive) {
                     pendingServerDeletion = vault
                 }

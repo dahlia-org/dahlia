@@ -144,11 +144,13 @@ export async function ensureSearchIndexes(pool: Pool, config: AppConfig): Promis
   const modelLiteral = (await pool.query<{ value: string }>("select quote_literal($1) as value", [embedding.model])).rows[0]!.value;
   const suffix = createHash("sha256").update(embedding.model).digest("hex").slice(0, 8);
   const method = config.databaseType === "lakebase" ? "lakebase_ann" : "hnsw";
+  const vectorType = config.databaseType === "lakebase" ? "vector" : "public.vector";
+  const operatorClass = config.databaseType === "lakebase" ? "vector_cosine_ops" : "public.vector_cosine_ops";
   const indexName = `search_embeddings_${method}_${embedding.dimensions}_${suffix}`;
   await pool.query(`
     CREATE INDEX IF NOT EXISTS ${indexName}
     ON content.search_embeddings USING ${method}
-      ((embedding::vector(${embedding.dimensions})) vector_cosine_ops)
+      ((embedding::${vectorType}(${embedding.dimensions})) ${operatorClass})
     WHERE model = ${modelLiteral} AND dimensions = ${embedding.dimensions}
   `);
 }

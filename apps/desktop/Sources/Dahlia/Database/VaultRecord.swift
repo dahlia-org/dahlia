@@ -37,7 +37,7 @@ struct VaultRecord: Codable, FetchableRecord, PersistableRecord, Identifiable, E
 
 extension VaultRecord {
     var requiresServerDeletionBeforeRemoval: Bool {
-        syncEnabled || syncConfirmedConnectionId != nil
+        syncRole != "member" && (syncEnabled || syncConfirmedConnectionId != nil)
     }
 }
 

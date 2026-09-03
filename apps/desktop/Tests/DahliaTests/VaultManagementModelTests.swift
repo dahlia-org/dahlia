@@ -244,6 +244,29 @@
         }
 
         @Test
+        func removesAnImportedMemberVaultWithoutDeletingTheServerCopy() async throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            let repository = MeetingRepository(dbQueue: database.dbQueue)
+            let model = VaultManagementModel()
+            await model.configure(appDatabase: database)
+            let connection = DahliaAccountConnectionRecord(
+                id: .v7(), origin: "https://server.example.com", clientID: "desktop-client", createdAt: .now
+            )
+            var vault = makeVault(name: "Shared", lastOpenedAt: .distantPast)
+            vault.accountConnectionId = connection.id
+            vault.syncConfirmedConnectionId = connection.id
+            vault.syncEnabled = true
+            vault.syncRole = "member"
+            try await repository.insertDahliaAccountConnection(connection)
+            try await repository.insertCloudVaultAsync(vault, revision: 1)
+
+            let didRemove = await model.removeVault(vault, currentVaultId: nil)
+
+            #expect(didRemove)
+            #expect(try repository.fetchAllVaults().isEmpty)
+        }
+
+        @Test
         func renamesAVaultAndPersistsTheTrimmedName() async throws {
             let database = try AppDatabaseManager(path: ":memory:")
             let model = VaultManagementModel()

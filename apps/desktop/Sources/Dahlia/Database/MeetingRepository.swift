@@ -241,6 +241,9 @@ final class MeetingRepository {
     }
 
     private nonisolated static func deleteVaultRows(id: UUID, in db: Database) throws {
+        if try VaultRecord.fetchOne(db, key: id)?.syncRole == "member" {
+            try SyncTransactionQueue.discard(vaultId: id, in: db)
+        }
         let projects = try ProjectRecord.fetchResolvedAll(vaultId: id, in: db)
             .sorted {
                 $0.path.split(separator: "/").count > $1.path.split(separator: "/").count

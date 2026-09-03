@@ -390,6 +390,48 @@
         }
 
         @Test
+        func initialSnapshotDefersOnlyConstructionWhileRecordingIsActive() async throws {
+            let (database, vault) = try await syncedDatabase()
+            let meeting = MeetingRecord(
+                id: .v7(),
+                vaultId: vault.id,
+                projectId: nil,
+                name: "Recording",
+                createdAt: .now,
+                updatedAt: .now
+            )
+            let session = RecordingSessionRecord(
+                id: .v7(),
+                meetingId: meeting.id,
+                startedAt: .now,
+                endedAt: nil,
+                duration: nil,
+                offsetSeconds: 0,
+                createdAt: .now,
+                updatedAt: .now
+            )
+            try await database.dbQueue.write { db in
+                try meeting.insert(db)
+                try session.insert(db)
+                try SyncInitialSnapshotBuilder.enqueuePending(in: db)
+            }
+            #expect(try await database.dbQueue.read { db in
+                try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_transactions")
+            } == 0)
+
+            try await database.dbQueue.write { db in
+                try db.execute(
+                    sql: "UPDATE recording_sessions SET endedAt = ? WHERE id = ?",
+                    arguments: [Date(), session.id]
+                )
+                try SyncInitialSnapshotBuilder.enqueuePending(in: db)
+            }
+            #expect(try await database.dbQueue.read { db in
+                try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_transactions")
+            } ?? 0 > 0)
+        }
+
+        @Test
         func initialSnapshotAtomicallyConfirmsItsConnectionBeforeQueuedChanges() async throws {
             let (database, originalVault) = try await syncedDatabase()
             try await database.dbQueue.write { db in

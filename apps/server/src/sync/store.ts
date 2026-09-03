@@ -546,10 +546,12 @@ function createIdentityStore(
           || left.documentId.localeCompare(right.documentId))
         .slice(0, SEARCH_CANDIDATE_LIMIT).map(({ documentId }) => documentId);
     }
-    const dimensions = sql.raw(String(embedding.dimensions));
+    const vectorType = sql.raw(
+      `${searchBackend === "postgres" ? "public." : ""}vector(${embedding.dimensions})`,
+    );
     const distance = sql<number>`(
-      ${schema.searchEmbedding.embedding}::vector(${dimensions})
-      <=> ${JSON.stringify(embedding.vector)}::vector(${dimensions})
+      ${schema.searchEmbedding.embedding}::${vectorType}
+      <=> ${JSON.stringify(embedding.vector)}::${vectorType}
     )`;
     const base = db.select({ documentId: schema.searchDocument.documentId, distance })
       .from(schema.searchDocument).innerJoin(schema.searchEmbedding, and(

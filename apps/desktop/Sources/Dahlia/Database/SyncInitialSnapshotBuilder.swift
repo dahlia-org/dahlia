@@ -3,6 +3,14 @@ import GRDB
 
 enum SyncInitialSnapshotBuilder {
     static func enqueuePending(in db: Database) throws {
+        // Existing transactions keep draining during recording, but constructing a full initial
+        // snapshot must not monopolize the same SQLite writer used by finalized transcript ingress.
+        let isRecording = try Bool.fetchOne(
+            db,
+            sql: "SELECT EXISTS(SELECT 1 FROM recording_sessions WHERE endedAt IS NULL)"
+        ) ?? false
+        guard !isRecording else { return }
+
         let vaultIds = try UUID.fetchAll(
             db,
             sql: """
