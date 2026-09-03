@@ -72,6 +72,12 @@ final class MeetingRepository {
         }
     }
 
+    nonisolated func fetchCloudVaultsAsync() async throws -> [CloudVaultRecord] {
+        try await dbQueue.read { db in
+            try CloudVaultRecord.order(Column("name"), Column("vaultId")).fetchAll(db)
+        }
+    }
+
     /// 最後にオープンした保管庫を取得する。
     func fetchLastOpenedVault() throws -> VaultRecord? {
         try dbQueue.read { db in
@@ -144,9 +150,18 @@ final class MeetingRepository {
                   ) else { return nil }
             vault.syncEnabled = isEnabled
             vault.syncConfirmedConnectionId = isEnabled ? vault.accountConnectionId : vault.syncConfirmedConnectionId
+            if isEnabled { vault.syncBootstrapPending = true }
             try vault.update(db)
             return vault
         }
+    }
+
+    nonisolated func acceptServerSyncVersion(vaultId: UUID) async throws {
+        try await MeetingSyncQueue.acceptServerVersion(vaultId: vaultId, dbQueue: dbQueue)
+    }
+
+    nonisolated func reapplyLocalSyncVersion(vaultId: UUID) async throws {
+        try await MeetingSyncQueue.reapplyLocalVersion(vaultId: vaultId, dbQueue: dbQueue)
     }
 
     nonisolated func requestServerVaultDeletion(id: UUID) async throws -> VaultRecord? {

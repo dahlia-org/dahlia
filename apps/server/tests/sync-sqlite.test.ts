@@ -35,6 +35,114 @@ afterEach(() => {
 });
 
 describe("SQLite meeting sync", () => {
+  it("commits domain transactions atomically and replays them by idempotency key", async () => {
+    const { directory, store } = await setup(false);
+    const app = createApp({
+      config: testConfig(join(directory, "server.sqlite")),
+      authStore: store,
+      artifactStorage: new LocalObjectStorage(join(directory, "objects")),
+    });
+    const headers = {
+      "content-type": "application/json",
+      "origin": "http://localhost:5173",
+      "x-forwarded-email": "owner@example.com",
+      "x-forwarded-user": owner.userId,
+    };
+    const body = {
+      schemaVersion: 1,
+      id: "019d4a01-0000-7000-8000-000000000001",
+      vaultId,
+      createdAt: "2026-09-03T00:00:00.000Z",
+      operations: [{
+        id: "019d4a01-0000-7000-8000-000000000002",
+        entity: "vault",
+        action: "create",
+        entityId: vaultId,
+        baseRevision: null,
+        data: { name: "Offline Vault", createdAt: "2026-09-03T00:00:00.000Z" },
+      }],
+    };
+    const commit = () => app.request("/api/v1/transactions", {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+    });
+    const first = await commit();
+    const replay = await commit();
+    expect(first.status).toBe(200);
+    expect(replay.status).toBe(200);
+    expect(await replay.json()).toEqual(await first.json());
+
+    const conflict = await app.request("/api/v1/transactions", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        ...body,
+        id: "019d4a01-0000-7000-8000-000000000003",
+        operations: [{
+          ...body.operations[0],
+          id: "019d4a01-0000-7000-8000-000000000004",
+          action: "update",
+          baseRevision: 0,
+          data: { name: "Conflicting name" },
+        }],
+      }),
+    });
+    expect(conflict.status).toBe(409);
+    expect(await conflict.json()).toMatchObject({
+      error: "revision_conflict",
+      conflicts: [{ entity: "vault", serverRevision: 1 }],
+    });
+
+    const changes = await app.request(`/api/v1/vaults/${vaultId}/changes`, { headers });
+    expect(changes.status).toBe(200);
+    expect(await changes.json()).toMatchObject({
+      items: [{ entity: "vault", action: "upsert", revision: 1 }],
+      hasMore: false,
+    });
+    expect((await app.request(`/api/v1/vaults/${vaultId}/changes?cursor=v1.not-base64!`, { headers })).status)
+      .toBe(400);
+    expect((await app.request("/api/v1/events?cursor=v1.not-base64!", { headers })).status).toBe(400);
+    expect((await app.request(`/api/v1/vaults/${vaultId}/manifest`, {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({}),
+    })).status).toBe(404);
+    await expect(new MeetingSyncService(store.sync).commitTransaction(
+      { ...owner, impersonated: true },
+      body,
+    )).rejects.toEqual(expect.objectContaining({ status: 403, code: "impersonated_session_read_only" }));
+
+    expect((await app.request(`/api/v1/vaults/${vaultId}`, { method: "DELETE", headers })).status).toBe(204);
+    const otherHeaders = {
+      ...headers,
+      "x-forwarded-email": "other@example.com",
+      "x-forwarded-user": otherOwner.userId,
+    };
+    expect((await app.request(`/api/v1/vaults/${vaultId}/changes`, { headers: otherHeaders })).status).toBe(404);
+
+    const otherTransactionId = "019d4a01-0000-7000-8000-000000000005";
+    const recreated = await app.request("/api/v1/transactions", {
+      method: "POST",
+      headers: otherHeaders,
+      body: JSON.stringify({
+        ...body,
+        id: otherTransactionId,
+        operations: [{
+          ...body.operations[0],
+          id: "019d4a01-0000-7000-8000-000000000006",
+          data: { name: "Recreated Vault", createdAt: "2026-09-03T00:00:00.000Z" },
+        }],
+      }),
+    });
+    expect(recreated.status).toBe(200);
+    const recreatedChanges = await app.request(`/api/v1/vaults/${vaultId}/changes`, { headers: otherHeaders });
+    expect(await recreatedChanges.json()).toMatchObject({
+      items: [{ transactionId: otherTransactionId, entity: "vault", action: "upsert" }],
+    });
+    await store.close?.();
+  });
+
   it("keeps client IDs owner-scoped and activates only the manifest generation", async () => {
     const { store } = await setup();
     await store.sync.withIdentity(owner, async (sync) => {
@@ -54,6 +162,64 @@ describe("SQLite meeting sync", () => {
     await store.sync.withIdentity(otherOwner, async (sync) => {
       expect(await sync.getVault(vaultId)).toBeNull();
       expect(await sync.ensureUploadTarget(vaultId, meetingId)).toBe(false);
+    });
+    await store.close?.();
+  });
+
+  it("enforces screenshot revisions after activating staged content", async () => {
+    const { store } = await setup();
+    const createdAt = new Date("2026-09-02T00:00:00Z");
+    await store.sync.withIdentity(owner, async (sync) => {
+      expect(await sync.ensureUploadTarget(vaultId, meetingId)).toBe(true);
+      expect(await sync.createScreenshot({
+        screenshotId,
+        vaultId,
+        meetingId,
+        capturedAt: createdAt,
+        contentType: "image/png",
+        storageKey: `meetings/${meetingId}/screenshots/${screenshotId}.png`,
+        contentLength: 3,
+        ocrText: null,
+        caption: null,
+      })).toBe(true);
+      const operation = {
+        id: "019d4a01-0000-7000-8000-000000000012",
+        entity: "screenshot" as const,
+        action: "upsert" as const,
+        entityId: screenshotId,
+        baseRevision: null,
+        data: { meetingId, capturedAt: createdAt, ocrText: null, caption: null },
+      };
+      const first = await sync.commitTransaction({
+        schemaVersion: 1,
+        id: "019d4a01-0000-7000-8000-000000000011",
+        vaultId,
+        createdAt,
+        requestHash: "first",
+        operations: [operation],
+      });
+      expect(first.records).toEqual([expect.objectContaining({ entity: "screenshot", revision: 2 })]);
+      for (const [id, baseRevision] of [
+        ["019d4a01-0000-7000-8000-000000000013", null],
+        ["019d4a01-0000-7000-8000-000000000014", 1],
+      ] as const) {
+        await expect(sync.commitTransaction({
+          schemaVersion: 1,
+          id,
+          vaultId,
+          createdAt,
+          requestHash: id,
+          operations: [{ ...operation, id: crypto.randomUUID(), baseRevision }],
+        })).rejects.toMatchObject({ status: 409, code: "revision_conflict" });
+      }
+      await expect(sync.commitTransaction({
+        schemaVersion: 1,
+        id: "019d4a01-0000-7000-8000-000000000015",
+        vaultId,
+        createdAt,
+        requestHash: "delete",
+        operations: [{ ...operation, id: crypto.randomUUID(), action: "delete", baseRevision: 1, data: {} }],
+      })).rejects.toMatchObject({ status: 409, code: "revision_conflict" });
     });
     await store.close?.();
   });

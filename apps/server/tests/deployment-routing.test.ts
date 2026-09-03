@@ -298,7 +298,7 @@ describe("deployment routing", () => {
     expect(postgres).not.toContain('CREATE TABLE "core"."user"');
     expect(postgres).toContain("ROW LEVEL SECURITY");
     expect(postgres).toContain("CREATE POLICY");
-    expect(postgres).toContain('"permission"."principal_type" = \'team\'');
+    expect(postgres).toContain('permission."principal_type" = \'team\'');
     expect(postgres).toContain('FROM "auth"."team_member"');
     expect(postgres).not.toContain("header_deployment");
     expect(sqlite).toContain("team_member_user_team_idx");

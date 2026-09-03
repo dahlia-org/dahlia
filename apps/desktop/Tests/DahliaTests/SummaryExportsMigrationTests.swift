@@ -19,7 +19,7 @@ import GRDB
                 )
             }
 
-            #expect(result.0.map(\.name) == ["meetingId", "title", "document", "createdAt"])
+            #expect(result.0.map(\.name) == ["meetingId", "title", "document", "createdAt", "serverRevision"])
             #expect(result.0.first(where: { $0.name == "document" })?.isNotNull == true)
             #expect(result.1 == ["meetingId", "type", "url", "createdAt", "updatedAt"])
         }
@@ -50,8 +50,8 @@ import GRDB
             let result = try migrated.dbQueue.read { db in
                 try (
                     db.columns(in: "summaries"),
-                    SummaryRecord.fetchOne(db, key: validMeetingId),
-                    SummaryRecord.fetchOne(db, key: legacyGoogleMeetingId),
+                    Row.fetchOne(db, sql: "SELECT * FROM summaries WHERE meetingId = ?", arguments: [validMeetingId]),
+                    Row.fetchOne(db, sql: "SELECT * FROM summaries WHERE meetingId = ?", arguments: [legacyGoogleMeetingId]),
                     SummaryExportRecord
                         .filter(Column("meetingId") == validMeetingId)
                         .order(Column("type"))
@@ -59,17 +59,18 @@ import GRDB
                     SummaryExportRecord
                         .filter(Column("meetingId") == legacyGoogleMeetingId)
                         .fetchAll(db),
-                    SummaryRecord.fetchCount(db),
+                    Int.fetchOne(db, sql: "SELECT count(*) FROM summaries") ?? 0,
                     SummaryExportRecord.fetchCount(db)
                 )
             }
 
             #expect(result.0.map(\.name) == ["meetingId", "title", "document", "createdAt"])
             #expect(result.0.first(where: { $0.name == "document" })?.isNotNull == true)
-            #expect(result.1?.title == "Stored SQL title")
-            #expect(result.1?.createdAt == createdAt)
-            #expect(try result.1?.loadDocument().title == "Canonical")
-            #expect(result.2?.meetingId == legacyGoogleMeetingId)
+            #expect(result.1?["title"] as String? == "Stored SQL title")
+            #expect(result.1?["createdAt"] as Date? == createdAt)
+            let storedDocument = try #require(result.1?["document"] as String?)
+            #expect(try JSONDecoder().decode(SummaryDocument.self, from: Data(storedDocument.utf8)).title == "Canonical")
+            #expect(result.2?["meetingId"] as UUID? == legacyGoogleMeetingId)
             #expect(result.3 == [
                 SummaryExportRecord(
                     meetingId: validMeetingId,
@@ -95,7 +96,7 @@ import GRDB
             }
             let deletedCounts = try migrated.dbQueue.read { db in
                 try (
-                    SummaryRecord.filter(Column("meetingId") == validMeetingId).fetchCount(db),
+                    Int.fetchOne(db, sql: "SELECT count(*) FROM summaries WHERE meetingId = ?", arguments: [validMeetingId]) ?? 0,
                     SummaryExportRecord.filter(Column("meetingId") == validMeetingId).fetchCount(db)
                 )
             }

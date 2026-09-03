@@ -1,11 +1,12 @@
 import { afterAll, describe, expect, it } from "vitest";
+import { eq, sql } from "drizzle-orm";
 
 import { createPostgresAuthStore } from "../src/auth/store";
 import type { Identity } from "../src/auth/identity";
 import type { AppConfig } from "../src/config";
 import { connectAuthDatabase } from "../src/db/client";
 import * as schema from "../src/db/auth-schema";
-import { eq, sql } from "drizzle-orm";
+import { SyncTransactionError } from "../src/sync/store";
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 const integration = describe.runIf(databaseUrl);
@@ -23,6 +24,44 @@ const connection = databaseUrl ? connectAuthDatabase(config) : undefined;
 afterAll(async () => connection?.close());
 
 integration("PostgreSQL application store", () => {
+  it("serializes optimistic transactions within a Vault", async () => {
+    const store = createPostgresAuthStore(connection!.db, "postgres", undefined, true);
+    const userId = crypto.randomUUID();
+    const identity: Identity = { userId, workspaceId: `personal:${userId}`, source: "header" };
+    const vaultId = crypto.randomUUID();
+    expect(await store.ensureIdentityUser(identity)).toBe(true);
+    expect(await store.sync.withIdentity(identity, (sync) => sync.commitVaultManifest({
+      vaultId,
+      name: "Vault",
+      createdAt: new Date(),
+      projects: [],
+    }))).toBe(true);
+    const update = (name: string) => store.sync.withIdentity(identity, (sync) => sync.commitTransaction({
+      schemaVersion: 1,
+      id: crypto.randomUUID(),
+      vaultId,
+      createdAt: new Date(),
+      requestHash: name,
+      operations: [{
+        id: crypto.randomUUID(),
+        entity: "vault",
+        action: "update",
+        entityId: vaultId,
+        baseRevision: 1,
+        data: { name },
+      }],
+    }));
+
+    const results = await Promise.allSettled([update("First"), update("Second")]);
+    expect(results.filter(({ status }) => status === "fulfilled")).toHaveLength(1);
+    const rejected = results.find((result) => result.status === "rejected");
+    if (rejected?.status !== "rejected") throw new Error("expected one revision conflict");
+    expect(rejected.reason).toBeInstanceOf(SyncTransactionError);
+    expect(rejected.reason as SyncTransactionError).toMatchObject({ status: 409, code: "revision_conflict" });
+    await store.sync.withIdentity(identity, (sync) => sync.beginVaultDeletion(vaultId, 25));
+    expect(await store.sync.withIdentity(identity, (sync) => sync.finishVaultDeletion(vaultId))).toBe(true);
+  });
+
   it("enforces FORCE RLS and does not leak transaction-local identity", async () => {
     const store = createPostgresAuthStore(connection!.db, "postgres", undefined, true);
     const suffix = crypto.randomUUID();

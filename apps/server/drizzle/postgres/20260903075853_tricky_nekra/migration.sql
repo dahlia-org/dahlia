@@ -67,6 +67,42 @@ CREATE TABLE "core"."search_index_jobs" (
 	CONSTRAINT "search_index_job_dimensions_check" CHECK ("dimensions" BETWEEN 32 AND 1024)
 );
 --> statement-breakpoint
+CREATE TABLE "core"."storage_delete_jobs" (
+	"storage_key" text PRIMARY KEY,
+	"attempts" integer DEFAULT 0 NOT NULL,
+	"status" text DEFAULT 'pending' NOT NULL,
+	"available_at" timestamp DEFAULT now() NOT NULL,
+	"claimed_at" timestamp,
+	"lease_expires_at" timestamp,
+	"last_error_code" text,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	CONSTRAINT "storage_delete_job_status_check" CHECK ("status" IN ('pending', 'processing', 'failed'))
+);
+--> statement-breakpoint
+CREATE TABLE "core"."sync_changes" (
+	"sequence" bigserial PRIMARY KEY,
+	"owner_user_id" text NOT NULL,
+	"vault_id" uuid NOT NULL,
+	"entity" text NOT NULL,
+	"entity_id" uuid NOT NULL,
+	"action" text NOT NULL,
+	"revision" integer,
+	"transaction_id" uuid NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	CONSTRAINT "sync_change_entity_check" CHECK ("entity" IN ('vault', 'project', 'meeting', 'summary', 'transcript', 'screenshot')),
+	CONSTRAINT "sync_change_action_check" CHECK ("action" IN ('upsert', 'delete', 'reset'))
+);
+--> statement-breakpoint
+CREATE TABLE "core"."transaction_receipts" (
+	"transaction_id" uuid PRIMARY KEY,
+	"owner_user_id" text NOT NULL,
+	"vault_id" uuid NOT NULL,
+	"request_hash" text NOT NULL,
+	"response_json" jsonb NOT NULL,
+	"cursor" bigint NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
 CREATE TABLE "content"."meetings" (
 	"meeting_id" uuid PRIMARY KEY,
 	"vault_id" uuid NOT NULL,
@@ -81,6 +117,9 @@ CREATE TABLE "content"."meetings" (
 	"summary_title" text,
 	"summary_document" text,
 	"summary_created_at" timestamp,
+	"revision" integer DEFAULT 1 NOT NULL,
+	"summary_revision" integer DEFAULT 0 NOT NULL,
+	"transcript_revision" integer DEFAULT 0 NOT NULL,
 	"active_transcript_generation" text,
 	"manifest_received_at" timestamp,
 	"deleting_at" timestamp,
@@ -96,6 +135,7 @@ CREATE TABLE "core"."projects" (
 	"project_type" text,
 	"revision" integer NOT NULL,
 	"created_at" timestamp NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL,
 	CONSTRAINT "project_vault_project_unique" UNIQUE("vault_id","project_id"),
 	CONSTRAINT "project_type_check" CHECK ((
     ("parent_project_id" IS NULL AND "project_type" IN ('customer', 'internal', 'personal', 'undefined'))
@@ -116,6 +156,7 @@ CREATE TABLE "content"."screenshots" (
 	"active" boolean DEFAULT true NOT NULL,
 	"ocr_text" text,
 	"caption" text,
+	"revision" integer DEFAULT 1 NOT NULL,
 	"created_at" timestamp DEFAULT now() NOT NULL,
 	"updated_at" timestamp DEFAULT now() NOT NULL
 );
@@ -137,6 +178,7 @@ CREATE TABLE "content"."transcript_segments" (
 CREATE TABLE "core"."vaults" (
 	"vault_id" uuid PRIMARY KEY,
 	"name" text NOT NULL,
+	"revision" integer DEFAULT 1 NOT NULL,
 	"deleting_at" timestamp,
 	"created_at" timestamp DEFAULT now() NOT NULL,
 	"updated_at" timestamp DEFAULT now() NOT NULL
@@ -157,6 +199,10 @@ CREATE TABLE "core"."vault_permissions" (
 --> statement-breakpoint
 CREATE INDEX "search_document_vault_kind_meeting_document_idx" ON "content"."search_documents" ("vault_id","kind","meeting_id","document_id");--> statement-breakpoint
 CREATE INDEX "search_index_job_claim_idx" ON "core"."search_index_jobs" ("status","available_at","lease_expires_at");--> statement-breakpoint
+CREATE INDEX "storage_delete_job_claim_idx" ON "core"."storage_delete_jobs" ("status","available_at","lease_expires_at");--> statement-breakpoint
+CREATE INDEX "sync_change_owner_vault_sequence_idx" ON "core"."sync_changes" ("owner_user_id","vault_id","sequence");--> statement-breakpoint
+CREATE INDEX "sync_change_owner_sequence_idx" ON "core"."sync_changes" ("owner_user_id","sequence");--> statement-breakpoint
+CREATE INDEX "transaction_receipt_owner_created_idx" ON "core"."transaction_receipts" ("owner_user_id","created_at");--> statement-breakpoint
 CREATE INDEX "synced_meeting_vault_created_id_idx" ON "content"."meetings" ("vault_id","created_at","meeting_id");--> statement-breakpoint
 CREATE INDEX "project_vault_parent_name_idx" ON "core"."projects" ("vault_id","parent_project_id","name");--> statement-breakpoint
 CREATE INDEX "synced_screenshot_vault_meeting_captured_id_idx" ON "content"."screenshots" ("vault_id","meeting_id","captured_at","screenshot_id");--> statement-breakpoint
@@ -167,6 +213,7 @@ ALTER TABLE "content"."search_documents" ADD CONSTRAINT "search_document_meeting
 ALTER TABLE "content"."search_embeddings" ADD CONSTRAINT "search_embedding_document_fk" FOREIGN KEY ("vault_id","document_id") REFERENCES "content"."search_documents"("vault_id","document_id") ON DELETE CASCADE;--> statement-breakpoint
 ALTER TABLE "core"."search_index_jobs" ADD CONSTRAINT "search_index_job_vault_fk" FOREIGN KEY ("vault_id") REFERENCES "core"."vaults"("vault_id") ON DELETE CASCADE;--> statement-breakpoint
 ALTER TABLE "core"."search_index_jobs" ADD CONSTRAINT "search_index_job_owner_user_fk" FOREIGN KEY ("owner_user_id") REFERENCES "auth"."user"("id") ON DELETE CASCADE;--> statement-breakpoint
+ALTER TABLE "core"."transaction_receipts" ADD CONSTRAINT "transaction_receipt_owner_user_fk" FOREIGN KEY ("owner_user_id") REFERENCES "auth"."user"("id") ON DELETE CASCADE;--> statement-breakpoint
 ALTER TABLE "content"."meetings" ADD CONSTRAINT "synced_meeting_vault_fk" FOREIGN KEY ("vault_id") REFERENCES "core"."vaults"("vault_id") ON DELETE CASCADE;--> statement-breakpoint
 ALTER TABLE "content"."meetings" ADD CONSTRAINT "synced_meeting_project_fk" FOREIGN KEY ("vault_id","project_id") REFERENCES "core"."projects"("vault_id","project_id");--> statement-breakpoint
 ALTER TABLE "core"."projects" ADD CONSTRAINT "project_vault_fk" FOREIGN KEY ("vault_id") REFERENCES "core"."vaults"("vault_id") ON DELETE CASCADE;--> statement-breakpoint
@@ -185,11 +232,11 @@ CREATE INDEX "team_member_user_team_idx" ON "auth"."team_member" ("user_id","tea
 CREATE FUNCTION "core"."current_identity_owns_vault"(target_vault_id uuid)
 RETURNS boolean LANGUAGE sql STABLE AS $$
   SELECT coalesce(current_setting('app.user_id', true), '') <> '' AND EXISTS (
-    SELECT 1 FROM "core"."vault_permissions" "permission"
-    WHERE "permission"."vault_id" = target_vault_id
-      AND "permission"."principal_type" = 'user'
-      AND "permission"."principal_id" = current_setting('app.user_id', true)
-      AND "permission"."role" = 'owner'
+    SELECT 1 FROM "core"."vault_permissions" permission
+    WHERE permission."vault_id" = target_vault_id
+      AND permission."principal_type" = 'user'
+      AND permission."principal_id" = current_setting('app.user_id', true)
+      AND permission."role" = 'owner'
   )
 $$;
 --> statement-breakpoint
@@ -197,17 +244,17 @@ CREATE FUNCTION "core"."current_identity_can_read_vault"(target_vault_id uuid)
 RETURNS boolean LANGUAGE sql STABLE AS $$
   SELECT "core"."current_identity_owns_vault"(target_vault_id) OR (
     current_setting('app.sharing_enabled', true) = 'true' AND EXISTS (
-      SELECT 1 FROM "core"."vault_permissions" "permission"
-      WHERE "permission"."vault_id" = target_vault_id AND "permission"."role" = 'member' AND (
-        ("permission"."principal_type" = 'user' AND "permission"."principal_id" = current_setting('app.user_id', true))
-        OR ("permission"."principal_type" = 'organization' AND EXISTS (
+      SELECT 1 FROM "core"."vault_permissions" permission
+      WHERE permission."vault_id" = target_vault_id AND permission."role" = 'member' AND (
+        (permission."principal_type" = 'user' AND permission."principal_id" = current_setting('app.user_id', true))
+        OR (permission."principal_type" = 'organization' AND EXISTS (
           SELECT 1 FROM "auth"."member" membership
-          WHERE membership."organization_id" = "permission"."principal_id"
+          WHERE membership."organization_id" = permission."principal_id"
             AND membership."user_id" = current_setting('app.user_id', true)
         ))
-        OR ("permission"."principal_type" = 'team' AND EXISTS (
+        OR (permission."principal_type" = 'team' AND EXISTS (
           SELECT 1 FROM "auth"."team_member" membership
-          WHERE membership."team_id" = "permission"."principal_id"
+          WHERE membership."team_id" = permission."principal_id"
             AND membership."user_id" = current_setting('app.user_id', true)
         ))
       )

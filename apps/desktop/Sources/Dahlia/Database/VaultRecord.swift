@@ -24,6 +24,10 @@ struct VaultRecord: Codable, FetchableRecord, PersistableRecord, Identifiable, E
     var syncDeletionApproved = false
     var syncDeletionConnectionId: UUID?
     var syncBulkDeleteApproved = false
+    var serverRevision: Int?
+    var syncCursor: String?
+    var syncConflictJSON: String?
+    var syncBootstrapPending = false
 
     var localProvider: AIAccountProvider {
         get { AIAccountProvider(rawValue: localAIProvider) ?? .chatGPTSubscription }
@@ -40,4 +44,16 @@ extension VaultRecord {
     var requiresServerDeletionBeforeRemoval: Bool {
         syncEnabled || syncConfirmedConnectionId != nil || syncDeletionMode != nil
     }
+}
+
+struct CloudVaultRecord: Codable, FetchableRecord, PersistableRecord, Identifiable, Equatable, Sendable {
+    static let databaseTableName = "cloud_vaults"
+
+    var vaultId: UUID
+    var connectionId: UUID
+    var name: String
+    var createdAt: Date
+    var revision: Int
+
+    var id: String { "\(connectionId.uuidString):\(vaultId.uuidString)" }
 }

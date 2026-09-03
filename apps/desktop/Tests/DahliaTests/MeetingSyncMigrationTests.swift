@@ -28,11 +28,57 @@
             #expect(result.3.contains("syncDeletionConnectionId"))
             #expect(result.4.contains("syncUploadedConnectionId"))
             #expect(result.3.contains("name"))
+            #expect(try database.dbQueue.read { db in try db.tableExists("sync_apply_context") })
+            #expect(try database.dbQueue.read { db in try db.tableExists("cloud_vaults") })
             #expect(try database.dbQueue.read { db in try db.tableExists("vault_sync_jobs") })
             #expect(try database.dbQueue.read { db in
                 try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('transcript_segments')")
                     .contains("audioSource")
             })
+        }
+
+        @Test
+        func enablingSyncMarksBootstrapBeforeQueuedUploadsRun() async throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            let repository = MeetingRepository(dbQueue: database.dbQueue)
+            let connection = DahliaAccountConnectionRecord(
+                id: .v7(), origin: "https://server.example.com", clientID: "desktop-client", createdAt: .now
+            )
+            var configuredVault = VaultRecord(
+                id: .v7(), path: "/tmp/bootstrap", name: "Bootstrap", createdAt: .now, lastOpenedAt: .now
+            )
+            configuredVault.accountConnectionId = connection.id
+            let vault = configuredVault
+            try await database.dbQueue.write { db in
+                try connection.insert(db)
+                try vault.insert(db)
+            }
+
+            let updated = try #require(try await repository.updateVaultSync(id: vault.id, isEnabled: true))
+            #expect(updated.syncBootstrapPending)
+            #expect(try await database.dbQueue.read { db in
+                try Int.fetchOne(db, sql: "SELECT count(*) FROM vault_sync_jobs WHERE vaultId = ?", arguments: [vault.id])
+            } == 1)
+        }
+
+        @Test
+        func remoteApplyDoesNotRequeueDomainChanges() async throws {
+            let (database, vault, meeting) = try await syncedMeetingDatabase()
+            try await database.dbQueue.write { db in
+                try db.execute(sql: "DELETE FROM vault_sync_jobs; DELETE FROM meeting_sync_jobs")
+                try db.execute(sql: "INSERT INTO sync_apply_context(active) VALUES(1)")
+                try db.execute(sql: "UPDATE vaults SET name = 'Remote' WHERE id = ?", arguments: [vault.id])
+                try db.execute(sql: "UPDATE meetings SET name = 'Remote' WHERE id = ?", arguments: [meeting.id])
+                try db.execute(sql: "DELETE FROM sync_apply_context")
+            }
+            let counts = try await database.dbQueue.read { db in
+                (
+                    try Int.fetchOne(db, sql: "SELECT count(*) FROM vault_sync_jobs") ?? -1,
+                    try Int.fetchOne(db, sql: "SELECT count(*) FROM meeting_sync_jobs") ?? -1
+                )
+            }
+            #expect(counts.0 == 0)
+            #expect(counts.1 == 0)
         }
 
         @Test
@@ -221,6 +267,97 @@
                     arguments: [meeting.id]
                 )
             } == 1)
+        }
+
+        @Test
+        func serverDeletionResetsCanonicalStateBeforeRestoreReupload() async throws {
+            let (database, vault, meeting) = try await syncedMeetingDatabase()
+            let screenshot = MeetingScreenshotRecord(
+                id: .v7(), meetingId: meeting.id, sessionId: nil, capturedAt: .now,
+                imageData: Data([1]), mimeType: "image/png", ocrText: nil, caption: nil
+            )
+            try await database.dbQueue.write { db in
+                try screenshot.insert(db)
+                try db.execute(
+                    sql: """
+                    UPDATE vaults SET serverRevision = 4, syncCursor = 'v1.cursor',
+                        syncConflictJSON = '{}', syncBootstrapPending = 1 WHERE id = ?;
+                    UPDATE meetings SET serverRevision = 3, summaryServerRevision = 2,
+                        transcriptServerRevision = 5, transcriptServerGeneration = 'generation' WHERE id = ?;
+                    UPDATE screenshots SET serverRevision = 7, syncUploadedConnectionId = accountConnectionId
+                    FROM vaults WHERE screenshots.id = ? AND vaults.id = ?;
+                    INSERT INTO meeting_sync_success(meetingId, segmentCount, confirmedCount)
+                    VALUES (?, 0, 0);
+                    """,
+                    arguments: [vault.id, meeting.id, screenshot.id, vault.id, meeting.id]
+                )
+            }
+
+            try await MeetingSyncQueue.completeServerVaultDeletion(
+                vaultId: vault.id,
+                mode: .replaceAfterRestore,
+                dbQueue: database.dbQueue
+            )
+
+            let state = try database.dbQueue.read { db in
+                try Row.fetchOne(
+                    db,
+                    sql: """
+                    SELECT vaults.serverRevision AS vaultRevision, vaults.syncCursor,
+                        vaults.syncConflictJSON, vaults.syncBootstrapPending,
+                        meetings.serverRevision AS meetingRevision, meetings.summaryServerRevision,
+                        meetings.transcriptServerRevision, meetings.transcriptServerGeneration,
+                        screenshots.serverRevision AS screenshotRevision, screenshots.syncUploadedConnectionId,
+                        (SELECT count(*) FROM vault_sync_jobs WHERE vaultId = vaults.id) AS vaultJobs,
+                        (SELECT count(*) FROM meeting_sync_jobs WHERE vaultId = vaults.id) AS meetingJobs,
+                        (SELECT count(*) FROM meeting_sync_success WHERE meetingId = meetings.id) AS successes
+                    FROM vaults JOIN meetings ON meetings.vaultId = vaults.id
+                    JOIN screenshots ON screenshots.meetingId = meetings.id
+                    WHERE vaults.id = ?
+                    """,
+                    arguments: [vault.id]
+                )
+            }
+            #expect(state?["vaultRevision"] as Int? == nil)
+            #expect(state?["syncCursor"] as String? == nil)
+            #expect(state?["syncConflictJSON"] as String? == nil)
+            #expect(state?["syncBootstrapPending"] as Bool? == false)
+            #expect(state?["meetingRevision"] as Int? == nil)
+            #expect(state?["summaryServerRevision"] as Int? == 0)
+            #expect(state?["transcriptServerRevision"] as Int? == 0)
+            #expect(state?["transcriptServerGeneration"] as String? == nil)
+            #expect(state?["screenshotRevision"] as Int? == nil)
+            #expect(state?["syncUploadedConnectionId"] as UUID? == nil)
+            #expect(state?["vaultJobs"] as Int? == 1)
+            #expect(state?["meetingJobs"] as Int? == 1)
+            #expect(state?["successes"] as Int? == 0)
+        }
+
+        @Test
+        func pushAcknowledgementDoesNotAdvancePullCursor() async throws {
+            let (database, vault, _) = try await syncedMeetingDatabase()
+            try await database.dbQueue.write { db in
+                try db.execute(
+                    sql: "UPDATE vaults SET syncCursor = 'v1.old' WHERE id = ?; INSERT INTO vault_sync_jobs(vaultId) VALUES (?)",
+                    arguments: [vault.id, vault.id]
+                )
+            }
+            let job = try #require(try await MeetingSyncQueue.claimVault(dbQueue: database.dbQueue))
+            try await MeetingSyncQueue.complete(
+                job,
+                response: MeetingSyncTransactionResponse(
+                    id: try #require(UUID(uuidString: job.transactionId)),
+                    status: "committed",
+                    cursor: "v1.new",
+                    records: [.init(entity: "vault", id: vault.id, revision: 9, record: nil)]
+                ),
+                dbQueue: database.dbQueue
+            )
+            let state = try database.dbQueue.read { db in
+                try Row.fetchOne(db, sql: "SELECT syncCursor, serverRevision FROM vaults WHERE id = ?", arguments: [vault.id])
+            }
+            #expect(state?["syncCursor"] as String? == "v1.old")
+            #expect(state?["serverRevision"] as Int? == 9)
         }
 
         @Test

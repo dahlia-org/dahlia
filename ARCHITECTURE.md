@@ -169,7 +169,7 @@ core.vault_permissions
     └─ user / Better Auth organization / Team の read-only member
 ```
 
-`/mcp` は MCP 2026-07-28 の stateless endpoint とし、accounts mode では DPoP-bound access token、exact resource audience、`api.artifact.write` を必須とする。Node の authorization server は CIMD を提供し、RFC 7591 DCR は開かない。Databricks Apps の header mode では Apps proxy が OAuth 認証を完了済みのため、転送 identity を owner として使い、artifact 操作で user access token を再利用しない。
+`/mcp` は MCP 2026-07-28 の stateless endpoint とし、accounts mode では DPoP-bound access token と exact resource audience を必須とする。`mcp` は全tool、`mcp:read` はread-only toolだけを許可する。Desktop が main API を呼ぶ capability scope は `all-apis` に統一する。Node の authorization server は CIMD を提供し、RFC 7591 DCR は開かない。Databricks Apps の header mode では Apps proxy が OAuth 認証を完了済みのため、転送 identity を owner として使い、artifact 操作で user access token を再利用しない。
 
 Cloudflare では Hono Worker は `/api/**`、`/.well-known/**`、`/mcp`、`/healthz` だけを処理する。React SPA と静的 asset は
 Workers Static Assets が直接配信し、Worker 内から asset binding を呼ばない。`/dashboard/**` の navigation は
@@ -204,6 +204,7 @@ Project は階層参照と meeting 絞り込みのためだけに同期し、Ser
 [ADR-0059](docs/adr/0059-authorize-content-through-vault-principal-permissions.md)を Vault ownership、permission、content RLS の正本とする。
 [ADR-0062](docs/adr/0062-add-server-hybrid-search-projection.md)を同期済み content の Server Hybrid 検索の正本とする。
 [ADR-0066](docs/adr/0066-sync-vault-projects-and-separate-transcript-speakers.md)を Vault／Project 同期と transcript 話者モデルの正本とする。
+[ADR-0067](docs/adr/0067-use-domain-transactions-and-cursor-deltas-for-sync.md)を Desktop／Web の双方向変更、optimistic revision、domain transaction queue、cursor delta、SSE invalidation の正本とする。SSE はデータ本体を運ばず、Desktop は remote delta 適用中だけ local enqueue trigger を抑止する。
 [ADR-0061](docs/adr/0061-decouple-vault-rls-from-better-auth-schema.md)をRLS identity contextの正本とする。
 [ADR-0063](docs/adr/0063-materialize-header-users-in-auth-schema.md)を共通Auth schemaとheader user射影の正本とする。
 [ADR-0064](docs/adr/0064-manage-server-administrators-with-better-auth.md)をServer管理者権限の正本とする。

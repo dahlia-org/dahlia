@@ -208,15 +208,15 @@ import GRDB
             let migrated = try AppDatabaseManager(path: databaseURL.path)
             let result = try migrated.dbQueue.read { db in
                 try (
-                    MeetingRecord.fetchOne(db, key: meetingId),
+                    Row.fetchOne(db, sql: "SELECT * FROM meetings WHERE id = ?", arguments: [meetingId]),
                     CalendarEventRecord.fetchCount(db)
                 )
             }
 
             let meeting = try #require(result.0)
-            #expect(meeting.name == "Keep me")
-            #expect(meeting.calendarEventIcalUid == nil)
-            #expect(meeting.calendarEventRecurrenceId == nil)
+            #expect(meeting["name"] as String? == "Keep me")
+            #expect(meeting["calendar_event_ical_uid"] as String? == nil)
+            #expect(meeting["calendar_event_recurrence_id"] as String? == nil)
             #expect(result.1 == 0)
         }
 

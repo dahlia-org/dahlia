@@ -29,6 +29,7 @@ export const artifact = sqliteTable("core_artifact", {
 export const syncedVault = sqliteTable("core_vaults", {
   vaultId: text("vault_id").primaryKey(),
   name: text("name").notNull(),
+  revision: integer("revision").default(1).notNull(),
   deletingAt: sqliteTimestamp("deleting_at"),
   createdAt: sqliteTimestamp("created_at").default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`).notNull(),
   updatedAt: sqliteTimestamp("updated_at").default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`).notNull(),
@@ -43,6 +44,7 @@ export const syncedProject = sqliteTable("core_projects", {
   projectType: text("project_type"),
   revision: integer("revision").notNull(),
   createdAt: sqliteTimestamp("created_at").notNull(),
+  updatedAt: sqliteTimestamp("updated_at").default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`).notNull(),
 }, (table) => [
   unique("project_vault_project_unique").on(table.vaultId, table.projectId),
   foreignKey({ columns: [table.vaultId], foreignColumns: [syncedVault.vaultId] }).onDelete("cascade"),
@@ -98,6 +100,9 @@ export const syncedMeeting = sqliteTable("content_meetings", {
   summaryTitle: text("summary_title"),
   summaryDocument: text("summary_document"),
   summaryCreatedAt: sqliteTimestamp("summary_created_at"),
+  revision: integer("revision").default(1).notNull(),
+  summaryRevision: integer("summary_revision").default(0).notNull(),
+  transcriptRevision: integer("transcript_revision").default(0).notNull(),
   activeTranscriptGeneration: text("active_transcript_generation"),
   manifestReceivedAt: sqliteTimestamp("manifest_received_at"),
   deletingAt: sqliteTimestamp("deleting_at"),
@@ -154,6 +159,7 @@ export const syncedScreenshot = sqliteTable("content_screenshots", {
   active: integer("active", { mode: "boolean" }).default(true).notNull(),
   ocrText: text("ocr_text"),
   caption: text("caption"),
+  revision: integer("revision").default(1).notNull(),
   createdAt: sqliteTimestamp("created_at").default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`).notNull(),
   updatedAt: sqliteTimestamp("updated_at").default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`).notNull(),
 }, (table) => [
@@ -229,4 +235,48 @@ export const searchIndexJob = sqliteTable("core_search_index_jobs", {
   check("search_index_job_status_check", sql`${table.status} IN ('pending', 'processing', 'failed')`),
   check("search_index_job_dimensions_check", sql`${table.dimensions} BETWEEN 32 AND 1024`),
   index("search_index_job_claim_idx").on(table.status, table.availableAt, table.leaseExpiresAt),
+]);
+
+export const syncTransactionReceipt = sqliteTable("core_transaction_receipts", {
+  transactionId: text("transaction_id").primaryKey(),
+  ownerUserId: text("owner_user_id").notNull(),
+  vaultId: text("vault_id").notNull(),
+  requestHash: text("request_hash").notNull(),
+  responseJson: text("response_json").notNull(),
+  cursor: integer("cursor").notNull(),
+  createdAt: sqliteTimestamp("created_at").default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`).notNull(),
+}, (table) => [
+  foreignKey({ columns: [table.ownerUserId], foreignColumns: [authUser.id] }).onDelete("cascade"),
+  index("transaction_receipt_owner_created_idx").on(table.ownerUserId, table.createdAt),
+]);
+
+export const syncChange = sqliteTable("core_sync_changes", {
+  sequence: integer("sequence").primaryKey({ autoIncrement: true }),
+  ownerUserId: text("owner_user_id").notNull(),
+  vaultId: text("vault_id").notNull(),
+  entity: text("entity").notNull(),
+  entityId: text("entity_id").notNull(),
+  action: text("action").notNull(),
+  revision: integer("revision"),
+  transactionId: text("transaction_id").notNull(),
+  createdAt: sqliteTimestamp("created_at").default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`).notNull(),
+}, (table) => [
+  check("sync_change_entity_check", sql`${table.entity} IN ('vault', 'project', 'meeting', 'summary', 'transcript', 'screenshot')`),
+  check("sync_change_action_check", sql`${table.action} IN ('upsert', 'delete', 'reset')`),
+  index("sync_change_owner_vault_sequence_idx").on(table.ownerUserId, table.vaultId, table.sequence),
+  index("sync_change_owner_sequence_idx").on(table.ownerUserId, table.sequence),
+]);
+
+export const storageDeleteJob = sqliteTable("core_storage_delete_jobs", {
+  storageKey: text("storage_key").primaryKey(),
+  attempts: integer("attempts").default(0).notNull(),
+  status: text("status").default("pending").notNull(),
+  availableAt: sqliteTimestamp("available_at").default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`).notNull(),
+  claimedAt: sqliteTimestamp("claimed_at"),
+  leaseExpiresAt: sqliteTimestamp("lease_expires_at"),
+  lastErrorCode: text("last_error_code"),
+  createdAt: sqliteTimestamp("created_at").default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`).notNull(),
+}, (table) => [
+  check("storage_delete_job_status_check", sql`${table.status} IN ('pending', 'processing', 'failed')`),
+  index("storage_delete_job_claim_idx").on(table.status, table.availableAt, table.leaseExpiresAt),
 ]);

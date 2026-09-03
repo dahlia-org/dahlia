@@ -154,7 +154,7 @@
                 .first(where: { $0.name == "scope" })?.value ?? ""
             #expect(scope.contains("openid"))
             #expect(scope.contains("offline_access"))
-            #expect(!scope.contains("all-apis"))
+            #expect(scope.contains("all-apis"))
         }
 
         @Test
@@ -177,7 +177,7 @@
             let scope = URLComponents(url: authorizationURL, resolvingAgainstBaseURL: false)?.queryItems?
                 .first(where: { $0.name == "scope" })?.value ?? ""
             #expect(Set(scope.split(separator: " ").map(String.init)) == [
-                "ai-gateway", "files", "iam.current-user:read", "offline_access",
+                "all-apis", "offline_access",
             ])
             let tokenBody = try #require(recorder.tokenRequestBody)
             let tokenScope = URLComponents(string: "?\(tokenBody)")?.queryItems?
@@ -187,7 +187,7 @@
 
         @Test
         func tokenResponseRejectsScopesOutsideTheRequest() async throws {
-            let recorder = CloudRequestRecorder(mode: .userInfo, tokenScope: "openid all-apis")
+            let recorder = CloudRequestRecorder(mode: .userInfo, tokenScope: "openid mcp:read")
             let service = makeService(recorder: recorder, store: CloudCredentialStoreFake())
 
             await #expect(throws: DahliaCloudError.invalidTokenResponse) {
@@ -823,7 +823,7 @@
             let body: String
             switch request.url?.path {
             case "/.well-known/oauth-protected-resource":
-                let scopes = mode == .proxySession ? "[\"iam.current-user:read\",\"all-apis\"]" : "[]"
+                let scopes = "[\"all-apis\"]"
                 body = """
                 {"resource":"https://cloud.example.com","authorization_servers":["https://accounts.example.com"],"scopes_supported":\(scopes)}
                 """

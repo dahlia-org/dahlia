@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { secureHeaders } from "hono/secure-headers";
+import { streamSSE } from "hono/streaming";
 import {
   bearerAuthChallengeResponse,
   OAuthError,
@@ -17,14 +18,11 @@ import {
 } from "./auth/identity";
 import { createProtectedResourceMetadata, type DahliaAuth } from "./auth/better-auth";
 import {
-  ARTIFACT_READ_SCOPE,
-  ARTIFACT_WRITE_SCOPE,
+  ALL_APIS_SCOPE,
   GATEWAY_SCOPES,
-  MODEL_READ_SCOPE,
-  MODEL_REQUEST_SCOPE,
-  SYNC_READ_SCOPE,
-  SYNC_WRITE_SCOPE,
-  type GatewayScope,
+  MCP_CAPABILITY_SCOPES,
+  MCP_READ_SCOPE,
+  MCP_SCOPE,
 } from "./auth/scopes";
 import { EXTERNAL_ORGANIZATION_ID, type AuthStore } from "./auth/store";
 import { mcpResource, type AppConfig } from "./config";
@@ -37,7 +35,7 @@ import {
 import type { ObjectStorage } from "./artifacts/storage";
 import { createArtifactMcpHandler, MCP_MAX_REQUEST_BYTES } from "./mcp";
 import { MeetingSyncService } from "./sync/service";
-import { SyncStoreUnavailableError } from "./sync/store";
+import { decodeSyncCursor, SyncStoreUnavailableError, SyncTransactionError } from "./sync/store";
 import type { SearchTokenizer } from "./search/tokenizer";
 import type { SearchEmbedder } from "./search/embedding";
 import { MODEL_ALIAS_PATTERN, UPSTREAM_MODEL_MAX_LENGTH } from "./ai-gateway/model-alias";
@@ -47,10 +45,6 @@ export const AUTH_MAX_REQUEST_BYTES = 64 * 1024;
 const ARTIFACT_PATCH_MAX_REQUEST_BYTES = 1024;
 const SYNC_JSON_MAX_REQUEST_BYTES = 8 * 1024 * 1024;
 const teamInputSchema = z.object({ name: z.string().trim().min(1).max(100) });
-
-export function requiredGatewayScope(path: string): GatewayScope {
-  return path === "/api/v1/models" ? MODEL_READ_SCOPE : MODEL_REQUEST_SCOPE;
-}
 
 export const authBodyLimit = bodyLimit({
   maxSize: AUTH_MAX_REQUEST_BYTES,
@@ -109,10 +103,7 @@ export async function authenticateMcpRequest(
   verifyAccessToken: (request: Request) => Promise<AuthInfo>,
   resourceMetadataUrl: string,
 ): Promise<AuthInfo | Response> {
-  const options = {
-    requiredScopes: [ARTIFACT_WRITE_SCOPE, SYNC_READ_SCOPE],
-    resourceMetadataUrl,
-  };
+  const options = { resourceMetadataUrl };
   let authInfo: AuthInfo;
   try {
     authInfo = await verifyAccessToken(request);
@@ -122,7 +113,7 @@ export async function authenticateMcpRequest(
       options,
     );
   }
-  if (!authInfo.scopes.some((scope) => scope === ARTIFACT_WRITE_SCOPE || scope === SYNC_READ_SCOPE)) {
+  if (!MCP_CAPABILITY_SCOPES.some((scope) => authInfo.scopes.includes(scope))) {
     return bearerAuthChallengeResponse(
       new OAuthError(OAuthErrorCode.InsufficientScope, "Insufficient scope"),
       options,
@@ -227,7 +218,7 @@ export function createApp(dependencies: AppDependencies) {
       await createProtectedResourceMetadata(auth)({
         resource: mcpResource(config),
         authorization_servers: [config.baseUrl],
-        scopes_supported: [ARTIFACT_WRITE_SCOPE, SYNC_READ_SCOPE],
+        scopes_supported: [...MCP_CAPABILITY_SCOPES],
       }),
     );
   });
@@ -376,7 +367,7 @@ export function createApp(dependencies: AppDependencies) {
   });
 
   app.get("/api/v1/artifacts", async (context) => {
-    const identity = await identities.fromBrowserOrGateway(context.req.raw, ARTIFACT_READ_SCOPE);
+    const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
     const page = await artifacts.list(identity.workspaceId, context.req.query("cursor"));
     return context.json({
       items: page.items.map(artifactResponse),
@@ -384,7 +375,7 @@ export function createApp(dependencies: AppDependencies) {
     });
   });
   app.post("/api/v1/artifacts", async (context) => {
-    const identity = await identities.fromGateway(context.req.raw, ARTIFACT_WRITE_SCOPE);
+    const identity = await identities.fromGateway(context.req.raw, ALL_APIS_SCOPE);
     const artifact = await artifacts.create(identity, context.req.raw);
     return context.json({
       ...artifactResponse(artifact),
@@ -413,48 +404,59 @@ export function createApp(dependencies: AppDependencies) {
   });
   app.put("/api/v1/artifacts/:artifactId", async (context) => {
     const id = artifacts.parseId(context.req.param("artifactId"));
-    const identity = await identities.fromGateway(context.req.raw, ARTIFACT_WRITE_SCOPE);
+    const identity = await identities.fromGateway(context.req.raw, ALL_APIS_SCOPE);
     return context.json(artifactResponse(await artifacts.put(id, identity, context.req.raw)));
   });
   app.patch("/api/v1/artifacts/:artifactId", artifactPatchBodyLimit, async (context) => {
     const id = artifacts.parseId(context.req.param("artifactId"));
-    const identity = await identities.fromGateway(context.req.raw, ARTIFACT_WRITE_SCOPE);
+    const identity = await identities.fromGateway(context.req.raw, ALL_APIS_SCOPE);
     const body = await context.req.json<unknown>().catch((): unknown => undefined);
     return context.json(artifactResponse(await artifacts.setVisibility(id, identity, body, context.req.raw.signal)));
   });
   app.delete("/api/v1/artifacts/:artifactId", async (context) => {
     const id = artifacts.parseId(context.req.param("artifactId"));
-    const identity = await identities.fromGateway(context.req.raw, ARTIFACT_WRITE_SCOPE);
+    const identity = await identities.fromGateway(context.req.raw, ALL_APIS_SCOPE);
     await artifacts.delete(id, identity, context.req.raw.signal);
     return context.body(null, 204);
   });
 
-  app.put(
-    "/api/v1/vaults/:vaultId/manifest",
-    syncBodyLimit,
-    async (context) => {
-      const identity = await identities.fromGateway(context.req.raw, SYNC_WRITE_SCOPE);
-      const vaultId = sync.parseId(context.req.param("vaultId"));
-      await sync.commitVaultManifest(identity, vaultId, await context.req.json().catch(() => null));
-      return context.body(null, 204);
-    },
-  );
-  app.put(
-    "/api/v1/vaults/:vaultId/meetings/:meetingId/manifest",
-    syncBodyLimit,
-    async (context) => {
-      const identity = await identities.fromGateway(context.req.raw, SYNC_WRITE_SCOPE);
-      const vaultId = sync.parseId(context.req.param("vaultId"));
-      const meetingId = sync.parseId(context.req.param("meetingId"));
-      await sync.commitManifest(identity, vaultId, meetingId, await context.req.json().catch(() => null));
-      return context.body(null, 204);
-    },
-  );
+  app.post("/api/v1/transactions", syncBodyLimit, async (context) => {
+    if (!context.req.header("authorization") && !mutationOriginAllowed(context.req.raw, config.baseUrl)) {
+      return context.json({ error: "invalid_origin" }, 403);
+    }
+    const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
+    return context.json(await sync.commitTransaction(identity, await context.req.json().catch(() => null)));
+  });
+  app.get("/api/v1/vaults/:vaultId/changes", async (context) => {
+    const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
+    return context.json(await sync.listChanges(
+      identity,
+      sync.parseId(context.req.param("vaultId")),
+      context.req.query("cursor"),
+    ));
+  });
+  app.get("/api/v1/events", async (context) => {
+    const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
+    const suppliedCursor = context.req.query("cursor") ?? context.req.header("last-event-id");
+    let sequence = suppliedCursor ? decodeSyncCursor(suppliedCursor) : 0;
+    return streamSSE(context, async (stream) => {
+      while (!stream.aborted) {
+        const cursor = await sync.latestCursor(identity);
+        const latest = decodeSyncCursor(cursor);
+        if (latest > sequence) {
+          sequence = latest;
+          await stream.writeSSE({ event: "invalidation", id: cursor, data: JSON.stringify({ cursor }) });
+        }
+        await stream.sleep(2_000);
+      }
+    });
+  });
+
   app.put(
     "/api/v1/vaults/:vaultId/meetings/:meetingId/transcripts/:generation/chunks/:chunkIndex",
     syncBodyLimit,
     async (context) => {
-      const identity = await identities.fromGateway(context.req.raw, SYNC_WRITE_SCOPE);
+      const identity = await identities.fromGateway(context.req.raw, ALL_APIS_SCOPE);
       const vaultId = sync.parseId(context.req.param("vaultId"));
       const meetingId = sync.parseId(context.req.param("meetingId"));
       const generation = sync.parseGeneration(context.req.param("generation"));
@@ -474,7 +476,7 @@ export function createApp(dependencies: AppDependencies) {
   app.put(
     "/api/v1/vaults/:vaultId/meetings/:meetingId/screenshots/:screenshotId/content",
     async (context) => {
-      const identity = await identities.fromGateway(context.req.raw, SYNC_WRITE_SCOPE);
+      const identity = await identities.fromGateway(context.req.raw, ALL_APIS_SCOPE);
       const vaultId = sync.parseId(context.req.param("vaultId"));
       const meetingId = sync.parseId(context.req.param("meetingId"));
       const screenshotId = sync.parseId(context.req.param("screenshotId"));
@@ -487,7 +489,7 @@ export function createApp(dependencies: AppDependencies) {
     },
   );
   app.delete("/api/v1/vaults/:vaultId/meetings/:meetingId", async (context) => {
-    const identity = await identities.fromGateway(context.req.raw, SYNC_WRITE_SCOPE);
+    const identity = await identities.fromGateway(context.req.raw, ALL_APIS_SCOPE);
     const complete = await sync.deleteMeeting(
       identity,
       sync.parseId(context.req.param("vaultId")),
@@ -496,26 +498,26 @@ export function createApp(dependencies: AppDependencies) {
     return complete ? context.body(null, 204) : context.json({ remaining: true }, 202);
   });
   app.delete("/api/v1/vaults/:vaultId", async (context) => {
-    const identity = await identities.fromGateway(context.req.raw, SYNC_WRITE_SCOPE);
+    const identity = await identities.fromGateway(context.req.raw, ALL_APIS_SCOPE);
     const complete = await sync.deleteVault(identity, sync.parseId(context.req.param("vaultId")));
     return complete ? context.body(null, 204) : context.json({ remaining: true }, 202);
   });
 
   app.get("/api/v1/vaults", async (context) => {
-    const identity = await identities.fromBrowserOrGateway(context.req.raw, SYNC_READ_SCOPE);
+    const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
     return context.json({ items: await sync.listVaults(identity) });
   });
   app.get("/api/v1/vaults/:vaultId", async (context) => {
-    const identity = await identities.fromBrowserOrGateway(context.req.raw, SYNC_READ_SCOPE);
+    const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
     const vault = await sync.getVault(identity, sync.parseId(context.req.param("vaultId")));
     return vault ? context.json(vault) : context.json({ error: "vault_not_found" }, 404);
   });
   app.get("/api/v1/vaults/:vaultId/projects", async (context) => {
-    const identity = await identities.fromBrowserOrGateway(context.req.raw, SYNC_READ_SCOPE);
+    const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
     return context.json({ items: await sync.listProjects(identity, sync.parseId(context.req.param("vaultId"))) });
   });
   app.get("/api/v1/vaults/:vaultId/projects/:projectId", async (context) => {
-    const identity = await identities.fromBrowserOrGateway(context.req.raw, SYNC_READ_SCOPE);
+    const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
     const project = await sync.getProject(
       identity,
       sync.parseId(context.req.param("vaultId")),
@@ -524,7 +526,7 @@ export function createApp(dependencies: AppDependencies) {
     return project ? context.json(project) : context.json({ error: "project_not_found" }, 404);
   });
   app.get("/api/v1/vaults/:vaultId/meetings", async (context) => {
-    const identity = await identities.fromBrowserOrGateway(context.req.raw, SYNC_READ_SCOPE);
+    const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
     const vaultId = sync.parseId(context.req.param("vaultId"));
     return context.json(await sync.listMeetings(
       identity,
@@ -536,7 +538,7 @@ export function createApp(dependencies: AppDependencies) {
     ));
   });
   app.get("/api/v1/vaults/:vaultId/meetings/:meetingId", async (context) => {
-    const identity = await identities.fromBrowserOrGateway(context.req.raw, SYNC_READ_SCOPE);
+    const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
     const meeting = await sync.getMeeting(
       identity,
       sync.parseId(context.req.param("vaultId")),
@@ -545,13 +547,13 @@ export function createApp(dependencies: AppDependencies) {
     return meeting ? context.json(meeting) : context.json({ error: "meeting_not_found" }, 404);
   });
   app.get("/api/v1/vaults/:vaultId/meetings/:meetingId/transcript", async (context) => {
-    const identity = await identities.fromBrowserOrGateway(context.req.raw, SYNC_READ_SCOPE);
+    const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
     const vaultId = sync.parseId(context.req.param("vaultId"));
     const meetingId = sync.parseId(context.req.param("meetingId"));
     return context.json(await sync.listTranscript(identity, vaultId, meetingId, context.req.query("cursor")));
   });
   app.get("/api/v1/vaults/:vaultId/meetings/:meetingId/screenshots", async (context) => {
-    const identity = await identities.fromBrowserOrGateway(context.req.raw, SYNC_READ_SCOPE);
+    const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
     const vaultId = sync.parseId(context.req.param("vaultId"));
     const meetingId = sync.parseId(context.req.param("meetingId"));
     return context.json(await sync.listScreenshots(
@@ -733,7 +735,7 @@ export function createApp(dependencies: AppDependencies) {
     ["GET", "HEAD"],
     "/api/v1/vaults/:vaultId/meetings/:meetingId/screenshots/:screenshotId/content",
     async (context) => {
-      const identity = await identities.fromBrowserOrGateway(context.req.raw, SYNC_READ_SCOPE);
+      const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
       return sync.readScreenshot(
         identity,
         sync.parseId(context.req.param("vaultId")),
@@ -748,7 +750,7 @@ export function createApp(dependencies: AppDependencies) {
     ["GET", "HEAD"],
     "/mcp/resources/vaults/:vaultId/meetings/:meetingId/screenshots/:screenshotId/content",
     async (context) => {
-      const identity = await identities.fromMcpResource(context.req.raw, SYNC_READ_SCOPE);
+      const identity = await identities.fromMcpResource(context.req.raw, MCP_READ_SCOPE);
       const response = await sync.readScreenshot(
         identity,
         sync.parseId(context.req.param("vaultId")),
@@ -783,7 +785,7 @@ export function createApp(dependencies: AppDependencies) {
       authInfo = {
         token: "",
         clientId: "trusted-proxy",
-        scopes: [ARTIFACT_WRITE_SCOPE, SYNC_READ_SCOPE],
+        scopes: [MCP_SCOPE],
         expiresAt: Math.floor(Date.now() / 1000) + 60,
         resource: new URL(mcpResource(config)),
         extra: { identity },
@@ -796,7 +798,7 @@ export function createApp(dependencies: AppDependencies) {
   app.use("/api/v1/*", async (context, next) => {
     context.set("identity", await identities.fromGateway(
       context.req.raw,
-      requiredGatewayScope(context.req.path),
+      ALL_APIS_SCOPE,
     ));
     for (const extension of extensions) {
       const response = await extension.beforeGateway?.({
@@ -831,6 +833,9 @@ export function createApp(dependencies: AppDependencies) {
     if (error instanceof ArtifactRequestError) {
       return Response.json({ error: error.code }, { status: error.status });
     }
+    if (error instanceof SyncTransactionError) {
+      return Response.json({ error: error.code, conflicts: error.conflicts }, { status: error.status });
+    }
     if (error instanceof SyncStoreUnavailableError) {
       return context.json({ error: error.message }, 503);
     }
@@ -842,7 +847,7 @@ export function createApp(dependencies: AppDependencies) {
     const artifact = await artifacts.get(artifacts.parseId(value));
     if (!artifact) return null;
     if (artifact.visibility === "public" && !request.headers.has("authorization")) return artifact;
-    const identity = await identities.fromBrowserOrGateway(request, ARTIFACT_READ_SCOPE);
+    const identity = await identities.fromBrowserOrGateway(request, ALL_APIS_SCOPE);
     if (artifact.visibility !== "public" && identity.workspaceId !== artifact.ownerWorkspaceId) {
       throw new ArtifactRequestError(404, "artifact_not_found");
     }

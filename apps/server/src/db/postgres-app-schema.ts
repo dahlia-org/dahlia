@@ -1,5 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
+  bigint,
+  bigserial,
   boolean,
   check,
   customType,
@@ -7,6 +9,7 @@ import {
   foreignKey,
   index,
   integer,
+  jsonb,
   pgSchema,
   primaryKey,
   real,
@@ -47,6 +50,7 @@ export const artifact = coreSchema.table("artifact", {
 export const syncedVault = coreSchema.table("vaults", {
   vaultId: uuid("vault_id").primaryKey(),
   name: text("name").notNull(),
+  revision: integer("revision").default(1).notNull(),
   deletingAt: timestamp("deleting_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -61,6 +65,7 @@ export const syncedProject = coreSchema.table("projects", {
   projectType: text("project_type"),
   revision: integer("revision").notNull(),
   createdAt: timestamp("created_at").notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => [
   unique("project_vault_project_unique").on(table.vaultId, table.projectId),
   foreignKey({
@@ -126,6 +131,9 @@ export const syncedMeeting = contentSchema.table("meetings", {
   summaryTitle: text("summary_title"),
   summaryDocument: text("summary_document"),
   summaryCreatedAt: timestamp("summary_created_at"),
+  revision: integer("revision").default(1).notNull(),
+  summaryRevision: integer("summary_revision").default(0).notNull(),
+  transcriptRevision: integer("transcript_revision").default(0).notNull(),
   activeTranscriptGeneration: text("active_transcript_generation"),
   manifestReceivedAt: timestamp("manifest_received_at"),
   deletingAt: timestamp("deleting_at"),
@@ -186,6 +194,7 @@ export const syncedScreenshot = contentSchema.table("screenshots", {
   active: boolean("active").default(true).notNull(),
   ocrText: text("ocr_text"),
   caption: text("caption"),
+  revision: integer("revision").default(1).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => [
@@ -268,4 +277,52 @@ export const searchIndexJob = coreSchema.table("search_index_jobs", {
   check("search_index_job_status_check", sql`${table.status} IN ('pending', 'processing', 'failed')`),
   check("search_index_job_dimensions_check", sql`${table.dimensions} BETWEEN 32 AND 1024`),
   index("search_index_job_claim_idx").on(table.status, table.availableAt, table.leaseExpiresAt),
+]);
+
+export const syncTransactionReceipt = coreSchema.table("transaction_receipts", {
+  transactionId: uuid("transaction_id").primaryKey(),
+  ownerUserId: text("owner_user_id").notNull(),
+  vaultId: uuid("vault_id").notNull(),
+  requestHash: text("request_hash").notNull(),
+  responseJson: jsonb("response_json").notNull(),
+  cursor: bigint("cursor", { mode: "number" }).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  foreignKey({
+    name: "transaction_receipt_owner_user_fk",
+    columns: [table.ownerUserId],
+    foreignColumns: [authUser.id],
+  }).onDelete("cascade"),
+  index("transaction_receipt_owner_created_idx").on(table.ownerUserId, table.createdAt),
+]);
+
+export const syncChange = coreSchema.table("sync_changes", {
+  sequence: bigserial("sequence", { mode: "number" }).primaryKey(),
+  ownerUserId: text("owner_user_id").notNull(),
+  vaultId: uuid("vault_id").notNull(),
+  entity: text("entity").notNull(),
+  entityId: uuid("entity_id").notNull(),
+  action: text("action").notNull(),
+  revision: integer("revision"),
+  transactionId: uuid("transaction_id").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  check("sync_change_entity_check", sql`${table.entity} IN ('vault', 'project', 'meeting', 'summary', 'transcript', 'screenshot')`),
+  check("sync_change_action_check", sql`${table.action} IN ('upsert', 'delete', 'reset')`),
+  index("sync_change_owner_vault_sequence_idx").on(table.ownerUserId, table.vaultId, table.sequence),
+  index("sync_change_owner_sequence_idx").on(table.ownerUserId, table.sequence),
+]);
+
+export const storageDeleteJob = coreSchema.table("storage_delete_jobs", {
+  storageKey: text("storage_key").primaryKey(),
+  attempts: integer("attempts").default(0).notNull(),
+  status: text("status").default("pending").notNull(),
+  availableAt: timestamp("available_at").defaultNow().notNull(),
+  claimedAt: timestamp("claimed_at"),
+  leaseExpiresAt: timestamp("lease_expires_at"),
+  lastErrorCode: text("last_error_code"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  check("storage_delete_job_status_check", sql`${table.status} IN ('pending', 'processing', 'failed')`),
+  index("storage_delete_job_claim_idx").on(table.status, table.availableAt, table.leaseExpiresAt),
 ]);

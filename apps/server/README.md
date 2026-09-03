@@ -30,25 +30,29 @@ Better Auth schemas are generated unmodified into `src/db/generated`; Dahlia tab
 | `/api/auth/**` | Google sign-in and OAuth 2.1 endpoints | Disabled |
 | `/api/session` | Account session and capabilities | Validated email-header identity and capabilities |
 | `/api/admin/**` | Platform administrators only | Platform administrators only |
-| `/api/v1/models` | Dahlia OAuth access token | Platform U2M / proxy authentication |
-| `/api/v1/responses` | Dahlia OAuth access token | Platform U2M / proxy authentication |
-| `GET /api/v1/artifacts` | Dahlia OAuth with artifact read scope or browser session | Proxy identity |
-| `POST /api/v1/artifacts` | Dahlia OAuth with artifact write scope | Proxy identity |
-| `/api/v1/artifacts/{uuidv7}` | Public reads are anonymous; private reads use Dahlia OAuth or browser session; mutations use Dahlia OAuth | Public reads are anonymous; private reads and mutations use proxy identity |
-| `/api/v1/artifacts/{uuidv7}/content` | Public reads are anonymous; private reads use Dahlia OAuth or browser session | Public reads are anonymous; private reads use proxy identity |
-| `/api/v1/vaults/**` | Browser session or Dahlia OAuth with sync scope | Proxy identity |
-| `POST /mcp` | Dahlia OAuth with artifact write or sync read scope | Databricks Apps / trusted proxy identity |
+| `/api/v1/models` | Dahlia OAuth with `all-apis` | Platform U2M / proxy authentication |
+| `/api/v1/responses` | Dahlia OAuth with `all-apis` | Platform U2M / proxy authentication |
+| `GET /api/v1/artifacts` | Dahlia OAuth with `all-apis` or browser session | Proxy identity |
+| `POST /api/v1/artifacts` | Dahlia OAuth with `all-apis` | Proxy identity |
+| `/api/v1/artifacts/{uuidv7}` | Public reads are anonymous; private reads use `all-apis` or browser session; mutations use `all-apis` | Public reads are anonymous; private reads and mutations use proxy identity |
+| `/api/v1/artifacts/{uuidv7}/content` | Public reads are anonymous; private reads use `all-apis` or browser session | Public reads are anonymous; private reads use proxy identity |
+| `/api/v1/vaults/**` | Browser session or Dahlia OAuth with `all-apis` | Proxy identity |
+| `POST /mcp` | Dahlia OAuth with `mcp` or `mcp:read` | Databricks Apps / trusted proxy identity |
 | `/healthz` | Minimal liveness | Internal liveness; anonymous external access is not guaranteed |
 
 `accounts` is the default authentication. It serves OAuth/OIDC discovery under `/.well-known/**`. Both hosted and self-hosted deployments use the fixed public client `databricks-cli`; it requires authorization code with S256 PKCE and supports rotating refresh tokens and revocation. Its default redirect allowlist retains the released `http://127.0.0.1:1455/oauth/callback` and also accepts the Desktop callback `http://localhost:8020`. RFC 7591 dynamic client registration remains disabled. Node deployments support MCP 2026-07-28 Client ID Metadata Documents (CIMD) with pinned public-address fetching; the MCP resource is `${DAHLIA_APP_URL}/mcp` and its protected-resource metadata is at `/.well-known/oauth-protected-resource/mcp`.
 
-OAuth access uses `api.model.read` for models, `api.model.request` for Responses, and `api.artifact.read` / `api.artifact.write` for private artifact operations. The fixed client is allowed to request these scopes; each endpoint verifies its own scope.
+OAuth access from Dahlia Desktop uses the single `all-apis` capability scope for models, Responses, artifacts, synchronization, deltas, and events. OIDC identity scopes remain separate protocol scopes.
 
 ### Meeting sync and Vault sharing
 
-Meeting sync is opt-in per Desktop Vault and uploads only to the selected Dahlia account connection. Desktop writes require `api.sync.write`; Private Web and Server MCP reads require `api.sync.read`. `core.vault_permissions` is the permission source of truth: every Vault has one immutable `user` owner identified by the authentication provider's raw user ID, while optional `user`, `organization`, and `team` members are read-only. Content rows carry only `vault_id`; PostgreSQL/Lakebase RLS and the SQLite/D1 store resolve access through the Vault permission. Screenshot bytes use deterministic object keys under `meetings/{meetingId}/screenshots/{screenshotId}.{extension}`.
+Meeting sync is opt-in per Desktop Vault and uploads only to the selected Dahlia account connection. Desktop API calls require `all-apis`; Server MCP reads require `mcp:read`. `core.vault_permissions` is the permission source of truth: every Vault has one immutable `user` owner identified by the authentication provider's raw user ID, while optional `user`, `organization`, and `team` members are read-only. Content rows carry only `vault_id`; PostgreSQL/Lakebase RLS and the SQLite/D1 store resolve access through the Vault permission. Screenshot bytes use deterministic object keys under `meetings/{meetingId}/screenshots/{screenshotId}.{extension}`.
 
-Desktop sends `PUT /api/v1/vaults/{vaultId}/manifest` before meeting data. That manifest is the complete Server mirror of the Vault name and two-level Project hierarchy; omitted Projects are deleted and affected meetings become unassigned. Projects are available for hierarchy browsing and meeting filtering but are not added to full-text or vector search. Transcript segments keep `audioSource` (`mic` or `system`) separate from nullable `speakerLabel`, which is reserved for future diarization.
+Desktop and Private Web mutations use `POST /api/v1/transactions`. Each UUIDv7 transaction is limited to one Vault, committed atomically, and replay-safe by transaction ID. Vault, Project, meeting metadata, and summary writes require the current canonical revision; conflicts return `409` with the Server record. Screenshot content and transcript chunks remain bounded staging uploads and are activated by a transaction.
+
+`GET /api/v1/vaults/{vaultId}/changes?cursor=...` is the durable delta feed. `GET /api/v1/events` sends only SSE invalidations and opaque cursors; clients always fetch canonical data from the delta/read APIs and can catch up after disconnect or application shutdown. Server MCP remains read-only.
+
+Vault and Project operations are committed through the domain transaction endpoint before meeting data. Projects are available for hierarchy browsing and meeting filtering but are not added to full-text or vector search. Transcript segments keep `audioSource` (`mic` or `system`) separate from nullable `speakerLabel`, which is reserved for future diarization.
 
 `GET /api/v1/vaults/{vaultId}/meetings` returns at most 200 meetings. Pass its opaque `nextCursor` as `cursor` to continue the same date-ordered Vault or Project listing. `query_meetings` exposes the same cursor contract. Search results remain a bounded relevance-ranked page and do not return a continuation cursor.
 
@@ -82,9 +86,9 @@ All storage backends stream authorized `GET` and `HEAD` responses through Dahlia
 
 ### Artifact MCP
 
-`POST /mcp` is a stateless, modern-only MCP 2026-07-28 endpoint. `api.artifact.write` exposes four artifact mutation tools; `api.sync.read` exposes synchronized Project, meeting, transcript, and screenshot read tools, including Project-filtered meeting queries. Each tool uses the same authorization as its REST API. Tool content is UTF-8 or canonical RFC 4648 base64, decoded to at most 8 MiB. MCP requests are rejected above 12 MiB before JSON parsing, including streamed requests without `Content-Length`. Tool results contain the artifact ID, canonical viewer URL, content type, visibility, and a resource link to the content endpoint, never artifact bytes or storage URLs. Streaming uploads larger than 8 MiB remain available through the REST API.
+`POST /mcp` is a stateless, modern-only MCP 2026-07-28 endpoint. `mcp` exposes every MCP tool, including the four artifact mutations and all synchronized-content reads; `mcp:read` exposes only the Project, meeting, transcript, and screenshot read tools, including Project-filtered meeting queries. Each tool uses the same authorization as its REST API. Tool content is UTF-8 or canonical RFC 4648 base64, decoded to at most 8 MiB. MCP requests are rejected above 12 MiB before JSON parsing, including streamed requests without `Content-Length`. Tool results contain the artifact ID, canonical viewer URL, content type, visibility, and a resource link to the content endpoint, never artifact bytes or storage URLs. Streaming uploads larger than 8 MiB remain available through the REST API.
 
-In `accounts` mode, `/mcp` requires a DPoP-bound access token for the exact MCP resource and at least one of `api.artifact.write` or `api.sync.read`; only tools covered by the granted scopes are registered. In `header` mode, authentication is delegated to the trusted proxy and Dahlia derives ownership from its verified forwarded identity headers. Databricks Apps exposes custom MCP servers at `/mcp`; its proxy has already authenticated the request, and `X-Forwarded-Access-Token` is not used for artifact storage. A present `Origin` must match the configured application origin; non-browser clients may omit it.
+In `accounts` mode, `/mcp` requires a DPoP-bound access token for the exact MCP resource and either `mcp` or `mcp:read`; only tools covered by the granted scope are registered. In `header` mode, authentication is delegated to the trusted proxy and Dahlia derives ownership from its verified forwarded identity headers. Databricks Apps exposes custom MCP servers at `/mcp`; its proxy has already authenticated the request, and `X-Forwarded-Access-Token` is not used for artifact storage. A present `Origin` must match the configured application origin; non-browser clients may omit it.
 
 `DAHLIA_STORAGE_BACKEND` selects `local`, `s3`, `databricks`, or `r2`. Node defaults to `local` under `DAHLIA_STORAGE_LOCAL_PATH=.data/storage`. Databricks uses `DAHLIA_STORAGE_DATABRICKS_VOLUME_PATH=/Volumes/<catalog>/<schema>/<volume>`. S3 uses `DAHLIA_STORAGE_S3_BUCKET`, optional `DAHLIA_STORAGE_S3_ENDPOINT`, and the standard `AWS_*` credential variables. Workers must explicitly select `r2` with the `DAHLIA_STORAGE` binding or `s3`; they reject the local default.
 
@@ -123,7 +127,7 @@ LAKEBASE_ENDPOINT=<injected from the postgres app resource>
 
 Databricks Apps supplies `DATABRICKS_HOST`, App service principal credentials, and `X-Forwarded-Access-Token`. Dahlia sends the forwarded user token as Bearer authentication only to `DATABRICKS_HOST/ai-gateway/mlflow/v1/responses`; it does not persist, log, or forward the proxy header itself. The Lakebase connector and model discovery independently use the App identity.
 
-For administrators, `GET /api/admin/models` uses the App service principal to list the system-provided model services from `DATABRICKS_HOST/api/2.1/unity-catalog/model-services?parent=schemas/system.ai&view=BASIC`, follows all result pages, and merges their saved enabled state. `DAHLIA_AI_BACKEND=databricks` therefore requires `DATABRICKS_CLIENT_ID` and `DATABRICKS_CLIENT_SECRET`; Databricks Apps injects both at runtime. The App requests only the `ai-gateway` user API scope for Responses. The Dashboard searches models by name and sorts enabled models first, then by model name and newest `update_time`; it enables or disables those models directly and does not show the manual Model Alias form for this backend.
+For administrators, `GET /api/admin/models` uses the App service principal to list the system-provided model services from `DATABRICKS_HOST/api/2.1/unity-catalog/model-services?parent=schemas/system.ai&view=BASIC`, follows all result pages, and merges their saved enabled state. `DAHLIA_AI_BACKEND=databricks` therefore requires `DATABRICKS_CLIENT_ID` and `DATABRICKS_CLIENT_SECRET`; Databricks Apps injects both at runtime. Desktop authorization requests `all-apis`; the App's separate OBO token retains the configured `ai-gateway` and `files` user API scopes. The Dashboard searches models by name and sorts enabled models first, then by model name and newest `update_time`; it enables or disables those models directly and does not show the manual Model Alias form for this backend.
 
 Cloudflare AI Gateway:
 

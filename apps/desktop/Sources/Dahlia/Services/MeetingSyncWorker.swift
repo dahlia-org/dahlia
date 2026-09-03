@@ -2,47 +2,97 @@ import CryptoKit
 import Foundation
 import GRDB
 
-private struct MeetingSyncManifestBody: Encodable {
-    struct Summary: Encodable {
-        let title: String
-        let document: String
-        let createdAt: Date
+struct MeetingSyncTransactionResponse: Decodable, Sendable {
+    struct Record: Decodable, Sendable {
+        struct Canonical: Decodable, Sendable {
+            let activeGeneration: String?
+        }
+
+        let entity: String
+        let id: UUID
+        let revision: Int?
+        let record: Canonical?
     }
 
-    struct Screenshot: Encodable, Sendable {
-        let screenshotId: UUID
-        let capturedAt: Date
-        let ocrText: String?
-        let caption: String?
-    }
-
-    let name: String
-    let projectId: UUID?
-    let description: String
+    let id: UUID
     let status: String
-    let duration: TimeInterval?
-    let recordingStartedAt: Date?
-    let createdAt: Date
-    let updatedAt: Date
-    let summary: Summary?
-    let activeTranscriptGeneration: String?
-    let screenshots: [Screenshot]
+    let cursor: String
+    let records: [Record]
 }
 
-private struct VaultSyncManifestBody: Encodable {
-    struct Project: Encodable {
-        let projectId: UUID
-        let parentProjectId: UUID?
-        let name: String
-        let description: String
-        let projectType: ProjectType?
-        let revision: Int
-        let createdAt: Date
+private struct MeetingSyncChangePage: Decodable, Sendable {
+    struct Change: Decodable, Sendable {
+        struct Canonical: Decodable, Sendable {
+            let vaultId: UUID?
+            let projectId: UUID?
+            let meetingId: UUID?
+            let screenshotId: UUID?
+            let parentProjectId: UUID?
+            let name: String?
+            let description: String?
+            let projectType: String?
+            let status: String?
+            let duration: Double?
+            let recordingStartedAt: Date?
+            let createdAt: Date?
+            let updatedAt: Date?
+            let title: String?
+            let document: String?
+            let activeGeneration: String?
+            let activeTranscriptGeneration: String?
+            let summaryRevision: Int?
+            let transcriptRevision: Int?
+            let capturedAt: Date?
+            let contentType: String?
+            let ocrText: String?
+            let caption: String?
+        }
+
+        let entity: String
+        let entityId: UUID
+        let action: String
+        let revision: Int?
+        let record: Canonical?
     }
 
-    let name: String
-    let createdAt: Date
-    let projects: [Project]
+    let items: [Change]
+    let cursor: String
+    let hasMore: Bool
+}
+
+private struct MeetingSyncTranscriptPage: Decodable, Sendable {
+    struct Segment: Decodable, Sendable {
+        let segmentId: UUID
+        let startTime: Date
+        let endTime: Date?
+        let text: String
+        let isConfirmed: Bool
+        let audioSource: String?
+        let speakerLabel: String?
+    }
+
+    let items: [Segment]
+    let nextCursor: String?
+}
+
+private struct MeetingSyncPullTarget: Sendable {
+    let vaultId: UUID
+    let connectionId: UUID
+    let origin: URL
+    let cursor: String?
+    let bootstrapPending: Bool
+}
+
+private struct MeetingSyncVaultList: Decodable, Sendable {
+    struct Vault: Decodable, Sendable {
+        let vaultId: UUID
+        let name: String
+        let revision: Int
+        let createdAt: Date
+        let role: String
+    }
+
+    let items: [Vault]
 }
 
 private struct MeetingSyncScreenshotMetadata: Decodable, FetchableRecord, Sendable {
@@ -51,6 +101,7 @@ private struct MeetingSyncScreenshotMetadata: Decodable, FetchableRecord, Sendab
     let ocrText: String?
     let caption: String?
     let syncUploadedConnectionId: UUID?
+    let serverRevision: Int?
 }
 
 private struct MeetingSyncTranscriptSegment: Encodable {
@@ -84,6 +135,7 @@ actor MeetingSyncWorker {
     private let session: URLSession
     private let persistenceIsActive: @MainActor @Sendable () -> Bool
     private var drainTask: Task<Void, Never>?
+    private var eventTasks: [UUID: Task<Void, Never>] = [:]
 
     init(
         dbQueue: DatabaseQueue,
@@ -99,9 +151,11 @@ actor MeetingSyncWorker {
         do {
             if restored { try await MeetingSyncQueue.prepareRestore(dbQueue: dbQueue) }
             try await MeetingSyncQueue.reconcile(dbQueue: dbQueue)
+            try await refreshCloudVaults()
         } catch {
             ErrorReportingService.capture(error, context: ["source": "meetingSyncReconcile"])
         }
+        await restartEventStreams()
         drain()
     }
 
@@ -109,9 +163,11 @@ actor MeetingSyncWorker {
         do {
             try await waitUntilPersistenceIsIdle()
             try await MeetingSyncQueue.reconcile(dbQueue: dbQueue)
+            try await refreshCloudVaults()
         } catch {
             ErrorReportingService.capture(error, context: ["source": "meetingSyncReconcile"])
         }
+        await restartEventStreams()
         drain()
     }
 
@@ -119,6 +175,13 @@ actor MeetingSyncWorker {
         drainTask?.cancel()
         await drainTask?.value
         drainTask = nil
+        for task in eventTasks.values {
+            task.cancel()
+        }
+        for task in eventTasks.values {
+            await task.value
+        }
+        eventTasks.removeAll()
     }
 
     func drain() {
@@ -141,13 +204,21 @@ actor MeetingSyncWorker {
                     continue
                 }
                 try await drainVaultDeletions()
+                try await pullRemoteChanges(bootstrapOnly: true)
                 if let vaultJob = try await MeetingSyncQueue.claimVault(dbQueue: dbQueue) {
                     do {
-                        try await uploadVault(vaultJob)
-                        try await MeetingSyncQueue.complete(vaultJob, dbQueue: dbQueue)
+                        let response = try await uploadVault(vaultJob)
+                        try await MeetingSyncQueue.complete(vaultJob, response: response, dbQueue: dbQueue)
                     } catch is CancellationError {
                         throw CancellationError()
                     } catch let error as MeetingSyncHTTPError {
+                        if error.status == 409 {
+                            try await MeetingSyncQueue.recordConflict(
+                                vaultId: vaultJob.vaultId,
+                                body: error.body,
+                                dbQueue: dbQueue
+                            )
+                        }
                         try await MeetingSyncQueue.fail(
                             vaultJob,
                             code: Self.errorCode(error),
@@ -165,20 +236,27 @@ actor MeetingSyncWorker {
                     continue
                 }
                 guard let job = try await MeetingSyncQueue.claim(dbQueue: dbQueue) else {
+                    try await pullRemoteChanges()
                     try await Task.sleep(for: .seconds(5))
                     continue
                 }
                 do {
                     if job.targetKind == "meetingDelete" {
-                        try await deleteMeeting(job)
+                        let response = try await deleteMeeting(job)
+                        try await MeetingSyncQueue.complete(job, response: response, dbQueue: dbQueue)
                     } else {
-                        try await uploadMeeting(job)
+                        let response = try await uploadMeeting(job)
+                        try await MeetingSyncQueue.complete(job, response: response, dbQueue: dbQueue)
                     }
-                    try await MeetingSyncQueue.complete(job, dbQueue: dbQueue)
                 } catch is CancellationError {
                     throw CancellationError()
                 } catch let error as MeetingSyncHTTPError where error.isPermanent {
-                    try await MeetingSyncQueue.block(job, code: Self.errorCode(error), dbQueue: dbQueue)
+                    try await MeetingSyncQueue.block(
+                        job,
+                        code: Self.errorCode(error),
+                        conflictJSON: error.status == 409 ? String(data: error.body, encoding: .utf8) : nil,
+                        dbQueue: dbQueue
+                    )
                 } catch {
                     try await MeetingSyncQueue.fail(job, code: Self.errorCode(error), dbQueue: dbQueue)
                 }
@@ -191,8 +269,8 @@ actor MeetingSyncWorker {
         }
     }
 
-    private func uploadMeeting(_ job: MeetingSyncJob) async throws {
-        guard let payload = try await loadPayload(job) else { return }
+    private func uploadMeeting(_ job: MeetingSyncJob) async throws -> MeetingSyncTransactionResponse {
+        guard let payload = try await loadPayload(job) else { throw MeetingSyncUnavailableError() }
         let base = "api/v1/vaults/\(job.vaultId.uuidString.lowercased())/meetings/\(job.meetingId.uuidString.lowercased())"
         for screenshotId in payload.screenshotsToUpload {
             guard let screenshot = try await dbQueue.read({ db in
@@ -242,40 +320,102 @@ actor MeetingSyncWorker {
             try await send(request, connectionId: payload.connectionId)
         }
 
-        let manifest = MeetingSyncManifestBody(
-            name: payload.meeting.name,
-            projectId: payload.meeting.projectId,
-            description: payload.meeting.description,
-            status: payload.meeting.status.rawValue,
-            duration: payload.meeting.duration,
-            recordingStartedAt: payload.meeting.recordingStartedAt,
-            createdAt: payload.meeting.createdAt,
-            updatedAt: payload.meeting.updatedAt,
-            summary: payload.summary.map {
-                MeetingSyncManifestBody.Summary(title: $0.title, document: $0.document, createdAt: $0.createdAt)
-            },
-            activeTranscriptGeneration: transcript.isEmpty ? nil : generation,
-            screenshots: payload.screenshots.map {
-                MeetingSyncManifestBody.Screenshot(
-                    screenshotId: $0.id,
-                    capturedAt: $0.capturedAt,
-                    ocrText: $0.ocrText,
-                    caption: $0.caption
-                )
-            }
+        var operations: [[String: Any]] = []
+        let meetingAction = payload.meeting.serverRevision == nil ? "create" : "update"
+        var meetingData: [String: Any] = [
+            "projectId": Self.json(payload.meeting.projectId),
+            "name": payload.meeting.name,
+            "description": payload.meeting.description,
+            "status": payload.meeting.status.rawValue,
+            "duration": Self.json(payload.meeting.duration),
+            "recordingStartedAt": Self.json(payload.meeting.recordingStartedAt),
+            "updatedAt": payload.meeting.updatedAt.ISO8601Format(),
+            "screenshotIds": payload.screenshots.map { $0.id.uuidString.lowercased() },
+        ]
+        if meetingAction == "create" { meetingData["createdAt"] = payload.meeting.createdAt.ISO8601Format() }
+        operations.append(Self.operation(
+            transactionID: job.transactionId,
+            index: operations.count,
+            entity: "meeting",
+            action: meetingAction,
+            entityID: payload.meeting.id,
+            baseRevision: payload.meeting.serverRevision,
+            data: meetingData
+        ))
+        if let summary = payload.summary {
+            operations.append(Self.operation(
+                transactionID: job.transactionId,
+                index: operations.count,
+                entity: "summary",
+                action: "upsert",
+                entityID: payload.meeting.id,
+                baseRevision: payload.meeting.summaryServerRevision,
+                data: [
+                    "title": summary.title,
+                    "document": summary.document,
+                    "createdAt": summary.createdAt.ISO8601Format(),
+                ]
+            ))
+        } else if payload.meeting.summaryServerRevision > 0 {
+            operations.append(Self.operation(
+                transactionID: job.transactionId,
+                index: operations.count,
+                entity: "summary",
+                action: "delete",
+                entityID: payload.meeting.id,
+                baseRevision: payload.meeting.summaryServerRevision,
+                data: [:]
+            ))
+        }
+        let activeGeneration = transcript.isEmpty ? nil : generation
+        if activeGeneration != payload.meeting.transcriptServerGeneration {
+            operations.append(Self.operation(
+                transactionID: job.transactionId,
+                index: operations.count,
+                entity: "transcript",
+                action: "replace",
+                entityID: payload.meeting.id,
+                baseRevision: payload.meeting.transcriptServerRevision,
+                data: [
+                    "generation": Self.json(activeGeneration),
+                    "baseGeneration": Self.json(payload.meeting.transcriptServerGeneration),
+                ]
+            ))
+        }
+        for screenshot in payload.screenshots {
+            operations.append(Self.operation(
+                transactionID: job.transactionId,
+                index: operations.count,
+                entity: "screenshot",
+                action: "upsert",
+                entityID: screenshot.id,
+                baseRevision: screenshot.serverRevision,
+                data: [
+                    "meetingId": payload.meeting.id.uuidString.lowercased(),
+                    "capturedAt": screenshot.capturedAt.ISO8601Format(),
+                    "ocrText": Self.json(screenshot.ocrText),
+                    "caption": Self.json(screenshot.caption),
+                ]
+            ))
+        }
+        let transactionBody = try Self.transactionBody(
+            id: job.transactionId,
+            vaultID: job.vaultId,
+            createdAt: job.transactionCreatedAt,
+            operations: operations
         )
-        let manifestBody = try Self.encode(manifest)
         do {
-            try await send(
+            let data = try await sendData(
                 request(
                     origin: payload.origin,
-                    path: "\(base)/manifest",
-                    method: "PUT",
-                    body: manifestBody,
+                    path: "api/v1/transactions",
+                    method: "POST",
+                    body: transactionBody,
                     contentType: "application/json"
                 ),
                 connectionId: payload.connectionId
             )
+            return try Self.decoder.decode(MeetingSyncTransactionResponse.self, from: data)
         } catch let error as MeetingSyncHTTPError where error.code == "screenshot_content_missing" {
             try await dbQueue.write { db in
                 try db.execute(
@@ -287,7 +427,7 @@ actor MeetingSyncWorker {
         }
     }
 
-    private func uploadVault(_ job: VaultSyncJob) async throws {
+    private func uploadVault(_ job: VaultSyncJob) async throws -> MeetingSyncTransactionResponse {
         let payload = try await dbQueue.read { db -> (VaultRecord, [ProjectRecord], DahliaAccountConnectionRecord) in
             guard let vault = try VaultRecord.fetchOne(db, key: job.vaultId),
                   vault.syncEnabled,
@@ -305,43 +445,90 @@ actor MeetingSyncWorker {
             )
         }
         guard let origin = URL(string: payload.2.origin) else { throw MeetingSyncUnavailableError() }
-        let body = VaultSyncManifestBody(
-            name: payload.0.name,
-            createdAt: payload.0.createdAt,
-            projects: payload.1.map {
-                VaultSyncManifestBody.Project(
-                    projectId: $0.id,
-                    parentProjectId: $0.parentProjectId,
-                    name: $0.name,
-                    description: $0.description,
-                    projectType: $0.projectType,
-                    revision: $0.revision,
-                    createdAt: $0.createdAt
-                )
-            }
+        var operations: [[String: Any]] = []
+        var vaultData: [String: Any] = ["name": payload.0.name]
+        let vaultAction = payload.0.serverRevision == nil ? "create" : "update"
+        if vaultAction == "create" {
+            vaultData["createdAt"] = payload.0.createdAt.ISO8601Format()
+        } else {
+            vaultData["projectIds"] = payload.1.map { $0.id.uuidString.lowercased() }
+        }
+        operations.append(Self.operation(
+            transactionID: job.transactionId,
+            index: operations.count,
+            entity: "vault",
+            action: vaultAction,
+            entityID: payload.0.id,
+            baseRevision: payload.0.serverRevision,
+            data: vaultData
+        ))
+        for project in payload.1 {
+            var data: [String: Any] = [
+                "parentProjectId": Self.json(project.parentProjectId),
+                "name": project.name,
+                "description": project.description,
+                "projectType": Self.json(project.projectType?.rawValue),
+            ]
+            let action = project.serverRevision == nil ? "create" : "update"
+            if action == "create" { data["createdAt"] = project.createdAt.ISO8601Format() }
+            operations.append(Self.operation(
+                transactionID: job.transactionId,
+                index: operations.count,
+                entity: "project",
+                action: action,
+                entityID: project.id,
+                baseRevision: project.serverRevision,
+                data: data
+            ))
+        }
+        let body = try Self.transactionBody(
+            id: job.transactionId,
+            vaultID: job.vaultId,
+            createdAt: job.transactionCreatedAt,
+            operations: operations
         )
-        try await send(
+        let data = try await sendData(
             request(
                 origin: origin,
-                path: "api/v1/vaults/\(job.vaultId.uuidString.lowercased())/manifest",
-                method: "PUT",
-                body: Self.encode(body),
+                path: "api/v1/transactions",
+                method: "POST",
+                body: body,
                 contentType: "application/json"
             ),
             connectionId: payload.2.id
         )
+        return try Self.decoder.decode(MeetingSyncTransactionResponse.self, from: data)
     }
 
-    private func deleteMeeting(_ job: MeetingSyncJob) async throws {
+    private func deleteMeeting(_ job: MeetingSyncJob) async throws -> MeetingSyncTransactionResponse {
         guard let connection = try await connection(vaultId: job.vaultId) else {
             throw MeetingSyncUnavailableError()
         }
-        let path = "api/v1/vaults/\(job.vaultId.uuidString.lowercased())/meetings/\(job.meetingId.uuidString.lowercased())"
-        while try await send(
-            request(origin: connection.origin, path: path, method: "DELETE"),
-            connectionId: connection.id,
-            acceptedStatuses: [202, 204, 404]
-        ) == 202 {}
+        let body = try Self.transactionBody(
+            id: job.transactionId,
+            vaultID: job.vaultId,
+            createdAt: job.transactionCreatedAt,
+            operations: [Self.operation(
+                transactionID: job.transactionId,
+                index: 0,
+                entity: "meeting",
+                action: "delete",
+                entityID: job.meetingId,
+                baseRevision: job.baseRevision,
+                data: [:]
+            )]
+        )
+        let data = try await sendData(
+            request(
+                origin: connection.origin,
+                path: "api/v1/transactions",
+                method: "POST",
+                body: body,
+                contentType: "application/json"
+            ),
+            connectionId: connection.id
+        )
+        return try Self.decoder.decode(MeetingSyncTransactionResponse.self, from: data)
     }
 
     private func drainVaultDeletions() async throws {
@@ -373,35 +560,431 @@ actor MeetingSyncWorker {
                 connectionId: deletion.connectionId,
                 acceptedStatuses: [202, 204, 404]
             ) == 202 {}
+            guard let mode = MeetingSyncDeletionMode(rawValue: deletion.mode) else {
+                throw MeetingSyncUnavailableError()
+            }
+            try await MeetingSyncQueue.completeServerVaultDeletion(
+                vaultId: deletion.id,
+                mode: mode,
+                dbQueue: dbQueue
+            )
+        }
+    }
+
+    private func restartEventStreams() async {
+        for task in eventTasks.values {
+            task.cancel()
+        }
+        eventTasks.removeAll()
+        let connections = await (try? dbQueue.read { db in
+            try Row.fetchAll(
+                db,
+                sql: """
+                SELECT DISTINCT dahlia_account_connections.id, dahlia_account_connections.origin
+                FROM dahlia_account_connections
+                """
+            ).compactMap { row -> (UUID, URL)? in
+                guard let url = URL(string: row["origin"] as String) else { return nil }
+                return (row["id"], url)
+            }
+        }) ?? []
+        for (connectionId, origin) in connections {
+            eventTasks[connectionId] = Task { [weak self] in
+                await self?.listenForInvalidations(connectionId: connectionId, origin: origin)
+            }
+        }
+    }
+
+    private func listenForInvalidations(connectionId: UUID, origin: URL) async {
+        while !Task.isCancelled {
+            do {
+                var eventRequest = try request(origin: origin, path: "api/v1/events", method: "GET")
+                let token = try await DahliaCloudTokenServiceRegistry.shared.validAccessToken(connectionID: connectionId)
+                eventRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+                eventRequest.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+                let (bytes, response) = try await session.bytes(for: eventRequest)
+                guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+                    throw URLError(.badServerResponse)
+                }
+                for try await line in bytes.lines where line == "event: invalidation" {
+                    try? await refreshCloudVaults(connectionId: connectionId)
+                    drain()
+                }
+            } catch is CancellationError {
+                return
+            } catch {
+                try? await Task.sleep(for: .seconds(5))
+            }
+        }
+    }
+
+    private func refreshCloudVaults(connectionId selectedConnectionId: UUID? = nil) async throws {
+        let connections = try await dbQueue.read { db in
+            try DahliaAccountConnectionRecord.fetchAll(db).compactMap { record -> (UUID, URL)? in
+                guard selectedConnectionId == nil || record.id == selectedConnectionId,
+                      let origin = URL(string: record.origin) else { return nil }
+                return (record.id, origin)
+            }
+        }
+        for (connectionId, origin) in connections {
+            let data = try await sendData(
+                request(origin: origin, path: "api/v1/vaults", method: "GET"),
+                connectionId: connectionId
+            )
+            let remote = try Self.decoder.decode(MeetingSyncVaultList.self, from: data).items
+                .filter { $0.role == "owner" }
             try await dbQueue.write { db in
-                try db.execute(
-                    sql: """
-                    UPDATE vaults SET syncDeletionMode = NULL, syncDeletionApproved = 0,
-                        syncDeletionConnectionId = NULL,
-                        syncConfirmedConnectionId = CASE WHEN ? = 'deleteOnly' THEN NULL ELSE syncConfirmedConnectionId END
-                    WHERE id = ?
-                    """,
-                    arguments: [deletion.mode, deletion.id]
-                )
-                if deletion.mode == MeetingSyncDeletionMode.replaceAfterRestore.rawValue {
-                    try db.execute(
-                        sql: """
-                        INSERT INTO vault_sync_jobs(vaultId) VALUES(?)
-                        ON CONFLICT(vaultId) DO UPDATE SET generation = generation + 1,
-                            status = 'pending', attempts = 0, availableAt = unixepoch('subsec'),
-                            claimedAt = NULL, leaseExpiresAt = NULL, lastErrorCode = NULL,
-                            updatedAt = unixepoch('subsec');
-                        INSERT INTO meeting_sync_jobs(vaultId, meetingId, targetKind)
-                        SELECT vaultId, id, 'upload' FROM meetings WHERE vaultId = ?
-                        ON CONFLICT(targetKind, meetingId) DO UPDATE SET generation = generation + 1,
-                            status = 'pending', attempts = 0, availableAt = unixepoch('subsec'),
-                            claimedAt = NULL, leaseExpiresAt = NULL, lastErrorCode = NULL,
-                            updatedAt = unixepoch('subsec')
-                        """,
-                        arguments: [deletion.id, deletion.id]
-                    )
+                try db.execute(sql: "DELETE FROM cloud_vaults WHERE connectionId = ?", arguments: [connectionId])
+                for vault in remote {
+                    try CloudVaultRecord(
+                        vaultId: vault.vaultId,
+                        connectionId: connectionId,
+                        name: vault.name,
+                        createdAt: vault.createdAt,
+                        revision: vault.revision
+                    ).save(db)
                 }
             }
+        }
+    }
+
+    private func pullRemoteChanges(bootstrapOnly: Bool = false) async throws {
+        let targets = try await dbQueue.read { db in
+            try Row.fetchAll(
+                db,
+                sql: """
+                SELECT vaults.id, vaults.syncCursor, vaults.syncBootstrapPending,
+                       dahlia_account_connections.id AS connectionId,
+                       dahlia_account_connections.origin
+                FROM vaults JOIN dahlia_account_connections
+                  ON dahlia_account_connections.id = vaults.accountConnectionId
+                WHERE vaults.syncEnabled = 1
+                  AND vaults.syncDeletionMode IS NULL
+                  AND vaults.syncConfirmedConnectionId = vaults.accountConnectionId
+                  AND vaults.syncConflictJSON IS NULL
+                  AND (? = 0 OR vaults.syncBootstrapPending = 1)
+                  AND NOT EXISTS (SELECT 1 FROM vault_sync_jobs WHERE vaultId = vaults.id)
+                  AND NOT EXISTS (SELECT 1 FROM meeting_sync_jobs WHERE vaultId = vaults.id)
+                ORDER BY vaults.id
+                """,
+                arguments: [bootstrapOnly ? 1 : 0]
+            ).compactMap { row -> MeetingSyncPullTarget? in
+                guard let origin = URL(string: row["origin"] as String) else { return nil }
+                return MeetingSyncPullTarget(
+                    vaultId: row["id"],
+                    connectionId: row["connectionId"],
+                    origin: origin,
+                    cursor: row["syncCursor"],
+                    bootstrapPending: row["syncBootstrapPending"]
+                )
+            }
+        }
+        for target in targets {
+            if target.bootstrapPending {
+                let result = try await perform(
+                    request(
+                        origin: target.origin,
+                        path: "api/v1/vaults/\(target.vaultId.uuidString.lowercased())",
+                        method: "GET"
+                    ),
+                    connectionId: target.connectionId,
+                    acceptedStatuses: [200, 404]
+                )
+                if result.status == 404 {
+                    try await dbQueue.write { db in
+                        try db.execute(
+                            sql: "UPDATE vaults SET syncBootstrapPending = 0 WHERE id = ?",
+                            arguments: [target.vaultId]
+                        )
+                    }
+                    continue
+                }
+            }
+            try await pullRemoteChanges(for: target)
+        }
+    }
+
+    private func pullRemoteChanges(for target: MeetingSyncPullTarget) async throws {
+        var cursor = target.cursor
+        while true {
+            var components = URLComponents()
+            components.path = "/api/v1/vaults/\(target.vaultId.uuidString.lowercased())/changes"
+            if let cursor { components.queryItems = [URLQueryItem(name: "cursor", value: cursor)] }
+            guard let path = components.string else { throw URLError(.badURL) }
+            let data = try await sendData(
+                request(origin: target.origin, path: path, method: "GET"),
+                connectionId: target.connectionId
+            )
+            let page = try Self.decoder.decode(MeetingSyncChangePage.self, from: data)
+            let supplemental = try await loadSupplementalContent(page.items, target: target)
+            try await apply(
+                page.items,
+                supplemental: supplemental,
+                cursor: page.cursor,
+                vaultId: target.vaultId,
+                completesBootstrap: target.bootstrapPending && !page.hasMore
+            )
+            cursor = page.cursor
+            if !page.hasMore { return }
+        }
+    }
+
+    private struct SupplementalContent: Sendable {
+        struct TranscriptSignature: Equatable, Sendable {
+            let count: Int
+            let maxId: UUID?
+            let confirmedCount: Int
+        }
+
+        var screenshots: [UUID: Data] = [:]
+        var transcripts: [UUID: [MeetingSyncTranscriptPage.Segment]] = [:]
+        var transcriptSignatures: [UUID: TranscriptSignature] = [:]
+    }
+
+    private func loadSupplementalContent(
+        _ changes: [MeetingSyncChangePage.Change],
+        target: MeetingSyncPullTarget
+    ) async throws -> SupplementalContent {
+        var content = SupplementalContent()
+        for change in changes where change.action == "upsert" {
+            guard let record = change.record else { continue }
+            if change.entity == "screenshot", let meetingId = record.meetingId {
+                content.screenshots[change.entityId] = try await sendData(
+                    request(
+                        origin: target.origin,
+                        path: "api/v1/vaults/\(target.vaultId.uuidString.lowercased())/meetings/\(meetingId.uuidString.lowercased())/screenshots/\(change.entityId.uuidString.lowercased())/content",
+                        method: "GET"
+                    ),
+                    connectionId: target.connectionId
+                )
+            } else if change.entity == "transcript" {
+                content.transcriptSignatures[change.entityId] = try await transcriptSignature(
+                    meetingId: change.entityId
+                )
+                content.transcripts[change.entityId] = try await loadTranscript(
+                    vaultId: target.vaultId,
+                    meetingId: change.entityId,
+                    target: target
+                )
+            }
+        }
+        return content
+    }
+
+    private func transcriptSignature(meetingId: UUID) async throws -> SupplementalContent.TranscriptSignature {
+        try await dbQueue.read { db in
+            let row = try Row.fetchOne(
+                db,
+                sql: """
+                SELECT count(*) AS segmentCount, max(id) AS maxSegmentId,
+                    sum(CASE WHEN isConfirmed = 1 THEN 1 ELSE 0 END) AS confirmedCount
+                FROM transcript_segments WHERE meetingId = ?
+                """,
+                arguments: [meetingId]
+            )
+            return SupplementalContent.TranscriptSignature(
+                count: row?["segmentCount"] ?? 0,
+                maxId: row?["maxSegmentId"],
+                confirmedCount: row?["confirmedCount"] ?? 0
+            )
+        }
+    }
+
+    private func loadTranscript(
+        vaultId: UUID,
+        meetingId: UUID,
+        target: MeetingSyncPullTarget
+    ) async throws -> [MeetingSyncTranscriptPage.Segment] {
+        var segments: [MeetingSyncTranscriptPage.Segment] = []
+        var cursor: String?
+        repeat {
+            var components = URLComponents()
+            components.path = "/api/v1/vaults/\(vaultId.uuidString.lowercased())/meetings/\(meetingId.uuidString.lowercased())/transcript"
+            if let cursor { components.queryItems = [URLQueryItem(name: "cursor", value: cursor)] }
+            guard let path = components.string else { throw URLError(.badURL) }
+            let data = try await sendData(
+                request(origin: target.origin, path: path, method: "GET"),
+                connectionId: target.connectionId
+            )
+            let page = try Self.decoder.decode(MeetingSyncTranscriptPage.self, from: data)
+            segments.append(contentsOf: page.items)
+            cursor = page.nextCursor
+        } while cursor != nil
+        return segments
+    }
+
+    // swiftlint:disable:next cyclomatic_complexity
+    private func apply(
+        _ changes: [MeetingSyncChangePage.Change],
+        supplemental: SupplementalContent,
+        cursor: String,
+        vaultId: UUID,
+        completesBootstrap: Bool
+    ) async throws {
+        try await dbQueue.write { db in
+            guard try !(Bool.fetchOne(
+                db,
+                sql: """
+                SELECT EXISTS (SELECT 1 FROM vault_sync_jobs WHERE vaultId = ?)
+                    OR EXISTS (SELECT 1 FROM meeting_sync_jobs WHERE vaultId = ?)
+                """,
+                arguments: [vaultId, vaultId]
+            ) ?? false) else { throw MeetingSyncUnavailableError() }
+            for (meetingId, expected) in supplemental.transcriptSignatures {
+                let row = try Row.fetchOne(
+                    db,
+                    sql: """
+                    SELECT count(*) AS segmentCount, max(id) AS maxSegmentId,
+                        sum(CASE WHEN isConfirmed = 1 THEN 1 ELSE 0 END) AS confirmedCount
+                    FROM transcript_segments WHERE meetingId = ?
+                    """,
+                    arguments: [meetingId]
+                )
+                let current = SupplementalContent.TranscriptSignature(
+                    count: row?["segmentCount"] ?? 0,
+                    maxId: row?["maxSegmentId"],
+                    confirmedCount: row?["confirmedCount"] ?? 0
+                )
+                guard current == expected else { throw MeetingSyncUnavailableError() }
+            }
+            try db.execute(sql: "INSERT OR IGNORE INTO sync_apply_context(active) VALUES(1)")
+            defer { try? db.execute(sql: "DELETE FROM sync_apply_context") }
+            for change in changes {
+                if change.action == "delete" {
+                    switch change.entity {
+                    case "project":
+                        try db.execute(sql: "DELETE FROM projects WHERE id = ? AND vaultId = ?", arguments: [change.entityId, vaultId])
+                    case "meeting":
+                        try db.execute(sql: "DELETE FROM meetings WHERE id = ? AND vaultId = ?", arguments: [change.entityId, vaultId])
+                    case "screenshot":
+                        try db.execute(sql: "DELETE FROM screenshots WHERE id = ?", arguments: [change.entityId])
+                    default:
+                        break
+                    }
+                    continue
+                }
+                if change.action == "reset", change.entity == "vault" {
+                    try db.execute(
+                        sql: "UPDATE vaults SET syncEnabled = 0, serverRevision = NULL, syncCursor = NULL WHERE id = ?",
+                        arguments: [vaultId]
+                    )
+                    continue
+                }
+                guard let record = change.record else { continue }
+                switch change.entity {
+                case "vault":
+                    guard let name = record.name else { continue }
+                    try db.execute(
+                        sql: "UPDATE vaults SET name = ?, serverRevision = ? WHERE id = ?",
+                        arguments: [name, change.revision, vaultId]
+                    )
+                case "project":
+                    guard let name = record.name, let createdAt = record.createdAt else { continue }
+                    let project = ProjectRecord(
+                        id: change.entityId,
+                        vaultId: vaultId,
+                        parentProjectId: record.parentProjectId,
+                        name: name,
+                        createdAt: createdAt,
+                        description: record.description ?? "",
+                        projectType: record.projectType.flatMap(ProjectType.init(rawValue:)),
+                        serverRevision: change.revision
+                    )
+                    try project.save(db)
+                case "meeting":
+                    guard let name = record.name, let status = record.status,
+                          let createdAt = record.createdAt, let updatedAt = record.updatedAt else { continue }
+                    try db.execute(
+                        sql: """
+                        INSERT INTO meetings (
+                            id, vaultId, projectId, name, description, status, duration,
+                            createdAt, updatedAt, recordingStartedAt, serverRevision,
+                            summaryServerRevision, transcriptServerRevision, transcriptServerGeneration
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(id) DO UPDATE SET projectId = excluded.projectId,
+                            name = excluded.name, description = excluded.description,
+                            status = excluded.status, duration = excluded.duration,
+                            createdAt = excluded.createdAt, updatedAt = excluded.updatedAt,
+                            recordingStartedAt = excluded.recordingStartedAt,
+                            serverRevision = excluded.serverRevision,
+                            summaryServerRevision = excluded.summaryServerRevision,
+                            transcriptServerRevision = excluded.transcriptServerRevision,
+                            transcriptServerGeneration = excluded.transcriptServerGeneration
+                        """,
+                        arguments: [
+                            change.entityId, vaultId, record.projectId, name, record.description ?? "", status,
+                            record.duration, createdAt, updatedAt, record.recordingStartedAt, change.revision,
+                            record.summaryRevision ?? 0, record.transcriptRevision ?? 0,
+                            record.activeTranscriptGeneration,
+                        ]
+                    )
+                case "summary":
+                    if let title = record.title, let document = record.document, let createdAt = record.createdAt {
+                        try SummaryRecord(
+                            meetingId: change.entityId,
+                            title: title,
+                            document: document,
+                            createdAt: createdAt,
+                            serverRevision: change.revision ?? 0
+                        ).save(db)
+                    } else {
+                        try db.execute(sql: "DELETE FROM summaries WHERE meetingId = ?", arguments: [change.entityId])
+                    }
+                    try db.execute(
+                        sql: "UPDATE meetings SET summaryServerRevision = ? WHERE id = ?",
+                        arguments: [change.revision ?? 0, change.entityId]
+                    )
+                case "transcript":
+                    try db.execute(sql: "DELETE FROM transcript_segments WHERE meetingId = ?", arguments: [change.entityId])
+                    for segment in supplemental.transcripts[change.entityId, default: []] {
+                        try db.execute(
+                            sql: """
+                            INSERT INTO transcript_segments (
+                                id, meetingId, startTime, endTime, text, isConfirmed, audioSource, speakerLabel
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                            """,
+                            arguments: [
+                                segment.segmentId, change.entityId, segment.startTime, segment.endTime,
+                                segment.text, segment.isConfirmed, segment.audioSource, segment.speakerLabel,
+                            ]
+                        )
+                    }
+                    try db.execute(
+                        sql: "UPDATE meetings SET transcriptServerRevision = ?, transcriptServerGeneration = ? WHERE id = ?",
+                        arguments: [change.revision ?? 0, record.activeGeneration, change.entityId]
+                    )
+                case "screenshot":
+                    guard let meetingId = record.meetingId, let capturedAt = record.capturedAt,
+                          let contentType = record.contentType,
+                          let imageData = supplemental.screenshots[change.entityId] else { continue }
+                    try db.execute(
+                        sql: """
+                        INSERT INTO screenshots (
+                            id, meetingId, capturedAt, imageData, mimeType, ocrText, caption,
+                            syncUploadedConnectionId, serverRevision
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?)
+                        ON CONFLICT(id) DO UPDATE SET capturedAt = excluded.capturedAt,
+                            imageData = excluded.imageData, mimeType = excluded.mimeType,
+                            ocrText = excluded.ocrText, caption = excluded.caption,
+                            serverRevision = excluded.serverRevision
+                        """,
+                        arguments: [
+                            change.entityId, meetingId, capturedAt, imageData, contentType,
+                            record.ocrText, record.caption, change.revision,
+                        ]
+                    )
+                default:
+                    continue
+                }
+            }
+            try db.execute(
+                sql: """
+                UPDATE vaults SET syncCursor = ?,
+                    syncBootstrapPending = CASE WHEN ? THEN 0 ELSE syncBootstrapPending END
+                WHERE id = ?
+                """,
+                arguments: [cursor, completesBootstrap, vaultId]
+            )
         }
     }
 
@@ -422,7 +1005,8 @@ actor MeetingSyncWorker {
                     Column("capturedAt"),
                     Column("ocrText"),
                     Column("caption"),
-                    Column("syncUploadedConnectionId")
+                    Column("syncUploadedConnectionId"),
+                    Column("serverRevision")
                 )
                 .order(Column("capturedAt"), Column("id"))
                 .asRequest(of: MeetingSyncScreenshotMetadata.self)
@@ -477,6 +1061,22 @@ actor MeetingSyncWorker {
         connectionId: UUID,
         acceptedStatuses: Set<Int> = [200, 201, 204]
     ) async throws -> Int {
+        try await perform(unsignedRequest, connectionId: connectionId, acceptedStatuses: acceptedStatuses).status
+    }
+
+    private func sendData(
+        _ unsignedRequest: URLRequest,
+        connectionId: UUID,
+        acceptedStatuses: Set<Int> = [200, 201, 204]
+    ) async throws -> Data {
+        try await perform(unsignedRequest, connectionId: connectionId, acceptedStatuses: acceptedStatuses).data
+    }
+
+    private func perform(
+        _ unsignedRequest: URLRequest,
+        connectionId: UUID,
+        acceptedStatuses: Set<Int>
+    ) async throws -> (data: Data, status: Int) {
         var forceRefresh = false
         for attempt in 0 ... 1 {
             try await waitUntilPersistenceIsIdle()
@@ -488,15 +1088,15 @@ actor MeetingSyncWorker {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
             let (data, response) = try await session.data(for: request)
             guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
-            if acceptedStatuses.contains(http.statusCode) { return http.statusCode }
+            if acceptedStatuses.contains(http.statusCode) { return (data, http.statusCode) }
             if http.statusCode == 401, attempt == 0 {
                 forceRefresh = true
                 continue
             }
             let code = (try? JSONDecoder().decode(MeetingSyncErrorResponse.self, from: data))?.error
-            throw MeetingSyncHTTPError(status: http.statusCode, code: code)
+            throw MeetingSyncHTTPError(status: http.statusCode, code: code, body: data)
         }
-        throw MeetingSyncHTTPError(status: 401, code: nil)
+        throw MeetingSyncHTTPError(status: 401, code: nil, body: Data())
     }
 
     private func waitUntilPersistenceIsIdle() async throws {
@@ -517,6 +1117,74 @@ actor MeetingSyncWorker {
         return try encoder.encode(value)
     }
 
+    private static let decoder: JSONDecoder = {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .custom { decoder in
+            let value = try decoder.singleValueContainer().decode(String.self)
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            if let date = formatter.date(from: value) { return date }
+            formatter.formatOptions = [.withInternetDateTime]
+            if let date = formatter.date(from: value) { return date }
+            throw try DecodingError.dataCorruptedError(
+                in: decoder.singleValueContainer(),
+                debugDescription: "Invalid ISO-8601 date"
+            )
+        }
+        return decoder
+    }()
+
+    private static func transactionBody(
+        id: String,
+        vaultID: UUID,
+        createdAt: Date,
+        operations: [[String: Any]]
+    ) throws -> Data {
+        try JSONSerialization.data(withJSONObject: [
+            "schemaVersion": 1,
+            "id": id,
+            "vaultId": vaultID.uuidString.lowercased(),
+            "createdAt": createdAt.ISO8601Format(),
+            "operations": operations,
+        ], options: [.sortedKeys])
+    }
+
+    private static func operation(
+        transactionID: String,
+        index: Int,
+        entity: String,
+        action: String,
+        entityID: UUID,
+        baseRevision: Int?,
+        data: [String: Any]
+    ) -> [String: Any] {
+        [
+            "id": operationID(transactionID: transactionID, index: index),
+            "entity": entity,
+            "action": action,
+            "entityId": entityID.uuidString.lowercased(),
+            "baseRevision": json(baseRevision),
+            "data": data,
+        ]
+    }
+
+    private static func operationID(transactionID: String, index: Int) -> String {
+        guard var bytes = UUID(uuidString: transactionID)?.uuid else { return transactionID }
+        withUnsafeMutableBytes(of: &bytes) { buffer in
+            buffer[12] = UInt8(truncatingIfNeeded: index >> 24)
+            buffer[13] = UInt8(truncatingIfNeeded: index >> 16)
+            buffer[14] = UInt8(truncatingIfNeeded: index >> 8)
+            buffer[15] = UInt8(truncatingIfNeeded: index)
+        }
+        return UUID(uuid: bytes).uuidString.lowercased()
+    }
+
+    private static func json(_ value: UUID?) -> Any { value?.uuidString.lowercased() ?? NSNull() }
+    private static func json(_ value: Date?) -> Any { value?.ISO8601Format() ?? NSNull() }
+    private static func json(_ value: String?) -> Any { value ?? NSNull() }
+    private static func json(_ value: Double?) -> Any { value ?? NSNull() }
+    private static func json(_ value: Int?) -> Any { value ?? NSNull() }
+
     private static func errorCode(_ error: Error) -> String {
         if let error = error as? MeetingSyncHTTPError { return "http_\(error.status)" }
         if error is MeetingSyncUnavailableError { return "connection_unavailable" }
@@ -529,6 +1197,7 @@ actor MeetingSyncWorker {
 private struct MeetingSyncHTTPError: Error {
     let status: Int
     let code: String?
+    let body: Data
 
     var isPermanent: Bool {
         code != "screenshot_content_missing" && [400, 409, 411, 413, 415, 422].contains(status)
@@ -539,4 +1208,4 @@ private struct MeetingSyncErrorResponse: Decodable {
     let error: String
 }
 
-private struct MeetingSyncUnavailableError: Error {}
+struct MeetingSyncUnavailableError: Error {}

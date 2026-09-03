@@ -2,7 +2,7 @@ import type { AuthInfo } from "@modelcontextprotocol/server";
 
 import { gatewayResource, mcpResource, type AppConfig } from "../config";
 import { createAccessTokenVerifier, type DahliaAuth } from "./better-auth";
-import type { ApiScope } from "./scopes";
+import { hasApiScope, type ApiScope } from "./scopes";
 import { personalWorkspaceId } from "./workspace";
 
 export interface Identity {
@@ -11,6 +11,7 @@ export interface Identity {
   name?: string;
   workspaceId: string;
   source: "accounts" | "header";
+  impersonated?: boolean;
 }
 
 export class AuthenticationError extends Error {
@@ -49,6 +50,7 @@ export class IdentityService {
         name: session.user.name,
         workspaceId: personalWorkspaceId(session.user.id),
         source: "accounts",
+        impersonated: Boolean(session.session.impersonatedBy),
       });
     }
     return this.fromHeader(request);
@@ -102,7 +104,7 @@ export class IdentityService {
   async fromMcpResource(request: Request, requiredScope: ApiScope): Promise<Identity> {
     if (this.config.authProvider !== "accounts") return this.fromHeader(request);
     const authInfo = await this.verifyMcpAccessToken(request, new URL(request.url).pathname);
-    if (!authInfo.scopes.includes(requiredScope)) {
+    if (!hasApiScope(authInfo.scopes, requiredScope)) {
       throw new AuthenticationError("Insufficient scope", true);
     }
     const identity = authInfo.extra?.identity;

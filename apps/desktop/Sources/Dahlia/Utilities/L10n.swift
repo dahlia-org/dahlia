@@ -1899,6 +1899,10 @@ enum L10n { // swiftlint:disable:this type_body_length
         localized: "Reconnect this Dahlia account to grant sync access.",
         bundle: bundle
     ) }
+    static var vaultSyncConflict: String { String(localized: "Sync conflict", bundle: bundle) }
+    static var useServerVersion: String { String(localized: "Use Server Version", bundle: bundle) }
+    static var reapplyLocalVersion: String { String(localized: "Reapply Local Version", bundle: bundle) }
+    static var chooseLocalFolder: String { String(localized: "Choose Local Folder", bundle: bundle) }
     static var deleteServerCopy: String { String(localized: "Delete Server Copy", bundle: bundle) }
     static var deleteServerCopyDescription: String { String(
         localized: "Server data will be deleted in resumable batches. Local meeting data is not deleted.",

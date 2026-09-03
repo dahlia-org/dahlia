@@ -6,7 +6,12 @@ import { admin, jwt, organization } from "better-auth/plugins";
 import { gatewayResource, mcpResource, type AppConfig } from "../config";
 import type { AuthStore } from "./store";
 import { personalWorkspaceId } from "./workspace";
-import { ARTIFACT_WRITE_SCOPE, MCP_OAUTH_SCOPES, OAUTH_SCOPES } from "./scopes";
+import {
+  AUTHORIZATION_SERVER_SCOPES,
+  MCP_SCOPE,
+  MCP_OAUTH_SCOPES,
+  OAUTH_SCOPES,
+} from "./scopes";
 
 export function denyOAuthManagement(): false {
   return false;
@@ -56,7 +61,7 @@ export function createDahliaAuth(
         allowUnauthenticatedClientRegistration: false,
         cachedTrustedClients: new Set(["databricks-cli"]),
         clientRegistrationDefaultResources: [mcp],
-        clientRegistrationDefaultScopes: [ARTIFACT_WRITE_SCOPE],
+        clientRegistrationDefaultScopes: [MCP_SCOPE],
         clientPrivileges: denyOAuthManagement,
         consentPage: "/oauth/consent",
         customAccessTokenClaims: ({ user }) => {
@@ -85,7 +90,7 @@ export function createDahliaAuth(
           },
         ],
         resourcePrivileges: denyOAuthManagement,
-        scopes: OAUTH_SCOPES,
+        scopes: AUTHORIZATION_SERVER_SCOPES,
         silenceWarnings: {
           oauthAuthServerConfig: true,
           openidConfig: true,

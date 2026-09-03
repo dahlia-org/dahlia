@@ -9,7 +9,7 @@ import { z } from "zod";
 import { ArtifactRequestError, ArtifactService } from "./artifacts/service";
 import type { ArtifactRecord } from "./auth/store";
 import type { Identity } from "./auth/identity";
-import { ARTIFACT_WRITE_SCOPE, SYNC_READ_SCOPE } from "./auth/scopes";
+import { hasApiScope, MCP_READ_SCOPE, MCP_SCOPE } from "./auth/scopes";
 import type { AppConfig } from "./config";
 import { MeetingSyncService } from "./sync/service";
 
@@ -46,7 +46,7 @@ export function createArtifactMcpHandler(
     const identity = mcpIdentity(authInfo);
     const server = new McpServer({ name: "Dahlia Server", version: "0.1.0" });
 
-    if (authInfo?.scopes.includes(ARTIFACT_WRITE_SCOPE)) {
+    if (hasApiScope(authInfo?.scopes ?? [], MCP_SCOPE)) {
     server.registerTool("create_artifact", {
       description: "Create a private artifact from UTF-8 text or canonical RFC 4648 base64 content.",
       inputSchema: artifactContentSchema,
@@ -92,7 +92,7 @@ export function createArtifactMcpHandler(
     }));
     }
 
-    if (sync && authInfo?.scopes.includes(SYNC_READ_SCOPE)) {
+    if (sync && hasApiScope(authInfo?.scopes ?? [], MCP_READ_SCOPE)) {
       const meetingInput = z.object({ vault_id: z.string(), meeting_id: z.string() }).strict();
       server.registerTool("query_meetings", {
         description: "List meetings in a synchronized Vault you can read.",

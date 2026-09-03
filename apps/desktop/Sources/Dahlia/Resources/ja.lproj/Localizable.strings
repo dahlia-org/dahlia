@@ -1633,3 +1633,7 @@
 "Connect a calendar to see upcoming meetings in Dahlia. You can set this up later." = "カレンダーを接続すると、Dahliaで今後のミーティングを確認できます。後から設定することもできます。";
 "Review your choices, then create or open the selected Vault." = "選択内容を確認し、指定したVaultを作成または開きます。";
 "Setup Summary" = "セットアップ内容";
+"Sync conflict" = "同期の競合";
+"Use Server Version" = "サーバー版を使用";
+"Reapply Local Version" = "ローカル版を再適用";
+"Choose Local Folder" = "ローカルフォルダを選択";

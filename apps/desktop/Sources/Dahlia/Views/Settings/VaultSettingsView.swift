@@ -15,6 +15,7 @@ struct VaultSettingsView: View {
     @State private var proposedName = ""
     @State private var pendingServerDeletion: VaultRecord?
     @State private var pendingBulkMeetingDeletion: VaultRecord?
+    @State private var pendingCloudVault: CloudVaultRecord?
 
     var body: some View {
         sections
@@ -162,7 +163,25 @@ struct VaultSettingsView: View {
                         .help(vault.accountConnectionId == nil
                             ? L10n.vaultSyncRequiresAccount
                             : supportsSync(vault) ? L10n.vaultSyncDescription : L10n.vaultSyncRequiresReauthentication)
+                        if vault.syncConflictJSON != nil {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundStyle(.orange)
+                                .help(L10n.vaultSyncConflict)
+                        }
                         vaultActions(for: vault)
+                    }
+                }
+                if !model.cloudVaults.isEmpty {
+                    Divider()
+                    ForEach(model.cloudVaults) { vault in
+                        HStack {
+                            Label(vault.name, systemImage: "icloud")
+                            Spacer()
+                            Button(L10n.chooseLocalFolder) {
+                                pendingCloudVault = vault
+                                isShowingFolderPicker = true
+                            }
+                        }
                     }
                 }
             }
@@ -185,6 +204,7 @@ struct VaultSettingsView: View {
     }
 
     private func showFolderPicker() {
+        pendingCloudVault = nil
         isShowingFolderPicker = true
     }
 
@@ -196,6 +216,15 @@ struct VaultSettingsView: View {
     private func vaultActions(for vault: VaultRecord) -> some View {
         Menu(L10n.actions, systemImage: "ellipsis.circle") {
             Button(L10n.rename, systemImage: "pencil", action: { requestRename(vault) })
+
+            if vault.syncConflictJSON != nil {
+                Button(L10n.useServerVersion, systemImage: "icloud.and.arrow.down") {
+                    Task { await model.acceptServerSyncVersion(for: vault) }
+                }
+                Button(L10n.reapplyLocalVersion, systemImage: "arrow.up.circle") {
+                    Task { await model.reapplyLocalSyncVersion(for: vault) }
+                }
+            }
 
             if vault.syncConfirmedConnectionId != nil {
                 Button(L10n.deleteServerCopy, systemImage: "icloud.slash", role: .destructive) {
@@ -227,10 +256,16 @@ struct VaultSettingsView: View {
         case let .success(urls):
             guard let url = urls.first else { return }
             Task {
-                _ = await model.registerVault(at: url, markAsOpened: false)
+                if let pendingCloudVault {
+                    _ = await model.registerCloudVault(pendingCloudVault, at: url)
+                    self.pendingCloudVault = nil
+                } else {
+                    _ = await model.registerVault(at: url, markAsOpened: false)
+                }
             }
         case let .failure(error):
             guard (error as? CocoaError)?.code != .userCancelled else { return }
+            pendingCloudVault = nil
             model.presentFolderSelectionError(error)
         }
     }

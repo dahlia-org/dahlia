@@ -54,6 +54,7 @@ export interface SyncVaultManifest {
 export interface SyncVaultRecord {
   vaultId: string;
   name: string;
+  revision?: number;
   createdAt: Date;
   updatedAt: Date;
   role: VaultRole;
@@ -81,6 +82,59 @@ export interface SyncProjectView extends SyncProjectRecord {
 
 export type VaultRole = "owner" | "member";
 export type VaultPrincipalType = "user" | "organization" | "team";
+export type SyncEntity = "vault" | "project" | "meeting" | "summary" | "transcript" | "screenshot";
+export type SyncAction = "create" | "update" | "delete" | "upsert" | "replace" | "reset" | "deleteHierarchy";
+
+export interface SyncTransactionOperation {
+  id: string;
+  entity: SyncEntity;
+  action: SyncAction;
+  entityId: string;
+  baseRevision: number | null;
+  data: Record<string, unknown> | null;
+}
+
+export interface SyncTransaction {
+  schemaVersion: 1;
+  id: string;
+  vaultId: string;
+  createdAt: Date;
+  requestHash: string;
+  operations: SyncTransactionOperation[];
+}
+
+export interface SyncCanonicalRecord {
+  entity: SyncEntity;
+  id: string;
+  revision: number | null;
+  record: Record<string, unknown> | null;
+}
+
+export interface SyncTransactionResponse {
+  id: string;
+  status: "committed";
+  cursor: string;
+  records: SyncCanonicalRecord[];
+}
+
+export interface SyncRevisionConflict {
+  entity: SyncEntity;
+  id: string;
+  clientBaseRevision: number | null;
+  serverRevision: number | null;
+  record: Record<string, unknown> | null;
+}
+
+export interface SyncChangeRecord {
+  sequence: number;
+  vaultId: string;
+  entity: SyncEntity;
+  entityId: string;
+  action: "upsert" | "delete" | "reset";
+  revision: number | null;
+  transactionId: string;
+  record: Record<string, unknown> | null;
+}
 
 export interface VaultPermissionRecord {
   vaultId: string;
@@ -105,6 +159,9 @@ export interface SyncMeetingRecord {
   summaryDocument: string | null;
   summaryCreatedAt: Date | null;
   activeTranscriptGeneration: string | null;
+  revision?: number;
+  summaryRevision?: number;
+  transcriptRevision?: number;
 }
 
 export interface SyncMeetingCursor {
@@ -127,6 +184,7 @@ export interface SyncScreenshotRecord {
   contentLength: number;
   ocrText: string | null;
   caption: string | null;
+  revision?: number;
 }
 
 export interface SyncSearchQuery {
@@ -141,6 +199,9 @@ export interface SyncSearchQuery {
 }
 
 export interface IdentitySyncStore {
+  commitTransaction(transaction: SyncTransaction): Promise<SyncTransactionResponse>;
+  listChanges(vaultId: string, after: number, limit: number): Promise<SyncChangeRecord[]>;
+  latestChangeSequence(vaultId?: string): Promise<number>;
   commitVaultManifest(manifest: SyncVaultManifest): Promise<boolean>;
   ensureUploadTarget(vaultId: string, meetingId: string): Promise<boolean>;
   commitManifest(manifest: SyncManifest): Promise<{
@@ -199,4 +260,7 @@ export interface IdentitySyncStore {
 export interface MeetingSyncStore {
   isAvailable(): Promise<boolean>;
   withIdentity<T>(identity: Identity, action: (store: IdentitySyncStore) => Promise<T>): Promise<T>;
+  claimStorageDeletes(limit: number): Promise<string[]>;
+  completeStorageDelete(storageKey: string): Promise<void>;
+  failStorageDelete(storageKey: string, code: string): Promise<void>;
 }

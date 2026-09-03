@@ -1,7 +1,7 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "40b47905-c1ee-4c04-8490-49a9996ad450",
+  "id": "e11aafc3-5039-4b33-a6f8-6916fcf6732f",
   "prevIds": [
     "00000000-0000-0000-0000-000000000000"
   ],
@@ -92,6 +92,18 @@
     },
     {
       "name": "core_search_index_jobs",
+      "entityType": "tables"
+    },
+    {
+      "name": "core_storage_delete_jobs",
+      "entityType": "tables"
+    },
+    {
+      "name": "core_sync_changes",
+      "entityType": "tables"
+    },
+    {
+      "name": "core_transaction_receipts",
       "entityType": "tables"
     },
     {
@@ -2334,6 +2346,246 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
+      "name": "storage_key",
+      "entityType": "columns",
+      "table": "core_storage_delete_jobs"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "attempts",
+      "entityType": "columns",
+      "table": "core_storage_delete_jobs"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "'pending'",
+      "generated": null,
+      "name": "status",
+      "entityType": "columns",
+      "table": "core_storage_delete_jobs"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "(cast(unixepoch('subsecond') * 1000 as integer))",
+      "generated": null,
+      "name": "available_at",
+      "entityType": "columns",
+      "table": "core_storage_delete_jobs"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "claimed_at",
+      "entityType": "columns",
+      "table": "core_storage_delete_jobs"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "lease_expires_at",
+      "entityType": "columns",
+      "table": "core_storage_delete_jobs"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "last_error_code",
+      "entityType": "columns",
+      "table": "core_storage_delete_jobs"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "(cast(unixepoch('subsecond') * 1000 as integer))",
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "core_storage_delete_jobs"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": true,
+      "default": null,
+      "generated": null,
+      "name": "sequence",
+      "entityType": "columns",
+      "table": "core_sync_changes"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "owner_user_id",
+      "entityType": "columns",
+      "table": "core_sync_changes"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "vault_id",
+      "entityType": "columns",
+      "table": "core_sync_changes"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "entity",
+      "entityType": "columns",
+      "table": "core_sync_changes"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "entity_id",
+      "entityType": "columns",
+      "table": "core_sync_changes"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "action",
+      "entityType": "columns",
+      "table": "core_sync_changes"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "revision",
+      "entityType": "columns",
+      "table": "core_sync_changes"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "transaction_id",
+      "entityType": "columns",
+      "table": "core_sync_changes"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "(cast(unixepoch('subsecond') * 1000 as integer))",
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "core_sync_changes"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "transaction_id",
+      "entityType": "columns",
+      "table": "core_transaction_receipts"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "owner_user_id",
+      "entityType": "columns",
+      "table": "core_transaction_receipts"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "vault_id",
+      "entityType": "columns",
+      "table": "core_transaction_receipts"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "request_hash",
+      "entityType": "columns",
+      "table": "core_transaction_receipts"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "response_json",
+      "entityType": "columns",
+      "table": "core_transaction_receipts"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "cursor",
+      "entityType": "columns",
+      "table": "core_transaction_receipts"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "(cast(unixepoch('subsecond') * 1000 as integer))",
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "core_transaction_receipts"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
       "name": "meeting_id",
       "entityType": "columns",
       "table": "content_meetings"
@@ -2459,6 +2711,36 @@
       "table": "content_meetings"
     },
     {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "1",
+      "generated": null,
+      "name": "revision",
+      "entityType": "columns",
+      "table": "content_meetings"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "summary_revision",
+      "entityType": "columns",
+      "table": "content_meetings"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "transcript_revision",
+      "entityType": "columns",
+      "table": "content_meetings"
+    },
+    {
       "type": "text",
       "notNull": false,
       "autoincrement": false,
@@ -2569,6 +2851,16 @@
       "table": "core_projects"
     },
     {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "(cast(unixepoch('subsecond') * 1000 as integer))",
+      "generated": null,
+      "name": "updated_at",
+      "entityType": "columns",
+      "table": "core_projects"
+    },
+    {
       "type": "text",
       "notNull": false,
       "autoincrement": false,
@@ -2665,6 +2957,16 @@
       "default": null,
       "generated": null,
       "name": "caption",
+      "entityType": "columns",
+      "table": "content_screenshots"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "1",
+      "generated": null,
+      "name": "revision",
       "entityType": "columns",
       "table": "content_screenshots"
     },
@@ -2805,6 +3107,16 @@
       "default": null,
       "generated": null,
       "name": "name",
+      "entityType": "columns",
+      "table": "core_vaults"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "1",
+      "generated": null,
+      "name": "revision",
       "entityType": "columns",
       "table": "core_vaults"
     },
@@ -3279,6 +3591,21 @@
     },
     {
       "columns": [
+        "owner_user_id"
+      ],
+      "tableTo": "user",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "name": "fk_core_transaction_receipts_owner_user_id_user_id_fk",
+      "entityType": "fks",
+      "table": "core_transaction_receipts"
+    },
+    {
+      "columns": [
         "vault_id"
       ],
       "tableTo": "core_vaults",
@@ -3627,6 +3954,33 @@
       "nameExplicit": false,
       "name": "core_model_alias_pk",
       "table": "core_model_alias",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "storage_key"
+      ],
+      "nameExplicit": false,
+      "name": "core_storage_delete_jobs_pk",
+      "table": "core_storage_delete_jobs",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "sequence"
+      ],
+      "nameExplicit": false,
+      "name": "core_sync_changes_pk",
+      "table": "core_sync_changes",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "transaction_id"
+      ],
+      "nameExplicit": false,
+      "name": "core_transaction_receipts_pk",
+      "table": "core_transaction_receipts",
       "entityType": "pks"
     },
     {
@@ -4102,6 +4456,86 @@
     {
       "columns": [
         {
+          "value": "status",
+          "isExpression": false
+        },
+        {
+          "value": "available_at",
+          "isExpression": false
+        },
+        {
+          "value": "lease_expires_at",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "storage_delete_job_claim_idx",
+      "entityType": "indexes",
+      "table": "core_storage_delete_jobs"
+    },
+    {
+      "columns": [
+        {
+          "value": "owner_user_id",
+          "isExpression": false
+        },
+        {
+          "value": "vault_id",
+          "isExpression": false
+        },
+        {
+          "value": "sequence",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "sync_change_owner_vault_sequence_idx",
+      "entityType": "indexes",
+      "table": "core_sync_changes"
+    },
+    {
+      "columns": [
+        {
+          "value": "owner_user_id",
+          "isExpression": false
+        },
+        {
+          "value": "sequence",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "sync_change_owner_sequence_idx",
+      "entityType": "indexes",
+      "table": "core_sync_changes"
+    },
+    {
+      "columns": [
+        {
+          "value": "owner_user_id",
+          "isExpression": false
+        },
+        {
+          "value": "created_at",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "transaction_receipt_owner_created_idx",
+      "entityType": "indexes",
+      "table": "core_transaction_receipts"
+    },
+    {
+      "columns": [
+        {
           "value": "vault_id",
           "isExpression": false
         },
@@ -4351,6 +4785,24 @@
       "name": "search_index_job_dimensions_check",
       "entityType": "checks",
       "table": "core_search_index_jobs"
+    },
+    {
+      "value": "\"status\" IN ('pending', 'processing', 'failed')",
+      "name": "storage_delete_job_status_check",
+      "entityType": "checks",
+      "table": "core_storage_delete_jobs"
+    },
+    {
+      "value": "\"entity\" IN ('vault', 'project', 'meeting', 'summary', 'transcript', 'screenshot')",
+      "name": "sync_change_entity_check",
+      "entityType": "checks",
+      "table": "core_sync_changes"
+    },
+    {
+      "value": "\"action\" IN ('upsert', 'delete', 'reset')",
+      "name": "sync_change_action_check",
+      "entityType": "checks",
+      "table": "core_sync_changes"
     },
     {
       "value": "(\n    (\"parent_project_id\" IS NULL AND \"project_type\" IN ('customer', 'internal', 'personal', 'undefined'))\n    OR (\"parent_project_id\" IS NOT NULL AND \"project_type\" IS NULL)\n  )",

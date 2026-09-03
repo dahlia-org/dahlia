@@ -27,12 +27,11 @@ struct DahliaAccountConnection: Identifiable, Equatable, Sendable {
     var isSignedIn: Bool { account != nil }
     var supportsArtifactExport: Bool {
         grantedScopes.contains(DahliaArtifactExportService.requiredScope)
-            || grantedScopes.contains("files")
     }
 
     var displayName: String { account?.displayName ?? origin }
     var supportsVaultSync: Bool {
-        grantedScopes.contains("api.sync.write") || grantedScopes.contains("all-apis") || grantedScopes.contains("files")
+        grantedScopes.contains("all-apis")
     }
 }
 

@@ -7,14 +7,14 @@
     @MainActor
     struct DahliaAccountConnectionTests {
         @Test
-        func filesScopeEnablesVaultSyncForDatabricksAppsConnections() {
+        func allApisScopeEnablesVaultSync() {
             let record = makeConnection(origin: "https://dahlia.example.com")
 
             #expect(DahliaAccountConnection(
                 record: record,
                 account: nil,
                 isCloud: false,
-                grantedScopes: ["files"]
+                grantedScopes: ["all-apis"]
             ).supportsVaultSync)
             #expect(!DahliaAccountConnection(
                 record: record,
@@ -25,7 +25,7 @@
         }
 
         @Test
-        func artifactExportAcceptsDedicatedAndDatabricksProxyScopes() {
+        func artifactExportRequiresAllApisScope() {
             let record = makeConnection(origin: "https://server.example.com")
             let account = DahliaCloudAccount(id: "user", name: "User", email: nil)
 
@@ -34,12 +34,6 @@
                 account: account,
                 isCloud: false,
                 grantedScopes: [DahliaArtifactExportService.requiredScope]
-            ).supportsArtifactExport)
-            #expect(DahliaAccountConnection(
-                record: record,
-                account: account,
-                isCloud: false,
-                grantedScopes: ["files"]
             ).supportsArtifactExport)
             #expect(!DahliaAccountConnection(
                 record: record,

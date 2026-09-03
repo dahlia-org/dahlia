@@ -203,10 +203,9 @@ actor DahliaCloudService {
         let pkce = CloudPKCE.generate()
         let state = CloudPKCE.randomURLSafeString(byteCount: 32)
         let scopes = discovery.usesProxySession
-            ? Set(["ai-gateway", "files", "iam.current-user:read", "offline_access"])
+            ? Set(["all-apis", "offline_access"])
             : Set(discovery.protectedResource.scopesSupported ?? [])
             .union(Self.identityScopes)
-            .subtracting(["all-apis"])
         let authorizationURL = try Self.authorizationURL(
             endpoint: discovery.authorizationServer.authorizationEndpoint,
             configuration: configuration,
@@ -251,9 +250,7 @@ actor DahliaCloudService {
     }
 
     func persist(_ newCredential: DahliaCloudCredential) throws {
-        guard credentialMatchesConfiguration(newCredential),
-              newCredential.grantedScopes.contains("all-apis") == false
-        else { throw DahliaCloudError.invalidTokenResponse }
+        guard credentialMatchesConfiguration(newCredential) else { throw DahliaCloudError.invalidTokenResponse }
         cancelRefresh()
         try storage.save(newCredential)
         credential = newCredential
@@ -315,9 +312,7 @@ actor DahliaCloudService {
     private func loadCredentialIfNeeded() throws {
         guard !didLoadCredential else { return }
         let storedCredential = try storage.load()
-        if let storedCredential,
-           storedCredential.grantedScopes.contains("all-apis") == false,
-           credentialMatchesConfiguration(storedCredential) {
+        if let storedCredential, credentialMatchesConfiguration(storedCredential) {
             credential = storedCredential
         }
         didLoadCredential = true
@@ -416,9 +411,7 @@ actor DahliaCloudService {
             throw DahliaCloudError.invalidTokenResponse
         }
         let returnedScopes = payload.scope.map { Set($0.split(separator: " ").map(String.init)) }
-        guard returnedScopes?.isSubset(of: allowedScopes) != false,
-              returnedScopes?.contains("all-apis") != true
-        else {
+        guard returnedScopes?.isSubset(of: allowedScopes) != false else {
             throw DahliaCloudError.invalidTokenResponse
         }
         return CloudTokenResponse(

@@ -1633,3 +1633,7 @@
 "Connect a calendar to see upcoming meetings in Dahlia. You can set this up later." = "Connect a calendar to see upcoming meetings in Dahlia. You can set this up later.";
 "Review your choices, then create or open the selected Vault." = "Review your choices, then create or open the selected Vault.";
 "Setup Summary" = "Setup Summary";
+"Sync conflict" = "Sync conflict";
+"Use Server Version" = "Use Server Version";
+"Reapply Local Version" = "Reapply Local Version";
+"Choose Local Folder" = "Choose Local Folder";

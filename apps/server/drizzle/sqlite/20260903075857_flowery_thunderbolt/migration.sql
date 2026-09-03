@@ -318,6 +318,43 @@ CREATE TABLE `core_search_index_jobs` (
 	CONSTRAINT "search_index_job_dimensions_check" CHECK("dimensions" BETWEEN 32 AND 1024)
 );
 --> statement-breakpoint
+CREATE TABLE `core_storage_delete_jobs` (
+	`storage_key` text PRIMARY KEY,
+	`attempts` integer DEFAULT 0 NOT NULL,
+	`status` text DEFAULT 'pending' NOT NULL,
+	`available_at` integer DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)) NOT NULL,
+	`claimed_at` integer,
+	`lease_expires_at` integer,
+	`last_error_code` text,
+	`created_at` integer DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)) NOT NULL,
+	CONSTRAINT "storage_delete_job_status_check" CHECK("status" IN ('pending', 'processing', 'failed'))
+);
+--> statement-breakpoint
+CREATE TABLE `core_sync_changes` (
+	`sequence` integer PRIMARY KEY AUTOINCREMENT,
+	`owner_user_id` text NOT NULL,
+	`vault_id` text NOT NULL,
+	`entity` text NOT NULL,
+	`entity_id` text NOT NULL,
+	`action` text NOT NULL,
+	`revision` integer,
+	`transaction_id` text NOT NULL,
+	`created_at` integer DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)) NOT NULL,
+	CONSTRAINT "sync_change_entity_check" CHECK("entity" IN ('vault', 'project', 'meeting', 'summary', 'transcript', 'screenshot')),
+	CONSTRAINT "sync_change_action_check" CHECK("action" IN ('upsert', 'delete', 'reset'))
+);
+--> statement-breakpoint
+CREATE TABLE `core_transaction_receipts` (
+	`transaction_id` text PRIMARY KEY,
+	`owner_user_id` text NOT NULL,
+	`vault_id` text NOT NULL,
+	`request_hash` text NOT NULL,
+	`response_json` text NOT NULL,
+	`cursor` integer NOT NULL,
+	`created_at` integer DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)) NOT NULL,
+	CONSTRAINT `fk_core_transaction_receipts_owner_user_id_user_id_fk` FOREIGN KEY (`owner_user_id`) REFERENCES `user`(`id`) ON DELETE CASCADE
+);
+--> statement-breakpoint
 CREATE TABLE `content_meetings` (
 	`meeting_id` text PRIMARY KEY,
 	`vault_id` text NOT NULL,
@@ -332,6 +369,9 @@ CREATE TABLE `content_meetings` (
 	`summary_title` text,
 	`summary_document` text,
 	`summary_created_at` integer,
+	`revision` integer DEFAULT 1 NOT NULL,
+	`summary_revision` integer DEFAULT 0 NOT NULL,
+	`transcript_revision` integer DEFAULT 0 NOT NULL,
 	`active_transcript_generation` text,
 	`manifest_received_at` integer,
 	`deleting_at` integer,
@@ -349,6 +389,7 @@ CREATE TABLE `core_projects` (
 	`project_type` text,
 	`revision` integer NOT NULL,
 	`created_at` integer NOT NULL,
+	`updated_at` integer DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)) NOT NULL,
 	CONSTRAINT `fk_core_projects_vault_id_core_vaults_vault_id_fk` FOREIGN KEY (`vault_id`) REFERENCES `core_vaults`(`vault_id`) ON DELETE CASCADE,
 	CONSTRAINT `fk_core_projects_vault_id_parent_project_id_core_projects_vault_id_project_id_fk` FOREIGN KEY (`vault_id`,`parent_project_id`) REFERENCES `core_projects`(`vault_id`,`project_id`) ON DELETE RESTRICT,
 	CONSTRAINT `project_vault_project_unique` UNIQUE(`vault_id`,`project_id`),
@@ -371,6 +412,7 @@ CREATE TABLE `content_screenshots` (
 	`active` integer DEFAULT true NOT NULL,
 	`ocr_text` text,
 	`caption` text,
+	`revision` integer DEFAULT 1 NOT NULL,
 	`created_at` integer DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)) NOT NULL,
 	`updated_at` integer DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)) NOT NULL,
 	CONSTRAINT `fk_content_screenshots_vault_id_meeting_id_content_meetings_vault_id_meeting_id_fk` FOREIGN KEY (`vault_id`,`meeting_id`) REFERENCES `content_meetings`(`vault_id`,`meeting_id`) ON DELETE CASCADE
@@ -394,6 +436,7 @@ CREATE TABLE `content_transcript_segments` (
 CREATE TABLE `core_vaults` (
 	`vault_id` text PRIMARY KEY,
 	`name` text NOT NULL,
+	`revision` integer DEFAULT 1 NOT NULL,
 	`deleting_at` integer,
 	`created_at` integer DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)) NOT NULL,
 	`updated_at` integer DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)) NOT NULL
@@ -443,6 +486,10 @@ CREATE INDEX `teamMember_userId_idx` ON `team_member` (`user_id`);--> statement-
 CREATE INDEX `verification_identifier_idx` ON `verification` (`identifier`);--> statement-breakpoint
 CREATE INDEX `search_document_vault_kind_meeting_document_idx` ON `content_search_documents` (`vault_id`,`kind`,`meeting_id`,`document_id`);--> statement-breakpoint
 CREATE INDEX `search_index_job_claim_idx` ON `core_search_index_jobs` (`status`,`available_at`,`lease_expires_at`);--> statement-breakpoint
+CREATE INDEX `storage_delete_job_claim_idx` ON `core_storage_delete_jobs` (`status`,`available_at`,`lease_expires_at`);--> statement-breakpoint
+CREATE INDEX `sync_change_owner_vault_sequence_idx` ON `core_sync_changes` (`owner_user_id`,`vault_id`,`sequence`);--> statement-breakpoint
+CREATE INDEX `sync_change_owner_sequence_idx` ON `core_sync_changes` (`owner_user_id`,`sequence`);--> statement-breakpoint
+CREATE INDEX `transaction_receipt_owner_created_idx` ON `core_transaction_receipts` (`owner_user_id`,`created_at`);--> statement-breakpoint
 CREATE INDEX `synced_meeting_vault_created_id_idx` ON `content_meetings` (`vault_id`,`created_at`,`meeting_id`);--> statement-breakpoint
 CREATE INDEX `project_vault_parent_name_idx` ON `core_projects` (`vault_id`,`parent_project_id`,`name`);--> statement-breakpoint
 CREATE INDEX `synced_screenshot_vault_meeting_captured_id_idx` ON `content_screenshots` (`vault_id`,`meeting_id`,`captured_at`,`screenshot_id`);--> statement-breakpoint

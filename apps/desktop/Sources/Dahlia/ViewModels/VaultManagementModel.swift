@@ -9,6 +9,7 @@ final class VaultManagementModel {
         .appending(path: "Dahlia", directoryHint: .isDirectory)
 
     private(set) var vaults: [VaultRecord] = []
+    private(set) var cloudVaults: [CloudVaultRecord] = []
     private(set) var pendingMeetingDeletionCounts: [UUID: Int] = [:]
     private(set) var errorMessage = ""
     private(set) var isLoading = false
@@ -36,6 +37,7 @@ final class VaultManagementModel {
     func loadVaults() async {
         guard let repository else {
             vaults = []
+            cloudVaults = []
             hasLoadedVaults = false
             return
         }
@@ -44,12 +46,40 @@ final class VaultManagementModel {
         defer { isLoading = false }
         do {
             vaults = try await repository.fetchAllVaultsAsync()
+            let localVaultIDs = Set(vaults.map(\.id))
+            cloudVaults = try await repository.fetchCloudVaultsAsync().filter { !localVaultIDs.contains($0.vaultId) }
             pendingMeetingDeletionCounts = try await repository.pendingMeetingDeletionCounts()
             hasLoadedVaults = true
         } catch {
             hasLoadedVaults = false
             guard !Task.isCancelled else { return }
             presentError(L10n.vaultLoadFailed, error: error, source: "loadVaults")
+        }
+    }
+
+    func registerCloudVault(_ cloudVault: CloudVaultRecord, at url: URL) async -> VaultRecord? {
+        guard let repository else { return nil }
+        let normalizedURL = Self.normalizedFileURL(url)
+        guard !vaults.contains(where: { Self.normalizedFileURL($0.url) == normalizedURL }) else { return nil }
+        var vault = VaultRecord(
+            id: cloudVault.vaultId,
+            path: normalizedURL.path,
+            name: cloudVault.name,
+            createdAt: cloudVault.createdAt,
+            lastOpenedAt: .distantPast
+        )
+        vault.accountConnectionId = cloudVault.connectionId
+        vault.syncConfirmedConnectionId = cloudVault.connectionId
+        vault.syncEnabled = true
+        vault.serverRevision = cloudVault.revision
+        vault.syncBootstrapPending = true
+        do {
+            try await repository.insertVaultAsync(vault)
+            await loadVaults()
+            return vault
+        } catch {
+            presentError(L10n.vaultAddFailed, error: error, source: "registerCloudVault")
+            return nil
         }
     }
 
@@ -215,6 +245,31 @@ final class VaultManagementModel {
         } catch {
             presentError(L10n.vaultOperationFailed, error: error, source: "updateVaultSync")
             return nil
+        }
+    }
+
+    func acceptServerSyncVersion(for vault: VaultRecord) async {
+        guard let repository else { return }
+        do {
+            try await repository.acceptServerSyncVersion(vaultId: vault.id)
+            if let index = vaults.firstIndex(where: { $0.id == vault.id }) {
+                vaults[index].syncConflictJSON = nil
+                vaults[index].syncBootstrapPending = true
+            }
+        } catch {
+            presentError(L10n.vaultOperationFailed, error: error, source: "acceptServerSyncVersion")
+        }
+    }
+
+    func reapplyLocalSyncVersion(for vault: VaultRecord) async {
+        guard let repository else { return }
+        do {
+            try await repository.reapplyLocalSyncVersion(vaultId: vault.id)
+            if let index = vaults.firstIndex(where: { $0.id == vault.id }) {
+                vaults[index].syncConflictJSON = nil
+            }
+        } catch {
+            presentError(L10n.vaultOperationFailed, error: error, source: "reapplyLocalSyncVersion")
         }
     }
 

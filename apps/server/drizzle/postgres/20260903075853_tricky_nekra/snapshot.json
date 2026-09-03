@@ -1,7 +1,7 @@
 {
   "version": "8",
   "dialect": "postgres",
-  "id": "af3bb415-8c01-49d9-9ffc-cc68189cb552",
+  "id": "aed83604-5311-4d22-ac00-e2fc843478cd",
   "prevIds": [
     "00000000-0000-0000-0000-000000000000"
   ],
@@ -41,6 +41,24 @@
     {
       "isRlsEnabled": false,
       "name": "search_index_jobs",
+      "entityType": "tables",
+      "schema": "core"
+    },
+    {
+      "isRlsEnabled": false,
+      "name": "storage_delete_jobs",
+      "entityType": "tables",
+      "schema": "core"
+    },
+    {
+      "isRlsEnabled": false,
+      "name": "sync_changes",
+      "entityType": "tables",
+      "schema": "core"
+    },
+    {
+      "isRlsEnabled": false,
+      "name": "transaction_receipts",
       "entityType": "tables",
       "schema": "core"
     },
@@ -630,6 +648,318 @@
       "table": "search_index_jobs"
     },
     {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "storage_key",
+      "entityType": "columns",
+      "schema": "core",
+      "table": "storage_delete_jobs"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "0",
+      "generated": null,
+      "identity": null,
+      "name": "attempts",
+      "entityType": "columns",
+      "schema": "core",
+      "table": "storage_delete_jobs"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "'pending'",
+      "generated": null,
+      "identity": null,
+      "name": "status",
+      "entityType": "columns",
+      "schema": "core",
+      "table": "storage_delete_jobs"
+    },
+    {
+      "type": "timestamp",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "now()",
+      "generated": null,
+      "identity": null,
+      "name": "available_at",
+      "entityType": "columns",
+      "schema": "core",
+      "table": "storage_delete_jobs"
+    },
+    {
+      "type": "timestamp",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "claimed_at",
+      "entityType": "columns",
+      "schema": "core",
+      "table": "storage_delete_jobs"
+    },
+    {
+      "type": "timestamp",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "lease_expires_at",
+      "entityType": "columns",
+      "schema": "core",
+      "table": "storage_delete_jobs"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "last_error_code",
+      "entityType": "columns",
+      "schema": "core",
+      "table": "storage_delete_jobs"
+    },
+    {
+      "type": "timestamp",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "now()",
+      "generated": null,
+      "identity": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "schema": "core",
+      "table": "storage_delete_jobs"
+    },
+    {
+      "type": "bigserial",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "sequence",
+      "entityType": "columns",
+      "schema": "core",
+      "table": "sync_changes"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "owner_user_id",
+      "entityType": "columns",
+      "schema": "core",
+      "table": "sync_changes"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "vault_id",
+      "entityType": "columns",
+      "schema": "core",
+      "table": "sync_changes"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "entity",
+      "entityType": "columns",
+      "schema": "core",
+      "table": "sync_changes"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "entity_id",
+      "entityType": "columns",
+      "schema": "core",
+      "table": "sync_changes"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "action",
+      "entityType": "columns",
+      "schema": "core",
+      "table": "sync_changes"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "revision",
+      "entityType": "columns",
+      "schema": "core",
+      "table": "sync_changes"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "transaction_id",
+      "entityType": "columns",
+      "schema": "core",
+      "table": "sync_changes"
+    },
+    {
+      "type": "timestamp",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "now()",
+      "generated": null,
+      "identity": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "schema": "core",
+      "table": "sync_changes"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "transaction_id",
+      "entityType": "columns",
+      "schema": "core",
+      "table": "transaction_receipts"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "owner_user_id",
+      "entityType": "columns",
+      "schema": "core",
+      "table": "transaction_receipts"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "vault_id",
+      "entityType": "columns",
+      "schema": "core",
+      "table": "transaction_receipts"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "request_hash",
+      "entityType": "columns",
+      "schema": "core",
+      "table": "transaction_receipts"
+    },
+    {
+      "type": "jsonb",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "response_json",
+      "entityType": "columns",
+      "schema": "core",
+      "table": "transaction_receipts"
+    },
+    {
+      "type": "bigint",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "cursor",
+      "entityType": "columns",
+      "schema": "core",
+      "table": "transaction_receipts"
+    },
+    {
+      "type": "timestamp",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "now()",
+      "generated": null,
+      "identity": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "schema": "core",
+      "table": "transaction_receipts"
+    },
+    {
       "type": "uuid",
       "typeSchema": null,
       "notNull": true,
@@ -799,6 +1129,45 @@
       "table": "meetings"
     },
     {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "1",
+      "generated": null,
+      "identity": null,
+      "name": "revision",
+      "entityType": "columns",
+      "schema": "content",
+      "table": "meetings"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "0",
+      "generated": null,
+      "identity": null,
+      "name": "summary_revision",
+      "entityType": "columns",
+      "schema": "content",
+      "table": "meetings"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "0",
+      "generated": null,
+      "identity": null,
+      "name": "transcript_revision",
+      "entityType": "columns",
+      "schema": "content",
+      "table": "meetings"
+    },
+    {
       "type": "text",
       "typeSchema": null,
       "notNull": false,
@@ -942,6 +1311,19 @@
       "table": "projects"
     },
     {
+      "type": "timestamp",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "now()",
+      "generated": null,
+      "identity": null,
+      "name": "updated_at",
+      "entityType": "columns",
+      "schema": "core",
+      "table": "projects"
+    },
+    {
       "type": "uuid",
       "typeSchema": null,
       "notNull": true,
@@ -1067,6 +1449,19 @@
       "generated": null,
       "identity": null,
       "name": "caption",
+      "entityType": "columns",
+      "schema": "content",
+      "table": "screenshots"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "1",
+      "generated": null,
+      "identity": null,
+      "name": "revision",
       "entityType": "columns",
       "schema": "content",
       "table": "screenshots"
@@ -1249,6 +1644,19 @@
       "generated": null,
       "identity": null,
       "name": "name",
+      "entityType": "columns",
+      "schema": "core",
+      "table": "vaults"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "1",
+      "generated": null,
+      "identity": null,
+      "name": "revision",
       "entityType": "columns",
       "schema": "core",
       "table": "vaults"
@@ -1446,6 +1854,132 @@
       "entityType": "indexes",
       "schema": "core",
       "table": "search_index_jobs"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        {
+          "value": "status",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "available_at",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "lease_expires_at",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "storage_delete_job_claim_idx",
+      "entityType": "indexes",
+      "schema": "core",
+      "table": "storage_delete_jobs"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        {
+          "value": "owner_user_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "vault_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "sequence",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "sync_change_owner_vault_sequence_idx",
+      "entityType": "indexes",
+      "schema": "core",
+      "table": "sync_changes"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        {
+          "value": "owner_user_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "sequence",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "sync_change_owner_sequence_idx",
+      "entityType": "indexes",
+      "schema": "core",
+      "table": "sync_changes"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        {
+          "value": "owner_user_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "created_at",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "transaction_receipt_owner_created_idx",
+      "entityType": "indexes",
+      "schema": "core",
+      "table": "transaction_receipts"
     },
     {
       "nameExplicit": true,
@@ -1746,6 +2280,23 @@
     {
       "nameExplicit": true,
       "columns": [
+        "owner_user_id"
+      ],
+      "schemaTo": "auth",
+      "tableTo": "user",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "name": "transaction_receipt_owner_user_fk",
+      "entityType": "fks",
+      "schema": "core",
+      "table": "transaction_receipts"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
         "vault_id"
       ],
       "schemaTo": "core",
@@ -1967,6 +2518,36 @@
     },
     {
       "columns": [
+        "storage_key"
+      ],
+      "nameExplicit": false,
+      "name": "storage_delete_jobs_pkey",
+      "schema": "core",
+      "table": "storage_delete_jobs",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "sequence"
+      ],
+      "nameExplicit": false,
+      "name": "sync_changes_pkey",
+      "schema": "core",
+      "table": "sync_changes",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "transaction_id"
+      ],
+      "nameExplicit": false,
+      "name": "transaction_receipts_pkey",
+      "schema": "core",
+      "table": "transaction_receipts",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
         "meeting_id"
       ],
       "nameExplicit": false,
@@ -2063,6 +2644,27 @@
       "entityType": "checks",
       "schema": "core",
       "table": "search_index_jobs"
+    },
+    {
+      "value": "\"status\" IN ('pending', 'processing', 'failed')",
+      "name": "storage_delete_job_status_check",
+      "entityType": "checks",
+      "schema": "core",
+      "table": "storage_delete_jobs"
+    },
+    {
+      "value": "\"entity\" IN ('vault', 'project', 'meeting', 'summary', 'transcript', 'screenshot')",
+      "name": "sync_change_entity_check",
+      "entityType": "checks",
+      "schema": "core",
+      "table": "sync_changes"
+    },
+    {
+      "value": "\"action\" IN ('upsert', 'delete', 'reset')",
+      "name": "sync_change_action_check",
+      "entityType": "checks",
+      "schema": "core",
+      "table": "sync_changes"
     },
     {
       "value": "(\n    (\"parent_project_id\" IS NULL AND \"project_type\" IN ('customer', 'internal', 'personal', 'undefined'))\n    OR (\"parent_project_id\" IS NOT NULL AND \"project_type\" IS NULL)\n  )",

@@ -223,11 +223,17 @@ describe("SQLite Better Auth store", () => {
       authStore: store,
       artifactStorage: new LocalObjectStorage(join(directory, "storage")),
     });
+    const apiMetadata = await app.request("/.well-known/oauth-protected-resource");
+    expect(await apiMetadata.json()).toMatchObject({
+      resource: "http://localhost:5173/api/v1",
+      authorization_servers: ["http://localhost:5173"],
+      scopes_supported: ["all-apis"],
+    });
     const metadata = await app.request("/.well-known/oauth-protected-resource/mcp");
     expect(await metadata.json()).toMatchObject({
       resource: "http://localhost:5173/mcp",
       authorization_servers: ["http://localhost:5173"],
-      scopes_supported: ["api.artifact.write", "api.sync.read"],
+      scopes_supported: ["mcp", "mcp:read"],
     });
     const unauthorizedMcp = await app.request("/mcp", {
       method: "POST",
@@ -261,8 +267,8 @@ describe("SQLite Better Auth store", () => {
       "client_secret_post",
       "[]",
       '["client_credentials"]',
-      '["api.artifact.write"]',
-      '["api.artifact.write"]',
+      '["mcp"]',
+      '["mcp"]',
       now.getTime(),
       now.getTime(),
     );
@@ -276,7 +282,7 @@ describe("SQLite Better Auth store", () => {
         grant_type: "client_credentials",
         client_id: "mcp-test-client",
         client_secret: clientSecret,
-        scope: "api.artifact.write",
+        scope: "mcp",
         resource: "http://localhost:5173/mcp",
       }),
     });
@@ -391,10 +397,10 @@ describe("SQLite Better Auth store", () => {
     ).run("session-1", expiresAt, "browser-token", now.getTime(), now.getTime(), "Dahlia", "user-1");
     database.prepare(
       'INSERT INTO "oauth_refresh_token" ("id", "token", "client_id", "session_id", "user_id", "expires_at", "created_at", "scopes") VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-    ).run("refresh-1", "refresh-token", "dahlia-macos", "session-1", "user-1", expiresAt, now.getTime(), "[\"api.model.read\",\"api.model.request\"]");
+    ).run("refresh-1", "refresh-token", "dahlia-macos", "session-1", "user-1", expiresAt, now.getTime(), "[\"all-apis\"]");
     database.prepare(
       'INSERT INTO "oauth_access_token" ("id", "token", "client_id", "session_id", "user_id", "refresh_id", "expires_at", "created_at", "scopes") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-    ).run("access-1", "access-token", "dahlia-macos", "session-1", "user-1", "refresh-1", expiresAt, now.getTime(), "[\"api.model.read\",\"api.model.request\"]");
+    ).run("access-1", "access-token", "dahlia-macos", "session-1", "user-1", "refresh-1", expiresAt, now.getTime(), "[\"all-apis\"]");
 
     expect(await store.listDahliaSessions("user-1")).toMatchObject([
       { id: "refresh-1", sessionId: "session-1", userAgent: "Dahlia" },

@@ -20,8 +20,10 @@ import type {
   SyncManifest,
   SyncScreenshotRecord,
   SyncSearchQuery,
+  SyncTransaction,
   VaultPrincipalType,
 } from "./types";
+import { decodeSyncCursor, encodeSyncCursor } from "./store";
 
 const uuidSchema = z.uuid().transform((value) => value.toLowerCase());
 const generationSchema = z.string().regex(/^[0-9a-f]{64}$/);
@@ -99,9 +101,43 @@ const TRANSCRIPT_READ_PAGE_SIZE = 10_000;
 const meetingCursorSchema = z.tuple([dateSchema, uuidSchema]);
 const screenshotCursorSchema = z.tuple([dateSchema, uuidSchema]);
 const transcriptCursorSchema = z.tuple([dateSchema, uuidSchema]);
+const uuidV7Schema = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+const transactionOperationSchema = z.object({
+  id: uuidV7Schema,
+  entity: z.enum(["vault", "project", "meeting", "summary", "transcript", "screenshot"]),
+  action: z.enum(["create", "update", "delete", "upsert", "replace", "reset", "deleteHierarchy"]),
+  entityId: uuidSchema,
+  baseRevision: z.number().int().nonnegative().nullable(),
+  data: z.record(z.string(), z.unknown()).nullable(),
+}).strict();
+const transactionSchema = z.object({
+  schemaVersion: z.literal(1),
+  id: uuidV7Schema,
+  vaultId: uuidSchema,
+  createdAt: dateSchema,
+  operations: z.array(transactionOperationSchema).min(1).max(10_000),
+}).strict();
+const transactionDataSchemas = {
+  "vault:create": z.object({ name: z.string().trim().min(1).max(500), createdAt: dateSchema }).strict(),
+  "vault:update": z.object({ name: z.string().trim().min(1).max(500), projectIds: z.array(uuidSchema).max(10_000).optional() }).strict(),
+  "vault:reset": z.object({}).strict(),
+  "project:create": z.object({ parentProjectId: uuidSchema.nullable(), name: projectNameSchema, description: z.string().max(20_000).default(""), projectType: projectTypeSchema.nullable(), createdAt: dateSchema }).strict(),
+  "project:update": z.object({ parentProjectId: uuidSchema.nullable(), name: projectNameSchema, description: z.string().max(20_000).default(""), projectType: projectTypeSchema.nullable() }).strict(),
+  "project:deleteHierarchy": z.object({}).strict(),
+  "meeting:create": z.object({ projectId: uuidSchema.nullable(), name: z.string().max(500), description: z.string().max(20_000).default(""), status: z.string().max(100), duration: z.number().finite().nonnegative().nullable(), recordingStartedAt: nullableDateSchema, createdAt: dateSchema, updatedAt: dateSchema, screenshotIds: z.array(uuidSchema).max(10_000).optional() }).strict(),
+  "meeting:update": z.object({ projectId: uuidSchema.nullable(), name: z.string().max(500), description: z.string().max(20_000).default(""), status: z.string().max(100), duration: z.number().finite().nonnegative().nullable(), recordingStartedAt: nullableDateSchema, updatedAt: dateSchema, screenshotIds: z.array(uuidSchema).max(10_000).optional() }).strict(),
+  "meeting:delete": z.object({}).strict(),
+  "summary:upsert": z.object({ title: z.string().max(500), document: z.string().max(8 * 1024 * 1024), createdAt: dateSchema }).strict(),
+  "summary:delete": z.object({}).strict(),
+  "transcript:replace": z.object({ generation: generationSchema.nullable(), baseGeneration: generationSchema.nullable() }).strict(),
+  "screenshot:upsert": z.object({ meetingId: uuidSchema, capturedAt: dateSchema, ocrText: z.string().nullable(), caption: z.string().nullable() }).strict(),
+  "screenshot:delete": z.object({}).strict(),
+} as const;
+const SYNC_CHANGE_PAGE_SIZE = 1;
 
 export class MeetingSyncService {
   private readonly activeQueryEmbeddingUsers = new Set<string>();
+  private storageDeleteDrain?: Promise<void>;
 
   constructor(
     private readonly store: MeetingSyncStore,
@@ -127,6 +163,129 @@ export class MeetingSyncService {
     const parsed = permissionPrincipalSchema.safeParse(value);
     if (!parsed.success) throw new ArtifactRequestError(400, "invalid_sync_share_target");
     return parsed.data;
+  }
+
+  async commitTransaction(identity: Identity, body: unknown) {
+    this.requireWritableIdentity(identity);
+    const parsed = transactionSchema.safeParse(body);
+    if (!parsed.success || new Set(parsed.data.operations.map(({ id }) => id)).size !== parsed.data.operations.length) {
+      throw new ArtifactRequestError(400, "invalid_sync_transaction");
+    }
+    const operations: SyncTransaction["operations"] = [];
+    for (const operation of parsed.data.operations) {
+      const key = `${operation.entity}:${operation.action}` as keyof typeof transactionDataSchemas;
+      const schema = transactionDataSchemas[key];
+      const data = schema?.safeParse(operation.data ?? {});
+      if (!data?.success || (operation.entity === "vault" && operation.entityId !== parsed.data.vaultId)) {
+        throw new ArtifactRequestError(400, "invalid_sync_operation");
+      }
+      operations.push({ ...operation, data: data.data });
+    }
+    const normalized = { ...parsed.data, operations };
+    const requestHash = await sha256(canonicalJson(normalized));
+    const response = await this.store.withIdentity(identity, async (scoped) => {
+      const meetings = new Map<string, Awaited<ReturnType<IdentitySyncStore["getMeeting"]>>>();
+      const prepared = [] as SyncTransaction["operations"];
+      for (const operation of operations) {
+        const data = { ...(operation.data ?? {}) };
+        if ((operation.entity === "meeting" && operation.action !== "delete") || operation.entity === "summary") {
+          let meeting = meetings.get(operation.entityId);
+          if (meeting === undefined) {
+            meeting = operation.entity === "meeting" && operation.action === "create"
+              ? null
+              : await scoped.getMeeting(parsed.data.vaultId, operation.entityId);
+          }
+          const name = operation.entity === "meeting" && typeof data.name === "string" ? data.name : meeting?.name ?? "";
+          const description = operation.entity === "meeting" && typeof data.description === "string"
+            ? data.description
+            : meeting?.description ?? "";
+          const summaryDocument = operation.entity === "summary"
+            ? operation.action === "upsert" ? String(data.document) : null
+            : meeting?.summaryDocument ?? null;
+          const summaryText = summarySearchableText(summaryDocument);
+          const embeddingText = summaryText.trim() || null;
+          Object.assign(data, {
+            searchText: createSearchText(this.tokenizer, [name, description, summaryText]),
+            embeddingText,
+            embeddingContentHash: await embeddingContentHash(embeddingText),
+          });
+          meetings.set(operation.entityId, {
+            ...(meeting ?? {}),
+            meetingId: operation.entityId,
+            vaultId: parsed.data.vaultId,
+            projectId: operation.entity === "meeting" ? data.projectId as string | null : meeting?.projectId ?? null,
+            name,
+            description,
+            status: operation.entity === "meeting" ? String(data.status) : meeting?.status ?? "",
+            duration: operation.entity === "meeting" ? data.duration as number | null : meeting?.duration ?? null,
+            recordingStartedAt: operation.entity === "meeting" ? data.recordingStartedAt as Date | null : meeting?.recordingStartedAt ?? null,
+            createdAt: operation.entity === "meeting" && operation.action === "create" ? data.createdAt as Date : meeting?.createdAt ?? parsed.data.createdAt,
+            updatedAt: operation.entity === "meeting" ? data.updatedAt as Date : meeting?.updatedAt ?? parsed.data.createdAt,
+            summaryTitle: operation.entity === "summary" && operation.action === "upsert" ? String(data.title) : operation.action === "delete" ? null : meeting?.summaryTitle ?? null,
+            summaryDocument,
+            summaryCreatedAt: operation.entity === "summary" && operation.action === "upsert" ? data.createdAt as Date : operation.action === "delete" ? null : meeting?.summaryCreatedAt ?? null,
+            activeTranscriptGeneration: meeting?.activeTranscriptGeneration ?? null,
+          });
+        } else if (operation.entity === "screenshot" && operation.action === "upsert") {
+          const embeddingText = [data.ocrText, data.caption]
+            .filter((value): value is string => typeof value === "string" && value.trim().length > 0).join("\n") || null;
+          Object.assign(data, {
+            searchText: createSearchText(this.tokenizer, [data.ocrText as string | null, data.caption as string | null]),
+            embeddingText,
+            embeddingContentHash: await embeddingContentHash(embeddingText),
+          });
+        }
+        prepared.push({ ...operation, data });
+      }
+      return scoped.commitTransaction({ ...normalized, operations: prepared, requestHash });
+    });
+    this.scheduleStorageDeletes();
+    return response;
+  }
+
+  private scheduleStorageDeletes(): void {
+    this.storageDeleteDrain ??= this.drainStorageDeletes()
+      .catch(() => undefined)
+      .finally(() => { this.storageDeleteDrain = undefined; });
+  }
+
+  private async drainStorageDeletes(): Promise<void> {
+    if (!this.storage) return;
+    while (true) {
+      const storageKeys = await this.store.claimStorageDeletes(SCREENSHOT_DELETE_BATCH_SIZE);
+      if (storageKeys.length === 0) return;
+      for (const storageKey of storageKeys) {
+        try {
+          await this.storageCall(() => this.storage!.delete(storageKey));
+          await this.store.completeStorageDelete(storageKey);
+        } catch (error) {
+          await this.store.failStorageDelete(
+            storageKey,
+            error instanceof ObjectStorageError ? error.code : "artifact_storage_unavailable",
+          );
+        }
+      }
+    }
+  }
+
+  async listChanges(identity: Identity, vaultId: string, cursor?: string) {
+    const after = cursor ? decodeSyncCursor(cursor) : 0;
+    const rows = await this.store.withIdentity(identity, (scoped) => scoped.listChanges(
+      vaultId,
+      after,
+      SYNC_CHANGE_PAGE_SIZE + 1,
+    ));
+    const items = rows.slice(0, SYNC_CHANGE_PAGE_SIZE);
+    const last = items.at(-1);
+    return {
+      items,
+      cursor: encodeSyncCursor(last?.sequence ?? after),
+      hasMore: rows.length > SYNC_CHANGE_PAGE_SIZE,
+    };
+  }
+
+  latestCursor(identity: Identity) {
+    return this.store.withIdentity(identity, async (scoped) => encodeSyncCursor(await scoped.latestChangeSequence()));
   }
 
   async commitVaultManifest(identity: Identity, vaultId: string, body: unknown): Promise<void> {
@@ -243,6 +402,7 @@ export class MeetingSyncService {
         contentLength: upload.contentLength,
         ocrText: null,
         caption: null,
+        revision: 1,
       };
       return await scoped.createScreenshot(record) ? { existing: record, created: true } : null;
     });
@@ -450,6 +610,7 @@ export class MeetingSyncService {
     principalType: VaultPrincipalType,
     principalId: string,
   ): Promise<void> {
+    this.requireWritableIdentity(identity);
     if (!await this.store.withIdentity(
       identity,
       (scoped) => scoped.putMemberPermission(vaultId, principalType, principalId),
@@ -464,6 +625,7 @@ export class MeetingSyncService {
     principalType: VaultPrincipalType,
     principalId: string,
   ): Promise<void> {
+    this.requireWritableIdentity(identity);
     if (!await this.store.withIdentity(
       identity,
       (scoped) => scoped.deleteMemberPermission(vaultId, principalType, principalId),
@@ -490,6 +652,10 @@ export class MeetingSyncService {
     if (screenshots === null) throw new ArtifactRequestError(404, "vault_not_found");
     await this.deleteScreenshots(identity, screenshots);
     return this.store.withIdentity(identity, (scoped) => scoped.finishVaultDeletion(vaultId));
+  }
+
+  private requireWritableIdentity(identity: Identity): void {
+    if (identity.impersonated) throw new ArtifactRequestError(403, "impersonated_session_read_only");
   }
 
   private async deleteScreenshots(identity: Identity, screenshots: SyncScreenshotRecord[]): Promise<void> {
@@ -607,5 +773,20 @@ function validProjectHierarchy(projects: z.infer<typeof vaultManifestSchema>["pr
 async function embeddingContentHash(text: string | null): Promise<string | null> {
   if (!text) return null;
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  if (value instanceof Date) return JSON.stringify(value.toISOString());
+  if (value && typeof value === "object") {
+    return `{${Object.entries(value).sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, child]) => `${JSON.stringify(key)}:${canonicalJson(child)}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+async function sha256(value: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }

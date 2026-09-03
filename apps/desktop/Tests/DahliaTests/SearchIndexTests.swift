@@ -806,8 +806,23 @@ import GRDB
             let segment = Self.makeSegment(meetingID: meeting.id, text: "移行前の文字起こし", offset: 10)
             try queue.write { db in
                 try insertLegacyVault(vault, in: db)
-                try project.insert(db)
-                try meeting.insert(db)
+                try db.execute(
+                    sql: """
+                    INSERT INTO projects (
+                        id, vaultId, parentProjectId, name, nameKey, createdAt,
+                        description, projectType, revision
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+                    INSERT INTO meetings (id, vaultId, projectId, name, status, duration, createdAt, updatedAt)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    arguments: [
+                        project.id, project.vaultId, project.parentProjectId, project.name,
+                        project.nameKey, project.createdAt, project.description,
+                        project.projectType, project.revision,
+                        meeting.id, meeting.vaultId, meeting.projectId, meeting.name,
+                        meeting.status, meeting.duration, meeting.createdAt, meeting.updatedAt,
+                    ]
+                )
                 try db.execute(
                     sql: """
                     INSERT INTO transcript_segments (
@@ -849,13 +864,19 @@ import GRDB
             let meeting = Self.makeMeeting(vaultID: vault.id)
             try await queue.write { db in
                 try insertLegacyVault(vault, in: db)
-                try meeting.insert(db)
-                try SummaryRecord(
-                    meetingId: meeting.id,
-                    title: "Preserved",
-                    document: Self.summaryDocument(body: "移行後検索対象").databaseJSONString(),
-                    createdAt: .now
-                ).insert(db)
+                try db.execute(
+                    sql: """
+                    INSERT INTO meetings (id, vaultId, projectId, name, status, duration, createdAt, updatedAt)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+                    INSERT INTO summaries (meetingId, title, document, createdAt)
+                    VALUES (?, 'Preserved', ?, ?)
+                    """,
+                    arguments: [
+                        meeting.id, meeting.vaultId, meeting.projectId, meeting.name,
+                        meeting.status, meeting.duration, meeting.createdAt, meeting.updatedAt,
+                        meeting.id, Self.summaryDocument(body: "移行後検索対象").databaseJSONString(), Date.now,
+                    ]
+                )
                 try db.execute(
                     sql: """
                     INSERT INTO search_documents(

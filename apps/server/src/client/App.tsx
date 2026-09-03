@@ -98,6 +98,7 @@ interface SyncedVaultInfo {
   role: "owner" | "member";
   createdAt: string;
   updatedAt: string;
+  revision: number;
 }
 
 interface OrganizationInfo {
@@ -154,6 +155,9 @@ interface SyncedMeetingInfo {
   updatedAt: string;
   summaryTitle?: string;
   summaryDocument?: string;
+  revision: number;
+  summaryRevision: number;
+  transcriptRevision: number;
 }
 
 interface SyncedMeetingPage {
@@ -221,6 +225,56 @@ async function json<T>(url: string, init?: RequestInit): Promise<T> {
     );
   }
   return (response.status === 204 ? undefined : await response.json()) as T;
+}
+
+type SyncOperation = {
+  entity: "vault" | "project" | "meeting" | "summary";
+  action: "create" | "update" | "delete" | "upsert" | "deleteHierarchy";
+  entityId: string;
+  baseRevision: number | null;
+  data: Record<string, unknown>;
+};
+
+async function commitSyncTransaction(vaultId: string, operations: SyncOperation[]) {
+  const transactionId = uuidV7();
+  return json("/api/v1/transactions", {
+    method: "POST",
+    body: JSON.stringify({
+      schemaVersion: 1,
+      id: transactionId,
+      vaultId,
+      createdAt: new Date().toISOString(),
+      operations: operations.map((operation) => ({ ...operation, id: uuidV7() })),
+    }),
+  });
+}
+
+function uuidV7(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  let timestamp = Date.now();
+  for (let index = 5; index >= 0; index -= 1) {
+    bytes[index] = timestamp & 0xff;
+    timestamp = Math.floor(timestamp / 256);
+  }
+  bytes[6] = (bytes[6]! & 0x0f) | 0x70;
+  bytes[8] = (bytes[8]! & 0x3f) | 0x80;
+  const value = [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  return `${value.slice(0, 8)}-${value.slice(8, 12)}-${value.slice(12, 16)}-${value.slice(16, 20)}-${value.slice(20)}`;
+}
+
+function summaryDocument(title: string, text: string): string {
+  return JSON.stringify({
+    schemaVersion: 3,
+    title,
+    description: "",
+    sections: [{
+      id: uuidV7(),
+      heading: "",
+      blocks: [{ id: uuidV7(), type: "paragraph", content: { text } }],
+    }],
+    tags: [],
+    actionItems: [],
+  });
 }
 
 async function beginSignIn(callbackURL: string): Promise<string | undefined> {
@@ -510,11 +564,29 @@ function Vaults() {
       .then(({ items }) => setVaults(items))
       .catch((caught: Error) => setError(caught.message));
   }, []);
+  const createVault = async () => {
+    const name = window.prompt("Vault name")?.trim();
+    if (!name) return;
+    const id = uuidV7();
+    try {
+      await commitSyncTransaction(id, [{
+        entity: "vault",
+        action: "create",
+        entityId: id,
+        baseRevision: null,
+        data: { name, createdAt: new Date().toISOString() },
+      }]);
+      window.location.assign(`/vaults/${id}`);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not create Vault");
+    }
+  };
   return (
     <>
       <PageHeader title="Vaults" />
       <section className="section-block">
         <h2 className="section-label">Synchronized Vaults</h2>
+        <button className="secondary" onClick={() => void createVault()}>New Vault</button>
         <div className="panel artifact-list">
           {!vaults && !error && <p className="muted">Loading Vaults…</p>}
           {vaults?.length === 0 && <div className="empty-state"><strong>No synchronized Vaults</strong></div>}
@@ -681,11 +753,49 @@ function VaultMeetings({ session, vaultId }: { session: SessionInfo; vaultId: st
     })
       .catch((caught: Error) => setError(caught.message));
   }, [vaultId]);
+  const renameVault = async () => {
+    if (!vault) return;
+    const name = window.prompt("Vault name", vault.name)?.trim();
+    if (!name || name === vault.name) return;
+    try {
+      await commitSyncTransaction(vaultId, [{
+        entity: "vault", action: "update", entityId: vaultId,
+        baseRevision: vault.revision, data: { name },
+      }]);
+      setVault({ ...vault, name, revision: vault.revision + 1 });
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not rename Vault");
+    }
+  };
+  const createProject = async () => {
+    const name = window.prompt("Project name")?.trim();
+    if (!name) return;
+    const id = uuidV7();
+    try {
+      await commitSyncTransaction(vaultId, [{
+        entity: "project", action: "create", entityId: id, baseRevision: null,
+        data: {
+          parentProjectId: null,
+          name,
+          description: "",
+          projectType: "undefined",
+          createdAt: new Date().toISOString(),
+        },
+      }]);
+      window.location.assign(`/vaults/${vaultId}/projects/${id}`);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not create Project");
+    }
+  };
   return (
     <>
       <PageHeader title={vault?.name ?? "Vault"} />
       <section className="section-block">
         <a className="secondary viewer-back" href="/vaults">All Vaults</a>
+        {vault?.role === "owner" && <>
+          <button className="secondary" onClick={() => void renameVault()}>Rename Vault</button>
+          <button className="secondary" onClick={() => void createProject()}>New Project</button>
+        </>}
         {projects.length > 0 && (
           <select aria-label="Filter by Project" value={projectId} onChange={(event) => setProjectId(event.target.value)}>
             <option value="">All Projects</option>
@@ -741,6 +851,7 @@ function VaultMeetings({ session, vaultId }: { session: SessionInfo; vaultId: st
 
 function SyncedProject({ vaultId, projectId }: { vaultId: string; projectId: string }) {
   const [project, setProject] = useState<SyncedProjectInfo>();
+  const [vault, setVault] = useState<SyncedVaultInfo>();
   const [meetings, setMeetings] = useState<SyncedMeetingInfo[]>([]);
   const [nextCursor, setNextCursor] = useState<string>();
   const [loadingMore, setLoadingMore] = useState(false);
@@ -761,16 +872,54 @@ function SyncedProject({ vaultId, projectId }: { vaultId: string; projectId: str
   }, [projectId, vaultId]);
   useEffect(() => {
     const controller = new AbortController();
-    void json<SyncedProjectInfo>(`/api/v1/vaults/${vaultId}/projects/${projectId}`, { signal: controller.signal })
-      .then(setProject).catch((caught: Error) => {
+    void Promise.all([
+      json<SyncedProjectInfo>(`/api/v1/vaults/${vaultId}/projects/${projectId}`, { signal: controller.signal }),
+      json<SyncedVaultInfo>(`/api/v1/vaults/${vaultId}`, { signal: controller.signal }),
+    ]).then(([projectValue, vaultValue]) => { setProject(projectValue); setVault(vaultValue); }).catch((caught: Error) => {
       if (caught.name !== "AbortError") setError(caught.message);
     });
     void loadMeetings(undefined, controller.signal);
     return () => controller.abort();
   }, [loadMeetings, projectId, vaultId]);
+  const editProject = async () => {
+    if (!project) return;
+    const name = window.prompt("Project name", project.name)?.trim();
+    if (!name) return;
+    const description = window.prompt("Project description", project.description) ?? project.description;
+    try {
+      await commitSyncTransaction(vaultId, [{
+        entity: "project", action: "update", entityId: projectId, baseRevision: project.revision,
+        data: {
+          parentProjectId: project.parentProjectId ?? null,
+          name,
+          description,
+          projectType: project.parentProjectId ? null : project.projectType ?? "undefined",
+        },
+      }]);
+      window.location.reload();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not update Project");
+    }
+  };
+  const deleteProject = async () => {
+    if (!project || !window.confirm(`Delete ${project.path} and its child Projects? Meetings will be unassigned.`)) return;
+    try {
+      await commitSyncTransaction(vaultId, [{
+        entity: "project", action: "deleteHierarchy", entityId: projectId,
+        baseRevision: project.revision, data: {},
+      }]);
+      window.location.assign(`/vaults/${vaultId}`);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not delete Project");
+    }
+  };
   return <>
     <PageHeader title={project?.path ?? "Project"} />
     <a className="secondary viewer-back" href={`/vaults/${vaultId}`}>Back to Vault</a>
+    {vault?.role === "owner" && <>
+      <button className="secondary" onClick={() => void editProject()}>Edit Project</button>
+      <button className="secondary" onClick={() => void deleteProject()}>Delete Project</button>
+    </>}
     {error && <p className="error">{error}</p>}
     {project && <section className="section-block"><div className="panel meeting-content">
       {project.description && <p>{project.description}</p>}
@@ -793,6 +942,7 @@ function SyncedProject({ vaultId, projectId }: { vaultId: string; projectId: str
 function SyncedMeeting({ vaultId, meetingId }: { vaultId: string; meetingId: string }) {
   const base = `/api/v1/vaults/${vaultId}/meetings/${meetingId}`;
   const [meeting, setMeeting] = useState<SyncedMeetingInfo>();
+  const [vault, setVault] = useState<SyncedVaultInfo>();
   const [transcript, setTranscript] = useState<SyncedTranscriptSegmentInfo[]>();
   const [screenshots, setScreenshots] = useState<SyncedScreenshotInfo[]>();
   const [screenshotCursor, setScreenshotCursor] = useState<string>();
@@ -803,10 +953,12 @@ function SyncedMeeting({ vaultId, meetingId }: { vaultId: string; meetingId: str
     const controller = new AbortController();
     void Promise.all([
       json<SyncedMeetingInfo>(base, { signal: controller.signal }),
+      json<SyncedVaultInfo>(`/api/v1/vaults/${vaultId}`, { signal: controller.signal }),
       json<{ items: SyncedTranscriptSegmentInfo[] }>(`${base}/transcript`, { signal: controller.signal }),
       json<SyncedScreenshotPage>(`${base}/screenshots`, { signal: controller.signal }),
-    ]).then(([meetingValue, transcriptPage, screenshotPage]) => {
+    ]).then(([meetingValue, vaultValue, transcriptPage, screenshotPage]) => {
       setMeeting(meetingValue);
+      setVault(vaultValue);
       setTranscript(transcriptPage.items);
       setScreenshots(screenshotPage.items);
       setScreenshotCursor(screenshotPage.nextCursor);
@@ -815,6 +967,57 @@ function SyncedMeeting({ vaultId, meetingId }: { vaultId: string; meetingId: str
     });
     return () => controller.abort();
   }, [base]);
+  const editMeeting = async () => {
+    if (!meeting) return;
+    const name = window.prompt("Meeting name", meeting.name)?.trim();
+    if (!name) return;
+    const description = window.prompt("Meeting description", meeting.description) ?? meeting.description;
+    try {
+      await commitSyncTransaction(vaultId, [{
+        entity: "meeting", action: "update", entityId: meetingId, baseRevision: meeting.revision,
+        data: {
+          projectId: meeting.projectId ?? null,
+          name,
+          description,
+          status: meeting.status,
+          duration: meeting.duration ?? null,
+          recordingStartedAt: meeting.recordingStartedAt ?? null,
+          updatedAt: new Date().toISOString(),
+        },
+      }]);
+      window.location.reload();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not update Meeting");
+    }
+  };
+  const editSummary = async () => {
+    if (!meeting) return;
+    const title = window.prompt("Summary title", meeting.summaryTitle ?? meeting.name)?.trim();
+    if (!title) return;
+    const text = window.prompt("Summary", summaryText) ?? summaryText;
+    try {
+      await commitSyncTransaction(vaultId, [{
+        entity: "summary", action: "upsert", entityId: meetingId,
+        baseRevision: meeting.summaryRevision,
+        data: { title, document: summaryDocument(title, text), createdAt: new Date().toISOString() },
+      }]);
+      window.location.reload();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not update Summary");
+    }
+  };
+  const deleteSummary = async () => {
+    if (!meeting?.summaryDocument || !window.confirm("Delete this Summary?")) return;
+    try {
+      await commitSyncTransaction(vaultId, [{
+        entity: "summary", action: "delete", entityId: meetingId,
+        baseRevision: meeting.summaryRevision, data: {},
+      }]);
+      window.location.reload();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not delete Summary");
+    }
+  };
   const loadMoreScreenshots = async () => {
     if (!screenshotCursor) return;
     setLoadingScreenshots(true);
@@ -835,6 +1038,11 @@ function SyncedMeeting({ vaultId, meetingId }: { vaultId: string; meetingId: str
     <>
       <PageHeader title={meeting?.name ?? "Meeting"} />
       <a className="secondary viewer-back" href={`/vaults/${vaultId}`}>All meetings</a>
+      {vault?.role === "owner" && <>
+        <button className="secondary" onClick={() => void editMeeting()}>Edit Meeting</button>
+        <button className="secondary" onClick={() => void editSummary()}>{summaryText ? "Edit Summary" : "New Summary"}</button>
+        {summaryText && <button className="secondary" onClick={() => void deleteSummary()}>Delete Summary</button>}
+      </>}
       {error && <p className="error">{error}</p>}
       {!meeting && !error && <p className="muted">Loading meeting…</p>}
       {summaryText && (
@@ -1662,6 +1870,18 @@ export function App({ brand = defaultBrand, extensions = [] }: AppProps) {
         setSessionError(caught instanceof Error ? caught.message : "Could not load your account");
       });
   }, [path, sessionAttempt, viewerId]);
+
+  useEffect(() => {
+    if (!session || !path.startsWith("/vaults")) return;
+    const checkpoint = sessionStorage.getItem("dahlia-sync-cursor");
+    const source = new EventSource(`/api/v1/events${checkpoint ? `?cursor=${encodeURIComponent(checkpoint)}` : ""}`);
+    source.addEventListener("invalidation", (event) => {
+      const cursor = (JSON.parse((event as MessageEvent<string>).data) as { cursor: string }).cursor;
+      sessionStorage.setItem("dahlia-sync-cursor", cursor);
+      window.location.reload();
+    });
+    return () => source.close();
+  }, [path, session]);
 
   if (path === "/sign-in") return <SignIn brand={brand} />;
   if (path === "/oauth/consent") return <Consent brand={brand} />;
