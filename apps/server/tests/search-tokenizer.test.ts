@@ -10,7 +10,7 @@ import {
   SEARCH_ANALYZER_CONFIG_HASH,
   SearchQueryError,
 } from "../src/search/tokenizer";
-import { summarySearchableText } from "../src/search/summary";
+import { summaryDisplayText, summarySearchableText } from "../src/search/summary";
 
 describe("server search tokenization", () => {
   it("keeps the Node analyzer aligned with the desktop configuration and Japanese golden cases", () => {
@@ -66,6 +66,10 @@ describe("summary search text", () => {
     expect(text).not.toContain("01:23");
     expect(text).not.toContain("hidden tag");
     expect(text).not.toContain("hidden action");
+    expect(summaryDisplayText(JSON.stringify({
+      description: "overview",
+      sections: [{ heading: "Decisions", blocks: [{ type: "paragraph", content: { text: "Visible paragraph" } }] }],
+    }))).toBe("overview\nDecisions\nVisible paragraph");
     expect(summarySearchableText("not-json")).toBe("");
   });
 });

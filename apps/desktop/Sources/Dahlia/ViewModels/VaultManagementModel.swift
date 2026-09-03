@@ -127,6 +127,7 @@ final class VaultManagementModel {
 
     func removeVault(_ vault: VaultRecord, currentVaultId: UUID?) async -> Bool {
         guard vault.id != currentVaultId else { return false }
+        guard !vault.requiresServerDeletionBeforeRemoval else { return false }
         guard !isRemovingVault else { return false }
         guard let repository else {
             presentError(L10n.vaultRemoveFailed, source: "removeVault")

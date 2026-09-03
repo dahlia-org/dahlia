@@ -155,6 +155,34 @@
         }
 
         @Test
+        func syncedVaultMustDeleteServerCopyBeforeLocalRemoval() async throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            let repository = MeetingRepository(dbQueue: database.dbQueue)
+            let connection = DahliaAccountConnectionRecord(
+                id: .v7(),
+                origin: "https://server.example.com",
+                clientID: "desktop-client",
+                createdAt: .now
+            )
+            try await repository.insertDahliaAccountConnection(connection)
+            var vault = VaultRecord(
+                id: .v7(),
+                path: "/tmp/synced-vault",
+                name: "Synced",
+                createdAt: .now,
+                lastOpenedAt: .now
+            )
+            vault.accountConnectionId = connection.id
+            vault.syncConfirmedConnectionId = connection.id
+            try repository.insertVault(vault)
+
+            await #expect(throws: VaultDeletionError.self) {
+                try await repository.deleteVaultSafely(id: vault.id)
+            }
+            #expect(try repository.fetchAllVaults().map(\.id) == [vault.id])
+        }
+
+        @Test
         func successfulSyncIsNotRequeuedUntilTheMeetingChanges() async throws {
             let (database, _, meeting) = try await syncedMeetingDatabase()
             let job = try #require(try await MeetingSyncQueue.claim(dbQueue: database.dbQueue))

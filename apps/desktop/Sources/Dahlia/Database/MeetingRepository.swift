@@ -222,6 +222,7 @@ final class MeetingRepository {
 
     /// 保管庫を登録解除する（関連プロジェクト・ミーティングもカスケード削除）。
     nonisolated func deleteVault(id: UUID) throws {
+        try ensureVaultCanBeRemoved(id: id)
         let meetingIds = try meetingIds(vaultId: id)
         try ensureNoLiveSegmentedAudio(meetingIds: Set(meetingIds))
         let audioTargets = try BatchAudioCleanupService.deletionTargets(vaultId: id, dbQueue: dbQueue)
@@ -252,12 +253,21 @@ final class MeetingRepository {
         id: UUID,
         managedRootURL: URL = BatchAudioStorage.managedRootURL
     ) async throws {
+        try ensureVaultCanBeRemoved(id: id)
         let ids = try meetingIds(vaultId: id)
         try await prepareSegmentedAudioForDeletion(
             meetingIds: Set(ids),
             managedRootURL: managedRootURL
         )
         try deleteVault(id: id)
+    }
+
+    private nonisolated func ensureVaultCanBeRemoved(id: UUID) throws {
+        if try dbQueue.read({ db in
+            try VaultRecord.fetchOne(db, key: id)?.requiresServerDeletionBeforeRemoval == true
+        }) {
+            throw VaultDeletionError.serverCopyExists
+        }
     }
 
     /// UI をブロックせず、保管庫の最終オープン日時を更新する。
@@ -878,6 +888,10 @@ final class MeetingRepository {
             in: db
         )
     }
+}
+
+enum VaultDeletionError: Error {
+    case serverCopyExists
 }
 
 extension MeetingRepository {

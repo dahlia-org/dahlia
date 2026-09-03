@@ -35,3 +35,9 @@ struct VaultRecord: Codable, FetchableRecord, PersistableRecord, Identifiable, E
         URL(fileURLWithPath: path, isDirectory: true)
     }
 }
+
+extension VaultRecord {
+    var requiresServerDeletionBeforeRemoval: Bool {
+        syncEnabled || syncConfirmedConnectionId != nil || syncDeletionMode != nil
+    }
+}

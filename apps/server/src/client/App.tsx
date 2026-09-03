@@ -10,6 +10,7 @@ import {
 } from "./routes";
 import { filterAndSortModels, type ModelAliasInfo } from "./model-list";
 import { UPSTREAM_MODEL_MAX_LENGTH } from "../ai-gateway/model-alias";
+import { summaryDisplayText } from "../search/summary";
 
 export interface SessionInfo {
   capabilities: DashboardCapabilities;
@@ -797,6 +798,7 @@ function SyncedMeeting({ vaultId, meetingId }: { vaultId: string; meetingId: str
   const [screenshotCursor, setScreenshotCursor] = useState<string>();
   const [loadingScreenshots, setLoadingScreenshots] = useState(false);
   const [error, setError] = useState<string>();
+  const summaryText = summaryDisplayText(meeting?.summaryDocument ?? null);
   useEffect(() => {
     const controller = new AbortController();
     void Promise.all([
@@ -835,10 +837,10 @@ function SyncedMeeting({ vaultId, meetingId }: { vaultId: string; meetingId: str
       <a className="secondary viewer-back" href={`/vaults/${vaultId}`}>All meetings</a>
       {error && <p className="error">{error}</p>}
       {!meeting && !error && <p className="muted">Loading meeting…</p>}
-      {meeting?.summaryDocument && (
+      {summaryText && (
         <section className="section-block">
-          <h2 className="section-label">{meeting.summaryTitle || "Summary"}</h2>
-          <div className="panel meeting-content"><pre>{meeting.summaryDocument}</pre></div>
+          <h2 className="section-label">{meeting?.summaryTitle || "Summary"}</h2>
+          <div className="panel meeting-content"><pre>{summaryText}</pre></div>
         </section>
       )}
       {transcript && (

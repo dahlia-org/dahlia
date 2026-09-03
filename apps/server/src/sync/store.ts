@@ -704,9 +704,18 @@ function createIdentityStore(
       const activeScreenshotIds = new Set(screenshotIds);
       const obsolete = existingScreenshots.filter(({ screenshotId }) => !activeScreenshotIds.has(screenshotId));
       if (obsolete.length > 0) {
+        const obsoleteIds = obsolete.map(({ screenshotId }) => screenshotId);
         await db.update(schema.syncedScreenshot).set({ active: false, updatedAt: now }).where(and(
           eq(schema.syncedScreenshot.vaultId, manifest.vaultId),
-          inArray(schema.syncedScreenshot.screenshotId, obsolete.map(({ screenshotId }) => screenshotId)),
+          inArray(schema.syncedScreenshot.screenshotId, obsoleteIds),
+        ));
+        await db.delete(schema.searchIndexJob).where(and(
+          eq(schema.searchIndexJob.vaultId, manifest.vaultId),
+          inArray(schema.searchIndexJob.documentId, obsoleteIds),
+        ));
+        await db.delete(schema.searchDocument).where(and(
+          eq(schema.searchDocument.vaultId, manifest.vaultId),
+          inArray(schema.searchDocument.documentId, obsoleteIds),
         ));
       }
       return { committed: true, missingScreenshotContent: false, obsoleteScreenshots: obsolete };

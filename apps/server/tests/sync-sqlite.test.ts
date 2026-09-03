@@ -377,7 +377,15 @@ describe("SQLite meeting sync", () => {
   });
 
   it("hides omitted screenshots before object deletion succeeds", async () => {
-    const { directory, store } = await setup();
+    const directory = mkdtempSync(join(tmpdir(), "dahlia-sync-obsolete-screenshot-"));
+    directories.push(directory);
+    const store = createNodeApplicationStore({
+      ...testConfig(join(directory, "server.sqlite")),
+      searchEmbedding: { model: "embedding-model", dimensions: 32 },
+    });
+    await store.migrate();
+    await store.ensureIdentityUser(owner);
+    await createVault(store, owner, vaultId);
     const local = new LocalObjectStorage(join(directory, "objects"));
     const service = new MeetingSyncService(store.sync, local);
     const bytes = new TextEncoder().encode("png");
@@ -393,7 +401,7 @@ describe("SQLite meeting sync", () => {
     await service.commitManifest(owner, vaultId, meetingId, manifestBody([{
       screenshotId,
       capturedAt: "2026-09-02T00:00:00.000Z",
-      ocrText: null,
+      ocrText: "obsolete confidential text",
       caption: null,
     }]));
     const failingStorage: ObjectStorage = {
@@ -406,6 +414,12 @@ describe("SQLite meeting sync", () => {
 
     await expect(failingService.commitManifest(owner, vaultId, meetingId, manifestBody([])))
       .rejects.toEqual(expect.objectContaining({ status: 502 }));
+    const database = new DatabaseSync(join(directory, "server.sqlite"));
+    expect(database.prepare("SELECT COUNT(*) AS count FROM content_search_documents WHERE document_id = ?")
+      .get(screenshotId)).toEqual({ count: 0 });
+    expect(database.prepare("SELECT COUNT(*) AS count FROM core_search_index_jobs WHERE document_id = ?")
+      .get(screenshotId)).toEqual({ count: 0 });
+    database.close();
     expect((await service.listScreenshots(owner, vaultId, meetingId)).items).toEqual([]);
     await expect(service.readScreenshot(
       owner,

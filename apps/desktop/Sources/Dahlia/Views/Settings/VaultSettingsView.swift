@@ -209,7 +209,7 @@ struct VaultSettingsView: View {
                 }
             }
 
-            if vault.id != currentVault?.id {
+            if vault.id != currentVault?.id, !vault.requiresServerDeletionBeforeRemoval {
                 Button(L10n.removeVault, systemImage: "minus", role: .destructive) {
                     pendingRemoval = vault
                 }

@@ -124,6 +124,8 @@ describe("dashboard navigation", () => {
     expect(source).toContain("/api/auth/organization/list-user-teams?");
     expect(source).not.toContain("/api/auth/organization/list-team-members?");
     expect(source).toContain('team.id !== "external-default"');
+    expect(source).toContain("summaryDisplayText(meeting?.summaryDocument ?? null)");
+    expect(source).not.toContain("<pre>{meeting.summaryDocument}</pre>");
   });
 
   it("uses immediate accessible switches for Databricks models", () => {

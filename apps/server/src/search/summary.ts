@@ -1,4 +1,8 @@
 export function summarySearchableText(document: string | null): string {
+  return summaryDisplayText(document);
+}
+
+export function summaryDisplayText(document: string | null): string {
   if (!document) return "";
   let value: unknown;
   try {
