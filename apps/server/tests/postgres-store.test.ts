@@ -306,7 +306,10 @@ integration("PostgreSQL application store", () => {
     } finally {
       await store.sync.withIdentity(owner, async (sync) => {
         await sync.deleteMemberPermission(vaultId, "organization", organizationId);
-        await sync.beginVaultDeletion(vaultId, 25);
+        const screenshots = await sync.beginVaultDeletion(vaultId, 25) ?? [];
+        for (const screenshot of screenshots) {
+          await sync.deleteScreenshot(vaultId, screenshot.screenshotId, screenshot.storageKey);
+        }
         await sync.finishVaultDeletion(vaultId);
       }).catch(() => undefined);
       await connection!.db.delete(schema.organization).where(eq(schema.organization.id, organizationId));
