@@ -652,7 +652,9 @@ enum SyncTransactionQueue {
                 arguments: [vaultId]
             ) else { return }
             let sequence: Int64 = first["sequence"]
-            applyConflictRevision(first["serverResponseJSON"], vaultId: vaultId, in: db)
+            let response: String? = first["serverResponseJSON"]
+            let missingEntities = missingConflictEntities(response)
+            applyConflictRevision(response, vaultId: vaultId, in: db)
             let transactionIds = try UUID.fetchAll(
                 db,
                 sql: "SELECT id FROM sync_transactions WHERE vaultId = ? AND sequence >= ? ORDER BY sequence",
@@ -675,11 +677,20 @@ enum SyncTransactionQueue {
                 var attachments: [UUID: SyncScreenshotAttachment] = [:]
                 for row in rows {
                     let oldOperationId: UUID = row["id"]
-                    let operation = SyncOperationDraft(
-                        entity: row["entity"],
-                        action: row["action"],
-                        entityId: row["entityId"],
-                        payloadJSON: (row["payloadJSON"] as String?).map { Data($0.utf8) }
+                    let entity: SyncEntity = row["entity"]
+                    let action: SyncAction = row["action"]
+                    let entityId: UUID = row["entityId"]
+                    let missing = missingEntities.contains("\(entity.rawValue):\(entityId.uuidString.lowercased())")
+                    if missing, action == .delete { continue }
+                    let rebasedAction: SyncAction = missing && action == .update ? .create : action
+                    let payload = (row["payloadJSON"] as String?).map { Data($0.utf8) }
+                    let operation = try SyncOperationDraft(
+                        entity: entity,
+                        action: rebasedAction,
+                        entityId: entityId,
+                        payloadJSON: rebasedAction == .create
+                            ? createPayload(from: payload, entity: entity, entityId: entityId, in: db)
+                            : payload
                     )
                     operations.append(operation)
                     let patch = try loadPatch(operationId: oldOperationId, in: db)
@@ -691,12 +702,14 @@ enum SyncTransactionQueue {
                         attachments[operation.id] = SyncScreenshotAttachment(mimeType: mime, sha256: sha, bytes: bytes)
                     }
                 }
-                queued.append(.init(
-                    operations: operations,
-                    segments: segments,
-                    deletions: deletions,
-                    attachments: attachments
-                ))
+                if !operations.isEmpty {
+                    queued.append(.init(
+                        operations: operations,
+                        segments: segments,
+                        deletions: deletions,
+                        attachments: attachments
+                    ))
+                }
             }
             try discard(vaultId: vaultId, fromSequence: sequence, in: db)
             for transaction in queued {
@@ -755,6 +768,37 @@ enum SyncTransactionQueue {
                 arguments: [vaultId, entity, id, revision]
             )
         }
+    }
+
+    private static func missingConflictEntities(_ response: String?) -> Set<String> {
+        guard let response, let data = response.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let conflicts = object["conflicts"] as? [[String: Any]] else { return [] }
+        return Set(conflicts.compactMap { conflict in
+            guard conflict["serverRevision"] is NSNull,
+                  let entity = conflict["entity"] as? String,
+                  let id = conflict["id"] as? String else { return nil }
+            return "\(entity):\(id.lowercased())"
+        })
+    }
+
+    private static func createPayload(
+        from payload: Data?,
+        entity: SyncEntity,
+        entityId: UUID,
+        in db: Database
+    ) throws -> Data? {
+        guard let payload,
+              var object = try JSONSerialization.jsonObject(with: payload) as? [String: Any] else { return payload }
+        let createdAt: Date? = switch entity {
+        case .vault: try VaultRecord.fetchOne(db, key: entityId)?.createdAt
+        case .project: try ProjectRecord.fetchOne(db, key: entityId)?.createdAt
+        case .meeting: try MeetingRecord.fetchOne(db, key: entityId)?.createdAt
+        default: nil
+        }
+        guard let createdAt else { return payload }
+        object["createdAt"] = try JSONDecoder().decode(String.self, from: SyncJSON.encoder.encode(createdAt))
+        return try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
     }
 }
 

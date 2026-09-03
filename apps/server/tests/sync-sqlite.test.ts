@@ -49,7 +49,7 @@ describe("SQLite canonical sync", () => {
         action: "create",
         entityId: projectId,
         baseRevision: null,
-        data: projectData("Duplicate"),
+        data: projectData("Straße"),
       },
       {
         id: "019d4a01-0000-7000-8000-000000000005",
@@ -57,10 +57,14 @@ describe("SQLite canonical sync", () => {
         action: "create",
         entityId: "019d3f46-8c00-7000-8000-000000000002",
         baseRevision: null,
-        data: projectData("duplicate"),
+        data: projectData("STRASSE"),
       },
     ]);
-    await expect(commit(store, owner, failed)).rejects.toThrow();
+    await expect(commit(store, owner, failed)).rejects.toMatchObject({
+      status: 422,
+      code: "duplicate_project_name",
+      operationId: "019d4a01-0000-7000-8000-000000000005",
+    });
     expect(await store.sync.withIdentity(owner, (sync) => sync.listProjects(vaultId))).toEqual([]);
 
     await expect(commit(store, owner, { ...create, requestHash: "different-payload" }))

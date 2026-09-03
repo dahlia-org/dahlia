@@ -739,6 +739,27 @@ function createIdentityStore(
     if (child) throw new SyncTransactionError(422, "invalid_project_hierarchy", [], operationId);
   }
 
+  async function assertProjectSiblingName(
+    vaultId: string,
+    projectId: string,
+    parentProjectId: string | null,
+    name: string,
+    operationId: string,
+  ): Promise<void> {
+    const siblings = await db.select({ id: schema.syncedProject.projectId, name: schema.syncedProject.name })
+      .from(schema.syncedProject).where(and(
+        eq(schema.syncedProject.vaultId, vaultId),
+        parentProjectId
+          ? eq(schema.syncedProject.parentProjectId, parentProjectId)
+          : isNull(schema.syncedProject.parentProjectId),
+        ownerAccess(schema.syncedProject.vaultId),
+      ));
+    const key = projectSiblingKey(name);
+    if (siblings.some((sibling) => sibling.id !== projectId && projectSiblingKey(sibling.name) === key)) {
+      throw new SyncTransactionError(422, "duplicate_project_name", [], operationId);
+    }
+  }
+
   async function assertProjectReference(
     vaultId: string,
     projectId: string | null,
@@ -832,6 +853,13 @@ function createIdentityStore(
           if (!vault) throw new SyncTransactionError(404, "vault_not_found");
           const parentProjectId = data.parentProjectId as string | null;
           await assertProjectHierarchy(transaction.vaultId, operation.entityId, parentProjectId, operation.id);
+          await assertProjectSiblingName(
+            transaction.vaultId,
+            operation.entityId,
+            parentProjectId,
+            String(data.name),
+            operation.id,
+          );
           await db.insert(schema.syncedProject).values({
             projectId: operation.entityId,
             vaultId: transaction.vaultId,
@@ -847,6 +875,13 @@ function createIdentityStore(
           await assertRevision(transaction, "project", operation.entityId, operation.baseRevision);
           const parentProjectId = data.parentProjectId as string | null;
           await assertProjectHierarchy(transaction.vaultId, operation.entityId, parentProjectId, operation.id);
+          await assertProjectSiblingName(
+            transaction.vaultId,
+            operation.entityId,
+            parentProjectId,
+            String(data.name),
+            operation.id,
+          );
           await db.update(schema.syncedProject).set({
             parentProjectId,
             name: String(data.name),
@@ -1594,6 +1629,10 @@ function stringField(data: Record<string, unknown>, key: string): string {
   const value = data[key];
   if (typeof value !== "string") throw new SyncTransactionError(400, "invalid_sync_operation");
   return value;
+}
+
+function projectSiblingKey(value: string): string {
+  return value.normalize("NFC").toUpperCase().toLowerCase().normalize("NFC");
 }
 
 function base64UrlEncode(value: string): string {

@@ -161,6 +161,51 @@
         }
 
         @Test
+        func reapplyingADeletedServerProjectRecreatesIt() async throws {
+            let (database, vault) = try await syncedDatabase()
+            let project = ProjectRecord(
+                id: .v7(),
+                vaultId: vault.id,
+                parentProjectId: nil,
+                name: "Restored",
+                createdAt: .now,
+                projectType: .undefined
+            )
+            try await database.dbQueue.write { db in
+                try project.insert(db)
+                try db.execute(
+                    sql: "INSERT INTO sync_entity_state(vaultId, entity, entityId, confirmedRevision) VALUES (?, 'project', ?, 2)",
+                    arguments: [vault.id, project.id]
+                )
+                try SyncTransactionRecorder.record(
+                    vaultId: vault.id,
+                    operations: [SyncInitialSnapshotBuilder.projectOperation(project, action: .update)],
+                    in: db
+                )
+            }
+            let claimed = try #require(try await SyncTransactionQueue.claim(dbQueue: database.dbQueue))
+            try await SyncTransactionQueue.block(
+                claimed,
+                reason: .conflict,
+                response: Data("""
+                {"conflicts":[{"entity":"project","id":"\(project.id.uuidString)","serverRevision":null,"record":null}]}
+                """.utf8),
+                dbQueue: database.dbQueue
+            )
+
+            try await SyncTransactionQueue.reapplyLocalVersion(vaultId: vault.id, dbQueue: database.dbQueue)
+
+            let retried = try #require(try await SyncTransactionQueue.claim(dbQueue: database.dbQueue))
+            let operation = try #require(retried.operations.first)
+            #expect(operation.entity == .project)
+            #expect(operation.action == .create)
+            #expect(operation.baseRevision == nil)
+            let payload = try #require(operation.payloadJSON)
+            let object = try #require(JSONSerialization.jsonObject(with: payload) as? [String: Any])
+            #expect(object["createdAt"] is String)
+        }
+
+        @Test
         func recorderQueuesOnlyConfirmedTranscriptSegments() async throws {
             let (database, vault) = try await syncedDatabase()
             let patch = SyncOperationDraft(entity: .transcript, action: .patch, entityId: UUID.v7())
@@ -618,6 +663,7 @@
             let firstRoot = UUID.v7()
             let secondRoot = UUID.v7()
             let retiredChild = UUID.v7()
+            let meetingId = UUID.v7()
             try await database.dbQueue.write { db in
                 try ProjectRecord(
                     id: firstRoot,
@@ -643,21 +689,35 @@
                     createdAt: .now,
                     projectType: nil
                 ).insert(db)
+                try MeetingRecord(
+                    id: meetingId,
+                    vaultId: vault.id,
+                    projectId: firstRoot,
+                    name: "Meeting",
+                    createdAt: .now,
+                    updatedAt: .now
+                ).insert(db)
             }
-            let page = try SyncJSON.decoder.decode(SyncChangePage.self, from: Data("""
-            {
-              "items": [
-                {"sequence":1,"entity":"project","entityId":"\(retiredChild.uuidString)","action":"delete","revision":null},
-                {"sequence":2,"entity":"project","entityId":"\(secondRoot.uuidString)","action":"upsert","revision":2,
-                 "record":{"name":"Root","projectType":"undefined","createdAt":"2026-09-03T12:00:00Z"}},
-                {"sequence":3,"entity":"project","entityId":"\(firstRoot.uuidString)","action":"upsert","revision":2,
-                 "record":{"parentProjectId":"\(secondRoot.uuidString)","name":"Child","createdAt":"2026-09-03T12:00:00Z"}}
-              ],
-              "cursor":"v1.snapshot",
-              "hasMore":false
-            }
-            """.utf8))
-            let snapshot = SyncWorker.initialSnapshotChanges(page.items)
+            let snapshot = [
+                SyncProjectSnapshot(
+                    projectId: secondRoot,
+                    parentProjectId: nil,
+                    name: "Root",
+                    description: "",
+                    projectType: "undefined",
+                    revision: 2,
+                    createdAt: .now
+                ),
+                SyncProjectSnapshot(
+                    projectId: firstRoot,
+                    parentProjectId: secondRoot,
+                    name: "Child",
+                    description: "",
+                    projectType: nil,
+                    revision: 2,
+                    createdAt: .now
+                ),
+            ]
 
             #expect(try await RemoteChangeApplier.reconcileProjectSnapshot(
                 snapshot,
@@ -671,6 +731,9 @@
             #expect(Set(projects.map(\.id)) == Set([firstRoot, secondRoot]))
             #expect(projects.first(where: { $0.id == secondRoot })?.parentProjectId == nil)
             #expect(projects.first(where: { $0.id == firstRoot })?.parentProjectId == secondRoot)
+            #expect(try await database.dbQueue.read { db in
+                try MeetingRecord.fetchOne(db, key: meetingId)?.projectId
+            } == firstRoot)
         }
 
         @Test

@@ -84,6 +84,20 @@ struct SyncChangePage: Decodable {
     let hasMore: Bool
 }
 
+struct SyncProjectSnapshot: Decodable, Sendable {
+    let projectId: UUID
+    let parentProjectId: UUID?
+    let name: String
+    let description: String
+    let projectType: String?
+    let revision: Int
+    let createdAt: Date
+}
+
+private struct SyncProjectSnapshotPage: Decodable {
+    let items: [SyncProjectSnapshot]
+}
+
 struct SyncTranscriptPage: Decodable {
     struct Segment: Decodable {
         let segmentId: UUID
@@ -423,15 +437,11 @@ actor SyncWorker {
                 if !page.hasMore { break }
             } while true
             let snapshot = Self.initialSnapshotChanges(Array(changes.values))
-            guard try await RemoteChangeApplier.reconcileProjectSnapshot(
-                snapshot,
-                vaultId: target.vaultId,
-                dbQueue: dbQueue
-            ) else {
+            guard let applicable = try await reconcilingProjects(in: snapshot, target: target) else {
                 return
             }
             _ = try await apply(
-                snapshot,
+                applicable,
                 cursor: cursor,
                 target: target
             )
@@ -441,11 +451,41 @@ actor SyncWorker {
         var cursor = target.cursor
         repeat {
             let page = try await loadChangePage(target: target, cursor: cursor)
-            let appliedAll = try await apply(coalesced(page.items), cursor: page.cursor, target: target)
+            guard let applicable = try await reconcilingProjects(in: coalesced(page.items), target: target) else {
+                break
+            }
+            let appliedAll = try await apply(applicable, cursor: page.cursor, target: target)
             guard appliedAll else { break }
             cursor = page.cursor
             if !page.hasMore { break }
         } while true
+    }
+
+    private func reconcilingProjects(
+        in changes: [SyncChangePage.Change],
+        target: SyncTarget
+    ) async throws -> [SyncChangePage.Change]? {
+        guard changes.contains(where: { $0.entity == .project }),
+              !changes.contains(where: { $0.entity == .vault && $0.action == "reset" }) else {
+            return changes
+        }
+        let data = try await sendData(
+            request(
+                origin: target.origin,
+                path: "api/v1/vaults/\(target.vaultId.lowercase)/projects",
+                method: "GET"
+            ),
+            connectionId: target.connectionId
+        )
+        let projects = try SyncJSON.decoder.decode(SyncProjectSnapshotPage.self, from: data).items
+        guard try await RemoteChangeApplier.reconcileProjectSnapshot(
+            projects,
+            vaultId: target.vaultId,
+            dbQueue: dbQueue
+        ) else {
+            return nil
+        }
+        return changes.filter { $0.entity != .project }
     }
 
     private func loadChangePage(target: SyncTarget, cursor: String?) async throws -> SyncChangePage {
@@ -737,15 +777,19 @@ actor SyncWorker {
 
 enum RemoteChangeApplier {
     static func reconcileProjectSnapshot(
-        _ changes: [SyncChangePage.Change],
+        _ projects: [SyncProjectSnapshot],
         vaultId: UUID,
         dbQueue: DatabaseQueue
     ) async throws -> Bool {
-        guard !changes.contains(where: { $0.entity == .vault && $0.action == "reset" }) else { return true }
-        let projects = changes.filter { $0.entity == .project }
-        let meetings = changes.filter { $0.entity == .meeting && $0.action == "upsert" }
+        let orderedProjects = orderProjects(projects)
         return try await dbQueue.write { db in
             guard try !SyncTransactionQueue.hasPending(vaultId: vaultId, in: db) else { return false }
+
+            let memberships = try Row.fetchAll(
+                db,
+                sql: "SELECT id, projectId FROM meetings WHERE vaultId = ? AND projectId IS NOT NULL",
+                arguments: [vaultId]
+            )
 
             try db.execute(sql: "UPDATE meetings SET projectId = NULL WHERE vaultId = ?", arguments: [vaultId])
             try db.execute(
@@ -761,17 +805,16 @@ enum RemoteChangeApplier {
                 arguments: [vaultId]
             )
 
-            for change in projects where change.action == "upsert" {
-                guard let record = change.record else { continue }
-                try SyncTransactionQueue.applyCanonical(
-                    .project,
-                    id: change.entityId,
+            for project in orderedProjects {
+                try ProjectRecord(
+                    id: project.projectId,
                     vaultId: vaultId,
-                    value: record,
-                    in: db
-                )
-            }
-            for change in projects {
+                    parentProjectId: project.parentProjectId,
+                    name: project.name,
+                    createdAt: project.createdAt,
+                    description: project.description,
+                    projectType: project.projectType.flatMap(ProjectType.init(rawValue:))
+                ).insert(db)
                 try db.execute(
                     sql: """
                     INSERT INTO sync_entity_state(vaultId, entity, entityId, confirmedRevision)
@@ -779,17 +822,31 @@ enum RemoteChangeApplier {
                     ON CONFLICT(vaultId, entity, entityId) DO UPDATE SET
                         confirmedRevision = excluded.confirmedRevision
                     """,
-                    arguments: [vaultId, change.entityId, change.revision]
+                    arguments: [vaultId, project.projectId, project.revision]
                 )
             }
-            for change in meetings {
-                try db.execute(
-                    sql: "UPDATE meetings SET projectId = ? WHERE id = ? AND vaultId = ?",
-                    arguments: [change.record?.projectId, change.entityId, vaultId]
-                )
+            let projectIds = Set(projects.map(\.projectId))
+            for membership in memberships {
+                let projectId: UUID = membership["projectId"]
+                guard projectIds.contains(projectId) else { continue }
+                try db.execute(sql: "UPDATE meetings SET projectId = ? WHERE id = ? AND vaultId = ?", arguments: [
+                    projectId,
+                    membership["id"] as UUID,
+                    vaultId,
+                ])
             }
             return true
         }
+    }
+
+    private static func orderProjects(_ projects: [SyncProjectSnapshot]) -> [SyncProjectSnapshot] {
+        let roots = projects.filter { $0.parentProjectId == nil }
+            .sorted { $0.projectId.uuidString < $1.projectId.uuidString }
+        let rootIds = Set(roots.map(\.projectId))
+        let children = projects.filter { project in
+            project.parentProjectId.map(rootIds.contains) == true
+        }.sorted { $0.projectId.uuidString < $1.projectId.uuidString }
+        return roots + children
     }
 
     static func apply(
