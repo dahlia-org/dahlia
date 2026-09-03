@@ -64,12 +64,22 @@ export function createDahliaAuth(
         clientRegistrationDefaultScopes: [MCP_SCOPE],
         clientPrivileges: denyOAuthManagement,
         consentPage: "/oauth/consent",
-        customAccessTokenClaims: ({ user }) => {
+        customAccessTokenClaims: ({ user, referenceId }) => {
           if (!user) return {};
-          return { workspace_id: personalWorkspaceId(user.id) };
+          return {
+            workspace_id: personalWorkspaceId(user.id),
+            impersonated: referenceId?.startsWith("impersonated:") ?? false,
+          };
         },
         enforcePerClientResources: true,
         loginPage: "/sign-in",
+        postLogin: {
+          page: "/oauth/consent",
+          shouldRedirect: () => false,
+          consentReferenceId: ({ session }) => session.impersonatedBy
+            ? `impersonated:${session.id}`
+            : undefined,
+        },
         refreshTokenExpiresIn: 30 * 24 * 60 * 60,
         refreshTokenReuseInterval: 0,
         resources: [

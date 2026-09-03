@@ -613,6 +613,18 @@ private extension SearchIndexer {
                     sql: "UPDATE screenshots SET ocrText = ?, caption = ? WHERE id = ?",
                     arguments: [result.ocrText, result.caption, result.screenshotID]
                 )
+                if let screenshot = try MeetingScreenshotRecord.fetchOne(db, key: result.screenshotID),
+                   let vaultId = try UUID.fetchOne(
+                       db,
+                       sql: "SELECT vaultId FROM meetings WHERE id = ?",
+                       arguments: [screenshot.meetingId]
+                   ) {
+                    try SyncTransactionRecorder.record(
+                        vaultId: vaultId,
+                        operations: [SyncInitialSnapshotBuilder.screenshotOperation(screenshot, action: .upsert)],
+                        in: db
+                    )
+                }
                 try Self.indexScreenshot(id: result.screenshotID, generation: generation, in: db)
             }
         }

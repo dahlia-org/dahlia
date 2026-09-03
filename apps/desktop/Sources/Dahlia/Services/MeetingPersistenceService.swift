@@ -221,8 +221,19 @@ final class MeetingPersistenceService {
         let recordingStartedAt = recordingSession.startedAt
         try? await dbQueue.write { db in
             if createsMeeting {
+                guard let meeting = try MeetingRecord.fetchOne(db, key: meetingId) else { return }
+                try SyncTransactionRecorder.record(
+                    vaultId: meeting.vaultId,
+                    operations: [SyncOperationDraft(entity: .meeting, action: .delete, entityId: meetingId)],
+                    in: db
+                )
                 _ = try MeetingRecord.deleteOne(db, key: meetingId)
             } else {
+                let deletedSegmentIds = try UUID.fetchAll(
+                    db,
+                    sql: "SELECT id FROM transcript_segments WHERE sessionId = ? ORDER BY id",
+                    arguments: [sessionId]
+                )
                 _ = try TranscriptSegmentRecord
                     .filter(Column("sessionId") == sessionId)
                     .deleteAll(db)
@@ -244,6 +255,23 @@ final class MeetingPersistenceService {
                         arguments: [meetingId, recordingStartedAt]
                     )
                 }
+                guard let meeting = try MeetingRecord.fetchOne(db, key: meetingId) else { return }
+                var operations: [SyncOperationDraft] = []
+                var deletions: [UUID: [UUID]] = [:]
+                if !deletedSegmentIds.isEmpty {
+                    let patch = SyncOperationDraft(entity: .transcript, action: .patch, entityId: meetingId)
+                    operations.append(patch)
+                    deletions[patch.id] = deletedSegmentIds
+                }
+                if resetsRecordingStartOnCancel {
+                    try operations.append(SyncInitialSnapshotBuilder.meetingOperation(meeting, action: .update))
+                }
+                try SyncTransactionRecorder.record(
+                    vaultId: meeting.vaultId,
+                    operations: operations,
+                    transcriptDeletions: deletions,
+                    in: db
+                )
             }
         }
     }
@@ -301,7 +329,7 @@ private enum MeetingPersistenceStarter {
                 in: db
             )
             let calendarEventKey = request.calendarEvent?.key
-            try MeetingRecord(
+            let meeting = MeetingRecord(
                 id: request.meetingId,
                 vaultId: request.vaultId,
                 projectId: projectId,
@@ -312,7 +340,13 @@ private enum MeetingPersistenceStarter {
                 recordingStartedAt: request.startedAt,
                 calendarEventIcalUid: calendarEventKey?.icalUid,
                 calendarEventRecurrenceId: calendarEventKey?.recurrenceId
-            ).insert(db)
+            )
+            try meeting.insert(db)
+            try SyncTransactionRecorder.record(
+                vaultId: request.vaultId,
+                operations: [SyncInitialSnapshotBuilder.meetingOperation(meeting, action: .create)],
+                in: db
+            )
             let recordingSession = makeRecordingSession(
                 id: request.recordingSessionId,
                 meetingId: request.meetingId,
@@ -368,6 +402,11 @@ private enum MeetingPersistenceStarter {
             if var meetingToUpdate = meeting, meetingToUpdate.recordingStartedAt == nil {
                 meetingToUpdate.recordingStartedAt = resolvedRecordingStartTime
                 try meetingToUpdate.update(db)
+                try SyncTransactionRecorder.record(
+                    vaultId: meetingToUpdate.vaultId,
+                    operations: [SyncInitialSnapshotBuilder.meetingOperation(meetingToUpdate, action: .update)],
+                    in: db
+                )
             }
 
             let recordingSession = makeRecordingSession(

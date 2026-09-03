@@ -77,7 +77,7 @@ try {
     const codexLicense = await readFile(new URL("./Codex-LICENSE", packageUrl), "utf8");
     const codexNotice = await readFile(new URL("./Codex-NOTICE.txt", packageUrl), "utf8");
     const migration = await readFile(
-      new URL(import.meta.resolve("@dahlia-ai/server/migrations/sqlite/20260903075857_flowery_thunderbolt/migration.sql")),
+      new URL(import.meta.resolve("@dahlia-ai/server/migrations/sqlite/20260903173555_lying_slipstream/migration.sql")),
       "utf8",
     );
     const authMigration = await readFile(
@@ -85,7 +85,7 @@ try {
       "utf8",
     );
     const applicationMigration = await readFile(
-      new URL(import.meta.resolve("@dahlia-ai/server/migrations/postgres/20260903075853_tricky_nekra/migration.sql")),
+      new URL(import.meta.resolve("@dahlia-ai/server/migrations/postgres/20260903173551_bumpy_freak/migration.sql")),
       "utf8",
     );
     if (
@@ -120,7 +120,7 @@ try {
     const applied = database.prepare('SELECT "name" FROM "__drizzle_migrations"').all();
     database.close();
     await store.close?.();
-    if (applied.length !== 1 || applied.at(-1)?.name !== "20260903075857_flowery_thunderbolt") {
+    if (applied.length !== 1 || applied.at(-1)?.name !== "20260903173555_lying_slipstream") {
       throw new Error("Installed package migrations did not run from the package directory");
     }
   `);

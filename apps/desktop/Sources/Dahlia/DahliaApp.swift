@@ -34,7 +34,7 @@ struct DahliaApp: App {
     @State private var tokenBroker = DahliaTokenBrokerServer()
     private let mainWindowNavigation: MainWindowNavigation
     @State private var appDatabase: AppDatabaseManager?
-    @State private var meetingSyncWorker: MeetingSyncWorker?
+    @State private var meetingSyncWorker: SyncWorker?
     @State private var isInitializingVault = true
     @State private var vaultInitializationTask: Task<Void, Never>?
     @State private var showVaultPicker = true
@@ -350,12 +350,7 @@ struct DahliaApp: App {
         }
         await DahliaCloudCredentialStorage.deleteLegacyCredential()
         await dahliaAccountController.configure(appDatabase: db)
-        let meetingSyncWorker = MeetingSyncWorker(
-            dbQueue: db.dbQueue,
-            persistenceIsActive: { [weak viewModel] in
-                viewModel?.isMeetingSyncPersistenceActive ?? false
-            }
-        )
+        let meetingSyncWorker = SyncWorker(dbQueue: db.dbQueue)
         self.meetingSyncWorker = meetingSyncWorker
         await meetingSyncWorker.start(restored: {
             if case .restored = AppDelegate.backupRestoreOutcome { return true }

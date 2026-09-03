@@ -86,6 +86,27 @@ describe("fixed OAuth client policy", () => {
       .rejects.toThrow("Insufficient scope");
   });
 
+  it("keeps impersonated OAuth tokens read-only", async () => {
+    const identities = new IdentityService(config);
+    Object.assign(identities, { verifyAccessToken: vi.fn(async () => ({
+      sub: "user-1",
+      workspace_id: "personal:user-1",
+      client_id: "mcp-client",
+      exp: Math.floor(Date.now() / 1000) + 60,
+      scope: `${ALL_APIS_SCOPE} ${MCP_SCOPE}`,
+      impersonated: true,
+    })) });
+    const request = new Request("https://new.dahlia.example/mcp", {
+      method: "POST",
+      headers: { Authorization: "DPoP access-token", DPoP: "proof" },
+    });
+
+    await expect(identities.fromGateway(request, ALL_APIS_SCOPE))
+      .rejects.toThrow("Impersonated sessions are read-only");
+    await expect(identities.verifyMcpAccessToken(request))
+      .rejects.toThrow("Impersonated sessions are read-only");
+  });
+
   it("preserves DPoP requests and distinguishes insufficient scope", async () => {
     const request = new Request("https://new.dahlia.example/mcp", {
       method: "POST",

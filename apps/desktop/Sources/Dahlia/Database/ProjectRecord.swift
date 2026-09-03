@@ -20,7 +20,6 @@ struct ProjectRecord: Codable, FetchableRecord, PersistableRecord, Identifiable,
     var description = ""
     var projectType: ProjectType?
     var revision = 1
-    var serverRevision: Int?
 
     /// Populated by hierarchy-aware repository reads. It is never persisted.
     var resolvedPath: String?
@@ -39,7 +38,6 @@ struct ProjectRecord: Codable, FetchableRecord, PersistableRecord, Identifiable,
         case description
         case projectType
         case revision
-        case serverRevision
     }
 
     init(
@@ -51,7 +49,6 @@ struct ProjectRecord: Codable, FetchableRecord, PersistableRecord, Identifiable,
         description: String = "",
         projectType: ProjectType?,
         revision: Int = 1,
-        serverRevision: Int? = nil,
         resolvedPath: String? = nil
     ) {
         self.id = id
@@ -63,7 +60,6 @@ struct ProjectRecord: Codable, FetchableRecord, PersistableRecord, Identifiable,
         self.description = description
         self.projectType = projectType
         self.revision = revision
-        self.serverRevision = serverRevision
         self.resolvedPath = resolvedPath
     }
 

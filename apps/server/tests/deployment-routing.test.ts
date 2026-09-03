@@ -50,7 +50,7 @@ describe("deployment routing", () => {
       migrations_dir: "drizzle/d1",
     }));
     const d1Migrations = readdirSync(new URL("../drizzle/d1", import.meta.url)).toSorted();
-    expect(d1Migrations).toEqual(["20260903075857_flowery_thunderbolt.sql"]);
+    expect(d1Migrations).toEqual(["20260903173555_lying_slipstream.sql"]);
     for (const migration of d1Migrations) {
       expect(readText(`../drizzle/d1/${migration}`))
         .toBe(readText(`../drizzle/sqlite/${migration.replace(/\.sql$/, "")}/migration.sql`));
@@ -271,9 +271,9 @@ describe("deployment routing", () => {
   });
 
   it("separates generated PostgreSQL auth DDL from the application baseline", () => {
-    const sqlite = readText("../drizzle/sqlite/20260903075857_flowery_thunderbolt/migration.sql");
+    const sqlite = readText("../drizzle/sqlite/20260903173555_lying_slipstream/migration.sql");
     const auth = readText("../drizzle/postgres-auth/20260903034253_melodic_scalphunter/migration.sql");
-    const postgres = readText("../drizzle/postgres/20260903075853_tricky_nekra/migration.sql");
+    const postgres = readText("../drizzle/postgres/20260903173551_bumpy_freak/migration.sql");
     for (const migration of [sqlite, `${auth}\n${postgres}`]) {
       expect(migration).toContain("model_alias");
       expect(migration).not.toContain("platform_admin");

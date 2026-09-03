@@ -1,7 +1,7 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "e11aafc3-5039-4b33-a6f8-6916fcf6732f",
+  "id": "ddca4758-b994-4d09-92b7-b23de354f8a7",
   "prevIds": [
     "00000000-0000-0000-0000-000000000000"
   ],
@@ -128,6 +128,10 @@
     },
     {
       "name": "core_vault_permissions",
+      "entityType": "tables"
+    },
+    {
+      "name": "content_transcript_patch_chunks",
       "entityType": "tables"
     },
     {
@@ -2741,22 +2745,12 @@
       "table": "content_meetings"
     },
     {
-      "type": "text",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "active_transcript_generation",
-      "entityType": "columns",
-      "table": "content_meetings"
-    },
-    {
       "type": "integer",
-      "notNull": false,
+      "notNull": true,
       "autoincrement": false,
-      "default": null,
+      "default": "false",
       "generated": null,
-      "name": "manifest_received_at",
+      "name": "active",
       "entityType": "columns",
       "table": "content_meetings"
     },
@@ -2931,6 +2925,16 @@
       "table": "content_screenshots"
     },
     {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "content_hash",
+      "entityType": "columns",
+      "table": "content_screenshots"
+    },
+    {
       "type": "integer",
       "notNull": true,
       "autoincrement": false,
@@ -3007,16 +3011,6 @@
       "default": null,
       "generated": null,
       "name": "meeting_id",
-      "entityType": "columns",
-      "table": "content_transcript_segments"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "generation",
       "entityType": "columns",
       "table": "content_transcript_segments"
     },
@@ -3209,6 +3203,76 @@
       "name": "created_at",
       "entityType": "columns",
       "table": "core_vault_permissions"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "vault_id",
+      "entityType": "columns",
+      "table": "content_transcript_patch_chunks"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "meeting_id",
+      "entityType": "columns",
+      "table": "content_transcript_patch_chunks"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "patch_id",
+      "entityType": "columns",
+      "table": "content_transcript_patch_chunks"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "chunk_index",
+      "entityType": "columns",
+      "table": "content_transcript_patch_chunks"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "content_hash",
+      "entityType": "columns",
+      "table": "content_transcript_patch_chunks"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "payload",
+      "entityType": "columns",
+      "table": "content_transcript_patch_chunks"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "(cast(unixepoch('subsecond') * 1000 as integer))",
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "content_transcript_patch_chunks"
     },
     {
       "columns": [
@@ -3735,6 +3799,23 @@
     {
       "columns": [
         "vault_id",
+        "meeting_id"
+      ],
+      "tableTo": "content_meetings",
+      "columnsTo": [
+        "vault_id",
+        "meeting_id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "name": "fk_content_transcript_patch_chunks_vault_id_meeting_id_content_meetings_vault_id_meeting_id_fk",
+      "entityType": "fks",
+      "table": "content_transcript_patch_chunks"
+    },
+    {
+      "columns": [
+        "vault_id",
         "document_id"
       ],
       "nameExplicit": false,
@@ -3766,7 +3847,6 @@
       "columns": [
         "vault_id",
         "meeting_id",
-        "generation",
         "segment_id"
       ],
       "nameExplicit": false,
@@ -3784,6 +3864,18 @@
       "name": "core_vault_permissions_pk",
       "entityType": "pks",
       "table": "core_vault_permissions"
+    },
+    {
+      "columns": [
+        "vault_id",
+        "meeting_id",
+        "patch_id",
+        "chunk_index"
+      ],
+      "nameExplicit": false,
+      "name": "content_transcript_patch_chunks_pk",
+      "entityType": "pks",
+      "table": "content_transcript_patch_chunks"
     },
     {
       "columns": [
@@ -4614,10 +4706,6 @@
           "isExpression": false
         },
         {
-          "value": "generation",
-          "isExpression": false
-        },
-        {
           "value": "start_time",
           "isExpression": false
         },
@@ -4629,7 +4717,7 @@
       "isUnique": false,
       "where": null,
       "origin": "manual",
-      "name": "synced_transcript_vault_meeting_generation_start_id_idx",
+      "name": "synced_transcript_vault_meeting_start_id_idx",
       "entityType": "indexes",
       "table": "content_transcript_segments"
     },

@@ -5,12 +5,9 @@ import {
   eq,
   exists,
   inArray,
-  isNotNull,
   isNull,
   gt,
   lt,
-  ne,
-  notInArray,
   or,
   sql,
 } from "drizzle-orm";
@@ -32,12 +29,19 @@ import type {
   SyncRevisionConflict,
   SyncScreenshotRecord,
   SyncSearchQuery,
+  SyncTranscriptSegment,
   SyncTransaction,
   SyncTransactionResponse,
 } from "./types";
 
 type SyncSchema = typeof postgresSchema;
 export type SyncSearchBackend = "postgres" | "lakebase" | "sqlite";
+
+function batches<T>(values: T[], size: number): T[][] {
+  const result: T[][] = [];
+  for (let offset = 0; offset < values.length; offset += size) result.push(values.slice(offset, offset + size));
+  return result;
+}
 
 export function createPostgresMeetingSyncStore(
   db: PostgresDatabase,
@@ -47,7 +51,7 @@ export function createPostgresMeetingSyncStore(
 ): MeetingSyncStore {
   let available: Promise<boolean> | undefined;
   const isAvailable = () => available ??= roleSupportsRls(db);
-  const storageDeletes = createStorageDeleteStore(db, postgresSchema);
+  const storageDeletes = createStorageDeleteStore(db, postgresSchema, true);
   return {
     isAvailable,
     ...storageDeletes,
@@ -82,6 +86,7 @@ export function createSqliteMeetingSyncStore(
   const storageDeletes = createStorageDeleteStore(
     db as unknown as PostgresDatabase,
     sqliteSchema as unknown as SyncSchema,
+    false,
   );
   return {
     isAvailable: () => Promise.resolve(true),
@@ -110,6 +115,7 @@ export class SyncTransactionError extends Error {
     readonly status: number,
     readonly code: string,
     readonly conflicts: SyncRevisionConflict[] = [],
+    readonly operationId?: string,
   ) {
     super(code);
   }
@@ -120,34 +126,41 @@ export function createUnavailableMeetingSyncStore(): MeetingSyncStore {
     isAvailable: () => Promise.resolve(false),
     withIdentity: () => Promise.reject(new SyncStoreUnavailableError()),
     claimStorageDeletes: () => Promise.reject(new SyncStoreUnavailableError()),
+    enqueueStorageDelete: () => Promise.reject(new SyncStoreUnavailableError()),
     completeStorageDelete: () => Promise.reject(new SyncStoreUnavailableError()),
     failStorageDelete: () => Promise.reject(new SyncStoreUnavailableError()),
   };
 }
 
-function createStorageDeleteStore(db: PostgresDatabase, schema: SyncSchema) {
+function createStorageDeleteStore(db: PostgresDatabase, schema: SyncSchema, isPostgres: boolean) {
   return {
+    async enqueueStorageDelete(storageKey: string): Promise<void> {
+      await db.insert(schema.storageDeleteJob).values({ storageKey }).onConflictDoNothing();
+    },
     async claimStorageDeletes(limit: number): Promise<string[]> {
-      const now = new Date();
-      const rows = await db.select({ key: schema.storageDeleteJob.storageKey })
-        .from(schema.storageDeleteJob).where(or(
-          and(
-            inArray(schema.storageDeleteJob.status, ["pending", "failed"]),
-            lt(schema.storageDeleteJob.availableAt, new Date(now.getTime() + 1)),
-          ),
-          and(
-            eq(schema.storageDeleteJob.status, "processing"),
-            lt(schema.storageDeleteJob.leaseExpiresAt, now),
-          ),
-        )).orderBy(asc(schema.storageDeleteJob.availableAt)).limit(limit);
-      const keys = rows.map(({ key }) => key);
-      if (keys.length) await db.update(schema.storageDeleteJob).set({
-        status: "processing",
-        attempts: sql`${schema.storageDeleteJob.attempts} + 1`,
-        claimedAt: now,
-        leaseExpiresAt: new Date(now.getTime() + 60_000),
-      }).where(inArray(schema.storageDeleteJob.storageKey, keys));
-      return keys;
+      return db.transaction(async (transaction) => {
+        const now = new Date();
+        const query = transaction.select({ key: schema.storageDeleteJob.storageKey })
+          .from(schema.storageDeleteJob).where(or(
+            and(
+              inArray(schema.storageDeleteJob.status, ["pending", "failed"]),
+              lt(schema.storageDeleteJob.availableAt, new Date(now.getTime() + 1)),
+            ),
+            and(
+              eq(schema.storageDeleteJob.status, "processing"),
+              lt(schema.storageDeleteJob.leaseExpiresAt, now),
+            ),
+          )).orderBy(asc(schema.storageDeleteJob.availableAt)).limit(limit);
+        const rows = isPostgres ? await query.for("update", { skipLocked: true }) : await query;
+        const keys = rows.map(({ key }) => key);
+        if (keys.length) await transaction.update(schema.storageDeleteJob).set({
+          status: "processing",
+          attempts: sql`${schema.storageDeleteJob.attempts} + 1`,
+          claimedAt: now,
+          leaseExpiresAt: new Date(now.getTime() + 60_000),
+        }).where(inArray(schema.storageDeleteJob.storageKey, keys));
+        return keys;
+      });
     },
     async completeStorageDelete(storageKey: string): Promise<void> {
       await db.delete(schema.storageDeleteJob).where(eq(schema.storageDeleteJob.storageKey, storageKey));
@@ -177,6 +190,7 @@ async function roleSupportsRls(db: PostgresDatabase): Promise<boolean> {
       "core.projects",
       "content.meetings",
       "content.transcript_segments",
+      "content.transcript_patch_chunks",
       "content.screenshots",
       "content.search_documents",
       "content.search_embeddings",
@@ -301,7 +315,7 @@ function createIdentityStore(
     const meetings = await db.select({ projectId: schema.syncedMeeting.projectId })
       .from(schema.syncedMeeting).where(and(
         readableMeeting(vaultId),
-        isNotNull(schema.syncedMeeting.manifestReceivedAt),
+        eq(schema.syncedMeeting.active, true),
         isNull(schema.syncedMeeting.deletingAt),
       ));
     const directCounts = new Map<string, number>();
@@ -464,7 +478,7 @@ function createIdentityStore(
           eq(schema.syncedMeeting.vaultId, schema.searchDocument.vaultId),
           eq(schema.syncedMeeting.meetingId, schema.searchDocument.documentId),
         ))
-        .where(and(common, isNotNull(schema.syncedMeeting.manifestReceivedAt), isNull(schema.syncedMeeting.deletingAt)))
+        .where(and(common, eq(schema.syncedMeeting.active, true), isNull(schema.syncedMeeting.deletingAt)))
         .orderBy(asc(search.rank), desc(schema.syncedMeeting.createdAt), desc(schema.syncedMeeting.meetingId))
         .limit(SEARCH_CANDIDATE_LIMIT)).map(({ documentId }) => documentId);
     }
@@ -508,7 +522,7 @@ function createIdentityStore(
           )).innerJoin(schema.syncedMeeting, and(
             eq(schema.syncedMeeting.vaultId, schema.searchDocument.vaultId),
             eq(schema.syncedMeeting.meetingId, schema.searchDocument.documentId),
-          )).where(and(common, isNotNull(schema.syncedMeeting.manifestReceivedAt), isNull(schema.syncedMeeting.deletingAt)))
+          )).where(and(common, eq(schema.syncedMeeting.active, true), isNull(schema.syncedMeeting.deletingAt)))
         : await db.select({
             documentId: schema.searchDocument.documentId,
             vector: schema.searchEmbedding.embedding,
@@ -546,7 +560,7 @@ function createIdentityStore(
       ? await base.innerJoin(schema.syncedMeeting, and(
           eq(schema.syncedMeeting.vaultId, schema.searchDocument.vaultId),
           eq(schema.syncedMeeting.meetingId, schema.searchDocument.documentId),
-        )).where(and(common, isNotNull(schema.syncedMeeting.manifestReceivedAt), isNull(schema.syncedMeeting.deletingAt)))
+        )).where(and(common, eq(schema.syncedMeeting.active, true), isNull(schema.syncedMeeting.deletingAt)))
         .orderBy(asc(distance), desc(schema.syncedMeeting.createdAt), desc(schema.syncedMeeting.meetingId))
         .limit(SEARCH_CANDIDATE_LIMIT)
       : await base.innerJoin(schema.syncedScreenshot, and(
@@ -569,71 +583,6 @@ function createIdentityStore(
       vectorDocumentIds(vaultId, meetingId, kind, query),
     ]);
     return reciprocalRankFusion(fts, vector).map(({ documentId }) => documentId);
-  }
-
-  async function commitVaultManifest(manifest: Parameters<IdentitySyncStore["commitVaultManifest"]>[0]): Promise<boolean> {
-    const now = new Date();
-    await db.insert(schema.syncedVault).values({
-      vaultId: manifest.vaultId,
-      name: manifest.name,
-      createdAt: manifest.createdAt,
-      updatedAt: now,
-    }).onConflictDoNothing();
-    await db.insert(schema.syncedVaultPermission).values({
-      vaultId: manifest.vaultId,
-      principalType: "user",
-      principalId: userPrincipalId,
-      role: "owner",
-      grantedByUserId: userPrincipalId,
-    }).onConflictDoNothing();
-    const [owned] = await db.update(schema.syncedVault).set({ name: manifest.name, updatedAt: now })
-      .where(ownedVault(manifest.vaultId)).returning({ vaultId: schema.syncedVault.vaultId });
-    if (!owned) return false;
-
-    const roots = manifest.projects.filter(({ parentProjectId }) => parentProjectId === null);
-    const children = manifest.projects.filter(({ parentProjectId }) => parentProjectId !== null);
-    const stagingPrefix = `__dahlia_sync_${crypto.randomUUID()}_`;
-    await db.update(schema.syncedProject).set({
-      name: sql`${stagingPrefix} || ${schema.syncedProject.projectId}`,
-    }).where(and(
-      eq(schema.syncedProject.vaultId, manifest.vaultId),
-      ownerAccess(schema.syncedProject.vaultId),
-    ));
-    for (const project of [...roots, ...children]) {
-      await db.insert(schema.syncedProject).values(project).onConflictDoNothing();
-      const [updated] = await db.update(schema.syncedProject).set({
-        parentProjectId: project.parentProjectId,
-        name: project.name,
-        description: project.description,
-        projectType: project.projectType,
-        revision: project.revision,
-        createdAt: project.createdAt,
-      }).where(and(
-        eq(schema.syncedProject.vaultId, manifest.vaultId),
-        eq(schema.syncedProject.projectId, project.projectId),
-        ownerAccess(schema.syncedProject.vaultId),
-      )).returning({ projectId: schema.syncedProject.projectId });
-      if (!updated) return false;
-    }
-
-    const projectIds = manifest.projects.map(({ projectId }) => projectId);
-    const obsoleteProjectId = and(
-      isNotNull(schema.syncedMeeting.projectId),
-      ...(projectIds.length ? [notInArray(schema.syncedMeeting.projectId, projectIds)] : []),
-    );
-    await db.update(schema.syncedMeeting).set({ projectId: null }).where(and(
-      eq(schema.syncedMeeting.vaultId, manifest.vaultId),
-      ownerAccess(schema.syncedMeeting.vaultId),
-      obsoleteProjectId,
-    ));
-    const obsolete = and(
-      eq(schema.syncedProject.vaultId, manifest.vaultId),
-      ownerAccess(schema.syncedProject.vaultId),
-      ...(projectIds.length ? [notInArray(schema.syncedProject.projectId, projectIds)] : []),
-    );
-    await db.delete(schema.syncedProject).where(and(obsolete, isNotNull(schema.syncedProject.parentProjectId)));
-    await db.delete(schema.syncedProject).where(obsolete);
-    return true;
   }
 
   async function ensureUploadTarget(vaultId: string, meetingId: string): Promise<boolean> {
@@ -697,7 +646,7 @@ function createIdentityStore(
             createdAt: record.summaryCreatedAt,
           }
         : entity === "transcript" && record
-          ? { meetingId: record.meetingId, activeGeneration: record.activeTranscriptGeneration }
+          ? { meetingId: record.meetingId }
           : record;
       return { entity, id: entityId, revision: revision ?? null, record: value ?? null };
     }
@@ -736,7 +685,15 @@ function createIdentityStore(
     baseRevision: number | null,
   ): Promise<void> {
     const current = await canonicalRecord(entity, transaction.vaultId, entityId);
-    if (current.record === null) throw new SyncTransactionError(404, `${entity}_not_found`);
+    if (current.record === null) {
+      throw new SyncTransactionError(409, "revision_conflict", [{
+        entity,
+        id: entityId,
+        clientBaseRevision: baseRevision,
+        serverRevision: null,
+        record: null,
+      }]);
+    }
     if (current.revision !== baseRevision) {
       throw new SyncTransactionError(409, "revision_conflict", [{
         entity,
@@ -746,6 +703,46 @@ function createIdentityStore(
         record: current.record,
       }]);
     }
+  }
+
+  async function assertProjectHierarchy(
+    vaultId: string,
+    projectId: string,
+    parentProjectId: string | null,
+    operationId: string,
+  ): Promise<void> {
+    if (!parentProjectId) return;
+    const [parent] = await db.select({ parentProjectId: schema.syncedProject.parentProjectId })
+      .from(schema.syncedProject).where(and(
+        eq(schema.syncedProject.vaultId, vaultId),
+        eq(schema.syncedProject.projectId, parentProjectId),
+        ownerAccess(schema.syncedProject.vaultId),
+      )).limit(1);
+    if (!parent || parent.parentProjectId) {
+      throw new SyncTransactionError(422, "invalid_project_parent", [], operationId);
+    }
+    const [child] = await db.select({ id: schema.syncedProject.projectId })
+      .from(schema.syncedProject).where(and(
+        eq(schema.syncedProject.vaultId, vaultId),
+        eq(schema.syncedProject.parentProjectId, projectId),
+        ownerAccess(schema.syncedProject.vaultId),
+      )).limit(1);
+    if (child) throw new SyncTransactionError(422, "invalid_project_hierarchy", [], operationId);
+  }
+
+  async function assertProjectReference(
+    vaultId: string,
+    projectId: string | null,
+    operationId: string,
+  ): Promise<void> {
+    if (!projectId) return;
+    const [project] = await db.select({ id: schema.syncedProject.projectId })
+      .from(schema.syncedProject).where(and(
+        eq(schema.syncedProject.vaultId, vaultId),
+        eq(schema.syncedProject.projectId, projectId),
+        ownerAccess(schema.syncedProject.vaultId),
+      )).limit(1);
+    if (!project) throw new SyncTransactionError(422, "project_not_found", [], operationId);
   }
 
   async function commitTransaction(transaction: SyncTransaction): Promise<SyncTransactionResponse> {
@@ -804,49 +801,17 @@ function createIdentityStore(
             revision: sql`${schema.syncedVault.revision} + 1`,
             updatedAt: now,
           }).where(ownedVault(transaction.vaultId));
-          if (Array.isArray(data.projectIds)) {
-            const projectIds = data.projectIds as string[];
-            const obsolete = and(
-              eq(schema.syncedProject.vaultId, transaction.vaultId),
-              ownerAccess(schema.syncedProject.vaultId),
-              ...(projectIds.length ? [notInArray(schema.syncedProject.projectId, projectIds)] : []),
-            );
-            const obsoleteProjects = await db.select({ id: schema.syncedProject.projectId })
-              .from(schema.syncedProject).where(obsolete);
-            const affectedMeetings = await db.select({ id: schema.syncedMeeting.meetingId })
-              .from(schema.syncedMeeting).where(and(
-                eq(schema.syncedMeeting.vaultId, transaction.vaultId),
-                isNotNull(schema.syncedMeeting.projectId),
-                ...(projectIds.length ? [notInArray(schema.syncedMeeting.projectId, projectIds)] : []),
-              ));
-            await db.update(schema.syncedMeeting).set({
-              projectId: null,
-              revision: sql`${schema.syncedMeeting.revision} + 1`,
-              updatedAt: now,
-            }).where(and(
-              eq(schema.syncedMeeting.vaultId, transaction.vaultId),
-              isNotNull(schema.syncedMeeting.projectId),
-              ...(projectIds.length ? [notInArray(schema.syncedMeeting.projectId, projectIds)] : []),
-            ));
-            await db.delete(schema.syncedProject).where(and(obsolete, isNotNull(schema.syncedProject.parentProjectId)));
-            await db.delete(schema.syncedProject).where(obsolete);
-            for (const project of obsoleteProjects) {
-              await appendChange(transaction, "project", project.id, "delete", null);
-            }
-            for (const meeting of affectedMeetings) {
-              const record = await canonicalRecord("meeting", transaction.vaultId, meeting.id);
-              records.push(record);
-              await appendChange(transaction, "meeting", meeting.id, "upsert", record.revision);
-            }
-          }
         } else if (operation.action === "reset") {
-          await assertRevision(transaction, "vault", operation.entityId, operation.baseRevision);
-          const screenshots = await db.select({ storageKey: schema.syncedScreenshot.storageKey })
-            .from(schema.syncedScreenshot).where(eq(schema.syncedScreenshot.vaultId, transaction.vaultId));
-          if (screenshots.length) {
-            await db.insert(schema.storageDeleteJob).values(screenshots).onConflictDoNothing();
+          const [owned] = await db.select({ id: schema.syncedVault.vaultId }).from(schema.syncedVault)
+            .where(ownedVault(transaction.vaultId)).limit(1);
+          if (owned) {
+            const screenshots = await db.select({ storageKey: schema.syncedScreenshot.storageKey })
+              .from(schema.syncedScreenshot).where(eq(schema.syncedScreenshot.vaultId, transaction.vaultId));
+            if (screenshots.length) {
+              await db.insert(schema.storageDeleteJob).values(screenshots).onConflictDoNothing();
+            }
+            await db.delete(schema.syncedVault).where(ownedVault(transaction.vaultId));
           }
-          await db.delete(schema.syncedVault).where(ownedVault(transaction.vaultId));
           cursor = await appendChange(transaction, "vault", operation.entityId, "reset", null);
           records.push({ entity: "vault", id: operation.entityId, revision: null, record: null });
           continue;
@@ -856,10 +821,12 @@ function createIdentityStore(
           const [vault] = await db.select({ id: schema.syncedVault.vaultId }).from(schema.syncedVault)
             .where(ownedVault(transaction.vaultId)).limit(1);
           if (!vault) throw new SyncTransactionError(404, "vault_not_found");
+          const parentProjectId = data.parentProjectId as string | null;
+          await assertProjectHierarchy(transaction.vaultId, operation.entityId, parentProjectId, operation.id);
           await db.insert(schema.syncedProject).values({
             projectId: operation.entityId,
             vaultId: transaction.vaultId,
-            parentProjectId: data.parentProjectId as string | null,
+            parentProjectId,
             name: String(data.name),
             description: stringField(data, "description"),
             projectType: data.projectType as string | null,
@@ -869,8 +836,10 @@ function createIdentityStore(
           });
         } else if (operation.action === "update") {
           await assertRevision(transaction, "project", operation.entityId, operation.baseRevision);
+          const parentProjectId = data.parentProjectId as string | null;
+          await assertProjectHierarchy(transaction.vaultId, operation.entityId, parentProjectId, operation.id);
           await db.update(schema.syncedProject).set({
-            parentProjectId: data.parentProjectId as string | null,
+            parentProjectId,
             name: String(data.name),
             description: stringField(data, "description"),
             projectType: data.projectType as string | null,
@@ -881,51 +850,15 @@ function createIdentityStore(
             eq(schema.syncedProject.projectId, operation.entityId),
             ownerAccess(schema.syncedProject.vaultId),
           ));
-        } else if (operation.action === "deleteHierarchy") {
+        } else if (operation.action === "delete") {
           await assertRevision(transaction, "project", operation.entityId, operation.baseRevision);
-          const children = await db.select({ id: schema.syncedProject.projectId }).from(schema.syncedProject).where(and(
-            eq(schema.syncedProject.vaultId, transaction.vaultId),
-            eq(schema.syncedProject.parentProjectId, operation.entityId),
-            ownerAccess(schema.syncedProject.vaultId),
-          ));
-          const projectIds = [operation.entityId, ...children.map(({ id }) => id)];
-          const affectedMeetings = await db.select({ id: schema.syncedMeeting.meetingId })
-            .from(schema.syncedMeeting).where(and(
-              eq(schema.syncedMeeting.vaultId, transaction.vaultId),
-              inArray(schema.syncedMeeting.projectId, projectIds),
-              ownerAccess(schema.syncedMeeting.vaultId),
-            ));
-          await db.update(schema.syncedMeeting).set({
-            projectId: null,
-            revision: sql`${schema.syncedMeeting.revision} + 1`,
-            updatedAt: now,
-          }).where(and(
-            eq(schema.syncedMeeting.vaultId, transaction.vaultId),
-            inArray(schema.syncedMeeting.projectId, projectIds),
-            ownerAccess(schema.syncedMeeting.vaultId),
-          ));
-          const childIds = children.map(({ id }) => id);
-          if (childIds.length) await db.delete(schema.syncedProject).where(and(
-            eq(schema.syncedProject.vaultId, transaction.vaultId),
-            inArray(schema.syncedProject.projectId, childIds),
-            ownerAccess(schema.syncedProject.vaultId),
-          ));
           await db.delete(schema.syncedProject).where(and(
             eq(schema.syncedProject.vaultId, transaction.vaultId),
             eq(schema.syncedProject.projectId, operation.entityId),
             ownerAccess(schema.syncedProject.vaultId),
           ));
-          for (const child of children) {
-            await appendChange(transaction, "project", child.id, "delete", null);
-            records.push({ entity: "project", id: child.id, revision: null, record: null });
-          }
           cursor = await appendChange(transaction, "project", operation.entityId, "delete", null);
           records.push({ entity: "project", id: operation.entityId, revision: null, record: null });
-          for (const meeting of affectedMeetings) {
-            const record = await canonicalRecord("meeting", transaction.vaultId, meeting.id);
-            records.push(record);
-            cursor = await appendChange(transaction, "meeting", meeting.id, "upsert", record.revision);
-          }
           continue;
         }
       } else if (operation.entity === "meeting") {
@@ -933,19 +866,21 @@ function createIdentityStore(
           const [vault] = await db.select({ id: schema.syncedVault.vaultId }).from(schema.syncedVault)
             .where(ownedVault(transaction.vaultId)).limit(1);
           if (!vault) throw new SyncTransactionError(404, "vault_not_found");
-          const [existing] = await db.select({ manifestReceivedAt: schema.syncedMeeting.manifestReceivedAt })
+          const [existing] = await db.select({ active: schema.syncedMeeting.active })
             .from(schema.syncedMeeting).where(ownedMeeting(transaction.vaultId, operation.entityId)).limit(1);
-          if (existing?.manifestReceivedAt) throw new SyncTransactionError(409, "revision_conflict", [{
+          if (existing?.active) throw new SyncTransactionError(409, "revision_conflict", [{
             entity: "meeting",
             id: operation.entityId,
             clientBaseRevision: null,
             serverRevision: (await canonicalRecord("meeting", transaction.vaultId, operation.entityId)).revision,
             record: (await canonicalRecord("meeting", transaction.vaultId, operation.entityId)).record,
           }]);
+          const projectId = data.projectId as string | null;
+          await assertProjectReference(transaction.vaultId, projectId, operation.id);
           const values = {
             meetingId: operation.entityId,
             vaultId: transaction.vaultId,
-            projectId: data.projectId as string | null,
+            projectId,
             name: String(data.name),
             description: stringField(data, "description"),
             status: String(data.status),
@@ -954,7 +889,7 @@ function createIdentityStore(
             createdAt: data.createdAt as Date,
             updatedAt: data.updatedAt as Date,
             revision: 1,
-            manifestReceivedAt: now,
+            active: true,
           };
           if (existing) {
             await db.update(schema.syncedMeeting).set(values).where(ownedMeeting(transaction.vaultId, operation.entityId));
@@ -963,8 +898,10 @@ function createIdentityStore(
           }
         } else if (operation.action === "update") {
           await assertRevision(transaction, "meeting", operation.entityId, operation.baseRevision);
+          const projectId = data.projectId as string | null;
+          await assertProjectReference(transaction.vaultId, projectId, operation.id);
           await db.update(schema.syncedMeeting).set({
-            projectId: data.projectId as string | null,
+            projectId,
             name: String(data.name),
             description: stringField(data, "description"),
             status: String(data.status),
@@ -986,28 +923,6 @@ function createIdentityStore(
           records.push({ entity: "meeting", id: operation.entityId, revision: null, record: null });
           continue;
         }
-        if (Array.isArray(data.screenshotIds)) {
-          const screenshotIds = data.screenshotIds as string[];
-          const obsolete = await db.select({
-            screenshotId: schema.syncedScreenshot.screenshotId,
-            storageKey: schema.syncedScreenshot.storageKey,
-          }).from(schema.syncedScreenshot).where(and(
-            eq(schema.syncedScreenshot.vaultId, transaction.vaultId),
-            eq(schema.syncedScreenshot.meetingId, operation.entityId),
-            eq(schema.syncedScreenshot.active, true),
-            ...(screenshotIds.length ? [notInArray(schema.syncedScreenshot.screenshotId, screenshotIds)] : []),
-          ));
-          if (obsolete.length) {
-            await db.insert(schema.storageDeleteJob).values(obsolete.map(({ storageKey }) => ({ storageKey }))).onConflictDoNothing();
-            await db.update(schema.syncedScreenshot).set({ active: false, updatedAt: now }).where(inArray(
-              schema.syncedScreenshot.screenshotId,
-              obsolete.map(({ screenshotId }) => screenshotId),
-            ));
-            for (const screenshot of obsolete) {
-              await appendChange(transaction, "screenshot", screenshot.screenshotId, "delete", null);
-            }
-          }
-        }
       } else if (operation.entity === "summary") {
         await assertRevision(transaction, "summary", operation.entityId, operation.baseRevision);
         await db.update(schema.syncedMeeting).set(operation.action === "delete" ? {
@@ -1022,36 +937,88 @@ function createIdentityStore(
           summaryRevision: sql`${schema.syncedMeeting.summaryRevision} + 1`,
         }).where(ownedMeeting(transaction.vaultId, operation.entityId));
       } else if (operation.entity === "transcript") {
-        const current = await canonicalRecord("transcript", transaction.vaultId, operation.entityId);
-        if (!current.record) throw new SyncTransactionError(404, "meeting_not_found");
-        const currentGeneration = (current.record as { activeGeneration?: string | null }).activeGeneration ?? null;
-        if ((data.baseGeneration ?? null) !== currentGeneration) {
-          throw new SyncTransactionError(409, "transcript_generation_conflict", [{
-            entity: "transcript",
-            id: operation.entityId,
-            clientBaseRevision: operation.baseRevision,
-            serverRevision: current.revision,
-            record: current.record,
-          }]);
+        await assertRevision(transaction, "transcript", operation.entityId, operation.baseRevision);
+        const patchId = String(data.patchId);
+        if (patchId !== operation.id) {
+          throw new SyncTransactionError(422, "transcript_patch_id_mismatch", [], operation.id);
         }
-        const generation = data.generation as string | null;
-        if (generation) {
-          const [segment] = await db.select({ id: schema.syncedTranscriptSegment.segmentId })
-            .from(schema.syncedTranscriptSegment).where(and(
-              eq(schema.syncedTranscriptSegment.vaultId, transaction.vaultId),
-              eq(schema.syncedTranscriptSegment.meetingId, operation.entityId),
-              eq(schema.syncedTranscriptSegment.generation, generation),
-            )).limit(1);
-          if (!segment) throw new SyncTransactionError(422, "transcript_generation_missing");
+        const expectedChunks = data.chunks as Array<{
+          index: number;
+          sha256: string;
+          segmentCount: number;
+          deletionCount: number;
+        }>;
+        const storedChunks = await db.select().from(schema.transcriptPatchChunk).where(and(
+          eq(schema.transcriptPatchChunk.vaultId, transaction.vaultId),
+          eq(schema.transcriptPatchChunk.meetingId, operation.entityId),
+          eq(schema.transcriptPatchChunk.patchId, patchId),
+        )).orderBy(asc(schema.transcriptPatchChunk.chunkIndex));
+        if (storedChunks.length !== expectedChunks.length) {
+          throw new SyncTransactionError(422, "transcript_patch_incomplete", [], operation.id);
+        }
+        const segments: SyncTranscriptSegment[] = [];
+        const deletions: string[] = [];
+        for (const [index, chunk] of storedChunks.entries()) {
+          const expected = expectedChunks[index];
+          if (!expected || chunk.chunkIndex !== expected.index || chunk.contentHash !== expected.sha256) {
+            throw new SyncTransactionError(422, "transcript_patch_hash_mismatch", [], operation.id);
+          }
+          const payload = (typeof chunk.payload === "string" ? JSON.parse(chunk.payload) : chunk.payload) as {
+            segments: Array<Omit<SyncTranscriptSegment, "startTime" | "endTime"> & {
+              startTime: Date | string;
+              endTime: Date | string | null;
+            }>;
+            deletions: string[];
+          };
+          if (payload.segments.length !== expected.segmentCount || payload.deletions.length !== expected.deletionCount) {
+            throw new SyncTransactionError(422, "transcript_patch_count_mismatch", [], operation.id);
+          }
+          segments.push(...payload.segments.map((segment) => ({
+            ...segment,
+            startTime: new Date(segment.startTime),
+            endTime: segment.endTime ? new Date(segment.endTime) : null,
+          })));
+          deletions.push(...payload.deletions);
+        }
+        if (segments.length !== data.segmentCount || deletions.length !== data.deletionCount
+          || new Set([...segments.map(({ segmentId }) => segmentId), ...deletions]).size !== segments.length + deletions.length) {
+          throw new SyncTransactionError(422, "invalid_transcript_patch", [], operation.id);
+        }
+        for (const batch of batches(deletions, 500)) {
+          await db.delete(schema.syncedTranscriptSegment).where(and(
+            eq(schema.syncedTranscriptSegment.vaultId, transaction.vaultId),
+            eq(schema.syncedTranscriptSegment.meetingId, operation.entityId),
+            inArray(schema.syncedTranscriptSegment.segmentId, batch),
+          ));
+        }
+        for (const batch of batches(segments, 250)) {
+          await db.insert(schema.syncedTranscriptSegment).values(batch.map((segment) => ({
+            ...segment,
+            vaultId: transaction.vaultId,
+            meetingId: operation.entityId,
+          }))).onConflictDoUpdate({
+            target: [
+              schema.syncedTranscriptSegment.vaultId,
+              schema.syncedTranscriptSegment.meetingId,
+              schema.syncedTranscriptSegment.segmentId,
+            ],
+            set: {
+              startTime: sql`excluded.start_time`,
+              endTime: sql`excluded.end_time`,
+              text: sql`excluded.text`,
+              isConfirmed: sql`excluded.is_confirmed`,
+              audioSource: sql`excluded.audio_source`,
+              speakerLabel: sql`excluded.speaker_label`,
+            },
+          });
         }
         await db.update(schema.syncedMeeting).set({
-          activeTranscriptGeneration: generation,
           transcriptRevision: sql`${schema.syncedMeeting.transcriptRevision} + 1`,
         }).where(ownedMeeting(transaction.vaultId, operation.entityId));
-        await db.delete(schema.syncedTranscriptSegment).where(and(
-          eq(schema.syncedTranscriptSegment.vaultId, transaction.vaultId),
-          eq(schema.syncedTranscriptSegment.meetingId, operation.entityId),
-          ...(generation ? [ne(schema.syncedTranscriptSegment.generation, generation)] : []),
+        await db.delete(schema.transcriptPatchChunk).where(and(
+          eq(schema.transcriptPatchChunk.vaultId, transaction.vaultId),
+          eq(schema.transcriptPatchChunk.meetingId, operation.entityId),
+          eq(schema.transcriptPatchChunk.patchId, patchId),
         ));
       } else if (operation.entity === "screenshot") {
         const meetingId = String(data.meetingId);
@@ -1064,6 +1031,14 @@ function createIdentityStore(
           )).limit(1);
           if (!screenshot) throw new SyncTransactionError(404, "screenshot_not_found");
           await db.insert(schema.storageDeleteJob).values({ storageKey: screenshot.storageKey }).onConflictDoNothing();
+          await db.delete(schema.searchIndexJob).where(and(
+            eq(schema.searchIndexJob.vaultId, transaction.vaultId),
+            eq(schema.searchIndexJob.documentId, operation.entityId),
+          ));
+          await db.delete(schema.searchDocument).where(and(
+            eq(schema.searchDocument.vaultId, transaction.vaultId),
+            eq(schema.searchDocument.documentId, operation.entityId),
+          ));
           await db.delete(schema.syncedScreenshot).where(eq(schema.syncedScreenshot.screenshotId, operation.entityId));
           cursor = await appendChange(transaction, "screenshot", operation.entityId, "delete", null);
           records.push({ entity: "screenshot", id: operation.entityId, revision: null, record: null });
@@ -1083,6 +1058,10 @@ function createIdentityStore(
         } else {
           await assertRevision(transaction, "screenshot", operation.entityId, operation.baseRevision);
         }
+        if (data.contentHash
+          && (current.record as { contentHash?: string } | null)?.contentHash !== data.contentHash) {
+          throw new SyncTransactionError(409, "screenshot_content_hash_mismatch");
+        }
         const [updated] = await db.update(schema.syncedScreenshot).set({
           active: true,
           capturedAt: data.capturedAt as Date,
@@ -1096,7 +1075,7 @@ function createIdentityStore(
           eq(schema.syncedScreenshot.screenshotId, operation.entityId),
           ownerAccess(schema.syncedScreenshot.vaultId),
         )).returning({ id: schema.syncedScreenshot.screenshotId });
-        if (!updated) throw new SyncTransactionError(422, "screenshot_content_missing");
+        if (!updated) throw new SyncTransactionError(422, "screenshot_content_missing", [], operation.id);
       }
 
       if (["meeting", "summary"].includes(operation.entity) && typeof data.searchText === "string") {
@@ -1152,7 +1131,9 @@ function createIdentityStore(
       responseJson: searchBackend === "sqlite" ? JSON.stringify(response) : response,
       cursor,
     });
-    return response;
+    return searchBackend === "sqlite"
+      ? JSON.parse(JSON.stringify(response)) as SyncTransactionResponse
+      : response;
   }
 
   async function listChanges(vaultId: string, after: number, limit: number): Promise<SyncChangeRecord[]> {
@@ -1177,10 +1158,15 @@ function createIdentityStore(
       gt(schema.syncChange.sequence, after),
     )).orderBy(asc(schema.syncChange.sequence)).limit(limit);
     const changes: SyncChangeRecord[] = [];
+    const canonicalRecords = new Map<string, SyncCanonicalRecord>();
     for (const row of rows) {
-      const canonical = row.action === "upsert"
-        ? await canonicalRecord(row.entity as SyncCanonicalRecord["entity"], vaultId, row.entityId, "read")
-        : null;
+      let canonical: SyncCanonicalRecord | null = null;
+      if (row.action === "upsert") {
+        const key = `${row.entity}:${row.entityId}`;
+        canonical = canonicalRecords.get(key)
+          ?? await canonicalRecord(row.entity as SyncCanonicalRecord["entity"], vaultId, row.entityId, "read");
+        canonicalRecords.set(key, canonical);
+      }
       changes.push({
         sequence: row.sequence,
         vaultId,
@@ -1208,156 +1194,26 @@ function createIdentityStore(
     commitTransaction,
     listChanges,
     latestChangeSequence,
-    commitVaultManifest,
     ensureUploadTarget,
-    async commitManifest(manifest) {
-      if (!await ensureUploadTarget(manifest.vaultId, manifest.meetingId)) {
-        return { committed: false, missingScreenshotContent: false, obsoleteScreenshots: [] };
-      }
-      const existingScreenshots = await db.select().from(schema.syncedScreenshot).where(and(
-        eq(schema.syncedScreenshot.vaultId, manifest.vaultId),
-        eq(schema.syncedScreenshot.meetingId, manifest.meetingId),
-      )) as SyncScreenshotRecord[];
-      const existingScreenshotById = new Map(existingScreenshots.map((screenshot) => [screenshot.screenshotId, screenshot]));
-      if (manifest.screenshots.some(({ screenshotId }) => !existingScreenshotById.has(screenshotId))) {
-        return { committed: false, missingScreenshotContent: true, obsoleteScreenshots: [] };
-      }
-      const currentDocuments = await db.select({
-        documentId: schema.searchDocument.documentId,
-        hash: schema.searchDocument.embeddingContentHash,
-      }).from(schema.searchDocument).where(and(
-        eq(schema.searchDocument.vaultId, manifest.vaultId),
-        eq(schema.searchDocument.meetingId, manifest.meetingId),
-      ));
-      const currentDocumentHashes = new Map(currentDocuments.map(({ documentId, hash }) => [documentId, hash]));
-      if (manifest.projectId) {
-        const [project] = await db.select({ id: schema.syncedProject.projectId }).from(schema.syncedProject).where(and(
-          eq(schema.syncedProject.vaultId, manifest.vaultId),
-          eq(schema.syncedProject.projectId, manifest.projectId),
-          ownerAccess(schema.syncedProject.vaultId),
-        )).limit(1);
-        if (!project) return { committed: false, missingScreenshotContent: false, obsoleteScreenshots: [] };
-      }
-      const [updated] = await db.update(schema.syncedMeeting).set({
-        projectId: manifest.projectId,
-        name: manifest.name,
-        description: manifest.description,
-        status: manifest.status,
-        duration: manifest.duration,
-        recordingStartedAt: manifest.recordingStartedAt,
-        createdAt: manifest.createdAt,
-        updatedAt: manifest.updatedAt,
-        summaryTitle: manifest.summaryTitle,
-        summaryDocument: manifest.summaryDocument,
-        summaryCreatedAt: manifest.summaryCreatedAt,
-        activeTranscriptGeneration: manifest.activeTranscriptGeneration,
-        manifestReceivedAt: new Date(),
-      }).where(and(ownedMeeting(manifest.vaultId, manifest.meetingId), isNull(schema.syncedMeeting.deletingAt)))
-        .returning({ meetingId: schema.syncedMeeting.meetingId });
-      if (!updated) return { committed: false, missingScreenshotContent: false, obsoleteScreenshots: [] };
-      const searchDocuments: SearchDocumentInput[] = [{
-        documentId: manifest.meetingId,
-        vaultId: manifest.vaultId,
-        meetingId: manifest.meetingId,
-        kind: "meeting",
-        searchText: manifest.searchText,
-        embeddingText: manifest.embeddingText,
-        embeddingContentHash: manifest.embeddingContentHash,
-        currentEmbeddingContentHash: currentDocumentHashes.get(manifest.meetingId) ?? null,
-      }];
-
-      if (manifest.activeTranscriptGeneration) {
-        await db.delete(schema.syncedTranscriptSegment).where(and(
-          eq(schema.syncedTranscriptSegment.vaultId, manifest.vaultId),
-          eq(schema.syncedTranscriptSegment.meetingId, manifest.meetingId),
-          ne(schema.syncedTranscriptSegment.generation, manifest.activeTranscriptGeneration),
-        ));
-      } else {
-        await db.delete(schema.syncedTranscriptSegment).where(and(
-          eq(schema.syncedTranscriptSegment.vaultId, manifest.vaultId),
-          eq(schema.syncedTranscriptSegment.meetingId, manifest.meetingId),
-        ));
-      }
-
-      const now = new Date();
-      const screenshotBatchSize = searchBackend === "sqlite" ? 100 : 500;
-      for (let offset = 0; offset < manifest.screenshots.length; offset += screenshotBatchSize) {
-        const batch = manifest.screenshots.slice(offset, offset + screenshotBatchSize);
-        await db.insert(schema.syncedScreenshot).values(batch.map((screenshot) => ({
-          ...existingScreenshotById.get(screenshot.screenshotId)!,
-          capturedAt: screenshot.capturedAt,
-          active: true,
-          ocrText: screenshot.ocrText,
-          caption: screenshot.caption,
-          updatedAt: now,
-        }))).onConflictDoUpdate({
-          target: schema.syncedScreenshot.screenshotId,
-          set: {
-            capturedAt: sql`excluded.captured_at`,
-            active: true,
-            ocrText: sql`excluded.ocr_text`,
-            caption: sql`excluded.caption`,
-            updatedAt: now,
-          },
-        });
-        searchDocuments.push(...batch.map((screenshot) => ({
-          documentId: screenshot.screenshotId,
-          vaultId: manifest.vaultId,
-          meetingId: manifest.meetingId,
-          kind: "screenshot" as const,
-          searchText: screenshot.searchText,
-          embeddingText: screenshot.embeddingText,
-          embeddingContentHash: screenshot.embeddingContentHash,
-          currentEmbeddingContentHash: currentDocumentHashes.get(screenshot.screenshotId) ?? null,
-        })));
-      }
-      await updateSearchDocuments(searchDocuments);
-
-      const screenshotIds = manifest.screenshots.map((screenshot) => screenshot.screenshotId);
-      const activeScreenshotIds = new Set(screenshotIds);
-      const obsolete = existingScreenshots.filter(({ screenshotId }) => !activeScreenshotIds.has(screenshotId));
-      if (obsolete.length > 0) {
-        const obsoleteIds = obsolete.map(({ screenshotId }) => screenshotId);
-        await db.update(schema.syncedScreenshot).set({ active: false, updatedAt: now }).where(and(
-          eq(schema.syncedScreenshot.vaultId, manifest.vaultId),
-          inArray(schema.syncedScreenshot.screenshotId, obsoleteIds),
-        ));
-        await db.delete(schema.searchIndexJob).where(and(
-          eq(schema.searchIndexJob.vaultId, manifest.vaultId),
-          inArray(schema.searchIndexJob.documentId, obsoleteIds),
-        ));
-        await db.delete(schema.searchDocument).where(and(
-          eq(schema.searchDocument.vaultId, manifest.vaultId),
-          inArray(schema.searchDocument.documentId, obsoleteIds),
-        ));
-      }
-      return { committed: true, missingScreenshotContent: false, obsoleteScreenshots: obsolete };
-    },
-    async putTranscriptChunk(vaultId, meetingId, generation, segments) {
+    async putTranscriptChunk(vaultId, meetingId, patchId, chunkIndex, contentHash, segments, deletions) {
       if (!await ensureUploadTarget(vaultId, meetingId)) return false;
-      if (segments.length === 0) return true;
-      await db.insert(schema.syncedTranscriptSegment).values(segments.map((segment) => ({
-        ...segment,
+      const payload = { segments, deletions };
+      await db.insert(schema.transcriptPatchChunk).values({
         vaultId,
         meetingId,
-        generation,
-      }))).onConflictDoUpdate({
-        target: [
-          schema.syncedTranscriptSegment.vaultId,
-          schema.syncedTranscriptSegment.meetingId,
-          schema.syncedTranscriptSegment.generation,
-          schema.syncedTranscriptSegment.segmentId,
-        ],
-        set: {
-          startTime: sql`excluded.start_time`,
-          endTime: sql`excluded.end_time`,
-          text: sql`excluded.text`,
-          isConfirmed: sql`excluded.is_confirmed`,
-          audioSource: sql`excluded.audio_source`,
-          speakerLabel: sql`excluded.speaker_label`,
-        },
-      });
-      return true;
+        patchId,
+        chunkIndex,
+        contentHash,
+        payload: searchBackend === "sqlite" ? JSON.stringify(payload) : payload,
+      }).onConflictDoNothing();
+      const [stored] = await db.select({ hash: schema.transcriptPatchChunk.contentHash })
+        .from(schema.transcriptPatchChunk).where(and(
+          eq(schema.transcriptPatchChunk.vaultId, vaultId),
+          eq(schema.transcriptPatchChunk.meetingId, meetingId),
+          eq(schema.transcriptPatchChunk.patchId, patchId),
+          eq(schema.transcriptPatchChunk.chunkIndex, chunkIndex),
+        )).limit(1);
+      return stored?.hash === contentHash;
     },
     async getScreenshot(vaultId, meetingId, screenshotId, activeOnly = false) {
       const [row] = await db.select().from(schema.syncedScreenshot).where(and(
@@ -1376,6 +1232,7 @@ function createIdentityStore(
       const [created] = await db.insert(schema.syncedScreenshot).values({
         ...input,
         active: false,
+        revision: 0,
         createdAt: new Date(),
         updatedAt: new Date(),
       }).onConflictDoNothing().returning({ screenshotId: schema.syncedScreenshot.screenshotId });
@@ -1450,7 +1307,7 @@ function createIdentityStore(
             lt(schema.syncedMeeting.meetingId, cursor.meetingId),
           ),
         )] : []),
-        isNotNull(schema.syncedMeeting.manifestReceivedAt),
+        eq(schema.syncedMeeting.active, true),
         isNull(schema.syncedMeeting.deletingAt),
       );
       if (!query) {
@@ -1469,19 +1326,19 @@ function createIdentityStore(
     async getMeeting(vaultId, meetingId) {
       const [row] = await db.select(meetingSelection(schema)).from(schema.syncedMeeting).where(and(
         readableMeeting(vaultId, meetingId),
-        isNotNull(schema.syncedMeeting.manifestReceivedAt),
+        eq(schema.syncedMeeting.active, true),
         isNull(schema.syncedMeeting.deletingAt),
       )).limit(1);
       return row ?? null;
     },
     async listTranscript(vaultId, meetingId, limit, cursor) {
-      const [meeting] = await db.select({ generation: schema.syncedMeeting.activeTranscriptGeneration })
+      const [meeting] = await db.select({ id: schema.syncedMeeting.meetingId })
         .from(schema.syncedMeeting).where(and(
           readableMeeting(vaultId, meetingId),
-          isNotNull(schema.syncedMeeting.manifestReceivedAt),
+          eq(schema.syncedMeeting.active, true),
           isNull(schema.syncedMeeting.deletingAt),
         )).limit(1);
-      if (!meeting?.generation) return [];
+      if (!meeting) return [];
       return db.select({
         segmentId: schema.syncedTranscriptSegment.segmentId,
         startTime: schema.syncedTranscriptSegment.startTime,
@@ -1494,7 +1351,6 @@ function createIdentityStore(
         readable(schema.syncedTranscriptSegment.vaultId),
         eq(schema.syncedTranscriptSegment.vaultId, vaultId),
         eq(schema.syncedTranscriptSegment.meetingId, meetingId),
-        eq(schema.syncedTranscriptSegment.generation, meeting.generation),
         ...(cursor ? [or(
           gt(schema.syncedTranscriptSegment.startTime, cursor.startTime),
           and(
@@ -1510,7 +1366,7 @@ function createIdentityStore(
       const [meeting] = await db.select({ id: schema.syncedMeeting.meetingId })
         .from(schema.syncedMeeting).where(and(
           readableMeeting(vaultId, meetingId),
-          isNotNull(schema.syncedMeeting.manifestReceivedAt),
+          eq(schema.syncedMeeting.active, true),
           isNull(schema.syncedMeeting.deletingAt),
         )).limit(1);
       if (!meeting) return [];
@@ -1748,7 +1604,6 @@ function meetingSelection(schema: SyncSchema) {
     summaryTitle: schema.syncedMeeting.summaryTitle,
     summaryDocument: schema.syncedMeeting.summaryDocument,
     summaryCreatedAt: schema.syncedMeeting.summaryCreatedAt,
-    activeTranscriptGeneration: schema.syncedMeeting.activeTranscriptGeneration,
     revision: schema.syncedMeeting.revision,
     summaryRevision: schema.syncedMeeting.summaryRevision,
     transcriptRevision: schema.syncedMeeting.transcriptRevision,
@@ -1764,6 +1619,7 @@ function screenshotSelection(schema: SyncSchema) {
     contentType: schema.syncedScreenshot.contentType,
     storageKey: schema.syncedScreenshot.storageKey,
     contentLength: schema.syncedScreenshot.contentLength,
+    contentHash: schema.syncedScreenshot.contentHash,
     ocrText: schema.syncedScreenshot.ocrText,
     caption: schema.syncedScreenshot.caption,
     revision: schema.syncedScreenshot.revision,

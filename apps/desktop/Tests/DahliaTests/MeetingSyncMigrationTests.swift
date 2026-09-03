@@ -7,415 +7,422 @@
     @MainActor
     struct MeetingSyncMigrationTests {
         @Test
-        func currentSchemaSyncsOnlyOriginalTranscriptText() throws {
+        func finalUnreleasedSchemaUsesFourDerivedStateFreeQueueTables() throws {
             let database = try AppDatabaseManager(path: ":memory:")
-            let result = try database.dbQueue.read { db in
-                (
-                    try db.tableExists("meeting_sync_jobs"),
-                    try db.tableExists("meeting_sync_success"),
-                    try String.fetchOne(
-                        db,
-                        sql: "SELECT name FROM sqlite_master WHERE type = 'trigger' AND name = 'meeting_sync_queue_translation'"
-                    ),
-                    try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('vaults')"),
-                    try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('screenshots')")
+            let tables = try database.dbQueue.read { db in
+                try String.fetchAll(
+                    db,
+                    sql: "SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'sync_%' ORDER BY name"
                 )
             }
-            #expect(result.0)
-            #expect(result.1)
-            #expect(result.2 == nil)
-            #expect(result.3.contains("syncBulkDeleteApproved"))
-            #expect(result.3.contains("syncDeletionConnectionId"))
-            #expect(result.4.contains("syncUploadedConnectionId"))
-            #expect(result.3.contains("name"))
-            #expect(try database.dbQueue.read { db in try db.tableExists("sync_apply_context") })
-            #expect(try database.dbQueue.read { db in try db.tableExists("cloud_vaults") })
-            #expect(try database.dbQueue.read { db in try db.tableExists("vault_sync_jobs") })
-            #expect(try database.dbQueue.read { db in
-                try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('transcript_segments')")
-                    .contains("audioSource")
-            })
+            #expect(tables == [
+                "sync_entity_state",
+                "sync_operations",
+                "sync_transactions",
+                "sync_transcript_patch_items",
+            ])
+
+            let cloudVaultExists = try database.dbQueue.read { db in
+                try db.tableExists("cloud_vaults")
+            }
+            #expect(!cloudVaultExists)
+
+            let transactionColumns = try database.dbQueue.read { db in
+                try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('sync_transactions')")
+            }
+            #expect(!transactionColumns.contains("status"))
+            #expect(!transactionColumns.contains("claimedAt"))
+
+            let operationColumns = try database.dbQueue.read { db in
+                try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('sync_operations')")
+            }
+            #expect(operationColumns.contains("attachmentBytes"))
+            #expect(!operationColumns.contains("expectedRevision"))
+
+            let stateColumns = try database.dbQueue.read { db in
+                try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('sync_entity_state')")
+            }
+            #expect(stateColumns == ["vaultId", "entity", "entityId", "confirmedRevision"])
         }
 
         @Test
-        func enablingSyncMarksBootstrapBeforeQueuedUploadsRun() async throws {
-            let database = try AppDatabaseManager(path: ":memory:")
-            let repository = MeetingRepository(dbQueue: database.dbQueue)
-            let connection = DahliaAccountConnectionRecord(
-                id: .v7(), origin: "https://server.example.com", clientID: "desktop-client", createdAt: .now
+        func recorderKeepsImmutablePayloadAttachmentAndVaultOrder() async throws {
+            let (database, vault) = try await syncedDatabase()
+            let firstId = UUID.v7()
+            let secondId = UUID.v7()
+            let attachment = SyncScreenshotAttachment(mimeType: "image/png", bytes: Data([1, 2, 3]))
+            let first = SyncOperationDraft(
+                id: firstId,
+                entity: .screenshot,
+                action: .upsert,
+                entityId: UUID.v7(),
+                payloadJSON: Data("{\"caption\":\"first\"}".utf8)
             )
-            var configuredVault = VaultRecord(
-                id: .v7(), path: "/tmp/bootstrap", name: "Bootstrap", createdAt: .now, lastOpenedAt: .now
+            let second = SyncOperationDraft(
+                id: secondId,
+                entity: .meeting,
+                action: .update,
+                entityId: UUID.v7(),
+                payloadJSON: Data("{\"name\":\"second\"}".utf8)
             )
-            configuredVault.accountConnectionId = connection.id
-            let vault = configuredVault
-            try await database.dbQueue.write { db in
-                try connection.insert(db)
-                try vault.insert(db)
-            }
-
-            let updated = try #require(try await repository.updateVaultSync(id: vault.id, isEnabled: true))
-            #expect(updated.syncBootstrapPending)
-            #expect(try await database.dbQueue.read { db in
-                try Int.fetchOne(db, sql: "SELECT count(*) FROM vault_sync_jobs WHERE vaultId = ?", arguments: [vault.id])
-            } == 1)
-        }
-
-        @Test
-        func remoteApplyDoesNotRequeueDomainChanges() async throws {
-            let (database, vault, meeting) = try await syncedMeetingDatabase()
-            try await database.dbQueue.write { db in
-                try db.execute(sql: "DELETE FROM vault_sync_jobs; DELETE FROM meeting_sync_jobs")
-                try db.execute(sql: "INSERT INTO sync_apply_context(active) VALUES(1)")
-                try db.execute(sql: "UPDATE vaults SET name = 'Remote' WHERE id = ?", arguments: [vault.id])
-                try db.execute(sql: "UPDATE meetings SET name = 'Remote' WHERE id = ?", arguments: [meeting.id])
-                try db.execute(sql: "DELETE FROM sync_apply_context")
-            }
-            let counts = try await database.dbQueue.read { db in
-                (
-                    try Int.fetchOne(db, sql: "SELECT count(*) FROM vault_sync_jobs") ?? -1,
-                    try Int.fetchOne(db, sql: "SELECT count(*) FROM meeting_sync_jobs") ?? -1
+            _ = try await database.dbQueue.write { db in
+                try SyncTransactionRecorder.record(
+                    vaultId: vault.id,
+                    operations: [first],
+                    screenshotAttachments: [firstId: attachment],
+                    in: db
                 )
-            }
-            #expect(counts.0 == 0)
-            #expect(counts.1 == 0)
-        }
-
-        @Test
-        func audioSourceMigrationPreservesExistingRoutingAndClearsSpeakerLabel() throws {
-            let queue = try DatabaseQueue()
-            let segmentID = UUID.v7()
-            try queue.write { db in
-                try db.execute(sql: """
-                CREATE TABLE vaults (id BLOB PRIMARY KEY, name TEXT, syncEnabled BOOLEAN DEFAULT 0);
-                CREATE TABLE projects (
-                    id BLOB PRIMARY KEY, vaultId BLOB, parentProjectId BLOB, name TEXT,
-                    description TEXT, projectType TEXT, revision INTEGER
-                );
-                CREATE TABLE meetings (id BLOB PRIMARY KEY, vaultId BLOB, projectId BLOB);
-                CREATE TABLE meeting_sync_jobs (
-                    id INTEGER PRIMARY KEY, vaultId BLOB, meetingId BLOB, targetKind TEXT,
-                    generation INTEGER DEFAULT 1, status TEXT DEFAULT 'pending', attempts INTEGER DEFAULT 0,
-                    availableAt DATETIME, claimedAt DATETIME, leaseExpiresAt DATETIME,
-                    lastErrorCode TEXT, updatedAt DATETIME,
-                    UNIQUE(targetKind, meetingId)
-                );
-                CREATE TABLE transcript_segments (id BLOB PRIMARY KEY, speakerLabel TEXT);
-                INSERT INTO transcript_segments(id, speakerLabel) VALUES (?, 'mic');
-                """, arguments: [segmentID])
-                try VaultProjectSyncMigration.migrate(in: db)
-            }
-            let row = try queue.read { db in
-                try Row.fetchOne(db, sql: "SELECT audioSource, speakerLabel FROM transcript_segments WHERE id = ?", arguments: [segmentID])
-            }
-            #expect(row?["audioSource"] as String? == "mic")
-            #expect(row?["speakerLabel"] as String? == nil)
-        }
-
-        @Test
-        func deletingServerCopyClearsScreenshotUploadAcknowledgements() async throws {
-            let database = try AppDatabaseManager(path: ":memory:")
-            let repository = MeetingRepository(dbQueue: database.dbQueue)
-            let connection = DahliaAccountConnectionRecord(
-                id: .v7(), origin: "https://server.example.com", clientID: "desktop-client", createdAt: .now
-            )
-            var vault = VaultRecord(id: .v7(), path: "/tmp/sync", name: "Sync", createdAt: .now, lastOpenedAt: .now)
-            vault.accountConnectionId = connection.id
-            vault.syncConfirmedConnectionId = connection.id
-            vault.syncEnabled = true
-            let meeting = MeetingRecord(id: .v7(), vaultId: vault.id, name: "Meeting", createdAt: .now, updatedAt: .now)
-            var screenshot = MeetingScreenshotRecord(
-                id: .v7(), meetingId: meeting.id, sessionId: nil, capturedAt: .now,
-                imageData: Data([1]), mimeType: "image/png", ocrText: nil, caption: nil
-            )
-            screenshot.syncUploadedConnectionId = connection.id
-            let savedVault = vault
-            let savedScreenshot = screenshot
-            try await database.dbQueue.write { db in
-                try connection.insert(db)
-                try savedVault.insert(db)
-                try meeting.insert(db)
-                try savedScreenshot.insert(db)
+                try SyncTransactionRecorder.record(vaultId: vault.id, operations: [second], in: db)
             }
 
-            _ = try await repository.requestServerVaultDeletion(id: savedVault.id)
-            let screenshotId = savedScreenshot.id
-            let state = try await database.dbQueue.read { db in
-                (
-                    try MeetingScreenshotRecord.fetchOne(db, key: screenshotId)?.syncUploadedConnectionId,
-                    try VaultRecord.fetchOne(db, key: savedVault.id)?.syncDeletionConnectionId
-                )
-            }
-            #expect(state.0 == nil)
-            #expect(state.1 == connection.id)
-            await #expect(throws: DahliaAccountConnectionError.self) {
-                try await repository.deleteDahliaAccountConnection(id: connection.id)
-            }
-
-            let replacement = DahliaAccountConnectionRecord(
-                id: .v7(), origin: "https://other.example.com", clientID: "desktop-client", createdAt: .now
-            )
-            try await database.dbQueue.write { db in try replacement.insert(db) }
-            #expect(try await repository.updateVaultAccountConnection(
-                id: savedVault.id,
-                connectionID: replacement.id
-            ) == nil)
-        }
-
-        @Test
-        func switchingConnectionPreservesServerDeletionControl() async throws {
-            let database = try AppDatabaseManager(path: ":memory:")
-            let repository = MeetingRepository(dbQueue: database.dbQueue)
-            let original = DahliaAccountConnectionRecord(
-                id: .v7(), origin: "https://original.example.com", clientID: "desktop-client", createdAt: .now
-            )
-            let replacement = DahliaAccountConnectionRecord(
-                id: .v7(), origin: "https://replacement.example.com", clientID: "desktop-client", createdAt: .now
-            )
-            var vault = VaultRecord(id: .v7(), path: "/tmp/sync", name: "Sync", createdAt: .now, lastOpenedAt: .now)
-            vault.accountConnectionId = original.id
-            vault.syncConfirmedConnectionId = original.id
-            vault.syncEnabled = true
-            let savedVault = vault
-            try await database.dbQueue.write { db in
-                try original.insert(db)
-                try replacement.insert(db)
-                try savedVault.insert(db)
-            }
-
-            let switched = try #require(try await repository.updateVaultAccountConnection(
-                id: savedVault.id,
-                connectionID: replacement.id
+            let claimed = try #require(try await SyncTransactionQueue.claim(dbQueue: database.dbQueue))
+            #expect(claimed.operations.map(\.id) == [firstId])
+            #expect(claimed.operations.first?.payloadJSON == first.payloadJSON)
+            #expect(try await SyncTransactionQueue.claim(dbQueue: database.dbQueue) == nil)
+            let stored = try #require(try await SyncTransactionQueue.screenshotAttachment(
+                operationId: firstId,
+                dbQueue: database.dbQueue
             ))
-            #expect(switched.accountConnectionId == replacement.id)
-            #expect(switched.syncConfirmedConnectionId == original.id)
-            #expect(!switched.syncEnabled)
-            #expect(try await repository.updateVaultSync(id: savedVault.id, isEnabled: true) == nil)
-            #expect(try await repository.connectionHasPendingServerDeletion(id: original.id))
-
-            let deleting = try #require(try await repository.requestServerVaultDeletion(id: savedVault.id))
-            #expect(deleting.syncDeletionConnectionId == original.id)
-            await #expect(throws: DahliaAccountConnectionError.self) {
-                try await repository.deleteDahliaAccountConnection(id: original.id)
-            }
+            #expect(stored.bytes == attachment.bytes)
+            #expect(stored.sha256 == attachment.sha256)
         }
 
         @Test
-        func syncedVaultMustDeleteServerCopyBeforeLocalRemoval() async throws {
-            let database = try AppDatabaseManager(path: ":memory:")
-            let repository = MeetingRepository(dbQueue: database.dbQueue)
-            let connection = DahliaAccountConnectionRecord(
-                id: .v7(),
-                origin: "https://server.example.com",
-                clientID: "desktop-client",
-                createdAt: .now
-            )
-            try await repository.insertDahliaAccountConnection(connection)
-            var vault = VaultRecord(
-                id: .v7(),
-                path: "/tmp/synced-vault",
-                name: "Synced",
-                createdAt: .now,
-                lastOpenedAt: .now
-            )
-            vault.accountConnectionId = connection.id
-            vault.syncConfirmedConnectionId = connection.id
-            try repository.insertVault(vault)
-
-            await #expect(throws: VaultDeletionError.self) {
-                try await repository.deleteVaultSafely(id: vault.id)
-            }
-            #expect(try repository.fetchAllVaults().map(\.id) == [vault.id])
-        }
-
-        @Test
-        func successfulSyncIsNotRequeuedUntilTheMeetingChanges() async throws {
-            let (database, _, meeting) = try await syncedMeetingDatabase()
-            let job = try #require(try await MeetingSyncQueue.claim(dbQueue: database.dbQueue))
-            try await MeetingSyncQueue.complete(job, dbQueue: database.dbQueue)
-
-            try await MeetingSyncQueue.reconcile(dbQueue: database.dbQueue)
-            let vaultJob = try #require(try await MeetingSyncQueue.claimVault(dbQueue: database.dbQueue))
-            try await MeetingSyncQueue.complete(vaultJob, dbQueue: database.dbQueue)
-            #expect(try await MeetingSyncQueue.claim(dbQueue: database.dbQueue) == nil)
-
-            try await database.dbQueue.write { db in try MeetingSyncQueue.enqueue(meetingId: meeting.id, in: db) }
-            #expect(try await MeetingSyncQueue.claim(dbQueue: database.dbQueue) != nil)
-        }
-
-        @Test
-        func transcriptChangeDuringUploadIsRequeued() async throws {
-            let (database, _, meeting) = try await syncedMeetingDatabase()
-            let job = try #require(try await MeetingSyncQueue.claim(dbQueue: database.dbQueue))
-            try await database.dbQueue.write { db in
-                try db.execute(
-                    sql: """
-                    INSERT INTO transcript_segments(id, meetingId, startTime, text, isConfirmed, audioSource)
-                    VALUES (?, ?, ?, 'Late segment', 1, 'mic')
-                    """,
-                    arguments: [UUID.v7(), meeting.id, Date()]
+        func blockedReasonIsThePersistentStoppedState() async throws {
+            let (database, vault) = try await syncedDatabase()
+            _ = try await database.dbQueue.write { db in
+                try SyncTransactionRecorder.record(
+                    vaultId: vault.id,
+                    operations: [SyncOperationDraft(entity: .vault, action: .update, entityId: vault.id)],
+                    in: db
                 )
             }
-
-            try await MeetingSyncQueue.complete(job, dbQueue: database.dbQueue)
-            try await MeetingSyncQueue.reconcile(dbQueue: database.dbQueue)
-
+            let claimed = try #require(try await SyncTransactionQueue.claim(dbQueue: database.dbQueue))
+            try await SyncTransactionQueue.block(
+                claimed,
+                reason: .conflict,
+                response: Data("{}".utf8),
+                dbQueue: database.dbQueue
+            )
+            #expect(try await SyncTransactionQueue.claim(dbQueue: database.dbQueue) == nil)
             #expect(try await database.dbQueue.read { db in
-                try Int.fetchOne(
-                    db,
-                    sql: "SELECT count(*) FROM meeting_sync_jobs WHERE meetingId = ? AND targetKind = 'upload'",
-                    arguments: [meeting.id]
-                )
-            } == 1)
+                try String.fetchOne(db, sql: "SELECT blockedReason FROM sync_transactions WHERE id = ?", arguments: [claimed.id])
+            } == "conflict")
         }
 
         @Test
-        func serverDeletionResetsCanonicalStateBeforeRestoreReupload() async throws {
-            let (database, vault, meeting) = try await syncedMeetingDatabase()
-            let screenshot = MeetingScreenshotRecord(
-                id: .v7(), meetingId: meeting.id, sessionId: nil, capturedAt: .now,
-                imageData: Data([1]), mimeType: "image/png", ocrText: nil, caption: nil
+        func recorderQueuesOnlyConfirmedTranscriptSegments() async throws {
+            let (database, vault) = try await syncedDatabase()
+            let patch = SyncOperationDraft(entity: .transcript, action: .patch, entityId: UUID.v7())
+            let segment = TranscriptSegmentRecord(
+                id: .v7(),
+                meetingId: patch.entityId,
+                sessionId: nil,
+                startTime: .now,
+                endTime: nil,
+                text: "preview",
+                translatedText: nil,
+                isConfirmed: false,
+                audioSource: "mic",
+                speakerLabel: nil,
+                audioFeatureVersion: nil,
+                audioActiveRmsDecibels: nil,
+                audioMedianPitchHertz: nil,
+                audioVoicedFrameRatio: nil,
+                audioPitchSpreadHertz: nil
             )
+
+            let transactionId = try await database.dbQueue.write { db in
+                try SyncTransactionRecorder.record(
+                    vaultId: vault.id,
+                    operations: [patch],
+                    transcriptSegments: [patch.id: [SyncTranscriptPatchSegment(segment)]],
+                    in: db
+                )
+            }
+
+            #expect(transactionId == nil)
+            #expect(try await database.dbQueue.read { db in
+                try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_transactions")
+            } == 0)
+        }
+
+        @Test
+        func disabledVaultStillClaimsServerReset() async throws {
+            let (database, vault) = try await syncedDatabase()
+            let transactionId = try #require(try await database.dbQueue.write { db in
+                try db.execute(sql: "UPDATE vaults SET syncEnabled = 0 WHERE id = ?", arguments: [vault.id])
+                return try SyncTransactionRecorder.record(
+                    vaultId: vault.id,
+                    operations: [SyncOperationDraft(entity: .vault, action: .reset, entityId: vault.id)],
+                    in: db
+                )
+            })
+
+            #expect(try await SyncTransactionQueue.claim(dbQueue: database.dbQueue)?.id == transactionId)
+        }
+
+        @Test
+        func memberVaultRejectsLocalDomainTransactions() async throws {
+            let (database, vault) = try await syncedDatabase()
             try await database.dbQueue.write { db in
-                try screenshot.insert(db)
-                try db.execute(
-                    sql: """
-                    UPDATE vaults SET serverRevision = 4, syncCursor = 'v1.cursor',
-                        syncConflictJSON = '{}', syncBootstrapPending = 1 WHERE id = ?;
-                    UPDATE meetings SET serverRevision = 3, summaryServerRevision = 2,
-                        transcriptServerRevision = 5, transcriptServerGeneration = 'generation' WHERE id = ?;
-                    UPDATE screenshots SET serverRevision = 7, syncUploadedConnectionId = accountConnectionId
-                    FROM vaults WHERE screenshots.id = ? AND vaults.id = ?;
-                    INSERT INTO meeting_sync_success(meetingId, segmentCount, confirmedCount)
-                    VALUES (?, 0, 0);
-                    """,
-                    arguments: [vault.id, meeting.id, screenshot.id, vault.id, meeting.id]
-                )
+                try db.execute(sql: "UPDATE vaults SET syncRole = 'member' WHERE id = ?", arguments: [vault.id])
             }
 
-            try await MeetingSyncQueue.completeServerVaultDeletion(
-                vaultId: vault.id,
-                mode: .replaceAfterRestore,
-                dbQueue: database.dbQueue
-            )
-
-            let state = try database.dbQueue.read { db in
-                try Row.fetchOne(
-                    db,
-                    sql: """
-                    SELECT vaults.serverRevision AS vaultRevision, vaults.syncCursor,
-                        vaults.syncConflictJSON, vaults.syncBootstrapPending,
-                        meetings.serverRevision AS meetingRevision, meetings.summaryServerRevision,
-                        meetings.transcriptServerRevision, meetings.transcriptServerGeneration,
-                        screenshots.serverRevision AS screenshotRevision, screenshots.syncUploadedConnectionId,
-                        (SELECT count(*) FROM vault_sync_jobs WHERE vaultId = vaults.id) AS vaultJobs,
-                        (SELECT count(*) FROM meeting_sync_jobs WHERE vaultId = vaults.id) AS meetingJobs,
-                        (SELECT count(*) FROM meeting_sync_success WHERE meetingId = meetings.id) AS successes
-                    FROM vaults JOIN meetings ON meetings.vaultId = vaults.id
-                    JOIN screenshots ON screenshots.meetingId = meetings.id
-                    WHERE vaults.id = ?
-                    """,
-                    arguments: [vault.id]
-                )
-            }
-            #expect(state?["vaultRevision"] as Int? == nil)
-            #expect(state?["syncCursor"] as String? == nil)
-            #expect(state?["syncConflictJSON"] as String? == nil)
-            #expect(state?["syncBootstrapPending"] as Bool? == false)
-            #expect(state?["meetingRevision"] as Int? == nil)
-            #expect(state?["summaryServerRevision"] as Int? == 0)
-            #expect(state?["transcriptServerRevision"] as Int? == 0)
-            #expect(state?["transcriptServerGeneration"] as String? == nil)
-            #expect(state?["screenshotRevision"] as Int? == nil)
-            #expect(state?["syncUploadedConnectionId"] as UUID? == nil)
-            #expect(state?["vaultJobs"] as Int? == 1)
-            #expect(state?["meetingJobs"] as Int? == 1)
-            #expect(state?["successes"] as Int? == 0)
-        }
-
-        @Test
-        func pushAcknowledgementDoesNotAdvancePullCursor() async throws {
-            let (database, vault, _) = try await syncedMeetingDatabase()
-            try await database.dbQueue.write { db in
-                try db.execute(
-                    sql: "UPDATE vaults SET syncCursor = 'v1.old' WHERE id = ?; INSERT INTO vault_sync_jobs(vaultId) VALUES (?)",
-                    arguments: [vault.id, vault.id]
-                )
-            }
-            let job = try #require(try await MeetingSyncQueue.claimVault(dbQueue: database.dbQueue))
-            try await MeetingSyncQueue.complete(
-                job,
-                response: MeetingSyncTransactionResponse(
-                    id: try #require(UUID(uuidString: job.transactionId)),
-                    status: "committed",
-                    cursor: "v1.new",
-                    records: [.init(entity: "vault", id: vault.id, revision: 9, record: nil)]
-                ),
-                dbQueue: database.dbQueue
-            )
-            let state = try database.dbQueue.read { db in
-                try Row.fetchOne(db, sql: "SELECT syncCursor, serverRevision FROM vaults WHERE id = ?", arguments: [vault.id])
-            }
-            #expect(state?["syncCursor"] as String? == "v1.old")
-            #expect(state?["serverRevision"] as Int? == 9)
-        }
-
-        @Test
-        func vaultManifestJobBlocksItsMeetingsUntilCompleted() async throws {
-            let (database, vault, _) = try await syncedMeetingDatabase()
-            try await MeetingSyncQueue.reconcile(dbQueue: database.dbQueue)
-
-            #expect(try await MeetingSyncQueue.claim(dbQueue: database.dbQueue) == nil)
-            let vaultJob = try #require(try await MeetingSyncQueue.claimVault(dbQueue: database.dbQueue))
-            #expect(vaultJob.vaultId == vault.id)
-            try await MeetingSyncQueue.complete(vaultJob, dbQueue: database.dbQueue)
-            #expect(try await MeetingSyncQueue.claim(dbQueue: database.dbQueue) != nil)
-        }
-
-        @Test
-        func permanentFailureWaitsForContentChange() async throws {
-            let (database, _, meeting) = try await syncedMeetingDatabase()
-            let job = try #require(try await MeetingSyncQueue.claim(dbQueue: database.dbQueue))
-            try await MeetingSyncQueue.block(job, code: "http_413", dbQueue: database.dbQueue)
-            #expect(try await MeetingSyncQueue.claim(dbQueue: database.dbQueue) == nil)
-
-            try await database.dbQueue.write { db in try MeetingSyncQueue.enqueue(meetingId: meeting.id, in: db) }
-            #expect(try await MeetingSyncQueue.claim(dbQueue: database.dbQueue) != nil)
-        }
-
-        @Test
-        func oneHundredMeetingDeletesRequireOneApproval() async throws {
-            let database = try AppDatabaseManager(path: ":memory:")
-            let repository = MeetingRepository(dbQueue: database.dbQueue)
-            let connection = DahliaAccountConnectionRecord(
-                id: .v7(), origin: "https://server.example.com", clientID: "desktop-client", createdAt: .now
-            )
-            var vault = VaultRecord(
-                id: .v7(), path: "/tmp/sync", name: "Sync", createdAt: .now, lastOpenedAt: .now
-            )
-            vault.accountConnectionId = connection.id
-            vault.syncConfirmedConnectionId = connection.id
-            vault.syncEnabled = true
-            let syncedVault = vault
-            try await database.dbQueue.write { db in
-                try connection.insert(db)
-                try syncedVault.insert(db)
-                for _ in 0 ..< MeetingSyncQueue.meetingDeleteConfirmationThreshold {
-                    try db.execute(
-                        sql: "INSERT INTO meeting_sync_jobs(vaultId, meetingId, targetKind) VALUES (?, ?, 'meetingDelete')",
-                        arguments: [syncedVault.id, UUID.v7()]
+            await #expect(throws: SyncTransactionQueueError.self) {
+                try await database.dbQueue.write { db in
+                    try SyncTransactionRecorder.record(
+                        vaultId: vault.id,
+                        operations: [SyncOperationDraft(entity: .vault, action: .update, entityId: vault.id)],
+                        in: db
                     )
                 }
             }
-
-            #expect(try await MeetingSyncQueue.claim(dbQueue: database.dbQueue) == nil)
-            #expect(try await repository.pendingMeetingDeletionCounts()[syncedVault.id] == 100)
-            try await repository.approvePendingMeetingDeletions(vaultId: syncedVault.id)
-            #expect(try await MeetingSyncQueue.claim(dbQueue: database.dbQueue) != nil)
+            #expect(try await database.dbQueue.read { db in
+                try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_transactions")
+            } == 0)
         }
 
         @Test
-        func activeBatchTranscriptionBlocksSyncUntilPersistenceFinishes() async throws {
+        func remoteTranscriptKeepsLocalOnlyAndUnconfirmedRows() async throws {
+            let (database, vault) = try await syncedDatabase()
+            let meeting = MeetingRecord(
+                id: .v7(), vaultId: vault.id, projectId: nil, name: "Meeting",
+                createdAt: .now, updatedAt: .now
+            )
+            let confirmedId = UUID.v7()
+            let previewId = UUID.v7()
+            try await database.dbQueue.write { db in
+                try meeting.insert(db)
+                try TranscriptSegmentRecord(
+                    id: confirmedId, meetingId: meeting.id, sessionId: UUID.v7(), startTime: .now,
+                    endTime: nil, text: "old", translatedText: "translation", isConfirmed: true,
+                    audioSource: "mic", speakerLabel: nil, audioFeatureVersion: 1,
+                    audioActiveRmsDecibels: -20, audioMedianPitchHertz: 180,
+                    audioVoicedFrameRatio: 0.8, audioPitchSpreadHertz: 20
+                ).insert(db)
+                try TranscriptSegmentRecord(
+                    id: previewId, meetingId: meeting.id, sessionId: UUID.v7(), startTime: .now,
+                    endTime: nil, text: "preview", translatedText: nil, isConfirmed: false,
+                    audioSource: "system", speakerLabel: nil, audioFeatureVersion: nil,
+                    audioActiveRmsDecibels: nil, audioMedianPitchHertz: nil,
+                    audioVoicedFrameRatio: nil, audioPitchSpreadHertz: nil
+                ).insert(db)
+                try RemoteChangeApplier.applyTranscript(
+                    meetingId: meeting.id,
+                    segments: [.init(
+                        segmentId: confirmedId, startTime: .now, endTime: nil, text: "canonical",
+                        isConfirmed: true, audioSource: "mic", speakerLabel: "Speaker"
+                    )],
+                    in: db
+                )
+            }
+
+            let segments = try await database.dbQueue.read { db in
+                try TranscriptSegmentRecord.filter(Column("meetingId") == meeting.id).fetchAll(db)
+            }
+            let confirmed = try #require(segments.first { $0.id == confirmedId })
+            #expect(confirmed.text == "canonical")
+            #expect(confirmed.translatedText == "translation")
+            #expect(confirmed.audioFeatureVersion == 1)
+            #expect(confirmed.speakerLabel == "Speaker")
+            #expect(segments.contains { $0.id == previewId && !$0.isConfirmed })
+        }
+
+        @Test
+        func transcriptSchemaSeparatesAudioSourceFromSpeakerLabel() throws {
+            let queue = try DatabaseQueue(path: ":memory:")
+            let source = UUID.v7()
+            let result = try queue.write { db in
+                try db.execute(sql: """
+                CREATE TABLE vaults(id BLOB PRIMARY KEY);
+                CREATE TABLE meetings(id BLOB PRIMARY KEY);
+                CREATE TABLE dahlia_account_connections(id BLOB PRIMARY KEY);
+                CREATE TABLE transcript_segments(
+                    id BLOB PRIMARY KEY, meetingId BLOB NOT NULL, speakerLabel TEXT
+                );
+                INSERT INTO transcript_segments(id, meetingId, speakerLabel) VALUES (?, ?, 'mic');
+                """, arguments: [source, UUID.v7()])
+                try MeetingSyncMigration.migrate(in: db)
+                return try (
+                    Row.fetchOne(db, sql: "SELECT audioSource, speakerLabel FROM transcript_segments WHERE id = ?", arguments: [source]),
+                    Row.fetchOne(db, sql: "SELECT \"notnull\" AS isNotNull FROM pragma_table_info('transcript_segments') WHERE name = 'speakerLabel'")
+                )
+            }
+            #expect(result.0?["audioSource"] as String? == "mic")
+            #expect(result.0?["speakerLabel"] as String? == nil)
+            #expect(result.1?["isNotNull"] as Int? == 0)
+        }
+
+        @Test
+        func derivesRevisionsAndPreservesLaterOptimisticStateOnAck() async throws {
+            let (database, vault) = try await syncedDatabase()
+            try await database.dbQueue.write { db in
+                try db.execute(
+                    sql: "INSERT INTO sync_entity_state(vaultId, entity, entityId, confirmedRevision) VALUES (?, 'vault', ?, 3)",
+                    arguments: [vault.id, vault.id]
+                )
+                guard var first = try VaultRecord.fetchOne(db, key: vault.id) else {
+                    throw SyncTransactionQueueError.invalidReceipt
+                }
+                first.name = "First local"
+                try first.update(db)
+                try SyncTransactionRecorder.record(
+                    vaultId: vault.id,
+                    operations: [SyncInitialSnapshotBuilder.vaultOperation(first, action: .update)],
+                    in: db
+                )
+                first.name = "Second local"
+                try first.update(db)
+                try SyncTransactionRecorder.record(
+                    vaultId: vault.id,
+                    operations: [SyncInitialSnapshotBuilder.vaultOperation(first, action: .update)],
+                    in: db
+                )
+            }
+            let bases = try await database.dbQueue.read { db in
+                try Int.fetchAll(db, sql: "SELECT baseRevision FROM sync_operations ORDER BY rowid")
+            }
+            #expect(bases == [3, 4])
+
+            let claimed = try #require(try await SyncTransactionQueue.claim(dbQueue: database.dbQueue))
+            try await SyncTransactionQueue.complete(
+                claimed,
+                response: SyncTransactionResponse(
+                    id: claimed.id,
+                    status: "committed",
+                    cursor: "cursor-4",
+                    records: [.init(
+                        entity: .vault,
+                        id: vault.id,
+                        revision: 4,
+                        record: .object(["name": .string("Canonical first")])
+                    )]
+                ),
+                dbQueue: database.dbQueue
+            )
+            let state = try await database.dbQueue.read { db in
+                try (
+                    VaultRecord.fetchOne(db, key: vault.id)?.name,
+                    Int.fetchOne(
+                        db,
+                        sql: "SELECT confirmedRevision FROM sync_entity_state WHERE vaultId = ? AND entity = 'vault'",
+                        arguments: [vault.id]
+                    ),
+                    Int.fetchOne(db, sql: "SELECT count(*) FROM sync_transactions WHERE vaultId = ?", arguments: [vault.id])
+                )
+            }
+            #expect(state.0 == "Second local")
+            #expect(state.1 == 4)
+            #expect(state.2 == 1)
+        }
+
+        @Test
+        func resetStopsNewRecordingAndClearsRemoteAssociationAfterAck() async throws {
+            let (database, vault) = try await syncedDatabase()
+            let resetId = try #require(try await database.dbQueue.write { db in
+                try SyncTransactionRecorder.record(
+                    vaultId: vault.id,
+                    operations: [SyncOperationDraft(entity: .vault, action: .reset, entityId: vault.id)],
+                    in: db
+                )
+            })
+            let ignored = try await database.dbQueue.write { db in
+                try SyncTransactionRecorder.record(
+                    vaultId: vault.id,
+                    operations: [SyncOperationDraft(entity: .vault, action: .update, entityId: vault.id)],
+                    in: db
+                )
+            }
+            #expect(ignored == nil)
+
+            let claimed = try #require(try await SyncTransactionQueue.claim(dbQueue: database.dbQueue))
+            #expect(claimed.id == resetId)
+            try await SyncTransactionQueue.complete(
+                claimed,
+                response: SyncTransactionResponse(
+                    id: claimed.id,
+                    status: "committed",
+                    cursor: "reset-cursor",
+                    records: [.init(entity: .vault, id: vault.id, revision: nil, record: nil)]
+                ),
+                dbQueue: database.dbQueue
+            )
+            let updated = try #require(try await database.dbQueue.read { db in
+                try VaultRecord.fetchOne(db, key: vault.id)
+            })
+            #expect(!updated.syncEnabled)
+            #expect(updated.syncConfirmedConnectionId == nil)
+            #expect(updated.syncPullCursor == nil)
+            #expect(updated.syncLastCommittedCursor == nil)
+        }
+
+        @Test
+        func initialSnapshotIsDerivedWithoutASeparateBootstrapFlag() async throws {
+            let (database, vault) = try await syncedDatabase()
+            try await database.dbQueue.write { db in
+                try SyncInitialSnapshotBuilder.enqueuePending(in: db)
+                try SyncInitialSnapshotBuilder.enqueuePending(in: db)
+            }
+            let first = try database.dbQueue.read { db in
+                let count = try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_transactions") ?? 0
+                let operation = try Row.fetchOne(db, sql: "SELECT entity, action FROM sync_operations")
+                return (count, operation)
+            }
+            #expect(first.0 == 1)
+            #expect(first.1?["entity"] as String? == "vault")
+            #expect(first.1?["action"] as String? == "create")
+
+            try await database.dbQueue.write { db in
+                try SyncTransactionQueue.discard(vaultId: vault.id, in: db)
+                try db.execute(
+                    sql: """
+                    INSERT INTO sync_entity_state(vaultId, entity, entityId, confirmedRevision)
+                    VALUES (?, 'vault', ?, 1)
+                    """,
+                    arguments: [vault.id, vault.id]
+                )
+                try SyncInitialSnapshotBuilder.enqueuePending(in: db)
+            }
+            #expect(try await database.dbQueue.read { db in
+                try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_transactions")
+            } == 0)
+        }
+
+        @Test
+        func initialSnapshotAtomicallyConfirmsItsConnectionBeforeQueuedChanges() async throws {
+            let (database, originalVault) = try await syncedDatabase()
+            try await database.dbQueue.write { db in
+                try db.execute(
+                    sql: "UPDATE vaults SET syncConfirmedConnectionId = NULL, name = 'Latest' WHERE id = ?",
+                    arguments: [originalVault.id]
+                )
+                let ignored = try SyncTransactionRecorder.record(
+                    vaultId: originalVault.id,
+                    operations: [SyncOperationDraft(entity: .vault, action: .update, entityId: originalVault.id)],
+                    in: db
+                )
+                #expect(ignored == nil)
+
+                try SyncInitialSnapshotBuilder.enqueuePending(in: db)
+            }
+
+            let state = try await database.dbQueue.read { db in
+                try (
+                    VaultRecord.fetchOne(db, key: originalVault.id)?.syncConfirmedConnectionId,
+                    String.fetchOne(
+                        db,
+                        sql: "SELECT payloadJSON FROM sync_operations WHERE entity = 'vault' AND action = 'create'"
+                    ),
+                    Int.fetchOne(db, sql: "SELECT count(*) FROM sync_transactions")
+                )
+            }
+            #expect(state.0 == originalVault.accountConnectionId)
+            #expect(state.1?.contains("Latest") == true)
+            #expect(state.2 == 1)
+        }
+
+        private func syncedDatabase() async throws -> (AppDatabaseManager, VaultRecord) {
             let database = try AppDatabaseManager(path: ":memory:")
             let connection = DahliaAccountConnectionRecord(
                 id: .v7(), origin: "https://server.example.com", clientID: "desktop-client", createdAt: .now
@@ -424,70 +431,12 @@
             vault.accountConnectionId = connection.id
             vault.syncConfirmedConnectionId = connection.id
             vault.syncEnabled = true
-            let meeting = MeetingRecord(
-                id: .v7(), vaultId: vault.id, name: "Batch", createdAt: .now, updatedAt: .now
-            )
-            var session = RecordingSessionRecord(
-                id: .v7(), meetingId: meeting.id, startedAt: .now, endedAt: .now,
-                duration: 1, offsetSeconds: 0, createdAt: .now, updatedAt: .now,
-                transcriptionMode: .batch
-            )
-            session.batchLastAttemptAt = .now
-            let syncedVault = vault
-            let activeSession = session
-            try await database.dbQueue.write { db in
-                try connection.insert(db)
-                try syncedVault.insert(db)
-                try meeting.insert(db)
-                try activeSession.insert(db)
-            }
-
-            #expect(try await MeetingSyncQueue.claim(dbQueue: database.dbQueue) == nil)
-            try await database.dbQueue.write { db in
-                try db.execute(
-                    sql: "UPDATE recording_sessions SET batchLastError = 'failed' WHERE id = ?",
-                    arguments: [activeSession.id]
-                )
-            }
-            #expect(try await MeetingSyncQueue.claim(dbQueue: database.dbQueue) != nil)
-        }
-
-        @Test
-        func staleOpenRealtimeSessionDoesNotBlockSync() async throws {
-            let (database, _, meeting) = try await syncedMeetingDatabase()
-            let session = RecordingSessionRecord(
-                id: .v7(), meetingId: meeting.id, startedAt: .now, endedAt: nil,
-                duration: nil, offsetSeconds: 0, createdAt: .now, updatedAt: .now,
-                transcriptionMode: .realtime
-            )
-            try await database.dbQueue.write { db in
-                try session.insert(db)
-            }
-
-            #expect(try await MeetingSyncQueue.claim(dbQueue: database.dbQueue) != nil)
-        }
-
-        private func syncedMeetingDatabase() async throws -> (AppDatabaseManager, VaultRecord, MeetingRecord) {
-            let database = try AppDatabaseManager(path: ":memory:")
-            let connection = DahliaAccountConnectionRecord(
-                id: .v7(), origin: "https://server.example.com", clientID: "desktop-client", createdAt: .now
-            )
-            var vault = VaultRecord(
-                id: .v7(), path: "/tmp/sync", name: "Sync", createdAt: .now, lastOpenedAt: .now
-            )
-            vault.accountConnectionId = connection.id
-            vault.syncConfirmedConnectionId = connection.id
-            vault.syncEnabled = true
-            let meeting = MeetingRecord(
-                id: .v7(), vaultId: vault.id, name: "Meeting", createdAt: .now, updatedAt: .now
-            )
             let savedVault = vault
             try await database.dbQueue.write { db in
                 try connection.insert(db)
                 try savedVault.insert(db)
-                try meeting.insert(db)
             }
-            return (database, savedVault, meeting)
+            return (database, savedVault)
         }
     }
 #endif

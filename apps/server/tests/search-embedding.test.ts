@@ -86,6 +86,15 @@ describe("search embeddings", () => {
     }
   });
 
+  it("rejects oversized document input before calling the model", async () => {
+    const transport = vi.fn(async (input: RequestInfo | URL) => String(input).endsWith("/oidc/v1/token")
+      ? Response.json({ access_token: "app-token", expires_in: 3600 })
+      : Response.json({ data: [] }));
+    expect(() => createSearchEmbedder(config, transport)!.embedDocuments(["x".repeat(64 * 1024 + 1)]))
+      .toThrow("embedding_input_too_large");
+    expect(transport).not.toHaveBeenCalled();
+  });
+
   it("merges FTS and vector ranks with stable FTS preference", () => {
     expect(reciprocalRankFusion(["fts", "both"], ["vector", "both"]).map(({ documentId }) => documentId))
       .toEqual(["both", "fts", "vector"]);
@@ -106,7 +115,6 @@ describe("search embeddings", () => {
       summaryTitle: null,
       summaryDocument: null,
       summaryCreatedAt: null,
-      activeTranscriptGeneration: null,
     };
     const listMeetings = vi.fn(async (
       _vaultId: string,
@@ -174,5 +182,31 @@ describe("search embeddings", () => {
     } as never;
     expect(await processSearchIndexBatch(store, embedder)).toBe(1);
     expect(retry).toHaveBeenCalledWith(document, "stale_content", expect.any(Date));
+  });
+
+  it("fails an oversized indexed document without sending it to the model", async () => {
+    const document: SearchIndexDocumentRecord = {
+      vaultId: "vault",
+      documentId: "document",
+      ownerUserId: "owner",
+      generation: 1,
+      attempts: 0,
+      claimedAt: new Date(),
+      embeddingText: "x".repeat(64 * 1024 + 1),
+      contentHash: "hash",
+    };
+    const fail = vi.fn(() => Promise.resolve());
+    const store = {
+      claim: vi.fn(() => Promise.resolve([document])),
+      loadMany: vi.fn(() => Promise.resolve([document])),
+      fail,
+      discard: vi.fn(() => Promise.resolve()),
+    } as unknown as SearchIndexStore;
+    const embedDocuments = vi.fn();
+    const embedder = { model: "model", dimensions: 32, embedDocuments } as never;
+
+    expect(await processSearchIndexBatch(store, embedder)).toBe(1);
+    expect(fail).toHaveBeenCalledWith(document, "embedding_input_too_large");
+    expect(embedDocuments).not.toHaveBeenCalled();
   });
 });

@@ -17,16 +17,14 @@ import type { SearchEmbedder } from "../search/embedding";
 import type {
   IdentitySyncStore,
   MeetingSyncStore,
-  SyncManifest,
   SyncScreenshotRecord,
   SyncSearchQuery,
   SyncTransaction,
   VaultPrincipalType,
 } from "./types";
-import { decodeSyncCursor, encodeSyncCursor } from "./store";
+import { decodeSyncCursor, encodeSyncCursor, SyncTransactionError } from "./store";
 
 const uuidSchema = z.uuid().transform((value) => value.toLowerCase());
-const generationSchema = z.string().regex(/^[0-9a-f]{64}$/);
 const dateSchema = z.iso.datetime().transform((value) => new Date(value));
 const nullableDateSchema = dateSchema.nullable();
 const projectNameSchema = z.string().trim().min(1).refine((value) =>
@@ -36,52 +34,18 @@ const projectNameSchema = z.string().trim().min(1).refine((value) =>
   && new TextEncoder().encode(value).byteLength <= 255,
 );
 const projectTypeSchema = z.enum(["customer", "internal", "personal", "undefined"]);
-const vaultManifestSchema = z.object({
-  name: z.string().trim().min(1).max(500),
-  createdAt: dateSchema,
-  projects: z.array(z.object({
-    projectId: uuidSchema,
-    parentProjectId: uuidSchema.nullable(),
-    name: projectNameSchema,
-    description: z.string().max(20_000).default(""),
-    projectType: projectTypeSchema.nullable(),
-    revision: z.number().int().min(1),
-    createdAt: dateSchema,
-  }).strict()).max(10_000),
-}).strict();
 const transcriptSegmentSchema = z.object({
   segmentId: uuidSchema,
   startTime: dateSchema,
   endTime: nullableDateSchema,
-  text: z.string(),
-  isConfirmed: z.boolean(),
+  text: z.string().max(100_000),
+  isConfirmed: z.literal(true),
   audioSource: z.enum(["mic", "system"]).nullable(),
   speakerLabel: z.string().max(200).nullable(),
 }).strict();
 const transcriptChunkSchema = z.object({
   segments: z.array(transcriptSegmentSchema).max(500),
-}).strict();
-const manifestSchema = z.object({
-  projectId: uuidSchema.nullable(),
-  name: z.string().max(500),
-  description: z.string().max(20_000).default(""),
-  status: z.string().max(100),
-  duration: z.number().finite().nonnegative().nullable(),
-  recordingStartedAt: nullableDateSchema,
-  createdAt: dateSchema,
-  updatedAt: dateSchema,
-  summary: z.object({
-    title: z.string(),
-    document: z.string(),
-    createdAt: dateSchema,
-  }).strict().nullable(),
-  activeTranscriptGeneration: generationSchema.nullable(),
-  screenshots: z.array(z.object({
-    screenshotId: uuidSchema,
-    capturedAt: dateSchema,
-    ocrText: z.string().nullable(),
-    caption: z.string().nullable(),
-  }).strict()).max(10_000),
+  deletions: z.array(uuidSchema).max(500),
 }).strict();
 
 const SCREENSHOT_CONTENT_TYPES = new Map([
@@ -94,10 +58,11 @@ const SCREENSHOT_CONTENT_TYPES = new Map([
 const SCREENSHOT_DELETE_BATCH_SIZE = 25;
 const QUERY_EMBEDDING_DEADLINE_MS = 2_000;
 const QUERY_EMBEDDING_CONCURRENCY = 8;
-const SCREENSHOT_PROJECTION_BATCH_SIZE = 64;
 const permissionPrincipalSchema = z.string().trim().min(1).max(200);
 export const SYNC_READ_PAGE_SIZE = 200;
 const TRANSCRIPT_READ_PAGE_SIZE = 10_000;
+const TRANSCRIPT_PATCH_ITEM_LIMIT = 50_000;
+const TRANSCRIPT_PATCH_CHUNK_LIMIT = 100;
 const meetingCursorSchema = z.tuple([dateSchema, uuidSchema]);
 const screenshotCursorSchema = z.tuple([dateSchema, uuidSchema]);
 const transcriptCursorSchema = z.tuple([dateSchema, uuidSchema]);
@@ -105,7 +70,7 @@ const uuidV7Schema = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89
 const transactionOperationSchema = z.object({
   id: uuidV7Schema,
   entity: z.enum(["vault", "project", "meeting", "summary", "transcript", "screenshot"]),
-  action: z.enum(["create", "update", "delete", "upsert", "replace", "reset", "deleteHierarchy"]),
+  action: z.enum(["create", "update", "delete", "upsert", "patch", "reset"]),
   entityId: uuidSchema,
   baseRevision: z.number().int().nonnegative().nullable(),
   data: z.record(z.string(), z.unknown()).nullable(),
@@ -119,43 +84,59 @@ const transactionSchema = z.object({
 }).strict();
 const transactionDataSchemas = {
   "vault:create": z.object({ name: z.string().trim().min(1).max(500), createdAt: dateSchema }).strict(),
-  "vault:update": z.object({ name: z.string().trim().min(1).max(500), projectIds: z.array(uuidSchema).max(10_000).optional() }).strict(),
+  "vault:update": z.object({ name: z.string().trim().min(1).max(500) }).strict(),
   "vault:reset": z.object({}).strict(),
   "project:create": z.object({ parentProjectId: uuidSchema.nullable(), name: projectNameSchema, description: z.string().max(20_000).default(""), projectType: projectTypeSchema.nullable(), createdAt: dateSchema }).strict(),
   "project:update": z.object({ parentProjectId: uuidSchema.nullable(), name: projectNameSchema, description: z.string().max(20_000).default(""), projectType: projectTypeSchema.nullable() }).strict(),
-  "project:deleteHierarchy": z.object({}).strict(),
-  "meeting:create": z.object({ projectId: uuidSchema.nullable(), name: z.string().max(500), description: z.string().max(20_000).default(""), status: z.string().max(100), duration: z.number().finite().nonnegative().nullable(), recordingStartedAt: nullableDateSchema, createdAt: dateSchema, updatedAt: dateSchema, screenshotIds: z.array(uuidSchema).max(10_000).optional() }).strict(),
-  "meeting:update": z.object({ projectId: uuidSchema.nullable(), name: z.string().max(500), description: z.string().max(20_000).default(""), status: z.string().max(100), duration: z.number().finite().nonnegative().nullable(), recordingStartedAt: nullableDateSchema, updatedAt: dateSchema, screenshotIds: z.array(uuidSchema).max(10_000).optional() }).strict(),
+  "project:delete": z.object({}).strict(),
+  "meeting:create": z.object({ projectId: uuidSchema.nullable(), name: z.string().max(500), description: z.string().max(20_000).default(""), status: z.string().max(100), duration: z.number().finite().nonnegative().nullable(), recordingStartedAt: nullableDateSchema, createdAt: dateSchema, updatedAt: dateSchema }).strict(),
+  "meeting:update": z.object({ projectId: uuidSchema.nullable(), name: z.string().max(500), description: z.string().max(20_000).default(""), status: z.string().max(100), duration: z.number().finite().nonnegative().nullable(), recordingStartedAt: nullableDateSchema, updatedAt: dateSchema }).strict(),
   "meeting:delete": z.object({}).strict(),
   "summary:upsert": z.object({ title: z.string().max(500), document: z.string().max(8 * 1024 * 1024), createdAt: dateSchema }).strict(),
   "summary:delete": z.object({}).strict(),
-  "transcript:replace": z.object({ generation: generationSchema.nullable(), baseGeneration: generationSchema.nullable() }).strict(),
-  "screenshot:upsert": z.object({ meetingId: uuidSchema, capturedAt: dateSchema, ocrText: z.string().nullable(), caption: z.string().nullable() }).strict(),
+  "transcript:patch": z.object({
+    patchId: uuidV7Schema,
+    segmentCount: z.number().int().nonnegative().max(TRANSCRIPT_PATCH_ITEM_LIMIT),
+    deletionCount: z.number().int().nonnegative().max(TRANSCRIPT_PATCH_ITEM_LIMIT),
+    chunks: z.array(z.object({
+      index: z.number().int().nonnegative(),
+      sha256: z.string().regex(/^[0-9a-f]{64}$/),
+      segmentCount: z.number().int().nonnegative().max(500),
+      deletionCount: z.number().int().nonnegative().max(500),
+    }).strict()).min(1).max(TRANSCRIPT_PATCH_CHUNK_LIMIT),
+  }).strict().superRefine((patch, context) => {
+    if (patch.chunks.reduce((sum, chunk) => sum + chunk.segmentCount, 0) !== patch.segmentCount
+      || patch.chunks.reduce((sum, chunk) => sum + chunk.deletionCount, 0) !== patch.deletionCount
+      || patch.chunks.some((chunk, index) => chunk.index !== index)) {
+      context.addIssue({ code: "custom", message: "Invalid transcript patch manifest" });
+    }
+  }),
+  "screenshot:upsert": z.object({ meetingId: uuidSchema, capturedAt: dateSchema, ocrText: z.string().nullable(), caption: z.string().nullable(), contentHash: z.string().regex(/^[0-9a-f]{64}$/).nullable() }).strict(),
   "screenshot:delete": z.object({}).strict(),
 } as const;
-const SYNC_CHANGE_PAGE_SIZE = 1;
+const SYNC_CHANGE_PAGE_SIZE = 100;
 
 export class MeetingSyncService {
   private readonly activeQueryEmbeddingUsers = new Set<string>();
+  private readonly screenshotUploads = new Map<string, Promise<void>>();
   private storageDeleteDrain?: Promise<void>;
+  private storageDeleteRetry?: ReturnType<typeof setTimeout>;
 
   constructor(
     private readonly store: MeetingSyncStore,
     private readonly storage?: ObjectStorage,
     private readonly tokenizer: SearchTokenizer = createIntlSearchTokenizer(),
     private readonly embedder?: SearchEmbedder,
-  ) {}
+  ) {
+    if (storage) {
+      this.scheduleStorageDeletes();
+    }
+  }
 
   parseId(value: string): string {
     if (value !== value.toLowerCase()) throw new ArtifactRequestError(400, "invalid_sync_id");
     const parsed = uuidSchema.safeParse(value);
     if (!parsed.success) throw new ArtifactRequestError(400, "invalid_sync_id");
-    return parsed.data;
-  }
-
-  parseGeneration(value: string): string {
-    const parsed = generationSchema.safeParse(value);
-    if (!parsed.success) throw new ArtifactRequestError(400, "invalid_transcript_generation");
     return parsed.data;
   }
 
@@ -168,7 +149,9 @@ export class MeetingSyncService {
   async commitTransaction(identity: Identity, body: unknown) {
     this.requireWritableIdentity(identity);
     const parsed = transactionSchema.safeParse(body);
-    if (!parsed.success || new Set(parsed.data.operations.map(({ id }) => id)).size !== parsed.data.operations.length) {
+    if (!parsed.success
+      || new Set(parsed.data.operations.map(({ id }) => id)).size !== parsed.data.operations.length
+      || new Set(parsed.data.operations.map(({ entity, entityId }) => `${entity}:${entityId}`)).size !== parsed.data.operations.length) {
       throw new ArtifactRequestError(400, "invalid_sync_transaction");
     }
     const operations: SyncTransaction["operations"] = [];
@@ -177,7 +160,7 @@ export class MeetingSyncService {
       const schema = transactionDataSchemas[key];
       const data = schema?.safeParse(operation.data ?? {});
       if (!data?.success || (operation.entity === "vault" && operation.entityId !== parsed.data.vaultId)) {
-        throw new ArtifactRequestError(400, "invalid_sync_operation");
+        throw new SyncTransactionError(400, "invalid_sync_operation", [], operation.id);
       }
       operations.push({ ...operation, data: data.data });
     }
@@ -224,7 +207,6 @@ export class MeetingSyncService {
             summaryTitle: operation.entity === "summary" && operation.action === "upsert" ? String(data.title) : operation.action === "delete" ? null : meeting?.summaryTitle ?? null,
             summaryDocument,
             summaryCreatedAt: operation.entity === "summary" && operation.action === "upsert" ? data.createdAt as Date : operation.action === "delete" ? null : meeting?.summaryCreatedAt ?? null,
-            activeTranscriptGeneration: meeting?.activeTranscriptGeneration ?? null,
           });
         } else if (operation.entity === "screenshot" && operation.action === "upsert") {
           const embeddingText = [data.ocrText, data.caption]
@@ -246,7 +228,19 @@ export class MeetingSyncService {
   private scheduleStorageDeletes(): void {
     this.storageDeleteDrain ??= this.drainStorageDeletes()
       .catch(() => undefined)
-      .finally(() => { this.storageDeleteDrain = undefined; });
+      .finally(() => {
+        this.storageDeleteDrain = undefined;
+        this.scheduleStorageDeleteRetry();
+      });
+  }
+
+  private scheduleStorageDeleteRetry(): void {
+    if (this.storageDeleteRetry) return;
+    this.storageDeleteRetry = setTimeout(() => {
+      this.storageDeleteRetry = undefined;
+      this.scheduleStorageDeletes();
+    }, 60_000);
+    this.storageDeleteRetry.unref?.();
   }
 
   private async drainStorageDeletes(): Promise<void> {
@@ -263,6 +257,7 @@ export class MeetingSyncService {
             storageKey,
             error instanceof ObjectStorageError ? error.code : "artifact_storage_unavailable",
           );
+          this.scheduleStorageDeleteRetry();
         }
       }
     }
@@ -288,78 +283,13 @@ export class MeetingSyncService {
     return this.store.withIdentity(identity, async (scoped) => encodeSyncCursor(await scoped.latestChangeSequence()));
   }
 
-  async commitVaultManifest(identity: Identity, vaultId: string, body: unknown): Promise<void> {
-    const parsed = vaultManifestSchema.safeParse(body);
-    if (!parsed.success || !validProjectHierarchy(parsed.data?.projects ?? [])) {
-      throw new ArtifactRequestError(400, "invalid_vault_manifest");
-    }
-    const accepted = await this.store.withIdentity(identity, (scoped) => scoped.commitVaultManifest({
-      vaultId,
-      ...parsed.data,
-      projects: parsed.data.projects.map((project) => ({ ...project, vaultId })),
-    }));
-    if (!accepted) throw new ArtifactRequestError(404, "vault_not_found");
-  }
-
-  async commitManifest(identity: Identity, vaultId: string, meetingId: string, body: unknown): Promise<void> {
-    const parsed = manifestSchema.safeParse(body);
-    if (!parsed.success) throw new ArtifactRequestError(400, "invalid_sync_manifest");
-    const screenshotIds = parsed.data.screenshots.map(({ screenshotId }) => screenshotId);
-    if (new Set(screenshotIds).size !== screenshotIds.length || screenshotIds.includes(meetingId)) {
-      throw new ArtifactRequestError(400, "invalid_sync_manifest");
-    }
-    const summaryDocument = parsed.data.summary?.document ?? null;
-    const summaryText = summarySearchableText(summaryDocument);
-    const embeddingText = summaryText.trim() || null;
-    const screenshots: SyncManifest["screenshots"] = [];
-    for (let offset = 0; offset < parsed.data.screenshots.length; offset += SCREENSHOT_PROJECTION_BATCH_SIZE) {
-      const batch = parsed.data.screenshots.slice(offset, offset + SCREENSHOT_PROJECTION_BATCH_SIZE);
-      screenshots.push(...await Promise.all(batch.map(async (screenshot) => {
-        const screenshotEmbeddingText = [screenshot.ocrText, screenshot.caption]
-          .filter((value): value is string => Boolean(value?.trim())).join("\n") || null;
-        return {
-          ...screenshot,
-          searchText: createSearchText(this.tokenizer, [screenshot.ocrText, screenshot.caption]),
-          embeddingText: screenshotEmbeddingText,
-          embeddingContentHash: await embeddingContentHash(screenshotEmbeddingText),
-        };
-      })));
-    }
-    const manifest: SyncManifest = {
-      vaultId,
-      meetingId,
-      projectId: parsed.data.projectId,
-      name: parsed.data.name,
-      description: parsed.data.description,
-      status: parsed.data.status,
-      duration: parsed.data.duration,
-      recordingStartedAt: parsed.data.recordingStartedAt,
-      createdAt: parsed.data.createdAt,
-      updatedAt: parsed.data.updatedAt,
-      summaryTitle: parsed.data.summary?.title ?? null,
-      summaryDocument,
-      summaryCreatedAt: parsed.data.summary?.createdAt ?? null,
-      activeTranscriptGeneration: parsed.data.activeTranscriptGeneration,
-      searchText: createSearchText(this.tokenizer, [
-        parsed.data.name,
-        parsed.data.description,
-        summaryText,
-      ]),
-      embeddingText,
-      embeddingContentHash: await embeddingContentHash(embeddingText),
-      screenshots,
-    };
-    const result = await this.store.withIdentity(identity, (scoped) => scoped.commitManifest(manifest));
-    if (result.missingScreenshotContent) throw new ArtifactRequestError(409, "screenshot_content_missing");
-    if (!result.committed) throw new ArtifactRequestError(409, "sync_target_conflict");
-    await this.deleteScreenshots(identity, result.obsoleteScreenshots);
-  }
-
   async putTranscriptChunk(
     identity: Identity,
     vaultId: string,
     meetingId: string,
-    generation: string,
+    patchId: string,
+    chunkIndex: number,
+    contentHash: string,
     body: unknown,
   ): Promise<void> {
     const parsed = transcriptChunkSchema.safeParse(body);
@@ -367,8 +297,11 @@ export class MeetingSyncService {
     const accepted = await this.store.withIdentity(identity, (scoped) => scoped.putTranscriptChunk(
       vaultId,
       meetingId,
-      generation,
+      patchId,
+      chunkIndex,
+      contentHash,
       parsed.data.segments,
+      parsed.data.deletions,
     ));
     if (!accepted) throw new ArtifactRequestError(409, "sync_target_conflict");
   }
@@ -386,9 +319,13 @@ export class MeetingSyncService {
     if (!extension) throw new ArtifactRequestError(415, "unsupported_screenshot_type");
     const capturedAt = dateSchema.safeParse(request.headers.get("x-dahlia-captured-at"));
     if (!capturedAt.success) throw new ArtifactRequestError(400, "invalid_screenshot_captured_at");
+    const contentHash = request.headers.get("x-dahlia-content-sha256")?.toLowerCase();
+    if (!contentHash || !/^[0-9a-f]{64}$/.test(contentHash)) {
+      throw new ArtifactRequestError(400, "invalid_screenshot_content_hash");
+    }
     const storageKey = `meetings/${meetingId}/screenshots/${screenshotId}.${extension}`;
-
-    const reservation = await this.store.withIdentity(identity, async (scoped) => {
+    return this.withScreenshotUpload(storageKey, async () => {
+      const reservation = await this.store.withIdentity(identity, async (scoped) => {
       if (!await scoped.ensureUploadTarget(vaultId, meetingId)) return null;
       const existing = await scoped.getScreenshot(vaultId, meetingId, screenshotId);
       if (existing) return { existing, created: false };
@@ -400,43 +337,72 @@ export class MeetingSyncService {
         contentType: upload.contentType,
         storageKey,
         contentLength: upload.contentLength,
+        contentHash,
         ocrText: null,
         caption: null,
-        revision: 1,
+        revision: 0,
       };
       return await scoped.createScreenshot(record) ? { existing: record, created: true } : null;
-    });
-    if (!reservation) throw new ArtifactRequestError(409, "screenshot_id_conflict");
-    if (
-      reservation.existing.vaultId !== vaultId
-      || reservation.existing.meetingId !== meetingId
-      || reservation.existing.contentType !== upload.contentType
-      || reservation.existing.storageKey !== storageKey
-      || reservation.existing.contentLength !== upload.contentLength
-    ) {
-      throw new ArtifactRequestError(409, "screenshot_id_conflict");
-    }
-    if (!reservation.created && await this.storageCall(() => storage.exists(storageKey, request.signal))) {
-      return reservation.existing;
-    }
-    try {
-      await this.storageCall(() => storage.put(
-        storageKey,
-        request.body ?? new Uint8Array(),
-        upload.contentLength,
-        upload.contentType,
-        request.signal,
-      ));
-      return reservation.existing;
-    } catch (error) {
-      if (reservation.created) {
-        await this.store.withIdentity(
-          identity,
-          (scoped) => scoped.deleteScreenshot(vaultId, screenshotId, storageKey),
-        );
-        await storage.delete(storageKey).catch(() => undefined);
+      });
+      if (!reservation) throw new ArtifactRequestError(409, "screenshot_id_conflict");
+      if (
+        reservation.existing.vaultId !== vaultId
+        || reservation.existing.meetingId !== meetingId
+        || reservation.existing.contentType !== upload.contentType
+        || reservation.existing.storageKey !== storageKey
+        || reservation.existing.contentLength !== upload.contentLength
+        || reservation.existing.contentHash !== contentHash
+      ) {
+        throw new ArtifactRequestError(409, "screenshot_id_conflict");
       }
-      throw error;
+      if (!reservation.created && await this.storageCall(() => storage.exists(storageKey, request.signal))) {
+        const actualHash = await sha256Stream(request.body);
+        if (actualHash !== contentHash) throw new ArtifactRequestError(409, "screenshot_content_hash_mismatch");
+        return reservation.existing;
+      }
+      try {
+        const [storageBody, digestBody] = request.body?.tee() ?? [new Uint8Array(), new Uint8Array()];
+        const [, actualHash] = await Promise.all([
+          this.storageCall(() => storage.put(
+            storageKey,
+            storageBody,
+            upload.contentLength,
+            upload.contentType,
+            request.signal,
+          )),
+          sha256Stream(digestBody),
+        ]);
+        if (actualHash !== contentHash) throw new ArtifactRequestError(409, "screenshot_content_hash_mismatch");
+        return reservation.existing;
+      } catch (error) {
+        if (reservation.created) {
+          try {
+            await storage.delete(storageKey);
+          } catch {
+            await this.store.enqueueStorageDelete(storageKey);
+            this.scheduleStorageDeletes();
+          }
+          await this.store.withIdentity(
+            identity,
+            (scoped) => scoped.deleteScreenshot(vaultId, screenshotId, storageKey),
+          );
+        }
+        throw error;
+      }
+    });
+  }
+
+  private async withScreenshotUpload<T>(storageKey: string, operation: () => Promise<T>): Promise<T> {
+    const previous = this.screenshotUploads.get(storageKey);
+    let release!: () => void;
+    const current = new Promise<void>((resolve) => { release = resolve; });
+    this.screenshotUploads.set(storageKey, current);
+    await previous;
+    try {
+      return await operation();
+    } finally {
+      release();
+      if (this.screenshotUploads.get(storageKey) === current) this.screenshotUploads.delete(storageKey);
     }
   }
 
@@ -755,21 +721,6 @@ export class MeetingSyncService {
   }
 }
 
-function validProjectHierarchy(projects: z.infer<typeof vaultManifestSchema>["projects"]): boolean {
-  const byId = new Map(projects.map((project) => [project.projectId, project]));
-  if (byId.size !== projects.length) return false;
-  const siblingNames = new Set<string>();
-  for (const project of projects) {
-    const parent = project.parentProjectId ? byId.get(project.parentProjectId) : undefined;
-    if (project.parentProjectId && (!parent || parent.parentProjectId)) return false;
-    if ((project.parentProjectId === null) !== (project.projectType !== null)) return false;
-    const key = `${project.parentProjectId ?? "root"}\u0000${project.name.normalize("NFKC").toLowerCase()}`;
-    if (siblingNames.has(key)) return false;
-    siblingNames.add(key);
-  }
-  return true;
-}
-
 async function embeddingContentHash(text: string | null): Promise<string | null> {
   if (!text) return null;
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
@@ -788,5 +739,16 @@ function canonicalJson(value: unknown): string {
 
 async function sha256(value: string): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function sha256Stream(value: ReadableStream<Uint8Array> | Uint8Array | null): Promise<string> {
+  const bytes = value instanceof Uint8Array
+    ? value
+    : new Uint8Array(await new Response(value).arrayBuffer());
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer,
+  );
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }

@@ -120,8 +120,7 @@ CREATE TABLE "content"."meetings" (
 	"revision" integer DEFAULT 1 NOT NULL,
 	"summary_revision" integer DEFAULT 0 NOT NULL,
 	"transcript_revision" integer DEFAULT 0 NOT NULL,
-	"active_transcript_generation" text,
-	"manifest_received_at" timestamp,
+	"active" boolean DEFAULT false NOT NULL,
 	"deleting_at" timestamp,
 	CONSTRAINT "synced_meeting_vault_meeting_unique" UNIQUE("vault_id","meeting_id")
 );
@@ -153,6 +152,7 @@ CREATE TABLE "content"."screenshots" (
 	"content_type" text NOT NULL,
 	"storage_key" text NOT NULL,
 	"content_length" integer NOT NULL,
+	"content_hash" text NOT NULL,
 	"active" boolean DEFAULT true NOT NULL,
 	"ocr_text" text,
 	"caption" text,
@@ -164,7 +164,6 @@ CREATE TABLE "content"."screenshots" (
 CREATE TABLE "content"."transcript_segments" (
 	"vault_id" uuid,
 	"meeting_id" uuid,
-	"generation" text,
 	"segment_id" uuid,
 	"start_time" timestamp NOT NULL,
 	"end_time" timestamp,
@@ -172,7 +171,7 @@ CREATE TABLE "content"."transcript_segments" (
 	"is_confirmed" boolean NOT NULL,
 	"audio_source" text,
 	"speaker_label" text,
-	CONSTRAINT "synced_transcript_segment_pk" PRIMARY KEY("vault_id","meeting_id","generation","segment_id")
+	CONSTRAINT "synced_transcript_segment_pk" PRIMARY KEY("vault_id","meeting_id","segment_id")
 );
 --> statement-breakpoint
 CREATE TABLE "core"."vaults" (
@@ -197,6 +196,17 @@ CREATE TABLE "core"."vault_permissions" (
 	CONSTRAINT "vault_permission_owner_user_check" CHECK ("role" <> 'owner' OR "principal_type" = 'user')
 );
 --> statement-breakpoint
+CREATE TABLE "content"."transcript_patch_chunks" (
+	"vault_id" uuid,
+	"meeting_id" uuid,
+	"patch_id" uuid,
+	"chunk_index" integer,
+	"content_hash" text NOT NULL,
+	"payload" jsonb NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	CONSTRAINT "transcript_patch_chunk_pk" PRIMARY KEY("vault_id","meeting_id","patch_id","chunk_index")
+);
+--> statement-breakpoint
 CREATE INDEX "search_document_vault_kind_meeting_document_idx" ON "content"."search_documents" ("vault_id","kind","meeting_id","document_id");--> statement-breakpoint
 CREATE INDEX "search_index_job_claim_idx" ON "core"."search_index_jobs" ("status","available_at","lease_expires_at");--> statement-breakpoint
 CREATE INDEX "storage_delete_job_claim_idx" ON "core"."storage_delete_jobs" ("status","available_at","lease_expires_at");--> statement-breakpoint
@@ -206,7 +216,7 @@ CREATE INDEX "transaction_receipt_owner_created_idx" ON "core"."transaction_rece
 CREATE INDEX "synced_meeting_vault_created_id_idx" ON "content"."meetings" ("vault_id","created_at","meeting_id");--> statement-breakpoint
 CREATE INDEX "project_vault_parent_name_idx" ON "core"."projects" ("vault_id","parent_project_id","name");--> statement-breakpoint
 CREATE INDEX "synced_screenshot_vault_meeting_captured_id_idx" ON "content"."screenshots" ("vault_id","meeting_id","captured_at","screenshot_id");--> statement-breakpoint
-CREATE INDEX "synced_transcript_vault_meeting_generation_start_id_idx" ON "content"."transcript_segments" ("vault_id","meeting_id","generation","start_time","segment_id");--> statement-breakpoint
+CREATE INDEX "synced_transcript_vault_meeting_start_id_idx" ON "content"."transcript_segments" ("vault_id","meeting_id","start_time","segment_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "vault_permission_single_owner_idx" ON "core"."vault_permissions" ("vault_id") WHERE "role" = 'owner';--> statement-breakpoint
 CREATE INDEX "vault_permission_principal_vault_idx" ON "core"."vault_permissions" ("principal_type","principal_id","role","vault_id");--> statement-breakpoint
 ALTER TABLE "content"."search_documents" ADD CONSTRAINT "search_document_meeting_fk" FOREIGN KEY ("vault_id","meeting_id") REFERENCES "content"."meetings"("vault_id","meeting_id") ON DELETE CASCADE;--> statement-breakpoint
@@ -221,7 +231,8 @@ ALTER TABLE "core"."projects" ADD CONSTRAINT "project_parent_fk" FOREIGN KEY ("v
 ALTER TABLE "content"."screenshots" ADD CONSTRAINT "synced_screenshot_meeting_fk" FOREIGN KEY ("vault_id","meeting_id") REFERENCES "content"."meetings"("vault_id","meeting_id") ON DELETE CASCADE;--> statement-breakpoint
 ALTER TABLE "content"."transcript_segments" ADD CONSTRAINT "synced_transcript_segment_meeting_fk" FOREIGN KEY ("vault_id","meeting_id") REFERENCES "content"."meetings"("vault_id","meeting_id") ON DELETE CASCADE;--> statement-breakpoint
 ALTER TABLE "core"."vault_permissions" ADD CONSTRAINT "vault_permission_vault_fk" FOREIGN KEY ("vault_id") REFERENCES "core"."vaults"("vault_id") ON DELETE CASCADE;--> statement-breakpoint
-ALTER TABLE "core"."vault_permissions" ADD CONSTRAINT "vault_permission_granted_by_user_fk" FOREIGN KEY ("granted_by_user_id") REFERENCES "auth"."user"("id") ON DELETE RESTRICT;
+ALTER TABLE "core"."vault_permissions" ADD CONSTRAINT "vault_permission_granted_by_user_fk" FOREIGN KEY ("granted_by_user_id") REFERENCES "auth"."user"("id") ON DELETE RESTRICT;--> statement-breakpoint
+ALTER TABLE "content"."transcript_patch_chunks" ADD CONSTRAINT "transcript_patch_chunk_meeting_fk" FOREIGN KEY ("vault_id","meeting_id") REFERENCES "content"."meetings"("vault_id","meeting_id") ON DELETE CASCADE;
 --> statement-breakpoint
 CREATE UNIQUE INDEX "project_sibling_name_unique" ON "core"."projects" ("vault_id", "parent_project_id", lower("name")) NULLS NOT DISTINCT;
 --> statement-breakpoint
@@ -280,6 +291,8 @@ ALTER TABLE "content"."meetings" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "content"."meetings" FORCE ROW LEVEL SECURITY;
 ALTER TABLE "content"."transcript_segments" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "content"."transcript_segments" FORCE ROW LEVEL SECURITY;
+ALTER TABLE "content"."transcript_patch_chunks" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "content"."transcript_patch_chunks" FORCE ROW LEVEL SECURITY;
 ALTER TABLE "content"."screenshots" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "content"."screenshots" FORCE ROW LEVEL SECURITY;
 ALTER TABLE "content"."search_documents" ENABLE ROW LEVEL SECURITY;
@@ -291,6 +304,8 @@ CREATE POLICY "meeting_select" ON "content"."meetings" FOR SELECT USING ("core".
 CREATE POLICY "meeting_write" ON "content"."meetings" FOR ALL USING ("core"."current_identity_owns_vault"("vault_id")) WITH CHECK ("core"."current_identity_owns_vault"("vault_id"));
 CREATE POLICY "transcript_select" ON "content"."transcript_segments" FOR SELECT USING ("core"."current_identity_can_read_vault"("vault_id"));
 CREATE POLICY "transcript_write" ON "content"."transcript_segments" FOR ALL USING ("core"."current_identity_owns_vault"("vault_id")) WITH CHECK ("core"."current_identity_owns_vault"("vault_id"));
+CREATE POLICY "transcript_patch_select" ON "content"."transcript_patch_chunks" FOR SELECT USING ("core"."current_identity_owns_vault"("vault_id"));
+CREATE POLICY "transcript_patch_write" ON "content"."transcript_patch_chunks" FOR ALL USING ("core"."current_identity_owns_vault"("vault_id")) WITH CHECK ("core"."current_identity_owns_vault"("vault_id"));
 CREATE POLICY "screenshot_select" ON "content"."screenshots" FOR SELECT USING ("core"."current_identity_can_read_vault"("vault_id"));
 CREATE POLICY "screenshot_write" ON "content"."screenshots" FOR ALL USING ("core"."current_identity_owns_vault"("vault_id")) WITH CHECK ("core"."current_identity_owns_vault"("vault_id"));
 CREATE POLICY "search_document_select" ON "content"."search_documents" FOR SELECT USING ("core"."current_identity_can_read_vault"("vault_id"));

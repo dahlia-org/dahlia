@@ -1,7 +1,7 @@
 {
   "version": "8",
   "dialect": "postgres",
-  "id": "aed83604-5311-4d22-ac00-e2fc843478cd",
+  "id": "b82c3e9e-899a-44e4-8104-51b6df44d167",
   "prevIds": [
     "00000000-0000-0000-0000-000000000000"
   ],
@@ -97,6 +97,12 @@
       "name": "vault_permissions",
       "entityType": "tables",
       "schema": "core"
+    },
+    {
+      "isRlsEnabled": false,
+      "name": "transcript_patch_chunks",
+      "entityType": "tables",
+      "schema": "content"
     },
     {
       "type": "uuid",
@@ -1168,27 +1174,14 @@
       "table": "meetings"
     },
     {
-      "type": "text",
+      "type": "boolean",
       "typeSchema": null,
-      "notNull": false,
+      "notNull": true,
       "dimensions": 0,
-      "default": null,
+      "default": "false",
       "generated": null,
       "identity": null,
-      "name": "active_transcript_generation",
-      "entityType": "columns",
-      "schema": "content",
-      "table": "meetings"
-    },
-    {
-      "type": "timestamp",
-      "typeSchema": null,
-      "notNull": false,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "manifest_received_at",
+      "name": "active",
       "entityType": "columns",
       "schema": "content",
       "table": "meetings"
@@ -1415,6 +1408,19 @@
       "table": "screenshots"
     },
     {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "content_hash",
+      "entityType": "columns",
+      "schema": "content",
+      "table": "screenshots"
+    },
+    {
       "type": "boolean",
       "typeSchema": null,
       "notNull": true,
@@ -1514,19 +1520,6 @@
       "generated": null,
       "identity": null,
       "name": "meeting_id",
-      "entityType": "columns",
-      "schema": "content",
-      "table": "transcript_segments"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "generation",
       "entityType": "columns",
       "schema": "content",
       "table": "transcript_segments"
@@ -1777,6 +1770,97 @@
       "entityType": "columns",
       "schema": "core",
       "table": "vault_permissions"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "vault_id",
+      "entityType": "columns",
+      "schema": "content",
+      "table": "transcript_patch_chunks"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "meeting_id",
+      "entityType": "columns",
+      "schema": "content",
+      "table": "transcript_patch_chunks"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "patch_id",
+      "entityType": "columns",
+      "schema": "content",
+      "table": "transcript_patch_chunks"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "chunk_index",
+      "entityType": "columns",
+      "schema": "content",
+      "table": "transcript_patch_chunks"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "content_hash",
+      "entityType": "columns",
+      "schema": "content",
+      "table": "transcript_patch_chunks"
+    },
+    {
+      "type": "jsonb",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "payload",
+      "entityType": "columns",
+      "schema": "content",
+      "table": "transcript_patch_chunks"
+    },
+    {
+      "type": "timestamp",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "now()",
+      "generated": null,
+      "identity": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "schema": "content",
+      "table": "transcript_patch_chunks"
     },
     {
       "nameExplicit": true,
@@ -2111,13 +2195,6 @@
           "opclass": null
         },
         {
-          "value": "generation",
-          "isExpression": false,
-          "asc": true,
-          "nullsFirst": false,
-          "opclass": null
-        },
-        {
           "value": "start_time",
           "isExpression": false,
           "asc": true,
@@ -2137,7 +2214,7 @@
       "with": "",
       "method": "btree",
       "concurrently": false,
-      "name": "synced_transcript_vault_meeting_generation_start_id_idx",
+      "name": "synced_transcript_vault_meeting_start_id_idx",
       "entityType": "indexes",
       "schema": "content",
       "table": "transcript_segments"
@@ -2439,6 +2516,25 @@
       "table": "vault_permissions"
     },
     {
+      "nameExplicit": true,
+      "columns": [
+        "vault_id",
+        "meeting_id"
+      ],
+      "schemaTo": "content",
+      "tableTo": "meetings",
+      "columnsTo": [
+        "vault_id",
+        "meeting_id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "name": "transcript_patch_chunk_meeting_fk",
+      "entityType": "fks",
+      "schema": "content",
+      "table": "transcript_patch_chunks"
+    },
+    {
       "columns": [
         "vault_id",
         "document_id"
@@ -2475,7 +2571,6 @@
       "columns": [
         "vault_id",
         "meeting_id",
-        "generation",
         "segment_id"
       ],
       "nameExplicit": true,
@@ -2495,6 +2590,19 @@
       "entityType": "pks",
       "schema": "core",
       "table": "vault_permissions"
+    },
+    {
+      "columns": [
+        "vault_id",
+        "meeting_id",
+        "patch_id",
+        "chunk_index"
+      ],
+      "nameExplicit": true,
+      "name": "transcript_patch_chunk_pk",
+      "entityType": "pks",
+      "schema": "content",
+      "table": "transcript_patch_chunks"
     },
     {
       "columns": [

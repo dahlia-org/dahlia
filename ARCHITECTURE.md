@@ -160,9 +160,13 @@ Drizzle application store (SQLite, PostgreSQL, Lakebase, Hyperdrive, or D1)
     ├─ owner-scoped artifact create / replace / visibility / delete tools
     └─ owner-scoped synchronized meeting read tools
 
+/api/v1/transactions
+    └─ immutable Vault-scoped domain operations → atomic canonical commit
 /api/v1/vaults/{vault_id}/meetings/{meeting_id}
-    ├─ manifest + transcript generation chunks
+    ├─ transcript patch chunks
     └─ screenshot metadata + local / S3 / R2 / Databricks Volume bytes
+/api/v1/events + /api/v1/vaults/{vault_id}/changes
+    └─ SSE invalidation + cursor-based canonical catch-up
 
 core.vault_permissions
     ├─ raw user ID principal の単一 owner
@@ -177,19 +181,19 @@ Workers Static Assets が直接配信し、Worker 内から asset binding を呼
 
 Gateway、認証 store、upstream、artifact storage の停止は Server 操作だけを失敗させる。macOS の起動、録音、音声保存、文字起こし、
 閲覧、検索はこの runtime を待たない。Artifact API は明示的に渡された任意 asset だけを扱う。これとは別に、Vault ごとに明示的に有効化した
-meeting sync が Vault 名、Project の名前・説明・2段階階層、summary、transcript 原文、screenshot、OCR、AI caption の個人所有 Server copy を非同期作成する。Vault manifest を meeting より先に同期し、owner が明示した場合だけ、
+meeting sync が Vault 名、Project の名前・説明・2段階階層、summary、transcript 原文、screenshot、OCR、AI caption の個人所有 Server copy を非同期作成する。Desktop は既存の domain table を offline working-copy record cache とし、ローカル変更と immutable domain transaction の記録を同じ SQLite transaction で確定する。owner が明示した場合だけ、
 複数の特定 Better Auth organization または Team へ read-only 共有する。header modeでは全proxy userを通常表示される固定`external` OrganizationへJIT登録し、同じpermission modelを使う。write、delete、共有設定変更は owner に限定する。
 PostgreSQL／LakebaseではBetter Authの機械生成migrationとDahlia application migrationを別ledgerに置き、認証方式によらず
 `auth`、`core`／`content`の順で適用する。Header identityは検証直後に`auth.user`へ射影するが、Better Auth runtimeは起動しない。Serverは各identity transactionで
 `app.user_id`だけをtransaction-localに設定する。Vault/content RLSは`core.vault_permissions`を評価し、organizationとTeam membershipを
 `auth.member`と`auth.team_member`から直接解決する。
-Server は meeting の名前・説明・summary 表示本文と screenshot の OCR・caption を manifest 受理時に自前で token 化し、
+Server は meeting の名前・説明・summary 表示本文と screenshot の OCR・caption を domain transaction 受理時に自前で token 化し、
 共通の `content.search_documents` projection を canonical row と同じ transaction で更新する。PostgreSQL は GIN、Lakebase は
 `lakebase_text`、SQLite／D1 は FTS5 を使う。Node で embedding model が設定されている場合だけ、App service principal による
 非同期 worker が summary／OCR／caption の自然文から再生成可能な vector projection を作る。Lakebase は `lakebase_vector`、
 その他の PostgreSQL は pgvector、SQLite は exact cosine を使い、D1 は FTS-only とする。query 時は FTS と vector の上位候補を
 RRF で統合し、embedding の未設定・未完成・障害時は FTS に縮退する。transcript と内部識別子は Server 検索対象に含めず、
-すべての検索 query は `vault_id` 経由の permission／RLS を通す。現時点の D1 adapter は manifest の複数 statement を
+すべての検索 query は `vault_id` 経由の permission／RLS を通す。現時点の D1 adapter は domain transaction の複数 statement を
 atomic batch にできないため meeting sync capability を fail-closed とし、D1 の FTS-only 検索は atomic batch adapter 実装後の target state とする。
 翻訳文、音声、SQLite file、note、tag、calendar、
 Project は階層参照と meeting 絞り込みのためだけに同期し、Server の全文・vector projection へは含めない。transcript の `audio_source` は `mic`／`system` の収録経路、nullable な `speaker_label` は将来の話者分離ラベルとし、音声特徴量は同期しない。runtime と data boundary の判断は
@@ -204,7 +208,7 @@ Project は階層参照と meeting 絞り込みのためだけに同期し、Ser
 [ADR-0059](docs/adr/0059-authorize-content-through-vault-principal-permissions.md)を Vault ownership、permission、content RLS の正本とする。
 [ADR-0062](docs/adr/0062-add-server-hybrid-search-projection.md)を同期済み content の Server Hybrid 検索の正本とする。
 [ADR-0066](docs/adr/0066-sync-vault-projects-and-separate-transcript-speakers.md)を Vault／Project 同期と transcript 話者モデルの正本とする。
-[ADR-0067](docs/adr/0067-use-domain-transactions-and-cursor-deltas-for-sync.md)を Desktop／Web の双方向変更、optimistic revision、domain transaction queue、cursor delta、SSE invalidation の正本とする。SSE はデータ本体を運ばず、Desktop は remote delta 適用中だけ local enqueue trigger を抑止する。
+[ADR-0067](docs/adr/0067-use-domain-transactions-and-cursor-deltas-for-sync.md)を Desktop／Web の双方向変更、optimistic revision、domain transaction queue、cursor delta、SSE invalidation の正本とする。SSE はデータ本体を運ばない。local mutation は record cache と operation snapshot を同じ SQLite transaction へ明示的に書き、remote applier は recorder を呼ばない。
 [ADR-0061](docs/adr/0061-decouple-vault-rls-from-better-auth-schema.md)をRLS identity contextの正本とする。
 [ADR-0063](docs/adr/0063-materialize-header-users-in-auth-schema.md)を共通Auth schemaとheader user射影の正本とする。
 [ADR-0064](docs/adr/0064-manage-server-administrators-with-better-auth.md)をServer管理者権限の正本とする。

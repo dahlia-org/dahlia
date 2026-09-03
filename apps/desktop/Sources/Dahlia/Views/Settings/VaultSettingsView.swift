@@ -14,7 +14,6 @@ struct VaultSettingsView: View {
     @State private var pendingRename: VaultRecord?
     @State private var proposedName = ""
     @State private var pendingServerDeletion: VaultRecord?
-    @State private var pendingBulkMeetingDeletion: VaultRecord?
     @State private var pendingCloudVault: CloudVaultRecord?
 
     var body: some View {
@@ -89,28 +88,6 @@ struct VaultSettingsView: View {
             } message: {
                 Text(L10n.deleteServerCopyDescription)
             }
-            .confirmationDialog(
-                L10n.confirmBulkMeetingDeletion,
-                isPresented: Binding(
-                    get: { pendingBulkMeetingDeletion != nil },
-                    set: { if !$0 { pendingBulkMeetingDeletion = nil } }
-                ),
-                titleVisibility: .visible
-            ) {
-                if let vault = pendingBulkMeetingDeletion {
-                    Button(L10n.continueDeletion, role: .destructive) {
-                        Task {
-                            await model.approvePendingMeetingDeletions(for: vault)
-                            pendingBulkMeetingDeletion = nil
-                        }
-                    }
-                }
-                Button(L10n.cancel, role: .cancel) {}
-            } message: {
-                Text(L10n.confirmBulkMeetingDeletionDescription(
-                    pendingBulkMeetingDeletion.flatMap { model.pendingMeetingDeletionCounts[$0.id] } ?? 0
-                ))
-            }
     }
 
     private var sections: some View {
@@ -163,7 +140,7 @@ struct VaultSettingsView: View {
                         .help(vault.accountConnectionId == nil
                             ? L10n.vaultSyncRequiresAccount
                             : supportsSync(vault) ? L10n.vaultSyncDescription : L10n.vaultSyncRequiresReauthentication)
-                        if vault.syncConflictJSON != nil {
+                        if model.blockedSyncVaultIDs.contains(vault.id) {
                             Image(systemName: "exclamationmark.triangle.fill")
                                 .foregroundStyle(.orange)
                                 .help(L10n.vaultSyncConflict)
@@ -217,7 +194,7 @@ struct VaultSettingsView: View {
         Menu(L10n.actions, systemImage: "ellipsis.circle") {
             Button(L10n.rename, systemImage: "pencil", action: { requestRename(vault) })
 
-            if vault.syncConflictJSON != nil {
+            if model.blockedSyncVaultIDs.contains(vault.id) {
                 Button(L10n.useServerVersion, systemImage: "icloud.and.arrow.down") {
                     Task { await model.acceptServerSyncVersion(for: vault) }
                 }
@@ -229,12 +206,6 @@ struct VaultSettingsView: View {
             if vault.syncConfirmedConnectionId != nil {
                 Button(L10n.deleteServerCopy, systemImage: "icloud.slash", role: .destructive) {
                     pendingServerDeletion = vault
-                }
-            }
-
-            if model.pendingMeetingDeletionCounts[vault.id] != nil {
-                Button(L10n.confirmBulkMeetingDeletion, systemImage: "exclamationmark.triangle") {
-                    pendingBulkMeetingDeletion = vault
                 }
             }
 

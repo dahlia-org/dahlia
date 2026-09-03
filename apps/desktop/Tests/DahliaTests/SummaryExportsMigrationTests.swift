@@ -19,7 +19,7 @@ import GRDB
                 )
             }
 
-            #expect(result.0.map(\.name) == ["meetingId", "title", "document", "createdAt", "serverRevision"])
+            #expect(result.0.map(\.name) == ["meetingId", "title", "document", "createdAt"])
             #expect(result.0.first(where: { $0.name == "document" })?.isNotNull == true)
             #expect(result.1 == ["meetingId", "type", "url", "createdAt", "updatedAt"])
         }

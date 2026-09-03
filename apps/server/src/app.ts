@@ -453,22 +453,38 @@ export function createApp(dependencies: AppDependencies) {
   });
 
   app.put(
-    "/api/v1/vaults/:vaultId/meetings/:meetingId/transcripts/:generation/chunks/:chunkIndex",
+    "/api/v1/vaults/:vaultId/meetings/:meetingId/transcripts/:patchId/chunks/:chunkIndex",
     syncBodyLimit,
     async (context) => {
       const identity = await identities.fromGateway(context.req.raw, ALL_APIS_SCOPE);
       const vaultId = sync.parseId(context.req.param("vaultId"));
       const meetingId = sync.parseId(context.req.param("meetingId"));
-      const generation = sync.parseGeneration(context.req.param("generation"));
+      const patchId = sync.parseId(context.req.param("patchId"));
       if (!/^\d+$/.test(context.req.param("chunkIndex"))) {
         throw new ArtifactRequestError(400, "invalid_transcript_chunk_index");
+      }
+      const contentHash = context.req.header("x-dahlia-content-sha256")?.toLowerCase();
+      if (!contentHash || !/^[0-9a-f]{64}$/.test(contentHash)) {
+        throw new ArtifactRequestError(400, "invalid_transcript_chunk_hash");
+      }
+      const bytes = await context.req.raw.arrayBuffer();
+      const actualHash = [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))]
+        .map((byte) => byte.toString(16).padStart(2, "0")).join("");
+      if (actualHash !== contentHash) throw new ArtifactRequestError(409, "transcript_chunk_hash_mismatch");
+      let body: unknown;
+      try {
+        body = JSON.parse(new TextDecoder().decode(bytes));
+      } catch {
+        throw new ArtifactRequestError(400, "invalid_transcript_chunk");
       }
       await sync.putTranscriptChunk(
         identity,
         vaultId,
         meetingId,
-        generation,
-        await context.req.json().catch(() => null),
+        patchId,
+        Number(context.req.param("chunkIndex")),
+        contentHash,
+        body,
       );
       return context.body(null, 204);
     },
@@ -834,7 +850,11 @@ export function createApp(dependencies: AppDependencies) {
       return Response.json({ error: error.code }, { status: error.status });
     }
     if (error instanceof SyncTransactionError) {
-      return Response.json({ error: error.code, conflicts: error.conflicts }, { status: error.status });
+      return Response.json({
+        error: error.code,
+        conflicts: error.conflicts,
+        ...(error.operationId ? { operationId: error.operationId } : {}),
+      }, { status: error.status });
     }
     if (error instanceof SyncStoreUnavailableError) {
       return context.json({ error: error.message }, 503);

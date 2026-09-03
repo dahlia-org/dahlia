@@ -14,6 +14,7 @@ Better Auth admin pluginは標準のuser role、ban、session管理APIを提供�
 - Better Auth admin pluginをruntimeとschema生成の両方で有効化し、`auth.user.role`の`admin`を唯一の管理者権限とする。
 - 認証方式にかかわらず、最初に作成されたuserを初期adminにする。adminが0人になった場合は次の認証済みrequestで最古userを再昇格する。
 - Dahliaの既存`/api/admin/**`と管理画面は同じroleを参照する。accounts modeではBetter Auth標準admin APIも公開する。
+- Better Authのimpersonation sessionはread-onlyとし、その状態をOAuth consentのreferenceと署名済みaccess-token claimへ引き継いでGateway／MCPのmutationでも拒否する。
 - `DAHLIA_ADMIN_EMAIL`とapplication固有のplatform admin tableは廃止する。
 
 ## Consequences

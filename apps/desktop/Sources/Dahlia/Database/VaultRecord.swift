@@ -19,15 +19,10 @@ struct VaultRecord: Codable, FetchableRecord, PersistableRecord, Identifiable, E
     var chatReasoningEffort: String = CodexReasoningEffortOption.defaultValue
     var aiSettingsBackfilled = true
     var syncEnabled = false
+    var syncRole: String?
     var syncConfirmedConnectionId: UUID?
-    var syncDeletionMode: String?
-    var syncDeletionApproved = false
-    var syncDeletionConnectionId: UUID?
-    var syncBulkDeleteApproved = false
-    var serverRevision: Int?
-    var syncCursor: String?
-    var syncConflictJSON: String?
-    var syncBootstrapPending = false
+    var syncPullCursor: String?
+    var syncLastCommittedCursor: String?
 
     var localProvider: AIAccountProvider {
         get { AIAccountProvider(rawValue: localAIProvider) ?? .chatGPTSubscription }
@@ -42,18 +37,17 @@ struct VaultRecord: Codable, FetchableRecord, PersistableRecord, Identifiable, E
 
 extension VaultRecord {
     var requiresServerDeletionBeforeRemoval: Bool {
-        syncEnabled || syncConfirmedConnectionId != nil || syncDeletionMode != nil
+        syncEnabled || syncConfirmedConnectionId != nil
     }
 }
 
-struct CloudVaultRecord: Codable, FetchableRecord, PersistableRecord, Identifiable, Equatable, Sendable {
-    static let databaseTableName = "cloud_vaults"
-
+struct CloudVaultRecord: Identifiable, Equatable, Sendable {
     var vaultId: UUID
     var connectionId: UUID
     var name: String
     var createdAt: Date
     var revision: Int
+    var role: String
 
     var id: String { "\(connectionId.uuidString):\(vaultId.uuidString)" }
 }

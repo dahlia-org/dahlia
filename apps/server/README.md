@@ -50,6 +50,8 @@ Meeting sync is opt-in per Desktop Vault and uploads only to the selected Dahlia
 
 Desktop and Private Web mutations use `POST /api/v1/transactions`. Each UUIDv7 transaction is limited to one Vault, committed atomically, and replay-safe by transaction ID. Vault, Project, meeting metadata, and summary writes require the current canonical revision; conflicts return `409` with the Server record. Screenshot content and transcript chunks remain bounded staging uploads and are activated by a transaction.
 
+Desktop keeps immutable operations until the Server receipt is applied. Screenshot operations include the staged content SHA-256; transcript operations use `transcript:patch` with per-chunk hashes and explicit segment upserts/deletes. `400`/`411`/`413`/`415`/`422` stop as validation errors, `409` stops as a revision conflict, `401`/`403` stop as authorization errors after one token refresh, and only transport errors, `408`, `425`, `429`, and `5xx` retry automatically. The transaction response cursor records the last local commit; it never advances the separate delta pull checkpoint.
+
 `GET /api/v1/vaults/{vaultId}/changes?cursor=...` is the durable delta feed. `GET /api/v1/events` sends only SSE invalidations and opaque cursors; clients always fetch canonical data from the delta/read APIs and can catch up after disconnect or application shutdown. Server MCP remains read-only.
 
 Vault and Project operations are committed through the domain transaction endpoint before meeting data. Projects are available for hierarchy browsing and meeting filtering but are not added to full-text or vector search. Transcript segments keep `audioSource` (`mic` or `system`) separate from nullable `speakerLabel`, which is reserved for future diarization.

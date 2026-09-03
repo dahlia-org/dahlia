@@ -76,6 +76,9 @@ export class IdentityService {
     } catch {
       throw new AuthenticationError("Invalid or expired Dahlia access token", true);
     }
+    if (claims.impersonated === true) {
+      throw new AuthenticationError("Impersonated sessions are read-only", true);
+    }
     if (typeof claims.sub !== "string" || typeof claims.workspace_id !== "string") {
       throw new AuthenticationError("Access token is missing Dahlia identity claims", true);
     }
@@ -140,6 +143,9 @@ export class IdentityService {
       || typeof claims.exp !== "number"
     ) {
       throw new AuthenticationError("Access token is missing Dahlia MCP claims", true);
+    }
+    if (claims.impersonated === true) {
+      throw new AuthenticationError("Impersonated sessions are read-only", true);
     }
     const token = request.headers.get("authorization")?.trim().split(/\s+/, 2)[1];
     if (!token) throw new AuthenticationError("Access token is missing", true);

@@ -47,6 +47,11 @@ enum RecordingSessionCompletionWriter {
             meeting.duration = totalDuration
             meeting.updatedAt = request.updatedAt
             try meeting.update(db)
+            try SyncTransactionRecorder.record(
+                vaultId: meeting.vaultId,
+                operations: [SyncInitialSnapshotBuilder.meetingOperation(meeting, action: .update)],
+                in: db
+            )
         }
 
         guard let session = try RecordingSessionRecord.fetchOne(db, key: request.recordingSessionId) else {

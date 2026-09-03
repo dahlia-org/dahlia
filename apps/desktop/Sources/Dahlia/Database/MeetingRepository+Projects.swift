@@ -63,6 +63,11 @@ extension MeetingRepository {
                 projectType: parentProjectId == nil ? (projectType ?? .undefined) : nil
             )
             try record.insert(db)
+            try SyncTransactionRecorder.record(
+                vaultId: vaultId,
+                operations: [SyncInitialSnapshotBuilder.projectOperation(record, action: .create)],
+                in: db
+            )
             return try ProjectRecord.fetchResolved(id: record.id, in: db) ?? record
         }
     }
@@ -125,6 +130,11 @@ extension MeetingRepository {
                 createdAt: now,
                 updatedAt: now
             ).insert(db)
+            try SyncTransactionRecorder.record(
+                vaultId: vaultId,
+                operations: [SyncInitialSnapshotBuilder.projectOperation(project, action: .create)],
+                in: db
+            )
             return try ProjectRecord.fetchResolved(id: project.id, in: db) ?? project
         }
     }
@@ -194,6 +204,11 @@ extension MeetingRepository {
                 forMeetingIds: meetingIds,
                 in: db
             )
+            try SyncTransactionRecorder.record(
+                vaultId: vaultId,
+                operations: [SyncInitialSnapshotBuilder.projectOperation(project, action: .update)],
+                in: db
+            )
             guard let resolved = try ProjectRecord.fetchResolved(id: id, in: db) else {
                 throw ProjectWorkspaceError.projectNotFound
             }
@@ -226,6 +241,11 @@ extension MeetingRepository {
                 projectType: .undefined
             )
             try project.insert(db)
+            try SyncTransactionRecorder.record(
+                vaultId: vaultId,
+                operations: [SyncInitialSnapshotBuilder.projectOperation(project, action: .create)],
+                in: db
+            )
             return try ProjectRecord.fetchResolved(id: project.id, in: db) ?? project
         }
     }
@@ -292,6 +312,11 @@ extension MeetingRepository {
                 forMeetingIds: meetingIds,
                 in: db
             )
+            try SyncTransactionRecorder.record(
+                vaultId: vaultId,
+                operations: [SyncInitialSnapshotBuilder.projectOperation(project, action: .update)],
+                in: db
+            )
             guard let resolved = try ProjectRecord.fetchResolved(id: project.id, in: db) else {
                 throw ProjectWorkspaceError.projectNotFound
             }
@@ -301,6 +326,12 @@ extension MeetingRepository {
 
     func deleteProject(id: UUID) throws {
         try dbQueue.write { db in
+            guard let project = try ProjectRecord.fetchOne(db, key: id) else { return }
+            try SyncTransactionRecorder.record(
+                vaultId: project.vaultId,
+                operations: [SyncOperationDraft(entity: .project, action: .delete, entityId: id)],
+                in: db
+            )
             _ = try ProjectRecord.deleteOne(db, key: id)
         }
     }
@@ -324,6 +355,11 @@ extension MeetingRepository {
             record.description = description
             record.revision += 1
             try record.update(db)
+            try SyncTransactionRecorder.record(
+                vaultId: vaultId,
+                operations: [SyncInitialSnapshotBuilder.projectOperation(record, action: .update)],
+                in: db
+            )
             return true
         }
     }
@@ -358,6 +394,11 @@ extension MeetingRepository {
                     .map(\.id)
             )
             try ProjectRecord.incrementRevisions(descendantIds, in: db)
+            try SyncTransactionRecorder.record(
+                vaultId: vaultId,
+                operations: [SyncInitialSnapshotBuilder.projectOperation(project, action: .update)],
+                in: db
+            )
             return try ProjectRecord.fetchResolved(id: id, in: db) ?? project
         }
     }
@@ -407,6 +448,7 @@ extension MeetingRepository {
                 let hierarchy = try ProjectRecord.hierarchy(path: name, vaultId: vaultId, in: db)
                 guard !hierarchy.isEmpty else { return }
                 let projectIds = Set(hierarchy.map(\.id))
+                var syncOperations: [SyncOperationDraft] = []
 
                 switch meetingDisposition {
                 case let .move(destinationId):
@@ -421,16 +463,25 @@ extension MeetingRepository {
                             .filter(meetingIds.contains(Column("id")))
                             .updateAll(db, Column("projectId").set(to: destinationId))
                         try Self.updateVaultExports(vaultExportUpdates, forMeetingIds: meetingIds, in: db)
+                        syncOperations += try MeetingRecord
+                            .filter(meetingIds.contains(Column("id")))
+                            .fetchAll(db)
+                            .map { try SyncInitialSnapshotBuilder.meetingOperation($0, action: .update) }
                     }
                 case .deleteMeetings:
                     if !meetingIds.isEmpty {
+                        syncOperations += meetingIds.map {
+                            SyncOperationDraft(entity: .meeting, action: .delete, entityId: $0)
+                        }
                         _ = try MeetingRecord.filter(meetingIds.contains(Column("id"))).deleteAll(db)
                     }
                 }
 
                 for id in hierarchy.reversed().map(\.id) {
+                    syncOperations.append(SyncOperationDraft(entity: .project, action: .delete, entityId: id))
                     _ = try ProjectRecord.deleteOne(db, key: id)
                 }
+                try SyncTransactionRecorder.record(vaultId: vaultId, operations: syncOperations, in: db)
             }
         } catch let operationError {
             do {

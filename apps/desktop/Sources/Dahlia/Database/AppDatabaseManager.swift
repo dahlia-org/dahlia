@@ -272,29 +272,6 @@ final class AppDatabaseManager: Sendable {
             try MeetingSyncMigration.migrate(in: db)
         }
 
-        migrator.registerMigration("v43_meetingSyncOriginalTranscriptOnly") { db in
-            try MeetingSyncOriginalTranscriptMigration.migrate(in: db)
-        }
-
-        migrator.registerMigration("v44_meetingSyncBulkDeleteApproval") { db in
-            try MeetingSyncBulkDeleteMigration.migrate(in: db)
-        }
-
-        migrator.registerMigration("v45_meetingSyncScreenshotUpload") { db in
-            try MeetingSyncScreenshotUploadMigration.migrate(in: db)
-        }
-
-        migrator.registerMigration("v46_meetingSyncSuccess") { db in
-            try MeetingSyncSuccessMigration.migrate(in: db)
-        }
-
-        migrator.registerMigration("v47_meetingSyncDeletionConnection") { db in
-            try MeetingSyncDeletionConnectionMigration.migrate(in: db)
-        }
-        migrator.registerMigration("v48_vaultProjectSyncAndAudioSource") { db in
-            try VaultProjectSyncMigration.migrate(in: db)
-        }
-
         return migrator
     }()
 

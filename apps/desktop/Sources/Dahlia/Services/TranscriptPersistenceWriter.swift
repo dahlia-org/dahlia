@@ -154,6 +154,19 @@ actor TranscriptPersistenceWriter {
                 for record in records {
                     try record.insert(db)
                 }
+                if !records.isEmpty, let vaultId = try UUID.fetchOne(
+                    db,
+                    sql: "SELECT vaultId FROM meetings WHERE id = ?",
+                    arguments: [meetingId]
+                ) {
+                    let patch = SyncOperationDraft(entity: .transcript, action: .patch, entityId: meetingId)
+                    try SyncTransactionRecorder.record(
+                        vaultId: vaultId,
+                        operations: [patch],
+                        transcriptSegments: [patch.id: records.map(SyncTranscriptPatchSegment.init)],
+                        in: db
+                    )
+                }
                 for (id, translatedText) in translationUpdates {
                     try TranscriptSegmentRecord.updateTranslatedText(
                         translatedText,

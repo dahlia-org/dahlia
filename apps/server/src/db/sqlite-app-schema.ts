@@ -103,8 +103,7 @@ export const syncedMeeting = sqliteTable("content_meetings", {
   revision: integer("revision").default(1).notNull(),
   summaryRevision: integer("summary_revision").default(0).notNull(),
   transcriptRevision: integer("transcript_revision").default(0).notNull(),
-  activeTranscriptGeneration: text("active_transcript_generation"),
-  manifestReceivedAt: sqliteTimestamp("manifest_received_at"),
+  active: integer("active", { mode: "boolean" }).default(false).notNull(),
   deletingAt: sqliteTimestamp("deleting_at"),
 }, (table) => [
   unique("synced_meeting_vault_meeting_unique").on(table.vaultId, table.meetingId),
@@ -122,7 +121,6 @@ export const syncedMeeting = sqliteTable("content_meetings", {
 export const syncedTranscriptSegment = sqliteTable("content_transcript_segments", {
   vaultId: text("vault_id").notNull(),
   meetingId: text("meeting_id").notNull(),
-  generation: text("generation").notNull(),
   segmentId: text("segment_id").notNull(),
   startTime: sqliteTimestamp("start_time").notNull(),
   endTime: sqliteTimestamp("end_time"),
@@ -132,20 +130,30 @@ export const syncedTranscriptSegment = sqliteTable("content_transcript_segments"
   speakerLabel: text("speaker_label"),
 }, (table) => [
   primaryKey({
-    columns: [table.vaultId, table.meetingId, table.generation, table.segmentId],
+    columns: [table.vaultId, table.meetingId, table.segmentId],
   }),
   foreignKey({
     columns: [table.vaultId, table.meetingId],
     foreignColumns: [syncedMeeting.vaultId, syncedMeeting.meetingId],
   }).onDelete("cascade"),
-  index("synced_transcript_vault_meeting_generation_start_id_idx")
-    .on(
-      table.vaultId,
-      table.meetingId,
-      table.generation,
-      table.startTime,
-      table.segmentId,
-    ),
+  index("synced_transcript_vault_meeting_start_id_idx")
+    .on(table.vaultId, table.meetingId, table.startTime, table.segmentId),
+]);
+
+export const transcriptPatchChunk = sqliteTable("content_transcript_patch_chunks", {
+  vaultId: text("vault_id").notNull(),
+  meetingId: text("meeting_id").notNull(),
+  patchId: text("patch_id").notNull(),
+  chunkIndex: integer("chunk_index").notNull(),
+  contentHash: text("content_hash").notNull(),
+  payload: text("payload").notNull(),
+  createdAt: sqliteTimestamp("created_at").default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`).notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.vaultId, table.meetingId, table.patchId, table.chunkIndex] }),
+  foreignKey({
+    columns: [table.vaultId, table.meetingId],
+    foreignColumns: [syncedMeeting.vaultId, syncedMeeting.meetingId],
+  }).onDelete("cascade"),
 ]);
 
 export const syncedScreenshot = sqliteTable("content_screenshots", {
@@ -156,6 +164,7 @@ export const syncedScreenshot = sqliteTable("content_screenshots", {
   contentType: text("content_type").notNull(),
   storageKey: text("storage_key").notNull(),
   contentLength: integer("content_length").notNull(),
+  contentHash: text("content_hash").notNull(),
   active: integer("active", { mode: "boolean" }).default(true).notNull(),
   ocrText: text("ocr_text"),
   caption: text("caption"),

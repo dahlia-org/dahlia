@@ -15,7 +15,7 @@ import GRDB
                 try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('summaries')")
             }
 
-            #expect(columns == ["meetingId", "title", "document", "createdAt", "serverRevision"])
+            #expect(columns == ["meetingId", "title", "document", "createdAt"])
         }
 
         @Test

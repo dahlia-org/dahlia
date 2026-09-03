@@ -229,7 +229,7 @@ async function json<T>(url: string, init?: RequestInit): Promise<T> {
 
 type SyncOperation = {
   entity: "vault" | "project" | "meeting" | "summary";
-  action: "create" | "update" | "delete" | "upsert" | "deleteHierarchy";
+  action: "create" | "update" | "delete" | "upsert";
   entityId: string;
   baseRevision: number | null;
   data: Record<string, unknown>;
@@ -902,10 +902,10 @@ function SyncedProject({ vaultId, projectId }: { vaultId: string; projectId: str
     }
   };
   const deleteProject = async () => {
-    if (!project || !window.confirm(`Delete ${project.path} and its child Projects? Meetings will be unassigned.`)) return;
+    if (!project || !window.confirm(`Delete empty Project ${project.path}?`)) return;
     try {
       await commitSyncTransaction(vaultId, [{
-        entity: "project", action: "deleteHierarchy", entityId: projectId,
+        entity: "project", action: "delete", entityId: projectId,
         baseRevision: project.revision, data: {},
       }]);
       window.location.assign(`/vaults/${vaultId}`);

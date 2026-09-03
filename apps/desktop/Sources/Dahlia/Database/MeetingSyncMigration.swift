@@ -1,186 +1,93 @@
 import GRDB
 
-let syncQueueTransactionIDSQL = """
-lower(
-    substr(printf('%012x', CAST(unixepoch('subsec') * 1000 AS INTEGER)), 1, 8) || '-' ||
-    substr(printf('%012x', CAST(unixepoch('subsec') * 1000 AS INTEGER)), 9, 4) ||
-    '-7' || substr(hex(randomblob(2)), 2, 3) || '-8' ||
-    substr(hex(randomblob(2)), 2, 3) || '-' || hex(randomblob(6))
-)
-"""
-
+/// Final unreleased synchronization schema. v1-v41 are the only published migrations.
 enum MeetingSyncMigration {
     static func migrate(in db: Database) throws {
-        guard try ["vaults", "meetings", "summaries", "screenshots", "transcript_segments"]
+        guard try ["vaults", "meetings", "transcript_segments", "dahlia_account_connections"]
             .allSatisfy({ try db.tableExists($0) }) else { return }
+
         try db.alter(table: VaultRecord.databaseTableName) { table in
             table.add(column: "syncEnabled", .boolean).notNull().defaults(to: false)
+            table.add(column: "syncRole", .text).check { $0 == nil || ["owner", "member"].contains($0) }
             table.add(column: "syncConfirmedConnectionId", .blob)
-            table.add(column: "syncDeletionMode", .text)
-            table.add(column: "syncDeletionApproved", .boolean).notNull().defaults(to: false)
-            table.add(column: "serverRevision", .integer)
-            table.add(column: "syncCursor", .text)
-            table.add(column: "syncConflictJSON", .text)
-            table.add(column: "syncBootstrapPending", .boolean).notNull().defaults(to: false)
+            table.add(column: "syncPullCursor", .text)
+            table.add(column: "syncLastCommittedCursor", .text)
         }
-        try db.alter(table: MeetingRecord.databaseTableName) { table in
-            table.add(column: "serverRevision", .integer)
-            table.add(column: "summaryServerRevision", .integer).notNull().defaults(to: 0)
-            table.add(column: "transcriptServerRevision", .integer).notNull().defaults(to: 0)
-            table.add(column: "transcriptServerGeneration", .text)
+        try db.alter(table: TranscriptSegmentRecord.databaseTableName) { table in
+            table.add(column: "audioSource", .text)
         }
-        try db.alter(table: SummaryRecord.databaseTableName) { table in
-            table.add(column: "serverRevision", .integer).notNull().defaults(to: 0)
-        }
-        try db.alter(table: MeetingScreenshotRecord.databaseTableName) { table in
-            table.add(column: "serverRevision", .integer)
-        }
+        try db.execute(sql: "UPDATE transcript_segments SET audioSource = speakerLabel, speakerLabel = NULL")
         try db.execute(sql: schemaSQL)
-        try db.execute(sql: triggerSQL)
     }
 
     private static let schemaSQL = """
-    CREATE TABLE sync_apply_context (
-        active INTEGER PRIMARY KEY CHECK(active = 1)
-    );
-    CREATE TABLE cloud_vaults (
+    CREATE TABLE sync_transactions (
+        sequence INTEGER PRIMARY KEY,
+        id BLOB NOT NULL UNIQUE,
         vaultId BLOB NOT NULL,
-        connectionId BLOB NOT NULL REFERENCES dahlia_account_connections(id) ON DELETE CASCADE,
-        name TEXT NOT NULL,
+        connectionId BLOB NOT NULL REFERENCES dahlia_account_connections(id),
         createdAt DATETIME NOT NULL,
-        revision INTEGER NOT NULL,
-        PRIMARY KEY(vaultId, connectionId)
-    );
-    CREATE TABLE meeting_sync_jobs (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        vaultId BLOB NOT NULL,
-        meetingId BLOB,
-        targetKind TEXT NOT NULL CHECK(targetKind IN ('upload', 'meetingDelete')),
-        transactionId TEXT NOT NULL DEFAULT (\(syncQueueTransactionIDSQL)),
-        transactionCreatedAt DATETIME NOT NULL DEFAULT (unixepoch('subsec')),
-        baseRevision INTEGER,
-        generation INTEGER NOT NULL DEFAULT 1,
-        segmentCount INTEGER,
-        maxSegmentId BLOB,
-        confirmedCount INTEGER,
-        recordingEndedAt DATETIME,
-        batchCompletedAt DATETIME,
-        status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'running', 'failed')),
         attempts INTEGER NOT NULL DEFAULT 0,
-        availableAt DATETIME NOT NULL DEFAULT (unixepoch('subsec')),
-        claimedAt DATETIME,
+        availableAt DATETIME NOT NULL,
         leaseExpiresAt DATETIME,
-        lastErrorCode TEXT,
-        updatedAt DATETIME NOT NULL DEFAULT (unixepoch('subsec')),
-        UNIQUE(targetKind, meetingId)
+        blockedReason TEXT CHECK(blockedReason IN ('validation', 'conflict', 'authorization')),
+        serverResponseJSON TEXT
     );
-    CREATE INDEX meeting_sync_jobs_on_status_availableAt
-    ON meeting_sync_jobs(status, availableAt, id);
-    CREATE INDEX meeting_sync_jobs_on_vaultId
-    ON meeting_sync_jobs(vaultId, targetKind, id);
-    """
+    CREATE INDEX sync_transactions_claim_idx
+        ON sync_transactions(blockedReason, availableAt, leaseExpiresAt, sequence);
+    CREATE INDEX sync_transactions_vault_sequence_idx
+        ON sync_transactions(vaultId, sequence);
 
-    /// Meeting-level coalescing deliberately excludes transcript inserts from the recording write path.
-    private static let triggerSQL = """
-    CREATE TRIGGER meeting_sync_queue_meeting_insert AFTER INSERT ON meetings
-    WHEN NOT EXISTS (SELECT 1 FROM sync_apply_context) BEGIN
-        INSERT INTO meeting_sync_jobs(vaultId, meetingId, targetKind)
-        VALUES(new.vaultId, new.id, 'upload')
-        ON CONFLICT(targetKind, meetingId) DO UPDATE SET
-            generation = generation + 1, transactionId = \(
-                syncQueueTransactionIDSQL
-            ), transactionCreatedAt = unixepoch('subsec'), status = 'pending', attempts = 0,
-            availableAt = unixepoch('subsec'), claimedAt = NULL, leaseExpiresAt = NULL,
-            lastErrorCode = NULL, updatedAt = unixepoch('subsec');
-    END;
-    CREATE TRIGGER meeting_sync_queue_meeting_update
-    AFTER UPDATE OF name, description, status, duration, recordingStartedAt, createdAt ON meetings
-    WHEN NOT EXISTS (SELECT 1 FROM sync_apply_context) BEGIN
-        INSERT INTO meeting_sync_jobs(vaultId, meetingId, targetKind)
-        VALUES(new.vaultId, new.id, 'upload')
-        ON CONFLICT(targetKind, meetingId) DO UPDATE SET
-            generation = generation + 1, transactionId = \(
-                syncQueueTransactionIDSQL
-            ), transactionCreatedAt = unixepoch('subsec'), vaultId = excluded.vaultId, status = 'pending', attempts = 0,
-            availableAt = unixepoch('subsec'), claimedAt = NULL, leaseExpiresAt = NULL,
-            lastErrorCode = NULL, updatedAt = unixepoch('subsec');
-    END;
-    CREATE TRIGGER meeting_sync_queue_meeting_delete AFTER DELETE ON meetings
-    WHEN NOT EXISTS (SELECT 1 FROM sync_apply_context) BEGIN
-        DELETE FROM meeting_sync_jobs WHERE targetKind = 'upload' AND meetingId = old.id;
-        INSERT INTO meeting_sync_jobs(vaultId, meetingId, targetKind, baseRevision)
-        VALUES(old.vaultId, old.id, 'meetingDelete', old.serverRevision)
-        ON CONFLICT(targetKind, meetingId) DO UPDATE SET
-            generation = generation + 1, transactionId = \(syncQueueTransactionIDSQL),
-            transactionCreatedAt = unixepoch('subsec'), baseRevision = old.serverRevision,
-            vaultId = excluded.vaultId, status = 'pending', attempts = 0,
-            availableAt = unixepoch('subsec'), claimedAt = NULL, leaseExpiresAt = NULL,
-            lastErrorCode = NULL, updatedAt = unixepoch('subsec');
-    END;
-    CREATE TRIGGER meeting_sync_queue_summary_insert AFTER INSERT ON summaries
-    WHEN NOT EXISTS (SELECT 1 FROM sync_apply_context) BEGIN
-        INSERT INTO meeting_sync_jobs(vaultId, meetingId, targetKind)
-        SELECT vaultId, new.meetingId, 'upload' FROM meetings WHERE id = new.meetingId
-        ON CONFLICT(targetKind, meetingId) DO UPDATE SET generation = generation + 1,
-            transactionId = \(syncQueueTransactionIDSQL), transactionCreatedAt = unixepoch('subsec'),
-            status = 'pending', attempts = 0, availableAt = unixepoch('subsec'), claimedAt = NULL,
-            leaseExpiresAt = NULL, lastErrorCode = NULL, updatedAt = unixepoch('subsec');
-    END;
-    CREATE TRIGGER meeting_sync_queue_summary_update AFTER UPDATE OF title, document, createdAt ON summaries
-    WHEN NOT EXISTS (SELECT 1 FROM sync_apply_context) BEGIN
-        INSERT INTO meeting_sync_jobs(vaultId, meetingId, targetKind)
-        SELECT vaultId, new.meetingId, 'upload' FROM meetings WHERE id = new.meetingId
-        ON CONFLICT(targetKind, meetingId) DO UPDATE SET generation = generation + 1,
-            transactionId = \(syncQueueTransactionIDSQL), transactionCreatedAt = unixepoch('subsec'),
-            status = 'pending', attempts = 0, availableAt = unixepoch('subsec'), claimedAt = NULL,
-            leaseExpiresAt = NULL, lastErrorCode = NULL, updatedAt = unixepoch('subsec');
-    END;
-    CREATE TRIGGER meeting_sync_queue_summary_delete AFTER DELETE ON summaries
-    WHEN NOT EXISTS (SELECT 1 FROM sync_apply_context) BEGIN
-        INSERT INTO meeting_sync_jobs(vaultId, meetingId, targetKind)
-        SELECT vaultId, old.meetingId, 'upload' FROM meetings WHERE id = old.meetingId
-        ON CONFLICT(targetKind, meetingId) DO UPDATE SET generation = generation + 1,
-            transactionId = \(syncQueueTransactionIDSQL), transactionCreatedAt = unixepoch('subsec'),
-            status = 'pending', attempts = 0, availableAt = unixepoch('subsec'), claimedAt = NULL,
-            leaseExpiresAt = NULL, lastErrorCode = NULL, updatedAt = unixepoch('subsec');
-    END;
-    CREATE TRIGGER meeting_sync_queue_screenshot_insert AFTER INSERT ON screenshots
-    WHEN NOT EXISTS (SELECT 1 FROM sync_apply_context) BEGIN
-        INSERT INTO meeting_sync_jobs(vaultId, meetingId, targetKind)
-        SELECT vaultId, new.meetingId, 'upload' FROM meetings WHERE id = new.meetingId
-        ON CONFLICT(targetKind, meetingId) DO UPDATE SET generation = generation + 1,
-            transactionId = \(syncQueueTransactionIDSQL), transactionCreatedAt = unixepoch('subsec'),
-            status = 'pending', attempts = 0, availableAt = unixepoch('subsec'), claimedAt = NULL,
-            leaseExpiresAt = NULL, lastErrorCode = NULL, updatedAt = unixepoch('subsec');
-    END;
-    CREATE TRIGGER meeting_sync_queue_screenshot_analysis
-    AFTER UPDATE OF ocrText, caption ON screenshots
-    WHEN NOT EXISTS (SELECT 1 FROM sync_apply_context) BEGIN
-        INSERT INTO meeting_sync_jobs(vaultId, meetingId, targetKind)
-        SELECT vaultId, new.meetingId, 'upload' FROM meetings WHERE id = new.meetingId
-        ON CONFLICT(targetKind, meetingId) DO UPDATE SET generation = generation + 1,
-            transactionId = \(syncQueueTransactionIDSQL), transactionCreatedAt = unixepoch('subsec'),
-            status = 'pending', attempts = 0, availableAt = unixepoch('subsec'), claimedAt = NULL,
-            leaseExpiresAt = NULL, lastErrorCode = NULL, updatedAt = unixepoch('subsec');
-    END;
-    CREATE TRIGGER meeting_sync_queue_screenshot_delete AFTER DELETE ON screenshots
-    WHEN NOT EXISTS (SELECT 1 FROM sync_apply_context) BEGIN
-        INSERT INTO meeting_sync_jobs(vaultId, meetingId, targetKind)
-        SELECT vaultId, old.meetingId, 'upload' FROM meetings WHERE id = old.meetingId
-        ON CONFLICT(targetKind, meetingId) DO UPDATE SET generation = generation + 1,
-            transactionId = \(syncQueueTransactionIDSQL), transactionCreatedAt = unixepoch('subsec'),
-            status = 'pending', attempts = 0, availableAt = unixepoch('subsec'), claimedAt = NULL,
-            leaseExpiresAt = NULL, lastErrorCode = NULL, updatedAt = unixepoch('subsec');
-    END;
-    CREATE TRIGGER meeting_sync_queue_vault_enable AFTER UPDATE OF syncEnabled ON vaults
-    WHEN old.syncEnabled = 0 AND new.syncEnabled = 1
-      AND NOT EXISTS (SELECT 1 FROM sync_apply_context) BEGIN
-        INSERT INTO meeting_sync_jobs(vaultId, meetingId, targetKind)
-        SELECT new.id, id, 'upload' FROM meetings WHERE vaultId = new.id
-        ON CONFLICT(targetKind, meetingId) DO UPDATE SET generation = generation + 1,
-            transactionId = \(syncQueueTransactionIDSQL), transactionCreatedAt = unixepoch('subsec'),
-            status = 'pending', attempts = 0, availableAt = unixepoch('subsec'), claimedAt = NULL,
-            leaseExpiresAt = NULL, lastErrorCode = NULL, updatedAt = unixepoch('subsec');
-    END;
+    CREATE TABLE sync_operations (
+        transactionId BLOB NOT NULL REFERENCES sync_transactions(id) ON DELETE CASCADE,
+        position INTEGER NOT NULL,
+        id BLOB NOT NULL UNIQUE,
+        entity TEXT NOT NULL CHECK(entity IN ('vault', 'project', 'meeting', 'summary', 'transcript', 'screenshot')),
+        action TEXT NOT NULL CHECK(action IN ('create', 'update', 'delete', 'upsert', 'patch', 'reset')),
+        entityId BLOB NOT NULL,
+        baseRevision INTEGER,
+        payloadJSON TEXT,
+        attachmentMimeType TEXT,
+        attachmentSHA256 TEXT CHECK(attachmentSHA256 IS NULL OR length(attachmentSHA256) = 64),
+        attachmentBytes BLOB,
+        PRIMARY KEY(transactionId, position),
+        UNIQUE(transactionId, entity, entityId),
+        CHECK(
+            (attachmentMimeType IS NULL AND attachmentSHA256 IS NULL AND attachmentBytes IS NULL)
+            OR (entity = 'screenshot' AND attachmentMimeType IS NOT NULL
+                AND attachmentSHA256 IS NOT NULL AND attachmentBytes IS NOT NULL)
+        )
+    );
+    CREATE INDEX sync_operations_entity_idx
+        ON sync_operations(entity, entityId, transactionId);
+
+    CREATE TABLE sync_entity_state (
+        vaultId BLOB NOT NULL,
+        entity TEXT NOT NULL,
+        entityId BLOB NOT NULL,
+        confirmedRevision INTEGER,
+        PRIMARY KEY(vaultId, entity, entityId)
+    );
+
+    CREATE TABLE sync_transcript_patch_items (
+        operationId BLOB NOT NULL REFERENCES sync_operations(id) ON DELETE CASCADE,
+        position INTEGER NOT NULL,
+        action TEXT NOT NULL CHECK(action IN ('upsert', 'delete')),
+        segmentId BLOB NOT NULL,
+        startTime DATETIME,
+        endTime DATETIME,
+        text TEXT,
+        isConfirmed INTEGER,
+        audioSource TEXT,
+        speakerLabel TEXT,
+        PRIMARY KEY(operationId, position),
+        UNIQUE(operationId, segmentId),
+        CHECK(
+            (action = 'delete' AND startTime IS NULL AND endTime IS NULL AND text IS NULL
+                AND isConfirmed IS NULL AND audioSource IS NULL AND speakerLabel IS NULL)
+            OR (action = 'upsert' AND startTime IS NOT NULL AND text IS NOT NULL
+                AND isConfirmed IS NOT NULL)
+        )
+    );
     """
 }

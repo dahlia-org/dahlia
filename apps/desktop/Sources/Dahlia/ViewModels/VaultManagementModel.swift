@@ -10,7 +10,7 @@ final class VaultManagementModel {
 
     private(set) var vaults: [VaultRecord] = []
     private(set) var cloudVaults: [CloudVaultRecord] = []
-    private(set) var pendingMeetingDeletionCounts: [UUID: Int] = [:]
+    private(set) var blockedSyncVaultIDs: Set<UUID> = []
     private(set) var errorMessage = ""
     private(set) var isLoading = false
     private(set) var isRemovingVault = false
@@ -47,14 +47,49 @@ final class VaultManagementModel {
         do {
             vaults = try await repository.fetchAllVaultsAsync()
             let localVaultIDs = Set(vaults.map(\.id))
-            cloudVaults = try await repository.fetchCloudVaultsAsync().filter { !localVaultIDs.contains($0.vaultId) }
-            pendingMeetingDeletionCounts = try await repository.pendingMeetingDeletionCounts()
+            cloudVaults = try await fetchCloudVaults(repository: repository)
+                .filter { !localVaultIDs.contains($0.vaultId) }
+            blockedSyncVaultIDs = try await repository.blockedSyncVaultIDs()
             hasLoadedVaults = true
         } catch {
             hasLoadedVaults = false
             guard !Task.isCancelled else { return }
             presentError(L10n.vaultLoadFailed, error: error, source: "loadVaults")
         }
+    }
+
+    private func fetchCloudVaults(repository: MeetingRepository) async throws -> [CloudVaultRecord] {
+        struct Response: Decodable { let items: [Item] }
+        struct Item: Decodable {
+            let vaultId: UUID
+            let name: String
+            let revision: Int
+            let createdAt: Date
+            let role: String
+        }
+
+        var result: [CloudVaultRecord] = []
+        for connection in try await repository.fetchDahliaAccountConnections() {
+            guard let origin = URL(string: connection.origin),
+                  let url = URL(string: "api/v1/vaults", relativeTo: origin)?.absoluteURL else { continue }
+            var request = URLRequest(url: url)
+            let token = try await DahliaCloudTokenServiceRegistry.shared.validAccessToken(connectionID: connection.id)
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard (response as? HTTPURLResponse)?.statusCode == 200 else { continue }
+            let items = try SyncJSON.decoder.decode(Response.self, from: data).items
+            result += items.map {
+                CloudVaultRecord(
+                    vaultId: $0.vaultId,
+                    connectionId: connection.id,
+                    name: $0.name,
+                    createdAt: $0.createdAt,
+                    revision: $0.revision,
+                    role: $0.role
+                )
+            }
+        }
+        return result.sorted { ($0.name, $0.vaultId.uuidString) < ($1.name, $1.vaultId.uuidString) }
     }
 
     func registerCloudVault(_ cloudVault: CloudVaultRecord, at url: URL) async -> VaultRecord? {
@@ -71,10 +106,9 @@ final class VaultManagementModel {
         vault.accountConnectionId = cloudVault.connectionId
         vault.syncConfirmedConnectionId = cloudVault.connectionId
         vault.syncEnabled = true
-        vault.serverRevision = cloudVault.revision
-        vault.syncBootstrapPending = true
+        vault.syncRole = cloudVault.role
         do {
-            try await repository.insertVaultAsync(vault)
+            try await repository.insertCloudVaultAsync(vault, revision: cloudVault.revision)
             await loadVaults()
             return vault
         } catch {
@@ -252,10 +286,7 @@ final class VaultManagementModel {
         guard let repository else { return }
         do {
             try await repository.acceptServerSyncVersion(vaultId: vault.id)
-            if let index = vaults.firstIndex(where: { $0.id == vault.id }) {
-                vaults[index].syncConflictJSON = nil
-                vaults[index].syncBootstrapPending = true
-            }
+            blockedSyncVaultIDs.remove(vault.id)
         } catch {
             presentError(L10n.vaultOperationFailed, error: error, source: "acceptServerSyncVersion")
         }
@@ -265,9 +296,7 @@ final class VaultManagementModel {
         guard let repository else { return }
         do {
             try await repository.reapplyLocalSyncVersion(vaultId: vault.id)
-            if let index = vaults.firstIndex(where: { $0.id == vault.id }) {
-                vaults[index].syncConflictJSON = nil
-            }
+            blockedSyncVaultIDs.remove(vault.id)
         } catch {
             presentError(L10n.vaultOperationFailed, error: error, source: "reapplyLocalSyncVersion")
         }
@@ -284,16 +313,6 @@ final class VaultManagementModel {
         } catch {
             presentError(L10n.vaultOperationFailed, error: error, source: "deleteServerCopy")
             return nil
-        }
-    }
-
-    func approvePendingMeetingDeletions(for vault: VaultRecord) async {
-        guard let repository else { return }
-        do {
-            try await repository.approvePendingMeetingDeletions(vaultId: vault.id)
-            pendingMeetingDeletionCounts[vault.id] = nil
-        } catch {
-            presentError(L10n.vaultOperationFailed, error: error, source: "approvePendingMeetingDeletions")
         }
     }
 

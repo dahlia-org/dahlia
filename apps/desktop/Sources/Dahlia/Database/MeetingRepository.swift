@@ -72,12 +72,6 @@ final class MeetingRepository {
         }
     }
 
-    nonisolated func fetchCloudVaultsAsync() async throws -> [CloudVaultRecord] {
-        try await dbQueue.read { db in
-            try CloudVaultRecord.order(Column("name"), Column("vaultId")).fetchAll(db)
-        }
-    }
-
     /// 最後にオープンした保管庫を取得する。
     func fetchLastOpenedVault() throws -> VaultRecord? {
         try dbQueue.read { db in
@@ -102,12 +96,30 @@ final class MeetingRepository {
         }
     }
 
+    nonisolated func insertCloudVaultAsync(_ vault: VaultRecord, revision: Int) async throws {
+        try await dbQueue.write { db in
+            try vault.insert(db)
+            try db.execute(
+                sql: """
+                INSERT INTO sync_entity_state(vaultId, entity, entityId, confirmedRevision)
+                VALUES (?, 'vault', ?, ?)
+                """,
+                arguments: [vault.id, vault.id, revision]
+            )
+        }
+    }
+
     /// 保管庫の表示名を更新する。
     nonisolated func updateVaultName(id: UUID, name: String) async throws -> VaultRecord? {
         try await dbQueue.write { db in
             guard var vault = try VaultRecord.fetchOne(db, key: id) else { return nil }
             vault.name = name
             try vault.update(db)
+            try SyncTransactionRecorder.record(
+                vaultId: id,
+                operations: [SyncInitialSnapshotBuilder.vaultOperation(vault, action: .update)],
+                in: db
+            )
             return vault
         }
     }
@@ -124,16 +136,14 @@ final class MeetingRepository {
     nonisolated func updateVaultAccountConnection(id: UUID, connectionID: UUID?) async throws -> VaultRecord? {
         try await dbQueue.write { db in
             guard var vault = try VaultRecord.fetchOne(db, key: id) else { return nil }
-            guard vault.syncDeletionMode == nil || vault.accountConnectionId == connectionID else { return nil }
             if vault.accountConnectionId != connectionID {
+                guard try !SyncTransactionQueue.hasPending(vaultId: id, in: db) else {
+                    throw SyncTransactionQueueError.pendingTransactions
+                }
+                guard vault.syncConfirmedConnectionId == nil else {
+                    throw SyncTransactionQueueError.serverCopyExists
+                }
                 vault.syncEnabled = false
-                try db.execute(
-                    sql: """
-                    UPDATE screenshots SET syncUploadedConnectionId = NULL
-                    WHERE meetingId IN (SELECT id FROM meetings WHERE vaultId = ?)
-                    """,
-                    arguments: [id]
-                )
             }
             vault.accountConnectionId = connectionID
             try vault.update(db)
@@ -149,59 +159,36 @@ final class MeetingRepository {
                           && (vault.syncConfirmedConnectionId == nil || vault.syncConfirmedConnectionId == vault.accountConnectionId)
                   ) else { return nil }
             vault.syncEnabled = isEnabled
-            vault.syncConfirmedConnectionId = isEnabled ? vault.accountConnectionId : vault.syncConfirmedConnectionId
-            if isEnabled { vault.syncBootstrapPending = true }
             try vault.update(db)
             return vault
         }
     }
 
     nonisolated func acceptServerSyncVersion(vaultId: UUID) async throws {
-        try await MeetingSyncQueue.acceptServerVersion(vaultId: vaultId, dbQueue: dbQueue)
+        try await SyncTransactionQueue.acceptServerVersion(vaultId: vaultId, dbQueue: dbQueue)
     }
 
     nonisolated func reapplyLocalSyncVersion(vaultId: UUID) async throws {
-        try await MeetingSyncQueue.reapplyLocalVersion(vaultId: vaultId, dbQueue: dbQueue)
+        try await SyncTransactionQueue.reapplyLocalVersion(vaultId: vaultId, dbQueue: dbQueue)
     }
 
     nonisolated func requestServerVaultDeletion(id: UUID) async throws -> VaultRecord? {
         try await dbQueue.write { db in
-            guard var vault = try VaultRecord.fetchOne(db, key: id),
-                  let connectionId = vault.syncConfirmedConnectionId else { return nil }
-            vault.syncEnabled = false
-            vault.syncDeletionMode = MeetingSyncDeletionMode.deleteOnly.rawValue
-            vault.syncDeletionApproved = true
-            vault.syncDeletionConnectionId = connectionId
-            try db.execute(
-                sql: """
-                UPDATE screenshots SET syncUploadedConnectionId = NULL
-                WHERE meetingId IN (SELECT id FROM meetings WHERE vaultId = ?)
-                """,
-                arguments: [id]
+            guard let vault = try VaultRecord.fetchOne(db, key: id),
+                  vault.syncConfirmedConnectionId != nil else { return nil }
+            try SyncTransactionQueue.discard(vaultId: id, in: db)
+            try SyncTransactionRecorder.record(
+                vaultId: id,
+                operations: [SyncOperationDraft(entity: .vault, action: .reset, entityId: id)],
+                in: db
             )
-            try vault.update(db)
             return vault
         }
     }
 
-    nonisolated func pendingMeetingDeletionCounts() async throws -> [UUID: Int] {
+    nonisolated func blockedSyncVaultIDs() async throws -> Set<UUID> {
         try await dbQueue.read { db in
-            let rows = try Row.fetchAll(
-                db,
-                sql: """
-                SELECT vaultId, count(*) AS pendingCount FROM meeting_sync_jobs
-                WHERE targetKind = 'meetingDelete'
-                GROUP BY vaultId HAVING count(*) >= ?
-                """,
-                arguments: [MeetingSyncQueue.meetingDeleteConfirmationThreshold]
-            )
-            return Dictionary(uniqueKeysWithValues: rows.map { ($0["vaultId"] as UUID, $0["pendingCount"] as Int) })
-        }
-    }
-
-    nonisolated func approvePendingMeetingDeletions(vaultId: UUID) async throws {
-        try await dbQueue.write { db in
-            try db.execute(sql: "UPDATE vaults SET syncBulkDeleteApproved = 1 WHERE id = ?", arguments: [vaultId])
+            try UUID.fetchSet(db, sql: "SELECT DISTINCT vaultId FROM sync_transactions WHERE blockedReason IS NOT NULL")
         }
     }
 
@@ -356,7 +343,13 @@ final class MeetingRepository {
         try dbQueue.write { db in
             if var record = try MeetingRecord.fetchOne(db, key: id) {
                 record.name = newName
+                record.updatedAt = .now
                 try record.update(db)
+                try SyncTransactionRecorder.record(
+                    vaultId: record.vaultId,
+                    operations: [SyncInitialSnapshotBuilder.meetingOperation(record, action: .update)],
+                    in: db
+                )
             }
         }
     }
@@ -366,6 +359,12 @@ final class MeetingRepository {
         let audioTargets = try BatchAudioCleanupService.deletionTargets(meetingIds: [id], dbQueue: dbQueue)
         try BatchAudioCleanupService.deleteFiles(audioTargets)
         try dbQueue.write { db in
+            guard let meeting = try MeetingRecord.fetchOne(db, key: id) else { return }
+            try SyncTransactionRecorder.record(
+                vaultId: meeting.vaultId,
+                operations: [SyncOperationDraft(entity: .meeting, action: .delete, entityId: id)],
+                in: db
+            )
             _ = try MeetingRecord.deleteOne(db, key: id)
         }
     }
@@ -413,6 +412,16 @@ final class MeetingRepository {
         let audioTargets = try BatchAudioCleanupService.deletionTargets(meetingIds: ids, dbQueue: dbQueue)
         try BatchAudioCleanupService.deleteFiles(audioTargets)
         try dbQueue.write { db in
+            let meetings = try MeetingRecord.filter(ids.contains(Column("id"))).fetchAll(db)
+            for (vaultId, vaultMeetings) in Dictionary(grouping: meetings, by: \.vaultId) {
+                try SyncTransactionRecorder.record(
+                    vaultId: vaultId,
+                    operations: vaultMeetings.map {
+                        SyncOperationDraft(entity: .meeting, action: .delete, entityId: $0.id)
+                    },
+                    in: db
+                )
+            }
             _ = try MeetingRecord.filter(ids.contains(Column("id"))).deleteAll(db)
         }
     }
@@ -497,6 +506,18 @@ final class MeetingRepository {
                 .filter(Column("vaultId") == vaultId)
                 .updateAll(db, Column("projectId").set(to: toProjectId))
 
+            let changedMeetings = try MeetingRecord
+                .filter(ids.contains(Column("id")))
+                .filter(Column("vaultId") == vaultId)
+                .fetchAll(db)
+            try SyncTransactionRecorder.record(
+                vaultId: vaultId,
+                operations: changedMeetings.map {
+                    try SyncInitialSnapshotBuilder.meetingOperation($0, action: .update)
+                },
+                in: db
+            )
+
             try Self.updateVaultExports(vaultExportUpdates, forMeetingIds: ids, in: db)
         }
     }
@@ -527,6 +548,14 @@ final class MeetingRepository {
                 createdAt: existingSummary?.createdAt ?? Date()
             )
             try record.save(db)
+            try SyncTransactionRecorder.record(
+                vaultId: meeting.vaultId,
+                operations: [
+                    SyncInitialSnapshotBuilder.meetingOperation(meeting, action: .update),
+                    SyncInitialSnapshotBuilder.summaryOperation(record, action: .upsert),
+                ],
+                in: db
+            )
             _ = try SummaryExportRecord
                 .filter(Column("meetingId") == meetingId)
                 .deleteAll(db)
@@ -752,6 +781,18 @@ final class MeetingRepository {
             _ = try MeetingScreenshotRecord
                 .filter(deletedIds.contains(Column("id")))
                 .deleteAll(db)
+            guard let vaultId = try UUID.fetchOne(
+                db,
+                sql: "SELECT vaultId FROM meetings WHERE id = ?",
+                arguments: [meetingId]
+            ) else { return deletedScreenshots }
+            try SyncTransactionRecorder.record(
+                vaultId: vaultId,
+                operations: deletedScreenshots.map {
+                    SyncOperationDraft(entity: .screenshot, action: .delete, entityId: $0.id)
+                },
+                in: db
+            )
             return deletedScreenshots
         }
     }
@@ -846,6 +887,16 @@ final class MeetingRepository {
     nonisolated func upsertSummary(_ summary: SummaryRecord) throws {
         try dbQueue.write { db in
             try summary.save(db)
+            guard let vaultId = try UUID.fetchOne(
+                db,
+                sql: "SELECT vaultId FROM meetings WHERE id = ?",
+                arguments: [summary.meetingId]
+            ) else { return }
+            try SyncTransactionRecorder.record(
+                vaultId: vaultId,
+                operations: [SyncInitialSnapshotBuilder.summaryOperation(summary, action: .upsert)],
+                in: db
+            )
         }
     }
 

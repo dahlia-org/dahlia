@@ -784,7 +784,7 @@ final class CaptionViewModel: ObservableObject {
         recordingLifecycle != .idle || isRecordingStartPending || isFinalizingRecording
     }
 
-    var isMeetingSyncPersistenceActive: Bool {
+    var isSyncInitialSnapshotUnsafe: Bool {
         isRecordingLifecycleBusy || failedPersistenceService != nil || failedTranscriptionEventPipeline != nil
     }
 
@@ -2218,6 +2218,11 @@ final class CaptionViewModel: ObservableObject {
         )
         try? dbQueue.write { db in
             try record.insert(db)
+            try SyncTransactionRecorder.record(
+                vaultId: vaultId,
+                operations: [SyncInitialSnapshotBuilder.meetingOperation(record, action: .create)],
+                in: db
+            )
         }
 
         setMeetingContext(
@@ -2332,6 +2337,11 @@ final class CaptionViewModel: ObservableObject {
                     calendarEventRecurrenceId: calendarEventKey?.recurrenceId
                 )
                 try record.insert(db)
+                try SyncTransactionRecorder.record(
+                    vaultId: vault.id,
+                    operations: [SyncInitialSnapshotBuilder.meetingOperation(record, action: .create)],
+                    in: db
+                )
                 return assignedProjectId
             }
         } catch {

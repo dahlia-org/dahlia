@@ -134,8 +134,7 @@ export const syncedMeeting = contentSchema.table("meetings", {
   revision: integer("revision").default(1).notNull(),
   summaryRevision: integer("summary_revision").default(0).notNull(),
   transcriptRevision: integer("transcript_revision").default(0).notNull(),
-  activeTranscriptGeneration: text("active_transcript_generation"),
-  manifestReceivedAt: timestamp("manifest_received_at"),
+  active: boolean("active").default(false).notNull(),
   deletingAt: timestamp("deleting_at"),
 }, (table) => [
   unique("synced_meeting_vault_meeting_unique").on(table.vaultId, table.meetingId),
@@ -155,7 +154,6 @@ export const syncedMeeting = contentSchema.table("meetings", {
 export const syncedTranscriptSegment = contentSchema.table("transcript_segments", {
   vaultId: uuid("vault_id").notNull(),
   meetingId: uuid("meeting_id").notNull(),
-  generation: text("generation").notNull(),
   segmentId: uuid("segment_id").notNull(),
   startTime: timestamp("start_time").notNull(),
   endTime: timestamp("end_time"),
@@ -166,21 +164,35 @@ export const syncedTranscriptSegment = contentSchema.table("transcript_segments"
 }, (table) => [
   primaryKey({
     name: "synced_transcript_segment_pk",
-    columns: [table.vaultId, table.meetingId, table.generation, table.segmentId],
+    columns: [table.vaultId, table.meetingId, table.segmentId],
   }),
   foreignKey({
     name: "synced_transcript_segment_meeting_fk",
     columns: [table.vaultId, table.meetingId],
     foreignColumns: [syncedMeeting.vaultId, syncedMeeting.meetingId],
   }).onDelete("cascade"),
-  index("synced_transcript_vault_meeting_generation_start_id_idx")
-    .on(
-      table.vaultId,
-      table.meetingId,
-      table.generation,
-      table.startTime,
-      table.segmentId,
-    ),
+  index("synced_transcript_vault_meeting_start_id_idx")
+    .on(table.vaultId, table.meetingId, table.startTime, table.segmentId),
+]);
+
+export const transcriptPatchChunk = contentSchema.table("transcript_patch_chunks", {
+  vaultId: uuid("vault_id").notNull(),
+  meetingId: uuid("meeting_id").notNull(),
+  patchId: uuid("patch_id").notNull(),
+  chunkIndex: integer("chunk_index").notNull(),
+  contentHash: text("content_hash").notNull(),
+  payload: jsonb("payload").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  primaryKey({
+    name: "transcript_patch_chunk_pk",
+    columns: [table.vaultId, table.meetingId, table.patchId, table.chunkIndex],
+  }),
+  foreignKey({
+    name: "transcript_patch_chunk_meeting_fk",
+    columns: [table.vaultId, table.meetingId],
+    foreignColumns: [syncedMeeting.vaultId, syncedMeeting.meetingId],
+  }).onDelete("cascade"),
 ]);
 
 export const syncedScreenshot = contentSchema.table("screenshots", {
@@ -191,6 +203,7 @@ export const syncedScreenshot = contentSchema.table("screenshots", {
   contentType: text("content_type").notNull(),
   storageKey: text("storage_key").notNull(),
   contentLength: integer("content_length").notNull(),
+  contentHash: text("content_hash").notNull(),
   active: boolean("active").default(true).notNull(),
   ocrText: text("ocr_text"),
   caption: text("caption"),

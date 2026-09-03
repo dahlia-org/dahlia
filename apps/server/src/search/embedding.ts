@@ -2,6 +2,8 @@ import type { AppConfig } from "../config";
 import { DatabricksTokenError, DatabricksTokenProvider } from "../databricks/token";
 
 export const SEARCH_EMBEDDING_BATCH_SIZE = 16;
+export const SEARCH_EMBEDDING_DOCUMENT_MAX_BYTES = 64 * 1024;
+export const SEARCH_EMBEDDING_BATCH_MAX_BYTES = 512 * 1024;
 const SEARCH_EMBEDDING_TIMEOUT_MS = 30_000;
 const QUERY_INSTRUCTION = "Given a search query, retrieve relevant Dahlia meeting content.";
 
@@ -97,6 +99,11 @@ export function createSearchEmbedder(
     embedDocuments(input, signal) {
       if (input.length === 0 || input.length > SEARCH_EMBEDDING_BATCH_SIZE) {
         throw new SearchEmbeddingError("embedding_invalid_batch", false);
+      }
+      const byteLengths = input.map((value) => new TextEncoder().encode(value).byteLength);
+      if (byteLengths.some((length) => length > SEARCH_EMBEDDING_DOCUMENT_MAX_BYTES)
+        || byteLengths.reduce((sum, length) => sum + length, 0) > SEARCH_EMBEDDING_BATCH_MAX_BYTES) {
+        throw new SearchEmbeddingError("embedding_input_too_large", false);
       }
       return request(input, undefined, signal);
     },

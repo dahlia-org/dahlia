@@ -372,8 +372,7 @@ CREATE TABLE `content_meetings` (
 	`revision` integer DEFAULT 1 NOT NULL,
 	`summary_revision` integer DEFAULT 0 NOT NULL,
 	`transcript_revision` integer DEFAULT 0 NOT NULL,
-	`active_transcript_generation` text,
-	`manifest_received_at` integer,
+	`active` integer DEFAULT false NOT NULL,
 	`deleting_at` integer,
 	CONSTRAINT `fk_content_meetings_vault_id_core_vaults_vault_id_fk` FOREIGN KEY (`vault_id`) REFERENCES `core_vaults`(`vault_id`) ON DELETE CASCADE,
 	CONSTRAINT `fk_content_meetings_vault_id_project_id_core_projects_vault_id_project_id_fk` FOREIGN KEY (`vault_id`,`project_id`) REFERENCES `core_projects`(`vault_id`,`project_id`),
@@ -409,6 +408,7 @@ CREATE TABLE `content_screenshots` (
 	`content_type` text NOT NULL,
 	`storage_key` text NOT NULL,
 	`content_length` integer NOT NULL,
+	`content_hash` text NOT NULL,
 	`active` integer DEFAULT true NOT NULL,
 	`ocr_text` text,
 	`caption` text,
@@ -421,7 +421,6 @@ CREATE TABLE `content_screenshots` (
 CREATE TABLE `content_transcript_segments` (
 	`vault_id` text NOT NULL,
 	`meeting_id` text NOT NULL,
-	`generation` text NOT NULL,
 	`segment_id` text NOT NULL,
 	`start_time` integer NOT NULL,
 	`end_time` integer,
@@ -429,7 +428,7 @@ CREATE TABLE `content_transcript_segments` (
 	`is_confirmed` integer NOT NULL,
 	`audio_source` text,
 	`speaker_label` text,
-	CONSTRAINT `content_transcript_segments_pk` PRIMARY KEY(`vault_id`, `meeting_id`, `generation`, `segment_id`),
+	CONSTRAINT `content_transcript_segments_pk` PRIMARY KEY(`vault_id`, `meeting_id`, `segment_id`),
 	CONSTRAINT `fk_content_transcript_segments_vault_id_meeting_id_content_meetings_vault_id_meeting_id_fk` FOREIGN KEY (`vault_id`,`meeting_id`) REFERENCES `content_meetings`(`vault_id`,`meeting_id`) ON DELETE CASCADE
 );
 --> statement-breakpoint
@@ -455,6 +454,18 @@ CREATE TABLE `core_vault_permissions` (
 	CONSTRAINT "vault_permission_principal_type_check" CHECK("principal_type" IN ('user', 'organization', 'team')),
 	CONSTRAINT "vault_permission_role_check" CHECK("role" IN ('owner', 'member')),
 	CONSTRAINT "vault_permission_owner_user_check" CHECK("role" <> 'owner' OR "principal_type" = 'user')
+);
+--> statement-breakpoint
+CREATE TABLE `content_transcript_patch_chunks` (
+	`vault_id` text NOT NULL,
+	`meeting_id` text NOT NULL,
+	`patch_id` text NOT NULL,
+	`chunk_index` integer NOT NULL,
+	`content_hash` text NOT NULL,
+	`payload` text NOT NULL,
+	`created_at` integer DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)) NOT NULL,
+	CONSTRAINT `content_transcript_patch_chunks_pk` PRIMARY KEY(`vault_id`, `meeting_id`, `patch_id`, `chunk_index`),
+	CONSTRAINT `fk_content_transcript_patch_chunks_vault_id_meeting_id_content_meetings_vault_id_meeting_id_fk` FOREIGN KEY (`vault_id`,`meeting_id`) REFERENCES `content_meetings`(`vault_id`,`meeting_id`) ON DELETE CASCADE
 );
 --> statement-breakpoint
 CREATE UNIQUE INDEX `account_issuer_accountId_uidx` ON `account` (`issuer`,`account_id`);--> statement-breakpoint
@@ -493,7 +504,7 @@ CREATE INDEX `transaction_receipt_owner_created_idx` ON `core_transaction_receip
 CREATE INDEX `synced_meeting_vault_created_id_idx` ON `content_meetings` (`vault_id`,`created_at`,`meeting_id`);--> statement-breakpoint
 CREATE INDEX `project_vault_parent_name_idx` ON `core_projects` (`vault_id`,`parent_project_id`,`name`);--> statement-breakpoint
 CREATE INDEX `synced_screenshot_vault_meeting_captured_id_idx` ON `content_screenshots` (`vault_id`,`meeting_id`,`captured_at`,`screenshot_id`);--> statement-breakpoint
-CREATE INDEX `synced_transcript_vault_meeting_generation_start_id_idx` ON `content_transcript_segments` (`vault_id`,`meeting_id`,`generation`,`start_time`,`segment_id`);--> statement-breakpoint
+CREATE INDEX `synced_transcript_vault_meeting_start_id_idx` ON `content_transcript_segments` (`vault_id`,`meeting_id`,`start_time`,`segment_id`);--> statement-breakpoint
 CREATE UNIQUE INDEX `vault_permission_single_owner_idx` ON `core_vault_permissions` (`vault_id`) WHERE "core_vault_permissions"."role" = 'owner';--> statement-breakpoint
 CREATE INDEX `vault_permission_principal_vault_idx` ON `core_vault_permissions` (`principal_type`,`principal_id`,`role`,`vault_id`);
 --> statement-breakpoint

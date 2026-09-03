@@ -50,10 +50,6 @@ struct MeetingRecord: Codable, FetchableRecord, PersistableRecord, Equatable, Se
     var recordingStartedAt: Date?
     var calendarEventIcalUid: String?
     var calendarEventRecurrenceId: String?
-    var serverRevision: Int?
-    var summaryServerRevision = 0
-    var transcriptServerRevision = 0
-    var transcriptServerGeneration: String?
 
     var effectiveRecordingStartedAt: Date {
         recordingStartedAt ?? createdAt
@@ -72,10 +68,6 @@ struct MeetingRecord: Codable, FetchableRecord, PersistableRecord, Equatable, Se
         case recordingStartedAt
         case calendarEventIcalUid = "calendar_event_ical_uid"
         case calendarEventRecurrenceId = "calendar_event_recurrence_id"
-        case serverRevision
-        case summaryServerRevision
-        case transcriptServerRevision
-        case transcriptServerGeneration
     }
 }
 

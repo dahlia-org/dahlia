@@ -10,7 +10,6 @@ struct SummaryRecord: Codable, FetchableRecord, PersistableRecord {
     var title: String
     var document: String
     var createdAt: Date
-    var serverRevision = 0
 
     func loadDocument() throws -> SummaryDocument {
         try JSONDecoder().decode(SummaryDocument.self, from: Data(document.utf8))

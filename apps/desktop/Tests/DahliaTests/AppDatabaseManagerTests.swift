@@ -104,7 +104,7 @@ import os
 
             #expect(columns == [
                 "id", "vaultId", "parentProjectId", "name", "nameKey",
-                "createdAt", "description", "projectType", "revision", "serverRevision",
+                "createdAt", "description", "projectType", "revision",
             ])
         }
 
@@ -839,7 +839,7 @@ import os
                 try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('summaries')")
             }
 
-            #expect(columns == ["meetingId", "title", "document", "createdAt", "serverRevision"])
+            #expect(columns == ["meetingId", "title", "document", "createdAt"])
         }
 
         @Test
