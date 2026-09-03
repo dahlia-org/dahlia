@@ -338,64 +338,74 @@ actor SyncWorker {
         isPulling = true
         defer { isPulling = false }
         for target in try await pullTargets() {
-            var cursor = target.cursor
-            repeat {
-                var components = URLComponents()
-                components.path = "/api/v1/vaults/\(target.vaultId.lowercase)/changes"
-                if let cursor { components.queryItems = [URLQueryItem(name: "cursor", value: cursor)] }
-                guard let path = components.string else { throw URLError(.badURL) }
-                let data = try await sendData(
-                    request(origin: target.origin, path: path, method: "GET"),
-                    connectionId: target.connectionId
-                )
-                let page = try SyncJSON.decoder.decode(SyncChangePage.self, from: data)
-                let changes = coalesced(page.items)
-                var appliedAll = true
-                for (index, change) in changes.enumerated() {
-                    guard try await !SyncTransactionQueue.hasPending(
-                        vaultId: target.vaultId,
-                        dbQueue: dbQueue
-                    ) else {
-                        appliedAll = false
-                        break
-                    }
-                    let pageCursor = index == changes.indices.last ? page.cursor : nil
-                    if try await SyncTransactionQueue.isConfirmed(
-                        vaultId: target.vaultId,
-                        entity: change.entity,
-                        entityId: change.entityId,
-                        revision: change.revision,
-                        dbQueue: dbQueue
-                    ) {
-                        if let pageCursor,
-                           try await !SyncTransactionQueue.advancePullCursor(
-                               pageCursor,
-                               vaultId: target.vaultId,
-                               dbQueue: dbQueue
-                           ) {
-                            appliedAll = false
-                            break
-                        }
-                        continue
-                    }
-                    let supplemental = try await loadSupplemental([change], target: target)
-                    guard try await RemoteChangeApplier.apply(
-                        [change],
-                        screenshots: supplemental.screenshots,
-                        transcripts: supplemental.transcripts,
-                        cursor: pageCursor,
-                        vaultId: target.vaultId,
-                        dbQueue: dbQueue
-                    ) else {
-                        appliedAll = false
-                        break
-                    }
-                }
-                guard appliedAll else { break }
-                cursor = page.cursor
-                if !page.hasMore { break }
-            } while true
+            do {
+                try await pullRemoteChanges(for: target)
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                continue
+            }
         }
+    }
+
+    private func pullRemoteChanges(for target: SyncTarget) async throws {
+        var cursor = target.cursor
+        repeat {
+            var components = URLComponents()
+            components.path = "/api/v1/vaults/\(target.vaultId.lowercase)/changes"
+            if let cursor { components.queryItems = [URLQueryItem(name: "cursor", value: cursor)] }
+            guard let path = components.string else { throw URLError(.badURL) }
+            let data = try await sendData(
+                request(origin: target.origin, path: path, method: "GET"),
+                connectionId: target.connectionId
+            )
+            let page = try SyncJSON.decoder.decode(SyncChangePage.self, from: data)
+            let changes = coalesced(page.items)
+            var appliedAll = true
+            for (index, change) in changes.enumerated() {
+                guard try await !SyncTransactionQueue.hasPending(
+                    vaultId: target.vaultId,
+                    dbQueue: dbQueue
+                ) else {
+                    appliedAll = false
+                    break
+                }
+                let pageCursor = index == changes.indices.last ? page.cursor : nil
+                if try await SyncTransactionQueue.isConfirmed(
+                    vaultId: target.vaultId,
+                    entity: change.entity,
+                    entityId: change.entityId,
+                    revision: change.revision,
+                    dbQueue: dbQueue
+                ) {
+                    if let pageCursor,
+                       try await !SyncTransactionQueue.advancePullCursor(
+                           pageCursor,
+                           vaultId: target.vaultId,
+                           dbQueue: dbQueue
+                       ) {
+                        appliedAll = false
+                        break
+                    }
+                    continue
+                }
+                let supplemental = try await loadSupplemental([change], target: target)
+                guard try await RemoteChangeApplier.apply(
+                    [change],
+                    screenshots: supplemental.screenshots,
+                    transcripts: supplemental.transcripts,
+                    cursor: pageCursor,
+                    vaultId: target.vaultId,
+                    dbQueue: dbQueue
+                ) else {
+                    appliedAll = false
+                    break
+                }
+            }
+            guard appliedAll else { break }
+            cursor = page.cursor
+            if !page.hasMore { break }
+        } while true
     }
 
     private func coalesced(_ changes: [SyncChangePage.Change]) -> [SyncChangePage.Change] {
@@ -705,6 +715,15 @@ enum RemoteChangeApplier {
             """, arguments: [
                 change.entityId, meetingId, capturedAt, image, contentType, record.ocrText, record.caption,
             ])
+            try db.execute(
+                sql: "DELETE FROM search_index_jobs WHERE indexKind = 'fts' AND targetKind = 'screenshotAnalysis' AND targetKey = ?",
+                arguments: [change.entityId]
+            )
+            let generation = try Int.fetchOne(
+                db,
+                sql: "SELECT indexGeneration FROM search_index_state WHERE indexKind = 'fts'"
+            ) ?? 1
+            try indexScreenshotDocument(id: change.entityId, generation: generation, in: db)
         }
     }
 

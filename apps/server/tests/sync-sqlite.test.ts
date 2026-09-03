@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -330,6 +330,50 @@ describe("SQLite canonical sync", () => {
     );
     expect(response.status).toBe(409);
     expect(existsSync(join(objectRoot, `meetings/${meetingId}/screenshots/${screenshotId}.png`))).toBe(false);
+    await store.close?.();
+  });
+
+  it("rejects and removes stale stored screenshot bytes before accepting a retry", async () => {
+    const { directory, store } = await setup();
+    await createVault(store);
+    await commit(store, owner, transaction("019d4a01-4100-7000-8000-000000000001", [{
+      id: "019d4a01-4100-7000-8000-000000000002",
+      entity: "meeting",
+      action: "create",
+      entityId: meetingId,
+      baseRevision: null,
+      data: { ...meetingData(), projectId: null },
+    }]));
+    const objectRoot = join(directory, "objects");
+    const objectPath = join(objectRoot, `meetings/${meetingId}/screenshots/${screenshotId}.png`);
+    const app = createApp({
+      config: testConfig(join(directory, "server.sqlite")),
+      authStore: store,
+      artifactStorage: new LocalObjectStorage(objectRoot),
+    });
+    const bytes = new Uint8Array([1, 2, 3]);
+    const contentHash = "039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81";
+    const upload = () => app.request(
+      `/api/v1/vaults/${vaultId}/meetings/${meetingId}/screenshots/${screenshotId}/content`,
+      {
+        method: "PUT",
+        headers: {
+          ...headers(),
+          "content-length": String(bytes.length),
+          "content-type": "image/png",
+          "x-dahlia-captured-at": now.toISOString(),
+          "x-dahlia-content-sha256": contentHash,
+        },
+        body: bytes,
+      },
+    );
+
+    expect((await upload()).status).toBe(200);
+    writeFileSync(objectPath, new Uint8Array([4, 5, 6]));
+    expect((await upload()).status).toBe(503);
+    expect(existsSync(objectPath)).toBe(false);
+    expect((await upload()).status).toBe(200);
+    expect(readFileSync(objectPath)).toEqual(Buffer.from(bytes));
     await store.close?.();
   });
 

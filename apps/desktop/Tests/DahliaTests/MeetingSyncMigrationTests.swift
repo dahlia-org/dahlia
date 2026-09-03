@@ -184,6 +184,85 @@
         }
 
         @Test
+        func memberVaultDisablesRecordingBeforePersistenceStarts() async throws {
+            let (database, originalVault) = try await syncedDatabase()
+            var vault = originalVault
+            vault.syncRole = "member"
+            let settings = AppSettings()
+            settings.currentVault = vault
+            let sidebar = SidebarViewModel(settings: settings)
+            sidebar.setAppDatabase(database)
+            defer { sidebar.setAppDatabase(nil) }
+            let viewModel = CaptionViewModel(
+                availableInputDevicesProvider: { [MicrophoneDevice(id: 1, name: "Test Microphone")] },
+                defaultInputDeviceIDProvider: { nil }
+            )
+            await viewModel.refreshAvailableMicrophones()
+            let coordinator = RecordingCoordinator(
+                viewModel: viewModel,
+                sidebarViewModel: sidebar,
+                mainWindowNavigation: MainWindowNavigation(
+                    openMainWindow: {},
+                    openMainWindowWithoutActivation: {}
+                ),
+                onRecordingDidStart: {},
+                onRecordingDidStop: {}
+            )
+
+            #expect(viewModel.canBeginRecording)
+            #expect(!coordinator.canStartNewMeeting)
+        }
+
+        @Test
+        func remoteScreenshotUsesCanonicalAnalysisWithoutQueuingLocalAnalysis() async throws {
+            let (database, vault) = try await syncedDatabase()
+            let meeting = MeetingRecord(
+                id: .v7(), vaultId: vault.id, projectId: nil, name: "Meeting",
+                createdAt: .now, updatedAt: .now
+            )
+            let screenshotID = UUID.v7()
+            let record = try SyncJSON.decoder.decode(
+                SyncCanonicalPayload.self,
+                from: Data("""
+                {
+                  "meetingId": "\(meeting.id.uuidString.lowercased())",
+                  "capturedAt": "2026-09-03T00:00:00.000Z",
+                  "contentType": "image/png",
+                  "contentHash": "hash",
+                  "ocrText": "canonical ocr",
+                  "caption": "canonical caption"
+                }
+                """.utf8)
+            )
+            try await database.dbQueue.write { db in try meeting.insert(db) }
+
+            #expect(try await RemoteChangeApplier.apply(
+                [.init(entity: .screenshot, entityId: screenshotID, action: "upsert", revision: 1, record: record)],
+                screenshots: [screenshotID: Data([1, 2, 3])],
+                transcripts: [:],
+                cursor: nil,
+                vaultId: vault.id,
+                dbQueue: database.dbQueue
+            ))
+            let state = try await database.dbQueue.read { db in
+                try (
+                    Int.fetchOne(
+                        db,
+                        sql: "SELECT count(*) FROM search_index_jobs WHERE targetKind = 'screenshotAnalysis' AND targetKey = ?",
+                        arguments: [screenshotID]
+                    ),
+                    Int.fetchOne(
+                        db,
+                        sql: "SELECT count(*) FROM search_documents WHERE kind = 'screenshot' AND sourceId = ?",
+                        arguments: [screenshotID]
+                    )
+                )
+            }
+            #expect(state.0 == 0)
+            #expect(state.1 == 1)
+        }
+
+        @Test
         func remoteTranscriptKeepsLocalOnlyAndUnconfirmedRows() async throws {
             let (database, vault) = try await syncedDatabase()
             let meeting = MeetingRecord(

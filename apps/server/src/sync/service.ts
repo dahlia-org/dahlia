@@ -358,6 +358,16 @@ export class MeetingSyncService {
       if (!reservation.created && await this.storageCall(() => storage.exists(storageKey, request.signal))) {
         const actualHash = await sha256Stream(request.body);
         if (actualHash !== contentHash) throw new ArtifactRequestError(409, "screenshot_content_hash_mismatch");
+        const stored = await this.storageCall(() => storage.read(storageKey, "GET", request));
+        if (await sha256Stream(stored.body) !== contentHash) {
+          try {
+            await storage.delete(storageKey);
+          } catch {
+            await this.store.enqueueStorageDelete(storageKey);
+            this.scheduleStorageDeletes();
+          }
+          throw new ArtifactRequestError(503, "screenshot_stored_content_hash_mismatch");
+        }
         return reservation.existing;
       }
       try {

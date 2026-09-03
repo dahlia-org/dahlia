@@ -60,6 +60,40 @@ struct SearchDocumentFields {
     }
 }
 
+func indexScreenshotDocument(id: UUID, generation: Int, in db: Database) throws {
+    guard let row = try Row.fetchOne(
+        db,
+        sql: """
+        SELECT screenshots.id, screenshots.meetingId, screenshots.ocrText, screenshots.caption,
+               meetings.vaultId, meetings.projectId
+        FROM screenshots
+        JOIN meetings ON meetings.id = screenshots.meetingId
+        WHERE screenshots.id = ? AND screenshots.ocrText IS NOT NULL AND screenshots.caption IS NOT NULL
+        """,
+        arguments: [id]
+    ) else { return }
+    try upsertDocument(
+        SearchDocumentProjection(
+            kind: "screenshot",
+            sourceID: row["id"],
+            vaultID: row["vaultId"],
+            meetingID: row["meetingId"],
+            projectID: row["projectId"],
+            fields: SearchDocumentFields(
+                title: "",
+                description: "",
+                calendar: "",
+                tags: "",
+                projectPath: "",
+                ocr: row["ocrText"],
+                caption: row["caption"]
+            )
+        ),
+        generation: generation,
+        in: db
+    )
+}
+
 func upsertDocument(
     _ document: SearchDocumentProjection,
     generation: Int,

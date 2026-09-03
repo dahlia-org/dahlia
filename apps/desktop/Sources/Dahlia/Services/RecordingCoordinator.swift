@@ -30,7 +30,7 @@ final class RecordingCoordinator {
     var canStartNewMeeting: Bool {
         viewModel.canBeginRecording
             && sidebarViewModel.dbQueue != nil
-            && sidebarViewModel.currentVault != nil
+            && sidebarViewModel.currentVault.map { $0.syncRole != "member" } == true
     }
 
     func startNewMeeting() {
