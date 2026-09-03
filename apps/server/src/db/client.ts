@@ -148,7 +148,7 @@ export async function ensureSearchIndexes(pool: Pool, config: AppConfig): Promis
   await pool.query(`
     CREATE INDEX IF NOT EXISTS ${indexName}
     ON content.search_embeddings USING ${method}
-      ((embedding::vector(${embedding.dimensions})) vector_cosine_ops)
+      ((embedding::public.vector(${embedding.dimensions})) public.vector_cosine_ops)
     WHERE model = ${modelLiteral} AND dimensions = ${embedding.dimensions}
   `);
 }
