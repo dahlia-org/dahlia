@@ -103,6 +103,35 @@ describe("SQLite canonical sync", () => {
     await store.close?.();
   });
 
+  it("rejects unknown meeting statuses and normalizes the legacy recording value", async () => {
+    const { store } = await setup();
+    await createVault(store);
+    const service = new MeetingSyncService(store.sync);
+    const body = (id: string, status: string) => ({
+      schemaVersion: 1,
+      id,
+      vaultId,
+      createdAt: now.toISOString(),
+      operations: [{
+        id: id.replace(/1$/, "2"),
+        entity: "meeting",
+        action: "create",
+        entityId: meetingId,
+        baseRevision: null,
+        data: { ...meetingData(), projectId: null, status, createdAt: now.toISOString(), updatedAt: now.toISOString(), recordingStartedAt: now.toISOString() },
+      }],
+    });
+
+    await expect(service.commitTransaction(
+      owner,
+      body("019d4a01-1200-7000-8000-000000000001", "ARCHIVED"),
+    )).rejects.toMatchObject({ status: 400, code: "invalid_sync_operation" });
+    await service.commitTransaction(owner, body("019d4a01-1200-7000-8000-000000000011", "RECORDING"));
+    await expect(store.sync.withIdentity(owner, (sync) => sync.getMeeting(vaultId, meetingId)))
+      .resolves.toMatchObject({ status: "READY" });
+    await store.close?.();
+  });
+
   it("starts a recreated Vault change feed after its latest reset", async () => {
     const { store } = await setup();
     await createVault(store);

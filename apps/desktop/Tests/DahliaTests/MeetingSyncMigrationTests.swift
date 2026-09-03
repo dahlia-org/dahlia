@@ -206,6 +206,68 @@
         }
 
         @Test
+        func reapplyingADeletedMeetingRestoresItBeforeItsSummary() async throws {
+            let (database, vault) = try await syncedDatabase()
+            let meeting = MeetingRecord(
+                id: .v7(),
+                vaultId: vault.id,
+                projectId: nil,
+                name: "Restored",
+                createdAt: .now,
+                updatedAt: .now
+            )
+            let summary = SummaryRecord(
+                meetingId: meeting.id,
+                title: "Summary",
+                document: "{}",
+                createdAt: .now
+            )
+            try await database.dbQueue.write { db in
+                try meeting.insert(db)
+                try summary.insert(db)
+                try db.execute(
+                    sql: "INSERT INTO sync_entity_state(vaultId, entity, entityId, confirmedRevision) VALUES (?, 'meeting', ?, 2), (?, 'summary', ?, 1)",
+                    arguments: [vault.id, meeting.id, vault.id, meeting.id]
+                )
+                try SyncTransactionRecorder.record(
+                    vaultId: vault.id,
+                    operations: [SyncInitialSnapshotBuilder.summaryOperation(summary, action: .upsert)],
+                    in: db
+                )
+            }
+            let claimed = try #require(try await SyncTransactionQueue.claim(dbQueue: database.dbQueue))
+            try await SyncTransactionQueue.block(
+                claimed,
+                reason: .conflict,
+                response: Data("""
+                {"conflicts":[{"entity":"summary","id":"\(meeting.id.uuidString)","serverRevision":null,"record":null}]}
+                """.utf8),
+                dbQueue: database.dbQueue
+            )
+
+            try await SyncTransactionQueue.reapplyLocalVersion(vaultId: vault.id, dbQueue: database.dbQueue)
+
+            let operations = try database.dbQueue.read { db in
+                try Row.fetchAll(
+                    db,
+                    sql: """
+                    SELECT o.entity, o.action, o.baseRevision
+                    FROM sync_operations o
+                    JOIN sync_transactions t ON t.id = o.transactionId
+                    WHERE t.vaultId = ? ORDER BY t.sequence, o.position
+                    """,
+                    arguments: [vault.id]
+                )
+            }
+            #expect(operations.count == 2)
+            #expect(operations[0]["entity"] as String == "meeting")
+            #expect(operations[0]["action"] as String == "create")
+            #expect(operations[0]["baseRevision"] as Int? == nil)
+            #expect(operations[1]["entity"] as String == "summary")
+            #expect(operations[1]["baseRevision"] as Int? == 0)
+        }
+
+        @Test
         func recorderQueuesOnlyConfirmedTranscriptSegments() async throws {
             let (database, vault) = try await syncedDatabase()
             let patch = SyncOperationDraft(entity: .transcript, action: .patch, entityId: UUID.v7())
@@ -760,10 +822,17 @@
             }
 
             let chunks = try SyncWorker.transcriptChunks(.init(segments: segments, deletions: []))
+            let patches = try SyncWorker.transcriptPatches(
+                .init(segments: segments, deletions: []),
+                maximumChunks: 1
+            )
 
             #expect(chunks.count > 1)
             #expect(chunks.allSatisfy { $0.data.count < 8 * 1024 * 1024 })
             #expect(chunks.reduce(0) { $0 + $1.body.segments.count } == segments.count)
+            #expect(patches.count == chunks.count)
+            #expect(patches.flatMap(\.segments).map(\.segmentId) == segments.map(\.segmentId))
+            #expect(try patches.allSatisfy { try SyncWorker.transcriptChunks($0).count == 1 })
         }
 
         @Test

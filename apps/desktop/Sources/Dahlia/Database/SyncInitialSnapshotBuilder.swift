@@ -127,12 +127,16 @@ enum SyncInitialSnapshotBuilder {
                 .filter(Column("meetingId") == meeting.id)
                 .order(Column("startTime"), Column("id"))
                 .fetchAll(db)
-            if !segments.isEmpty {
+            let transcript = SyncTranscriptPatchSnapshot(
+                segments: segments.map(SyncTranscriptPatchSegment.init),
+                deletions: []
+            )
+            for snapshot in try SyncWorker.transcriptPatches(transcript) {
                 let patch = SyncOperationDraft(entity: .transcript, action: .patch, entityId: meeting.id)
                 try SyncTransactionRecorder.record(
                     vaultId: vaultId,
                     operations: [patch],
-                    transcriptSegments: [patch.id: segments.map(SyncTranscriptPatchSegment.init)],
+                    transcriptSegments: [patch.id: snapshot.segments],
                     allowAfterReset: allowAfterReset,
                     in: db
                 )

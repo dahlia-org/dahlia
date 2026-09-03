@@ -34,6 +34,12 @@ const projectNameSchema = z.string().trim().min(1).refine((value) =>
   && new TextEncoder().encode(value).byteLength <= 255,
 );
 const projectTypeSchema = z.enum(["customer", "internal", "personal", "undefined"]);
+const meetingStatusSchema = z.enum([
+  "TRANSCRIPT_NOT_FOUND",
+  "PROCESSING_TRANSCRIPT",
+  "READY",
+  "RECORDING",
+]).transform((status) => status === "RECORDING" ? "READY" : status);
 const transcriptSegmentSchema = z.object({
   segmentId: uuidSchema,
   startTime: dateSchema,
@@ -89,8 +95,8 @@ const transactionDataSchemas = {
   "project:create": z.object({ parentProjectId: uuidSchema.nullable(), name: projectNameSchema, description: z.string().max(20_000).default(""), projectType: projectTypeSchema.nullable(), createdAt: dateSchema }).strict(),
   "project:update": z.object({ parentProjectId: uuidSchema.nullable(), name: projectNameSchema, description: z.string().max(20_000).default(""), projectType: projectTypeSchema.nullable() }).strict(),
   "project:delete": z.object({}).strict(),
-  "meeting:create": z.object({ projectId: uuidSchema.nullable(), name: z.string().max(500), description: z.string().max(20_000).default(""), status: z.string().max(100), duration: z.number().finite().nonnegative().nullable(), recordingStartedAt: nullableDateSchema, createdAt: dateSchema, updatedAt: dateSchema }).strict(),
-  "meeting:update": z.object({ projectId: uuidSchema.nullable(), name: z.string().max(500), description: z.string().max(20_000).default(""), status: z.string().max(100), duration: z.number().finite().nonnegative().nullable(), recordingStartedAt: nullableDateSchema, updatedAt: dateSchema }).strict(),
+  "meeting:create": z.object({ projectId: uuidSchema.nullable(), name: z.string().max(500), description: z.string().max(20_000).default(""), status: meetingStatusSchema, duration: z.number().finite().nonnegative().nullable(), recordingStartedAt: nullableDateSchema, createdAt: dateSchema, updatedAt: dateSchema }).strict(),
+  "meeting:update": z.object({ projectId: uuidSchema.nullable(), name: z.string().max(500), description: z.string().max(20_000).default(""), status: meetingStatusSchema, duration: z.number().finite().nonnegative().nullable(), recordingStartedAt: nullableDateSchema, updatedAt: dateSchema }).strict(),
   "meeting:delete": z.object({}).strict(),
   "summary:upsert": z.object({ title: z.string().max(500), document: z.string().max(8 * 1024 * 1024), createdAt: dateSchema }).strict(),
   "summary:delete": z.object({}).strict(),

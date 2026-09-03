@@ -653,7 +653,19 @@ enum SyncTransactionQueue {
             ) else { return }
             let sequence: Int64 = first["sequence"]
             let response: String? = first["serverResponseJSON"]
-            let missingEntities = missingConflictEntities(response)
+            let directMissingEntities = missingConflictEntities(response)
+            let missingMeetings = Set(directMissingEntities.compactMap { conflict in
+                conflict.entity == .summary || conflict.entity == .transcript
+                    ? MissingConflictEntity(entity: .meeting, id: conflict.id)
+                    : nil
+            })
+            let missingEntities = directMissingEntities.union(missingMeetings)
+            for missing in missingEntities {
+                try db.execute(
+                    sql: "DELETE FROM sync_entity_state WHERE vaultId = ? AND entity = ? AND entityId = ?",
+                    arguments: [vaultId, missing.entity, missing.id]
+                )
+            }
             applyConflictRevision(response, vaultId: vaultId, in: db)
             let transactionIds = try UUID.fetchAll(
                 db,
@@ -661,6 +673,15 @@ enum SyncTransactionQueue {
                 arguments: [vaultId, sequence]
             )
             var queued: [RequeuedTransaction] = []
+            var restoredMeetings = Set<UUID>()
+            let meetingOperations = try missingMeetings.compactMap { missing -> SyncOperationDraft? in
+                guard let meeting = try MeetingRecord.fetchOne(db, key: missing.id) else { return nil }
+                restoredMeetings.insert(missing.id)
+                return try SyncInitialSnapshotBuilder.meetingOperation(meeting, action: .create)
+            }
+            if !meetingOperations.isEmpty {
+                queued.append(.init(operations: meetingOperations, segments: [:], deletions: [:], attachments: [:]))
+            }
             for transactionId in transactionIds {
                 let rows = try Row.fetchAll(
                     db,
@@ -680,7 +701,12 @@ enum SyncTransactionQueue {
                     let entity: SyncEntity = row["entity"]
                     let action: SyncAction = row["action"]
                     let entityId: UUID = row["entityId"]
-                    let missing = missingEntities.contains("\(entity.rawValue):\(entityId.uuidString.lowercased())")
+                    let key = MissingConflictEntity(entity: entity, id: entityId)
+                    if missingMeetings.contains(key) { continue }
+                    if directMissingEntities.contains(key),
+                       entity == .summary || entity == .transcript,
+                       !restoredMeetings.contains(entityId) { continue }
+                    let missing = missingEntities.contains(key)
                     if missing, action == .delete { continue }
                     let rebasedAction: SyncAction = missing && action == .update ? .create : action
                     let payload = (row["payloadJSON"] as String?).map { Data($0.utf8) }
@@ -770,15 +796,17 @@ enum SyncTransactionQueue {
         }
     }
 
-    private static func missingConflictEntities(_ response: String?) -> Set<String> {
+    private static func missingConflictEntities(_ response: String?) -> Set<MissingConflictEntity> {
         guard let response, let data = response.data(using: .utf8),
               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let conflicts = object["conflicts"] as? [[String: Any]] else { return [] }
         return Set(conflicts.compactMap { conflict in
             guard conflict["serverRevision"] is NSNull,
-                  let entity = conflict["entity"] as? String,
-                  let id = conflict["id"] as? String else { return nil }
-            return "\(entity):\(id.lowercased())"
+                  let rawEntity = conflict["entity"] as? String,
+                  let entity = SyncEntity(rawValue: rawEntity),
+                  let rawID = conflict["id"] as? String,
+                  let id = UUID(uuidString: rawID) else { return nil }
+            return MissingConflictEntity(entity: entity, id: id)
         })
     }
 
@@ -800,6 +828,11 @@ enum SyncTransactionQueue {
         object["createdAt"] = try JSONDecoder().decode(String.self, from: SyncJSON.encoder.encode(createdAt))
         return try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
     }
+}
+
+private struct MissingConflictEntity: Hashable {
+    let entity: SyncEntity
+    let id: UUID
 }
 
 enum SyncTransactionQueueError: Error {

@@ -123,6 +123,7 @@ private struct SyncTarget: Sendable {
 actor SyncWorker {
     private static let transcriptChunkSize = 500
     private static let transcriptChunkMaximumBytes = 6 * 1024 * 1024
+    private static let transcriptPatchMaximumChunks = 100
 
     private let dbQueue: DatabaseQueue
     private let session: URLSession
@@ -385,6 +386,30 @@ actor SyncWorker {
             }
         } while segmentOffset < segments.count || deletionOffset < snapshot.deletions.count || chunks.isEmpty
         return chunks
+    }
+
+    static func transcriptPatches(
+        _ snapshot: SyncTranscriptPatchSnapshot,
+        maximumChunks: Int = transcriptPatchMaximumChunks
+    ) throws -> [SyncTranscriptPatchSnapshot] {
+        guard !snapshot.segments.isEmpty || !snapshot.deletions.isEmpty else { return [] }
+        guard maximumChunks > 0 else { throw SyncTransactionQueueError.invalidReceipt }
+        let chunks = try transcriptChunks(snapshot)
+        var segmentOffset = 0
+        var deletionOffset = 0
+        return stride(from: 0, to: chunks.count, by: maximumChunks).map { offset in
+            let batch = chunks[offset ..< min(offset + maximumChunks, chunks.count)]
+            let segmentCount = batch.reduce(0) { $0 + $1.body.segments.count }
+            let deletionCount = batch.reduce(0) { $0 + $1.body.deletions.count }
+            defer {
+                segmentOffset += segmentCount
+                deletionOffset += deletionCount
+            }
+            return SyncTranscriptPatchSnapshot(
+                segments: Array(snapshot.segments[segmentOffset ..< segmentOffset + segmentCount]),
+                deletions: Array(snapshot.deletions[deletionOffset ..< deletionOffset + deletionCount])
+            )
+        }
     }
 
     private static func largestTranscriptChunk(
