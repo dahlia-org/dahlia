@@ -96,6 +96,7 @@ const SCREENSHOT_PROJECTION_BATCH_SIZE = 64;
 const permissionPrincipalSchema = z.string().trim().min(1).max(200);
 export const SYNC_READ_PAGE_SIZE = 200;
 const meetingCursorSchema = z.tuple([dateSchema, uuidSchema]);
+const screenshotCursorSchema = z.tuple([dateSchema, uuidSchema]);
 
 export class MeetingSyncService {
   private readonly activeQueryEmbeddingUsers = new Set<string>();
@@ -148,7 +149,7 @@ export class MeetingSyncService {
     }
     const summaryDocument = parsed.data.summary?.document ?? null;
     const summaryText = summarySearchableText(summaryDocument);
-    const embeddingText = summaryText.trim() ? [parsed.data.name, summaryText].filter(Boolean).join("\n") : null;
+    const embeddingText = summaryText.trim() || null;
     const screenshots: SyncManifest["screenshots"] = [];
     for (let offset = 0; offset < parsed.data.screenshots.length; offset += SCREENSHOT_PROJECTION_BATCH_SIZE) {
       const batch = parsed.data.screenshots.slice(offset, offset + SCREENSHOT_PROJECTION_BATCH_SIZE);
@@ -377,13 +378,41 @@ export class MeetingSyncService {
     meetingId: string,
     query?: string,
     signal?: AbortSignal,
+    cursor?: string,
   ) {
     const search = this.parseSearchQuery(query);
     if (search?.tokens.length && this.embedder
-      && !await this.store.withIdentity(identity, (scoped) => scoped.getMeeting(vaultId, meetingId))) return [];
-    return this.search(identity, search, (scoped, prepared) =>
-      scoped.listScreenshots(vaultId, meetingId, prepared, SYNC_READ_PAGE_SIZE),
-    (screenshot) => screenshot.screenshotId, signal);
+      && !await this.store.withIdentity(identity, (scoped) => scoped.getMeeting(vaultId, meetingId))) return { items: [] };
+    if (search) {
+      return {
+        items: await this.search(identity, search, (scoped, prepared) =>
+          scoped.listScreenshots(vaultId, meetingId, prepared, SYNC_READ_PAGE_SIZE),
+        (screenshot) => screenshot.screenshotId, signal),
+      };
+    }
+    const parsedCursor = this.parseScreenshotCursor(cursor);
+    const records = await this.store.withIdentity(identity, (scoped) => scoped.listScreenshots(
+      vaultId,
+      meetingId,
+      undefined,
+      SYNC_READ_PAGE_SIZE + 1,
+      parsedCursor,
+    ));
+    const items = records.slice(0, SYNC_READ_PAGE_SIZE);
+    const last = items.at(-1);
+    return {
+      items,
+      ...(records.length > SYNC_READ_PAGE_SIZE && last
+        ? { nextCursor: `${last.capturedAt.toISOString()},${last.screenshotId}` }
+        : {}),
+    };
+  }
+
+  private parseScreenshotCursor(cursor?: string) {
+    if (cursor === undefined) return undefined;
+    const parsed = screenshotCursorSchema.safeParse(cursor.split(","));
+    if (!parsed.success) throw new ArtifactRequestError(400, "invalid_sync_cursor");
+    return { capturedAt: parsed.data[0], screenshotId: parsed.data[1] };
   }
 
   async listPermissions(identity: Identity, vaultId: string) {

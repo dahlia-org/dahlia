@@ -192,6 +192,11 @@ interface SyncedScreenshotInfo {
   caption?: string;
 }
 
+interface SyncedScreenshotPage {
+  items: SyncedScreenshotInfo[];
+  nextCursor?: string;
+}
+
 class RequestError extends Error {
   constructor(message: string, readonly status?: number) {
     super(message);
@@ -789,22 +794,41 @@ function SyncedMeeting({ vaultId, meetingId }: { vaultId: string; meetingId: str
   const [meeting, setMeeting] = useState<SyncedMeetingInfo>();
   const [transcript, setTranscript] = useState<SyncedTranscriptSegmentInfo[]>();
   const [screenshots, setScreenshots] = useState<SyncedScreenshotInfo[]>();
+  const [screenshotCursor, setScreenshotCursor] = useState<string>();
+  const [loadingScreenshots, setLoadingScreenshots] = useState(false);
   const [error, setError] = useState<string>();
   useEffect(() => {
     const controller = new AbortController();
     void Promise.all([
       json<SyncedMeetingInfo>(base, { signal: controller.signal }),
       json<{ items: SyncedTranscriptSegmentInfo[] }>(`${base}/transcript`, { signal: controller.signal }),
-      json<{ items: SyncedScreenshotInfo[] }>(`${base}/screenshots`, { signal: controller.signal }),
+      json<SyncedScreenshotPage>(`${base}/screenshots`, { signal: controller.signal }),
     ]).then(([meetingValue, transcriptPage, screenshotPage]) => {
       setMeeting(meetingValue);
       setTranscript(transcriptPage.items);
       setScreenshots(screenshotPage.items);
+      setScreenshotCursor(screenshotPage.nextCursor);
     }).catch((caught: Error) => {
       if (caught.name !== "AbortError") setError(caught.message);
     });
     return () => controller.abort();
   }, [base]);
+  const loadMoreScreenshots = async () => {
+    if (!screenshotCursor) return;
+    setLoadingScreenshots(true);
+    setError(undefined);
+    try {
+      const page = await json<SyncedScreenshotPage>(
+        `${base}/screenshots?cursor=${encodeURIComponent(screenshotCursor)}`,
+      );
+      setScreenshots((current) => [...(current ?? []), ...page.items]);
+      setScreenshotCursor(page.nextCursor);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to load screenshots");
+    } finally {
+      setLoadingScreenshots(false);
+    }
+  };
   return (
     <>
       <PageHeader title={meeting?.name ?? "Meeting"} />
@@ -845,6 +869,11 @@ function SyncedMeeting({ vaultId, meetingId }: { vaultId: string; meetingId: str
               </figure>
             ))}
           </div>
+          {screenshotCursor && (
+            <button className="secondary load-more" disabled={loadingScreenshots} onClick={() => void loadMoreScreenshots()}>
+              {loadingScreenshots ? "Loading…" : "Load more"}
+            </button>
+          )}
         </section>
       )}
     </>

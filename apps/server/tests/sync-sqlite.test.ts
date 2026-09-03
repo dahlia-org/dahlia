@@ -105,6 +105,35 @@ describe("SQLite meeting sync", () => {
     await store.close?.();
   });
 
+  it("applies sibling Project renames without transient uniqueness conflicts", async () => {
+    const { store } = await setup();
+    const service = new MeetingSyncService(store.sync);
+    const firstId = "019d493e-063e-70ed-ab24-c86de735bca8";
+    const secondId = "019d493e-0d33-7359-96f5-2c45dc8285c1";
+    const createdAt = "2026-09-02T00:00:00.000Z";
+    const project = (projectId: string, name: string, revision: number) => ({
+      projectId,
+      parentProjectId: null,
+      name,
+      description: "",
+      projectType: "personal" as const,
+      revision,
+      createdAt,
+    });
+    await service.commitVaultManifest(owner, vaultId, {
+      name: "Vault",
+      createdAt,
+      projects: [project(firstId, "A", 1), project(secondId, "B", 1)],
+    });
+    await service.commitVaultManifest(owner, vaultId, {
+      name: "Vault",
+      createdAt,
+      projects: [project(firstId, "B", 2), project(secondId, "C", 2)],
+    });
+    expect((await service.listProjects(owner, vaultId)).map(({ name }) => name)).toEqual(["B", "C"]);
+    await store.close?.();
+  });
+
   it("paginates meetings beyond the first read page", async () => {
     const { store } = await setup();
     const service = new MeetingSyncService(store.sync);
@@ -142,6 +171,49 @@ describe("SQLite meeting sync", () => {
     await store.close?.();
   });
 
+  it("paginates screenshots beyond the first read page", async () => {
+    const { store } = await setup();
+    const service = new MeetingSyncService(store.sync);
+    const screenshots = Array.from({ length: 201 }, (_, index) => ({
+      screenshotId: crypto.randomUUID(),
+      capturedAt: new Date(Date.UTC(2026, 8, 2, 0, 0, index)),
+      ocrText: null,
+      caption: null,
+    }));
+    await store.sync.withIdentity(owner, async (sync) => {
+      expect(await sync.ensureUploadTarget(vaultId, meetingId)).toBe(true);
+      for (const screenshot of screenshots) {
+        expect(await sync.createScreenshot({
+          ...screenshot,
+          vaultId,
+          meetingId,
+          contentType: "image/png",
+          storageKey: `meetings/${meetingId}/screenshots/${screenshot.screenshotId}.png`,
+          contentLength: 3,
+        })).toBe(true);
+      }
+      expect((await sync.commitManifest(manifest(null, screenshots))).committed).toBe(true);
+    });
+
+    const first = await service.listScreenshots(owner, vaultId, meetingId);
+    if (!first.nextCursor) throw new Error("expected a continuation cursor");
+    const second = await service.listScreenshots(owner, vaultId, meetingId, undefined, undefined, first.nextCursor);
+
+    expect(first.items).toHaveLength(200);
+    expect(second.items).toHaveLength(1);
+    expect(second.nextCursor).toBeUndefined();
+    expect(new Set([...first.items, ...second.items].map(({ screenshotId: id }) => id)).size).toBe(201);
+
+    const app = createApp({ config: testConfig("file::memory:"), authStore: store });
+    const response = await app.request(
+      `/api/v1/vaults/${vaultId}/meetings/${meetingId}/screenshots?cursor=${encodeURIComponent(first.nextCursor)}`,
+      { headers: { "x-forwarded-email": "owner@example.com", "x-forwarded-user": owner.userId } },
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ items: [expect.anything()] });
+    await store.close?.();
+  });
+
   it("derives the deterministic object key from an allowlisted MIME type and relays safe headers", async () => {
     const { directory, store } = await setup();
     const storage = new LocalObjectStorage(join(directory, "objects"));
@@ -159,7 +231,7 @@ describe("SQLite meeting sync", () => {
     const screenshot = await service.putScreenshot(owner, vaultId, meetingId, screenshotId, request);
     expect(screenshot.storageKey).toBe(`meetings/${meetingId}/screenshots/${screenshotId}.png`);
     expect(readFileSync(join(directory, "objects", screenshot.storageKey))).toEqual(Buffer.from(bytes));
-    expect(await service.listScreenshots(owner, vaultId, meetingId)).toEqual([]);
+    expect((await service.listScreenshots(owner, vaultId, meetingId)).items).toEqual([]);
     await expect(service.readScreenshot(
       owner,
       vaultId,
@@ -212,7 +284,7 @@ describe("SQLite meeting sync", () => {
       },
       body: bytes,
     }));
-    expect((await service.listScreenshots(owner, vaultId, meetingId)).map(({ screenshotId: id }) => id))
+    expect((await service.listScreenshots(owner, vaultId, meetingId)).items.map(({ screenshotId: id }) => id))
       .toEqual([screenshotId]);
     await expect(service.readScreenshot(
       owner,
@@ -240,7 +312,7 @@ describe("SQLite meeting sync", () => {
     });
     expect(existsSync(join(directory, "objects", screenshot.storageKey))).toBe(false);
     expect(existsSync(join(directory, "objects", `meetings/${meetingId}/screenshots/${stagedScreenshotId}.png`))).toBe(false);
-    expect(await service.listScreenshots(owner, vaultId, meetingId)).toEqual([]);
+    expect((await service.listScreenshots(owner, vaultId, meetingId)).items).toEqual([]);
     await store.close?.();
   });
 
@@ -365,10 +437,18 @@ describe("SQLite meeting sync", () => {
       }],
     });
 
+    const projectionDatabase = new DatabaseSync(join(directory, "server.sqlite"));
+    const projection = projectionDatabase.prepare(
+      "SELECT embedding_text FROM content_search_documents WHERE document_id = ?",
+    ).get(meetingId) as { embedding_text: string };
+    projectionDatabase.close();
+    expect(projection.embedding_text).toContain("Budget approved");
+    expect(projection.embedding_text).not.toContain("Quarterly Alpha");
+
     expect((await service.listMeetings(owner, vaultId, "alpha roadmap")).items).toHaveLength(1);
     expect((await service.listMeetings(owner, vaultId, "budget approved")).items).toHaveLength(1);
     expect((await service.listMeetings(owner, vaultId, "transcriptsecret")).items).toEqual([]);
-    expect(await service.listScreenshots(owner, vaultId, meetingId, "revenue chart")).toHaveLength(1);
+    expect((await service.listScreenshots(owner, vaultId, meetingId, "revenue chart")).items).toHaveLength(1);
     const app = createApp({
       config: testConfig(join(directory, "server.sqlite")),
       authStore: store,
@@ -404,8 +484,8 @@ describe("SQLite meeting sync", () => {
     });
     expect((await service.listMeetings(owner, vaultId, "budget")).items).toEqual([]);
     expect((await service.listMeetings(owner, vaultId, "replacement")).items).toHaveLength(1);
-    expect(await service.listScreenshots(owner, vaultId, meetingId, "revenue")).toEqual([]);
-    expect(await service.listScreenshots(owner, vaultId, meetingId, "replacement")).toHaveLength(1);
+    expect((await service.listScreenshots(owner, vaultId, meetingId, "revenue")).items).toEqual([]);
+    expect((await service.listScreenshots(owner, vaultId, meetingId, "replacement")).items).toHaveLength(1);
 
     const database = new DatabaseSync(join(directory, "server.sqlite"));
     database.exec("INSERT INTO content_search_documents_fts(content_search_documents_fts) VALUES('integrity-check')");

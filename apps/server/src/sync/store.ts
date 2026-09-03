@@ -7,6 +7,7 @@ import {
   inArray,
   isNotNull,
   isNull,
+  gt,
   lt,
   ne,
   notInArray,
@@ -522,6 +523,13 @@ function createIdentityStore(
 
     const roots = manifest.projects.filter(({ parentProjectId }) => parentProjectId === null);
     const children = manifest.projects.filter(({ parentProjectId }) => parentProjectId !== null);
+    const stagingPrefix = `__dahlia_sync_${crypto.randomUUID()}_`;
+    await db.update(schema.syncedProject).set({
+      name: sql`${stagingPrefix} || ${schema.syncedProject.projectId}`,
+    }).where(and(
+      eq(schema.syncedProject.vaultId, manifest.vaultId),
+      ownerAccess(schema.syncedProject.vaultId),
+    ));
     for (const project of [...roots, ...children]) {
       await db.insert(schema.syncedProject).values(project).onConflictDoNothing();
       const [updated] = await db.update(schema.syncedProject).set({
@@ -853,7 +861,7 @@ function createIdentityStore(
       )).orderBy(asc(schema.syncedTranscriptSegment.startTime), asc(schema.syncedTranscriptSegment.segmentId))
         .limit(limit);
     },
-    async listScreenshots(vaultId, meetingId, query, limit) {
+    async listScreenshots(vaultId, meetingId, query, limit, cursor) {
       if (query && query.tokens.length === 0) return [];
       const [meeting] = await db.select({ id: schema.syncedMeeting.meetingId })
         .from(schema.syncedMeeting).where(and(
@@ -867,6 +875,13 @@ function createIdentityStore(
         eq(schema.syncedScreenshot.vaultId, vaultId),
         eq(schema.syncedScreenshot.meetingId, meetingId),
         eq(schema.syncedScreenshot.active, true),
+        ...(cursor ? [or(
+          gt(schema.syncedScreenshot.capturedAt, cursor.capturedAt),
+          and(
+            eq(schema.syncedScreenshot.capturedAt, cursor.capturedAt),
+            gt(schema.syncedScreenshot.screenshotId, cursor.screenshotId),
+          ),
+        )] : []),
       );
       if (!query) {
         return db.select(screenshotSelection(schema)).from(schema.syncedScreenshot).where(filter)

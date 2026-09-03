@@ -162,14 +162,16 @@ export function createArtifactMcpHandler(
       ));
       server.registerTool("get_meeting_screenshots", {
         description: "List authenticated screenshot resource links for a synchronized meeting you can read.",
-        inputSchema: meetingInput,
+        inputSchema: meetingInput.extend({ cursor: z.string().optional() }),
         annotations: { readOnlyHint: true },
-      }, async ({ vault_id, meeting_id }) => screenshotToolResult(
+      }, async ({ vault_id, meeting_id, cursor }) => screenshotToolResult(
         config,
         sync,
         identity,
         vault_id,
         meeting_id,
+        undefined,
+        cursor,
       ));
     }
 
@@ -195,18 +197,24 @@ async function screenshotToolResult(
   vaultIdValue: string,
   meetingIdValue: string,
   query?: string,
+  cursor?: string,
 ): Promise<CallToolResult> {
   const vaultId = sync.parseId(vaultIdValue);
   const meetingId = sync.parseId(meetingIdValue);
-  const screenshots = await sync.listScreenshots(identity, vaultId, meetingId, query);
+  const page = await sync.listScreenshots(identity, vaultId, meetingId, query, undefined, cursor);
   return {
-    content: screenshots.map((screenshot) => ({
+    content: [
+      ...(page.nextCursor
+        ? [{ type: "text" as const, text: JSON.stringify({ nextCursor: page.nextCursor }) }]
+        : []),
+      ...page.items.map((screenshot) => ({
       type: "resource_link" as const,
       name: `Screenshot ${screenshot.screenshotId}`,
       uri: `${config.baseUrl}/mcp/resources/vaults/${vaultId}/meetings/${meetingId}`
         + `/screenshots/${screenshot.screenshotId}/content`,
       mimeType: screenshot.contentType,
-    })),
+      })),
+    ],
   };
 }
 
