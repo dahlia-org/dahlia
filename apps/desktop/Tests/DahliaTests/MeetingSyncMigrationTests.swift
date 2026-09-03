@@ -237,7 +237,7 @@
             try await database.dbQueue.write { db in try meeting.insert(db) }
 
             #expect(try await RemoteChangeApplier.apply(
-                [.init(entity: .screenshot, entityId: screenshotID, action: "upsert", revision: 1, record: record)],
+                [.init(sequence: 1, entity: .screenshot, entityId: screenshotID, action: "upsert", revision: 1, record: record)],
                 screenshots: [screenshotID: Data([1, 2, 3])],
                 transcripts: [:],
                 cursor: nil,
@@ -535,17 +535,19 @@
             let rootId = UUID.v7()
             let childId = UUID.v7()
             let meetingId = UUID.v7()
+            let deletedMeetingId = UUID.v7()
             let json = """
             {
               "items": [
-                {"entity":"meeting","entityId":"\(meetingId.uuidString.lowercased())","action":"upsert","revision":2,
+                {"sequence":1,"entity":"meeting","entityId":"\(meetingId.uuidString.lowercased())","action":"upsert","revision":2,
                  "record":{"projectId":"\(childId.uuidString.lowercased())","name":"Current"}},
-                {"entity":"project","entityId":"\(childId.uuidString.lowercased())","action":"upsert","revision":1,
+                {"sequence":2,"entity":"project","entityId":"\(childId.uuidString.lowercased())","action":"upsert","revision":1,
                  "record":{"parentProjectId":"\(rootId.uuidString.lowercased())","name":"Child"}},
-                {"entity":"project","entityId":"\(rootId.uuidString.lowercased())","action":"upsert","revision":1,
+                {"sequence":3,"entity":"project","entityId":"\(rootId.uuidString.lowercased())","action":"upsert","revision":1,
                  "record":{"name":"Root"}},
-                {"entity":"meeting","entityId":"\(meetingId.uuidString.lowercased())","action":"upsert","revision":3,
-                 "record":{"projectId":"\(childId.uuidString.lowercased())","name":"Latest"}}
+                {"sequence":4,"entity":"meeting","entityId":"\(meetingId.uuidString.lowercased())","action":"upsert","revision":3,
+                 "record":{"projectId":"\(childId.uuidString.lowercased())","name":"Latest"}},
+                {"sequence":5,"entity":"meeting","entityId":"\(deletedMeetingId.uuidString.lowercased())","action":"delete","revision":null,"record":null}
               ],
               "cursor":"v1.cursor",
               "hasMore":false
@@ -555,8 +557,9 @@
 
             let changes = SyncWorker.initialSnapshotChanges(page.items)
 
-            #expect(changes.map(\.entityId) == [rootId, childId, meetingId])
-            #expect(changes.last?.revision == 3)
+            #expect(changes.map(\.entityId) == [rootId, childId, meetingId, deletedMeetingId])
+            #expect(changes[2].revision == 3)
+            #expect(changes.last?.action == "delete")
         }
 
         @Test

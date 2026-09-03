@@ -71,6 +71,7 @@ private struct ScreenshotOperationData: Decodable {
 
 struct SyncChangePage: Decodable {
     struct Change: Decodable {
+        let sequence: Int
         let entity: SyncEntity
         let entityId: UUID
         let action: String
@@ -526,8 +527,9 @@ actor SyncWorker {
         func sorted(_ entity: SyncEntity) -> [SyncChangePage.Change] {
             upserts.filter { $0.entity == entity }.sorted { $0.entityId.uuidString < $1.entityId.uuidString }
         }
+        let deletes = current.values.filter { $0.action == "delete" }.sorted { $0.sequence < $1.sequence }
         return sorted(.vault) + orderedProjects + sorted(.meeting) + sorted(.summary)
-            + sorted(.transcript) + sorted(.screenshot)
+            + sorted(.transcript) + sorted(.screenshot) + deletes
     }
 
     private func coalesced(_ changes: [SyncChangePage.Change]) -> [SyncChangePage.Change] {
