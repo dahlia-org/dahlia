@@ -1,7 +1,7 @@
 import { oauthProvider } from "@better-auth/oauth-provider";
 import { oauthProviderResourceClient } from "@better-auth/oauth-provider/resource-client";
 import { betterAuth, type BetterAuthOptions } from "better-auth";
-import { jwt } from "better-auth/plugins";
+import { admin, jwt, organization } from "better-auth/plugins";
 
 import { gatewayResource, mcpResource, type AppConfig } from "../config";
 import type { AuthStore } from "./store";
@@ -43,6 +43,7 @@ export function createDahliaAuth(
     },
     trustedOrigins: [config.baseUrl, ...config.oauthRedirectUris],
     plugins: [
+      admin(),
       jwt({
         jwks: {
           keyPairConfig: { alg: "EdDSA", crv: "Ed25519" },
@@ -90,6 +91,23 @@ export function createDahliaAuth(
           openidConfig: true,
         },
       }),
+      ...(config.syncSharingEnabled ? [organization({
+        cancelPendingInvitationsOnReInvite: true,
+        requireEmailVerificationOnInvitation: true,
+        sendInvitationEmail: async () => {},
+        teams: {
+          enabled: true,
+          defaultTeam: { enabled: true },
+        },
+        organizationHooks: {
+          beforeDeleteOrganization: async ({ organization: deleted }) => {
+            await authStore.deleteVaultPermissionsForOrganization(deleted.id).catch(() => undefined);
+          },
+          afterDeleteTeam: async ({ team: deleted }) => {
+            await authStore.deleteVaultPermissionsForPrincipal("team", deleted.id).catch(() => undefined);
+          },
+        },
+      })] : []),
       ...extensions.flatMap((extension) => extension.plugins),
     ],
   });

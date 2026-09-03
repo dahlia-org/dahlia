@@ -5,15 +5,15 @@ enum RecordingAudioSource: String, Codable, DatabaseValueConvertible, Sendable {
     case microphone
     case system
 
-    var speakerLabel: String {
+    var audioSource: String {
         switch self {
         case .microphone: "mic"
         case .system: "system"
         }
     }
 
-    init?(speakerLabel: String?) {
-        switch speakerLabel {
+    init?(audioSource: String?) {
+        switch audioSource {
         case "mic":
             self = .microphone
         case "system":

@@ -59,7 +59,8 @@ enum BatchSpeechTranscriberService {
                 endTime: absoluteEnd,
                 text: text,
                 isConfirmed: true,
-                speakerLabel: source.speakerLabel,
+                audioSource: source.audioSource,
+                speakerLabel: nil,
                 audioFeatures: audioFeatures.indices.contains(index) ? audioFeatures[index] : nil
             )
         }

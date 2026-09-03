@@ -269,7 +269,7 @@ import os
                 startTime: Date(),
                 text: "live transcript",
                 isConfirmed: true,
-                speakerLabel: "mic"
+                audioSource: "mic"
             )
 
             viewModel.isListening = true
@@ -299,7 +299,7 @@ import os
                 startTime: Date(),
                 text: "confirmed transcript",
                 isConfirmed: true,
-                speakerLabel: "mic"
+                audioSource: "mic"
             )
 
             #expect(!viewModel.currentMeetingHasTranscriptSegments)
@@ -336,7 +336,7 @@ import os
                     startTime: .now,
                     text: "existing transcript",
                     isConfirmed: true,
-                    speakerLabel: "mic"
+                    audioSource: "mic"
                 ),
             ])
 
@@ -536,7 +536,7 @@ import os
                 startTime: Date(),
                 text: "confirmed transcript",
                 isConfirmed: true,
-                speakerLabel: "mic"
+                audioSource: "mic"
             )
 
             viewModel.currentMeetingId = UUID.v7()

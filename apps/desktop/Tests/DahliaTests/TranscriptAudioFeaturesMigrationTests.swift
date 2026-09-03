@@ -35,6 +35,7 @@ import GRDB
                 "audioMedianPitchHertz",
                 "audioVoicedFrameRatio",
                 "audioPitchSpreadHertz",
+                "audioSource",
             ])
         }
 
@@ -84,7 +85,7 @@ import GRDB
                         now,
                         now.addingTimeInterval(1),
                         "Preserved",
-                        RecordingAudioSource.microphone.speakerLabel,
+                        RecordingAudioSource.microphone.audioSource,
                     ]
                 )
             }

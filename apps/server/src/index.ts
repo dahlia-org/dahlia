@@ -17,7 +17,8 @@ export {
   type ModelAliasInput,
   type ModelAliasRecord,
   type ModelAliasUpdate,
-  type PlatformAdminRecord,
+  type AdminUserRecord,
+  type RemoveAdminResult,
 } from "./auth/store";
 export * from "./config";
 export * from "./ai-gateway/service";

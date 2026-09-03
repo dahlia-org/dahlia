@@ -13,4 +13,5 @@ struct MeetingScreenshotRecord: Codable, FetchableRecord, PersistableRecord, Sen
     var mimeType: String
     var ocrText: String?
     var caption: String?
+    var syncUploadedConnectionId: UUID?
 }

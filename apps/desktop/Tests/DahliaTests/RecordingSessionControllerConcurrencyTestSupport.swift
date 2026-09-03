@@ -100,7 +100,7 @@
                 await registration.handler(.failure(
                     sessionId: registration.sessionID,
                     pipelineID: registration.pipelineID,
-                    sourceLabel: registration.source.speakerLabel,
+                    sourceLabel: registration.source.audioSource,
                     message: "runtime recognition failure"
                 ))
             }
@@ -122,12 +122,12 @@
                 startTime: .now,
                 text: "replacement preview",
                 isConfirmed: false,
-                speakerLabel: latest.source.speakerLabel
+                audioSource: latest.source.audioSource
             )
             await latest.handler(.preview(preview))
             await retiring.handler(.clearPreview(
                 sessionId: retiring.sessionID,
-                sourceLabel: retiring.source.speakerLabel
+                sourceLabel: retiring.source.audioSource
             ))
         }
     }

@@ -367,7 +367,7 @@ import GRDB
             #expect(completed.0.batchLastError == nil)
             #expect(completed.0.batchAttemptCount == 2)
             #expect(completed.1.count == 2)
-            #expect(completed.1.map(\.speakerLabel) == ["mic", "mic"])
+            #expect(completed.1.map(\.audioSource) == ["mic", "mic"])
             let localeIdentifiers = await context.recognizer.localeIdentifiers
             #expect((2 ... 3).contains(localeIdentifiers.count))
             #expect(Set(localeIdentifiers.suffix(2)) == ["ja_JP", "en_US"])

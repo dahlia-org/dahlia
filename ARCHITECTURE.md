@@ -122,10 +122,11 @@ write-backを発生させない。汎用参照は書き込み時にtarget存在�
 任意の Dahlia Server runtime は内蔵 Codex の provider transport を所有し、macOS の録音・文字起こし critical path には入らない。
 macOS の Dahlia アカウントは Vault の所有者ではなく、アプリ共有の接続として SQLite に登録する。OAuth credential と remote identity は
 接続 UUID ごとに Keychain が所有し、token 利用側は connection ID を明示する。sign-out は選択した credential だけを削除する。Vault は AI provider
-利用のために任意の接続を参照し、接続ごとの private `CODEX_HOME` を使う。この関連は meeting sync や upload を有効にしない。ローカルアカウントだけが
+利用のために任意の接続を参照し、接続ごとの private `CODEX_HOME` を使う。接続の関連だけでは meeting sync を有効にせず、Vault ごとの明示設定と再確認を要求する。ローカルアカウントだけが
 ChatGPT Subscription または Databricks AI Gateway を使い、Dahlia アカウントは接続先の Gateway を使う。この境界は
 [ADR-0053](docs/adr/0053-scope-codex-accounts-to-vaults.md)を正本とする。
-Better Auth、Gateway 管理 metadata、将来の meeting cloud sync は単一の Drizzle application database を共有する。
+Better Auth、Gateway 管理 metadata、meeting sync は単一の Drizzle application database を共有する。PostgreSQL は生成済み認証 table を
+`auth`、Web application と共有設定を `core`、meeting 実データを `content` schema に置き、参照は `auth <- core <- content` の方向だけを許可する。
 `DAHLIA_DATABASE_TYPE` は `sqlite`、`postgres`、`lakebase`、`hyperdrive`、`d1` から選び、SQLite／PostgreSQL の接続先は
 `DAHLIA_DATABASE_URL` で指定する。Node は SQLite／PostgreSQL／Lakebase、Workers は D1／Hyperdrive／PostgreSQL を扱う。
 Lakebase は公式 `@databricks/lakebase` connector で OAuth credential を更新する。
@@ -146,8 +147,9 @@ Dahlia macOS / bundled Codex 0.148.0
     upstream Responses API
 
 Drizzle application store (SQLite, PostgreSQL, Lakebase, Hyperdrive, or D1)
-    ├─ Model Alias + platform administrator + artifact metadata
-    └─ user + session + OAuth metadata (accounts mode)
+    ├─ auth: 共通 user directory + session/OAuth/organization/Team membership
+    ├─ core: Model Alias + artifact + Vault + principal permission
+    └─ content: meetings + transcript_segments + screenshots
 
 /api/v1/artifacts
     └─ POST → Server-generated UUIDv7; private by default
@@ -155,7 +157,16 @@ Drizzle application store (SQLite, PostgreSQL, Lakebase, Hyperdrive, or D1)
     ├─ owner-scoped metadata authorization; PUT replaces existing bytes only
     └─ local / S3 / R2 / Databricks Volume bytes → authenticated streaming relay
 /mcp
-    └─ owner-scoped artifact create / replace / visibility / delete tools
+    ├─ owner-scoped artifact create / replace / visibility / delete tools
+    └─ owner-scoped synchronized meeting read tools
+
+/api/v1/vaults/{vault_id}/meetings/{meeting_id}
+    ├─ manifest + transcript generation chunks
+    └─ screenshot metadata + local / S3 / R2 / Databricks Volume bytes
+
+core.vault_permissions
+    ├─ raw user ID principal の単一 owner
+    └─ user / Better Auth organization / Team の read-only member
 ```
 
 `/mcp` は MCP 2026-07-28 の stateless endpoint とし、accounts mode では DPoP-bound access token、exact resource audience、`api.artifact.write` を必須とする。Node の authorization server は CIMD を提供し、RFC 7591 DCR は開かない。Databricks Apps の header mode では Apps proxy が OAuth 認証を完了済みのため、転送 identity を owner として使い、artifact 操作で user access token を再利用しない。
@@ -165,13 +176,38 @@ Workers Static Assets が直接配信し、Worker 内から asset binding を呼
 `index.html` へ fallback する一方、API と discovery の未定義 path は Hono の 404 を維持する。
 
 Gateway、認証 store、upstream、artifact storage の停止は Server 操作だけを失敗させる。macOS の起動、録音、音声保存、文字起こし、
-閲覧、検索はこの runtime を待たない。Artifact API は明示的に渡された任意 asset だけを扱い、録音、SQLite、Vault の自動 upload／sync は行わない。runtime と data boundary の判断は
+閲覧、検索はこの runtime を待たない。Artifact API は明示的に渡された任意 asset だけを扱う。これとは別に、Vault ごとに明示的に有効化した
+meeting sync が Vault 名、Project の名前・説明・2段階階層、summary、transcript 原文、screenshot、OCR、AI caption の個人所有 Server copy を非同期作成する。Vault manifest を meeting より先に同期し、owner が明示した場合だけ、
+複数の特定 Better Auth organization または Team へ read-only 共有する。header modeでは全proxy userを通常表示される固定`external` OrganizationへJIT登録し、同じpermission modelを使う。write、delete、共有設定変更は owner に限定する。
+PostgreSQL／LakebaseではBetter Authの機械生成migrationとDahlia application migrationを別ledgerに置き、認証方式によらず
+`auth`、`core`／`content`の順で適用する。Header identityは検証直後に`auth.user`へ射影するが、Better Auth runtimeは起動しない。Serverは各identity transactionで
+`app.user_id`だけをtransaction-localに設定する。Vault/content RLSは`core.vault_permissions`を評価し、organizationとTeam membershipを
+`auth.member`と`auth.team_member`から直接解決する。
+Server は meeting の名前・説明・summary 表示本文と screenshot の OCR・caption を manifest 受理時に自前で token 化し、
+共通の `content.search_documents` projection を canonical row と同じ transaction で更新する。PostgreSQL は GIN、Lakebase は
+`lakebase_text`、SQLite／D1 は FTS5 を使う。Node で embedding model が設定されている場合だけ、App service principal による
+非同期 worker が summary／OCR／caption の自然文から再生成可能な vector projection を作る。Lakebase は `lakebase_vector`、
+その他の PostgreSQL は pgvector、SQLite は exact cosine を使い、D1 は FTS-only とする。query 時は FTS と vector の上位候補を
+RRF で統合し、embedding の未設定・未完成・障害時は FTS に縮退する。transcript と内部識別子は Server 検索対象に含めず、
+すべての検索 query は `vault_id` 経由の permission／RLS を通す。現時点の D1 adapter は manifest の複数 statement を
+atomic batch にできないため meeting sync capability を fail-closed とし、D1 の FTS-only 検索は atomic batch adapter 実装後の target state とする。
+翻訳文、音声、SQLite file、note、tag、calendar、
+Project は階層参照と meeting 絞り込みのためだけに同期し、Server の全文・vector projection へは含めない。transcript の `audio_source` は `mic`／`system` の収録経路、nullable な `speaker_label` は将来の話者分離ラベルとし、音声特徴量は同期しない。runtime と data boundary の判断は
 [ADR-0043](docs/adr/0043-unify-dahlia-server-application-database.md)、
 [ADR-0045](docs/adr/0045-add-owner-scoped-artifact-transport.md)、
 [ADR-0048](docs/adr/0048-issue-artifact-ids-server-side.md)、
 [ADR-0049](docs/adr/0049-expose-artifact-tools-over-remote-mcp.md)、
 [ADR-0046](docs/adr/0046-forward-databricks-user-token-to-ai-gateway.md)、
 および [ADR-0050](docs/adr/0050-use-app-service-principal-for-databricks-model-discovery.md)を正本とする。
+[ADR-0056](docs/adr/0056-add-owner-only-meeting-sync.md)を meeting sync の正本とする。
+[ADR-0057](docs/adr/0057-share-personal-vaults-with-organizations.md)を shared read の正本とする。
+[ADR-0059](docs/adr/0059-authorize-content-through-vault-principal-permissions.md)を Vault ownership、permission、content RLS の正本とする。
+[ADR-0062](docs/adr/0062-add-server-hybrid-search-projection.md)を同期済み content の Server Hybrid 検索の正本とする。
+[ADR-0066](docs/adr/0066-sync-vault-projects-and-separate-transcript-speakers.md)を Vault／Project 同期と transcript 話者モデルの正本とする。
+[ADR-0061](docs/adr/0061-decouple-vault-rls-from-better-auth-schema.md)をRLS identity contextの正本とする。
+[ADR-0063](docs/adr/0063-materialize-header-users-in-auth-schema.md)を共通Auth schemaとheader user射影の正本とする。
+[ADR-0064](docs/adr/0064-manage-server-administrators-with-better-auth.md)をServer管理者権限の正本とする。
+[ADR-0065](docs/adr/0065-unify-header-sharing-with-external-organization-teams.md)をheader Organization射影とTeam共有の正本とする。
 
 ## Workload Classes
 

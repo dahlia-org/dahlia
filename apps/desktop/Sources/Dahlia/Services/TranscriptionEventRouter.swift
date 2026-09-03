@@ -35,9 +35,9 @@ enum TranscriptionEventRouter {
     private static func apply(_ event: TranscriptionEvent, to store: TranscriptStore) {
         switch event {
         case let .preview(segment):
-            store.updateUnconfirmedSegment(segment, forSource: segment.speakerLabel)
+            store.updateUnconfirmedSegment(segment, forSource: segment.audioSource)
         case let .finalized(segment):
-            store.finalizeSegment(segment, forSource: segment.speakerLabel)
+            store.finalizeSegment(segment, forSource: segment.audioSource)
         case let .clearPreview(_, sourceLabel):
             store.clearUnconfirmedSegments(forSource: sourceLabel)
         case let .previewTranslation(_, segmentID, translatedText),

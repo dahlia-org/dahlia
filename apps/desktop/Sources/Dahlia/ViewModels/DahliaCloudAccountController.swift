@@ -6,23 +6,29 @@ struct DahliaAccountConnection: Identifiable, Equatable, Sendable {
     let account: DahliaCloudAccount?
     let isCloud: Bool
     let vaultCount: Int
+    let grantedScopes: Set<String>
 
     init(
         record: DahliaAccountConnectionRecord,
         account: DahliaCloudAccount?,
         isCloud: Bool,
-        vaultCount: Int = 0
+        vaultCount: Int = 0,
+        grantedScopes: Set<String> = []
     ) {
         self.record = record
         self.account = account
         self.isCloud = isCloud
         self.vaultCount = vaultCount
+        self.grantedScopes = grantedScopes
     }
 
     var id: UUID { record.id }
     var origin: String { record.origin }
     var isSignedIn: Bool { account != nil }
     var displayName: String { account?.displayName ?? origin }
+    var supportsVaultSync: Bool {
+        grantedScopes.contains("api.sync.write") || grantedScopes.contains("all-apis") || grantedScopes.contains("files")
+    }
 }
 
 @MainActor
@@ -118,7 +124,8 @@ final class DahliaCloudAccountController {
                     record: record,
                     account: credential?.account,
                     isCloud: isCloudOrigin(record.origin),
-                    vaultCount: vaultCounts[record.id, default: 0]
+                    vaultCount: vaultCounts[record.id, default: 0],
+                    grantedScopes: credential?.grantedScopes ?? []
                 ))
             }
             connections = loadedConnections
@@ -299,7 +306,12 @@ final class DahliaCloudAccountController {
                 throw DahliaCloudError.notConfigured
             }
             let service = try service(for: connection.record)
+            let previousCredential = try await service.storedCredential()
             let credential = try await service.authorize()
+            guard previousCredential == nil || previousCredential?.account.id == credential.account.id else {
+                await service.revokeIfPossible(credential)
+                throw DahliaCloudError.accountChanged
+            }
             do {
                 try Task.checkCancellation()
                 try await service.persist(credential)
@@ -327,6 +339,9 @@ final class DahliaCloudAccountController {
         defer { finishOperation(generation) }
         do {
             guard let connection = connections.first(where: { $0.id == connectionID }) else { return }
+            if try await repository?.connectionHasPendingServerDeletion(id: connectionID) == true {
+                throw DahliaAccountConnectionError.pendingServerDeletion
+            }
             do {
                 try await service(for: connection.record).signOut()
             } catch {
@@ -368,6 +383,9 @@ final class DahliaCloudAccountController {
                   !connection.isSignedIn,
                   let repository
             else { return }
+            if try await repository.connectionHasPendingServerDeletion(id: connectionID) {
+                throw DahliaAccountConnectionError.pendingServerDeletion
+            }
             if VaultAISettingsModel.shared.accountConnectionID == connectionID {
                 VaultAISettingsModel.shared.accountConnectionID = nil
                 guard await VaultAISettingsModel.shared.waitForRuntimeContext() else {

@@ -41,19 +41,19 @@ actor SpeechTranscriberService {
     private var streamingFailure: Error?
 
     private let locale: Locale
-    private let speakerLabel: String?
+    private let audioSource: String?
     private let translateSegment: SegmentTranslationHandler?
     private let previewTranslationCoordinator: PreviewTranslationCoordinator?
 
     init(
         pipelineID: UUID = .v7(),
         locale: Locale = Locale(identifier: "ja-JP"),
-        speakerLabel: String? = nil,
+        audioSource: String? = nil,
         translateSegment: SegmentTranslationHandler? = nil
     ) {
         self.pipelineID = pipelineID
         self.locale = locale
-        self.speakerLabel = speakerLabel
+        self.audioSource = audioSource
         self.translateSegment = translateSegment
         if let translateSegment {
             previewTranslationCoordinator = PreviewTranslationCoordinator(translate: translateSegment)
@@ -128,7 +128,7 @@ actor SpeechTranscriberService {
             await onEvent(.failure(
                 sessionId: recordingSessionId,
                 pipelineID: pipelineID,
-                sourceLabel: speakerLabel,
+                sourceLabel: audioSource,
                 message: error.localizedDescription
             ))
             throw error
@@ -229,12 +229,12 @@ actor SpeechTranscriberService {
             for try await result in transcriber.results {
                 guard !Task.isCancelled else { return }
 
-                let label = speakerLabel
+                let source = audioSource
                 guard let text = Self.normalizedTranscriptText(String(result.text.characters)) else {
                     if result.isFinal {
                         await previewTranslationCoordinator?.cancelPending()
                         previewSegmentID = nil
-                        await onEvent(.clearPreview(sessionId: recordingSessionId, sourceLabel: label))
+                        await onEvent(.clearPreview(sessionId: recordingSessionId, sourceLabel: source))
                     }
                     continue
                 }
@@ -248,13 +248,14 @@ actor SpeechTranscriberService {
                     endTime: recordingStartTime.addingTimeInterval(endSeconds.isFinite ? endSeconds : 0),
                     text: text,
                     isConfirmed: result.isFinal,
-                    speakerLabel: label
+                    audioSource: source,
+                    speakerLabel: nil
                 )
 
                 if result.isFinal {
                     await previewTranslationCoordinator?.cancelPending()
                     previewSegmentID = nil
-                    await onEvent(.clearPreview(sessionId: recordingSessionId, sourceLabel: label))
+                    await onEvent(.clearPreview(sessionId: recordingSessionId, sourceLabel: source))
                     await onEvent(.finalized(segment))
 
                     startFinalTranslation(
@@ -305,14 +306,14 @@ actor SpeechTranscriberService {
             error,
             context: [
                 "source": "liveTranscription",
-                "audioSource": speakerLabel ?? "unknown",
+                "audioSource": audioSource ?? "unknown",
                 "locale": locale.identifier,
             ]
         )
         await eventHandler(.failure(
             sessionId: activeSessionId,
             pipelineID: pipelineID,
-            sourceLabel: speakerLabel,
+            sourceLabel: audioSource,
             message: error.localizedDescription
         ))
     }
@@ -357,7 +358,7 @@ actor SpeechTranscriberService {
     private func clearPreview() async {
         guard let activeSessionId,
               let eventHandler else { return }
-        await eventHandler(.clearPreview(sessionId: activeSessionId, sourceLabel: speakerLabel))
+        await eventHandler(.clearPreview(sessionId: activeSessionId, sourceLabel: audioSource))
         previewSegmentID = nil
     }
 

@@ -15,7 +15,7 @@ struct MeetingConversationMetricsInput: Codable, Equatable, Sendable {
         let startTime: Date
         let endTime: Date?
         let text: String
-        let speakerLabel: String
+        let audioSource: String
         var audioFeatures: TranscriptAudioFeatures?
 
         private enum CodingKeys: String, CodingKey {
@@ -24,7 +24,7 @@ struct MeetingConversationMetricsInput: Codable, Equatable, Sendable {
             case startTime
             case endTime
             case text
-            case speakerLabel
+            case audioSource
         }
 
         init(
@@ -33,7 +33,7 @@ struct MeetingConversationMetricsInput: Codable, Equatable, Sendable {
             startTime: Date,
             endTime: Date?,
             text: String,
-            speakerLabel: String,
+            audioSource: String,
             audioFeatures: TranscriptAudioFeatures? = nil
         ) {
             self.id = id
@@ -41,7 +41,7 @@ struct MeetingConversationMetricsInput: Codable, Equatable, Sendable {
             self.startTime = startTime
             self.endTime = endTime
             self.text = text
-            self.speakerLabel = speakerLabel
+            self.audioSource = audioSource
             self.audioFeatures = audioFeatures
         }
 
@@ -52,7 +52,7 @@ struct MeetingConversationMetricsInput: Codable, Equatable, Sendable {
             startTime = try container.decode(Date.self, forKey: .startTime)
             endTime = try container.decodeIfPresent(Date.self, forKey: .endTime)
             text = try container.decode(String.self, forKey: .text)
-            speakerLabel = try container.decode(String.self, forKey: .speakerLabel)
+            audioSource = try container.decode(String.self, forKey: .audioSource)
             audioFeatures = nil
         }
 
@@ -63,7 +63,7 @@ struct MeetingConversationMetricsInput: Codable, Equatable, Sendable {
             try container.encode(startTime, forKey: .startTime)
             try container.encodeIfPresent(endTime, forKey: .endTime)
             try container.encode(text, forKey: .text)
-            try container.encode(speakerLabel, forKey: .speakerLabel)
+            try container.encode(audioSource, forKey: .audioSource)
         }
     }
 

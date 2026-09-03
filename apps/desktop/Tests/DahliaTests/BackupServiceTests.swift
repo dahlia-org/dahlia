@@ -49,7 +49,7 @@ import GRDB
                 text: "Preserved transcript",
                 translatedText: nil,
                 isConfirmed: true,
-                speakerLabel: "mic"
+                audioSource: "mic"
             )
             try await fixture.database.dbQueue.write { db in
                 try segment.insert(db)

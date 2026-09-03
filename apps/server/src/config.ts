@@ -48,7 +48,6 @@ export interface AppConfig {
   databaseUrl?: string;
   lakebaseDatabase?: LakebaseDatabaseConfig;
   baseUrl: string;
-  adminEmail?: string;
   provider?: ProviderConfig;
   googleClientId?: string;
   googleClientSecret?: string;
@@ -61,6 +60,11 @@ export interface AppConfig {
   storageDatabricksVolumePath?: string;
   artifactMaxBytes?: number;
   databricksWorkspace?: DatabricksWorkspaceConfig;
+  searchEmbedding?: {
+    model: string;
+    dimensions: number;
+  };
+  syncSharingEnabled?: boolean;
 }
 
 const authProviderSchema = z.enum(["accounts", "header"]);
@@ -70,6 +74,7 @@ const storageBackendSchema = z.enum(["databricks", "local", "r2", "s3"]);
 const LOCAL_BASE_URL = "http://localhost:5173";
 const LOCAL_DATABASE_URL = "file:.data/dahlia-auth.sqlite";
 export const DEFAULT_ARTIFACT_MAX_BYTES = 64 * 1024 * 1024;
+export const DEFAULT_SEARCH_EMBEDDING_DIMENSIONS = 1024;
 
 function csv(value: string | undefined): string[] {
   return value
@@ -180,6 +185,9 @@ function providerConfig(
 }
 
 export function loadConfig(env: Record<string, string | undefined>): AppConfig {
+  if (env.DAHLIA_ADMIN_EMAIL?.trim()) {
+    throw new Error("DAHLIA_ADMIN_EMAIL is no longer supported; the first user becomes administrator");
+  }
   if (env.DAHLIA_ARTIFACT_BACKEND?.trim()) {
     throw new Error("DAHLIA_ARTIFACT_BACKEND was replaced by DAHLIA_STORAGE_BACKEND");
   }
@@ -199,6 +207,13 @@ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
     .parse(env.DAHLIA_MAX_REQUEST_BYTES ?? String(16 * 1024 * 1024));
   const aiBackend = aiBackendSchema.parse(env.DAHLIA_AI_BACKEND?.trim() || "openai");
   const storageBackend = storageBackendSchema.parse(env.DAHLIA_STORAGE_BACKEND?.trim() || "local");
+  const searchEmbeddingModel = env.DAHLIA_SEARCH_EMBEDDING_MODEL?.trim();
+  const searchEmbedding = searchEmbeddingModel ? {
+    model: searchEmbeddingModel,
+    dimensions: z.coerce.number().int().min(32).max(1024)
+      .refine((value) => (value & (value - 1)) === 0, "must be a power of two")
+      .parse(env.DAHLIA_SEARCH_EMBEDDING_DIMENSIONS ?? String(DEFAULT_SEARCH_EMBEDDING_DIMENSIONS)),
+  } : undefined;
   const databricksWorkspace = databricksWorkspaceConfig(
     env,
     storageBackend === "databricks" || aiBackend === "databricks",
@@ -232,9 +247,6 @@ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
     databaseUrl: loadDatabaseUrl(env, databaseType),
     lakebaseDatabase: loadLakebaseDatabase(env, databaseType),
     baseUrl,
-    adminEmail: env.DAHLIA_ADMIN_EMAIL?.trim()
-      ? z.email().parse(env.DAHLIA_ADMIN_EMAIL.trim().toLowerCase())
-      : undefined,
     provider: providerConfig(env, aiBackend, databricksWorkspace),
     oauthRedirectUris: csv(env.DAHLIA_OAUTH_REDIRECT_URIS),
     maxRequestBytes,
@@ -244,7 +256,13 @@ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
     storageDatabricksVolumePath,
     artifactMaxBytes,
     databricksWorkspace,
+    searchEmbedding,
+    syncSharingEnabled: z.enum(["true", "false"]).parse(env.DAHLIA_SYNC_SHARING_ENABLED?.trim() || "false") === "true",
   };
+
+  if (config.searchEmbedding && config.provider?.backend !== "databricks") {
+    throw new Error("DAHLIA_SEARCH_EMBEDDING_MODEL requires DAHLIA_AI_BACKEND=databricks");
+  }
 
   if (authProvider === "accounts") {
     config.betterAuthSecret = required(env, "BETTER_AUTH_SECRET");

@@ -17,8 +17,8 @@ import Foundation
             store.apply(event: .preview(makeSegment(sessionID: sessionID, text: "Mic latest", source: "mic")))
 
             #expect(store.segments.count == 2)
-            #expect(store.segments.first(where: { $0.speakerLabel == "mic" })?.text == "Mic latest")
-            #expect(store.segments.first(where: { $0.speakerLabel == "system" })?.text == "System")
+            #expect(store.segments.first(where: { $0.audioSource == "mic" })?.text == "Mic latest")
+            #expect(store.segments.first(where: { $0.audioSource == "system" })?.text == "System")
             #expect(store.segments.allSatisfy { !$0.isConfirmed })
         }
 
@@ -189,7 +189,7 @@ import Foundation
                 startTime: Date(timeIntervalSince1970: 1_776_384_000),
                 text: text,
                 isConfirmed: isConfirmed,
-                speakerLabel: source
+                audioSource: source
             )
         }
 
@@ -202,7 +202,7 @@ import Foundation
                 text: segment.text,
                 translatedText: segment.translatedText,
                 isConfirmed: true,
-                speakerLabel: segment.speakerLabel
+                audioSource: segment.audioSource
             )
         }
     }

@@ -9,7 +9,9 @@ import { z } from "zod";
 import { ArtifactRequestError, ArtifactService } from "./artifacts/service";
 import type { ArtifactRecord } from "./auth/store";
 import type { Identity } from "./auth/identity";
+import { ARTIFACT_WRITE_SCOPE, SYNC_READ_SCOPE } from "./auth/scopes";
 import type { AppConfig } from "./config";
+import { MeetingSyncService } from "./sync/service";
 
 export const MCP_MAX_REQUEST_BYTES = 12 * 1024 * 1024;
 export const MCP_ARTIFACT_MAX_BYTES = 8 * 1024 * 1024;
@@ -35,11 +37,16 @@ const artifactOutputSchema = z.object({
   visibility: z.enum(["private", "public"]),
 });
 
-export function createArtifactMcpHandler(config: AppConfig, artifacts: ArtifactService) {
+export function createArtifactMcpHandler(
+  config: AppConfig,
+  artifacts: ArtifactService,
+  sync?: MeetingSyncService,
+) {
   return createMcpHandler(({ authInfo }) => {
     const identity = mcpIdentity(authInfo);
     const server = new McpServer({ name: "Dahlia Server", version: "0.1.0" });
 
+    if (authInfo?.scopes.includes(ARTIFACT_WRITE_SCOPE)) {
     server.registerTool("create_artifact", {
       description: "Create a private artifact from UTF-8 text or canonical RFC 4648 base64 content.",
       inputSchema: artifactContentSchema,
@@ -83,9 +90,122 @@ export function createArtifactMcpHandler(config: AppConfig, artifacts: ArtifactS
       const id = artifacts.parseId(artifact_id);
       return artifactResult(config, await artifacts.delete(id, identity));
     }));
+    }
+
+    if (sync && authInfo?.scopes.includes(SYNC_READ_SCOPE)) {
+      const meetingInput = z.object({ vault_id: z.string(), meeting_id: z.string() }).strict();
+      server.registerTool("query_meetings", {
+        description: "List meetings in a synchronized Vault you can read.",
+        inputSchema: z.object({
+          vault_id: z.string(),
+          query: z.string().optional(),
+          project_id: z.string().optional(),
+        }).strict(),
+        annotations: { readOnlyHint: true },
+      }, async ({ vault_id, query, project_id }) => jsonToolResult(async () => sync.listMeetings(
+        identity,
+        sync.parseId(vault_id),
+        query,
+        undefined,
+        project_id ? sync.parseId(project_id) : undefined,
+      )));
+      server.registerTool("query_projects", {
+        description: "List the complete synchronized Project hierarchy in a Vault you can read.",
+        inputSchema: z.object({ vault_id: z.string(), type: z.enum([
+          "customer", "internal", "personal", "undefined",
+        ]).optional() }).strict(),
+        annotations: { readOnlyHint: true },
+      }, async ({ vault_id, type }) => jsonToolResult(async () => {
+        const projects = await sync.listProjects(identity, sync.parseId(vault_id));
+        return type ? projects.filter((project) => project.effectiveType === type) : projects;
+      }));
+      server.registerTool("get_project", {
+        description: "Get one synchronized Project by stable UUID.",
+        inputSchema: z.object({ vault_id: z.string(), project_id: z.string() }).strict(),
+        annotations: { readOnlyHint: true },
+      }, async ({ vault_id, project_id }) => jsonToolResult(async () => {
+        const project = await sync.getProject(identity, sync.parseId(vault_id), sync.parseId(project_id));
+        if (!project) throw new ArtifactRequestError(404, "project_not_found");
+        return project;
+      }));
+      server.registerTool("get_meeting", {
+        description: "Get one synchronized meeting you can read and its summary.",
+        inputSchema: meetingInput,
+        annotations: { readOnlyHint: true },
+      }, async ({ vault_id, meeting_id }) => jsonToolResult(async () => {
+        const meeting = await sync.getMeeting(identity, sync.parseId(vault_id), sync.parseId(meeting_id));
+        if (!meeting) throw new ArtifactRequestError(404, "meeting_not_found");
+        return meeting;
+      }));
+      server.registerTool("get_meeting_transcript", {
+        description: "Get the active transcript for a synchronized meeting you can read.",
+        inputSchema: meetingInput,
+        annotations: { readOnlyHint: true },
+      }, async ({ vault_id, meeting_id }) => jsonToolResult(async () => sync.listTranscript(
+        identity,
+        sync.parseId(vault_id),
+        sync.parseId(meeting_id),
+      )));
+      server.registerTool("query_screenshots", {
+        description: "Search screenshot OCR and captions in a synchronized meeting you can read.",
+        inputSchema: meetingInput.extend({ query: z.string() }),
+        annotations: { readOnlyHint: true },
+      }, async ({ vault_id, meeting_id, query }) => screenshotToolResult(
+        config,
+        sync,
+        identity,
+        vault_id,
+        meeting_id,
+        query,
+      ));
+      server.registerTool("get_meeting_screenshots", {
+        description: "List authenticated screenshot resource links for a synchronized meeting you can read.",
+        inputSchema: meetingInput,
+        annotations: { readOnlyHint: true },
+      }, async ({ vault_id, meeting_id }) => screenshotToolResult(
+        config,
+        sync,
+        identity,
+        vault_id,
+        meeting_id,
+      ));
+    }
 
     return server;
   }, { legacy: "reject" });
+}
+
+async function jsonToolResult(operation: () => Promise<unknown>): Promise<CallToolResult> {
+  try {
+    return { content: [{ type: "text", text: JSON.stringify(await operation()) }] };
+  } catch (error) {
+    if (error instanceof ArtifactRequestError) {
+      return { isError: true, content: [{ type: "text", text: error.code }] };
+    }
+    throw error;
+  }
+}
+
+async function screenshotToolResult(
+  config: AppConfig,
+  sync: MeetingSyncService,
+  identity: Identity,
+  vaultIdValue: string,
+  meetingIdValue: string,
+  query?: string,
+): Promise<CallToolResult> {
+  const vaultId = sync.parseId(vaultIdValue);
+  const meetingId = sync.parseId(meetingIdValue);
+  const screenshots = await sync.listScreenshots(identity, vaultId, meetingId, query);
+  return {
+    content: screenshots.map((screenshot) => ({
+      type: "resource_link" as const,
+      name: `Screenshot ${screenshot.screenshotId}`,
+      uri: `${config.baseUrl}/mcp/resources/vaults/${vaultId}/meetings/${meetingId}`
+        + `/screenshots/${screenshot.screenshotId}/content`,
+      mimeType: screenshot.contentType,
+    })),
+  };
 }
 
 function mcpIdentity(authInfo: AuthInfo | undefined): Identity {

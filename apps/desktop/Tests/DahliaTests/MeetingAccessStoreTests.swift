@@ -619,7 +619,7 @@ import ImageIO
             let segments = firstPage.segments + secondPage.segments
             let segment = try #require(segments.first(where: { $0.id == fixture.firstSegmentID }))
             #expect(segment.text == "Original secret body")
-            #expect(segment.speaker == "mic")
+            #expect(segment.speaker == nil)
             #expect(segment.elapsedSeconds == 15)
             #expect(segment.endedElapsedSeconds == 17)
             #expect(segment.timestamp == "00:00:15")
@@ -3178,7 +3178,7 @@ import ImageIO
                 text: "Original secret body",
                 translatedText: "Translated text",
                 isConfirmed: true,
-                speakerLabel: "mic"
+                audioSource: "mic"
             ).insert(db)
             try TranscriptSegmentRecord(
                 id: secondSegmentID,
@@ -3189,7 +3189,7 @@ import ImageIO
                 text: "Second original body",
                 translatedText: nil,
                 isConfirmed: true,
-                speakerLabel: "system"
+                audioSource: "system"
             ).insert(db)
             try TranscriptSegmentRecord(
                 id: .v7(),
@@ -3310,7 +3310,7 @@ import ImageIO
                     text: "After pause",
                     translatedText: nil,
                     isConfirmed: true,
-                    speakerLabel: "mic"
+                    audioSource: "mic"
                 ).insert(db)
                 try MeetingScreenshotRecord(
                     id: screenshotID,

@@ -527,6 +527,8 @@
 "Dahlia sign-in was not authorized." = "Dahlia sign-in was not authorized.";
 "Dahlia credentials could not be saved securely." = "Dahlia credentials could not be saved securely.";
 "A Dahlia connection already exists for this server." = "A Dahlia connection already exists for this server.";
+"Sign in with the same Dahlia account, or add a new connection." = "Sign in with the same Dahlia account, or add a new connection.";
+"Wait for the pending Server data deletion before signing out or removing this connection." = "Wait for the pending Server data deletion before signing out or removing this connection.";
 "Manage the Dahlia Cloud and Server sign-ins used by Dahlia." = "Manage the Dahlia Cloud and Server sign-ins used by Dahlia.";
 "%lld Dahlia accounts" = "%lld Dahlia accounts";
 "Sign In Again" = "Sign In Again";
@@ -540,6 +542,15 @@
 "Coming Soon" = "Coming Soon";
 "Loading Vaults…" = "Loading Vaults…";
 "Removing Vault…" = "Removing Vault…";
+"Sync to Dahlia Server" = "Sync to Dahlia Server";
+"Privately sync summaries, original transcripts, screenshots, OCR text, and image captions." = "Privately sync summaries, original transcripts, screenshots, OCR text, and image captions.";
+"Choose a signed-in Dahlia account before enabling sync." = "Choose a signed-in Dahlia account before enabling sync.";
+"Reconnect this Dahlia account to grant sync access." = "Reconnect this Dahlia account to grant sync access.";
+"Delete Server Copy" = "Delete Server Copy";
+"Confirm Meeting Deletions" = "Confirm Meeting Deletions";
+"Continue Deleting" = "Continue Deleting";
+"%lld server meeting deletions are waiting. Continue deleting them?" = "%lld server meeting deletions are waiting. Continue deleting them?";
+"Server data will be deleted in resumable batches. Local meeting data is not deleted." = "Server data will be deleted in resumable batches. Local meeting data is not deleted.";
 "Current Vault" = "Current Vault";
 "Choose the vault used for recordings and sync." = "Choose the vault used for recordings and sync.";
 "Open the account and vault menu." = "Open the account and vault menu.";

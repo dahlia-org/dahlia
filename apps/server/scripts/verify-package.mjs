@@ -77,7 +77,15 @@ try {
     const codexLicense = await readFile(new URL("./Codex-LICENSE", packageUrl), "utf8");
     const codexNotice = await readFile(new URL("./Codex-NOTICE.txt", packageUrl), "utf8");
     const migration = await readFile(
-      new URL(import.meta.resolve("@dahlia-ai/server/migrations/sqlite/20260830001528_stiff_alex_power/migration.sql")),
+      new URL(import.meta.resolve("@dahlia-ai/server/migrations/sqlite/20260903075857_flowery_thunderbolt/migration.sql")),
+      "utf8",
+    );
+    const authMigration = await readFile(
+      new URL(import.meta.resolve("@dahlia-ai/server/migrations/postgres-auth/20260903034253_melodic_scalphunter/migration.sql")),
+      "utf8",
+    );
+    const applicationMigration = await readFile(
+      new URL(import.meta.resolve("@dahlia-ai/server/migrations/postgres/20260903075853_tricky_nekra/migration.sql")),
       "utf8",
     );
     if (
@@ -89,6 +97,10 @@ try {
       || !migration.includes("artifact")
       || migration.includes("artifact_reservation")
       || !migration.includes("storage_key")
+      || !authMigration.includes('CREATE TABLE "auth"."user"')
+      || applicationMigration.includes('CREATE TABLE "auth".')
+      || !applicationMigration.includes('REFERENCES "auth"."user"("id")')
+      || !applicationMigration.includes('CREATE TABLE "core"."vaults"')
     ) {
       throw new Error("Package assets are incomplete");
     }
@@ -108,7 +120,7 @@ try {
     const applied = database.prepare('SELECT "name" FROM "__drizzle_migrations"').all();
     database.close();
     await store.close?.();
-    if (applied.length !== 1 || applied[0]?.name !== "20260830001528_stiff_alex_power") {
+    if (applied.length !== 1 || applied.at(-1)?.name !== "20260903075857_flowery_thunderbolt") {
       throw new Error("Installed package migrations did not run from the package directory");
     }
   `);

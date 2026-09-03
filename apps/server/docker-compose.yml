@@ -1,12 +1,12 @@
 services:
   postgres:
-    image: postgres:17-alpine
+    image: pgvector/pgvector:pg17
     environment:
       POSTGRES_DB: dahlia
-      POSTGRES_PASSWORD: dahlia
-      POSTGRES_USER: dahlia
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_USER: postgres
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U dahlia"]
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 2s
       timeout: 2s
       retries: 15
@@ -14,6 +14,7 @@ services:
       - "5432:5432"
     volumes:
       - dahlia-postgres:/var/lib/postgresql/data
+      - ./docker/postgres-init.sql:/docker-entrypoint-initdb.d/10-dahlia-role.sql:ro
 
 volumes:
   dahlia-postgres:

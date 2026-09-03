@@ -413,7 +413,7 @@
             try await repository.insertDahliaAccountConnection(connection)
             let cancellation = CloudCancellationTrigger()
             let store = CloudCredentialStoreFake(
-                credential: makeCredential(expirationDate: .distantFuture),
+                credential: makeCredential(expirationDate: .distantFuture, accountID: "user-1"),
                 onSave: cancellation.fire
             )
             let service = makeService(recorder: CloudRequestRecorder(mode: .userInfo), store: store)
@@ -432,6 +432,42 @@
             await signIn.value
 
             #expect(controller.completedSignInConnection(matching: configuration) == nil)
+        }
+
+        @MainActor
+        @Test
+        func reauthenticationRejectsADifferentAccountAndKeepsTheExistingCredential() async throws {
+            let manager = try AppDatabaseManager(path: ":memory:")
+            let repository = MeetingRepository(dbQueue: manager.dbQueue)
+            let connection = DahliaAccountConnectionRecord(
+                id: .v7(),
+                origin: "https://cloud.example.com",
+                clientID: "desktop-client",
+                createdAt: .now
+            )
+            try await repository.insertDahliaAccountConnection(connection)
+            let configuration = try #require(DahliaCloudConfiguration.make(
+                urlString: connection.origin,
+                clientID: connection.clientID
+            ))
+            let recorder = CloudRequestRecorder(mode: .userInfo, advertisesRevocationEndpoint: true)
+            let existingCredential = makeCredential(expirationDate: .distantFuture)
+            let store = CloudCredentialStoreFake(credential: existingCredential)
+            let service = makeService(recorder: recorder, store: store)
+            let controller = DahliaCloudAccountController(
+                configuration: configuration,
+                serviceFactory: { _, _ in service }
+            )
+            await controller.configure(appDatabase: manager)
+
+            let signIn = try #require(controller.startReauthentication(connectionID: connection.id))
+            await signIn.value
+
+            #expect(store.credential == existingCredential)
+            #expect(store.saveCount == 0)
+            #expect(controller.completedSignInConnection(matching: configuration) == nil)
+            #expect(controller.errorMessage != nil)
+            #expect(recorder.requests.contains { $0.url?.path == "/revoke" })
         }
 
         @MainActor
@@ -626,7 +662,8 @@
         private func makeCredential(
             expirationDate: Date,
             revocationEndpoint: URL? = nil,
-            clientID: String = "desktop-client"
+            clientID: String = "desktop-client",
+            accountID: String = "saved-user"
         ) -> DahliaCloudCredential {
             DahliaCloudCredential(
                 accessToken: "old-access",
@@ -638,7 +675,7 @@
                 grantedScopes: ["openid"],
                 tokenEndpoint: URL(string: "https://accounts.example.com/token")!,
                 revocationEndpoint: revocationEndpoint,
-                account: DahliaCloudAccount(id: "saved-user", name: "Saved User", email: "saved@example.com")
+                account: DahliaCloudAccount(id: accountID, name: "Saved User", email: "saved@example.com")
             )
         }
     }

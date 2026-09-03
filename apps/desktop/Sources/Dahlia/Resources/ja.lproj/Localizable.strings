@@ -527,6 +527,8 @@
 "Dahlia sign-in was not authorized." = "Dahlia へのサインインが許可されませんでした。";
 "Dahlia credentials could not be saved securely." = "Dahlia の認証情報を安全に保存できませんでした。";
 "A Dahlia connection already exists for this server." = "この Server への Dahlia 接続はすでに存在します。";
+"Sign in with the same Dahlia account, or add a new connection." = "同じ Dahlia アカウントでサインインするか、新しい接続を追加してください。";
+"Wait for the pending Server data deletion before signing out or removing this connection." = "保留中の Server データ削除が完了してから、この接続をサインアウトまたは削除してください。";
 "Manage the Dahlia Cloud and Server sign-ins used by Dahlia." = "Dahlia が使用する Dahlia Cloud と Server のサインインを管理します。";
 "%lld Dahlia accounts" = "%lld 件の Dahlia アカウント";
 "Sign In Again" = "再サインイン";
@@ -540,6 +542,15 @@
 "Coming Soon" = "準備中";
 "Loading Vaults…" = "保管庫を読み込み中…";
 "Removing Vault…" = "保管庫を登録解除中…";
+"Sync to Dahlia Server" = "Dahlia Server に同期";
+"Privately sync summaries, original transcripts, screenshots, OCR text, and image captions." = "要約、文字起こし原文、スクリーンショット、OCR テキスト、画像キャプションを非公開で同期します。";
+"Choose a signed-in Dahlia account before enabling sync." = "同期を有効にする前に、サインイン済みの Dahlia アカウントを選択してください。";
+"Reconnect this Dahlia account to grant sync access." = "同期権限を付与するため、この Dahlia アカウントを再接続してください。";
+"Delete Server Copy" = "Server 上のコピーを削除";
+"Confirm Meeting Deletions" = "ミーティング削除を確認";
+"Continue Deleting" = "削除を続行";
+"%lld server meeting deletions are waiting. Continue deleting them?" = "Server 上の %lld 件のミーティング削除が保留中です。削除を続行しますか？";
+"Server data will be deleted in resumable batches. Local meeting data is not deleted." = "Server のデータを再開可能な単位で削除します。ローカルの会議データは削除しません。";
 "Current Vault" = "現在の保管庫";
 "Choose the vault used for recordings and sync." = "録音と同期に使用する保管庫を選択します。";
 "Open the account and vault menu." = "アカウントと保管庫のメニューを開きます。";

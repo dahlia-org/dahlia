@@ -34,6 +34,7 @@
     },
     "./migrations/sqlite/*": "./drizzle/sqlite/*",
     "./migrations/postgres/*": "./drizzle/postgres/*",
+    "./migrations/postgres-auth/*": "./drizzle/postgres-auth/*",
     "./package.json": "./package.json"
   },
   "files": [
@@ -56,7 +57,7 @@
     "build:library-client": "tsup --config tsup.client.config.ts && cp src/client/styles.css dist/client-library/styles.css",
     "check": "pnpm run lint && pnpm run typecheck && pnpm run test && pnpm run build && pnpm run test:package && pnpm run worker:dry-run",
     "db:generate": "pnpm run db:generate:postgres && pnpm run db:generate:sqlite",
-    "db:generate:postgres": "drizzle-kit generate --config drizzle.config.ts",
+    "db:generate:postgres": "drizzle-kit generate --config drizzle.auth.config.ts && drizzle-kit generate --config drizzle.config.ts",
     "db:generate:sqlite": "drizzle-kit generate --config drizzle.sqlite.config.ts && node scripts/sync-d1-migrations.mjs",
     "db:generate-auth": "node scripts/generate-auth-schema.mjs",
     "db:migrate": "tsx --env-file-if-exists=.env.local src/db/migrate.ts",
@@ -92,6 +93,7 @@
     "better-auth": "1.7.1",
     "drizzle-orm": "1.0.0-rc.4",
     "hono": "^4.13.0",
+    "lindera-wasm-ipadic-nodejs": "2.3.4",
     "pg": "8.18.0",
     "zod": "^4.4.3"
   },

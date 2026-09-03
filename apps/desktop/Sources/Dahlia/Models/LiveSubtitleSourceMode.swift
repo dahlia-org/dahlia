@@ -16,12 +16,12 @@ enum LiveSubtitleSourceMode: String {
         self == .includeMicrophone
     }
 
-    func includesSpeakerLabel(_ speakerLabel: String?) -> Bool {
+    func includesAudioSource(_ audioSource: String?) -> Bool {
         switch self {
         case .systemAudioOnly:
-            speakerLabel == "system"
+            audioSource == "system"
         case .includeMicrophone:
-            speakerLabel == nil || speakerLabel == "system" || speakerLabel == "mic"
+            audioSource == nil || audioSource == "system" || audioSource == "mic"
         }
     }
 }

@@ -109,7 +109,7 @@ import GRDB
                     sql: "SELECT identifier FROM grdb_migrations ORDER BY rowid DESC LIMIT 1"
                 )
             }
-            #expect(applied == "v41_vaultAISettingsBackfill")
+            #expect(applied == "v48_vaultProjectSyncAndAudioSource")
         }
 
         private func insertRootOrganization(

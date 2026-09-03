@@ -52,7 +52,7 @@ pnpm exec wrangler secret put GOOGLE_CLIENT_SECRET
 ```
 
 Use the final HTTPS Worker or custom-domain origin for `DAHLIA_APP_URL`; do not include a path.
-Optionally set `DAHLIA_ADMIN_EMAIL` to bootstrap `/admin` and add further administrators from `/admin/members`.
+The first authenticated user becomes the initial administrator. Add further registered users from `/admin/members`.
 
 ## 4. Configure Cloudflare AI Gateway
 

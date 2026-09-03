@@ -9,11 +9,13 @@ final class VaultManagementModel {
         .appending(path: "Dahlia", directoryHint: .isDirectory)
 
     private(set) var vaults: [VaultRecord] = []
+    private(set) var pendingMeetingDeletionCounts: [UUID: Int] = [:]
     private(set) var errorMessage = ""
     private(set) var isLoading = false
     private(set) var isRemovingVault = false
     private(set) var isRenamingVault = false
     private(set) var updatingVaultAccountID: UUID?
+    private(set) var updatingVaultSyncID: UUID?
     var isShowingError = false
 
     private var appDatabase: AppDatabaseManager?
@@ -21,7 +23,10 @@ final class VaultManagementModel {
     private var repository: MeetingRepository?
 
     func configure(appDatabase: AppDatabaseManager?) async {
-        guard self.appDatabase !== appDatabase || !hasLoadedVaults else { return }
+        if self.appDatabase === appDatabase, hasLoadedVaults {
+            await loadVaults()
+            return
+        }
         self.appDatabase = appDatabase
         hasLoadedVaults = false
         repository = appDatabase.map { MeetingRepository(dbQueue: $0.dbQueue) }
@@ -39,6 +44,7 @@ final class VaultManagementModel {
         defer { isLoading = false }
         do {
             vaults = try await repository.fetchAllVaultsAsync()
+            pendingMeetingDeletionCounts = try await repository.pendingMeetingDeletionCounts()
             hasLoadedVaults = true
         } catch {
             hasLoadedVaults = false
@@ -191,6 +197,47 @@ final class VaultManagementModel {
         } catch {
             presentError(L10n.vaultOperationFailed, error: error, source: "updateAccountConnection")
             return nil
+        }
+    }
+
+    func updateSync(for vault: VaultRecord, isEnabled: Bool) async -> VaultRecord? {
+        guard vault.syncEnabled != isEnabled, updatingVaultSyncID == nil, let repository else { return vault }
+        updatingVaultSyncID = vault.id
+        defer { updatingVaultSyncID = nil }
+        do {
+            guard let updated = try await repository.updateVaultSync(id: vault.id, isEnabled: isEnabled) else {
+                presentError(L10n.vaultSyncRequiresAccount, source: "updateVaultSync")
+                return nil
+            }
+            if let index = vaults.firstIndex(where: { $0.id == vault.id }) { vaults[index] = updated }
+            return updated
+        } catch {
+            presentError(L10n.vaultOperationFailed, error: error, source: "updateVaultSync")
+            return nil
+        }
+    }
+
+    func deleteServerCopy(for vault: VaultRecord) async -> VaultRecord? {
+        guard updatingVaultSyncID == nil, let repository else { return nil }
+        updatingVaultSyncID = vault.id
+        defer { updatingVaultSyncID = nil }
+        do {
+            guard let updated = try await repository.requestServerVaultDeletion(id: vault.id) else { return nil }
+            if let index = vaults.firstIndex(where: { $0.id == vault.id }) { vaults[index] = updated }
+            return updated
+        } catch {
+            presentError(L10n.vaultOperationFailed, error: error, source: "deleteServerCopy")
+            return nil
+        }
+    }
+
+    func approvePendingMeetingDeletions(for vault: VaultRecord) async {
+        guard let repository else { return }
+        do {
+            try await repository.approvePendingMeetingDeletions(vaultId: vault.id)
+            pendingMeetingDeletionCounts[vault.id] = nil
+        } catch {
+            presentError(L10n.vaultOperationFailed, error: error, source: "approvePendingMeetingDeletions")
         }
     }
 

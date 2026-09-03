@@ -32,15 +32,15 @@ jobs:
 
     services:
       postgres:
-        image: postgres:17-alpine
+        image: pgvector/pgvector:pg17
         env:
           POSTGRES_DB: dahlia
           POSTGRES_HOST_AUTH_METHOD: trust
-          POSTGRES_USER: dahlia
+          POSTGRES_USER: postgres
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U dahlia"
+          --health-cmd "pg_isready -U postgres"
           --health-interval 2s
           --health-timeout 2s
           --health-retries 15
@@ -65,33 +65,74 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Bootstrap non-privileged PostgreSQL application role
+        run: |
+          psql -h 127.0.0.1 -U postgres -d dahlia -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE EXTENSION vector;
+          CREATE ROLE dahlia LOGIN NOBYPASSRLS;
+          GRANT CONNECT, CREATE ON DATABASE dahlia TO dahlia;
+          CREATE DATABASE dahlia_header OWNER dahlia;
+          SQL
+
       - name: Validate Server application
         run: pnpm check
+
+      - name: Validate shared PostgreSQL migration in header mode
+        run: |
+          pnpm db:migrate
+          psql "$DAHLIA_DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
+          DO $$
+          BEGIN
+            IF to_regnamespace('auth') IS NULL THEN
+              RAISE EXCEPTION 'header migration did not create auth schema';
+            END IF;
+            IF to_regclass('auth.user') IS NULL THEN
+              RAISE EXCEPTION 'header migration did not create auth user table';
+            END IF;
+            IF to_regclass('drizzle.__dahlia_auth_migrations') IS NULL THEN
+              RAISE EXCEPTION 'header migration did not create auth ledger';
+            END IF;
+            IF to_regclass('drizzle.__dahlia_server_migrations') IS NULL THEN
+              RAISE EXCEPTION 'header migration did not create application ledger';
+            END IF;
+          END
+          $$;
+          SQL
+        env:
+          DAHLIA_AUTH_TYPE: header
+          DAHLIA_DATABASE_TYPE: postgres
+          DAHLIA_DATABASE_URL: postgresql://dahlia@127.0.0.1:5432/dahlia_header
 
       - name: Validate PostgreSQL migration
         run: pnpm db:migrate
         env:
-          DAHLIA_AUTH_PROVIDER: accounts
+          DAHLIA_AUTH_TYPE: accounts
           DAHLIA_DATABASE_TYPE: postgres
           DAHLIA_DATABASE_URL: postgresql://dahlia@127.0.0.1:5432/dahlia
-          DAHLIA_BASE_URL: https://dahlia.example
+          DAHLIA_APP_URL: https://dahlia.example
           BETTER_AUTH_SECRET: test-only-better-auth-secret-value
           GOOGLE_CLIENT_ID: test-google-client-id
           GOOGLE_CLIENT_SECRET: test-google-client-secret
           DAHLIA_OAUTH_REDIRECT_URIS: http://127.0.0.1:1455/oauth/callback,http://localhost:8020
+          DAHLIA_AI_BACKEND: databricks
+          DATABRICKS_HOST: https://workspace.example.databricks.com
+          DATABRICKS_CLIENT_ID: test-app-client-id
+          DATABRICKS_CLIENT_SECRET: test-app-client-secret
+          DAHLIA_SEARCH_EMBEDDING_MODEL: test-embedding-model
+          DAHLIA_SEARCH_EMBEDDING_DIMENSIONS: 32
 
       - name: Validate PostgreSQL application store
-        run: pnpm exec vitest run tests/postgres-store.test.ts
+        run: pnpm exec vitest run tests/postgres-store.test.ts tests/sync-sqlite.test.ts
         env:
           TEST_DATABASE_URL: postgresql://dahlia@127.0.0.1:5432/dahlia
 
       - name: Validate SQLite migration
         run: pnpm db:migrate
         env:
-          DAHLIA_AUTH_PROVIDER: accounts
+          DAHLIA_AUTH_TYPE: accounts
           DAHLIA_DATABASE_TYPE: sqlite
           DAHLIA_DATABASE_URL: file:/tmp/dahlia-auth.sqlite
-          DAHLIA_BASE_URL: http://localhost:5173
+          DAHLIA_APP_URL: http://localhost:5173
           BETTER_AUTH_SECRET: test-only-better-auth-secret-value
           GOOGLE_CLIENT_ID: test-google-client-id
           GOOGLE_CLIENT_SECRET: test-google-client-secret

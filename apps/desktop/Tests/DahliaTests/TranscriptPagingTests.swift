@@ -66,7 +66,7 @@
                     text: "preview",
                     translatedText: nil,
                     isConfirmed: false,
-                    speakerLabel: "mic"
+                    audioSource: "mic"
                 ).insert(db)
                 try TranscriptSegmentRecord(
                     id: .v7(),
@@ -75,7 +75,7 @@
                     text: "other meeting",
                     translatedText: nil,
                     isConfirmed: true,
-                    speakerLabel: "mic"
+                    audioSource: "mic"
                 ).insert(db)
             }
             let repository = MeetingRepository(dbQueue: fixture.database.dbQueue)
@@ -174,7 +174,7 @@
                 startTime: .now,
                 text: "stale preview",
                 isConfirmed: false,
-                speakerLabel: "mic"
+                audioSource: "mic"
             ), forSource: "mic")
             #expect(store.segments.contains(where: { !$0.isConfirmed }))
 
@@ -330,6 +330,7 @@
                     text: deferred.text,
                     translatedText: nil,
                     isConfirmed: true,
+                    audioSource: deferred.audioSource,
                     speakerLabel: deferred.speakerLabel
                 ).insert(db)
             }
@@ -534,7 +535,7 @@
                     text: "segment-\(index)",
                     translatedText: nil,
                     isConfirmed: true,
-                    speakerLabel: "mic"
+                    audioSource: "mic"
                 ).insert(db)
             }
         }

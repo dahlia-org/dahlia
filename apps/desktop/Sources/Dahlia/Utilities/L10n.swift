@@ -1824,6 +1824,14 @@ enum L10n { // swiftlint:disable:this type_body_length
         localized: "A Dahlia connection already exists for this server.",
         bundle: bundle
     ) }
+    static var dahliaCloudAccountChanged: String { String(
+        localized: "Sign in with the same Dahlia account, or add a new connection.",
+        bundle: bundle
+    ) }
+    static var dahliaAccountPendingServerDeletion: String { String(
+        localized: "Wait for the pending Server data deletion before signing out or removing this connection.",
+        bundle: bundle
+    ) }
     static var dahliaAccountsDescription: String { String(
         localized: "Manage the Dahlia Cloud and Server sign-ins used by Dahlia.",
         bundle: bundle
@@ -1878,6 +1886,31 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var comingSoon: String { String(localized: "Coming Soon", bundle: bundle) }
     static var loadingVaults: String { String(localized: "Loading Vaults…", bundle: bundle) }
     static var removingVault: String { String(localized: "Removing Vault…", bundle: bundle) }
+    static var vaultSync: String { String(localized: "Sync to Dahlia Server", bundle: bundle) }
+    static var vaultSyncDescription: String { String(
+        localized: "Privately sync summaries, original transcripts, screenshots, OCR text, and image captions.",
+        bundle: bundle
+    ) }
+    static var vaultSyncRequiresAccount: String { String(
+        localized: "Choose a signed-in Dahlia account before enabling sync.",
+        bundle: bundle
+    ) }
+    static var vaultSyncRequiresReauthentication: String { String(
+        localized: "Reconnect this Dahlia account to grant sync access.",
+        bundle: bundle
+    ) }
+    static var deleteServerCopy: String { String(localized: "Delete Server Copy", bundle: bundle) }
+    static var deleteServerCopyDescription: String { String(
+        localized: "Server data will be deleted in resumable batches. Local meeting data is not deleted.",
+        bundle: bundle
+    ) }
+    static var confirmBulkMeetingDeletion: String { String(localized: "Confirm Meeting Deletions", bundle: bundle) }
+    static var continueDeletion: String { String(localized: "Continue Deleting", bundle: bundle) }
+
+    static func confirmBulkMeetingDeletionDescription(_ count: Int) -> String {
+        String(localized: "\(count) server meeting deletions are waiting. Continue deleting them?", bundle: bundle)
+    }
+
     static var appearance: String { String(localized: "Appearance", bundle: bundle) }
     static var display: String { String(localized: "Display", bundle: bundle) }
     static var meetingSidebar: String { String(localized: "Meeting Sidebar", bundle: bundle) }

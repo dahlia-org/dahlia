@@ -133,6 +133,7 @@ enum DahliaCloudError: LocalizedError, Equatable {
     case noCredential
     case credentialStorageFailed
     case duplicateConnection
+    case accountChanged
 
     var errorDescription: String? {
         switch self {
@@ -158,6 +159,8 @@ enum DahliaCloudError: LocalizedError, Equatable {
             L10n.dahliaCredentialStorageFailed
         case .duplicateConnection:
             L10n.dahliaConnectionAlreadyExists
+        case .accountChanged:
+            L10n.dahliaCloudAccountChanged
         }
     }
 }

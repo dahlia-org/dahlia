@@ -39,20 +39,20 @@ Use the [ADR index](../../docs/adr/README.md) only when historical rationale or 
 - Enforce request byte limits before parsing or buffering. Stream Responses and artifact bodies without buffering the complete payload.
 - Header authentication is safe only behind a proxy that strips client-supplied identity headers, writes verified values, and prevents direct Server access. Do not weaken that deployment requirement with trust-by-header fallback logic.
 - With the Databricks backend, use `X-Forwarded-Access-Token` only for the current Responses request. Do not store, log, cache, return, or forward that header by name. Model discovery uses the App service principal and must not use the forwarded token.
-- Personal workspaces are deterministic identity claims. Do not add organizations, invitations, team sharing, per-organization providers, automatic recording uploads, or meeting cloud sync without an approved product and architecture decision.
+- Personal workspaces are deterministic identity claims. Organization and Team sharing must preserve personal Vault ownership and read-only member access; do not add per-organization providers or shared write access without an approved product and architecture decision.
 - Artifact IDs remain server-generated UUIDv7 values, owner-scoped, and default-private. Preserve authorization-before-storage access, streamed reads, the CSP sandbox, and non-disclosure of storage URLs and credentials.
 
 ## Database and Migrations
 
-- Better Auth and Dahlia application tables share one Drizzle application database. Node supports SQLite, PostgreSQL, and Lakebase; Workers support D1, Hyperdrive, and direct PostgreSQL.
+- Better Auth and Dahlia application tables share one Drizzle application database. All authentication modes use the generated `auth` tables, `core` for application and sharing state, and `content` for synchronized meeting data. Header mode projects validated users into `auth.user` without starting the Better Auth runtime. References flow only from `content` to `core` to `auth`. Node supports SQLite, PostgreSQL, and Lakebase; Workers support D1, Hyperdrive, and direct PostgreSQL.
 - Released migrations are immutable. Add forward-only migrations; never edit, reorder, or silently omit an existing migration.
 - Treat the Drizzle schemas as the source of truth and use Drizzle Kit to generate migrations. Hand-write SQL only for data migrations or DDL that Drizzle cannot express, using a new custom migration while keeping the declarative schema synchronized.
 - `pnpm db:generate-auth` uses the pinned official Better Auth CLI to regenerate only `src/db/generated/postgres-auth-schema.ts` and `src/db/generated/sqlite-auth-schema.ts`. Keep those outputs unmodified and keep Dahlia-owned tables in the adjacent dialect-specific app schema files.
 - Better Auth tables live in the PostgreSQL `auth` schema and are outside the application RLS policy. SQLite and D1 have no schema namespaces, so their Better Auth tables remain top-level. Do not add RLS or hand-written DDL to generated Better Auth declarations.
-- PostgreSQL tables containing Dahlia-owned user content require declaratively defined RLS policies in addition to application authorization. The policy design must identify the request identity source and account for table-owner and privileged-role RLS bypass.
+- PostgreSQL tables containing Dahlia-owned user content require declaratively defined RLS policies in addition to application authorization. RLS receives only transaction-local `app.user_id`, resolves organization and Team membership from `auth.member` and `auth.team_member`, and must account for table-owner and privileged-role RLS bypass.
 - SQLite and D1 do not provide PostgreSQL RLS. Keep equivalent owner checks in the shared application/store layer; never remove them because PostgreSQL has RLS.
-- `dahlia.artifact` is exempt from RLS while it contains only authorization/storage metadata and is reachable only through owner-scoped Server operations. Revisit the exemption before storing user content or exposing another database access path.
-- Drizzle Kit owns both `drizzle/postgres` and `drizzle/sqlite`. Run `pnpm db:generate` after declarative schema changes, preserve generated snapshots after release, and register each generated `migration.sql` package-relative path in `src/migrations.ts`; add a directory only for an independent migration ledger root.
+- `core.artifact` is exempt from RLS while it contains only authorization/storage metadata and is reachable only through owner-scoped Server operations. Revisit the exemption before storing user content or exposing another database access path.
+- Drizzle Kit owns `drizzle/postgres-auth`, `drizzle/postgres`, and `drizzle/sqlite`. Run `pnpm db:generate` after declarative schema changes, preserve generated snapshots after release, and register each generated `migration.sql` package-relative path in `src/migrations.ts`; add a directory only for an independent migration ledger root.
 - Migration execution is explicit. Do not run production migrations or destructive cleanup as an incidental validation step.
 
 ## Configuration and Public Surface

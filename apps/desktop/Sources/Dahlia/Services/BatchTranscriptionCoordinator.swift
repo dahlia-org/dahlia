@@ -879,7 +879,7 @@ extension BatchTranscriptionCoordinator {
 private func sortedTranscriptSegments(_ segments: [TranscriptSegment]) -> [TranscriptSegment] {
     segments.sorted { lhs, rhs in
         if lhs.startTime == rhs.startTime {
-            return (lhs.speakerLabel ?? "") < (rhs.speakerLabel ?? "")
+            return (lhs.audioSource ?? "") < (rhs.audioSource ?? "")
         }
         return lhs.startTime < rhs.startTime
     }

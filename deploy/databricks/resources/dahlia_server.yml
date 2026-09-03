@@ -6,12 +6,12 @@ resources:
       comment: Dahlia Server resources for ${bundle.target}
 
   volumes:
-    dahlia_artifacts:
+    dahlia_storage:
       catalog_name: ${var.catalog}
       schema_name: ${resources.schemas.dahlia.name}
       name: ${var.volume_name}
       volume_type: MANAGED
-      comment: Dahlia Server artifact bytes for ${bundle.target}
+      comment: Dahlia Server stored content for ${bundle.target}
 
   postgres_projects:
     dahlia_database_project:
@@ -30,8 +30,6 @@ resources:
       config:
         command: ["corepack", "pnpm", "start:databricks"]
         env:
-          - name: DAHLIA_ADMIN_EMAIL
-            value: ${var.admin_email}
           - name: DAHLIA_AUTH_TYPE
             value: header
           - name: DAHLIA_AI_BACKEND
@@ -39,9 +37,15 @@ resources:
           - name: DAHLIA_STORAGE_BACKEND
             value: databricks
           - name: DAHLIA_STORAGE_DATABRICKS_VOLUME_PATH
-            value: /Volumes/${resources.volumes.dahlia_artifacts.catalog_name}/${resources.volumes.dahlia_artifacts.schema_name}/${resources.volumes.dahlia_artifacts.name}
+            value: /Volumes/${resources.volumes.dahlia_storage.catalog_name}/${resources.volumes.dahlia_storage.schema_name}/${resources.volumes.dahlia_storage.name}
           - name: DAHLIA_DATABASE_TYPE
             value: lakebase
+          - name: DAHLIA_SEARCH_EMBEDDING_MODEL
+            value: ${var.search_embedding_model}
+          - name: DAHLIA_SEARCH_EMBEDDING_DIMENSIONS
+            value: ${var.search_embedding_dimensions}
+          - name: DAHLIA_SYNC_SHARING_ENABLED
+            value: ${var.sync_sharing_enabled}
           - name: LAKEBASE_ENDPOINT
             value_from: postgres
       resources:
@@ -50,8 +54,8 @@ resources:
             branch: ${resources.postgres_projects.dahlia_database_project.id}/branches/production
             database: ${resources.postgres_projects.dahlia_database_project.id}/branches/production/databases/databricks-postgres
             permission: CAN_CONNECT_AND_CREATE
-        - name: artifacts
+        - name: storage
           uc_securable:
             securable_type: VOLUME
-            securable_full_name: ${resources.volumes.dahlia_artifacts.catalog_name}.${resources.volumes.dahlia_artifacts.schema_name}.${resources.volumes.dahlia_artifacts.name}
+            securable_full_name: ${resources.volumes.dahlia_storage.catalog_name}.${resources.volumes.dahlia_storage.schema_name}.${resources.volumes.dahlia_storage.name}
             permission: WRITE_VOLUME

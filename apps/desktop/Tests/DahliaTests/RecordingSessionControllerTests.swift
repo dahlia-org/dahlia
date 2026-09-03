@@ -881,7 +881,7 @@
                 await onEvent(.failure(
                     sessionId: recordingSessionId,
                     pipelineID: pipelineID,
-                    sourceLabel: source.speakerLabel,
+                    sourceLabel: source.audioSource,
                     message: "recognition failed during start"
                 ))
             }

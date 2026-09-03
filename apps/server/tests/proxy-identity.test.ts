@@ -54,4 +54,33 @@ describe("proxy identity boundary", () => {
     await expect(new IdentityService(config).fromBrowser(new Request("https://dahlia.example/api/session")))
       .rejects.toThrow("X-Forwarded-Email is missing");
   });
+
+  it("projects the verified header identity before returning it", async () => {
+    const projected: string[] = [];
+    const identities = new IdentityService(headerConfig("X-Forwarded-Email"), undefined, async (identity) => {
+      projected.push(identity.userId);
+      return true;
+    });
+
+    await identities.fromBrowser(new Request("https://dahlia.example/api/session", {
+      headers: {
+        "X-Forwarded-Email": "user@example.com",
+        "X-Forwarded-User": "stable-user-id",
+      },
+    }));
+
+    expect(projected).toEqual(["stable-user-id"]);
+  });
+
+  it("fails closed when the header identity conflicts with the user directory", async () => {
+    const identities = new IdentityService(
+      headerConfig("X-Forwarded-Email"),
+      undefined,
+      () => Promise.resolve(false),
+    );
+
+    await expect(identities.fromBrowser(new Request("https://dahlia.example/api/session", {
+      headers: { "X-Forwarded-Email": "user@example.com" },
+    }))).rejects.toThrow("identity_projection_failed");
+  });
 });

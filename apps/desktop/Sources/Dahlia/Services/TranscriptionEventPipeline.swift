@@ -252,7 +252,7 @@ actor TranscriptionEventPipeline { // swiftlint:disable:this type_body_length
     private func enqueueUIEvent(_ event: TranscriptionEvent) {
         switch event {
         case let .preview(segment):
-            let key = PreviewKey(sessionId: segment.sessionId, sourceLabel: segment.speakerLabel)
+            let key = PreviewKey(sessionId: segment.sessionId, sourceLabel: segment.audioSource)
             compactUIProjectionIfNeeded()
             latestPreviews[key] = event
             guard previewSequences[key] == nil else { return }
@@ -261,7 +261,7 @@ actor TranscriptionEventPipeline { // swiftlint:disable:this type_body_length
             previewSequences[key] = sequence
 
         case let .finalized(segment):
-            discardPendingPreview(sessionId: segment.sessionId, sourceLabel: segment.speakerLabel)
+            discardPendingPreview(sessionId: segment.sessionId, sourceLabel: segment.audioSource)
             if segment.isConfirmed {
                 appendReloadableUIItem(.reloadableEvent(event))
             } else {
@@ -382,7 +382,7 @@ actor TranscriptionEventPipeline { // swiftlint:disable:this type_body_length
     private func uiControlKey(for event: TranscriptionEvent) -> UIControlKey {
         switch event {
         case let .finalized(segment):
-            .previewState(sessionId: segment.sessionId, sourceLabel: segment.speakerLabel)
+            .previewState(sessionId: segment.sessionId, sourceLabel: segment.audioSource)
         case let .clearPreview(sessionId, sourceLabel):
             .previewState(sessionId: sessionId, sourceLabel: sourceLabel)
         case let .previewTranslation(sessionId, segmentID, _):

@@ -68,6 +68,7 @@ struct TranscriptSegment: Identifiable, Equatable {
     var text: String
     var translatedText: String?
     var isConfirmed: Bool
+    var audioSource: String?
     var speakerLabel: String?
     var audioFeatures: TranscriptAudioFeatures?
 
@@ -97,6 +98,7 @@ struct TranscriptSegment: Identifiable, Equatable {
         text: String,
         translatedText: String? = nil,
         isConfirmed: Bool = false,
+        audioSource: String? = nil,
         speakerLabel: String? = nil,
         audioFeatures: TranscriptAudioFeatures? = nil
     ) {
@@ -107,6 +109,7 @@ struct TranscriptSegment: Identifiable, Equatable {
         self.text = text
         self.translatedText = translatedText
         self.isConfirmed = isConfirmed
+        self.audioSource = audioSource
         self.speakerLabel = speakerLabel
         self.audioFeatures = audioFeatures
     }
@@ -120,6 +123,7 @@ struct TranscriptSegment: Identifiable, Equatable {
         self.text = record.text
         self.translatedText = record.translatedText
         self.isConfirmed = record.isConfirmed
+        self.audioSource = record.audioSource
         self.speakerLabel = record.speakerLabel
         self.audioFeatures = record.audioFeatures
     }

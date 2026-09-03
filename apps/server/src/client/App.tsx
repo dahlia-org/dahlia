@@ -1,5 +1,5 @@
 import { createAuthClient } from "better-auth/react";
-import { useCallback, useEffect, useState, type ComponentType, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ComponentType, type ReactNode } from "react";
 
 import {
   artifactViewerId,
@@ -71,9 +71,10 @@ interface DeviceSession {
 }
 
 interface AdminMember {
+  id: string;
+  name: string;
   email: string;
   role: "admin";
-  source: "database" | "environment";
   removable: boolean;
 }
 
@@ -88,6 +89,102 @@ interface ArtifactInfo {
 interface ArtifactPage {
   items: ArtifactInfo[];
   nextCursor?: string;
+}
+
+interface SyncedVaultInfo {
+  vaultId: string;
+  name: string;
+  role: "owner" | "member";
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface OrganizationInfo {
+  id: string;
+  name: string;
+  slug: string;
+}
+
+interface OrganizationMember {
+  id: string;
+  userId: string;
+  role: string;
+  user: { name: string; email: string };
+}
+
+interface OrganizationInvitation {
+  id: string;
+  organizationId: string;
+  organizationName?: string;
+  email: string;
+  role: string;
+  status: string;
+  expiresAt: string;
+}
+
+interface TeamInfo {
+  id: string;
+  name: string;
+  organizationId: string;
+}
+
+interface TeamMember {
+  id: string;
+  userId: string;
+  teamId: string;
+}
+
+interface VaultPermissionInfo {
+  principalType: "user" | "organization" | "team";
+  principalId: string;
+  role: "owner" | "member";
+}
+
+interface SyncedMeetingInfo {
+  meetingId: string;
+  vaultId: string;
+  projectId?: string;
+  name: string;
+  description: string;
+  status: string;
+  duration?: number;
+  recordingStartedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+  summaryTitle?: string;
+  summaryDocument?: string;
+}
+
+interface SyncedTranscriptSegmentInfo {
+  segmentId: string;
+  startTime: string;
+  endTime?: string;
+  text: string;
+  isConfirmed: boolean;
+  audioSource?: string;
+  speakerLabel?: string;
+}
+
+interface SyncedProjectInfo {
+  projectId: string;
+  vaultId: string;
+  parentProjectId?: string;
+  name: string;
+  description: string;
+  projectType?: "customer" | "internal" | "personal" | "undefined";
+  effectiveType: "customer" | "internal" | "personal" | "undefined";
+  revision: number;
+  path: string;
+  directMeetingCount: number;
+  subtreeMeetingCount: number;
+}
+
+interface SyncedScreenshotInfo {
+  screenshotId: string;
+  capturedAt: string;
+  contentType: string;
+  ocrText?: string;
+  caption?: string;
 }
 
 class RequestError extends Error {
@@ -147,9 +244,11 @@ function SignIn({ brand }: { brand: DashboardBrand }) {
 
   async function signIn() {
     setError(undefined);
-    setError(await beginSignIn(window.location.search
-      ? `/api/auth/oauth2/authorize${window.location.search}`
-      : "/dashboard"));
+    const params = new URLSearchParams(window.location.search);
+    const next = params.get("next");
+    const safeNext = next?.startsWith("/") && !next.startsWith("//") ? next : undefined;
+    setError(await beginSignIn(safeNext
+      ?? (params.has("client_id") ? `/api/auth/oauth2/authorize${window.location.search}` : "/dashboard")));
   }
 
   return (
@@ -160,8 +259,8 @@ function SignIn({ brand }: { brand: DashboardBrand }) {
           <span className="eyebrow">Personal AI gateway</span>
           <h1>Use the model configured for your Dahlia deployment.</h1>
           <p>
-            Audio, transcripts, and local recordings stay on your Mac. {brand.name} {brand.product} only brokers
-            Codex requests.
+            Audio and local recordings stay on your Mac. When you enable Vault sync, meeting summaries,
+            transcripts, screenshots, OCR text, and captions are stored privately on this server.
           </p>
         </div>
         <button className="primary full" onClick={() => void signIn()}>
@@ -227,6 +326,12 @@ function Shell({
         <nav aria-label="Account navigation">
           <a className={route === "/dashboard" ? "active" : ""} href="/dashboard">Overview</a>
           <a className={route === "/artifacts" ? "active" : ""} href="/artifacts">Artifacts</a>
+          {session.capabilities.sync && (
+            <a className={route.startsWith("/vaults") ? "active" : ""} href="/vaults">Vaults</a>
+          )}
+          {session.capabilities.sharing && (
+            <a className={route === "/organizations" ? "active" : ""} href="/organizations">Organizations</a>
+          )}
           {extensions.flatMap((extension) => extension.navigation ?? []).map((item) => (
             (!item.capability || session.capabilities[item.capability])
               ? <a className={route === item.path ? "active" : ""} href={item.path} key={item.path}>{item.label}</a>
@@ -381,6 +486,749 @@ function Artifacts() {
             {loadingMore ? "Loading…" : "Load more"}
           </button>
         )}
+      </section>
+    </>
+  );
+}
+
+function Vaults() {
+  const [vaults, setVaults] = useState<SyncedVaultInfo[]>();
+  const [error, setError] = useState<string>();
+  useEffect(() => {
+    void json<{ items: SyncedVaultInfo[] }>("/api/v1/vaults")
+      .then(({ items }) => setVaults(items))
+      .catch((caught: Error) => setError(caught.message));
+  }, []);
+  return (
+    <>
+      <PageHeader title="Vaults" />
+      <section className="section-block">
+        <h2 className="section-label">Synchronized Vaults</h2>
+        <div className="panel artifact-list">
+          {!vaults && !error && <p className="muted">Loading Vaults…</p>}
+          {vaults?.length === 0 && <div className="empty-state"><strong>No synchronized Vaults</strong></div>}
+          {vaults?.map((vault) => (
+            <a className="artifact-row" href={`/vaults/${vault.vaultId}`} key={vault.vaultId}>
+              <span className="artifact-copy">
+                <strong>{vault.name}</strong>
+                <span>{vault.role === "owner" ? "Owned by you" : "Shared with you"} · Updated {new Date(vault.updatedAt).toLocaleString()}</span>
+              </span>
+            </a>
+          ))}
+        </div>
+        {error && <p className="error artifact-error">{error}</p>}
+      </section>
+    </>
+  );
+}
+
+function VaultSharing({ session, vault }: { session: SessionInfo; vault: SyncedVaultInfo }) {
+  const [permissions, setPermissions] = useState<VaultPermissionInfo[]>();
+  const [organizations, setOrganizations] = useState<OrganizationInfo[]>([]);
+  const [teams, setTeams] = useState<TeamInfo[]>([]);
+  const [error, setError] = useState<string>();
+  const load = useCallback(async () => {
+    setError(undefined);
+    try {
+      const [{ items }, organizationItems] = await Promise.all([
+        json<{ items: VaultPermissionInfo[] }>(`/api/v1/vaults/${vault.vaultId}/permissions`),
+        session.capabilities.sessions
+          ? json<OrganizationInfo[]>("/api/auth/organization/list")
+          : json<OrganizationInfo[]>("/api/v1/organizations"),
+      ]);
+      const teamItems = (await Promise.all(organizationItems.map((organization) =>
+        session.capabilities.sessions
+          ? json<TeamInfo[]>(`/api/auth/organization/list-teams?organizationId=${encodeURIComponent(organization.id)}`)
+          : json<TeamInfo[]>(`/api/v1/organizations/${encodeURIComponent(organization.id)}/teams`)
+      ))).flat();
+      setPermissions(items);
+      setOrganizations(organizationItems);
+      setTeams(teamItems);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not load sharing settings");
+    }
+  }, [session.capabilities.sessions, vault.vaultId]);
+  useEffect(() => { void load(); }, [load]);
+
+  async function toggle(principalType: "organization" | "team", principalId: string, enabled: boolean) {
+    setError(undefined);
+    try {
+      const target = `${principalType === "organization" ? "organizations" : "teams"}/${encodeURIComponent(principalId)}`;
+      await json(`/api/v1/vaults/${vault.vaultId}/permissions/${target}`, {
+        method: enabled ? "PUT" : "DELETE",
+      });
+      await load();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not update sharing");
+    }
+  }
+
+  const shared = (principalType: VaultPermissionInfo["principalType"], principalId: string) =>
+    permissions?.some((permission) => permission.role === "member"
+      && permission.principalType === principalType
+      && permission.principalId === principalId) === true;
+  const permissionLabel = (permission: VaultPermissionInfo) => {
+    if (permission.principalType === "organization") {
+      return organizations.find(({ id }) => id === permission.principalId)?.name ?? "Organization";
+    }
+    if (permission.principalType === "team") {
+      return teams.find(({ id }) => id === permission.principalId)?.name ?? "Team";
+    }
+    return "Shared directly with you";
+  };
+  return (
+    <section className="section-block">
+      <h2 className="section-label">Sharing</h2>
+      <div className="panel share-list">
+        {!permissions && !error && <p className="muted">Loading sharing settings…</p>}
+        {vault.role === "member" && permissions && (
+          <>
+            <p className="muted">This Vault was shared with you. Only its owner can change access.</p>
+            {permissions.map((permission) => (
+              <div className="share-row" key={`${permission.principalType}-${permission.principalId}`}>
+                <span>
+                  <strong>{permissionLabel(permission)}</strong>
+                  <small>Read-only access</small>
+                </span>
+              </div>
+            ))}
+          </>
+        )}
+        {vault.role === "owner" && organizations.length === 0 && permissions && (
+          <div className="empty-state"><strong>No organizations</strong><span>Create one from Organizations first.</span></div>
+        )}
+        {vault.role === "owner" && organizations.map((organization) => (
+          <label className="share-row" key={organization.id}>
+            <span><strong>{organization.name}</strong><small>{organization.slug}</small></span>
+            <input
+              type="checkbox"
+              checked={shared("organization", organization.id)}
+              onChange={(event) => void toggle("organization", organization.id, event.target.checked)}
+            />
+          </label>
+        ))}
+        {vault.role === "owner" && teams.map((team) => (
+          <label className="share-row" key={team.id}>
+            <span><strong>{team.name}</strong><small>Team · read-only access</small></span>
+            <input
+              type="checkbox"
+              checked={shared("team", team.id)}
+              onChange={(event) => void toggle("team", team.id, event.target.checked)}
+            />
+          </label>
+        ))}
+      </div>
+      {error && <p className="error artifact-error">{error}</p>}
+    </section>
+  );
+}
+
+function VaultMeetings({ session, vaultId }: { session: SessionInfo; vaultId: string }) {
+  const [vault, setVault] = useState<SyncedVaultInfo>();
+  const [projects, setProjects] = useState<SyncedProjectInfo[]>([]);
+  const [meetings, setMeetings] = useState<SyncedMeetingInfo[]>();
+  const [query, setQuery] = useState("");
+  const [projectId, setProjectId] = useState("");
+  const [error, setError] = useState<string>();
+  useEffect(() => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      const params = new URLSearchParams();
+      if (query) params.set("q", query);
+      if (projectId) params.set("projectId", projectId);
+      const suffix = params.size ? `?${params}` : "";
+      void json<{ items: SyncedMeetingInfo[] }>(`/api/v1/vaults/${vaultId}/meetings${suffix}`, {
+        signal: controller.signal,
+      }).then(({ items }) => {
+        setError(undefined);
+        setMeetings(items);
+      }).catch((caught: Error) => {
+        if (caught.name !== "AbortError") setError(caught.message);
+      });
+    }, 250);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [projectId, query, vaultId]);
+  useEffect(() => {
+    void Promise.all([
+      json<SyncedVaultInfo>(`/api/v1/vaults/${vaultId}`),
+      json<{ items: SyncedProjectInfo[] }>(`/api/v1/vaults/${vaultId}/projects`),
+    ]).then(([vaultValue, projectPage]) => {
+      setVault(vaultValue);
+      setProjects(projectPage.items);
+    })
+      .catch((caught: Error) => setError(caught.message));
+  }, [vaultId]);
+  return (
+    <>
+      <PageHeader title={vault?.name ?? "Vault"} />
+      <section className="section-block">
+        <a className="secondary viewer-back" href="/vaults">All Vaults</a>
+        {projects.length > 0 && (
+          <select aria-label="Filter by Project" value={projectId} onChange={(event) => setProjectId(event.target.value)}>
+            <option value="">All Projects</option>
+            {projects.map((project) => <option key={project.projectId} value={project.projectId}>{project.path}</option>)}
+          </select>
+        )}
+        <input
+          className="model-search"
+          aria-label="Search meetings"
+          placeholder="Search meetings"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+        />
+        <div className="panel artifact-list">
+          {!meetings && !error && <p className="muted">Loading meetings…</p>}
+          {meetings?.length === 0 && <div className="empty-state"><strong>No meetings found</strong></div>}
+          {meetings?.map((meeting) => (
+            <a
+              className="artifact-row"
+              href={`/vaults/${vaultId}/meetings/${meeting.meetingId}`}
+              key={meeting.meetingId}
+            >
+              <span className="artifact-copy">
+                <strong>{meeting.name}</strong>
+                <span>{new Date(meeting.createdAt).toLocaleString()} · {meeting.status}</span>
+              </span>
+            </a>
+          ))}
+        </div>
+        {error && <p className="error artifact-error">{error}</p>}
+      </section>
+      {projects.length > 0 && (
+        <section className="section-block">
+          <h2 className="section-label">Projects</h2>
+          <div className="panel artifact-list">
+            {projects.map((project) => (
+              <a className="artifact-row" href={`/vaults/${vaultId}/projects/${project.projectId}`} key={project.projectId}>
+                <span className="artifact-copy"><strong>{project.path}</strong><span>{project.subtreeMeetingCount} meetings</span></span>
+              </a>
+            ))}
+          </div>
+        </section>
+      )}
+      {session.capabilities.sharing && vault && <VaultSharing session={session} vault={vault} />}
+    </>
+  );
+}
+
+function SyncedProject({ vaultId, projectId }: { vaultId: string; projectId: string }) {
+  const [project, setProject] = useState<SyncedProjectInfo>();
+  const [meetings, setMeetings] = useState<SyncedMeetingInfo[]>([]);
+  const [error, setError] = useState<string>();
+  useEffect(() => {
+    const controller = new AbortController();
+    void Promise.all([
+      json<SyncedProjectInfo>(`/api/v1/vaults/${vaultId}/projects/${projectId}`, { signal: controller.signal }),
+      json<{ items: SyncedMeetingInfo[] }>(`/api/v1/vaults/${vaultId}/meetings?projectId=${projectId}`, { signal: controller.signal }),
+    ]).then(([projectValue, meetingPage]) => {
+      setProject(projectValue);
+      setMeetings(meetingPage.items);
+    }).catch((caught: Error) => {
+      if (caught.name !== "AbortError") setError(caught.message);
+    });
+    return () => controller.abort();
+  }, [projectId, vaultId]);
+  return <>
+    <PageHeader title={project?.path ?? "Project"} />
+    <a className="secondary viewer-back" href={`/vaults/${vaultId}`}>Back to Vault</a>
+    {error && <p className="error">{error}</p>}
+    {project && <section className="section-block"><div className="panel meeting-content">
+      {project.description && <p>{project.description}</p>}
+      <p className="muted">{project.effectiveType} · revision {project.revision} · {project.subtreeMeetingCount} meetings</p>
+    </div></section>}
+    <section className="section-block"><h2 className="section-label">Meetings</h2><div className="panel artifact-list">
+      {meetings.length === 0 && <div className="empty-state"><strong>No meetings</strong></div>}
+      {meetings.map((meeting) => <a className="artifact-row" href={`/vaults/${vaultId}/meetings/${meeting.meetingId}`} key={meeting.meetingId}>
+        <span className="artifact-copy"><strong>{meeting.name}</strong><span>{new Date(meeting.createdAt).toLocaleString()}</span></span>
+      </a>)}
+    </div></section>
+  </>;
+}
+
+function SyncedMeeting({ vaultId, meetingId }: { vaultId: string; meetingId: string }) {
+  const base = `/api/v1/vaults/${vaultId}/meetings/${meetingId}`;
+  const [meeting, setMeeting] = useState<SyncedMeetingInfo>();
+  const [transcript, setTranscript] = useState<SyncedTranscriptSegmentInfo[]>();
+  const [screenshots, setScreenshots] = useState<SyncedScreenshotInfo[]>();
+  const [error, setError] = useState<string>();
+  useEffect(() => {
+    const controller = new AbortController();
+    void Promise.all([
+      json<SyncedMeetingInfo>(base, { signal: controller.signal }),
+      json<{ items: SyncedTranscriptSegmentInfo[] }>(`${base}/transcript`, { signal: controller.signal }),
+      json<{ items: SyncedScreenshotInfo[] }>(`${base}/screenshots`, { signal: controller.signal }),
+    ]).then(([meetingValue, transcriptPage, screenshotPage]) => {
+      setMeeting(meetingValue);
+      setTranscript(transcriptPage.items);
+      setScreenshots(screenshotPage.items);
+    }).catch((caught: Error) => {
+      if (caught.name !== "AbortError") setError(caught.message);
+    });
+    return () => controller.abort();
+  }, [base]);
+  return (
+    <>
+      <PageHeader title={meeting?.name ?? "Meeting"} />
+      <a className="secondary viewer-back" href={`/vaults/${vaultId}`}>All meetings</a>
+      {error && <p className="error">{error}</p>}
+      {!meeting && !error && <p className="muted">Loading meeting…</p>}
+      {meeting?.summaryDocument && (
+        <section className="section-block">
+          <h2 className="section-label">{meeting.summaryTitle || "Summary"}</h2>
+          <div className="panel meeting-content"><pre>{meeting.summaryDocument}</pre></div>
+        </section>
+      )}
+      {transcript && (
+        <section className="section-block">
+          <h2 className="section-label">Transcript</h2>
+          <div className="panel meeting-content">
+            {transcript.slice(0, 500).map((segment) => (
+              <p key={segment.segmentId}>
+                {segment.speakerLabel && <strong>{segment.speakerLabel}: </strong>}{segment.text}
+              </p>
+            ))}
+            {transcript.length > 500 && <p className="muted">Showing the first 500 transcript segments.</p>}
+          </div>
+        </section>
+      )}
+      {screenshots && screenshots.length > 0 && (
+        <section className="section-block">
+          <h2 className="section-label">Screenshots</h2>
+          <div className="screenshot-grid">
+            {screenshots.map((screenshot) => (
+              <figure className="panel" key={screenshot.screenshotId}>
+                <img
+                  src={`${base}/screenshots/${screenshot.screenshotId}/content`}
+                  alt={screenshot.caption || ""}
+                  loading="lazy"
+                />
+                {(screenshot.caption || screenshot.ocrText) && <figcaption>{screenshot.caption || screenshot.ocrText}</figcaption>}
+              </figure>
+            ))}
+          </div>
+        </section>
+      )}
+    </>
+  );
+}
+
+function OrganizationCard({
+  organization,
+  session,
+  reloadOrganizations,
+}: {
+  organization: OrganizationInfo;
+  session: SessionInfo;
+  reloadOrganizations: () => void;
+}) {
+  const [members, setMembers] = useState<OrganizationMember[]>();
+  const [teams, setTeams] = useState<TeamInfo[]>([]);
+  const [teamMembers, setTeamMembers] = useState<Record<string, TeamMember[]>>({});
+  const [invitations, setInvitations] = useState<OrganizationInvitation[]>();
+  const [email, setEmail] = useState("");
+  const [teamName, setTeamName] = useState("");
+  const [invitationLink, setInvitationLink] = useState<string>();
+  const [error, setError] = useState<string>();
+  const organizationId = encodeURIComponent(organization.id);
+  const load = useCallback(async () => {
+    setError(undefined);
+    try {
+      const accounts = session.capabilities.sessions;
+      const [memberPage, teamItems] = await Promise.all([
+        json<{ members: OrganizationMember[] }>(accounts
+          ? `/api/auth/organization/list-members?organizationId=${organizationId}`
+          : `/api/v1/organizations/${organizationId}/members`),
+        json<TeamInfo[]>(accounts
+          ? `/api/auth/organization/list-teams?organizationId=${organizationId}`
+          : `/api/v1/organizations/${organizationId}/teams`),
+      ]);
+      setMembers(memberPage.members);
+      const role = memberPage.members.find((member) => member.userId === session.user.id)?.role;
+      const canManageTeams = ["owner", "admin"].includes(role ?? "");
+      const [invitationItems, teamMemberEntries] = await Promise.all([
+        accounts && canManageTeams
+          ? json<OrganizationInvitation[]>(
+              `/api/auth/organization/list-invitations?organizationId=${organizationId}`,
+            )
+          : Promise.resolve([]),
+        accounts && canManageTeams
+          ? Promise.all(memberPage.members.map(async (member) => ({
+              member,
+              teams: await json<TeamInfo[]>(
+                `/api/auth/organization/list-user-teams?userId=${encodeURIComponent(member.userId)}&organizationId=${organizationId}`,
+              ),
+            }))).then((memberships) => teamItems.map((team): [string, TeamMember[]] => [
+              team.id,
+              memberships.filter(({ teams }) => teams.some(({ id }) => id === team.id)).map(({ member }) => ({
+                id: `${team.id}:${member.userId}`,
+                userId: member.userId,
+                teamId: team.id,
+              })),
+            ]))
+          : accounts
+            ? Promise.resolve([] as [string, TeamMember[]][])
+            : Promise.all(teamItems.map(async (team): Promise<[string, TeamMember[]]> => [
+                team.id,
+                await json<TeamMember[]>(
+                  `/api/v1/organizations/${organizationId}/teams/${encodeURIComponent(team.id)}/members`,
+                ),
+              ])),
+      ]);
+      setInvitations(invitationItems.filter((invitation) => invitation.status === "pending"));
+      setTeams(teamItems);
+      setTeamMembers(Object.fromEntries(teamMemberEntries));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not load organization");
+    }
+  }, [organizationId, session.capabilities.sessions, session.user.id]);
+  useEffect(() => { void load(); }, [load]);
+
+  async function invite(event: React.FormEvent) {
+    event.preventDefault();
+    setError(undefined);
+    setInvitationLink(undefined);
+    try {
+      const invitation = await json<OrganizationInvitation>("/api/auth/organization/invite-member", {
+        method: "POST",
+        body: JSON.stringify({ email, role: "member", organizationId: organization.id }),
+      });
+      const link = `${window.location.origin}/accept-invitation/${invitation.id}`;
+      setInvitationLink(link);
+      setEmail("");
+      await navigator.clipboard.writeText(link).catch(() => undefined);
+      await load();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not create invitation");
+    }
+  }
+
+  async function removeMember(member: OrganizationMember) {
+    if (!window.confirm(`Remove ${member.user.email} from ${organization.name}?`)) return;
+    try {
+      await json("/api/auth/organization/remove-member", {
+        method: "POST",
+        body: JSON.stringify({ memberIdOrEmail: member.id, organizationId: organization.id }),
+      });
+      await load();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not remove member");
+    }
+  }
+
+  async function cancelInvitation(invitation: OrganizationInvitation) {
+    try {
+      await json("/api/auth/organization/cancel-invitation", {
+        method: "POST",
+        body: JSON.stringify({ invitationId: invitation.id }),
+      });
+      await load();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not cancel invitation");
+    }
+  }
+
+  async function deleteOrganization() {
+    if (!window.confirm(`Delete ${organization.name}? Shared Vault access will be revoked.`)) return;
+    try {
+      await json("/api/auth/organization/delete", {
+        method: "POST",
+        body: JSON.stringify({ organizationId: organization.id }),
+      });
+      reloadOrganizations();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not delete organization");
+    }
+  }
+
+  async function createTeam(event: React.FormEvent) {
+    event.preventDefault();
+    try {
+      const team = await json<TeamInfo>(session.capabilities.sessions
+        ? "/api/auth/organization/create-team"
+        : `/api/v1/organizations/${organizationId}/teams`, {
+        method: "POST",
+        body: JSON.stringify(session.capabilities.sessions
+          ? { name: teamName, organizationId: organization.id }
+          : { name: teamName }),
+      });
+      if (session.capabilities.sessions) {
+        await json("/api/auth/organization/add-team-member", {
+          method: "POST",
+          body: JSON.stringify({ teamId: team.id, userId: session.user.id, organizationId: organization.id }),
+        });
+      }
+      setTeamName("");
+      await load();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not create team");
+    }
+  }
+
+  async function renameTeam(team: TeamInfo) {
+    const name = window.prompt("Team name", team.name)?.trim();
+    if (!name || name === team.name) return;
+    try {
+      await json(session.capabilities.sessions
+        ? "/api/auth/organization/update-team"
+        : `/api/v1/organizations/${organizationId}/teams/${encodeURIComponent(team.id)}`, {
+        method: session.capabilities.sessions ? "POST" : "PATCH",
+        body: JSON.stringify(session.capabilities.sessions
+          ? { teamId: team.id, data: { name, organizationId: organization.id } }
+          : { name }),
+      });
+      await load();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not rename team");
+    }
+  }
+
+  async function deleteTeam(team: TeamInfo) {
+    if (!window.confirm(`Delete ${team.name}? Shared Vault access will be revoked.`)) return;
+    try {
+      await json(session.capabilities.sessions
+        ? "/api/auth/organization/remove-team"
+        : `/api/v1/organizations/${organizationId}/teams/${encodeURIComponent(team.id)}`, {
+        method: session.capabilities.sessions ? "POST" : "DELETE",
+        body: session.capabilities.sessions ? JSON.stringify({ teamId: team.id, organizationId: organization.id }) : undefined,
+      });
+      await load();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not delete team");
+    }
+  }
+
+  async function setTeamMember(team: TeamInfo, userId: string, enabled: boolean) {
+    try {
+      await json(session.capabilities.sessions
+        ? `/api/auth/organization/${enabled ? "add" : "remove"}-team-member`
+        : `/api/v1/organizations/${organizationId}/teams/${encodeURIComponent(team.id)}/members/${encodeURIComponent(userId)}`, {
+        method: session.capabilities.sessions ? "POST" : enabled ? "PUT" : "DELETE",
+        body: session.capabilities.sessions
+          ? JSON.stringify({ teamId: team.id, userId, organizationId: organization.id })
+          : undefined,
+      });
+      await load();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not update team membership");
+    }
+  }
+
+  const currentRole = members?.find((member) => member.userId === session.user.id)?.role;
+  const canManage = ["owner", "admin"].includes(currentRole ?? "");
+  const teamMemberIds = useMemo(() => Object.fromEntries(
+    Object.entries(teamMembers).map(([teamId, entries]) => [teamId, new Set(entries.map(({ userId }) => userId))]),
+  ), [teamMembers]);
+  return (
+    <section className="panel organization-card">
+      <div className="organization-heading">
+        <div><h2>{organization.name}</h2><span>{organization.slug}</span></div>
+        {session.capabilities.sessions && currentRole === "owner" && (
+          <button className="secondary danger-button" onClick={() => void deleteOrganization()}>Delete</button>
+        )}
+      </div>
+      <h3>Members</h3>
+      {!members && !error && <p className="muted">Loading members…</p>}
+      {members?.map((member) => (
+        <div className="member-row organization-row" key={member.id}>
+          <div><strong>{member.user.name || member.user.email}</strong><span>{member.user.email} · {member.role}</span></div>
+          {session.capabilities.sessions && canManage && member.userId !== session.user.id && (
+            <button className="secondary danger-button" onClick={() => void removeMember(member)}>Remove</button>
+          )}
+        </div>
+      ))}
+      <h3>Teams</h3>
+      {teams.map((team) => (
+        <div className="team-block" key={team.id}>
+          <div className="member-row organization-row">
+            <div><strong>{team.name}</strong><span>{teamMembers[team.id]?.length ?? 0} members</span></div>
+            {canManage && (
+              <div className="row-actions">
+                <button className="secondary" onClick={() => void renameTeam(team)}>Rename</button>
+                {teams.length > 1 && (session.capabilities.sessions || team.id !== "external-default") && (
+                  <button className="secondary danger-button" onClick={() => void deleteTeam(team)}>Delete</button>
+                )}
+              </div>
+            )}
+          </div>
+          {(!session.capabilities.sessions || canManage) && members?.map((member) => (
+            <label className="share-row" key={`${team.id}-${member.userId}`}>
+              <span><strong>{member.user.name || member.user.email}</strong><small>{member.user.email}</small></span>
+              <input
+                type="checkbox"
+                disabled={!canManage || (!session.capabilities.sessions
+                  && team.id === "external-default" && member.userId === session.user.id)}
+                checked={teamMemberIds[team.id]?.has(member.userId) === true}
+                onChange={(event) => void setTeamMember(team, member.userId, event.target.checked)}
+              />
+            </label>
+          ))}
+        </div>
+      ))}
+      {canManage && (
+        <form className="organization-invite" onSubmit={(event) => void createTeam(event)}>
+          <label>Team name<input required value={teamName} onChange={(event) => setTeamName(event.target.value)} /></label>
+          <button className="secondary">Create team</button>
+        </form>
+      )}
+      {session.capabilities.sessions && canManage && (
+        <>
+          <h3>Pending invitations</h3>
+          {invitations?.length === 0 && <p className="muted">No pending invitations.</p>}
+          {invitations?.map((invitation) => (
+            <div className="member-row organization-row" key={invitation.id}>
+              <div><strong>{invitation.email}</strong><span>Expires {new Date(invitation.expiresAt).toLocaleString()}</span></div>
+              <button className="secondary danger-button" onClick={() => void cancelInvitation(invitation)}>Cancel</button>
+            </div>
+          ))}
+          <form className="organization-invite" onSubmit={(event) => void invite(event)}>
+            <label>Email<input type="email" required value={email} onChange={(event) => setEmail(event.target.value)} /></label>
+            <button className="secondary">Create invitation link</button>
+          </form>
+          {invitationLink && (
+            <label className="invitation-link">Invitation link<input readOnly value={invitationLink} onFocus={(event) => event.target.select()} /></label>
+          )}
+        </>
+      )}
+      {error && <p className="error">{error}</p>}
+    </section>
+  );
+}
+
+function Organizations({ session }: { session: SessionInfo }) {
+  const [organizations, setOrganizations] = useState<OrganizationInfo[]>();
+  const [invitations, setInvitations] = useState<OrganizationInvitation[]>();
+  const [name, setName] = useState("");
+  const [slug, setSlug] = useState("");
+  const [error, setError] = useState<string>();
+  const load = useCallback(async () => {
+    setError(undefined);
+    try {
+      const accounts = session.capabilities.sessions;
+      const [organizationItems, invitationItems] = await Promise.all([
+        json<OrganizationInfo[]>(accounts ? "/api/auth/organization/list" : "/api/v1/organizations"),
+        accounts ? json<OrganizationInvitation[]>("/api/auth/organization/list-user-invitations") : Promise.resolve([]),
+      ]);
+      setOrganizations(organizationItems);
+      setInvitations(invitationItems.filter((invitation) => invitation.status === "pending"));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not load organizations");
+    }
+  }, [session.capabilities.sessions]);
+  useEffect(() => { void load(); }, [load]);
+
+  async function create(event: React.FormEvent) {
+    event.preventDefault();
+    setError(undefined);
+    try {
+      await json("/api/auth/organization/create", {
+        method: "POST",
+        body: JSON.stringify({ name, slug }),
+      });
+      setName("");
+      setSlug("");
+      await load();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not create organization");
+    }
+  }
+
+  async function decide(invitationId: string, accept: boolean) {
+    try {
+      await json(`/api/auth/organization/${accept ? "accept" : "reject"}-invitation`, {
+        method: "POST",
+        body: JSON.stringify({ invitationId }),
+      });
+      await load();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not update invitation");
+    }
+  }
+
+  return (
+    <>
+      <PageHeader title="Organizations" />
+      {invitations && invitations.length > 0 && (
+        <section className="section-block">
+          <h2 className="section-label">Invitations</h2>
+          <div className="panel admin-list">
+            {invitations.map((invitation) => (
+              <div className="member-row organization-row" key={invitation.id}>
+                <div><strong>{invitation.organizationName}</strong><span>{invitation.role} · expires {new Date(invitation.expiresAt).toLocaleString()}</span></div>
+                <div className="row-actions">
+                  <button className="secondary" onClick={() => void decide(invitation.id, false)}>Decline</button>
+                  <button className="primary" onClick={() => void decide(invitation.id, true)}>Accept</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+      <section className="section-block organization-list">
+        <h2 className="section-label">Your organizations</h2>
+        {!organizations && !error && <p className="muted">Loading organizations…</p>}
+        {organizations?.length === 0 && <div className="panel empty-state"><strong>No organizations</strong></div>}
+        {organizations?.map((organization) => (
+          <OrganizationCard
+            organization={organization}
+            session={session}
+            reloadOrganizations={() => void load()}
+            key={organization.id}
+          />
+        ))}
+      </section>
+      {session.capabilities.sessions && <section className="section-block">
+        <h2 className="section-label">Create organization</h2>
+        <form className="panel admin-form organization-form" onSubmit={(event) => void create(event)}>
+          <label>Name<input required value={name} onChange={(event) => setName(event.target.value)} /></label>
+          <label>Slug<input required pattern="[a-z0-9-]+" value={slug} onChange={(event) => setSlug(event.target.value)} /></label>
+          <button className="primary">Create</button>
+        </form>
+      </section>}
+      {error && <p className="error page-error">{error}</p>}
+    </>
+  );
+}
+
+function Invitation({ invitationId }: { invitationId: string }) {
+  const [invitation, setInvitation] = useState<OrganizationInvitation>();
+  const [error, setError] = useState<string>();
+  useEffect(() => {
+    void json<OrganizationInvitation>(`/api/auth/organization/get-invitation?id=${encodeURIComponent(invitationId)}`)
+      .then(setInvitation)
+      .catch((caught: Error) => setError(caught.message));
+  }, [invitationId]);
+
+  async function decide(accept: boolean) {
+    try {
+      await json(`/api/auth/organization/${accept ? "accept" : "reject"}-invitation`, {
+        method: "POST",
+        body: JSON.stringify({ invitationId }),
+      });
+      window.location.assign("/organizations");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not update invitation");
+    }
+  }
+
+  return (
+    <>
+      <PageHeader title="Organization invitation" />
+      <section className="panel invitation-card">
+        {!invitation && !error && <p className="muted">Loading invitation…</p>}
+        {invitation && (
+          <>
+            <h2>Join {invitation.organizationName}</h2>
+            <p>You were invited as {invitation.role}. This link expires {new Date(invitation.expiresAt).toLocaleString()}.</p>
+            <div className="button-row">
+              <button className="secondary" onClick={() => void decide(false)}>Decline</button>
+              <button className="primary" onClick={() => void decide(true)}>Accept invitation</button>
+            </div>
+          </>
+        )}
+        {error && <p className="error">{error}</p>}
       </section>
     </>
   );
@@ -707,8 +1555,8 @@ function AdminMembers() {
           {!members && !error && <p className="muted">Loading administrators…</p>}
           {members?.length === 0 && <div className="empty-state"><strong>No administrators</strong><span>Add an email below.</span></div>}
           {members?.map((member) => (
-            <div className="admin-row member-row" key={`${member.source}-${member.email}`}>
-              <div><strong>{member.email}</strong><span>Admin · {member.source === "environment" ? "Environment" : "Managed"}</span></div>
+            <div className="admin-row member-row" key={member.id}>
+              <div><strong>{member.email}</strong><span>{member.name} · Admin</span></div>
               <button className="secondary danger-button" disabled={!member.removable} onClick={() => void remove(member)}>Remove</button>
             </div>
           ))}
@@ -752,7 +1600,7 @@ export function App({ brand = defaultBrand, extensions = [] }: AppProps) {
   if (path === "/oauth/consent") return <Consent brand={brand} />;
   if (viewerId) return <ArtifactViewer brand={brand} id={viewerId} />;
   if (unauthorized) {
-    window.location.replace("/sign-in");
+    window.location.replace(`/sign-in?next=${encodeURIComponent(path)}`);
     return null;
   }
   if (sessionError) {
@@ -786,6 +1634,12 @@ export function App({ brand = defaultBrand, extensions = [] }: AppProps) {
   }
   else if (route.page === "admin-members") page = <AdminMembers />;
   else if (route.page === "artifacts") page = <Artifacts />;
+  else if (route.page === "vaults") page = <Vaults />;
+  else if (route.page === "vault") page = <VaultMeetings session={session} vaultId={route.vaultId!} />;
+  else if (route.page === "meeting") page = <SyncedMeeting vaultId={route.vaultId!} meetingId={route.meetingId!} />;
+  else if (route.page === "project") page = <SyncedProject vaultId={route.vaultId!} projectId={route.projectId!} />;
+  else if (route.page === "organizations") page = <Organizations session={session} />;
+  else if (route.page === "invitation") page = <Invitation invitationId={route.invitationId!} />;
   else if (route.page === "settings") page = <Settings />;
   else page = <Overview session={session} />;
   return <Shell brand={brand} extensions={extensions} session={session}>{page}</Shell>;

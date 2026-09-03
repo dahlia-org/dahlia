@@ -134,7 +134,7 @@ describe("server extensions", () => {
           { id: "extension", path: "extension/drizzle" },
         ],
         files: [
-          "drizzle/postgres/20260830063330_baseline/migration.sql",
+          ...serverMigrationManifest.postgres.files,
           "extension/drizzle/0000.sql",
         ],
       },
@@ -148,7 +148,7 @@ describe("server extensions", () => {
           },
         ],
         files: [
-          "drizzle/sqlite/20260830001528_stiff_alex_power/migration.sql",
+          ...serverMigrationManifest.sqlite.files,
           "extension/drizzle/sqlite/0000_baseline/migration.sql",
         ],
       },

@@ -58,6 +58,32 @@ describe("fixed OAuth client policy", () => {
     expect(verificationRequest.headers.get("dpop")).toBe("proof");
   });
 
+  it("verifies MCP resources at their canonical URL and requires sync read scope", async () => {
+    const identities = new IdentityService(config);
+    const verifier = vi.fn(async (request: Request) => {
+      void request;
+      return {
+        sub: "user-1",
+        workspace_id: "personal:user-1",
+        client_id: "mcp-client",
+        exp: Math.floor(Date.now() / 1000) + 60,
+        scope: "api.sync.read",
+      };
+    });
+    Object.assign(identities, { verifyAccessToken: verifier });
+    const request = new Request("http://internal/mcp/resources/vaults/vault/screenshots/image/content", {
+      headers: { Authorization: "DPoP access-token", DPoP: "proof" },
+    });
+
+    await expect(identities.fromMcpResource(request, "api.sync.read")).resolves.toMatchObject({
+      userId: "user-1",
+    });
+    expect((verifier.mock.calls[0]?.[0] as Request).url)
+      .toBe("https://new.dahlia.example/mcp/resources/vaults/vault/screenshots/image/content");
+    await expect(identities.fromMcpResource(request, "api.artifact.write"))
+      .rejects.toThrow("Insufficient scope");
+  });
+
   it("preserves DPoP requests and distinguishes insufficient scope", async () => {
     const request = new Request("https://new.dahlia.example/mcp", {
       method: "POST",
@@ -100,6 +126,7 @@ describe("fixed OAuth client policy", () => {
       "api.model.request",
       "api.artifact.read",
       "api.artifact.write",
+      "api.sync.write",
     ]);
     expect(OAUTH_SCOPES).toContain(ARTIFACT_READ_SCOPE);
     expect(OAUTH_SCOPES).toContain(ARTIFACT_WRITE_SCOPE);

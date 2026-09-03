@@ -163,7 +163,7 @@ import GRDB
                 text: text,
                 translatedText: nil,
                 isConfirmed: true,
-                speakerLabel: "mic"
+                audioSource: "mic"
             )
         }
     }

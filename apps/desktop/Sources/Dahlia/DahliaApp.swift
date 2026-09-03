@@ -18,6 +18,7 @@ private enum MainWindowMetrics {
 
 @main
 struct DahliaApp: App {
+    @Environment(\.scenePhase) private var scenePhase
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @State private var updateController: AppUpdateController
     @StateObject private var viewModel: CaptionViewModel
@@ -33,6 +34,7 @@ struct DahliaApp: App {
     @State private var tokenBroker = DahliaTokenBrokerServer()
     private let mainWindowNavigation: MainWindowNavigation
     @State private var appDatabase: AppDatabaseManager?
+    @State private var meetingSyncWorker: MeetingSyncWorker?
     @State private var isInitializingVault = true
     @State private var vaultInitializationTask: Task<Void, Never>?
     @State private var showVaultPicker = true
@@ -198,6 +200,10 @@ struct DahliaApp: App {
                 await CalendarSourceCoordinator.shared.refreshEnabledSources(settings.enabledCalendarSources)
                 await driveRestore
             }
+            .onChange(of: scenePhase) { _, phase in
+                guard phase == .active, let meetingSyncWorker else { return }
+                Task { await meetingSyncWorker.applicationBecameActive() }
+            }
             .modifier(MainWindowOpenWindowRegistrationModifier())
             .environment(mainWindowNavigation)
         }
@@ -344,6 +350,17 @@ struct DahliaApp: App {
         }
         await DahliaCloudCredentialStorage.deleteLegacyCredential()
         await dahliaAccountController.configure(appDatabase: db)
+        let meetingSyncWorker = MeetingSyncWorker(
+            dbQueue: db.dbQueue,
+            persistenceIsActive: { [weak viewModel] in
+                viewModel?.isMeetingSyncPersistenceActive ?? false
+            }
+        )
+        self.meetingSyncWorker = meetingSyncWorker
+        await meetingSyncWorker.start(restored: {
+            if case .restored = AppDelegate.backupRestoreOutcome { return true }
+            return false
+        }())
         do {
             try tokenBroker.start()
         } catch {
@@ -355,8 +372,9 @@ struct DahliaApp: App {
         viewModel.configureBatchTranscription(dbQueue: db.dbQueue) { [weak sidebarViewModel] in
             await sidebarViewModel?.refreshUnprocessedRecordings()
         }
-        appDelegate.terminationHandler = { [weak viewModel, weak db, weak tokenBroker] in
+        appDelegate.terminationHandler = { [weak viewModel, weak db, weak tokenBroker, weak meetingSyncWorker] in
             tokenBroker?.stop()
+            await meetingSyncWorker?.stop()
             await db?.searchIndexer.stop()
             return await viewModel?.prepareForTermination()
         }

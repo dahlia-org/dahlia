@@ -11,9 +11,16 @@ import { DatabricksVolumeObjectStorage } from "./artifacts/databricks-volume";
 import { LocalObjectStorage } from "./artifacts/local";
 import { S3ObjectStorage } from "./artifacts/s3";
 import { loadConfig } from "./config";
+import { createNodeSearchTokenizer } from "./search/node-tokenizer";
+import { createSearchEmbedder } from "./search/embedding";
+import { SearchIndexer } from "./search/node-indexer";
 
 const config = loadConfig(process.env);
+const searchEmbedder = createSearchEmbedder(config);
 const applicationStore = createNodeApplicationStore(config);
+const searchIndexer = searchEmbedder && applicationStore.searchIndex
+  ? new SearchIndexer(applicationStore.searchIndex, searchEmbedder)
+  : undefined;
 const auth = config.authProvider === "accounts"
   ? await initializeDahliaAuth(config, applicationStore, [{
       plugins: [cimd({ fetchClientMetadataResource, metadataProfile: "mcp-2026-07-28" })],
@@ -33,6 +40,8 @@ const app = createApp({
   auth,
   authStore: applicationStore,
   artifactStorage,
+  searchTokenizer: createNodeSearchTokenizer(),
+  searchEmbedder,
 });
 
 app.use("*", serveStatic({ root: "./dist/client" }));
@@ -46,6 +55,7 @@ const server = serve({
 }, (info) => {
   console.info(`Dahlia Server is listening on ${info.address}:${info.port}`);
 });
+searchIndexer?.start();
 const sockets = new Set<Socket>();
 server.on("connection", (socket: Socket) => {
   sockets.add(socket);
@@ -56,12 +66,13 @@ let shuttingDown = false;
 async function shutdown(): Promise<void> {
   if (shuttingDown) return;
   shuttingDown = true;
+  const stoppedIndexer = searchIndexer?.stop();
   const closed = new Promise<void>((resolve) => server.close(() => resolve()));
   const deadline = setTimeout(() => {
     for (const socket of sockets) socket.destroy();
   }, 10_000);
   deadline.unref();
-  await closed;
+  await Promise.all([closed, stoppedIndexer]);
   clearTimeout(deadline);
   await applicationStore.close?.();
 }

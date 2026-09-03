@@ -709,6 +709,10 @@ final class CaptionViewModel: ObservableObject {
         recordingLifecycle != .idle || isRecordingStartPending || isFinalizingRecording
     }
 
+    var isMeetingSyncPersistenceActive: Bool {
+        isRecordingLifecycleBusy || failedPersistenceService != nil || failedTranscriptionEventPipeline != nil
+    }
+
     private var recordingConfigurationTasks: [Int: Task<Void, Never>] = [:]
     private var nextRecordingConfigurationID = 0
     private var pendingRealtimeRecognitionFailure: (source: RecordingAudioSource?, message: String)?
@@ -4755,7 +4759,7 @@ final class CaptionViewModel: ObservableObject {
         )
         guard case let .failure(_, _, sourceLabel, message) = event else { return }
 
-        let source = RecordingAudioSource(speakerLabel: sourceLabel)
+        let source = RecordingAudioSource(audioSource: sourceLabel)
         errorMessage = message
         if case .starting = recordingLifecycle {
             if plan.finalMode == .realtime {

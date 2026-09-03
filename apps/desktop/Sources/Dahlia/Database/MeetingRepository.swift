@@ -118,9 +118,73 @@ final class MeetingRepository {
     nonisolated func updateVaultAccountConnection(id: UUID, connectionID: UUID?) async throws -> VaultRecord? {
         try await dbQueue.write { db in
             guard var vault = try VaultRecord.fetchOne(db, key: id) else { return nil }
+            guard vault.syncDeletionMode == nil || vault.accountConnectionId == connectionID else { return nil }
+            if vault.accountConnectionId != connectionID {
+                vault.syncEnabled = false
+                vault.syncConfirmedConnectionId = nil
+                try db.execute(
+                    sql: """
+                    UPDATE screenshots SET syncUploadedConnectionId = NULL
+                    WHERE meetingId IN (SELECT id FROM meetings WHERE vaultId = ?)
+                    """,
+                    arguments: [id]
+                )
+            }
             vault.accountConnectionId = connectionID
             try vault.update(db)
             return vault
+        }
+    }
+
+    nonisolated func updateVaultSync(id: UUID, isEnabled: Bool) async throws -> VaultRecord? {
+        try await dbQueue.write { db in
+            guard var vault = try VaultRecord.fetchOne(db, key: id),
+                  !isEnabled || vault.accountConnectionId != nil else { return nil }
+            vault.syncEnabled = isEnabled
+            vault.syncConfirmedConnectionId = isEnabled ? vault.accountConnectionId : vault.syncConfirmedConnectionId
+            try vault.update(db)
+            return vault
+        }
+    }
+
+    nonisolated func requestServerVaultDeletion(id: UUID) async throws -> VaultRecord? {
+        try await dbQueue.write { db in
+            guard var vault = try VaultRecord.fetchOne(db, key: id),
+                  let connectionId = vault.accountConnectionId else { return nil }
+            vault.syncEnabled = false
+            vault.syncDeletionMode = MeetingSyncDeletionMode.deleteOnly.rawValue
+            vault.syncDeletionApproved = true
+            vault.syncDeletionConnectionId = connectionId
+            try db.execute(
+                sql: """
+                UPDATE screenshots SET syncUploadedConnectionId = NULL
+                WHERE meetingId IN (SELECT id FROM meetings WHERE vaultId = ?)
+                """,
+                arguments: [id]
+            )
+            try vault.update(db)
+            return vault
+        }
+    }
+
+    nonisolated func pendingMeetingDeletionCounts() async throws -> [UUID: Int] {
+        try await dbQueue.read { db in
+            let rows = try Row.fetchAll(
+                db,
+                sql: """
+                SELECT vaultId, count(*) AS pendingCount FROM meeting_sync_jobs
+                WHERE targetKind = 'meetingDelete'
+                GROUP BY vaultId HAVING count(*) >= ?
+                """,
+                arguments: [MeetingSyncQueue.meetingDeleteConfirmationThreshold]
+            )
+            return Dictionary(uniqueKeysWithValues: rows.map { ($0["vaultId"] as UUID, $0["pendingCount"] as Int) })
+        }
+    }
+
+    nonisolated func approvePendingMeetingDeletions(vaultId: UUID) async throws {
+        try await dbQueue.write { db in
+            try db.execute(sql: "UPDATE vaults SET syncBulkDeleteApproved = 1 WHERE id = ?", arguments: [vaultId])
         }
     }
 

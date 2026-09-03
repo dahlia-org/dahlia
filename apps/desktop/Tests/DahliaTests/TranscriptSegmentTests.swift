@@ -26,7 +26,7 @@ import Foundation
                     startTime: start.addingTimeInterval(754),
                     text: "First",
                     isConfirmed: true,
-                    speakerLabel: "mic"
+                    audioSource: "mic"
                 ),
                 TranscriptSegment(
                     startTime: start.addingTimeInterval(3947),
@@ -39,7 +39,7 @@ import Foundation
                 segments: store.segments,
                 recordingSessions: store.recordingSessions,
                 timeBase: store.timeBase
-            ) == "[00:12:34] [mic] First\n[01:05:47] Second")
+            ) == "[00:12:34] First\n[01:05:47] Second")
             #expect(TranscriptTextFormatter.summaryText(
                 segments: store.segments,
                 recordingSessions: store.recordingSessions,
@@ -102,13 +102,13 @@ import Foundation
                 startTime: Date(timeIntervalSince1970: 1_776_384_000),
                 text: "First",
                 isConfirmed: true,
-                speakerLabel: "mic"
+                audioSource: "mic"
             )
             let second = TranscriptSegment(
                 startTime: Date(timeIntervalSince1970: 1_776_384_100),
                 text: "Second",
                 isConfirmed: true,
-                speakerLabel: "system"
+                audioSource: "system"
             )
 
             store.loadSegments([first, second])
@@ -127,7 +127,7 @@ import Foundation
                     text: "Hello",
                     translatedText: "こんにちは",
                     isConfirmed: false,
-                    speakerLabel: "mic"
+                    audioSource: "mic"
                 ),
                 forSource: "mic"
             )
@@ -137,7 +137,7 @@ import Foundation
                     startTime: Date(timeIntervalSince1970: 1_776_384_001),
                     text: "Hello world",
                     isConfirmed: false,
-                    speakerLabel: "mic"
+                    audioSource: "mic"
                 ),
                 forSource: "mic"
             )
@@ -157,7 +157,7 @@ import Foundation
                     startTime: Date(timeIntervalSince1970: 1_776_384_000),
                     text: "Confirmed",
                     isConfirmed: true,
-                    speakerLabel: "mic"
+                    audioSource: "mic"
                 ),
             ])
             store.updateUnconfirmedSegment(
@@ -165,7 +165,7 @@ import Foundation
                     startTime: Date(timeIntervalSince1970: 1_776_384_001),
                     text: "Mic preview",
                     isConfirmed: false,
-                    speakerLabel: "mic"
+                    audioSource: "mic"
                 ),
                 forSource: "mic"
             )
@@ -174,7 +174,7 @@ import Foundation
                     startTime: Date(timeIntervalSince1970: 1_776_384_002),
                     text: "System preview",
                     isConfirmed: false,
-                    speakerLabel: "system"
+                    audioSource: "system"
                 ),
                 forSource: "system"
             )
@@ -202,7 +202,7 @@ import Foundation
                 text: "Hello world",
                 translatedText: "こんにちは、世界",
                 isConfirmed: true,
-                speakerLabel: "mic",
+                audioSource: "mic",
                 audioFeatures: audioFeatures
             )
 

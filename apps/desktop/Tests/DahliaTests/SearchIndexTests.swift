@@ -808,7 +808,19 @@ import GRDB
                 try insertLegacyVault(vault, in: db)
                 try project.insert(db)
                 try meeting.insert(db)
-                try segment.insert(db)
+                try db.execute(
+                    sql: """
+                    INSERT INTO transcript_segments (
+                        id, meetingId, sessionId, startTime, endTime, text,
+                        translatedText, isConfirmed, speakerLabel
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    arguments: [
+                        segment.id, segment.meetingId, segment.sessionId, segment.startTime,
+                        segment.endTime, segment.text, segment.translatedText,
+                        segment.isConfirmed, segment.audioSource,
+                    ]
+                )
             }
 
             try AppDatabaseManager.migrator.migrate(queue)

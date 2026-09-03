@@ -38,9 +38,9 @@ actor LiveCaptionEventRelay {
     private func compactPendingEvents(for event: TranscriptionEvent) {
         switch event {
         case let .preview(segment):
-            removePendingPreviews(sessionId: segment.sessionId, sourceLabel: segment.speakerLabel)
+            removePendingPreviews(sessionId: segment.sessionId, sourceLabel: segment.audioSource)
         case let .finalized(segment):
-            removePendingPreviews(sessionId: segment.sessionId, sourceLabel: segment.speakerLabel)
+            removePendingPreviews(sessionId: segment.sessionId, sourceLabel: segment.audioSource)
             pendingEvents.removeAll {
                 guard case let .finalized(pendingSegment) = $0 else { return false }
                 return pendingSegment.id == segment.id
@@ -73,7 +73,7 @@ actor LiveCaptionEventRelay {
     private func removePendingPreviews(sessionId: UUID?, sourceLabel: String?) {
         pendingEvents.removeAll {
             guard case let .preview(segment) = $0 else { return false }
-            return segment.sessionId == sessionId && segment.speakerLabel == sourceLabel
+            return segment.sessionId == sessionId && segment.audioSource == sourceLabel
         }
     }
 

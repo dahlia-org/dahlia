@@ -19,7 +19,41 @@ describe("configuration", () => {
       oauthRedirectUris: ["http://127.0.0.1:1455/oauth/callback", "http://localhost:8020"],
       storageBackend: "local",
       storageLocalPath: ".data/storage",
+      searchEmbedding: undefined,
+      syncSharingEnabled: false,
     });
+  });
+
+  it("keeps Vault sharing opt-in", () => {
+    expect(loadConfig({ ...accounts, DAHLIA_SYNC_SHARING_ENABLED: "true" }).syncSharingEnabled).toBe(true);
+    expect(() => loadConfig({ ...accounts, DAHLIA_SYNC_SHARING_ENABLED: "yes" })).toThrow();
+  });
+
+  it("keeps embeddings off unless a Databricks model is configured", () => {
+    expect(loadConfig({ ...accounts }).searchEmbedding).toBeUndefined();
+    expect(loadConfig({
+      DAHLIA_AUTH_TYPE: "header",
+      DAHLIA_AI_BACKEND: "databricks",
+      DATABRICKS_HOST: "workspace.cloud.databricks.com",
+      DATABRICKS_CLIENT_ID: "app-client-id",
+      DATABRICKS_CLIENT_SECRET: "app-client-secret",
+      DAHLIA_SEARCH_EMBEDDING_MODEL: "system.ai.qwen3-embedding-0-6b",
+    }).searchEmbedding).toEqual({ model: "system.ai.qwen3-embedding-0-6b", dimensions: 1024 });
+    expect(() => loadConfig({
+      ...accounts,
+      DAHLIA_SEARCH_EMBEDDING_MODEL: "model",
+    })).toThrow("requires DAHLIA_AI_BACKEND=databricks");
+    for (const dimensions of [31, 96, 2048]) {
+      expect(() => loadConfig({
+        DAHLIA_AUTH_TYPE: "header",
+        DAHLIA_AI_BACKEND: "databricks",
+        DATABRICKS_HOST: "workspace.cloud.databricks.com",
+        DATABRICKS_CLIENT_ID: "app-client-id",
+        DATABRICKS_CLIENT_SECRET: "app-client-secret",
+        DAHLIA_SEARCH_EMBEDDING_MODEL: "model",
+        DAHLIA_SEARCH_EMBEDDING_DIMENSIONS: String(dimensions),
+      })).toThrow();
+    }
   });
 
   it("selects PostgreSQL independently from the AI Gateway", () => {
@@ -69,14 +103,14 @@ describe("configuration", () => {
     expect(loadConfig({
       DAHLIA_AUTH_TYPE: "header",
       DAHLIA_STORAGE_BACKEND: "databricks",
-      DAHLIA_STORAGE_DATABRICKS_VOLUME_PATH: "/Volumes/main/default/dahlia_artifacts",
+      DAHLIA_STORAGE_DATABRICKS_VOLUME_PATH: "/Volumes/dahlia/server/storage",
       DATABRICKS_HOST: "workspace.cloud.databricks.com",
       DATABRICKS_CLIENT_ID: "app-client-id",
       DATABRICKS_CLIENT_SECRET: "app-client-secret",
     })).toMatchObject({
       storageBackend: "databricks",
       artifactMaxBytes: 64 * 1024 * 1024,
-      storageDatabricksVolumePath: "/Volumes/main/default/dahlia_artifacts",
+      storageDatabricksVolumePath: "/Volumes/dahlia/server/storage",
       databricksWorkspace: { host: "https://workspace.cloud.databricks.com" },
     });
     expect(loadConfig({
@@ -232,9 +266,8 @@ describe("configuration", () => {
     })).toThrow("must use HTTPS");
   });
 
-  it("normalizes an optional bootstrap administrator", () => {
-    expect(loadConfig({ ...accounts, DAHLIA_ADMIN_EMAIL: " Admin@Example.COM " }).adminEmail)
-      .toBe("admin@example.com");
-    expect(loadConfig(accounts).adminEmail).toBeUndefined();
+  it("rejects the retired administrator environment variable", () => {
+    expect(() => loadConfig({ ...accounts, DAHLIA_ADMIN_EMAIL: "admin@example.com" }))
+      .toThrow("DAHLIA_ADMIN_EMAIL is no longer supported");
   });
 });

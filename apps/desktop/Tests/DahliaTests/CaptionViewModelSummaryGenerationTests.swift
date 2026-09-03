@@ -1126,10 +1126,10 @@ import GRDB
                 updatedAt: now.addingTimeInterval(60)
             )
             let firstSegment = TranscriptSegment(
-                startTime: now, text: "first transcript", isConfirmed: true, speakerLabel: "mic"
+                startTime: now, text: "first transcript", isConfirmed: true, audioSource: "mic"
             )
             let secondSegment = TranscriptSegment(
-                startTime: now.addingTimeInterval(60), text: "second transcript", isConfirmed: true, speakerLabel: "mic"
+                startTime: now.addingTimeInterval(60), text: "second transcript", isConfirmed: true, audioSource: "mic"
             )
             try database.dbQueue.write { db in
                 try vault.insert(db)
@@ -1235,7 +1235,7 @@ import GRDB
                 startTime: createdAt,
                 text: transcript,
                 isConfirmed: true,
-                speakerLabel: "mic"
+                audioSource: "mic"
             )
             try database.dbQueue.write { db in
                 try meeting.insert(db)

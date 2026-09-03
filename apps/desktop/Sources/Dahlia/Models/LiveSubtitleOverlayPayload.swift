@@ -121,7 +121,7 @@ struct LiveSubtitleOverlayPayload: Equatable {
     }
 
     fileprivate static func entry(for segment: TranscriptSegment, configuration: Configuration) -> Entry? {
-        guard configuration.sourceMode.includesSpeakerLabel(segment.speakerLabel),
+        guard configuration.sourceMode.includesAudioSource(segment.audioSource),
               let primaryText = segment.displayText.nilIfBlank else { return nil }
 
         return Entry(
@@ -129,7 +129,7 @@ struct LiveSubtitleOverlayPayload: Equatable {
             primaryText: primaryText,
             secondaryText: configuration.showsTranslation ? segment.displayTranslatedText : nil,
             isConfirmed: segment.isConfirmed,
-            sourceLabel: segment.speakerLabel
+            sourceLabel: segment.audioSource
         )
     }
 }
@@ -166,7 +166,7 @@ final class LiveSubtitleOverlayPayloadProjector {
         case let .finalized(segment):
             replaceFinalized(with: segment, configuration: configuration)
         case let .clearPreview(sourceLabel):
-            guard configuration.sourceMode.includesSpeakerLabel(sourceLabel) else { return }
+            guard configuration.sourceMode.includesAudioSource(sourceLabel) else { return }
             guard let index = previewIndex(forSource: sourceLabel) else { return }
             removeEntry(at: index)
             revision &+= 1
@@ -216,8 +216,8 @@ final class LiveSubtitleOverlayPayloadProjector {
         with segment: TranscriptSegment,
         configuration: LiveSubtitleOverlayPayload.Configuration
     ) {
-        guard configuration.sourceMode.includesSpeakerLabel(segment.speakerLabel) else { return }
-        let existingIndex = previewIndex(forSource: segment.speakerLabel)
+        guard configuration.sourceMode.includesAudioSource(segment.audioSource) else { return }
+        let existingIndex = previewIndex(forSource: segment.audioSource)
         let newEntry = LiveSubtitleOverlayPayload.entry(for: segment, configuration: configuration)
         guard existingIndex != nil || newEntry != nil else { return }
 
@@ -235,8 +235,8 @@ final class LiveSubtitleOverlayPayloadProjector {
         with segment: TranscriptSegment,
         configuration: LiveSubtitleOverlayPayload.Configuration
     ) {
-        guard configuration.sourceMode.includesSpeakerLabel(segment.speakerLabel) else { return }
-        if let previewIndex = previewIndex(forSource: segment.speakerLabel) {
+        guard configuration.sourceMode.includesAudioSource(segment.audioSource) else { return }
+        if let previewIndex = previewIndex(forSource: segment.audioSource) {
             removeEntry(at: previewIndex)
         }
         let existingIndex = entryIndices[segment.id]
@@ -259,7 +259,7 @@ final class LiveSubtitleOverlayPayloadProjector {
         _ segment: TranscriptSegment,
         configuration: LiveSubtitleOverlayPayload.Configuration
     ) {
-        guard configuration.sourceMode.includesSpeakerLabel(segment.speakerLabel) else { return }
+        guard configuration.sourceMode.includesAudioSource(segment.audioSource) else { return }
         guard let index = entryIndices[segment.id] else { return }
         guard let updatedEntry = LiveSubtitleOverlayPayload.entry(for: segment, configuration: configuration) else {
             removeEntry(at: index)

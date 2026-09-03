@@ -18,6 +18,12 @@ struct VaultRecord: Codable, FetchableRecord, PersistableRecord, Identifiable, E
     var chatModelID = ""
     var chatReasoningEffort: String = CodexReasoningEffortOption.defaultValue
     var aiSettingsBackfilled = true
+    var syncEnabled = false
+    var syncConfirmedConnectionId: UUID?
+    var syncDeletionMode: String?
+    var syncDeletionApproved = false
+    var syncDeletionConnectionId: UUID?
+    var syncBulkDeleteApproved = false
 
     var localProvider: AIAccountProvider {
         get { AIAccountProvider(rawValue: localAIProvider) ?? .chatGPTSubscription }

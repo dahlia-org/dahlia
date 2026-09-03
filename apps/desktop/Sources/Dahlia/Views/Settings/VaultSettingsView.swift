@@ -13,10 +13,15 @@ struct VaultSettingsView: View {
     @State private var pendingRemoval: VaultRecord?
     @State private var pendingRename: VaultRecord?
     @State private var proposedName = ""
+    @State private var pendingServerDeletion: VaultRecord?
+    @State private var pendingBulkMeetingDeletion: VaultRecord?
 
     var body: some View {
         sections
-            .disabled(model.isRemovingVault || model.isRenamingVault || model.updatingVaultAccountID != nil)
+            .disabled(
+                model.isRemovingVault || model.isRenamingVault
+                    || model.updatingVaultAccountID != nil || model.updatingVaultSyncID != nil
+            )
             .overlay {
                 if model.isRemovingVault {
                     ProgressView(L10n.removingVault)
@@ -63,6 +68,48 @@ struct VaultSettingsView: View {
             } message: {
                 Text(L10n.removeVaultConfirmationDescription)
             }
+            .confirmationDialog(
+                L10n.deleteServerCopy,
+                isPresented: Binding(
+                    get: { pendingServerDeletion != nil },
+                    set: { if !$0 { pendingServerDeletion = nil } }
+                ),
+                titleVisibility: .visible
+            ) {
+                if let vault = pendingServerDeletion {
+                    Button(L10n.deleteServerCopy, role: .destructive) {
+                        Task {
+                            _ = await model.deleteServerCopy(for: vault)
+                            pendingServerDeletion = nil
+                        }
+                    }
+                }
+                Button(L10n.cancel, role: .cancel) {}
+            } message: {
+                Text(L10n.deleteServerCopyDescription)
+            }
+            .confirmationDialog(
+                L10n.confirmBulkMeetingDeletion,
+                isPresented: Binding(
+                    get: { pendingBulkMeetingDeletion != nil },
+                    set: { if !$0 { pendingBulkMeetingDeletion = nil } }
+                ),
+                titleVisibility: .visible
+            ) {
+                if let vault = pendingBulkMeetingDeletion {
+                    Button(L10n.continueDeletion, role: .destructive) {
+                        Task {
+                            await model.approvePendingMeetingDeletions(for: vault)
+                            pendingBulkMeetingDeletion = nil
+                        }
+                    }
+                }
+                Button(L10n.cancel, role: .cancel) {}
+            } message: {
+                Text(L10n.confirmBulkMeetingDeletionDescription(
+                    pendingBulkMeetingDeletion.flatMap { model.pendingMeetingDeletionCounts[$0.id] } ?? 0
+                ))
+            }
     }
 
     private var sections: some View {
@@ -100,6 +147,21 @@ struct VaultSettingsView: View {
                             connections: accountConnections,
                             onSelect: { await updateAccountConnection(for: vault, connectionID: $0) }
                         )
+                        Toggle(
+                            L10n.vaultSync,
+                            isOn: Binding(
+                                get: { vault.syncEnabled },
+                                set: { isEnabled in
+                                    Task { _ = await model.updateSync(for: vault, isEnabled: isEnabled) }
+                                }
+                            )
+                        )
+                        .toggleStyle(.switch)
+                        .labelsHidden()
+                        .disabled(!vault.syncEnabled && !supportsSync(vault))
+                        .help(vault.accountConnectionId == nil
+                            ? L10n.vaultSyncRequiresAccount
+                            : supportsSync(vault) ? L10n.vaultSyncDescription : L10n.vaultSyncRequiresReauthentication)
                         vaultActions(for: vault)
                     }
                 }
@@ -126,9 +188,26 @@ struct VaultSettingsView: View {
         isShowingFolderPicker = true
     }
 
+    private func supportsSync(_ vault: VaultRecord) -> Bool {
+        guard let connectionID = vault.accountConnectionId else { return false }
+        return accountConnections.first(where: { $0.id == connectionID })?.supportsVaultSync == true
+    }
+
     private func vaultActions(for vault: VaultRecord) -> some View {
         Menu(L10n.actions, systemImage: "ellipsis.circle") {
             Button(L10n.rename, systemImage: "pencil", action: { requestRename(vault) })
+
+            if vault.syncConfirmedConnectionId != nil {
+                Button(L10n.deleteServerCopy, systemImage: "icloud.slash", role: .destructive) {
+                    pendingServerDeletion = vault
+                }
+            }
+
+            if model.pendingMeetingDeletionCounts[vault.id] != nil {
+                Button(L10n.confirmBulkMeetingDeletion, systemImage: "exclamationmark.triangle") {
+                    pendingBulkMeetingDeletion = vault
+                }
+            }
 
             if vault.id != currentVault?.id {
                 Button(L10n.removeVault, systemImage: "minus", role: .destructive) {

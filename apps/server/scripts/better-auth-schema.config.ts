@@ -1,7 +1,7 @@
 import { oauthProvider } from "@better-auth/oauth-provider";
 import { drizzleAdapter } from "@better-auth/drizzle-adapter/relations-v2";
 import { betterAuth } from "better-auth";
-import { jwt } from "better-auth/plugins";
+import { admin, jwt, organization } from "better-auth/plugins";
 
 import { OAUTH_SCOPES } from "../src/auth/scopes";
 
@@ -19,11 +19,21 @@ export const auth = betterAuth({
     ...(provider === "pg" ? { schemaName: "auth" } : {}),
   }),
   plugins: [
+    admin(),
     jwt(),
     oauthProvider({
       consentPage: "/oauth/consent",
       loginPage: "/sign-in",
       scopes: OAUTH_SCOPES,
+    }),
+    organization({
+      cancelPendingInvitationsOnReInvite: true,
+      requireEmailVerificationOnInvitation: true,
+      sendInvitationEmail: async () => {},
+      teams: {
+        enabled: true,
+        defaultTeam: { enabled: true },
+      },
     }),
   ],
 });

@@ -1,8 +1,8 @@
 # Dahlia Server
 
-`apps/server` is the optional, self-hostable AI Gateway used by the Codex process embedded in Dahlia. It also accepts explicitly uploaded arbitrary-byte artifacts; it does not automatically receive recordings, transcript records, SQLite databases, or Vault data. Responses request content is relayed to the configured provider without being persisted or logged.
+`apps/server` is the optional, self-hostable AI Gateway used by the Codex process embedded in Dahlia. It also accepts explicitly uploaded arbitrary-byte artifacts and optional owner-controlled meeting sync. Meeting sync stores Vault names, Project names/descriptions/hierarchy, summaries, original transcripts, screenshots, OCR, and captions; it never uploads recordings, translated transcripts, or SQLite databases. Responses request content is relayed to the configured provider without being persisted or logged.
 
-Better Auth, Gateway administration, and future meeting cloud sync share one Drizzle application database. Provider credentials remain separate runtime secrets and are never stored in that database.
+Better Auth, Gateway administration, and meeting sync share one Drizzle application database. Provider credentials remain separate runtime secrets and are never stored in that database.
 
 ## Database and Gateway configuration
 
@@ -16,15 +16,17 @@ Better Auth, Gateway administration, and future meeting cloud sync share one Dri
 | `hyperdrive` | Cloudflare Worker | `HYPERDRIVE` binding |
 | `d1` | Cloudflare Worker | `dahlia_db_prod` binding |
 
-Node supports `sqlite`, `postgres`, and `lakebase`; Workers support `d1`, `hyperdrive`, and direct `postgres`. PostgreSQL-compatible connections keep Better Auth tables in `auth` and Dahlia-owned tables in `dahlia`; both schemas are owned by the connection user. Lakebase uses the official `@databricks/lakebase` pool for OAuth credential refresh.
+Node supports `sqlite`, `postgres`, and `lakebase`; Workers support `d1`, `hyperdrive`, and direct `postgres`. PostgreSQL-compatible connections keep generated Better Auth tables in `auth`, application and sharing state in `core`, and synchronized meeting data in `content`; all schemas are owned by the connection user. References flow only from `content` to `core` to `auth`. Lakebase uses the official `@databricks/lakebase` pool for OAuth credential refresh.
 
-Better Auth schemas are generated unmodified into `src/db/generated`; Dahlia tables remain in the adjacent app schema files. `pnpm db:generate-auth` refreshes the auth definitions and `pnpm db:generate` produces one Drizzle migration stream per dialect under `drizzle/postgres` and `drizzle/sqlite`. The relations-v2 adapter is used with joins disabled. PostgreSQL migrations qualify both schemas; SQLite and D1 retain top-level tables and rely on the same application owner checks instead of RLS.
+Better Auth schemas are generated unmodified into `src/db/generated`; Dahlia tables remain in the adjacent app schema files. `pnpm db:generate-auth` refreshes the auth definitions and `pnpm db:generate` produces separate PostgreSQL auth and application streams under `drizzle/postgres-auth` and `drizzle/postgres`. Every authentication mode applies both streams in that order. Header mode keeps Better Auth endpoints disabled and projects each verified proxy identity into `auth.user`; accounts mode leaves that table under Better Auth's control. The relations-v2 adapter is used with joins disabled. SQLite and D1 retain one stream with top-level Better Auth tables, prefix Dahlia tables with `core_` or `content_`, and rely on the same application permission checks instead of RLS.
 
 ## API contract
 
 | Path | `accounts` | `header` |
 | --- | --- | --- |
-| `/`, `/sign-in`, `/dashboard/**`, `/artifacts/**` | Static SPA | Static SPA |
+| `/`, `/sign-in`, `/dashboard/**`, `/artifacts/**`, `/vaults/**` | Static SPA | Static SPA |
+| `/organizations` | Better Auth Organization and Team management | External Organization and Team management |
+| `/accept-invitation/**` | Better Auth invitation management | Not used |
 | `/api/auth/**` | Google sign-in and OAuth 2.1 endpoints | Disabled |
 | `/api/session` | Account session and capabilities | Validated email-header identity and capabilities |
 | `/api/admin/**` | Platform administrators only | Platform administrators only |
@@ -34,12 +36,35 @@ Better Auth schemas are generated unmodified into `src/db/generated`; Dahlia tab
 | `POST /api/v1/artifacts` | Dahlia OAuth with artifact write scope | Proxy identity |
 | `/api/v1/artifacts/{uuidv7}` | Public reads are anonymous; private reads use Dahlia OAuth or browser session; mutations use Dahlia OAuth | Public reads are anonymous; private reads and mutations use proxy identity |
 | `/api/v1/artifacts/{uuidv7}/content` | Public reads are anonymous; private reads use Dahlia OAuth or browser session | Public reads are anonymous; private reads use proxy identity |
-| `POST /mcp` | Dahlia OAuth with artifact write scope | Databricks Apps / trusted proxy identity |
+| `/api/v1/vaults/**` | Browser session or Dahlia OAuth with sync scope | Proxy identity |
+| `POST /mcp` | Dahlia OAuth with artifact write or sync read scope | Databricks Apps / trusted proxy identity |
 | `/healthz` | Minimal liveness | Internal liveness; anonymous external access is not guaranteed |
 
 `accounts` is the default authentication. It serves OAuth/OIDC discovery under `/.well-known/**`. Both hosted and self-hosted deployments use the fixed public client `databricks-cli`; it requires authorization code with S256 PKCE and supports rotating refresh tokens and revocation. Its default redirect allowlist retains the released `http://127.0.0.1:1455/oauth/callback` and also accepts the Desktop callback `http://localhost:8020`. RFC 7591 dynamic client registration remains disabled. Node deployments support MCP 2026-07-28 Client ID Metadata Documents (CIMD) with pinned public-address fetching; the MCP resource is `${DAHLIA_APP_URL}/mcp` and its protected-resource metadata is at `/.well-known/oauth-protected-resource/mcp`.
 
 OAuth access uses `api.model.read` for models, `api.model.request` for Responses, and `api.artifact.read` / `api.artifact.write` for private artifact operations. The fixed client is allowed to request these scopes; each endpoint verifies its own scope.
+
+### Meeting sync and Vault sharing
+
+Meeting sync is opt-in per Desktop Vault and uploads only to the selected Dahlia account connection. Desktop writes require `api.sync.write`; Private Web and Server MCP reads require `api.sync.read`. `core.vault_permissions` is the permission source of truth: every Vault has one immutable `user` owner identified by the authentication provider's raw user ID, while optional `user`, `organization`, and `team` members are read-only. Content rows carry only `vault_id`; PostgreSQL/Lakebase RLS and the SQLite/D1 store resolve access through the Vault permission. Screenshot bytes use deterministic object keys under `meetings/{meetingId}/screenshots/{screenshotId}.{extension}`.
+
+Desktop sends `PUT /api/v1/vaults/{vaultId}/manifest` before meeting data. That manifest is the complete Server mirror of the Vault name and two-level Project hierarchy; omitted Projects are deleted and affected meetings become unassigned. Projects are available for hierarchy browsing and meeting filtering but are not added to full-text or vector search. Transcript segments keep `audioSource` (`mic` or `system`) separate from nullable `speakerLabel`, which is reserved for future diarization.
+
+Explicit Organization and Team sharing is disabled unless `DAHLIA_SYNC_SHARING_ENABLED=true`. Disabled deployments do not expose permission mutations or member reads; owner sync and owner reads remain available.
+
+In accounts mode, owners use Better Auth Organizations, invitations, and Teams. In header mode, every validated proxy user is projected into the visible `external` Organization; the first user is its immutable owner and belongs to the `External` default Team, while later users join only the Organization. Organization owners manage Team membership from the same Web page. Vault owners explicitly grant read-only access through `PUT|DELETE /api/v1/vaults/{vaultId}/permissions/organizations/{organizationId}` or `/permissions/teams/{teamId}`; direct user member rows remain schema-only. PostgreSQL/Lakebase always migrate the generated `auth` baseline before the application baseline. RLS receives only transaction-local `app.user_id` and resolves current membership from `auth.member` and `auth.team_member`.
+
+### Server hybrid search
+
+Meeting and screenshot search is tokenized by the Server; it never reads Desktop's SQLite tokenizer or token data. Meeting search covers name, description, and visible summary text. Screenshot search covers OCR and caption. Original transcripts remain synchronized but are not searchable. Queries are limited to 500 characters and 16 AND-combined tokens. Node uses the pinned Lindera IPADIC WASM package, while Cloudflare Workers use `Intl.Segmenter`; changing runtime for an existing database requires recreating it or fully resynchronizing every meeting.
+
+`content.search_documents` is the shared rebuildable projection for meetings and screenshots. PostgreSQL uses its generated `tsvector` with GIN, SQLite uses an external-content FTS5 table, and Lakebase uses `lakebase_text` with BM25. D1 sync is fail-closed until its multi-statement writes use D1's atomic `batch()` API. Lakebase Search must be enabled by an operator before deployment; startup stops when the required extension cannot be loaded. After the first full synchronization, update BM25 corpus statistics once with:
+
+```sql
+VACUUM content.search_documents;
+```
+
+Set `DAHLIA_SEARCH_EMBEDDING_MODEL` to enable asynchronous semantic indexing on Node; an empty or missing value keeps it off. `DAHLIA_SEARCH_EMBEDDING_DIMENSIONS` defaults to `1024` and accepts powers of two from 32 through 1024. The App service principal calls the Databricks embedding endpoint, and content or credentials are never stored in the queue. Lakebase uses `lakebase_vector` with `lakebase_ann`; other PostgreSQL deployments use pgvector's `vector` extension with HNSW. Install `vector` as a database operator before enabling embeddings when the application role cannot create extensions. SQLite performs exact cosine ranking in Node. Search automatically combines the top 100 FTS and vector candidates with RRF and falls back to FTS when embeddings are absent, rebuilding, or unavailable. Document text and the user's search query are sent to the configured embedding provider; Dahlia does not persist or log query text.
 
 ### Artifact API
 
@@ -51,9 +76,9 @@ All storage backends stream authorized `GET` and `HEAD` responses through Dahlia
 
 ### Artifact MCP
 
-`POST /mcp` is a stateless, modern-only MCP 2026-07-28 endpoint. It exposes `create_artifact`, `update_artifact_content`, `update_artifact_visibility`, and `delete_artifact`; all operations use the same owner checks and private-by-default metadata as the Artifact REST API. Tool content is UTF-8 or canonical RFC 4648 base64, decoded to at most 8 MiB. MCP requests are rejected above 12 MiB before JSON parsing, including streamed requests without `Content-Length`. Tool results contain the artifact ID, canonical viewer URL, content type, visibility, and a resource link to the content endpoint, never artifact bytes or storage URLs. Streaming uploads larger than 8 MiB remain available through the REST API.
+`POST /mcp` is a stateless, modern-only MCP 2026-07-28 endpoint. `api.artifact.write` exposes four artifact mutation tools; `api.sync.read` exposes synchronized Project, meeting, transcript, and screenshot read tools, including Project-filtered meeting queries. Each tool uses the same authorization as its REST API. Tool content is UTF-8 or canonical RFC 4648 base64, decoded to at most 8 MiB. MCP requests are rejected above 12 MiB before JSON parsing, including streamed requests without `Content-Length`. Tool results contain the artifact ID, canonical viewer URL, content type, visibility, and a resource link to the content endpoint, never artifact bytes or storage URLs. Streaming uploads larger than 8 MiB remain available through the REST API.
 
-In `accounts` mode, `/mcp` requires a DPoP-bound access token for the exact MCP resource and `api.artifact.write`. In `header` mode, authentication is delegated to the trusted proxy and Dahlia derives ownership from its verified forwarded identity headers. Databricks Apps exposes custom MCP servers at `/mcp`; its proxy has already authenticated the request, and `X-Forwarded-Access-Token` is not used for artifact storage. A present `Origin` must match the configured application origin; non-browser clients may omit it.
+In `accounts` mode, `/mcp` requires a DPoP-bound access token for the exact MCP resource and at least one of `api.artifact.write` or `api.sync.read`; only tools covered by the granted scopes are registered. In `header` mode, authentication is delegated to the trusted proxy and Dahlia derives ownership from its verified forwarded identity headers. Databricks Apps exposes custom MCP servers at `/mcp`; its proxy has already authenticated the request, and `X-Forwarded-Access-Token` is not used for artifact storage. A present `Origin` must match the configured application origin; non-browser clients may omit it.
 
 `DAHLIA_STORAGE_BACKEND` selects `local`, `s3`, `databricks`, or `r2`. Node defaults to `local` under `DAHLIA_STORAGE_LOCAL_PATH=.data/storage`. Databricks uses `DAHLIA_STORAGE_DATABRICKS_VOLUME_PATH=/Volumes/<catalog>/<schema>/<volume>`. S3 uses `DAHLIA_STORAGE_S3_BUCKET`, optional `DAHLIA_STORAGE_S3_ENDPOINT`, and the standard `AWS_*` credential variables. Workers must explicitly select `r2` with the `DAHLIA_STORAGE` binding or `s3`; they reject the local default.
 
@@ -67,7 +92,7 @@ The AI backend uses the OpenAI Responses-compatible contract and is independent 
 
 `GET /api/v1/models` returns the standard OpenAI `object` and `data` fields together with the `models` catalog required by Dahlia's bundled Codex. Omitting `client_version` selects the latest supported bundled version, currently `0.149.1`; callers may also request `client_version=0.149.1` explicitly. Other explicit versions return `400 unsupported_codex_client_version`. The enabled Model Alias rows remain the source of truth for both representations. Codex picker and runtime metadata is inferred from the upstream model or alias when it matches the pinned catalog; models without pinned Codex metadata use the OSS default of `none`, `low`, `high`, and `max` reasoning effort with `max` as the default. OpenAI-internal transport, hosted-tool, service-tier, and canonical-model lifecycle fields are not inherited by aliases. Updating the bundled Codex requires updating this Server catalog and its contract test in the same change.
 
-Set the optional `DAHLIA_ADMIN_EMAIL` to bootstrap administration. That email remains an administrator while configured and cannot be removed in the UI. Additional administrator emails are managed under `/admin/members`. Starting with no administrator is allowed.
+The first authenticated user becomes the initial administrator. Administrator roles are stored in Better Auth's `auth.user.role`; additional registered users can be promoted or demoted under `/admin/members`.
 
 OpenAI or another OpenAI-compatible provider:
 
@@ -124,7 +149,7 @@ For `accounts`, configure the Google OAuth callback as `http://localhost:5173/ap
 
 For an identity-aware proxy, set `DAHLIA_AUTH_TYPE=header` and `DAHLIA_AUTH_HEADER` to the verified email header. Ensure the proxy removes and replaces that header and the application server is not directly reachable.
 
-The reference production container runs `pnpm db:migrate:prod` before starting Node, including with `header` authentication. PostgreSQL migrations use a session-level advisory lock, so replicas wait for one migrator instead of racing the same DDL.
+The reference production container runs `pnpm db:migrate:prod` before starting Node, including with `header` authentication. PostgreSQL migrations use a session-level advisory lock, so replicas wait for one migrator instead of racing the same DDL. Migration metadata is kept outside the application schemas: Better Auth uses `drizzle.__dahlia_auth_migrations`, and the application baseline uses `drizzle.__dahlia_server_migrations`. Both are applied in every authentication mode, in that order.
 
 SQLite contains user accounts, OAuth sessions, refresh tokens, and signing keys. Persist it across container replacement with a named volume:
 

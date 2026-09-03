@@ -146,13 +146,21 @@ Dahlia の scope 外であり、妨げない。
 
 - 文字起こしはリアルタイムもバッチも Apple Speech の `SpeechTranscriber` が on-device で行い、録音音声を外部へ
   送信しない。WhisperKit は付加機能であるバッチ自動言語判定で言語を選ぶためだけに使い、文字起こし自体は行わない。
-- 会議データはローカルの SQLite と file system に置く。
+- 会議データの正本はローカルの SQLite と file system に置く。Vault ごとに明示的に有効化する一方向同期は、
+  Vault 名、Project の名前・説明・階層、summary、transcript 原文、screenshot、OCR、AI caption の Server copy に限って許可する。翻訳文と音声は同期しない
+  ([ADR-0056](docs/adr/0056-add-owner-only-meeting-sync.md), [ADR-0066](docs/adr/0066-sync-vault-projects-and-separate-transcript-speakers.md))。Server copy は個人所有を維持し、owner が複数の特定 organization
+  または特定 Team へ明示した場合だけ read-only 共有できる。Header認証のuserは固定`external` Organizationへ所属する
+  ([ADR-0065](docs/adr/0065-unify-header-sharing-with-external-organization-teams.md))。
+- Server の任意 Hybrid 検索は同期済み summary、OCR、AI caption と検索時の query 原文を設定済み embedding
+  provider へ送信できる。Dahlia は query 原文を保存・ログ出力しない。
+  vector は再生成可能な projection とし、未設定、再構築中、障害時も全文検索へ縮退してローカルの中核機能を妨げない
+  ([ADR-0062](docs/adr/0062-add-server-hybrid-search-projection.md))。
 - 外部依存は付加機能に閉じ込め、未設定または失敗時も中核が動作する degradation を設計に含める。
 - 認証やアカウント設定を中核機能の前提にしない。
 
 **許容する例外**: 疎結合な付加機能は外部依存を持ってよい。Google Calendar と EventKit の読み取り、Google Docs や
 Drive への書き出し、Codex による要約生成、Sparkle の更新確認、Sentry の障害報告、TelemetryDeck の匿名利用計測、
-バッチ自動言語判定の初回モデル取得がこれにあたる。Codex の接続先として任意の Dahlia Server Gateway を選ぶ場合も
+バッチ自動言語判定の初回モデル取得、任意の meeting sync と明示的な read-only 共有がこれにあたる。Codex の接続先として任意の Dahlia Server Gateway を選ぶ場合も
 同じ境界に置き、いずれも中核の前提条件にしない。
 
 **誤読しやすい点**: 「スタンドアローン」は「オフライン専用」ではない。外部機能を持つこと自体は否定せず、
@@ -191,7 +199,7 @@ Drive への書き出し、Codex による要約生成、Sparkle の更新確認
 
 現在の tenet の下では採用しない。
 
-- チーム共有、共同編集、権限管理
+- 共同編集
 - CRM や SFA との双方向同期
 - クラウドでの音声処理と保管
 - 汎用の統合ハブ、ワークフロー自動化

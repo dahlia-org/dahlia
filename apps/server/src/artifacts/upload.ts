@@ -1,0 +1,34 @@
+export interface ParsedUpload {
+  contentLength: number;
+  contentType: string;
+}
+
+export class ArtifactRequestError extends Error {
+  constructor(
+    readonly status: number,
+    readonly code: string,
+  ) {
+    super(code);
+  }
+}
+
+export function parseUpload(request: Request, maximum: number): ParsedUpload {
+  const contentLength = parseContentLength(request, maximum);
+  const contentEncoding = request.headers.get("content-encoding")?.toLowerCase();
+  if (contentEncoding && contentEncoding !== "identity") {
+    throw new ArtifactRequestError(415, "unsupported_content_encoding");
+  }
+  const contentType = request.headers.get("content-type") || "application/octet-stream";
+  if (contentType.length > 255) throw new ArtifactRequestError(400, "invalid_content_type");
+  return { contentLength, contentType };
+}
+
+export function parseContentLength(request: Request, maximum: number): number {
+  const value = request.headers.get("content-length");
+  if (!value) throw new ArtifactRequestError(411, "content_length_required");
+  if (!/^\d+$/.test(value)) throw new ArtifactRequestError(400, "invalid_content_length");
+  const length = Number(value);
+  if (!Number.isSafeInteger(length)) throw new ArtifactRequestError(400, "invalid_content_length");
+  if (length > maximum) throw new ArtifactRequestError(413, "artifact_too_large");
+  return length;
+}

@@ -1,6 +1,4 @@
-CREATE SCHEMA IF NOT EXISTS "auth";
---> statement-breakpoint
-CREATE SCHEMA IF NOT EXISTS "dahlia";
+CREATE SCHEMA "auth";
 --> statement-breakpoint
 CREATE TABLE "auth"."account" (
 	"id" text PRIMARY KEY,
@@ -19,6 +17,18 @@ CREATE TABLE "auth"."account" (
 	"updated_at" timestamp NOT NULL
 );
 --> statement-breakpoint
+CREATE TABLE "auth"."invitation" (
+	"id" text PRIMARY KEY,
+	"organization_id" text NOT NULL,
+	"email" text NOT NULL,
+	"role" text,
+	"team_id" text,
+	"status" text DEFAULT 'pending' NOT NULL,
+	"expires_at" timestamp NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"inviter_id" text NOT NULL
+);
+--> statement-breakpoint
 CREATE TABLE "auth"."jwks" (
 	"id" text PRIMARY KEY,
 	"public_key" text NOT NULL,
@@ -27,6 +37,14 @@ CREATE TABLE "auth"."jwks" (
 	"expires_at" timestamp,
 	"alg" text,
 	"crv" text
+);
+--> statement-breakpoint
+CREATE TABLE "auth"."member" (
+	"id" text PRIMARY KEY,
+	"organization_id" text NOT NULL,
+	"user_id" text NOT NULL,
+	"role" text DEFAULT 'member' NOT NULL,
+	"created_at" timestamp NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "auth"."oauth_access_token" (
@@ -150,6 +168,15 @@ CREATE TABLE "auth"."oauth_resource" (
 	"metadata" jsonb
 );
 --> statement-breakpoint
+CREATE TABLE "auth"."organization" (
+	"id" text PRIMARY KEY,
+	"name" text NOT NULL,
+	"slug" text NOT NULL UNIQUE,
+	"logo" text,
+	"created_at" timestamp NOT NULL,
+	"metadata" text
+);
+--> statement-breakpoint
 CREATE TABLE "auth"."session" (
 	"id" text PRIMARY KEY,
 	"expires_at" timestamp NOT NULL,
@@ -158,7 +185,27 @@ CREATE TABLE "auth"."session" (
 	"updated_at" timestamp NOT NULL,
 	"ip_address" text,
 	"user_agent" text,
-	"user_id" text NOT NULL
+	"user_id" text NOT NULL,
+	"impersonated_by" text,
+	"active_organization_id" text,
+	"active_team_id" text
+);
+--> statement-breakpoint
+CREATE TABLE "auth"."team" (
+	"id" text PRIMARY KEY,
+	"name" text NOT NULL,
+	"member_count" integer DEFAULT 0 NOT NULL,
+	"organization_id" text NOT NULL,
+	"created_at" timestamp NOT NULL,
+	"updated_at" timestamp
+);
+--> statement-breakpoint
+CREATE TABLE "auth"."team_member" (
+	"id" text PRIMARY KEY,
+	"team_id" text NOT NULL,
+	"user_id" text NOT NULL,
+	"membership_key" text UNIQUE,
+	"created_at" timestamp
 );
 --> statement-breakpoint
 CREATE TABLE "auth"."user" (
@@ -168,7 +215,11 @@ CREATE TABLE "auth"."user" (
 	"email_verified" boolean DEFAULT false NOT NULL,
 	"image" text,
 	"created_at" timestamp DEFAULT now() NOT NULL,
-	"updated_at" timestamp DEFAULT now() NOT NULL
+	"updated_at" timestamp DEFAULT now() NOT NULL,
+	"role" text,
+	"banned" boolean DEFAULT false,
+	"ban_reason" text,
+	"ban_expires" timestamp
 );
 --> statement-breakpoint
 CREATE TABLE "auth"."verification" (
@@ -180,33 +231,12 @@ CREATE TABLE "auth"."verification" (
 	"updated_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "dahlia"."artifact" (
-	"id" text PRIMARY KEY,
-	"owner_workspace_id" text NOT NULL,
-	"content_type" text NOT NULL,
-	"storage_key" text,
-	"visibility" text DEFAULT 'private' NOT NULL,
-	"created_at" timestamp DEFAULT now() NOT NULL,
-	"updated_at" timestamp DEFAULT now() NOT NULL,
-	CONSTRAINT "artifact_visibility_check" CHECK ("visibility" IN ('private', 'public'))
-);
---> statement-breakpoint
-CREATE TABLE "dahlia"."model_alias" (
-	"alias" text PRIMARY KEY,
-	"upstream_model" text NOT NULL,
-	"display_name" text,
-	"enabled" boolean DEFAULT true NOT NULL,
-	"created_at" timestamp DEFAULT now() NOT NULL,
-	"updated_at" timestamp DEFAULT now() NOT NULL
-);
---> statement-breakpoint
-CREATE TABLE "dahlia"."platform_admin" (
-	"email" text PRIMARY KEY,
-	"created_at" timestamp DEFAULT now() NOT NULL
-);
---> statement-breakpoint
 CREATE UNIQUE INDEX "account_issuer_accountId_uidx" ON "auth"."account" ("issuer","account_id");--> statement-breakpoint
 CREATE INDEX "account_userId_idx" ON "auth"."account" ("user_id");--> statement-breakpoint
+CREATE INDEX "invitation_organizationId_idx" ON "auth"."invitation" ("organization_id");--> statement-breakpoint
+CREATE INDEX "invitation_email_idx" ON "auth"."invitation" ("email");--> statement-breakpoint
+CREATE INDEX "member_organizationId_idx" ON "auth"."member" ("organization_id");--> statement-breakpoint
+CREATE INDEX "member_userId_idx" ON "auth"."member" ("user_id");--> statement-breakpoint
 CREATE INDEX "oauthAccessToken_clientId_idx" ON "auth"."oauth_access_token" ("client_id");--> statement-breakpoint
 CREATE INDEX "oauthAccessToken_sessionId_idx" ON "auth"."oauth_access_token" ("session_id");--> statement-breakpoint
 CREATE INDEX "oauthAccessToken_userId_idx" ON "auth"."oauth_access_token" ("user_id");--> statement-breakpoint
@@ -222,9 +252,17 @@ CREATE INDEX "oauthRefreshToken_clientId_idx" ON "auth"."oauth_refresh_token" ("
 CREATE INDEX "oauthRefreshToken_sessionId_idx" ON "auth"."oauth_refresh_token" ("session_id");--> statement-breakpoint
 CREATE INDEX "oauthRefreshToken_userId_idx" ON "auth"."oauth_refresh_token" ("user_id");--> statement-breakpoint
 CREATE INDEX "oauthRefreshToken_authorizationCodeId_idx" ON "auth"."oauth_refresh_token" ("authorization_code_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "organization_slug_uidx" ON "auth"."organization" ("slug");--> statement-breakpoint
 CREATE INDEX "session_userId_idx" ON "auth"."session" ("user_id");--> statement-breakpoint
+CREATE INDEX "team_organizationId_idx" ON "auth"."team" ("organization_id");--> statement-breakpoint
+CREATE INDEX "teamMember_teamId_idx" ON "auth"."team_member" ("team_id");--> statement-breakpoint
+CREATE INDEX "teamMember_userId_idx" ON "auth"."team_member" ("user_id");--> statement-breakpoint
 CREATE INDEX "verification_identifier_idx" ON "auth"."verification" ("identifier");--> statement-breakpoint
 ALTER TABLE "auth"."account" ADD CONSTRAINT "account_user_id_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "auth"."user"("id") ON DELETE CASCADE;--> statement-breakpoint
+ALTER TABLE "auth"."invitation" ADD CONSTRAINT "invitation_organization_id_organization_id_fkey" FOREIGN KEY ("organization_id") REFERENCES "auth"."organization"("id") ON DELETE CASCADE;--> statement-breakpoint
+ALTER TABLE "auth"."invitation" ADD CONSTRAINT "invitation_inviter_id_user_id_fkey" FOREIGN KEY ("inviter_id") REFERENCES "auth"."user"("id") ON DELETE CASCADE;--> statement-breakpoint
+ALTER TABLE "auth"."member" ADD CONSTRAINT "member_organization_id_organization_id_fkey" FOREIGN KEY ("organization_id") REFERENCES "auth"."organization"("id") ON DELETE CASCADE;--> statement-breakpoint
+ALTER TABLE "auth"."member" ADD CONSTRAINT "member_user_id_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "auth"."user"("id") ON DELETE CASCADE;--> statement-breakpoint
 ALTER TABLE "auth"."oauth_access_token" ADD CONSTRAINT "oauth_access_token_client_id_oauth_client_client_id_fkey" FOREIGN KEY ("client_id") REFERENCES "auth"."oauth_client"("client_id") ON DELETE CASCADE;--> statement-breakpoint
 ALTER TABLE "auth"."oauth_access_token" ADD CONSTRAINT "oauth_access_token_session_id_session_id_fkey" FOREIGN KEY ("session_id") REFERENCES "auth"."session"("id") ON DELETE SET NULL;--> statement-breakpoint
 ALTER TABLE "auth"."oauth_access_token" ADD CONSTRAINT "oauth_access_token_user_id_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "auth"."user"("id") ON DELETE CASCADE;--> statement-breakpoint
@@ -237,4 +275,7 @@ ALTER TABLE "auth"."oauth_consent" ADD CONSTRAINT "oauth_consent_user_id_user_id
 ALTER TABLE "auth"."oauth_refresh_token" ADD CONSTRAINT "oauth_refresh_token_client_id_oauth_client_client_id_fkey" FOREIGN KEY ("client_id") REFERENCES "auth"."oauth_client"("client_id") ON DELETE CASCADE;--> statement-breakpoint
 ALTER TABLE "auth"."oauth_refresh_token" ADD CONSTRAINT "oauth_refresh_token_session_id_session_id_fkey" FOREIGN KEY ("session_id") REFERENCES "auth"."session"("id") ON DELETE SET NULL;--> statement-breakpoint
 ALTER TABLE "auth"."oauth_refresh_token" ADD CONSTRAINT "oauth_refresh_token_user_id_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "auth"."user"("id") ON DELETE CASCADE;--> statement-breakpoint
-ALTER TABLE "auth"."session" ADD CONSTRAINT "session_user_id_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "auth"."user"("id") ON DELETE CASCADE;
+ALTER TABLE "auth"."session" ADD CONSTRAINT "session_user_id_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "auth"."user"("id") ON DELETE CASCADE;--> statement-breakpoint
+ALTER TABLE "auth"."team" ADD CONSTRAINT "team_organization_id_organization_id_fkey" FOREIGN KEY ("organization_id") REFERENCES "auth"."organization"("id") ON DELETE CASCADE;--> statement-breakpoint
+ALTER TABLE "auth"."team_member" ADD CONSTRAINT "team_member_team_id_team_id_fkey" FOREIGN KEY ("team_id") REFERENCES "auth"."team"("id") ON DELETE CASCADE;--> statement-breakpoint
+ALTER TABLE "auth"."team_member" ADD CONSTRAINT "team_member_user_id_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "auth"."user"("id") ON DELETE CASCADE;

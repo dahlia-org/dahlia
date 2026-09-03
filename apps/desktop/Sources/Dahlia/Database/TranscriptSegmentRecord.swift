@@ -13,6 +13,7 @@ struct TranscriptSegmentRecord: Codable, FetchableRecord, PersistableRecord {
     var text: String
     var translatedText: String?
     var isConfirmed: Bool
+    var audioSource: String?
     var speakerLabel: String?
     var audioFeatureVersion: Int?
     var audioActiveRmsDecibels: Double?
@@ -32,6 +33,7 @@ extension TranscriptSegmentRecord {
         self.text = segment.text
         self.translatedText = segment.translatedText
         self.isConfirmed = segment.isConfirmed
+        self.audioSource = segment.audioSource
         self.speakerLabel = segment.speakerLabel
         self.audioFeatureVersion = segment.audioFeatures?.version
         self.audioActiveRmsDecibels = segment.audioFeatures?.activeRmsDecibels

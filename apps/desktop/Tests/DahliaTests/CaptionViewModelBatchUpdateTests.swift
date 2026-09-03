@@ -183,7 +183,7 @@ import GRDB
                 text: "Existing transcript",
                 translatedText: nil,
                 isConfirmed: true,
-                speakerLabel: "mic"
+                audioSource: "mic"
             )
             try await batch.database.dbQueue.write { db in
                 try existingSegment.insert(db)
@@ -262,7 +262,7 @@ import GRDB
                 text: "active recording transcript",
                 translatedText: nil,
                 isConfirmed: true,
-                speakerLabel: "mic"
+                audioSource: "mic"
             )
             let visibleSegment = TranscriptSegmentRecord(
                 id: .v7(),
@@ -272,7 +272,7 @@ import GRDB
                 text: "visible transcript before completion",
                 translatedText: nil,
                 isConfirmed: true,
-                speakerLabel: "mic"
+                audioSource: "mic"
             )
             try batch.database.dbQueue.write { db in
                 try recordingMeeting.insert(db)
@@ -299,7 +299,7 @@ import GRDB
                 text: "loaded after batch completion",
                 translatedText: nil,
                 isConfirmed: true,
-                speakerLabel: "mic"
+                audioSource: "mic"
             )
             try batch.database.dbQueue.write { db in
                 try db.execute(

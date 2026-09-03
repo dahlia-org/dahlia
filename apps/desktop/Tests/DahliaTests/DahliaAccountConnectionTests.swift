@@ -7,6 +7,24 @@
     @MainActor
     struct DahliaAccountConnectionTests {
         @Test
+        func filesScopeEnablesVaultSyncForDatabricksAppsConnections() {
+            let record = makeConnection(origin: "https://dahlia.example.com")
+
+            #expect(DahliaAccountConnection(
+                record: record,
+                account: nil,
+                isCloud: false,
+                grantedScopes: ["files"]
+            ).supportsVaultSync)
+            #expect(!DahliaAccountConnection(
+                record: record,
+                account: nil,
+                isCloud: false,
+                grantedScopes: ["ai-gateway"]
+            ).supportsVaultSync)
+        }
+
+        @Test
         func migrationAddsLocalAISettingsAndSetsDeletedConnectionToLocal() async throws {
             let queue = try DatabaseQueue()
             try AppDatabaseManager.migrator.migrate(queue, upTo: "v39_dahliaAccountConnections")
