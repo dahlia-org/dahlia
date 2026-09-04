@@ -463,8 +463,9 @@ actor SyncWorker {
             } catch is CancellationError {
                 throw CancellationError()
             } catch let error as SyncHTTPError where error.status == 404 && error.code == "vault_not_found" {
-                try await SyncTransactionQueue.removeRevokedMemberVault(
+                _ = try await RemoteChangeApplier.removeRevokedMemberVault(
                     vaultId: target.vaultId,
+                    expectedConnectionId: target.connectionId,
                     dbQueue: dbQueue
                 )
             } catch {
@@ -553,6 +554,7 @@ actor SyncWorker {
             reset,
             cursor: cursor,
             vaultId: target.vaultId,
+            expectedConnectionId: target.connectionId,
             dbQueue: dbQueue
         )
     }
@@ -620,6 +622,7 @@ actor SyncWorker {
         guard try await RemoteChangeApplier.reconcileProjectSnapshot(
             projects,
             vaultId: target.vaultId,
+            expectedConnectionId: target.connectionId,
             dbQueue: dbQueue
         ) else {
             return nil
@@ -698,9 +701,10 @@ actor SyncWorker {
     ) async throws -> Bool {
         guard !changes.isEmpty else {
             guard let cursor else { return true }
-            return try await SyncTransactionQueue.advancePullCursor(
+            return try await RemoteChangeApplier.advancePullCursor(
                 cursor,
                 vaultId: target.vaultId,
+                expectedConnectionId: target.connectionId,
                 dbQueue: dbQueue
             )
         }
@@ -718,9 +722,10 @@ actor SyncWorker {
                 dbQueue: dbQueue
             ) {
                 if let appliedCursor,
-                   try await !SyncTransactionQueue.advancePullCursor(
+                   try await !RemoteChangeApplier.advancePullCursor(
                        appliedCursor,
                        vaultId: target.vaultId,
+                       expectedConnectionId: target.connectionId,
                        dbQueue: dbQueue
                    ) { return false }
                 continue
@@ -738,6 +743,7 @@ actor SyncWorker {
                 transcripts: supplemental.transcripts,
                 cursor: appliedCursor,
                 vaultId: target.vaultId,
+                expectedConnectionId: target.connectionId,
                 dbQueue: dbQueue
             ) else { return false }
         }
@@ -753,6 +759,7 @@ actor SyncWorker {
               try await RemoteChangeApplier.beginTranscript(
                   meetingId: change.entityId,
                   vaultId: target.vaultId,
+                  expectedConnectionId: target.connectionId,
                   dbQueue: dbQueue
               )
         else { return false }
@@ -776,6 +783,7 @@ actor SyncWorker {
                     Array(page.items[offset ..< end]),
                     meetingId: change.entityId,
                     vaultId: target.vaultId,
+                    expectedConnectionId: target.connectionId,
                     dbQueue: dbQueue
                 ) else { return false }
             }
@@ -787,6 +795,7 @@ actor SyncWorker {
             revision: revision,
             cursor: appliedCursor,
             vaultId: target.vaultId,
+            expectedConnectionId: target.connectionId,
             dbQueue: dbQueue
         )
     }
@@ -979,13 +988,34 @@ actor SyncWorker {
 }
 
 enum RemoteChangeApplier {
+    private static func withCurrentAssociation(
+        vaultId: UUID,
+        expectedConnectionId: UUID,
+        dbQueue: DatabaseQueue,
+        _ body: @Sendable (Database) throws -> Bool
+    ) async throws -> Bool {
+        try await dbQueue.write { db in
+            guard try SyncTransactionQueue.matchesExpectedConnection(
+                vaultId: vaultId,
+                connectionId: expectedConnectionId,
+                in: db
+            ) else { return false }
+            return try body(db)
+        }
+    }
+
     static func reconcileProjectSnapshot(
         _ projects: [SyncProjectSnapshot],
         vaultId: UUID,
+        expectedConnectionId: UUID,
         dbQueue: DatabaseQueue
     ) async throws -> Bool {
         let orderedProjects = orderProjects(projects)
-        return try await dbQueue.write { db in
+        return try await withCurrentAssociation(
+            vaultId: vaultId,
+            expectedConnectionId: expectedConnectionId,
+            dbQueue: dbQueue
+        ) { db in
             guard try !SyncTransactionQueue.hasPending(vaultId: vaultId, in: db),
                   try !hasActiveRecording(in: db)
             else { return false }
@@ -1077,8 +1107,17 @@ enum RemoteChangeApplier {
         ) ?? false
     }
 
-    static func beginTranscript(meetingId: UUID, vaultId: UUID, dbQueue: DatabaseQueue) async throws -> Bool {
-        try await dbQueue.write { db in
+    static func beginTranscript(
+        meetingId: UUID,
+        vaultId: UUID,
+        expectedConnectionId: UUID,
+        dbQueue: DatabaseQueue
+    ) async throws -> Bool {
+        try await withCurrentAssociation(
+            vaultId: vaultId,
+            expectedConnectionId: expectedConnectionId,
+            dbQueue: dbQueue
+        ) { db in
             guard try !SyncTransactionQueue.hasPending(vaultId: vaultId, in: db),
                   try !hasActiveRecording(in: db)
             else { return false }
@@ -1107,9 +1146,14 @@ enum RemoteChangeApplier {
         _ segments: [SyncTranscriptPage.Segment],
         meetingId: UUID,
         vaultId: UUID,
+        expectedConnectionId: UUID,
         dbQueue: DatabaseQueue
     ) async throws -> Bool {
-        try await dbQueue.write { db in
+        try await withCurrentAssociation(
+            vaultId: vaultId,
+            expectedConnectionId: expectedConnectionId,
+            dbQueue: dbQueue
+        ) { db in
             guard try !SyncTransactionQueue.hasPending(vaultId: vaultId, in: db),
                   try !hasActiveRecording(in: db)
             else { return false }
@@ -1143,9 +1187,14 @@ enum RemoteChangeApplier {
         revision: Int,
         cursor: String?,
         vaultId: UUID,
+        expectedConnectionId: UUID,
         dbQueue: DatabaseQueue
     ) async throws -> Bool {
-        try await dbQueue.write { db in
+        try await withCurrentAssociation(
+            vaultId: vaultId,
+            expectedConnectionId: expectedConnectionId,
+            dbQueue: dbQueue
+        ) { db in
             guard try !SyncTransactionQueue.hasPending(vaultId: vaultId, in: db),
                   try !hasActiveRecording(in: db)
             else { return false }
@@ -1217,9 +1266,14 @@ enum RemoteChangeApplier {
         transcripts: [UUID: [SyncTranscriptPage.Segment]],
         cursor: String?,
         vaultId: UUID,
+        expectedConnectionId: UUID,
         dbQueue: DatabaseQueue
     ) async throws -> Bool {
-        try await dbQueue.write { db in
+        try await withCurrentAssociation(
+            vaultId: vaultId,
+            expectedConnectionId: expectedConnectionId,
+            dbQueue: dbQueue
+        ) { db in
             guard try !SyncTransactionQueue.hasPending(vaultId: vaultId, in: db) else { return false }
             if changes.contains(where: { $0.entity == .transcript }), try hasActiveRecording(in: db) {
                 return false
@@ -1285,6 +1339,7 @@ enum RemoteChangeApplier {
         _ snapshot: SyncResetSnapshot,
         cursor: String?,
         vaultId: UUID,
+        expectedConnectionId: UUID,
         dbQueue: DatabaseQueue
     ) async throws -> Bool {
         struct Existing {
@@ -1361,7 +1416,11 @@ enum RemoteChangeApplier {
             let ids = deletion.ids
             for batchStart in stride(from: 0, to: ids.count, by: 100) {
                 let batch = ids[batchStart ..< min(batchStart + 100, ids.count)]
-                let completed = try await dbQueue.write { db in
+                let completed = try await withCurrentAssociation(
+                    vaultId: vaultId,
+                    expectedConnectionId: expectedConnectionId,
+                    dbQueue: dbQueue
+                ) { db in
                     guard try !SyncTransactionQueue.hasPending(vaultId: vaultId, in: db),
                           try !hasActiveRecording(in: db)
                     else { return false }
@@ -1374,7 +1433,11 @@ enum RemoteChangeApplier {
                 guard completed else { return false }
             }
         }
-        return try await dbQueue.write { db in
+        return try await withCurrentAssociation(
+            vaultId: vaultId,
+            expectedConnectionId: expectedConnectionId,
+            dbQueue: dbQueue
+        ) { db in
             guard try !SyncTransactionQueue.hasPending(vaultId: vaultId, in: db),
                   try !hasActiveRecording(in: db)
             else { return false }
@@ -1385,6 +1448,41 @@ enum RemoteChangeApplier {
             if let cursor {
                 try db.execute(sql: "UPDATE vaults SET syncPullCursor = ? WHERE id = ?", arguments: [cursor, vaultId])
             }
+            return true
+        }
+    }
+
+    static func advancePullCursor(
+        _ cursor: String,
+        vaultId: UUID,
+        expectedConnectionId: UUID,
+        dbQueue: DatabaseQueue
+    ) async throws -> Bool {
+        try await withCurrentAssociation(
+            vaultId: vaultId,
+            expectedConnectionId: expectedConnectionId,
+            dbQueue: dbQueue
+        ) { db in
+            guard try !SyncTransactionQueue.hasPending(vaultId: vaultId, in: db) else { return false }
+            try db.execute(sql: "UPDATE vaults SET syncPullCursor = ? WHERE id = ?", arguments: [cursor, vaultId])
+            return true
+        }
+    }
+
+    static func removeRevokedMemberVault(
+        vaultId: UUID,
+        expectedConnectionId: UUID,
+        dbQueue: DatabaseQueue
+    ) async throws -> Bool {
+        try await withCurrentAssociation(
+            vaultId: vaultId,
+            expectedConnectionId: expectedConnectionId,
+            dbQueue: dbQueue
+        ) { db in
+            try db.execute(
+                sql: "DELETE FROM vaults WHERE id = ? AND syncRole = 'member'",
+                arguments: [vaultId]
+            )
             return true
         }
     }

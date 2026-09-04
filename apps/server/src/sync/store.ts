@@ -742,6 +742,9 @@ function createIdentityStore(
     operationId: string,
   ): Promise<void> {
     if (!parentProjectId) return;
+    if (parentProjectId === projectId) {
+      throw new SyncTransactionError(422, "invalid_project_parent", [], operationId);
+    }
     const [parent] = await db.select({ parentProjectId: schema.syncedProject.parentProjectId })
       .from(schema.syncedProject).where(and(
         eq(schema.syncedProject.vaultId, vaultId),

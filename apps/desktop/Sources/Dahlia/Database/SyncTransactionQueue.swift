@@ -505,20 +505,22 @@ enum SyncTransactionQueue {
             throw SyncTransactionQueueError.invalidReceipt
         }
         try await dbQueue.write { db in
-            let isStillAttached = try Bool.fetchOne(
+            guard try matchesExpectedConnection(
+                vaultId: transaction.vaultId,
+                connectionId: transaction.connectionId,
+                in: db
+            ) else { return }
+            let transactionStillExists = try Bool.fetchOne(
                 db,
                 sql: """
                 SELECT EXISTS (
-                    SELECT 1 FROM sync_transactions queued
-                    JOIN vaults vault ON vault.id = queued.vaultId
-                    WHERE queued.id = ? AND queued.vaultId = ? AND queued.connectionId = ?
-                      AND vault.accountConnectionId = queued.connectionId
-                      AND vault.syncConfirmedConnectionId = queued.connectionId
+                    SELECT 1 FROM sync_transactions
+                    WHERE id = ? AND vaultId = ? AND connectionId = ?
                 )
                 """,
                 arguments: [transaction.id, transaction.vaultId, transaction.connectionId]
             ) ?? false
-            guard isStillAttached else { return }
+            guard transactionStillExists else { return }
             let resetOperation = transaction.operations.contains {
                 $0.entity == .vault && $0.action == .reset
             }
@@ -661,6 +663,19 @@ enum SyncTransactionQueue {
         }
     }
 
+    static func matchesExpectedConnection(vaultId: UUID, connectionId: UUID, in db: Database) throws -> Bool {
+        try Bool.fetchOne(
+            db,
+            sql: """
+            SELECT EXISTS (
+                SELECT 1 FROM vaults
+                WHERE id = ? AND accountConnectionId = ? AND syncConfirmedConnectionId = ?
+            )
+            """,
+            arguments: [vaultId, connectionId, connectionId]
+        ) ?? false
+    }
+
     static func isConfirmed(
         vaultId: UUID,
         entity: SyncEntity,
@@ -680,14 +695,6 @@ enum SyncTransactionQueue {
                 """,
                 arguments: [vaultId, entity, entityId, revision]
             ) ?? false
-        }
-    }
-
-    static func advancePullCursor(_ cursor: String, vaultId: UUID, dbQueue: DatabaseQueue) async throws -> Bool {
-        try await dbQueue.write { db in
-            guard try !hasPending(vaultId: vaultId, in: db) else { return false }
-            try db.execute(sql: "UPDATE vaults SET syncPullCursor = ? WHERE id = ?", arguments: [cursor, vaultId])
-            return true
         }
     }
 
@@ -742,15 +749,6 @@ enum SyncTransactionQueue {
             try discard(vaultId: vaultId, fromSequence: sequence, in: db)
             try db.execute(sql: "DELETE FROM sync_entity_state WHERE vaultId = ?", arguments: [vaultId])
             try db.execute(sql: "UPDATE vaults SET syncPullCursor = NULL WHERE id = ?", arguments: [vaultId])
-        }
-    }
-
-    static func removeRevokedMemberVault(vaultId: UUID, dbQueue: DatabaseQueue) async throws {
-        try await dbQueue.write { db in
-            try db.execute(
-                sql: "DELETE FROM vaults WHERE id = ? AND syncRole = 'member'",
-                arguments: [vaultId]
-            )
         }
     }
 

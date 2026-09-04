@@ -671,6 +671,61 @@ describe("SQLite canonical sync", () => {
     await store.close?.();
   });
 
+  it("rejects self-parenting Project creates and updates without rejecting valid roots and children", async () => {
+    const { store } = await setup();
+    await createVault(store);
+    const childId = "019d4a01-2850-7000-8000-000000000001";
+    const createOperationId = "019d4a01-2850-7000-8000-000000000002";
+    await expect(commit(store, owner, transaction("019d4a01-2850-7000-8000-000000000003", [{
+      id: createOperationId,
+      entity: "project",
+      action: "create",
+      entityId: projectId,
+      baseRevision: null,
+      data: { ...projectData("Self"), parentProjectId: projectId, projectType: null },
+    }]))).rejects.toMatchObject({
+      status: 422,
+      code: "invalid_project_parent",
+      operationId: createOperationId,
+    });
+
+    await commit(store, owner, transaction("019d4a01-2850-7000-8000-000000000004", [{
+      id: "019d4a01-2850-7000-8000-000000000005",
+      entity: "project",
+      action: "create",
+      entityId: projectId,
+      baseRevision: null,
+      data: projectData("Root"),
+    }, {
+      id: "019d4a01-2850-7000-8000-000000000006",
+      entity: "project",
+      action: "create",
+      entityId: childId,
+      baseRevision: null,
+      data: { ...projectData("Child"), parentProjectId: projectId, projectType: null },
+    }]));
+
+    const updateOperationId = "019d4a01-2850-7000-8000-000000000007";
+    await expect(commit(store, owner, transaction("019d4a01-2850-7000-8000-000000000008", [{
+      id: updateOperationId,
+      entity: "project",
+      action: "update",
+      entityId: childId,
+      baseRevision: 1,
+      data: { ...projectData("Self"), parentProjectId: childId, projectType: null },
+    }]))).rejects.toMatchObject({
+      status: 422,
+      code: "invalid_project_parent",
+      operationId: updateOperationId,
+    });
+
+    expect(await store.sync.withIdentity(owner, (sync) => sync.listProjects(vaultId))).toEqual([
+      expect.objectContaining({ projectId, parentProjectId: null }),
+      expect.objectContaining({ projectId: childId, parentProjectId: projectId }),
+    ]);
+    await store.close?.();
+  });
+
   it("includes a missing parent when a deleted child Project is reapplied", async () => {
     const { store } = await setup();
     await createVault(store);

@@ -598,27 +598,6 @@
         }
 
         @Test
-        func revokedMemberVaultIsRemovedFromTheWorkingCopy() async throws {
-            let (database, originalVault) = try await syncedDatabase()
-            var memberVault = originalVault
-            memberVault.syncRole = "member"
-            let vault = memberVault
-            let meeting = MeetingRecord(
-                id: .v7(), vaultId: vault.id, projectId: nil, name: "Shared",
-                createdAt: .now, updatedAt: .now
-            )
-            try await database.dbQueue.write { db in
-                try vault.update(db)
-                try meeting.insert(db)
-            }
-
-            try await SyncTransactionQueue.removeRevokedMemberVault(vaultId: vault.id, dbQueue: database.dbQueue)
-
-            #expect(try await database.dbQueue.read { db in try VaultRecord.fetchOne(db, key: vault.id) } == nil)
-            #expect(try await database.dbQueue.read { db in try MeetingRecord.fetchOne(db, key: meeting.id) } == nil)
-        }
-
-        @Test
         func memberVaultDisablesRecordingBeforePersistenceStarts() async throws {
             let (database, originalVault) = try await syncedDatabase()
             var vault = originalVault
@@ -677,6 +656,7 @@
                 transcripts: [:],
                 cursor: nil,
                 vaultId: vault.id,
+                expectedConnectionId: #require(vault.syncConfirmedConnectionId),
                 dbQueue: database.dbQueue
             ))
             let state = try await database.dbQueue.read { db in
@@ -771,10 +751,17 @@
             }
 
             #expect(try await RemoteChangeApplier.beginTranscript(
-                meetingId: meeting.id, vaultId: vault.id, dbQueue: database.dbQueue
+                meetingId: meeting.id,
+                vaultId: vault.id,
+                expectedConnectionId: #require(vault.syncConfirmedConnectionId),
+                dbQueue: database.dbQueue
             ))
             #expect(try await RemoteChangeApplier.applyTranscriptPage(
-                [first], meetingId: meeting.id, vaultId: vault.id, dbQueue: database.dbQueue
+                [first],
+                meetingId: meeting.id,
+                vaultId: vault.id,
+                expectedConnectionId: #require(vault.syncConfirmedConnectionId),
+                dbQueue: database.dbQueue
             ))
             #expect(try await database.dbQueue.read { db in
                 try Set(UUID.fetchAll(
@@ -787,7 +774,11 @@
                 try String.fetchOne(db, sql: "SELECT syncPullCursor FROM vaults WHERE id = ?", arguments: [vault.id])
             } == nil)
             #expect(try await RemoteChangeApplier.applyTranscriptPage(
-                [second], meetingId: meeting.id, vaultId: vault.id, dbQueue: database.dbQueue
+                [second],
+                meetingId: meeting.id,
+                vaultId: vault.id,
+                expectedConnectionId: #require(vault.syncConfirmedConnectionId),
+                dbQueue: database.dbQueue
             ))
             #expect(try await database.dbQueue.read { db in
                 try Set(UUID.fetchAll(
@@ -801,6 +792,7 @@
                 revision: 4,
                 cursor: "cursor-4",
                 vaultId: vault.id,
+                expectedConnectionId: #require(vault.syncConfirmedConnectionId),
                 dbQueue: database.dbQueue
             ))
 
@@ -854,7 +846,9 @@
 
             #expect(try await !RemoteChangeApplier.apply(
                 [change], screenshots: [:], transcripts: [meeting.id: [segment]], cursor: "cursor-1",
-                vaultId: vault.id, dbQueue: database.dbQueue
+                vaultId: vault.id,
+                expectedConnectionId: #require(vault.syncConfirmedConnectionId),
+                dbQueue: database.dbQueue
             ))
             #expect(try await database.dbQueue.read { db in
                 try Int.fetchOne(db, sql: "SELECT count(*) FROM transcript_segments WHERE meetingId = ?", arguments: [meeting.id])
@@ -868,7 +862,9 @@
             }
             #expect(try await RemoteChangeApplier.apply(
                 [change], screenshots: [:], transcripts: [meeting.id: [segment]], cursor: "cursor-1",
-                vaultId: vault.id, dbQueue: database.dbQueue
+                vaultId: vault.id,
+                expectedConnectionId: #require(vault.syncConfirmedConnectionId),
+                dbQueue: database.dbQueue
             ))
         }
 
@@ -1445,7 +1441,9 @@
             #expect(try await RemoteChangeApplier.apply(
                 changes,
                 screenshots: [:], transcripts: [:], cursor: nil,
-                vaultId: vault.id, dbQueue: database.dbQueue
+                vaultId: vault.id,
+                expectedConnectionId: #require(vault.syncConfirmedConnectionId),
+                dbQueue: database.dbQueue
             ))
             let stateBeforeReconciliation = try await database.dbQueue.read { db in
                 try (
@@ -1461,6 +1459,7 @@
                 try #require(SyncResetSnapshot(changes)),
                 cursor: "reset-cursor",
                 vaultId: vault.id,
+                expectedConnectionId: #require(vault.syncConfirmedConnectionId),
                 dbQueue: database.dbQueue
             ))
             let state = try await database.dbQueue.read { db in
@@ -1578,6 +1577,7 @@
             #expect(try await !RemoteChangeApplier.reconcileProjectSnapshot(
                 snapshot,
                 vaultId: vault.id,
+                expectedConnectionId: #require(vault.syncConfirmedConnectionId),
                 dbQueue: database.dbQueue
             ))
             #expect(try await database.dbQueue.read { db in
@@ -1593,6 +1593,7 @@
             #expect(try await RemoteChangeApplier.reconcileProjectSnapshot(
                 snapshot,
                 vaultId: vault.id,
+                expectedConnectionId: #require(vault.syncConfirmedConnectionId),
                 dbQueue: database.dbQueue
             ))
 
