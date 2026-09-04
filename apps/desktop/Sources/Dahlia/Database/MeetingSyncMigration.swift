@@ -3,7 +3,7 @@ import GRDB
 /// Final unreleased synchronization schema. v1-v41 are the only published migrations.
 enum MeetingSyncMigration {
     static func migrate(in db: Database) throws {
-        guard try ["vaults", "meetings", "transcript_segments", "dahlia_account_connections"]
+        guard try ["vaults", "meetings", "screenshots", "transcript_segments", "dahlia_account_connections"]
             .allSatisfy({ try db.tableExists($0) }) else { return }
 
         try db.alter(table: VaultRecord.databaseTableName) { table in
@@ -55,11 +55,29 @@ enum MeetingSyncMigration {
         CHECK(
             (attachmentMimeType IS NULL AND attachmentSHA256 IS NULL AND attachmentBytes IS NULL)
             OR (entity = 'screenshot' AND attachmentMimeType IS NOT NULL
-                AND attachmentSHA256 IS NOT NULL AND attachmentBytes IS NOT NULL)
+                AND attachmentSHA256 IS NOT NULL)
         )
     );
     CREATE INDEX sync_operations_entity_idx
         ON sync_operations(entity, entityId, transactionId);
+
+    CREATE TRIGGER sync_screenshot_attachment_before_update
+    BEFORE UPDATE OF imageData, mimeType ON screenshots
+    BEGIN
+        UPDATE sync_operations
+        SET attachmentBytes = OLD.imageData
+        WHERE entity = 'screenshot' AND entityId = OLD.id
+          AND attachmentMimeType IS NOT NULL AND attachmentBytes IS NULL;
+    END;
+
+    CREATE TRIGGER sync_screenshot_attachment_before_delete
+    BEFORE DELETE ON screenshots
+    BEGIN
+        UPDATE sync_operations
+        SET attachmentBytes = OLD.imageData
+        WHERE entity = 'screenshot' AND entityId = OLD.id
+          AND attachmentMimeType IS NOT NULL AND attachmentBytes IS NULL;
+    END;
 
     CREATE TABLE sync_entity_state (
         vaultId BLOB NOT NULL REFERENCES vaults(id) ON DELETE CASCADE,

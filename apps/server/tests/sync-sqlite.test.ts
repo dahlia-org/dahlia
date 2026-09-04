@@ -640,6 +640,90 @@ describe("SQLite canonical sync", () => {
     await store.close?.();
   });
 
+  it("cleans up an upload that finishes after canonical screenshot deletion", async () => {
+    const { store } = await setup();
+    await createVault(store);
+    await commit(store, owner, transaction("019d4a01-4300-7000-8000-000000000001", [{
+      id: "019d4a01-4300-7000-8000-000000000002",
+      entity: "meeting",
+      action: "create",
+      entityId: meetingId,
+      baseRevision: null,
+      data: { ...meetingData(), projectId: null },
+    }]));
+    const storageKey = `meetings/${meetingId}/screenshots/${screenshotId}.png`;
+    expect(await store.sync.withIdentity(owner, (sync) => sync.createScreenshot({
+      screenshotId,
+      vaultId,
+      meetingId,
+      capturedAt: now,
+      contentType: "image/png",
+      storageKey,
+      contentLength: 3,
+      contentHash: "039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81",
+      ocrText: null,
+      caption: null,
+      revision: 0,
+    }))).toBe(true);
+    let releasePut!: () => void;
+    let markPutStarted!: () => void;
+    let markDeleted!: () => void;
+    const putGate = new Promise<void>((resolve) => { releasePut = resolve; });
+    const putStarted = new Promise<void>((resolve) => { markPutStarted = resolve; });
+    const deleted = new Promise<void>((resolve) => { markDeleted = resolve; });
+    let objectExists = false;
+    let deleteCalled = false;
+    const storage = {
+      async put(_key: string, body: ReadableStream<Uint8Array> | Uint8Array) {
+        if (!(body instanceof Uint8Array)) await new Response(body).arrayBuffer();
+        markPutStarted();
+        await putGate;
+        objectExists = true;
+      },
+      async exists() { return objectExists; },
+      async read() { return new Response(new Uint8Array([1, 2, 3])); },
+      async delete() {
+        deleteCalled = true;
+        objectExists = false;
+        markDeleted();
+      },
+    };
+    const uploadService = new MeetingSyncService(store.sync, storage);
+    const deleteService = new MeetingSyncService(store.sync, storage);
+    const upload = uploadService.putScreenshot(owner, vaultId, meetingId, screenshotId, new Request("https://server.test", {
+      method: "PUT",
+      headers: {
+        "content-length": "3",
+        "content-type": "image/png",
+        "x-dahlia-captured-at": now.toISOString(),
+        "x-dahlia-content-sha256": "039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81",
+      },
+      body: new Uint8Array([1, 2, 3]),
+    }));
+    await putStarted;
+    await deleteService.commitTransaction(owner, {
+      schemaVersion: 1,
+      id: "019d4a01-4300-7000-8000-000000000003",
+      vaultId,
+      createdAt: now.toISOString(),
+      operations: [{
+        id: "019d4a01-4300-7000-8000-000000000004",
+        entity: "meeting",
+        action: "delete",
+        entityId: meetingId,
+        baseRevision: 1,
+        data: {},
+      }],
+    });
+    await deleted;
+    expect(deleteCalled).toBe(true);
+
+    releasePut();
+    await expect(upload).rejects.toMatchObject({ status: 409, code: "screenshot_id_conflict" });
+    expect(objectExists).toBe(false);
+    await store.close?.();
+  });
+
   it("stores canonical transcript rows without a generation and keeps FTS projection", async () => {
     const { databasePath, store } = await setup();
     const database = new DatabaseSync(databasePath);

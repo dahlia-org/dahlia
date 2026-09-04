@@ -164,7 +164,11 @@ enum SyncInitialSnapshotBuilder {
         try await dbQueue.write { db in
             let vaultIds = try UUID.fetchAll(
                 db,
-                sql: "SELECT id FROM vaults WHERE syncConfirmedConnectionId IS NOT NULL"
+                sql: """
+                SELECT id FROM vaults
+                WHERE syncConfirmedConnectionId IS NOT NULL
+                  AND (syncRole IS NULL OR syncRole = 'owner')
+                """
             )
             for vaultId in vaultIds {
                 try SyncTransactionQueue.discard(vaultId: vaultId, in: db)

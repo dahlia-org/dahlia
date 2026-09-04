@@ -227,6 +227,21 @@ enum SyncTransactionRecorder {
         )
 
         for (position, operation) in operations.enumerated() {
+            let attachment = screenshotAttachments[operation.id]
+            let usesScreenshotRow = if attachment == nil {
+                false
+            } else {
+                try Bool.fetchOne(
+                    db,
+                    sql: "SELECT EXISTS (SELECT 1 FROM screenshots WHERE id = ?)",
+                    arguments: [operation.entityId]
+                ) ?? false
+            }
+            let attachmentBytes: Data? = if !usesScreenshotRow {
+                attachment?.bytes
+            } else {
+                nil
+            }
             let confirmedRevision = try Int.fetchOne(
                 db,
                 sql: """
@@ -271,9 +286,9 @@ enum SyncTransactionRecorder {
                     transactionId, position, operation.id, operation.entity, operation.action,
                     operation.entityId, baseRevision,
                     operation.payloadJSON.map { String(decoding: $0, as: UTF8.self) },
-                    screenshotAttachments[operation.id]?.mimeType,
-                    screenshotAttachments[operation.id]?.sha256,
-                    screenshotAttachments[operation.id]?.bytes,
+                    attachment?.mimeType,
+                    attachment?.sha256,
+                    attachmentBytes,
                 ]
             )
             var patchPosition = 0
@@ -603,9 +618,14 @@ enum SyncTransactionQueue {
             guard let row = try Row.fetchOne(
                 db,
                 sql: """
-                SELECT attachmentMimeType AS mimeType, attachmentSHA256 AS sha256,
-                    attachmentBytes AS bytes
-                FROM sync_operations WHERE id = ? AND attachmentBytes IS NOT NULL
+                SELECT operation.attachmentMimeType AS mimeType,
+                    operation.attachmentSHA256 AS sha256,
+                    COALESCE(operation.attachmentBytes, screenshot.imageData) AS bytes
+                FROM sync_operations operation
+                LEFT JOIN screenshots screenshot ON screenshot.id = operation.entityId
+                WHERE operation.id = ?
+                  AND operation.attachmentMimeType IS NOT NULL
+                  AND COALESCE(operation.attachmentBytes, screenshot.imageData) IS NOT NULL
                 """,
                 arguments: [operationId]
             ) else { return nil }

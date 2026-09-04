@@ -55,16 +55,24 @@
         }
 
         @Test
-        func recorderKeepsImmutablePayloadAttachmentAndVaultOrder() async throws {
+        func recorderUsesTheScreenshotRowUntilDeletionThenPreservesItsAttachment() async throws {
             let (database, vault) = try await syncedDatabase()
             let firstId = UUID.v7()
             let secondId = UUID.v7()
+            let meeting = MeetingRecord(
+                id: .v7(), vaultId: vault.id, projectId: nil, name: "Meeting",
+                createdAt: .now, updatedAt: .now
+            )
+            let screenshot = MeetingScreenshotRecord(
+                id: .v7(), meetingId: meeting.id, sessionId: nil, capturedAt: .now,
+                imageData: Data([1, 2, 3]), mimeType: "image/png", ocrText: nil, caption: nil
+            )
             let attachment = SyncScreenshotAttachment(mimeType: "image/png", bytes: Data([1, 2, 3]))
             let first = SyncOperationDraft(
                 id: firstId,
                 entity: .screenshot,
                 action: .upsert,
-                entityId: UUID.v7(),
+                entityId: screenshot.id,
                 payloadJSON: Data("{\"caption\":\"first\"}".utf8)
             )
             let second = SyncOperationDraft(
@@ -75,6 +83,8 @@
                 payloadJSON: Data("{\"name\":\"second\"}".utf8)
             )
             _ = try await database.dbQueue.write { db in
+                try meeting.insert(db)
+                try screenshot.insert(db)
                 try SyncTransactionRecorder.record(
                     vaultId: vault.id,
                     operations: [first],
@@ -88,12 +98,34 @@
             #expect(claimed.operations.map(\.id) == [firstId])
             #expect(claimed.operations.first?.payloadJSON == first.payloadJSON)
             #expect(try await SyncTransactionQueue.claim(dbQueue: database.dbQueue) == nil)
+            #expect(try await database.dbQueue.read { db in
+                try Int.fetchOne(
+                    db,
+                    sql: "SELECT length(attachmentBytes) FROM sync_operations WHERE id = ?",
+                    arguments: [firstId]
+                )
+            } == nil)
             let stored = try #require(try await SyncTransactionQueue.screenshotAttachment(
                 operationId: firstId,
                 dbQueue: database.dbQueue
             ))
             #expect(stored.bytes == attachment.bytes)
             #expect(stored.sha256 == attachment.sha256)
+
+            try await database.dbQueue.write { db in
+                _ = try MeetingScreenshotRecord.deleteOne(db, key: screenshot.id)
+            }
+            #expect(try await database.dbQueue.read { db in
+                try Int.fetchOne(
+                    db,
+                    sql: "SELECT length(attachmentBytes) FROM sync_operations WHERE id = ?",
+                    arguments: [firstId]
+                )
+            } == 3)
+            #expect(try await SyncTransactionQueue.screenshotAttachment(
+                operationId: firstId,
+                dbQueue: database.dbQueue
+            )?.bytes == attachment.bytes)
         }
 
         @Test
@@ -310,7 +342,7 @@
                 try Row.fetchAll(
                     db,
                     sql: """
-                    SELECT o.entity, o.action, o.baseRevision, o.payloadJSON,
+                    SELECT o.id, o.entity, o.action, o.baseRevision, o.payloadJSON,
                         o.attachmentSHA256, length(o.attachmentBytes) AS attachmentLength
                     FROM sync_operations o
                     JOIN sync_transactions t ON t.id = o.transactionId
@@ -324,10 +356,15 @@
             #expect(rows[0]["action"] as String == "create")
             #expect(rows[1]["entity"] as String == "screenshot")
             #expect(rows[1]["baseRevision"] as Int? == nil)
-            #expect(rows[1]["attachmentLength"] as Int? == 3)
+            #expect(rows[1]["attachmentLength"] as Int? == nil)
             let hash: String = rows[1]["attachmentSHA256"]
             let payload: String = rows[1]["payloadJSON"]
             #expect(payload.contains(hash))
+            let operationId: UUID = rows[1]["id"]
+            #expect(try await SyncTransactionQueue.screenshotAttachment(
+                operationId: operationId,
+                dbQueue: database.dbQueue
+            )?.bytes == screenshot.imageData)
         }
 
         @Test
@@ -584,6 +621,7 @@
                 try db.execute(sql: """
                 CREATE TABLE vaults(id BLOB PRIMARY KEY);
                 CREATE TABLE meetings(id BLOB PRIMARY KEY);
+                CREATE TABLE screenshots(id BLOB PRIMARY KEY, imageData BLOB NOT NULL, mimeType TEXT NOT NULL);
                 CREATE TABLE dahlia_account_connections(id BLOB PRIMARY KEY);
                 CREATE TABLE transcript_segments(
                     id BLOB PRIMARY KEY, meetingId BLOB NOT NULL, speakerLabel TEXT
@@ -707,9 +745,32 @@
         @Test
         func restoredVaultSeedsPullCursorPastItsAcknowledgedReset() async throws {
             let (database, vault) = try await syncedDatabase()
+            let memberVault = try await database.dbQueue.write { db in
+                var member = VaultRecord(
+                    id: .v7(), path: "/tmp/member-sync", name: "Shared",
+                    createdAt: .now, lastOpenedAt: .now
+                )
+                member.accountConnectionId = vault.accountConnectionId
+                member.syncConfirmedConnectionId = vault.syncConfirmedConnectionId
+                member.syncEnabled = true
+                member.syncRole = "member"
+                member.syncPullCursor = "member-cursor"
+                try member.insert(db)
+                return member
+            }
             try await SyncInitialSnapshotBuilder.prepareRestore(dbQueue: database.dbQueue)
             let reset = try #require(try await SyncTransactionQueue.claim(dbQueue: database.dbQueue))
             #expect(reset.operations.contains { $0.entity == .vault && $0.action == .reset })
+            #expect(try await database.dbQueue.read { db in
+                try Int.fetchOne(
+                    db,
+                    sql: "SELECT count(*) FROM sync_transactions WHERE vaultId = ?",
+                    arguments: [memberVault.id]
+                )
+            } == 0)
+            #expect(try await database.dbQueue.read { db in
+                try VaultRecord.fetchOne(db, key: memberVault.id)?.syncPullCursor
+            } == "member-cursor")
 
             try await SyncTransactionQueue.complete(
                 reset,

@@ -418,15 +418,26 @@ export class MeetingSyncService {
           uploadBody.digest,
         ]);
         if (actualHash !== contentHash) throw new ArtifactRequestError(409, "screenshot_content_hash_mismatch");
-        return reservation.existing;
+        const current = await this.store.withIdentity(identity, async (scoped) => {
+          if (!await scoped.ensureUploadTarget(vaultId, meetingId)) return null;
+          return scoped.getScreenshot(vaultId, meetingId, screenshotId);
+        });
+        if (!current
+          || current.storageKey !== storageKey
+          || current.contentType !== upload.contentType
+          || current.contentLength !== upload.contentLength
+          || current.contentHash !== contentHash) {
+          throw new ArtifactRequestError(409, "screenshot_id_conflict");
+        }
+        return current;
       } catch (error) {
+        try {
+          await storage.delete(storageKey);
+        } catch {
+          await this.store.enqueueStorageDelete(storageKey);
+          this.scheduleStorageDeletes();
+        }
         if (reservation.created) {
-          try {
-            await storage.delete(storageKey);
-          } catch {
-            await this.store.enqueueStorageDelete(storageKey);
-            this.scheduleStorageDeletes();
-          }
           await this.store.withIdentity(
             identity,
             (scoped) => scoped.deleteScreenshot(vaultId, screenshotId, storageKey),
