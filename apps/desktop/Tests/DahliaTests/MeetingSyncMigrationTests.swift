@@ -707,6 +707,73 @@
         }
 
         @Test
+        func remoteTranscriptPagesAdvanceOnlyAfterBoundedReconciliationFinishes() async throws {
+            let (database, vault) = try await syncedDatabase()
+            let meeting = MeetingRecord(
+                id: .v7(), vaultId: vault.id, projectId: nil, name: "Meeting",
+                createdAt: .now, updatedAt: .now
+            )
+            let removedId = UUID.v7()
+            let first = SyncTranscriptPage.Segment(
+                segmentId: .v7(), startTime: .now, endTime: nil, text: "first",
+                isConfirmed: true, audioSource: "mic", speakerLabel: nil
+            )
+            let second = SyncTranscriptPage.Segment(
+                segmentId: .v7(), startTime: .now, endTime: nil, text: "second",
+                isConfirmed: true, audioSource: "system", speakerLabel: nil
+            )
+            try await database.dbQueue.write { db in
+                try meeting.insert(db)
+                try TranscriptSegmentRecord(
+                    id: removedId, meetingId: meeting.id, sessionId: UUID.v7(), startTime: .now,
+                    endTime: nil, text: "removed", translatedText: nil, isConfirmed: true,
+                    audioSource: "mic", speakerLabel: nil, audioFeatureVersion: nil,
+                    audioActiveRmsDecibels: nil, audioMedianPitchHertz: nil,
+                    audioVoicedFrameRatio: nil, audioPitchSpreadHertz: nil
+                ).insert(db)
+            }
+
+            #expect(try await RemoteChangeApplier.beginTranscript(
+                meetingId: meeting.id, vaultId: vault.id, dbQueue: database.dbQueue
+            ))
+            #expect(try await RemoteChangeApplier.applyTranscriptPage(
+                [first], meetingId: meeting.id, vaultId: vault.id, dbQueue: database.dbQueue
+            ))
+            #expect(try await database.dbQueue.read { db in
+                try String.fetchOne(db, sql: "SELECT syncPullCursor FROM vaults WHERE id = ?", arguments: [vault.id])
+            } == nil)
+            #expect(try await RemoteChangeApplier.applyTranscriptPage(
+                [second], meetingId: meeting.id, vaultId: vault.id, dbQueue: database.dbQueue
+            ))
+            #expect(try await RemoteChangeApplier.finishTranscript(
+                meetingId: meeting.id,
+                revision: 4,
+                cursor: "cursor-4",
+                vaultId: vault.id,
+                dbQueue: database.dbQueue
+            ))
+
+            let state = try await database.dbQueue.read { db in
+                try (
+                    Set(UUID.fetchAll(
+                        db,
+                        sql: "SELECT id FROM transcript_segments WHERE meetingId = ? AND isConfirmed = 1",
+                        arguments: [meeting.id]
+                    )),
+                    String.fetchOne(db, sql: "SELECT syncPullCursor FROM vaults WHERE id = ?", arguments: [vault.id]),
+                    Int.fetchOne(
+                        db,
+                        sql: "SELECT confirmedRevision FROM sync_entity_state WHERE vaultId = ? AND entity = 'transcript' AND entityId = ?",
+                        arguments: [vault.id, meeting.id]
+                    )
+                )
+            }
+            #expect(state.0 == [first.segmentId, second.segmentId])
+            #expect(state.1 == "cursor-4")
+            #expect(state.2 == 4)
+        }
+
+        @Test
         func remoteTranscriptWaitsUntilRecordingFinishesWithoutAdvancingCursor() async throws {
             let (database, vault) = try await syncedDatabase()
             let meeting = MeetingRecord(

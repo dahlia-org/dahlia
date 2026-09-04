@@ -492,7 +492,9 @@ struct DahliaApp: App {
 
     private func confirmServerAdoption() async {
         guard let updated = await vaultManagementModel.confirmServerAdoption() else {
-            pendingSetupAdoptionVaultID = nil
+            if vaultManagementModel.pendingServerAdoption == nil {
+                pendingSetupAdoptionVaultID = nil
+            }
             return
         }
         if pendingSetupAdoptionVaultID == updated.id {

@@ -451,6 +451,40 @@
         }
 
         @Test
+        func adoptionRequiresAnotherConfirmationWhenTheServerVaultAppears() async throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            let repository = MeetingRepository(dbQueue: database.dbQueue)
+            let connection = DahliaAccountConnectionRecord(
+                id: .v7(), origin: "https://server.example.com", clientID: "desktop-client", createdAt: .now
+            )
+            let vault = makeVault(name: "Local", lastOpenedAt: .now)
+            let remote = CloudVaultRecord(
+                vaultId: vault.id,
+                connectionId: connection.id,
+                name: "Server",
+                createdAt: .now,
+                revision: 7,
+                role: "member"
+            )
+            var responses: [[CloudVaultRecord]] = [[], [], [remote]]
+            try await repository.insertDahliaAccountConnection(connection)
+            try repository.insertVault(vault)
+            let model = VaultManagementModel(cloudVaultFetcher: { _ in responses.removeFirst() })
+            await model.configure(appDatabase: database)
+            let account = DahliaAccountConnection(
+                record: connection,
+                account: DahliaCloudAccount(id: "user", name: "User", email: nil),
+                isCloud: false,
+                grantedScopes: ["all-apis"]
+            )
+
+            await model.requestServerAdoption(for: vault, connection: account)
+            #expect(await model.confirmServerAdoption() == nil)
+            #expect(model.pendingServerAdoption?.serverVault?.role == "member")
+            #expect(try repository.fetchAllVaults().first?.accountConnectionId == nil)
+        }
+
+        @Test
         func doesNotRenameAVaultToABlankName() async throws {
             let database = try AppDatabaseManager(path: ":memory:")
             let model = VaultManagementModel()

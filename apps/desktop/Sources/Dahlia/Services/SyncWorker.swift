@@ -154,6 +154,7 @@ private struct SyncTarget: Sendable {
 
 actor SyncWorker {
     private static let transcriptChunkSize = 500
+    private static let remoteTranscriptWriteBatchSize = 500
     private static let transcriptChunkMaximumBytes = 6 * 1024 * 1024
     private static let transcriptPatchMaximumChunks = 100
 
@@ -648,6 +649,12 @@ actor SyncWorker {
                    ) { return false }
                 continue
             }
+            if change.entity == .transcript, change.action == "upsert" {
+                guard try await applyTranscriptChange(change, cursor: appliedCursor, target: target) else {
+                    return false
+                }
+                continue
+            }
             let supplemental = try await loadSupplemental([change], target: target)
             guard try await RemoteChangeApplier.apply(
                 [change],
@@ -659,6 +666,53 @@ actor SyncWorker {
             ) else { return false }
         }
         return true
+    }
+
+    private func applyTranscriptChange(
+        _ change: SyncChangePage.Change,
+        cursor appliedCursor: String?,
+        target: SyncTarget
+    ) async throws -> Bool {
+        guard let revision = change.revision,
+              try await RemoteChangeApplier.beginTranscript(
+                  meetingId: change.entityId,
+                  vaultId: target.vaultId,
+                  dbQueue: dbQueue
+              )
+        else { return false }
+
+        var cursor: String?
+        repeat {
+            var components = URLComponents()
+            components.path = "/api/v1/vaults/\(target.vaultId.lowercase)/meetings/\(change.entityId.lowercase)/transcript"
+            if let cursor { components.queryItems = [URLQueryItem(name: "cursor", value: cursor)] }
+            guard let path = components.string else { throw URLError(.badURL) }
+            let page = try await SyncJSON.decoder.decode(
+                SyncTranscriptPage.self,
+                from: sendData(
+                    request(origin: target.origin, path: path, method: "GET"),
+                    connectionId: target.connectionId
+                )
+            )
+            for offset in stride(from: 0, to: page.items.count, by: Self.remoteTranscriptWriteBatchSize) {
+                let end = min(offset + Self.remoteTranscriptWriteBatchSize, page.items.count)
+                guard try await RemoteChangeApplier.applyTranscriptPage(
+                    Array(page.items[offset ..< end]),
+                    meetingId: change.entityId,
+                    vaultId: target.vaultId,
+                    dbQueue: dbQueue
+                ) else { return false }
+            }
+            cursor = page.nextCursor
+        } while cursor != nil
+
+        return try await RemoteChangeApplier.finishTranscript(
+            meetingId: change.entityId,
+            revision: revision,
+            cursor: appliedCursor,
+            vaultId: target.vaultId,
+            dbQueue: dbQueue
+        )
     }
 
     static func initialSnapshotChanges(_ changes: [SyncChangePage.Change]) -> [SyncChangePage.Change] {
@@ -722,7 +776,7 @@ actor SyncWorker {
         target: SyncTarget
     ) async throws -> (screenshots: [UUID: Data], transcripts: [UUID: [SyncTranscriptPage.Segment]]) {
         var screenshots: [UUID: Data] = [:]
-        var transcripts: [UUID: [SyncTranscriptPage.Segment]] = [:]
+        let transcripts: [UUID: [SyncTranscriptPage.Segment]] = [:]
         for change in changes where change.action == "upsert" {
             if change.entity == .screenshot, let meetingId = change.record?.meetingId {
                 let data = try await sendData(
@@ -738,32 +792,9 @@ actor SyncWorker {
                     throw SyncTransactionQueueError.invalidReceipt
                 }
                 screenshots[change.entityId] = data
-            } else if change.entity == .transcript {
-                transcripts[change.entityId] = try await loadTranscript(meetingId: change.entityId, target: target)
             }
         }
         return (screenshots, transcripts)
-    }
-
-    private func loadTranscript(meetingId: UUID, target: SyncTarget) async throws -> [SyncTranscriptPage.Segment] {
-        var result: [SyncTranscriptPage.Segment] = []
-        var cursor: String?
-        repeat {
-            var components = URLComponents()
-            components.path = "/api/v1/vaults/\(target.vaultId.lowercase)/meetings/\(meetingId.lowercase)/transcript"
-            if let cursor { components.queryItems = [URLQueryItem(name: "cursor", value: cursor)] }
-            guard let path = components.string else { throw URLError(.badURL) }
-            let page = try await SyncJSON.decoder.decode(
-                SyncTranscriptPage.self,
-                from: sendData(
-                    request(origin: target.origin, path: path, method: "GET"),
-                    connectionId: target.connectionId
-                )
-            )
-            result.append(contentsOf: page.items)
-            cursor = page.nextCursor
-        } while cursor != nil
-        return result
     }
 
     private func restartEventStreams() async {
@@ -968,6 +999,90 @@ enum RemoteChangeApplier {
             db,
             sql: "SELECT EXISTS (SELECT 1 FROM recording_sessions WHERE endedAt IS NULL)"
         ) ?? false
+    }
+
+    static func beginTranscript(meetingId: UUID, vaultId: UUID, dbQueue: DatabaseQueue) async throws -> Bool {
+        try await dbQueue.write { db in
+            guard try !SyncTransactionQueue.hasPending(vaultId: vaultId, in: db),
+                  try !hasActiveRecording(in: db)
+            else { return false }
+            try db.execute(sql: """
+            CREATE TEMP TABLE IF NOT EXISTS sync_remote_transcript_items (
+                meetingId TEXT NOT NULL,
+                segmentId TEXT NOT NULL,
+                PRIMARY KEY (meetingId, segmentId)
+            ) WITHOUT ROWID
+            """)
+            try db.execute(
+                sql: "DELETE FROM sync_remote_transcript_items WHERE meetingId = ?",
+                arguments: [meetingId]
+            )
+            return true
+        }
+    }
+
+    static func applyTranscriptPage(
+        _ segments: [SyncTranscriptPage.Segment],
+        meetingId: UUID,
+        vaultId: UUID,
+        dbQueue: DatabaseQueue
+    ) async throws -> Bool {
+        try await dbQueue.write { db in
+            guard try !SyncTransactionQueue.hasPending(vaultId: vaultId, in: db),
+                  try !hasActiveRecording(in: db)
+            else { return false }
+            for segment in segments {
+                try db.execute(
+                    sql: "INSERT OR IGNORE INTO sync_remote_transcript_items(meetingId, segmentId) VALUES (?, ?)",
+                    arguments: [meetingId, segment.segmentId]
+                )
+            }
+            try upsertTranscriptSegments(segments, meetingId: meetingId, in: db)
+            return true
+        }
+    }
+
+    static func finishTranscript(
+        meetingId: UUID,
+        revision: Int,
+        cursor: String?,
+        vaultId: UUID,
+        dbQueue: DatabaseQueue
+    ) async throws -> Bool {
+        try await dbQueue.write { db in
+            guard try !SyncTransactionQueue.hasPending(vaultId: vaultId, in: db),
+                  try !hasActiveRecording(in: db)
+            else { return false }
+            try db.execute(
+                sql: """
+                DELETE FROM transcript_segments
+                WHERE meetingId = ? AND isConfirmed = 1
+                  AND NOT EXISTS (
+                      SELECT 1 FROM sync_remote_transcript_items remote
+                      WHERE remote.meetingId = transcript_segments.meetingId
+                        AND remote.segmentId = transcript_segments.id
+                  )
+                """,
+                arguments: [meetingId]
+            )
+            try db.execute(
+                sql: """
+                INSERT INTO sync_entity_state(vaultId, entity, entityId, confirmedRevision)
+                VALUES (?, 'transcript', ?, ?)
+                ON CONFLICT(vaultId, entity, entityId) DO UPDATE SET
+                    confirmedRevision = excluded.confirmedRevision
+                """,
+                arguments: [vaultId, meetingId, revision]
+            )
+            if let cursor {
+                try db.execute(sql: "UPDATE vaults SET syncPullCursor = ? WHERE id = ?", arguments: [cursor, vaultId])
+            }
+            try db.execute(
+                sql: "DELETE FROM sync_remote_transcript_items WHERE meetingId = ?",
+                arguments: [meetingId]
+            )
+            return true
+        }
     }
 
     private static func orderProjects(_ projects: [SyncProjectSnapshot]) -> [SyncProjectSnapshot] {
@@ -1243,6 +1358,14 @@ enum RemoteChangeApplier {
                 arguments: StatementArguments([meetingId]) + StatementArguments(canonicalIDs)
             )
         }
+        try upsertTranscriptSegments(segments, meetingId: meetingId, in: db)
+    }
+
+    private static func upsertTranscriptSegments(
+        _ segments: [SyncTranscriptPage.Segment],
+        meetingId: UUID,
+        in db: Database
+    ) throws {
         for segment in segments {
             try db.execute(sql: """
             INSERT INTO transcript_segments(

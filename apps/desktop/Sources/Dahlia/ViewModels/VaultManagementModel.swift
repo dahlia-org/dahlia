@@ -299,6 +299,15 @@ final class VaultManagementModel {
                 presentError(L10n.vaultOperationFailed, source: "confirmServerAdoption.revoked")
                 return nil
             }
+            if (pendingServerAdoption.serverVault?.role, pendingServerAdoption.serverVault != nil)
+                != (currentServerVault?.role, currentServerVault != nil) {
+                self.pendingServerAdoption = PendingVaultServerAdoption(
+                    vault: pendingServerAdoption.vault,
+                    connection: pendingServerAdoption.connection,
+                    serverVault: currentServerVault
+                )
+                return nil
+            }
             guard let updated = try await repository.adoptVaultForServerSync(
                 id: pendingServerAdoption.vault.id,
                 connectionID: pendingServerAdoption.connection.id,
