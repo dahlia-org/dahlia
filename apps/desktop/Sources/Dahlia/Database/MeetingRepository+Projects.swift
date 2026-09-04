@@ -481,7 +481,7 @@ extension MeetingRepository {
                     syncOperations.append(SyncOperationDraft(entity: .project, action: .delete, entityId: id))
                     _ = try ProjectRecord.deleteOne(db, key: id)
                 }
-                try SyncTransactionRecorder.record(vaultId: vaultId, operations: syncOperations, in: db)
+                try SyncTransactionRecorder.recordBatches(vaultId: vaultId, operations: syncOperations, in: db)
             }
         } catch let operationError {
             do {

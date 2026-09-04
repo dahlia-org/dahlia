@@ -27,13 +27,13 @@
       "schema": "core"
     },
     {
-      "isRlsEnabled": false,
+      "isRlsEnabled": true,
       "name": "search_documents",
       "entityType": "tables",
       "schema": "content"
     },
     {
-      "isRlsEnabled": false,
+      "isRlsEnabled": true,
       "name": "search_embeddings",
       "entityType": "tables",
       "schema": "content"
@@ -63,31 +63,31 @@
       "schema": "core"
     },
     {
-      "isRlsEnabled": false,
+      "isRlsEnabled": true,
       "name": "meetings",
       "entityType": "tables",
       "schema": "content"
     },
     {
-      "isRlsEnabled": false,
+      "isRlsEnabled": true,
       "name": "projects",
       "entityType": "tables",
       "schema": "core"
     },
     {
-      "isRlsEnabled": false,
+      "isRlsEnabled": true,
       "name": "screenshots",
       "entityType": "tables",
       "schema": "content"
     },
     {
-      "isRlsEnabled": false,
+      "isRlsEnabled": true,
       "name": "transcript_segments",
       "entityType": "tables",
       "schema": "content"
     },
     {
-      "isRlsEnabled": false,
+      "isRlsEnabled": true,
       "name": "vaults",
       "entityType": "tables",
       "schema": "core"
@@ -99,7 +99,7 @@
       "schema": "core"
     },
     {
-      "isRlsEnabled": false,
+      "isRlsEnabled": true,
       "name": "transcript_patch_chunks",
       "entityType": "tables",
       "schema": "content"
@@ -2818,6 +2818,58 @@
     },
     {
       "as": "PERMISSIVE",
+      "for": "SELECT",
+      "roles": [
+        "public"
+      ],
+      "using": "\"core\".\"current_identity_can_read_vault\"(\"content\".\"search_documents\".\"vault_id\")",
+      "withCheck": null,
+      "name": "search_document_select",
+      "entityType": "policies",
+      "schema": "content",
+      "table": "search_documents"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "ALL",
+      "roles": [
+        "public"
+      ],
+      "using": "\"core\".\"current_identity_owns_vault\"(\"content\".\"search_documents\".\"vault_id\")",
+      "withCheck": "\"core\".\"current_identity_owns_vault\"(\"content\".\"search_documents\".\"vault_id\")",
+      "name": "search_document_write",
+      "entityType": "policies",
+      "schema": "content",
+      "table": "search_documents"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "SELECT",
+      "roles": [
+        "public"
+      ],
+      "using": "\"core\".\"current_identity_can_read_vault\"(\"content\".\"search_embeddings\".\"vault_id\")",
+      "withCheck": null,
+      "name": "search_embedding_select",
+      "entityType": "policies",
+      "schema": "content",
+      "table": "search_embeddings"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "ALL",
+      "roles": [
+        "public"
+      ],
+      "using": "\"core\".\"current_identity_owns_vault\"(\"content\".\"search_embeddings\".\"vault_id\")",
+      "withCheck": "\"core\".\"current_identity_owns_vault\"(\"content\".\"search_embeddings\".\"vault_id\")",
+      "name": "search_embedding_write",
+      "entityType": "policies",
+      "schema": "content",
+      "table": "search_embeddings"
+    },
+    {
+      "as": "PERMISSIVE",
       "for": "ALL",
       "roles": [
         "public"
@@ -2828,6 +2880,214 @@
       "entityType": "policies",
       "schema": "core",
       "table": "transaction_receipts"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "SELECT",
+      "roles": [
+        "public"
+      ],
+      "using": "\"core\".\"current_identity_can_read_vault\"(\"content\".\"meetings\".\"vault_id\")",
+      "withCheck": null,
+      "name": "meeting_select",
+      "entityType": "policies",
+      "schema": "content",
+      "table": "meetings"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "ALL",
+      "roles": [
+        "public"
+      ],
+      "using": "\"core\".\"current_identity_owns_vault\"(\"content\".\"meetings\".\"vault_id\")",
+      "withCheck": "\"core\".\"current_identity_owns_vault\"(\"content\".\"meetings\".\"vault_id\")",
+      "name": "meeting_write",
+      "entityType": "policies",
+      "schema": "content",
+      "table": "meetings"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "SELECT",
+      "roles": [
+        "public"
+      ],
+      "using": "\"core\".\"current_identity_can_read_vault\"(\"core\".\"projects\".\"vault_id\")",
+      "withCheck": null,
+      "name": "project_select",
+      "entityType": "policies",
+      "schema": "core",
+      "table": "projects"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "INSERT",
+      "roles": [
+        "public"
+      ],
+      "using": null,
+      "withCheck": "\"core\".\"current_identity_owns_vault\"(\"core\".\"projects\".\"vault_id\")",
+      "name": "project_insert",
+      "entityType": "policies",
+      "schema": "core",
+      "table": "projects"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "UPDATE",
+      "roles": [
+        "public"
+      ],
+      "using": "\"core\".\"current_identity_owns_vault\"(\"core\".\"projects\".\"vault_id\")",
+      "withCheck": "\"core\".\"current_identity_owns_vault\"(\"core\".\"projects\".\"vault_id\")",
+      "name": "project_update",
+      "entityType": "policies",
+      "schema": "core",
+      "table": "projects"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "DELETE",
+      "roles": [
+        "public"
+      ],
+      "using": "\"core\".\"current_identity_owns_vault\"(\"core\".\"projects\".\"vault_id\")",
+      "withCheck": null,
+      "name": "project_delete",
+      "entityType": "policies",
+      "schema": "core",
+      "table": "projects"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "SELECT",
+      "roles": [
+        "public"
+      ],
+      "using": "\"core\".\"current_identity_can_read_vault\"(\"content\".\"screenshots\".\"vault_id\")",
+      "withCheck": null,
+      "name": "screenshot_select",
+      "entityType": "policies",
+      "schema": "content",
+      "table": "screenshots"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "ALL",
+      "roles": [
+        "public"
+      ],
+      "using": "\"core\".\"current_identity_owns_vault\"(\"content\".\"screenshots\".\"vault_id\")",
+      "withCheck": "\"core\".\"current_identity_owns_vault\"(\"content\".\"screenshots\".\"vault_id\")",
+      "name": "screenshot_write",
+      "entityType": "policies",
+      "schema": "content",
+      "table": "screenshots"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "SELECT",
+      "roles": [
+        "public"
+      ],
+      "using": "\"core\".\"current_identity_can_read_vault\"(\"content\".\"transcript_segments\".\"vault_id\")",
+      "withCheck": null,
+      "name": "transcript_select",
+      "entityType": "policies",
+      "schema": "content",
+      "table": "transcript_segments"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "ALL",
+      "roles": [
+        "public"
+      ],
+      "using": "\"core\".\"current_identity_owns_vault\"(\"content\".\"transcript_segments\".\"vault_id\")",
+      "withCheck": "\"core\".\"current_identity_owns_vault\"(\"content\".\"transcript_segments\".\"vault_id\")",
+      "name": "transcript_write",
+      "entityType": "policies",
+      "schema": "content",
+      "table": "transcript_segments"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "SELECT",
+      "roles": [
+        "public"
+      ],
+      "using": "\"core\".\"current_identity_can_read_vault\"(\"core\".\"vaults\".\"vault_id\")",
+      "withCheck": null,
+      "name": "vault_select",
+      "entityType": "policies",
+      "schema": "core",
+      "table": "vaults"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "INSERT",
+      "roles": [
+        "public"
+      ],
+      "using": null,
+      "withCheck": "coalesce(current_setting('app.user_id', true), '') <> ''",
+      "name": "vault_insert",
+      "entityType": "policies",
+      "schema": "core",
+      "table": "vaults"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "UPDATE",
+      "roles": [
+        "public"
+      ],
+      "using": "\"core\".\"current_identity_owns_vault\"(\"core\".\"vaults\".\"vault_id\")",
+      "withCheck": "\"core\".\"current_identity_owns_vault\"(\"core\".\"vaults\".\"vault_id\")",
+      "name": "vault_update",
+      "entityType": "policies",
+      "schema": "core",
+      "table": "vaults"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "DELETE",
+      "roles": [
+        "public"
+      ],
+      "using": "\"core\".\"current_identity_owns_vault\"(\"core\".\"vaults\".\"vault_id\")",
+      "withCheck": null,
+      "name": "vault_delete",
+      "entityType": "policies",
+      "schema": "core",
+      "table": "vaults"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "SELECT",
+      "roles": [
+        "public"
+      ],
+      "using": "\"core\".\"current_identity_owns_vault\"(\"content\".\"transcript_patch_chunks\".\"vault_id\")",
+      "withCheck": null,
+      "name": "transcript_patch_select",
+      "entityType": "policies",
+      "schema": "content",
+      "table": "transcript_patch_chunks"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "ALL",
+      "roles": [
+        "public"
+      ],
+      "using": "\"core\".\"current_identity_owns_vault\"(\"content\".\"transcript_patch_chunks\".\"vault_id\")",
+      "withCheck": "\"core\".\"current_identity_owns_vault\"(\"content\".\"transcript_patch_chunks\".\"vault_id\")",
+      "name": "transcript_patch_write",
+      "entityType": "policies",
+      "schema": "content",
+      "table": "transcript_patch_chunks"
     }
   ],
   "renames": []

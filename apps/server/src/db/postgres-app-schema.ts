@@ -55,7 +55,25 @@ export const syncedVault = coreSchema.table("vaults", {
   deletingAt: timestamp("deleting_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (table) => [
+  pgPolicy("vault_select", {
+    for: "select",
+    using: sql`"core"."current_identity_can_read_vault"(${table.vaultId})`,
+  }),
+  pgPolicy("vault_insert", {
+    for: "insert",
+    withCheck: sql`coalesce(current_setting('app.user_id', true), '') <> ''`,
+  }),
+  pgPolicy("vault_update", {
+    for: "update",
+    using: sql`"core"."current_identity_owns_vault"(${table.vaultId})`,
+    withCheck: sql`"core"."current_identity_owns_vault"(${table.vaultId})`,
+  }),
+  pgPolicy("vault_delete", {
+    for: "delete",
+    using: sql`"core"."current_identity_owns_vault"(${table.vaultId})`,
+  }),
+]).enableRLS();
 
 export const syncedProject = coreSchema.table("projects", {
   projectId: uuid("project_id").primaryKey(),
@@ -86,7 +104,24 @@ export const syncedProject = coreSchema.table("projects", {
   check("project_revision_check", sql`${table.revision} >= 1`),
   check("project_parent_check", sql`${table.parentProjectId} IS NULL OR ${table.parentProjectId} <> ${table.projectId}`),
   index("project_vault_parent_name_idx").on(table.vaultId, table.parentProjectId, table.name),
-]);
+  pgPolicy("project_select", {
+    for: "select",
+    using: sql`"core"."current_identity_can_read_vault"(${table.vaultId})`,
+  }),
+  pgPolicy("project_insert", {
+    for: "insert",
+    withCheck: sql`"core"."current_identity_owns_vault"(${table.vaultId})`,
+  }),
+  pgPolicy("project_update", {
+    for: "update",
+    using: sql`"core"."current_identity_owns_vault"(${table.vaultId})`,
+    withCheck: sql`"core"."current_identity_owns_vault"(${table.vaultId})`,
+  }),
+  pgPolicy("project_delete", {
+    for: "delete",
+    using: sql`"core"."current_identity_owns_vault"(${table.vaultId})`,
+  }),
+]).enableRLS();
 
 export const syncedVaultPermission = coreSchema.table("vault_permissions", {
   vaultId: uuid("vault_id").notNull(),
@@ -150,7 +185,16 @@ export const syncedMeeting = contentSchema.table("meetings", {
     foreignColumns: [syncedProject.vaultId, syncedProject.projectId],
   }),
   index("synced_meeting_vault_created_id_idx").on(table.vaultId, table.createdAt, table.meetingId),
-]);
+  pgPolicy("meeting_select", {
+    for: "select",
+    using: sql`"core"."current_identity_can_read_vault"(${table.vaultId})`,
+  }),
+  pgPolicy("meeting_write", {
+    for: "all",
+    using: sql`"core"."current_identity_owns_vault"(${table.vaultId})`,
+    withCheck: sql`"core"."current_identity_owns_vault"(${table.vaultId})`,
+  }),
+]).enableRLS();
 
 export const syncedTranscriptSegment = contentSchema.table("transcript_segments", {
   vaultId: uuid("vault_id").notNull(),
@@ -174,7 +218,16 @@ export const syncedTranscriptSegment = contentSchema.table("transcript_segments"
   }).onDelete("cascade"),
   index("synced_transcript_vault_meeting_start_id_idx")
     .on(table.vaultId, table.meetingId, table.startTime, table.segmentId),
-]);
+  pgPolicy("transcript_select", {
+    for: "select",
+    using: sql`"core"."current_identity_can_read_vault"(${table.vaultId})`,
+  }),
+  pgPolicy("transcript_write", {
+    for: "all",
+    using: sql`"core"."current_identity_owns_vault"(${table.vaultId})`,
+    withCheck: sql`"core"."current_identity_owns_vault"(${table.vaultId})`,
+  }),
+]).enableRLS();
 
 export const transcriptPatchChunk = contentSchema.table("transcript_patch_chunks", {
   vaultId: uuid("vault_id").notNull(),
@@ -194,7 +247,16 @@ export const transcriptPatchChunk = contentSchema.table("transcript_patch_chunks
     columns: [table.vaultId, table.meetingId],
     foreignColumns: [syncedMeeting.vaultId, syncedMeeting.meetingId],
   }).onDelete("cascade"),
-]);
+  pgPolicy("transcript_patch_select", {
+    for: "select",
+    using: sql`"core"."current_identity_owns_vault"(${table.vaultId})`,
+  }),
+  pgPolicy("transcript_patch_write", {
+    for: "all",
+    using: sql`"core"."current_identity_owns_vault"(${table.vaultId})`,
+    withCheck: sql`"core"."current_identity_owns_vault"(${table.vaultId})`,
+  }),
+]).enableRLS();
 
 export const syncedScreenshot = contentSchema.table("screenshots", {
   screenshotId: uuid("screenshot_id").primaryKey(),
@@ -219,7 +281,16 @@ export const syncedScreenshot = contentSchema.table("screenshots", {
   }).onDelete("cascade"),
   index("synced_screenshot_vault_meeting_captured_id_idx")
     .on(table.vaultId, table.meetingId, table.capturedAt, table.screenshotId),
-]);
+  pgPolicy("screenshot_select", {
+    for: "select",
+    using: sql`"core"."current_identity_can_read_vault"(${table.vaultId})`,
+  }),
+  pgPolicy("screenshot_write", {
+    for: "all",
+    using: sql`"core"."current_identity_owns_vault"(${table.vaultId})`,
+    withCheck: sql`"core"."current_identity_owns_vault"(${table.vaultId})`,
+  }),
+]).enableRLS();
 
 export const searchDocument = contentSchema.table("search_documents", {
   documentId: uuid("document_id").notNull(),
@@ -242,7 +313,16 @@ export const searchDocument = contentSchema.table("search_documents", {
   check("search_document_kind_check", sql`${table.kind} IN ('meeting', 'screenshot')`),
   index("search_document_vault_kind_meeting_document_idx")
     .on(table.vaultId, table.kind, table.meetingId, table.documentId),
-]);
+  pgPolicy("search_document_select", {
+    for: "select",
+    using: sql`"core"."current_identity_can_read_vault"(${table.vaultId})`,
+  }),
+  pgPolicy("search_document_write", {
+    for: "all",
+    using: sql`"core"."current_identity_owns_vault"(${table.vaultId})`,
+    withCheck: sql`"core"."current_identity_owns_vault"(${table.vaultId})`,
+  }),
+]).enableRLS();
 
 export const searchEmbedding = contentSchema.table("search_embeddings", {
   vaultId: uuid("vault_id").notNull(),
@@ -260,7 +340,16 @@ export const searchEmbedding = contentSchema.table("search_embeddings", {
     foreignColumns: [searchDocument.vaultId, searchDocument.documentId],
   }).onDelete("cascade"),
   check("search_embedding_dimensions_check", sql`${table.dimensions} BETWEEN 32 AND 1024`),
-]);
+  pgPolicy("search_embedding_select", {
+    for: "select",
+    using: sql`"core"."current_identity_can_read_vault"(${table.vaultId})`,
+  }),
+  pgPolicy("search_embedding_write", {
+    for: "all",
+    using: sql`"core"."current_identity_owns_vault"(${table.vaultId})`,
+    withCheck: sql`"core"."current_identity_owns_vault"(${table.vaultId})`,
+  }),
+]).enableRLS();
 
 export const searchIndexJob = coreSchema.table("search_index_jobs", {
   vaultId: uuid("vault_id").notNull(),

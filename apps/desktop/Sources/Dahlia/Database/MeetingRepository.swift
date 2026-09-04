@@ -417,7 +417,7 @@ final class MeetingRepository {
         try dbQueue.write { db in
             let meetings = try MeetingRecord.filter(ids.contains(Column("id"))).fetchAll(db)
             for (vaultId, vaultMeetings) in Dictionary(grouping: meetings, by: \.vaultId) {
-                try SyncTransactionRecorder.record(
+                try SyncTransactionRecorder.recordBatches(
                     vaultId: vaultId,
                     operations: vaultMeetings.map {
                         SyncOperationDraft(entity: .meeting, action: .delete, entityId: $0.id)
@@ -513,7 +513,7 @@ final class MeetingRepository {
                 .filter(ids.contains(Column("id")))
                 .filter(Column("vaultId") == vaultId)
                 .fetchAll(db)
-            try SyncTransactionRecorder.record(
+            try SyncTransactionRecorder.recordBatches(
                 vaultId: vaultId,
                 operations: changedMeetings.map {
                     try SyncInitialSnapshotBuilder.meetingOperation($0, action: .update)
@@ -789,7 +789,7 @@ final class MeetingRepository {
                 sql: "SELECT vaultId FROM meetings WHERE id = ?",
                 arguments: [meetingId]
             ) else { return deletedScreenshots }
-            try SyncTransactionRecorder.record(
+            try SyncTransactionRecorder.recordBatches(
                 vaultId: vaultId,
                 operations: deletedScreenshots.map {
                     SyncOperationDraft(entity: .screenshot, action: .delete, entityId: $0.id)

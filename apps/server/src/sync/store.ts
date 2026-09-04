@@ -596,23 +596,12 @@ function createIdentityStore(
   }
 
   async function ensureUploadTarget(vaultId: string, meetingId: string): Promise<boolean> {
-    const now = new Date();
     const [vault] = await db.select({ deletingAt: schema.syncedVault.deletingAt })
       .from(schema.syncedVault).where(ownedVault(vaultId)).limit(1);
     if (!vault || vault.deletingAt) return false;
-    await db.insert(schema.syncedMeeting).values({
-      meetingId,
-      vaultId,
-      projectId: null,
-      name: "",
-      description: "",
-      status: "PROCESSING_TRANSCRIPT",
-      createdAt: now,
-      updatedAt: now,
-    }).onConflictDoNothing();
-    const [meeting] = await db.select({ deletingAt: schema.syncedMeeting.deletingAt })
+    const [meeting] = await db.select({ active: schema.syncedMeeting.active, deletingAt: schema.syncedMeeting.deletingAt })
       .from(schema.syncedMeeting).where(ownedMeeting(vaultId, meetingId)).limit(1);
-    return meeting !== undefined && meeting.deletingAt === null;
+    return meeting?.active === true && meeting.deletingAt === null;
   }
 
   async function canonicalRecord(

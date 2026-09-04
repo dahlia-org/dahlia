@@ -91,6 +91,10 @@ describe("PostgreSQL migrations", () => {
       .toBe(true);
     const authSql = authMigrations.flatMap((migration) => migration.sql).join("\n");
     const sql = applicationMigrations.flatMap((migration) => migration.sql).join("\n");
+    const snapshot = readFileSync(
+      new URL("../drizzle/postgres/20260903173551_bumpy_freak/snapshot.json", import.meta.url),
+      "utf8",
+    );
     expect(authSql).toContain('CREATE TABLE "auth"."user"');
     expect(authSql).not.toContain('CREATE SCHEMA "core"');
     expect(authSql).not.toContain('CREATE SCHEMA "content"');
@@ -137,6 +141,31 @@ describe("PostgreSQL migrations", () => {
     expect(sql).not.toContain('ALTER TABLE "core"."vault_permissions" ENABLE ROW LEVEL SECURITY');
     expect(sql).toContain('ALTER TABLE "content"."search_documents" FORCE ROW LEVEL SECURITY');
     expect(sql).toContain('ALTER TABLE "content"."search_embeddings" FORCE ROW LEVEL SECURITY');
+    for (const policy of [
+      "vault_select",
+      "vault_insert",
+      "vault_update",
+      "vault_delete",
+      "project_select",
+      "project_insert",
+      "project_update",
+      "project_delete",
+      "meeting_select",
+      "meeting_write",
+      "transcript_select",
+      "transcript_write",
+      "transcript_patch_select",
+      "transcript_patch_write",
+      "screenshot_select",
+      "screenshot_write",
+      "transaction_receipt_owner",
+      "search_document_select",
+      "search_document_write",
+      "search_embedding_select",
+      "search_embedding_write",
+    ]) {
+      expect(snapshot).toContain(`"name": "${policy}"`);
+    }
     expect(sql).not.toContain('FOREIGN KEY ("owner_workspace_id")');
     for (const table of ["meetings", "transcript_segments", "screenshots"]) {
       const definition = sql.match(new RegExp(`CREATE TABLE "content"\\."${table}" \\(([\\s\\S]*?)\\n\\);`))?.[1];

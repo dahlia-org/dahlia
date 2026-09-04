@@ -312,6 +312,7 @@
 "The project could not be found." = "プロジェクトが見つかりませんでした。";
 "Enter a valid project name without '/', ':', control characters, or a leading '.' or '_'." = "「/」「:」、制御文字、先頭の「.」「_」を含まない有効なプロジェクト名を入力してください。";
 "The project name is too long." = "プロジェクト名が長すぎます。";
+"The project description must be 20,000 characters or fewer." = "プロジェクトの説明は20,000文字以内で入力してください。";
 "A project named %@ already exists in this location." = "この場所には「%@」というプロジェクトがすでに存在します。";
 "The Summary output could not be moved to a recoverable Trash location." = "Summary 出力を復元可能なゴミ箱へ移動できませんでした。";
 "Choose an available project outside the hierarchy being deleted." = "削除対象の階層外にある利用可能なプロジェクトを選択してください。";

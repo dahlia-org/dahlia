@@ -143,7 +143,7 @@ integration("PostgreSQL application store", () => {
       },
     }]));
     expect(await store.sync.withIdentity(owner, (sync) => sync.listProjects(vaultId))).toHaveLength(1);
-    expect(await store.sync.withIdentity(owner, (sync) => sync.ensureUploadTarget(vaultId, meetingId))).toBe(true);
+    expect(await store.sync.withIdentity(owner, (sync) => sync.ensureUploadTarget(vaultId, meetingId))).toBe(false);
     await store.sync.withIdentity(owner, (sync) => commit(sync, vaultId, [{
       id: crypto.randomUUID(),
       entity: "meeting",
@@ -164,6 +164,7 @@ integration("PostgreSQL application store", () => {
         embeddingContentHash: null,
       },
     }]));
+    expect(await store.sync.withIdentity(owner, (sync) => sync.ensureUploadTarget(vaultId, meetingId))).toBe(true);
     expect(await connection!.db.select().from(schema.syncedVaultPermission).where(eq(
       schema.syncedVaultPermission.vaultId,
       vaultId,
@@ -259,7 +260,15 @@ integration("PostgreSQL application store", () => {
         { id: `member-membership-${suffix}`, organizationId, userId: member.userId, role: "member", createdAt: now },
       ]);
       await store.sync.withIdentity(owner, (sync) => createVault(sync, vaultId));
-      expect(await store.sync.withIdentity(owner, (sync) => sync.ensureUploadTarget(vaultId, meetingId))).toBe(true);
+      expect(await store.sync.withIdentity(owner, (sync) => sync.ensureUploadTarget(vaultId, meetingId))).toBe(false);
+      await store.sync.withIdentity(owner, (sync) => commit(sync, vaultId, [{
+        id: crypto.randomUUID(),
+        entity: "meeting",
+        action: "create",
+        entityId: meetingId,
+        baseRevision: null,
+        data: meetingData(null, now, "Shared meeting", "shared meeting"),
+      }]));
       await store.sync.withIdentity(owner, async (sync) => {
         expect(await sync.putTranscriptChunk(vaultId, meetingId, patchId, 0, chunkHash, [{
           segmentId,
@@ -283,13 +292,6 @@ integration("PostgreSQL application store", () => {
           caption: null,
         })).toBe(true);
         await commit(sync, vaultId, [{
-          id: crypto.randomUUID(),
-          entity: "meeting",
-          action: "create",
-          entityId: meetingId,
-          baseRevision: null,
-          data: meetingData(null, now, "Shared meeting", "shared meeting"),
-        }, {
           id: crypto.randomUUID(),
           entity: "screenshot",
           action: "upsert",
@@ -379,7 +381,7 @@ integration("PostgreSQL application store", () => {
       expect(await store.ensureIdentityUser(owner)).toBe(true);
       expect(await store.ensureIdentityUser(member)).toBe(true);
       await store.sync.withIdentity(owner, (sync) => createVault(sync, vaultId));
-      expect(await store.sync.withIdentity(owner, (sync) => sync.ensureUploadTarget(vaultId, meetingId))).toBe(true);
+      expect(await store.sync.withIdentity(owner, (sync) => sync.ensureUploadTarget(vaultId, meetingId))).toBe(false);
       expect(await store.sync.withIdentity(member, (sync) => sync.getVault(vaultId))).toBeNull();
       expect(await store.sync.withIdentity(owner, (sync) => sync.putMemberPermission(
         vaultId,
@@ -431,7 +433,7 @@ integration("PostgreSQL application store", () => {
       expect(await store.ensureIdentityUser(owner)).toBe(true);
       expect(await store.ensureIdentityUser(member)).toBe(true);
       await store.sync.withIdentity(owner, (sync) => createVault(sync, vaultId));
-      expect(await store.sync.withIdentity(owner, (sync) => sync.ensureUploadTarget(vaultId, meetingId))).toBe(true);
+      expect(await store.sync.withIdentity(owner, (sync) => sync.ensureUploadTarget(vaultId, meetingId))).toBe(false);
       await connection!.db.insert(schema.syncedVaultPermission).values({
         vaultId,
         principalType: "user",

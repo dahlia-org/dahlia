@@ -168,6 +168,34 @@ enum SyncJSON {
 }
 
 enum SyncTransactionRecorder {
+    private static let maximumOperationsPerTransaction = 1000
+    private static let maximumPayloadBytesPerTransaction = 6 * 1024 * 1024
+
+    static func recordBatches(
+        vaultId: UUID,
+        operations: [SyncOperationDraft],
+        allowAfterReset: Bool = false,
+        in db: Database
+    ) throws {
+        var batch: [SyncOperationDraft] = []
+        var payloadBytes = 0
+        for operation in operations {
+            let operationBytes = (operation.payloadJSON?.count ?? 0) + 256
+            if !batch.isEmpty,
+               payloadBytes + operationBytes > maximumPayloadBytesPerTransaction
+               || batch.count == maximumOperationsPerTransaction {
+                try record(vaultId: vaultId, operations: batch, allowAfterReset: allowAfterReset, in: db)
+                batch.removeAll(keepingCapacity: true)
+                payloadBytes = 0
+            }
+            batch.append(operation)
+            payloadBytes += operationBytes
+        }
+        if !batch.isEmpty {
+            try record(vaultId: vaultId, operations: batch, allowAfterReset: allowAfterReset, in: db)
+        }
+    }
+
     /// Records an immutable domain transaction. A Vault without a confirmed remote target stays local-only.
     @discardableResult
     static func record(

@@ -312,6 +312,7 @@
 "The project could not be found." = "The project could not be found.";
 "Enter a valid project name without '/', ':', control characters, or a leading '.' or '_'." = "Enter a valid project name without '/', ':', control characters, or a leading '.' or '_'.";
 "The project name is too long." = "The project name is too long.";
+"The project description must be 20,000 characters or fewer." = "The project description must be 20,000 characters or fewer.";
 "A project named %@ already exists in this location." = "A project named %@ already exists in this location.";
 "The Summary output could not be moved to a recoverable Trash location." = "The Summary output could not be moved to a recoverable Trash location.";
 "Choose an available project outside the hierarchy being deleted." = "Choose an available project outside the hierarchy being deleted.";

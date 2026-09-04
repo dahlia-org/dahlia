@@ -860,6 +860,56 @@
         }
 
         @Test
+        func recorderSplitsBulkOperationsWithoutChangingTheirOrder() async throws {
+            let (database, vault) = try await syncedDatabase()
+            let operations = (0 ... 1000).map { _ in
+                SyncOperationDraft(entity: .meeting, action: .delete, entityId: .v7())
+            }
+            try await database.dbQueue.write { db in
+                try SyncTransactionRecorder.recordBatches(vaultId: vault.id, operations: operations, in: db)
+            }
+
+            let queued = try await database.dbQueue.read { db in
+                try Row.fetchAll(
+                    db,
+                    sql: """
+                    SELECT o.entityId
+                    FROM sync_transactions t
+                    JOIN sync_operations o ON o.transactionId = t.id
+                    ORDER BY t.sequence, o.position
+                    """
+                ).map { $0["entityId"] as UUID }
+            }
+            #expect(queued == operations.map(\.entityId))
+            #expect(try await database.dbQueue.read { db in
+                try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_transactions")
+            } == 2)
+        }
+
+        @Test
+        func oversizedProjectDescriptionRollsBackTheRecordAndQueue() async throws {
+            let (database, vault) = try await syncedDatabase()
+            let repository = MeetingRepository(dbQueue: database.dbQueue)
+            #expect(throws: ProjectWorkspaceError.descriptionTooLong) {
+                try repository.createProject(
+                    vaultId: vault.id,
+                    parentProjectId: nil,
+                    name: "Project",
+                    description: String(repeating: "x", count: 20_001),
+                    projectType: .undefined
+                )
+            }
+            let counts = try await database.dbQueue.read { db in
+                try (
+                    Int.fetchOne(db, sql: "SELECT count(*) FROM projects") ?? 0,
+                    Int.fetchOne(db, sql: "SELECT count(*) FROM sync_transactions") ?? 0
+                )
+            }
+            #expect(counts.0 == 0)
+            #expect(counts.1 == 0)
+        }
+
+        @Test
         func freshPullCollapsesHistoryAndOrdersProjectDependenciesBeforeMeetings() throws {
             let rootId = UUID.v7()
             let childId = UUID.v7()

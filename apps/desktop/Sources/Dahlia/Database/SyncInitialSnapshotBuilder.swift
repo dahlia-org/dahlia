@@ -2,9 +2,6 @@ import Foundation
 import GRDB
 
 enum SyncInitialSnapshotBuilder {
-    private static let maximumProjectTransactionBytes = 6 * 1024 * 1024
-    private static let maximumProjectOperationsPerTransaction = 1000
-
     static func enqueuePending(in db: Database) throws {
         // Existing transactions keep draining during recording, but constructing a full initial
         // snapshot must not monopolize the same SQLite writer used by finalized transcript ingress.
@@ -67,10 +64,8 @@ enum SyncInitialSnapshotBuilder {
                 let right = $1.path.split(separator: "/").count
                 return left == right ? $0.id.uuidString < $1.id.uuidString : left < right
             }
-        var projectOperations: [SyncOperationDraft] = []
-        var projectBytes = 0
-        for project in projects {
-            let operation = try operation(
+        let projectOperations = try projects.map { project in
+            try operation(
                 entity: .project,
                 action: .create,
                 id: project.id,
@@ -82,30 +77,13 @@ enum SyncInitialSnapshotBuilder {
                     "createdAt": project.createdAt.ISO8601Format(),
                 ]
             )
-            let operationBytes = (operation.payloadJSON?.count ?? 0) + 256
-            if !projectOperations.isEmpty,
-               projectBytes + operationBytes > maximumProjectTransactionBytes
-               || projectOperations.count == maximumProjectOperationsPerTransaction {
-                try SyncTransactionRecorder.record(
-                    vaultId: vaultId,
-                    operations: projectOperations,
-                    allowAfterReset: allowAfterReset,
-                    in: db
-                )
-                projectOperations.removeAll(keepingCapacity: true)
-                projectBytes = 0
-            }
-            projectOperations.append(operation)
-            projectBytes += operationBytes
         }
-        if !projectOperations.isEmpty {
-            try SyncTransactionRecorder.record(
-                vaultId: vaultId,
-                operations: projectOperations,
-                allowAfterReset: allowAfterReset,
-                in: db
-            )
-        }
+        try SyncTransactionRecorder.recordBatches(
+            vaultId: vaultId,
+            operations: projectOperations,
+            allowAfterReset: allowAfterReset,
+            in: db
+        )
 
         let meetings = try MeetingRecord
             .filter(Column("vaultId") == vaultId)
@@ -234,6 +212,9 @@ enum SyncInitialSnapshotBuilder {
     }
 
     static func projectOperation(_ project: ProjectRecord, action: SyncAction) throws -> SyncOperationDraft {
+        guard project.description.utf16.count <= 20000 else {
+            throw ProjectWorkspaceError.descriptionTooLong
+        }
         var payload: [String: Any] = [
             "parentProjectId": json(project.parentProjectId),
             "name": project.name,

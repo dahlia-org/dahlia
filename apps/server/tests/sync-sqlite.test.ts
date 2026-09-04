@@ -103,7 +103,7 @@ describe("SQLite canonical sync", () => {
     await store.close?.();
   });
 
-  it("reports a screenshot's missing meeting dependency in revision conflicts", async () => {
+  it("rejects staging and reports conflicts after a meeting is deleted", async () => {
     const { store } = await setup();
     await createVault(store);
     await commit(store, owner, transaction("019d4a01-1150-7000-8000-000000000001", [{
@@ -143,6 +143,17 @@ describe("SQLite canonical sync", () => {
       baseRevision: 1,
       data: {},
     }]));
+
+    await expect(new MeetingSyncService(store.sync).putTranscriptChunk(
+      owner,
+      vaultId,
+      meetingId,
+      "019d4a01-1150-7000-8000-000000000009",
+      0,
+      "d".repeat(64),
+      { segments: [], deletions: [segmentId] },
+    )).rejects.toMatchObject({ status: 409, code: "sync_target_conflict" });
+    expect(await store.sync.withIdentity(owner, (sync) => sync.ensureUploadTarget(vaultId, meetingId))).toBe(false);
 
     await expect(commit(store, owner, transaction("019d4a01-1150-7000-8000-000000000007", [{
       id: "019d4a01-1150-7000-8000-000000000008",

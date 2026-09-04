@@ -1147,6 +1147,9 @@ enum L10n { // swiftlint:disable:this type_body_length
         bundle: bundle
     ) }
     static var projectNameTooLong: String { String(localized: "The project name is too long.", bundle: bundle) }
+    static var projectDescriptionTooLong: String {
+        String(localized: "The project description must be 20,000 characters or fewer.", bundle: bundle)
+    }
 
     static func projectAlreadyExists(_ name: String) -> String {
         String(localized: "A project named \(name) already exists in this location.", bundle: bundle)
