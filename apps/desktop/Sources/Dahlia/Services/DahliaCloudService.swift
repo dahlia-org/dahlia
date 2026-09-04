@@ -321,6 +321,7 @@ actor DahliaCloudService {
     private func credentialMatchesConfiguration(_ credential: DahliaCloudCredential) -> Bool {
         credential.clientID == configuration.clientID
             && Self.sameOrigin(credential.resource, configuration.origin)
+            && credential.grantedScopes.contains("all-apis")
     }
 
     private func refreshAndPersist(_ oldCredential: DahliaCloudCredential) async throws -> String {

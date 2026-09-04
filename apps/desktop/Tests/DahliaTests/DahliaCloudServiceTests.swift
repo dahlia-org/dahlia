@@ -270,6 +270,22 @@
         }
 
         @Test
+        func restartRequiresReauthorizationWhenStoredCredentialLacksAllAPIs() async throws {
+            let recorder = CloudRequestRecorder(mode: .refresh)
+            let store = CloudCredentialStoreFake(credential: makeCredential(
+                expirationDate: .distantPast,
+                grantedScopes: ["openid", "api.sync.write"]
+            ))
+            let service = makeService(recorder: recorder, store: store)
+
+            #expect(try await service.storedCredential() == nil)
+            await #expect(throws: DahliaCloudError.noCredential) {
+                try await service.validAccessToken()
+            }
+            #expect(recorder.tokenRequestCount == 0)
+        }
+
+        @Test
         func revocationFailureStillDeletesLocalCredential() async throws {
             let recorder = CloudRequestRecorder(mode: .refresh, revocationStatusCode: 503)
             let store = CloudCredentialStoreFake(credential: makeCredential(
@@ -660,7 +676,8 @@
             expirationDate: Date,
             revocationEndpoint: URL? = nil,
             clientID: String = "desktop-client",
-            accountID: String = "saved-user"
+            accountID: String = "saved-user",
+            grantedScopes: Set<String> = ["all-apis"]
         ) -> DahliaCloudCredential {
             DahliaCloudCredential(
                 accessToken: "old-access",
@@ -669,7 +686,7 @@
                 resource: "https://cloud.example.com",
                 issuer: "https://accounts.example.com",
                 clientID: clientID,
-                grantedScopes: ["openid"],
+                grantedScopes: grantedScopes,
                 tokenEndpoint: URL(string: "https://accounts.example.com/token")!,
                 revocationEndpoint: revocationEndpoint,
                 account: DahliaCloudAccount(id: accountID, name: "Saved User", email: "saved@example.com")

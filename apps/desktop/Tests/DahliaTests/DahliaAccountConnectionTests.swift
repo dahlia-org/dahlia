@@ -443,7 +443,7 @@
                 resource: origin,
                 issuer: "https://accounts.example.com",
                 clientID: "desktop-client",
-                grantedScopes: ["openid"],
+                grantedScopes: ["all-apis"],
                 tokenEndpoint: URL(string: "https://accounts.example.com/token")!,
                 revocationEndpoint: nil,
                 account: DahliaCloudAccount(id: accountID, name: accountID, email: nil)

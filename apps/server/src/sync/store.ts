@@ -793,6 +793,47 @@ function createIdentityStore(
     }], operationId);
   }
 
+  async function assertProjectDeletionAvailable(
+    vaultId: string,
+    projectId: string,
+    operationId: string,
+  ): Promise<void> {
+    const conflicts: SyncRevisionConflict[] = [];
+    const [child] = await db.select({ id: schema.syncedProject.projectId })
+      .from(schema.syncedProject).where(and(
+        eq(schema.syncedProject.vaultId, vaultId),
+        eq(schema.syncedProject.parentProjectId, projectId),
+        ownerAccess(schema.syncedProject.vaultId),
+      )).limit(1);
+    if (child) {
+      const current = await canonicalRecord("project", vaultId, child.id);
+      conflicts.push({
+        entity: "project",
+        id: child.id,
+        clientBaseRevision: null,
+        serverRevision: current.revision,
+        record: current.record,
+      });
+    }
+    const [meeting] = await db.select({ id: schema.syncedMeeting.meetingId })
+      .from(schema.syncedMeeting).where(and(
+        eq(schema.syncedMeeting.vaultId, vaultId),
+        eq(schema.syncedMeeting.projectId, projectId),
+        ownerAccess(schema.syncedMeeting.vaultId),
+      )).limit(1);
+    if (meeting) {
+      const current = await canonicalRecord("meeting", vaultId, meeting.id);
+      conflicts.push({
+        entity: "meeting",
+        id: meeting.id,
+        clientBaseRevision: null,
+        serverRevision: current.revision,
+        record: current.record,
+      });
+    }
+    if (conflicts.length) throw new SyncTransactionError(409, "revision_conflict", conflicts, operationId);
+  }
+
   async function commitTransaction(transaction: SyncTransaction): Promise<SyncTransactionResponse> {
     if (searchBackend !== "sqlite") {
       await db.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`transaction:${transaction.id}`}, 0))`);
@@ -934,6 +975,7 @@ function createIdentityStore(
           ));
         } else if (operation.action === "delete") {
           await assertRevision(transaction, "project", operation.entityId, operation.baseRevision);
+          await assertProjectDeletionAvailable(transaction.vaultId, operation.entityId, operation.id);
           await db.delete(schema.syncedProject).where(and(
             eq(schema.syncedProject.vaultId, transaction.vaultId),
             eq(schema.syncedProject.projectId, operation.entityId),

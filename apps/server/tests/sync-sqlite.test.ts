@@ -779,6 +779,55 @@ describe("SQLite canonical sync", () => {
     await store.close?.();
   });
 
+  it("reports concurrent Project dependents as revision conflicts before deletion", async () => {
+    const { store } = await setup();
+    await createVault(store);
+    const childId = "019d4a01-2950-7000-8000-000000000001";
+    await commit(store, owner, transaction("019d4a01-2950-7000-8000-000000000002", [{
+      id: "019d4a01-2950-7000-8000-000000000003",
+      entity: "project",
+      action: "create",
+      entityId: projectId,
+      baseRevision: null,
+      data: projectData("Root"),
+    }, {
+      id: "019d4a01-2950-7000-8000-000000000004",
+      entity: "project",
+      action: "create",
+      entityId: childId,
+      baseRevision: null,
+      data: { ...projectData("Child"), parentProjectId: projectId, projectType: null },
+    }, {
+      id: "019d4a01-2950-7000-8000-000000000005",
+      entity: "meeting",
+      action: "create",
+      entityId: meetingId,
+      baseRevision: null,
+      data: { ...meetingData(), projectId },
+    }]));
+
+    const operationId = "019d4a01-2950-7000-8000-000000000006";
+    await expect(commit(store, owner, transaction("019d4a01-2950-7000-8000-000000000007", [{
+      id: operationId,
+      entity: "project",
+      action: "delete",
+      entityId: projectId,
+      baseRevision: 1,
+      data: {},
+    }]))).rejects.toMatchObject({
+      status: 409,
+      code: "revision_conflict",
+      operationId,
+      conflicts: [
+        { entity: "project", id: childId, serverRevision: 1 },
+        { entity: "meeting", id: meetingId, serverRevision: 1 },
+      ],
+    });
+    expect(await store.sync.withIdentity(owner, (sync) => sync.getProject(vaultId, projectId)))
+      .toMatchObject({ projectId });
+    await store.close?.();
+  });
+
   it("reports the rejected operation ID and removes obsolete manifest routes", async () => {
     const { directory, store } = await setup();
     const app = createApp({
