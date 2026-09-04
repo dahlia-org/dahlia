@@ -268,6 +268,69 @@
         }
 
         @Test
+        func reapplyingADeletedScreenshotRestoresItsMeetingAndContent() async throws {
+            let (database, vault) = try await syncedDatabase()
+            let meeting = MeetingRecord(
+                id: .v7(), vaultId: vault.id, projectId: nil, name: "Restored",
+                createdAt: .now, updatedAt: .now
+            )
+            let screenshot = MeetingScreenshotRecord(
+                id: .v7(), meetingId: meeting.id, sessionId: nil, capturedAt: .now,
+                imageData: Data([1, 2, 3]), mimeType: "image/png", ocrText: "text", caption: nil
+            )
+            try await database.dbQueue.write { db in
+                try meeting.insert(db)
+                try screenshot.insert(db)
+                try db.execute(
+                    sql: "INSERT INTO sync_entity_state(vaultId, entity, entityId, confirmedRevision) VALUES (?, 'meeting', ?, 2), (?, 'screenshot', ?, 1)",
+                    arguments: [vault.id, meeting.id, vault.id, screenshot.id]
+                )
+                try SyncTransactionRecorder.record(
+                    vaultId: vault.id,
+                    operations: [SyncInitialSnapshotBuilder.screenshotOperation(screenshot, action: .upsert)],
+                    in: db
+                )
+            }
+            let claimed = try #require(try await SyncTransactionQueue.claim(dbQueue: database.dbQueue))
+            try await SyncTransactionQueue.block(
+                claimed,
+                reason: .conflict,
+                response: Data("""
+                {"conflicts":[
+                  {"entity":"screenshot","id":"\(screenshot.id.uuidString)","serverRevision":null,"record":null},
+                  {"entity":"meeting","id":"\(meeting.id.uuidString)","serverRevision":null,"record":null}
+                ]}
+                """.utf8),
+                dbQueue: database.dbQueue
+            )
+
+            try await SyncTransactionQueue.reapplyLocalVersion(vaultId: vault.id, dbQueue: database.dbQueue)
+
+            let rows = try database.dbQueue.read { db in
+                try Row.fetchAll(
+                    db,
+                    sql: """
+                    SELECT o.entity, o.action, o.baseRevision, o.payloadJSON,
+                        o.attachmentSHA256, length(o.attachmentBytes) AS attachmentLength
+                    FROM sync_operations o
+                    JOIN sync_transactions t ON t.id = o.transactionId
+                    WHERE t.vaultId = ? ORDER BY t.sequence, o.position
+                    """,
+                    arguments: [vault.id]
+                )
+            }
+            #expect(rows.count == 2)
+            #expect(rows[0]["entity"] as String == "meeting")
+            #expect(rows[0]["action"] as String == "create")
+            #expect(rows[1]["entity"] as String == "screenshot")
+            #expect(rows[1]["baseRevision"] as Int? == nil)
+            #expect(rows[1]["attachmentLength"] as Int? == 3)
+            let hash: String = rows[1]["attachmentSHA256"]
+            let payload: String = rows[1]["payloadJSON"]
+            #expect(payload.contains(hash))
+        }
+
+        @Test
         func recorderQueuesOnlyConfirmedTranscriptSegments() async throws {
             let (database, vault) = try await syncedDatabase()
             let patch = SyncOperationDraft(entity: .transcript, action: .patch, entityId: UUID.v7())
@@ -466,6 +529,54 @@
         }
 
         @Test
+        func remoteTranscriptWaitsUntilRecordingFinishesWithoutAdvancingCursor() async throws {
+            let (database, vault) = try await syncedDatabase()
+            let meeting = MeetingRecord(
+                id: .v7(), vaultId: vault.id, projectId: nil, name: "Meeting",
+                createdAt: .now, updatedAt: .now
+            )
+            let session = RecordingSessionRecord(
+                id: .v7(), meetingId: meeting.id, startedAt: .now, endedAt: nil,
+                duration: nil, offsetSeconds: 0, createdAt: .now, updatedAt: .now
+            )
+            let segment = SyncTranscriptPage.Segment(
+                segmentId: .v7(), startTime: .now, endTime: nil, text: "canonical",
+                isConfirmed: true, audioSource: "mic", speakerLabel: nil
+            )
+            let record = try SyncJSON.decoder.decode(
+                SyncCanonicalPayload.self,
+                from: Data("{\"meetingId\":\"\(meeting.id.uuidString.lowercased())\"}".utf8)
+            )
+            let change = SyncChangePage.Change(
+                sequence: 1, entity: .transcript, entityId: meeting.id,
+                action: "upsert", revision: 1, record: record
+            )
+            try await database.dbQueue.write { db in
+                try meeting.insert(db)
+                try session.insert(db)
+            }
+
+            #expect(try await !RemoteChangeApplier.apply(
+                [change], screenshots: [:], transcripts: [meeting.id: [segment]], cursor: "cursor-1",
+                vaultId: vault.id, dbQueue: database.dbQueue
+            ))
+            #expect(try await database.dbQueue.read { db in
+                try Int.fetchOne(db, sql: "SELECT count(*) FROM transcript_segments WHERE meetingId = ?", arguments: [meeting.id])
+            } == 0)
+            #expect(try await database.dbQueue.read { db in
+                try String.fetchOne(db, sql: "SELECT syncPullCursor FROM vaults WHERE id = ?", arguments: [vault.id])
+            } == nil)
+
+            try await database.dbQueue.write { db in
+                try db.execute(sql: "UPDATE recording_sessions SET endedAt = ? WHERE id = ?", arguments: [Date(), session.id])
+            }
+            #expect(try await RemoteChangeApplier.apply(
+                [change], screenshots: [:], transcripts: [meeting.id: [segment]], cursor: "cursor-1",
+                vaultId: vault.id, dbQueue: database.dbQueue
+            ))
+        }
+
+        @Test
         func transcriptSchemaSeparatesAudioSourceFromSpeakerLabel() throws {
             let queue = try DatabaseQueue(path: ":memory:")
             let source = UUID.v7()
@@ -654,7 +765,7 @@
         @Test
         func initialSnapshotSplitsLargeProjectCollectionsBelowTheRequestLimit() async throws {
             let (database, vault) = try await syncedDatabase()
-            let description = String(repeating: "x", count: 20_000)
+            let description = String(repeating: "x", count: 20000)
             try await database.dbQueue.write { db in
                 for index in 0 ..< 330 {
                     try ProjectRecord(
@@ -704,7 +815,8 @@
                  "record":{"name":"Root"}},
                 {"sequence":4,"entity":"meeting","entityId":"\(meetingId.uuidString.lowercased())","action":"upsert","revision":3,
                  "record":{"projectId":"\(childId.uuidString.lowercased())","name":"Latest"}},
-                {"sequence":5,"entity":"meeting","entityId":"\(deletedMeetingId.uuidString.lowercased())","action":"delete","revision":null,"record":null}
+                {"sequence":5,"entity":"meeting","entityId":"\(deletedMeetingId.uuidString
+                .lowercased())","action":"delete","revision":null,"record":null}
               ],
               "cursor":"v1.cursor",
               "hasMore":false

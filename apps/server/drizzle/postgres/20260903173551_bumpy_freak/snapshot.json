@@ -57,7 +57,7 @@
       "schema": "core"
     },
     {
-      "isRlsEnabled": false,
+      "isRlsEnabled": true,
       "name": "transaction_receipts",
       "entityType": "tables",
       "schema": "core"
@@ -2815,6 +2815,19 @@
       "entityType": "checks",
       "schema": "core",
       "table": "vault_permissions"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "ALL",
+      "roles": [
+        "public"
+      ],
+      "using": "\"core\".\"transaction_receipts\".\"owner_user_id\" = current_setting('app.user_id', true)",
+      "withCheck": "\"core\".\"transaction_receipts\".\"owner_user_id\" = current_setting('app.user_id', true)",
+      "name": "transaction_receipt_owner",
+      "entityType": "policies",
+      "schema": "core",
+      "table": "transaction_receipts"
     }
   ],
   "renames": []

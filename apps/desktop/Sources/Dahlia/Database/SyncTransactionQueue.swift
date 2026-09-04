@@ -655,9 +655,12 @@ enum SyncTransactionQueue {
             let response: String? = first["serverResponseJSON"]
             let directMissingEntities = missingConflictEntities(response)
             let missingMeetings = Set(directMissingEntities.compactMap { conflict in
-                conflict.entity == .summary || conflict.entity == .transcript
-                    ? MissingConflictEntity(entity: .meeting, id: conflict.id)
-                    : nil
+                switch conflict.entity {
+                case .meeting, .summary, .transcript:
+                    MissingConflictEntity(entity: .meeting, id: conflict.id)
+                default:
+                    nil
+                }
             })
             let missingEntities = directMissingEntities.union(missingMeetings)
             for missing in missingEntities {
@@ -709,7 +712,21 @@ enum SyncTransactionQueue {
                     let missing = missingEntities.contains(key)
                     if missing, action == .delete { continue }
                     let rebasedAction: SyncAction = missing && action == .update ? .create : action
-                    let payload = (row["payloadJSON"] as String?).map { Data($0.utf8) }
+                    var payload = (row["payloadJSON"] as String?).map { Data($0.utf8) }
+                    var replacementAttachment: SyncScreenshotAttachment?
+                    if missing, entity == .screenshot, action != .delete {
+                        guard let screenshot = try MeetingScreenshotRecord.fetchOne(db, key: entityId) else { continue }
+                        let attachment = SyncScreenshotAttachment(
+                            mimeType: screenshot.mimeType,
+                            bytes: screenshot.imageData
+                        )
+                        payload = try SyncInitialSnapshotBuilder.screenshotOperation(
+                            screenshot,
+                            action: .upsert,
+                            contentHash: attachment.sha256
+                        ).payloadJSON
+                        replacementAttachment = attachment
+                    }
                     let operation = try SyncOperationDraft(
                         entity: entity,
                         action: rebasedAction,
@@ -722,9 +739,11 @@ enum SyncTransactionQueue {
                     let patch = try loadPatch(operationId: oldOperationId, in: db)
                     segments[operation.id] = patch.segments
                     deletions[operation.id] = patch.deletions
-                    if let mime: String = row["attachmentMimeType"],
-                       let sha: String = row["attachmentSHA256"],
-                       let bytes: Data = row["attachmentBytes"] {
+                    if let replacementAttachment {
+                        attachments[operation.id] = replacementAttachment
+                    } else if let mime: String = row["attachmentMimeType"],
+                              let sha: String = row["attachmentSHA256"],
+                              let bytes: Data = row["attachmentBytes"] {
                         attachments[operation.id] = SyncScreenshotAttachment(mimeType: mime, sha256: sha, bytes: bytes)
                     }
                 }

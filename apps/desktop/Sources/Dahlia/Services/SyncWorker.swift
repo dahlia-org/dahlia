@@ -884,6 +884,13 @@ enum RemoteChangeApplier {
     ) async throws -> Bool {
         try await dbQueue.write { db in
             guard try !SyncTransactionQueue.hasPending(vaultId: vaultId, in: db) else { return false }
+            if changes.contains(where: { $0.entity == .transcript }),
+               try Bool.fetchOne(
+                   db,
+                   sql: "SELECT EXISTS (SELECT 1 FROM recording_sessions WHERE endedAt IS NULL)"
+               ) ?? false {
+                return false
+            }
             let deletingActiveMeeting = try changes.contains { change in
                 guard change.entity == .meeting, change.action == "delete" else { return false }
                 return try Bool.fetchOne(

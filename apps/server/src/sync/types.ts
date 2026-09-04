@@ -176,6 +176,7 @@ export interface IdentitySyncStore {
     segments: SyncTranscriptSegment[],
     deletions: string[],
   ): Promise<boolean>;
+  deleteTranscriptPatch(vaultId: string, meetingId: string, patchId: string): Promise<void>;
   getScreenshot(
     vaultId: string,
     meetingId: string,

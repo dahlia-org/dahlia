@@ -10,6 +10,7 @@ import {
   index,
   integer,
   jsonb,
+  pgPolicy,
   pgSchema,
   primaryKey,
   real,
@@ -307,7 +308,12 @@ export const syncTransactionReceipt = coreSchema.table("transaction_receipts", {
     foreignColumns: [authUser.id],
   }).onDelete("cascade"),
   index("transaction_receipt_owner_created_idx").on(table.ownerUserId, table.createdAt),
-]);
+  pgPolicy("transaction_receipt_owner", {
+    for: "all",
+    using: sql`${table.ownerUserId} = current_setting('app.user_id', true)`,
+    withCheck: sql`${table.ownerUserId} = current_setting('app.user_id', true)`,
+  }),
+]).enableRLS();
 
 export const syncChange = coreSchema.table("sync_changes", {
   sequence: bigserial("sequence", { mode: "number" }).primaryKey(),

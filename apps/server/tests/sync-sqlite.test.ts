@@ -103,6 +103,65 @@ describe("SQLite canonical sync", () => {
     await store.close?.();
   });
 
+  it("reports a screenshot's missing meeting dependency in revision conflicts", async () => {
+    const { store } = await setup();
+    await createVault(store);
+    await commit(store, owner, transaction("019d4a01-1150-7000-8000-000000000001", [{
+      id: "019d4a01-1150-7000-8000-000000000002",
+      entity: "meeting",
+      action: "create",
+      entityId: meetingId,
+      baseRevision: null,
+      data: { ...meetingData(), projectId: null },
+    }]));
+    const contentHash = "c".repeat(64);
+    expect(await store.sync.withIdentity(owner, (sync) => sync.createScreenshot({
+      screenshotId,
+      vaultId,
+      meetingId,
+      capturedAt: now,
+      contentType: "image/png",
+      storageKey: `meetings/${meetingId}/screenshots/${screenshotId}.png`,
+      contentLength: 3,
+      contentHash,
+      ocrText: null,
+      caption: null,
+    }))).toBe(true);
+    await commit(store, owner, transaction("019d4a01-1150-7000-8000-000000000003", [{
+      id: "019d4a01-1150-7000-8000-000000000004",
+      entity: "screenshot",
+      action: "upsert",
+      entityId: screenshotId,
+      baseRevision: null,
+      data: { meetingId, capturedAt: now, ocrText: null, caption: null, contentHash },
+    }]));
+    await commit(store, owner, transaction("019d4a01-1150-7000-8000-000000000005", [{
+      id: "019d4a01-1150-7000-8000-000000000006",
+      entity: "meeting",
+      action: "delete",
+      entityId: meetingId,
+      baseRevision: 1,
+      data: {},
+    }]));
+
+    await expect(commit(store, owner, transaction("019d4a01-1150-7000-8000-000000000007", [{
+      id: "019d4a01-1150-7000-8000-000000000008",
+      entity: "screenshot",
+      action: "upsert",
+      entityId: screenshotId,
+      baseRevision: 1,
+      data: { meetingId, capturedAt: now, ocrText: "local", caption: null, contentHash },
+    }]))).rejects.toMatchObject({
+      status: 409,
+      code: "revision_conflict",
+      conflicts: [
+        { entity: "screenshot", serverRevision: null },
+        { entity: "meeting", serverRevision: null },
+      ],
+    });
+    await store.close?.();
+  });
+
   it("rejects unknown meeting statuses and normalizes the legacy recording value", async () => {
     const { store } = await setup();
     await createVault(store);
@@ -267,6 +326,59 @@ describe("SQLite canonical sync", () => {
     expect(await store.sync.withIdentity(owner, (sync) => sync.listProjects(vaultId))).toEqual([]);
     expect(await store.sync.withIdentity(owner, (sync) => sync.getMeeting(vaultId, meetingId)))
       .toMatchObject({ projectId: null, summaryTitle: "Summary" });
+    await store.close?.();
+  });
+
+  it("removes staged transcript chunks after a rejected transaction", async () => {
+    const { databasePath, store } = await setup();
+    await createVault(store);
+    await commit(store, owner, transaction("019d4a01-2100-7000-8000-000000000001", [{
+      id: "019d4a01-2100-7000-8000-000000000002",
+      entity: "meeting",
+      action: "create",
+      entityId: meetingId,
+      baseRevision: null,
+      data: { ...meetingData(), projectId: null },
+    }]));
+    const patchId = "019d4a01-2100-7000-8000-000000000003";
+    const chunkHash = "b".repeat(64);
+    const service = new MeetingSyncService(store.sync);
+    await service.putTranscriptChunk(owner, vaultId, meetingId, patchId, 0, chunkHash, {
+      segments: [{
+        segmentId,
+        startTime: now.toISOString(),
+        endTime: null,
+        text: "staged",
+        isConfirmed: true,
+        audioSource: "mic",
+        speakerLabel: null,
+      }],
+      deletions: [],
+    });
+
+    await expect(service.commitTransaction(owner, {
+      schemaVersion: 1,
+      id: "019d4a01-2100-7000-8000-000000000004",
+      vaultId,
+      createdAt: now.toISOString(),
+      operations: [{
+        id: patchId,
+        entity: "transcript",
+        action: "patch",
+        entityId: meetingId,
+        baseRevision: 99,
+        data: {
+          patchId,
+          segmentCount: 1,
+          deletionCount: 0,
+          chunks: [{ index: 0, sha256: chunkHash, segmentCount: 1, deletionCount: 0 }],
+        },
+      }],
+    })).rejects.toMatchObject({ status: 409, code: "revision_conflict" });
+
+    const database = new DatabaseSync(databasePath);
+    expect(database.prepare("SELECT count(*) AS count FROM content_transcript_patch_chunks").get()).toMatchObject({ count: 0 });
+    database.close();
     await store.close?.();
   });
 

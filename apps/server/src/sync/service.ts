@@ -4,6 +4,7 @@ import type { Identity } from "../auth/identity";
 import { DEFAULT_ARTIFACT_MAX_BYTES } from "../config";
 import { ObjectStorageError, type ArtifactReadMethod, type ObjectStorage } from "../artifacts/storage";
 import { ArtifactRequestError, parseUpload } from "../artifacts/upload";
+import { sha256Passthrough, sha256Stream } from "../artifacts/sha256";
 import {
   createSearchText,
   createIntlSearchTokenizer,
@@ -172,61 +173,81 @@ export class MeetingSyncService {
     }
     const normalized = { ...parsed.data, operations };
     const requestHash = await sha256(canonicalJson(normalized));
-    const response = await this.store.withIdentity(identity, async (scoped) => {
-      const meetings = new Map<string, Awaited<ReturnType<IdentitySyncStore["getMeeting"]>>>();
-      const prepared = [] as SyncTransaction["operations"];
-      for (const operation of operations) {
-        const data = { ...(operation.data ?? {}) };
-        if ((operation.entity === "meeting" && operation.action !== "delete") || operation.entity === "summary") {
-          let meeting = meetings.get(operation.entityId);
-          if (meeting === undefined) {
-            meeting = operation.entity === "meeting" && operation.action === "create"
-              ? null
-              : await scoped.getMeeting(parsed.data.vaultId, operation.entityId);
+    let response: Awaited<ReturnType<IdentitySyncStore["commitTransaction"]>>;
+    try {
+      response = await this.store.withIdentity(identity, async (scoped) => {
+        const meetings = new Map<string, Awaited<ReturnType<IdentitySyncStore["getMeeting"]>>>();
+        const prepared = [] as SyncTransaction["operations"];
+        for (const operation of operations) {
+          const data = { ...(operation.data ?? {}) };
+          if ((operation.entity === "meeting" && operation.action !== "delete") || operation.entity === "summary") {
+            let meeting = meetings.get(operation.entityId);
+            if (meeting === undefined) {
+              meeting = operation.entity === "meeting" && operation.action === "create"
+                ? null
+                : await scoped.getMeeting(parsed.data.vaultId, operation.entityId);
+            }
+            const name = operation.entity === "meeting" && typeof data.name === "string" ? data.name : meeting?.name ?? "";
+            const description = operation.entity === "meeting" && typeof data.description === "string"
+              ? data.description
+              : meeting?.description ?? "";
+            const summaryDocument = operation.entity === "summary"
+              ? operation.action === "upsert" ? String(data.document) : null
+              : meeting?.summaryDocument ?? null;
+            const summaryText = summarySearchableText(summaryDocument);
+            const embeddingText = summaryText.trim() || null;
+            Object.assign(data, {
+              searchText: createSearchText(this.tokenizer, [name, description, summaryText]),
+              embeddingText,
+              embeddingContentHash: await embeddingContentHash(embeddingText),
+            });
+            meetings.set(operation.entityId, {
+              ...(meeting ?? {}),
+              meetingId: operation.entityId,
+              vaultId: parsed.data.vaultId,
+              projectId: operation.entity === "meeting" ? data.projectId as string | null : meeting?.projectId ?? null,
+              name,
+              description,
+              status: operation.entity === "meeting" ? String(data.status) : meeting?.status ?? "",
+              duration: operation.entity === "meeting" ? data.duration as number | null : meeting?.duration ?? null,
+              recordingStartedAt: operation.entity === "meeting" ? data.recordingStartedAt as Date | null : meeting?.recordingStartedAt ?? null,
+              createdAt: operation.entity === "meeting" && operation.action === "create" ? data.createdAt as Date : meeting?.createdAt ?? parsed.data.createdAt,
+              updatedAt: operation.entity === "meeting" ? data.updatedAt as Date : meeting?.updatedAt ?? parsed.data.createdAt,
+              summaryTitle: operation.entity === "summary" && operation.action === "upsert" ? String(data.title) : operation.action === "delete" ? null : meeting?.summaryTitle ?? null,
+              summaryDocument,
+              summaryCreatedAt: operation.entity === "summary" && operation.action === "upsert" ? data.createdAt as Date : operation.action === "delete" ? null : meeting?.summaryCreatedAt ?? null,
+            });
+          } else if (operation.entity === "screenshot" && operation.action === "upsert") {
+            const embeddingText = [data.ocrText, data.caption]
+              .filter((value): value is string => typeof value === "string" && value.trim().length > 0).join("\n") || null;
+            Object.assign(data, {
+              searchText: createSearchText(this.tokenizer, [data.ocrText as string | null, data.caption as string | null]),
+              embeddingText,
+              embeddingContentHash: await embeddingContentHash(embeddingText),
+            });
           }
-          const name = operation.entity === "meeting" && typeof data.name === "string" ? data.name : meeting?.name ?? "";
-          const description = operation.entity === "meeting" && typeof data.description === "string"
-            ? data.description
-            : meeting?.description ?? "";
-          const summaryDocument = operation.entity === "summary"
-            ? operation.action === "upsert" ? String(data.document) : null
-            : meeting?.summaryDocument ?? null;
-          const summaryText = summarySearchableText(summaryDocument);
-          const embeddingText = summaryText.trim() || null;
-          Object.assign(data, {
-            searchText: createSearchText(this.tokenizer, [name, description, summaryText]),
-            embeddingText,
-            embeddingContentHash: await embeddingContentHash(embeddingText),
-          });
-          meetings.set(operation.entityId, {
-            ...(meeting ?? {}),
-            meetingId: operation.entityId,
-            vaultId: parsed.data.vaultId,
-            projectId: operation.entity === "meeting" ? data.projectId as string | null : meeting?.projectId ?? null,
-            name,
-            description,
-            status: operation.entity === "meeting" ? String(data.status) : meeting?.status ?? "",
-            duration: operation.entity === "meeting" ? data.duration as number | null : meeting?.duration ?? null,
-            recordingStartedAt: operation.entity === "meeting" ? data.recordingStartedAt as Date | null : meeting?.recordingStartedAt ?? null,
-            createdAt: operation.entity === "meeting" && operation.action === "create" ? data.createdAt as Date : meeting?.createdAt ?? parsed.data.createdAt,
-            updatedAt: operation.entity === "meeting" ? data.updatedAt as Date : meeting?.updatedAt ?? parsed.data.createdAt,
-            summaryTitle: operation.entity === "summary" && operation.action === "upsert" ? String(data.title) : operation.action === "delete" ? null : meeting?.summaryTitle ?? null,
-            summaryDocument,
-            summaryCreatedAt: operation.entity === "summary" && operation.action === "upsert" ? data.createdAt as Date : operation.action === "delete" ? null : meeting?.summaryCreatedAt ?? null,
-          });
-        } else if (operation.entity === "screenshot" && operation.action === "upsert") {
-          const embeddingText = [data.ocrText, data.caption]
-            .filter((value): value is string => typeof value === "string" && value.trim().length > 0).join("\n") || null;
-          Object.assign(data, {
-            searchText: createSearchText(this.tokenizer, [data.ocrText as string | null, data.caption as string | null]),
-            embeddingText,
-            embeddingContentHash: await embeddingContentHash(embeddingText),
-          });
+          prepared.push({ ...operation, data });
         }
-        prepared.push({ ...operation, data });
+        return scoped.commitTransaction({ ...normalized, operations: prepared, requestHash });
+      });
+    } catch (error) {
+      if (error instanceof SyncTransactionError
+        && error.status >= 400 && error.status < 500
+        && ![408, 425, 429].includes(error.status)) {
+        try {
+          await this.store.withIdentity(identity, async (scoped) => {
+            for (const operation of operations) {
+              if (operation.entity === "transcript" && operation.action === "patch") {
+                await scoped.deleteTranscriptPatch(parsed.data.vaultId, operation.entityId, operation.id);
+              }
+            }
+          });
+        } catch {
+          // A later upload removes expired staging rows if immediate cleanup is unavailable.
+        }
       }
-      return scoped.commitTransaction({ ...normalized, operations: prepared, requestHash });
-    });
+      throw error;
+    }
     this.scheduleStorageDeletes();
     return response;
   }
@@ -380,16 +401,16 @@ export class MeetingSyncService {
         return reservation.existing;
       }
       try {
-        const [storageBody, digestBody] = request.body?.tee() ?? [new Uint8Array(), new Uint8Array()];
+        const uploadBody = sha256Passthrough(request.body);
         const [, actualHash] = await Promise.all([
           this.storageCall(() => storage.put(
             storageKey,
-            storageBody,
+            uploadBody.body,
             upload.contentLength,
             upload.contentType,
             request.signal,
           )),
-          sha256Stream(digestBody),
+          uploadBody.digest,
         ]);
         if (actualHash !== contentHash) throw new ArtifactRequestError(409, "screenshot_content_hash_mismatch");
         return reservation.existing;
@@ -758,16 +779,5 @@ function canonicalJson(value: unknown): string {
 
 async function sha256(value: string): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
-  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
-}
-
-async function sha256Stream(value: ReadableStream<Uint8Array> | Uint8Array | null): Promise<string> {
-  const bytes = value instanceof Uint8Array
-    ? value
-    : new Uint8Array(await new Response(value).arrayBuffer());
-  const digest = await crypto.subtle.digest(
-    "SHA-256",
-    bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer,
-  );
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }

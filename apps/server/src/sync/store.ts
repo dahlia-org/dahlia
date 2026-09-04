@@ -36,6 +36,7 @@ import type {
 
 type SyncSchema = typeof postgresSchema;
 export type SyncSearchBackend = "postgres" | "lakebase" | "sqlite";
+const TRANSCRIPT_PATCH_RETENTION_MS = 24 * 60 * 60 * 1_000;
 
 function batches<T>(values: T[], size: number): T[][] {
   const result: T[][] = [];
@@ -692,16 +693,28 @@ function createIdentityStore(
     entity: SyncCanonicalRecord["entity"],
     entityId: string,
     baseRevision: number | null,
+    missingDependencies: Array<{ entity: SyncCanonicalRecord["entity"]; id: string }> = [],
   ): Promise<void> {
     const current = await canonicalRecord(entity, transaction.vaultId, entityId);
     if (current.record === null) {
-      throw new SyncTransactionError(409, "revision_conflict", [{
+      const conflicts: SyncRevisionConflict[] = [{
         entity,
         id: entityId,
         clientBaseRevision: baseRevision,
         serverRevision: null,
         record: null,
-      }]);
+      }];
+      for (const dependency of missingDependencies) {
+        const record = await canonicalRecord(dependency.entity, transaction.vaultId, dependency.id);
+        if (record.record === null) conflicts.push({
+          entity: dependency.entity,
+          id: dependency.id,
+          clientBaseRevision: null,
+          serverRevision: null,
+          record: null,
+        });
+      }
+      throw new SyncTransactionError(409, "revision_conflict", conflicts);
     }
     if (current.revision !== baseRevision) {
       throw new SyncTransactionError(409, "revision_conflict", [{
@@ -1100,7 +1113,9 @@ function createIdentityStore(
             }]);
           }
         } else {
-          await assertRevision(transaction, "screenshot", operation.entityId, operation.baseRevision);
+          await assertRevision(transaction, "screenshot", operation.entityId, operation.baseRevision, [
+            { entity: "meeting", id: meetingId },
+          ]);
         }
         if (data.contentHash
           && (current.record as { contentHash?: string } | null)?.contentHash !== data.contentHash) {
@@ -1248,6 +1263,10 @@ function createIdentityStore(
     ensureUploadTarget,
     async putTranscriptChunk(vaultId, meetingId, patchId, chunkIndex, contentHash, segments, deletions) {
       if (!await ensureUploadTarget(vaultId, meetingId)) return false;
+      await db.delete(schema.transcriptPatchChunk).where(and(
+        eq(schema.transcriptPatchChunk.vaultId, vaultId),
+        lt(schema.transcriptPatchChunk.createdAt, new Date(Date.now() - TRANSCRIPT_PATCH_RETENTION_MS)),
+      ));
       const payload = { segments, deletions };
       await db.insert(schema.transcriptPatchChunk).values({
         vaultId,
@@ -1265,6 +1284,13 @@ function createIdentityStore(
           eq(schema.transcriptPatchChunk.chunkIndex, chunkIndex),
         )).limit(1);
       return stored?.hash === contentHash;
+    },
+    async deleteTranscriptPatch(vaultId, meetingId, patchId) {
+      await db.delete(schema.transcriptPatchChunk).where(and(
+        eq(schema.transcriptPatchChunk.vaultId, vaultId),
+        eq(schema.transcriptPatchChunk.meetingId, meetingId),
+        eq(schema.transcriptPatchChunk.patchId, patchId),
+      ));
     },
     async getScreenshot(vaultId, meetingId, screenshotId, activeOnly = false) {
       const [row] = await db.select().from(schema.syncedScreenshot).where(and(
