@@ -100,6 +100,25 @@ describe("SQLite canonical sync", () => {
     await store.close?.();
   });
 
+  it("returns a structured missing-Vault conflict for dependent transactions", async () => {
+    const { store } = await setup();
+    const operationId = "019d4a01-1020-7000-8000-000000000002";
+    await expect(commit(store, owner, transaction("019d4a01-1020-7000-8000-000000000001", [{
+      id: operationId,
+      entity: "project",
+      action: "create",
+      entityId: projectId,
+      baseRevision: null,
+      data: projectData("Orphan"),
+    }]))).rejects.toMatchObject({
+      status: 409,
+      code: "revision_conflict",
+      operationId,
+      conflicts: [{ entity: "vault", id: vaultId, serverRevision: null, record: null }],
+    });
+    await store.close?.();
+  });
+
   it("accepts Desktop text fields without Server-only character caps", async () => {
     const { store } = await setup();
     await createVault(store);

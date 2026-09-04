@@ -1101,8 +1101,14 @@ enum RemoteChangeApplier {
             else { return false }
             try db.execute(sql: """
             CREATE TEMP TABLE IF NOT EXISTS sync_remote_transcript_items (
-                meetingId TEXT NOT NULL,
-                segmentId TEXT NOT NULL,
+                meetingId BLOB NOT NULL,
+                segmentId BLOB NOT NULL,
+                startTime DATETIME NOT NULL,
+                endTime DATETIME,
+                text TEXT NOT NULL,
+                isConfirmed INTEGER NOT NULL,
+                audioSource TEXT,
+                speakerLabel TEXT,
                 PRIMARY KEY (meetingId, segmentId)
             ) WITHOUT ROWID
             """)
@@ -1126,11 +1132,25 @@ enum RemoteChangeApplier {
             else { return false }
             for segment in segments {
                 try db.execute(
-                    sql: "INSERT OR IGNORE INTO sync_remote_transcript_items(meetingId, segmentId) VALUES (?, ?)",
-                    arguments: [meetingId, segment.segmentId]
+                    sql: """
+                    INSERT INTO sync_remote_transcript_items(
+                        meetingId, segmentId, startTime, endTime, text,
+                        isConfirmed, audioSource, speakerLabel
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(meetingId, segmentId) DO UPDATE SET
+                        startTime = excluded.startTime,
+                        endTime = excluded.endTime,
+                        text = excluded.text,
+                        isConfirmed = excluded.isConfirmed,
+                        audioSource = excluded.audioSource,
+                        speakerLabel = excluded.speakerLabel
+                    """,
+                    arguments: [
+                        meetingId, segment.segmentId, segment.startTime, segment.endTime,
+                        segment.text, segment.isConfirmed, segment.audioSource, segment.speakerLabel,
+                    ]
                 )
             }
-            try upsertTranscriptSegments(segments, meetingId: meetingId, in: db)
             return true
         }
     }
@@ -1146,6 +1166,26 @@ enum RemoteChangeApplier {
             guard try !SyncTransactionQueue.hasPending(vaultId: vaultId, in: db),
                   try !hasActiveRecording(in: db)
             else { return false }
+            try db.execute(
+                sql: """
+                INSERT INTO transcript_segments(
+                    id, meetingId, startTime, endTime, text, isConfirmed, audioSource, speakerLabel
+                )
+                SELECT segmentId, meetingId, startTime, endTime, text,
+                    isConfirmed, audioSource, speakerLabel
+                FROM sync_remote_transcript_items
+                WHERE meetingId = ?
+                ON CONFLICT(id) DO UPDATE SET
+                    meetingId = excluded.meetingId,
+                    startTime = excluded.startTime,
+                    endTime = excluded.endTime,
+                    text = excluded.text,
+                    isConfirmed = excluded.isConfirmed,
+                    audioSource = excluded.audioSource,
+                    speakerLabel = excluded.speakerLabel
+                """,
+                arguments: [meetingId]
+            )
             try db.execute(
                 sql: """
                 DELETE FROM transcript_segments

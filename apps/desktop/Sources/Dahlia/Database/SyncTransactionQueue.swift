@@ -824,6 +824,7 @@ enum SyncTransactionQueue {
             let sequence: Int64 = first["sequence"]
             let response: String? = first["serverResponseJSON"]
             let directMissingEntities = missingConflictEntities(response)
+            let existingEntities = existingConflictEntities(response)
             if directMissingEntities.contains(.init(entity: .vault, id: vaultId)) {
                 try discard(vaultId: vaultId, in: db)
                 try db.execute(sql: "DELETE FROM sync_entity_state WHERE vaultId = ?", arguments: [vaultId])
@@ -900,7 +901,11 @@ enum SyncTransactionQueue {
                        !restoredMeetings.contains(entityId) { continue }
                     let missing = missingEntities.contains(key)
                     if missing, action == .delete { continue }
-                    let rebasedAction: SyncAction = missing && action == .update ? .create : action
+                    let rebasedAction = rebasedAction(
+                        action,
+                        missing: missing,
+                        conflictsWithExisting: existingEntities.contains(key)
+                    )
                     var payload = (row["payloadJSON"] as String?).map { Data($0.utf8) }
                     var replacementAttachment: SyncScreenshotAttachment?
                     if missing, entity == .screenshot, action != .delete {
@@ -920,9 +925,9 @@ enum SyncTransactionQueue {
                         entity: entity,
                         action: rebasedAction,
                         entityId: entityId,
-                        payloadJSON: rebasedAction == .create
-                            ? createPayload(from: payload, entity: entity, entityId: entityId, in: db)
-                            : payload
+                        payloadJSON: rebasedAction == action ? payload : rebasedPayload(
+                            from: payload, for: rebasedAction, entity: entity, entityId: entityId, in: db
+                        )
                     )
                     operations.append(operation)
                     let patch = try loadPatch(operationId: oldOperationId, in: db)
@@ -1037,14 +1042,45 @@ enum SyncTransactionQueue {
         })
     }
 
-    private static func createPayload(
+    private static func existingConflictEntities(_ response: String?) -> Set<MissingConflictEntity> {
+        guard let response, let data = response.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let conflicts = object["conflicts"] as? [[String: Any]] else { return [] }
+        return Set(conflicts.compactMap { conflict in
+            guard conflict["serverRevision"] is Int,
+                  let rawEntity = conflict["entity"] as? String,
+                  let entity = SyncEntity(rawValue: rawEntity),
+                  let rawID = conflict["id"] as? String,
+                  let id = UUID(uuidString: rawID) else { return nil }
+            return MissingConflictEntity(entity: entity, id: id)
+        })
+    }
+
+    private static func rebasedAction(
+        _ action: SyncAction,
+        missing: Bool,
+        conflictsWithExisting: Bool
+    ) -> SyncAction {
+        switch (action, missing, conflictsWithExisting) {
+        case (.update, true, _): .create
+        case (.create, _, true): .update
+        default: action
+        }
+    }
+
+    private static func rebasedPayload(
         from payload: Data?,
+        for action: SyncAction,
         entity: SyncEntity,
         entityId: UUID,
         in db: Database
     ) throws -> Data? {
         guard let payload,
               var object = try JSONSerialization.jsonObject(with: payload) as? [String: Any] else { return payload }
+        if action != .create {
+            object.removeValue(forKey: "createdAt")
+            return try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+        }
         let createdAt: Date? = switch entity {
         case .vault: try VaultRecord.fetchOne(db, key: entityId)?.createdAt
         case .project: try ProjectRecord.fetchOne(db, key: entityId)?.createdAt

@@ -253,6 +253,43 @@
         }
 
         @Test
+        func reapplyingAConflictingVaultCreateUpdatesTheCanonicalVault() async throws {
+            let (database, vault) = try await syncedDatabase()
+            try await database.dbQueue.write { db in
+                try db.execute(
+                    sql: "INSERT INTO sync_entity_state(vaultId, entity, entityId, confirmedRevision) VALUES (?, 'vault', ?, 3)",
+                    arguments: [vault.id, vault.id]
+                )
+                try SyncTransactionRecorder.record(
+                    vaultId: vault.id,
+                    operations: [SyncInitialSnapshotBuilder.vaultOperation(vault, action: .create)],
+                    in: db
+                )
+            }
+            let claimed = try #require(try await SyncTransactionQueue.claim(dbQueue: database.dbQueue))
+            try await SyncTransactionQueue.block(
+                claimed,
+                reason: .conflict,
+                response: Data("""
+                {"conflicts":[{"entity":"vault","id":"\(vault.id.uuidString)","serverRevision":4}]}
+                """.utf8),
+                dbQueue: database.dbQueue
+            )
+
+            try await SyncTransactionQueue.reapplyLocalVersion(vaultId: vault.id, dbQueue: database.dbQueue)
+
+            let retried = try #require(try await SyncTransactionQueue.claim(dbQueue: database.dbQueue))
+            let operation = try #require(retried.operations.first)
+            #expect(operation.entity == .vault)
+            #expect(operation.action == .update)
+            #expect(operation.baseRevision == 4)
+            let payload = try #require(operation.payloadJSON)
+            let object = try #require(JSONSerialization.jsonObject(with: payload) as? [String: Any])
+            #expect(object["name"] as? String == vault.name)
+            #expect(object["createdAt"] == nil)
+        }
+
+        @Test
         func reapplyingADeletedChildProjectRestoresItsMissingParentFirst() async throws {
             let (database, vault) = try await syncedDatabase()
             let root = ProjectRecord(
@@ -740,11 +777,25 @@
                 [first], meetingId: meeting.id, vaultId: vault.id, dbQueue: database.dbQueue
             ))
             #expect(try await database.dbQueue.read { db in
+                try Set(UUID.fetchAll(
+                    db,
+                    sql: "SELECT id FROM transcript_segments WHERE meetingId = ? AND isConfirmed = 1",
+                    arguments: [meeting.id]
+                ))
+            } == [removedId])
+            #expect(try await database.dbQueue.read { db in
                 try String.fetchOne(db, sql: "SELECT syncPullCursor FROM vaults WHERE id = ?", arguments: [vault.id])
             } == nil)
             #expect(try await RemoteChangeApplier.applyTranscriptPage(
                 [second], meetingId: meeting.id, vaultId: vault.id, dbQueue: database.dbQueue
             ))
+            #expect(try await database.dbQueue.read { db in
+                try Set(UUID.fetchAll(
+                    db,
+                    sql: "SELECT id FROM transcript_segments WHERE meetingId = ? AND isConfirmed = 1",
+                    arguments: [meeting.id]
+                ))
+            } == [removedId])
             #expect(try await RemoteChangeApplier.finishTranscript(
                 meetingId: meeting.id,
                 revision: 4,

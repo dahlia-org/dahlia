@@ -793,6 +793,21 @@ function createIdentityStore(
 
     const records: SyncCanonicalRecord[] = [];
     let cursor = 0;
+    const firstOperation = transaction.operations[0];
+    const establishesVault = firstOperation?.entity === "vault"
+      && (firstOperation.action === "create"
+        || (firstOperation.action === "reset" && transaction.operations.length === 1));
+    if (!establishesVault) {
+      const [vault] = await db.select({ id: schema.syncedVault.vaultId }).from(schema.syncedVault)
+        .where(ownedVault(transaction.vaultId)).limit(1);
+      if (!vault) throw new SyncTransactionError(409, "revision_conflict", [{
+        entity: "vault",
+        id: transaction.vaultId,
+        clientBaseRevision: null,
+        serverRevision: null,
+        record: null,
+      }], transaction.operations[0]?.id);
+    }
     for (const operation of transaction.operations) {
       const data = operation.data ?? {};
       const now = new Date();
@@ -865,9 +880,6 @@ function createIdentityStore(
         }
       } else if (operation.entity === "project") {
         if (operation.action === "create") {
-          const [vault] = await db.select({ id: schema.syncedVault.vaultId }).from(schema.syncedVault)
-            .where(ownedVault(transaction.vaultId)).limit(1);
-          if (!vault) throw new SyncTransactionError(404, "vault_not_found");
           const parentProjectId = data.parentProjectId as string | null;
           await assertProjectHierarchy(transaction.vaultId, operation.entityId, parentProjectId, operation.id);
           await db.insert(schema.syncedProject).values({
@@ -911,9 +923,6 @@ function createIdentityStore(
         }
       } else if (operation.entity === "meeting") {
         if (operation.action === "create") {
-          const [vault] = await db.select({ id: schema.syncedVault.vaultId }).from(schema.syncedVault)
-            .where(ownedVault(transaction.vaultId)).limit(1);
-          if (!vault) throw new SyncTransactionError(404, "vault_not_found");
           const [existing] = await db.select({ active: schema.syncedMeeting.active })
             .from(schema.syncedMeeting).where(ownedMeeting(transaction.vaultId, operation.entityId)).limit(1);
           if (existing?.active) throw new SyncTransactionError(409, "revision_conflict", [{
