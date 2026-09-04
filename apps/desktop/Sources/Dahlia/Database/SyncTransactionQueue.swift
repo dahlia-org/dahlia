@@ -175,6 +175,7 @@ enum SyncTransactionRecorder {
         vaultId: UUID,
         operations: [SyncOperationDraft],
         allowAfterReset: Bool = false,
+        connectionIdOverride: UUID? = nil,
         in db: Database
     ) throws {
         var batch: [SyncOperationDraft] = []
@@ -184,7 +185,13 @@ enum SyncTransactionRecorder {
             if !batch.isEmpty,
                payloadBytes + operationBytes > maximumPayloadBytesPerTransaction
                || batch.count == maximumOperationsPerTransaction {
-                try record(vaultId: vaultId, operations: batch, allowAfterReset: allowAfterReset, in: db)
+                try record(
+                    vaultId: vaultId,
+                    operations: batch,
+                    allowAfterReset: allowAfterReset,
+                    connectionIdOverride: connectionIdOverride,
+                    in: db
+                )
                 batch.removeAll(keepingCapacity: true)
                 payloadBytes = 0
             }
@@ -192,7 +199,13 @@ enum SyncTransactionRecorder {
             payloadBytes += operationBytes
         }
         if !batch.isEmpty {
-            try record(vaultId: vaultId, operations: batch, allowAfterReset: allowAfterReset, in: db)
+            try record(
+                vaultId: vaultId,
+                operations: batch,
+                allowAfterReset: allowAfterReset,
+                connectionIdOverride: connectionIdOverride,
+                in: db
+            )
         }
     }
 
@@ -205,6 +218,7 @@ enum SyncTransactionRecorder {
         transcriptDeletions: [UUID: [UUID]] = [:],
         screenshotAttachments: [UUID: SyncScreenshotAttachment] = [:],
         allowAfterReset: Bool = false,
+        connectionIdOverride: UUID? = nil,
         in db: Database
     ) throws -> UUID? {
         let confirmedSegments = transcriptSegments.mapValues { $0.filter(\.isConfirmed) }
@@ -218,8 +232,21 @@ enum SyncTransactionRecorder {
             throw DatabaseError(message: "duplicate sync entity in transaction")
         }
         guard let vault = try VaultRecord.fetchOne(db, key: vaultId),
-              let connectionId = vault.syncConfirmedConnectionId,
-              vault.accountConnectionId == connectionId else { return nil }
+              let targetConnectionId = vault.accountConnectionId else { return nil }
+        let connectionId: UUID
+        if let connectionIdOverride {
+            guard connectionIdOverride == targetConnectionId,
+                  vault.syncConfirmedConnectionId == nil else { return nil }
+            connectionId = connectionIdOverride
+        } else {
+            guard let confirmedConnectionId = vault.syncConfirmedConnectionId,
+                  confirmedConnectionId == targetConnectionId else {
+                // A local mutation invalidates a bounded initial snapshot before it can be sent.
+                try SyncTransactionQueue.discardPartialSnapshot(vaultId: vaultId, in: db)
+                return nil
+            }
+            connectionId = confirmedConnectionId
+        }
         guard vault.syncRole != "member" else { throw SyncTransactionQueueError.readOnlyVault }
         if !allowAfterReset {
             let resetIsLast = try Bool.fetchOne(
@@ -352,6 +379,27 @@ enum SyncTransactionRecorder {
 
 enum SyncTransactionQueue {
     static let leaseDuration: TimeInterval = 120
+
+    static func discardPartialSnapshot(vaultId: UUID, in db: Database) throws {
+        let resetSequence = try Int64.fetchOne(
+            db,
+            sql: """
+            SELECT t.sequence FROM sync_transactions t
+            JOIN sync_operations o ON o.transactionId = t.id
+            WHERE t.vaultId = ? AND o.entity = 'vault' AND o.action = 'reset'
+            ORDER BY t.sequence LIMIT 1
+            """,
+            arguments: [vaultId]
+        )
+        if let resetSequence {
+            try db.execute(
+                sql: "DELETE FROM sync_transactions WHERE vaultId = ? AND sequence > ?",
+                arguments: [vaultId, resetSequence]
+            )
+        } else {
+            try db.execute(sql: "DELETE FROM sync_transactions WHERE vaultId = ?", arguments: [vaultId])
+        }
+    }
 
     static func claim(dbQueue: DatabaseQueue) async throws -> SyncQueuedTransaction? {
         try await dbQueue.write { db in

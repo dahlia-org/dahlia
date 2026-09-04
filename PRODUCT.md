@@ -146,8 +146,8 @@ Dahlia の scope 外であり、妨げない。
 
 - 文字起こしはリアルタイムもバッチも Apple Speech の `SpeechTranscriber` が on-device で行い、録音音声を外部へ
   送信しない。WhisperKit は付加機能であるバッチ自動言語判定で言語を選ぶためだけに使い、文字起こし自体は行わない。
-- 同期を使わない会議データと端末固有ファイルはローカルの SQLite と file system だけで完結する。Vault ごとに明示的に同期を有効化した場合、SQLite は即時反映できる offline working copy とし、
-  Vault 名、Project の名前・説明・階層、meeting metadata、summary、transcript 原文、screenshot、OCR、AI caption の canonical record を Dahlia Server と同期してDesktop／Webから利用できる。翻訳文と音声は同期しない
+- ローカルアカウントの会議データと端末固有ファイルはローカルの SQLite と file system だけで完結する。一方、ServerアカウントのVault／ProjectはNotionやAsanaと同様にDesktopとWebが共有するServer canonical recordであり、Desktopからクラウドへ転送するコピーではない。SQLite は即時反映できるoffline working copyとし、
+  Vault 名、Project の名前・説明・階層、meeting metadata、summary、transcript 原文、screenshot、OCR、AI caption を双方向同期する。翻訳文と音声は同期しない
   ([ADR-0056](docs/adr/0056-add-owner-only-meeting-sync.md), [ADR-0066](docs/adr/0066-sync-vault-projects-and-separate-transcript-speakers.md), [ADR-0067](docs/adr/0067-use-domain-transactions-and-cursor-deltas-for-sync.md))。Server record は個人所有を維持し、owner が複数の特定 organization
   または特定 Team へ明示した場合だけ read-only 共有できる。Header認証のuserは固定`external` Organizationへ所属する
   ([ADR-0065](docs/adr/0065-unify-header-sharing-with-external-organization-teams.md))。
@@ -160,7 +160,7 @@ Dahlia の scope 外であり、妨げない。
 
 **許容する例外**: 疎結合な付加機能は外部依存を持ってよい。Google Calendar と EventKit の読み取り、Google Docs や
 Drive への書き出し、Codex による要約生成、Sparkle の更新確認、Sentry の障害報告、TelemetryDeck の匿名利用計測、
-バッチ自動言語判定の初回モデル取得、任意の meeting sync と明示的な read-only 共有がこれにあたる。Codex の接続先として任意の Dahlia Server Gateway を選ぶ場合も
+バッチ自動言語判定の初回モデル取得、Serverアカウントのcloud-backed working copyと明示的な read-only 共有がこれにあたる。Codex の接続先として任意の Dahlia Server Gateway を選ぶ場合も
 同じ境界に置き、いずれも中核の前提条件にしない。
 
 **誤読しやすい点**: 「スタンドアローン」は「オフライン専用」ではない。外部機能を持つこと自体は否定せず、

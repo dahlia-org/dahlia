@@ -164,7 +164,7 @@ export interface SyncSearchQuery {
 
 export interface IdentitySyncStore {
   commitTransaction(transaction: SyncTransaction): Promise<SyncTransactionResponse>;
-  listChanges(vaultId: string, after: number, limit: number): Promise<SyncChangeRecord[]>;
+  listChanges(vaultId: string, after: number, through: number, limit: number): Promise<SyncChangeRecord[]>;
   latestChangeSequence(vaultId?: string): Promise<number>;
   ensureUploadTarget(vaultId: string, meetingId: string): Promise<boolean>;
   putTranscriptChunk(

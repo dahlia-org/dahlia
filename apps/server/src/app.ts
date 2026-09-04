@@ -433,6 +433,7 @@ export function createApp(dependencies: AppDependencies) {
       identity,
       sync.parseId(context.req.param("vaultId")),
       context.req.query("cursor"),
+      context.req.query("highWaterCursor"),
     ));
   });
   app.get("/api/v1/events", async (context) => {

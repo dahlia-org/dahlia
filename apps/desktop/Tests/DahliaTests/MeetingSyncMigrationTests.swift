@@ -759,6 +759,7 @@
                 return member
             }
             try await SyncInitialSnapshotBuilder.prepareRestore(dbQueue: database.dbQueue)
+            try await SyncInitialSnapshotBuilder.enqueuePending(dbQueue: database.dbQueue)
             let reset = try #require(try await SyncTransactionQueue.claim(dbQueue: database.dbQueue))
             #expect(reset.operations.contains { $0.entity == .vault && $0.action == .reset })
             #expect(try await database.dbQueue.read { db in
@@ -795,9 +796,13 @@
         func initialSnapshotIsDerivedWithoutASeparateBootstrapFlag() async throws {
             let (database, vault) = try await syncedDatabase()
             try await database.dbQueue.write { db in
-                try SyncInitialSnapshotBuilder.enqueuePending(in: db)
-                try SyncInitialSnapshotBuilder.enqueuePending(in: db)
+                try db.execute(
+                    sql: "UPDATE vaults SET syncConfirmedConnectionId = NULL WHERE id = ?",
+                    arguments: [vault.id]
+                )
             }
+            try await SyncInitialSnapshotBuilder.enqueuePending(dbQueue: database.dbQueue)
+            try await SyncInitialSnapshotBuilder.enqueuePending(dbQueue: database.dbQueue)
             let first = try database.dbQueue.read { db in
                 let count = try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_transactions") ?? 0
                 let operation = try Row.fetchOne(db, sql: "SELECT entity, action FROM sync_operations")
@@ -816,7 +821,35 @@
                     """,
                     arguments: [vault.id, vault.id]
                 )
-                try SyncInitialSnapshotBuilder.enqueuePending(in: db)
+            }
+            try await SyncInitialSnapshotBuilder.enqueuePending(dbQueue: database.dbQueue)
+            #expect(try await database.dbQueue.read { db in
+                try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_transactions")
+            } == 0)
+        }
+
+        @Test
+        func localMutationInvalidatesAnUncommittedInitialSnapshot() async throws {
+            let (database, vault) = try await syncedDatabase()
+            try await database.dbQueue.write { db in
+                try db.execute(
+                    sql: "UPDATE vaults SET syncConfirmedConnectionId = NULL WHERE id = ?",
+                    arguments: [vault.id]
+                )
+                let marker = try SyncTransactionRecorder.record(
+                    vaultId: vault.id,
+                    operations: [SyncInitialSnapshotBuilder.vaultOperation(vault, action: .create)],
+                    connectionIdOverride: vault.accountConnectionId,
+                    in: db
+                )
+                #expect(marker != nil)
+
+                let localOperation = try SyncTransactionRecorder.record(
+                    vaultId: vault.id,
+                    operations: [SyncInitialSnapshotBuilder.vaultOperation(vault, action: .update)],
+                    in: db
+                )
+                #expect(localOperation == nil)
             }
             #expect(try await database.dbQueue.read { db in
                 try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_transactions")
@@ -824,10 +857,50 @@
         }
 
         @Test
+        func localMutationPreservesRestoreResetWhileInvalidatingItsPartialSnapshot() async throws {
+            let (database, vault) = try await syncedDatabase()
+            try await SyncInitialSnapshotBuilder.prepareRestore(dbQueue: database.dbQueue)
+            try await database.dbQueue.write { db in
+                let marker = try SyncTransactionRecorder.record(
+                    vaultId: vault.id,
+                    operations: [SyncInitialSnapshotBuilder.vaultOperation(vault, action: .create)],
+                    allowAfterReset: true,
+                    connectionIdOverride: vault.accountConnectionId,
+                    in: db
+                )
+                #expect(marker != nil)
+
+                let localOperation = try SyncTransactionRecorder.record(
+                    vaultId: vault.id,
+                    operations: [SyncInitialSnapshotBuilder.vaultOperation(vault, action: .update)],
+                    in: db
+                )
+                #expect(localOperation == nil)
+            }
+
+            let operations = try await database.dbQueue.read { db in
+                try Row.fetchAll(
+                    db,
+                    sql: """
+                    SELECT o.action FROM sync_operations o
+                    JOIN sync_transactions t ON t.id = o.transactionId
+                    WHERE t.vaultId = ? ORDER BY t.sequence
+                    """,
+                    arguments: [vault.id]
+                ).map { $0["action"] as String }
+            }
+            #expect(operations == ["reset"])
+        }
+
+        @Test
         func initialSnapshotSplitsLargeProjectCollectionsBelowTheRequestLimit() async throws {
             let (database, vault) = try await syncedDatabase()
             let description = String(repeating: "x", count: 20000)
             try await database.dbQueue.write { db in
+                try db.execute(
+                    sql: "UPDATE vaults SET syncConfirmedConnectionId = NULL WHERE id = ?",
+                    arguments: [vault.id]
+                )
                 for index in 0 ..< 330 {
                     try ProjectRecord(
                         id: .v7(),
@@ -839,8 +912,8 @@
                         projectType: .undefined
                     ).insert(db)
                 }
-                try SyncInitialSnapshotBuilder.enqueue(vaultId: vault.id, in: db)
             }
+            try await SyncInitialSnapshotBuilder.enqueuePending(dbQueue: database.dbQueue)
 
             let batches = try database.dbQueue.read { db in
                 try Row.fetchAll(
@@ -854,7 +927,7 @@
                     """
                 )
             }
-            #expect(batches.count == 2)
+            #expect(batches.count == 4)
             #expect(batches.reduce(0) { $0 + ($1["operationCount"] as Int) } == 330)
             #expect(batches.allSatisfy { ($0["payloadBytes"] as Int) < 8 * 1024 * 1024 })
         }
@@ -895,7 +968,7 @@
                     vaultId: vault.id,
                     parentProjectId: nil,
                     name: "Project",
-                    description: String(repeating: "x", count: 20_001),
+                    description: String(repeating: "x", count: 20001),
                     projectType: .undefined
                 )
             }
@@ -930,6 +1003,7 @@
                 .lowercased())","action":"delete","revision":null,"record":null}
               ],
               "cursor":"v1.cursor",
+              "highWaterCursor":"v1.high-water",
               "hasMore":false
             }
             """
@@ -940,29 +1014,6 @@
             #expect(changes.map(\.entityId) == [rootId, childId, meetingId, deletedMeetingId])
             #expect(changes[2].revision == 3)
             #expect(changes.last?.action == "delete")
-        }
-
-        @Test
-        func incrementalPullCollapsesDeleteAndRecreateAcrossPages() {
-            let meetingId = UUID.v7()
-            let otherId = UUID.v7()
-            let deleted = SyncChangePage.Change(
-                sequence: 1, entity: .meeting, entityId: meetingId,
-                action: "delete", revision: nil, record: nil
-            )
-            let unrelated = SyncChangePage.Change(
-                sequence: 2, entity: .summary, entityId: otherId,
-                action: "delete", revision: nil, record: nil
-            )
-            let recreated = SyncChangePage.Change(
-                sequence: 3, entity: .meeting, entityId: meetingId,
-                action: "upsert", revision: 1, record: nil
-            )
-
-            let changes = SyncWorker.incrementalChanges([[deleted, unrelated], [recreated]])
-
-            #expect(changes.map(\.entityId) == [otherId, meetingId])
-            #expect(changes.last?.action == "upsert")
         }
 
         @Test
@@ -1155,10 +1206,14 @@
                 updatedAt: .now
             )
             try await database.dbQueue.write { db in
+                try db.execute(
+                    sql: "UPDATE vaults SET syncConfirmedConnectionId = NULL WHERE id = ?",
+                    arguments: [vault.id]
+                )
                 try meeting.insert(db)
                 try session.insert(db)
-                try SyncInitialSnapshotBuilder.enqueuePending(in: db)
             }
+            try await SyncInitialSnapshotBuilder.enqueuePending(dbQueue: database.dbQueue)
             #expect(try await database.dbQueue.read { db in
                 try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_transactions")
             } == 0)
@@ -1168,8 +1223,8 @@
                     sql: "UPDATE recording_sessions SET endedAt = ? WHERE id = ?",
                     arguments: [Date(), session.id]
                 )
-                try SyncInitialSnapshotBuilder.enqueuePending(in: db)
             }
+            try await SyncInitialSnapshotBuilder.enqueuePending(dbQueue: database.dbQueue)
             #expect(try await database.dbQueue.read { db in
                 try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_transactions")
             } ?? 0 > 0)
@@ -1189,9 +1244,8 @@
                     in: db
                 )
                 #expect(ignored == nil)
-
-                try SyncInitialSnapshotBuilder.enqueuePending(in: db)
             }
+            try await SyncInitialSnapshotBuilder.enqueuePending(dbQueue: database.dbQueue)
 
             let state = try await database.dbQueue.read { db in
                 try (

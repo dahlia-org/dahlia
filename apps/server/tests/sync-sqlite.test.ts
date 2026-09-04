@@ -190,7 +190,11 @@ describe("SQLite canonical sync", () => {
       0,
       "d".repeat(64),
       { segments: [], deletions: [segmentId] },
-    )).rejects.toMatchObject({ status: 409, code: "sync_target_conflict" });
+    )).rejects.toMatchObject({
+      status: 409,
+      code: "revision_conflict",
+      conflicts: [{ entity: "meeting", id: meetingId, serverRevision: null, record: null }],
+    });
     expect(await store.sync.withIdentity(owner, (sync) => sync.ensureUploadTarget(vaultId, meetingId))).toBe(false);
 
     await expect(commit(store, owner, transaction("019d4a01-1150-7000-8000-000000000007", [{
@@ -261,11 +265,66 @@ describe("SQLite canonical sync", () => {
       data: { name: "Restored", createdAt: now },
     }]));
 
-    const changes = await store.sync.withIdentity(owner, (sync) => sync.listChanges(vaultId, 0, 100));
+    const changes = await store.sync.withIdentity(owner, (sync) => sync.listChanges(vaultId, 0, 100, 100));
     expect(changes).toHaveLength(1);
     expect(changes[0]).toMatchObject({ transactionId: recreatedId, action: "upsert", entity: "vault" });
-    const existingClientChanges = await store.sync.withIdentity(owner, (sync) => sync.listChanges(vaultId, 1, 100));
-    expect(existingClientChanges.map(({ action }) => action)).toEqual(["reset", "upsert"]);
+    const existingClientChanges = await store.sync.withIdentity(owner, (sync) => sync.listChanges(vaultId, 1, 100, 100));
+    expect(existingClientChanges.map(({ action }) => action)).toEqual(["upsert"]);
+    await store.close?.();
+  });
+
+  it("pages a stable high-water delta with one canonical state per entity", async () => {
+    const { store } = await setup();
+    await createVault(store);
+    const projectOperations = Array.from({ length: 101 }, (_, index) => ({
+      id: `019d4a01-1160-7000-8000-${(index + 10).toString(16).padStart(12, "0")}`,
+      entity: "project" as const,
+      action: "create" as const,
+      entityId: `019d3f47-0000-7000-8000-${index.toString(16).padStart(12, "0")}`,
+      baseRevision: null,
+      data: projectData(`Project ${index}`),
+    }));
+    await commit(store, owner, transaction("019d4a01-1160-7000-8000-000000000001", [
+      ...projectOperations,
+      {
+        id: "019d4a01-1160-7000-8000-000000000111",
+        entity: "meeting",
+        action: "create",
+        entityId: meetingId,
+        baseRevision: null,
+        data: { ...meetingData(), projectId: null },
+      },
+    ]));
+    await commit(store, owner, transaction("019d4a01-1160-7000-8000-000000000112", [{
+      id: "019d4a01-1160-7000-8000-000000000113",
+      entity: "meeting",
+      action: "delete",
+      entityId: meetingId,
+      baseRevision: 1,
+      data: {},
+    }]));
+    await commit(store, owner, transaction("019d4a01-1160-7000-8000-000000000114", [{
+      id: "019d4a01-1160-7000-8000-000000000115",
+      entity: "meeting",
+      action: "create",
+      entityId: meetingId,
+      baseRevision: null,
+      data: { ...meetingData(), projectId: null, name: "Recreated" },
+    }]));
+
+    const service = new MeetingSyncService(store.sync);
+    const first = await service.listChanges(owner, vaultId);
+    const second = await service.listChanges(owner, vaultId, first.cursor, first.highWaterCursor);
+    const changes = [...first.items, ...second.items];
+
+    expect(first.items).toHaveLength(100);
+    expect(first.hasMore).toBe(true);
+    expect(second.hasMore).toBe(false);
+    expect(second.highWaterCursor).toBe(first.highWaterCursor);
+    const meetingChanges = changes.filter(({ entity }) => entity === "meeting");
+    expect(meetingChanges).toHaveLength(1);
+    expect(meetingChanges[0]?.action).toBe("upsert");
+    expect(meetingChanges[0]?.record?.name).toBe("Recreated");
     await store.close?.();
   });
 
@@ -768,7 +827,11 @@ describe("SQLite canonical sync", () => {
     expect(deleteCalled).toBe(true);
 
     releasePut();
-    await expect(upload).rejects.toMatchObject({ status: 409, code: "screenshot_id_conflict" });
+    await expect(upload).rejects.toMatchObject({
+      status: 409,
+      code: "revision_conflict",
+      conflicts: [{ entity: "meeting", id: meetingId, serverRevision: null, record: null }],
+    });
     expect(objectExists).toBe(false);
     await store.close?.();
   });

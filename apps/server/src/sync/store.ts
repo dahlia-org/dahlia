@@ -8,6 +8,7 @@ import {
   isNull,
   gt,
   lt,
+  lte,
   or,
   sql,
 } from "drizzle-orm";
@@ -1184,7 +1185,12 @@ function createIdentityStore(
       : response;
   }
 
-  async function listChanges(vaultId: string, after: number, limit: number): Promise<SyncChangeRecord[]> {
+  async function listChanges(
+    vaultId: string,
+    after: number,
+    through: number,
+    limit: number,
+  ): Promise<SyncChangeRecord[]> {
     const [vault] = await db.select({ ownerUserId: schema.syncedVaultPermission.principalId })
       .from(schema.syncedVault)
       .innerJoin(schema.syncedVaultPermission, and(
@@ -1205,18 +1211,39 @@ function createIdentityStore(
         eq(schema.syncChange.vaultId, vaultId),
         eq(schema.syncChange.ownerUserId, vault.ownerUserId),
         eq(schema.syncChange.action, "reset"),
+        lte(schema.syncChange.sequence, through),
       )).orderBy(desc(schema.syncChange.sequence)).limit(1) : [];
     const effectiveAfter = after === 0 ? Number(latestReset?.sequence ?? 0) : after;
-    const rows = await db.select().from(schema.syncChange).where(and(
+    const latestChanges = db.select({
+      entity: schema.syncChange.entity,
+      entityId: schema.syncChange.entityId,
+      sequence: sql<number>`max(${schema.syncChange.sequence})`.as("sequence"),
+    }).from(schema.syncChange).where(and(
       eq(schema.syncChange.vaultId, vaultId),
       eq(schema.syncChange.ownerUserId, vault?.ownerUserId ?? userPrincipalId),
       gt(schema.syncChange.sequence, effectiveAfter),
+      lte(schema.syncChange.sequence, through),
+    )).groupBy(schema.syncChange.entity, schema.syncChange.entityId).as("latest_changes");
+    const rows = await db.select({
+      sequence: schema.syncChange.sequence,
+      ownerUserId: schema.syncChange.ownerUserId,
+      vaultId: schema.syncChange.vaultId,
+      entity: schema.syncChange.entity,
+      entityId: schema.syncChange.entityId,
+      action: schema.syncChange.action,
+      revision: schema.syncChange.revision,
+      transactionId: schema.syncChange.transactionId,
+      createdAt: schema.syncChange.createdAt,
+    }).from(schema.syncChange).innerJoin(latestChanges, and(
+      eq(schema.syncChange.entity, latestChanges.entity),
+      eq(schema.syncChange.entityId, latestChanges.entityId),
+      eq(schema.syncChange.sequence, latestChanges.sequence),
     )).orderBy(asc(schema.syncChange.sequence)).limit(limit);
     const changes: SyncChangeRecord[] = [];
     const canonicalRecords = new Map<string, SyncCanonicalRecord>();
     for (const row of rows) {
       let canonical: SyncCanonicalRecord | null = null;
-      if (row.action === "upsert") {
+      if (row.action !== "reset") {
         const key = `${row.entity}:${row.entityId}`;
         canonical = canonicalRecords.get(key)
           ?? await canonicalRecord(row.entity as SyncCanonicalRecord["entity"], vaultId, row.entityId, "read");
@@ -1227,7 +1254,7 @@ function createIdentityStore(
         vaultId,
         entity: row.entity as SyncCanonicalRecord["entity"],
         entityId: row.entityId,
-        action: row.action as SyncChangeRecord["action"],
+        action: row.action === "reset" ? "reset" : canonical?.record ? "upsert" : "delete",
         revision: canonical?.revision ?? row.revision,
         transactionId: row.transactionId,
         record: canonical?.record ?? null,

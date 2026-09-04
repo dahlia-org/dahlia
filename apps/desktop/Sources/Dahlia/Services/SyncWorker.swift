@@ -81,6 +81,7 @@ struct SyncChangePage: Decodable {
 
     let items: [Change]
     let cursor: String
+    let highWaterCursor: String
     let hasMore: Bool
 }
 
@@ -193,9 +194,7 @@ actor SyncWorker {
     private func runDrain() async {
         while !Task.isCancelled {
             do {
-                try await dbQueue.write { db in
-                    try SyncInitialSnapshotBuilder.enqueuePending(in: db)
-                }
+                try await SyncInitialSnapshotBuilder.enqueuePending(dbQueue: dbQueue)
                 guard let transaction = try await SyncTransactionQueue.claim(dbQueue: dbQueue) else {
                     try await pullRemoteChanges()
                     try await Task.sleep(for: .seconds(5))
@@ -452,13 +451,19 @@ actor SyncWorker {
     private func pullRemoteChanges(for target: SyncTarget) async throws {
         if target.cursor == nil {
             var cursor: String?
+            var highWaterCursor: String?
             var changes: [String: SyncChangePage.Change] = [:]
             repeat {
-                let page = try await loadChangePage(target: target, cursor: cursor)
+                let page = try await loadChangePage(
+                    target: target,
+                    cursor: cursor,
+                    highWaterCursor: highWaterCursor
+                )
                 for change in page.items {
                     changes["\(change.entity.rawValue):\(change.entityId.uuidString)"] = change
                 }
                 cursor = page.cursor
+                highWaterCursor = page.highWaterCursor
                 if !page.hasMore { break }
             } while true
             let snapshot = Self.initialSnapshotChanges(Array(changes.values))
@@ -474,20 +479,23 @@ actor SyncWorker {
         }
 
         var cursor = target.cursor
-        var changePages: [[SyncChangePage.Change]] = []
+        var highWaterCursor: String?
         repeat {
-            let page = try await loadChangePage(target: target, cursor: cursor)
-            changePages.append(page.items)
+            let page = try await loadChangePage(
+                target: target,
+                cursor: cursor,
+                highWaterCursor: highWaterCursor
+            )
+            highWaterCursor = page.highWaterCursor
+            guard let applicable = try await reconcilingProjects(in: page.items, target: target) else {
+                return
+            }
+            guard try await apply(applicable, cursor: page.cursor, target: target) else {
+                return
+            }
             cursor = page.cursor
             if !page.hasMore { break }
         } while true
-        guard let applicable = try await reconcilingProjects(
-            in: Self.incrementalChanges(changePages),
-            target: target
-        ) else {
-            return
-        }
-        _ = try await apply(applicable, cursor: cursor, target: target)
     }
 
     private func reconcilingProjects(
@@ -517,10 +525,17 @@ actor SyncWorker {
         return changes.filter { $0.entity != .project }
     }
 
-    private func loadChangePage(target: SyncTarget, cursor: String?) async throws -> SyncChangePage {
+    private func loadChangePage(
+        target: SyncTarget,
+        cursor: String?,
+        highWaterCursor: String?
+    ) async throws -> SyncChangePage {
         var components = URLComponents()
         components.path = "/api/v1/vaults/\(target.vaultId.lowercase)/changes"
-        if let cursor { components.queryItems = [URLQueryItem(name: "cursor", value: cursor)] }
+        components.queryItems = [
+            cursor.map { URLQueryItem(name: "cursor", value: $0) },
+            highWaterCursor.map { URLQueryItem(name: "highWaterCursor", value: $0) },
+        ].compactMap(\.self)
         guard let path = components.string else { throw URLError(.badURL) }
         let data = try await sendData(
             request(origin: target.origin, path: path, method: "GET"),
@@ -607,14 +622,6 @@ actor SyncWorker {
         let deletes = current.values.filter { $0.action == "delete" }.sorted { $0.sequence < $1.sequence }
         return sorted(.vault) + orderedProjects + sorted(.meeting) + sorted(.summary)
             + sorted(.transcript) + sorted(.screenshot) + deletes
-    }
-
-    static func incrementalChanges(_ pages: [[SyncChangePage.Change]]) -> [SyncChangePage.Change] {
-        var latest: [String: SyncChangePage.Change] = [:]
-        for change in pages.joined() {
-            latest["\(change.entity.rawValue):\(change.entityId.uuidString)"] = change
-        }
-        return latest.values.sorted { $0.sequence < $1.sequence }
     }
 
     private func pullTargets() async throws -> [SyncTarget] {

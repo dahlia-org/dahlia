@@ -2,139 +2,297 @@ import Foundation
 import GRDB
 
 enum SyncInitialSnapshotBuilder {
-    static func enqueuePending(in db: Database) throws {
-        // Existing transactions keep draining during recording, but constructing a full initial
-        // snapshot must not monopolize the same SQLite writer used by finalized transcript ingress.
-        let isRecording = try Bool.fetchOne(
-            db,
-            sql: "SELECT EXISTS(SELECT 1 FROM recording_sessions WHERE endedAt IS NULL)"
-        ) ?? false
-        guard !isRecording else { return }
+    private static let projectBatchSize = 100
+    private static let transcriptBatchSize = 500
 
-        let vaultIds = try UUID.fetchAll(
-            db,
-            sql: """
-            SELECT v.id FROM vaults v
-            WHERE v.syncEnabled = 1
-              AND v.accountConnectionId IS NOT NULL
-              AND (v.syncConfirmedConnectionId IS NULL
-                   OR v.accountConnectionId = v.syncConfirmedConnectionId)
-              AND NOT EXISTS (SELECT 1 FROM sync_transactions t WHERE t.vaultId = v.id)
-              AND NOT EXISTS (
-                SELECT 1 FROM sync_entity_state s
-                WHERE s.vaultId = v.id AND s.entity = 'vault' AND s.entityId = v.id
-              )
-            ORDER BY v.createdAt, v.id
-            """
-        )
-        for vaultId in vaultIds {
-            try db.execute(
+    static func enqueuePending(dbQueue: DatabaseQueue) async throws {
+        let pending = try await dbQueue.read { db -> (UUID, UUID, Bool)? in
+            guard let row = try Row.fetchOne(
+                db,
                 sql: """
-                UPDATE vaults SET syncConfirmedConnectionId = accountConnectionId
-                WHERE id = ? AND syncConfirmedConnectionId IS NULL
-                """,
-                arguments: [vaultId]
-            )
-            try enqueue(vaultId: vaultId, in: db)
+                SELECT v.id, v.accountConnectionId, EXISTS (
+                    SELECT 1 FROM sync_transactions t
+                    JOIN sync_operations o ON o.transactionId = t.id
+                    WHERE t.vaultId = v.id AND o.entity = 'vault' AND o.action = 'reset'
+                ) AS restoring
+                FROM vaults v
+                WHERE v.syncEnabled = 1
+                  AND v.accountConnectionId IS NOT NULL
+                  AND v.syncConfirmedConnectionId IS NULL
+                  AND (v.syncRole IS NULL OR v.syncRole = 'owner')
+                  AND NOT EXISTS (
+                    SELECT 1 FROM sync_entity_state s
+                    WHERE s.vaultId = v.id AND s.entity = 'vault' AND s.entityId = v.id
+                  )
+                ORDER BY v.createdAt, v.id
+                LIMIT 1
+                """
+            ) else { return nil }
+            return (row["id"], row["accountConnectionId"], row["restoring"])
         }
+        guard let (vaultId, connectionId, restoring) = pending else { return }
+        try await enqueue(vaultId: vaultId, connectionId: connectionId, restoring: restoring, dbQueue: dbQueue)
     }
 
-    static func enqueue(vaultId: UUID, allowAfterReset: Bool = false, in db: Database) throws {
-        guard let vault = try VaultRecord.fetchOne(db, key: vaultId),
-              vault.syncConfirmedConnectionId != nil else { return }
-
-        try SyncTransactionRecorder.record(
-            vaultId: vaultId,
-            operations: [operation(
-                entity: .vault,
-                action: .create,
-                id: vault.id,
-                payload: [
-                    "name": vault.name,
-                    "createdAt": vault.createdAt.ISO8601Format(),
-                ]
-            )],
-            allowAfterReset: allowAfterReset,
-            in: db
-        )
-
-        let projects = try ProjectRecord.fetchResolvedAll(vaultId: vaultId, in: db)
-            .sorted {
-                let left = $0.path.split(separator: "/").count
-                let right = $1.path.split(separator: "/").count
-                return left == right ? $0.id.uuidString < $1.id.uuidString : left < right
-            }
-        let projectOperations = try projects.map { project in
-            try operation(
-                entity: .project,
-                action: .create,
-                id: project.id,
-                payload: [
-                    "parentProjectId": json(project.parentProjectId),
-                    "name": project.name,
-                    "description": project.description,
-                    "projectType": json(project.projectType?.rawValue),
-                    "createdAt": project.createdAt.ISO8601Format(),
-                ]
-            )
-        }
-        try SyncTransactionRecorder.recordBatches(
-            vaultId: vaultId,
-            operations: projectOperations,
-            allowAfterReset: allowAfterReset,
-            in: db
-        )
-
-        let meetings = try MeetingRecord
-            .filter(Column("vaultId") == vaultId)
-            .order(Column("createdAt"), Column("id"))
-            .fetchAll(db)
-        for meeting in meetings {
-            var metadata = try [meetingOperation(meeting, action: .create)]
-            if let summary = try SummaryRecord.fetchOne(db, key: meeting.id) {
-                try metadata.append(summaryOperation(summary, action: .upsert))
-            }
-            try SyncTransactionRecorder.record(
-                vaultId: vaultId,
-                operations: metadata,
-                allowAfterReset: allowAfterReset,
-                in: db
-            )
-
-            let segments = try TranscriptSegmentRecord
-                .filter(Column("meetingId") == meeting.id)
-                .order(Column("startTime"), Column("id"))
-                .fetchAll(db)
-            let transcript = SyncTranscriptPatchSnapshot(
-                segments: segments.map(SyncTranscriptPatchSegment.init),
-                deletions: []
-            )
-            for snapshot in try SyncWorker.transcriptPatches(transcript) {
-                let patch = SyncOperationDraft(entity: .transcript, action: .patch, entityId: meeting.id)
+    private static func enqueue(
+        vaultId: UUID,
+        connectionId: UUID,
+        restoring: Bool,
+        dbQueue: DatabaseQueue
+    ) async throws {
+        guard let markerId = try await dbQueue.write({ db -> UUID? in
+            guard try !hasActiveRecording(in: db),
+                  let vault = try VaultRecord.fetchOne(db, key: vaultId),
+                  vault.accountConnectionId == connectionId,
+                  vault.syncConfirmedConnectionId == nil else { return nil }
+            try SyncTransactionQueue.discard(vaultId: vaultId, in: db)
+            if restoring {
                 try SyncTransactionRecorder.record(
                     vaultId: vaultId,
-                    operations: [patch],
-                    transcriptSegments: [patch.id: snapshot.segments],
-                    allowAfterReset: allowAfterReset,
+                    operations: [SyncOperationDraft(entity: .vault, action: .reset, entityId: vaultId)],
+                    allowAfterReset: true,
+                    connectionIdOverride: connectionId,
                     in: db
                 )
             }
+            return try SyncTransactionRecorder.record(
+                vaultId: vaultId,
+                operations: [operation(
+                    entity: .vault,
+                    action: .create,
+                    id: vault.id,
+                    payload: ["name": vault.name, "createdAt": vault.createdAt.ISO8601Format()]
+                )],
+                allowAfterReset: restoring,
+                connectionIdOverride: connectionId,
+                in: db
+            )
+        }) else { return }
 
-            let screenshots = try MeetingScreenshotRecord
-                .filter(Column("meetingId") == meeting.id)
-                .order(Column("capturedAt"), Column("id"))
-                .fetchAll(db)
-            for screenshot in screenshots {
+        try await enqueueProjects(
+            vaultId: vaultId,
+            connectionId: connectionId,
+            markerId: markerId,
+            restoring: restoring,
+            dbQueue: dbQueue
+        )
+        try await enqueueMeetings(
+            vaultId: vaultId,
+            connectionId: connectionId,
+            markerId: markerId,
+            restoring: restoring,
+            dbQueue: dbQueue
+        )
+
+        _ = try await dbQueue.write { db in
+            guard try canContinue(markerId: markerId, vaultId: vaultId, in: db) else { return false }
+            try db.execute(
+                sql: """
+                UPDATE vaults SET syncConfirmedConnectionId = accountConnectionId
+                WHERE id = ? AND accountConnectionId = ? AND syncConfirmedConnectionId IS NULL
+                """,
+                arguments: [vaultId, connectionId]
+            )
+            return db.changesCount == 1
+        }
+    }
+
+    private static func enqueueProjects(
+        vaultId: UUID,
+        connectionId: UUID,
+        markerId: UUID,
+        restoring: Bool,
+        dbQueue: DatabaseQueue
+    ) async throws {
+        for roots in [true, false] {
+            var lastId: UUID?
+            while true {
+                try Task.checkCancellation()
+                let cursor = lastId
+                let projects = try await dbQueue.write { db -> [ProjectRecord] in
+                    guard try canContinue(markerId: markerId, vaultId: vaultId, in: db) else { return [] }
+                    let parentClause = roots ? "parentProjectId IS NULL" : "parentProjectId IS NOT NULL"
+                    let cursorClause = cursor == nil ? "" : "AND id > ?"
+                    var arguments: StatementArguments = [vaultId]
+                    if let cursor { arguments += [cursor] }
+                    let projects = try ProjectRecord.fetchAll(
+                        db,
+                        sql: """
+                        SELECT * FROM projects
+                        WHERE vaultId = ? AND \(parentClause) \(cursorClause)
+                        ORDER BY id LIMIT \(projectBatchSize)
+                        """,
+                        arguments: arguments
+                    )
+                    try SyncTransactionRecorder.recordBatches(
+                        vaultId: vaultId,
+                        operations: projects.map { try projectOperation($0, action: .create) },
+                        allowAfterReset: restoring,
+                        connectionIdOverride: connectionId,
+                        in: db
+                    )
+                    return projects
+                }
+                guard let nextId = projects.last?.id else { break }
+                lastId = nextId
+            }
+        }
+    }
+
+    private static func enqueueMeetings(
+        vaultId: UUID,
+        connectionId: UUID,
+        markerId: UUID,
+        restoring: Bool,
+        dbQueue: DatabaseQueue
+    ) async throws {
+        var lastMeetingId: UUID?
+        while true {
+            try Task.checkCancellation()
+            let cursor = lastMeetingId
+            let meeting = try await dbQueue.write { db -> MeetingRecord? in
+                guard try canContinue(markerId: markerId, vaultId: vaultId, in: db) else { return nil }
+                let meeting = if let cursor {
+                    try MeetingRecord.fetchOne(
+                        db,
+                        sql: "SELECT * FROM meetings WHERE vaultId = ? AND id > ? ORDER BY id LIMIT 1",
+                        arguments: [vaultId, cursor]
+                    )
+                } else {
+                    try MeetingRecord.fetchOne(
+                        db,
+                        sql: "SELECT * FROM meetings WHERE vaultId = ? ORDER BY id LIMIT 1",
+                        arguments: [vaultId]
+                    )
+                }
+                guard let meeting else { return nil }
+                var metadata = try [meetingOperation(meeting, action: .create)]
+                if let summary = try SummaryRecord.fetchOne(db, key: meeting.id) {
+                    try metadata.append(summaryOperation(summary, action: .upsert))
+                }
+                try SyncTransactionRecorder.record(
+                    vaultId: vaultId,
+                    operations: metadata,
+                    allowAfterReset: restoring,
+                    connectionIdOverride: connectionId,
+                    in: db
+                )
+                return meeting
+            }
+            guard let meeting else { break }
+            lastMeetingId = meeting.id
+
+            try await enqueueTranscript(
+                meetingId: meeting.id,
+                vaultId: vaultId,
+                connectionId: connectionId,
+                markerId: markerId,
+                restoring: restoring,
+                dbQueue: dbQueue
+            )
+            try await enqueueScreenshots(
+                meetingId: meeting.id,
+                vaultId: vaultId,
+                connectionId: connectionId,
+                markerId: markerId,
+                restoring: restoring,
+                dbQueue: dbQueue
+            )
+        }
+    }
+
+    private static func enqueueTranscript(
+        meetingId: UUID,
+        vaultId: UUID,
+        connectionId: UUID,
+        markerId: UUID,
+        restoring: Bool,
+        dbQueue: DatabaseQueue
+    ) async throws {
+        var lastSegmentId: UUID?
+        while true {
+            let cursor = lastSegmentId
+            let segments = try await dbQueue.write { db -> [TranscriptSegmentRecord] in
+                guard try canContinue(markerId: markerId, vaultId: vaultId, in: db) else { return [] }
+                let segments = if let cursor {
+                    try TranscriptSegmentRecord.fetchAll(
+                        db,
+                        sql: """
+                        SELECT * FROM transcript_segments
+                        WHERE meetingId = ? AND isConfirmed = 1 AND id > ?
+                        ORDER BY id LIMIT \(transcriptBatchSize)
+                        """,
+                        arguments: [meetingId, cursor]
+                    )
+                } else {
+                    try TranscriptSegmentRecord.fetchAll(
+                        db,
+                        sql: """
+                        SELECT * FROM transcript_segments
+                        WHERE meetingId = ? AND isConfirmed = 1
+                        ORDER BY id LIMIT \(transcriptBatchSize)
+                        """,
+                        arguments: [meetingId]
+                    )
+                }
+                guard !segments.isEmpty else { return [] }
+                let patch = SyncOperationDraft(entity: .transcript, action: .patch, entityId: meetingId)
+                try SyncTransactionRecorder.record(
+                    vaultId: vaultId,
+                    operations: [patch],
+                    transcriptSegments: [patch.id: segments.map(SyncTranscriptPatchSegment.init)],
+                    allowAfterReset: restoring,
+                    connectionIdOverride: connectionId,
+                    in: db
+                )
+                return segments
+            }
+            guard let nextId = segments.last?.id else { break }
+            lastSegmentId = nextId
+        }
+    }
+
+    private static func enqueueScreenshots(
+        meetingId: UUID,
+        vaultId: UUID,
+        connectionId: UUID,
+        markerId: UUID,
+        restoring: Bool,
+        dbQueue: DatabaseQueue
+    ) async throws {
+        var lastScreenshotId: UUID?
+        while true {
+            let cursor = lastScreenshotId
+            let screenshot = try await dbQueue.write { db -> MeetingScreenshotRecord? in
+                guard try canContinue(markerId: markerId, vaultId: vaultId, in: db) else { return nil }
+                let screenshot = if let cursor {
+                    try MeetingScreenshotRecord.fetchOne(
+                        db,
+                        sql: "SELECT * FROM screenshots WHERE meetingId = ? AND id > ? ORDER BY id LIMIT 1",
+                        arguments: [meetingId, cursor]
+                    )
+                } else {
+                    try MeetingScreenshotRecord.fetchOne(
+                        db,
+                        sql: "SELECT * FROM screenshots WHERE meetingId = ? ORDER BY id LIMIT 1",
+                        arguments: [meetingId]
+                    )
+                }
+                guard let screenshot else { return nil }
                 let attachment = SyncScreenshotAttachment(mimeType: screenshot.mimeType, bytes: screenshot.imageData)
                 let operation = try screenshotOperation(screenshot, action: .upsert, contentHash: attachment.sha256)
                 try SyncTransactionRecorder.record(
                     vaultId: vaultId,
                     operations: [operation],
                     screenshotAttachments: [operation.id: attachment],
-                    allowAfterReset: allowAfterReset,
+                    allowAfterReset: restoring,
+                    connectionIdOverride: connectionId,
                     in: db
                 )
+                return screenshot
             }
+            guard let screenshot else { break }
+            lastScreenshotId = screenshot.id
         }
     }
 
@@ -151,18 +309,42 @@ enum SyncInitialSnapshotBuilder {
             for vaultId in vaultIds {
                 try SyncTransactionQueue.discard(vaultId: vaultId, in: db)
                 try db.execute(sql: "DELETE FROM sync_entity_state WHERE vaultId = ?", arguments: [vaultId])
-                try db.execute(
-                    sql: "UPDATE vaults SET syncPullCursor = NULL, syncLastCommittedCursor = NULL WHERE id = ?",
-                    arguments: [vaultId]
-                )
                 try SyncTransactionRecorder.record(
                     vaultId: vaultId,
                     operations: [SyncOperationDraft(entity: .vault, action: .reset, entityId: vaultId)],
                     in: db
                 )
-                try enqueue(vaultId: vaultId, allowAfterReset: true, in: db)
+                try db.execute(
+                    sql: """
+                    UPDATE vaults SET syncConfirmedConnectionId = NULL,
+                        syncPullCursor = NULL, syncLastCommittedCursor = NULL
+                    WHERE id = ?
+                    """,
+                    arguments: [vaultId]
+                )
             }
         }
+    }
+
+    private static func canContinue(markerId: UUID, vaultId: UUID, in db: Database) throws -> Bool {
+        let markerExists = try Bool.fetchOne(
+            db,
+            sql: "SELECT EXISTS(SELECT 1 FROM sync_transactions WHERE id = ? AND vaultId = ?)",
+            arguments: [markerId, vaultId]
+        ) ?? false
+        guard markerExists else { return false }
+        if try hasActiveRecording(in: db) {
+            try SyncTransactionQueue.discardPartialSnapshot(vaultId: vaultId, in: db)
+            return false
+        }
+        return true
+    }
+
+    private static func hasActiveRecording(in db: Database) throws -> Bool {
+        try Bool.fetchOne(
+            db,
+            sql: "SELECT EXISTS(SELECT 1 FROM recording_sessions WHERE endedAt IS NULL)"
+        ) ?? false
     }
 
     static func meetingOperation(_ meeting: MeetingRecord, action: SyncAction) throws -> SyncOperationDraft {

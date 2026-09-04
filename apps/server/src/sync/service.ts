@@ -128,6 +128,16 @@ const transactionDataSchemas = {
 } as const;
 const SYNC_CHANGE_PAGE_SIZE = 100;
 
+function missingMeetingConflict(meetingId: string): SyncTransactionError {
+  return new SyncTransactionError(409, "revision_conflict", [{
+    entity: "meeting",
+    id: meetingId,
+    clientBaseRevision: null,
+    serverRevision: null,
+    record: null,
+  }]);
+}
+
 export class MeetingSyncService {
   private readonly activeQueryEmbeddingUsers = new Set<string>();
   private readonly screenshotUploads = new Map<string, Promise<void>>();
@@ -295,18 +305,25 @@ export class MeetingSyncService {
     }
   }
 
-  async listChanges(identity: Identity, vaultId: string, cursor?: string) {
+  async listChanges(identity: Identity, vaultId: string, cursor?: string, highWaterCursor?: string) {
     const after = cursor ? decodeSyncCursor(cursor) : 0;
-    const rows = await this.store.withIdentity(identity, (scoped) => scoped.listChanges(
-      vaultId,
-      after,
-      SYNC_CHANGE_PAGE_SIZE + 1,
-    ));
+    const suppliedHighWater = highWaterCursor ? decodeSyncCursor(highWaterCursor) : undefined;
+    if (suppliedHighWater !== undefined && suppliedHighWater < after) {
+      throw new SyncTransactionError(400, "invalid_sync_cursor");
+    }
+    const { rows, highWater } = await this.store.withIdentity(identity, async (scoped) => {
+      const highWater = suppliedHighWater ?? await scoped.latestChangeSequence(vaultId);
+      return {
+        rows: await scoped.listChanges(vaultId, after, highWater, SYNC_CHANGE_PAGE_SIZE + 1),
+        highWater,
+      };
+    });
     const items = rows.slice(0, SYNC_CHANGE_PAGE_SIZE);
     const last = items.at(-1);
     return {
       items,
       cursor: encodeSyncCursor(last?.sequence ?? after),
+      highWaterCursor: encodeSyncCursor(highWater),
       hasMore: rows.length > SYNC_CHANGE_PAGE_SIZE,
     };
   }
@@ -335,7 +352,7 @@ export class MeetingSyncService {
       parsed.data.segments,
       parsed.data.deletions,
     ));
-    if (!accepted) throw new ArtifactRequestError(409, "sync_target_conflict");
+    if (!accepted) throw missingMeetingConflict(meetingId);
   }
 
   async putScreenshot(
@@ -361,7 +378,7 @@ export class MeetingSyncService {
         throw new ArtifactRequestError(503, "screenshot_storage_delete_pending");
       }
       const reservation = await this.store.withIdentity(identity, async (scoped) => {
-        if (!await scoped.ensureUploadTarget(vaultId, meetingId)) return null;
+        if (!await scoped.ensureUploadTarget(vaultId, meetingId)) throw missingMeetingConflict(meetingId);
         const existing = await scoped.getScreenshot(vaultId, meetingId, screenshotId);
         if (existing) return { existing, created: false };
         const record: SyncScreenshotRecord = {
@@ -419,7 +436,7 @@ export class MeetingSyncService {
         ]);
         if (actualHash !== contentHash) throw new ArtifactRequestError(409, "screenshot_content_hash_mismatch");
         const current = await this.store.withIdentity(identity, async (scoped) => {
-          if (!await scoped.ensureUploadTarget(vaultId, meetingId)) return null;
+          if (!await scoped.ensureUploadTarget(vaultId, meetingId)) throw missingMeetingConflict(meetingId);
           return scoped.getScreenshot(vaultId, meetingId, screenshotId);
         });
         if (!current
