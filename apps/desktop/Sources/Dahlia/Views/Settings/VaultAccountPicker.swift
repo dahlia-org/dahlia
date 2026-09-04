@@ -25,6 +25,7 @@ struct VaultAccountPicker: View {
             Text(L10n.localAccount).tag(UUID?.none)
             ForEach(connections) { connection in
                 Text(accountLabel(connection)).tag(Optional(connection.id))
+                    .disabled(!connection.isSignedIn || !connection.supportsVaultSync)
             }
         }
         .labelsHidden()

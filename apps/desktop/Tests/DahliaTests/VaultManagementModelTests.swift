@@ -281,7 +281,6 @@
             var vault = makeVault(name: "Shared", lastOpenedAt: .distantPast)
             vault.accountConnectionId = connection.id
             vault.syncConfirmedConnectionId = connection.id
-            vault.syncEnabled = true
             vault.syncRole = "member"
             let vaultID = vault.id
             try await repository.insertDahliaAccountConnection(connection)
@@ -328,7 +327,6 @@
             var vault = makeVault(name: "Shared", lastOpenedAt: .now)
             vault.accountConnectionId = connection.id
             vault.syncConfirmedConnectionId = connection.id
-            vault.syncEnabled = true
             vault.syncRole = "member"
             try await repository.insertDahliaAccountConnection(connection)
             try await repository.insertCloudVaultAsync(vault, revision: 1)
@@ -339,6 +337,76 @@
 
             #expect(renamed == nil)
             #expect(try repository.fetchAllVaults().first?.name == "Shared")
+        }
+
+        @Test
+        func serverAdoptionWaitsForConfirmation() async throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            let repository = MeetingRepository(dbQueue: database.dbQueue)
+            let connection = DahliaAccountConnectionRecord(
+                id: .v7(), origin: "https://server.example.com", clientID: "desktop-client", createdAt: .now
+            )
+            let vault = makeVault(name: "Local", lastOpenedAt: .now)
+            try await repository.insertDahliaAccountConnection(connection)
+            try repository.insertVault(vault)
+            let model = VaultManagementModel(cloudVaultFetcher: { _ in [] })
+            await model.configure(appDatabase: database)
+            let account = DahliaAccountConnection(
+                record: connection,
+                account: DahliaCloudAccount(id: "user", name: "User", email: nil),
+                isCloud: false,
+                grantedScopes: ["all-apis"]
+            )
+
+            await model.requestServerAdoption(for: vault, connection: account)
+
+            #expect(model.pendingServerAdoption?.serverVault == nil)
+            #expect(try repository.fetchAllVaults().first?.accountConnectionId == nil)
+
+            let adopted = try #require(await model.confirmServerAdoption())
+            #expect(adopted.accountConnectionId == connection.id)
+            #expect(adopted.syncConfirmedConnectionId == nil)
+        }
+
+        @Test
+        func adoptingAnExistingMemberVaultStartsFromServerRevision() async throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            let repository = MeetingRepository(dbQueue: database.dbQueue)
+            let connection = DahliaAccountConnectionRecord(
+                id: .v7(), origin: "https://server.example.com", clientID: "desktop-client", createdAt: .now
+            )
+            let vault = makeVault(name: "Local", lastOpenedAt: .now)
+            let remote = CloudVaultRecord(
+                vaultId: vault.id,
+                connectionId: connection.id,
+                name: "Server",
+                createdAt: .now,
+                revision: 7,
+                role: "member"
+            )
+            try await repository.insertDahliaAccountConnection(connection)
+            try repository.insertVault(vault)
+            let model = VaultManagementModel(cloudVaultFetcher: { _ in [remote] })
+            await model.configure(appDatabase: database)
+            let account = DahliaAccountConnection(
+                record: connection,
+                account: DahliaCloudAccount(id: "user", name: "User", email: nil),
+                isCloud: false,
+                grantedScopes: ["all-apis"]
+            )
+
+            await model.requestServerAdoption(for: vault, connection: account)
+            let adopted = try #require(await model.confirmServerAdoption())
+
+            #expect(adopted.syncRole == "member")
+            #expect(adopted.syncConfirmedConnectionId == connection.id)
+            #expect(try await SyncTransactionQueue.isConfirmed(
+                vaultId: vault.id,
+                entity: .vault,
+                entityId: vault.id,
+                revision: 7,
+                dbQueue: database.dbQueue
+            ))
         }
 
         @Test

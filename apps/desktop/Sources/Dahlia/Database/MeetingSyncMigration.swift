@@ -7,7 +7,6 @@ enum MeetingSyncMigration {
             .allSatisfy({ try db.tableExists($0) }) else { return }
 
         try db.alter(table: VaultRecord.databaseTableName) { table in
-            table.add(column: "syncEnabled", .boolean).notNull().defaults(to: false)
             table.add(column: "syncRole", .text).check { $0 == nil || ["owner", "member"].contains($0) }
             table.add(column: "syncConfirmedConnectionId", .blob)
             table.add(column: "syncPullCursor", .text)

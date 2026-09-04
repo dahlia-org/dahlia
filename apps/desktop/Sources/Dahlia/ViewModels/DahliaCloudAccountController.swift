@@ -51,6 +51,7 @@ final class DahliaCloudAccountController {
 
     private(set) var connections: [DahliaAccountConnection] = []
     private(set) var errorMessage: String?
+    private(set) var pendingSignOutConnection: DahliaAccountConnection?
     private var activeOperation: AccountOperation?
 
     let defaultConfiguration: DahliaCloudConfiguration?
@@ -167,12 +168,40 @@ final class DahliaCloudAccountController {
         return task
     }
 
+    func requestSignOut(connectionID: UUID) {
+        guard !isBusy else { return }
+        guard let connection = connections.first(where: { $0.id == connectionID }) else { return }
+        if connection.vaultCount > 0 {
+            pendingSignOutConnection = connection
+        } else {
+            _ = startSignOut(connectionID: connectionID)
+        }
+    }
+
     @discardableResult
-    func startSignOut(connectionID: UUID) -> Task<Void, Never>? {
+    func confirmSignOut(disposition: DahliaAccountVaultDisposition) -> Task<Void, Never>? {
+        guard let connection = pendingSignOutConnection else { return nil }
+        pendingSignOutConnection = nil
+        return startSignOut(connectionID: connection.id, vaultDisposition: disposition)
+    }
+
+    func cancelSignOut() {
+        pendingSignOutConnection = nil
+    }
+
+    @discardableResult
+    func startSignOut(
+        connectionID: UUID,
+        vaultDisposition: DahliaAccountVaultDisposition? = nil
+    ) -> Task<Void, Never>? {
         guard let generation = beginOperation(.signingOut(connectionID)) else { return nil }
         let task = Task { [weak self] in
             guard let self else { return }
-            await signOut(connectionID: connectionID, generation: generation)
+            await signOut(
+                connectionID: connectionID,
+                vaultDisposition: vaultDisposition,
+                generation: generation
+            )
         }
         accountTask = task
         return task
@@ -339,12 +368,22 @@ final class DahliaCloudAccountController {
         }
     }
 
-    private func signOut(connectionID: UUID, generation: Int) async {
+    private func signOut(
+        connectionID: UUID,
+        vaultDisposition: DahliaAccountVaultDisposition?,
+        generation: Int
+    ) async {
         defer { finishOperation(generation) }
         do {
             guard let connection = connections.first(where: { $0.id == connectionID }) else { return }
-            if try await repository?.connectionHasPendingServerDeletion(id: connectionID) == true {
-                throw DahliaAccountConnectionError.pendingServerDeletion
+            if connection.vaultCount > 0 {
+                guard let vaultDisposition, let repository else {
+                    throw DahliaAccountConnectionError.vaultDispositionRequired
+                }
+                try await repository.resolveVaultsForSignOut(
+                    connectionID: connectionID,
+                    disposition: vaultDisposition
+                )
             }
             do {
                 try await service(for: connection.record).signOut()

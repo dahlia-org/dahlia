@@ -16,8 +16,7 @@ enum SyncInitialSnapshotBuilder {
                     WHERE t.vaultId = v.id AND o.entity = 'vault' AND o.action = 'reset'
                 ) AS restoring
                 FROM vaults v
-                WHERE v.syncEnabled = 1
-                  AND v.accountConnectionId IS NOT NULL
+                WHERE v.accountConnectionId IS NOT NULL
                   AND v.syncConfirmedConnectionId IS NULL
                   AND (v.syncRole IS NULL OR v.syncRole = 'owner')
                   AND NOT EXISTS (

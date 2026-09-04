@@ -4,28 +4,11 @@ struct DahliaAccountsSettingsView: View {
     let controller: DahliaCloudAccountController
     let onShowSignIn: () -> Void
 
-    @State private var pendingSignOut: DahliaAccountConnection?
     @State private var pendingRemoval: DahliaAccountConnection?
-    @State private var isShowingSignOutConfirmation = false
     @State private var isShowingRemovalConfirmation = false
 
     var body: some View {
         sections
-            .confirmationDialog(
-                pendingSignOut.map { L10n.signOutDahliaConnection($0.displayName) } ?? "",
-                isPresented: $isShowingSignOutConfirmation,
-                titleVisibility: .visible
-            ) {
-                if let connection = pendingSignOut {
-                    Button(L10n.signOut, role: .destructive) {
-                        controller.startSignOut(connectionID: connection.id)
-                        pendingSignOut = nil
-                    }
-                }
-                Button(L10n.cancel, role: .cancel) { pendingSignOut = nil }
-            } message: {
-                Text(L10n.signOutDahliaConnectionDescription)
-            }
             .confirmationDialog(
                 pendingRemoval.map { L10n.removeDahliaConnection($0.displayName) } ?? "",
                 isPresented: $isShowingRemovalConfirmation,
@@ -98,8 +81,7 @@ struct DahliaAccountsSettingsView: View {
                     .controlSize(.small)
             } else if connection.isSignedIn {
                 Button(L10n.signOut) {
-                    pendingSignOut = connection
-                    isShowingSignOutConfirmation = true
+                    controller.requestSignOut(connectionID: connection.id)
                 }
                 .disabled(controller.isBusy)
             } else {

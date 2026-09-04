@@ -1832,7 +1832,11 @@ enum L10n { // swiftlint:disable:this type_body_length
         bundle: bundle
     ) }
     static var dahliaAccountPendingServerDeletion: String { String(
-        localized: "Wait for the pending Server data deletion before signing out or removing this connection.",
+        localized: "Resolve this connection's Server Vaults before removing it.",
+        bundle: bundle
+    ) }
+    static var dahliaAccountVaultDispositionRequired: String { String(
+        localized: "Choose what to do with this account's local Vaults before signing out.",
         bundle: bundle
     ) }
     static var dahliaAccountsDescription: String { String(
@@ -1860,10 +1864,41 @@ enum L10n { // swiftlint:disable:this type_body_length
         )
     }
 
-    static var signOutDahliaConnectionDescription: String { String(
-        localized: "Only this connection's credentials will be removed.",
+    static var moveVaultsToLocalAndSignOut: String { String(
+        localized: "Move Vaults to Local Account and Sign Out",
         bundle: bundle
     ) }
+    static var deleteLocalVaultsAndSignOut: String { String(
+        localized: "Delete Local Vaults and Sign Out",
+        bundle: bundle
+    ) }
+    static var signOutVaultDispositionDescription: String { String(
+        localized: "The Server Vaults will remain unchanged. Moving keeps the working copies on this Mac; deleting removes them from this Mac.",
+        bundle: bundle
+    ) }
+    static var moveVaultToServer: String { String(localized: "Move to Server", bundle: bundle) }
+    static var reconnectServerVault: String { String(localized: "Reconnect Server Vault", bundle: bundle) }
+    static var keepLocalAccount: String { String(localized: "Keep in Local Account", bundle: bundle) }
+
+    static func adoptVaultOnServerTitle(_ name: String, serverVaultExists: Bool) -> String {
+        if serverVaultExists {
+            return String(format: String(localized: "Reconnect %@ to this Server?", bundle: bundle), name)
+        }
+        return String(format: String(localized: "Move %@ to this Server?", bundle: bundle), name)
+    }
+
+    static func adoptVaultOnServerDescription(serverVaultExists: Bool) -> String {
+        if serverVaultExists {
+            return String(
+                localized: "A Vault with the same ID exists on the Server. Member access uses the Server version; owners can choose which version to use if records conflict.",
+                bundle: bundle
+            )
+        }
+        return String(
+            localized: "This Vault will move from the Local Account to the Server and synchronize automatically. Its working copy remains on this Mac.",
+            bundle: bundle
+        )
+    }
 
     static func removeDahliaConnection(_ name: String) -> String {
         String(format: String(localized: "Remove Dahlia connection %@?", bundle: bundle), name)
@@ -1889,28 +1924,10 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var comingSoon: String { String(localized: "Coming Soon", bundle: bundle) }
     static var loadingVaults: String { String(localized: "Loading Vaults…", bundle: bundle) }
     static var removingVault: String { String(localized: "Removing Vault…", bundle: bundle) }
-    static var vaultSync: String { String(localized: "Sync to Dahlia Server", bundle: bundle) }
-    static var vaultSyncDescription: String { String(
-        localized: "Privately sync summaries, original transcripts, screenshots, OCR text, and image captions.",
-        bundle: bundle
-    ) }
-    static var vaultSyncRequiresAccount: String { String(
-        localized: "Choose a signed-in Dahlia account before enabling sync.",
-        bundle: bundle
-    ) }
-    static var vaultSyncRequiresReauthentication: String { String(
-        localized: "Reconnect this Dahlia account to grant sync access.",
-        bundle: bundle
-    ) }
     static var vaultSyncConflict: String { String(localized: "Sync conflict", bundle: bundle) }
     static var useServerVersion: String { String(localized: "Use Server Version", bundle: bundle) }
     static var reapplyLocalVersion: String { String(localized: "Reapply Local Version", bundle: bundle) }
     static var chooseLocalFolder: String { String(localized: "Choose Local Folder", bundle: bundle) }
-    static var deleteServerCopy: String { String(localized: "Delete Server Copy", bundle: bundle) }
-    static var deleteServerCopyDescription: String { String(
-        localized: "Server data will be deleted in resumable batches. Local meeting data is not deleted.",
-        bundle: bundle
-    ) }
     static var confirmBulkMeetingDeletion: String { String(localized: "Confirm Meeting Deletions", bundle: bundle) }
     static var continueDeletion: String { String(localized: "Continue Deleting", bundle: bundle) }
 

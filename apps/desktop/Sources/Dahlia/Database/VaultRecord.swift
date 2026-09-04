@@ -18,7 +18,6 @@ struct VaultRecord: Codable, FetchableRecord, PersistableRecord, Identifiable, E
     var chatModelID = ""
     var chatReasoningEffort: String = CodexReasoningEffortOption.defaultValue
     var aiSettingsBackfilled = true
-    var syncEnabled = false
     var syncRole: String?
     var syncConfirmedConnectionId: UUID?
     var syncPullCursor: String?
@@ -41,7 +40,7 @@ extension VaultRecord {
     }
 
     var requiresServerDeletionBeforeRemoval: Bool {
-        allowsCanonicalEdits && (syncEnabled || syncConfirmedConnectionId != nil)
+        allowsCanonicalEdits && accountConnectionId != nil
     }
 }
 

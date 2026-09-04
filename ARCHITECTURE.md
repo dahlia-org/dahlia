@@ -180,7 +180,7 @@ Workers Static Assets が直接配信し、Worker 内から asset binding を呼
 `index.html` へ fallback する一方、API と discovery の未定義 path は Hono の 404 を維持する。
 
 Gateway、認証 store、upstream、artifact storage の停止は Server 操作だけを失敗させる。macOS の起動、録音、音声保存、文字起こし、
-閲覧、検索はこの runtime を待たない。Artifact API は明示的に渡された任意 asset だけを扱う。これとは別に、ServerアカウントのVault、Project、meeting、summary、transcript 原文、screenshot、OCR、AI captionはDesktopとWebが共有するServer canonical dataである。Desktop は既存の domain table を offline working-copy record cache とし、ローカル変更と immutable domain transaction の記録を同じ SQLite transaction で確定する。これはローカルからServer copyを作る一方向転送ではない。owner が明示した場合だけ、
+閲覧、検索はこの runtime を待たない。Artifact API は明示的に渡された任意 asset だけを扱う。これとは別に、ServerアカウントのVault、Project、meeting、summary、transcript 原文、screenshot、OCR、AI captionはDesktopとWebが共有するServer canonical dataである。Desktop は既存の domain table を offline working-copy record cache とし、ローカル変更と immutable domain transaction の記録を同じ SQLite transaction で確定する。これはローカルからServer copyを作る一方向転送ではない。サインインはローカルVaultを暗黙に関連付けず、明示的にServerへ移したVaultは常時同期する。サインアウトではServer canonical dataを変更せず、working copyを削除するかLocal Accountへ移す。owner が明示した場合だけ、
 複数の特定 Better Auth organization または Team へ read-only 共有する。header modeでは全proxy userを通常表示される固定`external` OrganizationへJIT登録し、同じpermission modelを使う。write、delete、共有設定変更は owner に限定する。
 PostgreSQL／LakebaseではBetter Authの機械生成migrationとDahlia application migrationを別ledgerに置き、認証方式によらず
 `auth`、`core`／`content`の順で適用する。Header identityは検証直後に`auth.user`へ射影するが、Better Auth runtimeは起動しない。Serverは各identity transactionで

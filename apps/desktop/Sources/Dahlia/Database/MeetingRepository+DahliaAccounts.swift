@@ -51,8 +51,14 @@ extension MeetingRepository {
 
 enum DahliaAccountConnectionError: LocalizedError {
     case pendingServerDeletion
+    case vaultDispositionRequired
 
     var errorDescription: String? {
-        L10n.dahliaAccountPendingServerDeletion
+        switch self {
+        case .pendingServerDeletion:
+            L10n.dahliaAccountPendingServerDeletion
+        case .vaultDispositionRequired:
+            L10n.dahliaAccountVaultDispositionRequired
+        }
     }
 }

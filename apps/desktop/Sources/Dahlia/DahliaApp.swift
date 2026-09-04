@@ -160,6 +160,51 @@ struct DahliaApp: App {
             ) {} message: {
                 Text(vaultManagementModel.errorMessage)
             }
+            .confirmationDialog(
+                vaultManagementModel.pendingServerAdoption.map {
+                    L10n.adoptVaultOnServerTitle($0.vault.name, serverVaultExists: $0.serverVault != nil)
+                } ?? "",
+                isPresented: Binding(
+                    get: { vaultManagementModel.pendingServerAdoption != nil },
+                    set: { if !$0 { vaultManagementModel.cancelServerAdoption() } }
+                ),
+                titleVisibility: .visible
+            ) {
+                if let pending = vaultManagementModel.pendingServerAdoption {
+                    Button(pending.serverVault == nil ? L10n.moveVaultToServer : L10n.reconnectServerVault) {
+                        Task { await confirmServerAdoption() }
+                    }
+                }
+                Button(L10n.keepLocalAccount, role: .cancel) {
+                    vaultManagementModel.cancelServerAdoption()
+                }
+            } message: {
+                if let pending = vaultManagementModel.pendingServerAdoption {
+                    Text(L10n.adoptVaultOnServerDescription(serverVaultExists: pending.serverVault != nil))
+                }
+            }
+            .confirmationDialog(
+                dahliaAccountController.pendingSignOutConnection.map {
+                    L10n.signOutDahliaConnection($0.displayName)
+                } ?? "",
+                isPresented: Binding(
+                    get: { dahliaAccountController.pendingSignOutConnection != nil },
+                    set: { if !$0 { dahliaAccountController.cancelSignOut() } }
+                ),
+                titleVisibility: .visible
+            ) {
+                Button(L10n.moveVaultsToLocalAndSignOut) {
+                    dahliaAccountController.confirmSignOut(disposition: .moveToLocalAccount)
+                }
+                Button(L10n.deleteLocalVaultsAndSignOut, role: .destructive) {
+                    dahliaAccountController.confirmSignOut(disposition: .deleteLocalCopies)
+                }
+                Button(L10n.cancel, role: .cancel) {
+                    dahliaAccountController.cancelSignOut()
+                }
+            } message: {
+                Text(L10n.signOutVaultDispositionDescription)
+            }
             .sheet(item: $viewModel.pendingBatchTranscriptionConfirmation) { confirmation in
                 BatchTranscriptionConfirmationView(
                     locales: viewModel.batchTranscriptionLocaleOptions(
@@ -203,6 +248,9 @@ struct DahliaApp: App {
             .onChange(of: scenePhase) { _, phase in
                 guard phase == .active, let meetingSyncWorker else { return }
                 Task { await meetingSyncWorker.applicationBecameActive() }
+            }
+            .onChange(of: dahliaAccountController.connections) {
+                Task { await reconcileVaultsAfterAccountChange() }
             }
             .modifier(MainWindowOpenWindowRegistrationModifier())
             .environment(mainWindowNavigation)
@@ -427,20 +475,9 @@ struct DahliaApp: App {
             if dahliaAccountController.errorMessage == nil,
                let connection = dahliaAccountController.completedSignInConnection(matching: configuration) {
                 if let targetVaultID,
-                   let db = appDatabase {
-                    do {
-                        if let vault = try await MeetingRepository(dbQueue: db.dbQueue).updateVaultAccountConnection(
-                            id: targetVaultID,
-                            connectionID: connection.id
-                        ), AppSettings.shared.currentVault?.id == targetVaultID {
-                            AppSettings.shared.currentVault = vault
-                            VaultAISettingsModel.shared.activate(vault: vault)
-                        }
-                        await dahliaAccountController.reload()
-                    } catch {
-                        dahliaAccountController.reportAccountLinkingError(error)
-                        return
-                    }
+                   let vault = vaultManagementModel.vaults.first(where: { $0.id == targetVaultID }),
+                   vault.accountConnectionId == nil {
+                    await vaultManagementModel.requestServerAdoption(for: vault, connection: connection)
                 }
                 mainWindowNavigation.dismissDahliaSignIn()
             }
@@ -450,6 +487,29 @@ struct DahliaApp: App {
     private func cancelDahliaSignIn() {
         dahliaAccountController.cancelAccountTask()
         mainWindowNavigation.dismissDahliaSignIn()
+    }
+
+    private func confirmServerAdoption() async {
+        guard let updated = await vaultManagementModel.confirmServerAdoption() else { return }
+        if AppSettings.shared.currentVault?.id == updated.id {
+            AppSettings.shared.currentVault = updated
+            VaultAISettingsModel.shared.activate(vault: updated)
+        }
+        await dahliaAccountController.reload()
+    }
+
+    private func reconcileVaultsAfterAccountChange() async {
+        await vaultManagementModel.loadVaults()
+        guard let current = AppSettings.shared.currentVault else { return }
+        guard let updated = vaultManagementModel.vaults.first(where: { $0.id == current.id }) else {
+            AppSettings.shared.currentVault = nil
+            sidebarViewModel.clearMeetingSelection()
+            viewModel.clearCurrentMeeting()
+            showVaultPicker = true
+            return
+        }
+        AppSettings.shared.currentVault = updated
+        VaultAISettingsModel.shared.activate(vault: updated)
     }
 
     private func completeSetupTour(_ vault: VaultRecord, accountConnectionID: UUID?) async -> Bool {

@@ -57,8 +57,7 @@ struct SettingsDetailView: View {
                 currentVault: appSettings.currentVault,
                 accountController: dahliaAccountController,
                 onShowSignIn: mainWindowNavigation.openDahliaSignIn,
-                onUpdateVault: updateCurrentVaultIfNeeded,
-                onUpdateCurrentVaultAccount: updateCurrentVaultAccountIfNeeded
+                onUpdateVault: updateCurrentVaultIfNeeded
             )
         case .language:
             LanguageSettingsView()
@@ -100,12 +99,6 @@ struct SettingsDetailView: View {
     private func updateCurrentVaultIfNeeded(_ vault: VaultRecord) {
         guard appSettings.currentVault?.id == vault.id else { return }
         appSettings.currentVault = vault
-    }
-
-    private func updateCurrentVaultAccountIfNeeded(_ vault: VaultRecord) {
-        guard appSettings.currentVault?.id == vault.id else { return }
-        appSettings.currentVault = vault
-        VaultAISettingsModel.shared.activate(vault: vault)
     }
 
 }

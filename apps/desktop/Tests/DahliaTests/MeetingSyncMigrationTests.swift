@@ -52,6 +52,10 @@
             #expect(stateVaultForeignKey?["table"] as String? == "vaults")
             #expect(stateVaultForeignKey?["from"] as String? == "vaultId")
             #expect(stateVaultForeignKey?["on_delete"] as String? == "CASCADE")
+            let vaultColumns = try database.dbQueue.read { db in
+                try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('vaults')")
+            }
+            #expect(!vaultColumns.contains("syncEnabled"))
             let projectNameIndexes = try database.dbQueue.read { db in
                 try Int.fetchOne(
                     db,
@@ -522,11 +526,10 @@
         }
 
         @Test
-        func disabledVaultStillClaimsServerReset() async throws {
+        func serverManagedVaultClaimsServerReset() async throws {
             let (database, vault) = try await syncedDatabase()
             let transactionId = try #require(try await database.dbQueue.write { db in
-                try db.execute(sql: "UPDATE vaults SET syncEnabled = 0 WHERE id = ?", arguments: [vault.id])
-                return try SyncTransactionRecorder.record(
+                try SyncTransactionRecorder.record(
                     vaultId: vault.id,
                     operations: [SyncOperationDraft(entity: .vault, action: .reset, entityId: vault.id)],
                     in: db
@@ -874,7 +877,6 @@
             let updated = try #require(try await database.dbQueue.read { db in
                 try VaultRecord.fetchOne(db, key: vault.id)
             })
-            #expect(!updated.syncEnabled)
             #expect(updated.syncConfirmedConnectionId == nil)
             #expect(updated.syncPullCursor == nil)
             #expect(updated.syncLastCommittedCursor == nil)
@@ -890,7 +892,6 @@
                 )
                 member.accountConnectionId = vault.accountConnectionId
                 member.syncConfirmedConnectionId = vault.syncConfirmedConnectionId
-                member.syncEnabled = true
                 member.syncRole = "member"
                 member.syncPullCursor = "member-cursor"
                 try member.insert(db)
@@ -925,7 +926,6 @@
             let restored = try #require(try await database.dbQueue.read { db in
                 try VaultRecord.fetchOne(db, key: vault.id)
             })
-            #expect(restored.syncEnabled)
             #expect(restored.syncPullCursor == "reset-cursor")
             #expect(restored.syncLastCommittedCursor == "reset-cursor")
         }
@@ -1266,7 +1266,6 @@
                 )
             }
             #expect(state.0?.name == "Restored")
-            #expect(state.0?.syncEnabled == true)
             #expect(state.0?.syncConfirmedConnectionId == vault.syncConfirmedConnectionId)
             #expect(state.0?.syncPullCursor == "reset-cursor")
             #expect(state.1?.name == "Current project")
@@ -1530,7 +1529,6 @@
             var vault = VaultRecord(id: .v7(), path: "/tmp/sync", name: "Sync", createdAt: .now, lastOpenedAt: .now)
             vault.accountConnectionId = connection.id
             vault.syncConfirmedConnectionId = connection.id
-            vault.syncEnabled = true
             let savedVault = vault
             try await database.dbQueue.write { db in
                 try connection.insert(db)

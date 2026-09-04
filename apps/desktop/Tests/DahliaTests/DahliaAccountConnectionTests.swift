@@ -232,6 +232,85 @@
         }
 
         @Test
+        func signOutCanMoveServerVaultsToTheLocalAccount() async throws {
+            let manager = try AppDatabaseManager(path: ":memory:")
+            let repository = MeetingRepository(dbQueue: manager.dbQueue)
+            let connection = makeConnection(origin: "https://server.example.com")
+            let credential = makeCredential(
+                origin: connection.origin,
+                accountID: "server-user",
+                accessToken: "server-token"
+            )
+            var vault = makeVault(name: "Server")
+            vault.accountConnectionId = connection.id
+            vault.syncConfirmedConnectionId = connection.id
+            vault.syncRole = "owner"
+            try await repository.insertDahliaAccountConnection(connection)
+            try repository.insertVault(vault)
+            let queuedVault = vault
+            try await manager.dbQueue.write { db in
+                try db.execute(
+                    sql: "INSERT INTO sync_entity_state(vaultId, entity, entityId, confirmedRevision) VALUES (?, 'vault', ?, 1)",
+                    arguments: [queuedVault.id, queuedVault.id]
+                )
+                try SyncTransactionRecorder.record(
+                    vaultId: queuedVault.id,
+                    operations: [SyncInitialSnapshotBuilder.vaultOperation(queuedVault, action: .update)],
+                    in: db
+                )
+            }
+            let store = CredentialStoreFake(values: [connection.id: credential])
+            let controller = makeController(store: store)
+            await controller.configure(appDatabase: manager)
+
+            controller.requestSignOut(connectionID: connection.id)
+            #expect(controller.pendingSignOutConnection?.id == connection.id)
+            #expect(store.credential(for: connection.id) != nil)
+            let signOut = try #require(controller.confirmSignOut(disposition: .moveToLocalAccount))
+            await signOut.value
+
+            let local = try #require(try repository.fetchAllVaults().first)
+            #expect(local.accountConnectionId == nil)
+            #expect(local.syncConfirmedConnectionId == nil)
+            #expect(local.syncRole == nil)
+            #expect(store.credential(for: connection.id) == nil)
+            #expect(try await manager.dbQueue.read { db in
+                try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_transactions")
+            } == 0)
+            #expect(try await manager.dbQueue.read { db in
+                try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_entity_state")
+            } == 0)
+        }
+
+        @Test
+        func signOutCanDeleteOnlyTheLocalVaultCopies() async throws {
+            let manager = try AppDatabaseManager(path: ":memory:")
+            let repository = MeetingRepository(dbQueue: manager.dbQueue)
+            let connection = makeConnection(origin: "https://server.example.com")
+            let credential = makeCredential(
+                origin: connection.origin,
+                accountID: "server-user",
+                accessToken: "server-token"
+            )
+            var vault = makeVault(name: "Server")
+            vault.accountConnectionId = connection.id
+            vault.syncConfirmedConnectionId = connection.id
+            vault.syncRole = "member"
+            try await repository.insertDahliaAccountConnection(connection)
+            try repository.insertVault(vault)
+            let store = CredentialStoreFake(values: [connection.id: credential])
+            let controller = makeController(store: store)
+            await controller.configure(appDatabase: manager)
+
+            controller.requestSignOut(connectionID: connection.id)
+            let signOut = try #require(controller.confirmSignOut(disposition: .deleteLocalCopies))
+            await signOut.value
+
+            #expect(try repository.fetchAllVaults().isEmpty)
+            #expect(store.credential(for: connection.id) == nil)
+        }
+
+        @Test
         func removingRejectedCredentialDeletesKeychainItemBeforeConnection() async throws {
             let manager = try AppDatabaseManager(path: ":memory:")
             let repository = MeetingRepository(dbQueue: manager.dbQueue)

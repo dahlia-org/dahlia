@@ -101,6 +101,10 @@ struct SyncResetSnapshot {
         guard changes.contains(where: { $0.entity == .vault && $0.action == "reset" && $0.record != nil }) else {
             return nil
         }
+        self.init(canonicalChanges: changes)
+    }
+
+    init(canonicalChanges changes: [SyncChangePage.Change]) {
         func ids(_ entity: SyncEntity) -> Set<UUID> {
             Set(changes.lazy.filter { $0.entity == entity && $0.action == "upsert" && $0.record != nil }.map(\.entityId))
         }
@@ -505,7 +509,7 @@ actor SyncWorker {
                 if !page.hasMore { break }
             } while true
             let snapshot = Self.initialSnapshotChanges((reset.map { [$0] } ?? []) + Array(changes.values))
-            _ = try await applySnapshot(snapshot, cursor: cursor, target: target)
+            _ = try await applySnapshot(snapshot, cursor: cursor, target: target, reconcilesMissingRecords: true)
             return
         }
 
@@ -547,9 +551,11 @@ actor SyncWorker {
     private func applySnapshot(
         _ changes: [SyncChangePage.Change],
         cursor: String?,
-        target: SyncTarget
+        target: SyncTarget,
+        reconcilesMissingRecords: Bool = false
     ) async throws -> Bool {
-        guard let reset = SyncResetSnapshot(changes) else {
+        let reset = reconcilesMissingRecords ? SyncResetSnapshot(canonicalChanges: changes) : SyncResetSnapshot(changes)
+        guard let reset else {
             guard let applicable = try await reconcilingProjects(in: changes, target: target) else { return false }
             return try await apply(applicable, cursor: cursor, target: target)
         }
@@ -696,8 +702,7 @@ actor SyncWorker {
                 FROM vaults
                 JOIN dahlia_account_connections
                   ON dahlia_account_connections.id = vaults.syncConfirmedConnectionId
-                WHERE vaults.syncEnabled = 1
-                  AND vaults.accountConnectionId = vaults.syncConfirmedConnectionId
+                WHERE vaults.accountConnectionId = vaults.syncConfirmedConnectionId
                   AND NOT EXISTS (SELECT 1 FROM sync_transactions WHERE vaultId = vaults.id)
                 """
             ).compactMap { row in
@@ -775,8 +780,7 @@ actor SyncWorker {
                 SELECT DISTINCT c.*
                 FROM dahlia_account_connections c
                 JOIN vaults v ON v.syncConfirmedConnectionId = c.id
-                WHERE v.syncEnabled = 1
-                  AND v.accountConnectionId = c.id
+                WHERE v.accountConnectionId = c.id
                 """
             )
         }) ?? []
@@ -1018,7 +1022,7 @@ enum RemoteChangeApplier {
                     } else {
                         try db.execute(
                             sql: """
-                            UPDATE vaults SET syncEnabled = 0, syncConfirmedConnectionId = NULL,
+                            UPDATE vaults SET syncConfirmedConnectionId = NULL,
                                 syncPullCursor = NULL, syncLastCommittedCursor = NULL
                             WHERE id = ?
                             """,

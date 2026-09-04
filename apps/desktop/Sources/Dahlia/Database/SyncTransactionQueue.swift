@@ -410,13 +410,7 @@ enum SyncTransactionQueue {
                 SELECT t.sequence, t.id, t.vaultId, t.connectionId, t.createdAt, t.attempts
                 FROM sync_transactions t
                 JOIN vaults v ON v.id = t.vaultId
-                WHERE (v.syncEnabled = 1 OR EXISTS (
-                      SELECT 1 FROM sync_operations reset_operation
-                      WHERE reset_operation.transactionId = t.id
-                        AND reset_operation.entity = 'vault'
-                        AND reset_operation.action = 'reset'
-                  ))
-                  AND v.accountConnectionId = t.connectionId
+                WHERE v.accountConnectionId = t.connectionId
                   AND v.syncConfirmedConnectionId = t.connectionId
                   AND t.blockedReason IS NULL
                   AND t.availableAt <= ?
@@ -569,7 +563,7 @@ enum SyncTransactionQueue {
             if resetOperation, !hasLaterTransaction {
                 try db.execute(
                     sql: """
-                    UPDATE vaults SET syncEnabled = 0, syncConfirmedConnectionId = NULL,
+                    UPDATE vaults SET syncConfirmedConnectionId = NULL,
                         syncPullCursor = NULL, syncLastCommittedCursor = NULL
                     WHERE id = ?
                     """,

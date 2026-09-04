@@ -7,7 +7,6 @@ struct AccountsAndVaultsSettingsView: View {
     let accountController: DahliaCloudAccountController
     let onShowSignIn: () -> Void
     let onUpdateVault: (VaultRecord) -> Void
-    let onUpdateCurrentVaultAccount: (VaultRecord) -> Void
 
     var body: some View {
         Form {
@@ -20,13 +19,12 @@ struct AccountsAndVaultsSettingsView: View {
                 model: vaultModel,
                 currentVault: currentVault,
                 accountConnections: accountController.connections,
-                onRenameVault: onUpdateVault,
-                onUpdateVaultAccount: onUpdateCurrentVaultAccount
+                onRenameVault: onUpdateVault
             )
             AccountSettingsView()
         }
         .formStyle(.grouped)
-        .onChange(of: accountController.connections.map(\.id)) {
+        .onChange(of: accountController.connections) {
             Task { await vaultModel.loadVaults() }
         }
         .onChange(of: vaultAssignments) {

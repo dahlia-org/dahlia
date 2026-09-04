@@ -6,21 +6,19 @@ struct VaultSettingsView: View {
     let currentVault: VaultRecord?
     let accountConnections: [DahliaAccountConnection]
     let onRenameVault: (VaultRecord) -> Void
-    let onUpdateVaultAccount: (VaultRecord) -> Void
 
     @State private var isShowingFolderPicker = false
     @State private var isShowingRenameAlert = false
     @State private var pendingRemoval: VaultRecord?
     @State private var pendingRename: VaultRecord?
     @State private var proposedName = ""
-    @State private var pendingServerDeletion: VaultRecord?
     @State private var pendingCloudVault: CloudVaultRecord?
 
     var body: some View {
         sections
             .disabled(
                 model.isRemovingVault || model.isRenamingVault
-                    || model.updatingVaultAccountID != nil || model.updatingVaultSyncID != nil
+                    || model.updatingVaultAccountID != nil
             )
             .overlay {
                 if model.isRemovingVault {
@@ -68,26 +66,6 @@ struct VaultSettingsView: View {
             } message: {
                 Text(L10n.removeVaultConfirmationDescription)
             }
-            .confirmationDialog(
-                L10n.deleteServerCopy,
-                isPresented: Binding(
-                    get: { pendingServerDeletion != nil },
-                    set: { if !$0 { pendingServerDeletion = nil } }
-                ),
-                titleVisibility: .visible
-            ) {
-                if let vault = pendingServerDeletion {
-                    Button(L10n.deleteServerCopy, role: .destructive) {
-                        Task {
-                            _ = await model.deleteServerCopy(for: vault)
-                            pendingServerDeletion = nil
-                        }
-                    }
-                }
-                Button(L10n.cancel, role: .cancel) {}
-            } message: {
-                Text(L10n.deleteServerCopyDescription)
-            }
     }
 
     private var sections: some View {
@@ -123,23 +101,9 @@ struct VaultSettingsView: View {
                         VaultAccountPicker(
                             vault: vault,
                             connections: accountConnections,
-                            onSelect: { await updateAccountConnection(for: vault, connectionID: $0) }
+                            onSelect: { await requestServerAdoption(for: vault, connectionID: $0) }
                         )
-                        Toggle(
-                            L10n.vaultSync,
-                            isOn: Binding(
-                                get: { vault.syncEnabled },
-                                set: { isEnabled in
-                                    Task { _ = await model.updateSync(for: vault, isEnabled: isEnabled) }
-                                }
-                            )
-                        )
-                        .toggleStyle(.switch)
-                        .labelsHidden()
-                        .disabled(!vault.syncEnabled && !supportsSync(vault))
-                        .help(vault.accountConnectionId == nil
-                            ? L10n.vaultSyncRequiresAccount
-                            : supportsSync(vault) ? L10n.vaultSyncDescription : L10n.vaultSyncRequiresReauthentication)
+                        .disabled(vault.accountConnectionId != nil)
                         if model.blockedSyncVaultIDs.contains(vault.id) {
                             Image(systemName: "exclamationmark.triangle.fill")
                                 .foregroundStyle(.orange)
@@ -185,11 +149,6 @@ struct VaultSettingsView: View {
         isShowingFolderPicker = true
     }
 
-    private func supportsSync(_ vault: VaultRecord) -> Bool {
-        guard let connectionID = vault.accountConnectionId else { return false }
-        return accountConnections.first(where: { $0.id == connectionID })?.supportsVaultSync == true
-    }
-
     private func vaultActions(for vault: VaultRecord) -> some View {
         Menu(L10n.actions, systemImage: "ellipsis.circle") {
             if vault.allowsCanonicalEdits {
@@ -200,14 +159,10 @@ struct VaultSettingsView: View {
                 Button(L10n.useServerVersion, systemImage: "icloud.and.arrow.down") {
                     Task { await model.acceptServerSyncVersion(for: vault) }
                 }
-                Button(L10n.reapplyLocalVersion, systemImage: "arrow.up.circle") {
-                    Task { await model.reapplyLocalSyncVersion(for: vault) }
-                }
-            }
-
-            if vault.syncConfirmedConnectionId != nil, vault.syncRole != "member" {
-                Button(L10n.deleteServerCopy, systemImage: "icloud.slash", role: .destructive) {
-                    pendingServerDeletion = vault
+                if vault.syncRole != "member" {
+                    Button(L10n.reapplyLocalVersion, systemImage: "arrow.up.circle") {
+                        Task { await model.reapplyLocalSyncVersion(for: vault) }
+                    }
                 }
             }
 
@@ -273,11 +228,11 @@ struct VaultSettingsView: View {
         }
     }
 
-    private func updateAccountConnection(for vault: VaultRecord, connectionID: UUID?) async -> UUID? {
-        guard let updatedVault = await model.updateAccountConnection(for: vault, connectionID: connectionID) else {
-            return vault.accountConnectionId
-        }
-        onUpdateVaultAccount(updatedVault)
-        return updatedVault.accountConnectionId
+    private func requestServerAdoption(for vault: VaultRecord, connectionID: UUID?) async -> UUID? {
+        guard let connectionID,
+              let connection = accountConnections.first(where: { $0.id == connectionID })
+        else { return vault.accountConnectionId }
+        await model.requestServerAdoption(for: vault, connection: connection)
+        return vault.accountConnectionId
     }
 }

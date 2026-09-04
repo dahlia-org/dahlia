@@ -2,6 +2,11 @@ import DahliaRuntimeSupport
 import Foundation
 import GRDB
 
+enum DahliaAccountVaultDisposition: Equatable, Sendable {
+    case deleteLocalCopies
+    case moveToLocalAccount
+}
+
 /// ミーティング・セグメント・プロジェクト・保管庫の DB クエリを集約するリポジトリ。
 @MainActor
 // Query methods share one MainActor-isolated database boundary.
@@ -143,22 +148,40 @@ final class MeetingRepository {
                 guard vault.syncConfirmedConnectionId == nil else {
                     throw SyncTransactionQueueError.serverCopyExists
                 }
-                vault.syncEnabled = false
             }
             vault.accountConnectionId = connectionID
+            if connectionID == nil {
+                vault.syncRole = nil
+                vault.syncPullCursor = nil
+                vault.syncLastCommittedCursor = nil
+            }
             try vault.update(db)
             return vault
         }
     }
 
-    nonisolated func updateVaultSync(id: UUID, isEnabled: Bool) async throws -> VaultRecord? {
+    nonisolated func adoptVaultForServerSync(
+        id: UUID,
+        connectionID: UUID,
+        serverVault: CloudVaultRecord?
+    ) async throws -> VaultRecord? {
         try await dbQueue.write { db in
             guard var vault = try VaultRecord.fetchOne(db, key: id),
-                  !isEnabled || (
-                      vault.accountConnectionId != nil
-                          && (vault.syncConfirmedConnectionId == nil || vault.syncConfirmedConnectionId == vault.accountConnectionId)
-                  ) else { return nil }
-            vault.syncEnabled = isEnabled
+                  vault.accountConnectionId == nil,
+                  try !SyncTransactionQueue.hasPending(vaultId: id, in: db)
+            else { return nil }
+            vault.accountConnectionId = connectionID
+            vault.syncRole = serverVault?.role
+            if serverVault?.role == "member" {
+                vault.syncConfirmedConnectionId = connectionID
+                try db.execute(
+                    sql: """
+                    INSERT INTO sync_entity_state(vaultId, entity, entityId, confirmedRevision)
+                    VALUES (?, 'vault', ?, ?)
+                    """,
+                    arguments: [id, id, serverVault?.revision]
+                )
+            }
             try vault.update(db)
             return vault
         }
@@ -170,20 +193,6 @@ final class MeetingRepository {
 
     nonisolated func reapplyLocalSyncVersion(vaultId: UUID) async throws {
         try await SyncTransactionQueue.reapplyLocalVersion(vaultId: vaultId, dbQueue: dbQueue)
-    }
-
-    nonisolated func requestServerVaultDeletion(id: UUID) async throws -> VaultRecord? {
-        try await dbQueue.write { db in
-            guard let vault = try VaultRecord.fetchOne(db, key: id),
-                  vault.syncConfirmedConnectionId != nil else { return nil }
-            try SyncTransactionQueue.discard(vaultId: id, in: db)
-            try SyncTransactionRecorder.record(
-                vaultId: id,
-                operations: [SyncOperationDraft(entity: .vault, action: .reset, entityId: id)],
-                in: db
-            )
-            return vault
-        }
     }
 
     nonisolated func blockedSyncVaultIDs() async throws -> Set<UUID> {
@@ -265,6 +274,90 @@ final class MeetingRepository {
             managedRootURL: managedRootURL
         )
         try deleteVault(id: id)
+    }
+
+    nonisolated func resolveVaultsForSignOut(
+        connectionID: UUID,
+        disposition: DahliaAccountVaultDisposition,
+        managedRootURL: URL = BatchAudioStorage.managedRootURL
+    ) async throws {
+        let vaultIds = try await dbQueue.read { db in
+            try UUID.fetchAll(
+                db,
+                sql: "SELECT id FROM vaults WHERE accountConnectionId = ? ORDER BY id",
+                arguments: [connectionID]
+            )
+        }
+        guard !vaultIds.isEmpty else { return }
+
+        if disposition == .moveToLocalAccount {
+            try await dbQueue.write { db in
+                for vaultId in vaultIds {
+                    try SyncTransactionQueue.discard(vaultId: vaultId, in: db)
+                }
+                try db.execute(
+                    sql: "DELETE FROM sync_entity_state WHERE vaultId IN (\(vaultIds.map { _ in "?" }.joined(separator: ",")))",
+                    arguments: StatementArguments(vaultIds)
+                )
+                try db.execute(
+                    sql: """
+                    UPDATE vaults SET accountConnectionId = NULL, syncRole = NULL,
+                        syncConfirmedConnectionId = NULL, syncPullCursor = NULL,
+                        syncLastCommittedCursor = NULL
+                    WHERE accountConnectionId = ?
+                    """,
+                    arguments: [connectionID]
+                )
+            }
+            return
+        }
+
+        let meetingIds = try await dbQueue.read { db in
+            try UUID.fetchAll(
+                db,
+                sql: "SELECT id FROM meetings WHERE vaultId IN (\(vaultIds.map { _ in "?" }.joined(separator: ",")))",
+                arguments: StatementArguments(vaultIds)
+            )
+        }
+        let hasActiveRecording = if meetingIds.isEmpty {
+            false
+        } else {
+            try await dbQueue.read { db in
+                try Bool.fetchOne(
+                    db,
+                    sql: """
+                    SELECT EXISTS (
+                        SELECT 1 FROM recording_sessions
+                        WHERE meetingId IN (\(meetingIds.map { _ in "?" }.joined(separator: ",")))
+                          AND endedAt IS NULL
+                    )
+                    """,
+                    arguments: StatementArguments(meetingIds)
+                ) ?? false
+            }
+        }
+        guard !hasActiveRecording else { throw RecordingAudioStoreError.invalidState }
+        try ensureNoLiveSegmentedAudio(meetingIds: Set(meetingIds))
+        try await prepareSegmentedAudioForDeletion(meetingIds: Set(meetingIds), managedRootURL: managedRootURL)
+        let audioTargets = try vaultIds.flatMap {
+            try BatchAudioCleanupService.deletionTargets(vaultId: $0, dbQueue: dbQueue)
+        }
+        try await dbQueue.writeWithoutTransaction { db in
+            try db.inTransaction {
+                for vaultId in vaultIds {
+                    try SyncTransactionQueue.discard(vaultId: vaultId, in: db)
+                    try Self.deleteVaultRows(id: vaultId, in: db)
+                }
+                return .rollback
+            }
+        }
+        try BatchAudioCleanupService.deleteFiles(audioTargets)
+        try await dbQueue.write { db in
+            for vaultId in vaultIds {
+                try SyncTransactionQueue.discard(vaultId: vaultId, in: db)
+                try Self.deleteVaultRows(id: vaultId, in: db)
+            }
+        }
     }
 
     private nonisolated func ensureVaultCanBeRemoved(id: UUID) throws {

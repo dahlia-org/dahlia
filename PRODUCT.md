@@ -150,7 +150,7 @@ Dahlia の scope 外であり、妨げない。
   Vault 名、Project の名前・説明・階層、meeting metadata、summary、transcript 原文、screenshot、OCR、AI caption を双方向同期する。翻訳文と音声は同期しない
   ([ADR-0056](docs/adr/0056-add-owner-only-meeting-sync.md), [ADR-0066](docs/adr/0066-sync-vault-projects-and-separate-transcript-speakers.md), [ADR-0067](docs/adr/0067-use-domain-transactions-and-cursor-deltas-for-sync.md))。Server record は個人所有を維持し、owner が複数の特定 organization
   または特定 Team へ明示した場合だけ read-only 共有できる。Header認証のuserは固定`external` Organizationへ所属する
-  ([ADR-0065](docs/adr/0065-unify-header-sharing-with-external-organization-teams.md))。
+  ([ADR-0065](docs/adr/0065-unify-header-sharing-with-external-organization-teams.md))。サインインだけではローカルVaultをServerアカウントへ移さず、ユーザーがVault単位で明示的に移行する。ServerアカウントのVaultは常時同期し、サインアウト時はServer recordを残したままローカルworking copyを削除するかローカルアカウントへ移す。
 - Server の任意 Hybrid 検索は同期済み summary、OCR、AI caption と検索時の query 原文を設定済み embedding
   provider へ送信できる。Dahlia は query 原文を保存・ログ出力しない。
   vector は再生成可能な projection とし、未設定、再構築中、障害時も全文検索へ縮退してローカルの中核機能を妨げない
