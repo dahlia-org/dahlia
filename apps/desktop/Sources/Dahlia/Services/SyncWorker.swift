@@ -573,8 +573,14 @@ actor SyncWorker {
         in changes: [SyncChangePage.Change],
         target: SyncTarget
     ) async throws -> [SyncChangePage.Change]? {
-        guard changes.contains(where: { $0.entity == .project }),
-              !changes.contains(where: { $0.entity == .vault && $0.action == "reset" }) else {
+        guard try await Self.needsProjectReconciliation(
+            changes,
+            vaultId: target.vaultId,
+            dbQueue: dbQueue
+        ),
+            !changes.contains(where: {
+                $0.entity == .vault && $0.action == "reset"
+            }) else {
             return changes
         }
         let data = try await sendData(
@@ -594,6 +600,25 @@ actor SyncWorker {
             return nil
         }
         return changes.filter { $0.entity != .project }
+    }
+
+    static func needsProjectReconciliation(
+        _ changes: [SyncChangePage.Change],
+        vaultId: UUID,
+        dbQueue: DatabaseQueue
+    ) async throws -> Bool {
+        if changes.contains(where: { $0.entity == .project }) { return true }
+        let referencedProjectIDs = Set(changes.compactMap { change in
+            change.entity == .meeting && change.action == "upsert" ? change.record?.projectId : nil
+        })
+        guard !referencedProjectIDs.isEmpty else { return false }
+        return try await dbQueue.read { db in
+            try referencedProjectIDs.contains { projectID in
+                try ProjectRecord
+                    .filter(Column("id") == projectID && Column("vaultId") == vaultId)
+                    .fetchCount(db) == 0
+            }
+        }
     }
 
     private func loadChangePage(

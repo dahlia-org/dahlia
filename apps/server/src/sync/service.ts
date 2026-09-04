@@ -78,7 +78,9 @@ const summaryDocumentSchema = z.string().refine(
 const meetingCursorSchema = z.tuple([dateSchema, uuidSchema]);
 const screenshotCursorSchema = z.tuple([dateSchema, uuidSchema]);
 const transcriptCursorSchema = z.tuple([dateSchema, uuidSchema]);
-const uuidV7Schema = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+const uuidV7Schema = z.string()
+  .regex(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)
+  .transform((value) => value.toLowerCase());
 const transactionOperationSchema = z.object({
   id: uuidV7Schema,
   entity: z.enum(["vault", "project", "meeting", "summary", "transcript", "screenshot"]),

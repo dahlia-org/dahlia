@@ -1248,6 +1248,46 @@
         }
 
         @Test
+        func meetingDeltaReconcilesAReferencedProjectFromAnotherPage() async throws {
+            let (database, vault) = try await syncedDatabase()
+            let projectId = UUID.v7()
+            let meetingId = UUID.v7()
+            let record = try SyncJSON.decoder.decode(
+                SyncCanonicalPayload.self,
+                from: Data("{\"projectId\":\"\(projectId.uuidString.lowercased())\",\"name\":\"Meeting\"}".utf8)
+            )
+            let changes = [SyncChangePage.Change(
+                sequence: 1,
+                entity: .meeting,
+                entityId: meetingId,
+                action: "upsert",
+                revision: 1,
+                record: record
+            )]
+
+            #expect(try await SyncWorker.needsProjectReconciliation(
+                changes,
+                vaultId: vault.id,
+                dbQueue: database.dbQueue
+            ))
+            try await database.dbQueue.write { db in
+                try ProjectRecord(
+                    id: projectId,
+                    vaultId: vault.id,
+                    parentProjectId: nil,
+                    name: "Project",
+                    createdAt: .now,
+                    projectType: .undefined
+                ).insert(db)
+            }
+            #expect(try await !SyncWorker.needsProjectReconciliation(
+                changes,
+                vaultId: vault.id,
+                dbQueue: database.dbQueue
+            ))
+        }
+
+        @Test
         func recreatedVaultResetReconcilesRowsWithoutDeletingRetainedLocalData() async throws {
             let (database, vault) = try await syncedDatabase()
             let retainedProject = ProjectRecord(

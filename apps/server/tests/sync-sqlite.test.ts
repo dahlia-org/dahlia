@@ -661,6 +661,29 @@ describe("SQLite canonical sync", () => {
     await store.close?.();
   });
 
+  it("accepts Foundation-style uppercase UUIDv7 transaction identifiers", async () => {
+    const { store } = await setup();
+    const service = new MeetingSyncService(store.sync);
+    const response = await service.commitTransaction(owner, {
+      schemaVersion: 1,
+      id: "019D4A01-3100-7000-8000-000000000001",
+      vaultId: vaultId.toUpperCase(),
+      createdAt: now.toISOString(),
+      operations: [{
+        id: "019D4A01-3100-7000-8000-000000000002",
+        entity: "vault",
+        action: "create",
+        entityId: vaultId.toUpperCase(),
+        baseRevision: null,
+        data: { name: "Uppercase UUIDs", createdAt: now.toISOString() },
+      }],
+    });
+
+    expect(response.id).toBe("019d4a01-3100-7000-8000-000000000001");
+    expect(response.records[0]?.id).toBe(vaultId);
+    await store.close?.();
+  });
+
   it("bounds summary documents by their serialized byte size", async () => {
     const { store } = await setup();
     const operationId = "019d4a01-3500-7000-8000-000000000002";
