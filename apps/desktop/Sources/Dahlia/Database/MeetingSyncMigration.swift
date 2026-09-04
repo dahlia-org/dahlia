@@ -17,6 +17,8 @@ enum MeetingSyncMigration {
             table.add(column: "audioSource", .text)
         }
         try db.execute(sql: "UPDATE transcript_segments SET audioSource = speakerLabel, speakerLabel = NULL")
+        try db.execute(sql: "DROP INDEX IF EXISTS projects_unique_root_name")
+        try db.execute(sql: "DROP INDEX IF EXISTS projects_unique_child_name")
         try db.execute(sql: schemaSQL)
     }
 

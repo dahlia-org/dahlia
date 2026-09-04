@@ -508,9 +508,6 @@ CREATE INDEX `synced_transcript_vault_meeting_start_id_idx` ON `content_transcri
 CREATE UNIQUE INDEX `vault_permission_single_owner_idx` ON `core_vault_permissions` (`vault_id`) WHERE "core_vault_permissions"."role" = 'owner';--> statement-breakpoint
 CREATE INDEX `vault_permission_principal_vault_idx` ON `core_vault_permissions` (`principal_type`,`principal_id`,`role`,`vault_id`);
 --> statement-breakpoint
-CREATE UNIQUE INDEX `project_sibling_name_unique`
-ON `core_projects` (`vault_id`, coalesce(`parent_project_id`, '00000000-0000-0000-0000-000000000000'), lower(`name`));
---> statement-breakpoint
 CREATE INDEX `member_user_organization_idx` ON `member` (`user_id`,`organization_id`);
 --> statement-breakpoint
 CREATE INDEX `team_member_user_team_idx` ON `team_member` (`user_id`,`team_id`);

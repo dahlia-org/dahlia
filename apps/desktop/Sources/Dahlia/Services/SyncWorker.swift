@@ -875,15 +875,6 @@ enum RemoteChangeApplier {
             let removedIDs = Set(existingByID.keys).subtracting(incomingIDs)
 
             // Keep retained rows in place so local-only CRM references survive canonical refreshes.
-            // Temporary names make hierarchy/name swaps safe under the sibling uniqueness indexes.
-            for project in existing {
-                let temporaryName = "Sync-\(project.id.uuidString.lowercased())"
-                try db.execute(
-                    sql: "UPDATE projects SET name = ?, nameKey = ? WHERE id = ? AND vaultId = ?",
-                    arguments: [temporaryName, DahliaProjectName.siblingKey(temporaryName), project.id, vaultId]
-                )
-            }
-
             let roots = orderedProjects.filter { $0.parentProjectId == nil }
             let children = orderedProjects.filter { $0.parentProjectId != nil }
             for project in roots where existingByID[project.projectId] != nil {
@@ -1013,13 +1004,6 @@ enum RemoteChangeApplier {
                     try SyncTransactionQueue.discard(vaultId: vaultId, in: db)
                     try db.execute(sql: "DELETE FROM sync_entity_state WHERE vaultId = ?", arguments: [vaultId])
                     if let record = change.record {
-                        for project in try ProjectRecord.filter(Column("vaultId") == vaultId).fetchAll(db) {
-                            let name = "Sync-\(project.id.uuidString.lowercased())"
-                            try db.execute(
-                                sql: "UPDATE projects SET name = ?, nameKey = ? WHERE id = ? AND vaultId = ?",
-                                arguments: [name, DahliaProjectName.siblingKey(name), project.id, vaultId]
-                            )
-                        }
                         try upsert(change, record: record, screenshots: screenshots, transcripts: transcripts, vaultId: vaultId, in: db)
                     } else {
                         try db.execute(

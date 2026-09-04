@@ -234,8 +234,6 @@ ALTER TABLE "core"."vault_permissions" ADD CONSTRAINT "vault_permission_vault_fk
 ALTER TABLE "core"."vault_permissions" ADD CONSTRAINT "vault_permission_granted_by_user_fk" FOREIGN KEY ("granted_by_user_id") REFERENCES "auth"."user"("id") ON DELETE RESTRICT;--> statement-breakpoint
 ALTER TABLE "content"."transcript_patch_chunks" ADD CONSTRAINT "transcript_patch_chunk_meeting_fk" FOREIGN KEY ("vault_id","meeting_id") REFERENCES "content"."meetings"("vault_id","meeting_id") ON DELETE CASCADE;
 --> statement-breakpoint
-CREATE UNIQUE INDEX "project_sibling_name_unique" ON "core"."projects" ("vault_id", "parent_project_id", lower("name")) NULLS NOT DISTINCT;
---> statement-breakpoint
 CREATE INDEX "member_user_organization_idx" ON "auth"."member" ("user_id","organization_id");
 --> statement-breakpoint
 CREATE INDEX "team_member_user_team_idx" ON "auth"."team_member" ("user_id","team_id");

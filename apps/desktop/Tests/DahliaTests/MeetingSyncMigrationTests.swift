@@ -52,6 +52,17 @@
             #expect(stateVaultForeignKey?["table"] as String? == "vaults")
             #expect(stateVaultForeignKey?["from"] as String? == "vaultId")
             #expect(stateVaultForeignKey?["on_delete"] as String? == "CASCADE")
+            let projectNameIndexes = try database.dbQueue.read { db in
+                try Int.fetchOne(
+                    db,
+                    sql: """
+                    SELECT count(*) FROM sqlite_master
+                    WHERE type = 'index'
+                      AND name IN ('projects_unique_root_name', 'projects_unique_child_name')
+                    """
+                ) ?? 0
+            }
+            #expect(projectNameIndexes == 0)
         }
 
         @Test
@@ -1054,7 +1065,8 @@
                 createdAt: .now, updatedAt: .now
             )
             let omittedProject = ProjectRecord(
-                id: .v7(), vaultId: vault.id, parentProjectId: nil, name: "Omitted",
+                id: .v7(), vaultId: vault.id, parentProjectId: nil,
+                name: "Sync-\(retainedProject.id.uuidString.lowercased())",
                 createdAt: .now, projectType: .undefined
             )
             let omittedMeeting = MeetingRecord(

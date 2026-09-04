@@ -42,14 +42,14 @@ describe("SQLite canonical sync", () => {
     expect(await commit(store, owner, create)).toEqual(first);
     expect(first).toMatchObject({ status: "committed", records: [{ entity: "vault", revision: 1 }] });
 
-    const failed = transaction("019d4a01-0000-7000-8000-000000000003", [
+    const sameNamedProjects = transaction("019d4a01-0000-7000-8000-000000000003", [
       {
         id: "019d4a01-0000-7000-8000-000000000004",
         entity: "project",
         action: "create",
         entityId: projectId,
         baseRevision: null,
-        data: projectData("Straße"),
+        data: projectData("Same name"),
       },
       {
         id: "019d4a01-0000-7000-8000-000000000005",
@@ -57,15 +57,12 @@ describe("SQLite canonical sync", () => {
         action: "create",
         entityId: "019d3f46-8c00-7000-8000-000000000002",
         baseRevision: null,
-        data: projectData("STRASSE"),
+        data: projectData("Same name"),
       },
     ]);
-    await expect(commit(store, owner, failed)).rejects.toMatchObject({
-      status: 422,
-      code: "duplicate_project_name",
-      operationId: "019d4a01-0000-7000-8000-000000000005",
-    });
-    expect(await store.sync.withIdentity(owner, (sync) => sync.listProjects(vaultId))).toEqual([]);
+    await expect(commit(store, owner, sameNamedProjects)).resolves.toMatchObject({ status: "committed" });
+    expect(await store.sync.withIdentity(owner, (sync) => sync.listProjects(vaultId)))
+      .toHaveLength(2);
 
     await expect(commit(store, owner, { ...create, requestHash: "different-payload" }))
       .rejects.toMatchObject({ status: 409, code: "idempotency_key_reused" });
