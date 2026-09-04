@@ -730,7 +730,16 @@ function createIdentityStore(
         eq(schema.syncedProject.projectId, parentProjectId),
         ownerAccess(schema.syncedProject.vaultId),
       )).limit(1);
-    if (!parent || parent.parentProjectId) {
+    if (!parent) {
+      throw new SyncTransactionError(409, "revision_conflict", [{
+        entity: "project",
+        id: parentProjectId,
+        clientBaseRevision: null,
+        serverRevision: null,
+        record: null,
+      }], operationId);
+    }
+    if (parent.parentProjectId) {
       throw new SyncTransactionError(422, "invalid_project_parent", [], operationId);
     }
     const [child] = await db.select({ id: schema.syncedProject.projectId })
@@ -754,7 +763,13 @@ function createIdentityStore(
         eq(schema.syncedProject.projectId, projectId),
         ownerAccess(schema.syncedProject.vaultId),
       )).limit(1);
-    if (!project) throw new SyncTransactionError(422, "project_not_found", [], operationId);
+    if (!project) throw new SyncTransactionError(409, "revision_conflict", [{
+      entity: "project",
+      id: projectId,
+      clientBaseRevision: null,
+      serverRevision: null,
+      record: null,
+    }], operationId);
   }
 
   async function commitTransaction(transaction: SyncTransaction): Promise<SyncTransactionResponse> {
@@ -783,29 +798,41 @@ function createIdentityStore(
       const now = new Date();
       if (operation.entity === "vault") {
         if (operation.action === "create") {
-          const [existing] = await db.select({ id: schema.syncedVault.vaultId }).from(schema.syncedVault)
+          const [existing] = await db.select({
+            id: schema.syncedVault.vaultId,
+            revision: schema.syncedVault.revision,
+          }).from(schema.syncedVault)
             .where(eq(schema.syncedVault.vaultId, transaction.vaultId)).limit(1);
-          if (existing) throw new SyncTransactionError(409, "revision_conflict", [{
-            entity: "vault",
-            id: operation.entityId,
-            clientBaseRevision: null,
-            serverRevision: (await canonicalRecord("vault", transaction.vaultId, operation.entityId)).revision,
-            record: (await canonicalRecord("vault", transaction.vaultId, operation.entityId)).record,
-          }]);
-          await db.insert(schema.syncedVault).values({
-            vaultId: transaction.vaultId,
-            name: String(data.name),
-            revision: 1,
-            createdAt: data.createdAt as Date,
-            updatedAt: now,
-          });
-          await db.insert(schema.syncedVaultPermission).values({
-            vaultId: transaction.vaultId,
-            principalType: "user",
-            principalId: userPrincipalId,
-            role: "owner",
-            grantedByUserId: userPrincipalId,
-          });
+          if (existing?.revision === 0) {
+            await db.update(schema.syncedVault).set({
+              name: String(data.name),
+              revision: 1,
+              createdAt: data.createdAt as Date,
+              updatedAt: now,
+            }).where(ownedVault(transaction.vaultId));
+          } else {
+            if (existing) throw new SyncTransactionError(409, "revision_conflict", [{
+              entity: "vault",
+              id: operation.entityId,
+              clientBaseRevision: null,
+              serverRevision: (await canonicalRecord("vault", transaction.vaultId, operation.entityId)).revision,
+              record: (await canonicalRecord("vault", transaction.vaultId, operation.entityId)).record,
+            }]);
+            await db.insert(schema.syncedVault).values({
+              vaultId: transaction.vaultId,
+              name: String(data.name),
+              revision: 1,
+              createdAt: data.createdAt as Date,
+              updatedAt: now,
+            });
+            await db.insert(schema.syncedVaultPermission).values({
+              vaultId: transaction.vaultId,
+              principalType: "user",
+              principalId: userPrincipalId,
+              role: "owner",
+              grantedByUserId: userPrincipalId,
+            });
+          }
         } else if (operation.action === "update") {
           await assertRevision(transaction, "vault", operation.entityId, operation.baseRevision);
           await db.update(schema.syncedVault).set({
@@ -822,7 +849,15 @@ function createIdentityStore(
             if (screenshots.length) {
               await db.insert(schema.storageDeleteJob).values(screenshots).onConflictDoNothing();
             }
-            await db.delete(schema.syncedVault).where(ownedVault(transaction.vaultId));
+            if (data.preservePermissions === true) {
+              await db.delete(schema.searchIndexJob).where(eq(schema.searchIndexJob.vaultId, transaction.vaultId));
+              await db.delete(schema.syncedMeeting).where(eq(schema.syncedMeeting.vaultId, transaction.vaultId));
+              await db.delete(schema.syncedProject).where(eq(schema.syncedProject.vaultId, transaction.vaultId));
+              await db.update(schema.syncedVault).set({ revision: 0, updatedAt: now })
+                .where(ownedVault(transaction.vaultId));
+            } else {
+              await db.delete(schema.syncedVault).where(ownedVault(transaction.vaultId));
+            }
           }
           cursor = await appendChange(transaction, "vault", operation.entityId, "reset", null);
           records.push({ entity: "vault", id: operation.entityId, revision: null, record: null });
@@ -847,8 +882,9 @@ function createIdentityStore(
             updatedAt: now,
           });
         } else if (operation.action === "update") {
-          await assertRevision(transaction, "project", operation.entityId, operation.baseRevision);
           const parentProjectId = data.parentProjectId as string | null;
+          await assertRevision(transaction, "project", operation.entityId, operation.baseRevision,
+            parentProjectId ? [{ entity: "project", id: parentProjectId }] : []);
           await assertProjectHierarchy(transaction.vaultId, operation.entityId, parentProjectId, operation.id);
           await db.update(schema.syncedProject).set({
             parentProjectId,
@@ -909,8 +945,9 @@ function createIdentityStore(
             await db.insert(schema.syncedMeeting).values(values);
           }
         } else if (operation.action === "update") {
-          await assertRevision(transaction, "meeting", operation.entityId, operation.baseRevision);
           const projectId = data.projectId as string | null;
+          await assertRevision(transaction, "meeting", operation.entityId, operation.baseRevision,
+            projectId ? [{ entity: "project", id: projectId }] : []);
           await assertProjectReference(transaction.vaultId, projectId, operation.id);
           await db.update(schema.syncedMeeting).set({
             projectId,

@@ -244,13 +244,14 @@ describe("SQLite canonical sync", () => {
   it("starts a recreated Vault change feed after its latest reset", async () => {
     const { store } = await setup();
     await createVault(store);
+    await store.sync.withIdentity(owner, (sync) => sync.putMemberPermission(vaultId, "organization", "external"));
     await commit(store, owner, transaction("019d4a01-1100-7000-8000-000000000001", [{
       id: "019d4a01-1100-7000-8000-000000000002",
       entity: "vault",
       action: "reset",
       entityId: vaultId,
       baseRevision: 1,
-      data: {},
+      data: { preservePermissions: true },
     }]));
     const recreatedId = "019d4a01-1100-7000-8000-000000000003";
     await commit(store, owner, transaction(recreatedId, [{
@@ -268,6 +269,8 @@ describe("SQLite canonical sync", () => {
     expect(changes[1]).toMatchObject({ transactionId: recreatedId, action: "upsert", entity: "vault" });
     const existingClientChanges = await store.sync.withIdentity(owner, (sync) => sync.listChanges(vaultId, 1, 100, 100));
     expect(existingClientChanges.map(({ action }) => action)).toEqual(["reset", "upsert"]);
+    expect(await store.sync.withIdentity(owner, (sync) => sync.listPermissions(vaultId)))
+      .toContainEqual(expect.objectContaining({ principalType: "organization", principalId: "external" }));
     await store.close?.();
   });
 
@@ -515,7 +518,7 @@ describe("SQLite canonical sync", () => {
     await store.close?.();
   });
 
-  it("rejects project hierarchies deeper than two levels and missing meeting projects", async () => {
+  it("rejects deep project hierarchies and reports missing project dependencies as conflicts", async () => {
     const { store } = await setup();
     await createVault(store);
     const childId = "019d4a01-2800-7000-8000-000000000001";
@@ -560,9 +563,63 @@ describe("SQLite canonical sync", () => {
       baseRevision: null,
       data: meetingData(),
     }]))).rejects.toMatchObject({
-      status: 422,
-      code: "project_not_found",
+      status: 409,
+      code: "revision_conflict",
       operationId: "019d4a01-2800-7000-8000-000000000008",
+      conflicts: [{ entity: "project", id: projectId, serverRevision: null }],
+    });
+    await store.close?.();
+  });
+
+  it("includes a missing parent when a deleted child Project is reapplied", async () => {
+    const { store } = await setup();
+    await createVault(store);
+    const childId = "019d4a01-2900-7000-8000-000000000001";
+    await commit(store, owner, transaction("019d4a01-2900-7000-8000-000000000002", [{
+      id: "019d4a01-2900-7000-8000-000000000003",
+      entity: "project",
+      action: "create",
+      entityId: projectId,
+      baseRevision: null,
+      data: projectData("Root"),
+    }, {
+      id: "019d4a01-2900-7000-8000-000000000004",
+      entity: "project",
+      action: "create",
+      entityId: childId,
+      baseRevision: null,
+      data: { ...projectData("Child"), parentProjectId: projectId, projectType: null },
+    }]));
+    await commit(store, owner, transaction("019d4a01-2900-7000-8000-000000000005", [{
+      id: "019d4a01-2900-7000-8000-000000000006",
+      entity: "project",
+      action: "delete",
+      entityId: childId,
+      baseRevision: 1,
+      data: {},
+    }, {
+      id: "019d4a01-2900-7000-8000-000000000007",
+      entity: "project",
+      action: "delete",
+      entityId: projectId,
+      baseRevision: 1,
+      data: {},
+    }]));
+
+    await expect(commit(store, owner, transaction("019d4a01-2900-7000-8000-000000000008", [{
+      id: "019d4a01-2900-7000-8000-000000000009",
+      entity: "project",
+      action: "update",
+      entityId: childId,
+      baseRevision: 1,
+      data: { ...projectData("Child"), parentProjectId: projectId, projectType: null },
+    }]))).rejects.toMatchObject({
+      status: 409,
+      code: "revision_conflict",
+      conflicts: [
+        { entity: "project", id: childId, serverRevision: null },
+        { entity: "project", id: projectId, serverRevision: null },
+      ],
     });
     await store.close?.();
   });

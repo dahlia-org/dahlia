@@ -7,6 +7,11 @@ private struct SyncHTTPError: Error {
     let status: Int
     let body: Data
 
+    var code: String? {
+        guard let object = try? JSONSerialization.jsonObject(with: body) as? [String: String] else { return nil }
+        return object["error"]
+    }
+
     var blockedReason: SyncBlockedReason? {
         switch status {
         case 401, 403: .authorization
@@ -464,6 +469,11 @@ actor SyncWorker {
                 try await pullRemoteChanges(for: target)
             } catch is CancellationError {
                 throw CancellationError()
+            } catch let error as SyncHTTPError where error.status == 404 && error.code == "vault_not_found" {
+                try await SyncTransactionQueue.removeRevokedMemberVault(
+                    vaultId: target.vaultId,
+                    dbQueue: dbQueue
+                )
             } catch {
                 continue
             }

@@ -49,7 +49,7 @@ enum SyncInitialSnapshotBuilder {
             if restoring {
                 try SyncTransactionRecorder.record(
                     vaultId: vaultId,
-                    operations: [SyncOperationDraft(entity: .vault, action: .reset, entityId: vaultId)],
+                    operations: [restoreResetOperation(vaultId: vaultId)],
                     allowAfterReset: true,
                     connectionIdOverride: connectionId,
                     in: db
@@ -311,7 +311,7 @@ enum SyncInitialSnapshotBuilder {
                 try db.execute(sql: "DELETE FROM sync_entity_state WHERE vaultId = ?", arguments: [vaultId])
                 try SyncTransactionRecorder.record(
                     vaultId: vaultId,
-                    operations: [SyncOperationDraft(entity: .vault, action: .reset, entityId: vaultId)],
+                    operations: [restoreResetOperation(vaultId: vaultId)],
                     in: db
                 )
                 try db.execute(
@@ -345,6 +345,15 @@ enum SyncInitialSnapshotBuilder {
             db,
             sql: "SELECT EXISTS(SELECT 1 FROM recording_sessions WHERE endedAt IS NULL)"
         ) ?? false
+    }
+
+    private static func restoreResetOperation(vaultId: UUID) throws -> SyncOperationDraft {
+        try SyncOperationDraft(
+            entity: .vault,
+            action: .reset,
+            entityId: vaultId,
+            payloadJSON: SyncJSON.encoder.encode(["preservePermissions": true])
+        )
     }
 
     static func meetingOperation(_ meeting: MeetingRecord, action: SyncAction) throws -> SyncOperationDraft {

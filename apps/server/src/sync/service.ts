@@ -97,7 +97,7 @@ const transactionSchema = z.object({
 const transactionDataSchemas = {
   "vault:create": z.object({ name: z.string().trim().min(1), createdAt: dateSchema }).strict(),
   "vault:update": z.object({ name: z.string().trim().min(1) }).strict(),
-  "vault:reset": z.object({}).strict(),
+  "vault:reset": z.object({ preservePermissions: z.boolean().optional() }).strict(),
   "project:create": z.object({ parentProjectId: uuidSchema.nullable(), name: projectNameSchema, description: z.string().max(20_000).default(""), projectType: projectTypeSchema.nullable(), createdAt: dateSchema }).strict(),
   "project:update": z.object({ parentProjectId: uuidSchema.nullable(), name: projectNameSchema, description: z.string().max(20_000).default(""), projectType: projectTypeSchema.nullable() }).strict(),
   "project:delete": z.object({}).strict(),

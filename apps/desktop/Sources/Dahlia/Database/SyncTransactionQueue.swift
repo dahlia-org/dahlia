@@ -737,8 +737,17 @@ enum SyncTransactionQueue {
         }
     }
 
-    static func reapplyLocalVersion(vaultId: UUID, dbQueue: DatabaseQueue) async throws {
+    static func removeRevokedMemberVault(vaultId: UUID, dbQueue: DatabaseQueue) async throws {
         try await dbQueue.write { db in
+            try db.execute(
+                sql: "DELETE FROM vaults WHERE id = ? AND syncRole = 'member'",
+                arguments: [vaultId]
+            )
+        }
+    }
+
+    static func reapplyLocalVersion(vaultId: UUID, dbQueue: DatabaseQueue) async throws {
+        let rebuildVault = try await dbQueue.write { db -> Bool in
             guard let first = try Row.fetchOne(
                 db,
                 sql: """
@@ -746,10 +755,24 @@ enum SyncTransactionQueue {
                 WHERE vaultId = ? AND blockedReason IS NOT NULL ORDER BY sequence LIMIT 1
                 """,
                 arguments: [vaultId]
-            ) else { return }
+            ) else { return false }
             let sequence: Int64 = first["sequence"]
             let response: String? = first["serverResponseJSON"]
             let directMissingEntities = missingConflictEntities(response)
+            if directMissingEntities.contains(.init(entity: .vault, id: vaultId)) {
+                try discard(vaultId: vaultId, in: db)
+                try db.execute(sql: "DELETE FROM sync_entity_state WHERE vaultId = ?", arguments: [vaultId])
+                try db.execute(
+                    sql: """
+                    UPDATE vaults SET syncConfirmedConnectionId = NULL,
+                        syncPullCursor = NULL, syncLastCommittedCursor = NULL
+                    WHERE id = ?
+                    """,
+                    arguments: [vaultId]
+                )
+                return true
+            }
+            let missingProjects = Set(directMissingEntities.filter { $0.entity == .project })
             let missingMeetings = Set(directMissingEntities.compactMap { conflict in
                 switch conflict.entity {
                 case .meeting, .summary, .transcript:
@@ -772,6 +795,10 @@ enum SyncTransactionQueue {
                 arguments: [vaultId, sequence]
             )
             var queued: [RequeuedTransaction] = []
+            let projectOperations = try missingProjectOperations(missingProjects, in: db)
+            if !projectOperations.isEmpty {
+                queued.append(.init(operations: projectOperations, segments: [:], deletions: [:], attachments: [:]))
+            }
             var restoredMeetings = Set<UUID>()
             let meetingOperations = try missingMeetings.compactMap { missing -> SyncOperationDraft? in
                 guard let meeting = try MeetingRecord.fetchOne(db, key: missing.id) else { return nil }
@@ -801,6 +828,7 @@ enum SyncTransactionQueue {
                     let action: SyncAction = row["action"]
                     let entityId: UUID = row["entityId"]
                     let key = MissingConflictEntity(entity: entity, id: entityId)
+                    if missingProjects.contains(key) { continue }
                     if missingMeetings.contains(key) { continue }
                     if directMissingEntities.contains(key),
                        entity == .summary || entity == .transcript,
@@ -863,7 +891,26 @@ enum SyncTransactionQueue {
                     in: db
                 )
             }
+            return false
         }
+        if rebuildVault {
+            try await SyncInitialSnapshotBuilder.enqueuePending(dbQueue: dbQueue)
+        }
+    }
+
+    private static func missingProjectOperations(
+        _ missingProjects: Set<MissingConflictEntity>,
+        in db: Database
+    ) throws -> [SyncOperationDraft] {
+        try missingProjects.compactMap { missing -> (ProjectRecord, SyncOperationDraft)? in
+            guard let project = try ProjectRecord.fetchOne(db, key: missing.id) else { return nil }
+            return try (project, SyncInitialSnapshotBuilder.projectOperation(project, action: .create))
+        }.sorted { left, right in
+            if (left.0.parentProjectId == nil) != (right.0.parentProjectId == nil) {
+                return left.0.parentProjectId == nil
+            }
+            return left.0.id.uuidString < right.0.id.uuidString
+        }.map(\.1)
     }
 
     private static func loadPatch(operationId: UUID, in db: Database) throws -> SyncTranscriptPatchSnapshot {

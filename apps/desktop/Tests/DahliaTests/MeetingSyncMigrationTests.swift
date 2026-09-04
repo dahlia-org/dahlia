@@ -249,6 +249,112 @@
         }
 
         @Test
+        func reapplyingADeletedChildProjectRestoresItsMissingParentFirst() async throws {
+            let (database, vault) = try await syncedDatabase()
+            let root = ProjectRecord(
+                id: .v7(), vaultId: vault.id, parentProjectId: nil, name: "Root",
+                createdAt: .now, projectType: .undefined
+            )
+            let child = ProjectRecord(
+                id: .v7(), vaultId: vault.id, parentProjectId: root.id, name: "Child",
+                createdAt: .now, projectType: nil
+            )
+            try await database.dbQueue.write { db in
+                try root.insert(db)
+                try child.insert(db)
+                try db.execute(
+                    sql: """
+                    INSERT INTO sync_entity_state(vaultId, entity, entityId, confirmedRevision)
+                    VALUES (?, 'project', ?, 2), (?, 'project', ?, 2)
+                    """,
+                    arguments: [vault.id, root.id, vault.id, child.id]
+                )
+                try SyncTransactionRecorder.record(
+                    vaultId: vault.id,
+                    operations: [SyncInitialSnapshotBuilder.projectOperation(child, action: .update)],
+                    in: db
+                )
+            }
+            let claimed = try #require(try await SyncTransactionQueue.claim(dbQueue: database.dbQueue))
+            try await SyncTransactionQueue.block(
+                claimed,
+                reason: .conflict,
+                response: Data("""
+                {"conflicts":[
+                  {"entity":"project","id":"\(child.id.uuidString)","serverRevision":null,"record":null},
+                  {"entity":"project","id":"\(root.id.uuidString)","serverRevision":null,"record":null}
+                ]}
+                """.utf8),
+                dbQueue: database.dbQueue
+            )
+
+            try await SyncTransactionQueue.reapplyLocalVersion(vaultId: vault.id, dbQueue: database.dbQueue)
+
+            let operations = try database.dbQueue.read { db in
+                try Row.fetchAll(
+                    db,
+                    sql: """
+                    SELECT o.entityId, o.action FROM sync_operations o
+                    JOIN sync_transactions t ON t.id = o.transactionId
+                    WHERE t.vaultId = ? ORDER BY t.sequence, o.position
+                    """,
+                    arguments: [vault.id]
+                )
+            }
+            #expect(operations.count == 2)
+            #expect(operations[0]["entityId"] as UUID == root.id)
+            #expect(operations[0]["action"] as String == "create")
+            #expect(operations[1]["entityId"] as UUID == child.id)
+            #expect(operations[1]["action"] as String == "create")
+        }
+
+        @Test
+        func reapplyingADeletedVaultQueuesTheCompleteLocalSnapshot() async throws {
+            let (database, vault) = try await syncedDatabase()
+            let project = ProjectRecord(
+                id: .v7(), vaultId: vault.id, parentProjectId: nil, name: "Project",
+                createdAt: .now, projectType: .undefined
+            )
+            let meeting = MeetingRecord(
+                id: .v7(), vaultId: vault.id, projectId: project.id, name: "Meeting",
+                createdAt: .now, updatedAt: .now
+            )
+            try await database.dbQueue.write { db in
+                try project.insert(db)
+                try meeting.insert(db)
+                try SyncTransactionRecorder.record(
+                    vaultId: vault.id,
+                    operations: [SyncInitialSnapshotBuilder.vaultOperation(vault, action: .update)],
+                    in: db
+                )
+            }
+            let claimed = try #require(try await SyncTransactionQueue.claim(dbQueue: database.dbQueue))
+            try await SyncTransactionQueue.block(
+                claimed,
+                reason: .conflict,
+                response: Data("""
+                {"conflicts":[{"entity":"vault","id":"\(vault.id.uuidString)","serverRevision":null,"record":null}]}
+                """.utf8),
+                dbQueue: database.dbQueue
+            )
+
+            try await SyncTransactionQueue.reapplyLocalVersion(vaultId: vault.id, dbQueue: database.dbQueue)
+
+            let entities = try await database.dbQueue.read { db in
+                try String.fetchAll(
+                    db,
+                    sql: """
+                    SELECT o.entity FROM sync_operations o
+                    JOIN sync_transactions t ON t.id = o.transactionId
+                    WHERE t.vaultId = ? ORDER BY t.sequence, o.position
+                    """,
+                    arguments: [vault.id]
+                )
+            }
+            #expect(entities == ["vault", "project", "meeting"])
+        }
+
+        @Test
         func reapplyingADeletedMeetingRestoresItBeforeItsSummary() async throws {
             let (database, vault) = try await syncedDatabase()
             let meeting = MeetingRecord(
@@ -449,6 +555,27 @@
             #expect(try await database.dbQueue.read { db in
                 try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_transactions")
             } == 0)
+        }
+
+        @Test
+        func revokedMemberVaultIsRemovedFromTheWorkingCopy() async throws {
+            let (database, originalVault) = try await syncedDatabase()
+            var memberVault = originalVault
+            memberVault.syncRole = "member"
+            let vault = memberVault
+            let meeting = MeetingRecord(
+                id: .v7(), vaultId: vault.id, projectId: nil, name: "Shared",
+                createdAt: .now, updatedAt: .now
+            )
+            try await database.dbQueue.write { db in
+                try vault.update(db)
+                try meeting.insert(db)
+            }
+
+            try await SyncTransactionQueue.removeRevokedMemberVault(vaultId: vault.id, dbQueue: database.dbQueue)
+
+            #expect(try await database.dbQueue.read { db in try VaultRecord.fetchOne(db, key: vault.id) } == nil)
+            #expect(try await database.dbQueue.read { db in try MeetingRecord.fetchOne(db, key: meeting.id) } == nil)
         }
 
         @Test
