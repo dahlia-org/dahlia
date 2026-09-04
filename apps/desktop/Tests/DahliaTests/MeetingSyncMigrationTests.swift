@@ -1017,6 +1017,72 @@
         }
 
         @Test
+        func freshPullKeepsResetBeforeTheRecreatedCanonicalState() throws {
+            let vaultId = UUID.v7()
+            let staleMeetingId = UUID.v7()
+            let projectId = UUID.v7()
+            let resetRecord = try SyncJSON.decoder.decode(
+                SyncCanonicalPayload.self,
+                from: Data("{\"name\":\"Restored\"}".utf8)
+            )
+            let projectRecord = try SyncJSON.decoder.decode(
+                SyncCanonicalPayload.self,
+                from: Data("{\"name\":\"Current\",\"createdAt\":\"2026-09-03T00:00:00.000Z\"}".utf8)
+            )
+
+            let changes = SyncWorker.initialSnapshotChanges([
+                .init(sequence: 1, entity: .meeting, entityId: staleMeetingId, action: "upsert", revision: 1, record: nil),
+                .init(sequence: 2, entity: .vault, entityId: vaultId, action: "reset", revision: 1, record: resetRecord),
+                .init(sequence: 3, entity: .vault, entityId: vaultId, action: "upsert", revision: 1, record: resetRecord),
+                .init(sequence: 4, entity: .project, entityId: projectId, action: "upsert", revision: 1, record: projectRecord),
+            ])
+
+            #expect(changes.map(\.action) == ["reset", "upsert", "upsert"])
+            #expect(changes.map(\.entityId) == [vaultId, vaultId, projectId])
+            #expect(!changes.contains { $0.entityId == staleMeetingId })
+        }
+
+        @Test
+        func recreatedVaultResetClearsStaleCanonicalRowsWithoutDisconnecting() async throws {
+            let (database, vault) = try await syncedDatabase()
+            let staleProject = ProjectRecord(
+                id: .v7(), vaultId: vault.id, parentProjectId: nil, name: "Stale",
+                createdAt: .now, projectType: .undefined
+            )
+            let staleMeeting = MeetingRecord(
+                id: .v7(), vaultId: vault.id, projectId: staleProject.id, name: "Stale",
+                createdAt: .now, updatedAt: .now
+            )
+            let record = try SyncJSON.decoder.decode(
+                SyncCanonicalPayload.self,
+                from: Data("{\"name\":\"Restored\"}".utf8)
+            )
+            try await database.dbQueue.write { db in
+                try staleProject.insert(db)
+                try staleMeeting.insert(db)
+            }
+
+            #expect(try await RemoteChangeApplier.apply(
+                [.init(sequence: 2, entity: .vault, entityId: vault.id, action: "reset", revision: 1, record: record)],
+                screenshots: [:], transcripts: [:], cursor: "reset-cursor",
+                vaultId: vault.id, dbQueue: database.dbQueue
+            ))
+            let state = try await database.dbQueue.read { db in
+                try (
+                    VaultRecord.fetchOne(db, key: vault.id),
+                    Int.fetchOne(db, sql: "SELECT count(*) FROM projects WHERE vaultId = ?", arguments: [vault.id]),
+                    Int.fetchOne(db, sql: "SELECT count(*) FROM meetings WHERE vaultId = ?", arguments: [vault.id])
+                )
+            }
+            #expect(state.0?.name == "Restored")
+            #expect(state.0?.syncEnabled == true)
+            #expect(state.0?.syncConfirmedConnectionId == vault.syncConfirmedConnectionId)
+            #expect(state.0?.syncPullCursor == "reset-cursor")
+            #expect(state.1 == 0)
+            #expect(state.2 == 0)
+        }
+
+        @Test
         func freshPullReconcilesExistingProjectsBeforeApplyingCanonicalHierarchy() async throws {
             let (database, vault) = try await syncedDatabase()
             let firstRoot = UUID.v7()

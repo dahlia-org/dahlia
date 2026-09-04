@@ -266,10 +266,38 @@ describe("SQLite canonical sync", () => {
     }]));
 
     const changes = await store.sync.withIdentity(owner, (sync) => sync.listChanges(vaultId, 0, 100, 100));
-    expect(changes).toHaveLength(1);
-    expect(changes[0]).toMatchObject({ transactionId: recreatedId, action: "upsert", entity: "vault" });
+    expect(changes).toHaveLength(2);
+    expect(changes[0]).toMatchObject({ action: "reset", entity: "vault", record: { name: "Restored" } });
+    expect(changes[1]).toMatchObject({ transactionId: recreatedId, action: "upsert", entity: "vault" });
     const existingClientChanges = await store.sync.withIdentity(owner, (sync) => sync.listChanges(vaultId, 1, 100, 100));
-    expect(existingClientChanges.map(({ action }) => action)).toEqual(["upsert"]);
+    expect(existingClientChanges.map(({ action }) => action)).toEqual(["reset", "upsert"]);
+    await store.close?.();
+  });
+
+  it("reports a deleted Vault reset after the previous owner cursor", async () => {
+    const { store } = await setup();
+    await createVault(store);
+    const service = new MeetingSyncService(store.sync);
+    const beforeReset = await service.listChanges(owner, vaultId);
+    const resetId = "019d4a01-1150-7000-8000-000000000001";
+    await commit(store, owner, transaction(resetId, [{
+      id: "019d4a01-1150-7000-8000-000000000002",
+      entity: "vault",
+      action: "reset",
+      entityId: vaultId,
+      baseRevision: 1,
+      data: {},
+    }]));
+
+    const afterReset = await service.listChanges(owner, vaultId, beforeReset.cursor);
+    expect(afterReset.items).toHaveLength(1);
+    expect(afterReset.items[0]).toMatchObject({
+      transactionId: resetId,
+      action: "reset",
+      entity: "vault",
+      record: null,
+    });
+    expect(afterReset.cursor).not.toBe(beforeReset.cursor);
     await store.close?.();
   });
 

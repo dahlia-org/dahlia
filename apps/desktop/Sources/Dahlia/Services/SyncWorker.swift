@@ -453,6 +453,7 @@ actor SyncWorker {
             var cursor: String?
             var highWaterCursor: String?
             var changes: [String: SyncChangePage.Change] = [:]
+            var reset: SyncChangePage.Change?
             repeat {
                 let page = try await loadChangePage(
                     target: target,
@@ -460,13 +461,18 @@ actor SyncWorker {
                     highWaterCursor: highWaterCursor
                 )
                 for change in page.items {
+                    if change.entity == .vault, change.action == "reset" {
+                        reset = change
+                        changes.removeAll()
+                        continue
+                    }
                     changes["\(change.entity.rawValue):\(change.entityId.uuidString)"] = change
                 }
                 cursor = page.cursor
                 highWaterCursor = page.highWaterCursor
                 if !page.hasMore { break }
             } while true
-            let snapshot = Self.initialSnapshotChanges(Array(changes.values))
+            let snapshot = Self.initialSnapshotChanges((reset.map { [$0] } ?? []) + Array(changes.values))
             guard let applicable = try await reconcilingProjects(in: snapshot, target: target) else {
                 return
             }
@@ -563,7 +569,7 @@ actor SyncWorker {
                 dbQueue: dbQueue
             ) else { return false }
             let appliedCursor = index == changes.indices.last ? cursor : nil
-            if try await SyncTransactionQueue.isConfirmed(
+            if change.action != "reset", try await SyncTransactionQueue.isConfirmed(
                 vaultId: target.vaultId,
                 entity: change.entity,
                 entityId: change.entityId,
@@ -592,11 +598,9 @@ actor SyncWorker {
     }
 
     static func initialSnapshotChanges(_ changes: [SyncChangePage.Change]) -> [SyncChangePage.Change] {
-        if let reset = changes.last(where: { $0.entity == .vault && $0.action == "reset" }) {
-            return [reset]
-        }
+        let reset = changes.filter { $0.entity == .vault && $0.action == "reset" }.max { $0.sequence < $1.sequence }
         var current: [String: SyncChangePage.Change] = [:]
-        for change in changes {
+        for change in changes where change.action != "reset" && change.sequence > (reset?.sequence ?? 0) {
             current["\(change.entity.rawValue):\(change.entityId.uuidString)"] = change
         }
         let upserts = current.values.filter { $0.action == "upsert" && $0.record != nil }
@@ -620,7 +624,7 @@ actor SyncWorker {
             upserts.filter { $0.entity == entity }.sorted { $0.entityId.uuidString < $1.entityId.uuidString }
         }
         let deletes = current.values.filter { $0.action == "delete" }.sorted { $0.sequence < $1.sequence }
-        return sorted(.vault) + orderedProjects + sorted(.meeting) + sorted(.summary)
+        return (reset.map { [$0] } ?? []) + sorted(.vault) + orderedProjects + sorted(.meeting) + sorted(.summary)
             + sorted(.transcript) + sorted(.screenshot) + deletes
     }
 
@@ -936,6 +940,10 @@ enum RemoteChangeApplier {
             if changes.contains(where: { $0.entity == .transcript }), try hasActiveRecording(in: db) {
                 return false
             }
+            if changes.contains(where: { $0.action == "reset" && $0.record != nil }),
+               try hasActiveRecording(in: db) {
+                return false
+            }
             let deletingActiveMeeting = try changes.contains { change in
                 guard change.entity == .meeting, change.action == "delete" else { return false }
                 return try Bool.fetchOne(
@@ -956,15 +964,21 @@ enum RemoteChangeApplier {
                 } else if change.action == "reset" {
                     try SyncTransactionQueue.discard(vaultId: vaultId, in: db)
                     try db.execute(sql: "DELETE FROM sync_entity_state WHERE vaultId = ?", arguments: [vaultId])
-                    try db.execute(
-                        sql: """
-                        UPDATE vaults SET syncEnabled = 0, syncConfirmedConnectionId = NULL,
-                            syncPullCursor = NULL, syncLastCommittedCursor = NULL
-                        WHERE id = ?
-                        """,
-                        arguments: [vaultId]
-                    )
-                    return true
+                    if let record = change.record {
+                        try db.execute(sql: "DELETE FROM meetings WHERE vaultId = ?", arguments: [vaultId])
+                        try db.execute(sql: "DELETE FROM projects WHERE vaultId = ?", arguments: [vaultId])
+                        try upsert(change, record: record, screenshots: screenshots, transcripts: transcripts, vaultId: vaultId, in: db)
+                    } else {
+                        try db.execute(
+                            sql: """
+                            UPDATE vaults SET syncEnabled = 0, syncConfirmedConnectionId = NULL,
+                                syncPullCursor = NULL, syncLastCommittedCursor = NULL
+                            WHERE id = ?
+                            """,
+                            arguments: [vaultId]
+                        )
+                        return true
+                    }
                 } else if let record = change.record {
                     try upsert(change, record: record, screenshots: screenshots, transcripts: transcripts, vaultId: vaultId, in: db)
                 }

@@ -1199,32 +1199,33 @@ function createIdentityStore(
         eq(schema.syncedVaultPermission.role, "owner"),
       ))
       .where(and(readable(schema.syncedVault.vaultId), eq(schema.syncedVault.vaultId, vaultId))).limit(1);
-    const resetExists = await db.select({ id: schema.syncChange.sequence }).from(schema.syncChange).where(and(
-      eq(schema.syncChange.vaultId, vaultId),
-      eq(schema.syncChange.ownerUserId, userPrincipalId),
-      eq(schema.syncChange.action, "reset"),
-      gt(schema.syncChange.sequence, after),
-    )).limit(1);
-    if (!vault && resetExists.length === 0) throw new SyncTransactionError(404, "vault_not_found");
-    const [latestReset] = vault ? await db.select({ sequence: schema.syncChange.sequence })
+    const ledgerOwnerUserId = vault?.ownerUserId ?? userPrincipalId;
+    const [latestReset] = await db.select({
+      sequence: schema.syncChange.sequence,
+      revision: schema.syncChange.revision,
+      transactionId: schema.syncChange.transactionId,
+    })
       .from(schema.syncChange).where(and(
         eq(schema.syncChange.vaultId, vaultId),
-        eq(schema.syncChange.ownerUserId, vault.ownerUserId),
+        eq(schema.syncChange.ownerUserId, ledgerOwnerUserId),
         eq(schema.syncChange.action, "reset"),
+        gt(schema.syncChange.sequence, after),
         lte(schema.syncChange.sequence, through),
-      )).orderBy(desc(schema.syncChange.sequence)).limit(1) : [];
-    const effectiveAfter = after === 0 ? Number(latestReset?.sequence ?? 0) : after;
+      )).orderBy(desc(schema.syncChange.sequence)).limit(1);
+    if (!vault && !latestReset) throw new SyncTransactionError(404, "vault_not_found");
+    const effectiveAfter = Number(latestReset?.sequence ?? after);
     const latestChanges = db.select({
       entity: schema.syncChange.entity,
       entityId: schema.syncChange.entityId,
       sequence: sql<number>`max(${schema.syncChange.sequence})`.as("sequence"),
     }).from(schema.syncChange).where(and(
       eq(schema.syncChange.vaultId, vaultId),
-      eq(schema.syncChange.ownerUserId, vault?.ownerUserId ?? userPrincipalId),
+      eq(schema.syncChange.ownerUserId, ledgerOwnerUserId),
       gt(schema.syncChange.sequence, effectiveAfter),
       lte(schema.syncChange.sequence, through),
     )).groupBy(schema.syncChange.entity, schema.syncChange.entityId).as("latest_changes");
-    const rows = await db.select({
+    const rowLimit = Math.max(0, limit - (latestReset ? 1 : 0));
+    const rows = rowLimit === 0 ? [] : await db.select({
       sequence: schema.syncChange.sequence,
       ownerUserId: schema.syncChange.ownerUserId,
       vaultId: schema.syncChange.vaultId,
@@ -1238,9 +1239,33 @@ function createIdentityStore(
       eq(schema.syncChange.entity, latestChanges.entity),
       eq(schema.syncChange.entityId, latestChanges.entityId),
       eq(schema.syncChange.sequence, latestChanges.sequence),
-    )).orderBy(asc(schema.syncChange.sequence)).limit(limit);
+    )).orderBy(asc(schema.syncChange.sequence)).limit(rowLimit);
     const changes: SyncChangeRecord[] = [];
     const canonicalRecords = new Map<string, SyncCanonicalRecord>();
+    if (latestReset) {
+      const [recreated] = vault ? await db.select({ sequence: schema.syncChange.sequence })
+        .from(schema.syncChange).where(and(
+          eq(schema.syncChange.vaultId, vaultId),
+          eq(schema.syncChange.ownerUserId, ledgerOwnerUserId),
+          eq(schema.syncChange.entity, "vault"),
+          eq(schema.syncChange.action, "upsert"),
+          gt(schema.syncChange.sequence, latestReset.sequence),
+          lte(schema.syncChange.sequence, through),
+        )).limit(1) : [];
+      const canonical = recreated
+        ? await canonicalRecord("vault", vaultId, vaultId, "read")
+        : null;
+      changes.push({
+        sequence: latestReset.sequence,
+        vaultId,
+        entity: "vault",
+        entityId: vaultId,
+        action: "reset",
+        revision: canonical?.revision ?? latestReset.revision,
+        transactionId: latestReset.transactionId,
+        record: canonical?.record ?? null,
+      });
+    }
     for (const row of rows) {
       let canonical: SyncCanonicalRecord | null = null;
       if (row.action !== "reset") {
@@ -1266,7 +1291,10 @@ function createIdentityStore(
   async function latestChangeSequence(vaultId?: string): Promise<number> {
     const [row] = await db.select({ sequence: sql<number>`coalesce(max(${schema.syncChange.sequence}), 0)` })
       .from(schema.syncChange).where(and(
-        readable(schema.syncChange.vaultId),
+        or(
+          eq(schema.syncChange.ownerUserId, userPrincipalId),
+          readable(schema.syncChange.vaultId),
+        ),
         ...(vaultId ? [eq(schema.syncChange.vaultId, vaultId)] : []),
       ));
     return Number(row?.sequence ?? 0);
