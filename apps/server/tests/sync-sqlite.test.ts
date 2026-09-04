@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -995,13 +995,54 @@ describe("SQLite canonical sync", () => {
     database.close();
     await store.close?.();
   });
+
+  it("commits search reconciliation one page at a time", async () => {
+    const { databasePath, store } = await setup({ model: "model", dimensions: 32 });
+    await createVault(store);
+    await commit(store, owner, transaction("019d4a01-4400-7000-8000-000000000001", [
+      {
+        id: "019d4a01-4400-7000-8000-000000000002",
+        entity: "project",
+        action: "create",
+        entityId: projectId,
+        baseRevision: null,
+        data: projectData("Project"),
+      },
+      {
+        id: "019d4a01-4400-7000-8000-000000000003",
+        entity: "meeting",
+        action: "create",
+        entityId: meetingId,
+        baseRevision: null,
+        data: meetingData(),
+      },
+    ]));
+    const database = new DatabaseSync(databasePath);
+    const insert = database.prepare(`
+      INSERT INTO content_search_documents
+        (document_id, vault_id, meeting_id, kind, search_text, embedding_text, embedding_content_hash)
+      VALUES (?, ?, ?, 'meeting', '', 'summary', 'hash')
+    `);
+    database.exec("BEGIN");
+    for (let index = 0; index < 501; index += 1) {
+      insert.run(`document-${index.toString().padStart(3, "0")}`, vaultId, meetingId);
+    }
+    database.exec("COMMIT");
+    database.close();
+
+    const prepare = vi.spyOn(DatabaseSync.prototype, "prepare");
+    await store.searchIndex!.reconcile("model", 32);
+    expect(prepare.mock.calls.filter(([statement]) => statement === "begin")).toHaveLength(2);
+    prepare.mockRestore();
+    await store.close?.();
+  });
 });
 
-async function setup() {
+async function setup(searchEmbedding?: AppConfig["searchEmbedding"]) {
   const directory = mkdtempSync(join(tmpdir(), "dahlia-sync-"));
   directories.push(directory);
   const databasePath = join(directory, "server.sqlite");
-  const store = createNodeApplicationStore(testConfig(databasePath));
+  const store = createNodeApplicationStore({ ...testConfig(databasePath), searchEmbedding });
   await store.migrate();
   await store.ensureIdentityUser(owner);
   await store.ensureIdentityUser(other);

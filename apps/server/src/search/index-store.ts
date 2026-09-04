@@ -190,9 +190,9 @@ function createSearchIndexStore(
           eq(schema.syncedVaultPermission.role, "owner"),
         ));
       for (const { userId } of owners) {
-        await withOwner(userId, async (transaction) => {
-          let after: string | undefined;
-          while (true) {
+        let after: string | undefined;
+        while (true) {
+          const page = await withOwner(userId, async (transaction) => {
             const documents = await transaction.select({
               vaultId: schema.searchDocument.vaultId,
               documentId: schema.searchDocument.documentId,
@@ -220,7 +220,7 @@ function createSearchIndexStore(
                   ne(schema.searchIndexJob.dimensions, dimensions),
                 ),
               )).orderBy(asc(schema.searchDocument.documentId)).limit(RECONCILE_BATCH_SIZE);
-            if (documents.length === 0) break;
+            if (documents.length === 0) return null;
             const now = new Date();
             await transaction.insert(schema.searchIndexJob).values(documents.map((document) => ({
               ...document,
@@ -245,9 +245,15 @@ function createSearchIndexStore(
                 updatedAt: now,
               },
             });
-            after = documents.at(-1)!.documentId;
-          }
-        });
+            return {
+              after: documents.at(-1)!.documentId,
+              complete: documents.length < RECONCILE_BATCH_SIZE,
+            };
+          });
+          if (!page) break;
+          after = page.after;
+          if (page.complete) break;
+        }
       }
     },
     claim(model, dimensions, limit) {
