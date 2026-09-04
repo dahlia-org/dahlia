@@ -1511,6 +1511,54 @@
         }
 
         @Test
+        func recorderSplitsTranscriptSnapshotsBeforeTheServerChunkLimit() async throws {
+            let (database, vault) = try await syncedDatabase()
+            let meeting = MeetingRecord(
+                id: .v7(), vaultId: vault.id, projectId: nil, name: "Meeting",
+                createdAt: .now, updatedAt: .now
+            )
+            let records = (0 ..< 101).map { index in
+                TranscriptSegmentRecord(
+                    id: .v7(), meetingId: meeting.id, sessionId: nil,
+                    startTime: Date(timeIntervalSince1970: Double(index)), endTime: nil,
+                    text: "segment \(index)", translatedText: nil, isConfirmed: true,
+                    audioSource: "mic", speakerLabel: nil, audioFeatureVersion: nil,
+                    audioActiveRmsDecibels: nil, audioMedianPitchHertz: nil,
+                    audioVoicedFrameRatio: nil, audioPitchSpreadHertz: nil
+                )
+            }
+            try await database.dbQueue.write { db in
+                try meeting.insert(db)
+                for record in records { try record.insert(db) }
+                let patch = SyncOperationDraft(entity: .transcript, action: .patch, entityId: meeting.id)
+                try SyncTransactionRecorder.record(
+                    vaultId: vault.id,
+                    operations: [patch],
+                    transcriptSegments: [patch.id: records.map(SyncTranscriptPatchSegment.init)],
+                    in: db
+                )
+            }
+
+            let queued = try await database.dbQueue.read { db in
+                try Row.fetchAll(
+                    db,
+                    sql: """
+                    SELECT o.baseRevision, count(i.operationId) AS itemCount
+                    FROM sync_operations o
+                    JOIN sync_transactions t ON t.id = o.transactionId
+                    JOIN sync_transcript_patch_items i ON i.operationId = o.id
+                    WHERE t.vaultId = ?
+                    GROUP BY t.sequence, o.position
+                    ORDER BY t.sequence, o.position
+                    """,
+                    arguments: [vault.id]
+                ).map { row in (row["baseRevision"] as Int?, row["itemCount"] as Int) }
+            }
+            #expect(queued.map(\.1) == [100, 1])
+            #expect(queued.map(\.0) == [0, 1])
+        }
+
+        @Test
         func initialSnapshotDefersOnlyConstructionWhileRecordingIsActive() async throws {
             let (database, vault) = try await syncedDatabase()
             let meeting = MeetingRecord(
