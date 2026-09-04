@@ -1288,6 +1288,56 @@
         }
 
         @Test
+        func childDeltaReconcilesItsMeetingFromAnotherPage() async throws {
+            let (database, vault) = try await syncedDatabase()
+            let meetingId = UUID.v7()
+            let screenshotId = UUID.v7()
+            let screenshot = try SyncJSON.decoder.decode(
+                SyncCanonicalPayload.self,
+                from: Data("{\"meetingId\":\"\(meetingId.uuidString.lowercased())\"}".utf8)
+            )
+            let changes = [
+                SyncChangePage.Change(
+                    sequence: 1,
+                    entity: .transcript,
+                    entityId: meetingId,
+                    action: "upsert",
+                    revision: 1,
+                    record: nil
+                ),
+                SyncChangePage.Change(
+                    sequence: 2,
+                    entity: .screenshot,
+                    entityId: screenshotId,
+                    action: "upsert",
+                    revision: 1,
+                    record: screenshot
+                ),
+            ]
+
+            #expect(try await SyncWorker.missingParentMeetingIDs(
+                in: changes,
+                vaultId: vault.id,
+                dbQueue: database.dbQueue
+            ) == [meetingId])
+            try await database.dbQueue.write { db in
+                try MeetingRecord(
+                    id: meetingId,
+                    vaultId: vault.id,
+                    projectId: nil,
+                    name: "Meeting",
+                    createdAt: .now,
+                    updatedAt: .now
+                ).insert(db)
+            }
+            #expect(try await SyncWorker.missingParentMeetingIDs(
+                in: changes,
+                vaultId: vault.id,
+                dbQueue: database.dbQueue
+            ).isEmpty)
+        }
+
+        @Test
         func recreatedVaultResetReconcilesRowsWithoutDeletingRetainedLocalData() async throws {
             let (database, vault) = try await syncedDatabase()
             let retainedProject = ProjectRecord(

@@ -130,6 +130,11 @@ private struct SyncProjectSnapshotPage: Decodable {
     let items: [SyncProjectSnapshot]
 }
 
+private struct SyncMeetingSnapshotHeader: Decodable {
+    let meetingId: UUID
+    let revision: Int
+}
+
 struct SyncTranscriptPage: Decodable {
     struct Segment: Decodable {
         let segmentId: UUID
@@ -538,7 +543,7 @@ actor SyncWorker {
                 _ = try await applySnapshot(snapshot, cursor: snapshotPage.cursor, target: target)
                 return
             }
-            guard let applicable = try await reconcilingProjects(in: page.items, target: target) else {
+            guard let applicable = try await reconcilingDependencies(in: page.items, target: target) else {
                 return
             }
             guard try await apply(applicable, cursor: page.cursor, target: target) else {
@@ -557,7 +562,7 @@ actor SyncWorker {
     ) async throws -> Bool {
         let reset = reconcilesMissingRecords ? SyncResetSnapshot(canonicalChanges: changes) : SyncResetSnapshot(changes)
         guard let reset else {
-            guard let applicable = try await reconcilingProjects(in: changes, target: target) else { return false }
+            guard let applicable = try await reconcilingDependencies(in: changes, target: target) else { return false }
             return try await apply(applicable, cursor: cursor, target: target)
         }
         guard try await apply(changes, cursor: nil, target: target) else { return false }
@@ -567,6 +572,43 @@ actor SyncWorker {
             vaultId: target.vaultId,
             dbQueue: dbQueue
         )
+    }
+
+    private func reconcilingDependencies(
+        in changes: [SyncChangePage.Change],
+        target: SyncTarget
+    ) async throws -> [SyncChangePage.Change]? {
+        let missingMeetingIDs = try await Self.missingParentMeetingIDs(
+            in: changes,
+            vaultId: target.vaultId,
+            dbQueue: dbQueue
+        )
+        var parentMeetings: [SyncChangePage.Change] = []
+        for meetingId in missingMeetingIDs {
+            let data = try await sendData(
+                request(
+                    origin: target.origin,
+                    path: "api/v1/vaults/\(target.vaultId.lowercase)/meetings/\(meetingId.lowercase)",
+                    method: "GET"
+                ),
+                connectionId: target.connectionId
+            )
+            let header = try SyncJSON.decoder.decode(SyncMeetingSnapshotHeader.self, from: data)
+            let record = try SyncJSON.decoder.decode(SyncCanonicalPayload.self, from: data)
+            parentMeetings.append(.init(
+                sequence: 0,
+                entity: .meeting,
+                entityId: header.meetingId,
+                action: "upsert",
+                revision: header.revision,
+                record: record
+            ))
+        }
+        guard try await reconcilingProjects(in: parentMeetings + changes, target: target) != nil,
+              try await apply(parentMeetings, cursor: nil, target: target) else {
+            return nil
+        }
+        return changes.filter { $0.entity != .project }
     }
 
     private func reconcilingProjects(
@@ -618,6 +660,32 @@ actor SyncWorker {
                     .filter(Column("id") == projectID && Column("vaultId") == vaultId)
                     .fetchCount(db) == 0
             }
+        }
+    }
+
+    static func missingParentMeetingIDs(
+        in changes: [SyncChangePage.Change],
+        vaultId: UUID,
+        dbQueue: DatabaseQueue
+    ) async throws -> [UUID] {
+        let referencedMeetingIDs = Set(changes.compactMap { change -> UUID? in
+            guard change.action == "upsert" else { return nil }
+            switch change.entity {
+            case .summary, .transcript:
+                return change.entityId
+            case .screenshot:
+                return change.record?.meetingId
+            case .vault, .project, .meeting:
+                return nil
+            }
+        })
+        guard !referencedMeetingIDs.isEmpty else { return [] }
+        return try await dbQueue.read { db in
+            try referencedMeetingIDs.filter { meetingID in
+                try MeetingRecord
+                    .filter(Column("id") == meetingID && Column("vaultId") == vaultId)
+                    .fetchCount(db) == 0
+            }.sorted { $0.uuidString < $1.uuidString }
         }
     }
 
