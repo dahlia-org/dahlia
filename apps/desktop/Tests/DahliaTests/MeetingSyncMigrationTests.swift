@@ -943,6 +943,29 @@
         }
 
         @Test
+        func incrementalPullCollapsesDeleteAndRecreateAcrossPages() {
+            let meetingId = UUID.v7()
+            let otherId = UUID.v7()
+            let deleted = SyncChangePage.Change(
+                sequence: 1, entity: .meeting, entityId: meetingId,
+                action: "delete", revision: nil, record: nil
+            )
+            let unrelated = SyncChangePage.Change(
+                sequence: 2, entity: .summary, entityId: otherId,
+                action: "delete", revision: nil, record: nil
+            )
+            let recreated = SyncChangePage.Change(
+                sequence: 3, entity: .meeting, entityId: meetingId,
+                action: "upsert", revision: 1, record: nil
+            )
+
+            let changes = SyncWorker.incrementalChanges([[deleted, unrelated], [recreated]])
+
+            #expect(changes.map(\.entityId) == [otherId, meetingId])
+            #expect(changes.last?.action == "upsert")
+        }
+
+        @Test
         func freshPullReconcilesExistingProjectsBeforeApplyingCanonicalHierarchy() async throws {
             let (database, vault) = try await syncedDatabase()
             let firstRoot = UUID.v7()

@@ -474,16 +474,20 @@ actor SyncWorker {
         }
 
         var cursor = target.cursor
+        var changePages: [[SyncChangePage.Change]] = []
         repeat {
             let page = try await loadChangePage(target: target, cursor: cursor)
-            guard let applicable = try await reconcilingProjects(in: coalesced(page.items), target: target) else {
-                break
-            }
-            let appliedAll = try await apply(applicable, cursor: page.cursor, target: target)
-            guard appliedAll else { break }
+            changePages.append(page.items)
             cursor = page.cursor
             if !page.hasMore { break }
         } while true
+        guard let applicable = try await reconcilingProjects(
+            in: Self.incrementalChanges(changePages),
+            target: target
+        ) else {
+            return
+        }
+        _ = try await apply(applicable, cursor: cursor, target: target)
     }
 
     private func reconcilingProjects(
@@ -605,18 +609,12 @@ actor SyncWorker {
             + sorted(.transcript) + sorted(.screenshot) + deletes
     }
 
-    private func coalesced(_ changes: [SyncChangePage.Change]) -> [SyncChangePage.Change] {
-        var result: [SyncChangePage.Change] = []
-        for change in changes {
-            if let previous = result.last,
-               previous.entity == change.entity,
-               previous.entityId == change.entityId {
-                result[result.count - 1] = change
-            } else {
-                result.append(change)
-            }
+    static func incrementalChanges(_ pages: [[SyncChangePage.Change]]) -> [SyncChangePage.Change] {
+        var latest: [String: SyncChangePage.Change] = [:]
+        for change in pages.joined() {
+            latest["\(change.entity.rawValue):\(change.entityId.uuidString)"] = change
         }
-        return result
+        return latest.values.sorted { $0.sequence < $1.sequence }
     }
 
     private func pullTargets() async throws -> [SyncTarget] {

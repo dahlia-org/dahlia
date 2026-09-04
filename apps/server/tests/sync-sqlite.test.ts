@@ -103,6 +103,44 @@ describe("SQLite canonical sync", () => {
     await store.close?.();
   });
 
+  it("accepts Desktop text fields without Server-only character caps", async () => {
+    const { store } = await setup();
+    await createVault(store);
+    const name = "m".repeat(501);
+    const description = "d".repeat(20_001);
+    const title = "s".repeat(501);
+    await commit(store, owner, transaction("019d4a01-1050-7000-8000-000000000001", [
+      {
+        id: "019d4a01-1050-7000-8000-000000000002",
+        entity: "vault",
+        action: "update",
+        entityId: vaultId,
+        baseRevision: 1,
+        data: { name },
+      },
+      {
+        id: "019d4a01-1050-7000-8000-000000000003",
+        entity: "meeting",
+        action: "create",
+        entityId: meetingId,
+        baseRevision: null,
+        data: { ...meetingData(), projectId: null, name, description },
+      },
+      {
+        id: "019d4a01-1050-7000-8000-000000000004",
+        entity: "summary",
+        action: "upsert",
+        entityId: meetingId,
+        baseRevision: 0,
+        data: { title, document: "{}", createdAt: now },
+      },
+    ]));
+
+    expect(await store.sync.withIdentity(owner, (sync) => sync.getMeeting(vaultId, meetingId)))
+      .toMatchObject({ name, description, summaryTitle: title });
+    await store.close?.();
+  });
+
   it("rejects staging and reports conflicts after a meeting is deleted", async () => {
     const { store } = await setup();
     await createVault(store);
