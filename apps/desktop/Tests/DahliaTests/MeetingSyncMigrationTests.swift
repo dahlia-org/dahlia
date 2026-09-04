@@ -1043,43 +1043,98 @@
         }
 
         @Test
-        func recreatedVaultResetClearsStaleCanonicalRowsWithoutDisconnecting() async throws {
+        func recreatedVaultResetReconcilesRowsWithoutDeletingRetainedLocalData() async throws {
             let (database, vault) = try await syncedDatabase()
-            let staleProject = ProjectRecord(
-                id: .v7(), vaultId: vault.id, parentProjectId: nil, name: "Stale",
+            let retainedProject = ProjectRecord(
+                id: .v7(), vaultId: vault.id, parentProjectId: nil, name: "Old retained",
                 createdAt: .now, projectType: .undefined
             )
-            let staleMeeting = MeetingRecord(
-                id: .v7(), vaultId: vault.id, projectId: staleProject.id, name: "Stale",
+            let retainedMeeting = MeetingRecord(
+                id: .v7(), vaultId: vault.id, projectId: retainedProject.id, name: "Old retained",
                 createdAt: .now, updatedAt: .now
             )
-            let record = try SyncJSON.decoder.decode(
+            let omittedProject = ProjectRecord(
+                id: .v7(), vaultId: vault.id, parentProjectId: nil, name: "Omitted",
+                createdAt: .now, projectType: .undefined
+            )
+            let omittedMeeting = MeetingRecord(
+                id: .v7(), vaultId: vault.id, projectId: omittedProject.id, name: "Omitted",
+                createdAt: .now, updatedAt: .now
+            )
+            let vaultRecord = try SyncJSON.decoder.decode(
                 SyncCanonicalPayload.self,
                 from: Data("{\"name\":\"Restored\"}".utf8)
             )
+            let projectRecord = try SyncJSON.decoder.decode(
+                SyncCanonicalPayload.self,
+                from: Data("{\"name\":\"Current project\",\"projectType\":\"undefined\",\"createdAt\":\"2026-09-03T00:00:00.000Z\"}".utf8)
+            )
+            let meetingRecord = try SyncJSON.decoder.decode(
+                SyncCanonicalPayload.self,
+                from: Data("{\"projectId\":\"\(retainedProject.id.uuidString.lowercased())\",\"name\":\"Current meeting\",\"status\":\"READY\",\"createdAt\":\"2026-09-03T00:00:00.000Z\",\"updatedAt\":\"2026-09-03T00:00:00.000Z\"}".utf8)
+            )
             try await database.dbQueue.write { db in
-                try staleProject.insert(db)
-                try staleMeeting.insert(db)
+                try db.execute(
+                    sql: "UPDATE vaults SET syncPullCursor = 'old-cursor' WHERE id = ?",
+                    arguments: [vault.id]
+                )
+                try retainedProject.insert(db)
+                try retainedMeeting.insert(db)
+                try omittedProject.insert(db)
+                try omittedMeeting.insert(db)
+                try MeetingNoteRecord(
+                    meetingId: retainedMeeting.id,
+                    text: "Device-local note",
+                    createdAt: .now,
+                    updatedAt: .now
+                ).insert(db)
             }
 
+            let changes: [SyncChangePage.Change] = [
+                .init(sequence: 2, entity: .vault, entityId: vault.id, action: "reset", revision: 1, record: vaultRecord),
+                .init(sequence: 3, entity: .project, entityId: retainedProject.id, action: "upsert", revision: 1, record: projectRecord),
+                .init(sequence: 4, entity: .meeting, entityId: retainedMeeting.id, action: "upsert", revision: 1, record: meetingRecord),
+            ]
             #expect(try await RemoteChangeApplier.apply(
-                [.init(sequence: 2, entity: .vault, entityId: vault.id, action: "reset", revision: 1, record: record)],
-                screenshots: [:], transcripts: [:], cursor: "reset-cursor",
+                changes,
+                screenshots: [:], transcripts: [:], cursor: nil,
                 vaultId: vault.id, dbQueue: database.dbQueue
+            ))
+            let stateBeforeReconciliation = try await database.dbQueue.read { db in
+                try (
+                    MeetingNoteRecord.fetchOne(db, key: retainedMeeting.id)?.text,
+                    VaultRecord.fetchOne(db, key: vault.id)?.syncPullCursor,
+                    MeetingRecord.fetchOne(db, key: omittedMeeting.id)
+                )
+            }
+            #expect(stateBeforeReconciliation.0 == "Device-local note")
+            #expect(stateBeforeReconciliation.1 == "old-cursor")
+            #expect(stateBeforeReconciliation.2 != nil)
+            #expect(try await RemoteChangeApplier.finishReset(
+                try #require(SyncResetSnapshot(changes)),
+                cursor: "reset-cursor",
+                vaultId: vault.id,
+                dbQueue: database.dbQueue
             ))
             let state = try await database.dbQueue.read { db in
                 try (
                     VaultRecord.fetchOne(db, key: vault.id),
-                    Int.fetchOne(db, sql: "SELECT count(*) FROM projects WHERE vaultId = ?", arguments: [vault.id]),
-                    Int.fetchOne(db, sql: "SELECT count(*) FROM meetings WHERE vaultId = ?", arguments: [vault.id])
+                    ProjectRecord.fetchOne(db, key: retainedProject.id),
+                    MeetingRecord.fetchOne(db, key: retainedMeeting.id),
+                    MeetingNoteRecord.fetchOne(db, key: retainedMeeting.id),
+                    ProjectRecord.fetchOne(db, key: omittedProject.id),
+                    MeetingRecord.fetchOne(db, key: omittedMeeting.id)
                 )
             }
             #expect(state.0?.name == "Restored")
             #expect(state.0?.syncEnabled == true)
             #expect(state.0?.syncConfirmedConnectionId == vault.syncConfirmedConnectionId)
             #expect(state.0?.syncPullCursor == "reset-cursor")
-            #expect(state.1 == 0)
-            #expect(state.2 == 0)
+            #expect(state.1?.name == "Current project")
+            #expect(state.2?.name == "Current meeting")
+            #expect(state.3?.text == "Device-local note")
+            #expect(state.4 == nil)
+            #expect(state.5 == nil)
         }
 
         @Test

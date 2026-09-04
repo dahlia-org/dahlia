@@ -85,6 +85,28 @@ struct SyncChangePage: Decodable {
     let hasMore: Bool
 }
 
+struct SyncResetSnapshot {
+    let projects: Set<UUID>
+    let meetings: Set<UUID>
+    let summaries: Set<UUID>
+    let transcripts: Set<UUID>
+    let screenshots: Set<UUID>
+
+    init?(_ changes: [SyncChangePage.Change]) {
+        guard changes.contains(where: { $0.entity == .vault && $0.action == "reset" && $0.record != nil }) else {
+            return nil
+        }
+        func ids(_ entity: SyncEntity) -> Set<UUID> {
+            Set(changes.lazy.filter { $0.entity == entity && $0.action == "upsert" && $0.record != nil }.map(\.entityId))
+        }
+        projects = ids(.project)
+        meetings = ids(.meeting)
+        summaries = ids(.summary)
+        transcripts = ids(.transcript)
+        screenshots = ids(.screenshot)
+    }
+}
+
 struct SyncProjectSnapshot: Decodable, Sendable {
     let projectId: UUID
     let parentProjectId: UUID?
@@ -473,14 +495,7 @@ actor SyncWorker {
                 if !page.hasMore { break }
             } while true
             let snapshot = Self.initialSnapshotChanges((reset.map { [$0] } ?? []) + Array(changes.values))
-            guard let applicable = try await reconcilingProjects(in: snapshot, target: target) else {
-                return
-            }
-            _ = try await apply(
-                applicable,
-                cursor: cursor,
-                target: target
-            )
+            _ = try await applySnapshot(snapshot, cursor: cursor, target: target)
             return
         }
 
@@ -493,6 +508,21 @@ actor SyncWorker {
                 highWaterCursor: highWaterCursor
             )
             highWaterCursor = page.highWaterCursor
+            if page.items.contains(where: { $0.entity == .vault && $0.action == "reset" }) {
+                var snapshotItems = page.items
+                var snapshotPage = page
+                while snapshotPage.hasMore {
+                    snapshotPage = try await loadChangePage(
+                        target: target,
+                        cursor: snapshotPage.cursor,
+                        highWaterCursor: page.highWaterCursor
+                    )
+                    snapshotItems.append(contentsOf: snapshotPage.items)
+                }
+                let snapshot = Self.initialSnapshotChanges(snapshotItems)
+                _ = try await applySnapshot(snapshot, cursor: snapshotPage.cursor, target: target)
+                return
+            }
             guard let applicable = try await reconcilingProjects(in: page.items, target: target) else {
                 return
             }
@@ -502,6 +532,24 @@ actor SyncWorker {
             cursor = page.cursor
             if !page.hasMore { break }
         } while true
+    }
+
+    private func applySnapshot(
+        _ changes: [SyncChangePage.Change],
+        cursor: String?,
+        target: SyncTarget
+    ) async throws -> Bool {
+        guard let reset = SyncResetSnapshot(changes) else {
+            guard let applicable = try await reconcilingProjects(in: changes, target: target) else { return false }
+            return try await apply(applicable, cursor: cursor, target: target)
+        }
+        guard try await apply(changes, cursor: nil, target: target) else { return false }
+        return try await RemoteChangeApplier.finishReset(
+            reset,
+            cursor: cursor,
+            vaultId: target.vaultId,
+            dbQueue: dbQueue
+        )
     }
 
     private func reconcilingProjects(
@@ -965,8 +1013,13 @@ enum RemoteChangeApplier {
                     try SyncTransactionQueue.discard(vaultId: vaultId, in: db)
                     try db.execute(sql: "DELETE FROM sync_entity_state WHERE vaultId = ?", arguments: [vaultId])
                     if let record = change.record {
-                        try db.execute(sql: "DELETE FROM meetings WHERE vaultId = ?", arguments: [vaultId])
-                        try db.execute(sql: "DELETE FROM projects WHERE vaultId = ?", arguments: [vaultId])
+                        for project in try ProjectRecord.filter(Column("vaultId") == vaultId).fetchAll(db) {
+                            let name = "Sync-\(project.id.uuidString.lowercased())"
+                            try db.execute(
+                                sql: "UPDATE projects SET name = ?, nameKey = ? WHERE id = ? AND vaultId = ?",
+                                arguments: [name, DahliaProjectName.siblingKey(name), project.id, vaultId]
+                            )
+                        }
                         try upsert(change, record: record, screenshots: screenshots, transcripts: transcripts, vaultId: vaultId, in: db)
                     } else {
                         try db.execute(
@@ -992,6 +1045,114 @@ enum RemoteChangeApplier {
                     arguments: [vaultId, change.entity, change.entityId, change.revision]
                 )
             }
+            if let cursor {
+                try db.execute(sql: "UPDATE vaults SET syncPullCursor = ? WHERE id = ?", arguments: [cursor, vaultId])
+            }
+            return true
+        }
+    }
+
+    static func finishReset(
+        _ snapshot: SyncResetSnapshot,
+        cursor: String?,
+        vaultId: UUID,
+        dbQueue: DatabaseQueue
+    ) async throws -> Bool {
+        struct Existing {
+            let projects: [ProjectRecord]
+            let meetings: Set<UUID>
+            let summaries: Set<UUID>
+            let transcripts: Set<UUID>
+            let screenshots: Set<UUID>
+        }
+        let existing = try await dbQueue.read { db in
+            try Existing(
+                projects: ProjectRecord.filter(Column("vaultId") == vaultId).fetchAll(db),
+                meetings: Set(UUID.fetchAll(
+                    db,
+                    sql: "SELECT id FROM meetings WHERE vaultId = ?",
+                    arguments: [vaultId]
+                )),
+                summaries: Set(UUID.fetchAll(
+                    db,
+                    sql: """
+                    SELECT summaries.meetingId FROM summaries
+                    JOIN meetings ON meetings.id = summaries.meetingId
+                    WHERE meetings.vaultId = ?
+                    """,
+                    arguments: [vaultId]
+                )),
+                transcripts: Set(UUID.fetchAll(
+                    db,
+                    sql: """
+                    SELECT DISTINCT transcript_segments.meetingId FROM transcript_segments
+                    JOIN meetings ON meetings.id = transcript_segments.meetingId
+                    WHERE meetings.vaultId = ? AND transcript_segments.isConfirmed = 1
+                    """,
+                    arguments: [vaultId]
+                )),
+                screenshots: Set(UUID.fetchAll(
+                    db,
+                    sql: """
+                    SELECT screenshots.id FROM screenshots
+                    JOIN meetings ON meetings.id = screenshots.meetingId
+                    WHERE meetings.vaultId = ?
+                    """,
+                    arguments: [vaultId]
+                ))
+            )
+        }
+        let deletedProjects = existing.projects.filter { !snapshot.projects.contains($0.id) }
+            .sorted { ($0.parentProjectId == nil ? 1 : 0) < ($1.parentProjectId == nil ? 1 : 0) }
+            .map(\.id)
+        let deletions: [(sql: String, vaultScoped: Bool, ids: [UUID])] = [
+            (
+                "DELETE FROM screenshots WHERE id = ?",
+                false,
+                Array(existing.screenshots.subtracting(snapshot.screenshots))
+            ),
+            (
+                "DELETE FROM transcript_segments WHERE meetingId = ? AND isConfirmed = 1",
+                false,
+                Array(existing.transcripts.subtracting(snapshot.transcripts))
+            ),
+            (
+                "DELETE FROM summaries WHERE meetingId = ?",
+                false,
+                Array(existing.summaries.subtracting(snapshot.summaries))
+            ),
+            (
+                "DELETE FROM meetings WHERE id = ? AND vaultId = ?",
+                true,
+                Array(existing.meetings.subtracting(snapshot.meetings))
+            ),
+            ("DELETE FROM projects WHERE id = ? AND vaultId = ?", true, deletedProjects),
+        ]
+        for deletion in deletions {
+            let ids = deletion.ids
+            for batchStart in stride(from: 0, to: ids.count, by: 100) {
+                let batch = ids[batchStart ..< min(batchStart + 100, ids.count)]
+                let completed = try await dbQueue.write { db in
+                    guard try !SyncTransactionQueue.hasPending(vaultId: vaultId, in: db),
+                          try !hasActiveRecording(in: db)
+                    else { return false }
+                    for id in batch {
+                        let arguments: StatementArguments = deletion.vaultScoped ? [id, vaultId] : [id]
+                        try db.execute(sql: deletion.sql, arguments: arguments)
+                    }
+                    return true
+                }
+                guard completed else { return false }
+            }
+        }
+        return try await dbQueue.write { db in
+            guard try !SyncTransactionQueue.hasPending(vaultId: vaultId, in: db),
+                  try !hasActiveRecording(in: db)
+            else { return false }
+            try db.execute(
+                sql: "DELETE FROM sync_entity_state WHERE vaultId = ? AND confirmedRevision IS NULL",
+                arguments: [vaultId]
+            )
             if let cursor {
                 try db.execute(sql: "UPDATE vaults SET syncPullCursor = ? WHERE id = ?", arguments: [cursor, vaultId])
             }
