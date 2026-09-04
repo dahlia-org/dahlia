@@ -505,6 +505,20 @@ enum SyncTransactionQueue {
             throw SyncTransactionQueueError.invalidReceipt
         }
         try await dbQueue.write { db in
+            let isStillAttached = try Bool.fetchOne(
+                db,
+                sql: """
+                SELECT EXISTS (
+                    SELECT 1 FROM sync_transactions queued
+                    JOIN vaults vault ON vault.id = queued.vaultId
+                    WHERE queued.id = ? AND queued.vaultId = ? AND queued.connectionId = ?
+                      AND vault.accountConnectionId = queued.connectionId
+                      AND vault.syncConfirmedConnectionId = queued.connectionId
+                )
+                """,
+                arguments: [transaction.id, transaction.vaultId, transaction.connectionId]
+            ) ?? false
+            guard isStillAttached else { return }
             let resetOperation = transaction.operations.contains {
                 $0.entity == .vault && $0.action == .reset
             }
