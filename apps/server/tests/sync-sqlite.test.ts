@@ -471,6 +471,26 @@ describe("SQLite canonical sync", () => {
     await store.close?.();
   });
 
+  it("bounds summary documents by their serialized byte size", async () => {
+    const { store } = await setup();
+    const operationId = "019d4a01-3500-7000-8000-000000000002";
+    await expect(new MeetingSyncService(store.sync).commitTransaction(owner, {
+      schemaVersion: 1,
+      id: "019d4a01-3500-7000-8000-000000000001",
+      vaultId,
+      createdAt: now.toISOString(),
+      operations: [{
+        id: operationId,
+        entity: "summary",
+        action: "upsert",
+        entityId: meetingId,
+        baseRevision: 0,
+        data: { title: "Summary", document: "界".repeat(2_100_000), createdAt: now.toISOString() },
+      }],
+    })).rejects.toMatchObject({ status: 400, code: "invalid_sync_operation", operationId });
+    await store.close?.();
+  });
+
   it("verifies screenshot bytes against the immutable content hash", async () => {
     const { directory, store } = await setup();
     await createVault(store);

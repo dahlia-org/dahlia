@@ -808,38 +808,69 @@ enum RemoteChangeApplier {
     ) async throws -> Bool {
         let orderedProjects = orderProjects(projects)
         return try await dbQueue.write { db in
-            guard try !SyncTransactionQueue.hasPending(vaultId: vaultId, in: db) else { return false }
+            guard try !SyncTransactionQueue.hasPending(vaultId: vaultId, in: db),
+                  try !hasActiveRecording(in: db)
+            else { return false }
 
-            let memberships = try Row.fetchAll(
-                db,
-                sql: "SELECT id, projectId FROM meetings WHERE vaultId = ? AND projectId IS NOT NULL",
-                arguments: [vaultId]
-            )
+            let existing = try ProjectRecord.filter(Column("vaultId") == vaultId).fetchAll(db)
+            let existingByID = Dictionary(uniqueKeysWithValues: existing.map { ($0.id, $0) })
+            let incomingIDs = Set(projects.map(\.projectId))
+            let removedIDs = Set(existingByID.keys).subtracting(incomingIDs)
 
-            try db.execute(sql: "UPDATE meetings SET projectId = NULL WHERE vaultId = ?", arguments: [vaultId])
-            try db.execute(
-                sql: "DELETE FROM projects WHERE vaultId = ? AND parentProjectId IS NOT NULL",
-                arguments: [vaultId]
-            )
-            try db.execute(
-                sql: "DELETE FROM projects WHERE vaultId = ? AND parentProjectId IS NULL",
-                arguments: [vaultId]
-            )
-            try db.execute(
-                sql: "DELETE FROM sync_entity_state WHERE vaultId = ? AND entity = 'project'",
-                arguments: [vaultId]
-            )
+            // Keep retained rows in place so local-only CRM references survive canonical refreshes.
+            // Temporary names make hierarchy/name swaps safe under the sibling uniqueness indexes.
+            for project in existing {
+                let temporaryName = "Sync-\(project.id.uuidString.lowercased())"
+                try db.execute(
+                    sql: "UPDATE projects SET name = ?, nameKey = ? WHERE id = ? AND vaultId = ?",
+                    arguments: [temporaryName, DahliaProjectName.siblingKey(temporaryName), project.id, vaultId]
+                )
+            }
+
+            let roots = orderedProjects.filter { $0.parentProjectId == nil }
+            let children = orderedProjects.filter { $0.parentProjectId != nil }
+            for project in roots where existingByID[project.projectId] != nil {
+                try db.execute(
+                    sql: "UPDATE projects SET parentProjectId = NULL, projectType = ? WHERE id = ? AND vaultId = ?",
+                    arguments: [project.projectType, project.projectId, vaultId]
+                )
+            }
+            for project in roots where existingByID[project.projectId] == nil {
+                try insert(project, vaultId: vaultId, in: db)
+            }
+            for project in existing where removedIDs.contains(project.id) && project.parentProjectId != nil {
+                try ProjectRecord.deleteOne(db, key: project.id)
+            }
+            for project in children where existingByID[project.projectId]?.parentProjectId != nil {
+                try db.execute(
+                    sql: "UPDATE projects SET parentProjectId = ?, projectType = NULL WHERE id = ? AND vaultId = ?",
+                    arguments: [project.parentProjectId, project.projectId, vaultId]
+                )
+            }
+            for project in existing where removedIDs.contains(project.id) && project.parentProjectId == nil {
+                try ProjectRecord.deleteOne(db, key: project.id)
+            }
+            for project in children where existingByID[project.projectId]?.parentProjectId == nil {
+                try db.execute(
+                    sql: "UPDATE projects SET parentProjectId = ?, projectType = NULL WHERE id = ? AND vaultId = ?",
+                    arguments: [project.parentProjectId, project.projectId, vaultId]
+                )
+            }
+            for project in children where existingByID[project.projectId] == nil {
+                try insert(project, vaultId: vaultId, in: db)
+            }
 
             for project in orderedProjects {
-                try ProjectRecord(
-                    id: project.projectId,
-                    vaultId: vaultId,
-                    parentProjectId: project.parentProjectId,
-                    name: project.name,
-                    createdAt: project.createdAt,
-                    description: project.description,
-                    projectType: project.projectType.flatMap(ProjectType.init(rawValue:))
-                ).insert(db)
+                try db.execute(
+                    sql: """
+                    UPDATE projects SET parentProjectId = ?, name = ?, nameKey = ?, createdAt = ?,
+                        description = ?, projectType = ? WHERE id = ? AND vaultId = ?
+                    """,
+                    arguments: [
+                        project.parentProjectId, project.name, DahliaProjectName.siblingKey(project.name),
+                        project.createdAt, project.description, project.projectType, project.projectId, vaultId,
+                    ]
+                )
                 try db.execute(
                     sql: """
                     INSERT INTO sync_entity_state(vaultId, entity, entityId, confirmedRevision)
@@ -850,18 +881,31 @@ enum RemoteChangeApplier {
                     arguments: [vaultId, project.projectId, project.revision]
                 )
             }
-            let projectIds = Set(projects.map(\.projectId))
-            for membership in memberships {
-                let projectId: UUID = membership["projectId"]
-                guard projectIds.contains(projectId) else { continue }
-                try db.execute(sql: "UPDATE meetings SET projectId = ? WHERE id = ? AND vaultId = ?", arguments: [
-                    projectId,
-                    membership["id"] as UUID,
-                    vaultId,
-                ])
-            }
+            try db.execute(
+                sql: "DELETE FROM sync_entity_state WHERE vaultId = ? AND entity = 'project' AND entityId NOT IN (SELECT id FROM projects WHERE vaultId = ?)",
+                arguments: [vaultId, vaultId]
+            )
             return true
         }
+    }
+
+    private static func insert(_ project: SyncProjectSnapshot, vaultId: UUID, in db: Database) throws {
+        try ProjectRecord(
+            id: project.projectId,
+            vaultId: vaultId,
+            parentProjectId: project.parentProjectId,
+            name: project.name,
+            createdAt: project.createdAt,
+            description: project.description,
+            projectType: project.projectType.flatMap(ProjectType.init(rawValue:))
+        ).insert(db)
+    }
+
+    private static func hasActiveRecording(in db: Database) throws -> Bool {
+        try Bool.fetchOne(
+            db,
+            sql: "SELECT EXISTS (SELECT 1 FROM recording_sessions WHERE endedAt IS NULL)"
+        ) ?? false
     }
 
     private static func orderProjects(_ projects: [SyncProjectSnapshot]) -> [SyncProjectSnapshot] {
@@ -884,11 +928,7 @@ enum RemoteChangeApplier {
     ) async throws -> Bool {
         try await dbQueue.write { db in
             guard try !SyncTransactionQueue.hasPending(vaultId: vaultId, in: db) else { return false }
-            if changes.contains(where: { $0.entity == .transcript }),
-               try Bool.fetchOne(
-                   db,
-                   sql: "SELECT EXISTS (SELECT 1 FROM recording_sessions WHERE endedAt IS NULL)"
-               ) ?? false {
+            if changes.contains(where: { $0.entity == .transcript }), try hasActiveRecording(in: db) {
                 return false
             }
             let deletingActiveMeeting = try changes.contains { change in

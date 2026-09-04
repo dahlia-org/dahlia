@@ -838,6 +838,8 @@
             let secondRoot = UUID.v7()
             let retiredChild = UUID.v7()
             let meetingId = UUID.v7()
+            let insightId = UUID.v7()
+            let recordingId = UUID.v7()
             try await database.dbQueue.write { db in
                 try ProjectRecord(
                     id: firstRoot,
@@ -871,6 +873,34 @@
                     createdAt: .now,
                     updatedAt: .now
                 ).insert(db)
+                let now = Date.now
+                try InsightRecord(
+                    id: insightId,
+                    vaultId: vault.id,
+                    content: "Keep this reference",
+                    isAccepted: true,
+                    metadataJSON: "{}",
+                    revision: 1,
+                    createdAt: now,
+                    updatedAt: now
+                ).insert(db)
+                try InsightReferenceRecord(
+                    insightId: insightId,
+                    resourceType: .project,
+                    resourceId: firstRoot,
+                    referenceRole: .context,
+                    createdAt: now
+                ).insert(db)
+                try RecordingSessionRecord(
+                    id: recordingId,
+                    meetingId: meetingId,
+                    startedAt: .now,
+                    endedAt: nil,
+                    duration: nil,
+                    offsetSeconds: 0,
+                    createdAt: .now,
+                    updatedAt: .now
+                ).insert(db)
             }
             let snapshot = [
                 SyncProjectSnapshot(
@@ -893,6 +923,21 @@
                 ),
             ]
 
+            #expect(try await !RemoteChangeApplier.reconcileProjectSnapshot(
+                snapshot,
+                vaultId: vault.id,
+                dbQueue: database.dbQueue
+            ))
+            #expect(try await database.dbQueue.read { db in
+                try ProjectRecord.fetchOne(db, key: firstRoot)?.name
+            } == "First")
+
+            try await database.dbQueue.write { db in
+                try db.execute(
+                    sql: "UPDATE recording_sessions SET endedAt = ? WHERE id = ?",
+                    arguments: [Date.now, recordingId]
+                )
+            }
             #expect(try await RemoteChangeApplier.reconcileProjectSnapshot(
                 snapshot,
                 vaultId: vault.id,
@@ -908,6 +953,13 @@
             #expect(try await database.dbQueue.read { db in
                 try MeetingRecord.fetchOne(db, key: meetingId)?.projectId
             } == firstRoot)
+            #expect(try await database.dbQueue.read { db in
+                try Int.fetchOne(
+                    db,
+                    sql: "SELECT count(*) FROM insight_references WHERE insightId = ? AND resourceId = ?",
+                    arguments: [insightId, firstRoot]
+                )
+            } == 1)
         }
 
         @Test

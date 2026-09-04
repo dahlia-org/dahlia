@@ -70,6 +70,11 @@ export const SYNC_READ_PAGE_SIZE = 200;
 const TRANSCRIPT_READ_PAGE_SIZE = 10_000;
 const TRANSCRIPT_PATCH_ITEM_LIMIT = 50_000;
 const TRANSCRIPT_PATCH_CHUNK_LIMIT = 100;
+const SUMMARY_DOCUMENT_MAX_SERIALIZED_BYTES = 6 * 1024 * 1024;
+const summaryDocumentSchema = z.string().refine(
+  (value) => new TextEncoder().encode(JSON.stringify(value)).byteLength <= SUMMARY_DOCUMENT_MAX_SERIALIZED_BYTES,
+  "Summary document is too large",
+);
 const meetingCursorSchema = z.tuple([dateSchema, uuidSchema]);
 const screenshotCursorSchema = z.tuple([dateSchema, uuidSchema]);
 const transcriptCursorSchema = z.tuple([dateSchema, uuidSchema]);
@@ -99,7 +104,7 @@ const transactionDataSchemas = {
   "meeting:create": z.object({ projectId: uuidSchema.nullable(), name: z.string().max(500), description: z.string().max(20_000).default(""), status: meetingStatusSchema, duration: z.number().finite().nonnegative().nullable(), recordingStartedAt: nullableDateSchema, createdAt: dateSchema, updatedAt: dateSchema }).strict(),
   "meeting:update": z.object({ projectId: uuidSchema.nullable(), name: z.string().max(500), description: z.string().max(20_000).default(""), status: meetingStatusSchema, duration: z.number().finite().nonnegative().nullable(), recordingStartedAt: nullableDateSchema, updatedAt: dateSchema }).strict(),
   "meeting:delete": z.object({}).strict(),
-  "summary:upsert": z.object({ title: z.string().max(500), document: z.string().max(8 * 1024 * 1024), createdAt: dateSchema }).strict(),
+  "summary:upsert": z.object({ title: z.string().max(500), document: summaryDocumentSchema, createdAt: dateSchema }).strict(),
   "summary:delete": z.object({}).strict(),
   "transcript:patch": z.object({
     patchId: uuidV7Schema,
