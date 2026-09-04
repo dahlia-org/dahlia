@@ -170,7 +170,6 @@ enum SyncJSON {
 enum SyncTransactionRecorder {
     private static let maximumOperationsPerTransaction = 1000
     private static let maximumPayloadBytesPerTransaction = 6 * 1024 * 1024
-    private static let maximumTranscriptItemsPerOperation = 100
 
     static func recordBatches(
         vaultId: UUID,
@@ -249,18 +248,6 @@ enum SyncTransactionRecorder {
             connectionId = confirmedConnectionId
         }
         guard vault.syncRole != "member" else { throw SyncTransactionQueueError.readOnlyVault }
-        let split = try splitTranscriptPatchIfNeeded(
-            vaultId: vaultId,
-            operations: operations,
-            confirmedSegments: confirmedSegments,
-            transcriptSegments: transcriptSegments,
-            transcriptDeletions: transcriptDeletions,
-            screenshotAttachments: screenshotAttachments,
-            allowAfterReset: allowAfterReset,
-            connectionIdOverride: connectionIdOverride,
-            in: db
-        )
-        if split.wasSplit { return split.transactionId }
         if !allowAfterReset {
             let resetIsLast = try Bool.fetchOne(
                 db,
@@ -387,64 +374,6 @@ enum SyncTransactionRecorder {
             }
         }
         return transactionId
-    }
-
-    private static func splitTranscriptPatchIfNeeded(
-        vaultId: UUID,
-        operations: [SyncOperationDraft],
-        confirmedSegments: [UUID: [SyncTranscriptPatchSegment]],
-        transcriptSegments: [UUID: [SyncTranscriptPatchSegment]],
-        transcriptDeletions: [UUID: [UUID]],
-        screenshotAttachments: [UUID: SyncScreenshotAttachment],
-        allowAfterReset: Bool,
-        connectionIdOverride: UUID?,
-        in db: Database
-    ) throws -> (wasSplit: Bool, transactionId: UUID?) {
-        guard let patch = operations.first(where: { operation in
-            operation.entity == .transcript && operation.action == .patch
-                && confirmedSegments[operation.id, default: []].count
-                + transcriptDeletions[operation.id, default: []].count > maximumTranscriptItemsPerOperation
-        }) else { return (false, nil) }
-        let segments = confirmedSegments[patch.id, default: []]
-        let deletions = transcriptDeletions[patch.id, default: []]
-        let segmentCount = min(segments.count, maximumTranscriptItemsPerOperation)
-        let deletionCount = min(deletions.count, maximumTranscriptItemsPerOperation - segmentCount)
-        let firstPatch = SyncOperationDraft(
-            entity: .transcript,
-            action: .patch,
-            entityId: patch.entityId,
-            payloadJSON: patch.payloadJSON
-        )
-        _ = try record(
-            vaultId: vaultId,
-            operations: [firstPatch],
-            transcriptSegments: [firstPatch.id: Array(segments.prefix(segmentCount))],
-            transcriptDeletions: [firstPatch.id: Array(deletions.prefix(deletionCount))],
-            allowAfterReset: allowAfterReset,
-            connectionIdOverride: connectionIdOverride,
-            in: db
-        )
-        let remainingPatch = SyncOperationDraft(
-            entity: .transcript,
-            action: .patch,
-            entityId: patch.entityId,
-            payloadJSON: patch.payloadJSON
-        )
-        let transactionId = try record(
-            vaultId: vaultId,
-            operations: operations.map { $0.id == patch.id ? remainingPatch : $0 },
-            transcriptSegments: transcriptSegments.merging([
-                remainingPatch.id: Array(segments.dropFirst(segmentCount)),
-            ]) { _, replacement in replacement },
-            transcriptDeletions: transcriptDeletions.merging([
-                remainingPatch.id: Array(deletions.dropFirst(deletionCount)),
-            ]) { _, replacement in replacement },
-            screenshotAttachments: screenshotAttachments,
-            allowAfterReset: allowAfterReset,
-            connectionIdOverride: connectionIdOverride,
-            in: db
-        )
-        return (true, transactionId)
     }
 }
 

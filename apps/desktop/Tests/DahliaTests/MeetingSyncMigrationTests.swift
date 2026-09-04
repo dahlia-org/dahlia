@@ -1638,21 +1638,14 @@
             }
 
             let chunks = try SyncWorker.transcriptChunks(.init(segments: segments, deletions: []))
-            let patches = try SyncWorker.transcriptPatches(
-                .init(segments: segments, deletions: []),
-                maximumChunks: 1
-            )
 
             #expect(chunks.count > 1)
             #expect(chunks.allSatisfy { $0.data.count < 8 * 1024 * 1024 })
             #expect(chunks.reduce(0) { $0 + $1.body.segments.count } == segments.count)
-            #expect(patches.count == chunks.count)
-            #expect(patches.flatMap(\.segments).map(\.segmentId) == segments.map(\.segmentId))
-            #expect(try patches.allSatisfy { try SyncWorker.transcriptChunks($0).count == 1 })
         }
 
         @Test
-        func recorderSplitsTranscriptSnapshotsBeforeTheServerChunkLimit() async throws {
+        func recorderKeepsTranscriptReplacementAndMeetingUpdateAtomic() async throws {
             let (database, vault) = try await syncedDatabase()
             let meeting = MeetingRecord(
                 id: .v7(), vaultId: vault.id, projectId: nil, name: "Meeting",
@@ -1674,29 +1667,31 @@
                 let patch = SyncOperationDraft(entity: .transcript, action: .patch, entityId: meeting.id)
                 try SyncTransactionRecorder.record(
                     vaultId: vault.id,
-                    operations: [patch],
+                    operations: [patch, SyncInitialSnapshotBuilder.meetingOperation(meeting, action: .update)],
                     transcriptSegments: [patch.id: records.map(SyncTranscriptPatchSegment.init)],
                     in: db
                 )
             }
 
-            let queued = try await database.dbQueue.read { db in
+            let queued = try database.dbQueue.read { db in
                 try Row.fetchAll(
                     db,
                     sql: """
-                    SELECT o.baseRevision, count(i.operationId) AS itemCount
+                    SELECT t.sequence, o.entity, o.baseRevision, count(i.operationId) AS itemCount
                     FROM sync_operations o
                     JOIN sync_transactions t ON t.id = o.transactionId
-                    JOIN sync_transcript_patch_items i ON i.operationId = o.id
+                    LEFT JOIN sync_transcript_patch_items i ON i.operationId = o.id
                     WHERE t.vaultId = ?
-                    GROUP BY t.sequence, o.position
+                    GROUP BY t.sequence, o.position, o.entity, o.baseRevision
                     ORDER BY t.sequence, o.position
                     """,
                     arguments: [vault.id]
-                ).map { row in (row["baseRevision"] as Int?, row["itemCount"] as Int) }
+                )
             }
-            #expect(queued.map(\.1) == [100, 1])
-            #expect(queued.map(\.0) == [0, 1])
+            #expect(queued.count == 2)
+            #expect(Set(queued.map { $0["sequence"] as Int64 }).count == 1)
+            #expect(queued.map { $0["entity"] as String } == ["transcript", "meeting"])
+            #expect(queued.map { $0["itemCount"] as Int } == [101, 0])
         }
 
         @Test

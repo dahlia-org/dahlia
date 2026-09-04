@@ -717,6 +717,24 @@ function createIdentityStore(
     }
   }
 
+  async function assertCreateAvailable(
+    transaction: SyncTransaction,
+    operation: SyncTransaction["operations"][number],
+  ): Promise<void> {
+    if (operation.action !== "create") return;
+    const current = await canonicalRecord(operation.entity, transaction.vaultId, operation.entityId);
+    if (current.record === null
+      || (operation.entity === "vault" && current.revision === 0)
+      || (operation.entity === "meeting" && current.record.active === false)) return;
+    throw new SyncTransactionError(409, "revision_conflict", [{
+      entity: operation.entity,
+      id: operation.entityId,
+      clientBaseRevision: null,
+      serverRevision: current.revision,
+      record: current.record,
+    }], operation.id);
+  }
+
   async function assertProjectHierarchy(
     vaultId: string,
     projectId: string,
@@ -809,6 +827,7 @@ function createIdentityStore(
       }], transaction.operations[0]?.id);
     }
     for (const operation of transaction.operations) {
+      await assertCreateAvailable(transaction, operation);
       const data = operation.data ?? {};
       const now = new Date();
       if (operation.entity === "vault") {
@@ -832,7 +851,7 @@ function createIdentityStore(
               clientBaseRevision: null,
               serverRevision: (await canonicalRecord("vault", transaction.vaultId, operation.entityId)).revision,
               record: (await canonicalRecord("vault", transaction.vaultId, operation.entityId)).record,
-            }]);
+            }], operation.id);
             await db.insert(schema.syncedVault).values({
               vaultId: transaction.vaultId,
               name: String(data.name),
@@ -925,13 +944,6 @@ function createIdentityStore(
         if (operation.action === "create") {
           const [existing] = await db.select({ active: schema.syncedMeeting.active })
             .from(schema.syncedMeeting).where(ownedMeeting(transaction.vaultId, operation.entityId)).limit(1);
-          if (existing?.active) throw new SyncTransactionError(409, "revision_conflict", [{
-            entity: "meeting",
-            id: operation.entityId,
-            clientBaseRevision: null,
-            serverRevision: (await canonicalRecord("meeting", transaction.vaultId, operation.entityId)).revision,
-            record: (await canonicalRecord("meeting", transaction.vaultId, operation.entityId)).record,
-          }]);
           const projectId = data.projectId as string | null;
           await assertProjectReference(transaction.vaultId, projectId, operation.id);
           const values = {

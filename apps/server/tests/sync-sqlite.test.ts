@@ -96,6 +96,28 @@ describe("SQLite canonical sync", () => {
       code: "revision_conflict",
       conflicts: [{ entity: "project", serverRevision: null, record: null }],
     });
+    await commit(store, owner, transaction("019d4a01-1000-7000-8000-000000000005", [{
+      id: "019d4a01-1000-7000-8000-000000000006",
+      entity: "project",
+      action: "create",
+      entityId: projectId,
+      baseRevision: null,
+      data: projectData("Existing"),
+    }]));
+    const duplicateCreateOperationId = "019d4a01-1000-7000-8000-000000000008";
+    await expect(commit(store, owner, transaction("019d4a01-1000-7000-8000-000000000007", [{
+      id: duplicateCreateOperationId,
+      entity: "project",
+      action: "create",
+      entityId: projectId,
+      baseRevision: null,
+      data: projectData("Local"),
+    }]))).rejects.toMatchObject({
+      status: 409,
+      code: "revision_conflict",
+      operationId: duplicateCreateOperationId,
+      conflicts: [{ entity: "project", serverRevision: 1, record: { name: "Existing" } }],
+    });
     expect(await store.sync.withIdentity(other, (sync) => sync.getVault(vaultId))).toBeNull();
     await store.close?.();
   });
