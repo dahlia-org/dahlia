@@ -122,6 +122,65 @@ describe("SQLite canonical sync", () => {
     await store.close?.();
   });
 
+  it("reclaims inactive screenshot uploads after a terminal transaction rejection", async () => {
+    const { store } = await setup();
+    await createVault(store);
+    await commit(store, owner, transaction("019d4a01-1010-7000-8000-000000000001", [{
+      id: "019d4a01-1010-7000-8000-000000000002",
+      entity: "meeting",
+      action: "create",
+      entityId: meetingId,
+      baseRevision: null,
+      data: { ...meetingData(), projectId: null },
+    }]));
+    const contentHash = "a".repeat(64);
+    const storageKey = `meetings/${meetingId}/screenshots/${screenshotId}.png`;
+    expect(await store.sync.withIdentity(owner, (sync) => sync.createScreenshot({
+      screenshotId,
+      vaultId,
+      meetingId,
+      capturedAt: now,
+      contentType: "image/png",
+      storageKey,
+      contentLength: 3,
+      contentHash,
+      ocrText: null,
+      caption: null,
+      revision: 0,
+    }))).toBe(true);
+
+    const rejected = transaction(
+      "019d4a01-1010-7000-8000-000000000003",
+      [{
+        id: "019d4a01-1010-7000-8000-000000000004",
+        entity: "screenshot",
+        action: "upsert",
+        entityId: screenshotId,
+        baseRevision: null,
+        data: { meetingId, capturedAt: now, ocrText: null, caption: null, contentHash },
+      }, {
+        id: "019d4a01-1010-7000-8000-000000000005",
+        entity: "vault",
+        action: "update",
+        entityId: vaultId,
+        baseRevision: 0,
+        data: { name: "Conflicting rename" },
+      }],
+    );
+    const request = JSON.parse(JSON.stringify(rejected)) as Record<string, unknown>;
+    Reflect.deleteProperty(request, "requestHash");
+    await expect(new MeetingSyncService(store.sync).commitTransaction(owner, request))
+      .rejects.toMatchObject({ status: 409, code: "revision_conflict" });
+
+    expect(await store.sync.withIdentity(owner, (sync) => sync.getScreenshot(
+      vaultId,
+      meetingId,
+      screenshotId,
+    ))).toBeNull();
+    expect(await store.sync.hasStorageDelete(storageKey)).toBe(true);
+    await store.close?.();
+  });
+
   it("returns a structured missing-Vault conflict for dependent transactions", async () => {
     const { store } = await setup();
     const operationId = "019d4a01-1020-7000-8000-000000000002";

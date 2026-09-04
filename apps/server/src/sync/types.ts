@@ -184,6 +184,7 @@ export interface IdentitySyncStore {
     activeOnly?: boolean,
   ): Promise<SyncScreenshotRecord | null>;
   createScreenshot(input: SyncScreenshotRecord): Promise<boolean>;
+  discardInactiveScreenshot(vaultId: string, screenshotId: string): Promise<boolean>;
   deleteScreenshot(vaultId: string, screenshotId: string, storageKey: string): Promise<boolean>;
   listVaults(): Promise<SyncVaultRecord[]>;
   getVault(vaultId: string): Promise<SyncVaultRecord | null>;

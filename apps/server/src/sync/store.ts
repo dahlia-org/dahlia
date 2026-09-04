@@ -1382,6 +1382,25 @@ function createIdentityStore(
       }).onConflictDoNothing().returning({ screenshotId: schema.syncedScreenshot.screenshotId });
       return created !== undefined;
     },
+    async discardInactiveScreenshot(vaultId, screenshotId) {
+      const [deleted] = await db.delete(schema.syncedScreenshot).where(and(
+        eq(schema.syncedScreenshot.vaultId, vaultId),
+        eq(schema.syncedScreenshot.screenshotId, screenshotId),
+        eq(schema.syncedScreenshot.active, false),
+        ownerAccess(schema.syncedScreenshot.vaultId),
+      )).returning({ storageKey: schema.syncedScreenshot.storageKey });
+      if (!deleted) return false;
+      await db.delete(schema.searchIndexJob).where(and(
+        eq(schema.searchIndexJob.vaultId, vaultId),
+        eq(schema.searchIndexJob.documentId, screenshotId),
+      ));
+      await db.delete(schema.searchDocument).where(and(
+        eq(schema.searchDocument.vaultId, vaultId),
+        eq(schema.searchDocument.documentId, screenshotId),
+      ));
+      await db.insert(schema.storageDeleteJob).values({ storageKey: deleted.storageKey }).onConflictDoNothing();
+      return true;
+    },
     async deleteScreenshot(vaultId, screenshotId, storageKey) {
       await db.delete(schema.searchIndexJob).where(and(
         eq(schema.searchIndexJob.vaultId, vaultId),

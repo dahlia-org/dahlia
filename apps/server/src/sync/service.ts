@@ -251,16 +251,26 @@ export class MeetingSyncService {
       if (error instanceof SyncTransactionError
         && error.status >= 400 && error.status < 500
         && ![408, 425, 429].includes(error.status)) {
+        let discardedScreenshot = false;
         try {
           await this.store.withIdentity(identity, async (scoped) => {
             for (const operation of operations) {
               if (operation.entity === "transcript" && operation.action === "patch") {
                 await scoped.deleteTranscriptPatch(parsed.data.vaultId, operation.entityId, operation.id);
+              } else if (operation.entity === "screenshot" && operation.action === "upsert") {
+                discardedScreenshot = await scoped.discardInactiveScreenshot(
+                  parsed.data.vaultId,
+                  operation.entityId,
+                ) || discardedScreenshot;
               }
             }
           });
-        } catch {
-          // A later upload removes expired staging rows if immediate cleanup is unavailable.
+          if (discardedScreenshot) this.scheduleStorageDeletes();
+        } catch (cleanupError) {
+          if (operations.some(({ entity, action }) => entity === "screenshot" && action === "upsert")) {
+            throw cleanupError;
+          }
+          // A later transcript upload removes expired staging rows if immediate cleanup is unavailable.
         }
       }
       throw error;
