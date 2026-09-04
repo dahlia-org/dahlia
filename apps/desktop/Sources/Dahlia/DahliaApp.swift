@@ -38,6 +38,7 @@ struct DahliaApp: App {
     @State private var isInitializingVault = true
     @State private var vaultInitializationTask: Task<Void, Never>?
     @State private var showVaultPicker = true
+    @State private var pendingSetupAdoptionVaultID: UUID?
 
     @MainActor
     init() {
@@ -166,7 +167,7 @@ struct DahliaApp: App {
                 } ?? "",
                 isPresented: Binding(
                     get: { vaultManagementModel.pendingServerAdoption != nil },
-                    set: { if !$0 { vaultManagementModel.cancelServerAdoption() } }
+                    set: { if !$0 { cancelServerAdoption() } }
                 ),
                 titleVisibility: .visible
             ) {
@@ -176,7 +177,7 @@ struct DahliaApp: App {
                     }
                 }
                 Button(L10n.keepLocalAccount, role: .cancel) {
-                    vaultManagementModel.cancelServerAdoption()
+                    cancelServerAdoption()
                 }
             } message: {
                 if let pending = vaultManagementModel.pendingServerAdoption {
@@ -490,12 +491,30 @@ struct DahliaApp: App {
     }
 
     private func confirmServerAdoption() async {
-        guard let updated = await vaultManagementModel.confirmServerAdoption() else { return }
+        guard let updated = await vaultManagementModel.confirmServerAdoption() else {
+            pendingSetupAdoptionVaultID = nil
+            return
+        }
+        if pendingSetupAdoptionVaultID == updated.id {
+            pendingSetupAdoptionVaultID = nil
+            guard openVault(updated, recordsLastOpened: false),
+                  await vaultManagementModel.markVaultOpened(updated)
+            else { return }
+            SetupTourPresentationPolicy.markCompleted()
+            mainWindowNavigation.completeSetupTour()
+            await dahliaAccountController.reload()
+            return
+        }
         if AppSettings.shared.currentVault?.id == updated.id {
             AppSettings.shared.currentVault = updated
             VaultAISettingsModel.shared.activate(vault: updated)
         }
         await dahliaAccountController.reload()
+    }
+
+    private func cancelServerAdoption() {
+        pendingSetupAdoptionVaultID = nil
+        vaultManagementModel.cancelServerAdoption()
     }
 
     private func reconcileVaultsAfterAccountChange() async {
@@ -513,12 +532,18 @@ struct DahliaApp: App {
     }
 
     private func completeSetupTour(_ vault: VaultRecord, accountConnectionID: UUID?) async -> Bool {
-        guard let configuredVault = await vaultManagementModel.updateAccountConnection(
-            for: vault,
-            connectionID: accountConnectionID
-        ),
-            openVault(configuredVault, recordsLastOpened: false),
-            await vaultManagementModel.markVaultOpened(configuredVault)
+        if let accountConnectionID, vault.accountConnectionId == nil {
+            guard let connection = dahliaAccountController.connections.first(where: {
+                $0.id == accountConnectionID
+            }) else { return false }
+            await vaultManagementModel.requestServerAdoption(for: vault, connection: connection)
+            guard vaultManagementModel.pendingServerAdoption?.vault.id == vault.id else { return false }
+            pendingSetupAdoptionVaultID = vault.id
+            return true
+        }
+        guard vault.accountConnectionId == accountConnectionID,
+              openVault(vault, recordsLastOpened: false),
+              await vaultManagementModel.markVaultOpened(vault)
         else { return false }
         await dahliaAccountController.reload()
         SetupTourPresentationPolicy.markCompleted()

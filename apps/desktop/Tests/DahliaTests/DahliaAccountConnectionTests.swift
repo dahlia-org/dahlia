@@ -69,7 +69,11 @@
             #expect(migrated.summaryModelID == "gpt-5.6-luna")
             #expect(!migrated.aiSettingsBackfilled)
 
-            _ = try await repository.updateVaultAccountConnection(id: migrated.id, connectionID: connection.id)
+            _ = try await repository.adoptVaultForServerSync(
+                id: migrated.id,
+                connectionID: connection.id,
+                serverVault: nil
+            )
             try await repository.deleteDahliaAccountConnection(id: connection.id)
 
             migrated = try #require(try await queue.read { db in try VaultRecord.fetchOne(db, key: vault.id) })
@@ -87,7 +91,11 @@
             var staleSettings = VaultAISettingsSnapshot(vault: vault)
             staleSettings.summaryModelID = "new-summary-model"
 
-            _ = try await repository.updateVaultAccountConnection(id: vault.id, connectionID: connection.id)
+            _ = try await repository.adoptVaultForServerSync(
+                id: vault.id,
+                connectionID: connection.id,
+                serverVault: nil
+            )
             _ = try await repository.updateVaultAISettings(staleSettings)
 
             let stored = try #require(try await manager.dbQueue.read { db in
@@ -308,6 +316,47 @@
 
             #expect(try repository.fetchAllVaults().isEmpty)
             #expect(store.credential(for: connection.id) == nil)
+        }
+
+        @Test
+        func signOutDoesNotDeleteAVaultWithAnActiveRecording() async throws {
+            let manager = try AppDatabaseManager(path: ":memory:")
+            let repository = MeetingRepository(dbQueue: manager.dbQueue)
+            let connection = makeConnection(origin: "https://server.example.com")
+            let credential = makeCredential(
+                origin: connection.origin,
+                accountID: "server-user",
+                accessToken: "server-token"
+            )
+            var vault = makeVault(name: "Server")
+            vault.accountConnectionId = connection.id
+            vault.syncConfirmedConnectionId = connection.id
+            vault.syncRole = "owner"
+            let meeting = MeetingRecord(
+                id: .v7(), vaultId: vault.id, projectId: nil, name: "Recording",
+                createdAt: .now, updatedAt: .now
+            )
+            let session = RecordingSessionRecord(
+                id: .v7(), meetingId: meeting.id, startedAt: .now, endedAt: nil,
+                duration: nil, offsetSeconds: 0, createdAt: .now, updatedAt: .now
+            )
+            try await repository.insertDahliaAccountConnection(connection)
+            try repository.insertVault(vault)
+            try await manager.dbQueue.write { db in
+                try meeting.insert(db)
+                try session.insert(db)
+            }
+            let store = CredentialStoreFake(values: [connection.id: credential])
+            let controller = makeController(store: store)
+            await controller.configure(appDatabase: manager)
+
+            controller.requestSignOut(connectionID: connection.id)
+            let signOut = try #require(controller.confirmSignOut(disposition: .deleteLocalCopies))
+            await signOut.value
+
+            #expect(try repository.fetchAllVaults().map(\.id) == [vault.id])
+            #expect(store.credential(for: connection.id) != nil)
+            #expect(controller.errorMessage != nil)
         }
 
         @Test

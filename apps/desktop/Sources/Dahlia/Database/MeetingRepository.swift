@@ -138,28 +138,6 @@ final class MeetingRepository {
         }
     }
 
-    nonisolated func updateVaultAccountConnection(id: UUID, connectionID: UUID?) async throws -> VaultRecord? {
-        try await dbQueue.write { db in
-            guard var vault = try VaultRecord.fetchOne(db, key: id) else { return nil }
-            if vault.accountConnectionId != connectionID {
-                guard try !SyncTransactionQueue.hasPending(vaultId: id, in: db) else {
-                    throw SyncTransactionQueueError.pendingTransactions
-                }
-                guard vault.syncConfirmedConnectionId == nil else {
-                    throw SyncTransactionQueueError.serverCopyExists
-                }
-            }
-            vault.accountConnectionId = connectionID
-            if connectionID == nil {
-                vault.syncRole = nil
-                vault.syncPullCursor = nil
-                vault.syncLastCommittedCursor = nil
-            }
-            try vault.update(db)
-            return vault
-        }
-    }
-
     nonisolated func adoptVaultForServerSync(
         id: UUID,
         connectionID: UUID,
@@ -353,6 +331,34 @@ final class MeetingRepository {
         }
         try BatchAudioCleanupService.deleteFiles(audioTargets)
         try await dbQueue.write { db in
+            let placeholders = vaultIds.map { _ in "?" }.joined(separator: ",")
+            let arguments = StatementArguments(vaultIds)
+            let hasActiveRecording = try Bool.fetchOne(
+                db,
+                sql: """
+                SELECT EXISTS (
+                    SELECT 1 FROM recording_sessions
+                    JOIN meetings ON meetings.id = recording_sessions.meetingId
+                    WHERE meetings.vaultId IN (\(placeholders))
+                      AND recording_sessions.endedAt IS NULL
+                )
+                """,
+                arguments: arguments
+            ) ?? false
+            let hasLiveAudio = try Bool.fetchOne(
+                db,
+                sql: """
+                SELECT EXISTS (
+                    SELECT 1 FROM recording_audio_segments
+                    JOIN recording_sessions ON recording_sessions.id = recording_audio_segments.recordingSessionId
+                    JOIN meetings ON meetings.id = recording_sessions.meetingId
+                    WHERE meetings.vaultId IN (\(placeholders))
+                      AND recording_audio_segments.state != ?
+                )
+                """,
+                arguments: arguments + [RecordingAudioSegmentState.purged.rawValue]
+            ) ?? false
+            guard !hasActiveRecording, !hasLiveAudio else { throw RecordingAudioStoreError.invalidState }
             for vaultId in vaultIds {
                 try SyncTransactionQueue.discard(vaultId: vaultId, in: db)
                 try Self.deleteVaultRows(id: vaultId, in: db)

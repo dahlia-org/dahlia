@@ -38,12 +38,15 @@
             let selectedURL = rootURL.appending(path: "Selected", directoryHint: .isDirectory)
             defer { try? FileManager.default.removeItem(at: rootURL) }
             let settings = VaultAISettingsModel.shared
+            let originalConnectionID = settings.accountConnectionID
             let originalProvider = settings.localProvider
             let originalProfile = settings.databricksProfile
             settings.clear()
+            settings.accountConnectionID = .v7()
             settings.localProvider = .databricks
             settings.databricksProfile = "setup-profile"
             defer {
+                settings.accountConnectionID = originalConnectionID
                 settings.localProvider = originalProvider
                 settings.databricksProfile = originalProfile
             }
@@ -53,8 +56,10 @@
 
             #expect(vault.localProvider == .databricks)
             #expect(vault.databricksProfile == "setup-profile")
+            #expect(vault.accountConnectionId == nil)
             #expect(storedVault.localProvider == .databricks)
             #expect(storedVault.databricksProfile == "setup-profile")
+            #expect(storedVault.accountConnectionId == nil)
         }
 
         @Test
@@ -410,26 +415,39 @@
         }
 
         @Test
-        func updatesTheAccountConnectionForOneVault() async throws {
+        func adoptionPreservesTheLocalVaultWhenMemberAccessWasRevokedBeforeConfirmation() async throws {
             let database = try AppDatabaseManager(path: ":memory:")
             let repository = MeetingRepository(dbQueue: database.dbQueue)
             let connection = DahliaAccountConnectionRecord(
-                id: .v7(),
-                origin: "https://server.example.com",
-                clientID: "desktop-client",
-                createdAt: .now
+                id: .v7(), origin: "https://server.example.com", clientID: "desktop-client", createdAt: .now
             )
+            let vault = makeVault(name: "Local", lastOpenedAt: .now)
+            let remote = CloudVaultRecord(
+                vaultId: vault.id,
+                connectionId: connection.id,
+                name: "Server",
+                createdAt: .now,
+                revision: 7,
+                role: "member"
+            )
+            var responses = [[remote], [remote], []]
             try await repository.insertDahliaAccountConnection(connection)
-            let vault = makeVault(name: "Account", lastOpenedAt: .now)
             try repository.insertVault(vault)
-            let model = VaultManagementModel()
+            let model = VaultManagementModel(cloudVaultFetcher: { _ in responses.removeFirst() })
             await model.configure(appDatabase: database)
+            let account = DahliaAccountConnection(
+                record: connection,
+                account: DahliaCloudAccount(id: "user", name: "User", email: nil),
+                isCloud: false,
+                grantedScopes: ["all-apis"]
+            )
 
-            let updated = try #require(await model.updateAccountConnection(for: vault, connectionID: connection.id))
+            await model.requestServerAdoption(for: vault, connection: account)
+            #expect(await model.confirmServerAdoption() == nil)
 
-            #expect(updated.accountConnectionId == connection.id)
-            #expect(model.vaults.first?.accountConnectionId == connection.id)
-            #expect(try repository.fetchAllVaults().first?.accountConnectionId == connection.id)
+            let preserved = try #require(repository.fetchAllVaults().first)
+            #expect(preserved.accountConnectionId == nil)
+            #expect(preserved.syncConfirmedConnectionId == nil)
         }
 
         @Test

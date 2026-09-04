@@ -182,7 +182,7 @@ final class VaultManagementModel {
             createdAt: now,
             lastOpenedAt: markAsOpened ? now : .distantPast
         )
-        VaultAISettingsModel.shared.snapshot(for: vault.id).apply(to: &vault)
+        VaultAISettingsModel.shared.snapshot(for: vault.id).applyAISettings(to: &vault)
 
         do {
             try await repository.insertVaultAsync(vault)
@@ -264,34 +264,6 @@ final class VaultManagementModel {
         }
     }
 
-    func updateAccountConnection(for vault: VaultRecord, connectionID: UUID?) async -> VaultRecord? {
-        guard vault.accountConnectionId != connectionID else { return vault }
-        guard updatingVaultAccountID == nil else { return nil }
-        guard let repository else {
-            presentError(L10n.vaultOperationFailed, source: "updateAccountConnection")
-            return nil
-        }
-
-        updatingVaultAccountID = vault.id
-        defer { updatingVaultAccountID = nil }
-        do {
-            guard let updatedVault = try await repository.updateVaultAccountConnection(
-                id: vault.id,
-                connectionID: connectionID
-            ) else {
-                presentError(L10n.vaultOperationFailed, source: "updateAccountConnection")
-                return nil
-            }
-            if let index = vaults.firstIndex(where: { $0.id == vault.id }) {
-                vaults[index] = updatedVault
-            }
-            return updatedVault
-        } catch {
-            presentError(L10n.vaultOperationFailed, error: error, source: "updateAccountConnection")
-            return nil
-        }
-    }
-
     func requestServerAdoption(for vault: VaultRecord, connection: DahliaAccountConnection) async {
         guard updatingVaultAccountID == nil,
               vault.accountConnectionId == nil,
@@ -321,10 +293,16 @@ final class VaultManagementModel {
         updatingVaultAccountID = pendingServerAdoption.vault.id
         defer { updatingVaultAccountID = nil }
         do {
+            let currentServerVault = try await fetchCloudVaults(from: pendingServerAdoption.connection.record)
+                .first(where: { $0.vaultId == pendingServerAdoption.vault.id })
+            guard pendingServerAdoption.serverVault == nil || currentServerVault != nil else {
+                presentError(L10n.vaultOperationFailed, source: "confirmServerAdoption.revoked")
+                return nil
+            }
             guard let updated = try await repository.adoptVaultForServerSync(
                 id: pendingServerAdoption.vault.id,
                 connectionID: pendingServerAdoption.connection.id,
-                serverVault: pendingServerAdoption.serverVault
+                serverVault: currentServerVault
             ) else { return nil }
             if let index = vaults.firstIndex(where: { $0.id == updated.id }) { vaults[index] = updated }
             return updated
