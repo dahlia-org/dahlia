@@ -222,7 +222,7 @@ describe("deployment routing", () => {
     expect(bundle).not.toContain("legacy_artifact_volume_name:");
     expect(resource).toContain(`dahlia_storage:
       catalog_name: \${var.catalog}
-      schema_name: \${resources.schemas.dahlia.name}
+      schema_name: \${resources.schemas.app_schema.name}
       name: \${var.volume_name}`);
     expect(bundle).toContain("scripts/postdeploy.sh");
     expect(resource).toContain("name: DATABRICKS_MODEL_SCHEMA");

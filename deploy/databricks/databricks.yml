@@ -69,13 +69,13 @@ targets:
         ai_schema:
           lifecycle:
             prevent_destroy: true
-        dahlia:
+        app_schema:
           lifecycle:
             prevent_destroy: true
       volumes:
         dahlia_storage:
           catalog_name: ${var.catalog}
-          schema_name: ${resources.schemas.dahlia.name}
+          schema_name: ${resources.schemas.app_schema.name}
           name: ${var.volume_name}
           volume_type: MANAGED
           comment: Dahlia Server stored content for ${bundle.target}

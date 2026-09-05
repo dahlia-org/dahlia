@@ -19,7 +19,7 @@ Dahlia Server App ─┬─ forwarded user token ── Databricks AI Gateway Re
 
 - A Databricks workspace with Databricks Apps, Lakebase Autoscaling, and access to the Lakebase Search preview.
 - Permission to create Apps and Lakebase projects and query the configured Responses and embedding models.
-- Databricks CLI 1.4.0 or newer with `ai-gateway get-model-service` and `create-model-service` support (verified with 1.12.1), authenticated with a CLI profile or environment variables.
+- Databricks CLI 1.4.0 or newer with `ai-gateway list-model-services`, `get-model-service`, and `create-model-service` support (verified with 1.12.1), authenticated with a CLI profile or environment variables.
 - Bash and jq for postdeploy.
 - Node.js 22.13 or newer, Corepack, and pnpm for local validation.
 
@@ -61,6 +61,12 @@ Both columns must be non-null. A successful authenticated header request also pr
 
 Dahlia installs `lakebase_text` and creates the unified BM25 index during migration. When an embedding model is configured it also installs `lakebase_vector` and creates a dimension- and model-specific `lakebase_ann` index. Failure to load either configured capability stops migration instead of silently changing search semantics. Grant the App service principal query permission on the embedding model. After the Desktop completes the first full Vault synchronization, run `VACUUM app.search_documents;` against the application database so BM25 corpus statistics include the uploaded rows.
 
+The postdeploy regression check uses a fake CLI and does not access a workspace:
+
+```bash
+node --test scripts/postdeploy.test.mjs
+```
+
 ## Initial AI models
 
 The bundle creates `${catalog}.${ai_schema}` (default `dahlia.ai`) and sets `DATABRICKS_MODEL_SCHEMA` to that schema. It is independent of `app_schema` (default `app`), which contains stored content. The postdeploy Bash script preserves Lakebase search-extension activation, then registers these model services using the foundation-model destinations of the corresponding `system.ai` services:
@@ -74,7 +80,7 @@ The bundle creates `${catalog}.${ai_schema}` (default `dahlia.ai`) and sets `DAT
 | `kimi-k3` | `system.ai.kimi-k3` |
 | `deepseek-v4-pro` | `system.ai.deepseek-v4-pro-0813` |
 
-This is a temporary registration step: it does not check for existing models or retry conflicts. If a model already exists, the CLI creation error stops postdeploy; remove or skip its registration for subsequent deployments. Model creation uses `databricks ai-gateway create-model-service`; `get-model-service` and jq resolve and validate each source foundation-model destination. No inference payload logging is enabled by the script.
+This registration step lists existing model services across all pages and creates only missing names. Existing model configurations are preserved, so deployments can be repeated or resumed after a partial failure. Listing, source lookup, and creation failures stop postdeploy with CLI diagnostics; each creation logs the target and source model names. Concurrent creation conflicts are not retried; rerun deployment after resolving the error. Model creation uses `databricks ai-gateway create-model-service`; `get-model-service` and jq resolve and validate each source foundation-model destination. No inference payload logging is enabled by the script.
 
 The bundle grants `USE SCHEMA` and `EXECUTE` on the AI schema to `account users`, with `EXECUTE` inherited by its model services. Before activating search extensions and registering models, postdeploy adds `USE CATALOG` on the existing `${catalog}` to `account users`, preserving other grants. The deployment principal needs `USE CATALOG`, `USE SCHEMA`, `CREATE SERVICE`, permission to manage catalog and schema grants, and access to the source models. The App service principal needs visibility of the target model services. If the AI schema already exists outside the bundle, bind the `ai_schema` schema resource before deployment rather than creating a duplicate. Deployments sharing a catalog must share one schema owner/bundle management arrangement.
 
