@@ -147,14 +147,20 @@ struct CodexRuntimeAccountIsolationTests {
         }
         await service.waitUntilActiveTurnForTesting()
         let databricksActivation = Task {
-            try await coordinator.activate(VaultAISettingsSnapshot(vault: databricksVault))
+            try await coordinator.activate(VaultAISettingsSnapshot(
+                vault: databricksVault,
+                localAccountSettings: .init(provider: .databricks, databricksProfile: "WORK")
+            ))
         }
         await service.waitUntilConfigurationReloadIsWaitingForTesting()
 
         databricksActivation.cancel()
         await #expect(throws: CancellationError.self) { try await databricksActivation.value }
         let localActivation = Task {
-            try await coordinator.activate(VaultAISettingsSnapshot(vault: localVault))
+            try await coordinator.activate(VaultAISettingsSnapshot(
+                vault: localVault,
+                localAccountSettings: .init(provider: .chatGPTSubscription, databricksProfile: "")
+            ))
         }
         await completeGeneration(on: first)
 

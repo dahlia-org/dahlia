@@ -737,10 +737,10 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
 
     // MARK: - LLM 設定
 
-    @AppStorage("codexAccountProvider") var codexAccountProviderRawValue = AIAccountProvider.chatGPTSubscription.rawValue
+    @AppStorage(LocalAccountAISettings.providerKey) var codexAccountProviderRawValue = AIAccountProvider.chatGPTSubscription.rawValue
     @AppStorage("codexConfiguredAccountProvider") var codexConfiguredAccountProviderRawValue =
         AIAccountProvider.chatGPTSubscription.rawValue
-    @AppStorage("llmDatabricksProfile") var codexDatabricksProfile = ""
+    @AppStorage(LocalAccountAISettings.databricksProfileKey) var codexDatabricksProfile = ""
     @AppStorage("codexConfiguredDatabricksProfile") var codexConfiguredDatabricksProfile = ""
     @AppStorage("codexModelID") var codexModelID = "gpt-5.6-luna"
     @AppStorage("codexReasoningEffort") var codexReasoningEffort = "high"

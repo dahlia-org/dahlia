@@ -89,35 +89,19 @@
         }
 
         @Test
-        func setupPersistsProviderDraftBeforeTheFirstVaultIsActive() async throws {
+        func newVaultKeepsLegacyProviderDefaults() async throws {
             let database = try AppDatabaseManager(path: ":memory:")
             let model = VaultManagementModel()
             await model.configure(appDatabase: database)
             let rootURL = temporaryDirectoryURL()
             let selectedURL = rootURL.appending(path: "Selected", directoryHint: .isDirectory)
             defer { try? FileManager.default.removeItem(at: rootURL) }
-            let settings = VaultAISettingsModel.shared
-            let originalConnectionID = settings.accountConnectionID
-            let originalProvider = settings.localProvider
-            let originalProfile = settings.databricksProfile
-            settings.clear()
-            settings.accountConnectionID = .v7()
-            settings.localProvider = .databricks
-            settings.databricksProfile = "setup-profile"
-            defer {
-                settings.accountConnectionID = originalConnectionID
-                settings.localProvider = originalProvider
-                settings.databricksProfile = originalProfile
-            }
-
             let vault = try #require(await model.createVault(at: selectedURL))
             let storedVault = try #require(MeetingRepository(dbQueue: database.dbQueue).fetchAllVaults().first)
 
-            #expect(vault.localProvider == .databricks)
-            #expect(vault.databricksProfile == "setup-profile")
             #expect(vault.accountConnectionId == nil)
-            #expect(storedVault.localProvider == .databricks)
-            #expect(storedVault.databricksProfile == "setup-profile")
+            #expect(storedVault.localProvider == .chatGPTSubscription)
+            #expect(storedVault.databricksProfile.isEmpty)
             #expect(storedVault.accountConnectionId == nil)
         }
 

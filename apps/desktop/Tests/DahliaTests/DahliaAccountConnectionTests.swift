@@ -88,7 +88,10 @@
             let vault = makeVault(name: "Account")
             try await repository.insertDahliaAccountConnection(connection)
             try repository.insertVault(vault)
-            var staleSettings = VaultAISettingsSnapshot(vault: vault)
+            var staleSettings = VaultAISettingsSnapshot(
+                vault: vault,
+                localAccountSettings: .init(provider: .chatGPTSubscription, databricksProfile: "")
+            )
             staleSettings.summaryModelID = "new-summary-model"
 
             _ = try await repository.adoptVaultForServerSync(
@@ -170,9 +173,12 @@
             try await manager.dbQueue.write { db in
                 try insertLegacyVault(pending, in: db)
             }
-            var settings = VaultAISettingsSnapshot(vault: try #require(
-                try await manager.dbQueue.read { db in try VaultRecord.fetchOne(db, key: pending.id) }
-            ))
+            var settings = try VaultAISettingsSnapshot(
+                vault: #require(try await manager.dbQueue.read { db in
+                    try VaultRecord.fetchOne(db, key: pending.id)
+                }),
+                localAccountSettings: .init(provider: .chatGPTSubscription, databricksProfile: "")
+            )
             settings.summaryModelID = "explicit-model"
 
             _ = try await repository.updateVaultAISettings(settings)

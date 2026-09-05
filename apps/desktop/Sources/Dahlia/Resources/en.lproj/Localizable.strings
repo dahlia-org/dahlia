@@ -531,7 +531,7 @@
 "Sign in with the same Dahlia account, or add a new connection." = "Sign in with the same Dahlia account, or add a new connection.";
 "Resolve this connection's Server Vaults before removing it." = "Resolve this connection's Server Vaults before removing it.";
 "Choose what to do with this account's local Vaults before signing out." = "Choose what to do with this account's local Vaults before signing out.";
-"Manage the Dahlia Cloud and Server sign-ins used by Dahlia." = "Manage the Dahlia Cloud and Server sign-ins used by Dahlia.";
+"Manage the Local Account and sign-ins to Dahlia Cloud and Server." = "Manage the Local Account and sign-ins to Dahlia Cloud and Server.";
 "%lld Dahlia accounts" = "%lld Dahlia accounts";
 "Sign In Again" = "Sign In Again";
 "Sign-in required" = "Sign-in required";
@@ -1066,8 +1066,10 @@
 "This approval request is no longer pending." = "This approval request is no longer pending.";
 "Unknown Codex app-server error." = "Unknown Codex app-server error.";
 "Account" = "Account";
-"Choose the model provider used by the current vault's Local Account." = "Choose the model provider used by the current vault's Local Account.";
-"This setting applies only to the current vault." = "This setting applies only to the current vault.";
+"Selected Account" = "Selected Account";
+"Local Account Model Provider" = "Local Account Model Provider";
+"Choose the model provider used by the Local Account." = "Choose the model provider used by the Local Account.";
+"This setting is shared by all Local Account vaults. Dahlia Server and Cloud use hosted models automatically." = "This setting is shared by all Local Account vaults. Dahlia Server and Cloud use hosted models automatically.";
 "ChatGPT Subscription" = "ChatGPT Subscription";
 "Databricks" = "Databricks";
 "Codex Account" = "Codex Account";

@@ -5,10 +5,12 @@ import GRDB
 
 actor SearchIndexer {
     typealias RuntimeProviderResolver = @Sendable () -> CodexRuntimeProvider
+    typealias LocalAccountSettingsResolver = @MainActor @Sendable () -> LocalAccountAISettings
 
     private let dbQueue: DatabaseQueue
     private let screenshotAnalyzer: any ScreenshotAnalyzing
     private let runtimeProviderResolver: RuntimeProviderResolver
+    private let localAccountSettingsResolver: LocalAccountSettingsResolver
     private let observationQueue = DispatchQueue(label: "app.dahlia.search-indexer", qos: .utility)
     private var workerTask: Task<Void, Never>?
     private var observationDrainTask: Task<Void, Never>?
@@ -26,11 +28,15 @@ actor SearchIndexer {
     init(
         dbQueue: DatabaseQueue,
         screenshotAnalyzer: any ScreenshotAnalyzing = CodexScreenshotAnalysisService(),
-        runtimeProviderResolver: @escaping RuntimeProviderResolver = { CodexRuntimeContextStore.shared.provider }
+        runtimeProviderResolver: @escaping RuntimeProviderResolver = { CodexRuntimeContextStore.shared.provider },
+        localAccountSettingsResolver: @escaping LocalAccountSettingsResolver = {
+            VaultAISettingsModel.shared.localAccountSettings
+        }
     ) {
         self.dbQueue = dbQueue
         self.screenshotAnalyzer = screenshotAnalyzer
         self.runtimeProviderResolver = runtimeProviderResolver
+        self.localAccountSettingsResolver = localAccountSettingsResolver
     }
 
     func start() async {
@@ -517,6 +523,7 @@ private extension SearchIndexer {
     }
 
     func processScreenshotJobsConcurrently(_ jobs: [SearchIndexJob]) async throws -> Bool {
+        let localSettings = await localAccountSettingsResolver()
         let inputs = try await dbQueue.read { db in
             try Dictionary(uniqueKeysWithValues: jobs.compactMap { job -> (UUID, ScreenshotAnalysisInput)? in
                 guard let screenshot = try MeetingScreenshotRecord.fetchOne(db, key: job.targetID),
@@ -529,8 +536,8 @@ private extension SearchIndexer {
                     mimeType: screenshot.mimeType,
                     runtimeProvider: CodexRuntimeProvider(
                         accountConnectionID: vault.accountConnectionId,
-                        localProvider: vault.localProvider,
-                        databricksProfile: vault.databricksProfile
+                        localProvider: localSettings.provider,
+                        databricksProfile: localSettings.databricksProfile
                     )
                 ))
             })

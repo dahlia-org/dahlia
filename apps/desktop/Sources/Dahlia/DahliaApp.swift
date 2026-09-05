@@ -395,6 +395,7 @@ struct DahliaApp: App {
         do {
             try await MeetingRepository(dbQueue: db.dbQueue)
                 .backfillVaultAISettings(VaultAISettingsLegacyValues(settings: .shared))
+            try await vaultAISettings.inheritLocalAccountSettings(from: db.dbQueue)
         } catch {
             ErrorReportingService.capture(error, context: ["source": "vaultAISettingsBackfill"])
         }
@@ -820,6 +821,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 return
             }
             await CodexAppServerService.shared.shutdown()
+            await CodexAppServerService.localAccount.shutdown()
             sender.reply(toApplicationShouldTerminate: true)
         }
         return .terminateLater

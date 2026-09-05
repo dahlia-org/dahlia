@@ -9,19 +9,22 @@ struct BundledCodexAppServerLauncher {
     private let presetSkillInstaller: BundledCodexPresetSkillInstaller
     private let tokenBrokerAuthorization: DahliaTokenBrokerAuthorization
     private let runtimeProviderResolver: RuntimeProviderResolver
+    private let arguments: [String]
 
     init(
         executableLocator: any CodexExecutableLocating = BundleCodexExecutableLocator(),
         homeLocator: ApplicationSupportCodexHomeLocator = ApplicationSupportCodexHomeLocator(),
         presetSkillInstaller: BundledCodexPresetSkillInstaller = BundledCodexPresetSkillInstaller(),
         tokenBrokerAuthorization: DahliaTokenBrokerAuthorization = .shared,
-        runtimeProviderResolver: @escaping RuntimeProviderResolver = { CodexRuntimeContextStore.shared.provider }
+        runtimeProviderResolver: @escaping RuntimeProviderResolver = { CodexRuntimeContextStore.shared.provider },
+        arguments: [String] = ["app-server"]
     ) {
         self.executableLocator = executableLocator
         self.homeLocator = homeLocator
         self.presetSkillInstaller = presetSkillInstaller
         self.tokenBrokerAuthorization = tokenBrokerAuthorization
         self.runtimeProviderResolver = runtimeProviderResolver
+        self.arguments = arguments
     }
 
     func launch() throws -> any CodexAppServerTransport {
@@ -52,6 +55,7 @@ struct BundledCodexAppServerLauncher {
         }
         return try CodexAppServerProcessTransport(
             executableURL: executableURL,
+            arguments: arguments,
             environment: environment,
             currentDirectoryURL: homeURL,
             onLaunch: onLaunch
