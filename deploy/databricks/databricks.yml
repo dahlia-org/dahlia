@@ -19,6 +19,9 @@ variables:
     description: Databricks App name.
   database_project_id:
     description: Lakebase project ID.
+  codex_auto_review_model:
+    description: Upstream model used by the Codex automatic approval reviewer. Empty disables it.
+    default: system.ai.gpt-5-6-luna
   search_embedding_model:
     description: Databricks embedding model used by server-side Hybrid search. Empty disables embeddings.
     default: system.ai.qwen3-embedding-0-6b

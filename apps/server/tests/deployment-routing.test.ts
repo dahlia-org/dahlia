@@ -93,6 +93,7 @@ describe("deployment routing", () => {
     const cloudflareVite = readText("../vite.cloudflare.config.ts");
 
     expect(worker).not.toContain("ASSETS");
+    expect(worker).toContain("CODEX_AUTO_REVIEW_MODEL");
     expect(worker).not.toContain("isApplicationPath");
     expect(worker).toContain("DAHLIA_AI_BACKEND");
     expect(worker).toContain("DATABRICKS_HOST");
@@ -203,6 +204,9 @@ describe("deployment routing", () => {
     expect(bundle).toContain("app_name: dahlia-dev");
     expect(bundle).toContain("app_name: dahlia-prod");
     expect(bundle).toContain("database_project_id: dahlia-db-dev");
+    expect(bundle).toContain("default: system.ai.gpt-5-6-luna");
+    expect(resource).toContain("name: CODEX_AUTO_REVIEW_MODEL");
+    expect(resource).toContain("value: ${var.codex_auto_review_model}");
     expect(bundle).toContain("database_project_id: dahlia-db");
     expect(bundle).toContain("catalog:");
     expect(bundle).toContain("default: dahlia");

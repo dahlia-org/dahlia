@@ -102,7 +102,7 @@ In `accounts` mode, `/mcp` requires a DPoP-bound access token for the exact MCP 
 
 The AI backend uses the OpenAI Responses-compatible contract and is independent of the database. Select `databricks`, `cloudflare`, or `openai` with `DAHLIA_AI_BACKEND`; it defaults to `openai`. While the selected non-Databricks backend has no `OPENAI_API_KEY`, `/api/v1/models` returns an empty standard model list and a Codex catalog with no picker-visible models, while Responses returns `503 provider_not_configured`.
 
-`GET /api/v1/models` returns the standard OpenAI `object` and `data` fields together with the `models` catalog required by Dahlia's bundled Codex. Omitting `client_version` selects the latest supported bundled version, currently `0.149.1`; callers may also request `client_version=0.149.1` explicitly. Other explicit versions return `400 unsupported_codex_client_version`. The enabled Model Alias rows remain the source of truth for both representations. Codex picker and runtime metadata is inferred from the upstream model or alias when it matches the pinned catalog; models without pinned Codex metadata use the OSS default of `none`, `low`, `high`, and `max` reasoning effort with `max` as the default. OpenAI-internal transport, hosted-tool, service-tier, and canonical-model lifecycle fields are not inherited by aliases. Updating the bundled Codex requires updating this Server catalog and its contract test in the same change.
+`GET /api/v1/models` returns the standard OpenAI `object` and `data` fields together with the `models` catalog required by Dahlia's bundled Codex. Omitting `client_version` selects the latest supported bundled version, currently `0.149.1`; callers may also request `client_version=0.149.1` explicitly. Other explicit versions return `400 unsupported_codex_client_version`. The enabled Model Alias rows remain the source of truth for both representations, except for the reserved `codex-auto-review` alias. Set `CODEX_AUTO_REVIEW_MODEL` to expose that alias as `Codex Auto Review` and route automatic approval reviews to the configured upstream model; an empty or missing value disables it. Codex picker and runtime metadata is inferred from the upstream model or alias when it matches the pinned catalog; models without pinned Codex metadata use the OSS default of `none`, `low`, `high`, and `max` reasoning effort with `max` as the default. OpenAI-internal transport, hosted-tool, service-tier, and canonical-model lifecycle fields are not inherited by aliases. Updating the bundled Codex requires updating this Server catalog and its contract test in the same change.
 
 The first authenticated user becomes the initial administrator. Administrator roles are stored in Better Auth's `auth.user.role`; additional registered users can be promoted or demoted under `/admin/members`.
 
@@ -120,6 +120,7 @@ Databricks native OpenAI Responses API:
 
 ```dotenv
 DAHLIA_AI_BACKEND=databricks
+CODEX_AUTO_REVIEW_MODEL=system.ai.gpt-5-6-luna
 DATABRICKS_HOST=https://<workspace-host>
 DATABRICKS_CLIENT_ID=<app-service-principal-client-id>
 DATABRICKS_CLIENT_SECRET=<app-service-principal-secret>

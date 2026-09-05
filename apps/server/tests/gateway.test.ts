@@ -103,6 +103,62 @@ describe("AI Gateway", () => {
     expect(model).toMatchObject({ availability_nux: null, upgrade: null });
   });
 
+  it("exposes and resolves the configured Codex automatic review alias", async () => {
+    const storedAutoReview = {
+      ...alias,
+      alias: "codex-auto-review",
+      upstreamModel: "stale/model",
+      displayName: "Stale Review",
+    };
+    const lookup = vi.fn(() => Promise.resolve(storedAutoReview));
+    const transport = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      expect(new Headers(init?.headers).get("authorization")).toBe("Bearer user-token");
+      expect(JSON.parse(String(init?.body))).toMatchObject({ model: "system.ai.gpt-5-6-luna" });
+      return new Response("{}");
+    });
+    const service = new GatewayService({
+      ...databricksConfig,
+      codexAutoReviewModel: "system.ai.gpt-5-6-luna",
+    }, {
+      listModelAliases: () => Promise.resolve([alias, storedAutoReview]),
+      getEnabledModelAlias: lookup,
+    }, transport);
+
+    const listed = await service.models();
+    expect(listed.data.filter((model) => model.id === "codex-auto-review")).toEqual([{
+      id: "codex-auto-review",
+      object: "model",
+      created: 0,
+      owned_by: "dahlia",
+      display_name: "Codex Auto Review",
+    }]);
+    expect(listed.models.find((model) => model.slug === "codex-auto-review")).toMatchObject({
+      display_name: "Codex Auto Review",
+      default_reasoning_level: "medium",
+      visibility: "list",
+    });
+
+    await service.responses(new Request("https://dahlia.example/api/v1/responses", {
+      method: "POST",
+      headers: { "x-forwarded-access-token": "user-token" },
+      body: JSON.stringify({ model: "codex-auto-review" }),
+    }));
+    expect(lookup).not.toHaveBeenCalled();
+    expect(transport).toHaveBeenCalledOnce();
+
+    const disabledService = new GatewayService(databricksConfig, {
+      listModelAliases: () => Promise.resolve([storedAutoReview]),
+      getEnabledModelAlias: lookup,
+    }, transport);
+    await expect(disabledService.responses(new Request("https://dahlia.example/api/v1/responses", {
+      method: "POST",
+      headers: { "x-forwarded-access-token": "user-token" },
+      body: JSON.stringify({ model: "codex-auto-review" }),
+    }))).rejects.toMatchObject({ status: 404, code: "model_not_found" });
+    expect(lookup).not.toHaveBeenCalled();
+    expect(transport).toHaveBeenCalledOnce();
+  });
+
   it("uses the OSS reasoning default for Databricks models without bundled metadata", async () => {
     const response = await new GatewayService(config, {
       ...registry,
