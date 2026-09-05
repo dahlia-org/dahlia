@@ -1,6 +1,6 @@
 ---
 name: generate-release-notes
-description: Generate concise, human-friendly GitHub Release notes for Dahlia by interpreting user-visible changes between releases. Use when independently drafting or revising a single-language Dahlia release note; use release-dahlia-app instead for the complete bilingual app-release workflow.
+description: Draft or revise a standalone Dahlia release note. Use release-dahlia-app for the complete bilingual app release.
 ---
 
 # Generate Release Notes
@@ -10,8 +10,8 @@ Create release notes for people who use Dahlia, based on repository evidence rat
 ## Gather evidence
 
 1. Determine the target version from the request. If absent, read `CFBundleShortVersionString` from `Resources/Info.plist` and prefix it with `v`.
-2. Find the newest earlier semantic-version tag reachable from `HEAD`. Exclude the target tag itself when it already exists.
-3. Inspect the complete range from that tag through `HEAD`:
+2. Honor an explicit comparison base and target ref, including a published-release base supplied by the release workflow. Otherwise find the newest earlier semantic-version tag reachable from `HEAD`, excluding the target tag itself. This offline fallback does not establish which release was last published; identify the selected base in the comparison link.
+3. Inspect the complete range from the selected base through the target ref (default `HEAD`):
    - Read the first-parent commit list and subjects.
    - Read the diff stat to understand scope.
    - Inspect the relevant diffs and source files deeply enough to explain user impact accurately.

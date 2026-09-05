@@ -14,7 +14,7 @@ Run the targeted suite first. Expand to the full suite for changes with broad ef
 ## Interpreting Results
 
 - Do not treat exit code 0 alone as success. Confirm a summary such as `Test run with N tests`; when `xcode-select` points to Command Line Tools, the build can exit successfully while running zero tests.
-- If the toolchain prevents execution, report the output of `xcode-select -p` and the tests that did not run. Do not run `sudo xcode-select -s /Applications/Xcode.app` automatically because it changes system configuration; ask the user to make that switch.
+- If Command Line Tools prevents execution and Xcode is installed, retry with the process-local override `env DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --filter <Suite>`. Do not change system-wide `xcode-select` settings. If execution remains blocked, report `xcode-select -p`, the attempted override, and the tests that did not run.
 
 ## Test Conventions
 

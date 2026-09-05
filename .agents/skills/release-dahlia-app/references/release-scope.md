@@ -5,6 +5,6 @@
    - Include `apps/desktop/Sources/Dahlia`, app resources, and packaging behavior visible to app users.
    - Include shared-target changes only when the `Dahlia` target actually uses the changed behavior.
    - Exclude `DahliaMCP`, `DahliaMeetingAccess`, tests, CI, developer tooling, and docs unless the same change materially affects the app.
-3. Determine one version increment from the complete release range. Apply the root `AGENTS.md` release policy; never infer a major version.
+3. Determine one version increment from the complete release range. Apply [Desktop Release Versioning](../../../../docs/desktop-release-versioning.md); never infer a major version.
 4. Stop if a GitHub Release already exists for the target version. An existing target tag at `HEAD` is not the comparison base when that release is still unpublished.
 5. Update both version keys in `Resources/Info.plist` only during release preparation.

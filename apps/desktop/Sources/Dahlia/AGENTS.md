@@ -45,17 +45,9 @@ store, repository, or global worker.
 
 ## Code Review Rules
 
-### Runtime Isolation and Durability
-
-- Flag any changed path that lets MainActor, UI rendering, observers, previews, or caches gate audio acceptance, immutable segment writing, finalized transcript or translation persistence, or the documented stop drain. The safe path keeps recording-critical and durable work in owned lanes that progress independently of UI stalls and surface overload or failure explicitly.
-
-### MainActor and UI Workload
-
-- Flag database, disk, network, synchronous OS queries, or input-sized decode and parsing on MainActor, along with high-frequency changes that create unbounded tasks, reparsing, layout materialization, or state publication. The safe path moves input-sized non-UI work to an owned worker and exposes a bounded, cancelable, replaceable projection that rejects stale results by identity or generation.
-
-### Update-Rate Controls
-
-- Do not prescribe debouncing by default. Use debounce only when a quiet period has semantic meaning, throttle or coalescing when a continuous stream must make periodic progress, and latest-wins when only replaceable current state matters. None may drop audio frames or delay or drop the durable ingress of finalized data. Apply them only to rebuildable projection work whose source of truth is preserved, and require explicit bounds and relevant coverage for bursts, cancellation, stale completions, and MainActor stalls when these paths change.
+Apply the safety and concurrency invariants above and the [Code Review Guide](../../../../docs/code-review.md).
+Choose update-rate controls by semantics: debounce only when a quiet period is meaningful; use throttle or coalescing
+for continuous progress and latest-wins for replaceable projections. Never drop or delay durable ingress to smooth UI updates.
 
 ## Implementation Conventions
 
@@ -64,7 +56,6 @@ store, repository, or global worker.
   `.footnote`, `.caption`, `.caption2`) and `NSFont.preferredFont(forTextStyle:)` in AppKit. Use `.caption2` for badges, tags, and chips.
   Do not introduce Dahlia-specific point-size scales or global font-size settings without explicit product approval; derive numeric sizes only
   when an API requires them.
-- Follow the SwiftFormat and SwiftLint configuration: four-space indentation, 150-character line limit, and trailing commas.
 - Add UI strings as computed properties in `Utilities/L10n.swift`, then add the same key to both `Resources/ja.lproj` and `Resources/en.lproj`. Japanese is the primary localization.
 - Settings screens use `Form` with `.formStyle(.grouped)`, `Section`, `LabeledContent`, and standard controls. Do not add custom cards, custom rows, or fixed-width control frames. Use `.toggleStyle(.switch)` for toggles and `.checkbox` for multiple selection.
 

@@ -49,7 +49,7 @@ conflict, and update the tenet only through a new ADR that the user approves.
 - **IMPORTANT:** Do not write overly defensive code. Always prefer simplicity over pathological complexity.
 - Use Swift 6.2, SwiftUI, macOS 26+, and Swift 6 strict concurrency.
 - Use Swift Package Manager only. Do not generate an Xcode project.
-- The app has exactly eight SwiftPM runtime dependencies: GRDB.swift, sentry-cocoa, TelemetryDeck SwiftSDK, Sparkle, WhisperKit, mlx-swift, mlx-swift-lm, and swift-transformers. Vendored native targets are DahliaAEC3 and the arm64 DahliaLindera static XCFramework (Rust 1.97.0, Lindera 2.0.1, embedded IPADIC, and a committed Cargo.lock). The separate `apps/desktop/BuildTools` package pins SwiftFormat. The app also verifies and bundles a pinned official arm64 release of the OpenAI Codex CLI as a runtime helper. Get confirmation before adding or updating dependencies.
+- The app has exactly eight SwiftPM runtime dependencies: GRDB.swift, sentry-cocoa, TelemetryDeck SwiftSDK, Sparkle, WhisperKit, mlx-swift, mlx-swift-lm, and swift-transformers. Vendored native targets are DahliaAEC3 and the arm64 DahliaLindera static XCFramework (Rust 1.97.0, Lindera 2.0.1, embedded IPADIC, and a committed Cargo.lock). The separate `apps/desktop/BuildTools` package pins SwiftFormat. The app also verifies and bundles a pinned official arm64 release of the OpenAI Codex CLI as a runtime helper. Get confirmation before adding or updating dependencies unless the user has already authorized the specific dependency change.
 - Telemetry is allowlist-only and best-effort. Follow [`docs/telemetry.md`](docs/telemetry.md): never send content, identifiers, paths, or free text; never wait for delivery; and never call a telemetry SDK outside its designated adapter.
 - Never destroy a released user's database. Do not modify registered migrations; add a new migration according to `apps/desktop/Sources/Dahlia/Database/AGENTS.md`.
 
@@ -62,22 +62,14 @@ conflict, and update the tenet only through a new ADR that the user approves.
 
 ## Release Versioning
 
-- Apply this policy prospectively when preparing a release. Do not revise or validate historical version numbers, missing releases, or build numbers against it.
-- Keep `CFBundleShortVersionString` in `x.y.z` format. Determine the next version from the complete set of changes since the latest release, not from each individual change.
-- Increment `z` for a release containing only backward-compatible fixes, improvements, or additions. This includes bug fixes, internal refactoring, documentation, backward-compatible features, and additive database migrations that do not change the meaning of existing data, such as new tables or indexes and nullable or defaulted columns.
-- Increment `y` and reset `z` to `0` when a release changes compatibility, a primary workflow, or an existing behavioral or data contract. This includes semantic changes to recording or transcription, changes to existing settings, MCP or backup contracts, table rebuilds, renames or removals, type, nullability, constraint, or relationship changes, and migrations that reinterpret, transform, or meaningfully backfill existing data.
-- When a release contains changes from multiple categories, use the highest required increment.
-- Never infer an `x.0.0` release. Increment `x` and reset `y` and `z` to `0` only when the user explicitly requests a major version; ask before release if a major increment appears necessary.
-- Update versions during release preparation, not as part of ordinary feature or fix changes.
-- Treat `CFBundleVersion` as an integer build number independent of the marketing version. Increase it from the latest published build for every newly published distribution artifact, including a replacement with the same marketing version. Local builds and unpublished attempts do not require an increment.
-- During release preparation, update `CFBundleShortVersionString` and `CFBundleVersion` together in `Resources/Info.plist`.
+Update versions only during desktop release preparation. Follow [Desktop Release Versioning](docs/desktop-release-versioning.md) for the release range, compatibility increment, and build number.
 
 ## Authorization
 
 - For requests to answer, explain, review, diagnose, or plan, inspect the relevant files and logs and report the result. Do not edit unless the request also asks for a change.
 - For requests to change, implement, or fix, make the in-scope local edits and run relevant non-destructive validation without asking first. Preserve existing uncommitted work and leave unrelated changes untouched.
-- Get confirmation before destructive actions, external writes, dependency changes, or a material expansion of scope.
-- When asking the user a question, treat it as blocking and wait for an explicit response. Do not resolve it automatically through a timeout, default, or recommended choice. If the active agent or tool provides wait-duration or automatic-resolution controls, configure them for indefinite waiting or disable automatic resolution. If that is not supported, leave the question unresolved and stop rather than proceeding without the user's answer.
+- Get confirmation for destructive actions, external writes, dependency changes, or material scope expansions that the user has not already authorized. An explicit request authorizes its in-scope operation; do not ask again solely because it writes externally. Preserve any action-time approval required by the execution environment.
+- Ask only when a missing decision materially affects correctness, safety, or scope. Keep dependent work pending until the user answers, and continue independent authorized work. Never treat a timeout, default, or recommendation as the user's approval.
 - When a requested GitHub operation requires GitHub CLI access to existing authentication credentials, agents may run the necessary `gh` commands outside the sandbox without additional confirmation. Use the environment's supported escalation mechanism, keep access scoped to the requested operation, and never reveal, export, copy, or persist credential values. Reauthentication or other changes to authentication state still require explicit user authorization.
 
 ## Commands
