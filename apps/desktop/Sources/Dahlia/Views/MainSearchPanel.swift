@@ -73,10 +73,6 @@ struct MainSearchPanel: View {
                     RoundedRectangle(cornerRadius: DahliaDesign.Field.cornerRadius)
                         .stroke(.separator, lineWidth: 1)
                 }
-                MainSearchModeControl(
-                    selection: $model.searchMode,
-                    allowsNeuralSearch: sidebarViewModel.isVectorSearchEnabled
-                )
                 Button(L10n.close, systemImage: "xmark", action: onDismiss)
                     .labelStyle(.iconOnly)
                     .dahliaFixedSymbol()
@@ -146,9 +142,6 @@ struct MainSearchPanel: View {
         .onChange(of: model.inputText) {
             model.queryDidChange(using: sidebarViewModel)
         }
-        .onChange(of: model.searchMode) {
-            model.searchModeDidChange(using: sidebarViewModel)
-        }
         .onChange(of: sidebarViewModel.allProjectItems) {
             model.catalogDidChange(using: sidebarViewModel)
         }
@@ -163,9 +156,6 @@ struct MainSearchPanel: View {
         }
         .onChange(of: sidebarViewModel.areSearchTagsLoaded) {
             model.catalogDidChange(using: sidebarViewModel)
-        }
-        .onChange(of: sidebarViewModel.isVectorSearchEnabled) {
-            model.vectorSearchAvailabilityDidChange(using: sidebarViewModel)
         }
         .onKeyPress(.downArrow) {
             model.moveSelection(by: 1)
@@ -195,13 +185,6 @@ struct MainSearchPanel: View {
             ContentUnavailableView.search
                 .frame(maxWidth: .infinity, minHeight: 240)
         } else {
-            if let guidanceMessage = model.guidanceMessage {
-                Label(guidanceMessage, systemImage: "square.and.arrow.down")
-                    .font(.callout)
-                    .foregroundStyle(DahliaDesign.secondaryTextColor)
-                    .padding(.horizontal, 12)
-                    .padding(.bottom, 8)
-            }
             if !model.meetings.isEmpty {
                 sectionHeader(model.isRecent ? L10n.recentMeetings : L10n.meetings)
                 ForEach(Array(model.meetings.enumerated()), id: \.element.id) { index, meeting in
@@ -281,7 +264,6 @@ struct MainSearchPanel: View {
             projectTint: meeting.projectId.map { appearanceForProject($0).color.color },
             dateText: meeting.effectiveRecordingStartedAt.formatted(date: .numeric, time: .omitted),
             shortcutNumber: shortcutNumber,
-            isSemanticHit: meeting.isSemanticHit,
             isSelected: model.selectedResultID == .meeting(meeting.id),
             action: { onOpenMeeting(meeting.id) }
         )

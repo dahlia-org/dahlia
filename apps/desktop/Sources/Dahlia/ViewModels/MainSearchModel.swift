@@ -1,22 +1,17 @@
 import Foundation
 import Observation
-import OSLog
-
-private let mainSearchLogger = Logger(subsystem: "com.dahlia", category: "MainSearch")
 
 @MainActor
 @Observable
 final class MainSearchModel {
     private(set) var isPresented = false
     var inputText = ""
-    var searchMode: SearchMode = .advanced
     private(set) var tokens: [MeetingSearchToken] = []
     private(set) var meetings: [MeetingSidebarItem] = []
     private(set) var screenshots: [ScreenshotSearchResult] = []
     private(set) var projects: [ProjectOverviewItem] = []
     private(set) var isLoading = false
     private(set) var errorMessage: String?
-    private(set) var guidanceMessage: String?
     private(set) var isProjectCatalogLoading = false
     private(set) var projectCatalogLoadFailed = false
     private(set) var hasMoreMeetings = false
@@ -36,13 +31,7 @@ final class MainSearchModel {
     @ObservationIgnored private var projectGeneration = 0
     @ObservationIgnored private var activeMeetingCriteria = MeetingSearchCriteria()
     @ObservationIgnored private var activeRankingPolicy: MeetingSearchRankingPolicy?
-    @ObservationIgnored private(set) var activeQueryEmbedding: [Float]?
-    @ObservationIgnored private let embeddingServiceOverride: (any TextEmbeddingProviding)?
     @ObservationIgnored private var pendingQualifierText: String?
-
-    init(embeddingService: (any TextEmbeddingProviding)? = nil) {
-        embeddingServiceOverride = embeddingService
-    }
 
     var resultIDs: [MainSearchResultID] {
         meetings.map { .meeting($0.id) }
@@ -60,9 +49,6 @@ final class MainSearchModel {
 
     func present(using sidebarViewModel: SidebarViewModel) {
         resetSearch()
-        if searchMode == .neural, !sidebarViewModel.isVectorSearchEnabled {
-            searchMode = .advanced
-        }
         isPresented = true
         startSearch(using: sidebarViewModel, delay: nil, appending: false)
     }
@@ -78,19 +64,6 @@ final class MainSearchModel {
             return
         }
         startSearch(using: sidebarViewModel, delay: .milliseconds(250), appending: false)
-    }
-
-    func searchModeDidChange(using sidebarViewModel: SidebarViewModel) {
-        guard searchMode != .neural || sidebarViewModel.isVectorSearchEnabled else {
-            searchMode = .advanced
-            return
-        }
-        startSearch(using: sidebarViewModel, delay: nil, appending: false)
-    }
-
-    func vectorSearchAvailabilityDidChange(using sidebarViewModel: SidebarViewModel) {
-        guard !sidebarViewModel.isVectorSearchEnabled, searchMode == .neural else { return }
-        searchMode = .advanced
     }
 
     @discardableResult
@@ -184,7 +157,6 @@ final class MainSearchModel {
         projects = []
         isLoading = false
         errorMessage = nil
-        guidanceMessage = nil
         isProjectCatalogLoading = false
         projectCatalogLoadFailed = false
         hasMoreMeetings = false
@@ -195,7 +167,6 @@ final class MainSearchModel {
         screenshotCursor = nil
         activeMeetingCriteria = MeetingSearchCriteria()
         activeRankingPolicy = nil
-        activeQueryEmbedding = nil
         selectedResultID = nil
         isRecent = true
         pendingQualifierText = nil
@@ -211,9 +182,7 @@ final class MainSearchModel {
         let requestGeneration = generation
         let vaultID = sidebarViewModel.currentVault?.id
         let dbQueue = sidebarViewModel.searchDBQueue
-        let embeddingService = embeddingServiceOverride ?? sidebarViewModel.embeddingService
         let criteria = searchCriteria(using: sidebarViewModel)
-        let mode = searchMode
         let rankingPolicy = AppSettings.shared.meetingSearchRankingPolicy
         let appendsCurrentRanking = appending && activeRankingPolicy == rankingPolicy
         activeMeetingCriteria = criteria
@@ -243,28 +212,9 @@ final class MainSearchModel {
                 if let delay {
                     try await Task.sleep(for: delay)
                 }
-                if mode == .neural, appendsCurrentRanking, let embedding = self?.activeQueryEmbedding {
-                    let page = try await MeetingRepository.searchMeetingSidebarPage(
-                        vaultId: vaultID,
-                        criteria: criteria,
-                        mode: .neural,
-                        rankingPolicy: rankingPolicy,
-                        queryEmbedding: embedding,
-                        after: cursor,
-                        limit: limit,
-                        dbQueue: dbQueue
-                    )
-                    try Task.checkCancellation()
-                    guard let self,
-                          self.generation == requestGeneration,
-                          sidebarViewModel.currentVault?.id == vaultID else { return }
-                    self.apply(page, appending: true)
-                    return
-                }
-                let firstPage = try await MeetingRepository.searchMeetingSidebarPage(
+                let page = try await MeetingRepository.searchMeetingSidebarPage(
                     vaultId: vaultID,
                     criteria: criteria,
-                    mode: mode == .neural ? .advanced : mode,
                     rankingPolicy: rankingPolicy,
                     after: cursor,
                     limit: limit,
@@ -274,59 +224,7 @@ final class MainSearchModel {
                 guard let self,
                       self.generation == requestGeneration,
                       sidebarViewModel.currentVault?.id == vaultID else { return }
-                self.apply(firstPage, appending: appendsCurrentRanking)
-                do {
-                    guard mode == .neural else { return }
-                    guard let embeddingService, await embeddingService.isAvailable else {
-                        self.guidanceMessage = L10n.neuralModelRequired
-                        return
-                    }
-                    guard self.generation == requestGeneration else { return }
-                    guard !criteria.text.isEmpty else { return }
-                    guard sidebarViewModel.isVectorSearchReady else {
-                        self.guidanceMessage = L10n.neuralIndexNotReady
-                        return
-                    }
-                    let embedding: [Float]
-                    if appendsCurrentRanking, let cached = self.activeQueryEmbedding {
-                        embedding = cached
-                    } else {
-                        embedding = try await embeddingService.queryEmbedding(criteria.text)
-                        try Task.checkCancellation()
-                        guard self.generation == requestGeneration,
-                              self.searchMode == mode,
-                              sidebarViewModel.currentVault?.id == vaultID else { return }
-                        self.activeQueryEmbedding = embedding
-                        self.startProjectSearch(
-                            criteria: criteria,
-                            using: sidebarViewModel,
-                            queryEmbedding: embedding
-                        )
-                    }
-                    let hybridPage = try await MeetingRepository.searchMeetingSidebarPage(
-                        vaultId: vaultID,
-                        criteria: criteria,
-                        mode: .neural,
-                        rankingPolicy: rankingPolicy,
-                        queryEmbedding: embedding,
-                        after: appendsCurrentRanking ? cursor : nil,
-                        limit: limit,
-                        dbQueue: dbQueue
-                    )
-                    try Task.checkCancellation()
-                    guard self.generation == requestGeneration,
-                          sidebarViewModel.currentVault?.id == vaultID else { return }
-                    self.apply(hybridPage, appending: appendsCurrentRanking)
-                } catch is CancellationError {
-                    return
-                } catch {
-                    guard self.generation == requestGeneration else { return }
-                    mainSearchLogger.error(
-                        "Neural search fell back to full-text results: \(error.localizedDescription, privacy: .public)"
-                    )
-                    self.guidanceMessage = L10n.neuralSearchFailed
-                    return
-                }
+                self.apply(page, appending: appendsCurrentRanking)
             } catch is CancellationError {
                 return
             } catch {
@@ -356,7 +254,6 @@ final class MainSearchModel {
     ) {
         isRecent = criteria.isEmpty
         errorMessage = nil
-        guidanceMessage = nil
         isLoading = true
         guard !appending else { return }
         meetings = []
@@ -364,7 +261,6 @@ final class MainSearchModel {
         projects = []
         meetingCursor = nil
         screenshotCursor = nil
-        activeQueryEmbedding = nil
         hasMoreMeetings = false
         hasMoreScreenshots = false
         hasCompletedInitialMeetingSearch = false
@@ -380,7 +276,7 @@ final class MainSearchModel {
         screenshotSearchTask?.cancel()
         screenshotGeneration &+= 1
         let requestGeneration = screenshotGeneration
-        guard searchMode != .simple, !criteria.text.isEmpty,
+        guard !criteria.text.isEmpty,
               let vaultID = sidebarViewModel.currentVault?.id,
               let dbQueue = sidebarViewModel.searchDBQueue else {
             if !appending { screenshots = [] }
@@ -431,8 +327,7 @@ final class MainSearchModel {
 
     private func startProjectSearch(
         criteria: MeetingSearchCriteria,
-        using sidebarViewModel: SidebarViewModel,
-        queryEmbedding: [Float]? = nil
+        using sidebarViewModel: SidebarViewModel
     ) {
         projectSearchTask?.cancel()
         projectGeneration &+= 1
@@ -452,7 +347,6 @@ final class MainSearchModel {
 
         isProjectCatalogLoading = true
         let projectItems = sidebarViewModel.allProjectItems
-        let mode = searchMode
         projectSearchTask = Task { [weak self] in
             let results: [ProjectOverviewItem]
             if criteria.isEmpty {
@@ -464,8 +358,6 @@ final class MainSearchModel {
                     let ids = try await MeetingRepository.searchProjectIDs(
                         vaultID: vaultID,
                         query: criteria.text,
-                        mode: mode,
-                        queryEmbedding: queryEmbedding,
                         limit: MainSearchDesign.projectResultLimit,
                         dbQueue: dbQueue
                     )

@@ -19,7 +19,7 @@ macOS、ローカル SQLite、録音、UI、内蔵 Codex / local MCP。
 - [Desktop の認証と account 分離](desktop/accounts.md)
 - [チャットの書き込みと承認](desktop/chat-approval.md)
 - [匿名 telemetry](desktop/telemetry.md)
-- [ローカル全文・Hybrid 検索](desktop/search.md)
+- [ローカル全文検索と旧 Hybrid 検索](desktop/search.md)
 
 ## Server / Cloud
 

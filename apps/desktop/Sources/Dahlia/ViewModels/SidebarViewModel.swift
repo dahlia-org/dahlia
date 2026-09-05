@@ -36,8 +36,6 @@ final class SidebarViewModel {
     /// GRDB の `ValueObservation` は他プロセスの書き込みを検知しないため、これが跨プロセス更新の合図になる。
     private(set) var workspaceChangeToken: UInt64 = 0
     private(set) var searchIndexRevision = 0
-    private(set) var isVectorSearchEnabled = false
-    private(set) var isVectorSearchReady = false
 
     var meetingSidebarItems: [MeetingSidebarItem] = []
     var meetingSidebarGroups: [MeetingDateGroup] = []
@@ -101,7 +99,6 @@ final class SidebarViewModel {
     var currentVault: VaultRecord? { settings.currentVault }
     var dbQueue: DatabaseQueue? { appDatabase?.dbQueue }
     var searchDBQueue: DatabaseQueue? { appDatabase?.searchDBQueue }
-    var embeddingService: (any TextEmbeddingProviding)? { appDatabase?.embeddingService }
 
     @ObservationIgnored var meetingRepository: MeetingRepository?
     @ObservationIgnored var projectWorkspaceService: ProjectWorkspaceService?
@@ -215,8 +212,6 @@ final class SidebarViewModel {
         fileWatcher = nil
         searchIndexRevision = 0
         hasObservedSearchIndexRevision = false
-        isVectorSearchEnabled = false
-        isVectorSearchReady = false
         flatProjects.removeAll()
         areSearchProjectsLoaded = false
         meetingSidebarItems.removeAll()
@@ -346,18 +341,18 @@ final class SidebarViewModel {
         searchIndexObservation?.cancel()
         searchIndexRefreshTask?.cancel()
         let observation = ValueObservation.tracking { db in
-            try Self.searchIndexObservationValues(in: db)
+            try Int.fetchOne(
+                db,
+                sql: "SELECT indexRevision FROM search_index_state WHERE indexKind = 'fts'"
+            ) ?? 0
         }.removeDuplicates()
         searchIndexObservation = observation.start(
             in: dbQueue,
             scheduling: .async(onQueue: .main),
             onError: { _ in },
-            onChange: { [weak self] values in
+            onChange: { [weak self] revision in
                 Task { @MainActor [weak self] in
                     guard let self, self.dbQueue === dbQueue else { return }
-                    let revision = values[0]
-                    self.isVectorSearchEnabled = values[1] == 1
-                    self.isVectorSearchReady = values[2] == 1
                     guard self.hasObservedSearchIndexRevision else {
                         self.hasObservedSearchIndexRevision = true
                         self.searchIndexRevision = revision
@@ -374,26 +369,6 @@ final class SidebarViewModel {
                 }
             }
         )
-    }
-
-    nonisolated static func searchIndexObservationValues(in db: Database) throws -> [Int] {
-        let ftsRevision = try Int.fetchOne(
-            db,
-            sql: "SELECT indexRevision FROM search_index_state WHERE indexKind = 'fts'"
-        ) ?? 0
-        let vector = try Row.fetchOne(
-            db,
-            sql: """
-            SELECT indexRevision, phase, isEnabled, analyzerConfigurationHash
-            FROM search_index_state WHERE indexKind = 'vector'
-            """
-        )
-        let isVectorEnabled = vector?["isEnabled"] as Bool? ?? false
-        let isVectorReady = isVectorEnabled
-            && vector?["phase"] as String? == "ready"
-            && vector?["analyzerConfigurationHash"] as String? == EmbeddingGemmaDescriptor.configurationHash
-        let vectorRevision: Int = isVectorReady ? vector?["indexRevision"] ?? 0 : 0
-        return [ftsRevision + vectorRevision, isVectorEnabled ? 1 : 0, isVectorReady ? 1 : 0]
     }
 
     func refreshUnprocessedRecordings() async {

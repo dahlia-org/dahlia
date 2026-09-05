@@ -7,7 +7,6 @@ actor SearchIndexer {
     typealias RuntimeProviderResolver = @Sendable () -> CodexRuntimeProvider
 
     private let dbQueue: DatabaseQueue
-    private let vectorIndexer: VectorSearchIndexer?
     private let screenshotAnalyzer: any ScreenshotAnalyzing
     private let runtimeProviderResolver: RuntimeProviderResolver
     private let observationQueue = DispatchQueue(label: "app.dahlia.search-indexer", qos: .utility)
@@ -26,18 +25,15 @@ actor SearchIndexer {
 
     init(
         dbQueue: DatabaseQueue,
-        vectorIndexer: VectorSearchIndexer? = nil,
         screenshotAnalyzer: any ScreenshotAnalyzing = CodexScreenshotAnalysisService(),
         runtimeProviderResolver: @escaping RuntimeProviderResolver = { CodexRuntimeContextStore.shared.provider }
     ) {
         self.dbQueue = dbQueue
-        self.vectorIndexer = vectorIndexer
         self.screenshotAnalyzer = screenshotAnalyzer
         self.runtimeProviderResolver = runtimeProviderResolver
     }
 
     func start() async {
-        await vectorIndexer?.start()
         guard workerTask == nil else { return }
         isPaused = false
         let observation = ValueObservation.tracking { db in
@@ -66,12 +62,10 @@ actor SearchIndexer {
     }
 
     func stop() async {
-        await vectorIndexer?.stop()
         await stopOwnWorker()
     }
 
     func pauseForRecording() async {
-        await vectorIndexer?.pauseForRecording()
         await stopOwnWorker()
     }
 

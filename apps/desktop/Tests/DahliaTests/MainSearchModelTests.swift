@@ -33,7 +33,7 @@ import GRDB
         }
 
         @Test(.timeLimit(.minutes(1)))
-        func defaultsToAdvancedAndKeepsAvailableModeAcrossPresentations() async throws {
+        func searchesFullTextAcrossPresentations() async throws {
             let fixture = try MainSearchModelFixture()
             defer { fixture.stop() }
             try await fixture.insertSearchContent()
@@ -42,26 +42,24 @@ import GRDB
             #expect(await pollUntil { sidebar.isProjectCatalogLoaded })
 
             let model = MainSearchModel()
-            #expect(model.searchMode == .advanced)
 
             model.present(using: sidebar)
             model.inputText = "Needle"
             model.queryDidChange(using: sidebar)
-            #expect(await pollUntil { !model.isLoading && !model.isProjectCatalogLoading })
-
-            model.searchMode = .simple
-            model.searchModeDidChange(using: sidebar)
             #expect(await pollUntil { !model.isLoading && !model.isProjectCatalogLoading })
             #expect(model.meetings.map(\.meetingName) == ["Needle meeting"])
             #expect(model.projects.map(\.projectDisplayName) == ["Needle project"])
 
             model.dismiss()
             model.present(using: sidebar)
-            #expect(model.searchMode == .simple)
+            model.inputText = "Needle"
+            model.queryDidChange(using: sidebar)
+            #expect(await pollUntil { !model.isLoading })
+            #expect(model.meetings.map(\.meetingName) == ["Needle meeting"])
         }
 
         @Test(.timeLimit(.minutes(1)))
-        func switchingModeReplacesResultsFromThePreviousMode() async throws {
+        func fullTextSearchDoesNotFallBackToSubstringMatching() async throws {
             let fixture = try MainSearchModelFixture()
             defer { fixture.stop() }
             try await fixture.insertSearchContent()
@@ -71,14 +69,13 @@ import GRDB
 
             let model = MainSearchModel()
             model.present(using: sidebar)
-            model.inputText = "eedle"
-            model.searchMode = .simple
-            model.searchModeDidChange(using: sidebar)
+            model.inputText = "Needle"
+            model.queryDidChange(using: sidebar)
             #expect(await pollUntil { !model.isLoading && !model.isProjectCatalogLoading })
             #expect(model.meetings.map(\.meetingName) == ["Needle meeting"])
 
-            model.searchMode = .advanced
-            model.searchModeDidChange(using: sidebar)
+            model.inputText = "eedle"
+            model.queryDidChange(using: sidebar)
             #expect(model.meetings.isEmpty)
             #expect(await pollUntil { !model.isLoading && !model.isProjectCatalogLoading })
             #expect(model.meetings.isEmpty)
@@ -126,88 +123,6 @@ import GRDB
             #expect(model.presentedScreenshots.map(\.id) == [expected.screenshotID])
             #expect(model.screenshots.first?.meetingID == expected.meetingID)
             #expect(model.resultIDs == [.screenshot(expected.screenshotID)])
-        }
-
-        @Test(.timeLimit(.minutes(1)))
-        func neuralSearchKeepsFTSResultsWhenEmbeddingFails() async throws {
-            let fixture = try MainSearchModelFixture()
-            defer { fixture.stop() }
-            try await fixture.insertSearchContent()
-            try await fixture.setVectorState(phase: "ready", isEnabled: true)
-            let sidebar = fixture.makeSidebarViewModel()
-            defer { sidebar.setAppDatabase(nil) }
-            #expect(await pollUntil { sidebar.isVectorSearchReady })
-
-            let model = MainSearchModel(embeddingService: ReviewEmbeddingProvider(throwsForQueries: true))
-            model.searchMode = .neural
-            model.present(using: sidebar)
-            model.inputText = "Needle"
-            model.queryDidChange(using: sidebar)
-            #expect(await pollUntil { !model.isLoading && model.meetings.map(\.meetingName) == ["Needle meeting"] })
-            #expect(model.errorMessage == nil)
-        }
-
-        @Test(.timeLimit(.minutes(1)))
-        func staleNeuralCompletionDoesNotReplaceCurrentQueryEmbedding() async throws {
-            let fixture = try MainSearchModelFixture()
-            defer { fixture.stop() }
-            try await fixture.insertSearchContent()
-            try await fixture.setVectorState(phase: "ready", isEnabled: true)
-            let sidebar = fixture.makeSidebarViewModel()
-            defer { sidebar.setAppDatabase(nil) }
-            #expect(await pollUntil { sidebar.isVectorSearchReady })
-            let embedder = ReviewEmbeddingProvider(blockedQuery: "Older")
-
-            let model = MainSearchModel(embeddingService: embedder)
-            model.searchMode = .neural
-            model.present(using: sidebar)
-            model.inputText = "Older"
-            model.queryDidChange(using: sidebar)
-            #expect(await pollUntil { await embedder.didStartBlockedQuery })
-
-            model.inputText = "Needle"
-            model.queryDidChange(using: sidebar)
-            #expect(await pollUntil { model.activeQueryEmbedding?.first == 2 })
-            await embedder.releaseBlockedQuery()
-            #expect(await pollUntil { await embedder.didFinishBlockedQuery })
-            #expect(model.activeQueryEmbedding?.first == 2)
-        }
-
-        @Test(.timeLimit(.minutes(1)))
-        func reopeningSearchDowngradesDisabledNeuralMode() throws {
-            let fixture = try MainSearchModelFixture()
-            defer { fixture.stop() }
-            let sidebar = fixture.makeSidebarViewModel()
-            defer { sidebar.setAppDatabase(nil) }
-            let model = MainSearchModel()
-            model.searchMode = .neural
-
-            model.present(using: sidebar)
-
-            #expect(model.searchMode == .advanced)
-        }
-
-        @Test(.timeLimit(.minutes(1)))
-        func missingModelGuidanceSurvivesModeChangeCallback() async throws {
-            let fixture = try MainSearchModelFixture()
-            defer { fixture.stop() }
-            try await fixture.insertSearchContent()
-            try await fixture.setVectorState(phase: "pending", isEnabled: true)
-            let sidebar = fixture.makeSidebarViewModel()
-            defer { sidebar.setAppDatabase(nil) }
-            #expect(await pollUntil { sidebar.isVectorSearchEnabled })
-            let model = MainSearchModel(embeddingService: ReviewEmbeddingProvider(isAvailable: false))
-            model.searchMode = .neural
-            model.present(using: sidebar)
-            model.inputText = "Needle"
-            model.queryDidChange(using: sidebar)
-
-            #expect(await pollUntil { model.guidanceMessage == L10n.neuralModelRequired })
-            model.searchModeDidChange(using: sidebar)
-            #expect(await pollUntil { !model.isLoading && model.guidanceMessage == L10n.neuralModelRequired })
-            #expect(model.searchMode == .neural)
-            #expect(model.meetings.map(\.meetingName) == ["Needle meeting"])
-            #expect(model.errorMessage == nil)
         }
 
         @Test(.timeLimit(.minutes(1)))
@@ -650,18 +565,6 @@ import GRDB
             return (screenshotID, meetingID)
         }
 
-        func setVectorState(phase: String, isEnabled: Bool) async throws {
-            try await manager.dbQueue.write { db in
-                try db.execute(
-                    sql: """
-                    UPDATE search_index_state SET phase = ?, isEnabled = ?
-                    WHERE indexKind = 'vector'
-                    """,
-                    arguments: [phase, isEnabled]
-                )
-            }
-        }
-
         func insertMatchingMeetings(count: Int) async throws {
             let vaultID = vault.id
             try await manager.dbQueue.write { db in
@@ -713,43 +616,4 @@ import GRDB
         }
     }
 
-    private actor ReviewEmbeddingProvider: TextEmbeddingProviding {
-        private let blockedQuery: String?
-        private let throwsForQueries: Bool
-        private let available: Bool
-        private var releasesBlockedQuery = false
-        private(set) var didStartBlockedQuery = false
-        private(set) var didFinishBlockedQuery = false
-        var isAvailable: Bool { available }
-
-        init(blockedQuery: String? = nil, throwsForQueries: Bool = false, isAvailable: Bool = true) {
-            self.blockedQuery = blockedQuery
-            self.throwsForQueries = throwsForQueries
-            available = isAvailable
-        }
-
-        func queryEmbedding(_ query: String) async throws -> [Float] {
-            if throwsForQueries { throw ReviewEmbeddingError.failed }
-            if query == blockedQuery {
-                didStartBlockedQuery = true
-                while !releasesBlockedQuery {
-                    try? await Task.sleep(for: .milliseconds(10))
-                    await Task.yield()
-                }
-                didFinishBlockedQuery = true
-            }
-            let value: Float = query == "Needle" ? 2 : 1
-            return [value] + Array(repeating: 0, count: EmbeddingGemmaDescriptor.dimensions - 1)
-        }
-
-        func documentEmbeddings(_: [DocumentEmbeddingInput]) async throws -> [[Float]] { [] }
-
-        func releaseBlockedQuery() {
-            releasesBlockedQuery = true
-        }
-    }
-
-    private enum ReviewEmbeddingError: Error {
-        case failed
-    }
 #endif

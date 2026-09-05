@@ -858,10 +858,6 @@
 "Attending" = "Attending";
 
 /* Search Modes */
-"Search mode" = "Search mode";
-"Search mode Simple" = "Simple";
-"Search mode Advanced" = "Advanced";
-"Search mode Neural" = "Neural";
 
 /* Meeting Detection */
 "Meeting Notifications" = "Meeting Notifications";
@@ -1554,8 +1550,6 @@
 "Search Results" = "Search Results";
 "Search query is too broad" = "This search is taking too long. Add another term to narrow it down.";
 "Full-text search" = "Full-Text Search";
-"Vector search" = "Vector Search";
-"Enable vector search" = "Enable Vector Search";
 "Search index status" = "Status";
 "Pending search jobs" = "Pending jobs";
 "Processing search jobs" = "Processing jobs";
@@ -1582,20 +1576,7 @@
 "Benchmark current is best" = "Your current weights scored best.";
 "Benchmark no judgments" = "Could not build an evaluation set. Add more meetings and run it again.";
 "Benchmark needs meetings" = "There are no meetings to evaluate.";
-"Semantic match" = "Semantic match";
-"Neural model required" = "Install EmbeddingGemma in Search settings to use Neural search, or switch to Advanced for full-text results.";
-"Neural index not ready" = "Showing full-text results because the vector index is not ready. Rebuild the index in Search settings.";
-"Neural search failed" = "Showing full-text results because semantic search could not run.";
-"Embedding model" = "Embedding model";
-"Installed" = "Installed";
-"Not installed" = "Not installed";
-"Vector index status" = "Vector index status";
-"Downloading embedding model" = "Downloading EmbeddingGemma…";
-"Accept terms and download model" = "Agree and download (about 212 MB)";
-"Gemma terms" = "View Gemma terms";
-"Embedding model description" = "When vector search is enabled, downloads Google's EmbeddingGemma 300M 4-bit model after you agree to the Gemma terms. Indexing starts only when you choose Rebuild Vector Search. Embeddings stay on this Mac and use a fixed 256 dimensions.";
 "Rebuild full-text search" = "Rebuild Full-Text Search";
-"Rebuild vector search" = "Rebuild Vector Search";
 "Search index pending" = "Waiting to index";
 "Indexing meeting metadata" = "Indexing meeting metadata";
 "Search index ready" = "Ready";

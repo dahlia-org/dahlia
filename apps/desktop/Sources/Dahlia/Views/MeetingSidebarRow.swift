@@ -179,7 +179,7 @@ struct MeetingSidebarRow: View {
                     .fill(context.colorHex.map(Color.init(hex:)) ?? Color.secondary)
                     .frame(width: 6, height: 6)
             } else {
-                Image(systemName: context.kind == .calendar ? "calendar" : context.kind == .semantic ? "brain" : "text.alignleft")
+                Image(systemName: context.kind == .calendar ? "calendar" : "text.alignleft")
                     .frame(width: 8)
             }
 
@@ -207,8 +207,6 @@ struct MeetingSidebarRow: View {
             L10n.projectMatch
         case .title:
             ""
-        case .semantic:
-            L10n.semanticMatch
         }
     }
 

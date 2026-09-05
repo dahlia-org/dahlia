@@ -123,55 +123,6 @@ import GRDB
         }
 
         @Test
-        func simpleSearchUsesLiteralLikeAcrossMeetingMetadata() async throws {
-            let fixture = try MeetingSidebarRepositoryFixture()
-            let expected = try fixture.insertSearchFixtures()
-            await fixture.manager.searchIndexer.drain()
-
-            #expect(try await fixture.resultIDs(query: "Quarterly", mode: .simple) == [expected.title])
-            #expect(try await fixture.resultIDs(query: "budget", mode: .simple) == [expected.description])
-            #expect(try await fixture.resultIDs(query: "Acme/Zephyr", mode: .simple).isEmpty)
-            #expect(try await fixture.resultIDs(query: "Calendar description", mode: .simple) == [expected.calendar])
-            #expect(try await fixture.resultIDs(query: "Customer", mode: .simple) == [expected.tag])
-            #expect(try await fixture.resultIDs(query: "verbatimneedle", mode: .simple).isEmpty)
-            #expect(try await fixture.resultIDs(query: "%_", mode: .simple) == [expected.literal])
-        }
-
-        @Test
-        func simpleProjectSearchUsesNameDescriptionAndResolvedPath() async throws {
-            let fixture = try MeetingSidebarRepositoryFixture()
-            let values = try await fixture.manager.dbQueue.write { db in
-                let rootID = try fixture.insertProject(name: "Customer", type: .customer, in: db)
-                let childID = try fixture.insertProject(
-                    name: "Platform",
-                    parentID: rootID,
-                    description: "Status 100%_ready",
-                    in: db
-                )
-                return (rootID, childID)
-            }
-            await fixture.manager.searchIndexer.drain()
-
-            let path = try await MeetingRepository.searchProjectIDs(
-                vaultID: fixture.vault.id,
-                query: "Customer/Platform",
-                mode: .simple,
-                limit: 20,
-                dbQueue: fixture.manager.dbQueue
-            )
-            let description = try await MeetingRepository.searchProjectIDs(
-                vaultID: fixture.vault.id,
-                query: "%_",
-                mode: .simple,
-                limit: 20,
-                dbQueue: fixture.manager.dbQueue
-            )
-
-            #expect(path == [values.1])
-            #expect(description == [values.1])
-        }
-
-        @Test
         func filtersByProjectHierarchyTagsAndDateBounds() async throws {
             let fixture = try MeetingSidebarRepositoryFixture()
             let startDate = Date(timeIntervalSince1970: 1_800_000_000)
@@ -660,11 +611,10 @@ import GRDB
             return id
         }
 
-        func resultIDs(query: String, mode: SearchMode = .advanced) async throws -> Set<UUID> {
+        func resultIDs(query: String) async throws -> Set<UUID> {
             try await Set(MeetingRepository.searchMeetingSidebarPage(
                 vaultId: vault.id,
                 query: query,
-                mode: mode,
                 limit: 50,
                 dbQueue: manager.dbQueue
             ).items.map(\.id))

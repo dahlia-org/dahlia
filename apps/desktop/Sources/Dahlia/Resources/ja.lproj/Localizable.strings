@@ -858,10 +858,6 @@
 "Attending" = "参加予定";
 
 /* Search Modes */
-"Search mode" = "検索モード";
-"Search mode Simple" = "Simple";
-"Search mode Advanced" = "Advanced";
-"Search mode Neural" = "Neural";
 
 /* Meeting Detection */
 "Meeting Notifications" = "ミーティング通知";
@@ -1554,8 +1550,6 @@
 "Search Results" = "検索結果";
 "Search query is too broad" = "検索に時間がかかっています。語句を追加して絞り込んでください。";
 "Full-text search" = "全文検索";
-"Vector search" = "ベクトル検索";
-"Enable vector search" = "ベクトル検索を有効にする";
 "Search index status" = "状態";
 "Pending search jobs" = "待機中のジョブ";
 "Processing search jobs" = "処理中のジョブ";
@@ -1582,20 +1576,7 @@
 "Benchmark current is best" = "現在の重みが最も良い結果でした。";
 "Benchmark needs meetings" = "採点に使えるミーティングがありません。";
 "Benchmark no judgments" = "正解データを作成できませんでした。ミーティングを増やしてから再実行してください。";
-"Semantic match" = "意味による一致";
-"Neural model required" = "Neural検索を使うには検索設定でEmbeddingGemmaを導入してください。Advanced検索へ切り替えると全文検索できます。";
-"Neural index not ready" = "ベクトルインデックスが準備できていないため、全文検索の結果を表示しています。検索設定でインデックスを再構築してください。";
-"Neural search failed" = "セマンティック検索を実行できなかったため、全文検索の結果を表示しています。";
-"Embedding model" = "埋め込みモデル";
-"Installed" = "導入済み";
-"Not installed" = "未導入";
-"Vector index status" = "ベクトルインデックスの状態";
-"Downloading embedding model" = "EmbeddingGemmaをダウンロード中…";
-"Accept terms and download model" = "規約に同意してダウンロード（約212 MB）";
-"Gemma terms" = "Gemma利用規約を表示";
-"Embedding model description" = "ベクトル検索を有効にすると、Gemma利用規約への同意後、GoogleのEmbeddingGemma 300M 4-bitモデルを取得します。インデックス作成は「ベクトル検索を再構築」を押した時だけ開始します。会議データと256次元ベクトルはこのMac内だけで処理します。";
 "Rebuild full-text search" = "全文検索を再構築";
-"Rebuild vector search" = "ベクトル検索を再構築";
 "Search index pending" = "インデックス作成待ち";
 "Indexing meeting metadata" = "ミーティング情報を処理中";
 "Search index ready" = "準備完了";
