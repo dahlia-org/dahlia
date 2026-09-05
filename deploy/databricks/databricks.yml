@@ -34,9 +34,9 @@ variables:
   catalog:
     description: Unity Catalog catalog containing Dahlia Server storage.
     default: dahlia
-  core_schema:
+  app_schema:
     description: Unity Catalog schema containing Dahlia Server storage.
-    default: core
+    default: app
   ai_schema:
     description: Unity Catalog schema containing AI model services.
     default: ai

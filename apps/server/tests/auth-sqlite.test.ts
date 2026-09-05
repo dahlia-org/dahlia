@@ -136,9 +136,9 @@ describe("SQLite Better Auth store", () => {
     expect(database.prepare('SELECT user_id FROM team_member WHERE team_id = ?').get("external-default"))
       .toEqual({ user_id: "stable-user-id" });
 
-    database.prepare('INSERT INTO core_vaults (vault_id, name) VALUES (?, ?)').run("019d493d-f5f4-7b8b-a9da-8ef51975b171", "Vault");
+    database.prepare('INSERT INTO vaults (vault_id, name) VALUES (?, ?)').run("019d493d-f5f4-7b8b-a9da-8ef51975b171", "Vault");
     database.prepare(`
-      INSERT INTO core_search_index_jobs
+      INSERT INTO search_index_jobs
         (vault_id, document_id, owner_user_id, model, dimensions)
       VALUES (?, ?, ?, 'model', 32)
     `).run(
@@ -147,16 +147,16 @@ describe("SQLite Better Auth store", () => {
       "stable-user-id",
     );
     database.prepare('DELETE FROM "user" WHERE id = ?').run("stable-user-id");
-    expect(database.prepare("SELECT count(*) AS count FROM core_search_index_jobs").get()).toEqual({ count: 0 });
+    expect(database.prepare("SELECT count(*) AS count FROM search_index_jobs").get()).toEqual({ count: 0 });
 
     const now = Date.now();
     database.prepare(`
       INSERT INTO "user" (id, name, email, email_verified, created_at, updated_at)
       VALUES ('grantor', 'Grantor', 'grantor@example.com', 1, ?, ?)
     `).run(now, now);
-    database.prepare('INSERT INTO core_vaults (vault_id, name) VALUES (?, ?)').run("019d493e-063e-70ed-ab24-c86de735bca8", "Vault");
+    database.prepare('INSERT INTO vaults (vault_id, name) VALUES (?, ?)').run("019d493e-063e-70ed-ab24-c86de735bca8", "Vault");
     database.prepare(`
-      INSERT INTO core_vault_permissions
+      INSERT INTO vault_permissions
         (vault_id, principal_type, principal_id, role, granted_by_user_id)
       VALUES (?, 'user', 'grantor', 'owner', 'grantor')
     `).run("019d493e-063e-70ed-ab24-c86de735bca8");
@@ -252,8 +252,8 @@ describe("SQLite Better Auth store", () => {
     expect(database.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'team_member_user_team_idx'").get())
       .toEqual({ name: "team_member_user_team_idx" });
     expect(database.prepare(
-      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'content_search_documents_fts'",
-    ).all()).toEqual([{ name: "content_search_documents_fts" }]);
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'search_documents_fts'",
+    ).all()).toEqual([{ name: "search_documents_fts" }]);
 
     const now = new Date();
     const expiresAt = now.getTime() + 60_000;
@@ -293,26 +293,6 @@ describe("SQLite Better Auth store", () => {
     });
 
     expect(database.prepare('SELECT 1 FROM "user" WHERE "id" = ?').get("rolled-back-user")).toBeUndefined();
-    expect(await store.createModelAlias({
-      alias: "summary",
-      upstreamModel: "provider/model",
-      displayName: null,
-      enabled: true,
-    })).toBe(true);
-    expect(await store.createModelAlias({
-      alias: "summary",
-      upstreamModel: "duplicate",
-      displayName: null,
-      enabled: true,
-    })).toBe(false);
-    expect(await store.getEnabledModelAlias("summary")).toMatchObject({ alias: "summary", upstreamModel: "provider/model" });
-    expect(await store.updateModelAlias("summary", {
-      upstreamModel: "provider/model-v2",
-      displayName: "Summary",
-      enabled: false,
-    })).toBe(true);
-    expect(await store.getEnabledModelAlias("summary")).toBeNull();
-    expect(await store.listModelAliases()).toMatchObject([{ alias: "summary", displayName: "Summary", enabled: false }]);
     await store.ensureIdentityUser({
       userId: "first-admin",
       workspaceId: "personal:first-admin",
@@ -332,7 +312,6 @@ describe("SQLite Better Auth store", () => {
       expect.objectContaining({ id: "second-admin" }),
     ]));
     expect(await store.removeAdminUser("second-admin@example.com")).toBe("removed");
-    expect(await store.deleteModelAlias("summary")).toBe(true);
     expect(await store.createArtifact({
       id: "019cc4dd-e5c5-7bd4-94e0-98df9cc40db9",
       ownerWorkspaceId: "personal:user-1",

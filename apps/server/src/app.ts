@@ -153,7 +153,7 @@ export function createApp(dependencies: AppDependencies) {
   }
   const extensions = dependencies.extensions ?? [];
   const identities = new IdentityService(config, auth, (identity) => store.ensureIdentityUser(identity));
-  const gateway = new GatewayService(config, store, dependencies.fetch);
+  const gateway = new GatewayService(config, dependencies.fetch);
   const artifacts = new ArtifactService(config, store, dependencies.artifactStorage);
   const sync = new MeetingSyncService(
     store.sync,

@@ -182,7 +182,7 @@ describe("SQLite canonical sync", () => {
     await store.sync.enqueueStorageDelete(storageKey);
     const first = (await store.sync.claimStorageDeletes(1))[0]!;
     const database = new DatabaseSync(databasePath);
-    database.prepare("update core_storage_delete_jobs set lease_expires_at = 0 where storage_key = ?")
+    database.prepare("update storage_delete_jobs set lease_expires_at = 0 where storage_key = ?")
       .run(storageKey);
     database.close();
     const second = (await store.sync.claimStorageDeletes(1))[0]!;
@@ -688,7 +688,7 @@ describe("SQLite canonical sync", () => {
     })).rejects.toMatchObject({ status: 409, code: "revision_conflict" });
 
     const database = new DatabaseSync(databasePath);
-    expect(database.prepare("SELECT count(*) AS count FROM content_transcript_patch_chunks").get()).toMatchObject({ count: 0 });
+    expect(database.prepare("SELECT count(*) AS count FROM transcript_patch_chunks").get()).toMatchObject({ count: 0 });
     database.close();
     await store.close?.();
   });
@@ -1278,12 +1278,12 @@ describe("SQLite canonical sync", () => {
   it("stores canonical transcript rows without a generation and keeps FTS projection", async () => {
     const { databasePath, store } = await setup();
     const database = new DatabaseSync(databasePath);
-    const transcriptColumns = database.prepare("pragma table_info('content_transcript_segments')").all()
+    const transcriptColumns = database.prepare("pragma table_info('transcript_segments')").all()
       .map((row) => (row as { name: string }).name);
     expect(transcriptColumns).not.toContain("generation");
-    expect(database.prepare("pragma table_info('content_meetings')").all()
+    expect(database.prepare("pragma table_info('meetings')").all()
       .map((row) => (row as { name: string }).name)).toContain("active");
-    expect(database.prepare("select name from sqlite_master where name = 'content_search_documents_fts'").get())
+    expect(database.prepare("select name from sqlite_master where name = 'search_documents_fts'").get())
       .toBeTruthy();
     database.close();
     await store.close?.();
@@ -1312,7 +1312,7 @@ describe("SQLite canonical sync", () => {
     ]));
     const database = new DatabaseSync(databasePath);
     const insert = database.prepare(`
-      INSERT INTO content_search_documents
+      INSERT INTO search_documents
         (document_id, vault_id, meeting_id, kind, search_text, embedding_text, embedding_content_hash)
       VALUES (?, ?, ?, 'meeting', '', 'summary', 'hash')
     `);

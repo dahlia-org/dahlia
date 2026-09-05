@@ -75,63 +75,59 @@
       "entityType": "tables"
     },
     {
-      "name": "core_artifact",
+      "name": "artifact",
       "entityType": "tables"
     },
     {
-      "name": "core_model_alias",
+      "name": "search_documents",
       "entityType": "tables"
     },
     {
-      "name": "content_search_documents",
+      "name": "search_embeddings",
       "entityType": "tables"
     },
     {
-      "name": "content_search_embeddings",
+      "name": "search_index_jobs",
       "entityType": "tables"
     },
     {
-      "name": "core_search_index_jobs",
+      "name": "storage_delete_jobs",
       "entityType": "tables"
     },
     {
-      "name": "core_storage_delete_jobs",
+      "name": "sync_changes",
       "entityType": "tables"
     },
     {
-      "name": "core_sync_changes",
+      "name": "transaction_receipts",
       "entityType": "tables"
     },
     {
-      "name": "core_transaction_receipts",
+      "name": "meetings",
       "entityType": "tables"
     },
     {
-      "name": "content_meetings",
+      "name": "projects",
       "entityType": "tables"
     },
     {
-      "name": "core_projects",
+      "name": "screenshots",
       "entityType": "tables"
     },
     {
-      "name": "content_screenshots",
+      "name": "transcript_segments",
       "entityType": "tables"
     },
     {
-      "name": "content_transcript_segments",
+      "name": "vaults",
       "entityType": "tables"
     },
     {
-      "name": "core_vaults",
+      "name": "vault_permissions",
       "entityType": "tables"
     },
     {
-      "name": "core_vault_permissions",
-      "entityType": "tables"
-    },
-    {
-      "name": "content_transcript_patch_chunks",
+      "name": "transcript_patch_chunks",
       "entityType": "tables"
     },
     {
@@ -1942,7 +1938,7 @@
       "generated": null,
       "name": "id",
       "entityType": "columns",
-      "table": "core_artifact"
+      "table": "artifact"
     },
     {
       "type": "text",
@@ -1952,7 +1948,7 @@
       "generated": null,
       "name": "owner_workspace_id",
       "entityType": "columns",
-      "table": "core_artifact"
+      "table": "artifact"
     },
     {
       "type": "text",
@@ -1962,7 +1958,7 @@
       "generated": null,
       "name": "content_type",
       "entityType": "columns",
-      "table": "core_artifact"
+      "table": "artifact"
     },
     {
       "type": "text",
@@ -1972,7 +1968,7 @@
       "generated": null,
       "name": "storage_key",
       "entityType": "columns",
-      "table": "core_artifact"
+      "table": "artifact"
     },
     {
       "type": "text",
@@ -1982,7 +1978,7 @@
       "generated": null,
       "name": "visibility",
       "entityType": "columns",
-      "table": "core_artifact"
+      "table": "artifact"
     },
     {
       "type": "integer",
@@ -1992,7 +1988,7 @@
       "generated": null,
       "name": "created_at",
       "entityType": "columns",
-      "table": "core_artifact"
+      "table": "artifact"
     },
     {
       "type": "integer",
@@ -2002,67 +1998,7 @@
       "generated": null,
       "name": "updated_at",
       "entityType": "columns",
-      "table": "core_artifact"
-    },
-    {
-      "type": "text",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "alias",
-      "entityType": "columns",
-      "table": "core_model_alias"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "upstream_model",
-      "entityType": "columns",
-      "table": "core_model_alias"
-    },
-    {
-      "type": "text",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "display_name",
-      "entityType": "columns",
-      "table": "core_model_alias"
-    },
-    {
-      "type": "integer",
-      "notNull": true,
-      "autoincrement": false,
-      "default": "true",
-      "generated": null,
-      "name": "enabled",
-      "entityType": "columns",
-      "table": "core_model_alias"
-    },
-    {
-      "type": "integer",
-      "notNull": true,
-      "autoincrement": false,
-      "default": "(cast(unixepoch('subsecond') * 1000 as integer))",
-      "generated": null,
-      "name": "created_at",
-      "entityType": "columns",
-      "table": "core_model_alias"
-    },
-    {
-      "type": "integer",
-      "notNull": true,
-      "autoincrement": false,
-      "default": "(cast(unixepoch('subsecond') * 1000 as integer))",
-      "generated": null,
-      "name": "updated_at",
-      "entityType": "columns",
-      "table": "core_model_alias"
+      "table": "artifact"
     },
     {
       "type": "text",
@@ -2072,7 +2008,7 @@
       "generated": null,
       "name": "document_id",
       "entityType": "columns",
-      "table": "content_search_documents"
+      "table": "search_documents"
     },
     {
       "type": "text",
@@ -2082,7 +2018,7 @@
       "generated": null,
       "name": "vault_id",
       "entityType": "columns",
-      "table": "content_search_documents"
+      "table": "search_documents"
     },
     {
       "type": "text",
@@ -2092,7 +2028,7 @@
       "generated": null,
       "name": "meeting_id",
       "entityType": "columns",
-      "table": "content_search_documents"
+      "table": "search_documents"
     },
     {
       "type": "text",
@@ -2102,7 +2038,7 @@
       "generated": null,
       "name": "kind",
       "entityType": "columns",
-      "table": "content_search_documents"
+      "table": "search_documents"
     },
     {
       "type": "text",
@@ -2112,7 +2048,7 @@
       "generated": null,
       "name": "search_text",
       "entityType": "columns",
-      "table": "content_search_documents"
+      "table": "search_documents"
     },
     {
       "type": "text",
@@ -2122,7 +2058,7 @@
       "generated": null,
       "name": "embedding_text",
       "entityType": "columns",
-      "table": "content_search_documents"
+      "table": "search_documents"
     },
     {
       "type": "text",
@@ -2132,7 +2068,7 @@
       "generated": null,
       "name": "embedding_content_hash",
       "entityType": "columns",
-      "table": "content_search_documents"
+      "table": "search_documents"
     },
     {
       "type": "integer",
@@ -2142,7 +2078,7 @@
       "generated": null,
       "name": "updated_at",
       "entityType": "columns",
-      "table": "content_search_documents"
+      "table": "search_documents"
     },
     {
       "type": "text",
@@ -2152,7 +2088,7 @@
       "generated": null,
       "name": "vault_id",
       "entityType": "columns",
-      "table": "content_search_embeddings"
+      "table": "search_embeddings"
     },
     {
       "type": "text",
@@ -2162,7 +2098,7 @@
       "generated": null,
       "name": "document_id",
       "entityType": "columns",
-      "table": "content_search_embeddings"
+      "table": "search_embeddings"
     },
     {
       "type": "text",
@@ -2172,7 +2108,7 @@
       "generated": null,
       "name": "model",
       "entityType": "columns",
-      "table": "content_search_embeddings"
+      "table": "search_embeddings"
     },
     {
       "type": "integer",
@@ -2182,7 +2118,7 @@
       "generated": null,
       "name": "dimensions",
       "entityType": "columns",
-      "table": "content_search_embeddings"
+      "table": "search_embeddings"
     },
     {
       "type": "text",
@@ -2192,7 +2128,7 @@
       "generated": null,
       "name": "content_hash",
       "entityType": "columns",
-      "table": "content_search_embeddings"
+      "table": "search_embeddings"
     },
     {
       "type": "blob",
@@ -2202,7 +2138,7 @@
       "generated": null,
       "name": "embedding",
       "entityType": "columns",
-      "table": "content_search_embeddings"
+      "table": "search_embeddings"
     },
     {
       "type": "integer",
@@ -2212,7 +2148,7 @@
       "generated": null,
       "name": "updated_at",
       "entityType": "columns",
-      "table": "content_search_embeddings"
+      "table": "search_embeddings"
     },
     {
       "type": "text",
@@ -2222,7 +2158,7 @@
       "generated": null,
       "name": "vault_id",
       "entityType": "columns",
-      "table": "core_search_index_jobs"
+      "table": "search_index_jobs"
     },
     {
       "type": "text",
@@ -2232,7 +2168,7 @@
       "generated": null,
       "name": "document_id",
       "entityType": "columns",
-      "table": "core_search_index_jobs"
+      "table": "search_index_jobs"
     },
     {
       "type": "text",
@@ -2242,7 +2178,7 @@
       "generated": null,
       "name": "owner_user_id",
       "entityType": "columns",
-      "table": "core_search_index_jobs"
+      "table": "search_index_jobs"
     },
     {
       "type": "text",
@@ -2252,7 +2188,7 @@
       "generated": null,
       "name": "model",
       "entityType": "columns",
-      "table": "core_search_index_jobs"
+      "table": "search_index_jobs"
     },
     {
       "type": "integer",
@@ -2262,7 +2198,7 @@
       "generated": null,
       "name": "dimensions",
       "entityType": "columns",
-      "table": "core_search_index_jobs"
+      "table": "search_index_jobs"
     },
     {
       "type": "integer",
@@ -2272,7 +2208,7 @@
       "generated": null,
       "name": "generation",
       "entityType": "columns",
-      "table": "core_search_index_jobs"
+      "table": "search_index_jobs"
     },
     {
       "type": "text",
@@ -2282,7 +2218,7 @@
       "generated": null,
       "name": "status",
       "entityType": "columns",
-      "table": "core_search_index_jobs"
+      "table": "search_index_jobs"
     },
     {
       "type": "integer",
@@ -2292,7 +2228,7 @@
       "generated": null,
       "name": "attempts",
       "entityType": "columns",
-      "table": "core_search_index_jobs"
+      "table": "search_index_jobs"
     },
     {
       "type": "integer",
@@ -2302,7 +2238,7 @@
       "generated": null,
       "name": "available_at",
       "entityType": "columns",
-      "table": "core_search_index_jobs"
+      "table": "search_index_jobs"
     },
     {
       "type": "integer",
@@ -2312,7 +2248,7 @@
       "generated": null,
       "name": "claimed_at",
       "entityType": "columns",
-      "table": "core_search_index_jobs"
+      "table": "search_index_jobs"
     },
     {
       "type": "integer",
@@ -2322,7 +2258,7 @@
       "generated": null,
       "name": "lease_expires_at",
       "entityType": "columns",
-      "table": "core_search_index_jobs"
+      "table": "search_index_jobs"
     },
     {
       "type": "text",
@@ -2332,7 +2268,7 @@
       "generated": null,
       "name": "last_error_code",
       "entityType": "columns",
-      "table": "core_search_index_jobs"
+      "table": "search_index_jobs"
     },
     {
       "type": "integer",
@@ -2342,7 +2278,7 @@
       "generated": null,
       "name": "updated_at",
       "entityType": "columns",
-      "table": "core_search_index_jobs"
+      "table": "search_index_jobs"
     },
     {
       "type": "text",
@@ -2352,7 +2288,7 @@
       "generated": null,
       "name": "storage_key",
       "entityType": "columns",
-      "table": "core_storage_delete_jobs"
+      "table": "storage_delete_jobs"
     },
     {
       "type": "integer",
@@ -2362,7 +2298,7 @@
       "generated": null,
       "name": "attempts",
       "entityType": "columns",
-      "table": "core_storage_delete_jobs"
+      "table": "storage_delete_jobs"
     },
     {
       "type": "text",
@@ -2372,7 +2308,7 @@
       "generated": null,
       "name": "status",
       "entityType": "columns",
-      "table": "core_storage_delete_jobs"
+      "table": "storage_delete_jobs"
     },
     {
       "type": "integer",
@@ -2382,7 +2318,7 @@
       "generated": null,
       "name": "available_at",
       "entityType": "columns",
-      "table": "core_storage_delete_jobs"
+      "table": "storage_delete_jobs"
     },
     {
       "type": "integer",
@@ -2392,7 +2328,7 @@
       "generated": null,
       "name": "claimed_at",
       "entityType": "columns",
-      "table": "core_storage_delete_jobs"
+      "table": "storage_delete_jobs"
     },
     {
       "type": "integer",
@@ -2402,7 +2338,7 @@
       "generated": null,
       "name": "lease_expires_at",
       "entityType": "columns",
-      "table": "core_storage_delete_jobs"
+      "table": "storage_delete_jobs"
     },
     {
       "type": "text",
@@ -2412,7 +2348,7 @@
       "generated": null,
       "name": "last_error_code",
       "entityType": "columns",
-      "table": "core_storage_delete_jobs"
+      "table": "storage_delete_jobs"
     },
     {
       "type": "integer",
@@ -2422,7 +2358,7 @@
       "generated": null,
       "name": "created_at",
       "entityType": "columns",
-      "table": "core_storage_delete_jobs"
+      "table": "storage_delete_jobs"
     },
     {
       "type": "integer",
@@ -2432,7 +2368,7 @@
       "generated": null,
       "name": "sequence",
       "entityType": "columns",
-      "table": "core_sync_changes"
+      "table": "sync_changes"
     },
     {
       "type": "text",
@@ -2442,7 +2378,7 @@
       "generated": null,
       "name": "owner_user_id",
       "entityType": "columns",
-      "table": "core_sync_changes"
+      "table": "sync_changes"
     },
     {
       "type": "text",
@@ -2452,7 +2388,7 @@
       "generated": null,
       "name": "vault_id",
       "entityType": "columns",
-      "table": "core_sync_changes"
+      "table": "sync_changes"
     },
     {
       "type": "text",
@@ -2462,7 +2398,7 @@
       "generated": null,
       "name": "entity",
       "entityType": "columns",
-      "table": "core_sync_changes"
+      "table": "sync_changes"
     },
     {
       "type": "text",
@@ -2472,7 +2408,7 @@
       "generated": null,
       "name": "entity_id",
       "entityType": "columns",
-      "table": "core_sync_changes"
+      "table": "sync_changes"
     },
     {
       "type": "text",
@@ -2482,7 +2418,7 @@
       "generated": null,
       "name": "action",
       "entityType": "columns",
-      "table": "core_sync_changes"
+      "table": "sync_changes"
     },
     {
       "type": "integer",
@@ -2492,7 +2428,7 @@
       "generated": null,
       "name": "revision",
       "entityType": "columns",
-      "table": "core_sync_changes"
+      "table": "sync_changes"
     },
     {
       "type": "text",
@@ -2502,7 +2438,7 @@
       "generated": null,
       "name": "transaction_id",
       "entityType": "columns",
-      "table": "core_sync_changes"
+      "table": "sync_changes"
     },
     {
       "type": "integer",
@@ -2512,7 +2448,7 @@
       "generated": null,
       "name": "created_at",
       "entityType": "columns",
-      "table": "core_sync_changes"
+      "table": "sync_changes"
     },
     {
       "type": "text",
@@ -2522,7 +2458,7 @@
       "generated": null,
       "name": "transaction_id",
       "entityType": "columns",
-      "table": "core_transaction_receipts"
+      "table": "transaction_receipts"
     },
     {
       "type": "text",
@@ -2532,7 +2468,7 @@
       "generated": null,
       "name": "owner_user_id",
       "entityType": "columns",
-      "table": "core_transaction_receipts"
+      "table": "transaction_receipts"
     },
     {
       "type": "text",
@@ -2542,7 +2478,7 @@
       "generated": null,
       "name": "vault_id",
       "entityType": "columns",
-      "table": "core_transaction_receipts"
+      "table": "transaction_receipts"
     },
     {
       "type": "text",
@@ -2552,7 +2488,7 @@
       "generated": null,
       "name": "request_hash",
       "entityType": "columns",
-      "table": "core_transaction_receipts"
+      "table": "transaction_receipts"
     },
     {
       "type": "text",
@@ -2562,7 +2498,7 @@
       "generated": null,
       "name": "response_json",
       "entityType": "columns",
-      "table": "core_transaction_receipts"
+      "table": "transaction_receipts"
     },
     {
       "type": "integer",
@@ -2572,7 +2508,7 @@
       "generated": null,
       "name": "cursor",
       "entityType": "columns",
-      "table": "core_transaction_receipts"
+      "table": "transaction_receipts"
     },
     {
       "type": "integer",
@@ -2582,7 +2518,7 @@
       "generated": null,
       "name": "created_at",
       "entityType": "columns",
-      "table": "core_transaction_receipts"
+      "table": "transaction_receipts"
     },
     {
       "type": "text",
@@ -2592,7 +2528,7 @@
       "generated": null,
       "name": "meeting_id",
       "entityType": "columns",
-      "table": "content_meetings"
+      "table": "meetings"
     },
     {
       "type": "text",
@@ -2602,7 +2538,7 @@
       "generated": null,
       "name": "vault_id",
       "entityType": "columns",
-      "table": "content_meetings"
+      "table": "meetings"
     },
     {
       "type": "text",
@@ -2612,7 +2548,7 @@
       "generated": null,
       "name": "project_id",
       "entityType": "columns",
-      "table": "content_meetings"
+      "table": "meetings"
     },
     {
       "type": "text",
@@ -2622,7 +2558,7 @@
       "generated": null,
       "name": "name",
       "entityType": "columns",
-      "table": "content_meetings"
+      "table": "meetings"
     },
     {
       "type": "text",
@@ -2632,7 +2568,7 @@
       "generated": null,
       "name": "description",
       "entityType": "columns",
-      "table": "content_meetings"
+      "table": "meetings"
     },
     {
       "type": "text",
@@ -2642,7 +2578,7 @@
       "generated": null,
       "name": "status",
       "entityType": "columns",
-      "table": "content_meetings"
+      "table": "meetings"
     },
     {
       "type": "real",
@@ -2652,7 +2588,7 @@
       "generated": null,
       "name": "duration",
       "entityType": "columns",
-      "table": "content_meetings"
+      "table": "meetings"
     },
     {
       "type": "integer",
@@ -2662,7 +2598,7 @@
       "generated": null,
       "name": "recording_started_at",
       "entityType": "columns",
-      "table": "content_meetings"
+      "table": "meetings"
     },
     {
       "type": "integer",
@@ -2672,7 +2608,7 @@
       "generated": null,
       "name": "created_at",
       "entityType": "columns",
-      "table": "content_meetings"
+      "table": "meetings"
     },
     {
       "type": "integer",
@@ -2682,7 +2618,7 @@
       "generated": null,
       "name": "updated_at",
       "entityType": "columns",
-      "table": "content_meetings"
+      "table": "meetings"
     },
     {
       "type": "text",
@@ -2692,7 +2628,7 @@
       "generated": null,
       "name": "summary_title",
       "entityType": "columns",
-      "table": "content_meetings"
+      "table": "meetings"
     },
     {
       "type": "text",
@@ -2702,7 +2638,7 @@
       "generated": null,
       "name": "summary_document",
       "entityType": "columns",
-      "table": "content_meetings"
+      "table": "meetings"
     },
     {
       "type": "integer",
@@ -2712,7 +2648,7 @@
       "generated": null,
       "name": "summary_created_at",
       "entityType": "columns",
-      "table": "content_meetings"
+      "table": "meetings"
     },
     {
       "type": "integer",
@@ -2722,7 +2658,7 @@
       "generated": null,
       "name": "revision",
       "entityType": "columns",
-      "table": "content_meetings"
+      "table": "meetings"
     },
     {
       "type": "integer",
@@ -2732,7 +2668,7 @@
       "generated": null,
       "name": "summary_revision",
       "entityType": "columns",
-      "table": "content_meetings"
+      "table": "meetings"
     },
     {
       "type": "integer",
@@ -2742,7 +2678,7 @@
       "generated": null,
       "name": "transcript_revision",
       "entityType": "columns",
-      "table": "content_meetings"
+      "table": "meetings"
     },
     {
       "type": "integer",
@@ -2752,7 +2688,7 @@
       "generated": null,
       "name": "active",
       "entityType": "columns",
-      "table": "content_meetings"
+      "table": "meetings"
     },
     {
       "type": "integer",
@@ -2762,7 +2698,7 @@
       "generated": null,
       "name": "deleting_at",
       "entityType": "columns",
-      "table": "content_meetings"
+      "table": "meetings"
     },
     {
       "type": "text",
@@ -2772,7 +2708,7 @@
       "generated": null,
       "name": "project_id",
       "entityType": "columns",
-      "table": "core_projects"
+      "table": "projects"
     },
     {
       "type": "text",
@@ -2782,7 +2718,7 @@
       "generated": null,
       "name": "vault_id",
       "entityType": "columns",
-      "table": "core_projects"
+      "table": "projects"
     },
     {
       "type": "text",
@@ -2792,7 +2728,7 @@
       "generated": null,
       "name": "parent_project_id",
       "entityType": "columns",
-      "table": "core_projects"
+      "table": "projects"
     },
     {
       "type": "text",
@@ -2802,7 +2738,7 @@
       "generated": null,
       "name": "name",
       "entityType": "columns",
-      "table": "core_projects"
+      "table": "projects"
     },
     {
       "type": "text",
@@ -2812,7 +2748,7 @@
       "generated": null,
       "name": "description",
       "entityType": "columns",
-      "table": "core_projects"
+      "table": "projects"
     },
     {
       "type": "text",
@@ -2822,7 +2758,7 @@
       "generated": null,
       "name": "project_type",
       "entityType": "columns",
-      "table": "core_projects"
+      "table": "projects"
     },
     {
       "type": "integer",
@@ -2832,7 +2768,7 @@
       "generated": null,
       "name": "revision",
       "entityType": "columns",
-      "table": "core_projects"
+      "table": "projects"
     },
     {
       "type": "integer",
@@ -2842,7 +2778,7 @@
       "generated": null,
       "name": "created_at",
       "entityType": "columns",
-      "table": "core_projects"
+      "table": "projects"
     },
     {
       "type": "integer",
@@ -2852,7 +2788,7 @@
       "generated": null,
       "name": "updated_at",
       "entityType": "columns",
-      "table": "core_projects"
+      "table": "projects"
     },
     {
       "type": "text",
@@ -2862,7 +2798,7 @@
       "generated": null,
       "name": "screenshot_id",
       "entityType": "columns",
-      "table": "content_screenshots"
+      "table": "screenshots"
     },
     {
       "type": "text",
@@ -2872,7 +2808,7 @@
       "generated": null,
       "name": "vault_id",
       "entityType": "columns",
-      "table": "content_screenshots"
+      "table": "screenshots"
     },
     {
       "type": "text",
@@ -2882,7 +2818,7 @@
       "generated": null,
       "name": "meeting_id",
       "entityType": "columns",
-      "table": "content_screenshots"
+      "table": "screenshots"
     },
     {
       "type": "integer",
@@ -2892,7 +2828,7 @@
       "generated": null,
       "name": "captured_at",
       "entityType": "columns",
-      "table": "content_screenshots"
+      "table": "screenshots"
     },
     {
       "type": "text",
@@ -2902,7 +2838,7 @@
       "generated": null,
       "name": "content_type",
       "entityType": "columns",
-      "table": "content_screenshots"
+      "table": "screenshots"
     },
     {
       "type": "text",
@@ -2912,7 +2848,7 @@
       "generated": null,
       "name": "storage_key",
       "entityType": "columns",
-      "table": "content_screenshots"
+      "table": "screenshots"
     },
     {
       "type": "integer",
@@ -2922,7 +2858,7 @@
       "generated": null,
       "name": "content_length",
       "entityType": "columns",
-      "table": "content_screenshots"
+      "table": "screenshots"
     },
     {
       "type": "text",
@@ -2932,7 +2868,7 @@
       "generated": null,
       "name": "content_hash",
       "entityType": "columns",
-      "table": "content_screenshots"
+      "table": "screenshots"
     },
     {
       "type": "integer",
@@ -2942,7 +2878,7 @@
       "generated": null,
       "name": "active",
       "entityType": "columns",
-      "table": "content_screenshots"
+      "table": "screenshots"
     },
     {
       "type": "text",
@@ -2952,7 +2888,7 @@
       "generated": null,
       "name": "ocr_text",
       "entityType": "columns",
-      "table": "content_screenshots"
+      "table": "screenshots"
     },
     {
       "type": "text",
@@ -2962,7 +2898,7 @@
       "generated": null,
       "name": "caption",
       "entityType": "columns",
-      "table": "content_screenshots"
+      "table": "screenshots"
     },
     {
       "type": "integer",
@@ -2972,7 +2908,7 @@
       "generated": null,
       "name": "revision",
       "entityType": "columns",
-      "table": "content_screenshots"
+      "table": "screenshots"
     },
     {
       "type": "integer",
@@ -2982,7 +2918,7 @@
       "generated": null,
       "name": "created_at",
       "entityType": "columns",
-      "table": "content_screenshots"
+      "table": "screenshots"
     },
     {
       "type": "integer",
@@ -2992,7 +2928,7 @@
       "generated": null,
       "name": "updated_at",
       "entityType": "columns",
-      "table": "content_screenshots"
+      "table": "screenshots"
     },
     {
       "type": "text",
@@ -3002,7 +2938,7 @@
       "generated": null,
       "name": "vault_id",
       "entityType": "columns",
-      "table": "content_transcript_segments"
+      "table": "transcript_segments"
     },
     {
       "type": "text",
@@ -3012,7 +2948,7 @@
       "generated": null,
       "name": "meeting_id",
       "entityType": "columns",
-      "table": "content_transcript_segments"
+      "table": "transcript_segments"
     },
     {
       "type": "text",
@@ -3022,7 +2958,7 @@
       "generated": null,
       "name": "segment_id",
       "entityType": "columns",
-      "table": "content_transcript_segments"
+      "table": "transcript_segments"
     },
     {
       "type": "integer",
@@ -3032,7 +2968,7 @@
       "generated": null,
       "name": "start_time",
       "entityType": "columns",
-      "table": "content_transcript_segments"
+      "table": "transcript_segments"
     },
     {
       "type": "integer",
@@ -3042,7 +2978,7 @@
       "generated": null,
       "name": "end_time",
       "entityType": "columns",
-      "table": "content_transcript_segments"
+      "table": "transcript_segments"
     },
     {
       "type": "text",
@@ -3052,7 +2988,7 @@
       "generated": null,
       "name": "text",
       "entityType": "columns",
-      "table": "content_transcript_segments"
+      "table": "transcript_segments"
     },
     {
       "type": "integer",
@@ -3062,7 +2998,7 @@
       "generated": null,
       "name": "is_confirmed",
       "entityType": "columns",
-      "table": "content_transcript_segments"
+      "table": "transcript_segments"
     },
     {
       "type": "text",
@@ -3072,7 +3008,7 @@
       "generated": null,
       "name": "audio_source",
       "entityType": "columns",
-      "table": "content_transcript_segments"
+      "table": "transcript_segments"
     },
     {
       "type": "text",
@@ -3082,7 +3018,7 @@
       "generated": null,
       "name": "speaker_label",
       "entityType": "columns",
-      "table": "content_transcript_segments"
+      "table": "transcript_segments"
     },
     {
       "type": "text",
@@ -3092,7 +3028,7 @@
       "generated": null,
       "name": "vault_id",
       "entityType": "columns",
-      "table": "core_vaults"
+      "table": "vaults"
     },
     {
       "type": "text",
@@ -3102,7 +3038,7 @@
       "generated": null,
       "name": "name",
       "entityType": "columns",
-      "table": "core_vaults"
+      "table": "vaults"
     },
     {
       "type": "integer",
@@ -3112,7 +3048,7 @@
       "generated": null,
       "name": "revision",
       "entityType": "columns",
-      "table": "core_vaults"
+      "table": "vaults"
     },
     {
       "type": "integer",
@@ -3122,7 +3058,7 @@
       "generated": null,
       "name": "deleting_at",
       "entityType": "columns",
-      "table": "core_vaults"
+      "table": "vaults"
     },
     {
       "type": "integer",
@@ -3132,7 +3068,7 @@
       "generated": null,
       "name": "created_at",
       "entityType": "columns",
-      "table": "core_vaults"
+      "table": "vaults"
     },
     {
       "type": "integer",
@@ -3142,7 +3078,7 @@
       "generated": null,
       "name": "updated_at",
       "entityType": "columns",
-      "table": "core_vaults"
+      "table": "vaults"
     },
     {
       "type": "text",
@@ -3152,7 +3088,7 @@
       "generated": null,
       "name": "vault_id",
       "entityType": "columns",
-      "table": "core_vault_permissions"
+      "table": "vault_permissions"
     },
     {
       "type": "text",
@@ -3162,7 +3098,7 @@
       "generated": null,
       "name": "principal_type",
       "entityType": "columns",
-      "table": "core_vault_permissions"
+      "table": "vault_permissions"
     },
     {
       "type": "text",
@@ -3172,7 +3108,7 @@
       "generated": null,
       "name": "principal_id",
       "entityType": "columns",
-      "table": "core_vault_permissions"
+      "table": "vault_permissions"
     },
     {
       "type": "text",
@@ -3182,7 +3118,7 @@
       "generated": null,
       "name": "role",
       "entityType": "columns",
-      "table": "core_vault_permissions"
+      "table": "vault_permissions"
     },
     {
       "type": "text",
@@ -3192,7 +3128,7 @@
       "generated": null,
       "name": "granted_by_user_id",
       "entityType": "columns",
-      "table": "core_vault_permissions"
+      "table": "vault_permissions"
     },
     {
       "type": "integer",
@@ -3202,7 +3138,7 @@
       "generated": null,
       "name": "created_at",
       "entityType": "columns",
-      "table": "core_vault_permissions"
+      "table": "vault_permissions"
     },
     {
       "type": "text",
@@ -3212,7 +3148,7 @@
       "generated": null,
       "name": "vault_id",
       "entityType": "columns",
-      "table": "content_transcript_patch_chunks"
+      "table": "transcript_patch_chunks"
     },
     {
       "type": "text",
@@ -3222,7 +3158,7 @@
       "generated": null,
       "name": "meeting_id",
       "entityType": "columns",
-      "table": "content_transcript_patch_chunks"
+      "table": "transcript_patch_chunks"
     },
     {
       "type": "text",
@@ -3232,7 +3168,7 @@
       "generated": null,
       "name": "patch_id",
       "entityType": "columns",
-      "table": "content_transcript_patch_chunks"
+      "table": "transcript_patch_chunks"
     },
     {
       "type": "integer",
@@ -3242,7 +3178,7 @@
       "generated": null,
       "name": "chunk_index",
       "entityType": "columns",
-      "table": "content_transcript_patch_chunks"
+      "table": "transcript_patch_chunks"
     },
     {
       "type": "text",
@@ -3252,7 +3188,7 @@
       "generated": null,
       "name": "content_hash",
       "entityType": "columns",
-      "table": "content_transcript_patch_chunks"
+      "table": "transcript_patch_chunks"
     },
     {
       "type": "text",
@@ -3262,7 +3198,7 @@
       "generated": null,
       "name": "payload",
       "entityType": "columns",
-      "table": "content_transcript_patch_chunks"
+      "table": "transcript_patch_chunks"
     },
     {
       "type": "integer",
@@ -3272,7 +3208,7 @@
       "generated": null,
       "name": "created_at",
       "entityType": "columns",
-      "table": "content_transcript_patch_chunks"
+      "table": "transcript_patch_chunks"
     },
     {
       "columns": [
@@ -3594,7 +3530,7 @@
         "vault_id",
         "meeting_id"
       ],
-      "tableTo": "content_meetings",
+      "tableTo": "meetings",
       "columnsTo": [
         "vault_id",
         "meeting_id"
@@ -3602,16 +3538,16 @@
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
-      "name": "fk_content_search_documents_vault_id_meeting_id_content_meetings_vault_id_meeting_id_fk",
+      "name": "fk_search_documents_vault_id_meeting_id_meetings_vault_id_meeting_id_fk",
       "entityType": "fks",
-      "table": "content_search_documents"
+      "table": "search_documents"
     },
     {
       "columns": [
         "vault_id",
         "document_id"
       ],
-      "tableTo": "content_search_documents",
+      "tableTo": "search_documents",
       "columnsTo": [
         "vault_id",
         "document_id"
@@ -3619,24 +3555,24 @@
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
-      "name": "fk_content_search_embeddings_vault_id_document_id_content_search_documents_vault_id_document_id_fk",
+      "name": "fk_search_embeddings_vault_id_document_id_search_documents_vault_id_document_id_fk",
       "entityType": "fks",
-      "table": "content_search_embeddings"
+      "table": "search_embeddings"
     },
     {
       "columns": [
         "vault_id"
       ],
-      "tableTo": "core_vaults",
+      "tableTo": "vaults",
       "columnsTo": [
         "vault_id"
       ],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
-      "name": "fk_core_search_index_jobs_vault_id_core_vaults_vault_id_fk",
+      "name": "fk_search_index_jobs_vault_id_vaults_vault_id_fk",
       "entityType": "fks",
-      "table": "core_search_index_jobs"
+      "table": "search_index_jobs"
     },
     {
       "columns": [
@@ -3649,9 +3585,9 @@
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
-      "name": "fk_core_search_index_jobs_owner_user_id_user_id_fk",
+      "name": "fk_search_index_jobs_owner_user_id_user_id_fk",
       "entityType": "fks",
-      "table": "core_search_index_jobs"
+      "table": "search_index_jobs"
     },
     {
       "columns": [
@@ -3664,31 +3600,31 @@
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
-      "name": "fk_core_transaction_receipts_owner_user_id_user_id_fk",
+      "name": "fk_transaction_receipts_owner_user_id_user_id_fk",
       "entityType": "fks",
-      "table": "core_transaction_receipts"
+      "table": "transaction_receipts"
     },
     {
       "columns": [
         "vault_id"
       ],
-      "tableTo": "core_vaults",
+      "tableTo": "vaults",
       "columnsTo": [
         "vault_id"
       ],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
-      "name": "fk_content_meetings_vault_id_core_vaults_vault_id_fk",
+      "name": "fk_meetings_vault_id_vaults_vault_id_fk",
       "entityType": "fks",
-      "table": "content_meetings"
+      "table": "meetings"
     },
     {
       "columns": [
         "vault_id",
         "project_id"
       ],
-      "tableTo": "core_projects",
+      "tableTo": "projects",
       "columnsTo": [
         "vault_id",
         "project_id"
@@ -3696,31 +3632,31 @@
       "onUpdate": "NO ACTION",
       "onDelete": "NO ACTION",
       "nameExplicit": false,
-      "name": "fk_content_meetings_vault_id_project_id_core_projects_vault_id_project_id_fk",
+      "name": "fk_meetings_vault_id_project_id_projects_vault_id_project_id_fk",
       "entityType": "fks",
-      "table": "content_meetings"
+      "table": "meetings"
     },
     {
       "columns": [
         "vault_id"
       ],
-      "tableTo": "core_vaults",
+      "tableTo": "vaults",
       "columnsTo": [
         "vault_id"
       ],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
-      "name": "fk_core_projects_vault_id_core_vaults_vault_id_fk",
+      "name": "fk_projects_vault_id_vaults_vault_id_fk",
       "entityType": "fks",
-      "table": "core_projects"
+      "table": "projects"
     },
     {
       "columns": [
         "vault_id",
         "parent_project_id"
       ],
-      "tableTo": "core_projects",
+      "tableTo": "projects",
       "columnsTo": [
         "vault_id",
         "project_id"
@@ -3728,16 +3664,16 @@
       "onUpdate": "NO ACTION",
       "onDelete": "RESTRICT",
       "nameExplicit": false,
-      "name": "fk_core_projects_vault_id_parent_project_id_core_projects_vault_id_project_id_fk",
+      "name": "fk_projects_vault_id_parent_project_id_projects_vault_id_project_id_fk",
       "entityType": "fks",
-      "table": "core_projects"
+      "table": "projects"
     },
     {
       "columns": [
         "vault_id",
         "meeting_id"
       ],
-      "tableTo": "content_meetings",
+      "tableTo": "meetings",
       "columnsTo": [
         "vault_id",
         "meeting_id"
@@ -3745,16 +3681,16 @@
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
-      "name": "fk_content_screenshots_vault_id_meeting_id_content_meetings_vault_id_meeting_id_fk",
+      "name": "fk_screenshots_vault_id_meeting_id_meetings_vault_id_meeting_id_fk",
       "entityType": "fks",
-      "table": "content_screenshots"
+      "table": "screenshots"
     },
     {
       "columns": [
         "vault_id",
         "meeting_id"
       ],
-      "tableTo": "content_meetings",
+      "tableTo": "meetings",
       "columnsTo": [
         "vault_id",
         "meeting_id"
@@ -3762,24 +3698,24 @@
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
-      "name": "fk_content_transcript_segments_vault_id_meeting_id_content_meetings_vault_id_meeting_id_fk",
+      "name": "fk_transcript_segments_vault_id_meeting_id_meetings_vault_id_meeting_id_fk",
       "entityType": "fks",
-      "table": "content_transcript_segments"
+      "table": "transcript_segments"
     },
     {
       "columns": [
         "vault_id"
       ],
-      "tableTo": "core_vaults",
+      "tableTo": "vaults",
       "columnsTo": [
         "vault_id"
       ],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
-      "name": "fk_core_vault_permissions_vault_id_core_vaults_vault_id_fk",
+      "name": "fk_vault_permissions_vault_id_vaults_vault_id_fk",
       "entityType": "fks",
-      "table": "core_vault_permissions"
+      "table": "vault_permissions"
     },
     {
       "columns": [
@@ -3792,16 +3728,16 @@
       "onUpdate": "NO ACTION",
       "onDelete": "RESTRICT",
       "nameExplicit": false,
-      "name": "fk_core_vault_permissions_granted_by_user_id_user_id_fk",
+      "name": "fk_vault_permissions_granted_by_user_id_user_id_fk",
       "entityType": "fks",
-      "table": "core_vault_permissions"
+      "table": "vault_permissions"
     },
     {
       "columns": [
         "vault_id",
         "meeting_id"
       ],
-      "tableTo": "content_meetings",
+      "tableTo": "meetings",
       "columnsTo": [
         "vault_id",
         "meeting_id"
@@ -3809,9 +3745,9 @@
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
-      "name": "fk_content_transcript_patch_chunks_vault_id_meeting_id_content_meetings_vault_id_meeting_id_fk",
+      "name": "fk_transcript_patch_chunks_vault_id_meeting_id_meetings_vault_id_meeting_id_fk",
       "entityType": "fks",
-      "table": "content_transcript_patch_chunks"
+      "table": "transcript_patch_chunks"
     },
     {
       "columns": [
@@ -3819,9 +3755,9 @@
         "document_id"
       ],
       "nameExplicit": false,
-      "name": "content_search_documents_pk",
+      "name": "search_documents_pk",
       "entityType": "pks",
-      "table": "content_search_documents"
+      "table": "search_documents"
     },
     {
       "columns": [
@@ -3829,9 +3765,9 @@
         "document_id"
       ],
       "nameExplicit": false,
-      "name": "content_search_embeddings_pk",
+      "name": "search_embeddings_pk",
       "entityType": "pks",
-      "table": "content_search_embeddings"
+      "table": "search_embeddings"
     },
     {
       "columns": [
@@ -3839,9 +3775,9 @@
         "document_id"
       ],
       "nameExplicit": false,
-      "name": "core_search_index_jobs_pk",
+      "name": "search_index_jobs_pk",
       "entityType": "pks",
-      "table": "core_search_index_jobs"
+      "table": "search_index_jobs"
     },
     {
       "columns": [
@@ -3850,9 +3786,9 @@
         "segment_id"
       ],
       "nameExplicit": false,
-      "name": "content_transcript_segments_pk",
+      "name": "transcript_segments_pk",
       "entityType": "pks",
-      "table": "content_transcript_segments"
+      "table": "transcript_segments"
     },
     {
       "columns": [
@@ -3861,9 +3797,9 @@
         "principal_id"
       ],
       "nameExplicit": false,
-      "name": "core_vault_permissions_pk",
+      "name": "vault_permissions_pk",
       "entityType": "pks",
-      "table": "core_vault_permissions"
+      "table": "vault_permissions"
     },
     {
       "columns": [
@@ -3873,9 +3809,9 @@
         "chunk_index"
       ],
       "nameExplicit": false,
-      "name": "content_transcript_patch_chunks_pk",
+      "name": "transcript_patch_chunks_pk",
       "entityType": "pks",
-      "table": "content_transcript_patch_chunks"
+      "table": "transcript_patch_chunks"
     },
     {
       "columns": [
@@ -4035,17 +3971,8 @@
         "id"
       ],
       "nameExplicit": false,
-      "name": "core_artifact_pk",
-      "table": "core_artifact",
-      "entityType": "pks"
-    },
-    {
-      "columns": [
-        "alias"
-      ],
-      "nameExplicit": false,
-      "name": "core_model_alias_pk",
-      "table": "core_model_alias",
+      "name": "artifact_pk",
+      "table": "artifact",
       "entityType": "pks"
     },
     {
@@ -4053,8 +3980,8 @@
         "storage_key"
       ],
       "nameExplicit": false,
-      "name": "core_storage_delete_jobs_pk",
-      "table": "core_storage_delete_jobs",
+      "name": "storage_delete_jobs_pk",
+      "table": "storage_delete_jobs",
       "entityType": "pks"
     },
     {
@@ -4062,8 +3989,8 @@
         "sequence"
       ],
       "nameExplicit": false,
-      "name": "core_sync_changes_pk",
-      "table": "core_sync_changes",
+      "name": "sync_changes_pk",
+      "table": "sync_changes",
       "entityType": "pks"
     },
     {
@@ -4071,8 +3998,8 @@
         "transaction_id"
       ],
       "nameExplicit": false,
-      "name": "core_transaction_receipts_pk",
-      "table": "core_transaction_receipts",
+      "name": "transaction_receipts_pk",
+      "table": "transaction_receipts",
       "entityType": "pks"
     },
     {
@@ -4080,8 +4007,8 @@
         "meeting_id"
       ],
       "nameExplicit": false,
-      "name": "content_meetings_pk",
-      "table": "content_meetings",
+      "name": "meetings_pk",
+      "table": "meetings",
       "entityType": "pks"
     },
     {
@@ -4089,8 +4016,8 @@
         "project_id"
       ],
       "nameExplicit": false,
-      "name": "core_projects_pk",
-      "table": "core_projects",
+      "name": "projects_pk",
+      "table": "projects",
       "entityType": "pks"
     },
     {
@@ -4098,8 +4025,8 @@
         "screenshot_id"
       ],
       "nameExplicit": false,
-      "name": "content_screenshots_pk",
-      "table": "content_screenshots",
+      "name": "screenshots_pk",
+      "table": "screenshots",
       "entityType": "pks"
     },
     {
@@ -4107,8 +4034,8 @@
         "vault_id"
       ],
       "nameExplicit": false,
-      "name": "core_vaults_pk",
-      "table": "core_vaults",
+      "name": "vaults_pk",
+      "table": "vaults",
       "entityType": "pks"
     },
     {
@@ -4521,7 +4448,7 @@
       "origin": "manual",
       "name": "search_document_vault_kind_meeting_document_idx",
       "entityType": "indexes",
-      "table": "content_search_documents"
+      "table": "search_documents"
     },
     {
       "columns": [
@@ -4543,7 +4470,7 @@
       "origin": "manual",
       "name": "search_index_job_claim_idx",
       "entityType": "indexes",
-      "table": "core_search_index_jobs"
+      "table": "search_index_jobs"
     },
     {
       "columns": [
@@ -4565,7 +4492,7 @@
       "origin": "manual",
       "name": "storage_delete_job_claim_idx",
       "entityType": "indexes",
-      "table": "core_storage_delete_jobs"
+      "table": "storage_delete_jobs"
     },
     {
       "columns": [
@@ -4587,7 +4514,7 @@
       "origin": "manual",
       "name": "sync_change_owner_vault_sequence_idx",
       "entityType": "indexes",
-      "table": "core_sync_changes"
+      "table": "sync_changes"
     },
     {
       "columns": [
@@ -4605,7 +4532,7 @@
       "origin": "manual",
       "name": "sync_change_owner_sequence_idx",
       "entityType": "indexes",
-      "table": "core_sync_changes"
+      "table": "sync_changes"
     },
     {
       "columns": [
@@ -4623,7 +4550,7 @@
       "origin": "manual",
       "name": "transaction_receipt_owner_created_idx",
       "entityType": "indexes",
-      "table": "core_transaction_receipts"
+      "table": "transaction_receipts"
     },
     {
       "columns": [
@@ -4645,7 +4572,7 @@
       "origin": "manual",
       "name": "synced_meeting_vault_created_id_idx",
       "entityType": "indexes",
-      "table": "content_meetings"
+      "table": "meetings"
     },
     {
       "columns": [
@@ -4667,7 +4594,7 @@
       "origin": "manual",
       "name": "project_vault_parent_name_idx",
       "entityType": "indexes",
-      "table": "core_projects"
+      "table": "projects"
     },
     {
       "columns": [
@@ -4693,7 +4620,7 @@
       "origin": "manual",
       "name": "synced_screenshot_vault_meeting_captured_id_idx",
       "entityType": "indexes",
-      "table": "content_screenshots"
+      "table": "screenshots"
     },
     {
       "columns": [
@@ -4719,7 +4646,7 @@
       "origin": "manual",
       "name": "synced_transcript_vault_meeting_start_id_idx",
       "entityType": "indexes",
-      "table": "content_transcript_segments"
+      "table": "transcript_segments"
     },
     {
       "columns": [
@@ -4729,11 +4656,11 @@
         }
       ],
       "isUnique": true,
-      "where": "\"core_vault_permissions\".\"role\" = 'owner'",
+      "where": "\"vault_permissions\".\"role\" = 'owner'",
       "origin": "manual",
       "name": "vault_permission_single_owner_idx",
       "entityType": "indexes",
-      "table": "core_vault_permissions"
+      "table": "vault_permissions"
     },
     {
       "columns": [
@@ -4759,7 +4686,7 @@
       "origin": "manual",
       "name": "vault_permission_principal_vault_idx",
       "entityType": "indexes",
-      "table": "core_vault_permissions"
+      "table": "vault_permissions"
     },
     {
       "columns": [
@@ -4769,7 +4696,7 @@
       "nameExplicit": true,
       "name": "synced_meeting_vault_meeting_unique",
       "entityType": "uniques",
-      "table": "content_meetings"
+      "table": "meetings"
     },
     {
       "columns": [
@@ -4779,7 +4706,7 @@
       "nameExplicit": true,
       "name": "project_vault_project_unique",
       "entityType": "uniques",
-      "table": "core_projects"
+      "table": "projects"
     },
     {
       "columns": [
@@ -4848,85 +4775,85 @@
       "value": "\"visibility\" IN ('private', 'public')",
       "name": "artifact_visibility_check",
       "entityType": "checks",
-      "table": "core_artifact"
+      "table": "artifact"
     },
     {
       "value": "\"kind\" IN ('meeting', 'screenshot')",
       "name": "search_document_kind_check",
       "entityType": "checks",
-      "table": "content_search_documents"
+      "table": "search_documents"
     },
     {
       "value": "\"dimensions\" BETWEEN 32 AND 1024",
       "name": "search_embedding_dimensions_check",
       "entityType": "checks",
-      "table": "content_search_embeddings"
+      "table": "search_embeddings"
     },
     {
       "value": "\"status\" IN ('pending', 'processing', 'failed')",
       "name": "search_index_job_status_check",
       "entityType": "checks",
-      "table": "core_search_index_jobs"
+      "table": "search_index_jobs"
     },
     {
       "value": "\"dimensions\" BETWEEN 32 AND 1024",
       "name": "search_index_job_dimensions_check",
       "entityType": "checks",
-      "table": "core_search_index_jobs"
+      "table": "search_index_jobs"
     },
     {
       "value": "\"status\" IN ('pending', 'processing', 'failed')",
       "name": "storage_delete_job_status_check",
       "entityType": "checks",
-      "table": "core_storage_delete_jobs"
+      "table": "storage_delete_jobs"
     },
     {
       "value": "\"entity\" IN ('vault', 'project', 'meeting', 'summary', 'transcript', 'screenshot')",
       "name": "sync_change_entity_check",
       "entityType": "checks",
-      "table": "core_sync_changes"
+      "table": "sync_changes"
     },
     {
       "value": "\"action\" IN ('upsert', 'delete', 'reset')",
       "name": "sync_change_action_check",
       "entityType": "checks",
-      "table": "core_sync_changes"
+      "table": "sync_changes"
     },
     {
       "value": "(\n    (\"parent_project_id\" IS NULL AND \"project_type\" IN ('customer', 'internal', 'personal', 'undefined'))\n    OR (\"parent_project_id\" IS NOT NULL AND \"project_type\" IS NULL)\n  )",
       "name": "project_type_check",
       "entityType": "checks",
-      "table": "core_projects"
+      "table": "projects"
     },
     {
       "value": "\"revision\" >= 1",
       "name": "project_revision_check",
       "entityType": "checks",
-      "table": "core_projects"
+      "table": "projects"
     },
     {
       "value": "\"parent_project_id\" IS NULL OR \"parent_project_id\" <> \"project_id\"",
       "name": "project_parent_check",
       "entityType": "checks",
-      "table": "core_projects"
+      "table": "projects"
     },
     {
       "value": "\"principal_type\" IN ('user', 'organization', 'team')",
       "name": "vault_permission_principal_type_check",
       "entityType": "checks",
-      "table": "core_vault_permissions"
+      "table": "vault_permissions"
     },
     {
       "value": "\"role\" IN ('owner', 'member')",
       "name": "vault_permission_role_check",
       "entityType": "checks",
-      "table": "core_vault_permissions"
+      "table": "vault_permissions"
     },
     {
       "value": "\"role\" <> 'owner' OR \"principal_type\" = 'user'",
       "name": "vault_permission_owner_user_check",
       "entityType": "checks",
-      "table": "core_vault_permissions"
+      "table": "vault_permissions"
     }
   ],
   "renames": []

@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { Client } from "pg";
 import { afterAll, describe, expect, it } from "vitest";
 import { eq, sql } from "drizzle-orm";
 
@@ -25,6 +27,18 @@ const connection = databaseUrl ? connectAuthDatabase(config) : undefined;
 afterAll(async () => connection?.close());
 
 integration("PostgreSQL application store", () => {
+  it("runs the operator RLS probe against the application schema", async () => {
+    const client = new Client({ connectionString: databaseUrl });
+    await client.connect();
+    try {
+      const probe = readFileSync(new URL("../scripts/lakebase-rls-probe.sql", import.meta.url), "utf8");
+      // pg rejects query errors directly; only psql needs ON_ERROR_STOP.
+      await client.query(probe.replace("\\set ON_ERROR_STOP on\n", ""));
+    } finally {
+      await client.end();
+    }
+  });
+
   it("serializes optimistic transactions within a Vault", async () => {
     const store = createPostgresAuthStore(connection!.db, "postgres", undefined, true);
     const userId = crypto.randomUUID();
@@ -81,15 +95,15 @@ integration("PostgreSQL application store", () => {
       from pg_class as class
       join pg_namespace as namespace on namespace.oid = class.relnamespace
       where (namespace.nspname, class.relname) in (
-        ('core', 'vaults'),
-        ('core', 'projects'),
-        ('core', 'transaction_receipts'),
-        ('content', 'meetings'),
-        ('content', 'transcript_segments'),
-        ('content', 'transcript_patch_chunks'),
-        ('content', 'screenshots'),
-        ('content', 'search_documents'),
-        ('content', 'search_embeddings')
+        ('app', 'vaults'),
+        ('app', 'projects'),
+        ('app', 'transaction_receipts'),
+        ('app', 'meetings'),
+        ('app', 'transcript_segments'),
+        ('app', 'transcript_patch_chunks'),
+        ('app', 'screenshots'),
+        ('app', 'search_documents'),
+        ('app', 'search_embeddings')
       )
       order by namespace.nspname, class.relname
     `);
@@ -97,14 +111,14 @@ integration("PostgreSQL application store", () => {
     expect(protectedTables.rows.every(({ rls, force_rls }) => rls && force_rls)).toBe(true);
     const legacyOwnerColumns = await connection!.db.execute(sql`
       select 1 from information_schema.columns
-      where table_schema in ('core', 'content')
+      where table_schema = 'app'
         and table_name in ('vaults', 'meetings', 'transcript_segments', 'screenshots')
         and column_name = 'owner_workspace_id'
     `);
     expect(legacyOwnerColumns.rows).toEqual([]);
     const searchColumns = await connection!.db.execute<{ table_name: string; column_name: string }>(sql`
       select table_name, column_name from information_schema.columns
-      where table_schema = 'content'
+      where table_schema = 'app'
         and table_name in ('meetings', 'screenshots')
         and column_name in ('search_text', 'search_vector')
       order by table_name, column_name
@@ -112,14 +126,14 @@ integration("PostgreSQL application store", () => {
     expect(searchColumns.rows).toEqual([]);
     const projectionColumns = await connection!.db.execute<{ column_name: string }>(sql`
       select column_name from information_schema.columns
-      where table_schema = 'content' and table_name = 'search_documents'
+      where table_schema = 'app' and table_name = 'search_documents'
         and column_name in ('search_text', 'search_vector')
       order by column_name
     `);
     expect(projectionColumns.rows.map(({ column_name }) => column_name)).toEqual(["search_text", "search_vector"]);
     const searchIndexes = await connection!.db.execute<{ indexname: string; indexdef: string }>(sql`
       select indexname, indexdef from pg_indexes
-      where schemaname = 'content'
+      where schemaname = 'app'
         and (indexname = 'search_documents_search_gin' or indexdef like '%USING hnsw%')
       order by indexname
     `);
@@ -181,40 +195,25 @@ integration("PostgreSQL application store", () => {
       throw new Error("rollback");
     })).rejects.toThrow("rollback");
     const withoutContext = await connection!.db.execute<{ count: string }>(sql`
-      select count(*)::text as count from core.vaults where vault_id = ${vaultId}
+      select count(*)::text as count from app.vaults where vault_id = ${vaultId}
     `);
     expect(withoutContext.rows[0]?.count).toBe("0");
     const searchWithoutContext = await connection!.db.execute<{ count: string }>(sql`
-      select count(*)::text as count from content.search_documents where vault_id = ${vaultId}
+      select count(*)::text as count from app.search_documents where vault_id = ${vaultId}
     `);
     expect(searchWithoutContext.rows[0]?.count).toBe("0");
     const receiptsWithoutContext = await connection!.db.execute<{ count: string }>(sql`
-      select count(*)::text as count from core.transaction_receipts where vault_id = ${vaultId}
+      select count(*)::text as count from app.transaction_receipts where vault_id = ${vaultId}
     `);
     expect(receiptsWithoutContext.rows[0]?.count).toBe("0");
     await store.sync.withIdentity(owner, (sync) => sync.beginVaultDeletion(vaultId, 25));
     expect(await store.sync.withIdentity(owner, (sync) => sync.finishVaultDeletion(vaultId))).toBe(true);
   });
 
-  it("persists Model Aliases and Better Auth administrators", async () => {
+  it("persists Better Auth administrators", async () => {
     const store = createPostgresAuthStore(connection!.db, "postgres", undefined, true);
     const suffix = crypto.randomUUID();
-    const alias = `test-${suffix}`;
     const email = `${suffix}@example.com`;
-
-    expect(await store.createModelAlias({
-      alias,
-      upstreamModel: "provider/model",
-      displayName: null,
-      enabled: true,
-    })).toBe(true);
-    expect(await store.getEnabledModelAlias(alias)).toMatchObject({ alias, upstreamModel: "provider/model" });
-    expect(await store.updateModelAlias(alias, {
-      upstreamModel: "provider/model-v2",
-      displayName: "Test model",
-      enabled: false,
-    })).toBe(true);
-    expect(await store.getEnabledModelAlias(alias)).toBeNull();
 
     const identity: Identity = {
       userId: suffix,
@@ -226,7 +225,6 @@ integration("PostgreSQL application store", () => {
     expect(await store.addAdminUser(email)).toMatchObject({ id: suffix });
     expect(await store.isAdminUser(suffix)).toBe(true);
     expect(await store.removeAdminUser(email)).toBe("removed");
-    expect(await store.deleteModelAlias(alias)).toBe(true);
   });
 
   it("grants read-only Vault access through an explicit organization share", async () => {
@@ -323,7 +321,7 @@ integration("PostgreSQL application store", () => {
       });
       for (const table of ["meetings", "transcript_segments", "screenshots"] as const) {
         const hidden = await connection!.db.execute<{ count: string }>(
-          sql.raw(`select count(*)::text as count from content.${table}`),
+          sql.raw(`select count(*)::text as count from app.${table}`),
         );
         expect(hidden.rows[0]?.count).toBe("0");
       }

@@ -10,7 +10,7 @@ resources:
       comment: AI model services for Dahlia Server
     dahlia:
       catalog_name: ${var.catalog}
-      name: ${var.core_schema}
+      name: ${var.app_schema}
       comment: Resources for Dahlia Server ${bundle.target}
 
   volumes:

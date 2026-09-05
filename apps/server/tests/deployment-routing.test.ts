@@ -211,9 +211,9 @@ describe("deployment routing", () => {
     expect(bundle).toContain("database_project_id: dahlia-db");
     expect(bundle).toContain("catalog:");
     expect(bundle).toContain("default: dahlia");
-    expect(bundle).toMatch(/core_schema:[\s\S]*?default: core/);
+    expect(bundle).toMatch(/app_schema:[\s\S]*?default: app/);
     expect(bundle).toMatch(/ai_schema:[\s\S]*?default: ai/);
-    expect(resource).toContain("name: ${var.core_schema}");
+    expect(resource).toContain("name: ${var.app_schema}");
     expect(resource).not.toContain("${var.schema}");
     expect(bundle).toContain("'${var.catalog}' '${var.ai_schema}' '${var.database_project_id}'");
     expect(bundle).toContain("volume_name:");
@@ -288,7 +288,7 @@ describe("deployment routing", () => {
     const auth = readText("../drizzle/postgres-auth/20260903034253_melodic_scalphunter/migration.sql");
     const postgres = readText("../drizzle/postgres/20260903173551_bumpy_freak/migration.sql");
     for (const migration of [sqlite, `${auth}\n${postgres}`]) {
-      expect(migration).toContain("model_alias");
+      expect(migration).not.toContain("model_alias");
       expect(migration).not.toContain("platform_admin");
       expect(migration).not.toContain("artifact_reservation");
       expect(migration).toContain("storage_key");
@@ -306,9 +306,9 @@ describe("deployment routing", () => {
     expect(auth).toContain('"team_id" text');
     expect(postgres).not.toContain('CREATE TABLE "auth".');
     expect(postgres).toContain('REFERENCES "auth"."user"("id")');
-    expect(postgres).toContain('CREATE TABLE "core"."artifact"');
-    expect(postgres).toContain('CREATE TABLE "content"."meetings"');
-    expect(postgres).not.toContain('CREATE TABLE "core"."user"');
+    expect(postgres).toContain('CREATE TABLE "app"."artifact"');
+    expect(postgres).toContain('CREATE TABLE "app"."meetings"');
+    expect(postgres).not.toContain('CREATE TABLE "app"."user"');
     expect(postgres).toContain("ROW LEVEL SECURITY");
     expect(postgres).toContain("CREATE POLICY");
     expect(postgres).toContain('permission."principal_type" = \'team\'');

@@ -4,7 +4,7 @@
 
 ## 検索 projection
 
-Server は canonical content から自分の検索索引を作る。Desktop の token / ML runtime へ依存せず、`content.search_documents` に meeting と screenshot 共通の再構築可能な projection を持つ。
+Server は canonical content から自分の検索索引を作る。Desktop の token / ML runtime へ依存せず、`app.search_documents` に meeting と screenshot 共通の再構築可能な projection を持つ。
 
 対象は meeting 名・説明、summary の description / 表示本文、screenshot の OCR / AI caption。transcript、翻訳、UUID、summary 内部 metadata、transcript reference、Project context は含めない。壊れた summary JSON は同期を拒否せず meeting metadata だけを索引する。
 
@@ -16,7 +16,7 @@ PostgreSQL は generated tsvector / GIN、Lakebase は `lakebase_text` / BM25、
 
 ## Hybrid 検索
 
-`content.search_embeddings` に model / dimensions / content hash / vector を保存する。`core.search_index_jobs` は raw text を持たない lease 付き durable queue。Node worker が owner identity で文書を読み、App service principal により最大16文書ずつ非同期推論する。保存直前に hash と owner permission を再確認する。
+`app.search_embeddings` に model / dimensions / content hash / vector を保存する。`app.search_index_jobs` は raw text を持たない lease 付き durable queue。Node worker が owner identity で文書を読み、App service principal により最大16文書ずつ非同期推論する。保存直前に hash と owner permission を再確認する。
 
 - `DAHLIA_SEARCH_EMBEDDING_MODEL` が空なら無効。dimensions は32〜1024の2の冪、既定1024。DAB の検証既定だけ `system.ai.qwen3-embedding-0-6b` を設定する。
 - Lakebase は `lakebase_vector` / ANN、他 PostgreSQL は pgvector / HNSW、SQLite Node は Float32 BLOB の exact cosine。model / dimensions を index と query の条件に含める。

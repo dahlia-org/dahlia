@@ -14,7 +14,7 @@ Server account の Vault / Project / meeting は Desktop と Web が共有する
 
 Vault 名、2段階 Project 階層と名前・説明、meeting metadata、summary document、transcript 原文、screenshot bytes / MIME / OCR / AI caption を同期する。音声、翻訳文、SQLite ファイル、端末の export path は対象外。note、tag、calendar metadata、音声特徴量をこの同期契約へ追加しない。
 
-Project は `core.projects` に置き Vault 権限を継承する。空 Vault と Project 単独変更も扱い、同じ Vault の meeting だけが参照できる。Project 削除前に依存 meeting を明示的に移動・解除し、依存が残る削除を Server が拒否する。Project は階層閲覧・明示 filter に使い、検索本文や vector へ混ぜない。
+Project は `app.projects` に置き Vault 権限を継承する。空 Vault と Project 単独変更も扱い、同じ Vault の meeting だけが参照できる。Project 削除前に依存 meeting を明示的に移動・解除し、依存が残る削除を Server が拒否する。Project は階層閲覧・明示 filter に使い、検索本文や vector へ混ぜない。
 
 transcript の収録経路は `audio_source: mic | system`、人・diarization の話者は nullable `speaker_label` として分離する。既存 Desktop の収録経路は forward migration で移し、話者欄を空にする。未リリース時の旧 Server field の意味は互換経路を残さなかった。
 

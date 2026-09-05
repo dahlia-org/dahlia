@@ -96,14 +96,14 @@ try {
       || !codexLicense.includes("Apache License")
       || !codexNotice.includes("OpenAI Codex\\nCopyright 2025 OpenAI")
       || !codexNotice.includes("codex-rs/models-manager/models.json")
-      || !migration.includes("model_alias")
+      || migration.includes("model_alias")
       || !migration.includes("artifact")
       || migration.includes("artifact_reservation")
       || !migration.includes("storage_key")
       || !authMigration.includes('CREATE TABLE "auth"."user"')
       || applicationMigration.includes('CREATE TABLE "auth".')
       || !applicationMigration.includes('REFERENCES "auth"."user"("id")')
-      || !applicationMigration.includes('CREATE TABLE "core"."vaults"')
+      || !applicationMigration.includes('CREATE TABLE "app"."vaults"')
     ) {
       throw new Error("Package assets are incomplete");
     }

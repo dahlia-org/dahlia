@@ -4,7 +4,7 @@
 
 ## 配置
 
-`deploy/databricks` の DAB が App と Lakebase Autoscaling project を配置し、`apps/server` だけを同期する。App は `databricks_postgres` へ `CAN_CONNECT_AND_CREATE` で接続する。Auth / core / content と migration ledger は [Database](database-and-identity.md#schema-と-migration) に従う。
+`deploy/databricks` の DAB が App と Lakebase Autoscaling project を配置し、`apps/server` だけを同期する。App は `databricks_postgres` へ `CAN_CONNECT_AND_CREATE` で接続する。auth / app と migration ledger は [Database](database-and-identity.md#schema-と-migration) に従う。
 
 authentication、canonical origin、AI backend は独立に選ぶ。Node origin は HTTP/1.1、外部 HTTP/2・HTTP/3 は edge proxy が終端する。trusted proxy はすべての利用する forwarded header を client 値から除去・上書きし、直接 Server に到達させない。
 

@@ -130,11 +130,11 @@ export async function ensureSearchIndexes(pool: Pool, config: AppConfig): Promis
   if (config.databaseType === "lakebase") {
     await pool.query("CREATE EXTENSION IF NOT EXISTS lakebase_text");
     await pool.query(
-      "CREATE INDEX IF NOT EXISTS search_documents_search_bm25 ON content.search_documents USING lakebase_bm25 (search_vector)",
+      "CREATE INDEX IF NOT EXISTS search_documents_search_bm25 ON app.search_documents USING lakebase_bm25 (search_vector)",
     );
   } else if (config.databaseType === "postgres") {
     await pool.query(
-      "CREATE INDEX IF NOT EXISTS search_documents_search_gin ON content.search_documents USING gin (search_vector)",
+      "CREATE INDEX IF NOT EXISTS search_documents_search_gin ON app.search_documents USING gin (search_vector)",
     );
   }
   const embedding = config.searchEmbedding;
@@ -149,7 +149,7 @@ export async function ensureSearchIndexes(pool: Pool, config: AppConfig): Promis
   const indexName = `search_embeddings_${method}_${embedding.dimensions}_${suffix}`;
   await pool.query(`
     CREATE INDEX IF NOT EXISTS ${indexName}
-    ON content.search_embeddings USING ${method}
+    ON app.search_embeddings USING ${method}
       ((embedding::${vectorType}(${embedding.dimensions})) ${operatorClass})
     WHERE model = ${modelLiteral} AND dimensions = ${embedding.dimensions}
   `);

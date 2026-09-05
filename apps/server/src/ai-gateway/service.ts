@@ -1,4 +1,3 @@
-import type { AuthStore } from "../auth/store";
 import type { AppConfig } from "../config";
 import type { GatewayFetch } from "./adapters";
 import type { AIGatewayBackend, RequestBody, RequestContext } from "./backend";
@@ -17,11 +16,8 @@ export class GatewayService {
 
   constructor(
     private readonly config: AppConfig,
-    // Retained for the published constructor contract; model discovery no longer reads the store.
-    _store: Pick<AuthStore, "getEnabledModelAlias" | "listModelAliases">,
     transport: GatewayFetch = fetch,
   ) {
-    void _store;
     const provider = config.provider;
     if (provider?.backend === "databricks") {
       if (!config.databricksWorkspace) throw new Error("Databricks workspace credentials are required");
