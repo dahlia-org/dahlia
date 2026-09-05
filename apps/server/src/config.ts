@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { UPSTREAM_MODEL_MAX_LENGTH } from "./ai-gateway/model-alias";
+
 export type AuthProvider = "accounts" | "header";
 export type DatabaseType = "sqlite" | "postgres" | "lakebase" | "hyperdrive" | "d1";
 export type AIBackend = "databricks" | "cloudflare" | "openai";
@@ -54,6 +56,7 @@ export interface AppConfig {
   betterAuthSecret?: string;
   oauthRedirectUris: string[];
   maxRequestBytes: number;
+  codexAutoReviewModel?: string;
   storageBackend?: StorageBackend;
   storageLocalPath?: string;
   storageS3?: S3StorageConfig;
@@ -206,6 +209,7 @@ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
     .max(64 * 1024 * 1024)
     .parse(env.DAHLIA_MAX_REQUEST_BYTES ?? String(16 * 1024 * 1024));
   const aiBackend = aiBackendSchema.parse(env.DAHLIA_AI_BACKEND?.trim() || "openai");
+  const codexAutoReviewModel = env.CODEX_AUTO_REVIEW_MODEL?.trim();
   const storageBackend = storageBackendSchema.parse(env.DAHLIA_STORAGE_BACKEND?.trim() || "local");
   const searchEmbeddingModel = env.DAHLIA_SEARCH_EMBEDDING_MODEL?.trim();
   const searchEmbedding = searchEmbeddingModel ? {
@@ -250,6 +254,9 @@ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
     provider: providerConfig(env, aiBackend, databricksWorkspace),
     oauthRedirectUris: csv(env.DAHLIA_OAUTH_REDIRECT_URIS),
     maxRequestBytes,
+    codexAutoReviewModel: codexAutoReviewModel
+      ? z.string().max(UPSTREAM_MODEL_MAX_LENGTH).parse(codexAutoReviewModel)
+      : undefined,
     storageBackend,
     storageLocalPath: env.DAHLIA_STORAGE_LOCAL_PATH?.trim() || ".data/storage",
     storageS3,

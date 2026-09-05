@@ -132,6 +132,33 @@ describe("administration", () => {
     expect((await app.request("/api/admin/models/summary", { method: "DELETE", headers: ownerHeaders })).status).toBe(204);
   });
 
+  it("rejects mutations of the reserved Codex automatic review alias", async () => {
+    const { models, store } = administrativeStore();
+    const app = createApp({ config, authStore: store });
+    const alias = "codex-auto-review";
+    const requests = [
+      new Request(`https://dahlia.example/api/admin/models`, {
+        method: "POST",
+        headers: ownerHeaders,
+        body: JSON.stringify({ alias, upstreamModel: "provider/model", displayName: null, enabled: true }),
+      }),
+      new Request(`https://dahlia.example/api/admin/models/${alias}`, {
+        method: "PATCH",
+        headers: ownerHeaders,
+        body: JSON.stringify({ upstreamModel: "provider/model", displayName: null, enabled: true }),
+      }),
+      new Request(`https://dahlia.example/api/admin/models/${alias}`, {
+        method: "DELETE",
+        headers: ownerHeaders,
+      }),
+    ];
+
+    for (const request of requests) {
+      expect((await app.request(request)).status).toBe(400);
+    }
+    expect(models).toEqual([]);
+  });
+
   it("exposes Databricks models with their saved enabled state", async () => {
     const { models, store } = administrativeStore();
     const longestAlias = "m".repeat(255);

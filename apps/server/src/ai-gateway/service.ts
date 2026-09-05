@@ -5,7 +5,7 @@ import type { AuthStore, ModelAliasRecord } from "../auth/store";
 import type { AppConfig } from "../config";
 import { DatabricksTokenProvider } from "../databricks/token";
 import { listDatabricksModelServices, sendOpenAIResponses, type GatewayFetch } from "./adapters";
-import { MODEL_ALIAS_PATTERN } from "./model-alias";
+import { CODEX_AUTO_REVIEW_ALIAS, MODEL_ALIAS_PATTERN } from "./model-alias";
 
 interface DatabricksModel {
   id: string;
@@ -68,7 +68,9 @@ export class GatewayService {
       return { object: "list", data: [], models: codexModels([]) };
     }
     const aliases = await this.modelAliases();
-    const enabledAliases = aliases.filter((alias) => alias.enabled);
+    const enabledAliases = aliases.filter((alias) => alias.enabled && alias.alias !== CODEX_AUTO_REVIEW_ALIAS);
+    const autoReviewAlias = configuredAutoReviewAlias(this.config.codexAutoReviewModel);
+    if (autoReviewAlias) enabledAliases.push(autoReviewAlias);
     return {
       object: "list",
       data: enabledAliases.map((alias) => ({
@@ -112,10 +114,14 @@ export class GatewayService {
       throw new GatewayRequestError("model is required", 400, "model_required");
     }
     let alias;
-    try {
-      alias = await this.store.getEnabledModelAlias(model);
-    } catch {
-      throw new GatewayRequestError("Model registry is unavailable", 503, "model_registry_unavailable");
+    if (model === CODEX_AUTO_REVIEW_ALIAS) {
+      alias = configuredAutoReviewAlias(this.config.codexAutoReviewModel);
+    } else {
+      try {
+        alias = await this.store.getEnabledModelAlias(model) ?? undefined;
+      } catch {
+        throw new GatewayRequestError("Model registry is unavailable", 503, "model_registry_unavailable");
+      }
     }
     if (!alias) {
       throw new GatewayRequestError(`Model '${model}' is not available`, 404, "model_not_found");
@@ -234,6 +240,17 @@ export class GatewayService {
   }
 }
 
+function configuredAutoReviewAlias(upstreamModel: string | undefined): ModelAliasRecord | undefined {
+  return upstreamModel ? {
+    alias: CODEX_AUTO_REVIEW_ALIAS,
+    upstreamModel,
+    displayName: "Codex Auto Review",
+    enabled: true,
+    createdAt: new Date(0),
+    updatedAt: new Date(0),
+  } : undefined;
+}
+
 function requireSupportedCodexClient(request?: Request): void {
   if (!request) return;
   const version = new URL(request.url).searchParams.get("client_version")
@@ -253,7 +270,8 @@ function codexModels(aliases: ModelAliasRecord[]): CodexModelWire[] {
     hiddenCodexModel(model.slug),
   ]));
   aliases.forEach((alias, priority) => {
-    const model = knownCodexModel(alias.upstreamModel)
+    const metadataModel = alias.alias === CODEX_AUTO_REVIEW_ALIAS ? alias.alias : alias.upstreamModel;
+    const model = knownCodexModel(metadataModel)
       ?? knownCodexModel(alias.alias)
       ?? ossCodexModel(alias.alias);
     models.set(alias.alias, {

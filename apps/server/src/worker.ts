@@ -17,6 +17,7 @@ import { createIntlSearchTokenizer } from "./search/tokenizer";
 
 export interface RuntimeSecrets {
   BETTER_AUTH_SECRET?: string;
+  CODEX_AUTO_REVIEW_MODEL?: string;
   DAHLIA_AI_BACKEND?: string;
   DAHLIA_AUTH_HEADER?: string;
   DAHLIA_AUTH_TYPE?: string;
@@ -79,6 +80,7 @@ function createWorkerApplicationStore(config: AppConfig, env: WorkerEnv): Applic
 export async function initializeWorkerApp(env: WorkerEnv): Promise<WorkerApp> {
   const config = loadConfig({
     BETTER_AUTH_SECRET: env.BETTER_AUTH_SECRET,
+    CODEX_AUTO_REVIEW_MODEL: env.CODEX_AUTO_REVIEW_MODEL,
     DAHLIA_AI_BACKEND: env.DAHLIA_AI_BACKEND,
     DAHLIA_AUTH_HEADER: env.DAHLIA_AUTH_HEADER,
     DAHLIA_AUTH_TYPE: env.DAHLIA_AUTH_TYPE,

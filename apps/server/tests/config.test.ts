@@ -19,9 +19,17 @@ describe("configuration", () => {
       oauthRedirectUris: ["http://127.0.0.1:1455/oauth/callback", "http://localhost:8020"],
       storageBackend: "local",
       storageLocalPath: ".data/storage",
+      codexAutoReviewModel: undefined,
       searchEmbedding: undefined,
       syncSharingEnabled: false,
     });
+  });
+
+  it("configures the Codex automatic review upstream without a backend-specific default", () => {
+    expect(loadConfig({ ...accounts, CODEX_AUTO_REVIEW_MODEL: " provider/reviewer " }).codexAutoReviewModel)
+      .toBe("provider/reviewer");
+    expect(loadConfig({ ...accounts, CODEX_AUTO_REVIEW_MODEL: " " }).codexAutoReviewModel).toBeUndefined();
+    expect(() => loadConfig({ ...accounts, CODEX_AUTO_REVIEW_MODEL: "m".repeat(768) })).toThrow();
   });
 
   it("keeps Vault sharing opt-in", () => {
