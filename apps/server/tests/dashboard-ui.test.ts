@@ -7,7 +7,6 @@ import {
   resolveDashboardExtensionRoute,
   type DashboardExtension,
 } from "../src/client/App";
-import { filterAndSortModels, type ModelAliasInfo } from "../src/client/model-list";
 import { artifactViewerId, resolveDashboardRoute, shouldRedirectToSignIn } from "../src/client/routes";
 
 const ExtensionPage = () => null;
@@ -72,8 +71,8 @@ describe("dashboard navigation", () => {
   it("gates administration routes", () => {
     const admin = { admin: true, sessions: false };
     const user = { admin: false, sessions: false };
-    expect(resolveDashboardRoute("/admin", admin)).toEqual({ redirect: "/admin/models" });
-    expect(resolveDashboardRoute("/admin/models", admin)).toEqual({ page: "admin-models" });
+    expect(resolveDashboardRoute("/admin", admin)).toEqual({ redirect: "/admin/members" });
+    expect(resolveDashboardRoute("/admin/models", admin)).toEqual({ redirect: "/dashboard" });
     expect(resolveDashboardRoute("/admin/members", admin)).toEqual({ page: "admin-members" });
     expect(resolveDashboardRoute("/admin/models", user)).toEqual({ redirect: "/dashboard" });
   });
@@ -128,38 +127,9 @@ describe("dashboard navigation", () => {
     expect(source).not.toContain("<pre>{meeting.summaryDocument}</pre>");
   });
 
-  it("uses immediate accessible switches for Databricks models", () => {
+  it("removes the model management UI", () => {
     const source = readFileSync(new URL("../src/client/App.tsx", import.meta.url), "utf8");
-    const styles = readFileSync(new URL("../src/client/styles.css", import.meta.url), "utf8");
-
-    expect(source).toContain('className="switch-field"');
-    expect(source).toContain('role="switch"');
-    expect(source).toContain('aria-label={`Enable ${model.upstreamModel}`}');
-    expect(source).toContain('typeof detail?.error === "string"');
-    expect(source).toContain('method: configured ? "PATCH" : "POST"');
-    expect(source).toContain("setEnabled(previousEnabled)");
-    expect(source).toContain("!databricksModels && (");
-    expect(styles).toContain(".switch-field input:focus-visible + .switch-control");
-    expect(styles).toContain(".provider-model-row { grid-template-columns: 1fr; }");
-  });
-
-  it("filters models by name and applies the default sort order", () => {
-    const model = (alias: string, displayName: string, enabled: boolean, updateTime: string): ModelAliasInfo => ({
-      alias,
-      upstreamModel: `system.ai.${alias}`,
-      displayName,
-      enabled,
-      updateTime,
-    });
-    const models = [
-      model("alpha-old", "Alpha", false, "2026-08-01T00:00:00Z"),
-      model("zulu", "Zulu", true, "2026-08-01T00:00:00Z"),
-      model("alpha-new", "Alpha", false, "2026-08-02T00:00:00Z"),
-    ];
-
-    expect(filterAndSortModels(models, "").map(({ alias }) => alias))
-      .toEqual(["zulu", "alpha-new", "alpha-old"]);
-    expect(filterAndSortModels(models, "SYSTEM.AI.ALPHA").map(({ alias }) => alias))
-      .toEqual(["alpha-new", "alpha-old"]);
+    expect(source).not.toContain("/admin/models");
+    expect(source).not.toContain("AdminModels");
   });
 });

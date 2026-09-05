@@ -116,6 +116,7 @@ jobs:
           DAHLIA_OAUTH_REDIRECT_URIS: http://127.0.0.1:1455/oauth/callback,http://localhost:8020
           DAHLIA_AI_BACKEND: databricks
           DATABRICKS_HOST: https://workspace.example.databricks.com
+          DATABRICKS_MODEL_SCHEMA: dahlia.ai
           DATABRICKS_CLIENT_ID: test-app-client-id
           DATABRICKS_CLIENT_SECRET: test-app-client-secret
           DAHLIA_SEARCH_EMBEDDING_MODEL: test-embedding-model

@@ -8,8 +8,6 @@ import {
   shouldRedirectToSignIn,
   type DashboardCapabilities,
 } from "./routes";
-import { filterAndSortModels, type ModelAliasInfo } from "./model-list";
-import { UPSTREAM_MODEL_MAX_LENGTH } from "../ai-gateway/model-alias";
 import { summaryDisplayText } from "../search/summary";
 
 export interface SessionInfo {
@@ -410,7 +408,6 @@ function Shell({
           {session.capabilities.admin && (
             <>
               <span className="nav-divider" />
-              <a className={route === "/admin/models" ? "active" : ""} href="/admin/models">Models</a>
               <a className={route === "/admin/members" ? "active" : ""} href="/admin/members">Members</a>
             </>
           )}
@@ -1583,212 +1580,6 @@ function ArtifactViewer({ brand, id }: { brand: DashboardBrand; id: string }) {
   );
 }
 
-function ModelAliasRow({ model, reload }: { model: ModelAliasInfo; reload: () => void }) {
-  const [upstreamModel, setUpstreamModel] = useState(model.upstreamModel);
-  const [displayName, setDisplayName] = useState(model.displayName || "");
-  const [enabled, setEnabled] = useState(model.enabled);
-  const [error, setError] = useState<string>();
-  const [pending, setPending] = useState(false);
-
-  async function save(event: React.FormEvent) {
-    event.preventDefault();
-    setPending(true);
-    setError(undefined);
-    try {
-      await json(`/api/admin/models/${model.alias}`, {
-        method: "PATCH",
-        body: JSON.stringify({ upstreamModel, displayName: displayName.trim() || null, enabled }),
-      });
-      reload();
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not update model");
-    } finally {
-      setPending(false);
-    }
-  }
-
-  async function remove() {
-    if (!window.confirm(`Delete model alias '${model.alias}'?`)) return;
-    setPending(true);
-    setError(undefined);
-    try {
-      await json(`/api/admin/models/${model.alias}`, { method: "DELETE" });
-      reload();
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not delete model");
-      setPending(false);
-    }
-  }
-
-  return (
-    <form className="admin-row model-row" onSubmit={(event) => void save(event)}>
-      <div className="admin-row-heading">
-        <strong>{model.alias}</strong>
-        <label className="toggle-field">
-          <input type="checkbox" checked={enabled} onChange={(event) => setEnabled(event.target.checked)} />
-          Enabled
-        </label>
-      </div>
-      <label>Upstream model<input value={upstreamModel} required maxLength={UPSTREAM_MODEL_MAX_LENGTH} onChange={(event) => setUpstreamModel(event.target.value)} /></label>
-      <label>Display name<input value={displayName} maxLength={100} placeholder={model.alias} onChange={(event) => setDisplayName(event.target.value)} /></label>
-      <div className="row-actions">
-        <button className="secondary danger-button" type="button" disabled={pending} onClick={() => void remove()}>Delete</button>
-        <button className="secondary" disabled={pending}>Save</button>
-      </div>
-      {error && <p className="error">{error}</p>}
-    </form>
-  );
-}
-
-function DatabricksModelRow({
-  model,
-  onUpdated,
-}: {
-  model: ModelAliasInfo;
-  onUpdated: (enabled: boolean) => void;
-}) {
-  const [configured, setConfigured] = useState(model.configured ?? true);
-  const [enabled, setEnabled] = useState(model.enabled);
-  const [error, setError] = useState<string>();
-  const [pending, setPending] = useState(false);
-
-  async function toggle(nextEnabled: boolean) {
-    const previousEnabled = enabled;
-    setEnabled(nextEnabled);
-    setPending(true);
-    setError(undefined);
-    try {
-      await json(configured ? `/api/admin/models/${model.alias}` : "/api/admin/models", {
-        method: configured ? "PATCH" : "POST",
-        body: JSON.stringify({
-          ...(configured ? {} : { alias: model.alias }),
-          upstreamModel: model.upstreamModel,
-          displayName: model.displayName,
-          enabled: nextEnabled,
-        }),
-      });
-      setConfigured(true);
-      onUpdated(nextEnabled);
-    } catch (caught) {
-      setEnabled(previousEnabled);
-      setError(caught instanceof Error ? caught.message : "Could not update model");
-    } finally {
-      setPending(false);
-    }
-  }
-
-  return (
-    <div className="admin-row provider-model-row">
-      <div className="provider-model-copy">
-        <strong>{model.displayName || model.alias}</strong>
-        <span>{model.upstreamModel}</span>
-      </div>
-      <label className="switch-field">
-        <input
-          type="checkbox"
-          role="switch"
-          aria-label={`Enable ${model.upstreamModel}`}
-          checked={enabled}
-          disabled={pending}
-          onChange={(event) => void toggle(event.target.checked)}
-        />
-        <span className="switch-control" aria-hidden="true" />
-        <span>{enabled ? "Enabled" : "Disabled"}</span>
-      </label>
-      {error && <p className="error">{error}</p>}
-    </div>
-  );
-}
-
-function AdminModels({ databricksModels }: { databricksModels: boolean }) {
-  const [models, setModels] = useState<ModelAliasInfo[]>();
-  const [alias, setAlias] = useState("");
-  const [upstreamModel, setUpstreamModel] = useState("");
-  const [displayName, setDisplayName] = useState("");
-  const [query, setQuery] = useState("");
-  const [error, setError] = useState<string>();
-  const load = useCallback(() => {
-    setError(undefined);
-    void json<ModelAliasInfo[]>("/api/admin/models").then(setModels).catch((caught: Error) => setError(caught.message));
-  }, []);
-  useEffect(load, [load]);
-
-  async function create(event: React.FormEvent) {
-    event.preventDefault();
-    setError(undefined);
-    try {
-      await json("/api/admin/models", {
-        method: "POST",
-        body: JSON.stringify({ alias, upstreamModel, displayName: displayName.trim() || null, enabled: true }),
-      });
-      setAlias("");
-      setUpstreamModel("");
-      setDisplayName("");
-      load();
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not add model");
-    }
-  }
-
-  function updateModel(upstreamModel: string, enabled: boolean) {
-    setModels((current) => current?.map((model) => model.upstreamModel === upstreamModel
-      ? { ...model, configured: true, enabled }
-      : model));
-  }
-
-  const displayedModels = models && filterAndSortModels(models, query);
-
-  return (
-    <>
-      <PageHeader title="Models" />
-      <section className="section-block">
-        <h2 className="section-label">{databricksModels ? "Available models" : "Model aliases"}</h2>
-        {models && models.length > 0 && (
-          <input
-            className="model-search"
-            type="search"
-            aria-label="Search models"
-            placeholder="Search models"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-          />
-        )}
-        <div className="panel admin-list">
-          {!models && !error && <p className="muted">Loading models…</p>}
-          {models?.length === 0 && (
-            <div className="empty-state">
-              <strong>{databricksModels ? "No models available" : "No models configured"}</strong>
-              {!databricksModels && <span>Add an alias below.</span>}
-            </div>
-          )}
-          {models && models.length > 0 && displayedModels?.length === 0 && (
-            <div className="empty-state"><strong>No models match your search</strong></div>
-          )}
-          {displayedModels?.map((model) => databricksModels
-            ? <DatabricksModelRow
-                key={model.upstreamModel}
-                model={model}
-                onUpdated={(enabled) => updateModel(model.upstreamModel, enabled)}
-              />
-            : <ModelAliasRow key={model.alias} model={model} reload={load} />)}
-        </div>
-      </section>
-      {!databricksModels && (
-        <section className="section-block">
-          <h2 className="section-label">Add model</h2>
-          <form className="panel admin-form" onSubmit={(event) => void create(event)}>
-            <label>Alias<input value={alias} required pattern="[a-z0-9][a-z0-9._-]{0,254}" maxLength={255} placeholder="gpt-5.6-luna" onChange={(event) => setAlias(event.target.value)} /></label>
-            <label>Upstream model<input value={upstreamModel} required maxLength={UPSTREAM_MODEL_MAX_LENGTH} placeholder="openai/gpt-5.6-luna" onChange={(event) => setUpstreamModel(event.target.value)} /></label>
-            <label>Display name<input value={displayName} maxLength={100} placeholder="Optional" onChange={(event) => setDisplayName(event.target.value)} /></label>
-            <button className="primary">Add model</button>
-          </form>
-        </section>
-      )}
-      {error && <p className="error page-error admin-error">{error}</p>}
-    </>
-  );
-}
-
 function AdminMembers() {
   const [members, setMembers] = useState<AdminMember[]>();
   const [email, setEmail] = useState("");
@@ -1916,8 +1707,6 @@ export function App({ brand = defaultBrand, extensions = [] }: AppProps) {
   if (extensionRoute) {
     const ExtensionPage = extensionRoute.component;
     page = <ExtensionPage session={session} />;
-  } else if (route.page === "admin-models") {
-    page = <AdminModels databricksModels={session.capabilities.databricksModels === true} />;
   }
   else if (route.page === "admin-members") page = <AdminMembers />;
   else if (route.page === "artifacts") page = <Artifacts />;

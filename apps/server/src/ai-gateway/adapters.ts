@@ -6,6 +6,7 @@ export interface UpstreamRequest {
   body: string;
   requestHeaders: Headers;
   signal?: AbortSignal;
+  upstreamHeaders?: Record<string, string>;
 }
 
 function upstreamHeaders(requestHeaders: Headers, authorization: string): Headers {
@@ -29,7 +30,7 @@ export function sendOpenAIResponses(
   transport: GatewayFetch = fetch,
 ): Promise<Response> {
   const headers = upstreamHeaders(request.requestHeaders, authorization);
-  if (provider.backend === "cloudflare") headers.set("cf-aig-collect-log-payload", "false");
+  for (const [name, value] of Object.entries(request.upstreamHeaders ?? {})) headers.set(name, value);
   const endpoint = new URL(provider.baseUrl);
   endpoint.pathname = `${endpoint.pathname.replace(/\/$/, "")}/responses`;
   return transport(endpoint, {
@@ -48,7 +49,7 @@ export function listDatabricksModelServices(
   pageToken?: string,
 ): Promise<Response> {
   const endpoint = new URL("/api/2.1/unity-catalog/model-services", provider.baseUrl);
-  endpoint.searchParams.set("parent", "schemas/system.ai");
+  endpoint.searchParams.set("parent", `schemas/${provider.modelSchema}`);
   endpoint.searchParams.set("view", "BASIC");
   endpoint.searchParams.set("page_size", "100");
   if (pageToken) endpoint.searchParams.set("page_token", pageToken);

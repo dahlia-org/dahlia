@@ -102,7 +102,7 @@ In `accounts` mode, `/mcp` requires a DPoP-bound access token for the exact MCP 
 
 The AI backend uses the OpenAI Responses-compatible contract and is independent of the database. Select `databricks`, `cloudflare`, or `openai` with `DAHLIA_AI_BACKEND`; it defaults to `openai`. While the selected non-Databricks backend has no `OPENAI_API_KEY`, `/api/v1/models` returns an empty standard model list and a Codex catalog with no picker-visible models, while Responses returns `503 provider_not_configured`.
 
-`GET /api/v1/models` returns the standard OpenAI `object` and `data` fields together with the `models` catalog required by Dahlia's bundled Codex. Omitting `client_version` selects the latest supported bundled version, currently `0.149.1`; callers may also request `client_version=0.149.1` explicitly. Other explicit versions return `400 unsupported_codex_client_version`. The enabled Model Alias rows remain the source of truth for both representations, except for the reserved `codex-auto-review` alias. Set `CODEX_AUTO_REVIEW_MODEL` to expose that alias as `Codex Auto Review` and route automatic approval reviews to the configured upstream model; an empty or missing value disables it. Codex picker and runtime metadata is inferred from the upstream model or alias when it matches the pinned catalog; models without pinned Codex metadata use the OSS default of `none`, `low`, `high`, and `max` reasoning effort with `max` as the default. OpenAI-internal transport, hosted-tool, service-tier, and canonical-model lifecycle fields are not inherited by aliases. Updating the bundled Codex requires updating this Server catalog and its contract test in the same change.
+`GET /api/v1/models` returns the standard OpenAI `object` and `data` fields together with the `models` catalog required by Dahlia's bundled Codex. Omitting `client_version` selects the latest supported bundled version, currently `0.149.1`; callers may also request `client_version=0.149.1` explicitly. Other explicit versions return `400 unsupported_codex_client_version`. Each AI backend returns both representations directly; model discovery no longer reads Model Alias rows. OpenAI and Cloudflare currently return a fixed mock catalog containing `gpt-5.6-luna`. Cloudflare maps that ID to `openai/gpt-5.6-luna` for inference. The Server owns the reserved `codex-auto-review` override independently of every backend. Set `CODEX_AUTO_REVIEW_MODEL` to expose that alias as `Codex Auto Review` and route automatic approval reviews to the configured upstream model; an empty or missing value disables it. The environment override wins over any backend model with that reserved ID and is forwarded verbatim, without Databricks schema prefixing. Codex picker and runtime metadata is inferred from the public model name when it matches the pinned catalog; models without pinned Codex metadata use the OSS default of `none`, `low`, `high`, and `max` reasoning effort with `max` as the default. OpenAI-internal transport, hosted-tool, service-tier, and canonical-model lifecycle fields are not inherited by aliases. Updating the bundled Codex requires updating this Server catalog and its contract test in the same change.
 
 The first authenticated user becomes the initial administrator. Administrator roles are stored in Better Auth's `auth.user.role`; additional registered users can be promoted or demoted under `/admin/members`.
 
@@ -114,7 +114,7 @@ OPENAI_API_KEY=...
 # OPENAI_BASE_URL=https://api.openai.com/v1
 ```
 
-Non-local provider URLs must use HTTPS. The database is the only Model Alias source of truth.
+Non-local provider URLs must use HTTPS. Model Alias management UI and `/api/admin/models` endpoints have been removed. Historical database rows and exported store types remain intact but no longer control Gateway requests.
 
 Databricks native OpenAI Responses API:
 
@@ -122,6 +122,7 @@ Databricks native OpenAI Responses API:
 DAHLIA_AI_BACKEND=databricks
 CODEX_AUTO_REVIEW_MODEL=system.ai.gpt-5-6-luna
 DATABRICKS_HOST=https://<workspace-host>
+DATABRICKS_MODEL_SCHEMA=dahlia.ai
 DATABRICKS_CLIENT_ID=<app-service-principal-client-id>
 DATABRICKS_CLIENT_SECRET=<app-service-principal-secret>
 DAHLIA_DATABASE_TYPE=lakebase
@@ -130,7 +131,9 @@ LAKEBASE_ENDPOINT=<injected from the postgres app resource>
 
 Databricks Apps supplies `DATABRICKS_HOST`, App service principal credentials, and `X-Forwarded-Access-Token`. Dahlia sends the forwarded user token as Bearer authentication only to `DATABRICKS_HOST/ai-gateway/mlflow/v1/responses`; it does not persist, log, or forward the proxy header itself. The Lakebase connector and model discovery independently use the App identity.
 
-For administrators, `GET /api/admin/models` uses the App service principal to list the system-provided model services from `DATABRICKS_HOST/api/2.1/unity-catalog/model-services?parent=schemas/system.ai&view=BASIC`, follows all result pages, and merges their saved enabled state. `DAHLIA_AI_BACKEND=databricks` therefore requires `DATABRICKS_CLIENT_ID` and `DATABRICKS_CLIENT_SECRET`; Databricks Apps injects both at runtime. Desktop authorization requests `all-apis`; the App's separate OBO token retains the configured `ai-gateway` and `files` user API scopes. The Dashboard searches models by name and sorts enabled models first, then by model name and newest `update_time`; it enables or disables those models directly and does not show the manual Model Alias form for this backend.
+`GET /api/v1/models` uses the App service principal to list all pages of Model Services under the required `DATABRICKS_MODEL_SCHEMA` (`catalog.schema`, for example `dahlia.ai`; specify catalog and schema names in lowercase). Model IDs are returned as short names such as `gpt-5-6-luna`; the Databricks backend prefixes that configured schema when forwarding Responses. Fully qualified model IDs from clients are rejected. The Server-controlled `CODEX_AUTO_REVIEW_MODEL` override is exempt and is sent unchanged. Databricks requires `DATABRICKS_CLIENT_ID` and `DATABRICKS_CLIENT_SECRET`; Apps injects both at runtime. Desktop authorization requests `all-apis`; the App keeps the `ai-gateway` and `files` OBO scopes.
+
+The Worker-safe `AIGatewayBackend` interface provides `listModels(request)` and `responses(body, context)`. `RequestBody` is the shared Responses payload; `input` may be omitted (for example with a stored prompt), and nullable `max_output_tokens` / `stream` values are forwarded unchanged; `RequestContext` carries verified `identity.userId`, incoming headers, cancellation, and an optional Server-resolved `upstreamModel`. Implementations read only necessary incoming headers and construct upstream headers explicitly. Databricks sends the verified user ID as `user_id` in `Databricks-Ai-Gateway-Request-Tags` for upstream usage attribution; client-supplied tags cannot override it. User IDs and content are not written to Dahlia diagnostic logs.
 
 Cloudflare AI Gateway:
 
@@ -199,7 +202,7 @@ Deployment guides:
 ## Codex 0.149.1 manual configuration
 
 ```toml
-model = "<alias-configured-in-admin>"
+model = "<id-from-api-v1-models>"
 model_provider = "dahlia-server"
 
 [model_providers.dahlia-server]

@@ -16,6 +16,7 @@ export type ProviderConfig = {
 } | {
   backend: "databricks";
   baseUrl: string;
+  modelSchema: string;
 };
 
 export interface LakebaseDatabaseConfig {
@@ -168,8 +169,13 @@ function providerConfig(
     const host = databricks?.host
       ?? validateBaseUrl(hostValue.includes("://") ? hostValue : `https://${hostValue}`, "DATABRICKS_HOST");
     if (new URL(host).pathname !== "/") throw new Error("DATABRICKS_HOST must be a workspace origin without a path");
+    const modelSchema = required(env, "DATABRICKS_MODEL_SCHEMA");
+    if (!/^[a-zA-Z0-9_][a-zA-Z0-9_-]{0,254}\.[a-zA-Z0-9_][a-zA-Z0-9_-]{0,254}$/.test(modelSchema)) {
+      throw new Error("DATABRICKS_MODEL_SCHEMA must be catalog.schema");
+    }
     return {
       backend,
+      modelSchema,
       baseUrl: `${host}/ai-gateway/mlflow/v1`,
     };
   }
