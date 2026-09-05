@@ -20,7 +20,7 @@ accounts は Google sign-in と public-client OAuth、header は値を除去・�
 
 `CODEX_AUTO_REVIEW_MODEL` は backend の機能に依存しない Server 共通機能として維持する。設定時は予約 ID codex-auto-review の一覧と実行先を上書きし、環境変数の上流 ID を無加工で転送する。未設定時は予約 ID を無効化し、backend に同名モデルがあっても利用させない。
 
-Databricks DAB は catalog.ai schema を管理し、postdeploy が暫定措置として gpt-5-6-luna Model Service を直接登録する。重複確認・再試行は行わず、既存時は作成エラーを返す。権限付与は operator に任せる。
+Databricks DAB は catalog.ai schema を管理し、postdeploy が初期 Model Service を登録する。2026-09-06 の再デプロイ対応で、一覧取得に成功してから不足するモデルだけを作成し、既存モデルの設定を保持する。失敗時は対象と CLI 診断を表示して停止し、再試行は行わない。初期モデルと権限付与の詳細は [デプロイ手順](../../../deploy/databricks/README.md#initial-ai-models) を参照する。
 
 ### 理由と制約
 
