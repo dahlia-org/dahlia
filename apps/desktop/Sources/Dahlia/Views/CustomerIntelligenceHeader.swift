@@ -5,6 +5,7 @@ struct CustomerIntelligenceHeader: View {
     let scope: CustomerIntelligenceScope
     let selectedOrganizationID: UUID?
     let roots: [OrganizationWorkspaceNode]
+    let canEditProjects: Bool
     @Binding var showsInspector: Bool
     let onSelectScope: (CustomerIntelligenceScope) -> Void
     let onCreate: (CustomerIntelligenceCreationRequest) -> Void
@@ -89,6 +90,7 @@ struct CustomerIntelligenceHeader: View {
                 systemImage: "plus",
                 action: { onCreate(.project(organizationID: creationOrganizationID)) }
             )
+            .disabled(!canEditProjects)
         case .topics:
             DahliaWindowHeaderIconButton(
                 label: L10n.customerIntelligenceNewTopic,
@@ -106,6 +108,7 @@ struct CustomerIntelligenceHeader: View {
                 Button(L10n.newProject, systemImage: "folder.badge.plus") {
                     onCreate(.project(organizationID: creationOrganizationID))
                 }
+                .disabled(!canEditProjects)
                 Button(L10n.customerIntelligenceNewTopic, systemImage: "text.bubble") {
                     onCreate(.topic(organizationID: creationOrganizationID))
                 }

@@ -1,15 +1,17 @@
+import Foundation
+
 enum ProjectDestinationOptions {
     static func reparentCandidates(
         for project: ProjectOverviewItem,
         projects: [ProjectOverviewItem]
     ) -> [ProjectOverviewItem] {
-        let hierarchy = hierarchy(for: project, projects: projects)
-        let canBecomeSubproject = project.parentProjectId != nil || hierarchy.count == 1
+        let hierarchyIDs = hierarchyIDs(for: project.projectId, projects: projects)
+        let canBecomeSubproject = project.parentProjectId != nil || hierarchyIDs.count == 1
         guard canBecomeSubproject else { return [] }
 
         return projects.filter {
             $0.parentProjectId == nil
-                && !ProjectRecord.belongsToHierarchy($0.projectName, prefix: project.projectName)
+                && !hierarchyIDs.contains($0.projectId)
         }
     }
 
@@ -17,8 +19,9 @@ enum ProjectDestinationOptions {
         whenDeleting project: ProjectOverviewItem,
         projects: [ProjectOverviewItem]
     ) -> [ProjectOverviewItem] {
-        projects.filter {
-            !ProjectRecord.belongsToHierarchy($0.projectName, prefix: project.projectName)
+        let hierarchyIDs = hierarchyIDs(for: project.projectId, projects: projects)
+        return projects.filter {
+            !hierarchyIDs.contains($0.projectId)
         }
     }
 
@@ -26,8 +29,25 @@ enum ProjectDestinationOptions {
         for project: ProjectOverviewItem,
         projects: [ProjectOverviewItem]
     ) -> [ProjectOverviewItem] {
-        projects.filter {
-            ProjectRecord.belongsToHierarchy($0.projectName, prefix: project.projectName)
+        let hierarchyIDs = hierarchyIDs(for: project.projectId, projects: projects)
+        return projects.filter { hierarchyIDs.contains($0.projectId) }
+    }
+
+    private static func hierarchyIDs(
+        for projectId: UUID,
+        projects: [ProjectOverviewItem]
+    ) -> Set<UUID> {
+        let childrenByParent = Dictionary(grouping: projects, by: \.parentProjectId)
+        var result: Set<UUID> = []
+
+        func append(_ id: UUID) {
+            guard result.insert(id).inserted else { return }
+            for child in childrenByParent[id, default: []] {
+                append(child.projectId)
+            }
         }
+
+        append(projectId)
+        return result
     }
 }

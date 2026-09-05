@@ -1148,7 +1148,7 @@ enum RemoteChangeApplier {
                   try !hasActiveRecording(in: db)
             else { return false }
 
-            let existing = try ProjectRecord.filter(Column("vaultId") == vaultId).fetchAll(db)
+            let existing = try ProjectRecord.fetchResolvedAll(vaultId: vaultId, in: db)
             let existingByID = Dictionary(uniqueKeysWithValues: existing.map { ($0.id, $0) })
             let incomingIDs = Set(projects.map(\.projectId))
             let removedIDs = Set(existingByID.keys).subtracting(incomingIDs)
@@ -1188,16 +1188,33 @@ enum RemoteChangeApplier {
             }
 
             for project in orderedProjects {
-                try db.execute(
-                    sql: """
-                    UPDATE projects SET parentProjectId = ?, name = ?, nameKey = ?, createdAt = ?,
-                        description = ?, projectType = ? WHERE id = ? AND vaultId = ?
-                    """,
-                    arguments: [
-                        project.parentProjectId, project.name, DahliaProjectName.siblingKey(project.name),
-                        project.createdAt, project.description, project.projectType, project.projectId, vaultId,
-                    ]
+                let previous = existingByID[project.projectId]
+                try ProjectRecord.applyCanonical(
+                    id: project.projectId,
+                    vaultId: vaultId,
+                    parentProjectId: project.parentProjectId,
+                    name: project.name,
+                    createdAt: project.createdAt,
+                    description: project.description,
+                    projectType: project.projectType.flatMap(ProjectType.init(rawValue:)),
+                    in: db
                 )
+                if let previous {
+                    let hierarchyWasPreapplied = previous.parentProjectId != project.parentProjectId
+                        || previous.projectType?.rawValue != project.projectType
+                    if previous.name == project.name, hierarchyWasPreapplied {
+                        var invalidatedIDs = Set(
+                            ProjectRecord.hierarchy(projectId: previous.id, records: existing)
+                                .dropFirst()
+                                .map(\.id)
+                        )
+                        if previous.createdAt == project.createdAt,
+                           previous.description == project.description {
+                            invalidatedIDs.insert(previous.id)
+                        }
+                        try ProjectRecord.incrementRevisions(invalidatedIDs, in: db)
+                    }
+                }
                 try db.execute(
                     sql: """
                     INSERT INTO sync_entity_state(vaultId, entity, entityId, confirmedRevision)

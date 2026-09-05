@@ -69,16 +69,15 @@ import GRDB
         }
 
         @Test
-        func rejectsDuplicateSiblingNamesIgnoringCase() throws {
+        func allowsDuplicateSiblingNamesIgnoringCase() throws {
             let context = try makeContext()
             defer { try? FileManager.default.removeItem(at: context.rootURL) }
 
-            _ = try context.service.createProject(name: "Project", parentProjectId: nil)
+            let first = try context.service.createProject(name: "Project", parentProjectId: nil)
+            let second = try context.service.createProject(name: "project", parentProjectId: nil)
 
-            #expect(throws: ProjectWorkspaceError.self) {
-                try context.service.createProject(name: "project", parentProjectId: nil)
-            }
-            #expect(try context.repository.fetchAllProjects(vaultId: context.vault.id).count == 1)
+            #expect(first.id != second.id)
+            #expect(try context.repository.fetchAllProjects(vaultId: context.vault.id).count == 2)
         }
 
         @Test
@@ -95,16 +94,44 @@ import GRDB
         }
 
         @Test
-        func rejectsUnicodeEquivalentSiblingNames() throws {
+        func allowsUnicodeEquivalentSiblingNames() throws {
             let context = try makeContext()
             defer { try? FileManager.default.removeItem(at: context.rootURL) }
 
-            _ = try context.service.createProject(name: "Équipe", parentProjectId: nil)
+            let first = try context.service.createProject(name: "Équipe", parentProjectId: nil)
+            let second = try context.service.createProject(name: "e\u{301}QUIPE", parentProjectId: nil)
 
-            #expect(throws: ProjectWorkspaceError.self) {
-                try context.service.createProject(name: "e\u{301}QUIPE", parentProjectId: nil)
-            }
-            #expect(try context.repository.fetchAllProjects(vaultId: context.vault.id).count == 1)
+            #expect(first.id != second.id)
+            #expect(try context.repository.fetchAllProjects(vaultId: context.vault.id).count == 2)
+        }
+
+        @Test
+        func deletingDuplicatePathUsesProjectIdentity() async throws {
+            let context = try makeContext()
+            defer { try? FileManager.default.removeItem(at: context.rootURL) }
+
+            let roots = [
+                try context.service.createProject(name: "Project", parentProjectId: nil),
+                try context.service.createProject(name: "Project", parentProjectId: nil),
+            ].sorted { $0.id.uuidString < $1.id.uuidString }
+            let retainedRoot = roots[0]
+            let deletedRoot = roots[1]
+            let retainedChild = try context.service.createProject(name: "Child", parentProjectId: retainedRoot.id)
+            let deletedChild = try context.service.createProject(name: "Child", parentProjectId: deletedRoot.id)
+            let retainedMeeting = try insertMeeting(projectId: retainedChild.id, context: context)
+            let deletedMeeting = try insertMeeting(projectId: deletedChild.id, context: context)
+
+            try await context.service.deleteProjectHierarchy(
+                id: deletedRoot.id,
+                meetingDisposition: .deleteMeetings
+            )
+
+            #expect(try context.repository.fetchProject(id: retainedRoot.id) != nil)
+            #expect(try context.repository.fetchProject(id: retainedChild.id) != nil)
+            #expect(try context.repository.fetchMeeting(id: retainedMeeting.id) != nil)
+            #expect(try context.repository.fetchProject(id: deletedRoot.id) == nil)
+            #expect(try context.repository.fetchProject(id: deletedChild.id) == nil)
+            #expect(try context.repository.fetchMeeting(id: deletedMeeting.id) == nil)
         }
 
         @Test

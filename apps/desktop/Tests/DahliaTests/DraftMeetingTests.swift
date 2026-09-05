@@ -174,6 +174,59 @@ import GRDB
         }
 
         @Test
+        func memberVaultCalendarSelectionDoesNotCreateADraftOrClearSelection() throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            var vault = VaultRecord(
+                id: .v7(),
+                path: nil,
+                name: "Shared",
+                createdAt: .now,
+                lastOpenedAt: .now
+            )
+            vault.syncRole = "member"
+            try database.dbQueue.write { db in
+                try vault.insert(db)
+            }
+            let settings = AppSettings()
+            settings.currentVault = vault
+            let sidebarViewModel = SidebarViewModel(settings: settings)
+            sidebarViewModel.setAppDatabase(database)
+            defer { sidebarViewModel.setAppDatabase(nil) }
+            let viewModel = CaptionViewModel()
+            let selectedMeetingID = UUID.v7()
+            sidebarViewModel.selectMeeting(selectedMeetingID)
+            let coordinator = RecordingCoordinator(
+                viewModel: viewModel,
+                sidebarViewModel: sidebarViewModel,
+                mainWindowNavigation: MainWindowNavigation(
+                    openMainWindow: {},
+                    openMainWindowWithoutActivation: {}
+                ),
+                onRecordingDidStart: {},
+                onRecordingDidStop: {}
+            )
+            let event = CalendarEvent(
+                id: "event",
+                calendarID: "calendar",
+                calendarName: "Calendar",
+                calendarColorHex: nil,
+                platformId: "event",
+                title: "Shared calendar event",
+                description: "",
+                icalUid: nil,
+                startDate: .now,
+                endDate: .now.addingTimeInterval(60),
+                isAllDay: false,
+                conferenceURI: nil
+            )
+
+            coordinator.openCalendarEvent(event)
+
+            #expect(!viewModel.hasDraftMeeting)
+            #expect(sidebarViewModel.selectedMeetingId == selectedMeetingID)
+        }
+
+        @Test
         func createsDraftInSelectedProject() throws {
             let database = try AppDatabaseManager(path: ":memory:")
             let vaultURL = FileManager.default.temporaryDirectory

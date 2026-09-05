@@ -268,6 +268,7 @@ struct DahliaApp: App {
                         showVaultPicker
                             || mainWindowNavigation.isShowingSettings
                             || mainWindowNavigation.isShowingDahliaSignIn
+                            || !sidebarViewModel.canEditCurrentVault
                     )
             }
             SettingsCommands(mainWindowNavigation: mainWindowNavigation)
@@ -615,7 +616,7 @@ struct DahliaApp: App {
                         : .afterMeetingPersistence
                 ) {
                     sidebarViewModel.selectMeeting(existingMeetingId)
-                    if startTranscription {
+                    if startTranscription, vault.allowsCanonicalEdits {
                         startTranscriptionForMeeting(
                             existingMeetingId,
                             in: db,
@@ -631,6 +632,7 @@ struct DahliaApp: App {
                 return
             }
 
+            guard vault.allowsCanonicalEdits else { return }
             sidebarViewModel.clearMeetingSelection()
             viewModel.beginDraftMeeting(
                 from: event,
@@ -654,7 +656,8 @@ struct DahliaApp: App {
             return
         }
 
-        viewModel.createEmptyMeeting(
+        guard vault.allowsCanonicalEdits else { return }
+        guard let meetingId = viewModel.createEmptyMeeting(
             dbQueue: db.dbQueue,
             projectURL: nil,
             vaultId: vault.id,
@@ -662,8 +665,7 @@ struct DahliaApp: App {
             name: "",
             projectName: nil,
             vaultURL: vault.url
-        )
-        guard let meetingId = viewModel.currentMeetingId else { return }
+        ) else { return }
         sidebarViewModel.selectMeeting(meetingId)
         if startTranscription {
             startTranscriptionForMeeting(meetingId, in: db, vault: vault)

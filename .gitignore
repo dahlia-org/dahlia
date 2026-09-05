@@ -1,6 +1,7 @@
 .build/
 Vendor/DahliaLinderaSources/target/
 .codex-tmp/
+.codex/review-loop/
 .swiftpm/
 *.app
 Dahlia.zip

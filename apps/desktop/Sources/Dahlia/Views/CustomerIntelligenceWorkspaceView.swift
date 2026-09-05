@@ -46,6 +46,7 @@ struct OrganizationWorkspaceView: View {
                     scope: model.scope,
                     selectedOrganizationID: model.selection.organizationID,
                     roots: model.roots,
+                    canEditProjects: sidebarViewModel.canEditCurrentVault,
                     showsInspector: $showsInspector,
                     onSelectScope: { scope in
                         Task { await model.selectScope(scope) }
@@ -284,7 +285,8 @@ private extension OrganizationWorkspaceView {
         description: String,
         organizationID: UUID
     ) async -> Bool {
-        guard let dbQueue = sidebarViewModel.dbQueue,
+        guard sidebarViewModel.canEditCurrentVault,
+              let dbQueue = sidebarViewModel.dbQueue,
               let vaultID = sidebarViewModel.currentVault?.id else {
             return false
         }

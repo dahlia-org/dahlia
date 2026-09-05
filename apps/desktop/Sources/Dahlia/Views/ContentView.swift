@@ -599,6 +599,7 @@ private extension ContentView {
     }
 
     private func presentProjectCreation() {
+        guard sidebarViewModel.canEditCurrentVault else { return }
         projectEditorRequest = .create
     }
 

@@ -27,6 +27,46 @@
         }
 
         @Test
+        func canonicalProjectUpdateInvalidatesOpenEditsForItsHierarchy() async throws {
+            let (database, vault) = try await syncedDatabase()
+            let root = ProjectRecord(
+                id: .v7(), vaultId: vault.id, parentProjectId: nil,
+                name: "Root", createdAt: .now, projectType: .undefined
+            )
+            let child = ProjectRecord(
+                id: .v7(), vaultId: vault.id, parentProjectId: root.id,
+                name: "Child", createdAt: .now, projectType: nil
+            )
+            let canonical = try SyncJSON.decoder.decode(
+                SyncCanonicalPayload.self,
+                from: Data(
+                    "{\"name\":\"Renamed\",\"description\":\"Remote\",\"projectType\":\"undefined\",\"createdAt\":\"2026-09-03T00:00:00.000Z\"}"
+                        .utf8
+                )
+            )
+            try await database.dbQueue.write { db in
+                try root.insert(db)
+                try child.insert(db)
+                try SyncTransactionQueue.applyCanonical(
+                    .project,
+                    id: root.id,
+                    vaultId: vault.id,
+                    value: canonical,
+                    in: db
+                )
+            }
+
+            let revisions = try await database.dbQueue.read { db in
+                try (
+                    ProjectRecord.fetchOne(db, key: root.id)?.revision,
+                    ProjectRecord.fetchOne(db, key: child.id)?.revision
+                )
+            }
+            #expect(revisions.0 == 2)
+            #expect(revisions.1 == 2)
+        }
+
+        @Test
         func retryingAValidationBlockPreservesTheImmutableTransaction() async throws {
             let (database, vault) = try await syncedDatabase()
             let payload = try SyncJSON.encoder.encode(JSONValue.object(["name": .string("Queued")]))

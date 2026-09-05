@@ -23,8 +23,12 @@ struct MeetingProjectPicker: View {
         viewModel.currentProjectId != nil
     }
 
+    private var canEdit: Bool {
+        sidebarViewModel.canEditCurrentVault
+    }
+
     private var showsRemoveButton: Bool {
-        hasProjectAssignment && (isHovered || isRemoveFocused)
+        canEdit && hasProjectAssignment && (isHovered || isRemoveFocused)
     }
 
     private var trimmedProjectInput: String {
@@ -54,7 +58,8 @@ struct MeetingProjectPicker: View {
     }
 
     private var shouldShowCreateSuggestion: Bool {
-        !trimmedProjectInput.isEmpty
+        canEdit
+            && !trimmedProjectInput.isEmpty
             && !filteredProjects.contains(where: {
                 $0.name.caseInsensitiveCompare(trimmedProjectInput) == .orderedSame
             })
@@ -101,7 +106,7 @@ struct MeetingProjectPicker: View {
             isHovered = hovering
         }
         .contextMenu {
-            if hasProjectAssignment {
+            if canEdit, hasProjectAssignment {
                 Button(L10n.removeProjectAssignment, role: .destructive, action: clearProject)
             }
         }
@@ -125,8 +130,9 @@ struct MeetingProjectPicker: View {
             }
         }
         .buttonStyle(.plain)
+        .disabled(!canEdit)
 
-        if hasProjectAssignment {
+        if canEdit, hasProjectAssignment {
             button.accessibilityAction(named: Text(L10n.removeProjectAssignment), clearProject)
         } else {
             button
@@ -134,6 +140,7 @@ struct MeetingProjectPicker: View {
     }
 
     private func presentProjectPopover() {
+        guard canEdit else { return }
         projectInput = ""
         showProjectPopover.toggle()
     }
@@ -230,7 +237,7 @@ struct MeetingProjectPicker: View {
     }
 
     private func submitProjectInput() {
-        guard !trimmedProjectInput.isEmpty else { return }
+        guard canEdit, !trimmedProjectInput.isEmpty else { return }
 
         if let matchingProject = sidebarViewModel.flatProjects.first(where: {
             $0.name.caseInsensitiveCompare(trimmedProjectInput) == .orderedSame
@@ -243,11 +250,13 @@ struct MeetingProjectPicker: View {
     }
 
     private func createAndAssignProject(named name: String) {
+        guard canEdit else { return }
         guard let project = sidebarViewModel.fetchOrCreateProject(name: name) else { return }
         assignMeeting(to: project.record.id, projectName: project.record.path)
     }
 
     private func clearProject() {
+        guard canEdit else { return }
         let existingMeetingId = viewModel.currentMeetingId
         let removesPersistedProject = viewModel.currentProjectId != nil
         if removesPersistedProject, let existingMeetingId {
@@ -260,6 +269,7 @@ struct MeetingProjectPicker: View {
     }
 
     private func assignMeeting(to projectId: UUID, projectName: String) {
+        guard canEdit else { return }
         let projectURL = sidebarViewModel.projectURL(for: projectName)
         guard let meetingId = viewModel.materializeDraftMeeting(
             projectURL: projectURL,

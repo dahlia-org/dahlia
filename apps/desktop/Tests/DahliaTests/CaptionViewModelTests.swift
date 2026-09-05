@@ -64,6 +64,49 @@ import os
         }
 
         @Test
+        func rejectedEmptyMeetingDoesNotReplaceTheVisibleMeeting() throws {
+            let viewModel = CaptionViewModel()
+            let database = try AppDatabaseManager(path: ":memory:")
+            let vaultID = UUID.v7()
+            let connectionID = UUID.v7()
+            let connection = DahliaAccountConnectionRecord(
+                id: connectionID,
+                origin: "https://server.example.com",
+                clientID: "desktop-client",
+                createdAt: .now
+            )
+            var vault = VaultRecord(
+                id: vaultID,
+                path: nil,
+                name: "Shared Vault",
+                createdAt: .now,
+                lastOpenedAt: .now
+            )
+            vault.accountConnectionId = connectionID
+            vault.syncConfirmedConnectionId = connectionID
+            vault.syncRole = "member"
+            try database.dbQueue.write { db in
+                try connection.insert(db)
+                try vault.insert(db)
+            }
+            let visibleMeetingID = UUID.v7()
+            viewModel.currentMeetingId = visibleMeetingID
+
+            let createdMeetingID = viewModel.createEmptyMeeting(
+                dbQueue: database.dbQueue,
+                projectURL: nil,
+                vaultId: vaultID,
+                projectId: nil,
+                vaultURL: nil
+            )
+
+            #expect(createdMeetingID == nil)
+            #expect(viewModel.currentMeetingId == visibleMeetingID)
+            #expect(viewModel.errorMessage != nil)
+            #expect(try database.dbQueue.read(MeetingRecord.fetchCount) == 0)
+        }
+
+        @Test
         func systemDefaultMicrophoneSelectionResolvesCurrentDefaultDevice() async {
             let inputProvider = MutableMicrophoneInputProvider(
                 defaultDeviceID: AudioDeviceID(202),

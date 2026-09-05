@@ -100,7 +100,9 @@ final class RecordingCoordinator {
     }
 
     private func createDraftMeeting(project: ProjectOverviewItem?) {
-        guard !viewModel.isRecordingStartPending, !viewModel.isFinalizingRecording else { return }
+        guard sidebarViewModel.canEditCurrentVault,
+              !viewModel.isRecordingStartPending,
+              !viewModel.isFinalizingRecording else { return }
         mainWindowNavigation.showMeetings()
         guard let dbQueue = sidebarViewModel.dbQueue,
               let vault = sidebarViewModel.currentVault else {
@@ -123,13 +125,14 @@ final class RecordingCoordinator {
 
     func createEmptyMeeting() {
         mainWindowNavigation.showMeetings()
+        guard sidebarViewModel.canEditCurrentVault else { return }
         guard let dbQueue = sidebarViewModel.dbQueue,
               let vault = sidebarViewModel.currentVault else {
             MainWindowOpener.shared.openMainWindow()
             return
         }
 
-        viewModel.createEmptyMeeting(
+        guard let meetingId = viewModel.createEmptyMeeting(
             dbQueue: dbQueue,
             projectURL: nil,
             vaultId: vault.id,
@@ -137,10 +140,8 @@ final class RecordingCoordinator {
             name: "",
             projectName: nil,
             vaultURL: vault.url
-        )
-        if let meetingId = viewModel.currentMeetingId {
-            sidebarViewModel.selectMeeting(meetingId)
-        }
+        ) else { return }
+        sidebarViewModel.selectMeeting(meetingId)
     }
 
     func openCalendarEvent(_ event: CalendarEvent) {
@@ -164,7 +165,7 @@ final class RecordingCoordinator {
             return
         }
 
-        guard !viewModel.isListening else { return }
+        guard sidebarViewModel.canEditCurrentVault, !viewModel.isListening else { return }
 
         sidebarViewModel.clearMeetingSelection()
         viewModel.beginDraftMeeting(

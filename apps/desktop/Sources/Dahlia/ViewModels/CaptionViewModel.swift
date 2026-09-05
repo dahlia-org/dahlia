@@ -2193,6 +2193,7 @@ final class CaptionViewModel: ObservableObject {
     }
 
     /// 文字起こしを開始せずに空の MeetingRecord を作成し、表示対象としてセットする。
+    @discardableResult
     func createEmptyMeeting(
         dbQueue: DatabaseQueue,
         projectURL: URL?,
@@ -2201,11 +2202,8 @@ final class CaptionViewModel: ObservableObject {
         name: String = "",
         projectName: String? = nil,
         vaultURL: URL?
-    ) {
-        guard !isRecordingStartPending, !isFinalizingRecording else { return }
-
-        resetMeetingState()
-        draftMeeting = nil
+    ) -> UUID? {
+        guard !isRecordingStartPending, !isFinalizingRecording else { return nil }
 
         let meetingId = UUID.v7()
         let now = Date()
@@ -2217,15 +2215,22 @@ final class CaptionViewModel: ObservableObject {
             createdAt: now,
             updatedAt: now
         )
-        try? dbQueue.write { db in
-            try record.insert(db)
-            try SyncTransactionRecorder.record(
-                vaultId: vaultId,
-                operations: [SyncInitialSnapshotBuilder.meetingOperation(record, action: .create)],
-                in: db
-            )
+        do {
+            try dbQueue.write { db in
+                try record.insert(db)
+                try SyncTransactionRecorder.record(
+                    vaultId: vaultId,
+                    operations: [SyncInitialSnapshotBuilder.meetingOperation(record, action: .create)],
+                    in: db
+                )
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+            ErrorReportingService.capture(error, context: ["source": "createEmptyMeeting"])
+            return nil
         }
 
+        resetMeetingState()
         setMeetingContext(
             id: meetingId,
             dbQueue: dbQueue,
@@ -2234,6 +2239,7 @@ final class CaptionViewModel: ObservableObject {
             projectName: projectName,
             vaultURL: vaultURL
         )
+        return meetingId
     }
 
     func beginDraftMeeting(

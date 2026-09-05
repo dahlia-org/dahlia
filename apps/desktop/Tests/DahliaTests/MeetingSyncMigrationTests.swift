@@ -1566,7 +1566,7 @@
                 SyncProjectSnapshot(
                     projectId: firstRoot,
                     parentProjectId: secondRoot,
-                    name: "Child",
+                    name: "First",
                     description: "",
                     projectType: nil,
                     revision: 2,
@@ -1603,6 +1603,8 @@
             #expect(Set(projects.map(\.id)) == Set([firstRoot, secondRoot]))
             #expect(projects.first(where: { $0.id == secondRoot })?.parentProjectId == nil)
             #expect(projects.first(where: { $0.id == firstRoot })?.parentProjectId == secondRoot)
+            #expect((projects.first(where: { $0.id == secondRoot })?.revision ?? 0) > 1)
+            #expect((projects.first(where: { $0.id == firstRoot })?.revision ?? 0) > 1)
             #expect(try await database.dbQueue.read { db in
                 try MeetingRecord.fetchOne(db, key: meetingId)?.projectId
             } == firstRoot)

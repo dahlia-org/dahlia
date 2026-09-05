@@ -284,37 +284,37 @@ import ImageIO
         }
 
         @Test
-        func projectSiblingIdentityNormalizesUnicodeAndCase() throws {
+        func projectSiblingIdentityUsesUUIDDespiteEquivalentNames() throws {
             let fixture = try Fixture()
             let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
-            _ = try store.createProject(
+            let first = try store.createProject(
                 name: "Équipe",
                 parentProjectID: nil,
                 projectType: .customer
             )
 
-            #expect(throws: MeetingAccessError.projectAlreadyExists("e\u{301}QUIPE")) {
-                try store.createProject(
-                    name: "e\u{301}QUIPE",
-                    parentProjectID: nil,
-                    projectType: .customer
-                )
-            }
+            let second = try store.createProject(
+                name: "e\u{301}QUIPE",
+                parentProjectID: nil,
+                projectType: .customer
+            )
+
+            #expect(first.project.projectID != second.project.projectID)
         }
 
         @Test
-        func projectCreateRejectsDuplicateSiblingWithoutFilesystemMutation() throws {
+        func projectCreateAllowsDuplicateSiblingWithoutFilesystemMutation() throws {
             let fixture = try Fixture()
             let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
             try FileManager.default.removeItem(at: fixture.primaryVaultURL.appending(path: "Acme"))
 
-            #expect(throws: MeetingAccessError.projectAlreadyExists("acme")) {
-                try store.createProject(
-                    name: "acme",
-                    parentProjectID: nil,
-                    projectType: .customer
-                )
-            }
+            let created = try store.createProject(
+                name: "acme",
+                parentProjectID: nil,
+                projectType: .customer
+            )
+
+            #expect(created.project.projectID != fixture.primaryProjectID)
             #expect(!FileManager.default.fileExists(atPath: fixture.primaryVaultURL.appending(path: "acme").path))
         }
 

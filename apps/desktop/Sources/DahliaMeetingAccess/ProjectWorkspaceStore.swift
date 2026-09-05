@@ -46,15 +46,8 @@ public extension MeetingAccessStore {
                             throw MeetingAccessError.projectHierarchyTooDeep
                         }
                         guard projectType == nil else { throw MeetingAccessError.projectTypeOwnedByRoot }
-                        try validateSiblingName(
-                            name,
-                            parentProjectID: parent.id,
-                            excluding: nil,
-                            rows: rows
-                        )
                         return parent.id
                     }
-                    try validateSiblingName(name, parentProjectID: nil, excluding: nil, rows: rows)
                     return nil
                 }
 
@@ -407,12 +400,6 @@ private extension MeetingAccessStore {
         let oldPath = paths[id] ?? project.name
         let parentPath = parentProjectID.flatMap { paths[$0] }
         let newPath = parentPath.map { "\($0)/\(name)" } ?? name
-        try validateSiblingName(
-            name,
-            parentProjectID: parentProjectID,
-            excluding: id,
-            rows: rows
-        )
         let explicitType = resolvedExplicitType(
             update: update,
             project: project,
@@ -571,21 +558,6 @@ private extension MeetingAccessStore {
             throw MeetingAccessError.invalidProjectName
         }
         return value
-    }
-
-    func validateSiblingName(
-        _ name: String,
-        parentProjectID: UUID?,
-        excluding excludedID: UUID?,
-        rows: [WorkspaceProjectRow]
-    ) throws {
-        guard !rows.contains(where: {
-            $0.id != excludedID
-                && $0.parentProjectID == parentProjectID
-                && DahliaProjectName.siblingKey($0.name) == DahliaProjectName.siblingKey(name)
-        }) else {
-            throw MeetingAccessError.projectAlreadyExists(name)
-        }
     }
 
     func removeNewEmptyDirectory(_ url: URL) throws {

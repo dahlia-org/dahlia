@@ -12,9 +12,9 @@ extension MeetingRepository {
         }
     }
 
-    nonisolated func meetingIds(projectHierarchy name: String, vaultId: UUID) throws -> Set<UUID> {
+    nonisolated func meetingIds(projectHierarchy projectId: UUID, vaultId: UUID) throws -> Set<UUID> {
         try dbQueue.read { db in
-            let projectIds = try ProjectRecord.hierarchy(path: name, vaultId: vaultId, in: db).map(\.id)
+            let projectIds = try ProjectRecord.hierarchy(projectId: projectId, vaultId: vaultId, in: db).map(\.id)
             guard !projectIds.isEmpty else { return [] }
             return try UUID.fetchSet(
                 db,
@@ -101,16 +101,6 @@ extension MeetingRepository {
                     throw ProjectWorkspaceError.typeOwnedByRoot
                 }
             }
-            guard try ProjectRecord
-                .filter(
-                    Column("vaultId") == vaultId
-                        && Column("parentProjectId") == parentProjectId
-                        && Column("nameKey") == DahliaProjectName.siblingKey(name)
-                )
-                .fetchOne(db) == nil else {
-                throw ProjectWorkspaceError.projectAlreadyExists(name)
-            }
-
             let project = ProjectRecord(
                 id: .v7(),
                 vaultId: vaultId,
@@ -160,9 +150,7 @@ extension MeetingRepository {
             guard DahliaProjectName.normalizedName(name) == name else {
                 throw ProjectWorkspaceError.invalidName
             }
-            let descendants = records.filter {
-                $0.id != id && ProjectRecord.belongsToHierarchy($0.path, prefix: project.path)
-            }
+            let descendants = Array(ProjectRecord.hierarchy(projectId: id, records: records).dropFirst())
             let descendantIDs = Set(descendants.map(\.id))
             guard parentProjectId != id,
                   parentProjectId.map({ !descendantIDs.contains($0) }) ?? true else {
@@ -176,14 +164,6 @@ extension MeetingRepository {
                     throw ProjectWorkspaceError.hierarchyTooDeep
                 }
             }
-            guard !records.contains(where: {
-                $0.id != id
-                    && $0.parentProjectId == parentProjectId
-                    && $0.nameKey == DahliaProjectName.siblingKey(name)
-            }) else {
-                throw ProjectWorkspaceError.projectAlreadyExists(name)
-            }
-
             let locationChanged = project.parentProjectId != parentProjectId || project.name != name
             let typeChanged = parentProjectId == nil && project.projectType != projectType
             let changed = locationChanged || typeChanged || project.description != description
@@ -282,14 +262,6 @@ extension MeetingRepository {
                     throw ProjectWorkspaceError.hierarchyTooDeep
                 }
             }
-            guard !records.contains(where: {
-                $0.id != id
-                    && $0.parentProjectId == parentProjectId
-                    && $0.nameKey == DahliaProjectName.siblingKey(name)
-            }) else {
-                throw ProjectWorkspaceError.projectAlreadyExists(name)
-            }
-
             let effectiveType = ProjectRecord.effectiveType(for: project.id, records: records)?.type ?? .undefined
             let wasRoot = project.parentProjectId == nil
             project.parentProjectId = parentProjectId
@@ -404,7 +376,7 @@ extension MeetingRepository {
     }
 
     func deleteProjectHierarchy(
-        name: String,
+        projectId: UUID,
         vaultId: UUID,
         meetingDisposition: ProjectMeetingDisposition,
         vaultExportUpdates: [MeetingVaultExportUpdate] = [],
@@ -413,7 +385,7 @@ extension MeetingRepository {
             BatchAudioCleanupService.restoreStagedFiles
     ) throws -> [BatchAudioCleanupService.StagedFile] {
         let meetingIds = try dbQueue.read { db in
-            let projectIds = try ProjectRecord.hierarchy(path: name, vaultId: vaultId, in: db).map(\.id)
+            let projectIds = try ProjectRecord.hierarchy(projectId: projectId, vaultId: vaultId, in: db).map(\.id)
             guard !projectIds.isEmpty else { return Set<UUID>() }
             return try UUID.fetchSet(
                 db,
@@ -445,7 +417,7 @@ extension MeetingRepository {
         let stagedAudio = try BatchAudioCleanupService.stageFiles(audioTargets)
         do {
             try dbQueue.write { db in
-                let hierarchy = try ProjectRecord.hierarchy(path: name, vaultId: vaultId, in: db)
+                let hierarchy = try ProjectRecord.hierarchy(projectId: projectId, vaultId: vaultId, in: db)
                 guard !hierarchy.isEmpty else { return }
                 let projectIds = Set(hierarchy.map(\.id))
                 var syncOperations: [SyncOperationDraft] = []

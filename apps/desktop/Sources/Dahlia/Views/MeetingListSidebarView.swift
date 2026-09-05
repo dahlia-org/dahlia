@@ -84,7 +84,7 @@ struct MeetingListSidebarView: View {
                 MeetingSidebarHeader(
                     displayMode: $mainWindowNavigation.meetingSidebarDisplayMode,
                     isExpanded: primarySectionExpanded,
-                    canCreateProject: sidebarViewModel.currentVault != nil,
+                    canCreateProject: canEdit,
                     onToggleExpansion: togglePrimarySection,
                     onCreateProject: onCreateProject
                 )

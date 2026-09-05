@@ -110,8 +110,6 @@ final class ProjectWorkspaceService {
         if parent != nil, projectType != nil {
             throw ProjectWorkspaceError.typeOwnedByRoot
         }
-        let path = parent.map { "\($0.path)/\(name)" } ?? name
-        try ensureProjectDoesNotExist(path: path, excludingProjectId: nil)
         return try repository.createProject(
             vaultId: vault.id,
             parentProjectId: parentProjectId,
@@ -151,9 +149,11 @@ final class ProjectWorkspaceService {
 
         let parentPath = project.path.split(separator: "/").dropLast().joined(separator: "/")
         let newPath = parentPath.isEmpty ? newName : "\(parentPath)/\(newName)"
-        try ensureProjectDoesNotExist(path: newPath, excludingProjectId: id)
-
-        let summaryPlan = try projectSummaryMovePlan(oldPrefix: project.path, newPrefix: newPath)
+        let summaryPlan = try projectSummaryMovePlan(
+            projectId: id,
+            oldPrefix: project.path,
+            newPrefix: newPath
+        )
         var renamed: ProjectRecord?
         try performSummaryRelocations(summaryPlan.relocations) {
             renamed = try repository.updateProjectLocation(
@@ -197,13 +197,7 @@ final class ProjectWorkspaceService {
         guard project.parentProjectId != parentProjectId else { return project }
 
         let projects = try repository.fetchAllProjects(vaultId: vault.id)
-        let descendantIds = Set(
-            projects.filter { candidate in
-                candidate.id != project.id
-                    && ProjectRecord.belongsToHierarchy(candidate.path, prefix: project.path)
-            }
-            .map(\.id)
-        )
+        let descendantIds = Set(ProjectRecord.hierarchy(projectId: id, records: projects).dropFirst().map(\.id))
         guard parentProjectId != id,
               parentProjectId.map({ !descendantIds.contains($0) }) ?? true else {
             throw ProjectWorkspaceError.cycleDetected
@@ -223,8 +217,11 @@ final class ProjectWorkspaceService {
             throw ProjectWorkspaceError.hierarchyTooDeep
         }
         let newPath = parent.map { "\($0.path)/\(project.name)" } ?? project.name
-        try ensureProjectDoesNotExist(path: newPath, excludingProjectId: id)
-        let summaryPlan = try projectSummaryMovePlan(oldPrefix: project.path, newPrefix: newPath)
+        let summaryPlan = try projectSummaryMovePlan(
+            projectId: id,
+            oldPrefix: project.path,
+            newPrefix: newPath
+        )
         var moved: ProjectRecord?
         try performSummaryRelocations(summaryPlan.relocations) {
             moved = try repository.updateProjectLocation(
@@ -275,9 +272,7 @@ final class ProjectWorkspaceService {
             }
             let name = try Self.validatedName(name)
             let projects = try repository.fetchAllProjects(vaultId: vault.id)
-            let descendants = projects.filter {
-                $0.id != id && ProjectRecord.belongsToHierarchy($0.path, prefix: project.path)
-            }
+            let descendants = Array(ProjectRecord.hierarchy(projectId: id, records: projects).dropFirst())
             let descendantIDs = Set(descendants.map(\.id))
             guard parentProjectId != id,
                   parentProjectId.map({ !descendantIDs.contains($0) }) ?? true else {
@@ -293,11 +288,14 @@ final class ProjectWorkspaceService {
                 return parent
             }
             let newPath = parent.map { "\($0.path)/\(name)" } ?? name
-            try ensureProjectDoesNotExist(path: newPath, excludingProjectId: id)
             let summaryPlan = if project.path == newPath {
                 ProjectSummaryMovePlan(relocations: [], vaultExportUpdates: [])
             } else {
-                try projectSummaryMovePlan(oldPrefix: project.path, newPrefix: newPath)
+                try projectSummaryMovePlan(
+                    projectId: id,
+                    oldPrefix: project.path,
+                    newPrefix: newPath
+                )
             }
             return try performSummaryRelocations(summaryPlan.relocations) {
                 try repository.updateCustomerIntelligenceProject(
@@ -394,27 +392,33 @@ final class ProjectWorkspaceService {
 
         let movePlan: MeetingMovePlan?
         if case let .move(destinationId) = meetingDisposition {
+            let hierarchyIds = try Set(
+                ProjectRecord.hierarchy(
+                    projectId: id,
+                    records: repository.fetchAllProjects(vaultId: vault.id)
+                ).map(\.id)
+            )
             guard let destination = try repository.fetchProject(id: destinationId),
                   destination.vaultId == vault.id,
-                  !ProjectRecord.belongsToHierarchy(destination.path, prefix: project.path)
+                  !hierarchyIds.contains(destinationId)
             else {
                 throw ProjectWorkspaceError.invalidMoveDestination
             }
-            let hierarchyMeetingIds = try repository.meetingIds(projectHierarchy: project.path, vaultId: vault.id)
+            let hierarchyMeetingIds = try repository.meetingIds(projectHierarchy: id, vaultId: vault.id)
             movePlan = try makeMeetingMovePlan(ids: hierarchyMeetingIds, toProjectId: destinationId)
         } else {
             movePlan = nil
         }
 
         let trashedSummaries = meetingDisposition == .deleteMeetings && deletesSummaryFiles
-            ? try trashTrackedSummaries(projectPath: project.path)
+            ? try trashTrackedSummaries(projectId: id)
             : []
         let relocations = movePlan?.relocations ?? []
         let stagedAudio: [BatchAudioCleanupService.StagedFile]
         do {
             stagedAudio = try performSummaryRelocations(relocations) {
                 try repository.deleteProjectHierarchy(
-                    name: project.path,
+                    projectId: id,
                     vaultId: vault.id,
                     meetingDisposition: meetingDisposition,
                     vaultExportUpdates: movePlan?.vaultExportUpdates ?? [],
@@ -429,9 +433,9 @@ final class ProjectWorkspaceService {
         return stagedAudio
     }
 
-    private func trashTrackedSummaries(projectPath: String) throws -> [TrashedSummary] {
+    private func trashTrackedSummaries(projectId: UUID) throws -> [TrashedSummary] {
         guard let vaultURL = vault.url else { return [] }
-        let meetingIds = try repository.meetingIds(projectHierarchy: projectPath, vaultId: vault.id)
+        let meetingIds = try repository.meetingIds(projectHierarchy: projectId, vaultId: vault.id)
         guard !meetingIds.isEmpty else { return [] }
         let candidates = try repository.fetchMeetingMoveCandidates(ids: meetingIds, vaultId: vault.id)
         let externalPaths = try repository.externalVaultSummaryPaths(
@@ -510,15 +514,6 @@ extension ProjectWorkspaceService {
             )
         } catch is DahliaVaultMutationLockError {
             throw ProjectWorkspaceError.vaultBusy
-        }
-    }
-
-    private nonisolated func ensureProjectDoesNotExist(path: String, excludingProjectId: UUID?) throws {
-        let projects = try repository.fetchAllProjects(vaultId: vault.id)
-        if projects.contains(where: {
-            $0.id != excludingProjectId && ProjectRecord.pathKey($0.path) == ProjectRecord.pathKey(path)
-        }) {
-            throw ProjectWorkspaceError.projectAlreadyExists(path)
         }
     }
 
@@ -638,6 +633,7 @@ extension ProjectWorkspaceService {
     }
 
     private nonisolated func projectSummaryMovePlan(
+        projectId: UUID,
         oldPrefix: String,
         newPrefix: String
     ) throws -> ProjectSummaryMovePlan {
@@ -645,7 +641,7 @@ extension ProjectWorkspaceService {
             return ProjectSummaryMovePlan(relocations: [], vaultExportUpdates: [])
         }
         let fileManager = FileManager.default
-        let meetingIds = try repository.meetingIds(projectHierarchy: oldPrefix, vaultId: vault.id)
+        let meetingIds = try repository.meetingIds(projectHierarchy: projectId, vaultId: vault.id)
         guard !meetingIds.isEmpty else {
             return ProjectSummaryMovePlan(relocations: [], vaultExportUpdates: [])
         }

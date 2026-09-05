@@ -607,16 +607,16 @@ enum SyncTransactionQueue {
             }
         case .project:
             guard let name = value.name, let createdAt = value.createdAt else { return }
-            try db.execute(sql: """
-            INSERT INTO projects(id, vaultId, parentProjectId, name, nameKey, createdAt, description, projectType, revision)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
-            ON CONFLICT(id) DO UPDATE SET parentProjectId = excluded.parentProjectId,
-                name = excluded.name, nameKey = excluded.nameKey,
-                description = excluded.description, projectType = excluded.projectType
-            """, arguments: [
-                id, vaultId, value.parentProjectId, name, DahliaProjectName.siblingKey(name),
-                createdAt, value.description ?? "", value.projectType,
-            ])
+            try ProjectRecord.applyCanonical(
+                id: id,
+                vaultId: vaultId,
+                parentProjectId: value.parentProjectId,
+                name: name,
+                createdAt: createdAt,
+                description: value.description ?? "",
+                projectType: value.projectType.flatMap(ProjectType.init(rawValue:)),
+                in: db
+            )
         case .meeting:
             guard let name = value.name, let status = value.status,
                   let createdAt = value.createdAt, let updatedAt = value.updatedAt else { return }
