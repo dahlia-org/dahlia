@@ -97,6 +97,7 @@ describe("deployment routing", () => {
     expect(worker).not.toContain("isApplicationPath");
     expect(worker).toContain("DAHLIA_AI_BACKEND");
     expect(worker).toContain("DATABRICKS_HOST");
+    expect(worker).toContain("DATABRICKS_MODEL_SCHEMA: env.DATABRICKS_MODEL_SCHEMA");
     expect(worker).toContain("OPENAI_API_KEY");
     expect(worker).toContain("OPENAI_BASE_URL");
     expect(cloudflareVite).toContain("cloudflare(");
@@ -220,6 +221,10 @@ describe("deployment routing", () => {
       catalog_name: \${var.catalog}
       schema_name: \${resources.schemas.dahlia.name}
       name: \${var.volume_name}`);
+    expect(bundle).toContain("scripts/postdeploy.py");
+    expect(resource).toContain("name: DATABRICKS_MODEL_SCHEMA");
+    expect(resource).toContain("value: ${var.catalog}.ai");
+    expect(resource).toMatch(/dahlia_ai:[\s\S]*?name: ai/);
     expect(bundle).toContain("sync_sharing_enabled:");
     expect(bundle).toMatch(/sync_sharing_enabled:[\s\S]*?default: "false"/);
     expect(bundle).toMatch(/dev:[\s\S]*?sync_sharing_enabled: "true"[\s\S]*?prod:/);

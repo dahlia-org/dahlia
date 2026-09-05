@@ -28,7 +28,7 @@ export function isCoreDashboardPath(path: string): boolean {
 }
 
 export type DashboardRoute = {
-  page?: "overview" | "settings" | "artifacts" | "vaults" | "vault" | "meeting" | "project" | "organizations" | "invitation" | "admin-models" | "admin-members";
+  page?: "overview" | "settings" | "artifacts" | "vaults" | "vault" | "meeting" | "project" | "organizations" | "invitation" | "admin-members";
   redirect?: string;
   vaultId?: string;
   meetingId?: string;
@@ -73,9 +73,9 @@ export function resolveDashboardRoute(
   if (path === "/dashboard/settings") {
     return capabilities.sessions ? { page: "settings" } : { redirect: "/dashboard" };
   }
-  if (path === "/admin") return { redirect: capabilities.admin ? "/admin/models" : "/dashboard" };
+  if (path === "/admin") return { redirect: capabilities.admin ? "/admin/members" : "/dashboard" };
   if (path === "/admin/models") {
-    return capabilities.admin ? { page: "admin-models" } : { redirect: "/dashboard" };
+    return { redirect: "/dashboard" };
   }
   if (path === "/admin/members") {
     return capabilities.admin ? { page: "admin-members" } : { redirect: "/dashboard" };

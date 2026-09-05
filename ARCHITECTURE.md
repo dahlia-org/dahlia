@@ -131,9 +131,11 @@ Better Auth、Gateway 管理 metadata、meeting sync は単一の Drizzle applic
 `DAHLIA_DATABASE_URL` で指定する。Node は SQLite／PostgreSQL／Lakebase、Workers は D1／Hyperdrive／PostgreSQL を扱う。
 Lakebase は公式 `@databricks/lakebase` connector で OAuth credential を更新する。
 database 選択は認証および AI backend と独立する。`DAHLIA_AI_BACKEND` で Databricks、Cloudflare、OpenAI を選択し、Databricks Responses は Apps proxy の `X-Forwarded-Access-Token`、モデル発見は App service principal、その他は `OPENAI_API_KEY` と必要に応じて `OPENAI_BASE_URL` を使う。
-Databricks Apps の header identity は sessionless だが、Model Alias と administrator の正本として Lakebase を使用する。Responses request は上限内で検証して upstream model を
-変換し、upstream response body は streaming relay する。request と response の content は DB、cache、analytics、application log
-へ保存しない。Databricks backend の管理画面は App service principal で Unity Catalog Model Services API の `system.ai` 一覧を全ページ都度取得し、一覧自体は保存せず、管理者が有効化した Model Alias だけを application database に保存する。
+Databricks Apps の header identity は sessionless だが、認証・administrator・Server canonical data のため Lakebase を使用する。
+AI Gateway は `AIGatewayBackend.listModels` と `responses(body, context)` を共通境界とする。モデル一覧は backend が返し、Databricks は App service principal で `DATABRICKS_MODEL_SCHEMA` 配下を取得する。短い公開モデル名の上流変換とヘッダー構築は backend が所有する。
+Server 共通層は `CODEX_AUTO_REVIEW_MODEL` による予約モデル上書きを所有し、設定された上流 ID はスキーマを補完せず転送する。
+Responses request は上限内で検証し、upstream response body は streaming relay する。request と response の content は DB、cache、analytics、application log へ保存しない。
+Databricks request tags には認証済み user ID を付与する。Model Alias の既存データは残すが Gateway から参照せず、管理画面・API は廃止する ([ADR-0069](docs/adr/0069-use-backend-model-catalogs.md))。
 
 ```text
 Dahlia macOS / bundled Codex 0.148.0
@@ -141,7 +143,7 @@ Dahlia macOS / bundled Codex 0.148.0
 /api/v1
     ├─ Better Auth OAuth access token
     └─ Databricks Apps / trusted proxy identity
-        ↓ database-backed Model Alias resolution
+        ↓ backend model resolution + Server auto-review override
     OpenAI-compatible upstream adapter
         ↓ deployment credential or forwarded Databricks user token
     upstream Responses API

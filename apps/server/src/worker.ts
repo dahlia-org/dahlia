@@ -43,6 +43,7 @@ export interface RuntimeSecrets {
   DATABRICKS_CLIENT_ID?: string;
   DATABRICKS_CLIENT_SECRET?: string;
   DATABRICKS_HOST?: string;
+  DATABRICKS_MODEL_SCHEMA?: string;
   OPENAI_API_KEY?: string;
   OPENAI_BASE_URL?: string;
 }
@@ -109,6 +110,7 @@ export async function initializeWorkerApp(env: WorkerEnv): Promise<WorkerApp> {
     DATABRICKS_CLIENT_ID: env.DATABRICKS_CLIENT_ID,
     DATABRICKS_CLIENT_SECRET: env.DATABRICKS_CLIENT_SECRET,
     DATABRICKS_HOST: env.DATABRICKS_HOST,
+    DATABRICKS_MODEL_SCHEMA: env.DATABRICKS_MODEL_SCHEMA,
     OPENAI_API_KEY: env.OPENAI_API_KEY,
     OPENAI_BASE_URL: env.OPENAI_BASE_URL,
   });

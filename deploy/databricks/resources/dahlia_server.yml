@@ -1,5 +1,9 @@
 resources:
   schemas:
+    dahlia_ai:
+      catalog_name: ${var.catalog}
+      name: ai
+      comment: AI model services for Dahlia Server
     dahlia:
       catalog_name: ${var.catalog}
       name: ${var.schema}
@@ -34,6 +38,8 @@ resources:
             value: header
           - name: DAHLIA_AI_BACKEND
             value: databricks
+          - name: DATABRICKS_MODEL_SCHEMA
+            value: ${var.catalog}.ai
           - name: CODEX_AUTO_REVIEW_MODEL
             value: ${var.codex_auto_review_model}
           - name: DAHLIA_STORAGE_BACKEND

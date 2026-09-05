@@ -38,11 +38,7 @@ import { MeetingSyncService } from "./sync/service";
 import { decodeSyncCursor, SyncStoreUnavailableError, SyncTransactionError } from "./sync/store";
 import type { SearchTokenizer } from "./search/tokenizer";
 import type { SearchEmbedder } from "./search/embedding";
-import {
-  CODEX_AUTO_REVIEW_ALIAS,
-  MODEL_ALIAS_PATTERN,
-  UPSTREAM_MODEL_MAX_LENGTH,
-} from "./ai-gateway/model-alias";
+
 import { gatewayError, GatewayRequestError, GatewayService } from "./ai-gateway/service";
 
 export const AUTH_MAX_REQUEST_BYTES = 64 * 1024;
@@ -126,13 +122,6 @@ export async function authenticateMcpRequest(
   return authInfo;
 }
 
-const aliasSchema = z.string().regex(MODEL_ALIAS_PATTERN).refine((alias) => alias !== CODEX_AUTO_REVIEW_ALIAS);
-const modelFieldsSchema = z.object({
-  upstreamModel: z.string().trim().min(1).max(UPSTREAM_MODEL_MAX_LENGTH),
-  displayName: z.string().trim().min(1).max(100).nullable().optional(),
-  enabled: z.boolean(),
-});
-const createModelSchema = modelFieldsSchema.extend({ alias: aliasSchema });
 const memberSchema = z.object({ email: z.string().trim().email().transform((value) => value.toLowerCase()) });
 
 export function mutationOriginAllowed(request: Request, baseUrl: string): boolean {
@@ -243,7 +232,6 @@ export function createApp(dependencies: AppDependencies) {
     const identity = context.get("identity");
     const capabilities: Record<string, boolean> = {
       admin: await isAdministrator(store, identity),
-      databricksModels: config.provider?.backend === "databricks",
       sessions: auth !== undefined,
       sync: await store.sync.isAvailable(),
       sharing: config.syncSharingEnabled === true,
@@ -277,40 +265,6 @@ export function createApp(dependencies: AppDependencies) {
     }
     context.set("identity", identity);
     await next();
-  });
-  app.get("/api/admin/models", async (context) => context.json(await gateway.adminModels(context.req.raw)));
-  app.post("/api/admin/models", async (context) => {
-    const parsed = createModelSchema.safeParse(await context.req.json().catch(() => null));
-    if (!parsed.success) return context.json({ error: "invalid_model_alias" }, 400);
-    const created = await store.createModelAlias({
-      ...parsed.data,
-      displayName: parsed.data.displayName ?? null,
-    });
-    return created
-      ? context.json((await store.listModelAliases()).find((model) => model.alias === parsed.data.alias)!, 201)
-      : context.json({ error: "model_alias_exists" }, 409);
-  });
-  app.patch("/api/admin/models/:alias", async (context) => {
-    const alias = aliasSchema.safeParse(context.req.param("alias"));
-    const update = modelFieldsSchema.safeParse(await context.req.json().catch(() => null));
-    if (!alias.success || !update.success) {
-      return context.json({ error: "invalid_model_alias" }, 400);
-    }
-    if (!await store.updateModelAlias(alias.data, {
-      ...update.data,
-      displayName: update.data.displayName ?? null,
-    })) return context.json({ error: "model_alias_not_found" }, 404);
-    const model = (await store.listModelAliases()).find((candidate) => candidate.alias === alias.data);
-    return model
-      ? context.json(model)
-      : context.json({ error: "model_alias_not_found" }, 404);
-  });
-  app.delete("/api/admin/models/:alias", async (context) => {
-    const alias = aliasSchema.safeParse(context.req.param("alias"));
-    if (!alias.success) return context.json({ error: "invalid_model_alias" }, 400);
-    return await store.deleteModelAlias(alias.data)
-      ? context.body(null, 204)
-      : context.json({ error: "model_alias_not_found" }, 404);
   });
   app.get("/api/admin/members", async (context) => {
     const admins = await store.listAdminUsers();
@@ -819,7 +773,7 @@ export function createApp(dependencies: AppDependencies) {
     await next();
   });
   app.get("/api/v1/models", async (context) => context.json(await gateway.models(context.req.raw)));
-  app.post("/api/v1/responses", async (context) => gateway.responses(context.req.raw));
+  app.post("/api/v1/responses", async (context) => gateway.responses(context.req.raw, context.get("identity")));
 
   for (const extension of extensions) extension.registerRoutes?.(app, services);
 

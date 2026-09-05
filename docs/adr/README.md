@@ -78,3 +78,4 @@ Codex は全 ADR を順番に読まず、最初にこの一覧から現在の作
 | [0066](0066-sync-vault-projects-and-separate-transcript-speakers.md) | Desktop / Server / Meeting sync | Vault名とProject階層を同期し、transcriptの収録経路と話者ラベルを分離する | Accepted; amends 0056, 0058, 0059, and 0062 |
 | [0067](0067-use-domain-transactions-and-cursor-deltas-for-sync.md) | Desktop / Server / Meeting sync | domain transaction、optimistic revision、cursor delta、SSE invalidationでDesktopとWebを同期する | Accepted; amends 0056, 0058, 0059, and 0066 |
 | [0068](0068-consolidate-desktop-and-mcp-oauth-scopes.md) | Desktop / Server / Authentication | Desktop APIを`all-apis`、MCPをfull/read-onlyの2 scopeへ統合する | Accepted; amends 0029, 0045, 0049, 0051, 0056, and 0067 |
+| [0069](0069-use-backend-model-catalogs.md) | Server / AI Gateway | backend 別モデル一覧と Responses 互換境界へ統一し、Server 共通の自動レビュー上書きを維持する | Accepted; amends 0029, 0031, and 0050 |

@@ -12,7 +12,7 @@ sync:
 experimental:
   skip_name_prefix_for_schema: true
   scripts:
-    postdeploy: "databricks api post /api/2.0/postgres/projects/${var.database_project_id}/search-extensions --json '{}' --profile '${workspace.profile}'"
+    postdeploy: "python3 scripts/postdeploy.py --profile '${workspace.profile}' --catalog '${var.catalog}' --database-project-id '${var.database_project_id}'"
 
 variables:
   app_name:
@@ -63,6 +63,9 @@ targets:
           lifecycle:
             prevent_destroy: true
       schemas:
+        dahlia_ai:
+          lifecycle:
+            prevent_destroy: true
         dahlia:
           lifecycle:
             prevent_destroy: true

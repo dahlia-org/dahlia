@@ -15,7 +15,7 @@ const config: AppConfig = {
   baseUrl: "https://dahlia.example",
   oauthRedirectUris: [],
   maxRequestBytes: 1024,
-  provider: { backend: "databricks", baseUrl: "https://workspace.example/ai-gateway/mlflow/v1" },
+  provider: { backend: "databricks", modelSchema: "dahlia.ai", baseUrl: "https://workspace.example/ai-gateway/mlflow/v1" },
   databricksWorkspace: {
     host: "https://workspace.example",
     clientId: "client",

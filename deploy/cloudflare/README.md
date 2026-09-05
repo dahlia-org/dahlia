@@ -63,7 +63,7 @@ pnpm exec wrangler secret put OPENAI_API_KEY
 pnpm exec wrangler secret put OPENAI_BASE_URL
 ```
 
-Use `https://api.cloudflare.com/client/v4/accounts/<account-id>/ai/v1` as the base URL. This contract uses the default gateway and does not expose named-gateway selection. Dahlia sends `cf-aig-collect-log-payload: false` so prompt and response content are not collected in AI Gateway logs. After deployment, create public aliases such as `gpt-5.6-luna` and upstream IDs such as `openai/gpt-5.6-luna` under `/admin/models`.
+Use `https://api.cloudflare.com/client/v4/accounts/<account-id>/ai/v1` as the base URL. This contract uses the default gateway and does not expose named-gateway selection. Dahlia sends `cf-aig-collect-log-payload: false` so prompt and response content are not collected in AI Gateway logs. The backend currently exposes a mock `gpt-5.6-luna` catalog entry and routes it to `openai/gpt-5.6-luna`. Set `CODEX_AUTO_REVIEW_MODEL` to override the reserved automatic-review model independently of that catalog.
 
 ## 5. Validate and deploy
 
