@@ -95,35 +95,11 @@ final class VaultManagementModel {
     }
 
     private func fetchCloudVaults(from connection: DahliaAccountConnectionRecord) async throws -> [CloudVaultRecord] {
-        struct Response: Decodable { let items: [Item] }
-        struct Item: Decodable {
-            let vaultId: UUID
-            let name: String
-            let revision: Int
-            let createdAt: Date
-            let role: String
-        }
-
         if let cloudVaultFetcher {
             return try await cloudVaultFetcher(connection)
         }
-        guard let origin = URL(string: connection.origin),
-              let url = URL(string: "api/v1/vaults", relativeTo: origin)?.absoluteURL else { return [] }
-        var request = URLRequest(url: url)
         let token = try await DahliaCloudTokenServiceRegistry.shared.validAccessToken(connectionID: connection.id)
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw URLError(.badServerResponse) }
-        return try SyncJSON.decoder.decode(Response.self, from: data).items.map {
-            CloudVaultRecord(
-                vaultId: $0.vaultId,
-                connectionId: connection.id,
-                name: $0.name,
-                createdAt: $0.createdAt,
-                revision: $0.revision,
-                role: $0.role
-            )
-        }
+        return try await CloudVaultDiscovery.fetch(connection: connection, token: token)
     }
 
     func registerCloudVault(_ cloudVault: CloudVaultRecord) async -> VaultRecord? {

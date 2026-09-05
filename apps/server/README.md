@@ -37,6 +37,7 @@ Better Auth schemas are generated unmodified into `src/db/generated`; Dahlia tab
 | `/api/v1/artifacts/{uuidv7}` | Public reads are anonymous; private reads use `all-apis` or browser session; mutations use `all-apis` | Public reads are anonymous; private reads and mutations use proxy identity |
 | `/api/v1/artifacts/{uuidv7}/content` | Public reads are anonymous; private reads use `all-apis` or browser session | Public reads are anonymous; private reads use proxy identity |
 | `/api/v1/vaults/**` | Browser session or Dahlia OAuth with `all-apis` | Proxy identity |
+| `GET /api/v1/organizations` | Browser session or Dahlia OAuth with `all-apis`; current memberships only | Current memberships for proxy identity |
 | `POST /mcp` | Dahlia OAuth with `mcp` or `mcp:read` | Databricks Apps / trusted proxy identity |
 | `/healthz` | Minimal liveness | Internal liveness; anonymous external access is not guaranteed |
 
@@ -57,6 +58,15 @@ Desktop keeps immutable operations until the Server receipt is applied. Screensh
 Vault and Project operations are committed through the domain transaction endpoint before meeting data. Projects are available for hierarchy browsing and meeting filtering but are not added to full-text or vector search. Transcript segments keep `audioSource` (`mic` or `system`) separate from nullable `speakerLabel`, which is reserved for future diarization.
 
 `GET /api/v1/vaults/{vaultId}/meetings` returns at most 200 meetings. Pass its opaque `nextCursor` as `cursor` to continue the same date-ordered Vault or Project listing. `query_meetings` exposes the same cursor contract. Search results remain a bounded relevance-ranked page and do not return a continuation cursor.
+
+The optional `projectScope=direct` requires `projectId` and returns only meetings directly assigned to that Project. `projectScope=unassigned` forbids `projectId` and returns only meetings without a Project. Omitting `projectScope` preserves the existing Project-and-children listing. Both scopes support the same cursor pagination.
+
+The Private Web sidebar switches between Personal and the current user's Organizations, then displays collapsible Vault → Project → Meeting navigation. Unassigned meetings appear directly under their Vault. Expand controls are separate from detail links; meetings load on expansion, with **Show more** for subsequent pages. Selection and expansion are stored per user in tab-scoped session storage. The initial selection is Personal; a revoked Organization selection returns to Personal.
+
+`GET /api/v1/vaults` accepts mutually exclusive `userId` and `organizationId` filters. No parameter means the authenticated user's own `userId`. A user filter returns owned Vaults and only permits the authenticated user's ID (another user is `403`). An Organization filter requires current membership (`403` otherwise), and returns only Vaults shared to that Organization or to one of the user's Teams within it. Owning a Vault or access through a different Organization is insufficient for this filter. Multiple matching grants produce one row. Empty, whitespace-containing, control-containing, over-200-character IDs and simultaneous filters return `400`; IDs are opaque auth IDs, not necessarily UUIDs.
+
+**Client compatibility:** the default Vault listing now returns owned Vaults, rather than all accessible Vaults. Clients needing all accessible Vaults must union the default listing with each `organizationId` listing by Vault ID. `GET /api/v1/organizations` lists the authenticated user's Organizations in both accounts and header modes and accepts browser or `all-apis` gateway authentication; sharing-disabled deployments return an empty array. Desktop Vault discovery performs this union. Update Desktop along with Server to preserve shared Vault discovery; older Desktop versions continue synchronizing already-registered Vaults but will not discover additional shared Vaults through the default list.
+
 
 `GET /api/v1/vaults/{vaultId}/meetings/{meetingId}/screenshots` likewise returns at most 200 screenshots. Pass `nextCursor` as `cursor` to continue chronological listings; MCP `get_meeting_screenshots` accepts the same cursor and emits the next cursor as JSON text before its resource links. Screenshot search remains a bounded page without a cursor.
 

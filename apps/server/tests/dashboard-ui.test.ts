@@ -1,3 +1,4 @@
+import { projectAncestors, vaultListURL } from "../src/client/Sidebar";
 import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
@@ -12,6 +13,18 @@ import { artifactViewerId, resolveDashboardRoute, shouldRedirectToSignIn } from 
 const ExtensionPage = () => null;
 
 describe("dashboard navigation", () => {
+  it("builds exclusive scopes and expands the selected Project ancestry by ID", () => {
+    expect(vaultListURL("user+1", "")).toBe("/api/v1/vaults?userId=user%2B1");
+    expect(vaultListURL("user+1", "org+1")).toBe("/api/v1/vaults?organizationId=org%2B1");
+    const projects = [
+      { projectId: "parent", name: "Same" },
+      { projectId: "child", parentProjectId: "parent", name: "Same" },
+      { projectId: "other", name: "Same" },
+    ] as Parameters<typeof projectAncestors>[0];
+    expect([...projectAncestors(projects, "child")]).toEqual(["child", "parent"]);
+    expect([...projectAncestors(projects, "missing")]).toEqual([]);
+  });
+
   it("redirects to sign-in only for an authentication failure", () => {
     expect(shouldRedirectToSignIn(401)).toBe(true);
     expect(shouldRedirectToSignIn(500)).toBe(false);
