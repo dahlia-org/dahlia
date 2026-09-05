@@ -137,6 +137,8 @@ describe("AI Gateway", () => {
       default_reasoning_level: "medium",
       visibility: "list",
     });
+    expect(listed.models.find((model) => model.slug === "codex-auto-review")?.model_messages)
+      .toHaveProperty("auto_review.policy_template");
 
     await service.responses(new Request("https://dahlia.example/api/v1/responses", {
       method: "POST",

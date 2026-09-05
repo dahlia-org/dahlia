@@ -5,7 +5,7 @@ import type { AuthStore, ModelAliasRecord } from "../auth/store";
 import type { AppConfig } from "../config";
 import { DatabricksTokenProvider } from "../databricks/token";
 import { listDatabricksModelServices, sendOpenAIResponses, type GatewayFetch } from "./adapters";
-import { MODEL_ALIAS_PATTERN } from "./model-alias";
+import { CODEX_AUTO_REVIEW_ALIAS, MODEL_ALIAS_PATTERN } from "./model-alias";
 
 interface DatabricksModel {
   id: string;
@@ -14,7 +14,6 @@ interface DatabricksModel {
 }
 
 const DATABRICKS_MODEL_TIMEOUT_MS = 30_000;
-const CODEX_AUTO_REVIEW_ALIAS = "codex-auto-review";
 export const LATEST_CODEX_CLIENT_VERSION = "0.149.1";
 
 interface CodexModelWire {
@@ -271,7 +270,8 @@ function codexModels(aliases: ModelAliasRecord[]): CodexModelWire[] {
     hiddenCodexModel(model.slug),
   ]));
   aliases.forEach((alias, priority) => {
-    const model = knownCodexModel(alias.upstreamModel)
+    const metadataModel = alias.alias === CODEX_AUTO_REVIEW_ALIAS ? alias.alias : alias.upstreamModel;
+    const model = knownCodexModel(metadataModel)
       ?? knownCodexModel(alias.alias)
       ?? ossCodexModel(alias.alias);
     models.set(alias.alias, {
