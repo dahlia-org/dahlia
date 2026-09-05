@@ -3,7 +3,7 @@
 > Implementation note (2026-07-27): 「組織」画面は一社のルートに限定した bounded hierarchy viewer として
 > 実装した。巨大な graph canvas、graph DB、自由座標は導入せず、人物は inspector に置く。AI の判断は
 > Insight として正準レコードから分離し、明示された更新は単純な単数 CRUD／関係ツールで逐次反映する。詳細は
-> [ADR 0012](../adr/0012-reviewable-customer-intelligence-workspace.md) を参照。Glossary は単独では文字起こしや
+> [MCP と UI](../adr/desktop/customer-intelligence.md#mcp-と-ui) を参照。Glossary は単独では文字起こしや
 > AI context を改善しないため、リリース前に v25/v26 schema から除外し、実用途が生じた場合に再検討する。
 
 - 調査日: 2026-07-26

@@ -139,6 +139,8 @@ Dahlia が何を作り何を作らないかを決める positioning と tenet �
 
 ## アーキテクチャ
 
+対象・目的別の資料は[ドキュメント索引](docs/README.md)から辿れます。
+
 現在の runtime data flow、目標 architecture、実装との適合状況、remediation plan、UI 応答性の方針は
 [ARCHITECTURE.md](ARCHITECTURE.md)を参照してください。過去の設計判断と置換関係は
 [Architecture Decision Records](docs/adr/README.md)にまとめています。

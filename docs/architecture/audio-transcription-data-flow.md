@@ -151,7 +151,7 @@ stateDiagram-v2
 
 `ready` は「永続的に保持する」という意味ではなく、検証済みの immutable CAF を正本として読める状態を表す。
 確定 protocol、crash recovery、保持・削除の詳細は
-[ADR-0004](../adr/0004-protect-recordings-with-segmented-immutable-storage.md) を参照する。
+[確定手順](../adr/desktop/recording-storage.md#確定手順) を参照する。
 
 ## Runtime scenarios
 
