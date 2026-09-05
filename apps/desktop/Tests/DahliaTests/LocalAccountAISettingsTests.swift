@@ -31,12 +31,14 @@
             }
             let model = VaultAISettingsModel(setupDefaults: defaults, activateRuntime: { _ in })
 
-            try await model.configure(dbQueue: database.dbQueue)
+            model.configure(dbQueue: database.dbQueue)
+            try await model.inheritLocalAccountSettings(from: database.dbQueue)
 
             #expect(model.localAccountSettings == .init(provider: .databricks, databricksProfile: "LOCAL"))
             model.databricksProfile = "CHANGED"
             let restored = VaultAISettingsModel(setupDefaults: defaults, activateRuntime: { _ in })
-            try await restored.configure(dbQueue: database.dbQueue)
+            restored.configure(dbQueue: database.dbQueue)
+            try await restored.inheritLocalAccountSettings(from: database.dbQueue)
             #expect(restored.localAccountSettings == .init(provider: .databricks, databricksProfile: "CHANGED"))
             let storedProfile = try await database.dbQueue.read { [id = latest.id] db in
                 try VaultRecord.fetchOne(db, key: id)?.databricksProfile
@@ -54,7 +56,8 @@
             let database = try AppDatabaseManager(path: ":memory:")
             let model = VaultAISettingsModel(setupDefaults: defaults, activateRuntime: { _ in })
 
-            try await model.configure(dbQueue: database.dbQueue)
+            model.configure(dbQueue: database.dbQueue)
+            try await model.inheritLocalAccountSettings(from: database.dbQueue)
 
             #expect(model.localAccountSettings == .init(provider: .databricks, databricksProfile: "LEGACY"))
             #expect(defaults.bool(forKey: LocalAccountAISettings.migrationKey))
@@ -96,6 +99,46 @@
             model.activate(vault: makeVault(openedAt: .now))
             #expect(await model.waitForRuntimeContext())
             #expect(model.localAccountSettings == .init(provider: .databricks, databricksProfile: "NEW"))
+        }
+
+        @Test
+        func failedBackfillDoesNotDisableSubsequentSettingsPersistence() async throws {
+            let suiteName = "LocalAccountAISettingsTests-\(UUID())"
+            let defaults = try #require(UserDefaults(suiteName: suiteName))
+            defer { defaults.removePersistentDomain(forName: suiteName) }
+            let database = try AppDatabaseManager(path: ":memory:")
+            let repository = MeetingRepository(dbQueue: database.dbQueue)
+            var vault = makeVault(openedAt: .now)
+            vault.aiSettingsBackfilled = false
+            try repository.insertVault(vault)
+            let model = VaultAISettingsModel(setupDefaults: defaults, activateRuntime: { _ in })
+            model.configure(dbQueue: database.dbQueue)
+            try await database.dbQueue.write { db in
+                try db.execute(sql: "CREATE TRIGGER fail_backfill BEFORE UPDATE ON vaults BEGIN SELECT RAISE(ABORT, 'test failure'); END")
+            }
+
+            await #expect(throws: DatabaseError.self) {
+                try await repository.backfillVaultAISettings(.init(
+                    localProvider: .databricks, databricksProfile: "LEGACY",
+                    summaryModelID: "legacy", summaryReasoningEffort: "high",
+                    chatModelID: "legacy", chatReasoningEffort: "high"
+                ))
+            }
+            #expect(!defaults.bool(forKey: LocalAccountAISettings.migrationKey))
+            try await database.dbQueue.write { db in
+                try db.execute(sql: "DROP TRIGGER fail_backfill")
+            }
+            model.activate(vault: vault)
+            model.summaryModelID = "updated"
+            model.chatReasoningEffort = "low"
+
+            let vaultID = vault.id
+            #expect(await pollUntil {
+                let stored = try? await database.dbQueue.read { db in
+                    try VaultRecord.fetchOne(db, key: vaultID)
+                }
+                return stored?.summaryModelID == "updated" && stored?.chatReasoningEffort == "low"
+            })
         }
 
         @Test

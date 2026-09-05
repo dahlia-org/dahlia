@@ -390,11 +390,12 @@ struct DahliaApp: App {
         }
         appDatabase = db
         let vaultAISettings = VaultAISettingsModel.shared
+        vaultAISettings.configure(dbQueue: db.dbQueue)
         await CodexRuntimeContextCoordinator.shared.configure(dbQueue: db.dbQueue)
         do {
             try await MeetingRepository(dbQueue: db.dbQueue)
                 .backfillVaultAISettings(VaultAISettingsLegacyValues(settings: .shared))
-            try await vaultAISettings.configure(dbQueue: db.dbQueue)
+            try await vaultAISettings.inheritLocalAccountSettings(from: db.dbQueue)
         } catch {
             ErrorReportingService.capture(error, context: ["source": "vaultAISettingsBackfill"])
         }

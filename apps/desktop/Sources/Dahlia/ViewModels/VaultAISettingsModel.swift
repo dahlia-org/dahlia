@@ -88,8 +88,11 @@ final class VaultAISettingsModel {
         LocalAccountAISettings(provider: localProvider, databricksProfile: databricksProfile)
     }
 
-    func configure(dbQueue: DatabaseQueue) async throws {
+    func configure(dbQueue: DatabaseQueue) {
         self.dbQueue = dbQueue
+    }
+
+    func inheritLocalAccountSettings(from dbQueue: DatabaseQueue) async throws {
         guard !setupDefaults.bool(forKey: LocalAccountAISettings.migrationKey) else { return }
         let previousVault = try await MeetingRepository(dbQueue: dbQueue).fetchLatestLocalAccountVault()
         guard !setupDefaults.bool(forKey: LocalAccountAISettings.migrationKey) else { return }
