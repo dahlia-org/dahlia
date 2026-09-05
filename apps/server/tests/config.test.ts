@@ -43,6 +43,7 @@ describe("configuration", () => {
       DAHLIA_AUTH_TYPE: "header",
       DAHLIA_AI_BACKEND: "databricks",
       DATABRICKS_HOST: "workspace.cloud.databricks.com",
+      DATABRICKS_MODEL_SCHEMA: "dahlia.ai",
       DATABRICKS_CLIENT_ID: "app-client-id",
       DATABRICKS_CLIENT_SECRET: "app-client-secret",
       DAHLIA_SEARCH_EMBEDDING_MODEL: "system.ai.qwen3-embedding-0-6b",
@@ -56,12 +57,25 @@ describe("configuration", () => {
         DAHLIA_AUTH_TYPE: "header",
         DAHLIA_AI_BACKEND: "databricks",
         DATABRICKS_HOST: "workspace.cloud.databricks.com",
+      DATABRICKS_MODEL_SCHEMA: "dahlia.ai",
         DATABRICKS_CLIENT_ID: "app-client-id",
         DATABRICKS_CLIENT_SECRET: "app-client-secret",
         DAHLIA_SEARCH_EMBEDDING_MODEL: "model",
         DAHLIA_SEARCH_EMBEDDING_DIMENSIONS: String(dimensions),
       })).toThrow();
     }
+  });
+
+  it("requires a qualified Databricks model schema", () => {
+    const env = {
+      DAHLIA_AUTH_TYPE: "header", DAHLIA_AI_BACKEND: "databricks",
+      DATABRICKS_HOST: "workspace.example", DATABRICKS_CLIENT_ID: "client", DATABRICKS_CLIENT_SECRET: "secret",
+    };
+    for (const schema of [undefined, "", "catalog", "a.b.c", "a/b.ai", "a.ai?x=1"]) {
+      expect(() => loadConfig({ ...env, DATABRICKS_MODEL_SCHEMA: schema })).toThrow("DATABRICKS_MODEL_SCHEMA");
+    }
+    expect(loadConfig({ ...env, DATABRICKS_MODEL_SCHEMA: " custom_catalog.ai " }).provider)
+      .toMatchObject({ modelSchema: "custom_catalog.ai" });
   });
 
   it("selects PostgreSQL independently from the AI Gateway", () => {
@@ -85,6 +99,7 @@ describe("configuration", () => {
       DAHLIA_AUTH_TYPE: "header",
       DAHLIA_AI_BACKEND: "databricks",
       DATABRICKS_HOST: "workspace.cloud.databricks.com",
+      DATABRICKS_MODEL_SCHEMA: "dahlia.ai",
     };
     expect(loadConfig({
       ...databricks,
@@ -113,6 +128,7 @@ describe("configuration", () => {
       DAHLIA_STORAGE_BACKEND: "databricks",
       DAHLIA_STORAGE_DATABRICKS_VOLUME_PATH: "/Volumes/dahlia/server/storage",
       DATABRICKS_HOST: "workspace.cloud.databricks.com",
+      DATABRICKS_MODEL_SCHEMA: "dahlia.ai",
       DATABRICKS_CLIENT_ID: "app-client-id",
       DATABRICKS_CLIENT_SECRET: "app-client-secret",
     })).toMatchObject({
@@ -158,6 +174,7 @@ describe("configuration", () => {
       DAHLIA_STORAGE_BACKEND: "databricks",
       DAHLIA_STORAGE_DATABRICKS_VOLUME_PATH: "/Volumes/main/default/volume/nested",
       DATABRICKS_HOST: "workspace.cloud.databricks.com",
+      DATABRICKS_MODEL_SCHEMA: "dahlia.ai",
       DATABRICKS_CLIENT_ID: "app-client-id",
       DATABRICKS_CLIENT_SECRET: "app-client-secret",
     })).toThrow("must identify a Unity Catalog Volume");

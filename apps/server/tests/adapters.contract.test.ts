@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { CloudflareBackend } from "../src/ai-gateway/cloudflare";
 import type { ProviderConfig } from "../src/config";
 import { listDatabricksModelServices, sendOpenAIResponses, type GatewayFetch } from "../src/ai-gateway/adapters";
 
@@ -33,11 +34,9 @@ describe("gateway adapter contract", () => {
 
   it("disables Cloudflare payload logging without adding gateway selection headers", async () => {
     const transport = vi.fn<GatewayFetch>(async () => new Response("{}"));
-    await sendOpenAIResponses(
-      { ...provider, backend: "cloudflare" },
-      "Bearer provider-secret",
-      { body: '{"model":"openai/gpt-5.6-luna"}', requestHeaders: new Headers() },
-      transport,
+    await new CloudflareBackend({ ...provider, backend: "cloudflare" }, transport).responses(
+      { model: "openai/gpt-5.6-luna", input: [] },
+      { headers: new Headers(), identity: { userId: "user" }, signal: new AbortController().signal },
     );
 
     const headers = new Headers(transport.mock.calls[0]![1]?.headers);
@@ -49,7 +48,7 @@ describe("gateway adapter contract", () => {
   it("lists Databricks models with only the Bearer credential", async () => {
     const transport = vi.fn<GatewayFetch>(async () => new Response('{"model_services":[]}'));
     await listDatabricksModelServices(
-      { backend: "databricks", baseUrl: "https://workspace.example/ai-gateway/mlflow/v1" },
+      { backend: "databricks", modelSchema: "dahlia.ai", baseUrl: "https://workspace.example/ai-gateway/mlflow/v1" },
       "Bearer user-token",
       undefined,
       transport,
@@ -62,7 +61,7 @@ describe("gateway adapter contract", () => {
     expect(endpoint.origin + endpoint.pathname)
       .toBe("https://workspace.example/api/2.1/unity-catalog/model-services");
     expect(Object.fromEntries(endpoint.searchParams)).toEqual({
-      parent: "schemas/system.ai",
+      parent: "schemas/dahlia.ai",
       view: "BASIC",
       page_size: "100",
       page_token: "next/token",

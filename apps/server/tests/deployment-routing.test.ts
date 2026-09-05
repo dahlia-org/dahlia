@@ -97,6 +97,7 @@ describe("deployment routing", () => {
     expect(worker).not.toContain("isApplicationPath");
     expect(worker).toContain("DAHLIA_AI_BACKEND");
     expect(worker).toContain("DATABRICKS_HOST");
+    expect(worker).toContain("DATABRICKS_MODEL_SCHEMA: env.DATABRICKS_MODEL_SCHEMA");
     expect(worker).toContain("OPENAI_API_KEY");
     expect(worker).toContain("OPENAI_BASE_URL");
     expect(cloudflareVite).toContain("cloudflare(");
@@ -210,8 +211,11 @@ describe("deployment routing", () => {
     expect(bundle).toContain("database_project_id: dahlia-db");
     expect(bundle).toContain("catalog:");
     expect(bundle).toContain("default: dahlia");
-    expect(bundle).toContain("schema:");
-    expect(bundle).toContain("default: server");
+    expect(bundle).toMatch(/core_schema:[\s\S]*?default: core/);
+    expect(bundle).toMatch(/ai_schema:[\s\S]*?default: ai/);
+    expect(resource).toContain("name: ${var.core_schema}");
+    expect(resource).not.toContain("${var.schema}");
+    expect(bundle).toContain("'${var.catalog}' '${var.ai_schema}' '${var.database_project_id}'");
     expect(bundle).toContain("volume_name:");
     expect(bundle).toContain("default: storage");
     expect(bundle).not.toContain("legacy_artifact_catalog:");
@@ -220,6 +224,11 @@ describe("deployment routing", () => {
       catalog_name: \${var.catalog}
       schema_name: \${resources.schemas.dahlia.name}
       name: \${var.volume_name}`);
+    expect(bundle).toContain("scripts/postdeploy.sh");
+    expect(resource).toContain("name: DATABRICKS_MODEL_SCHEMA");
+    expect(resource).toContain("value: ${var.catalog}.${var.ai_schema}");
+    expect(resource).toContain("name: ${var.ai_schema}");
+    expect(resource).toMatch(/ai_schema:[\s\S]*?principal: account users\s+privileges:\s+- EXECUTE/);
     expect(bundle).toContain("sync_sharing_enabled:");
     expect(bundle).toMatch(/sync_sharing_enabled:[\s\S]*?default: "false"/);
     expect(bundle).toMatch(/dev:[\s\S]*?sync_sharing_enabled: "true"[\s\S]*?prod:/);

@@ -1,8 +1,16 @@
 resources:
   schemas:
+    ai_schema:
+      catalog_name: ${var.catalog}
+      name: ${var.ai_schema}
+      grants:
+        - principal: account users
+          privileges:
+            - EXECUTE
+      comment: AI model services for Dahlia Server
     dahlia:
       catalog_name: ${var.catalog}
-      name: ${var.schema}
+      name: ${var.core_schema}
       comment: Resources for Dahlia Server ${bundle.target}
 
   volumes:
@@ -34,6 +42,8 @@ resources:
             value: header
           - name: DAHLIA_AI_BACKEND
             value: databricks
+          - name: DATABRICKS_MODEL_SCHEMA
+            value: ${var.catalog}.${var.ai_schema}
           - name: CODEX_AUTO_REVIEW_MODEL
             value: ${var.codex_auto_review_model}
           - name: DAHLIA_STORAGE_BACKEND

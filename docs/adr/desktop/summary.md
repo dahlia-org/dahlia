@@ -26,4 +26,4 @@ AST / renderer / file locator は `DahliaRuntimeSupport` で app と helper が�
 
 Markdown 再パース、LLM DTO の直接保存、inline transcript metadata は出力先と内部モデルを結合するため却下した。中間層は増えるが同じ構造と renderer を共有できる。Obsidian の参照位置は旧 inline link と完全一致しない。
 
-新規 summary 作成、MCP による filename 変更、Google Docs の自動追随はこの訂正契約に含めない。Slack / Google Docs renderer は初期の将来候補であり、実装済みとは扱わない。具体的な型は [SummaryDocument](../../../apps/desktop/Sources/DahliaRuntimeSupport/SummaryDocument.swift)、出力は [共有 renderer](../../../apps/desktop/Sources/DahliaRuntimeSupport/ObsidianMarkdownSummaryRenderer.swift) を参照し、型定義を文書へ複製しない。
+新規 summary 作成、MCP による filename 変更、Google Docs の自動追随はこの訂正契約に含めない。RTF ベースの [Google Docs renderer](../../../apps/desktop/Sources/Dahlia/Services/SummaryRendering/GoogleDocsSummaryRenderer.swift) は実装済みで、`GoogleDocsSummaryExportService.exportSummary` から使用する。将来候補は Slack renderer と Google Docs の部分更新 renderer であり、既存の全体 export と区別する。具体的な型は [SummaryDocument](../../../apps/desktop/Sources/DahliaRuntimeSupport/SummaryDocument.swift)、出力は [共有 renderer](../../../apps/desktop/Sources/DahliaRuntimeSupport/ObsidianMarkdownSummaryRenderer.swift) を参照し、型定義を文書へ複製しない。

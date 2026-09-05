@@ -134,8 +134,8 @@ write-backを発生させない。汎用参照は書き込み時にtarget存在�
 
 任意の Dahlia Server runtime は内蔵 Codex の provider transport を所有し、macOS の録音・文字起こし critical path には入らない。
 macOS の Dahlia アカウントは Vault の所有者ではなく、アプリ共有の接続として SQLite に登録する。OAuth credential と remote identity は
-接続 UUID ごとに Keychain が所有し、token 利用側は connection ID を明示する。sign-out は選択した credential だけを削除する。Vault は AI provider
-利用のために任意の接続を参照し、接続ごとの private `CODEX_HOME` を使う。接続の関連だけでは meeting sync を有効にせず、Vault ごとの明示設定と再確認を要求する。ローカルアカウントだけが
+接続 UUID ごとに Keychain が所有し、token 利用側は connection ID を明示する。sign-out は選択した接続の credential を削除し、Server record を残したまま local working copy の削除または Local Account への移動を選ぶ。Vault は AI provider
+利用のために任意の接続を参照し、接続ごとの private `CODEX_HOME` を使う。サインインだけでは Local Vault を移さず、Vault 単位の明示移行を要求する。Server-managed Vault は常時同期し、独立した同期 toggle は持たない。ローカルアカウントだけが
 ChatGPT Subscription または Databricks AI Gateway を使い、Dahlia アカウントは接続先の Gateway を使う。この境界は
 [Codex account context](docs/adr/desktop/accounts.md#codex-account-context)を正本とする。
 Better Auth、Gateway 管理 metadata、meeting sync は単一の Drizzle application database を共有する。PostgreSQL は生成済み認証 table を
@@ -144,9 +144,11 @@ Better Auth、Gateway 管理 metadata、meeting sync は単一の Drizzle applic
 `DAHLIA_DATABASE_URL` で指定する。Node は SQLite／PostgreSQL／Lakebase、Workers は D1／Hyperdrive／PostgreSQL を扱う。
 Lakebase は公式 `@databricks/lakebase` connector で OAuth credential を更新する。
 database 選択は認証および AI backend と独立する。`DAHLIA_AI_BACKEND` で Databricks、Cloudflare、OpenAI を選択し、Databricks Responses は Apps proxy の `X-Forwarded-Access-Token`、モデル発見は App service principal、その他は `OPENAI_API_KEY` と必要に応じて `OPENAI_BASE_URL` を使う。
-Databricks Apps の header identity は sessionless だが、Model Alias と administrator の正本として Lakebase を使用する。Responses request は上限内で検証して upstream model を
-変換し、upstream response body は streaming relay する。request と response の content は DB、cache、analytics、application log
-へ保存しない。Databricks backend の管理画面は App service principal で Unity Catalog Model Services API の `system.ai` 一覧を全ページ都度取得し、一覧自体は保存せず、管理者が有効化した Model Alias だけを application database に保存する。
+Databricks Apps の header identity は sessionless だが、認証・administrator・Server canonical data のため Lakebase を使用する。
+AI Gateway は `AIGatewayBackend.listModels` と `responses(body, context)` を共通境界とする。モデル一覧は backend が返し、Databricks は App service principal で `DATABRICKS_MODEL_SCHEMA` 配下を取得する。短い公開モデル名の上流変換とヘッダー構築は backend が所有する。
+Server 共通層は `CODEX_AUTO_REVIEW_MODEL` による予約モデル上書きを所有し、設定された上流 ID はスキーマを補完せず転送する。
+Responses request は上限内で検証し、upstream response body は streaming relay する。request と response の content は DB、cache、analytics、application log へ保存しない。
+Databricks request tags には認証済み user ID を付与する。Model Alias の既存データは残すが Gateway から参照せず、管理画面・API は廃止する ([Backend モデル契約](docs/adr/server/gateway.md#backend-モデル契約))。
 
 ```text
 Dahlia macOS / bundled Codex 0.148.0
@@ -154,7 +156,7 @@ Dahlia macOS / bundled Codex 0.148.0
 /api/v1
     ├─ Better Auth OAuth access token
     └─ Databricks Apps / trusted proxy identity
-        ↓ database-backed Model Alias resolution
+        ↓ backend model resolution + Server auto-review override
     OpenAI-compatible upstream adapter
         ↓ deployment credential or forwarded Databricks user token
     upstream Responses API
@@ -217,7 +219,7 @@ Project は階層参照と meeting 絞り込みのためだけに同期し、Ser
 - [Vault 共有と管理者](docs/adr/server/sharing-and-administration.md): shared read、Organization／Team 共有、Server 管理者権限。
 - [Server Hybrid 検索](docs/adr/server/search.md#hybrid-検索): 同期済み content の検索 projection。
 
-Desktop SQLite は offline working copy であり、単方向の転送元ではない。SSE はデータ本体を運ばない。local mutation は record cache と operation snapshot を同じ SQLite transaction へ明示的に書き、remote applier は recorder を呼ばない。
+Desktop SQLite は offline working copy であり、単方向の転送元ではない。SSE はデータ本体を運ばない。Server 側採用では未送信変更を破棄して cursor をリセットし、Server の revision 一覧を取得するまで revision 未確定の Vault 同期行を保持して送信を停止する。この間のローカル変更と確定文字起こしはキューへ保存し、取得した revision で未送信操作を順序どおり補正してから送信を再開する。revision 取得と canonical 本体の適用は区別し、cursor が未設定なら同じ revision でも本体を再取得・適用する。これを初期送信の中断と混同して create を再生成してはならない。local mutation は record cache と operation snapshot を同じ SQLite transaction へ明示的に書き、remote applier は recorder を呼ばない。
 
 ## Workload Classes
 

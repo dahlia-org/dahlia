@@ -63,6 +63,9 @@ try {
     import { fileURLToPath } from "node:url";
 
     if (typeof server.createApp !== "function" || typeof App !== "function") throw new Error("Package API is incomplete");
+    for (const name of ["DatabricksBackend", "OpenAIBackend", "CloudflareBackend"]) {
+      if (typeof server[name] !== "function") throw new Error("Missing AI backend export: " + name);
+    }
     if ("createPostgresApplicationStore" in server || "createPostgresAuthStore" in server) {
       throw new Error("Unsafe PostgreSQL store factory leaked from the package root");
     }
@@ -125,7 +128,7 @@ try {
     }
   `);
   await writeFile(join(directory, "verify.ts"), `
-    import { createD1AuthStore, type D1DatabaseLike } from "@dahlia-ai/server";
+    import { createD1AuthStore, type D1DatabaseLike, type AIGatewayBackend, type RequestBody, type RequestContext } from "@dahlia-ai/server";
     import {
       createNodeAuthStore,
       createPostgresApplicationStore,
@@ -133,6 +136,11 @@ try {
     } from "@dahlia-ai/server/node";
     import type { App } from "@dahlia-ai/server/client";
 
+    declare const backend: AIGatewayBackend;
+    declare const context: RequestContext;
+    const body: RequestBody = { model: "model", input: [], max_output_tokens: 256, stream: true };
+    void backend.responses(body, context);
+    void backend.listModels({ signal: context.signal });
     declare const database: D1DatabaseLike;
     const store = createD1AuthStore(database);
     const client: typeof App | undefined = undefined;
