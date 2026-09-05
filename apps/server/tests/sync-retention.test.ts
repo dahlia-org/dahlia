@@ -11,7 +11,7 @@ import type { AppConfig } from "../src/config";
 import { serverMigrationManifest } from "../src/migrations";
 import { pruneSyncHistory } from "../src/sync/retention";
 import { MeetingSyncService } from "../src/sync/service";
-import { decodeSyncCursor, SYNC_HISTORY_RETENTION_MS } from "../src/sync/store";
+import { decodeSyncCursor, SYNC_HISTORY_RETENTION_MS, SYNC_SNAPSHOT_PAGE_BYTES } from "../src/sync/store";
 import type { SyncTransactionOperation } from "../src/sync/types";
 
 const owner: Identity = { userId: "retention-owner", workspaceId: "personal:retention-owner", source: "header" };
@@ -204,6 +204,36 @@ describe("sync history retention", () => {
     expect(await service.latestCursor(owner)).toBe(receipt.cursor);
     await expect(service.listSnapshot(owner, vaultId)).rejects.toMatchObject({ status: 404 });
     await expect(service.listChanges(member, vaultId)).rejects.toMatchObject({ status: 404 });
+  });
+
+  it("bounds serialized snapshot bytes and resumes without skipping large summaries", async () => {
+    const { service, raw, vaultId } = await setup();
+    const meetings = [id(), id(), id()].sort();
+    const createdAt = new Date().toISOString();
+    await service.commitTransaction(owner, body(vaultId, meetings.map((meetingId) => ({
+      entity: "meeting", action: "create", entityId: meetingId, baseRevision: null,
+      data: { projectId: null, name: "Meeting", description: "", status: "READY", duration: null,
+        recordingStartedAt: null, createdAt, updatedAt: createdAt },
+    }))));
+    // Multibyte text and escaped quotes exercise serialized bytes rather than string length.
+    const document = JSON.stringify({ text: 'あ"'.repeat(700_000) });
+    for (const meetingId of meetings) {
+      raw.prepare("UPDATE meetings SET summary_document = ?, summary_revision = 1 WHERE meeting_id = ?").run(document, meetingId);
+    }
+    const seen: string[] = [];
+    let page = await service.listSnapshot(owner, vaultId);
+    const startCursor = page.startCursor;
+    let pages = 0;
+    while (true) {
+      expect(++pages).toBeLessThanOrEqual(7);
+      expect(new TextEncoder().encode(JSON.stringify(page)).byteLength).toBeLessThanOrEqual(SYNC_SNAPSHOT_PAGE_BYTES + 1024);
+      expect(page.startCursor).toBe(startCursor);
+      seen.push(...page.items.filter((item) => item.entity === "summary").map((item) => item.id));
+      if (!page.nextCursor) break;
+      page = await service.listSnapshot(owner, vaultId, page.nextCursor, startCursor);
+    }
+    expect(pages).toBeGreaterThan(1);
+    expect(seen).toEqual(meetings);
   });
 
   it("finishes a paged snapshot with delta catch-up and refuses a pruned starting cursor", async () => {

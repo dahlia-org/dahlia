@@ -43,6 +43,7 @@ export type SyncSearchBackend = "postgres" | "lakebase" | "sqlite";
 const TRANSCRIPT_PATCH_RETENTION_MS = 24 * 60 * 60 * 1_000;
 export const SYNC_HISTORY_RETENTION_MS = 90 * 24 * 60 * 60 * 1_000;
 export const SYNC_RETENTION_BATCH_SIZE = 1_000;
+export const SYNC_SNAPSHOT_PAGE_BYTES = 8 * 1024 * 1024;
 export const SYNC_SNAPSHOT_ENTITIES = ["vault", "project", "meeting", "summary", "transcript", "screenshot"] as const;
 
 function batches<T>(values: T[], size: number): T[][] {
@@ -1548,16 +1549,24 @@ function createIdentityStore(
     vaultId: string,
     after: SyncSnapshotPosition | undefined,
     limit: number,
-  ): Promise<SyncCanonicalRecord[]> {
+  ): Promise<{ items: SyncCanonicalRecord[]; hasMore: boolean }> {
     const vault = await canonicalRecord("vault", vaultId, vaultId, "read");
     if (!vault.record || vault.record.deletingAt) throw new SyncTransactionError(404, "vault_not_found");
     const records: SyncCanonicalRecord[] = [];
+    let bytes = 0;
+    const append = (record: SyncCanonicalRecord) => {
+      const size = new TextEncoder().encode(JSON.stringify(record)).byteLength + 1;
+      // A single record must make progress even if it exceeds the page budget.
+      if (records.length > 0 && (records.length >= limit || bytes + size > SYNC_SNAPSHOT_PAGE_BYTES)) return false;
+      records.push(record);
+      bytes += size;
+      return true;
+    };
     for (const entity of SYNC_SNAPSHOT_ENTITIES.slice(after ? SYNC_SNAPSHOT_ENTITIES.indexOf(after.entity) : 0)) {
       const afterId = after?.entity === entity ? after.id : undefined;
       const remaining = limit - records.length;
-      if (remaining <= 0) break;
       if (entity === "vault") {
-        if (!afterId || vaultId > afterId) records.push(vault);
+        if (!afterId || vaultId > afterId) append(vault);
         continue;
       }
       const source = entity === "project"
@@ -1579,10 +1588,14 @@ function createIdentityStore(
       const rows = await db.select({ id: source.id }).from(source.table).where(and(
         eq(source.table.vaultId, vaultId), readable(source.table.vaultId), source.active,
         afterId ? gt(source.id, afterId) : undefined,
-      )).orderBy(asc(source.id)).limit(remaining);
-      for (const row of rows) records.push(await canonicalRecord(entity, vaultId, row.id, "read"));
+      )).orderBy(asc(source.id)).limit(remaining + 1);
+      for (const row of rows) {
+        if (records.length >= limit || !append(await canonicalRecord(entity, vaultId, row.id, "read"))) {
+          return { items: records, hasMore: true };
+        }
+      }
     }
-    return records;
+    return { items: records, hasMore: false };
   }
 
   return {

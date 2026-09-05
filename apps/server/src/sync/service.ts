@@ -358,17 +358,16 @@ export class MeetingSyncService {
       const start = suppliedStart ?? latest;
       if (start > latest) throw new SyncTransactionError(400, "invalid_snapshot_cursor");
       await scoped.assertCursorAvailable(vaultId, start);
-      const rows = await scoped.listSnapshot(
+      const { items, hasMore } = await scoped.listSnapshot(
         vaultId,
         position?.success ? { entity: position.data[0], id: position.data[1] } : undefined,
-        SYNC_CHANGE_PAGE_SIZE + 1,
+        SYNC_CHANGE_PAGE_SIZE,
       );
-      const items = rows.slice(0, SYNC_CHANGE_PAGE_SIZE);
       const last = items.at(-1);
       return {
         items,
         startCursor: encodeSyncCursor(start),
-        nextCursor: rows.length > SYNC_CHANGE_PAGE_SIZE && last ? `${last.entity},${last.id}` : null,
+        nextCursor: hasMore && last ? `${last.entity},${last.id}` : null,
       };
     });
   }

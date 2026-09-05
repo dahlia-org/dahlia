@@ -183,7 +183,7 @@ export interface IdentitySyncStore {
   commitTransaction(transaction: SyncTransaction): Promise<SyncTransactionResponse>;
   resolveTransaction(transaction: SyncTransaction): Promise<SyncTransactionResponse | null>;
   assertCursorAvailable(vaultId: string, after: number): Promise<void>;
-  listSnapshot(vaultId: string, after: SyncSnapshotPosition | undefined, limit: number): Promise<SyncCanonicalRecord[]>;
+  listSnapshot(vaultId: string, after: SyncSnapshotPosition | undefined, limit: number): Promise<{ items: SyncCanonicalRecord[]; hasMore: boolean }>;
   listChanges(vaultId: string, after: number, through: number, limit: number): Promise<SyncChangeRecord[]>;
   latestChangeSequence(vaultId?: string): Promise<number>;
   ensureUploadTarget(vaultId: string, meetingId: string): Promise<boolean>;
