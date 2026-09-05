@@ -187,7 +187,8 @@ export interface IdentitySyncStore {
   createScreenshot(input: SyncScreenshotRecord): Promise<boolean>;
   discardInactiveScreenshot(vaultId: string, screenshotId: string): Promise<boolean>;
   deleteScreenshot(vaultId: string, screenshotId: string, storageKey: string): Promise<boolean>;
-  listVaults(): Promise<SyncVaultRecord[]>;
+  listOrganizations(): Promise<{ id: string; name: string; slug: string }[]>;
+  listVaults(organizationId?: string): Promise<SyncVaultRecord[]>;
   getVault(vaultId: string): Promise<SyncVaultRecord | null>;
   listProjects(vaultId: string): Promise<SyncProjectView[]>;
   getProject(vaultId: string, projectId: string): Promise<SyncProjectView | null>;
@@ -197,6 +198,7 @@ export interface IdentitySyncStore {
     limit: number,
     projectId?: string,
     cursor?: SyncMeetingCursor,
+    projectScope?: "direct" | "unassigned",
   ): Promise<SyncMeetingRecord[]>;
   getMeeting(vaultId: string, meetingId: string): Promise<SyncMeetingRecord | null>;
   listTranscript(

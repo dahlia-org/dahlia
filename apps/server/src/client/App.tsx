@@ -9,6 +9,8 @@ import {
   type DashboardCapabilities,
 } from "./routes";
 import { summaryDisplayText } from "../search/summary";
+import { json, RequestError, type SyncedVaultInfo, type OrganizationInfo, type SyncedMeetingInfo, type SyncedMeetingPage, type SyncedProjectInfo } from "./api";
+import { Sidebar, SidebarProvider, useSidebar } from "./Sidebar";
 
 export interface SessionInfo {
   capabilities: DashboardCapabilities;
@@ -90,21 +92,6 @@ interface ArtifactPage {
   nextCursor?: string;
 }
 
-interface SyncedVaultInfo {
-  vaultId: string;
-  name: string;
-  role: "owner" | "member";
-  createdAt: string;
-  updatedAt: string;
-  revision: number;
-}
-
-interface OrganizationInfo {
-  id: string;
-  name: string;
-  slug: string;
-}
-
 interface OrganizationMember {
   id: string;
   userId: string;
@@ -140,29 +127,6 @@ interface VaultPermissionInfo {
   role: "owner" | "member";
 }
 
-interface SyncedMeetingInfo {
-  meetingId: string;
-  vaultId: string;
-  projectId?: string;
-  name: string;
-  description: string;
-  status: string;
-  duration?: number;
-  recordingStartedAt?: string;
-  createdAt: string;
-  updatedAt: string;
-  summaryTitle?: string;
-  summaryDocument?: string;
-  revision: number;
-  summaryRevision: number;
-  transcriptRevision: number;
-}
-
-interface SyncedMeetingPage {
-  items: SyncedMeetingInfo[];
-  nextCursor?: string;
-}
-
 interface SyncedTranscriptSegmentInfo {
   segmentId: string;
   startTime: string;
@@ -171,20 +135,6 @@ interface SyncedTranscriptSegmentInfo {
   isConfirmed: boolean;
   audioSource?: string;
   speakerLabel?: string;
-}
-
-interface SyncedProjectInfo {
-  projectId: string;
-  vaultId: string;
-  parentProjectId?: string;
-  name: string;
-  description: string;
-  projectType?: "customer" | "internal" | "personal" | "undefined";
-  effectiveType: "customer" | "internal" | "personal" | "undefined";
-  revision: number;
-  path: string;
-  directMeetingCount: number;
-  subtreeMeetingCount: number;
 }
 
 interface SyncedScreenshotInfo {
@@ -198,31 +148,6 @@ interface SyncedScreenshotInfo {
 interface SyncedScreenshotPage {
   items: SyncedScreenshotInfo[];
   nextCursor?: string;
-}
-
-class RequestError extends Error {
-  constructor(message: string, readonly status?: number) {
-    super(message);
-  }
-}
-
-async function json<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, {
-    ...init,
-    headers: init?.body ? { "content-type": "application/json", ...init.headers } : init?.headers,
-  });
-  if (!response.ok) {
-    const detail = (await response.json().catch(() => null)) as {
-      message?: string;
-      error?: string | { message?: string };
-    } | null;
-    const error = typeof detail?.error === "string" ? detail.error : detail?.error?.message;
-    throw new RequestError(
-      detail?.message || error || `Request failed (${response.status})`,
-      response.status,
-    );
-  }
-  return (response.status === 204 ? undefined : await response.json()) as T;
 }
 
 type SyncOperation = {
@@ -383,47 +308,33 @@ function Shell({
 }) {
   const route = window.location.pathname;
   return (
-    <div className="app-shell">
-      <aside className="sidebar">
-        <Brand brand={brand} />
-        <nav aria-label="Account navigation">
-          <a className={route === "/dashboard" ? "active" : ""} href="/dashboard">Overview</a>
-          <a className={route === "/artifacts" ? "active" : ""} href="/artifacts">Artifacts</a>
-          {session.capabilities.sync && (
-            <a className={route.startsWith("/vaults") ? "active" : ""} href="/vaults">Vaults</a>
-          )}
-          {session.capabilities.sharing && (
-            <a className={route === "/organizations" ? "active" : ""} href="/organizations">Organizations</a>
-          )}
-          {extensions.flatMap((extension) => extension.navigation ?? []).map((item) => (
-            (!item.capability || session.capabilities[item.capability])
-              ? <a className={route === item.path ? "active" : ""} href={item.path} key={item.path}>{item.label}</a>
-              : null
-          ))}
-          {session.capabilities.sessions && (
-            <a className={route === "/dashboard/settings" ? "active" : ""} href="/dashboard/settings">
-              Settings
-            </a>
-          )}
-          {session.capabilities.admin && (
-            <>
-              <span className="nav-divider" />
-              <a className={route === "/admin/members" ? "active" : ""} href="/admin/members">Members</a>
-            </>
-          )}
-        </nav>
-        <div className="sidebar-footer">
-          <span className="avatar">
-            {(session.user.name || session.user.email || session.user.id).slice(0, 1).toUpperCase()}
-          </span>
-          <span className="identity-copy">
-            <strong>{session.user.name || session.user.email || session.user.id}</strong>
-            <small>Personal account</small>
-          </span>
-        </div>
-      </aside>
-      <main className="workspace">{children}</main>
-    </div>
+    <SidebarProvider session={session}>
+      <div className="app-shell">
+        <Sidebar brand={<Brand brand={brand} />} session={session}>
+          <nav aria-label="Account navigation">
+            <a className={route === "/dashboard" ? "active" : ""} href="/dashboard">Overview</a>
+            <a className={route === "/artifacts" ? "active" : ""} href="/artifacts">Artifacts</a>
+            {extensions.flatMap((extension) => extension.navigation ?? []).map((item) => (
+              (!item.capability || session.capabilities[item.capability])
+                ? <a className={route === item.path ? "active" : ""} href={item.path} key={item.path}>{item.label}</a>
+                : null
+            ))}
+            {session.capabilities.sessions && (
+              <a className={route === "/dashboard/settings" ? "active" : ""} href="/dashboard/settings">
+                Settings
+              </a>
+            )}
+            {session.capabilities.admin && (
+              <>
+                <span className="nav-divider" />
+                <a className={route === "/admin/members" ? "active" : ""} href="/admin/members">Members</a>
+              </>
+            )}
+          </nav>
+        </Sidebar>
+        <main className="workspace">{children}</main>
+      </div>
+    </SidebarProvider>
   );
 }
 
@@ -554,13 +465,8 @@ function Artifacts() {
 }
 
 function Vaults() {
-  const [vaults, setVaults] = useState<SyncedVaultInfo[]>();
+  const { vaults, error: loadError, reload, organizationId } = useSidebar();
   const [error, setError] = useState<string>();
-  useEffect(() => {
-    void json<{ items: SyncedVaultInfo[] }>("/api/v1/vaults")
-      .then(({ items }) => setVaults(items))
-      .catch((caught: Error) => setError(caught.message));
-  }, []);
   const createVault = async () => {
     const name = window.prompt("Vault name")?.trim();
     if (!name) return;
@@ -583,9 +489,10 @@ function Vaults() {
       <PageHeader title="Vaults" />
       <section className="section-block">
         <h2 className="section-label">Synchronized Vaults</h2>
-        <button className="secondary" onClick={() => void createVault()}>New Vault</button>
+        {!organizationId && <button className="secondary" onClick={() => void createVault()}>New Vault</button>}
         <div className="panel artifact-list">
-          {!vaults && !error && <p className="muted">Loading Vaults…</p>}
+          {!vaults && !loadError && <p className="muted">Loading Vaults…</p>}
+          {loadError && <p role="alert">{loadError} <button onClick={reload}>Retry</button></p>}
           {vaults?.length === 0 && <div className="empty-state"><strong>No synchronized Vaults</strong></div>}
           {vaults?.map((vault) => (
             <a className="artifact-row" href={`/vaults/${vault.vaultId}`} key={vault.vaultId}>

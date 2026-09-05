@@ -544,8 +544,22 @@ export class MeetingSyncService {
     return new Response(method === "HEAD" ? null : upstream.body, { status: upstream.status, headers });
   }
 
-  listVaults(identity: Identity) {
-    return this.store.withIdentity(identity, (scoped) => scoped.listVaults());
+  listOrganizations(identity: Identity) {
+    return this.store.withIdentity(identity, (scoped) => scoped.listOrganizations());
+  }
+
+  listVaults(identity: Identity, userId?: string, organizationId?: string) {
+    const valid = (value: string) => value.length > 0 && value.length <= 200
+      && value === value.trim() && !/[\s]/u.test(value) && ![...value].some((character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127);
+    if ((userId !== undefined && organizationId !== undefined)
+      || (userId !== undefined && !valid(userId))
+      || (organizationId !== undefined && !valid(organizationId))) {
+      throw new ArtifactRequestError(400, "invalid_vault_scope");
+    }
+    if (userId !== undefined && userId !== identity.userId) {
+      throw new ArtifactRequestError(403, "user_forbidden");
+    }
+    return this.store.withIdentity(identity, (scoped) => scoped.listVaults(organizationId));
   }
 
   getVault(identity: Identity, vaultId: string) {
@@ -567,14 +581,21 @@ export class MeetingSyncService {
     signal?: AbortSignal,
     projectId?: string,
     cursor?: string,
+    projectScope?: string,
   ) {
+    if (projectScope !== undefined && (
+      !["direct", "unassigned"].includes(projectScope)
+      || (projectScope === "direct" && !projectId)
+      || (projectScope === "unassigned" && projectId !== undefined)
+    )) throw new ArtifactRequestError(400, "invalid_project_scope");
+    const scope = projectScope as "direct" | "unassigned" | undefined;
     const search = this.parseSearchQuery(query);
     if (search?.tokens.length && this.embedder
       && !await this.store.withIdentity(identity, (scoped) => scoped.getVault(vaultId))) return { items: [] };
     if (search) {
       return {
         items: await this.search(identity, search, (scoped, prepared) =>
-          scoped.listMeetings(vaultId, prepared, SYNC_READ_PAGE_SIZE, projectId),
+          scoped.listMeetings(vaultId, prepared, SYNC_READ_PAGE_SIZE, projectId, undefined, scope),
         (meeting) => meeting.meetingId, signal),
       };
     }
@@ -585,6 +606,7 @@ export class MeetingSyncService {
       SYNC_READ_PAGE_SIZE + 1,
       projectId,
       parsedCursor,
+      scope,
     ));
     const items = records.slice(0, SYNC_READ_PAGE_SIZE);
     const last = items.at(-1);
