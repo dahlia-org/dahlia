@@ -794,6 +794,13 @@ enum SyncTransactionQueue {
             let sequence: Int64 = blocked["sequence"]
             try discard(vaultId: vaultId, fromSequence: sequence, in: db)
             try db.execute(sql: "DELETE FROM sync_entity_state WHERE vaultId = ?", arguments: [vaultId])
+            if !rebuildInitialSnapshot {
+                // Keep the pull target distinct from an interrupted initial upload until reconciliation completes.
+                try db.execute(
+                    sql: "INSERT INTO sync_entity_state(vaultId, entity, entityId, confirmedRevision) VALUES (?, 'vault', ?, NULL)",
+                    arguments: [vaultId, vaultId]
+                )
+            }
             try db.execute(
                 sql: """
                 UPDATE vaults SET

@@ -75,6 +75,17 @@ struct TranscriptChunkBody: Codable {
         let isConfirmed: Bool
         let audioSource: String?
         let speakerLabel: String?
+
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(segmentId, forKey: .segmentId)
+            try container.encode(startTime, forKey: .startTime)
+            try container.encode(endTime, forKey: .endTime)
+            try container.encode(text, forKey: .text)
+            try container.encode(isConfirmed, forKey: .isConfirmed)
+            try container.encode(audioSource, forKey: .audioSource)
+            try container.encode(speakerLabel, forKey: .speakerLabel)
+        }
     }
 
     let segments: [Segment]

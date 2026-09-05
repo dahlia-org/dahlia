@@ -320,6 +320,102 @@
             #expect(state.2 == 0)
         }
 
+        @Test(arguments: [false, true])
+        func acceptingServerVersionForcesCanonicalReconciliation(hasConfirmedVault: Bool) async throws {
+            let (database, vault) = try await syncedDatabase()
+            try await database.dbQueue.write { db in
+                if hasConfirmedVault {
+                    try db.execute(
+                        sql: "INSERT INTO sync_entity_state(vaultId, entity, entityId, confirmedRevision) VALUES (?, 'vault', ?, 3)",
+                        arguments: [vault.id, vault.id]
+                    )
+                }
+                var edited = vault
+                edited.name = "Rejected local name"
+                try edited.update(db)
+                try SyncTransactionRecorder.record(
+                    vaultId: vault.id,
+                    operations: [SyncInitialSnapshotBuilder.vaultOperation(edited, action: hasConfirmedVault ? .update : .create)],
+                    in: db
+                )
+            }
+            let claimed = try #require(try await SyncTransactionQueue.claim(dbQueue: database.dbQueue))
+            try await SyncTransactionQueue.block(
+                claimed,
+                reason: .conflict,
+                response: Data("""
+                {"conflicts":[{"entity":"vault","id":"\(vault.id.uuidString)","serverRevision":4}]}
+                """.utf8),
+                dbQueue: database.dbQueue
+            )
+
+            try await SyncTransactionQueue.acceptServerVersion(vaultId: vault.id, dbQueue: database.dbQueue)
+
+            let state = try await database.dbQueue.read { db in
+                try (
+                    Int.fetchOne(db, sql: "SELECT count(*) FROM sync_transactions WHERE vaultId = ?", arguments: [vault.id]),
+                    Int.fetchOne(db, sql: "SELECT count(*) FROM sync_entity_state WHERE vaultId = ?", arguments: [vault.id]),
+                    VaultRecord.fetchOne(db, key: vault.id)?.syncPullCursor
+                )
+            }
+            #expect(state.0 == 0)
+            #expect(state.1 == 1)
+            #expect(state.2 == nil)
+            try await SyncInitialSnapshotBuilder.enqueuePending(dbQueue: database.dbQueue)
+            #expect(try await SyncTransactionQueue.claim(dbQueue: database.dbQueue) == nil)
+            #expect(try await database.dbQueue.read { db in
+                try VaultRecord.fetchOne(db, key: vault.id)?.syncConfirmedConnectionId
+            } == vault.syncConfirmedConnectionId)
+
+            let canonical = try SyncJSON.decoder.decode(
+                SyncCanonicalPayload.self,
+                from: Data("{\"name\":\"Server name\"}".utf8)
+            )
+            let changes: [SyncChangePage.Change] = [
+                .init(sequence: 4, entity: .vault, entityId: vault.id, action: "upsert", revision: 4, record: canonical),
+            ]
+            #expect(try await RemoteChangeApplier.apply(
+                changes, screenshots: [:], transcripts: [:], cursor: nil,
+                vaultId: vault.id, expectedConnectionId: #require(vault.syncConfirmedConnectionId),
+                dbQueue: database.dbQueue
+            ))
+            #expect(try await RemoteChangeApplier.finishReset(
+                SyncResetSnapshot(canonicalChanges: changes), cursor: "server-cursor",
+                vaultId: vault.id, expectedConnectionId: #require(vault.syncConfirmedConnectionId),
+                dbQueue: database.dbQueue
+            ))
+            try await SyncInitialSnapshotBuilder.enqueuePending(dbQueue: database.dbQueue)
+            #expect(try await SyncTransactionQueue.claim(dbQueue: database.dbQueue) == nil)
+            #expect(try await database.dbQueue.read { db in
+                try VaultRecord.fetchOne(db, key: vault.id)?.name
+            } == "Server name")
+        }
+
+        @Test
+        func transcriptChunkEncodesRequiredNullableFields() throws {
+            for hasValues in [false, true] {
+                let segment = TranscriptChunkBody.Segment(
+                    segmentId: .v7(), startTime: Date(timeIntervalSince1970: 0),
+                    endTime: hasValues ? Date(timeIntervalSince1970: 1) : nil,
+                    text: "Confirmed", isConfirmed: true,
+                    audioSource: hasValues ? "mic" : nil,
+                    speakerLabel: hasValues ? "Speaker" : nil
+                )
+                let data = try SyncJSON.encoder.encode(TranscriptChunkBody(segments: [segment], deletions: []))
+                let object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+                let segments = try #require(object["segments"] as? [[String: Any]])
+                let encoded = try #require(segments.first)
+                for key in ["endTime", "audioSource", "speakerLabel"] {
+                    let value = try #require(encoded[key])
+                    #expect((value is NSNull) == !hasValues)
+                }
+                let decoded = try SyncJSON.decoder.decode(TranscriptChunkBody.self, from: data)
+                #expect(decoded.segments.first?.speakerLabel == segment.speakerLabel)
+                #expect(decoded.segments.first?.audioSource == segment.audioSource)
+                #expect(decoded.segments.first?.endTime == segment.endTime)
+            }
+        }
+
         private func syncedDatabase() async throws -> (AppDatabaseManager, VaultRecord) {
             let database = try AppDatabaseManager(path: ":memory:")
             let connection = DahliaAccountConnectionRecord(
