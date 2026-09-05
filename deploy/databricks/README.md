@@ -19,7 +19,8 @@ Dahlia Server App ─┬─ forwarded user token ── Databricks AI Gateway Re
 
 - A Databricks workspace with Databricks Apps, Lakebase Autoscaling, and access to the Lakebase Search preview.
 - Permission to create Apps and Lakebase projects and query the configured Responses and embedding models.
-- Databricks CLI 1.4.0 or newer, authenticated with a CLI profile or environment variables.
+- Databricks CLI 1.4.0 or newer with `ai-gateway get-model-service` and `create-model-service` support (verified with 1.12.1), authenticated with a CLI profile or environment variables.
+- Bash and jq for postdeploy.
 - Node.js 22.13 or newer, Corepack, and pnpm for local validation.
 
 ## Configure
@@ -28,7 +29,7 @@ The first authenticated user becomes the initial administrator. Additional admin
 
 Dahlia Desktop requests `all-apis` when authorizing against a deployed Databricks App. Separately, the App resource keeps `user_api_scopes` set to `ai-gateway` and `files`; these scopes govern only the Apps proxy's OBO token and are not the Desktop API capability scope. Dahlia uses `X-Forwarded-Access-Token` as Bearer authentication only for the workspace OpenAI-compatible Responses API at `DATABRICKS_HOST/ai-gateway/mlflow/v1/responses`. Configured-schema model discovery and background embedding requests use short-lived App service principal tokens obtained from the runtime-injected `DATABRICKS_CLIENT_ID` and `DATABRICKS_CLIENT_SECRET`; no provider secret or forwarded user token is stored. Dahlia also uses the runtime-provided `DATABRICKS_APP_URL` as its canonical public origin, so the bundle does not need to reference its own App URL. `/mcp` needs no additional user API scope: the Apps proxy authenticates the caller and supplies verified identity headers, while artifact bytes use the App service principal's existing Volume permission.
 
-The default App names are `dahlia-dev` for `dev` and `dahlia-prod` for `prod`. The corresponding Lakebase project IDs are `dahlia-db-dev` and `dahlia-db`. By default, both targets use the managed Volume `dahlia.server.storage`. Choose the deployment environment by overriding `catalog`; override `schema` only when a catalog needs more than one Dahlia Server installation. Explicit Vault sharing is enabled for the private `dev` target and remains disabled by default elsewhere. The bundle exposes `codex-auto-review` through `system.ai.gpt-5-6-luna`; override `codex_auto_review_model` to use another upstream model or set it to a blank value to disable the alias. The bundle enables Hybrid search with `system.ai.qwen3-embedding-0-6b` at 1024 dimensions; set `--var search_embedding_model=' '` to keep FTS only, or override both search variables for another compatible model.
+The default App names are `dahlia-dev` for `dev` and `dahlia-prod` for `prod`. The corresponding Lakebase project IDs are `dahlia-db-dev` and `dahlia-db`. By default, both targets use the managed Volume `dahlia.core.storage`. Choose the deployment environment by overriding `catalog`; override `core_schema` only when a catalog needs more than one Dahlia Server installation. Explicit Vault sharing is enabled for the private `dev` target and remains disabled by default elsewhere. The bundle exposes `codex-auto-review` through `system.ai.gpt-5-6-luna`; override `codex_auto_review_model` to use another upstream model or set it to a blank value to disable the alias. The bundle enables Hybrid search with `system.ai.qwen3-embedding-0-6b` at 1024 dimensions; set `--var search_embedding_model=' '` to keep FTS only, or override both search variables for another compatible model.
 
 The bundle syncs only the self-contained `apps/server` package. Its package manifest, pnpm lockfile, runtime configuration, and source are deployed without repository-root pnpm files.
 
@@ -60,11 +61,22 @@ Both columns must be non-null. A successful authenticated header request also pr
 
 Dahlia installs `lakebase_text` and creates the unified BM25 index during migration. When an embedding model is configured it also installs `lakebase_vector` and creates a dimension- and model-specific `lakebase_ann` index. Failure to load either configured capability stops migration instead of silently changing search semantics. Grant the App service principal query permission on the embedding model. After the Desktop completes the first full Vault synchronization, run `VACUUM content.search_documents;` against the application database so BM25 corpus statistics include the uploaded rows.
 
-## Initial AI model
+## Initial AI models
 
-The bundle creates `${catalog}.ai` and sets `DATABRICKS_MODEL_SCHEMA` to that schema. It is independent of the storage `schema` variable. The postdeploy Python 3 script preserves Lakebase search-extension activation, then registers `${catalog}.ai.gpt-5-6-luna`, using the foundation-model destination of `system.ai.gpt-5-6-luna`. This is a temporary registration step: it does not check for existing models or retry conflicts. If the model already exists, the CLI creation error stops postdeploy; remove or skip this registration step for subsequent deployments. Model creation uses the Model Services REST API because DAB does not manage this resource. No inference payload logging is enabled by the script.
+The bundle creates `${catalog}.${ai_schema}` (default `dahlia.ai`) and sets `DATABRICKS_MODEL_SCHEMA` to that schema. It is independent of `core_schema` (default `core`), which contains stored content. The postdeploy Bash script preserves Lakebase search-extension activation, then registers these model services using the foundation-model destinations of the corresponding `system.ai` services:
 
-The deployment principal needs `USE CATALOG`, `USE SCHEMA`, `CREATE SERVICE`, and access to the source model. The App service principal needs visibility of the target model services; users need `USE CATALOG`, `USE SCHEMA`, and `EXECUTE` on the target model services. Grants are managed by the operator or inherited from existing configuration; postdeploy does not grant access. If `${catalog}.ai` already exists outside the bundle, bind the `dahlia_ai` schema resource before deployment rather than creating a duplicate. Deployments sharing a catalog must share one schema owner/bundle management arrangement.
+| Registered name | Source service |
+| --- | --- |
+| `gpt-5-6-luna` | `system.ai.gpt-5-6-luna` |
+| `gpt-6-astra` | `system.ai.gpt-6-astra` |
+| `gpt-5-6-sol` | `system.ai.gpt-5-6-sol` |
+| `gpt-5-6-terra` | `system.ai.gpt-5-6-terra` |
+| `kimi-k3` | `system.ai.kimi-k3` |
+| `deepseek-v4-pro` | `system.ai.deepseek-v4-pro-0813` |
+
+This is a temporary registration step: it does not check for existing models or retry conflicts. If a model already exists, the CLI creation error stops postdeploy; remove or skip its registration for subsequent deployments. Model creation uses `databricks ai-gateway create-model-service`; `get-model-service` and jq resolve and validate each source foundation-model destination. No inference payload logging is enabled by the script.
+
+The bundle grants `EXECUTE` on the AI schema to `account users`, inherited by its model services. The deployment principal needs `USE CATALOG`, `USE SCHEMA`, `CREATE SERVICE`, permission to manage schema grants, and access to the source models. The App service principal needs visibility of the target model services; users still need `USE CATALOG` and `USE SCHEMA`, managed by the operator. If the AI schema already exists outside the bundle, bind the `ai_schema` schema resource before deployment rather than creating a duplicate. Deployments sharing a catalog must share one schema owner/bundle management arrangement.
 
 The existing `codex_auto_review_model` variable remains independent of discovery and defaults to `system.ai.gpt-5-6-luna`. It sets `CODEX_AUTO_REVIEW_MODEL`; the Server applies this override for every backend and sends its value unchanged. It need not be a member of `DATABRICKS_MODEL_SCHEMA`.
 

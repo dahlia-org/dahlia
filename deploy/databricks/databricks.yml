@@ -12,7 +12,7 @@ sync:
 experimental:
   skip_name_prefix_for_schema: true
   scripts:
-    postdeploy: "python3 scripts/postdeploy.py --profile '${workspace.profile}' --catalog '${var.catalog}' --database-project-id '${var.database_project_id}'"
+    postdeploy: "bash scripts/postdeploy.sh '${workspace.profile}' '${var.catalog}' '${var.ai_schema}' '${var.database_project_id}'"
 
 variables:
   app_name:
@@ -34,9 +34,12 @@ variables:
   catalog:
     description: Unity Catalog catalog containing Dahlia Server storage.
     default: dahlia
-  schema:
+  core_schema:
     description: Unity Catalog schema containing Dahlia Server storage.
-    default: server
+    default: core
+  ai_schema:
+    description: Unity Catalog schema containing AI model services.
+    default: ai
   volume_name:
     description: Managed Volume used for stored content.
     default: storage
@@ -63,7 +66,7 @@ targets:
           lifecycle:
             prevent_destroy: true
       schemas:
-        dahlia_ai:
+        ai_schema:
           lifecycle:
             prevent_destroy: true
         dahlia:
