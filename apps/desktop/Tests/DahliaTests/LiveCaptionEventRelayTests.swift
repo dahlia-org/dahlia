@@ -93,7 +93,7 @@
                 startTime: Date(timeIntervalSince1970: 1_776_384_000),
                 text: text,
                 isConfirmed: isConfirmed,
-                speakerLabel: sourceLabel
+                audioSource: sourceLabel
             )
         }
     }

@@ -46,6 +46,22 @@ import GRDB
             #expect(!viewModel.hasMoreMeetings)
         }
 
+        @Test
+        func refreshingVaultFilesystemServicesKeepsMeetingSelection() throws {
+            let fixture = try SidebarViewModelMeetingListFixture()
+            defer { fixture.stop() }
+            let viewModel = fixture.makeViewModel()
+            defer { viewModel.setAppDatabase(nil) }
+            let meetingID = UUID.v7()
+            viewModel.selectedMeetingIds = [meetingID]
+            var pathlessVault = fixture.vault
+            pathlessVault.path = nil
+
+            viewModel.refreshCurrentVaultFilesystemServices(pathlessVault)
+
+            #expect(viewModel.selectedMeetingIds == [meetingID])
+        }
+
         @Test(.timeLimit(.minutes(1)))
         func refreshesMeetingRowsLoadedAfterInitialPage() async throws {
             let fixture = try SidebarViewModelMeetingListFixture()
@@ -699,7 +715,9 @@ import GRDB
         }
 
         func stop() {
-            try? FileManager.default.removeItem(at: vault.url)
+            if let url = vault.url {
+                try? FileManager.default.removeItem(at: url)
+            }
         }
     }
 

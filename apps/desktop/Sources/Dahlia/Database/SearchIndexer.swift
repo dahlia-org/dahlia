@@ -518,7 +518,7 @@ actor SearchIndexer {
 private extension SearchIndexer {
     func indexScreenshot(id: UUID, generation: Int) async throws {
         try await dbQueue.write { db in
-            try Self.indexScreenshot(id: id, generation: generation, in: db)
+            try indexScreenshotDocument(id: id, generation: generation, in: db)
         }
     }
 
@@ -613,40 +613,21 @@ private extension SearchIndexer {
                     sql: "UPDATE screenshots SET ocrText = ?, caption = ? WHERE id = ?",
                     arguments: [result.ocrText, result.caption, result.screenshotID]
                 )
-                try Self.indexScreenshot(id: result.screenshotID, generation: generation, in: db)
+                if let screenshot = try MeetingScreenshotRecord.fetchOne(db, key: result.screenshotID),
+                   let vaultId = try UUID.fetchOne(
+                       db,
+                       sql: "SELECT vaultId FROM meetings WHERE id = ?",
+                       arguments: [screenshot.meetingId]
+                   ) {
+                    try SyncTransactionRecorder.record(
+                        vaultId: vaultId,
+                        operations: [SyncInitialSnapshotBuilder.screenshotOperation(screenshot, action: .upsert)],
+                        in: db
+                    )
+                }
+                try indexScreenshotDocument(id: result.screenshotID, generation: generation, in: db)
             }
         }
-    }
-
-    nonisolated static func indexScreenshot(id: UUID, generation: Int, in db: Database) throws {
-        guard let row = try Row.fetchOne(
-            db,
-            sql: """
-            SELECT screenshots.id, screenshots.meetingId, screenshots.ocrText, screenshots.caption,
-                   meetings.vaultId, meetings.projectId
-            FROM screenshots
-            JOIN meetings ON meetings.id = screenshots.meetingId
-            WHERE screenshots.id = ? AND screenshots.ocrText IS NOT NULL AND screenshots.caption IS NOT NULL
-            """,
-            arguments: [id]
-        ) else { return }
-        let document = SearchDocumentProjection(
-            kind: "screenshot",
-            sourceID: row["id"],
-            vaultID: row["vaultId"],
-            meetingID: row["meetingId"],
-            projectID: row["projectId"],
-            fields: SearchDocumentFields(
-                title: "",
-                description: "",
-                calendar: "",
-                tags: "",
-                projectPath: "",
-                ocr: row["ocrText"],
-                caption: row["caption"]
-            )
-        )
-        try upsertDocument(document, generation: generation, in: db)
     }
 
     func indexMeeting(

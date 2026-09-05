@@ -558,7 +558,7 @@ import os
         }
 
         @Test
-        func databaseBoundaryRejectsInvalidProjectParentsAndDuplicateRoots() throws {
+        func databaseBoundaryRejectsInvalidProjectParentsAndAllowsDuplicateRoots() throws {
             let database = try AppDatabaseManager(path: ":memory:")
             let repository = MeetingRepository(dbQueue: database.dbQueue)
             let firstVault = VaultRecord(
@@ -608,15 +608,14 @@ import os
                     )
                 }
             }
-            #expect(throws: DatabaseError.self) {
-                try repository.createProject(
-                    vaultId: firstVault.id,
-                    parentProjectId: nil,
-                    name: "root",
-                    description: "",
-                    projectType: .undefined
-                )
-            }
+            let duplicate = try repository.createProject(
+                vaultId: firstVault.id,
+                parentProjectId: nil,
+                name: "root",
+                description: "",
+                projectType: .undefined
+            )
+            #expect(duplicate.id != root.id)
         }
 
         @Test

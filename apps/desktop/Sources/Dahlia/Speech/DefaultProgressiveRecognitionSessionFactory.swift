@@ -28,7 +28,7 @@ struct DefaultProgressiveRecognitionSessionFactory: ProgressiveRecognitionSessio
     ) async throws -> PreparedProgressiveRecognitionSession {
         let service = SpeechTranscriberService(
             locale: locale,
-            speakerLabel: source.speakerLabel,
+            audioSource: source.audioSource,
             translateSegment: translateSegment
         )
         try await service.prepare()

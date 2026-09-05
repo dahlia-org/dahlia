@@ -49,6 +49,7 @@ struct VaultSidebarView: View {
                     mainWindowNavigation.isShowingSettings
                         || selectedVault == nil
                         || isCurrentVaultSelected
+                        || selectedVault?.requiresServerDeletionBeforeRemoval == true
                 )
                 .confirmationDialog(
                     L10n.removeVaultConfirmation(selectedVault?.name ?? ""),
@@ -68,7 +69,7 @@ struct VaultSidebarView: View {
                         Label {
                             VStack(alignment: .leading) {
                                 Text(vault.name)
-                                Text(vault.path)
+                                Text(vault.path ?? L10n.noLocalExportFolder)
                                     .font(.footnote)
                                     .foregroundStyle(DahliaDesign.secondaryTextColor)
                                     .lineLimit(1)
@@ -113,7 +114,7 @@ struct VaultSidebarView: View {
     }
 
     private func requestRemoval() {
-        guard selectedVault != nil, !isCurrentVaultSelected else { return }
+        guard let selectedVault, !isCurrentVaultSelected, !selectedVault.requiresServerDeletionBeforeRemoval else { return }
         isShowingRemovalConfirmation = true
     }
 

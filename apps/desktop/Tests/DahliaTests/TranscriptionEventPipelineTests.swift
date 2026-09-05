@@ -384,7 +384,7 @@
                     startTime: Date(timeIntervalSince1970: 1_776_384_000 + Double(index)),
                     text: "final-\(index)",
                     isConfirmed: true,
-                    speakerLabel: "mic"
+                    audioSource: "mic"
                 )))
             }
 
@@ -710,7 +710,7 @@
                 startTime: Date(timeIntervalSince1970: 1_776_384_000),
                 text: text,
                 isConfirmed: isConfirmed,
-                speakerLabel: "mic"
+                audioSource: "mic"
             )
         }
     }

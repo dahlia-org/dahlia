@@ -64,6 +64,49 @@ import os
         }
 
         @Test
+        func rejectedEmptyMeetingDoesNotReplaceTheVisibleMeeting() throws {
+            let viewModel = CaptionViewModel()
+            let database = try AppDatabaseManager(path: ":memory:")
+            let vaultID = UUID.v7()
+            let connectionID = UUID.v7()
+            let connection = DahliaAccountConnectionRecord(
+                id: connectionID,
+                origin: "https://server.example.com",
+                clientID: "desktop-client",
+                createdAt: .now
+            )
+            var vault = VaultRecord(
+                id: vaultID,
+                path: nil,
+                name: "Shared Vault",
+                createdAt: .now,
+                lastOpenedAt: .now
+            )
+            vault.accountConnectionId = connectionID
+            vault.syncConfirmedConnectionId = connectionID
+            vault.syncRole = "member"
+            try database.dbQueue.write { db in
+                try connection.insert(db)
+                try vault.insert(db)
+            }
+            let visibleMeetingID = UUID.v7()
+            viewModel.currentMeetingId = visibleMeetingID
+
+            let createdMeetingID = viewModel.createEmptyMeeting(
+                dbQueue: database.dbQueue,
+                projectURL: nil,
+                vaultId: vaultID,
+                projectId: nil,
+                vaultURL: nil
+            )
+
+            #expect(createdMeetingID == nil)
+            #expect(viewModel.currentMeetingId == visibleMeetingID)
+            #expect(viewModel.errorMessage != nil)
+            #expect(try database.dbQueue.read(MeetingRecord.fetchCount) == 0)
+        }
+
+        @Test
         func systemDefaultMicrophoneSelectionResolvesCurrentDefaultDevice() async {
             let inputProvider = MutableMicrophoneInputProvider(
                 defaultDeviceID: AudioDeviceID(202),
@@ -269,7 +312,7 @@ import os
                 startTime: Date(),
                 text: "live transcript",
                 isConfirmed: true,
-                speakerLabel: "mic"
+                audioSource: "mic"
             )
 
             viewModel.isListening = true
@@ -299,7 +342,7 @@ import os
                 startTime: Date(),
                 text: "confirmed transcript",
                 isConfirmed: true,
-                speakerLabel: "mic"
+                audioSource: "mic"
             )
 
             #expect(!viewModel.currentMeetingHasTranscriptSegments)
@@ -336,7 +379,7 @@ import os
                     startTime: .now,
                     text: "existing transcript",
                     isConfirmed: true,
-                    speakerLabel: "mic"
+                    audioSource: "mic"
                 ),
             ])
 
@@ -536,7 +579,7 @@ import os
                 startTime: Date(),
                 text: "confirmed transcript",
                 isConfirmed: true,
-                speakerLabel: "mic"
+                audioSource: "mic"
             )
 
             viewModel.currentMeetingId = UUID.v7()
@@ -739,14 +782,14 @@ import os
         }
 
         @Test
-        func materializeDraftMeetingPersistsMeetingAndCalendarEvent() throws {
+        func materializeDraftMeetingWithoutExportFolderPersistsMeetingAndCalendarEvent() throws {
             let viewModel = CaptionViewModel()
             let database = try AppDatabaseManager(path: ":memory:")
             let vaultId = UUID.v7()
             try database.dbQueue.write { db in
                 try VaultRecord(
                     id: vaultId,
-                    path: testVaultURL.path,
+                    path: nil,
                     name: "Test Vault",
                     createdAt: Date(),
                     lastOpenedAt: Date()
@@ -755,7 +798,7 @@ import os
             let previousVault = AppSettings.shared.currentVault
             AppSettings.shared.currentVault = VaultRecord(
                 id: vaultId,
-                path: testVaultURL.path,
+                path: nil,
                 name: "Test Vault",
                 createdAt: Date(),
                 lastOpenedAt: Date()
@@ -778,7 +821,7 @@ import os
                     conferenceURI: URL(string: "https://meet.google.com/test-link")
                 ),
                 dbQueue: database.dbQueue,
-                vaultURL: testVaultURL
+                vaultURL: nil
             )
 
             let meetingId = try #require(
@@ -805,6 +848,54 @@ import os
             #expect(persisted.2.platformId == "event-1")
             #expect(!viewModel.hasDraftMeeting)
             #expect(viewModel.currentMeetingId == meetingId)
+        }
+
+        @Test
+        func updatingVaultExportFolderRefreshesDraftProjectURL() throws {
+            let viewModel = CaptionViewModel()
+            let database = try AppDatabaseManager(path: ":memory:")
+            viewModel.beginDraftMeeting(
+                dbQueue: database.dbQueue,
+                projectName: "Parent/Child",
+                vaultURL: nil
+            )
+
+            viewModel.updateVaultExportFolder(testVaultURL)
+
+            let expected = testVaultURL.appending(path: "Parent/Child", directoryHint: .isDirectory)
+            #expect(viewModel.currentVaultURL == testVaultURL)
+            #expect(viewModel.currentProjectURL == expected)
+            #expect(viewModel.draftMeeting?.projectURL == expected)
+        }
+
+        @Test
+        func removingVaultExportFolderRefreshesNavigatedRecordingContext() throws {
+            let viewModel = CaptionViewModel()
+            let database = try AppDatabaseManager(path: ":memory:")
+            let recordingMeetingID = UUID.v7()
+            viewModel.isListening = true
+            viewModel.currentMeetingId = recordingMeetingID
+            viewModel.currentVaultURL = testVaultURL
+            viewModel.setExplicitProjectContext(
+                projectURL: testVaultURL.appending(path: "Parent/Child", directoryHint: .isDirectory),
+                projectId: UUID.v7(),
+                projectName: "Parent/Child"
+            )
+            viewModel.loadMeeting(
+                UUID.v7(),
+                dbQueue: database.dbQueue,
+                projectURL: nil,
+                projectId: nil,
+                vaultURL: testVaultURL
+            )
+
+            viewModel.updateVaultExportFolder(nil)
+            viewModel.returnToRecordingMeeting()
+
+            #expect(viewModel.currentMeetingId == recordingMeetingID)
+            #expect(viewModel.currentVaultURL == nil)
+            #expect(viewModel.currentProjectURL == nil)
+            #expect(viewModel.currentProjectName == "Parent/Child")
         }
 
         @Test

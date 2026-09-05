@@ -1,3 +1,4 @@
+import DahliaRuntimeSupport
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -56,14 +57,6 @@ struct VaultSetupStepView: View {
                                 .onSubmit(createVaultSelection)
                         }
 
-                        if let newVaultURL {
-                            Text(newVaultURL.path(percentEncoded: false))
-                                .font(.footnote.monospaced())
-                                .foregroundStyle(.secondary)
-                                .lineLimit(2)
-                                .truncationMode(.middle)
-                                .textSelection(.enabled)
-                        }
                     }
                     .padding(22)
                     .background(
@@ -81,7 +74,7 @@ struct VaultSetupStepView: View {
                     }
                     .buttonStyle(.dahlia(.primary))
                     .controlSize(.large)
-                    .disabled(newVaultURL == nil)
+                    .disabled(normalizedVaultName == nil)
                     .frame(maxWidth: .infinity)
                 }
             } else {
@@ -162,14 +155,13 @@ struct VaultSetupStepView: View {
         }
     }
 
-    private var newVaultURL: URL? {
-        SetupTourModel.newVaultURL(named: vaultName)
+    private var normalizedVaultName: String? {
+        DahliaProjectName.normalizedName(vaultName)
     }
 
     private func createVaultSelection() {
-        guard let newVaultURL else { return }
-        model.selectVaultURL(newVaultURL)
-        model.confirmVaultSelection()
+        guard let normalizedVaultName else { return }
+        model.selectPathlessVault(named: normalizedVaultName)
         isCreatingVault = false
     }
 }

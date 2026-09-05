@@ -112,7 +112,7 @@ import GRDB
                 text: "Existing transcript",
                 translatedText: nil,
                 isConfirmed: true,
-                speakerLabel: "mic"
+                audioSource: "mic"
             )
             try await fixture.database.dbQueue.write { db in
                 try sessionToPersist.update(db)

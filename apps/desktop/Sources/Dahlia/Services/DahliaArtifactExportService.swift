@@ -20,7 +20,7 @@ struct DahliaArtifactExportResult: Sendable {
 }
 
 enum DahliaArtifactExportService {
-    static let requiredScope = "api.artifact.write"
+    static let requiredScope = "all-apis"
 
     static func export(
         html: String,

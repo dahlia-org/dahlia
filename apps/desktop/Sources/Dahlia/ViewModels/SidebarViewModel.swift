@@ -15,6 +15,10 @@ final class SidebarViewModel {
     nonisolated static let meetingPageSize = 50
     nonisolated static let maximumVisibleMeetings = 500
 
+    var canEditCurrentVault: Bool {
+        currentVault?.allowsCanonicalEdits == true
+    }
+
     // MARK: - Observed State
 
     /// 現在の vault に属する全 project のフラット一覧。
@@ -154,8 +158,26 @@ final class SidebarViewModel {
     }
 
     /// プロジェクト名から vault 内の URL を返す。
-    func projectURL(for name: String) -> URL {
-        currentVault!.url.appendingPathComponent(name, isDirectory: true)
+    func projectURL(for name: String) -> URL? {
+        currentVault?.url?.appendingPathComponent(name, isDirectory: true)
+    }
+
+    func refreshCurrentVaultFilesystemServices(_ vault: VaultRecord) {
+        guard currentVault?.id == vault.id,
+              let dbQueue,
+              let meetingRepository else { return }
+        projectWorkspaceService = ProjectWorkspaceService(repository: meetingRepository, vault: vault)
+        vaultSyncService?.stopMonitoring()
+        fileWatcher?.stopMonitoring()
+        vaultSyncService = nil
+        fileWatcher = nil
+        guard let vaultURL = vault.url else { return }
+        let syncService = VaultSyncService(vaultURL: vaultURL, dbQueue: dbQueue, vaultId: vault.id)
+        vaultSyncService = syncService
+        syncService.startMonitoring()
+        let watcher = TranscriptFileWatcher(dbQueue: dbQueue, vaultURL: vaultURL)
+        watcher.startMonitoring()
+        fileWatcher = watcher
     }
 
     /// アプリ起動時に AppDatabaseManager と保管庫を設定する。
@@ -269,19 +291,20 @@ final class SidebarViewModel {
             return
         }
 
-        let vaultURL = vault.url
         let vaultId = vault.id
         if let meetingRepository {
             projectWorkspaceService = ProjectWorkspaceService(repository: meetingRepository, vault: vault)
         }
 
-        let syncService = VaultSyncService(vaultURL: vaultURL, dbQueue: dbQueue, vaultId: vaultId)
-        vaultSyncService = syncService
-        syncService.startMonitoring()
+        if let vaultURL = vault.url {
+            let syncService = VaultSyncService(vaultURL: vaultURL, dbQueue: dbQueue, vaultId: vaultId)
+            vaultSyncService = syncService
+            syncService.startMonitoring()
 
-        let watcher = TranscriptFileWatcher(dbQueue: dbQueue, vaultURL: vaultURL)
-        watcher.startMonitoring()
-        fileWatcher = watcher
+            let watcher = TranscriptFileWatcher(dbQueue: dbQueue, vaultURL: vaultURL)
+            watcher.startMonitoring()
+            fileWatcher = watcher
+        }
 
         startProjectObservation(dbQueue: dbQueue, vaultId: vaultId)
         startMeetingListObservation(dbQueue: dbQueue, vaultId: vaultId)
@@ -694,7 +717,7 @@ final class SidebarViewModel {
         projectType: ProjectType? = nil,
         description: String = ""
     ) -> ProjectRecord? {
-        guard let projectWorkspaceService else { return nil }
+        guard canEditCurrentVault, let projectWorkspaceService else { return nil }
         do {
             let project = try projectWorkspaceService.createProject(
                 name: name,
@@ -715,7 +738,7 @@ final class SidebarViewModel {
         newName: String,
         expectedRevision: Int? = nil
     ) -> ProjectRecord? {
-        guard let projectWorkspaceService else { return nil }
+        guard canEditCurrentVault, let projectWorkspaceService else { return nil }
         do {
             let project = try projectWorkspaceService.renameProject(
                 id: id,
@@ -735,7 +758,7 @@ final class SidebarViewModel {
         parentProjectId: UUID?,
         expectedRevision: Int? = nil
     ) -> ProjectRecord? {
-        guard let projectWorkspaceService else { return nil }
+        guard canEditCurrentVault, let projectWorkspaceService else { return nil }
         do {
             let project = try projectWorkspaceService.reparentProject(
                 id: id,
@@ -755,7 +778,7 @@ final class SidebarViewModel {
         projectType: ProjectType,
         expectedRevision: Int? = nil
     ) -> ProjectRecord? {
-        guard let projectWorkspaceService else { return nil }
+        guard canEditCurrentVault, let projectWorkspaceService else { return nil }
         do {
             let project = try projectWorkspaceService.updateRootProjectType(
                 id: id,
@@ -778,7 +801,7 @@ final class SidebarViewModel {
         description: String,
         expectedRevision: Int
     ) async -> ProjectRecord? {
-        guard let projectWorkspaceService else { return nil }
+        guard canEditCurrentVault, let projectWorkspaceService else { return nil }
         do {
             let project = try await Task.detached(priority: .userInitiated) {
                 try projectWorkspaceService.updateProject(
@@ -804,7 +827,7 @@ final class SidebarViewModel {
         meetingDisposition: ProjectMeetingDisposition,
         deletesSummaryFiles: Bool = false
     ) async -> Bool {
-        guard let projectWorkspaceService else { return false }
+        guard canEditCurrentVault, let projectWorkspaceService else { return false }
         do {
             try await projectWorkspaceService.deleteProjectHierarchy(
                 id: id,
@@ -820,13 +843,14 @@ final class SidebarViewModel {
     }
 
     /// プロジェクトを取得または作成し、派生する Summary 書き出し先 URL を返す。
-    func fetchOrCreateProject(name: String) -> (record: ProjectRecord, url: URL)? {
-        guard let vault = currentVault,
+    func fetchOrCreateProject(name: String) -> (record: ProjectRecord, url: URL?)? {
+        guard canEditCurrentVault,
+              let vault = currentVault,
               let projectWorkspaceService else { return nil }
 
         do {
             let record = try projectWorkspaceService.fetchOrCreateRootProject(name: name)
-            let projectURL = vault.url.appending(path: record.path, directoryHint: .isDirectory)
+            let projectURL = vault.url?.appending(path: record.path, directoryHint: .isDirectory)
             return (record, projectURL)
         } catch {
             lastError = error.localizedDescription

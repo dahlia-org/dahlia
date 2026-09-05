@@ -133,6 +133,7 @@ enum DahliaCloudError: LocalizedError, Equatable {
     case noCredential
     case credentialStorageFailed
     case duplicateConnection
+    case accountChanged
 
     var errorDescription: String? {
         switch self {
@@ -158,6 +159,8 @@ enum DahliaCloudError: LocalizedError, Equatable {
             L10n.dahliaCredentialStorageFailed
         case .duplicateConnection:
             L10n.dahliaConnectionAlreadyExists
+        case .accountChanged:
+            L10n.dahliaCloudAccountChanged
         }
     }
 }
@@ -195,15 +198,19 @@ actor DahliaCloudService {
         return credential
     }
 
+    func storedAccountForReauthentication() throws -> DahliaCloudAccount? {
+        guard let storedCredential = try storage.load(), credentialMatchesEndpoint(storedCredential) else { return nil }
+        return storedCredential.account
+    }
+
     func authorize() async throws -> DahliaCloudCredential {
         let discovery = try await discover(configuration: configuration)
         let pkce = CloudPKCE.generate()
         let state = CloudPKCE.randomURLSafeString(byteCount: 32)
         let scopes = discovery.usesProxySession
-            ? Set(["ai-gateway", "files", "iam.current-user:read", "offline_access"])
+            ? Set(["all-apis", "offline_access"])
             : Set(discovery.protectedResource.scopesSupported ?? [])
             .union(Self.identityScopes)
-            .subtracting(["all-apis"])
         let authorizationURL = try Self.authorizationURL(
             endpoint: discovery.authorizationServer.authorizationEndpoint,
             configuration: configuration,
@@ -248,9 +255,7 @@ actor DahliaCloudService {
     }
 
     func persist(_ newCredential: DahliaCloudCredential) throws {
-        guard credentialMatchesConfiguration(newCredential),
-              newCredential.grantedScopes.contains("all-apis") == false
-        else { throw DahliaCloudError.invalidTokenResponse }
+        guard credentialMatchesConfiguration(newCredential) else { throw DahliaCloudError.invalidTokenResponse }
         cancelRefresh()
         try storage.save(newCredential)
         credential = newCredential
@@ -312,15 +317,18 @@ actor DahliaCloudService {
     private func loadCredentialIfNeeded() throws {
         guard !didLoadCredential else { return }
         let storedCredential = try storage.load()
-        if let storedCredential,
-           storedCredential.grantedScopes.contains("all-apis") == false,
-           credentialMatchesConfiguration(storedCredential) {
+        if let storedCredential, credentialMatchesConfiguration(storedCredential) {
             credential = storedCredential
         }
         didLoadCredential = true
     }
 
     private func credentialMatchesConfiguration(_ credential: DahliaCloudCredential) -> Bool {
+        credentialMatchesEndpoint(credential)
+            && credential.grantedScopes.contains("all-apis")
+    }
+
+    private func credentialMatchesEndpoint(_ credential: DahliaCloudCredential) -> Bool {
         credential.clientID == configuration.clientID
             && Self.sameOrigin(credential.resource, configuration.origin)
     }
@@ -352,6 +360,7 @@ actor DahliaCloudService {
             revocationEndpoint: oldCredential.revocationEndpoint,
             account: oldCredential.account
         )
+        guard credentialMatchesConfiguration(updated) else { throw DahliaCloudError.invalidTokenResponse }
         try storage.save(updated)
         credential = updated
         return updated.accessToken
@@ -413,9 +422,7 @@ actor DahliaCloudService {
             throw DahliaCloudError.invalidTokenResponse
         }
         let returnedScopes = payload.scope.map { Set($0.split(separator: " ").map(String.init)) }
-        guard returnedScopes?.isSubset(of: allowedScopes) != false,
-              returnedScopes?.contains("all-apis") != true
-        else {
+        guard returnedScopes?.isSubset(of: allowedScopes) != false else {
             throw DahliaCloudError.invalidTokenResponse
         }
         return CloudTokenResponse(

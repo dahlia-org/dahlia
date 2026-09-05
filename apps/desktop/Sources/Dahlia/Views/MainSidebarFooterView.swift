@@ -93,7 +93,7 @@ struct MainSidebarFooterView: View {
         if let connectionID = vaultAISettings.accountConnectionID,
            let connection = dahliaAccountController.connections.first(where: { $0.id == connectionID }) {
             if connection.isSignedIn {
-                dahliaAccountController.startSignOut(connectionID: connection.id)
+                dahliaAccountController.requestSignOut(connectionID: connection.id)
             } else {
                 dahliaAccountController.startReauthentication(connectionID: connection.id)
             }

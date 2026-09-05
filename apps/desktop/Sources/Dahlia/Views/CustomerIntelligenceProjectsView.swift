@@ -161,7 +161,9 @@ struct CustomerIntelligenceProjectsView: View {
                         subtitle: detail.summary.project.path,
                         systemImage: "folder",
                         badge: projectTypeTitle(detail.summary.effectiveType),
-                        onEdit: { editedProject = detail.summary.project }
+                        onEdit: sidebarViewModel.canEditCurrentVault
+                            ? { editedProject = detail.summary.project }
+                            : nil
                     )
 
                     CustomerIntelligenceInspectorSection(title: L10n.projectDescription) {

@@ -33,7 +33,19 @@ import GRDB
             )
             try queue.write { db in
                 try insertLegacyVault(vault, in: db)
-                try project.insert(db)
+                try db.execute(
+                    sql: """
+                    INSERT INTO projects (
+                        id, vaultId, parentProjectId, name, nameKey, createdAt,
+                        description, projectType, revision
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    arguments: [
+                        project.id, project.vaultId, project.parentProjectId, project.name,
+                        project.nameKey, project.createdAt, project.description,
+                        project.projectType, project.revision,
+                    ]
+                )
                 try db.execute(
                     sql: """
                     INSERT INTO meetings (id, vaultId, projectId, name, status, duration, createdAt, updatedAt)
@@ -62,7 +74,11 @@ import GRDB
                     sql: "SELECT name FROM pragma_table_info('organization_domains')"
                 ))
                 let vaultCount = try VaultRecord.filter(key: vault.id).fetchCount(db)
-                let migratedMeeting = try MeetingRecord.fetchOne(db, key: meeting.id)
+                let migratedMeeting = try Row.fetchOne(
+                    db,
+                    sql: "SELECT projectId, name FROM meetings WHERE id = ?",
+                    arguments: [meeting.id]
+                )
                 let foreignKeyFailures = try Row.fetchAll(db, sql: "PRAGMA foreign_key_check")
                 return (
                     contactColumns,
@@ -84,8 +100,8 @@ import GRDB
             #expect(result.2.contains("domainName"))
             #expect(!result.2.contains("normalizedDomain"))
             #expect(result.3 == 1)
-            #expect(result.4?.projectId == project.id)
-            #expect(result.4?.name == meeting.name)
+            #expect(result.4?["projectId"] as UUID? == project.id)
+            #expect(result.4?["name"] as String? == meeting.name)
             #expect(result.5.isEmpty)
         }
 

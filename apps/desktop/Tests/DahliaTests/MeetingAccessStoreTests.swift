@@ -13,6 +13,23 @@ import ImageIO
     // swiftlint:disable:next type_body_length
     struct MeetingAccessStoreTests {
         @Test
+        func createsProjectWithoutALocalExportFolder() throws {
+            let fixture = try Fixture()
+            try fixture.manager.dbQueue.write { db in
+                try db.execute(sql: "UPDATE vaults SET path = NULL WHERE id = ?", arguments: [fixture.primaryVaultID])
+            }
+            let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+
+            let created = try store.createProject(
+                name: "Database only",
+                parentProjectID: nil,
+                projectType: .undefined
+            )
+
+            #expect(created.project.name == "Database only")
+        }
+
+        @Test
         func projectWorkspaceReadAndWriteOperationsEnforceHierarchyTypeAndRevision() throws {
             let fixture = try Fixture()
             let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
@@ -267,37 +284,37 @@ import ImageIO
         }
 
         @Test
-        func projectSiblingIdentityNormalizesUnicodeAndCase() throws {
+        func projectSiblingIdentityUsesUUIDDespiteEquivalentNames() throws {
             let fixture = try Fixture()
             let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
-            _ = try store.createProject(
+            let first = try store.createProject(
                 name: "Équipe",
                 parentProjectID: nil,
                 projectType: .customer
             )
 
-            #expect(throws: MeetingAccessError.projectAlreadyExists("e\u{301}QUIPE")) {
-                try store.createProject(
-                    name: "e\u{301}QUIPE",
-                    parentProjectID: nil,
-                    projectType: .customer
-                )
-            }
+            let second = try store.createProject(
+                name: "e\u{301}QUIPE",
+                parentProjectID: nil,
+                projectType: .customer
+            )
+
+            #expect(first.project.projectID != second.project.projectID)
         }
 
         @Test
-        func projectCreateRejectsDuplicateSiblingWithoutFilesystemMutation() throws {
+        func projectCreateAllowsDuplicateSiblingWithoutFilesystemMutation() throws {
             let fixture = try Fixture()
             let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
             try FileManager.default.removeItem(at: fixture.primaryVaultURL.appending(path: "Acme"))
 
-            #expect(throws: MeetingAccessError.projectAlreadyExists("acme")) {
-                try store.createProject(
-                    name: "acme",
-                    parentProjectID: nil,
-                    projectType: .customer
-                )
-            }
+            let created = try store.createProject(
+                name: "acme",
+                parentProjectID: nil,
+                projectType: .customer
+            )
+
+            #expect(created.project.projectID != fixture.primaryProjectID)
             #expect(!FileManager.default.fileExists(atPath: fixture.primaryVaultURL.appending(path: "acme").path))
         }
 
@@ -619,7 +636,7 @@ import ImageIO
             let segments = firstPage.segments + secondPage.segments
             let segment = try #require(segments.first(where: { $0.id == fixture.firstSegmentID }))
             #expect(segment.text == "Original secret body")
-            #expect(segment.speaker == "mic")
+            #expect(segment.speaker == nil)
             #expect(segment.elapsedSeconds == 15)
             #expect(segment.endedElapsedSeconds == 17)
             #expect(segment.timestamp == "00:00:15")
@@ -3178,7 +3195,7 @@ import ImageIO
                 text: "Original secret body",
                 translatedText: "Translated text",
                 isConfirmed: true,
-                speakerLabel: "mic"
+                audioSource: "mic"
             ).insert(db)
             try TranscriptSegmentRecord(
                 id: secondSegmentID,
@@ -3189,7 +3206,7 @@ import ImageIO
                 text: "Second original body",
                 translatedText: nil,
                 isConfirmed: true,
-                speakerLabel: "system"
+                audioSource: "system"
             ).insert(db)
             try TranscriptSegmentRecord(
                 id: .v7(),
@@ -3310,7 +3327,7 @@ import ImageIO
                     text: "After pause",
                     translatedText: nil,
                     isConfirmed: true,
-                    speakerLabel: "mic"
+                    audioSource: "mic"
                 ).insert(db)
                 try MeetingScreenshotRecord(
                     id: screenshotID,

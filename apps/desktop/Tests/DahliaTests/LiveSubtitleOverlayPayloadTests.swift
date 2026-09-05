@@ -14,13 +14,13 @@ import Foundation
                         startTime: Date(timeIntervalSince1970: 1_776_384_000),
                         text: "Microphone",
                         isConfirmed: true,
-                        speakerLabel: "mic"
+                        audioSource: "mic"
                     ),
                     TranscriptSegment(
                         startTime: Date(timeIntervalSince1970: 1_776_384_001),
                         text: "System",
                         isConfirmed: true,
-                        speakerLabel: "system"
+                        audioSource: "system"
                     ),
                 ],
                 transcriptionLocaleIdentifier: "en_US",
@@ -57,10 +57,10 @@ import Foundation
                         startTime: Date(timeIntervalSince1970: 1_776_384_000),
                         text: "First",
                         isConfirmed: true,
-                        speakerLabel: "system"
+                        audioSource: "system"
                     ),
                     TranscriptSegment(
-                        id: secondID, startTime: Date(timeIntervalSince1970: 1_776_384_001), text: "Second", isConfirmed: true, speakerLabel: "system"
+                        id: secondID, startTime: Date(timeIntervalSince1970: 1_776_384_001), text: "Second", isConfirmed: true, audioSource: "system"
                     ),
                 ],
                 transcriptionLocaleIdentifier: "en_US",
@@ -82,7 +82,7 @@ import Foundation
                         startTime: Date(timeIntervalSince1970: 1_776_384_000),
                         text: "  Hello world  ",
                         isConfirmed: false,
-                        speakerLabel: "mic"
+                        audioSource: "mic"
                     ),
                 ],
                 sourceMode: .includeMicrophone,
@@ -105,7 +105,7 @@ import Foundation
                         text: "Hello world",
                         translatedText: "こんにちは、世界",
                         isConfirmed: true,
-                        speakerLabel: "mic"
+                        audioSource: "mic"
                     ),
                 ],
                 sourceMode: .includeMicrophone,
@@ -128,7 +128,7 @@ import Foundation
                         text: "Hello world",
                         translatedText: "Hello world",
                         isConfirmed: true,
-                        speakerLabel: "mic"
+                        audioSource: "mic"
                     ),
                 ],
                 sourceMode: .includeMicrophone,
@@ -179,21 +179,21 @@ import Foundation
                         text: "Earlier line",
                         translatedText: "ひとつ前",
                         isConfirmed: true,
-                        speakerLabel: "mic"
+                        audioSource: "mic"
                     ),
                     TranscriptSegment(
                         startTime: Date(timeIntervalSince1970: 1_776_384_000),
                         text: "Mic first",
                         translatedText: "マイク最初",
                         isConfirmed: true,
-                        speakerLabel: "mic"
+                        audioSource: "mic"
                     ),
                     TranscriptSegment(
                         startTime: Date(timeIntervalSince1970: 1_776_384_001),
                         text: "System latest",
                         translatedText: "システム最新",
                         isConfirmed: true,
-                        speakerLabel: "system"
+                        audioSource: "system"
                     ),
                 ],
                 sourceMode: .includeMicrophone,
@@ -216,13 +216,13 @@ import Foundation
                         text: "Confirmed line",
                         translatedText: "確定済み",
                         isConfirmed: true,
-                        speakerLabel: "mic"
+                        audioSource: "mic"
                     ),
                     TranscriptSegment(
                         startTime: Date(timeIntervalSince1970: 1_776_384_001),
                         text: "Unconfirmed current",
                         isConfirmed: false,
-                        speakerLabel: "system"
+                        audioSource: "system"
                     ),
                 ],
                 sourceMode: .includeMicrophone,
@@ -246,7 +246,7 @@ import Foundation
                         text: "Unconfirmed current",
                         translatedText: "未確定の現在行",
                         isConfirmed: false,
-                        speakerLabel: "system"
+                        audioSource: "system"
                     ),
                 ],
                 sourceMode: .includeMicrophone,
@@ -288,14 +288,14 @@ import Foundation
                         text: "Mic line",
                         translatedText: "マイク",
                         isConfirmed: true,
-                        speakerLabel: "mic"
+                        audioSource: "mic"
                     ),
                     TranscriptSegment(
                         startTime: Date(timeIntervalSince1970: 1_776_384_001),
                         text: "System line",
                         translatedText: "システム",
                         isConfirmed: true,
-                        speakerLabel: "system"
+                        audioSource: "system"
                     ),
                 ],
                 sourceMode: .systemAudioOnly,
@@ -317,7 +317,7 @@ import Foundation
                         startTime: Date(timeIntervalSince1970: 1_776_384_000),
                         text: "Mic only",
                         isConfirmed: true,
-                        speakerLabel: "mic"
+                        audioSource: "mic"
                     ),
                 ],
                 sourceMode: .systemAudioOnly,
@@ -345,11 +345,11 @@ import Foundation
                     startTime: Date(timeIntervalSince1970: 1_776_384_000 + Double($0)),
                     text: "Segment \($0)",
                     isConfirmed: true,
-                    speakerLabel: "system"
+                    audioSource: "system"
                 )
             }
-            let preview = TranscriptSegment(startTime: .now, text: "Preview", speakerLabel: "system")
-            let finalized = TranscriptSegment(id: preview.id, startTime: .now, text: "Final", isConfirmed: true, speakerLabel: "system")
+            let preview = TranscriptSegment(startTime: .now, text: "Preview", audioSource: "system")
+            let finalized = TranscriptSegment(id: preview.id, startTime: .now, text: "Final", isConfirmed: true, audioSource: "system")
             var translated = finalized
             translated.translatedText = "確定"
             let projector = LiveSubtitleOverlayPayloadProjector()

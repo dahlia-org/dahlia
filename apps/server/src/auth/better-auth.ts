@@ -1,12 +1,17 @@
 import { oauthProvider } from "@better-auth/oauth-provider";
 import { oauthProviderResourceClient } from "@better-auth/oauth-provider/resource-client";
 import { betterAuth, type BetterAuthOptions } from "better-auth";
-import { jwt } from "better-auth/plugins";
+import { admin, jwt, organization } from "better-auth/plugins";
 
 import { gatewayResource, mcpResource, type AppConfig } from "../config";
 import type { AuthStore } from "./store";
 import { personalWorkspaceId } from "./workspace";
-import { ARTIFACT_WRITE_SCOPE, MCP_OAUTH_SCOPES, OAUTH_SCOPES } from "./scopes";
+import {
+  AUTHORIZATION_SERVER_SCOPES,
+  MCP_SCOPE,
+  MCP_OAUTH_SCOPES,
+  OAUTH_SCOPES,
+} from "./scopes";
 
 export function denyOAuthManagement(): false {
   return false;
@@ -43,6 +48,7 @@ export function createDahliaAuth(
     },
     trustedOrigins: [config.baseUrl, ...config.oauthRedirectUris],
     plugins: [
+      admin(),
       jwt({
         jwks: {
           keyPairConfig: { alg: "EdDSA", crv: "Ed25519" },
@@ -55,15 +61,25 @@ export function createDahliaAuth(
         allowUnauthenticatedClientRegistration: false,
         cachedTrustedClients: new Set(["databricks-cli"]),
         clientRegistrationDefaultResources: [mcp],
-        clientRegistrationDefaultScopes: [ARTIFACT_WRITE_SCOPE],
+        clientRegistrationDefaultScopes: [MCP_SCOPE],
         clientPrivileges: denyOAuthManagement,
         consentPage: "/oauth/consent",
-        customAccessTokenClaims: ({ user }) => {
+        customAccessTokenClaims: ({ user, referenceId }) => {
           if (!user) return {};
-          return { workspace_id: personalWorkspaceId(user.id) };
+          return {
+            workspace_id: personalWorkspaceId(user.id),
+            impersonated: referenceId?.startsWith("impersonated:") ?? false,
+          };
         },
         enforcePerClientResources: true,
         loginPage: "/sign-in",
+        postLogin: {
+          page: "/oauth/consent",
+          shouldRedirect: () => false,
+          consentReferenceId: ({ session }) => session.impersonatedBy
+            ? `impersonated:${session.id}`
+            : undefined,
+        },
         refreshTokenExpiresIn: 30 * 24 * 60 * 60,
         refreshTokenReuseInterval: 0,
         resources: [
@@ -84,12 +100,29 @@ export function createDahliaAuth(
           },
         ],
         resourcePrivileges: denyOAuthManagement,
-        scopes: OAUTH_SCOPES,
+        scopes: AUTHORIZATION_SERVER_SCOPES,
         silenceWarnings: {
           oauthAuthServerConfig: true,
           openidConfig: true,
         },
       }),
+      ...(config.syncSharingEnabled ? [organization({
+        cancelPendingInvitationsOnReInvite: true,
+        requireEmailVerificationOnInvitation: true,
+        sendInvitationEmail: async () => {},
+        teams: {
+          enabled: true,
+          defaultTeam: { enabled: true },
+        },
+        organizationHooks: {
+          beforeDeleteOrganization: async ({ organization: deleted }) => {
+            await authStore.deleteVaultPermissionsForOrganization(deleted.id).catch(() => undefined);
+          },
+          afterDeleteTeam: async ({ team: deleted }) => {
+            await authStore.deleteVaultPermissionsForPrincipal("team", deleted.id).catch(() => undefined);
+          },
+        },
+      })] : []),
       ...extensions.flatMap((extension) => extension.plugins),
     ],
   });

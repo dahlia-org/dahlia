@@ -370,7 +370,7 @@ import Foundation
                         startTime: session.startedAt,
                         endTime: session.startedAt.addingTimeInterval(5),
                         text: "ignored",
-                        speakerLabel: "speaker-1"
+                        audioSource: "speaker-1"
                     ),
                 ]
             )
@@ -403,7 +403,7 @@ import Foundation
                     startTime: segment.startTime,
                     endTime: segment.endTime,
                     text: "world",
-                    speakerLabel: segment.speakerLabel
+                    audioSource: segment.audioSource
                 ),
             ])
             let changedTiming = makeInput(
@@ -467,7 +467,7 @@ import Foundation
                 startTime: session.startedAt.addingTimeInterval(start),
                 endTime: end.map(session.startedAt.addingTimeInterval),
                 text: text,
-                speakerLabel: source.speakerLabel,
+                audioSource: source.audioSource,
                 audioFeatures: audioFeatures
             )
         }
@@ -484,7 +484,7 @@ import Foundation
                 startTime: baseDate.addingTimeInterval(start),
                 endTime: baseDate.addingTimeInterval(end),
                 text: "text",
-                speakerLabel: source.speakerLabel
+                audioSource: source.audioSource
             )
         }
     }

@@ -4,6 +4,7 @@ struct ProjectSidebarHoverCard: View {
     let project: ProjectOverviewItem
     let appearance: ProjectAppearance
     let isPinned: Bool
+    let canEdit: Bool
     let onOpen: () -> Void
     let onTogglePin: () -> Void
     let onEdit: () -> Void
@@ -43,19 +44,21 @@ struct ProjectSidebarHoverCard: View {
 
             Label(meetingCountText, systemImage: "calendar")
 
-            Divider()
+            if canEdit {
+                Divider()
 
-            Button(L10n.editProject, systemImage: "gearshape", action: onEdit)
-                .buttonStyle(.plain)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 4)
-                .background(
-                    isEditHovered ? Color.black.opacity(0.08) : .clear,
-                    in: .rect(cornerRadius: DahliaDesign.Highlight.compactCornerRadius)
-                )
-                .contentShape(.rect(cornerRadius: DahliaDesign.Highlight.compactCornerRadius))
-                .onHover { isEditHovered = $0 }
+                Button(L10n.editProject, systemImage: "gearshape", action: onEdit)
+                    .buttonStyle(.plain)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 4)
+                    .background(
+                        isEditHovered ? Color.black.opacity(0.08) : .clear,
+                        in: .rect(cornerRadius: DahliaDesign.Highlight.compactCornerRadius)
+                    )
+                    .contentShape(.rect(cornerRadius: DahliaDesign.Highlight.compactCornerRadius))
+                    .onHover { isEditHovered = $0 }
+            }
         }
         .dahliaSidebarHoverCard()
     }

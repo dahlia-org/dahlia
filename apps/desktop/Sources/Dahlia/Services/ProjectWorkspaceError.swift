@@ -4,6 +4,7 @@ enum ProjectWorkspaceError: LocalizedError, Equatable {
     case projectNotFound
     case invalidName
     case nameTooLong
+    case descriptionTooLong
     case projectAlreadyExists(String)
     case typeOwnedByRoot
     case staleRevision(current: Int)
@@ -25,6 +26,8 @@ enum ProjectWorkspaceError: LocalizedError, Equatable {
             L10n.invalidProjectName
         case .nameTooLong:
             L10n.projectNameTooLong
+        case .descriptionTooLong:
+            L10n.projectDescriptionTooLong
         case let .projectAlreadyExists(name):
             L10n.projectAlreadyExists(name)
         case .typeOwnedByRoot:

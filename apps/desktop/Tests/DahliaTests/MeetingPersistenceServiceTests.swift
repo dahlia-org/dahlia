@@ -306,7 +306,7 @@ import os
                     startTime: startDate,
                     text: "Must not be persisted",
                     isConfirmed: true,
-                    speakerLabel: "mic"
+                    audioSource: "mic"
                 )
             )
             await service.stop()
@@ -487,7 +487,7 @@ import os
                 startTime: secondSessionStart.addingTimeInterval(3),
                 text: "After pause",
                 isConfirmed: true,
-                speakerLabel: "mic"
+                audioSource: "mic"
             )
 
             try await service.persist(.finalized(segment))
@@ -518,7 +518,7 @@ import os
                 startTime: createdAt,
                 text: "Existing transcript",
                 isConfirmed: true,
-                speakerLabel: "mic"
+                audioSource: "mic"
             )
             try await database.dbQueue.write { db in
                 try MeetingRecord(
@@ -543,7 +543,7 @@ import os
                 startTime: createdAt.addingTimeInterval(60),
                 text: "Cancelled append",
                 isConfirmed: true,
-                speakerLabel: "mic"
+                audioSource: "mic"
             )
             try await service.persist(.finalized(appendedSegment))
 
@@ -850,7 +850,7 @@ import os
                 text: "Hello world",
                 translatedText: "こんにちは、世界",
                 isConfirmed: true,
-                speakerLabel: "mic"
+                audioSource: "mic"
             )
 
             try await service.persist(.finalized(segment))
@@ -883,7 +883,7 @@ import os
                 startTime: startDate,
                 text: "Persist without UI",
                 isConfirmed: true,
-                speakerLabel: "mic"
+                audioSource: "mic"
             )
 
             try await service.persist(.finalized(segment))
@@ -924,7 +924,7 @@ import os
                 startTime: startDate,
                 text: "Hello world",
                 isConfirmed: true,
-                speakerLabel: "mic"
+                audioSource: "mic"
             )
 
             try await service.persist(.finalized(segment))
@@ -968,7 +968,7 @@ import os
                     text: "Preview",
                     translatedText: "プレビュー",
                     isConfirmed: false,
-                    speakerLabel: "mic"
+                    audioSource: "mic"
                 ),
                 forSource: "mic"
             )
@@ -999,7 +999,7 @@ import os
                 startTime: startDate,
                 text: "Final",
                 isConfirmed: true,
-                speakerLabel: "mic"
+                audioSource: "mic"
             )
 
             try await service.persist(.previewTranslation(

@@ -145,7 +145,7 @@ enum MeetingConversationMetricsCalculator {
         )
 
         for segment in input.segments {
-            guard let source = RecordingAudioSource(speakerLabel: segment.speakerLabel) else { continue }
+            guard let source = RecordingAudioSource(audioSource: segment.audioSource) else { continue }
             var accumulator = accumulators[source, default: SourceAccumulator()]
             let characterCount = normalizedCharacterCount(segment.text)
             accumulator.segmentCount += 1

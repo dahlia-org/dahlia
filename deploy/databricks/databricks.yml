@@ -11,24 +11,32 @@ sync:
 
 experimental:
   skip_name_prefix_for_schema: true
+  scripts:
+    postdeploy: "databricks api post /api/2.0/postgres/projects/${var.database_project_id}/search-extensions --json '{}' --profile '${workspace.profile}'"
 
 variables:
   app_name:
     description: Databricks App name.
   database_project_id:
     description: Lakebase project ID.
-  admin_email:
-    description: Email address that bootstraps Dahlia Server administration.
-    default: " "
+  search_embedding_model:
+    description: Databricks embedding model used by server-side Hybrid search. Empty disables embeddings.
+    default: system.ai.qwen3-embedding-0-6b
+  search_embedding_dimensions:
+    description: Power-of-two embedding dimensions from 32 through 1024.
+    default: "1024"
+  sync_sharing_enabled:
+    description: Enables explicit Organization and Team Vault sharing.
+    default: "false"
   catalog:
-    description: Unity Catalog catalog used for Dahlia.
+    description: Unity Catalog catalog containing Dahlia Server storage.
+    default: dahlia
   schema:
-    description: Unity Catalog schema used for Dahlia Server.
+    description: Unity Catalog schema containing Dahlia Server storage.
     default: server
   volume_name:
-    description: Managed Volume used for Dahlia storage.
+    description: Managed Volume used for stored content.
     default: storage
-
 targets:
   dev:
     default: true
@@ -36,7 +44,7 @@ targets:
     variables:
       app_name: dahlia-dev
       database_project_id: dahlia-db-dev
-      catalog: dahlia_dev
+      sync_sharing_enabled: "true"
     resources:
       postgres_projects:
         dahlia_database_project:
@@ -46,4 +54,21 @@ targets:
     variables:
       app_name: dahlia-prod
       database_project_id: dahlia-db
-      catalog: dahlia
+    resources:
+      postgres_projects:
+        dahlia_database_project:
+          lifecycle:
+            prevent_destroy: true
+      schemas:
+        dahlia:
+          lifecycle:
+            prevent_destroy: true
+      volumes:
+        dahlia_storage:
+          catalog_name: ${var.catalog}
+          schema_name: ${resources.schemas.dahlia.name}
+          name: ${var.volume_name}
+          volume_type: MANAGED
+          comment: Dahlia Server stored content for ${bundle.target}
+          lifecycle:
+            prevent_destroy: true

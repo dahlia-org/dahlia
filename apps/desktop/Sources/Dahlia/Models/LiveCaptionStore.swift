@@ -96,7 +96,7 @@ final class LiveCaptionStore: ObservableObject {
         var preview = newSegment
         preview.isConfirmed = false
 
-        if let existingPreviewIndex = previewIndex(forSource: preview.speakerLabel) {
+        if let existingPreviewIndex = previewIndex(forSource: preview.audioSource) {
             let existingPreview = segments[existingPreviewIndex]
             if preview.translatedText == nil, existingPreview.id == preview.id {
                 preview.translatedText = existingPreview.translatedText
@@ -124,7 +124,7 @@ final class LiveCaptionStore: ObservableObject {
         let replacementStart = min(existingSegmentIndex ?? confirmedInsertionIndex, confirmedInsertionIndex)
         var replacement = Array(segments[replacementStart...])
         replacement.removeAll {
-            $0.id == finalized.id || (!$0.isConfirmed && $0.speakerLabel == finalized.speakerLabel)
+            $0.id == finalized.id || (!$0.isConfirmed && $0.audioSource == finalized.audioSource)
         }
         let insertionIndex = replacement.lastIndex(where: \.isConfirmed).map { $0 + 1 } ?? replacement.startIndex
         replacement.insert(finalized, at: insertionIndex)
@@ -143,7 +143,7 @@ final class LiveCaptionStore: ObservableObject {
     private func previewIndex(forSource sourceLabel: String?) -> Int? {
         let previewStartIndex = segments.lastIndex(where: \.isConfirmed).map { $0 + 1 } ?? segments.startIndex
         return segments[previewStartIndex...].lastIndex {
-            !$0.isConfirmed && $0.speakerLabel == sourceLabel
+            !$0.isConfirmed && $0.audioSource == sourceLabel
         }
     }
 

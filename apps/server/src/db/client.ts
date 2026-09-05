@@ -12,9 +12,9 @@ import pg, { type Pool } from "pg";
 
 import type { AppConfig } from "../config";
 import type { PostgresMigrationDirectory } from "../migrations";
-import { createPostgresPool, POSTGRES_SCHEMA } from "./postgres";
+import { createPostgresPool, POSTGRES_MIGRATION_SCHEMA, POSTGRES_SEARCH_PATH } from "./postgres";
 
-export type PostgresDatabase = NodePgDatabase;
+export type PostgresDatabase = NodePgDatabase & { $client: Pool };
 export type SQLiteDatabase = SQLiteAsyncDatabase<"sync" | "async", unknown>;
 
 const noOpSpan = {
@@ -46,7 +46,7 @@ function createDatabasePool(config: AppConfig, max: number): Pool {
         sslMode: database.sslMode,
         user: database.username,
       }, noOpLakebaseTelemetry),
-      options: `-c search_path=${POSTGRES_SCHEMA}`,
+      options: `-c search_path=${POSTGRES_SEARCH_PATH}`,
     });
   }
   if (config.databaseType !== "postgres" || !config.databaseUrl) {
@@ -71,8 +71,8 @@ export function postgresMigrationConfigs(migrationDirectories: readonly Postgres
     ids.add(id);
     return {
       migrationsFolder: path,
-      migrationsSchema: POSTGRES_SCHEMA,
-      ...(id === "server" ? {} : { migrationsTable: `__dahlia_${id}_migrations` }),
+      migrationsSchema: POSTGRES_MIGRATION_SCHEMA,
+      migrationsTable: `__dahlia_${id}_migrations`,
     };
   });
 }
@@ -110,14 +110,49 @@ export async function migrateApplicationDatabase(
   try {
     await pool.query("SELECT pg_advisory_lock($1)", [lockId]);
     locked = true;
-    await pool.query(`CREATE SCHEMA IF NOT EXISTS "${POSTGRES_SCHEMA}"`);
-    for (const migrationConfig of postgresMigrationConfigs(migrationDirectories)) {
-      await migrate(readPostgresMigrations(migrationConfig), database, migrationConfig);
+    await pool.query(`CREATE SCHEMA IF NOT EXISTS "${POSTGRES_MIGRATION_SCHEMA}"`);
+    const migrationConfigs = postgresMigrationConfigs(migrationDirectories);
+    for (const [index, migrationConfig] of migrationConfigs.entries()) {
+      const files = migrationDirectories[index]?.files;
+      const allowedNames = files && new Set(files.map((file) => file.split("/")[0]));
+      const migrations = readPostgresMigrations(migrationConfig)
+        .filter((migration) => !allowedNames || allowedNames.has(migration.name));
+      await migrate(migrations, database, migrationConfig);
     }
+    await ensureSearchIndexes(pool, config);
   } finally {
     if (locked) await pool.query("SELECT pg_advisory_unlock($1)", [lockId]);
     await pool.end();
   }
+}
+
+export async function ensureSearchIndexes(pool: Pool, config: AppConfig): Promise<void> {
+  if (config.databaseType === "lakebase") {
+    await pool.query("CREATE EXTENSION IF NOT EXISTS lakebase_text");
+    await pool.query(
+      "CREATE INDEX IF NOT EXISTS search_documents_search_bm25 ON content.search_documents USING lakebase_bm25 (search_vector)",
+    );
+  } else if (config.databaseType === "postgres") {
+    await pool.query(
+      "CREATE INDEX IF NOT EXISTS search_documents_search_gin ON content.search_documents USING gin (search_vector)",
+    );
+  }
+  const embedding = config.searchEmbedding;
+  if (!embedding || (config.databaseType !== "postgres" && config.databaseType !== "lakebase")) return;
+  const extension = config.databaseType === "lakebase" ? "lakebase_vector CASCADE" : "vector";
+  await pool.query(`CREATE EXTENSION IF NOT EXISTS ${extension}`);
+  const modelLiteral = (await pool.query<{ value: string }>("select quote_literal($1) as value", [embedding.model])).rows[0]!.value;
+  const suffix = createHash("sha256").update(embedding.model).digest("hex").slice(0, 8);
+  const method = config.databaseType === "lakebase" ? "lakebase_ann" : "hnsw";
+  const vectorType = config.databaseType === "lakebase" ? "vector" : "public.vector";
+  const operatorClass = config.databaseType === "lakebase" ? "vector_cosine_ops" : "public.vector_cosine_ops";
+  const indexName = `search_embeddings_${method}_${embedding.dimensions}_${suffix}`;
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS ${indexName}
+    ON content.search_embeddings USING ${method}
+      ((embedding::${vectorType}(${embedding.dimensions})) ${operatorClass})
+    WHERE model = ${modelLiteral} AND dimensions = ${embedding.dimensions}
+  `);
 }
 
 /** @deprecated Use connectApplicationDatabase. */

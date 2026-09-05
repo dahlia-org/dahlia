@@ -236,7 +236,7 @@ import GRDB
                         text: "hello",
                         translatedText: nil,
                         isConfirmed: true,
-                        speakerLabel: RecordingAudioSource.microphone.speakerLabel
+                        audioSource: RecordingAudioSource.microphone.audioSource
                     )
                     .insert(db)
                     try TranscriptSegmentRecord(
@@ -248,7 +248,7 @@ import GRDB
                         text: "world",
                         translatedText: nil,
                         isConfirmed: true,
-                        speakerLabel: RecordingAudioSource.system.speakerLabel
+                        audioSource: RecordingAudioSource.system.audioSource
                     )
                     .insert(db)
                 }
@@ -278,7 +278,7 @@ import GRDB
                             text: "segment",
                             translatedText: nil,
                             isConfirmed: true,
-                            speakerLabel: RecordingAudioSource.microphone.speakerLabel
+                            audioSource: RecordingAudioSource.microphone.audioSource
                         )
                         .insert(db)
                     }
@@ -309,7 +309,7 @@ import GRDB
                             text: "segment",
                             translatedText: nil,
                             isConfirmed: true,
-                            speakerLabel: RecordingAudioSource.microphone.speakerLabel
+                            audioSource: RecordingAudioSource.microphone.audioSource
                         )
                         .insert(db)
                     }

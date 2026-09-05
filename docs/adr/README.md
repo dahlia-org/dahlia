@@ -39,7 +39,7 @@ Codex は全 ADR を順番に読まず、最初にこの一覧から現在の作
 | [0026](0026-measure-product-adoption-with-bounded-telemetry.md) | Privacy / Product analytics | 丸めた録音時間と AI chat・内蔵 MCP の利用を固定 allowlist で計測する | Accepted; amends 0025; amended by 0028 |
 | [0027](0027-use-provider-aware-chat-approval-reviewer.md) | AI runtime / Chat / Authentication | ChatGPT Subscription は代理審査、Databricks はユーザー承認を使う | Accepted; amends 0012 and 0022; builds on 0023; amended by 0036 |
 | [0028](0028-remove-automatic-previous-meeting-summary-context.md) | Summary / AI runtime / MCP | 要約生成の過去 meeting 自動参照と要約専用 MCP session を廃止する | Accepted; amends 0003, 0015, 0017, and 0026 |
-| [0029](0029-offer-an-optional-codex-ai-gateway.md) | AI runtime / Server gateway | 内蔵 Codex 用の任意の認証付き AI Gateway を別 runtime で提供する | Accepted; amends 0003; amended by 0031, 0043, 0044, 0045, 0046, 0047, and 0054 |
+| [0029](0029-offer-an-optional-codex-ai-gateway.md) | AI runtime / Server gateway | 内蔵 Codex 用の任意の認証付き AI Gateway を別 runtime で提供する | Accepted; amends 0003; amended by 0031, 0043, 0044, 0045, 0046, 0047, 0054, and 0064 |
 | [0031](0031-publish-dahlia-server-extension-contract.md) | Server gateway / Distribution | 実行可能な Server と versioned extension contract を同じ package で配布する | Accepted; amends 0029; amended by 0043 |
 | [0032](0032-use-local-codex-login-success-page.md) | AI runtime / Authentication | ChatGPT 認証完了に app-server のローカル成功ページを使う | Accepted; amends 0003 |
 | [0033](0033-use-local-fts5-search-projection.md) | Search / Database projection | Lindera と FTS5 による再構築可能なローカル検索索引を使う | Accepted; builds on 0006, 0007, and 0009; amended by 0034, 0040, and 0041 |
@@ -52,8 +52,8 @@ Codex は全 ADR を順番に読まず、最初にこの一覧から現在の作
 | [0040](0040-user-configurable-meeting-search-field-weights.md) | Search / Settings | ミーティング検索の順位をユーザー設定のフィールド重みで決める | Accepted; amends 0033 and 0034; amended by 0041 |
 | [0041](0041-exclude-project-context-from-meeting-search.md) | Search / Project context | Project の文脈をミーティング自由文検索と順位から除外する | Accepted; amends 0005, 0033, 0035, 0037, and 0040; builds on 0034 |
 | [0042](0042-apply-global-batch-audio-retention.md) | Recording storage / Settings | 現在の保存期間と録音終了日時からバッチ録音を遡及削除する | Accepted; amends 0004 |
-| [0043](0043-unify-dahlia-server-application-database.md) | Server gateway / Database | Server の認証・管理・将来同期を単一の選択可能な Drizzle DB に統一する | Accepted; amends 0029 and 0031; amended by 0044 |
-| [0044](0044-deploy-dahlia-server-to-databricks-apps.md) | Server gateway / Databricks | DAB、Lakebase、App OAuth で Dahlia Server を Databricks Apps に配置する | Accepted; amends 0029 and 0043; amended by 0045, 0046, 0047, and 0050 |
+| [0043](0043-unify-dahlia-server-application-database.md) | Server gateway / Database | Server の認証・管理・将来同期を単一の選択可能な Drizzle DB に統一する | Accepted; amends 0029 and 0031; amended by 0044 and 0058 |
+| [0044](0044-deploy-dahlia-server-to-databricks-apps.md) | Server gateway / Databricks | DAB、Lakebase、App OAuth で Dahlia Server を Databricks Apps に配置する | Accepted; amends 0029 and 0043; amended by 0045, 0046, 0047, 0050, and 0058 |
 | [0045](0045-add-owner-scoped-artifact-transport.md) | Server / Artifact storage | owner-scoped の任意 asset transport を R2 または Volume で提供する | Accepted; amends 0029, 0043, and 0044; amended by 0048 |
 | [0046](0046-forward-databricks-user-token-to-ai-gateway.md) | Server gateway / Databricks | Apps proxy の user token で workspace AI Gateway を呼ぶ | Accepted; amends 0029 and 0044; amended by 0050 |
 | [0047](0047-manage-pnpm-dependencies-per-application.md) | Server gateway / Distribution | モノレポ内の各アプリが pnpm manifest と lockfile を独立して所有する | Accepted; amends 0029 and 0044 |
@@ -65,3 +65,16 @@ Codex は全 ADR を順番に読まず、最初にこの一覧から現在の作
 | [0053](0053-scope-codex-accounts-to-vaults.md) | Desktop / AI runtime / Authentication / Vault | Vault ごとにローカルまたは Dahlia アカウントの Codex home とモデル設定を選択する | Accepted; partially supersedes 0051 and 0052, builds on 0021 and 0029 |
 | [0054](0054-align-ai-runtime-timeouts.md) | Desktop / AI runtime / Server gateway | 要約と RPC の timeout を upstream execution と応答遅延に合わせる | Accepted; amends 0003 and 0029 |
 | [0055](0055-add-artifact-browser-pages.md) | Server / Artifact UI | owner-scoped artifact の一覧・表示ページと browser read 認証を追加する | Accepted; amends 0045, 0048, and 0049 |
+| [0056](0056-add-owner-only-meeting-sync.md) | Desktop / Server / Meeting sync | summary、transcript、screenshot を owner-only で Server へ同期する | Accepted; amends 0045, 0052, and 0053; amended by 0058, 0059, 0060, and 0066 |
+| [0057](0057-share-personal-vaults-with-organizations.md) | Server / Meeting sync / Sharing | 個人所有 Vault を複数 organization または header deployment へ明示的に read-only 共有する | Accepted; amends 0056; amended by 0058, 0059, 0061, and 0065; rollout disabled by default |
+| [0058](0058-separate-server-auth-core-content-schemas.md) | Server / Database / Databricks | Server DB を auth・core・content に分け、DAB storage の既定を整理する | Accepted; amends 0043, 0044, 0056, and 0057; amended by 0059, 0061, 0063, and 0066 |
+| [0059](0059-authorize-content-through-vault-principal-permissions.md) | Server / Database / Authorization | Vault principal permission を ownership、共有、content RLS の正本にする | Accepted; amends 0056, 0057, and 0058; amended by 0061, 0065, and 0066 |
+| [0060](0060-add-server-full-text-search.md) | Server / Search / Meeting sync | Server tokenization とDB別全文索引で同期済み meeting と screenshot を検索する | Accepted; amends 0056; builds on 0033, 0034, 0038, and 0059; amended by 0062 |
+| [0061](0061-decouple-vault-rls-from-better-auth-schema.md) | Server / Database / Authorization | 生のuser IDとtransaction-local principal contextを使い、header modeのVault RLSをBetter Auth schemaから分離する | Accepted; amends 0057, 0058, and 0059; amended by 0063 and 0065 |
+| [0062](0062-add-server-hybrid-search-projection.md) | Server / Search / Embeddings | 統合検索projectionと非同期vector生成でFTSをHybrid検索へ拡張する | Accepted; amends 0060; builds on 0059 and 0061; amended by 0066 |
+| [0063](0063-materialize-header-users-in-auth-schema.md) | Server / Database / Authentication | Header identityを共通Auth userへ射影し、全認証方式で同じmigration集合を使う | Accepted; amends 0058 and 0061; amended by 0064 and 0065 |
+| [0064](0064-manage-server-administrators-with-better-auth.md) | Server / Authentication / Administration | Better Auth admin roleをServer管理権限の正本にする | Accepted; amends 0029 and 0063 |
+| [0065](0065-unify-header-sharing-with-external-organization-teams.md) | Server / Authentication / Sharing | Header userをExternal Organizationへ統合し、OrganizationとTeamでVaultを共有する | Accepted; amends 0057, 0059, 0061, and 0063 |
+| [0066](0066-sync-vault-projects-and-separate-transcript-speakers.md) | Desktop / Server / Meeting sync | Vault名とProject階層を同期し、transcriptの収録経路と話者ラベルを分離する | Accepted; amends 0056, 0058, 0059, and 0062 |
+| [0067](0067-use-domain-transactions-and-cursor-deltas-for-sync.md) | Desktop / Server / Meeting sync | domain transaction、optimistic revision、cursor delta、SSE invalidationでDesktopとWebを同期する | Accepted; amends 0056, 0058, 0059, and 0066 |
+| [0068](0068-consolidate-desktop-and-mcp-oauth-scopes.md) | Desktop / Server / Authentication | Desktop APIを`all-apis`、MCPをfull/read-onlyの2 scopeへ統合する | Accepted; amends 0029, 0045, 0049, 0051, 0056, and 0067 |

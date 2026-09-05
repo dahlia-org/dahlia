@@ -7,8 +7,8 @@
         @Test
         func defaultsToSystemAudioOnly() {
             #expect(LiveSubtitleSourceMode.defaultMode == .systemAudioOnly)
-            #expect(!LiveSubtitleSourceMode.defaultMode.includesSpeakerLabel("mic"))
-            #expect(LiveSubtitleSourceMode.defaultMode.includesSpeakerLabel("system"))
+            #expect(!LiveSubtitleSourceMode.defaultMode.includesAudioSource("mic"))
+            #expect(LiveSubtitleSourceMode.defaultMode.includesAudioSource("system"))
         }
 
         @Test

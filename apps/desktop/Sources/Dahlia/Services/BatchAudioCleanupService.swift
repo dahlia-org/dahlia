@@ -45,9 +45,16 @@ enum BatchAudioCleanupService {
             )
             return rows.compactMap { row in
                 guard let location = RecordingAudioStorageLocation(rawValue: row["storageLocation"]) else { return nil }
-                let vaultURL = URL(fileURLWithPath: row["vaultPath"])
+                let baseURL: URL
+                switch location {
+                case .managed:
+                    baseURL = BatchAudioStorage.managedRootURL
+                case .vault:
+                    guard let vaultPath: String = row["vaultPath"] else { return nil }
+                    baseURL = URL(fileURLWithPath: vaultPath)
+                }
                 return DeletionTarget(
-                    baseURL: BatchAudioStorage.baseURL(for: location, vaultURL: vaultURL),
+                    baseURL: baseURL,
                     relativePath: row["relativePath"]
                 )
             }

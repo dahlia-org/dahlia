@@ -312,6 +312,7 @@
 "The project could not be found." = "プロジェクトが見つかりませんでした。";
 "Enter a valid project name without '/', ':', control characters, or a leading '.' or '_'." = "「/」「:」、制御文字、先頭の「.」「_」を含まない有効なプロジェクト名を入力してください。";
 "The project name is too long." = "プロジェクト名が長すぎます。";
+"The project description must be 20,000 characters or fewer." = "プロジェクトの説明は20,000文字以内で入力してください。";
 "A project named %@ already exists in this location." = "この場所には「%@」というプロジェクトがすでに存在します。";
 "The Summary output could not be moved to a recoverable Trash location." = "Summary 出力を復元可能なゴミ箱へ移動できませんでした。";
 "Choose an available project outside the hierarchy being deleted." = "削除対象の階層外にある利用可能なプロジェクトを選択してください。";
@@ -527,12 +528,24 @@
 "Dahlia sign-in was not authorized." = "Dahlia へのサインインが許可されませんでした。";
 "Dahlia credentials could not be saved securely." = "Dahlia の認証情報を安全に保存できませんでした。";
 "A Dahlia connection already exists for this server." = "この Server への Dahlia 接続はすでに存在します。";
+"Sign in with the same Dahlia account, or add a new connection." = "同じ Dahlia アカウントでサインインするか、新しい接続を追加してください。";
+"Resolve this connection's Server Vaults before removing it." = "この接続を削除する前に、関連する Server Vault の扱いを解決してください。";
+"Choose what to do with this account's local Vaults before signing out." = "サインアウトする前に、このアカウントのローカル Vault をどう扱うか選択してください。";
 "Manage the Dahlia Cloud and Server sign-ins used by Dahlia." = "Dahlia が使用する Dahlia Cloud と Server のサインインを管理します。";
 "%lld Dahlia accounts" = "%lld 件の Dahlia アカウント";
 "Sign In Again" = "再サインイン";
 "Sign-in required" = "再サインインが必要";
 "Sign out of %@?" = "%@ からサインアウトしますか？";
-"Only this connection's credentials will be removed." = "この接続の認証情報だけを削除します。";
+"Move Vaults to Local Account and Sign Out" = "Vault をローカルアカウントへ移してサインアウト";
+"Delete Local Vaults and Sign Out" = "ローカル Vault を削除してサインアウト";
+"The Server Vaults will remain unchanged. Moving keeps the working copies on this Mac; deleting removes them from this Mac." = "Server 上の Vault は変更されません。移動すると作業コピーをこの Mac に残し、削除するとこの Mac から取り除きます。";
+"Move to Server" = "Server へ移行";
+"Reconnect Server Vault" = "Server Vault に再接続";
+"Keep in Local Account" = "ローカルアカウントのままにする";
+"Reconnect %@ to this Server?" = "%@ をこの Server に再接続しますか？";
+"Move %@ to this Server?" = "%@ をこの Server へ移行しますか？";
+"A Vault with the same ID exists on the Server. Member access uses the Server version; owners can choose which version to use if records conflict." = "同じ ID の Vault が Server にあります。member は Server 版を使用し、owner は競合時にどちらの版を使うか選択できます。";
+"This Vault will move from the Local Account to the Server and synchronize automatically. Its working copy remains on this Mac." = "この Vault をローカルアカウントから Server へ移行し、自動的に同期します。作業コピーはこの Mac に残ります。";
 "Remove Dahlia connection %@?" = "Dahlia 接続 %@ を削除しますか？";
 "The connection will be removed. Local meeting data will not be deleted." = "接続を削除します。ローカルの会議データは削除されません。";
 "Signed in as %@" = "%@ としてサインイン済み";
@@ -540,6 +553,9 @@
 "Coming Soon" = "準備中";
 "Loading Vaults…" = "保管庫を読み込み中…";
 "Removing Vault…" = "保管庫を登録解除中…";
+"Confirm Meeting Deletions" = "ミーティング削除を確認";
+"Continue Deleting" = "削除を続行";
+"%lld server meeting deletions are waiting. Continue deleting them?" = "Server 上の %lld 件のミーティング削除が保留中です。削除を続行しますか？";
 "Current Vault" = "現在の保管庫";
 "Choose the vault used for recordings and sync." = "録音と同期に使用する保管庫を選択します。";
 "Open the account and vault menu." = "アカウントと保管庫のメニューを開きます。";
@@ -611,6 +627,7 @@
 "Loading Google Calendar…" = "Google カレンダーを読み込み中…";
 "Loading macOS Calendar…" = "macOS カレンダーを読み込み中…";
 "Retry" = "再試行";
+"Retry Sync" = "同期を再試行";
 "Join" = "参加";
 "All day" = "終日";
 "Google Calendar is not configured" = "Google カレンダーが未設定です";
@@ -669,7 +686,7 @@
 
 /* Vault Picker */
 "Create New Vault" = "保管庫を新規作成する";
-"Create a new folder to use as a vault." = "新しいフォルダを作成して保管庫として使用します。";
+"Create a vault without a local export folder." = "ローカルの書き出しフォルダを指定せずに保管庫を作成します。";
 "Add Vault" = "保管庫を追加";
 "Registered Vaults" = "登録済みの保管庫";
 "Open Folder as Vault" = "保管庫としてフォルダを開く";
@@ -1622,3 +1639,11 @@
 "Connect a calendar to see upcoming meetings in Dahlia. You can set this up later." = "カレンダーを接続すると、Dahliaで今後のミーティングを確認できます。後から設定することもできます。";
 "Review your choices, then create or open the selected Vault." = "選択内容を確認し、指定したVaultを作成または開きます。";
 "Setup Summary" = "セットアップ内容";
+"Sync conflict" = "同期の競合";
+"Use Server Version" = "サーバー版を使用";
+"Reapply Local Version" = "ローカル版を再適用";
+"Choose Local Folder" = "ローカルフォルダを選択";
+"No local export folder" = "ローカル書き出しフォルダなし";
+"Set Local Export Folder" = "ローカル書き出しフォルダを設定";
+"Change Local Export Folder" = "ローカル書き出しフォルダを変更";
+"Remove Local Export Folder" = "ローカル書き出しフォルダを解除";

@@ -8,6 +8,7 @@ extension SidebarViewModel {
     ]
 
     func renameMeeting(id: UUID, newName: String) {
+        guard canEditCurrentVault else { return }
         do {
             try meetingRepository?.renameMeeting(id: id, newName: newName)
             updateCachedMeetingName(id: id, name: newName)
@@ -30,7 +31,7 @@ extension SidebarViewModel {
     }
 
     func deleteMeetings(ids: Set<UUID>) {
-        guard !ids.isEmpty else { return }
+        guard canEditCurrentVault, !ids.isEmpty else { return }
         guard let meetingRepository else { return }
         Task {
             do {
@@ -45,7 +46,7 @@ extension SidebarViewModel {
 
     @discardableResult
     func moveMeeting(id: UUID, toProjectId: UUID?) -> Bool {
-        guard let projectWorkspaceService else { return false }
+        guard canEditCurrentVault, let projectWorkspaceService else { return false }
         do {
             try projectWorkspaceService.moveMeeting(id: id, toProjectId: toProjectId)
             let projectName = toProjectId.flatMap { projectId in
@@ -63,7 +64,7 @@ extension SidebarViewModel {
 
     @discardableResult
     func moveMeetings(ids: Set<UUID>, toProjectId: UUID?) -> Bool {
-        guard let projectWorkspaceService, !ids.isEmpty else { return false }
+        guard canEditCurrentVault, let projectWorkspaceService, !ids.isEmpty else { return false }
         do {
             try projectWorkspaceService.moveMeetings(ids: ids, toProjectId: toProjectId)
             let projectName = toProjectId.flatMap { projectId in

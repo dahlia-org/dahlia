@@ -2,6 +2,11 @@ import DahliaRuntimeSupport
 import Foundation
 import GRDB
 
+enum DahliaAccountVaultDisposition: Equatable, Sendable {
+    case deleteLocalCopies
+    case moveToLocalAccount
+}
+
 /// ミーティング・セグメント・プロジェクト・保管庫の DB クエリを集約するリポジトリ。
 @MainActor
 // Query methods share one MainActor-isolated database boundary.
@@ -96,12 +101,49 @@ final class MeetingRepository {
         }
     }
 
+    nonisolated func insertCloudVaultAsync(_ vault: VaultRecord, revision: Int) async throws {
+        try await dbQueue.write { db in
+            try vault.insert(db)
+            try db.execute(
+                sql: """
+                INSERT INTO sync_entity_state(vaultId, entity, entityId, confirmedRevision)
+                VALUES (?, 'vault', ?, ?)
+                """,
+                arguments: [vault.id, vault.id, revision]
+            )
+        }
+    }
+
     /// 保管庫の表示名を更新する。
     nonisolated func updateVaultName(id: UUID, name: String) async throws -> VaultRecord? {
         try await dbQueue.write { db in
             guard var vault = try VaultRecord.fetchOne(db, key: id) else { return nil }
             vault.name = name
             try vault.update(db)
+            try SyncTransactionRecorder.record(
+                vaultId: id,
+                operations: [SyncInitialSnapshotBuilder.vaultOperation(vault, action: .update)],
+                in: db
+            )
+            return vault
+        }
+    }
+
+    /// Device-local export folder. This never produces a Server transaction.
+    nonisolated func updateVaultPath(id: UUID, path: String?) async throws -> VaultRecord? {
+        try await dbQueue.write { db in
+            guard var vault = try VaultRecord.fetchOne(db, key: id) else { return nil }
+            guard vault.path != path else { return vault }
+            vault.path = path
+            try vault.update(db)
+            try db.execute(
+                sql: """
+                DELETE FROM summary_exports
+                WHERE type = ?
+                  AND meetingId IN (SELECT id FROM meetings WHERE vaultId = ?)
+                """,
+                arguments: [SummaryExportType.vault.rawValue, id]
+            )
             return vault
         }
     }
@@ -115,12 +157,70 @@ final class MeetingRepository {
         }
     }
 
-    nonisolated func updateVaultAccountConnection(id: UUID, connectionID: UUID?) async throws -> VaultRecord? {
+    nonisolated func adoptVaultForServerSync(
+        id: UUID,
+        connectionID: UUID,
+        serverVault: CloudVaultRecord?
+    ) async throws -> VaultRecord? {
         try await dbQueue.write { db in
-            guard var vault = try VaultRecord.fetchOne(db, key: id) else { return nil }
+            guard var vault = try VaultRecord.fetchOne(db, key: id),
+                  vault.accountConnectionId == nil,
+                  try !SyncTransactionQueue.hasPending(vaultId: id, in: db)
+            else { return nil }
             vault.accountConnectionId = connectionID
+            vault.syncRole = serverVault?.role
+            if let serverVault, serverVault.role == "member" {
+                vault.name = serverVault.name
+                vault.createdAt = serverVault.createdAt
+                vault.syncConfirmedConnectionId = connectionID
+                try db.execute(
+                    sql: """
+                    INSERT INTO sync_entity_state(vaultId, entity, entityId, confirmedRevision)
+                    VALUES (?, 'vault', ?, ?)
+                    """,
+                    arguments: [id, id, serverVault.revision]
+                )
+            }
             try vault.update(db)
             return vault
+        }
+    }
+
+    nonisolated func acceptServerSyncVersion(vaultId: UUID) async throws {
+        try await SyncTransactionQueue.acceptServerVersion(vaultId: vaultId, dbQueue: dbQueue)
+    }
+
+    nonisolated func discardInvalidSyncTransaction(vaultId: UUID) async throws {
+        try await SyncTransactionQueue.discardInvalidTransaction(vaultId: vaultId, dbQueue: dbQueue)
+    }
+
+    nonisolated func retryInvalidSyncTransaction(vaultId: UUID) async throws {
+        try await SyncTransactionQueue.retryInvalidTransaction(vaultId: vaultId, dbQueue: dbQueue)
+    }
+
+    nonisolated func retryAuthorizationSync(connectionId: UUID) async throws {
+        try await SyncTransactionQueue.retryAuthorizationBlocks(connectionId: connectionId, dbQueue: dbQueue)
+    }
+
+    nonisolated func reapplyLocalSyncVersion(vaultId: UUID) async throws {
+        try await SyncTransactionQueue.reapplyLocalVersion(vaultId: vaultId, dbQueue: dbQueue)
+    }
+
+    nonisolated func blockedSyncVaultIDs() async throws -> Set<UUID> {
+        try await dbQueue.read { db in
+            try UUID.fetchSet(db, sql: "SELECT DISTINCT vaultId FROM sync_transactions WHERE blockedReason IS NOT NULL")
+        }
+    }
+
+    nonisolated func conflictedSyncVaultIDs() async throws -> Set<UUID> {
+        try await dbQueue.read { db in
+            try UUID.fetchSet(db, sql: "SELECT DISTINCT vaultId FROM sync_transactions WHERE blockedReason = 'conflict'")
+        }
+    }
+
+    nonisolated func validationBlockedSyncVaultIDs() async throws -> Set<UUID> {
+        try await dbQueue.read { db in
+            try UUID.fetchSet(db, sql: "SELECT DISTINCT vaultId FROM sync_transactions WHERE blockedReason = 'validation'")
         }
     }
 
@@ -156,6 +256,7 @@ final class MeetingRepository {
 
     /// 保管庫を登録解除する（関連プロジェクト・ミーティングもカスケード削除）。
     nonisolated func deleteVault(id: UUID) throws {
+        try ensureVaultCanBeRemoved(id: id)
         let meetingIds = try meetingIds(vaultId: id)
         try ensureNoLiveSegmentedAudio(meetingIds: Set(meetingIds))
         let audioTargets = try BatchAudioCleanupService.deletionTargets(vaultId: id, dbQueue: dbQueue)
@@ -172,6 +273,9 @@ final class MeetingRepository {
     }
 
     private nonisolated static func deleteVaultRows(id: UUID, in db: Database) throws {
+        if try VaultRecord.fetchOne(db, key: id)?.syncRole == "member" {
+            try SyncTransactionQueue.discard(vaultId: id, in: db)
+        }
         let projects = try ProjectRecord.fetchResolvedAll(vaultId: id, in: db)
             .sorted {
                 $0.path.split(separator: "/").count > $1.path.split(separator: "/").count
@@ -186,12 +290,133 @@ final class MeetingRepository {
         id: UUID,
         managedRootURL: URL = BatchAudioStorage.managedRootURL
     ) async throws {
+        try ensureVaultCanBeRemoved(id: id)
         let ids = try meetingIds(vaultId: id)
         try await prepareSegmentedAudioForDeletion(
             meetingIds: Set(ids),
             managedRootURL: managedRootURL
         )
         try deleteVault(id: id)
+    }
+
+    nonisolated func resolveVaultsForSignOut(
+        connectionID: UUID,
+        disposition: DahliaAccountVaultDisposition,
+        managedRootURL: URL = BatchAudioStorage.managedRootURL
+    ) async throws {
+        let vaultIds = try await dbQueue.read { db in
+            try UUID.fetchAll(
+                db,
+                sql: "SELECT id FROM vaults WHERE accountConnectionId = ? ORDER BY id",
+                arguments: [connectionID]
+            )
+        }
+        guard !vaultIds.isEmpty else { return }
+
+        if disposition == .moveToLocalAccount {
+            try await dbQueue.write { db in
+                for vaultId in vaultIds {
+                    try SyncTransactionQueue.discard(vaultId: vaultId, in: db)
+                }
+                try db.execute(
+                    sql: "DELETE FROM sync_entity_state WHERE vaultId IN (\(vaultIds.map { _ in "?" }.joined(separator: ",")))",
+                    arguments: StatementArguments(vaultIds)
+                )
+                try db.execute(
+                    sql: """
+                    UPDATE vaults SET accountConnectionId = NULL, syncRole = NULL,
+                        syncConfirmedConnectionId = NULL, syncPullCursor = NULL,
+                        syncLastCommittedCursor = NULL
+                    WHERE accountConnectionId = ?
+                    """,
+                    arguments: [connectionID]
+                )
+            }
+            return
+        }
+
+        let meetingIds = try await dbQueue.read { db in
+            try UUID.fetchAll(
+                db,
+                sql: "SELECT id FROM meetings WHERE vaultId IN (\(vaultIds.map { _ in "?" }.joined(separator: ",")))",
+                arguments: StatementArguments(vaultIds)
+            )
+        }
+        let hasActiveRecording = if meetingIds.isEmpty {
+            false
+        } else {
+            try await dbQueue.read { db in
+                try Bool.fetchOne(
+                    db,
+                    sql: """
+                    SELECT EXISTS (
+                        SELECT 1 FROM recording_sessions
+                        WHERE meetingId IN (\(meetingIds.map { _ in "?" }.joined(separator: ",")))
+                          AND endedAt IS NULL
+                    )
+                    """,
+                    arguments: StatementArguments(meetingIds)
+                ) ?? false
+            }
+        }
+        guard !hasActiveRecording else { throw RecordingAudioStoreError.invalidState }
+        try ensureNoLiveSegmentedAudio(meetingIds: Set(meetingIds))
+        try await prepareSegmentedAudioForDeletion(meetingIds: Set(meetingIds), managedRootURL: managedRootURL)
+        let audioTargets = try vaultIds.flatMap {
+            try BatchAudioCleanupService.deletionTargets(vaultId: $0, dbQueue: dbQueue)
+        }
+        try await dbQueue.writeWithoutTransaction { db in
+            try db.inTransaction {
+                for vaultId in vaultIds {
+                    try SyncTransactionQueue.discard(vaultId: vaultId, in: db)
+                    try Self.deleteVaultRows(id: vaultId, in: db)
+                }
+                return .rollback
+            }
+        }
+        try BatchAudioCleanupService.deleteFiles(audioTargets)
+        try await dbQueue.write { db in
+            let placeholders = vaultIds.map { _ in "?" }.joined(separator: ",")
+            let arguments = StatementArguments(vaultIds)
+            let hasActiveRecording = try Bool.fetchOne(
+                db,
+                sql: """
+                SELECT EXISTS (
+                    SELECT 1 FROM recording_sessions
+                    JOIN meetings ON meetings.id = recording_sessions.meetingId
+                    WHERE meetings.vaultId IN (\(placeholders))
+                      AND recording_sessions.endedAt IS NULL
+                )
+                """,
+                arguments: arguments
+            ) ?? false
+            let hasLiveAudio = try Bool.fetchOne(
+                db,
+                sql: """
+                SELECT EXISTS (
+                    SELECT 1 FROM recording_audio_segments
+                    JOIN recording_sessions ON recording_sessions.id = recording_audio_segments.recordingSessionId
+                    JOIN meetings ON meetings.id = recording_sessions.meetingId
+                    WHERE meetings.vaultId IN (\(placeholders))
+                      AND recording_audio_segments.state != ?
+                )
+                """,
+                arguments: arguments + [RecordingAudioSegmentState.purged.rawValue]
+            ) ?? false
+            guard !hasActiveRecording, !hasLiveAudio else { throw RecordingAudioStoreError.invalidState }
+            for vaultId in vaultIds {
+                try SyncTransactionQueue.discard(vaultId: vaultId, in: db)
+                try Self.deleteVaultRows(id: vaultId, in: db)
+            }
+        }
+    }
+
+    private nonisolated func ensureVaultCanBeRemoved(id: UUID) throws {
+        if try dbQueue.read({ db in
+            try VaultRecord.fetchOne(db, key: id)?.requiresServerDeletionBeforeRemoval == true
+        }) {
+            throw VaultDeletionError.serverCopyExists
+        }
     }
 
     /// UI をブロックせず、保管庫の最終オープン日時を更新する。
@@ -265,7 +490,13 @@ final class MeetingRepository {
         try dbQueue.write { db in
             if var record = try MeetingRecord.fetchOne(db, key: id) {
                 record.name = newName
+                record.updatedAt = .now
                 try record.update(db)
+                try SyncTransactionRecorder.record(
+                    vaultId: record.vaultId,
+                    operations: [SyncInitialSnapshotBuilder.meetingOperation(record, action: .update)],
+                    in: db
+                )
             }
         }
     }
@@ -275,6 +506,12 @@ final class MeetingRepository {
         let audioTargets = try BatchAudioCleanupService.deletionTargets(meetingIds: [id], dbQueue: dbQueue)
         try BatchAudioCleanupService.deleteFiles(audioTargets)
         try dbQueue.write { db in
+            guard let meeting = try MeetingRecord.fetchOne(db, key: id) else { return }
+            try SyncTransactionRecorder.record(
+                vaultId: meeting.vaultId,
+                operations: [SyncOperationDraft(entity: .meeting, action: .delete, entityId: id)],
+                in: db
+            )
             _ = try MeetingRecord.deleteOne(db, key: id)
         }
     }
@@ -322,6 +559,16 @@ final class MeetingRepository {
         let audioTargets = try BatchAudioCleanupService.deletionTargets(meetingIds: ids, dbQueue: dbQueue)
         try BatchAudioCleanupService.deleteFiles(audioTargets)
         try dbQueue.write { db in
+            let meetings = try MeetingRecord.filter(ids.contains(Column("id"))).fetchAll(db)
+            for (vaultId, vaultMeetings) in Dictionary(grouping: meetings, by: \.vaultId) {
+                try SyncTransactionRecorder.recordBatches(
+                    vaultId: vaultId,
+                    operations: vaultMeetings.map {
+                        SyncOperationDraft(entity: .meeting, action: .delete, entityId: $0.id)
+                    },
+                    in: db
+                )
+            }
             _ = try MeetingRecord.filter(ids.contains(Column("id"))).deleteAll(db)
         }
     }
@@ -406,6 +653,18 @@ final class MeetingRepository {
                 .filter(Column("vaultId") == vaultId)
                 .updateAll(db, Column("projectId").set(to: toProjectId))
 
+            let changedMeetings = try MeetingRecord
+                .filter(ids.contains(Column("id")))
+                .filter(Column("vaultId") == vaultId)
+                .fetchAll(db)
+            try SyncTransactionRecorder.recordBatches(
+                vaultId: vaultId,
+                operations: changedMeetings.map {
+                    try SyncInitialSnapshotBuilder.meetingOperation($0, action: .update)
+                },
+                in: db
+            )
+
             try Self.updateVaultExports(vaultExportUpdates, forMeetingIds: ids, in: db)
         }
     }
@@ -436,6 +695,14 @@ final class MeetingRepository {
                 createdAt: existingSummary?.createdAt ?? Date()
             )
             try record.save(db)
+            try SyncTransactionRecorder.record(
+                vaultId: meeting.vaultId,
+                operations: [
+                    SyncInitialSnapshotBuilder.meetingOperation(meeting, action: .update),
+                    SyncInitialSnapshotBuilder.summaryOperation(record, action: .upsert),
+                ],
+                in: db
+            )
             _ = try SummaryExportRecord
                 .filter(Column("meetingId") == meetingId)
                 .deleteAll(db)
@@ -661,6 +928,18 @@ final class MeetingRepository {
             _ = try MeetingScreenshotRecord
                 .filter(deletedIds.contains(Column("id")))
                 .deleteAll(db)
+            guard let vaultId = try UUID.fetchOne(
+                db,
+                sql: "SELECT vaultId FROM meetings WHERE id = ?",
+                arguments: [meetingId]
+            ) else { return deletedScreenshots }
+            try SyncTransactionRecorder.recordBatches(
+                vaultId: vaultId,
+                operations: deletedScreenshots.map {
+                    SyncOperationDraft(entity: .screenshot, action: .delete, entityId: $0.id)
+                },
+                in: db
+            )
             return deletedScreenshots
         }
     }
@@ -755,6 +1034,16 @@ final class MeetingRepository {
     nonisolated func upsertSummary(_ summary: SummaryRecord) throws {
         try dbQueue.write { db in
             try summary.save(db)
+            guard let vaultId = try UUID.fetchOne(
+                db,
+                sql: "SELECT vaultId FROM meetings WHERE id = ?",
+                arguments: [summary.meetingId]
+            ) else { return }
+            try SyncTransactionRecorder.record(
+                vaultId: vaultId,
+                operations: [SyncInitialSnapshotBuilder.summaryOperation(summary, action: .upsert)],
+                in: db
+            )
         }
     }
 
@@ -812,6 +1101,10 @@ final class MeetingRepository {
             in: db
         )
     }
+}
+
+enum VaultDeletionError: Error {
+    case serverCopyExists
 }
 
 extension MeetingRepository {

@@ -336,7 +336,7 @@ import GRDB
                     .fetchOne(db)
             }
             #expect(transcript?.startTime == fixture.now.addingTimeInterval(0.001))
-            #expect(transcript?.speakerLabel == RecordingAudioSource.microphone.speakerLabel)
+            #expect(transcript?.audioSource == RecordingAudioSource.microphone.audioSource)
         }
     }
 

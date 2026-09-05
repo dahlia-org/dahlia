@@ -11,6 +11,25 @@ import GRDB
     // swiftlint:disable:next type_body_length
     struct MeetingSummaryUpdateTests {
         @Test
+        func updatesSummaryWithoutALocalExportFolder() throws {
+            let fixture = try Fixture()
+            try fixture.manager.dbQueue.write { db in
+                try db.execute(sql: "UPDATE vaults SET path = NULL WHERE id = ?", arguments: [fixture.primaryVaultID])
+            }
+            let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+            let version = try #require(store.meeting(id: fixture.firstMeetingID).summaryDocumentVersion)
+
+            let result = try store.updateMeetingSummary(
+                meetingID: fixture.firstMeetingID,
+                expectedDocumentVersion: version,
+                document: Self.document(title: "Database only", body: "No export folder")
+            )
+
+            #expect(result.changed)
+            #expect(result.vaultExport == .notExported)
+        }
+
+        @Test
         func replacesDocumentAndPropagatesMeetingMetadata() throws {
             let fixture = try Fixture()
             let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)

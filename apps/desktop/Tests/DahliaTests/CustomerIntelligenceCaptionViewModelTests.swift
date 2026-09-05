@@ -11,7 +11,7 @@ import GRDB
         func materializedCalendarDraftSchedulesParticipantIngestion() async throws {
             let fixture = try CustomerIntelligenceFixture()
             let viewModel = CaptionViewModel()
-            let vaultURL = URL(fileURLWithPath: fixture.vault.path, isDirectory: true)
+            let vaultURL = try #require(fixture.vault.url)
             let previousVault = AppSettings.shared.currentVault
             AppSettings.shared.currentVault = fixture.vault
             defer { AppSettings.shared.currentVault = previousVault }

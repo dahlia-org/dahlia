@@ -154,7 +154,7 @@
                 .first(where: { $0.name == "scope" })?.value ?? ""
             #expect(scope.contains("openid"))
             #expect(scope.contains("offline_access"))
-            #expect(!scope.contains("all-apis"))
+            #expect(scope.contains("all-apis"))
         }
 
         @Test
@@ -177,7 +177,7 @@
             let scope = URLComponents(url: authorizationURL, resolvingAgainstBaseURL: false)?.queryItems?
                 .first(where: { $0.name == "scope" })?.value ?? ""
             #expect(Set(scope.split(separator: " ").map(String.init)) == [
-                "ai-gateway", "files", "iam.current-user:read", "offline_access",
+                "all-apis", "offline_access",
             ])
             let tokenBody = try #require(recorder.tokenRequestBody)
             let tokenScope = URLComponents(string: "?\(tokenBody)")?.queryItems?
@@ -187,7 +187,7 @@
 
         @Test
         func tokenResponseRejectsScopesOutsideTheRequest() async throws {
-            let recorder = CloudRequestRecorder(mode: .userInfo, tokenScope: "openid all-apis")
+            let recorder = CloudRequestRecorder(mode: .userInfo, tokenScope: "openid mcp:read")
             let service = makeService(recorder: recorder, store: CloudCredentialStoreFake())
 
             await #expect(throws: DahliaCloudError.invalidTokenResponse) {
@@ -201,6 +201,22 @@
             let store = CloudCredentialStoreFake(credential: oldCredential)
             let service = makeService(
                 recorder: CloudRequestRecorder(mode: .refresh, tokenAccessToken: ""),
+                store: store
+            )
+
+            await #expect(throws: DahliaCloudError.invalidTokenResponse) {
+                try await service.validAccessToken()
+            }
+            #expect(store.credential == oldCredential)
+            #expect(store.saveCount == 0)
+        }
+
+        @Test
+        func refreshRejectsScopesThatLoseAllAPIsWithoutReplacingCredential() async throws {
+            let oldCredential = makeCredential(expirationDate: .distantPast)
+            let store = CloudCredentialStoreFake(credential: oldCredential)
+            let service = makeService(
+                recorder: CloudRequestRecorder(mode: .refresh, tokenScope: "openid"),
                 store: store
             )
 
@@ -267,6 +283,22 @@
             try await restored.signOut()
             #expect(store.credential == nil)
             #expect(recorder.requests.contains { $0.url?.path == "/revoke" })
+        }
+
+        @Test
+        func restartRequiresReauthorizationWhenStoredCredentialLacksAllAPIs() async throws {
+            let recorder = CloudRequestRecorder(mode: .refresh)
+            let store = CloudCredentialStoreFake(credential: makeCredential(
+                expirationDate: .distantPast,
+                grantedScopes: ["openid", "api.sync.write"]
+            ))
+            let service = makeService(recorder: recorder, store: store)
+
+            #expect(try await service.storedCredential() == nil)
+            await #expect(throws: DahliaCloudError.noCredential) {
+                try await service.validAccessToken()
+            }
+            #expect(recorder.tokenRequestCount == 0)
         }
 
         @Test
@@ -410,7 +442,7 @@
             try await repository.insertDahliaAccountConnection(connection)
             let cancellation = CloudCancellationTrigger()
             let store = CloudCredentialStoreFake(
-                credential: makeCredential(expirationDate: .distantFuture),
+                credential: makeCredential(expirationDate: .distantFuture, accountID: "user-1"),
                 onSave: cancellation.fire
             )
             let service = makeService(recorder: CloudRequestRecorder(mode: .userInfo), store: store)
@@ -429,6 +461,45 @@
             await signIn.value
 
             #expect(controller.completedSignInConnection(matching: configuration) == nil)
+        }
+
+        @MainActor
+        @Test
+        func reauthenticationRejectsADifferentAccountAndKeepsTheExistingCredential() async throws {
+            let manager = try AppDatabaseManager(path: ":memory:")
+            let repository = MeetingRepository(dbQueue: manager.dbQueue)
+            let connection = DahliaAccountConnectionRecord(
+                id: .v7(),
+                origin: "https://cloud.example.com",
+                clientID: "desktop-client",
+                createdAt: .now
+            )
+            try await repository.insertDahliaAccountConnection(connection)
+            let configuration = try #require(DahliaCloudConfiguration.make(
+                urlString: connection.origin,
+                clientID: connection.clientID
+            ))
+            let recorder = CloudRequestRecorder(mode: .userInfo, advertisesRevocationEndpoint: true)
+            let existingCredential = makeCredential(
+                expirationDate: .distantFuture,
+                grantedScopes: ["openid", "api.sync.write"]
+            )
+            let store = CloudCredentialStoreFake(credential: existingCredential)
+            let service = makeService(recorder: recorder, store: store)
+            let controller = DahliaCloudAccountController(
+                configuration: configuration,
+                serviceFactory: { _, _ in service }
+            )
+            await controller.configure(appDatabase: manager)
+
+            let signIn = try #require(controller.startReauthentication(connectionID: connection.id))
+            await signIn.value
+
+            #expect(store.credential == existingCredential)
+            #expect(store.saveCount == 0)
+            #expect(controller.completedSignInConnection(matching: configuration) == nil)
+            #expect(controller.errorMessage != nil)
+            #expect(recorder.requests.contains { $0.url?.path == "/revoke" })
         }
 
         @MainActor
@@ -623,7 +694,9 @@
         private func makeCredential(
             expirationDate: Date,
             revocationEndpoint: URL? = nil,
-            clientID: String = "desktop-client"
+            clientID: String = "desktop-client",
+            accountID: String = "saved-user",
+            grantedScopes: Set<String> = ["all-apis"]
         ) -> DahliaCloudCredential {
             DahliaCloudCredential(
                 accessToken: "old-access",
@@ -632,10 +705,10 @@
                 resource: "https://cloud.example.com",
                 issuer: "https://accounts.example.com",
                 clientID: clientID,
-                grantedScopes: ["openid"],
+                grantedScopes: grantedScopes,
                 tokenEndpoint: URL(string: "https://accounts.example.com/token")!,
                 revocationEndpoint: revocationEndpoint,
-                account: DahliaCloudAccount(id: "saved-user", name: "Saved User", email: "saved@example.com")
+                account: DahliaCloudAccount(id: accountID, name: "Saved User", email: "saved@example.com")
             )
         }
     }
@@ -786,7 +859,7 @@
             let body: String
             switch request.url?.path {
             case "/.well-known/oauth-protected-resource":
-                let scopes = mode == .proxySession ? "[\"iam.current-user:read\",\"all-apis\"]" : "[]"
+                let scopes = "[\"all-apis\"]"
                 body = """
                 {"resource":"https://cloud.example.com","authorization_servers":["https://accounts.example.com"],"scopes_supported":\(scopes)}
                 """

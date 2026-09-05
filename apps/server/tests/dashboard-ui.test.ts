@@ -32,6 +32,29 @@ describe("dashboard navigation", () => {
     expect(artifactViewerId("/artifacts/id/content")).toBeUndefined();
   });
 
+  it("gates synchronized Vault routes with the sync capability", () => {
+    const enabled = { admin: false, sessions: false, sync: true };
+    expect(resolveDashboardRoute("/vaults", enabled)).toEqual({ page: "vaults" });
+    expect(resolveDashboardRoute("/vaults/v1", enabled)).toEqual({ page: "vault", vaultId: "v1" });
+    expect(resolveDashboardRoute("/vaults/v1/projects/p1", enabled))
+      .toEqual({ page: "project", vaultId: "v1", projectId: "p1" });
+    expect(resolveDashboardRoute("/vaults/v1/meetings/m1", enabled))
+      .toEqual({ page: "meeting", vaultId: "v1", meetingId: "m1" });
+    expect(resolveDashboardRoute("/vaults", { admin: false, sessions: false, sync: false }))
+      .toEqual({ redirect: "/dashboard" });
+  });
+
+  it("gates organization and invitation routes with session capabilities", () => {
+    const enabled = { admin: false, sessions: true, sharing: true };
+    expect(resolveDashboardRoute("/organizations", enabled)).toEqual({ page: "organizations" });
+    expect(resolveDashboardRoute("/accept-invitation/invitation-1", enabled))
+      .toEqual({ page: "invitation", invitationId: "invitation-1" });
+    expect(resolveDashboardRoute("/organizations", { ...enabled, sharing: false }))
+      .toEqual({ redirect: "/dashboard" });
+    expect(resolveDashboardRoute("/organizations", { ...enabled, sessions: false }))
+      .toEqual({ page: "organizations" });
+  });
+
   it("embeds browser-native artifact types and downloads other bytes", () => {
     expect(canEmbedArtifact("text/html; charset=utf-8")).toBe(true);
     expect(canEmbedArtifact("image/png")).toBe(true);
@@ -98,6 +121,11 @@ describe("dashboard navigation", () => {
     expect(source).toContain('sandbox="allow-scripts"');
     expect(source).toContain("application/vnd.dahlia.artifact+json");
     expect(source).toContain("Loading artifacts…");
+    expect(source).toContain("/api/auth/organization/list-user-teams?");
+    expect(source).not.toContain("/api/auth/organization/list-team-members?");
+    expect(source).toContain('team.id !== "external-default"');
+    expect(source).toContain("summaryDisplayText(meeting?.summaryDocument ?? null)");
+    expect(source).not.toContain("<pre>{meeting.summaryDocument}</pre>");
   });
 
   it("uses immediate accessible switches for Databricks models", () => {

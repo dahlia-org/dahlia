@@ -312,6 +312,7 @@
 "The project could not be found." = "The project could not be found.";
 "Enter a valid project name without '/', ':', control characters, or a leading '.' or '_'." = "Enter a valid project name without '/', ':', control characters, or a leading '.' or '_'.";
 "The project name is too long." = "The project name is too long.";
+"The project description must be 20,000 characters or fewer." = "The project description must be 20,000 characters or fewer.";
 "A project named %@ already exists in this location." = "A project named %@ already exists in this location.";
 "The Summary output could not be moved to a recoverable Trash location." = "The Summary output could not be moved to a recoverable Trash location.";
 "Choose an available project outside the hierarchy being deleted." = "Choose an available project outside the hierarchy being deleted.";
@@ -527,12 +528,24 @@
 "Dahlia sign-in was not authorized." = "Dahlia sign-in was not authorized.";
 "Dahlia credentials could not be saved securely." = "Dahlia credentials could not be saved securely.";
 "A Dahlia connection already exists for this server." = "A Dahlia connection already exists for this server.";
+"Sign in with the same Dahlia account, or add a new connection." = "Sign in with the same Dahlia account, or add a new connection.";
+"Resolve this connection's Server Vaults before removing it." = "Resolve this connection's Server Vaults before removing it.";
+"Choose what to do with this account's local Vaults before signing out." = "Choose what to do with this account's local Vaults before signing out.";
 "Manage the Dahlia Cloud and Server sign-ins used by Dahlia." = "Manage the Dahlia Cloud and Server sign-ins used by Dahlia.";
 "%lld Dahlia accounts" = "%lld Dahlia accounts";
 "Sign In Again" = "Sign In Again";
 "Sign-in required" = "Sign-in required";
 "Sign out of %@?" = "Sign out of %@?";
-"Only this connection's credentials will be removed." = "Only this connection's credentials will be removed.";
+"Move Vaults to Local Account and Sign Out" = "Move Vaults to Local Account and Sign Out";
+"Delete Local Vaults and Sign Out" = "Delete Local Vaults and Sign Out";
+"The Server Vaults will remain unchanged. Moving keeps the working copies on this Mac; deleting removes them from this Mac." = "The Server Vaults will remain unchanged. Moving keeps the working copies on this Mac; deleting removes them from this Mac.";
+"Move to Server" = "Move to Server";
+"Reconnect Server Vault" = "Reconnect Server Vault";
+"Keep in Local Account" = "Keep in Local Account";
+"Reconnect %@ to this Server?" = "Reconnect %@ to this Server?";
+"Move %@ to this Server?" = "Move %@ to this Server?";
+"A Vault with the same ID exists on the Server. Member access uses the Server version; owners can choose which version to use if records conflict." = "A Vault with the same ID exists on the Server. Member access uses the Server version; owners can choose which version to use if records conflict.";
+"This Vault will move from the Local Account to the Server and synchronize automatically. Its working copy remains on this Mac." = "This Vault will move from the Local Account to the Server and synchronize automatically. Its working copy remains on this Mac.";
 "Remove Dahlia connection %@?" = "Remove Dahlia connection %@?";
 "The connection will be removed. Local meeting data will not be deleted." = "The connection will be removed. Local meeting data will not be deleted.";
 "Signed in as %@" = "Signed in as %@";
@@ -540,6 +553,9 @@
 "Coming Soon" = "Coming Soon";
 "Loading Vaults…" = "Loading Vaults…";
 "Removing Vault…" = "Removing Vault…";
+"Confirm Meeting Deletions" = "Confirm Meeting Deletions";
+"Continue Deleting" = "Continue Deleting";
+"%lld server meeting deletions are waiting. Continue deleting them?" = "%lld server meeting deletions are waiting. Continue deleting them?";
 "Current Vault" = "Current Vault";
 "Choose the vault used for recordings and sync." = "Choose the vault used for recordings and sync.";
 "Open the account and vault menu." = "Open the account and vault menu.";
@@ -611,6 +627,7 @@
 "Loading Google Calendar…" = "Loading Google Calendar…";
 "Loading macOS Calendar…" = "Loading macOS Calendar…";
 "Retry" = "Retry";
+"Retry Sync" = "Retry Sync";
 "Join" = "Join";
 "All day" = "All day";
 "Google Calendar is not configured" = "Google Calendar is not configured";
@@ -669,7 +686,7 @@
 
 /* Vault Picker */
 "Create New Vault" = "Create New Vault";
-"Create a new folder to use as a vault." = "Create a new folder to use as a vault.";
+"Create a vault without a local export folder." = "Create a vault without a local export folder.";
 "Add Vault" = "Add Vault";
 "Registered Vaults" = "Registered Vaults";
 "Open Folder as Vault" = "Open Folder as Vault";
@@ -1622,3 +1639,11 @@
 "Connect a calendar to see upcoming meetings in Dahlia. You can set this up later." = "Connect a calendar to see upcoming meetings in Dahlia. You can set this up later.";
 "Review your choices, then create or open the selected Vault." = "Review your choices, then create or open the selected Vault.";
 "Setup Summary" = "Setup Summary";
+"Sync conflict" = "Sync conflict";
+"Use Server Version" = "Use Server Version";
+"Reapply Local Version" = "Reapply Local Version";
+"Choose Local Folder" = "Choose Local Folder";
+"No local export folder" = "No local export folder";
+"Set Local Export Folder" = "Set Local Export Folder";
+"Change Local Export Folder" = "Change Local Export Folder";
+"Remove Local Export Folder" = "Remove Local Export Folder";

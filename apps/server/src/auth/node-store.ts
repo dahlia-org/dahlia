@@ -8,15 +8,21 @@ import { migrate as migrateSqlite } from "drizzle-orm/sqlite-proxy/migrator";
 
 import type { AppConfig } from "../config";
 import { connectApplicationDatabase, migrateApplicationDatabase } from "../db/client";
-import { serverMigrationManifest, type MigrationManifest } from "../migrations";
+import {
+  postgresMigrations,
+  serverMigrationManifest,
+  type MigrationManifest,
+} from "../migrations";
 import {
   createPostgresApplicationStore,
   createSqliteApplicationStore,
   type ApplicationStore,
 } from "./store";
+import { createPostgresSearchIndexStore, createSqliteSearchIndexStore, type SearchIndexStore } from "../search/index-store";
 
 export interface NodeApplicationStore extends ApplicationStore {
   migrate(): Promise<void>;
+  searchIndex?: SearchIndexStore;
 }
 
 export function createNodeApplicationStore(
@@ -26,8 +32,17 @@ export function createNodeApplicationStore(
   if (config.databaseType === "postgres" || config.databaseType === "lakebase") {
     const connection = connectApplicationDatabase(config);
     return {
-      ...createPostgresApplicationStore(connection.db),
-      migrate: () => migrateApplicationDatabase(config, migrations.postgres.directories),
+      ...createPostgresApplicationStore(
+        connection.db,
+        config.databaseType,
+        config.searchEmbedding,
+        config.syncSharingEnabled,
+      ),
+      migrate: () => migrateApplicationDatabase(
+        config,
+        postgresMigrations(migrations),
+      ),
+      searchIndex: config.searchEmbedding ? createPostgresSearchIndexStore(connection.db) : undefined,
       close: connection.close,
     };
   }
@@ -74,7 +89,12 @@ export function createNodeApplicationStore(
       };
     },
   });
-  const store = createSqliteApplicationStore(transactionalSqlite, true);
+  const store = createSqliteApplicationStore(
+    transactionalSqlite,
+    true,
+    config.searchEmbedding,
+    config.syncSharingEnabled,
+  );
   const applyMigrationQueries = (queries: string[]) => {
     for (const query of queries) database.exec(query);
     return Promise.resolve();
@@ -119,6 +139,7 @@ export function createNodeApplicationStore(
   };
   return {
     ...store,
+    searchIndex: config.searchEmbedding ? createSqliteSearchIndexStore(transactionalSqlite) : undefined,
     close: () => {
       database.close();
       return Promise.resolve();

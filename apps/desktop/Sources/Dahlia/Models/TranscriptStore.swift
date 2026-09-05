@@ -481,7 +481,7 @@ final class TranscriptStore: ObservableObject { // swiftlint:disable:this type_b
     private func latestPreviews(in source: [TranscriptSegment]) -> [TranscriptSegment] {
         var previews: [String: TranscriptSegment] = [:]
         for segment in source where !segment.isConfirmed {
-            previews[segment.speakerLabel ?? ""] = segment
+            previews[segment.audioSource ?? ""] = segment
         }
         return Array(previews.values)
     }
@@ -492,7 +492,7 @@ final class TranscriptStore: ObservableObject { // swiftlint:disable:this type_b
         unconfirmedThrottleTasks[key]?.cancel()
         unconfirmedThrottleTasks[key] = nil
         pendingUnconfirmed[key] = nil
-        segments.removeAll { !$0.isConfirmed && $0.speakerLabel == sourceLabel }
+        segments.removeAll { !$0.isConfirmed && $0.audioSource == sourceLabel }
         lastUnconfirmedUpdate[key] = .now
     }
 
@@ -528,7 +528,7 @@ final class TranscriptStore: ObservableObject { // swiftlint:disable:this type_b
 
     private func applyUnconfirmedMutation(_ mutation: UnconfirmedMutation, forSource sourceLabel: String? = nil) {
         projectionRevision &+= 1
-        let existingIndex = segments.lastIndex(where: { !$0.isConfirmed && $0.speakerLabel == sourceLabel })
+        let existingIndex = segments.lastIndex(where: { !$0.isConfirmed && $0.audioSource == sourceLabel })
 
         switch mutation {
         case .clear:
@@ -558,6 +558,7 @@ final class TranscriptStore: ObservableObject { // swiftlint:disable:this type_b
             text: segment.text,
             translatedText: segment.translatedText ?? existingSegment?.translatedText,
             isConfirmed: false,
+            audioSource: segment.audioSource,
             speakerLabel: segment.speakerLabel
         )
     }
@@ -573,6 +574,6 @@ final class TranscriptStore: ObservableObject { // swiftlint:disable:this type_b
             }
         }
 
-        return segments.last(where: { !$0.isConfirmed && $0.speakerLabel == sourceLabel })
+        return segments.last(where: { !$0.isConfirmed && $0.audioSource == sourceLabel })
     }
 }

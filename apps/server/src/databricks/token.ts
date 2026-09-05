@@ -9,7 +9,11 @@ interface CachedToken {
 
 const TOKEN_TIMEOUT_MS = 30_000;
 
-export class DatabricksTokenError extends Error {}
+export class DatabricksTokenError extends Error {
+  constructor(message: string, readonly retryable = false) {
+    super(message);
+  }
+}
 
 export class DatabricksTokenProvider {
   private cached?: CachedToken;
@@ -44,12 +48,17 @@ export class DatabricksTokenProvider {
         signal: AbortSignal.timeout(TOKEN_TIMEOUT_MS),
       });
     } catch {
-      throw new DatabricksTokenError("Databricks authentication failed");
+      throw new DatabricksTokenError("Databricks authentication failed", true);
     }
     const body: unknown = await response.json().catch(() => undefined);
+    if (!response.ok) {
+      throw new DatabricksTokenError(
+        "Databricks authentication failed",
+        response.status === 429 || response.status >= 500,
+      );
+    }
     if (
-      !response.ok
-      || !body
+      !body
       || typeof body !== "object"
       || !("access_token" in body)
       || typeof body.access_token !== "string"

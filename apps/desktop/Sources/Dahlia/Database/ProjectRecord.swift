@@ -132,13 +132,7 @@ struct ProjectRecord: Codable, FetchableRecord, PersistableRecord, Identifiable,
         return hierarchy(projectId: projectId, records: records)
     }
 
-    static func hierarchy(path: String, vaultId: UUID, in db: Database) throws -> [Self] {
-        let records = try fetchResolvedAll(vaultId: vaultId, in: db)
-        guard let project = records.first(where: { $0.path == path }) else { return [] }
-        return hierarchy(projectId: project.id, records: records)
-    }
-
-    private static func hierarchy(projectId: UUID, records: [Self]) -> [Self] {
+    static func hierarchy(projectId: UUID, records: [Self]) -> [Self] {
         let childrenByParent = Dictionary(grouping: records, by: \.parentProjectId)
         var result: [Self] = []
 
@@ -195,13 +189,47 @@ struct ProjectRecord: Codable, FetchableRecord, PersistableRecord, Identifiable,
             .updateAll(db, Column("revision").set(to: Column("revision") + 1))
     }
 
-    static func belongsToHierarchy(_ path: String, prefix: String) -> Bool {
-        path == prefix || path.hasPrefix(prefix + "/")
+    static func applyCanonical(
+        id: UUID,
+        vaultId: UUID,
+        parentProjectId: UUID?,
+        name: String,
+        createdAt: Date,
+        description: String,
+        projectType: ProjectType?,
+        in db: Database
+    ) throws {
+        guard var project = try fetchOne(db, key: id) else {
+            try Self(
+                id: id,
+                vaultId: vaultId,
+                parentProjectId: parentProjectId,
+                name: name,
+                createdAt: createdAt,
+                description: description,
+                projectType: projectType
+            ).insert(db)
+            return
+        }
+        guard project.vaultId == vaultId else {
+            throw ProjectWorkspaceError.projectNotFound
+        }
+
+        let hierarchyChanged = project.parentProjectId != parentProjectId
+            || project.name != name
+            || project.projectType != projectType
+        guard hierarchyChanged
+            || project.createdAt != createdAt
+            || project.description != description else { return }
+        let descendantIDs = try Set(hierarchy(projectId: id, vaultId: vaultId, in: db).dropFirst().map(\.id))
+        project.parentProjectId = parentProjectId
+        project.name = name
+        project.createdAt = createdAt
+        project.description = description
+        project.projectType = projectType
+        project.revision += 1
+        try project.update(db)
+        try incrementRevisions(hierarchyChanged ? descendantIDs : [], in: db)
     }
 
-    static func pathKey(_ path: String) -> String {
-        path.split(separator: "/", omittingEmptySubsequences: false)
-            .map { DahliaProjectName.siblingKey(String($0)) }
-            .joined(separator: "/")
-    }
 }

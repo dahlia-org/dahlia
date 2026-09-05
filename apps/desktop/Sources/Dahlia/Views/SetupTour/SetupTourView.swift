@@ -242,9 +242,10 @@ struct SetupTourView: View {
                 return
             }
             let vault: VaultRecord? = if let originalVault = model.originalVault,
-                                         originalVault.url.standardizedFileURL
-                                         == model.selectedVaultURL.standardizedFileURL {
+                                         model.keepsOriginalVault {
                 originalVault
+            } else if let name = model.selectedVaultName {
+                await vaultManagementModel.createVault(named: name)
             } else {
                 await vaultManagementModel.createVault(at: model.selectedVaultURL)
             }
@@ -262,7 +263,7 @@ struct SetupTourView: View {
     }
 
     private var requiresVaultSwitch: Bool {
-        model.originalVault?.url.standardizedFileURL != model.selectedVaultURL.standardizedFileURL
+        !model.keepsOriginalVault
     }
 
 }

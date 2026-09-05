@@ -36,6 +36,136 @@ afterEach(() => {
 });
 
 describe("SQLite Better Auth store", () => {
+  it("creates one external organization owner under concurrent first header access", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "dahlia-header-concurrent-"));
+    directories.push(directory);
+    const path = join(directory, "header.sqlite");
+    const config = { ...testConfig(path), authProvider: "header" as const };
+    const store = createNodeAuthStore(config);
+    await store.migrate();
+    const app = createApp({ config, authStore: store, artifactStorage: new LocalObjectStorage(join(directory, "storage")) });
+    const responses = await Promise.all(["first", "second"].map((user) => Promise.resolve().then(() =>
+      app.request("/api/session", { headers: {
+        "X-Forwarded-Email": `${user}@example.com`,
+        "X-Forwarded-User": user,
+      } }))));
+    expect(responses.map(({ status }) => status)).toEqual([200, 200]);
+    const database = new DatabaseSync(path);
+    expect(database.prepare("SELECT count(*) AS count FROM organization WHERE id = 'external'").get()).toEqual({ count: 1 });
+    expect(database.prepare("SELECT count(*) AS count FROM member WHERE organization_id = 'external' AND role = 'owner'").get())
+      .toEqual({ count: 1 });
+    expect(database.prepare("SELECT count(*) AS count FROM team WHERE id = 'external-default'").get()).toEqual({ count: 1 });
+    expect(database.prepare("SELECT count(*) AS count FROM team_member WHERE team_id = 'external-default'").get())
+      .toEqual({ count: 1 });
+    database.close();
+    await store.close?.();
+  });
+
+  it("projects trusted header users into the generated auth user table", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "dahlia-header-user-"));
+    directories.push(directory);
+    const path = join(directory, "header.sqlite");
+    const config = { ...testConfig(path), authProvider: "header" as const };
+    const store = createNodeAuthStore(config);
+    await store.migrate();
+    const app = createApp({
+      config,
+      authStore: store,
+      artifactStorage: new LocalObjectStorage(join(directory, "storage")),
+    });
+    expect((await app.request("/api/auth/admin/list-users")).status).toBe(404);
+
+    const first = await app.request("/api/session", { headers: {
+      "X-Forwarded-Email": "User@Example.com",
+      "X-Forwarded-Preferred-Username": "First Name",
+      "X-Forwarded-User": "stable-user-id",
+    } });
+    expect(first.status).toBe(200);
+
+    const database = new DatabaseSync(path);
+    expect(database.prepare(
+      'SELECT id, name, email, email_verified, role FROM "user" WHERE id = ?',
+    ).get("stable-user-id")).toEqual({
+      id: "stable-user-id",
+      name: "First Name",
+      email: "user@example.com",
+      email_verified: 1,
+      role: "admin",
+    });
+    expect(database.prepare('SELECT id, name, slug FROM organization WHERE id = ?').get("external"))
+      .toEqual({ id: "external", name: "external", slug: "external" });
+    expect(database.prepare('SELECT user_id, role FROM member WHERE organization_id = ?').get("external"))
+      .toEqual({ user_id: "stable-user-id", role: "owner" });
+    expect(database.prepare('SELECT id, name, organization_id FROM team WHERE id = ?').get("external-default"))
+      .toEqual({ id: "external-default", name: "External", organization_id: "external" });
+    expect(database.prepare('SELECT user_id FROM team_member WHERE team_id = ?').get("external-default"))
+      .toEqual({ user_id: "stable-user-id" });
+
+    const updated = await app.request("/api/session", { headers: {
+      "X-Forwarded-Email": "renamed@example.com",
+      "X-Forwarded-Preferred-Username": "Renamed User",
+      "X-Forwarded-User": "stable-user-id",
+    } });
+    expect(updated.status).toBe(200);
+    expect(database.prepare('SELECT name, email FROM "user" WHERE id = ?').get("stable-user-id"))
+      .toEqual({ name: "Renamed User", email: "renamed@example.com" });
+
+    const conflict = await app.request("/api/session", { headers: {
+      "X-Forwarded-Email": "renamed@example.com",
+      "X-Forwarded-User": "different-user-id",
+    } });
+    expect(conflict.status).toBe(409);
+    expect(await conflict.json()).toEqual({ error: "identity_projection_failed" });
+    expect(database.prepare('SELECT count(*) AS count FROM "user"').get()).toEqual({ count: 1 });
+
+    expect((await app.request("/api/session", { headers: {
+      "X-Forwarded-Email": "second@example.com",
+      "X-Forwarded-User": "second-user-id",
+    } })).status).toBe(200);
+    expect(database.prepare('SELECT role FROM member WHERE organization_id = ? AND user_id = ?')
+      .get("external", "second-user-id")).toEqual({ role: "member" });
+    expect(database.prepare('SELECT 1 FROM team_member WHERE team_id = ? AND user_id = ?')
+      .get("external-default", "second-user-id")).toBeUndefined();
+    database.prepare('DELETE FROM team_member WHERE team_id = ? AND user_id = ?')
+      .run("external-default", "stable-user-id");
+    expect((await app.request("/api/session", { headers: {
+      "X-Forwarded-Email": "renamed@example.com",
+      "X-Forwarded-Preferred-Username": "Renamed User",
+      "X-Forwarded-User": "stable-user-id",
+    } })).status).toBe(200);
+    expect(database.prepare('SELECT user_id FROM team_member WHERE team_id = ?').get("external-default"))
+      .toEqual({ user_id: "stable-user-id" });
+
+    database.prepare('INSERT INTO core_vaults (vault_id, name) VALUES (?, ?)').run("019d493d-f5f4-7b8b-a9da-8ef51975b171", "Vault");
+    database.prepare(`
+      INSERT INTO core_search_index_jobs
+        (vault_id, document_id, owner_user_id, model, dimensions)
+      VALUES (?, ?, ?, 'model', 32)
+    `).run(
+      "019d493d-f5f4-7b8b-a9da-8ef51975b171",
+      "019d493e-0147-7cf6-b56c-b036960bba02",
+      "stable-user-id",
+    );
+    database.prepare('DELETE FROM "user" WHERE id = ?').run("stable-user-id");
+    expect(database.prepare("SELECT count(*) AS count FROM core_search_index_jobs").get()).toEqual({ count: 0 });
+
+    const now = Date.now();
+    database.prepare(`
+      INSERT INTO "user" (id, name, email, email_verified, created_at, updated_at)
+      VALUES ('grantor', 'Grantor', 'grantor@example.com', 1, ?, ?)
+    `).run(now, now);
+    database.prepare('INSERT INTO core_vaults (vault_id, name) VALUES (?, ?)').run("019d493e-063e-70ed-ab24-c86de735bca8", "Vault");
+    database.prepare(`
+      INSERT INTO core_vault_permissions
+        (vault_id, principal_type, principal_id, role, granted_by_user_id)
+      VALUES (?, 'user', 'grantor', 'owner', 'grantor')
+    `).run("019d493e-063e-70ed-ab24-c86de735bca8");
+    expect(() => database.prepare('DELETE FROM "user" WHERE id = ?').run("grantor")).toThrow();
+
+    database.close();
+    await store.close?.();
+  });
+
   it("migrates, seeds the fixed client, and revokes a Dahlia session", async () => {
     const directory = mkdtempSync(join(tmpdir(), "dahlia-auth-"));
     directories.push(directory);
@@ -71,8 +201,9 @@ describe("SQLite Better Auth store", () => {
       throw new Error("rollback");
     })).rejects.toThrow("rollback");
 
-    expect(database.prepare('SELECT "name" FROM "__drizzle_migrations"').get()).toEqual({
-      name: "20260830001528_stiff_alex_power",
+    expect(database.prepare('SELECT "name" FROM "__drizzle_migrations" ORDER BY "created_at" DESC LIMIT 1').get())
+      .toEqual({
+      name: "20260903173555_lying_slipstream",
     });
     expect(database.prepare('SELECT "client_id" FROM "oauth_client" WHERE "client_id" = ?').get("databricks-cli"))
       .toEqual({ client_id: "databricks-cli" });
@@ -92,11 +223,17 @@ describe("SQLite Better Auth store", () => {
       authStore: store,
       artifactStorage: new LocalObjectStorage(join(directory, "storage")),
     });
+    const apiMetadata = await app.request("/.well-known/oauth-protected-resource");
+    expect(await apiMetadata.json()).toMatchObject({
+      resource: "http://localhost:5173/api/v1",
+      authorization_servers: ["http://localhost:5173"],
+      scopes_supported: ["all-apis"],
+    });
     const metadata = await app.request("/.well-known/oauth-protected-resource/mcp");
     expect(await metadata.json()).toMatchObject({
       resource: "http://localhost:5173/mcp",
       authorization_servers: ["http://localhost:5173"],
-      scopes_supported: ["api.artifact.write"],
+      scopes_supported: ["mcp", "mcp:read"],
     });
     const unauthorizedMcp = await app.request("/mcp", {
       method: "POST",
@@ -106,6 +243,17 @@ describe("SQLite Better Auth store", () => {
     expect(unauthorizedMcp.status).toBe(401);
     expect(unauthorizedMcp.headers.get("www-authenticate"))
       .toContain('resource_metadata="http://localhost:5173/.well-known/oauth-protected-resource/mcp"');
+    expect((await app.request("/api/auth/organization/list")).status).toBe(404);
+    expect((await app.request("/api/auth/admin/list-users")).status).toBe(401);
+    expect(database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('organization', 'member', 'invitation', 'team', 'team_member') ORDER BY name").all())
+      .toEqual([{ name: "invitation" }, { name: "member" }, { name: "organization" }, { name: "team" }, { name: "team_member" }]);
+    expect(database.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'member_user_organization_idx'").get())
+      .toEqual({ name: "member_user_organization_idx" });
+    expect(database.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'team_member_user_team_idx'").get())
+      .toEqual({ name: "team_member_user_team_idx" });
+    expect(database.prepare(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'content_search_documents_fts'",
+    ).all()).toEqual([{ name: "content_search_documents_fts" }]);
 
     const now = new Date();
     const expiresAt = now.getTime() + 60_000;
@@ -119,8 +267,8 @@ describe("SQLite Better Auth store", () => {
       "client_secret_post",
       "[]",
       '["client_credentials"]',
-      '["api.artifact.write"]',
-      '["api.artifact.write"]',
+      '["mcp"]',
+      '["mcp"]',
       now.getTime(),
       now.getTime(),
     );
@@ -134,7 +282,7 @@ describe("SQLite Better Auth store", () => {
         grant_type: "client_credentials",
         client_id: "mcp-test-client",
         client_secret: clientSecret,
-        scope: "api.artifact.write",
+        scope: "mcp",
         resource: "http://localhost:5173/mcp",
       }),
     });
@@ -165,11 +313,25 @@ describe("SQLite Better Auth store", () => {
     })).toBe(true);
     expect(await store.getEnabledModelAlias("summary")).toBeNull();
     expect(await store.listModelAliases()).toMatchObject([{ alias: "summary", displayName: "Summary", enabled: false }]);
-    expect(await store.addPlatformAdmin("admin@example.com")).toBe(true);
-    expect(await store.addPlatformAdmin("admin@example.com")).toBe(false);
-    expect(await store.isPlatformAdmin("admin@example.com")).toBe(true);
-    expect(await store.listPlatformAdmins()).toMatchObject([{ email: "admin@example.com" }]);
-    expect(await store.deletePlatformAdmin("admin@example.com")).toBe(true);
+    await store.ensureIdentityUser({
+      userId: "first-admin",
+      workspaceId: "personal:first-admin",
+      email: "first-admin@example.com",
+      source: "header",
+    });
+    await store.ensureIdentityUser({
+      userId: "second-admin",
+      workspaceId: "personal:second-admin",
+      email: "second-admin@example.com",
+      source: "header",
+    });
+    expect(await store.addAdminUser("second-admin@example.com")).toMatchObject({ id: "second-admin" });
+    expect(await store.isAdminUser("second-admin")).toBe(true);
+    expect(await store.listAdminUsers()).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "first-admin" }),
+      expect.objectContaining({ id: "second-admin" }),
+    ]));
+    expect(await store.removeAdminUser("second-admin@example.com")).toBe("removed");
     expect(await store.deleteModelAlias("summary")).toBe(true);
     expect(await store.createArtifact({
       id: "019cc4dd-e5c5-7bd4-94e0-98df9cc40db9",
@@ -235,10 +397,10 @@ describe("SQLite Better Auth store", () => {
     ).run("session-1", expiresAt, "browser-token", now.getTime(), now.getTime(), "Dahlia", "user-1");
     database.prepare(
       'INSERT INTO "oauth_refresh_token" ("id", "token", "client_id", "session_id", "user_id", "expires_at", "created_at", "scopes") VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-    ).run("refresh-1", "refresh-token", "dahlia-macos", "session-1", "user-1", expiresAt, now.getTime(), "[\"api.model.read\",\"api.model.request\"]");
+    ).run("refresh-1", "refresh-token", "dahlia-macos", "session-1", "user-1", expiresAt, now.getTime(), "[\"all-apis\"]");
     database.prepare(
       'INSERT INTO "oauth_access_token" ("id", "token", "client_id", "session_id", "user_id", "refresh_id", "expires_at", "created_at", "scopes") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-    ).run("access-1", "access-token", "dahlia-macos", "session-1", "user-1", "refresh-1", expiresAt, now.getTime(), "[\"api.model.read\",\"api.model.request\"]");
+    ).run("access-1", "access-token", "dahlia-macos", "session-1", "user-1", "refresh-1", expiresAt, now.getTime(), "[\"all-apis\"]");
 
     expect(await store.listDahliaSessions("user-1")).toMatchObject([
       { id: "refresh-1", sessionId: "session-1", userAgent: "Dahlia" },

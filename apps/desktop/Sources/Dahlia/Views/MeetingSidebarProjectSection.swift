@@ -6,6 +6,7 @@ struct MeetingSidebarProjectSection: View {
     let projectAppearance: ProjectAppearance
     let isPinned: Bool
     let isExpanded: Bool
+    let canEditProject: Bool
     let canCreateMeeting: Bool
     let showsMeetingDate: Bool
     let selectedMeetingIDs: Set<UUID>
@@ -34,6 +35,7 @@ struct MeetingSidebarProjectSection: View {
                     appearance: projectAppearance,
                     isPinned: isPinned,
                     isExpanded: isExpanded,
+                    canEditProject: canEditProject,
                     canCreateMeeting: canCreateMeeting,
                     onToggleExpansion: onToggleExpansion,
                     onOpen: { onOpenProject(project.projectId, $0) },

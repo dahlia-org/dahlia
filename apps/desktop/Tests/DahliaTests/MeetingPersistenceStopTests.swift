@@ -24,7 +24,7 @@ import GRDB
                 startTime: startDate,
                 text: "Persisted at stop",
                 isConfirmed: true,
-                speakerLabel: "mic"
+                audioSource: "mic"
             )
             try await service.persist(.finalized(segment))
 
@@ -116,7 +116,7 @@ import GRDB
                 startTime: fixture.vault.createdAt,
                 text: "Legacy transcript",
                 isConfirmed: true,
-                speakerLabel: "mic"
+                audioSource: "mic"
             )
             try await fixture.database.dbQueue.write { db in
                 try MeetingRecord(
@@ -142,7 +142,7 @@ import GRDB
                 startTime: .now,
                 text: "New transcript",
                 isConfirmed: true,
-                speakerLabel: "mic"
+                audioSource: "mic"
             )
             try await service.persist(.finalized(newSegment))
 

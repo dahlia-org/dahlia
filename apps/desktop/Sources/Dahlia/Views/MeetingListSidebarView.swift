@@ -32,6 +32,8 @@ struct MeetingListSidebarView: View {
     @State private var isRecentSectionExpanded = true
     @FocusState private var isRenameFieldFocused: Bool
 
+    private var canEdit: Bool { sidebarViewModel.canEditCurrentVault }
+
     private var meetingSelection: Binding<Set<UUID>> {
         Binding(
             get: { renderedMeetingSelection },
@@ -48,7 +50,7 @@ struct MeetingListSidebarView: View {
             MainSidebarNavigationView(
                 meetingSidebarDisplayMode: $mainWindowNavigation.meetingSidebarDisplayMode,
                 onCreateMeeting: recordingCoordinator.createDraftMeeting,
-                canCreateMeeting: !viewModel.isRecordingStartPending && !viewModel.isFinalizingRecording,
+                canCreateMeeting: canEdit && !viewModel.isRecordingStartPending && !viewModel.isFinalizingRecording,
                 canStartQuickRecording: recordingCoordinator.canStartNewMeeting,
                 onStartQuickRecording: recordingCoordinator.startQuickRecording,
                 isShowingUpcomingSchedule: isShowingUpcomingSchedule,
@@ -57,7 +59,7 @@ struct MeetingListSidebarView: View {
                 onShowChat: onShowChat,
                 isShowingProjects: isShowingProjects,
                 onShowProjects: onShowProjects,
-                canCreateProject: sidebarViewModel.currentVault != nil,
+                canCreateProject: canEdit,
                 onCreateProject: onCreateProject,
                 isShowingUnprocessedRecordings: isShowingUnprocessedRecordings,
                 unprocessedRecordingCount: sidebarViewModel.unprocessedRecordingItems.count,
@@ -82,7 +84,7 @@ struct MeetingListSidebarView: View {
                 MeetingSidebarHeader(
                     displayMode: $mainWindowNavigation.meetingSidebarDisplayMode,
                     isExpanded: primarySectionExpanded,
-                    canCreateProject: sidebarViewModel.currentVault != nil,
+                    canCreateProject: canEdit,
                     onToggleExpansion: togglePrimarySection,
                     onCreateProject: onCreateProject
                 )
@@ -193,7 +195,7 @@ struct MeetingListSidebarView: View {
                 }
             }
             .contextMenu(forSelectionType: UUID.self) { selection in
-                contextMenu(for: selection)
+                if canEdit { contextMenu(for: selection) }
             }
 
             MainSidebarBottomArea(
@@ -207,7 +209,7 @@ struct MeetingListSidebarView: View {
         .font(.callout)
         .foregroundStyle(DahliaDesign.sidebarPrimaryTextColor)
         .onDeleteCommand {
-            requestDeletion(of: sidebarViewModel.selectedMeetingIds)
+            if canEdit { requestDeletion(of: sidebarViewModel.selectedMeetingIds) }
         }
         .onAppear {
             renderedMeetingSelection = sidebarViewModel.selectedMeetingIds
@@ -360,7 +362,8 @@ struct MeetingListSidebarView: View {
             } ?? .default,
             isPinned: isPinned,
             isExpanded: isExpanded ?? projectGroupIsExpanded(group.key),
-            canCreateMeeting: !viewModel.isRecordingStartPending && !viewModel.isFinalizingRecording,
+            canEditProject: canEdit,
+            canCreateMeeting: canEdit && !viewModel.isRecordingStartPending && !viewModel.isFinalizingRecording,
             showsMeetingDate: mainWindowNavigation.meetingSidebarDisplayMode == .byProject,
             selectedMeetingIDs: renderedMeetingSelection,
             activeRecordingID: viewModel.recordingMeetingId,

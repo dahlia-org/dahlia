@@ -28,7 +28,7 @@ import GRDB
                 text: "previous transcript",
                 translatedText: nil,
                 isConfirmed: true,
-                speakerLabel: "mic"
+                audioSource: "mic"
             )
             try await fixture.database.dbQueue.write { db in
                 try previousTranscript.insert(db)
@@ -79,7 +79,7 @@ import GRDB
                 text: "replacement transcript",
                 translatedText: nil,
                 isConfirmed: true,
-                speakerLabel: "mic"
+                audioSource: "mic"
             )
             try BatchTranscriptionPersistence.complete(
                 sessionId: fixture.session.id,

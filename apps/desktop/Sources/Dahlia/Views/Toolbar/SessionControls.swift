@@ -65,7 +65,7 @@ struct GenerateSummaryHeaderButton: View {
     }
 
     private var isGenerateSummaryEnabled: Bool {
-        !isGeneratingCurrentMeeting && viewModel.canGenerateSummary
+        sidebarViewModel.canEditCurrentVault && !isGeneratingCurrentMeeting && viewModel.canGenerateSummary
     }
 
     var body: some View {

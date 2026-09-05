@@ -122,8 +122,8 @@ extension MeetingRepository {
                     .filter(Column("meetingId") == meetingId)
                     .filter(Column("isConfirmed") == true)
                     .filter(
-                        Column("speakerLabel") == RecordingAudioSource.microphone.speakerLabel
-                            || Column("speakerLabel") == RecordingAudioSource.system.speakerLabel
+                        Column("audioSource") == RecordingAudioSource.microphone.audioSource
+                            || Column("audioSource") == RecordingAudioSource.system.audioSource
                     )
                     .order(Column("startTime").asc, Column("id").asc)
                     .limit(Self.transcriptPageSize)
@@ -148,14 +148,14 @@ extension MeetingRepository {
     private nonisolated static func conversationMetricSegment(
         _ record: TranscriptSegmentRecord
     ) -> MeetingConversationMetricsInput.Segment? {
-        guard let speakerLabel = record.speakerLabel else { return nil }
+        guard let audioSource = record.audioSource else { return nil }
         return MeetingConversationMetricsInput.Segment(
             id: record.id,
             sessionId: record.sessionId,
             startTime: record.startTime,
             endTime: record.endTime,
             text: record.text,
-            speakerLabel: speakerLabel,
+            audioSource: audioSource,
             audioFeatures: record.audioFeatures
         )
     }

@@ -12,6 +12,7 @@ struct ProjectDetailView: View {
     let displayMode: ProjectDetailDisplayMode
     let onChangeDisplayMode: (ProjectDetailDisplayMode) -> Void
     let onBack: () -> Void
+    let canEdit: Bool
     let onEdit: () -> Void
     let onOpenMeeting: (UUID) -> Void
 
@@ -95,14 +96,16 @@ struct ProjectDetailView: View {
                     .truncationMode(.middle)
                     .accessibilityAddTraits(.isHeader)
 
-                DahliaWindowHeaderIconButton(
-                    label: L10n.editProject,
-                    systemImage: "pencil",
-                    presentsHelpInContainerOverlay: true,
-                    controlSize: 36,
-                    symbolFont: .title2,
-                    action: onEdit
-                )
+                if canEdit {
+                    DahliaWindowHeaderIconButton(
+                        label: L10n.editProject,
+                        systemImage: "pencil",
+                        presentsHelpInContainerOverlay: true,
+                        controlSize: 36,
+                        symbolFont: .title2,
+                        action: onEdit
+                    )
+                }
 
                 Spacer()
             }

@@ -625,7 +625,16 @@ import GRDB
             )
             try queue.write { db in
                 try insertLegacyVault(vault, in: db)
-                try meeting.insert(db)
+                try db.execute(
+                    sql: """
+                    INSERT INTO meetings (id, vaultId, projectId, name, status, duration, createdAt, updatedAt)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    arguments: [
+                        meeting.id, meeting.vaultId, meeting.projectId, meeting.name,
+                        meeting.status, meeting.duration, meeting.createdAt, meeting.updatedAt,
+                    ]
+                )
                 try db.execute(
                     sql: """
                     INSERT INTO screenshots(id, meetingId, sessionId, capturedAt, imageData, mimeType)

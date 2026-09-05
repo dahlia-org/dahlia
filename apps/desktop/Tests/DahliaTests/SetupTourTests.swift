@@ -54,6 +54,7 @@
                 SetupTourPresentationPolicy.currentVersion)
             #expect(defaults.object(forKey: SetupTourPresentationPolicy.progressStepUserDefaultsKey) == nil)
             #expect(defaults.object(forKey: SetupTourPresentationPolicy.vaultPathUserDefaultsKey) == nil)
+            #expect(defaults.object(forKey: SetupTourPresentationPolicy.vaultNameUserDefaultsKey) == nil)
             #expect(defaults.object(forKey: SetupTourPresentationPolicy.vaultConfirmedUserDefaultsKey) == nil)
             #expect(defaults.object(forKey: SetupTourPresentationPolicy.providerUserDefaultsKey) == nil)
             #expect(defaults.object(forKey: SetupTourPresentationPolicy.databricksProfileUserDefaultsKey) == nil)
@@ -169,17 +170,33 @@
         }
 
         @Test
-        func newVaultNameResolvesInsideDocuments() {
-            #expect(SetupTourModel.newVaultURL(named: "Dahlia") == URL.documentsDirectory.appending(
-                path: "Dahlia",
-                directoryHint: .isDirectory
-            ))
-            #expect(SetupTourModel.newVaultURL(named: "  Team Notes  ") == URL.documentsDirectory.appending(
-                path: "Team Notes",
-                directoryHint: .isDirectory
-            ))
-            #expect(SetupTourModel.newVaultURL(named: "") == nil)
-            #expect(SetupTourModel.newVaultURL(named: "Team/Notes") == nil)
+        func pathlessCurrentVaultIsKeptUntilAnotherLocationIsSelected() {
+            let vault = VaultRecord(
+                id: .v7(), path: nil, name: "Cloud Vault",
+                createdAt: .now, lastOpenedAt: .now
+            )
+            let model = SetupTourModel(mode: .manual, currentVault: vault)
+
+            #expect(model.keepsOriginalVault)
+            model.selectVaultURL(URL(filePath: "/tmp/Export", directoryHint: .isDirectory))
+            model.confirmVaultSelection()
+            #expect(!model.keepsOriginalVault)
+        }
+
+        @Test
+        func pathlessVaultSelectionSurvivesInterruptedInitialTour() throws {
+            let suiteName = "SetupTourPathlessProgressTests-\(UUID())"
+            let defaults = try #require(UserDefaults(suiteName: suiteName))
+            defer { defaults.removePersistentDomain(forName: suiteName) }
+            let model = SetupTourModel(mode: .initial, currentVault: nil, progressDefaults: defaults)
+            model.selectAccountConnection(nil)
+            model.advance()
+            model.selectPathlessVault(named: "Cloud Vault")
+            model.advance()
+
+            let restored = SetupTourModel(mode: .initial, currentVault: nil, progressDefaults: defaults)
+            #expect(restored.selectedVaultName == "Cloud Vault")
+            #expect(restored.isVaultLocationConfirmed)
         }
 
         @Test

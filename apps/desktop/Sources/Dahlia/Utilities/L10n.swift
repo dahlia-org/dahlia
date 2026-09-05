@@ -1147,6 +1147,9 @@ enum L10n { // swiftlint:disable:this type_body_length
         bundle: bundle
     ) }
     static var projectNameTooLong: String { String(localized: "The project name is too long.", bundle: bundle) }
+    static var projectDescriptionTooLong: String {
+        String(localized: "The project description must be 20,000 characters or fewer.", bundle: bundle)
+    }
 
     static func projectAlreadyExists(_ name: String) -> String {
         String(localized: "A project named \(name) already exists in this location.", bundle: bundle)
@@ -1824,6 +1827,18 @@ enum L10n { // swiftlint:disable:this type_body_length
         localized: "A Dahlia connection already exists for this server.",
         bundle: bundle
     ) }
+    static var dahliaCloudAccountChanged: String { String(
+        localized: "Sign in with the same Dahlia account, or add a new connection.",
+        bundle: bundle
+    ) }
+    static var dahliaAccountPendingServerDeletion: String { String(
+        localized: "Resolve this connection's Server Vaults before removing it.",
+        bundle: bundle
+    ) }
+    static var dahliaAccountVaultDispositionRequired: String { String(
+        localized: "Choose what to do with this account's local Vaults before signing out.",
+        bundle: bundle
+    ) }
     static var dahliaAccountsDescription: String { String(
         localized: "Manage the Dahlia Cloud and Server sign-ins used by Dahlia.",
         bundle: bundle
@@ -1849,10 +1864,41 @@ enum L10n { // swiftlint:disable:this type_body_length
         )
     }
 
-    static var signOutDahliaConnectionDescription: String { String(
-        localized: "Only this connection's credentials will be removed.",
+    static var moveVaultsToLocalAndSignOut: String { String(
+        localized: "Move Vaults to Local Account and Sign Out",
         bundle: bundle
     ) }
+    static var deleteLocalVaultsAndSignOut: String { String(
+        localized: "Delete Local Vaults and Sign Out",
+        bundle: bundle
+    ) }
+    static var signOutVaultDispositionDescription: String { String(
+        localized: "The Server Vaults will remain unchanged. Moving keeps the working copies on this Mac; deleting removes them from this Mac.",
+        bundle: bundle
+    ) }
+    static var moveVaultToServer: String { String(localized: "Move to Server", bundle: bundle) }
+    static var reconnectServerVault: String { String(localized: "Reconnect Server Vault", bundle: bundle) }
+    static var keepLocalAccount: String { String(localized: "Keep in Local Account", bundle: bundle) }
+
+    static func adoptVaultOnServerTitle(_ name: String, serverVaultExists: Bool) -> String {
+        if serverVaultExists {
+            return String(format: String(localized: "Reconnect %@ to this Server?", bundle: bundle), name)
+        }
+        return String(format: String(localized: "Move %@ to this Server?", bundle: bundle), name)
+    }
+
+    static func adoptVaultOnServerDescription(serverVaultExists: Bool) -> String {
+        if serverVaultExists {
+            return String(
+                localized: "A Vault with the same ID exists on the Server. Member access uses the Server version; owners can choose which version to use if records conflict.",
+                bundle: bundle
+            )
+        }
+        return String(
+            localized: "This Vault will move from the Local Account to the Server and synchronize automatically. Its working copy remains on this Mac.",
+            bundle: bundle
+        )
+    }
 
     static func removeDahliaConnection(_ name: String) -> String {
         String(format: String(localized: "Remove Dahlia connection %@?", bundle: bundle), name)
@@ -1878,6 +1924,22 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var comingSoon: String { String(localized: "Coming Soon", bundle: bundle) }
     static var loadingVaults: String { String(localized: "Loading Vaults…", bundle: bundle) }
     static var removingVault: String { String(localized: "Removing Vault…", bundle: bundle) }
+    static var vaultSyncConflict: String { String(localized: "Sync conflict", bundle: bundle) }
+    static var retrySync: String { String(localized: "Retry Sync", bundle: bundle) }
+    static var useServerVersion: String { String(localized: "Use Server Version", bundle: bundle) }
+    static var reapplyLocalVersion: String { String(localized: "Reapply Local Version", bundle: bundle) }
+    static var chooseLocalFolder: String { String(localized: "Choose Local Folder", bundle: bundle) }
+    static var noLocalExportFolder: String { String(localized: "No local export folder", bundle: bundle) }
+    static var setLocalExportFolder: String { String(localized: "Set Local Export Folder", bundle: bundle) }
+    static var changeLocalExportFolder: String { String(localized: "Change Local Export Folder", bundle: bundle) }
+    static var removeLocalExportFolder: String { String(localized: "Remove Local Export Folder", bundle: bundle) }
+    static var confirmBulkMeetingDeletion: String { String(localized: "Confirm Meeting Deletions", bundle: bundle) }
+    static var continueDeletion: String { String(localized: "Continue Deleting", bundle: bundle) }
+
+    static func confirmBulkMeetingDeletionDescription(_ count: Int) -> String {
+        String(localized: "\(count) server meeting deletions are waiting. Continue deleting them?", bundle: bundle)
+    }
+
     static var appearance: String { String(localized: "Appearance", bundle: bundle) }
     static var display: String { String(localized: "Display", bundle: bundle) }
     static var meetingSidebar: String { String(localized: "Meeting Sidebar", bundle: bundle) }
@@ -2308,7 +2370,7 @@ enum L10n { // swiftlint:disable:this type_body_length
     // MARK: - Vault Picker
 
     static var createNewVault: String { String(localized: "Create New Vault", bundle: bundle) }
-    static var createNewVaultDescription: String { String(localized: "Create a new folder to use as a vault.", bundle: bundle) }
+    static var createNewVaultDescription: String { String(localized: "Create a vault without a local export folder.", bundle: bundle) }
     static var addVault: String { String(localized: "Add Vault", bundle: bundle) }
     static var registeredVaults: String { String(localized: "Registered Vaults", bundle: bundle) }
     static var openFolderAsVault: String { String(localized: "Open Folder as Vault", bundle: bundle) }

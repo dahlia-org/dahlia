@@ -105,7 +105,7 @@ import GRDB
                         startTime: Date(timeIntervalSince1970: 1_776_384_000 + Double(index)),
                         text: "Segment \(index)",
                         isConfirmed: true,
-                        speakerLabel: "system"
+                        audioSource: "system"
                     )),
                     plan: plan,
                     liveCaptionStore: liveStore
@@ -195,7 +195,7 @@ import GRDB
                 startTime: Date(timeIntervalSince1970: 1_776_384_000),
                 text: "Preview",
                 isConfirmed: false,
-                speakerLabel: "mic"
+                audioSource: "mic"
             )
             var final = preview
             final.text = "Final"
@@ -221,7 +221,7 @@ import GRDB
                 startTime: Date(timeIntervalSince1970: 1_776_384_000),
                 text: "Shared recognition",
                 isConfirmed: true,
-                speakerLabel: "system"
+                audioSource: "system"
             )
         }
     }

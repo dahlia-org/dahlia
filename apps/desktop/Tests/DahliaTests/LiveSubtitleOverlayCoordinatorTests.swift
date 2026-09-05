@@ -25,7 +25,7 @@ import Foundation
                     startTime: .now,
                     text: "Historical transcript",
                     isConfirmed: true,
-                    speakerLabel: "system"
+                    audioSource: "system"
                 )
             )
             viewModel.liveCaptionStore.start(sessionId: sessionID)
@@ -35,7 +35,7 @@ import Foundation
                     startTime: .now,
                     text: "Ephemeral live caption",
                     isConfirmed: true,
-                    speakerLabel: "system"
+                    audioSource: "system"
                 )
             ))
             let presenter = FakeLiveSubtitlePresenter()
@@ -69,7 +69,7 @@ import Foundation
                 sessionId: sessionID,
                 startTime: .now,
                 text: "Immediate preview",
-                speakerLabel: "system"
+                audioSource: "system"
             )))
 
             #expect(presenter.lastPayload?.entries.map(\.primaryText) == ["Immediate preview"])
@@ -95,7 +95,7 @@ import Foundation
                 sessionId: sessionID,
                 startTime: .now,
                 text: "Preview",
-                speakerLabel: "system"
+                audioSource: "system"
             )))
             let presenter = FakeLiveSubtitlePresenter()
             let coordinator = LiveSubtitleOverlayCoordinator(viewModel: viewModel, liveSubtitleOverlayService: presenter)
@@ -108,7 +108,7 @@ import Foundation
                 startTime: .now,
                 text: "Final",
                 isConfirmed: true,
-                speakerLabel: "system"
+                audioSource: "system"
             )))
 
             #expect(presenter.lastPayload?.entries.map(\.primaryText) == ["Preview"])
@@ -148,7 +148,7 @@ import Foundation
                         sessionId: sessionID,
                         startTime: .now,
                         text: "Preview \(index)",
-                        speakerLabel: "system"
+                        audioSource: "system"
                     )
                 ))
                 index += 1
@@ -201,7 +201,7 @@ import Foundation
                     startTime: .now,
                     text: "Microphone",
                     isConfirmed: true,
-                    speakerLabel: "mic"
+                    audioSource: "mic"
                 )
             ))
             viewModel.liveCaptionStore.apply(event: .finalized(
@@ -210,7 +210,7 @@ import Foundation
                     startTime: .now,
                     text: "System",
                     isConfirmed: true,
-                    speakerLabel: "system"
+                    audioSource: "system"
                 )
             ))
             let presenter = FakeLiveSubtitlePresenter()

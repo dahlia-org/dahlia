@@ -3,15 +3,17 @@ import { describe, expect, it, vi } from "vitest";
 import { denyOAuthManagement } from "../src/auth/better-auth";
 import { IdentityService } from "../src/auth/identity";
 import {
-  ARTIFACT_READ_SCOPE,
-  ARTIFACT_WRITE_SCOPE,
+  ALL_APIS_SCOPE,
+  AUTHORIZATION_SERVER_SCOPES,
   GATEWAY_SCOPES,
-  MODEL_READ_SCOPE,
-  MODEL_REQUEST_SCOPE,
+  hasApiScope,
+  MCP_OAUTH_SCOPES,
+  MCP_READ_SCOPE,
+  MCP_SCOPE,
   OAUTH_SCOPES,
 } from "../src/auth/scopes";
 import { createPostgresAuthStore } from "../src/auth/store";
-import { authenticateMcpRequest, requiredGatewayScope } from "../src/app";
+import { authenticateMcpRequest } from "../src/app";
 import type { AppConfig } from "../src/config";
 import type { PostgresDatabase } from "../src/db/client";
 
@@ -38,7 +40,7 @@ describe("fixed OAuth client policy", () => {
         workspace_id: "personal:user-1",
         client_id: "https://client.example/metadata.json",
         exp: Math.floor(Date.now() / 1000) + 60,
-        scope: ARTIFACT_WRITE_SCOPE,
+        scope: MCP_SCOPE,
       };
     });
     Object.assign(identities, { verifyAccessToken: verifier });
@@ -49,13 +51,60 @@ describe("fixed OAuth client policy", () => {
 
     await expect(identities.verifyMcpAccessToken(internalRequest)).resolves.toMatchObject({
       token: "access-token",
-      scopes: [ARTIFACT_WRITE_SCOPE],
+      scopes: [MCP_SCOPE],
     });
     const verificationRequest = verifier.mock.calls[0]?.[0] as Request;
     expect(verificationRequest.url).toBe("https://new.dahlia.example/mcp");
     expect(verificationRequest.method).toBe("POST");
     expect(verificationRequest.headers.get("authorization")).toBe("DPoP access-token");
     expect(verificationRequest.headers.get("dpop")).toBe("proof");
+  });
+
+  it("verifies MCP resources at their canonical URL and requires sync read scope", async () => {
+    const identities = new IdentityService(config);
+    const verifier = vi.fn(async (request: Request) => {
+      void request;
+      return {
+        sub: "user-1",
+        workspace_id: "personal:user-1",
+        client_id: "mcp-client",
+        exp: Math.floor(Date.now() / 1000) + 60,
+        scope: MCP_READ_SCOPE,
+      };
+    });
+    Object.assign(identities, { verifyAccessToken: verifier });
+    const request = new Request("http://internal/mcp/resources/vaults/vault/screenshots/image/content", {
+      headers: { Authorization: "DPoP access-token", DPoP: "proof" },
+    });
+
+    await expect(identities.fromMcpResource(request, MCP_READ_SCOPE)).resolves.toMatchObject({
+      userId: "user-1",
+    });
+    expect((verifier.mock.calls[0]?.[0] as Request).url)
+      .toBe("https://new.dahlia.example/mcp/resources/vaults/vault/screenshots/image/content");
+    await expect(identities.fromMcpResource(request, MCP_SCOPE))
+      .rejects.toThrow("Insufficient scope");
+  });
+
+  it("keeps impersonated OAuth tokens read-only", async () => {
+    const identities = new IdentityService(config);
+    Object.assign(identities, { verifyAccessToken: vi.fn(async () => ({
+      sub: "user-1",
+      workspace_id: "personal:user-1",
+      client_id: "mcp-client",
+      exp: Math.floor(Date.now() / 1000) + 60,
+      scope: `${ALL_APIS_SCOPE} ${MCP_SCOPE}`,
+      impersonated: true,
+    })) });
+    const request = new Request("https://new.dahlia.example/mcp", {
+      method: "POST",
+      headers: { Authorization: "DPoP access-token", DPoP: "proof" },
+    });
+
+    await expect(identities.fromGateway(request, ALL_APIS_SCOPE))
+      .rejects.toThrow("Impersonated sessions are read-only");
+    await expect(identities.verifyMcpAccessToken(request))
+      .rejects.toThrow("Impersonated sessions are read-only");
   });
 
   it("preserves DPoP requests and distinguishes insufficient scope", async () => {
@@ -66,7 +115,7 @@ describe("fixed OAuth client policy", () => {
     const authInfo = {
       token: "access-token",
       clientId: "https://client.example/metadata.json",
-      scopes: [ARTIFACT_WRITE_SCOPE],
+      scopes: [MCP_SCOPE],
       expiresAt: Math.floor(Date.now() / 1000) + 60,
       resource: new URL("https://new.dahlia.example/mcp"),
     };
@@ -94,18 +143,15 @@ describe("fixed OAuth client policy", () => {
     expect(denyOAuthManagement()).toBe(false);
   });
 
-  it("uses separate model read and request scopes", () => {
-    expect(GATEWAY_SCOPES).toEqual([
-      "api.model.read",
-      "api.model.request",
-      "api.artifact.read",
-      "api.artifact.write",
+  it("uses one Desktop API scope and hierarchical MCP scopes", () => {
+    expect(GATEWAY_SCOPES).toEqual([ALL_APIS_SCOPE]);
+    expect(OAUTH_SCOPES).toEqual(["openid", "profile", "email", "offline_access", ALL_APIS_SCOPE]);
+    expect(MCP_OAUTH_SCOPES).toEqual(["openid", "profile", "email", "offline_access", MCP_SCOPE, MCP_READ_SCOPE]);
+    expect(AUTHORIZATION_SERVER_SCOPES).toEqual([
+      "openid", "profile", "email", "offline_access", ALL_APIS_SCOPE, MCP_SCOPE, MCP_READ_SCOPE,
     ]);
-    expect(OAUTH_SCOPES).toContain(ARTIFACT_READ_SCOPE);
-    expect(OAUTH_SCOPES).toContain(ARTIFACT_WRITE_SCOPE);
-    expect(requiredGatewayScope("/api/v1/models")).toBe(MODEL_READ_SCOPE);
-    expect(requiredGatewayScope("/api/v1/responses")).toBe(MODEL_REQUEST_SCOPE);
-    expect(requiredGatewayScope("/api/v1/unknown")).toBe(MODEL_REQUEST_SCOPE);
+    expect(hasApiScope([MCP_SCOPE], MCP_READ_SCOPE)).toBe(true);
+    expect(hasApiScope([MCP_READ_SCOPE], MCP_SCOPE)).toBe(false);
   });
 
   it("does not fall back to a browser session when an Authorization header is present", async () => {
@@ -119,13 +165,13 @@ describe("fixed OAuth client policy", () => {
 
     await expect(identities.fromBrowserOrGateway(new Request("https://new.dahlia.example/api/v1/artifacts", {
       headers: { authorization: "Bearer invalid" },
-    }), ARTIFACT_READ_SCOPE)).rejects.toThrow("invalid token");
+    }), ALL_APIS_SCOPE)).rejects.toThrow("invalid token");
     expect(gateway).toHaveBeenCalledOnce();
     expect(browser).not.toHaveBeenCalled();
 
     await expect(identities.fromBrowserOrGateway(
       new Request("https://new.dahlia.example/api/v1/artifacts"),
-      ARTIFACT_READ_SCOPE,
+      ALL_APIS_SCOPE,
     )).resolves.toMatchObject({ userId: "browser-user" });
     expect(browser).toHaveBeenCalledOnce();
   });

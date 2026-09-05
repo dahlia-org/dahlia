@@ -244,7 +244,7 @@ actor MicrophoneRecognitionTestSession {
         locale: Locale,
         onEvent: @escaping EventHandler
     ) async throws -> (SpeechTranscriberService, AudioBufferBridge, AVAudioFormat) {
-        let service = SpeechTranscriberService(locale: locale, speakerLabel: RecordingAudioSource.microphone.speakerLabel)
+        let service = SpeechTranscriberService(locale: locale, audioSource: RecordingAudioSource.microphone.audioSource)
         try await service.prepare()
         guard let targetFormat = await service.targetAudioFormat() else {
             throw AudioCaptureError.converterCreationFailed

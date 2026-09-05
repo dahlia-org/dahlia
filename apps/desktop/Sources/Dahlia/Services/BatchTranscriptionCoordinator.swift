@@ -522,6 +522,7 @@ actor BatchTranscriptionCoordinator {
     }
 
     private func exportTranscript(for job: Job) throws {
+        guard let vaultURL = job.vault.url else { return }
         let detail = try dbQueue.read { db in
             let segments = try TranscriptSegmentRecord
                 .filter(Column("meetingId") == job.meeting.id)
@@ -534,7 +535,7 @@ actor BatchTranscriptionCoordinator {
             return (segments, sessions)
         }
         _ = try TranscriptExportService.exportTranscript(
-            vaultURL: job.vault.url,
+            vaultURL: vaultURL,
             meetingId: job.meeting.id,
             projectName: job.projectName,
             createdAt: job.meeting.effectiveRecordingStartedAt,
@@ -879,7 +880,7 @@ extension BatchTranscriptionCoordinator {
 private func sortedTranscriptSegments(_ segments: [TranscriptSegment]) -> [TranscriptSegment] {
     segments.sorted { lhs, rhs in
         if lhs.startTime == rhs.startTime {
-            return (lhs.speakerLabel ?? "") < (rhs.speakerLabel ?? "")
+            return (lhs.audioSource ?? "") < (rhs.audioSource ?? "")
         }
         return lhs.startTime < rhs.startTime
     }

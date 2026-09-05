@@ -268,6 +268,10 @@ final class AppDatabaseManager: Sendable {
             try VaultAISettingsBackfillMigration.migrate(in: db)
         }
 
+        migrator.registerMigration("v42_meetingSync", foreignKeyChecks: .deferred) { db in
+            try MeetingSyncMigration.migrate(in: db)
+        }
+
         return migrator
     }()
 

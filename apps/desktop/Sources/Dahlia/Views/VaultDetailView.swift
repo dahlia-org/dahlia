@@ -14,7 +14,7 @@ struct VaultDetailView: View {
                 Section(L10n.vaultDetails) {
                     LabeledContent(L10n.vaultName, value: vault.name)
                     LabeledContent(L10n.location) {
-                        Text(vault.path)
+                        Text(vault.path ?? L10n.noLocalExportFolder)
                             .lineLimit(2)
                             .truncationMode(.middle)
                             .textSelection(.enabled)

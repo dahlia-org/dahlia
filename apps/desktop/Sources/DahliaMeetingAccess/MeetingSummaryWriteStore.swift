@@ -84,16 +84,14 @@ extension MeetingAccessStore {
         let previousContents: Data
     }
 
-    func summaryVaultURL(in db: Database) throws -> URL {
+    func summaryVaultURL(in db: Database) throws -> URL? {
         _ = try fetchVault(in: db)
-        guard let path = try String.fetchOne(
+        let path = try String.fetchOne(
             db,
             sql: "SELECT path FROM vaults WHERE id = ?",
             arguments: [vaultID]
-        ) else {
-            throw MeetingAccessError.vaultNotFound
-        }
-        return URL(fileURLWithPath: path, isDirectory: true)
+        )
+        return path.map { URL(fileURLWithPath: $0, isDirectory: true) }
     }
 
     // MARK: - Prevalidation
@@ -102,7 +100,7 @@ extension MeetingAccessStore {
         meetingID: UUID,
         expectedDocumentVersion: String,
         document: SummaryDocument,
-        vaultURL: URL,
+        vaultURL: URL?,
         in db: Database
     ) throws -> SummaryUpdatePlan {
         guard try Bool.fetchOne(
@@ -244,9 +242,10 @@ extension MeetingAccessStore {
         meetingID: UUID,
         document: SummaryDocument,
         createdAt: Date,
-        vaultURL: URL,
+        vaultURL: URL?,
         in db: Database
     ) throws -> (write: VaultFileWrite?, outcome: SummaryMutationResult.VaultExportOutcome) {
+        guard let vaultURL else { return (nil, .notExported) }
         guard let storedURL = try String.fetchOne(
             db,
             sql: "SELECT url FROM summary_exports WHERE meetingId = ? AND type = 'vault'",

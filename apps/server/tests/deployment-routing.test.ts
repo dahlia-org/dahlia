@@ -50,9 +50,11 @@ describe("deployment routing", () => {
       migrations_dir: "drizzle/d1",
     }));
     const d1Migrations = readdirSync(new URL("../drizzle/d1", import.meta.url)).toSorted();
-    expect(d1Migrations).toEqual(["20260830001528_stiff_alex_power.sql"]);
-    expect(readText("../drizzle/d1/20260830001528_stiff_alex_power.sql"))
-      .toBe(readText("../drizzle/sqlite/20260830001528_stiff_alex_power/migration.sql"));
+    expect(d1Migrations).toEqual(["20260903173555_lying_slipstream.sql"]);
+    for (const migration of d1Migrations) {
+      expect(readText(`../drizzle/d1/${migration}`))
+        .toBe(readText(`../drizzle/sqlite/${migration.replace(/\.sql$/, "")}/migration.sql`));
+    }
     expect(wrangler.vars).toEqual({
       DAHLIA_AI_BACKEND: "cloudflare",
       DAHLIA_STORAGE_BACKEND: "r2",
@@ -203,8 +205,7 @@ describe("deployment routing", () => {
     expect(bundle).toContain("database_project_id: dahlia-db-dev");
     expect(bundle).toContain("database_project_id: dahlia-db");
     expect(bundle).toContain("catalog:");
-    expect(bundle).toContain("catalog: dahlia_dev");
-    expect(bundle).toContain("catalog: dahlia");
+    expect(bundle).toContain("default: dahlia");
     expect(bundle).toContain("schema:");
     expect(bundle).toContain("default: server");
     expect(bundle).toContain("volume_name:");
@@ -215,9 +216,12 @@ describe("deployment routing", () => {
       catalog_name: \${var.catalog}
       schema_name: \${resources.schemas.dahlia.name}
       name: \${var.volume_name}`);
-    expect(bundle).not.toContain("prevent_destroy: true");
+    expect(bundle).toContain("sync_sharing_enabled:");
+    expect(bundle).toMatch(/sync_sharing_enabled:[\s\S]*?default: "false"/);
+    expect(bundle).toMatch(/dev:[\s\S]*?sync_sharing_enabled: "true"[\s\S]*?prod:/);
+    expect(bundle).toMatch(/prod:[\s\S]*?volumes:[\s\S]*?prevent_destroy: true/);
     expect(bundle).toMatch(/dev:[\s\S]*?purge_on_delete: true[\s\S]*?prod:/);
-    expect(bundle).toMatch(/admin_email:\n\s+description: .+\n\s+default: " "/);
+    expect(bundle).not.toContain("admin_email");
     expect(bundle).not.toContain("postgres_databases:");
     expect(resource).toContain("source_code_path: ../../../apps/server");
     expect(resource).toContain(`user_api_scopes:
@@ -238,6 +242,8 @@ describe("deployment routing", () => {
     expect(resource).toContain("name: DAHLIA_STORAGE_BACKEND");
     expect(resource).toContain("value: databricks");
     expect(resource).toContain("name: DAHLIA_STORAGE_DATABRICKS_VOLUME_PATH");
+    expect(resource).toContain("name: DAHLIA_SYNC_SHARING_ENABLED");
+    expect(resource).toContain("value: ${var.sync_sharing_enabled}");
     expect(resource).toContain("/Volumes/${resources.volumes.dahlia_storage.catalog_name}/${resources.volumes.dahlia_storage.schema_name}/${resources.volumes.dahlia_storage.name}");
     expect(resource).toContain("securable_full_name: ${resources.volumes.dahlia_storage.catalog_name}.${resources.volumes.dahlia_storage.schema_name}.${resources.volumes.dahlia_storage.name}");
     expect(resource).toContain("postgres_projects:");
@@ -247,6 +253,7 @@ describe("deployment routing", () => {
     expect(serverPackage.name).toBe("@dahlia-ai/server");
     expect(serverPackage.exports).toHaveProperty(".");
     expect(serverPackage.exports).toHaveProperty("./client");
+    expect(serverPackage.exports).toHaveProperty("./migrations/postgres-auth/*");
     expect(serverPackage.exports).toHaveProperty("./package.json");
     expect(serverPackage.scripts["start:databricks"]).toBe("pnpm run db:migrate:prod && pnpm run start");
     expect(serverPackage.scripts["dev:cloudflare"]).toContain("vite.cloudflare.config.ts");
@@ -259,26 +266,42 @@ describe("deployment routing", () => {
     expect(readText("../src/db/client.ts"))
       .toContain("pg_advisory_lock");
     expect(readText("../src/db/client.ts"))
-      .toContain("migrationsSchema: POSTGRES_SCHEMA");
+      .toContain("migrationsSchema: POSTGRES_MIGRATION_SCHEMA");
     expect(serverPackage.scripts["ensure:wrangler"]).toContain("../../deploy/cloudflare/wrangler.example.jsonc");
   });
 
-  it("uses one Drizzle baseline per dialect with PostgreSQL schema isolation", () => {
-    const sqlite = readText("../drizzle/sqlite/20260830001528_stiff_alex_power/migration.sql");
-    const postgres = readText("../drizzle/postgres/20260830063330_baseline/migration.sql");
-    for (const migration of [sqlite, postgres]) {
+  it("separates generated PostgreSQL auth DDL from the application baseline", () => {
+    const sqlite = readText("../drizzle/sqlite/20260903173555_lying_slipstream/migration.sql");
+    const auth = readText("../drizzle/postgres-auth/20260903034253_melodic_scalphunter/migration.sql");
+    const postgres = readText("../drizzle/postgres/20260903173551_bumpy_freak/migration.sql");
+    for (const migration of [sqlite, `${auth}\n${postgres}`]) {
       expect(migration).toContain("model_alias");
-      expect(migration).toContain("platform_admin");
+      expect(migration).not.toContain("platform_admin");
       expect(migration).not.toContain("artifact_reservation");
       expect(migration).toContain("storage_key");
       expect(migration).not.toContain("subscription");
       expect(migration).not.toContain("stripe");
-      expect(migration).not.toContain("organization");
+      expect(migration).toContain("organization");
     }
-    expect(postgres).toContain('CREATE TABLE "auth"."user"');
-    expect(postgres).toContain('CREATE TABLE "dahlia"."artifact"');
-    expect(postgres).not.toContain('CREATE TABLE "dahlia"."user"');
-    expect(postgres).not.toContain("ROW LEVEL SECURITY");
-    expect(postgres).not.toContain("CREATE POLICY");
+    expect(auth).toContain('CREATE TABLE "auth"."user"');
+    expect(auth).toContain('"role" text');
+    expect(auth).toContain('"banned" boolean');
+    expect(auth).toContain('"impersonated_by" text');
+    expect(auth).toContain('CREATE TABLE "auth"."team"');
+    expect(auth).toContain('CREATE TABLE "auth"."team_member"');
+    expect(auth).toContain('"active_team_id" text');
+    expect(auth).toContain('"team_id" text');
+    expect(postgres).not.toContain('CREATE TABLE "auth".');
+    expect(postgres).toContain('REFERENCES "auth"."user"("id")');
+    expect(postgres).toContain('CREATE TABLE "core"."artifact"');
+    expect(postgres).toContain('CREATE TABLE "content"."meetings"');
+    expect(postgres).not.toContain('CREATE TABLE "core"."user"');
+    expect(postgres).toContain("ROW LEVEL SECURITY");
+    expect(postgres).toContain("CREATE POLICY");
+    expect(postgres).toContain('permission."principal_type" = \'team\'');
+    expect(postgres).toContain('FROM "auth"."team_member"');
+    expect(postgres).not.toContain("header_deployment");
+    expect(sqlite).toContain("team_member_user_team_idx");
+    expect(sqlite).not.toContain("header_deployment");
   });
 });
