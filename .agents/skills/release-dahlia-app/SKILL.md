@@ -1,6 +1,6 @@
 ---
 name: release-dahlia-app
-description: Prepare and publish a Dahlia macOS app release with versioning, optional local revalidation, Japanese and English user-facing notes, Sparkle localization, notarization, and GitHub Release creation. Use when cutting, preparing, publishing, or checking a Dahlia app release; do not use for releases of the dahlia-mcp executable or unrelated repository modules.
+description: Prepare or publish a Dahlia macOS app release, including bilingual notes, signing, notarization, and Sparkle assets.
 ---
 
 # Release Dahlia App
@@ -9,7 +9,7 @@ Prepare the desktop app release. Keep note generation in this skill; never launc
 
 ## Scope the release
 
-Read the repository `AGENTS.md` release policy, `Resources/Info.plist`, and [references/release-scope.md](references/release-scope.md). Apply the reference to determine the release range, included changes, and version. Do not publish until the version change is committed and `HEAD` is pushed.
+Read [the desktop versioning policy](../../../docs/desktop-release-versioning.md), `Resources/Info.plist`, and [references/release-scope.md](references/release-scope.md). Apply the reference to determine the release range, included changes, and version. Do not publish until the version change is committed and `HEAD` is pushed.
 
 ## Write localized notes
 
@@ -37,7 +37,7 @@ Do not run notarization for a check, explanation, or preparation-only request. I
 
 ## Publish
 
-Show both note files and the target version to the user. Publishing creates external state, so wait for explicit confirmation, then run:
+Show both note files and the target version to the user. If publication has not already been authorized, obtain confirmation before publishing. An explicit publish request or `$release-dahlia-app --auto-approve` authorizes publication after all required gates; do not ask again for the same action. Then run:
 
 ```bash
 .agents/skills/release-dahlia-app/scripts/create-github-release.sh \
