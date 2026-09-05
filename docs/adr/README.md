@@ -1,81 +1,59 @@
-# Architecture Decision Records
+# 設計判断
 
-ADR は、設計判断を行った時点の背景、選択肢、トレードオフを残す履歴である。
-現在の構成、横断的な設計原則、実装との適合状況、修正完了条件は
-[ARCHITECTURE.md](../../ARCHITECTURE.md)、機能の採否と scope の境界は
-[PRODUCT.md](../../PRODUCT.md) を正本とする。
-product tenet 自体を変更または追加する場合も、その判断は新しい ADR に記録する。
+対象・テーマごとに、採択した設計、その理由、制約と変更の経緯をまとめる。採択は実装・rollout・検証の完了を意味しない。現在の構成と適合状況は [ARCHITECTURE.md](../../ARCHITECTURE.md)、Server の API・運用は [Server README](../../apps/server/README.md)、機能の採否は [PRODUCT.md](../../PRODUCT.md) を参照する。文書全体の入口は [Documentation](../README.md)。
 
-Codex は全 ADR を順番に読まず、最初にこの一覧から現在の作業に関係する記録だけを選ぶ。
-既存の決定を変更または反転する場合は、新しい ADR を追加して置換関係を記録し、過去の本文を現在形へ書き換えない。
+`Codex app-server` は Desktop の内蔵子プロセスであり、Dahlia Server とは別物。
 
-| ADR | Area | Decision | Status / relationship |
-| --- | --- | --- | --- |
-| [0001](0001-summary-document-ast.md) | Summary | `SummaryDocument` AST をサマリーの正準表現にする | Accepted; amended by 0024 |
-| [0002](0002-isolate-recording-critical-path-from-main-actor.md) | Recording / Concurrency | 録音と確定データの保存を MainActor の UI projection から分離する | Accepted; partially superseded by 0006 and 0009 |
-| [0003](0003-use-a-shared-codex-app-server.md) | AI runtime | Codex app-server をアプリ共有の長寿命 backend として使う | Accepted; amended by 0013, 0015, 0019, 0020, 0021, 0022, 0028, 0032, 0039, and 0054 |
-| [0004](0004-protect-recordings-with-segmented-immutable-storage.md) | Recording storage | 録音データを分割された immutable segment として保全する | Accepted |
-| [0005](0005-vault-scoped-meeting-access-mcp.md) | Meeting access | Vault 固定・read-only の local MCP で meeting data を公開する | Accepted; amended by 0010, 0034, and 0041 |
-| [0006](0006-bounded-transcript-projection.md) | Transcript UI | SQLite を正本とし、文字起こし表示を bounded projection と keyset pagination にする | Accepted; partially supersedes 0002 |
-| [0007](0007-version-and-restore-sqlite-backups.md) | Database backup | SQLite backup を schema generation 付きで管理する | Accepted |
-| [0008](0008-render-streaming-chat-markdown-as-bounded-projection.md) | Chat UI | Streaming Markdown を bounded UI projection として描画する | Accepted |
-| [0009](0009-execution-context-and-degradation-order.md) | Concurrency / UI responsiveness | 実行コンテキストの判断基準と負荷時の縮退順序を定める | Accepted; partially supersedes 0002 |
-| [0010](0010-database-canonical-bounded-project-hierarchy.md) | Project workspace | DB 正本の2段階 Project 階層と派生 Summary 出力先を採用する | Accepted; amends 0005 |
-| [0011](0011-vault-scoped-customer-intelligence.md) | Customer intelligence | Vault単位の型付き正準データとAI示唆を分離する | Accepted; amends 0005, builds on 0010 |
-| [0012](0012-reviewable-customer-intelligence-workspace.md) | Customer intelligence / UI | 単一顧客の組織ビューと単数 CRUD による逐次AI更新を採用する | Accepted; amends 0011; amended by 0022 and 0027 |
-| [0013](0013-expand-codex-stdout-burst-buffer.md) | AI runtime | Codex stdout の burst buffer を拡張し、消費済み payload を即時解放する | Superseded by 0019 |
-| [0014](0014-domain-driven-organization-merge.md) | Customer intelligence / Identity | メールドメイン追加を入口にルート組織を完全統合する | Accepted; amends 0011 and 0012 |
-| [0015](0015-preset-projects-optimizer-skill.md) | AI runtime / Project workspace | Projects Optimizer skill をアプリ内チャットへプリセットする | Accepted; partially superseded by 0021, amends 0003, builds on 0010; amended by 0028 |
-| [0016](0016-shared-organization-domains.md) | Customer intelligence / Identity | 同じメールドメインを複数のルート組織で共有可能にする | Accepted; amends 0011 and 0014 |
-| [0017](0017-preset-customer-intelligence-skills.md) | AI runtime / Customer intelligence | 顧客インテリジェンスの curator skill を層ごとに分けてプリセットする | Accepted; amends 0015, builds on 0011 and 0012; amended by 0028 |
-| [0018](0018-mcp-meeting-summary-update.md) | Summary / Meeting access | サマリーの訂正を MCP のドキュメント全体置換で行う | Accepted; amends 0005 and 0010, builds on 0001; amended by 0024 |
-| [0019](0019-pull-codex-stdout-with-backpressure.md) | AI runtime | Codex stdout を64 KiB単位で需要駆動読み取りする | Accepted; supersedes 0013, amends 0003; amended by 0020 |
-| [0020](0020-bound-codex-output-relative-to-client-input.md) | AI runtime | Codex stdout の単一行上限をclient入力に応じて拡張する | Accepted; amends 0019 and 0003 |
-| [0021](0021-preserve-user-home-for-databricks-authentication.md) | AI runtime / Authentication | app-server では `CODEX_HOME` だけを分離し、Databricks CLI のため user `HOME` を継承する | Accepted; partially supersedes 0015, amends 0003; amended by 0039 |
-| [0022](0022-user-approved-workspace-write-chat.md) | AI runtime / Chat | アプリ内チャットを `workspace-write` とユーザー承認で実行する | Accepted; amends 0003 and 0012; amended by 0023, 0027, and 0036 |
-| [0023](0023-review-vault-mcp-writes-in-chat.md) | AI runtime / Chat / MCP | Vault MCP の書き込みを追加権限なしの単一 tool call として承認する | Accepted; amends 0022 |
-| [0024](0024-flat-summary-blocks-with-hierarchy-attributes.md) | Summary / Meeting access | 平坦な階層属性でサマリーのネストリストと表を表現する | Accepted; amends 0001 and 0018 |
-| [0025](0025-adopt-allowlisted-nonblocking-telemetry.md) | Privacy / Observability | 許可リスト制の匿名テレメトリを公式 SDK の非ブロッキング経路で送る | Accepted; amended by 0026 |
-| [0026](0026-measure-product-adoption-with-bounded-telemetry.md) | Privacy / Product analytics | 丸めた録音時間と AI chat・内蔵 MCP の利用を固定 allowlist で計測する | Accepted; amends 0025; amended by 0028 |
-| [0027](0027-use-provider-aware-chat-approval-reviewer.md) | AI runtime / Chat / Authentication | ChatGPT Subscription は代理審査、Databricks はユーザー承認を使う | Accepted; amends 0012 and 0022; builds on 0023; amended by 0036 |
-| [0028](0028-remove-automatic-previous-meeting-summary-context.md) | Summary / AI runtime / MCP | 要約生成の過去 meeting 自動参照と要約専用 MCP session を廃止する | Accepted; amends 0003, 0015, 0017, and 0026 |
-| [0029](0029-offer-an-optional-codex-ai-gateway.md) | AI runtime / Server gateway | 内蔵 Codex 用の任意の認証付き AI Gateway を別 runtime で提供する | Accepted; amends 0003; amended by 0031, 0043, 0044, 0045, 0046, 0047, 0054, and 0064 |
-| [0031](0031-publish-dahlia-server-extension-contract.md) | Server gateway / Distribution | 実行可能な Server と versioned extension contract を同じ package で配布する | Accepted; amends 0029; amended by 0043 |
-| [0032](0032-use-local-codex-login-success-page.md) | AI runtime / Authentication | ChatGPT 認証完了に app-server のローカル成功ページを使う | Accepted; amends 0003 |
-| [0033](0033-use-local-fts5-search-projection.md) | Search / Database projection | Lindera と FTS5 による再構築可能なローカル検索索引を使う | Accepted; builds on 0006, 0007, and 0009; amended by 0034, 0040, and 0041 |
-| [0034](0034-index-summary-body-in-local-search.md) | Search / Summary | 構造化 summary の本文をローカル検索対象にする | Accepted; amends 0005 and 0033, builds on 0001; amended by 0040 |
-| [0035](0035-add-local-hybrid-search.md) | Search / ML | 任意導入の256次元 EmbeddingGemma 索引でローカルハイブリッド検索を提供する | Accepted; amends 0033 and 0034; amended by 0037 and 0041 |
-| [0036](0036-select-chat-approval-method-per-task.md) | AI runtime / Chat / Authentication | AI チャットの承認方法をタスクごとに選択する | Accepted; amends 0022 and 0027; builds on 0023 |
-| [0037](0037-use-actual-summary-content-for-meeting-vectors.md) | Search / ML / Summary | meeting vector を title と実際の summary コンテンツに限定する | Accepted; amends 0035, builds on 0001 and 0034; amended by 0041 |
-| [0038](0038-index-screenshot-ocr-in-local-search.md) | Search / Screenshots | 全 screenshot の検出文字と画像説明を正本保存し独立した FTS 結果として返す | Accepted; amends 0005, 0033, and 0035 |
-| [0039](0039-guide-databricks-cli-installation-and-login.md) | AI runtime / Authentication / Distribution | CLI を外部導入のまま案内し、workspace URL から OAuth profile を作成する | Accepted; amends 0003 and 0021 |
-| [0040](0040-user-configurable-meeting-search-field-weights.md) | Search / Settings | ミーティング検索の順位をユーザー設定のフィールド重みで決める | Accepted; amends 0033 and 0034; amended by 0041 |
-| [0041](0041-exclude-project-context-from-meeting-search.md) | Search / Project context | Project の文脈をミーティング自由文検索と順位から除外する | Accepted; amends 0005, 0033, 0035, 0037, and 0040; builds on 0034 |
-| [0042](0042-apply-global-batch-audio-retention.md) | Recording storage / Settings | 現在の保存期間と録音終了日時からバッチ録音を遡及削除する | Accepted; amends 0004 |
-| [0043](0043-unify-dahlia-server-application-database.md) | Server gateway / Database | Server の認証・管理・将来同期を単一の選択可能な Drizzle DB に統一する | Accepted; amends 0029 and 0031; amended by 0044 and 0058 |
-| [0044](0044-deploy-dahlia-server-to-databricks-apps.md) | Server gateway / Databricks | DAB、Lakebase、App OAuth で Dahlia Server を Databricks Apps に配置する | Accepted; amends 0029 and 0043; amended by 0045, 0046, 0047, 0050, and 0058 |
-| [0045](0045-add-owner-scoped-artifact-transport.md) | Server / Artifact storage | owner-scoped の任意 asset transport を R2 または Volume で提供する | Accepted; amends 0029, 0043, and 0044; amended by 0048 |
-| [0046](0046-forward-databricks-user-token-to-ai-gateway.md) | Server gateway / Databricks | Apps proxy の user token で workspace AI Gateway を呼ぶ | Accepted; amends 0029 and 0044; amended by 0050 |
-| [0047](0047-manage-pnpm-dependencies-per-application.md) | Server gateway / Distribution | モノレポ内の各アプリが pnpm manifest と lockfile を独立して所有する | Accepted; amends 0029 and 0044 |
-| [0048](0048-issue-artifact-ids-server-side.md) | Server / Artifact API | UUIDv7 artifact ID を Server で発行し、PUT を置換専用にする | Accepted; amends 0045 |
-| [0049](0049-expose-artifact-tools-over-remote-mcp.md) | Server / MCP / Authentication | owner-scoped artifact mutation を remote MCP として公開する | Accepted; amends 0029, 0044, 0045, and 0048 |
-| [0050](0050-use-app-service-principal-for-databricks-model-discovery.md) | Server gateway / Databricks | モデル発見だけを App service principal で実行する | Accepted; amends 0044 and 0046 |
-| [0051](0051-add-desktop-cloud-oauth.md) | Desktop / Cloud authentication | protected-resource discovery と deployment-bound credential で Cloud に接続する | Accepted; builds on 0044 and 0049; amended by 0052 |
-| [0052](0052-separate-desktop-account-connections-from-vaults.md) | Desktop / Authentication / Vault | 接続をアプリ共有にし、Vault 関連は sync consumer と同時に追加する | Accepted; amends 0051, builds on 0043 |
-| [0053](0053-scope-codex-accounts-to-vaults.md) | Desktop / AI runtime / Authentication / Vault | Vault ごとにローカルまたは Dahlia アカウントの Codex home とモデル設定を選択する | Accepted; partially supersedes 0051 and 0052, builds on 0021 and 0029 |
-| [0054](0054-align-ai-runtime-timeouts.md) | Desktop / AI runtime / Server gateway | 要約と RPC の timeout を upstream execution と応答遅延に合わせる | Accepted; amends 0003 and 0029 |
-| [0055](0055-add-artifact-browser-pages.md) | Server / Artifact UI | owner-scoped artifact の一覧・表示ページと browser read 認証を追加する | Accepted; amends 0045, 0048, and 0049 |
-| [0056](0056-add-owner-only-meeting-sync.md) | Desktop / Server / Meeting sync | summary、transcript、screenshot を owner-only で Server へ同期する | Accepted; amends 0045, 0052, and 0053; amended by 0058, 0059, 0060, and 0066 |
-| [0057](0057-share-personal-vaults-with-organizations.md) | Server / Meeting sync / Sharing | 個人所有 Vault を複数 organization または header deployment へ明示的に read-only 共有する | Accepted; amends 0056; amended by 0058, 0059, 0061, and 0065; rollout disabled by default |
-| [0058](0058-separate-server-auth-core-content-schemas.md) | Server / Database / Databricks | Server DB を auth・core・content に分け、DAB storage の既定を整理する | Accepted; amends 0043, 0044, 0056, and 0057; amended by 0059, 0061, 0063, and 0066 |
-| [0059](0059-authorize-content-through-vault-principal-permissions.md) | Server / Database / Authorization | Vault principal permission を ownership、共有、content RLS の正本にする | Accepted; amends 0056, 0057, and 0058; amended by 0061, 0065, and 0066 |
-| [0060](0060-add-server-full-text-search.md) | Server / Search / Meeting sync | Server tokenization とDB別全文索引で同期済み meeting と screenshot を検索する | Accepted; amends 0056; builds on 0033, 0034, 0038, and 0059; amended by 0062 |
-| [0061](0061-decouple-vault-rls-from-better-auth-schema.md) | Server / Database / Authorization | 生のuser IDとtransaction-local principal contextを使い、header modeのVault RLSをBetter Auth schemaから分離する | Accepted; amends 0057, 0058, and 0059; amended by 0063 and 0065 |
-| [0062](0062-add-server-hybrid-search-projection.md) | Server / Search / Embeddings | 統合検索projectionと非同期vector生成でFTSをHybrid検索へ拡張する | Accepted; amends 0060; builds on 0059 and 0061; amended by 0066 |
-| [0063](0063-materialize-header-users-in-auth-schema.md) | Server / Database / Authentication | Header identityを共通Auth userへ射影し、全認証方式で同じmigration集合を使う | Accepted; amends 0058 and 0061; amended by 0064 and 0065 |
-| [0064](0064-manage-server-administrators-with-better-auth.md) | Server / Authentication / Administration | Better Auth admin roleをServer管理権限の正本にする | Accepted; amends 0029 and 0063 |
-| [0065](0065-unify-header-sharing-with-external-organization-teams.md) | Server / Authentication / Sharing | Header userをExternal Organizationへ統合し、OrganizationとTeamでVaultを共有する | Accepted; amends 0057, 0059, 0061, and 0063 |
-| [0066](0066-sync-vault-projects-and-separate-transcript-speakers.md) | Desktop / Server / Meeting sync | Vault名とProject階層を同期し、transcriptの収録経路と話者ラベルを分離する | Accepted; amends 0056, 0058, 0059, and 0062 |
-| [0067](0067-use-domain-transactions-and-cursor-deltas-for-sync.md) | Desktop / Server / Meeting sync | domain transaction、optimistic revision、cursor delta、SSE invalidationでDesktopとWebを同期する | Accepted; amends 0056, 0058, 0059, and 0066 |
-| [0068](0068-consolidate-desktop-and-mcp-oauth-scopes.md) | Desktop / Server / Authentication | Desktop APIを`all-apis`、MCPをfull/read-onlyの2 scopeへ統合する | Accepted; amends 0029, 0045, 0049, 0051, 0056, and 0067 |
-| [0069](0069-use-backend-model-catalogs.md) | Server / AI Gateway | backend 別モデル一覧と Responses 互換境界へ統一し、Server 共通の自動レビュー上書きを維持する | Accepted; amends 0029, 0031, and 0050 |
+## Desktop
+
+macOS、ローカル SQLite、録音、UI、内蔵 Codex / local MCP。
+
+- [サマリーの構造と更新](desktop/summary.md)
+- [録音ストレージと保存期間](desktop/recording-storage.md)
+- [実行コンテキストと UI projection](desktop/concurrency-and-projection.md)
+- [SQLite backup / restore](desktop/database-backup.md)
+- [Local MCP と Project 階層](desktop/local-mcp-and-projects.md)
+- [顧客情報の正準モデルと更新](desktop/customer-intelligence.md)
+- [内蔵 AI skill と context](desktop/ai-skills-and-context.md)
+- [Codex runtime と stdio](desktop/codex-runtime.md)
+- [Desktop の認証と account 分離](desktop/accounts.md)
+- [チャットの書き込みと承認](desktop/chat-approval.md)
+- [匿名 telemetry](desktop/telemetry.md)
+- [ローカル全文・Hybrid 検索](desktop/search.md)
+
+## Server / Cloud
+
+Server / Private Web、配置、API、認可、storage。
+
+- [AI Gateway と配布契約](server/gateway.md)
+- [Databricks 配置と upstream identity](server/databricks.md)
+- [Artifact storage / API / MCP / Web](server/artifacts.md)
+- [Database schema と認可 identity](server/database-and-identity.md)
+- [Vault 共有と管理者](server/sharing-and-administration.md)
+- [Server 全文・Hybrid 検索](server/search.md)
+
+## Shared
+
+Desktop / Server / 外部 client 間の契約。
+
+- [Desktop / Server / MCP の OAuth 契約](shared/oauth.md)
+- [Desktop / Server の canonical sync](shared/sync.md)
+- [Desktop / Gateway の AI timeout](shared/ai-timeouts.md)
+
+## Monorepo
+
+リポジトリ全体の build / package 所有境界。
+
+- [アプリ単位の依存管理](monorepo/dependencies.md)
+
+## 更新のルール
+
+- 番号を付けず、対象とテーマを表すファイル名・見出しで参照する。同じテーマの追補は本文へ統合し、責務や対象が異なる場合だけ文書を増やす。
+- 対象、判断の日付、決定、理由、制約を残す。判断が変わった部分は本文を整合させ、以前の選択と変更理由を日付付きで簡潔に記録する。未実装・未検証・未解決事項を採択済みの仕様と混同しない。
+- Product tenet の変更はユーザーが承認した新しい設計判断で行う。
+- 型定義のコピー、実装の逐次説明、完了した作業リストはコード・テスト・現行仕様へ寄せる。重要な不変条件、却下理由、rollout 制限は圧縮しても残す。
+- 単なる不具合修正、定数調整、手順の更新では文書を増やさない。移動・見出し変更時はリポジトリ内の参照も更新する。
+
+## 過去の記録
+
+2026-09-06 に66件の記録を22テーマへ統合し、旧番号と重複した説明を除いた。これは文書整理であり、新しい製品・設計判断ではない。統合前の詳細と旧パスは [Git 履歴の原文](https://github.com/dahlia-org/dahlia/tree/a84967776061c5db1be2e0f25bf135dcdc4e6ba7/docs/adr) で参照できる。

@@ -17,6 +17,19 @@ source of truth、再生成可能性、実測値に基づいて target state を
 
 最終確認日: 2026-08-12
 
+## Document Scope
+
+この文書は複数 runtime の構成を含む。対象別の操作・詳細仕様は [Documentation index](docs/README.md) から選ぶ。
+
+| 範囲 | 適用先 |
+| --- | --- |
+| Reliability Scope、Execution Context、UI、Failure / Overload、Conformance / Remediation | Desktop の録音・保存・応答性。Server の可用性や process crash 耐性の保証へ一般化しない |
+| Runtime Data Flow のローカル処理 | Desktop / local MCP / 内蔵 Codex app-server |
+| Runtime Data Flow の Server・同期・認証境界 | Desktop と Server。API・運用の詳細は [Server README](apps/server/README.md) |
+| 設計判断の履歴 | [対象別 ADR](docs/adr/README.md)。Accepted と実装・検証完了は別 |
+
+以下の確認日・適合状況は元の観測時点を示し、文書整理によって再検証済みにはしない。
+
 ## Reliability Scope
 
 Dahlia が優先して防ぐ障害は、録音中の MainActor または UI の一時停止によって音声や確定文字起こしを失うことである。
@@ -117,14 +130,14 @@ Contactのローカルidentityは `UUID + (vaultId, email)` であり、Vault横
 Organization/Contactなどの正準レコードと、AIまたは人によるInsightを分離する。Insightのreview状態は正準レコードへの
 write-backを発生させない。汎用参照は書き込み時にtarget存在とVault一致を検証し、target削除時はtriggerで除去する。
 詳細な判断と将来のContact統合条件は
-[ADR-0011](docs/adr/0011-vault-scoped-customer-intelligence.md)を正本とする。
+[正準モデルと AI の主張](docs/adr/desktop/customer-intelligence.md#正準モデルと-ai-の主張)を正本とする。
 
 任意の Dahlia Server runtime は内蔵 Codex の provider transport を所有し、macOS の録音・文字起こし critical path には入らない。
 macOS の Dahlia アカウントは Vault の所有者ではなく、アプリ共有の接続として SQLite に登録する。OAuth credential と remote identity は
-接続 UUID ごとに Keychain が所有し、token 利用側は connection ID を明示する。sign-out は選択した credential だけを削除する。Vault は AI provider
-利用のために任意の接続を参照し、接続ごとの private `CODEX_HOME` を使う。接続の関連だけでは meeting sync を有効にせず、Vault ごとの明示設定と再確認を要求する。ローカルアカウントだけが
+接続 UUID ごとに Keychain が所有し、token 利用側は connection ID を明示する。sign-out は選択した接続の credential を削除し、Server record を残したまま local working copy の削除または Local Account への移動を選ぶ。Vault は AI provider
+利用のために任意の接続を参照し、接続ごとの private `CODEX_HOME` を使う。サインインだけでは Local Vault を移さず、Vault 単位の明示移行を要求する。Server-managed Vault は常時同期し、独立した同期 toggle は持たない。ローカルアカウントだけが
 ChatGPT Subscription または Databricks AI Gateway を使い、Dahlia アカウントは接続先の Gateway を使う。この境界は
-[ADR-0053](docs/adr/0053-scope-codex-accounts-to-vaults.md)を正本とする。
+[Codex account context](docs/adr/desktop/accounts.md#codex-account-context)を正本とする。
 Better Auth、Gateway 管理 metadata、meeting sync は単一の Drizzle application database を共有する。PostgreSQL は生成済み認証 table を
 `auth`、Web application と共有設定を `core`、meeting 実データを `content` schema に置き、参照は `auth <- core <- content` の方向だけを許可する。
 `DAHLIA_DATABASE_TYPE` は `sqlite`、`postgres`、`lakebase`、`hyperdrive`、`d1` から選び、SQLite／PostgreSQL の接続先は
@@ -135,7 +148,7 @@ Databricks Apps の header identity は sessionless だが、認証・administra
 AI Gateway は `AIGatewayBackend.listModels` と `responses(body, context)` を共通境界とする。モデル一覧は backend が返し、Databricks は App service principal で `DATABRICKS_MODEL_SCHEMA` 配下を取得する。短い公開モデル名の上流変換とヘッダー構築は backend が所有する。
 Server 共通層は `CODEX_AUTO_REVIEW_MODEL` による予約モデル上書きを所有し、設定された上流 ID はスキーマを補完せず転送する。
 Responses request は上限内で検証し、upstream response body は streaming relay する。request と response の content は DB、cache、analytics、application log へ保存しない。
-Databricks request tags には認証済み user ID を付与する。Model Alias の既存データは残すが Gateway から参照せず、管理画面・API は廃止する ([ADR-0069](docs/adr/0069-use-backend-model-catalogs.md))。
+Databricks request tags には認証済み user ID を付与する。Model Alias の既存データは残すが Gateway から参照せず、管理画面・API は廃止する ([Backend モデル契約](docs/adr/server/gateway.md#backend-モデル契約))。
 
 ```text
 Dahlia macOS / bundled Codex 0.148.0
@@ -197,23 +210,16 @@ RRF で統合し、embedding の未設定・未完成・障害時は FTS に縮�
 すべての検索 query は `vault_id` 経由の permission／RLS を通す。現時点の D1 adapter は domain transaction の複数 statement を
 atomic batch にできないため meeting sync capability を fail-closed とし、D1 の FTS-only 検索は atomic batch adapter 実装後の target state とする。
 翻訳文、音声、SQLite file、note、tag、calendar、
-Project は階層参照と meeting 絞り込みのためだけに同期し、Server の全文・vector projection へは含めない。transcript の `audio_source` は `mic`／`system` の収録経路、nullable な `speaker_label` は将来の話者分離ラベルとし、音声特徴量は同期しない。runtime と data boundary の判断は
-[ADR-0043](docs/adr/0043-unify-dahlia-server-application-database.md)、
-[ADR-0045](docs/adr/0045-add-owner-scoped-artifact-transport.md)、
-[ADR-0048](docs/adr/0048-issue-artifact-ids-server-side.md)、
-[ADR-0049](docs/adr/0049-expose-artifact-tools-over-remote-mcp.md)、
-[ADR-0046](docs/adr/0046-forward-databricks-user-token-to-ai-gateway.md)、
-および [ADR-0050](docs/adr/0050-use-app-service-principal-for-databricks-model-discovery.md)を正本とする。
-[ADR-0056](docs/adr/0056-add-owner-only-meeting-sync.md)を meeting sync の正本とする。
-[ADR-0057](docs/adr/0057-share-personal-vaults-with-organizations.md)を shared read の正本とする。
-[ADR-0059](docs/adr/0059-authorize-content-through-vault-principal-permissions.md)を Vault ownership、permission、content RLS の正本とする。
-[ADR-0062](docs/adr/0062-add-server-hybrid-search-projection.md)を同期済み content の Server Hybrid 検索の正本とする。
-[ADR-0066](docs/adr/0066-sync-vault-projects-and-separate-transcript-speakers.md)を Vault／Project 同期と transcript 話者モデルの正本とする。
-[ADR-0067](docs/adr/0067-use-domain-transactions-and-cursor-deltas-for-sync.md)を Serverアカウントにおける共有canonical Vault／Project、Desktop／Web の双方向変更、optimistic revision、domain transaction queue、cursor delta、SSE invalidation の正本とする。Desktop SQLiteはoffline working copyであり、単方向の転送元ではない。SSE はデータ本体を運ばない。 Server 側採用では未送信変更を破棄して cursor をリセットし、Server の revision 一覧を取得するまで revision 未確定の Vault 同期行を保持して送信を停止する。この間のローカル変更と確定文字起こしはキューへ保存し、取得した revision で未送信操作を順序どおり補正してから送信を再開する。revision 取得と canonical 本体の適用は区別し、cursor が未設定なら同じ revision でも本体を再取得・適用する。これを初期送信の中断と混同して create を再生成してはならない。local mutation は record cache と operation snapshot を同じ SQLite transaction へ明示的に書き、remote applier は recorder を呼ばない。
-[ADR-0061](docs/adr/0061-decouple-vault-rls-from-better-auth-schema.md)をRLS identity contextの正本とする。
-[ADR-0063](docs/adr/0063-materialize-header-users-in-auth-schema.md)を共通Auth schemaとheader user射影の正本とする。
-[ADR-0064](docs/adr/0064-manage-server-administrators-with-better-auth.md)をServer管理者権限の正本とする。
-[ADR-0065](docs/adr/0065-unify-header-sharing-with-external-organization-teams.md)をheader Organization射影とTeam共有の正本とする。
+Project は階層参照と meeting 絞り込みのためだけに同期し、Server の全文・vector projection へは含めない。transcript の `audio_source` は `mic`／`system` の収録経路、nullable な `speaker_label` は将来の話者分離ラベルとし、音声特徴量は同期しない。runtime と data boundary の判断は次を正本とする。
+
+- [Server database と認可 identity](docs/adr/server/database-and-identity.md): schema、Vault permission、content RLS、header user 射影。
+- [Artifact](docs/adr/server/artifacts.md): ownership、storage、ID、Remote MCP。
+- [Databricks upstream identity](docs/adr/server/databricks.md#upstream-identity): Responses と model discovery の認証境界。
+- [Canonical sync](docs/adr/shared/sync.md): Vault／Project、transcript 話者モデル、Desktop／Web の双方向変更、revision、transaction、delta、SSE。
+- [Vault 共有と管理者](docs/adr/server/sharing-and-administration.md): shared read、Organization／Team 共有、Server 管理者権限。
+- [Server Hybrid 検索](docs/adr/server/search.md#hybrid-検索): 同期済み content の検索 projection。
+
+Desktop SQLite は offline working copy であり、単方向の転送元ではない。SSE はデータ本体を運ばない。Server 側採用では未送信変更を破棄して cursor をリセットし、Server の revision 一覧を取得するまで revision 未確定の Vault 同期行を保持して送信を停止する。この間のローカル変更と確定文字起こしはキューへ保存し、取得した revision で未送信操作を順序どおり補正してから送信を再開する。revision 取得と canonical 本体の適用は区別し、cursor が未設定なら同じ revision でも本体を再取得・適用する。これを初期送信の中断と混同して create を再生成してはならない。local mutation は record cache と operation snapshot を同じ SQLite transaction へ明示的に書き、remote applier は recorder を呼ばない。
 
 ## Workload Classes
 
@@ -443,7 +449,7 @@ SQLite stall の実測結果を得るまでは `.unbounded` と retry 保持の�
 
 durable event を drop する `AsyncStream.bufferingNewest/Oldest` への単純置換は行わない。まず event count、text bytes、
 SQLite stall duration、retry backlog を計測する。その結果から、audio writer と独立した bounded backpressure または
-disk-backed recovery のどちらを使うかを決める。選択した容量、受付不能時の UX、停止時の drain を ADR 0009 の queue contract
+disk-backed recovery のどちらを使うかを決める。選択した容量、受付不能時の UX、停止時の drain を [実行コンテキスト](docs/adr/desktop/concurrency-and-projection.md#実行コンテキスト) の queue contract
 として実装前に確定する。
 
 完了条件:
@@ -505,7 +511,7 @@ lane を分離した。R5 は instrumentation のみ完了しており、backpre
 
 意思決定の一覧と読み方は [ADR index](docs/adr/README.md) を参照する。録音と UI 応答性に直接関係する記録:
 
-- [ADR-0002: 録音クリティカルパスを MainActor から分離する](docs/adr/0002-isolate-recording-critical-path-from-main-actor.md)
-- [ADR-0004: 録音データを分割された不変セグメントとして保全する](docs/adr/0004-protect-recordings-with-segmented-immutable-storage.md)
-- [ADR-0006: 大量文字起こしを bounded projection と keyset pagination で表示する](docs/adr/0006-bounded-transcript-projection.md)
-- [ADR-0009: 実行コンテキストと負荷縮退順序を定める](docs/adr/0009-execution-context-and-degradation-order.md)
+- [録音クリティカルパスを MainActor から分離する](docs/adr/desktop/concurrency-and-projection.md#録音と保存の分離)
+- [録音データを分割された不変セグメントとして保全する](docs/adr/desktop/recording-storage.md#確定手順)
+- [大量文字起こしを bounded projection と keyset pagination で表示する](docs/adr/desktop/concurrency-and-projection.md#transcript-projection)
+- [実行コンテキストと負荷縮退順序を定める](docs/adr/desktop/concurrency-and-projection.md#実行コンテキスト)

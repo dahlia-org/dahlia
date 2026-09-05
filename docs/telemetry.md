@@ -106,5 +106,5 @@ SDK の非ブロッキング契約や cache 上限が将来変わる場合は、
 
 - [TelemetryDeck Swift Setup](https://telemetrydeck.com/docs/guides/swift-setup/)
 - [TelemetryDeck default parameters](https://telemetrydeck.com/docs/ingest/default-parameters/)
-- [ADR-0025](adr/0025-adopt-allowlisted-nonblocking-telemetry.md)
-- [ADR-0026](adr/0026-measure-product-adoption-with-bounded-telemetry.md)
+- [収集と実行境界](adr/desktop/telemetry.md#収集と実行境界)
+- [許可した集計](adr/desktop/telemetry.md#許可した集計)

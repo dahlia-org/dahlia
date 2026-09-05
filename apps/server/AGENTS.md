@@ -15,16 +15,16 @@ Use progressive disclosure. Read the closest implementation first, then only the
 | Local setup, API behavior, configuration, or deployment overview | [`README.md`](README.md) |
 | Product scope or whether a cloud feature belongs in Dahlia | [`PRODUCT.md`](../../PRODUCT.md), especially T4 and T5 |
 | Account authentication and API access | [`README.md` API contract](README.md#api-contract), then the affected `src/auth` implementation |
-| Gateway upstream relay | [ADR-0029](../../docs/adr/0029-offer-an-optional-codex-ai-gateway.md) |
-| Canonical data, remote mutations, conflicts, or catch-up | [ADR-0067](../../docs/adr/0067-use-domain-transactions-and-cursor-deltas-for-sync.md), then `src/sync` and the affected Desktop sync path |
+| Gateway upstream relay | [Gateway 境界](../../docs/adr/server/gateway.md#gateway-境界) |
+| Canonical data, remote mutations, conflicts, or catch-up | [Transaction と競合](../../docs/adr/shared/sync.md#transaction-と競合), then `src/sync` and the affected Desktop sync path |
 | Vault ownership and sharing | [`README.md` Vault sharing](README.md#meeting-sync-and-vault-sharing) |
-| Public package exports or extension hooks | [ADR-0031](../../docs/adr/0031-publish-dahlia-server-extension-contract.md) |
-| Application database, identity, or migrations | [ADR-0043](../../docs/adr/0043-unify-dahlia-server-application-database.md) |
+| Public package exports or extension hooks | [配布と拡張](../../docs/adr/server/gateway.md#配布と拡張) |
+| Application database, identity, or migrations | [Schema と migration](../../docs/adr/server/database-and-identity.md#schema-と-migration) |
 | Databricks deployment or Lakebase setup | [`deploy/databricks/README.md`](../../deploy/databricks/README.md) |
-| Databricks forwarded user token | [ADR-0046](../../docs/adr/0046-forward-databricks-user-token-to-ai-gateway.md) |
-| Databricks model discovery | [ADR-0050](../../docs/adr/0050-use-app-service-principal-for-databricks-model-discovery.md) |
-| Artifact authorization, storage, IDs, or public URLs | [ADR-0045](../../docs/adr/0045-add-owner-scoped-artifact-transport.md), [ADR-0048](../../docs/adr/0048-issue-artifact-ids-server-side.md) |
-| Dependencies, lockfiles, packaging, or deployment source layout | [ADR-0047](../../docs/adr/0047-manage-pnpm-dependencies-per-application.md) |
+| Databricks forwarded user token | [Upstream identity](../../docs/adr/server/databricks.md#upstream-identity) |
+| Databricks model discovery | [Upstream identity](../../docs/adr/server/databricks.md#upstream-identity) |
+| Artifact authorization, storage, IDs, or public URLs | [Ownership と storage](../../docs/adr/server/artifacts.md#ownership-と-storage), [API と ID](../../docs/adr/server/artifacts.md#api-と-id) |
+| Dependencies, lockfiles, packaging, or deployment source layout | [アプリ単位の依存管理](../../docs/adr/monorepo/dependencies.md) |
 
 Use the [ADR index](../../docs/adr/README.md) only when historical rationale or a contract change requires it. Do not read unrelated ADRs by default.
 

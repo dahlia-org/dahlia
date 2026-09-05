@@ -147,7 +147,7 @@ Write tools:
 - `update_meeting_summary`
 
 `update_meeting_summary` replaces one Meeting's whole summary document and is described in
-[ADR 0018](adr/0018-mcp-meeting-summary-update.md). It takes the `summary_document` and `summary_document_version`
+[訂正と export](adr/desktop/summary.md#訂正と-export). It takes the `summary_document` and `summary_document_version`
 that `get_meeting` returned, propagates the document title and description to the Meeting, adds document tags without
 removing existing ones, and rewrites an already-exported vault Markdown file in place under its current file name. It
 never creates a summary or a summary file that does not exist, never renames one, and leaves a Google Docs export

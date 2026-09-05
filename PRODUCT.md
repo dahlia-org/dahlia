@@ -46,10 +46,10 @@ Dahlia でないもの:
 
 - 初期リリースで人が手作業する UI を提供してよい。ただしその機能は、同じ操作を AI が実行できる粒度の
   Repository API と MCP tool を前提に設計する。人だけが到達できる整理操作を作らない。
-- AI が逐次書き込む前提のため、操作は単数、冪等、検証可能な単位に分割する ([ADR-0012](docs/adr/0012-reviewable-customer-intelligence-workspace.md))。
+- AI が逐次書き込む前提のため、操作は単数、冪等、検証可能な単位に分割する ([MCP と UI](docs/adr/desktop/customer-intelligence.md#mcp-と-ui))。
   暗黙の一括変換に依存しない。
 - AI の主張 (Insight) と正準レコードを分離し、AI 出力の形や信頼度を durable schema に固定しない
-  ([ADR-0011](docs/adr/0011-vault-scoped-customer-intelligence.md))。Insight の確認は正準レコードを書き換えない。
+  ([正準モデルと AI の主張](docs/adr/desktop/customer-intelligence.md#正準モデルと-ai-の主張))。Insight の確認は正準レコードを書き換えない。
 - 人が確定した値を自動処理が黙って上書きしない。ユーザーが編集した Organization 名などは、後続の自動観測より優先する。
 
 **許容する例外**: 統合、削除、誤りの訂正など、影響が不可逆または本人しか判断できない操作は人が確定する。
@@ -70,7 +70,7 @@ Contact は、自分の会議記録を辿るためのローカルな整理軸で
 
 - CRM や SFA への同期、書き戻し、ID マッピングを実装しない。
 - Contact の identity は `UUID + (vaultId, email)` のローカル identity であり、Vault 横断や全社の人物 identity では
-  ない ([ADR-0011](docs/adr/0011-vault-scoped-customer-intelligence.md))。
+  ない ([正準モデルと AI の主張](docs/adr/desktop/customer-intelligence.md#正準モデルと-ai-の主張))。
 - 組織と人物は、会議参加者という観測から必要な範囲だけを作る。企業の組織図を完全に再現しない。
 - Dahlia 内部では SQLite が Organization と Contact の技術的な source of truth である。これは「Dahlia が顧客マスタの
   正本である」ことを意味しない。この二つの意味を混同しない。
@@ -96,8 +96,8 @@ Contact は、自分の会議記録を辿るためのローカルな整理軸で
 - 負荷に応じて集約、破棄、再生成してよいのは、再生成可能な UI projection だけである。音声フレーム、確定文字起こし、
   確定翻訳、録音 range は、UI の都合で破棄しない
   ([Failure and Overload Policy](ARCHITECTURE.md#failure-and-overload-policy))。
-- 録音音声は検証済みの immutable segment として保存し ([ADR-0004](docs/adr/0004-protect-recordings-with-segmented-immutable-storage.md))、
-  データベースは schema generation 付きで backup と restore ができる ([ADR-0007](docs/adr/0007-version-and-restore-sqlite-backups.md))。
+- 録音音声は検証済みの immutable segment として保存し ([確定手順](docs/adr/desktop/recording-storage.md#確定手順))、
+  データベースは schema generation 付きで backup と restore ができる ([Import と復元](docs/adr/desktop/database-backup.md#import-と復元))。
 - 新機能は録音クリティカルパスに同期依存を追加しない。顧客インテリジェンスの取り込みのような補助処理は、
   録音開始が成功した後の best effort とし、失敗しても録音を巻き戻さない。
 
@@ -121,14 +121,14 @@ OS やストレージ自体の障害は現時点の保証対象外であり、�
 
 - 新しい外部サービス連携の要求は、まず MCP tool として外部エージェントが実現できないかを検討する。
 - MCP は Vault UUID を認可境界とし、既定は read-only、書き込みは明示的な `--write` に限定する
-  ([ADR-0005](docs/adr/0005-vault-scoped-meeting-access-mcp.md), [ADR-0010](docs/adr/0010-database-canonical-bounded-project-hierarchy.md))。
+  ([Vault 境界](docs/adr/desktop/local-mcp-and-projects.md#vault-境界), [Project の正本](docs/adr/desktop/local-mcp-and-projects.md#project-の正本))。
 - MCP が返す内容は untrusted data として扱い、指示として実行しない。
 - 連携先が増えるほど価値が上がる、という前提を採らない。連携数ではなく、一次データの質と辿りやすさで価値を測る。
 
 **許容する例外**: 操作が限定的で疎結合な入出力は許容する。ファイル書き出し、要約のエクスポート、カレンダーからの
 読み取りのように、失敗しても録音と文字起こしに影響しない一方向の境界を保つこと。内蔵 Codex の任意の model-provider
 transport は業務システム統合ではなく、既存の AI 付加機能の接続境界として扱う
-([ADR-0029](docs/adr/0029-offer-an-optional-codex-ai-gateway.md))。
+([Gateway 境界](docs/adr/server/gateway.md#gateway-境界))。
 
 **誤読しやすい点**: 「連携しない」は「閉じる」ではない。Dahlia 側の統合実装を増やさない代わりに、外部から
 使える読み取り口は意図的に整備する。外部エージェントが Dahlia の MCP と他サービスの MCP を併用することは
@@ -148,13 +148,13 @@ Dahlia の scope 外であり、妨げない。
   送信しない。WhisperKit は付加機能であるバッチ自動言語判定で言語を選ぶためだけに使い、文字起こし自体は行わない。
 - ローカルアカウントの会議データと端末固有ファイルはローカルの SQLite と file system だけで完結する。一方、ServerアカウントのVault／ProjectはNotionやAsanaと同様にDesktopとWebが共有するServer canonical recordであり、Desktopからクラウドへ転送するコピーではない。SQLite は即時反映できるoffline working copyとし、
   Vault 名、Project の名前・説明・階層、meeting metadata、summary、transcript 原文、screenshot、OCR、AI caption を双方向同期する。翻訳文と音声は同期しない
-  ([ADR-0056](docs/adr/0056-add-owner-only-meeting-sync.md), [ADR-0066](docs/adr/0066-sync-vault-projects-and-separate-transcript-speakers.md), [ADR-0067](docs/adr/0067-use-domain-transactions-and-cursor-deltas-for-sync.md))。Server record は個人所有を維持し、owner が複数の特定 organization
+  ([正本とアカウント境界](docs/adr/shared/sync.md#正本とアカウント境界), [同期対象とモデル](docs/adr/shared/sync.md#同期対象とモデル), [Transaction と競合](docs/adr/shared/sync.md#transaction-と競合))。Server record は個人所有を維持し、owner が複数の特定 organization
   または特定 Team へ明示した場合だけ read-only 共有できる。Header認証のuserは固定`external` Organizationへ所属する
-  ([ADR-0065](docs/adr/0065-unify-header-sharing-with-external-organization-teams.md))。サインインだけではローカルVaultをServerアカウントへ移さず、ユーザーがVault単位で明示的に移行する。ServerアカウントのVaultは常時同期し、サインアウト時はServer recordを残したままローカルworking copyを削除するかローカルアカウントへ移す。
+  ([共有境界](docs/adr/server/sharing-and-administration.md#共有境界))。サインインだけではローカルVaultをServerアカウントへ移さず、ユーザーがVault単位で明示的に移行する。ServerアカウントのVaultは常時同期し、サインアウト時はServer recordを残したままローカルworking copyを削除するかローカルアカウントへ移す。
 - Server の任意 Hybrid 検索は同期済み summary、OCR、AI caption と検索時の query 原文を設定済み embedding
   provider へ送信できる。Dahlia は query 原文を保存・ログ出力しない。
   vector は再生成可能な projection とし、未設定、再構築中、障害時も全文検索へ縮退してローカルの中核機能を妨げない
-  ([ADR-0062](docs/adr/0062-add-server-hybrid-search-projection.md))。
+  ([Hybrid 検索](docs/adr/server/search.md#hybrid-検索))。
 - 外部依存は付加機能に閉じ込め、未設定または失敗時も中核が動作する degradation を設計に含める。
 - 認証やアカウント設定を中核機能の前提にしない。
 

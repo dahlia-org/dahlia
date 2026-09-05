@@ -162,7 +162,7 @@ public struct SummaryBlock: Codable, Equatable, Identifiable, Sendable {
         self.content = content
     }
 
-    /// 新しい block id を採番する。ADR-0001 のとおり id はアプリ側が採番し、LLM には生成させない。
+    /// 新しい block id を採番する。docs/adr/desktop/summary.md の「正準表現」のとおり id はアプリ側が採番し、LLM には生成させない。
     public init(content: SummaryBlockContent) {
         self.init(id: summaryUUIDv7(), content: content)
     }

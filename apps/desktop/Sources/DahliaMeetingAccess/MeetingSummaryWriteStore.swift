@@ -13,7 +13,9 @@ enum SummaryWriteLimits {
 public extension MeetingAccessStore {
     /// 保存済みサマリーをドキュメント全体の置換で更新する。
     ///
-    /// ADR-0010 の Summary 変更手順に従い、Vault ロックを取り、完全に事前検証してから
+    /// docs/adr/desktop/summary.md の「訂正と export」と
+    /// docs/adr/desktop/local-mcp-and-projects.md の「Export directory」に従い、
+    /// Vault ロックを取り、完全に事前検証してから
     /// ファイルを書き、単一トランザクションでデータベースを更新し、失敗時はファイルを書き戻す。
     func updateMeetingSummary(
         meetingID: UUID,

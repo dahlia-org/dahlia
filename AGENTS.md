@@ -26,12 +26,13 @@ Use progressive disclosure: read the scoped `AGENTS.md` first, then open only th
 
 | Task | Additional reference |
 | --- | --- |
+| Documentation navigation, ownership, or cleanup | [`Documentation index`](docs/README.md) |
 | Whether to build something, its product scope, or how AI and the user divide the work | [`PRODUCT.md`](PRODUCT.md), then the [`Tenets`](PRODUCT.md#tenets) that the change touches |
 | Current runtime ownership or workload boundaries | [`ARCHITECTURE.md`](ARCHITECTURE.md#runtime-data-flow) |
 | Audio capture, recording, live subtitles, or realtime/batch transcript data flow | [`Audio and Transcription Data Flow`](docs/architecture/audio-transcription-data-flow.md) |
 | Recording, transcription, concurrency, persistence, or failure handling | [`ARCHITECTURE.md`](ARCHITECTURE.md#reliability-scope), then the relevant section |
 | UI interaction, rendering workload, or responsiveness | [`apps/desktop/Sources/Dahlia/AGENTS.md`](apps/desktop/Sources/Dahlia/AGENTS.md), then [`UI and Interaction Responsiveness`](ARCHITECTURE.md#ui-and-interaction-responsiveness) when workload behavior is affected |
-| Telemetry, metrics, analytics, Sentry, or external diagnostics | [`Anonymous Telemetry Collection Policy`](docs/telemetry.md), then [ADR-0026](docs/adr/0026-measure-product-adoption-with-bounded-telemetry.md) and [ADR-0025](docs/adr/0025-adopt-allowlisted-nonblocking-telemetry.md) |
+| Telemetry, metrics, analytics, Sentry, or external diagnostics | [`Anonymous Telemetry Collection Policy`](docs/telemetry.md), then [許可した集計](docs/adr/desktop/telemetry.md#許可した集計) and [収集と実行境界](docs/adr/desktop/telemetry.md#収集と実行境界) |
 | Code review | [`Code Review Guide`](docs/code-review.md), then the architecture references routed by the closest applicable `AGENTS.md` |
 | Fixing an identified architecture deviation | [`Conformance Status`](ARCHITECTURE.md#conformance-status), then the matching item in [`Remediation Plan`](ARCHITECTURE.md#remediation-plan) |
 | Historical rationale or a change to an architectural decision | [`docs/adr/README.md`](docs/adr/README.md), then only the relevant ADR |
