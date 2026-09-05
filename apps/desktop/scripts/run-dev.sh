@@ -95,8 +95,6 @@ embed_sparkle_framework "$PROJECT_DIR" "$CONTENTS"
 embed_whisperkit_licenses "$PROJECT_DIR" "$CONTENTS"
 embed_lindera_licenses "$PROJECT_DIR" "$CONTENTS"
 embed_telemetrydeck_resources "$PROJECT_DIR" "$BUILD_DIR" "$CONTENTS"
-embed_embedding_dependency_licenses "$PROJECT_DIR" "$CONTENTS"
-embed_mlx_metal_library "$PROJECT_DIR" "$CONTENTS"
 
 xattr -cr "${APP_BUNDLE}" || true
 

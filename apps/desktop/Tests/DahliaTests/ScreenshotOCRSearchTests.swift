@@ -703,7 +703,7 @@ import GRDB
                 return documentID
             }
 
-            try AppDatabaseManager.migrator.migrate(queue)
+            try AppDatabaseManager.migrator.migrate(queue, upTo: "v38_screenshotOCRSearch")
 
             let snapshot = try queue.read { db in
                 try (

@@ -8,7 +8,6 @@ struct MainSearchResultRow: View {
     var dateText: String?
     var shortcutNumber: Int?
     var leadingProjectAppearance: ProjectAppearance?
-    var isSemanticHit = false
     let isSelected: Bool
     let action: () -> Void
 
@@ -29,14 +28,6 @@ struct MainSearchResultRow: View {
                         .font(.subheadline)
                         .foregroundStyle(DahliaDesign.secondaryTextColor)
                         .lineLimit(1)
-                }
-
-                if isSemanticHit {
-                    Image(systemName: "brain")
-                        .font(.caption)
-                        .foregroundStyle(DahliaDesign.secondaryTextColor)
-                        .help(L10n.semanticMatch)
-                        .accessibilityLabel(L10n.semanticMatch)
                 }
 
                 if let projectBadge, !projectBadge.isEmpty {

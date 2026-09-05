@@ -91,7 +91,6 @@ struct MeetingSearchMatchContext: Equatable, Hashable, Sendable {
         case calendar
         case tag
         case project
-        case semantic
     }
 
     let kind: Kind

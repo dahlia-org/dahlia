@@ -5,19 +5,27 @@ import DahliaMeetingAccess
 import DahliaRuntimeSupport
 import Foundation
 import GRDB
+import OSLog
 
 /// アプリ全体で単一の SQLite データベースを管理する。
 /// 正アプリは `Application Support/Dahlia`、`run-dev.sh` は分離した開発プロファイルに配置する。
 final class AppDatabaseManager: Sendable {
     let dbQueue: DatabaseQueue
     let searchDBQueue: DatabaseQueue
-    let embeddingService: EmbeddingGemmaService
-    let vectorSearchIndexer: VectorSearchIndexer
     let searchIndexer: SearchIndexer
 
     /// アプリケーションサポートディレクトリに DB を作成・オープンする。
     convenience init() throws {
         try self.init(path: Self.databaseURL.path, enablesConcurrentSearch: true)
+        let directory = DahliaApplicationSupport.currentDirectoryURL
+        Task.detached(priority: .utility) {
+            do {
+                try RetiredEmbeddingModelCleanup.remove(from: directory)
+            } catch {
+                Logger(subsystem: "com.dahlia", category: "ModelCleanup")
+                    .error("Retired embedding model cleanup failed; will retry on next launch")
+            }
+        }
     }
 
     init(
@@ -53,13 +61,8 @@ final class AppDatabaseManager: Sendable {
             configuration.readonly = true
             searchDBQueue = try DatabaseQueue(path: path, configuration: configuration)
         }
-        let embeddingService = EmbeddingGemmaService()
-        let vectorSearchIndexer = VectorSearchIndexer(dbQueue: dbQueue, embedder: embeddingService)
-        self.embeddingService = embeddingService
-        self.vectorSearchIndexer = vectorSearchIndexer
         searchIndexer = SearchIndexer(
             dbQueue: dbQueue,
-            vectorIndexer: vectorSearchIndexer,
             screenshotAnalyzer: screenshotAnalyzer,
             runtimeProviderResolver: screenshotRuntimeProviderResolver
         )
@@ -298,6 +301,10 @@ final class AppDatabaseManager: Sendable {
                     syncRecoveryState = NULL WHERE id = NEW.id;
             END;
             """)
+        }
+
+        migrator.registerMigration("v44_retireVectorSearch") { db in
+            try RetireVectorSearchMigration.migrate(in: db)
         }
 
         return migrator
