@@ -2,52 +2,30 @@ import SwiftUI
 
 struct AccountSettingsView: View {
     @Bindable private var vaultSettings = VaultAISettingsModel.shared
-    @State private var dahliaController = DahliaCloudAccountController.shared
     @State private var chatGPTController = CodexAccountController()
     @State private var databricksController = DatabricksAccountController()
 
     var body: some View {
-        if vaultSettings.isLocalAccount {
-            switch vaultSettings.localProvider {
-            case .chatGPTSubscription:
-                ChatGPTAccountSettingsView(
-                    controller: chatGPTController,
-                    title: L10n.localAccount,
-                    footer: localProviderFooter
-                ) {
-                    providerPicker
-                }
-            case .databricks:
-                DatabricksAccountSettingsView(
-                    controller: databricksController,
-                    title: L10n.localAccount,
-                    footer: localProviderFooter
-                ) {
-                    providerPicker
-                }
+        switch vaultSettings.localProvider {
+        case .chatGPTSubscription:
+            ChatGPTAccountSettingsView(
+                controller: chatGPTController,
+                title: L10n.localAccountModelProvider,
+                footer: localProviderFooter
+            ) {
+                providerPicker
             }
-        } else {
-            Section {
-                LabeledContent(L10n.modelProvider, value: L10n.dahliaAccount)
-            } header: {
-                Text(L10n.dahliaAccount)
-            }
-
-            if let connectionID = vaultSettings.accountConnectionID,
-               let connection = dahliaController.connections.first(where: { $0.id == connectionID }) {
-                Section {
-                    SettingsStatusMessage(
-                        text: connection.isSignedIn ? connection.origin : L10n.signInRequired,
-                        systemImage: connection.isSignedIn ? "checkmark.circle.fill" : "exclamationmark.triangle.fill",
-                        tint: connection.isSignedIn ? .green : .orange
-                    )
-                } header: {
-                    Text(connection.displayName)
-                }
+        case .databricks:
+            DatabricksAccountSettingsView(
+                controller: databricksController,
+                title: L10n.localAccountModelProvider,
+                footer: localProviderFooter
+            ) {
+                providerPicker
             }
         }
 
-        if let errorMessage = vaultSettings.errorMessage {
+        if vaultSettings.isLocalAccount, let errorMessage = vaultSettings.errorMessage {
             Section {
                 SettingsStatusMessage(
                     text: errorMessage,
@@ -69,7 +47,7 @@ struct AccountSettingsView: View {
         .disabled(
             chatGPTController.isBusy
                 || databricksController.isBusy
-                || vaultSettings.isSwitchingRuntime
+                || (vaultSettings.isLocalAccount && vaultSettings.isSwitchingRuntime)
         )
     }
 

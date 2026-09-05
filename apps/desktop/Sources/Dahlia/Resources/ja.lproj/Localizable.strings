@@ -531,7 +531,7 @@
 "Sign in with the same Dahlia account, or add a new connection." = "同じ Dahlia アカウントでサインインするか、新しい接続を追加してください。";
 "Resolve this connection's Server Vaults before removing it." = "この接続を削除する前に、関連する Server Vault の扱いを解決してください。";
 "Choose what to do with this account's local Vaults before signing out." = "サインアウトする前に、このアカウントのローカル Vault をどう扱うか選択してください。";
-"Manage the Dahlia Cloud and Server sign-ins used by Dahlia." = "Dahlia が使用する Dahlia Cloud と Server のサインインを管理します。";
+"Manage the Local Account and sign-ins to Dahlia Cloud and Server." = "ローカルアカウントと、Dahlia Cloud・Server へのサインインを管理します。";
 "%lld Dahlia accounts" = "%lld 件の Dahlia アカウント";
 "Sign In Again" = "再サインイン";
 "Sign-in required" = "再サインインが必要";
@@ -1070,8 +1070,10 @@
 "This approval request is no longer pending." = "この承認リクエストはすでに処理済みです。";
 "Unknown Codex app-server error." = "Codex app-server で不明なエラーが発生しました。";
 "Account" = "アカウント";
-"Choose the model provider used by the current vault's Local Account." = "現在の保管庫のローカルアカウントで使用するモデルプロバイダーを選択します。";
-"This setting applies only to the current vault." = "この設定は現在の保管庫にのみ適用されます。";
+"Selected Account" = "選択中のアカウント";
+"Local Account Model Provider" = "ローカルアカウントのモデルプロバイダー";
+"Choose the model provider used by the Local Account." = "ローカルアカウントで使用するモデルプロバイダーを選択します。";
+"This setting is shared by all Local Account vaults. Dahlia Server and Cloud use hosted models automatically." = "この設定はローカルアカウントのすべての保管庫で共通です。Dahlia Server と Cloud は hosted モデルを自動的に使用します。";
 "ChatGPT Subscription" = "ChatGPT Subscription";
 "Databricks" = "Databricks";
 "Codex Account" = "Codex アカウント";

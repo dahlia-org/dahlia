@@ -12,6 +12,7 @@ struct AccountsAndVaultsSettingsView: View {
         Form {
             DahliaAccountsSettingsView(
                 controller: accountController,
+                currentVault: currentVault,
                 onShowSignIn: onShowSignIn
             )
             VaultSettingsView(

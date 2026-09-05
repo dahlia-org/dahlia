@@ -36,6 +36,20 @@ actor CodexAppServerService {
 
     static let shared = CodexAppServerService()
 
+    /// Account management uses the local credential store without changing the
+    /// active provider's configuration or its token-broker authorization.
+    static let localAccount = CodexAppServerService(
+        launcher: BundledCodexAppServerLauncher(
+            tokenBrokerAuthorization: DahliaTokenBrokerAuthorization(),
+            runtimeProviderResolver: { .chatGPTSubscription },
+            arguments: ["app-server", "-c", "model_provider=\"openai\""]
+        ),
+        providerAuthenticationPreparation: { _, _ in false },
+        configurationReadiness: { true },
+        accountProviderResolver: { .chatGPTSubscription },
+        runtimeProviderResolver: { .chatGPTSubscription }
+    )
+
     private struct PendingRequest {
         let method: String
         var continuation: CheckedContinuation<JSONValue, any Error>?

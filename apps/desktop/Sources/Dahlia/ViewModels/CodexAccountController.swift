@@ -12,27 +12,30 @@ final class CodexAccountController {
 
     private let service: CodexAppServerService
     private let urlOpener: any CodexLoginURLOpening
-    private let hasActiveVault: @MainActor @Sendable () -> Bool
-    private let runtimeReadiness: @MainActor @Sendable () async -> Bool
+    private let authenticationDidChange: @MainActor @Sendable () async throws -> Void
 
     init(
-        service: CodexAppServerService = .shared,
+        service: CodexAppServerService = .localAccount,
         urlOpener: any CodexLoginURLOpening = WorkspaceCodexLoginURLOpener(),
-        hasActiveVault: @escaping @MainActor @Sendable () -> Bool = {
-            VaultAISettingsModel.shared.vaultID != nil
-        },
-        runtimeReadiness: @escaping @MainActor @Sendable () async -> Bool = {
-            await VaultAISettingsModel.shared.waitForRuntimeContext()
+        authenticationDidChange: @escaping @MainActor @Sendable () async throws -> Void = {
+            try await CodexAccountController.reloadLocalRuntimeAfterAuthenticationChange()
         }
     ) {
         self.service = service
         self.urlOpener = urlOpener
-        self.hasActiveVault = hasActiveVault
-        self.runtimeReadiness = runtimeReadiness
+        self.authenticationDidChange = authenticationDidChange
     }
 
     var isBusy: Bool {
         isCheckingStatus || isSigningIn || isSigningOut
+    }
+
+    static func reloadLocalRuntimeAfterAuthenticationChange(
+        contextStore: CodexRuntimeContextStore = .shared,
+        service: CodexAppServerService = .shared
+    ) async throws {
+        guard contextStore.isConfigured, contextStore.provider == .chatGPTSubscription else { return }
+        try await service.reloadConfiguration()
     }
 
     func activateChatGPTSubscription() async {
@@ -42,9 +45,6 @@ final class CodexAccountController {
 
         do {
             try Task.checkCancellation()
-            if hasActiveVault() {
-                guard await runtimeReadiness() else { throw CodexConfigurationError.accountNotReady }
-            }
             accountStatus = try await service.accountStatus(forceRefresh: true)
             try Task.checkCancellation()
         } catch is CancellationError {
@@ -73,7 +73,7 @@ final class CodexAccountController {
                 throw CodexAppServerError.loginPageCouldNotOpen
             }
             try await service.waitForLoginCompletion(loginID: session.id)
-            accountStatus = try await service.accountStatus(forceRefresh: true)
+            try await refreshAfterAuthenticationChange()
         } catch is CancellationError {
             // Cancelling the task also cancels the pending app-server login attempt.
         } catch {
@@ -89,11 +89,18 @@ final class CodexAccountController {
 
         do {
             try await service.logout()
-            accountStatus = try await service.accountStatus(forceRefresh: true)
+            try await refreshAfterAuthenticationChange()
         } catch is CancellationError {
             // SwiftUI cancels this operation when the settings screen disappears.
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    private func refreshAfterAuthenticationChange() async throws {
+        // Credentials have changed; closing settings must not cancel runtime invalidation.
+        let authenticationDidChange = authenticationDidChange
+        try await Task { try await authenticationDidChange() }.value
+        accountStatus = try await service.accountStatus(forceRefresh: true)
     }
 }

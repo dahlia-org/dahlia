@@ -14,9 +14,11 @@ sign-out は remote revocation を試みた後、結果にかかわらず local 
 
 Vault の nullable connection ID は nil を Local Account とし、削除時は SET NULL。Local Account だけが ChatGPT Subscription / 直接 Databricks provider を選べ、Dahlia account はその Server の Gateway を使う。
 
-Local Account は既存の `Application Support/Dahlia/Codex`、Dahlia account は接続 UUID ごとの private CODEX_HOME を使う。単一 app-server は context 切替時に新規操作を待たせ、進行中操作を drain して対象 home で再起動する。process pool と account 間並列実行は導入しない。
+Local Account は既存の `Application Support/Dahlia/Codex`、Dahlia account は接続 UUID ごとの private CODEX_HOME を使う。生成用の単一 app-server は context 切替時に新規操作を待たせ、進行中操作を drain して対象 home で再起動する。ローカルの認証管理だけは既存サービスの別インスタンスを使い、Local Account の home と OpenAI provider に固定する。設定画面を開いても生成用の context・設定ファイル・Server の token broker 認可を変更しない。認証変更後は ChatGPT を実行中の場合だけ生成用サービスを再読込する。
 
-model discovery と生成は同じ root provider を使い、別の provider 専用 model cache を持たない。Dahlia token は既存 service actor から private local broker / Codex auth command へ動的に渡し、config・環境変数・log に保存しない。provider、CLI profile、summary / chat model と effort は Vault に保存し、既存は従来設定、新規は作成時の active Vault から継承する。同一 origin の複数 remote account 切替は対象外。
+model discovery と生成は同じ root provider を使い、別の provider 専用 model cache を持たない。Dahlia token は既存 service actor から private local broker / Codex auth command へ動的に渡し、config・環境変数・log に保存しない。provider と CLI profile はアプリ設定に保存する Local Account 共通設定とし、設定画面・セットアップ・生成・画像解析が同じ値を使う。初回のみ最後に開いた Local Account の Vault から引き継ぎ、該当 Vault がなければ従来のアプリ設定を使う。旧 Vault 列は互換性のため保持するが、実行先の判定には使わない。summary / chat model と effort は引き続き Vault に保存し、新規は作成時の active Vault から継承する。同一 origin の複数 remote account 切替は対象外。
+
+アカウント一覧は Local Account を常時含め、現在の Vault の所属アカウントにチェックを表示する。モデルプロバイダー設定は常に Local Account を対象とし、Dahlia Server / Cloud の hosted provider は設定項目として表示しない。
 
 ## ChatGPT と Databricks CLI
 

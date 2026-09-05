@@ -15,20 +15,13 @@ final class VaultAISettingsModel {
         }
     }
 
+    /// These two settings belong to the Local Account and survive vault activation.
     var localProvider: AIAccountProvider {
-        didSet {
-            persistSetupProviderDraftIfChanged(oldValue, localProvider)
-            persistIfChanged(oldValue, localProvider)
-            scheduleRuntimeActivationIfChanged(oldValue, localProvider)
-        }
+        didSet { persistLocalAccountSettingsIfChanged(oldValue, localProvider) }
     }
 
     var databricksProfile: String {
-        didSet {
-            persistSetupProviderDraftIfChanged(oldValue, databricksProfile)
-            persistIfChanged(oldValue, databricksProfile)
-            scheduleRuntimeActivationIfChanged(oldValue, databricksProfile)
-        }
+        didSet { persistLocalAccountSettingsIfChanged(oldValue, databricksProfile) }
     }
 
     var summaryModelID: String { didSet { persistIfChanged(oldValue, summaryModelID) } }
@@ -44,12 +37,27 @@ final class VaultAISettingsModel {
     @ObservationIgnored private var saveTask: Task<Void, Never>?
     @ObservationIgnored private var runtimeTask: Task<Bool, Never>?
     @ObservationIgnored private let setupDefaults: UserDefaults
+    @ObservationIgnored private let activateRuntime: @Sendable (VaultAISettingsSnapshot) async throws -> Void
 
-    init(setupDefaults: UserDefaults = .standard) {
+    init(
+        setupDefaults: UserDefaults = .standard,
+        activateRuntime: @escaping @Sendable (VaultAISettingsSnapshot) async throws -> Void = {
+            try await CodexRuntimeContextCoordinator.shared.activate($0)
+        }
+    ) {
         self.setupDefaults = setupDefaults
+        self.activateRuntime = activateRuntime
         accountConnectionID = nil
-        localProvider = SetupTourPresentationPolicy.restoredProvider(in: setupDefaults) ?? .chatGPTSubscription
-        databricksProfile = SetupTourPresentationPolicy.restoredDatabricksProfile(in: setupDefaults)
+        let localSettings = LocalAccountAISettings(defaults: setupDefaults)
+        let restoresSetupDraft = !setupDefaults.bool(forKey: LocalAccountAISettings.migrationKey)
+            && SetupTourPresentationPolicy.hasSavedProgress(in: setupDefaults)
+        if restoresSetupDraft {
+            localProvider = SetupTourPresentationPolicy.restoredProvider(in: setupDefaults) ?? localSettings.provider
+            databricksProfile = SetupTourPresentationPolicy.restoredDatabricksProfile(in: setupDefaults)
+        } else {
+            localProvider = localSettings.provider
+            databricksProfile = localSettings.databricksProfile
+        }
         summaryModelID = "gpt-5.6-luna"
         summaryReasoningEffort = "high"
         chatModelID = ""
@@ -76,14 +84,28 @@ final class VaultAISettingsModel {
 
     var isLocalAccount: Bool { accountConnectionID == nil }
 
-    func configure(dbQueue: DatabaseQueue) {
+    var localAccountSettings: LocalAccountAISettings {
+        LocalAccountAISettings(provider: localProvider, databricksProfile: databricksProfile)
+    }
+
+    func configure(dbQueue: DatabaseQueue) async throws {
         self.dbQueue = dbQueue
+        guard !setupDefaults.bool(forKey: LocalAccountAISettings.migrationKey) else { return }
+        let previousVault = try await MeetingRepository(dbQueue: dbQueue).fetchLatestLocalAccountVault()
+        guard !setupDefaults.bool(forKey: LocalAccountAISettings.migrationKey) else { return }
+        isApplying = true
+        if let previousVault {
+            localProvider = previousVault.localProvider
+            databricksProfile = previousVault.databricksProfile
+        }
+        isApplying = false
+        localAccountSettings.save(to: setupDefaults)
     }
 
     func activate(vault: VaultRecord) {
         activationGeneration += 1
         errorMessage = nil
-        apply(VaultAISettingsSnapshot(vault: vault))
+        apply(VaultAISettingsSnapshot(vault: vault, localAccountSettings: localAccountSettings))
         scheduleRuntimeActivation()
     }
 
@@ -105,8 +127,6 @@ final class VaultAISettingsModel {
         isApplying = true
         vaultID = settings.vaultID
         accountConnectionID = settings.accountConnectionID
-        localProvider = settings.localProvider
-        databricksProfile = settings.databricksProfile
         summaryModelID = settings.summaryModelID
         summaryReasoningEffort = settings.summaryReasoningEffort
         chatModelID = settings.chatModelID
@@ -143,23 +163,26 @@ final class VaultAISettingsModel {
                 if let vault = try? await dbQueue.read({ db in
                     try VaultRecord.fetchOne(db, key: snapshot.vaultID)
                 }) {
-                    self.apply(VaultAISettingsSnapshot(vault: vault))
+                    self.apply(VaultAISettingsSnapshot(vault: vault, localAccountSettings: self.localAccountSettings))
                     self.scheduleRuntimeActivation()
                 }
             }
         }
     }
 
-    private func persistSetupProviderDraftIfChanged<T: Equatable>(_ oldValue: T, _ newValue: T) {
-        guard vaultID == nil,
-              oldValue != newValue,
-              SetupTourPresentationPolicy.hasSavedProgress(in: setupDefaults)
-        else { return }
-        SetupTourPresentationPolicy.saveProviderDraft(
-            provider: localProvider,
-            databricksProfile: databricksProfile,
-            in: setupDefaults
-        )
+    private func persistLocalAccountSettingsIfChanged<T: Equatable>(_ oldValue: T, _ newValue: T) {
+        guard oldValue != newValue, !isApplying else { return }
+        localAccountSettings.save(to: setupDefaults)
+        if vaultID == nil, SetupTourPresentationPolicy.hasSavedProgress(in: setupDefaults) {
+            SetupTourPresentationPolicy.saveProviderDraft(
+                provider: localProvider,
+                databricksProfile: databricksProfile,
+                in: setupDefaults
+            )
+        }
+        if isLocalAccount {
+            scheduleRuntimeActivation()
+        }
     }
 
     private func scheduleRuntimeActivationIfChanged<T: Equatable>(_ oldValue: T, _ newValue: T) {
@@ -170,11 +193,12 @@ final class VaultAISettingsModel {
     private func scheduleRuntimeActivation() {
         guard let snapshot else { return }
         let generation = activationGeneration
+        let activateRuntime = activateRuntime
         runtimeTask?.cancel()
         isSwitchingRuntime = true
         runtimeTask = Task { [weak self] in
             do {
-                try await CodexRuntimeContextCoordinator.shared.activate(snapshot)
+                try await activateRuntime(snapshot)
                 guard let self,
                       self.activationGeneration == generation,
                       self.vaultID == snapshot.vaultID

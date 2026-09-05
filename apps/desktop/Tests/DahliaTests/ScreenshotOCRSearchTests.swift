@@ -14,7 +14,8 @@ import GRDB
             let database = try AppDatabaseManager(
                 path: ":memory:",
                 screenshotAnalyzer: analyzer,
-                screenshotRuntimeProviderResolver: { .databricks(profile: "WORK") }
+                screenshotRuntimeProviderResolver: { .databricks(profile: "WORK") },
+                localAccountSettingsResolver: { .init(provider: .databricks, databricksProfile: "WORK") }
             )
             let vault = {
                 var vault = makeVault()
@@ -46,13 +47,31 @@ import GRDB
                 imageData: Data([4, 5, 6]),
                 mimeType: "image/png"
             )
+            let connection = DahliaAccountConnectionRecord(
+                id: .v7(), origin: "https://server.example.com", clientID: "test", createdAt: .now
+            )
+            let hostedVault = {
+                var vault = makeVault()
+                vault.path = nil
+                vault.accountConnectionId = connection.id
+                return vault
+            }()
+            let hostedMeeting = makeMeeting(vaultID: hostedVault.id)
+            let hostedScreenshot = MeetingScreenshotRecord(
+                id: .v7(), meetingId: hostedMeeting.id, sessionId: nil, capturedAt: .now,
+                imageData: Data([7, 8, 9]), mimeType: "image/png"
+            )
             try await database.dbQueue.write { db in
+                try connection.insert(db)
                 try vault.insert(db)
                 try meeting.insert(db)
                 try screenshot.insert(db)
                 try localVault.insert(db)
                 try localMeeting.insert(db)
                 try localScreenshot.insert(db)
+                try hostedVault.insert(db)
+                try hostedMeeting.insert(db)
+                try hostedScreenshot.insert(db)
             }
 
             let coreSearchHasPriority = try await database.dbQueue.read { db in
@@ -103,20 +122,18 @@ import GRDB
             #expect(screenshotPage.items.first?.meetingDescription == "検索対象のミーティング説明")
             #expect(meetingPage.items.isEmpty)
             #expect(await analyzer.runtimeProviders[screenshot.id] == .databricks(profile: "WORK"))
-            #expect(await analyzer.runtimeProviders[localScreenshot.id] == nil)
+            #expect(await analyzer.runtimeProviders[localScreenshot.id] == .databricks(profile: "WORK"))
+            #expect(await analyzer.runtimeProviders[hostedScreenshot.id] == nil)
             #expect(try await database.dbQueue.read { db in
                 try MeetingScreenshotRecord.fetchOne(db, key: localScreenshot.id)?.ocrText
-            } == nil)
+            } == "画像だけの固有検索語")
         }
 
         @Test
         func ocrMatchRanksAboveCaptionOnlyMatch() async throws {
             let ocrMatchID = UUID.v7()
             let captionMatchID = UUID.v7()
-            let database = try AppDatabaseManager(
-                path: ":memory:",
-                screenshotAnalyzer: FieldTargetedScreenshotAnalyzer(ocrMatchID: ocrMatchID)
-            )
+            let database = try makeDatabase(screenshotAnalyzer: FieldTargetedScreenshotAnalyzer(ocrMatchID: ocrMatchID))
             let vault = makeVault()
             let meeting = makeMeeting(vaultID: vault.id)
             try await database.dbQueue.write { db in
@@ -154,10 +171,7 @@ import GRDB
 
         @Test
         func recordingPauseLeavesOCRQueuedUntilRestart() async throws {
-            let database = try AppDatabaseManager(
-                path: ":memory:",
-                screenshotAnalyzer: StubScreenshotAnalyzer(text: "録音終了後")
-            )
+            let database = try makeDatabase(screenshotAnalyzer: StubScreenshotAnalyzer(text: "録音終了後"))
             let vault = makeVault()
             let meeting = makeMeeting(vaultID: vault.id)
             try await database.dbQueue.write { db in
@@ -202,7 +216,7 @@ import GRDB
         @Test
         func recordingPauseCancelsAllInFlightOCRAndRequeuesIt() async throws {
             let analyzer = CancellableScreenshotAnalyzer()
-            let database = try AppDatabaseManager(path: ":memory:", screenshotAnalyzer: analyzer)
+            let database = try makeDatabase(screenshotAnalyzer: analyzer)
             let vault = makeVault()
             let meeting = makeMeeting(vaultID: vault.id)
             try await database.dbQueue.write { db in
@@ -253,7 +267,7 @@ import GRDB
         @Test(.timeLimit(.minutes(1)))
         func recordingPauseCancelsExplicitRebuildOCRAndRequeuesIt() async throws {
             let analyzer = CancellableScreenshotAnalyzer()
-            let database = try AppDatabaseManager(path: ":memory:", screenshotAnalyzer: analyzer)
+            let database = try makeDatabase(screenshotAnalyzer: analyzer)
             let vault = makeVault()
             let meeting = makeMeeting(vaultID: vault.id)
             try await database.dbQueue.write { db in
@@ -294,10 +308,7 @@ import GRDB
 
         @Test
         func staleScreenshotCursorReplacesResults() async throws {
-            let database = try AppDatabaseManager(
-                path: ":memory:",
-                screenshotAnalyzer: StubScreenshotAnalyzer(text: "cursor needle")
-            )
+            let database = try makeDatabase(screenshotAnalyzer: StubScreenshotAnalyzer(text: "cursor needle"))
             let vault = makeVault()
             let meeting = makeMeeting(vaultID: vault.id)
             try await database.dbQueue.write { db in
@@ -342,7 +353,7 @@ import GRDB
         @Test(.timeLimit(.minutes(1)))
         func analyzesSingleScreenshotsUpToEightConcurrently() async throws {
             let analyzer = ConcurrentScreenshotAnalyzer()
-            let database = try AppDatabaseManager(path: ":memory:", screenshotAnalyzer: analyzer)
+            let database = try makeDatabase(screenshotAnalyzer: analyzer)
             let vault = makeVault()
             let meeting = makeMeeting(vaultID: vault.id)
             let screenshots = (0 ..< 9).map { index in
@@ -385,7 +396,7 @@ import GRDB
         func concurrentFailureIsolatesTheFailingScreenshot() async throws {
             let failingID = UUID.v7()
             let analyzer = FailingOneScreenshotAnalyzer(failingID: failingID)
-            let database = try AppDatabaseManager(path: ":memory:", screenshotAnalyzer: analyzer)
+            let database = try makeDatabase(screenshotAnalyzer: analyzer)
             let vault = makeVault()
             let meeting = makeMeeting(vaultID: vault.id)
             let screenshots = [failingID] + (0 ..< 7).map { _ in UUID.v7() }
@@ -430,7 +441,7 @@ import GRDB
         func screenshotPersistenceFailureOnlyRetriesTheAffectedJob() async throws {
             let failingID = UUID.v7()
             let analyzer = StubScreenshotAnalyzer(text: "stored text")
-            let database = try AppDatabaseManager(path: ":memory:", screenshotAnalyzer: analyzer)
+            let database = try makeDatabase(screenshotAnalyzer: analyzer)
             let vault = makeVault()
             let meeting = makeMeeting(vaultID: vault.id)
             let screenshotIDs = [failingID] + (0 ..< 7).map { _ in UUID.v7() }
@@ -492,7 +503,7 @@ import GRDB
         func unavailableRequiredModelBacksOffTheEntireScreenshotQueue() async throws {
             let failingID = try #require(UUID(uuidString: "00000000-0000-7000-8000-000000000000"))
             let analyzer = PrerequisiteRetryAnalyzer(failingID: failingID)
-            let database = try AppDatabaseManager(path: ":memory:", screenshotAnalyzer: analyzer)
+            let database = try makeDatabase(screenshotAnalyzer: analyzer)
             let vault = makeVault()
             let meeting = makeMeeting(vaultID: vault.id)
             let screenshots = ([failingID] + (0 ..< 8).map { _ in UUID.v7() }).enumerated().map { index, id in
@@ -555,7 +566,7 @@ import GRDB
 
         @Test
         func exhaustedOCRJobIsTerminalUntilExplicitRebuild() async throws {
-            let database = try AppDatabaseManager(path: ":memory:", screenshotAnalyzer: FailingScreenshotAnalyzer())
+            let database = try makeDatabase(screenshotAnalyzer: FailingScreenshotAnalyzer())
             let vault = makeVault()
             let meeting = makeMeeting(vaultID: vault.id)
             let screenshot = MeetingScreenshotRecord(
@@ -763,6 +774,15 @@ import GRDB
             #expect(state.0?.caption == nil)
             #expect(state.1 == 1)
             #expect(state.2.contains("caption"))
+        }
+
+        private func makeDatabase(screenshotAnalyzer: any ScreenshotAnalyzing) throws -> AppDatabaseManager {
+            try AppDatabaseManager(
+                path: ":memory:",
+                screenshotAnalyzer: screenshotAnalyzer,
+                screenshotRuntimeProviderResolver: { .chatGPTSubscription },
+                localAccountSettingsResolver: { .init(provider: .chatGPTSubscription, databricksProfile: "") }
+            )
         }
 
         private func makeVault() -> VaultRecord {

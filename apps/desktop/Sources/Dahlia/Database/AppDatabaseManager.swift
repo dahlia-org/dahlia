@@ -26,6 +26,9 @@ final class AppDatabaseManager: Sendable {
         screenshotAnalyzer: any ScreenshotAnalyzing = CodexScreenshotAnalysisService(),
         screenshotRuntimeProviderResolver: @escaping SearchIndexer.RuntimeProviderResolver = {
             CodexRuntimeContextStore.shared.provider
+        },
+        localAccountSettingsResolver: @escaping SearchIndexer.LocalAccountSettingsResolver = {
+            VaultAISettingsModel.shared.localAccountSettings
         }
     ) throws {
         if path != ":memory:" {
@@ -61,7 +64,8 @@ final class AppDatabaseManager: Sendable {
             dbQueue: dbQueue,
             vectorIndexer: vectorSearchIndexer,
             screenshotAnalyzer: screenshotAnalyzer,
-            runtimeProviderResolver: screenshotRuntimeProviderResolver
+            runtimeProviderResolver: screenshotRuntimeProviderResolver,
+            localAccountSettingsResolver: localAccountSettingsResolver
         )
         if path != ":memory:" {
             try FileManager.default.setAttributes(

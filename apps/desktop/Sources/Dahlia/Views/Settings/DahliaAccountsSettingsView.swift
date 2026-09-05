@@ -2,6 +2,7 @@ import SwiftUI
 
 struct DahliaAccountsSettingsView: View {
     let controller: DahliaCloudAccountController
+    let currentVault: VaultRecord?
     let onShowSignIn: () -> Void
 
     @State private var pendingRemoval: DahliaAccountConnection?
@@ -30,12 +31,16 @@ struct DahliaAccountsSettingsView: View {
     @ViewBuilder
     private var sections: some View {
         Section {
+            HStack {
+                Label(L10n.localAccount, systemImage: "desktopcomputer")
+                selectionMark(connectionID: nil)
+            }
             ForEach(controller.connections) { connection in
                 connectionRow(connection)
             }
         } header: {
             HStack {
-                Text(L10n.dahliaAccount)
+                Text(L10n.account)
 
                 Spacer()
 
@@ -67,7 +72,10 @@ struct DahliaAccountsSettingsView: View {
                     .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(connection.displayName)
+                    HStack {
+                        Text(connection.displayName)
+                        selectionMark(connectionID: connection.id)
+                    }
                     Text(connection.isSignedIn ? connection.origin : L10n.signInRequired)
                         .font(.footnote)
                         .foregroundStyle(.secondary)
@@ -96,6 +104,15 @@ struct DahliaAccountsSettingsView: View {
                 }
                 .disabled(controller.isBusy)
             }
+        }
+    }
+
+    @ViewBuilder
+    private func selectionMark(connectionID: UUID?) -> some View {
+        if let currentVault, currentVault.accountConnectionId == connectionID {
+            Image(systemName: "checkmark")
+                .foregroundStyle(.tint)
+                .accessibilityLabel(L10n.selectedAccount)
         }
     }
 }

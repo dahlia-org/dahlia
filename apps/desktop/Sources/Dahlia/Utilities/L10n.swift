@@ -1840,7 +1840,7 @@ enum L10n { // swiftlint:disable:this type_body_length
         bundle: bundle
     ) }
     static var dahliaAccountsDescription: String { String(
-        localized: "Manage the Dahlia Cloud and Server sign-ins used by Dahlia.",
+        localized: "Manage the Local Account and sign-ins to Dahlia Cloud and Server.",
         bundle: bundle
     ) }
     static func dahliaAccountCount(_ count: Int) -> String { String(
@@ -2502,12 +2502,14 @@ enum L10n { // swiftlint:disable:this type_body_length
 
     static var codexUnknownError: String { String(localized: "Unknown Codex app-server error.", bundle: bundle) }
     static var account: String { String(localized: "Account", bundle: bundle) }
+    static var selectedAccount: String { String(localized: "Selected Account", bundle: bundle) }
+    static var localAccountModelProvider: String { String(localized: "Local Account Model Provider", bundle: bundle) }
     static var aiAccountDescription: String { String(
-        localized: "Choose the model provider used by the current vault's Local Account.",
+        localized: "Choose the model provider used by the Local Account.",
         bundle: bundle
     ) }
     static var aiAccountSettingsDescription: String { String(
-        localized: "This setting applies only to the current vault.",
+        localized: "This setting is shared by all Local Account vaults. Dahlia Server and Cloud use hosted models automatically.",
         bundle: bundle
     ) }
 

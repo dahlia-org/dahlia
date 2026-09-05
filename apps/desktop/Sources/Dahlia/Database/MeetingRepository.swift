@@ -63,6 +63,14 @@ final class MeetingRepository {
 
     // MARK: - Vaults
 
+    nonisolated func fetchLatestLocalAccountVault() async throws -> VaultRecord? {
+        try await dbQueue.read { db in
+            try VaultRecord.filter(Column("accountConnectionId") == nil)
+                .order(Column("lastOpenedAt").desc, Column("id"))
+                .fetchOne(db)
+        }
+    }
+
     /// 全保管庫を最終オープン日時の降順で取得する。
     nonisolated func fetchAllVaults() throws -> [VaultRecord] {
         try dbQueue.read { db in
