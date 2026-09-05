@@ -69,7 +69,7 @@ struct VaultSidebarView: View {
                         Label {
                             VStack(alignment: .leading) {
                                 Text(vault.name)
-                                Text(vault.path)
+                                Text(vault.path ?? L10n.noLocalExportFolder)
                                     .font(.footnote)
                                     .foregroundStyle(DahliaDesign.secondaryTextColor)
                                     .lineLimit(1)

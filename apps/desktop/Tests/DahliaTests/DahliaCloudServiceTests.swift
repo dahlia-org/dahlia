@@ -212,6 +212,22 @@
         }
 
         @Test
+        func refreshRejectsScopesThatLoseAllAPIsWithoutReplacingCredential() async throws {
+            let oldCredential = makeCredential(expirationDate: .distantPast)
+            let store = CloudCredentialStoreFake(credential: oldCredential)
+            let service = makeService(
+                recorder: CloudRequestRecorder(mode: .refresh, tokenScope: "openid"),
+                store: store
+            )
+
+            await #expect(throws: DahliaCloudError.invalidTokenResponse) {
+                try await service.validAccessToken()
+            }
+            #expect(store.credential == oldCredential)
+            #expect(store.saveCount == 0)
+        }
+
+        @Test
         func loopbackPageDoesNotReportOAuthErrorsAsCompleted() throws {
             let success = try #require(URL(string: "http://127.0.0.1:8020/?code=code&state=state"))
             let failure = try #require(URL(string: "http://127.0.0.1:8020/?error=access_denied&state=state"))
@@ -464,7 +480,10 @@
                 clientID: connection.clientID
             ))
             let recorder = CloudRequestRecorder(mode: .userInfo, advertisesRevocationEndpoint: true)
-            let existingCredential = makeCredential(expirationDate: .distantFuture)
+            let existingCredential = makeCredential(
+                expirationDate: .distantFuture,
+                grantedScopes: ["openid", "api.sync.write"]
+            )
             let store = CloudCredentialStoreFake(credential: existingCredential)
             let service = makeService(recorder: recorder, store: store)
             let controller = DahliaCloudAccountController(

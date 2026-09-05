@@ -1,12 +1,12 @@
 import Foundation
 import GRDB
 
-/// 保管庫を表す GRDB レコード。path は保管庫ディレクトリの絶対パスに対応する。
+/// 保管庫を表す GRDB レコード。path は任意のローカル出力ディレクトリに対応する。
 struct VaultRecord: Codable, FetchableRecord, PersistableRecord, Identifiable, Equatable {
     static let databaseTableName = "vaults"
 
     var id: UUID
-    var path: String
+    var path: String?
     var name: String
     var createdAt: Date
     var lastOpenedAt: Date
@@ -28,9 +28,9 @@ struct VaultRecord: Codable, FetchableRecord, PersistableRecord, Identifiable, E
         set { localAIProvider = newValue.rawValue }
     }
 
-    /// 保管庫ディレクトリの URL。
-    var url: URL {
-        URL(fileURLWithPath: path, isDirectory: true)
+    /// Markdown などを出力する任意のローカルディレクトリ。
+    var url: URL? {
+        path.map { URL(fileURLWithPath: $0, isDirectory: true) }
     }
 }
 

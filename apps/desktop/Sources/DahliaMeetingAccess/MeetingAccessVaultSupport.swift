@@ -8,7 +8,8 @@ extension MeetingAccessStore {
         guard allowsWrites else { throw MeetingAccessError.writeAccessRequired }
     }
 
-    func withVaultMutationLock<T>(vaultURL: URL, operation: () throws -> T) throws -> T {
+    func withVaultMutationLock<T>(vaultURL: URL?, operation: () throws -> T) throws -> T {
+        guard let vaultURL else { return try operation() }
         do {
             return try DahliaVaultMutationLock.withLock(
                 vaultURL: vaultURL,

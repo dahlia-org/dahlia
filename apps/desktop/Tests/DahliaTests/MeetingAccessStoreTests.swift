@@ -13,6 +13,23 @@ import ImageIO
     // swiftlint:disable:next type_body_length
     struct MeetingAccessStoreTests {
         @Test
+        func createsProjectWithoutALocalExportFolder() throws {
+            let fixture = try Fixture()
+            try fixture.manager.dbQueue.write { db in
+                try db.execute(sql: "UPDATE vaults SET path = NULL WHERE id = ?", arguments: [fixture.primaryVaultID])
+            }
+            let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+
+            let created = try store.createProject(
+                name: "Database only",
+                parentProjectID: nil,
+                projectType: .undefined
+            )
+
+            #expect(created.project.name == "Database only")
+        }
+
+        @Test
         func projectWorkspaceReadAndWriteOperationsEnforceHierarchyTypeAndRevision() throws {
             let fixture = try Fixture()
             let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)

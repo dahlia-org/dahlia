@@ -421,7 +421,9 @@ export function createApp(dependencies: AppDependencies) {
   });
 
   app.post("/api/v1/transactions", syncBodyLimit, async (context) => {
-    if (!context.req.header("authorization") && !mutationOriginAllowed(context.req.raw, config.baseUrl)) {
+    const requiresBrowserOrigin = config.authProvider === "accounts" && !context.req.header("authorization");
+    if ((requiresBrowserOrigin || context.req.header("origin"))
+      && !mutationOriginAllowed(context.req.raw, config.baseUrl)) {
       return context.json({ error: "invalid_origin" }, 403);
     }
     const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
@@ -505,21 +507,6 @@ export function createApp(dependencies: AppDependencies) {
       });
     },
   );
-  app.delete("/api/v1/vaults/:vaultId/meetings/:meetingId", async (context) => {
-    const identity = await identities.fromGateway(context.req.raw, ALL_APIS_SCOPE);
-    const complete = await sync.deleteMeeting(
-      identity,
-      sync.parseId(context.req.param("vaultId")),
-      sync.parseId(context.req.param("meetingId")),
-    );
-    return complete ? context.body(null, 204) : context.json({ remaining: true }, 202);
-  });
-  app.delete("/api/v1/vaults/:vaultId", async (context) => {
-    const identity = await identities.fromGateway(context.req.raw, ALL_APIS_SCOPE);
-    const complete = await sync.deleteVault(identity, sync.parseId(context.req.param("vaultId")));
-    return complete ? context.body(null, 204) : context.json({ remaining: true }, 202);
-  });
-
   app.get("/api/v1/vaults", async (context) => {
     const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
     return context.json({ items: await sync.listVaults(identity) });

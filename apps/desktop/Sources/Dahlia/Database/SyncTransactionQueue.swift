@@ -736,19 +736,74 @@ enum SyncTransactionQueue {
     }
 
     static func acceptServerVersion(vaultId: UUID, dbQueue: DatabaseQueue) async throws {
+        _ = try await discardBlocked(vaultId: vaultId, reason: .conflict, dbQueue: dbQueue)
+    }
+
+    static func discardInvalidTransaction(vaultId: UUID, dbQueue: DatabaseQueue) async throws {
+        if try await discardBlocked(vaultId: vaultId, reason: .validation, dbQueue: dbQueue) {
+            try await SyncInitialSnapshotBuilder.enqueuePending(dbQueue: dbQueue)
+        }
+    }
+
+    static func retryInvalidTransaction(vaultId: UUID, dbQueue: DatabaseQueue) async throws {
+        try await dbQueue.write { db in
+            try db.execute(
+                sql: """
+                UPDATE sync_transactions SET blockedReason = NULL, serverResponseJSON = NULL,
+                    availableAt = ?, leaseExpiresAt = NULL
+                WHERE vaultId = ? AND blockedReason = 'validation'
+                """,
+                arguments: [Date(), vaultId]
+            )
+        }
+    }
+
+    static func retryAuthorizationBlocks(connectionId: UUID, dbQueue: DatabaseQueue) async throws {
+        try await dbQueue.write { db in
+            try db.execute(
+                sql: """
+                UPDATE sync_transactions SET blockedReason = NULL, serverResponseJSON = NULL,
+                    availableAt = ?, leaseExpiresAt = NULL
+                WHERE connectionId = ? AND blockedReason = 'authorization'
+                """,
+                arguments: [Date(), connectionId]
+            )
+        }
+    }
+
+    private static func discardBlocked(
+        vaultId: UUID,
+        reason: SyncBlockedReason,
+        dbQueue: DatabaseQueue
+    ) async throws -> Bool {
         try await dbQueue.write { db in
             guard let blocked = try Row.fetchOne(
                 db,
                 sql: """
                 SELECT sequence FROM sync_transactions
-                WHERE vaultId = ? AND blockedReason IS NOT NULL ORDER BY sequence LIMIT 1
+                WHERE vaultId = ? AND blockedReason = ? ORDER BY sequence LIMIT 1
                 """,
-                arguments: [vaultId]
-            ) else { return }
+                arguments: [vaultId, reason]
+            ) else { return false }
+            let hasConfirmedVault = try Bool.fetchOne(
+                db,
+                sql: "SELECT EXISTS(SELECT 1 FROM sync_entity_state WHERE vaultId = ? AND entity = 'vault' AND entityId = ?)",
+                arguments: [vaultId, vaultId]
+            ) ?? false
+            let rebuildInitialSnapshot = reason == .validation && !hasConfirmedVault
             let sequence: Int64 = blocked["sequence"]
             try discard(vaultId: vaultId, fromSequence: sequence, in: db)
             try db.execute(sql: "DELETE FROM sync_entity_state WHERE vaultId = ?", arguments: [vaultId])
-            try db.execute(sql: "UPDATE vaults SET syncPullCursor = NULL WHERE id = ?", arguments: [vaultId])
+            try db.execute(
+                sql: """
+                UPDATE vaults SET
+                    syncConfirmedConnectionId = CASE WHEN ? THEN NULL ELSE syncConfirmedConnectionId END,
+                    syncPullCursor = NULL
+                WHERE id = ?
+                """,
+                arguments: [rebuildInitialSnapshot, vaultId]
+            )
+            return rebuildInitialSnapshot
         }
     }
 
@@ -758,7 +813,7 @@ enum SyncTransactionQueue {
                 db,
                 sql: """
                 SELECT sequence, serverResponseJSON FROM sync_transactions
-                WHERE vaultId = ? AND blockedReason IS NOT NULL ORDER BY sequence LIMIT 1
+                WHERE vaultId = ? AND blockedReason = 'conflict' ORDER BY sequence LIMIT 1
                 """,
                 arguments: [vaultId]
             ) else { return false }

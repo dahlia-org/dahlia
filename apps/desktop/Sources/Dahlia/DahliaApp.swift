@@ -173,7 +173,7 @@ struct DahliaApp: App {
             ) {
                 if let pending = vaultManagementModel.pendingServerAdoption {
                     Button(pending.serverVault == nil ? L10n.moveVaultToServer : L10n.reconnectServerVault) {
-                        Task { await confirmServerAdoption() }
+                        Task { await confirmServerAdoption(pending) }
                     }
                 }
                 Button(L10n.keepLocalAccount, role: .cancel) {
@@ -399,7 +399,9 @@ struct DahliaApp: App {
         }
         await DahliaCloudCredentialStorage.deleteLegacyCredential()
         await dahliaAccountController.configure(appDatabase: db)
-        let meetingSyncWorker = SyncWorker(dbQueue: db.dbQueue)
+        let meetingSyncWorker = SyncWorker(dbQueue: db.dbQueue) {
+            await reconcileVaultsAfterAccountChange()
+        }
         self.meetingSyncWorker = meetingSyncWorker
         await meetingSyncWorker.start(restored: {
             if case .restored = AppDelegate.backupRestoreOutcome { return true }
@@ -451,7 +453,9 @@ struct DahliaApp: App {
         }
         guard viewModel.canSwitchVault, let db = appDatabase else { return false }
 
-        try? FileManager.default.createDirectory(at: vault.url, withIntermediateDirectories: true)
+        if let url = vault.url {
+            try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        }
 
         sidebarViewModel.clearMeetingSelection()
         viewModel.clearCurrentMeeting()
@@ -490,13 +494,14 @@ struct DahliaApp: App {
         mainWindowNavigation.dismissDahliaSignIn()
     }
 
-    private func confirmServerAdoption() async {
-        guard let updated = await vaultManagementModel.confirmServerAdoption() else {
+    private func confirmServerAdoption(_ pending: PendingVaultServerAdoption) async {
+        guard let updated = await vaultManagementModel.confirmServerAdoption(pending) else {
             if vaultManagementModel.pendingServerAdoption == nil {
                 pendingSetupAdoptionVaultID = nil
             }
             return
         }
+        await meetingSyncWorker?.drain()
         if pendingSetupAdoptionVaultID == updated.id {
             pendingSetupAdoptionVaultID = nil
             guard openVault(updated, recordsLastOpened: false),
@@ -716,7 +721,9 @@ struct DahliaApp: App {
             return (nil, nil, nil)
         }
         let project = try meeting.projectId.flatMap { try repository.fetchProject(id: $0) }
-        let projectURL = project.map { vault.url.appending(path: $0.path, directoryHint: .isDirectory) }
+        let projectURL = project.flatMap { project in
+            vault.url?.appending(path: project.path, directoryHint: .isDirectory)
+        }
         return (projectURL, project?.id, project?.path)
     }
 }

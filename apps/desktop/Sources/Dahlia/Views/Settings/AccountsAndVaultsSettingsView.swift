@@ -19,7 +19,7 @@ struct AccountsAndVaultsSettingsView: View {
                 model: vaultModel,
                 currentVault: currentVault,
                 accountConnections: accountController.connections,
-                onRenameVault: onUpdateVault
+                onUpdateVault: onUpdateVault
             )
             AccountSettingsView()
         }

@@ -10,8 +10,10 @@ import Foundation
             let first = makeVault(id: .v7(), path: "/Users/example/Customers/Meetings")
             let second = makeVault(id: .v7(), path: "/Users/example/Internal/Meetings")
 
-            #expect(MCPVaultDisplayName.resolve(for: first, among: [first, second]) == "Meetings — \(first.path)")
-            #expect(MCPVaultDisplayName.resolve(for: second, among: [first, second]) == "Meetings — \(second.path)")
+            #expect(MCPVaultDisplayName.resolve(for: first, among: [first, second]) ==
+                "Meetings — /Users/example/Customers/Meetings")
+            #expect(MCPVaultDisplayName.resolve(for: second, among: [first, second]) ==
+                "Meetings — /Users/example/Internal/Meetings")
         }
 
         @Test

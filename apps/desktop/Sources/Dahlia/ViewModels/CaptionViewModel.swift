@@ -39,10 +39,10 @@ private enum SummaryExternalExportError: Error {
 private struct RecordingContext {
     let meetingId: UUID?
     let store: TranscriptStore
-    let projectURL: URL?
+    var projectURL: URL?
     let projectId: UUID?
     let projectName: String?
-    let vaultURL: URL?
+    var vaultURL: URL?
     let dbQueue: DatabaseQueue?
     let batchTranscriptionState: BatchTranscriptionState?
 }
@@ -1187,7 +1187,7 @@ final class CaptionViewModel: ObservableObject {
             meetingId: meetingId,
             dbQueue: dbQueue
         )
-        if let dbQueue, let vaultURL {
+        if let dbQueue {
             batchSummaryContextsBySessionId[sessionId] = BatchSummaryContext(
                 dbQueue: dbQueue,
                 vaultURL: vaultURL,
@@ -1293,8 +1293,7 @@ final class CaptionViewModel: ObservableObject {
         do {
             let repository = MeetingRepository(dbQueue: context.dbQueue)
             guard let meeting = try repository.fetchMeeting(id: confirmation.meetingId),
-                  let vault = try repository.fetchAllVaults().first(where: { $0.id == meeting.vaultId }),
-                  vault.url.standardizedFileURL == context.vaultURL.standardizedFileURL else {
+                  let vault = try repository.fetchAllVaults().first(where: { $0.id == meeting.vaultId }) else {
                 return L10n.meetingUnavailable
             }
             guard meeting.projectId != projectId else { return nil }
@@ -1305,7 +1304,9 @@ final class CaptionViewModel: ObservableObject {
             if currentMeetingId == meeting.id, currentDbQueue === context.dbQueue {
                 let project = try projectId.flatMap(repository.fetchProject(id:))
                 setExplicitProjectContext(
-                    projectURL: project.map { context.vaultURL.appending(path: $0.path, directoryHint: .isDirectory) },
+                    projectURL: project.flatMap { project in
+                        context.vaultURL?.appending(path: project.path, directoryHint: .isDirectory)
+                    },
                     projectId: projectId,
                     projectName: project?.path
                 )
@@ -1318,16 +1319,14 @@ final class CaptionViewModel: ObservableObject {
 
     func assignCurrentMeetingProject(_ projectId: UUID?) -> String? {
         guard let meetingId = currentMeetingId,
-              let dbQueue = currentDbQueue,
-              let vaultURL = currentVaultURL else {
+              let dbQueue = currentDbQueue else {
             return L10n.meetingUnavailable
         }
 
         do {
             let repository = MeetingRepository(dbQueue: dbQueue)
             guard let meeting = try repository.fetchMeeting(id: meetingId),
-                  let vault = try repository.fetchAllVaults().first(where: { $0.id == meeting.vaultId }),
-                  vault.url.standardizedFileURL == vaultURL.standardizedFileURL else {
+                  let vault = try repository.fetchAllVaults().first(where: { $0.id == meeting.vaultId }) else {
                 return L10n.meetingUnavailable
             }
             guard meeting.projectId != projectId else { return nil }
@@ -1336,7 +1335,9 @@ final class CaptionViewModel: ObservableObject {
                 .moveMeeting(id: meeting.id, toProjectId: projectId)
             let project = try projectId.flatMap(repository.fetchProject(id:))
             setExplicitProjectContext(
-                projectURL: project.map { vaultURL.appending(path: $0.path, directoryHint: .isDirectory) },
+                projectURL: project.flatMap { project in
+                    vault.url?.appending(path: project.path, directoryHint: .isDirectory)
+                },
                 projectId: projectId,
                 projectName: project?.path
             )
@@ -1778,8 +1779,8 @@ final class CaptionViewModel: ObservableObject {
 
     private func reloadCurrentMeetingAfterBatchCompletion(meetingId: UUID) async {
         guard let dbQueue = currentDbQueue,
-              let vaultURL = currentVaultURL,
               currentMeetingId == meetingId else { return }
+        let vaultURL = currentVaultURL
         let projectionGeneration = summaryProjectionGeneration
         do {
             let loaded = try await Task.detached(priority: .userInitiated) {
@@ -1916,7 +1917,7 @@ final class CaptionViewModel: ObservableObject {
     private nonisolated static func fetchLoadedMeetingData(
         meetingId: UUID,
         dbQueue: DatabaseQueue,
-        vaultURL: URL
+        vaultURL: URL?
     ) throws -> LoadedMeetingData {
         let repo = MeetingRepository(dbQueue: dbQueue)
         let detail = try repo.fetchMeetingDetail(id: meetingId)
@@ -1930,7 +1931,7 @@ final class CaptionViewModel: ObservableObject {
         let googleDocsExport = detail.summaryExports.first(where: { $0.type == .googleDocs })
         let artifactExport = detail.summaryExports.first(where: { $0.type == .dahliaArtifact })
 
-        let lastSummaryURL: URL? = if detail.summary != nil {
+        let lastSummaryURL: URL? = if detail.summary != nil, let vaultURL {
             SummaryService.findSummaryFile(
                 storedRelativePath: vaultExport?.vaultRelativePath,
                 vaultURL: vaultURL
@@ -2073,7 +2074,7 @@ final class CaptionViewModel: ObservableObject {
         projectURL: URL?,
         projectId: UUID?,
         projectName: String? = nil,
-        vaultURL: URL
+        vaultURL: URL?
     ) {
         guard !isFinalizingRecording else { return }
         if case .starting = recordingLifecycle { return }
@@ -2117,8 +2118,8 @@ final class CaptionViewModel: ObservableObject {
     func retryInitialMeetingLoad() {
         guard store.requiresFullMeetingReload,
               let meetingId = currentMeetingId,
-              let dbQueue = currentDbQueue,
-              let vaultURL = currentVaultURL else { return }
+              let dbQueue = currentDbQueue else { return }
+        let vaultURL = currentVaultURL
         let transcriptPageLoader = TranscriptPageLoader(dbQueue: dbQueue)
         store.prepareForMeetingLoading(meetingId: meetingId, loader: transcriptPageLoader)
         startMeetingLoad(
@@ -2140,7 +2141,7 @@ final class CaptionViewModel: ObservableObject {
     private func startMeetingLoad(
         meetingId: UUID,
         dbQueue: DatabaseQueue,
-        vaultURL: URL,
+        vaultURL: URL?,
         transcriptPageLoader: TranscriptPageLoader
     ) {
         meetingLoadTask?.cancel()
@@ -2199,7 +2200,7 @@ final class CaptionViewModel: ObservableObject {
         projectId: UUID?,
         name: String = "",
         projectName: String? = nil,
-        vaultURL: URL
+        vaultURL: URL?
     ) {
         guard !isRecordingStartPending, !isFinalizingRecording else { return }
 
@@ -2241,7 +2242,7 @@ final class CaptionViewModel: ObservableObject {
         projectURL: URL? = nil,
         projectId: UUID? = nil,
         projectName: String? = nil,
-        vaultURL: URL
+        vaultURL: URL?
     ) {
         guard !isRecordingStartPending, !isFinalizingRecording else { return }
 
@@ -2268,7 +2269,7 @@ final class CaptionViewModel: ObservableObject {
         _ draftMeeting: DraftMeeting,
         noteText: String,
         dbQueue: DatabaseQueue,
-        vaultURL: URL
+        vaultURL: URL?
     ) {
         beginDraftMeeting(
             from: draftMeeting.linkedCalendarEvent,
@@ -2302,8 +2303,8 @@ final class CaptionViewModel: ObservableObject {
 
         guard let draftMeeting,
               let dbQueue = currentDbQueue,
-              let vault = AppSettings.shared.currentVault,
-              let vaultURL = currentVaultURL else { return nil }
+              let vault = AppSettings.shared.currentVault else { return nil }
+        let vaultURL = currentVaultURL
 
         let requestedProjectURL = projectURL ?? draftMeeting.projectURL ?? currentProjectURL
         let requestedProjectId = projectId ?? draftMeeting.projectId ?? currentProjectId
@@ -2449,8 +2450,8 @@ final class CaptionViewModel: ObservableObject {
     /// 現在の meetingId のノート・スクリーンショット・サマリーを DB から読み込み直す。
     private func reloadMeetingDetail() {
         guard let meetingId = currentMeetingId,
-              let dbQueue = currentDbQueue,
-              let vaultURL = currentVaultURL else { return }
+              let dbQueue = currentDbQueue else { return }
+        let vaultURL = currentVaultURL
         meetingLoadTask?.cancel()
         meetingLoadGeneration &+= 1
         let generation = meetingLoadGeneration
@@ -2603,7 +2604,7 @@ final class CaptionViewModel: ObservableObject {
         projectURL: URL?,
         projectId: UUID?,
         projectName: String?,
-        vaultURL: URL
+        vaultURL: URL?
     ) {
         currentMeetingId = id
         currentProjectURL = projectURL
@@ -2621,17 +2622,14 @@ final class CaptionViewModel: ObservableObject {
     private static func projectContext(
         projectId: UUID?,
         dbQueue: DatabaseQueue,
-        vaultURL: URL
-    ) -> (url: URL, name: String)? {
+        vaultURL: URL?
+    ) -> (url: URL?, name: String)? {
         guard let projectId,
               let project = try? dbQueue.read({ db in
                   try ProjectRecord.fetchResolved(id: projectId, in: db)
               }) else { return nil }
 
-        return (
-            vaultURL.appending(path: project.path, directoryHint: .isDirectory),
-            project.path
-        )
+        return (vaultURL?.appending(path: project.path, directoryHint: .isDirectory), project.path)
     }
 
     func setExplicitProjectContext(projectURL: URL?, projectId: UUID?, projectName: String?) {
@@ -2642,6 +2640,21 @@ final class CaptionViewModel: ObservableObject {
         draftMeeting?.projectId = projectId
         draftMeeting?.projectName = projectName
         draftMeeting?.allowsCalendarSeriesProjectInheritance = false
+    }
+
+    func updateVaultExportFolder(_ vaultURL: URL?) {
+        currentVaultURL = vaultURL
+        currentProjectURL = currentProjectName.flatMap {
+            vaultURL?.appending(path: $0, directoryHint: .isDirectory)
+        }
+        draftMeeting?.projectURL = currentProjectURL
+        if var context = recordingContext {
+            context.vaultURL = vaultURL
+            context.projectURL = context.projectName.flatMap {
+                vaultURL?.appending(path: $0, directoryHint: .isDirectory)
+            }
+            recordingContext = context
+        }
     }
 
     // MARK: - Analyzer Preparation
@@ -3005,18 +3018,11 @@ final class CaptionViewModel: ObservableObject {
             loader: TranscriptPageLoader(dbQueue: request.dbQueue)
         )
 
-        let resolvedProject = currentVaultURL.flatMap { vaultURL -> (url: URL, name: String)? in
-            guard let projectName = service.projectName else { return nil }
-            return (
-                vaultURL.appending(path: projectName, directoryHint: .isDirectory),
-                projectName
-            )
-        }
         let projectWasInherited = service.projectId != request.projectId
         currentProjectId = service.projectId
-        if let resolvedProject {
-            currentProjectURL = resolvedProject.url
-            currentProjectName = resolvedProject.name
+        if let projectName = service.projectName {
+            currentProjectURL = currentVaultURL?.appending(path: projectName, directoryHint: .isDirectory)
+            currentProjectName = projectName
         } else if projectWasInherited {
             currentProjectURL = nil
             currentProjectName = nil
@@ -3177,7 +3183,7 @@ final class CaptionViewModel: ObservableObject {
         vaultId: UUID,
         projectId: UUID?,
         projectName: String? = nil,
-        vaultURL: URL,
+        vaultURL: URL?,
         initialMeetingName: String = "",
         usesDraftMeeting: Bool = true,
         recordingTrigger: UsageTelemetryEvent.RecordingTrigger? = nil,
@@ -3668,7 +3674,7 @@ final class CaptionViewModel: ObservableObject {
             meetingId: meetingId,
             dbQueue: dbQueue
         )
-        if let dbQueue, let vaultURL {
+        if let dbQueue {
             batchSummaryContextsBySessionId[sessionId] = BatchSummaryContext(
                 dbQueue: dbQueue,
                 vaultURL: vaultURL,
@@ -3865,7 +3871,7 @@ final class CaptionViewModel: ObservableObject {
         let projectName: String
         let projectDescription: String?
         let recordingStartedAt: Date
-        let vaultURL: URL
+        let vaultURL: URL?
         let noteText: String?
         let recordingSessions: [RecordingSessionTimeline]
         let options: SummaryGenerationOptions
@@ -3876,7 +3882,7 @@ final class CaptionViewModel: ObservableObject {
 
     private struct BatchSummaryContext {
         let dbQueue: DatabaseQueue
-        let vaultURL: URL
+        let vaultURL: URL?
         let meetingName: String
     }
 
@@ -3884,7 +3890,7 @@ final class CaptionViewModel: ObservableObject {
         let meetingId: UUID
         private(set) var options: SummaryGenerationOptions
         let dbQueue: DatabaseQueue
-        let vaultURL: URL
+        let vaultURL: URL?
         let job: SummaryGenerationJob
         let generationSettings: SummaryGenerationSettings
         var sessionIDs: Set<UUID>
@@ -3896,7 +3902,7 @@ final class CaptionViewModel: ObservableObject {
             meetingId: UUID,
             options: SummaryGenerationOptions,
             dbQueue: DatabaseQueue,
-            vaultURL: URL,
+            vaultURL: URL?,
             job: SummaryGenerationJob,
             generationSettings: SummaryGenerationSettings
         ) {
@@ -3927,7 +3933,7 @@ final class CaptionViewModel: ObservableObject {
 
         func hasSamePersistenceContext(as other: PendingBatchSummaryRequest) -> Bool {
             dbQueue === other.dbQueue
-                && vaultURL.standardizedFileURL == other.vaultURL.standardizedFileURL
+                && vaultURL?.standardizedFileURL == other.vaultURL?.standardizedFileURL
                 && generationSettings.runtimeProvider == other.generationSettings.runtimeProvider
         }
 
@@ -3961,7 +3967,6 @@ final class CaptionViewModel: ObservableObject {
         guard canStartManualSummaryGeneration,
               let currentMeetingId,
               !isSummaryGenerating(meetingId: currentMeetingId),
-              currentVaultURL != nil,
               batchTranscriptionState?.blocksSummaryGeneration != true else { return false }
         return currentMeetingHasTranscriptSegments
     }
@@ -4065,8 +4070,7 @@ final class CaptionViewModel: ObservableObject {
         options: SummaryGenerationOptions = .manual
     ) {
         guard canStartManualSummaryGeneration,
-              let dbQueue,
-              let vaultURL else { return }
+              let dbQueue else { return }
 
         for meetingId in meetingIds.sorted(by: { $0.uuidString < $1.uuidString })
             where !isSummaryGenerating(meetingId: meetingId) {
@@ -4092,8 +4096,8 @@ final class CaptionViewModel: ObservableObject {
     private func triggerSummary(options: SummaryGenerationOptions) -> Bool {
         guard canGenerateSummary,
               let meetingId = currentMeetingId,
-              let vaultURL = currentVaultURL,
               let dbQueue = currentDbQueue else { return false }
+        let vaultURL = currentVaultURL
         saveNoteImmediately()
         let repo = MeetingRepository(dbQueue: dbQueue)
         let meetingName = (try? repo.fetchMeeting(id: meetingId)?.name.nilIfBlank)
@@ -4130,7 +4134,7 @@ final class CaptionViewModel: ObservableObject {
                 && request.meetingId == meetingId
                 && !request.job.hasFailure
                 && precedingAutomaticRequest.dbQueue === request.dbQueue
-                && precedingAutomaticRequest.vaultURL.standardizedFileURL == request.vaultURL.standardizedFileURL
+                && precedingAutomaticRequest.vaultURL?.standardizedFileURL == request.vaultURL?.standardizedFileURL
                 && precedingAutomaticRequest.generationSettings.runtimeProvider
                 == request.generationSettings.runtimeProvider {
                 request.mergeOptions(precedingAutomaticRequest.options)
@@ -4149,7 +4153,7 @@ final class CaptionViewModel: ObservableObject {
         let first = precedingAutomaticRequest.flatMap { precedingRequest in
             completedRequests.first { request in
                 precedingRequest.dbQueue === request.dbQueue
-                    && precedingRequest.vaultURL.standardizedFileURL == request.vaultURL.standardizedFileURL
+                    && precedingRequest.vaultURL?.standardizedFileURL == request.vaultURL?.standardizedFileURL
                     && precedingRequest.generationSettings.runtimeProvider == request.generationSettings.runtimeProvider
             }
         } ?? completedRequests.first
@@ -4205,7 +4209,7 @@ final class CaptionViewModel: ObservableObject {
     private func makePersistedSummaryRequest(
         meetingId: UUID,
         dbQueue: DatabaseQueue,
-        vaultURL: URL,
+        vaultURL: URL?,
         options: SummaryGenerationOptions,
         generationSettings: SummaryGenerationSettings? = nil,
         telemetryTrigger: UsageTelemetryEvent.SummaryTrigger
@@ -4226,7 +4230,9 @@ final class CaptionViewModel: ObservableObject {
             meetingId: meetingId,
             meetingName: meeting.name.nilIfBlank ?? L10n.newMeeting,
             dbQueue: dbQueue,
-            projectURL: project.map { vaultURL.appending(path: $0.path, directoryHint: .isDirectory) },
+            projectURL: project.flatMap { project in
+                vaultURL?.appending(path: project.path, directoryHint: .isDirectory)
+            },
             projectName: project?.path ?? "",
             projectDescription: project?.description,
             recordingStartedAt: meeting.effectiveRecordingStartedAt,
@@ -4366,16 +4372,24 @@ final class CaptionViewModel: ObservableObject {
         }
 
         let exportOptions = request.options.exportOptions
-        if exportOptions.exportsToVault {
+        let currentVault: VaultRecord? = if exportOptions.exportsToVault {
+            try await request.dbQueue.read { db -> VaultRecord? in
+                guard let vaultID = try MeetingRecord.fetchOne(db, key: meetingId)?.vaultId else { return nil }
+                return try VaultRecord.fetchOne(db, key: vaultID)
+            }
+        } else {
+            nil
+        }
+        if exportOptions.exportsToVault, let vaultURL = currentVault?.url {
             usageTelemetryReporter(.export(.started, destination: .vault, trigger: .summaryGeneration))
             job.progress.vaultExport = .running
             do {
-                guard let vaultID = try repo.fetchMeeting(id: meetingId)?.vaultId else {
+                guard let vaultID = currentVault?.id else {
                     throw SummaryGenerationPreparationError.meetingUnavailable
                 }
                 guard let exportResult = try await VaultSummaryExportService.exportSummary(
                     .init(
-                        vaultURL: request.vaultURL,
+                        vaultURL: vaultURL,
                         vaultID: vaultID,
                         meetingID: meetingId,
                         dbQueue: request.dbQueue,
@@ -4388,7 +4402,7 @@ final class CaptionViewModel: ObservableObject {
                 }
                 markSummaryAsApplied()
                 try await VaultSummaryExportService.exportSupportingArtifacts(
-                    vaultURL: request.vaultURL,
+                    vaultURL: vaultURL,
                     meetingId: meetingId,
                     projectName: exportResult.projectName,
                     createdAt: request.recordingStartedAt,
@@ -4407,6 +4421,9 @@ final class CaptionViewModel: ObservableObject {
                 try persistGeneratedSummary()
             }
         } else {
+            if exportOptions.exportsToVault {
+                job.progress.vaultExport = .skipped
+            }
             try persistGeneratedSummary()
         }
 
@@ -4759,8 +4776,8 @@ final class CaptionViewModel: ObservableObject {
         guard !ids.isEmpty,
               !isSummaryGenerating,
               !isDeletingScreenshots,
-              let dbQueue = activeDbQueueForSessionControls,
-              let vaultURL = currentVaultURL else { return }
+              let dbQueue = activeDbQueueForSessionControls else { return }
+        let vaultURL = currentVaultURL
         let screenshotIds = ids
         isDeletingScreenshots = true
         Task { [weak self] in
@@ -4774,16 +4791,18 @@ final class CaptionViewModel: ObservableObject {
                 for screenshot in deletedScreenshots {
                     await ScreenshotImageLoader.shared.remove(screenshotID: screenshot.id)
                 }
-                do {
-                    try await Task.detached(priority: .utility) {
-                        try ScreenshotExportService.deleteExportedScreenshots(
-                            vaultURL: vaultURL,
-                            screenshots: deletedScreenshots
-                        )
-                    }.value
-                } catch {
-                    captionViewModelLogger.error("Failed to delete exported screenshots from the Vault: \(error)")
-                    ErrorReportingService.capture(error, context: ["source": "deleteExportedScreenshots"])
+                if let vaultURL {
+                    do {
+                        try await Task.detached(priority: .utility) {
+                            try ScreenshotExportService.deleteExportedScreenshots(
+                                vaultURL: vaultURL,
+                                screenshots: deletedScreenshots
+                            )
+                        }.value
+                    } catch {
+                        captionViewModelLogger.error("Failed to delete exported screenshots from the Vault: \(error)")
+                        ErrorReportingService.capture(error, context: ["source": "deleteExportedScreenshots"])
+                    }
                 }
                 guard let self, self.currentMeetingId == meetingId else { return }
                 let deletedIds = Set(deletedScreenshots.map(\.id))

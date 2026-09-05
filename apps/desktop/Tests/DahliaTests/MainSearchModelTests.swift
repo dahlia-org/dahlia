@@ -690,7 +690,9 @@ import GRDB
         }
 
         func stop() {
-            try? FileManager.default.removeItem(at: vault.url)
+            if let url = vault.url {
+                try? FileManager.default.removeItem(at: url)
+            }
         }
 
         private nonisolated static func insertMeeting(

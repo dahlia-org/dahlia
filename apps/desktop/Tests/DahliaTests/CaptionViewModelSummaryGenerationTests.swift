@@ -11,6 +11,44 @@ import GRDB
     // swiftlint:disable:next type_body_length
     struct CaptionViewModelSummaryGenerationTests {
         @Test
+        func generatesSummaryWithoutALocalExportFolder() async throws {
+            let fixture = try SummaryGenerationFixture()
+            defer { fixture.removeFiles() }
+            let runner = BlockingSummaryRunner()
+            let viewModel = CaptionViewModel(summaryGenerationRunner: runner.run)
+            await fixture.select(fixture.first, in: viewModel, note: "note", usesExportFolder: false)
+            _ = try await MeetingRepository(dbQueue: fixture.database.dbQueue)
+                .updateVaultPath(id: fixture.vault.id, path: nil)
+
+            #expect(viewModel.triggerManualSummary(options: .manual))
+            await runner.waitForCallCount(1)
+            runner.complete(meetingID: fixture.first.id, title: "Database only")
+
+            #expect(await waitUntil { !viewModel.isSummaryGenerating(meetingId: fixture.first.id) })
+            #expect(try fixture.summary(for: fixture.first.id)?.loadDocument().title == "Database only")
+            #expect(try fixture.summaryPath(for: fixture.first.id) == nil)
+        }
+
+        @Test
+        func removingExportFolderDuringGenerationPreventsLateFileExport() async throws {
+            let fixture = try SummaryGenerationFixture()
+            defer { fixture.removeFiles() }
+            let runner = BlockingSummaryRunner()
+            let viewModel = CaptionViewModel(summaryGenerationRunner: runner.run)
+            await fixture.select(fixture.first, in: viewModel, note: "note")
+
+            #expect(viewModel.triggerManualSummary(options: .manual))
+            await runner.waitForCallCount(1)
+            _ = try await MeetingRepository(dbQueue: fixture.database.dbQueue)
+                .updateVaultPath(id: fixture.vault.id, path: nil)
+            runner.complete(meetingID: fixture.first.id, title: "Database only")
+
+            #expect(await waitUntil { !viewModel.isSummaryGenerating(meetingId: fixture.first.id) })
+            #expect(try fixture.summary(for: fixture.first.id)?.loadDocument().title == "Database only")
+            #expect(try fixture.summaryPath(for: fixture.first.id) == nil)
+        }
+
+        @Test
         func generatedSummaryWinsOverAnEarlierReload() async throws {
             let fixture = try SummaryGenerationFixture()
             defer { fixture.removeFiles() }
@@ -1274,13 +1312,18 @@ import GRDB
             }
         }
 
-        func select(_ meeting: MeetingRecord, in viewModel: CaptionViewModel, note: String) async {
+        func select(
+            _ meeting: MeetingRecord,
+            in viewModel: CaptionViewModel,
+            note: String,
+            usesExportFolder: Bool = true
+        ) async {
             viewModel.loadMeeting(
                 meeting.id,
                 dbQueue: database.dbQueue,
                 projectURL: nil,
                 projectId: nil,
-                vaultURL: vaultURL
+                vaultURL: usesExportFolder ? vaultURL : nil
             )
             _ = await pollUntil {
                 viewModel.currentMeetingId == meeting.id

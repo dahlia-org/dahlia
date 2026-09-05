@@ -627,6 +627,7 @@
 "Loading Google Calendar…" = "Google カレンダーを読み込み中…";
 "Loading macOS Calendar…" = "macOS カレンダーを読み込み中…";
 "Retry" = "再試行";
+"Retry Sync" = "同期を再試行";
 "Join" = "参加";
 "All day" = "終日";
 "Google Calendar is not configured" = "Google カレンダーが未設定です";
@@ -685,7 +686,7 @@
 
 /* Vault Picker */
 "Create New Vault" = "保管庫を新規作成する";
-"Create a new folder to use as a vault." = "新しいフォルダを作成して保管庫として使用します。";
+"Create a vault without a local export folder." = "ローカルの書き出しフォルダを指定せずに保管庫を作成します。";
 "Add Vault" = "保管庫を追加";
 "Registered Vaults" = "登録済みの保管庫";
 "Open Folder as Vault" = "保管庫としてフォルダを開く";
@@ -1642,3 +1643,7 @@
 "Use Server Version" = "サーバー版を使用";
 "Reapply Local Version" = "ローカル版を再適用";
 "Choose Local Folder" = "ローカルフォルダを選択";
+"No local export folder" = "ローカル書き出しフォルダなし";
+"Set Local Export Folder" = "ローカル書き出しフォルダを設定";
+"Change Local Export Folder" = "ローカル書き出しフォルダを変更";
+"Remove Local Export Folder" = "ローカル書き出しフォルダを解除";

@@ -30,6 +30,65 @@
         }
 
         @Test
+        func createsVaultWithoutALocalExportFolder() async throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            let model = VaultManagementModel()
+            await model.configure(appDatabase: database)
+
+            let vault = try #require(await model.createVault(named: "  Cloud only  "))
+            let stored = try #require(MeetingRepository(dbQueue: database.dbQueue).fetchAllVaults().first)
+
+            #expect(vault.name == "Cloud only")
+            #expect(vault.path == nil)
+            #expect(stored.id == vault.id)
+            #expect(stored.name == vault.name)
+            #expect(stored.path == nil)
+        }
+
+        @Test
+        func changesAndRemovesLocalExportFolderWithoutQueuingServerOperations() async throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            let model = VaultManagementModel()
+            await model.configure(appDatabase: database)
+            let vault = try #require(await model.createVault(named: "Vault"))
+            let folder = temporaryDirectoryURL()
+            defer { try? FileManager.default.removeItem(at: folder) }
+
+            let withFolder = try #require(await model.setExportFolder(for: vault, to: folder))
+            #expect(withFolder.url == folder.standardizedFileURL)
+            #expect(FileManager.default.fileExists(atPath: folder.path))
+            let meeting = MeetingRecord(
+                id: .v7(), vaultId: vault.id, projectId: nil, name: "Meeting",
+                createdAt: .now, updatedAt: .now
+            )
+            try await database.dbQueue.write { db in
+                try meeting.insert(db)
+                try SummaryRecord(
+                    meetingId: meeting.id,
+                    title: "Summary",
+                    document: "{}",
+                    createdAt: .now
+                ).insert(db)
+                try SummaryExportRecord(
+                    meetingId: meeting.id,
+                    type: .vault,
+                    url: #require(SummaryExportRecord.vaultURL(relativePath: "summary.md")),
+                    createdAt: .now,
+                    updatedAt: .now
+                ).insert(db)
+            }
+            _ = try #require(await model.setExportFolder(for: withFolder, to: folder))
+            #expect(try await database.dbQueue.read { db in
+                try SummaryExportRecord.fetchOne(meetingId: meeting.id, type: .vault, in: db)
+            } != nil)
+            let withoutFolder = try #require(await model.setExportFolder(for: withFolder, to: nil))
+            #expect(withoutFolder.path == nil)
+            #expect(try await database.dbQueue.read { db in
+                try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_transactions")
+            } == 0)
+        }
+
+        @Test
         func setupPersistsProviderDraftBeforeTheFirstVaultIsActive() async throws {
             let database = try AppDatabaseManager(path: ":memory:")
             let model = VaultManagementModel()
@@ -203,6 +262,28 @@
         }
 
         @Test
+        func registersCloudVaultWithoutChoosingALocalFolder() async throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            let repository = MeetingRepository(dbQueue: database.dbQueue)
+            let connection = DahliaAccountConnectionRecord(
+                id: .v7(), origin: "https://server.example.com", clientID: "desktop-client", createdAt: .now
+            )
+            try await repository.insertDahliaAccountConnection(connection)
+            let cloudVault = CloudVaultRecord(
+                vaultId: .v7(), connectionId: connection.id, name: "Cloud",
+                createdAt: .now, revision: 1, role: "member"
+            )
+            let model = VaultManagementModel()
+            await model.configure(appDatabase: database)
+
+            let vault = try #require(await model.registerCloudVault(cloudVault))
+
+            #expect(vault.path == nil)
+            #expect(vault.syncConfirmedConnectionId == connection.id)
+            #expect(vault.syncRole == "member")
+        }
+
+        @Test
         func registeringTheSameFolderReturnsTheExistingVault() async throws {
             let database = try AppDatabaseManager(path: ":memory:")
             let model = VaultManagementModel()
@@ -368,7 +449,9 @@
             #expect(model.pendingServerAdoption?.serverVault == nil)
             #expect(try repository.fetchAllVaults().first?.accountConnectionId == nil)
 
-            let adopted = try #require(await model.confirmServerAdoption())
+            let pending = try #require(model.pendingServerAdoption)
+            model.cancelServerAdoption()
+            let adopted = try #require(await model.confirmServerAdoption(pending))
             #expect(adopted.accountConnectionId == connection.id)
             #expect(adopted.syncConfirmedConnectionId == nil)
         }
@@ -381,11 +464,12 @@
                 id: .v7(), origin: "https://server.example.com", clientID: "desktop-client", createdAt: .now
             )
             let vault = makeVault(name: "Local", lastOpenedAt: .now)
+            let remoteCreatedAt = Date(timeIntervalSince1970: 1_800_000_000)
             let remote = CloudVaultRecord(
                 vaultId: vault.id,
                 connectionId: connection.id,
                 name: "Server",
-                createdAt: .now,
+                createdAt: remoteCreatedAt,
                 revision: 7,
                 role: "member"
             )
@@ -401,10 +485,13 @@
             )
 
             await model.requestServerAdoption(for: vault, connection: account)
-            let adopted = try #require(await model.confirmServerAdoption())
+            let pending = try #require(model.pendingServerAdoption)
+            let adopted = try #require(await model.confirmServerAdoption(pending))
 
             #expect(adopted.syncRole == "member")
             #expect(adopted.syncConfirmedConnectionId == connection.id)
+            #expect(adopted.name == remote.name)
+            #expect(adopted.createdAt == remote.createdAt)
             #expect(try await SyncTransactionQueue.isConfirmed(
                 vaultId: vault.id,
                 entity: .vault,
@@ -443,7 +530,8 @@
             )
 
             await model.requestServerAdoption(for: vault, connection: account)
-            #expect(await model.confirmServerAdoption() == nil)
+            let pending = try #require(model.pendingServerAdoption)
+            #expect(await model.confirmServerAdoption(pending) == nil)
 
             let preserved = try #require(repository.fetchAllVaults().first)
             #expect(preserved.accountConnectionId == nil)
@@ -479,7 +567,8 @@
             )
 
             await model.requestServerAdoption(for: vault, connection: account)
-            #expect(await model.confirmServerAdoption() == nil)
+            let pending = try #require(model.pendingServerAdoption)
+            #expect(await model.confirmServerAdoption(pending) == nil)
             #expect(model.pendingServerAdoption?.serverVault?.role == "member")
             #expect(try repository.fetchAllVaults().first?.accountConnectionId == nil)
         }

@@ -4,6 +4,19 @@
 重大なレビュー規則は最も近い `AGENTS.md` の `## Code Review Rules`、技術的な正本は `ARCHITECTURE.md` と関連 ADR に置き、
 ここでは finding の採用基準とレビュー時の確認方法を定める。
 
+## モノレポでの適用範囲
+
+このガイドは macOS アプリ専用ではなく、Dahlia モノレポ全体の共通レビュー基準である。変更ファイルに最も近い
+`AGENTS.md` を適用し、複数アプリや契約境界にまたがる変更では関係する scope をすべて確認する。
+
+- `apps/desktop`: macOS、録音、文字起こし、Swift concurrency、GRDB、UI の規則を適用する。
+- `apps/server`: Server の認証、認可、RLS、API、Node／Worker portability、database、storage の規則を適用する。
+- `deploy` と共有 package: 対象 runtime の deployment contract、生成物、public export、consumer 互換性を確認する。
+- Desktop／Server 間の同期や OAuth のような変更は、一方の実装だけでなく wire contract、failure semantics、schema、rollout 順序を両側から確認する。
+
+以下の録音、UI、MainActor などの項目は Desktop を変更または利用する差分にだけ適用する。Server-only 差分を macOS の
+実行モデルで評価せず、逆に cross-runtime の変更から Desktop 側の durability と recording-critical contract を落とさない。
+
 ## レビューの準備
 
 1. 変更されたファイルと実行経路を確認し、適用されるすべての `AGENTS.md` を読む。

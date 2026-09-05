@@ -9,6 +9,18 @@ import GRDB
     @MainActor
     struct ProjectWorkspaceServiceTests {
         @Test
+        func createsProjectsWithoutALocalExportFolder() throws {
+            let context = try makeContext(usesExportFolder: false)
+            defer { try? FileManager.default.removeItem(at: context.rootURL) }
+
+            let parent = try context.service.createProject(name: "Parent", parentProjectId: nil)
+            let child = try context.service.createProject(name: "Child", parentProjectId: parent.id)
+
+            #expect(parent.path == "Parent")
+            #expect(child.path == "Parent/Child")
+        }
+
+        @Test
         func createsRootAndOneSubprojectWithoutCreatingDirectories() throws {
             let context = try makeContext()
             defer { try? FileManager.default.removeItem(at: context.rootURL) }
@@ -1256,7 +1268,8 @@ import GRDB
             summaryFileResolver: @escaping ProjectWorkspaceService.SummaryFileResolver =
                 ProjectWorkspaceService.resolveSummaryFile,
             stagedAudioRestorer: @escaping ProjectWorkspaceService.StagedAudioRestorer =
-                BatchAudioCleanupService.restoreStagedFiles
+                BatchAudioCleanupService.restoreStagedFiles,
+            usesExportFolder: Bool = true
         ) throws -> ProjectWorkspaceTestContext {
             let rootURL = FileManager.default.temporaryDirectory
                 .appending(path: UUID().uuidString, directoryHint: .isDirectory)
@@ -1269,7 +1282,7 @@ import GRDB
             let repository = MeetingRepository(dbQueue: database.dbQueue)
             let vault = VaultRecord(
                 id: .v7(),
-                path: vaultURL.path,
+                path: usesExportFolder ? vaultURL.path : nil,
                 name: "Test Vault",
                 createdAt: .now,
                 lastOpenedAt: .now

@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 import type { Identity } from "../src/auth/identity";
+import { initializeDahliaAuth } from "../src/auth/better-auth";
 import { createNodeApplicationStore } from "../src/auth/node-store";
 import { LocalObjectStorage } from "../src/artifacts/local";
 import { createApp } from "../src/app";
@@ -119,6 +120,80 @@ describe("SQLite canonical sync", () => {
       conflicts: [{ entity: "project", serverRevision: 1, record: { name: "Existing" } }],
     });
     expect(await store.sync.withIdentity(other, (sync) => sync.getVault(vaultId))).toBeNull();
+    await store.close?.();
+  });
+
+  it("revision-fences destructive Vault resets", async () => {
+    const { store } = await setup();
+    await createVault(store);
+    await commit(store, owner, transaction("019d4a01-1001-7000-8000-000000000001", [{
+      id: "019d4a01-1001-7000-8000-000000000002",
+      entity: "vault",
+      action: "update",
+      entityId: vaultId,
+      baseRevision: 1,
+      data: { name: "Newer" },
+    }]));
+    await expect(commit(store, owner, transaction("019d4a01-1001-7000-8000-000000000003", [{
+      id: "019d4a01-1001-7000-8000-000000000004",
+      entity: "vault",
+      action: "reset",
+      entityId: vaultId,
+      baseRevision: 1,
+      data: { preservePermissions: true },
+    }]))).rejects.toMatchObject({
+      status: 409,
+      code: "revision_conflict",
+      conflicts: [{ entity: "vault", serverRevision: 2 }],
+    });
+    await expect(commit(store, owner, transaction("019d4a01-1001-7000-8000-000000000005", [{
+      id: "019d4a01-1001-7000-8000-000000000006",
+      entity: "vault",
+      action: "reset",
+      entityId: vaultId,
+      baseRevision: 2,
+      data: { preservePermissions: true },
+    }]))).resolves.toMatchObject({ status: "committed" });
+    await store.close?.();
+  });
+
+  it("rejects destructive Vault resets from shared members", async () => {
+    const { store } = await setup();
+    await createVault(store);
+    await store.sync.withIdentity(owner, (sync) => sync.putMemberPermission(vaultId, "organization", "external"));
+    const operationId = "019d4a01-1002-7000-8000-000000000002";
+
+    await expect(commit(store, other, transaction("019d4a01-1002-7000-8000-000000000001", [{
+      id: operationId,
+      entity: "vault",
+      action: "reset",
+      entityId: vaultId,
+      baseRevision: 1,
+      data: { preservePermissions: true },
+    }]))).rejects.toMatchObject({ status: 409, code: "revision_conflict", operationId });
+    await expect(store.sync.withIdentity(owner, (sync) => sync.getVault(vaultId)))
+      .resolves.toMatchObject({ vaultId, revision: 1 });
+    await store.close?.();
+  });
+
+  it("fences expired storage-delete claims by attempt", async () => {
+    const { databasePath, store } = await setup();
+    const storageKey = "meetings/m/screenshots/s.png";
+    await store.sync.enqueueStorageDelete(storageKey);
+    const first = (await store.sync.claimStorageDeletes(1))[0]!;
+    const database = new DatabaseSync(databasePath);
+    database.prepare("update core_storage_delete_jobs set lease_expires_at = 0 where storage_key = ?")
+      .run(storageKey);
+    database.close();
+    const second = (await store.sync.claimStorageDeletes(1))[0]!;
+
+    expect(second.attempt).toBe(first.attempt + 1);
+    expect(await store.sync.isStorageDeleteClaimCurrent(first)).toBe(false);
+    expect(await store.sync.isStorageDeleteClaimCurrent(second)).toBe(true);
+    await store.sync.completeStorageDelete(first);
+    expect(await store.sync.hasStorageDelete(storageKey)).toBe(true);
+    await store.sync.completeStorageDelete(second);
+    expect(await store.sync.hasStorageDelete(storageKey)).toBe(false);
     await store.close?.();
   });
 
@@ -862,6 +937,61 @@ describe("SQLite canonical sync", () => {
       { ...owner, impersonated: true },
       {},
     )).rejects.toMatchObject({ status: 403, code: "impersonated_session_read_only" });
+    await store.close?.();
+  });
+
+  it("accepts trusted header transactions without a browser Origin header", async () => {
+    const { directory, store } = await setup();
+    const app = createApp({
+      config: testConfig(join(directory, "server.sqlite")),
+      authStore: store,
+      artifactStorage: new LocalObjectStorage(join(directory, "objects")),
+    });
+    const requestHeaders: Record<string, string> = headers();
+    delete requestHeaders.origin;
+    const response = await app.request("/api/v1/transactions", {
+      method: "POST",
+      headers: requestHeaders,
+      body: JSON.stringify({
+        schemaVersion: 1,
+        id: "019d4a01-3050-7000-8000-000000000001",
+        vaultId,
+        createdAt: now,
+        operations: [{
+          id: "019d4a01-3050-7000-8000-000000000002",
+          entity: "vault",
+          action: "create",
+          entityId: vaultId,
+          baseRevision: null,
+          data: { name: "Vault", createdAt: now },
+        }],
+      }),
+    });
+    expect(response.status).toBe(200);
+    expect((await app.request("/api/v1/transactions", {
+      method: "POST",
+      headers: { ...headers(), origin: "https://attacker.example" },
+      body: "{}",
+    })).status).toBe(403);
+
+    const accountsConfig: AppConfig = {
+      ...testConfig(join(directory, "server.sqlite")),
+      authProvider: "accounts",
+      betterAuthSecret: "test-only-better-auth-secret-value",
+      googleClientId: "google-client",
+      googleClientSecret: "google-secret",
+    };
+    const accountsApp = createApp({
+      config: accountsConfig,
+      auth: await initializeDahliaAuth(accountsConfig, store),
+      authStore: store,
+      artifactStorage: new LocalObjectStorage(join(directory, "objects")),
+    });
+    expect((await accountsApp.request("/api/v1/transactions", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    })).status).toBe(403);
     await store.close?.();
   });
 

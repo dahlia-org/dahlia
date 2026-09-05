@@ -198,6 +198,11 @@ actor DahliaCloudService {
         return credential
     }
 
+    func storedAccountForReauthentication() throws -> DahliaCloudAccount? {
+        guard let storedCredential = try storage.load(), credentialMatchesEndpoint(storedCredential) else { return nil }
+        return storedCredential.account
+    }
+
     func authorize() async throws -> DahliaCloudCredential {
         let discovery = try await discover(configuration: configuration)
         let pkce = CloudPKCE.generate()
@@ -319,9 +324,13 @@ actor DahliaCloudService {
     }
 
     private func credentialMatchesConfiguration(_ credential: DahliaCloudCredential) -> Bool {
+        credentialMatchesEndpoint(credential)
+            && credential.grantedScopes.contains("all-apis")
+    }
+
+    private func credentialMatchesEndpoint(_ credential: DahliaCloudCredential) -> Bool {
         credential.clientID == configuration.clientID
             && Self.sameOrigin(credential.resource, configuration.origin)
-            && credential.grantedScopes.contains("all-apis")
     }
 
     private func refreshAndPersist(_ oldCredential: DahliaCloudCredential) async throws -> String {
@@ -351,6 +360,7 @@ actor DahliaCloudService {
             revocationEndpoint: oldCredential.revocationEndpoint,
             account: oldCredential.account
         )
+        guard credentialMatchesConfiguration(updated) else { throw DahliaCloudError.invalidTokenResponse }
         try storage.save(updated)
         credential = updated
         return updated.accessToken

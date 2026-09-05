@@ -13,14 +13,11 @@ final class SetupTourModel {
     private(set) var isCompleting = false
     private(set) var errorMessage: String?
     private(set) var selectedVaultURL: URL
+    private(set) var selectedVaultName: String?
+    private(set) var didSelectVaultLocation = false
     private(set) var selectedAccountConnectionID: UUID?
     private(set) var isAccountSelectionConfirmed: Bool
     private let progressDefaults: UserDefaults?
-
-    nonisolated static func newVaultURL(named proposedName: String) -> URL? {
-        guard let name = DahliaProjectName.normalizedName(proposedName) else { return nil }
-        return URL.documentsDirectory.appending(path: name, directoryHint: .isDirectory)
-    }
 
     init(
         mode: SetupTourMode,
@@ -57,10 +54,12 @@ final class SetupTourModel {
             selectedAccountConnectionID = restoredConnectionID
             isAccountSelectionConfirmed = restoredAccountConfirmed
             selectedVaultURL = restoredVaultURL ?? VaultManagementModel.defaultVaultURL
+            selectedVaultName = SetupTourPresentationPolicy.restoredVaultName(in: progressDefaults)
             isVaultLocationConfirmed = restoredVaultConfirmed
         } else {
             currentStep = .account
             selectedVaultURL = currentVault?.url ?? VaultManagementModel.defaultVaultURL
+            selectedVaultName = nil
             isVaultLocationConfirmed = currentVault != nil
         }
     }
@@ -88,7 +87,19 @@ final class SetupTourModel {
 
     func selectVaultURL(_ url: URL) {
         selectedVaultURL = url
-        isVaultLocationConfirmed = originalVault?.url.standardizedFileURL == url.standardizedFileURL
+        selectedVaultName = nil
+        didSelectVaultLocation = true
+        isVaultLocationConfirmed = originalVault?.url?.standardizedFileURL == url.standardizedFileURL
+        errorMessage = nil
+        persistProgress()
+    }
+
+    func selectPathlessVault(named name: String) {
+        guard let name = DahliaProjectName.normalizedName(name) else { return }
+        selectedVaultName = name
+        selectedVaultURL = VaultManagementModel.defaultVaultURL
+        didSelectVaultLocation = true
+        isVaultLocationConfirmed = true
         errorMessage = nil
         persistProgress()
     }
@@ -97,6 +108,13 @@ final class SetupTourModel {
         isVaultLocationConfirmed = true
         errorMessage = nil
         persistProgress()
+    }
+
+    var keepsOriginalVault: Bool {
+        guard let originalVault else { return false }
+        return selectedVaultName == nil && (!didSelectVaultLocation
+            || originalVault.url?.standardizedFileURL == selectedVaultURL.standardizedFileURL
+        )
     }
 
     func advance() {
@@ -142,6 +160,7 @@ final class SetupTourModel {
         SetupTourPresentationPolicy.saveProgress(
             step: currentStep,
             vaultURL: selectedVaultURL,
+            vaultName: selectedVaultName,
             isVaultConfirmed: isVaultLocationConfirmed,
             accountConnectionID: selectedAccountConnectionID,
             isAccountSelectionConfirmed: isAccountSelectionConfirmed,

@@ -6,6 +6,49 @@ enum SyncInitialSnapshotBuilder {
     private static let transcriptBatchSize = 500
 
     static func enqueuePending(dbQueue: DatabaseQueue) async throws {
+        let interruptedVaultId = try await dbQueue.read { db in
+            try UUID.fetchOne(
+                db,
+                sql: """
+                SELECT id FROM vaults
+                WHERE accountConnectionId IS NOT NULL
+                  AND syncConfirmedConnectionId = accountConnectionId
+                  AND (syncRole IS NULL OR syncRole = 'owner')
+                  AND NOT EXISTS (
+                    SELECT 1 FROM sync_transactions t WHERE t.vaultId = vaults.id
+                  )
+                  AND NOT EXISTS (
+                    SELECT 1 FROM sync_entity_state s
+                    WHERE s.vaultId = vaults.id AND s.entity = 'vault' AND s.entityId = vaults.id
+                  )
+                ORDER BY createdAt, id
+                LIMIT 1
+                """
+            )
+        }
+        if let interruptedVaultId {
+            try await dbQueue.write { db in
+                try db.execute(
+                    sql: """
+                    UPDATE vaults SET syncConfirmedConnectionId = NULL,
+                        syncPullCursor = NULL, syncLastCommittedCursor = NULL
+                    WHERE id = ?
+                      AND accountConnectionId IS NOT NULL
+                      AND syncConfirmedConnectionId = accountConnectionId
+                      AND (syncRole IS NULL OR syncRole = 'owner')
+                      AND NOT EXISTS (
+                        SELECT 1 FROM sync_transactions t WHERE t.vaultId = vaults.id
+                      )
+                      AND NOT EXISTS (
+                        SELECT 1 FROM sync_entity_state s
+                        WHERE s.vaultId = vaults.id AND s.entity = 'vault' AND s.entityId = vaults.id
+                      )
+                    """,
+                    arguments: [interruptedVaultId]
+                )
+            }
+        }
+
         let pending = try await dbQueue.read { db -> (UUID, UUID, Bool)? in
             guard let row = try Row.fetchOne(
                 db,
@@ -19,9 +62,16 @@ enum SyncInitialSnapshotBuilder {
                 WHERE v.accountConnectionId IS NOT NULL
                   AND v.syncConfirmedConnectionId IS NULL
                   AND (v.syncRole IS NULL OR v.syncRole = 'owner')
-                  AND NOT EXISTS (
-                    SELECT 1 FROM sync_entity_state s
-                    WHERE s.vaultId = v.id AND s.entity = 'vault' AND s.entityId = v.id
+                  AND (
+                    EXISTS (
+                      SELECT 1 FROM sync_transactions t
+                      JOIN sync_operations o ON o.transactionId = t.id
+                      WHERE t.vaultId = v.id AND o.entity = 'vault' AND o.action = 'reset'
+                    )
+                    OR NOT EXISTS (
+                      SELECT 1 FROM sync_entity_state s
+                      WHERE s.vaultId = v.id AND s.entity = 'vault' AND s.entityId = v.id
+                    )
                   )
                 ORDER BY v.createdAt, v.id
                 LIMIT 1
@@ -85,6 +135,9 @@ enum SyncInitialSnapshotBuilder {
 
         _ = try await dbQueue.write { db in
             guard try canContinue(markerId: markerId, vaultId: vaultId, in: db) else { return false }
+            if restoring {
+                try db.execute(sql: "DELETE FROM sync_entity_state WHERE vaultId = ?", arguments: [vaultId])
+            }
             try db.execute(
                 sql: """
                 UPDATE vaults SET syncConfirmedConnectionId = accountConnectionId
@@ -307,7 +360,6 @@ enum SyncInitialSnapshotBuilder {
             )
             for vaultId in vaultIds {
                 try SyncTransactionQueue.discard(vaultId: vaultId, in: db)
-                try db.execute(sql: "DELETE FROM sync_entity_state WHERE vaultId = ?", arguments: [vaultId])
                 try SyncTransactionRecorder.record(
                     vaultId: vaultId,
                     operations: [restoreResetOperation(vaultId: vaultId)],

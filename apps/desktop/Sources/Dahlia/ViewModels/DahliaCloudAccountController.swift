@@ -339,9 +339,9 @@ final class DahliaCloudAccountController {
                 throw DahliaCloudError.notConfigured
             }
             let service = try service(for: connection.record)
-            let previousCredential = try await service.storedCredential()
+            let previousAccount = try await service.storedAccountForReauthentication()
             let credential = try await service.authorize()
-            guard previousCredential == nil || previousCredential?.account.id == credential.account.id else {
+            guard previousAccount == nil || previousAccount?.id == credential.account.id else {
                 await service.revokeIfPossible(credential)
                 throw DahliaCloudError.accountChanged
             }
@@ -356,6 +356,7 @@ final class DahliaCloudAccountController {
                 throw error
             }
             guard isCurrentOperation(generation) else { return }
+            try await repository?.retryAuthorizationSync(connectionId: connectionID)
             try await reloadCodexAuthenticationIfActive(connectionID)
             await reload()
             guard !Task.isCancelled, isCurrentOperation(generation) else { return }

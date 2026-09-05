@@ -97,8 +97,12 @@ struct SettingsDetailView: View {
     }
 
     private func updateCurrentVaultIfNeeded(_ vault: VaultRecord) {
-        guard appSettings.currentVault?.id == vault.id else { return }
+        guard let currentVault = appSettings.currentVault, currentVault.id == vault.id else { return }
+        let exportFolderChanged = currentVault.path != vault.path
         appSettings.currentVault = vault
+        guard exportFolderChanged else { return }
+        captionViewModel.updateVaultExportFolder(vault.url)
+        sidebarViewModel.refreshCurrentVaultFilesystemServices(vault)
     }
 
 }

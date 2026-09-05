@@ -4,6 +4,7 @@ enum SetupTourPresentationPolicy {
     static let userDefaultsKey = "setupTourPresentationVersion"
     static let progressStepUserDefaultsKey = "setupTourProgressStep"
     static let vaultPathUserDefaultsKey = "setupTourVaultPath"
+    static let vaultNameUserDefaultsKey = "setupTourVaultName"
     static let vaultConfirmedUserDefaultsKey = "setupTourVaultConfirmed"
     static let providerUserDefaultsKey = "setupTourProvider"
     static let databricksProfileUserDefaultsKey = "setupTourDatabricksProfile"
@@ -38,6 +39,7 @@ enum SetupTourPresentationPolicy {
     static func saveProgress(
         step: SetupTourStep,
         vaultURL: URL,
+        vaultName: String? = nil,
         isVaultConfirmed: Bool,
         accountConnectionID: UUID? = nil,
         isAccountSelectionConfirmed: Bool = false,
@@ -45,6 +47,7 @@ enum SetupTourPresentationPolicy {
     ) {
         defaults.set(step.rawValue, forKey: progressStepUserDefaultsKey)
         defaults.set(vaultURL.path, forKey: vaultPathUserDefaultsKey)
+        defaults.set(vaultName, forKey: vaultNameUserDefaultsKey)
         defaults.set(isVaultConfirmed, forKey: vaultConfirmedUserDefaultsKey)
         defaults.set(accountConnectionID?.uuidString, forKey: accountConnectionIDUserDefaultsKey)
         defaults.set(isAccountSelectionConfirmed, forKey: accountSelectionConfirmedUserDefaultsKey)
@@ -52,6 +55,10 @@ enum SetupTourPresentationPolicy {
 
     static func restoredAccountConnectionID(in defaults: UserDefaults = .standard) -> UUID? {
         defaults.string(forKey: accountConnectionIDUserDefaultsKey).flatMap(UUID.init(uuidString:))
+    }
+
+    static func restoredVaultName(in defaults: UserDefaults = .standard) -> String? {
+        defaults.string(forKey: vaultNameUserDefaultsKey)?.nilIfBlank
     }
 
     static func isAccountSelectionConfirmed(in defaults: UserDefaults = .standard) -> Bool {
@@ -86,6 +93,7 @@ enum SetupTourPresentationPolicy {
     private static func clearProgress(in defaults: UserDefaults) {
         defaults.removeObject(forKey: progressStepUserDefaultsKey)
         defaults.removeObject(forKey: vaultPathUserDefaultsKey)
+        defaults.removeObject(forKey: vaultNameUserDefaultsKey)
         defaults.removeObject(forKey: vaultConfirmedUserDefaultsKey)
         defaults.removeObject(forKey: providerUserDefaultsKey)
         defaults.removeObject(forKey: databricksProfileUserDefaultsKey)

@@ -12,7 +12,7 @@ Meeting sync previously created a Server Vault only as a side effect of uploadin
 
 - Desktop sends an owner-only Vault manifest before meeting uploads. It contains the Vault name and the complete two-level Project hierarchy; the last accepted manifest replaces the previous Project set.
 - Server stores Projects in `core.projects`. They inherit Vault permissions, are exposed for hierarchy browsing and explicit meeting filtering, and are not included in full-text or vector search.
-- Meetings may reference a Project in the same Vault. Removing a Project clears that reference instead of deleting the meeting.
+- Meetings may reference a Project in the same Vault. As amended by ADR-0067, clients explicitly move or detach dependent meetings before deleting a Project; the Server rejects a Project delete while dependencies remain.
 - Transcript `audio_source` records `mic` or `system`. Nullable `speaker_label` is reserved for a human or diarized speaker identity and is currently unset.
 - The Desktop database uses a forward migration that moves existing routing values from `speakerLabel` to `audioSource` and clears `speakerLabel`. The unreleased Server wire contract has no compatibility path for the old field meaning.
 

@@ -209,7 +209,7 @@ import GRDB
             #expect(viewModel.currentProjectName == inheritedProject.name)
             #expect(
                 viewModel.currentProjectURL
-                    == vault.url.appending(path: inheritedProject.name, directoryHint: .isDirectory)
+                    == vault.url?.appending(path: inheritedProject.name, directoryHint: .isDirectory)
             )
         }
 

@@ -179,16 +179,21 @@ public extension MeetingAccessStore {
                 return MeetingProjectMembershipResult(changed: false, changedMeetingIDs: [], projectID: projectID)
             }
 
-            let destinationDirectory = projectPath.map {
-                vault.url.appending(path: $0, directoryHint: .isDirectory)
-            } ?? vault.url
-            let summaryPlan = try database.read { db in
-                try makeSummaryMovePlan(
-                    meetingIDs: Set(changedIDs),
-                    destinationDirectory: destinationDirectory,
-                    vaultURL: vault.url,
-                    in: db
-                )
+            let summaryPlan: SummaryMovePlan
+            if let vaultURL = vault.url {
+                let destinationDirectory = projectPath.map {
+                    vaultURL.appending(path: $0, directoryHint: .isDirectory)
+                } ?? vaultURL
+                summaryPlan = try database.read { db in
+                    try makeSummaryMovePlan(
+                        meetingIDs: Set(changedIDs),
+                        destinationDirectory: destinationDirectory,
+                        vaultURL: vaultURL,
+                        in: db
+                    )
+                }
+            } else {
+                summaryPlan = SummaryMovePlan(moves: [], updates: [])
             }
             try performSummaryFileMoves(summaryPlan.moves, vaultURL: vault.url) {
                 try commitMeetingMemberships(
@@ -215,9 +220,9 @@ private extension MeetingAccessStore {
     struct WorkspaceVault {
         let id: UUID
         let name: String
-        let path: String
+        let path: String?
 
-        var url: URL { URL(fileURLWithPath: path, isDirectory: true) }
+        var url: URL? { path.map { URL(fileURLWithPath: $0, isDirectory: true) } }
         var scoped: ScopedVault { ScopedVault(id: id, name: name) }
     }
 
@@ -696,9 +701,10 @@ private extension MeetingAccessStore {
 
     func performSummaryFileMoves(
         _ moves: [SummaryFileMove],
-        vaultURL: URL,
+        vaultURL: URL?,
         operation: () throws -> Void
     ) throws {
+        guard let vaultURL else { return try operation() }
         let createdDirectories = try createOutputDirectories(for: moves, vaultURL: vaultURL)
         var completedMoves: [SummaryFileMove] = []
         do {
@@ -824,6 +830,7 @@ private extension MeetingAccessStore {
         rows: [WorkspaceProjectRow],
         vault: WorkspaceVault
     ) throws -> SummaryMovePlan {
+        guard let vaultURL = vault.url else { return SummaryMovePlan(moves: [], updates: []) }
         let paths = resolvedProjectPaths(rows)
         let projectPlaceholders = plan.hierarchyIDs.map { _ in "?" }.joined(separator: ",")
         let meetingIDs = try database.read { db in
@@ -857,7 +864,7 @@ private extension MeetingAccessStore {
         let externalIdentities = try database.read { db in
             try externalSummaryIdentities(
                 excluding: meetingIDs,
-                vaultURL: vault.url,
+                vaultURL: vaultURL,
                 in: db
             )
         }
@@ -871,8 +878,8 @@ private extension MeetingAccessStore {
             else {
                 continue
             }
-            let source = vault.url.appending(path: storedPath).standardizedFileURL
-            guard isInsideVault(source, vaultURL: vault.url) else {
+            let source = vaultURL.appending(path: storedPath).standardizedFileURL
+            guard isInsideVault(source, vaultURL: vaultURL) else {
                 throw MeetingAccessError.projectFileConflict(source.path)
             }
             guard FileManager.default.fileExists(atPath: source.path) else { continue }
@@ -906,8 +913,8 @@ private extension MeetingAccessStore {
                 updates.append(SummaryExportUpdate(meetingID: meetingID, relativePath: nil))
                 continue
             }
-            let source = vault.url.appending(path: storedPath).standardizedFileURL
-            guard isInsideVault(source, vaultURL: vault.url) else {
+            let source = vaultURL.appending(path: storedPath).standardizedFileURL
+            guard isInsideVault(source, vaultURL: vaultURL) else {
                 throw MeetingAccessError.projectFileConflict(source.path)
             }
             guard FileManager.default.fileExists(atPath: source.path) else {
@@ -921,11 +928,11 @@ private extension MeetingAccessStore {
                 updates.append(SummaryExportUpdate(meetingID: meetingID, relativePath: nil))
                 continue
             }
-            try validatePathContainsNoSymlink(source, vaultURL: vault.url)
+            try validatePathContainsNoSymlink(source, vaultURL: vaultURL)
 
             let destinationRelativePath = "\(newProjectPath)/\(suffix)"
-            let destination = vault.url.appending(path: destinationRelativePath).standardizedFileURL
-            try validateOutputDirectory(destination.deletingLastPathComponent(), vaultURL: vault.url)
+            let destination = vaultURL.appending(path: destinationRelativePath).standardizedFileURL
+            try validateOutputDirectory(destination.deletingLastPathComponent(), vaultURL: vaultURL)
             updates.append(SummaryExportUpdate(
                 meetingID: meetingID,
                 relativePath: destinationRelativePath

@@ -886,7 +886,9 @@ private extension ContentView {
         viewModel.loadMeeting(
             detail.meetingId,
             dbQueue: dbQueue,
-            projectURL: detail.projectName.map { vault.url.appending(path: $0, directoryHint: .isDirectory) },
+            projectURL: detail.projectName.flatMap { projectName in
+                vault.url?.appending(path: projectName, directoryHint: .isDirectory)
+            },
             projectId: detail.projectId,
             projectName: detail.projectName,
             vaultURL: vault.url

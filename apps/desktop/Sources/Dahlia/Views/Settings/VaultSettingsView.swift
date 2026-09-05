@@ -5,14 +5,15 @@ struct VaultSettingsView: View {
     var model: VaultManagementModel
     let currentVault: VaultRecord?
     let accountConnections: [DahliaAccountConnection]
-    let onRenameVault: (VaultRecord) -> Void
+    let onUpdateVault: (VaultRecord) -> Void
 
     @State private var isShowingFolderPicker = false
+    @State private var isShowingCreateAlert = false
     @State private var isShowingRenameAlert = false
     @State private var pendingRemoval: VaultRecord?
     @State private var pendingRename: VaultRecord?
+    @State private var pendingExportFolderVault: VaultRecord?
     @State private var proposedName = ""
-    @State private var pendingCloudVault: CloudVaultRecord?
 
     var body: some View {
         sections
@@ -48,6 +49,14 @@ struct VaultSettingsView: View {
                 Button(L10n.save, action: renameVault)
                     .disabled(proposedName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 Button(L10n.cancel, role: .cancel, action: clearRenameRequest)
+            }
+            .alert(L10n.createNewVault, isPresented: $isShowingCreateAlert) {
+                TextField(L10n.vaultName, text: $proposedName)
+                Button(L10n.create, action: createVault)
+                    .disabled(proposedName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                Button(L10n.cancel, role: .cancel, action: clearCreateRequest)
+            } message: {
+                Text(L10n.vaultNameDescription)
             }
             .confirmationDialog(
                 pendingRemoval.map { L10n.removeVaultConfirmation($0.name) } ?? "",
@@ -86,7 +95,7 @@ struct VaultSettingsView: View {
 
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(vault.name)
-                                Text(vault.path)
+                                Text(vault.path ?? L10n.noLocalExportFolder)
                                     .font(.footnote)
                                     .foregroundStyle(DahliaDesign.secondaryTextColor)
                                     .lineLimit(1)
@@ -94,7 +103,7 @@ struct VaultSettingsView: View {
                                     .textSelection(.enabled)
                             }
                         }
-                        .help(vault.path)
+                        .help(vault.path ?? L10n.noLocalExportFolder)
 
                         Spacer()
 
@@ -118,9 +127,8 @@ struct VaultSettingsView: View {
                         HStack {
                             Label(vault.name, systemImage: "icloud")
                             Spacer()
-                            Button(L10n.chooseLocalFolder) {
-                                pendingCloudVault = vault
-                                isShowingFolderPicker = true
+                            Button(L10n.addVault) {
+                                Task { _ = await model.registerCloudVault(vault) }
                             }
                         }
                     }
@@ -132,10 +140,10 @@ struct VaultSettingsView: View {
 
                 Spacer()
 
-                Button(L10n.addVault, systemImage: "plus", action: showFolderPicker)
+                Button(L10n.addVault, systemImage: "plus", action: showCreateAlert)
                     .buttonStyle(.dahlia(.primary))
                     .controlSize(.small)
-                    .help(L10n.openFolderAsVaultDescription)
+                    .help(L10n.vaultNameDescription)
             }
         } footer: {
             if model.vaults.isEmpty, !model.isLoading {
@@ -144,9 +152,9 @@ struct VaultSettingsView: View {
         }
     }
 
-    private func showFolderPicker() {
-        pendingCloudVault = nil
-        isShowingFolderPicker = true
+    private func showCreateAlert() {
+        proposedName = ""
+        isShowingCreateAlert = true
     }
 
     private func vaultActions(for vault: VaultRecord) -> some View {
@@ -155,7 +163,21 @@ struct VaultSettingsView: View {
                 Button(L10n.rename, systemImage: "pencil", action: { requestRename(vault) })
             }
 
-            if model.blockedSyncVaultIDs.contains(vault.id) {
+            Button(vault.path == nil ? L10n.setLocalExportFolder : L10n.changeLocalExportFolder, systemImage: "folder") {
+                pendingExportFolderVault = vault
+                isShowingFolderPicker = true
+            }
+            if vault.path != nil {
+                Button(L10n.removeLocalExportFolder, systemImage: "folder.badge.minus") {
+                    Task {
+                        if let updated = await model.setExportFolder(for: vault, to: nil) {
+                            onUpdateVault(updated)
+                        }
+                    }
+                }
+            }
+
+            if model.conflictedSyncVaultIDs.contains(vault.id) {
                 Button(L10n.useServerVersion, systemImage: "icloud.and.arrow.down") {
                     Task { await model.acceptServerSyncVersion(for: vault) }
                 }
@@ -163,6 +185,15 @@ struct VaultSettingsView: View {
                     Button(L10n.reapplyLocalVersion, systemImage: "arrow.up.circle") {
                         Task { await model.reapplyLocalSyncVersion(for: vault) }
                     }
+                }
+            }
+
+            if model.validationBlockedSyncVaultIDs.contains(vault.id) {
+                Button(L10n.retrySync, systemImage: "arrow.clockwise") {
+                    Task { await model.retryInvalidSyncTransaction(for: vault) }
+                }
+                Button(L10n.useServerVersion, systemImage: "icloud.and.arrow.down", role: .destructive) {
+                    Task { await model.discardInvalidSyncTransaction(for: vault) }
                 }
             }
 
@@ -184,18 +215,27 @@ struct VaultSettingsView: View {
         case let .success(urls):
             guard let url = urls.first else { return }
             Task {
-                if let pendingCloudVault {
-                    _ = await model.registerCloudVault(pendingCloudVault, at: url)
-                    self.pendingCloudVault = nil
-                } else {
-                    _ = await model.registerVault(at: url, markAsOpened: false)
+                if let vault = pendingExportFolderVault,
+                   let updated = await model.setExportFolder(for: vault, to: url) {
+                    onUpdateVault(updated)
                 }
+                pendingExportFolderVault = nil
             }
         case let .failure(error):
             guard (error as? CocoaError)?.code != .userCancelled else { return }
-            pendingCloudVault = nil
+            pendingExportFolderVault = nil
             model.presentFolderSelectionError(error)
         }
+    }
+
+    private func createVault() {
+        let name = proposedName
+        clearCreateRequest()
+        Task { _ = await model.createVault(named: name) }
+    }
+
+    private func clearCreateRequest() {
+        proposedName = ""
     }
 
     private func requestRename(_ vault: VaultRecord) {
@@ -211,7 +251,7 @@ struct VaultSettingsView: View {
         clearRenameRequest()
         Task {
             if let renamedVault = await model.renameVault(vault, to: name) {
-                onRenameVault(renamedVault)
+                onUpdateVault(renamedVault)
             }
         }
     }

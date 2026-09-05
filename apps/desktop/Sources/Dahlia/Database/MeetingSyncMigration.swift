@@ -6,6 +6,7 @@ enum MeetingSyncMigration {
         guard try ["vaults", "meetings", "screenshots", "transcript_segments", "dahlia_account_connections"]
             .allSatisfy({ try db.tableExists($0) }) else { return }
 
+        try makeVaultPathOptional(in: db)
         try db.alter(table: VaultRecord.databaseTableName) { table in
             table.add(column: "syncRole", .text).check { $0 == nil || ["owner", "member"].contains($0) }
             table.add(column: "syncConfirmedConnectionId", .blob)
@@ -19,6 +20,44 @@ enum MeetingSyncMigration {
         try db.execute(sql: "DROP INDEX IF EXISTS projects_unique_root_name")
         try db.execute(sql: "DROP INDEX IF EXISTS projects_unique_child_name")
         try db.execute(sql: schemaSQL)
+    }
+
+    private static func makeVaultPathOptional(in db: Database) throws {
+        guard try Int.fetchOne(
+            db,
+            sql: "SELECT \"notnull\" FROM pragma_table_info('vaults') WHERE name = 'path'"
+        ) == 1 else { return }
+        try db.execute(sql: """
+        CREATE TABLE vaults_v42 (
+            id BLOB PRIMARY KEY,
+            path TEXT UNIQUE,
+            name TEXT NOT NULL,
+            createdAt DATETIME NOT NULL,
+            lastOpenedAt DATETIME NOT NULL,
+            accountConnectionId BLOB REFERENCES dahlia_account_connections(id) ON DELETE SET NULL,
+            localAIProvider TEXT NOT NULL DEFAULT 'chatGPTSubscription',
+            databricksProfile TEXT NOT NULL DEFAULT '',
+            summaryModelID TEXT NOT NULL DEFAULT 'gpt-5.6-luna',
+            summaryReasoningEffort TEXT NOT NULL DEFAULT 'high',
+            chatModelID TEXT NOT NULL DEFAULT '',
+            chatReasoningEffort TEXT NOT NULL DEFAULT 'medium',
+            aiSettingsBackfilled INTEGER NOT NULL DEFAULT 0
+        );
+        INSERT INTO vaults_v42 (
+            id, path, name, createdAt, lastOpenedAt, accountConnectionId,
+            localAIProvider, databricksProfile, summaryModelID, summaryReasoningEffort,
+            chatModelID, chatReasoningEffort, aiSettingsBackfilled
+        )
+        SELECT
+            id, path, name, createdAt, lastOpenedAt, accountConnectionId,
+            localAIProvider, databricksProfile, summaryModelID, summaryReasoningEffort,
+            chatModelID, chatReasoningEffort, aiSettingsBackfilled
+        FROM vaults;
+        DROP TABLE vaults;
+        ALTER TABLE vaults_v42 RENAME TO vaults;
+        CREATE INDEX vaults_on_accountConnectionId ON vaults(accountConnectionId);
+        """)
+        try SearchDocumentsMigration.createVaultCleanupTrigger(in: db)
     }
 
     private static let schemaSQL = """

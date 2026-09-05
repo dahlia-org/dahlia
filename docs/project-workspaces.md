@@ -55,13 +55,14 @@ Read models expose the explicit value, effective value, type-owning root Project
 
 ## Derived Summary output directories
 
-The logical Project path determines a desired Summary output directory below the Vault path. This is a one-way
-derivation:
+The local export folder is optional and device-local. Without one, Project and Summary changes remain database-only.
+When configured, the logical Project path determines a desired Summary output directory below that folder. This is a
+one-way derivation:
 
 ```text
 Project records in SQLite
         ↓
-Vault-relative Summary output directory
+optional Vault-relative Summary output directory
 ```
 
 Creating a Project does not create a directory. Dahlia creates the necessary output directory lazily when a Summary

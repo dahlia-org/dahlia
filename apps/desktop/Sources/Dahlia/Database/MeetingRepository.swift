@@ -129,6 +129,25 @@ final class MeetingRepository {
         }
     }
 
+    /// Device-local export folder. This never produces a Server transaction.
+    nonisolated func updateVaultPath(id: UUID, path: String?) async throws -> VaultRecord? {
+        try await dbQueue.write { db in
+            guard var vault = try VaultRecord.fetchOne(db, key: id) else { return nil }
+            guard vault.path != path else { return vault }
+            vault.path = path
+            try vault.update(db)
+            try db.execute(
+                sql: """
+                DELETE FROM summary_exports
+                WHERE type = ?
+                  AND meetingId IN (SELECT id FROM meetings WHERE vaultId = ?)
+                """,
+                arguments: [SummaryExportType.vault.rawValue, id]
+            )
+            return vault
+        }
+    }
+
     nonisolated func updateVaultAISettings(_ settings: VaultAISettingsSnapshot) async throws -> VaultRecord? {
         try await dbQueue.write { db in
             guard var vault = try VaultRecord.fetchOne(db, key: settings.vaultID) else { return nil }
@@ -150,14 +169,16 @@ final class MeetingRepository {
             else { return nil }
             vault.accountConnectionId = connectionID
             vault.syncRole = serverVault?.role
-            if serverVault?.role == "member" {
+            if let serverVault, serverVault.role == "member" {
+                vault.name = serverVault.name
+                vault.createdAt = serverVault.createdAt
                 vault.syncConfirmedConnectionId = connectionID
                 try db.execute(
                     sql: """
                     INSERT INTO sync_entity_state(vaultId, entity, entityId, confirmedRevision)
                     VALUES (?, 'vault', ?, ?)
                     """,
-                    arguments: [id, id, serverVault?.revision]
+                    arguments: [id, id, serverVault.revision]
                 )
             }
             try vault.update(db)
@@ -169,6 +190,18 @@ final class MeetingRepository {
         try await SyncTransactionQueue.acceptServerVersion(vaultId: vaultId, dbQueue: dbQueue)
     }
 
+    nonisolated func discardInvalidSyncTransaction(vaultId: UUID) async throws {
+        try await SyncTransactionQueue.discardInvalidTransaction(vaultId: vaultId, dbQueue: dbQueue)
+    }
+
+    nonisolated func retryInvalidSyncTransaction(vaultId: UUID) async throws {
+        try await SyncTransactionQueue.retryInvalidTransaction(vaultId: vaultId, dbQueue: dbQueue)
+    }
+
+    nonisolated func retryAuthorizationSync(connectionId: UUID) async throws {
+        try await SyncTransactionQueue.retryAuthorizationBlocks(connectionId: connectionId, dbQueue: dbQueue)
+    }
+
     nonisolated func reapplyLocalSyncVersion(vaultId: UUID) async throws {
         try await SyncTransactionQueue.reapplyLocalVersion(vaultId: vaultId, dbQueue: dbQueue)
     }
@@ -176,6 +209,18 @@ final class MeetingRepository {
     nonisolated func blockedSyncVaultIDs() async throws -> Set<UUID> {
         try await dbQueue.read { db in
             try UUID.fetchSet(db, sql: "SELECT DISTINCT vaultId FROM sync_transactions WHERE blockedReason IS NOT NULL")
+        }
+    }
+
+    nonisolated func conflictedSyncVaultIDs() async throws -> Set<UUID> {
+        try await dbQueue.read { db in
+            try UUID.fetchSet(db, sql: "SELECT DISTINCT vaultId FROM sync_transactions WHERE blockedReason = 'conflict'")
+        }
+    }
+
+    nonisolated func validationBlockedSyncVaultIDs() async throws -> Set<UUID> {
+        try await dbQueue.read { db in
+            try UUID.fetchSet(db, sql: "SELECT DISTINCT vaultId FROM sync_transactions WHERE blockedReason = 'validation'")
         }
     }
 

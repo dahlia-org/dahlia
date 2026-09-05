@@ -13,6 +13,7 @@ enum SearchDocumentsMigration {
             "vaults", "meetings", "projects", "meeting_tags", "tags", "calendar_events",
         ]
         if try sourceTables.allSatisfy({ try db.tableExists($0) }) {
+            try createVaultCleanupTrigger(in: db)
             try db.execute(sql: triggerSQL)
         }
         try db.execute(
@@ -27,6 +28,10 @@ enum SearchDocumentsMigration {
             """,
             arguments: [analyzerVersion, analyzerConfigurationHash, Date()]
         )
+    }
+
+    static func createVaultCleanupTrigger(in db: Database) throws {
+        try db.execute(sql: vaultCleanupTriggerSQL)
     }
 
     private static func requireContentlessDeleteSupport(in db: Database) throws {
@@ -138,7 +143,7 @@ enum SearchDocumentsMigration {
 
     """
 
-    private static let triggerSQL = """
+    private static let vaultCleanupTriggerSQL = """
     CREATE TRIGGER search_queue_vaults_delete AFTER DELETE ON vaults BEGIN
         INSERT INTO search_index_jobs(indexKind, targetKind, targetKey, priority, availableAt, updatedAt)
         VALUES('fts', 'vaultCleanup', old.id, 200, unixepoch('subsec'), unixepoch('subsec'))
@@ -147,7 +152,9 @@ enum SearchDocumentsMigration {
             availableAt = excluded.availableAt, claimedAt = NULL, leaseExpiresAt = NULL,
             lastErrorCode = NULL, updatedAt = excluded.updatedAt;
     END;
+    """
 
+    private static let triggerSQL = """
     CREATE TRIGGER search_queue_meetings_insert AFTER INSERT ON meetings BEGIN
         INSERT INTO search_index_jobs(indexKind, targetKind, targetKey, availableAt, updatedAt)
         VALUES('fts', 'meeting', new.id, unixepoch('subsec'), unixepoch('subsec'))

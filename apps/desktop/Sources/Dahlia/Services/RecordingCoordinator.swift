@@ -111,7 +111,9 @@ final class RecordingCoordinator {
         sidebarViewModel.clearMeetingSelection()
         viewModel.beginDraftMeeting(
             dbQueue: dbQueue,
-            projectURL: project.map { vault.url.appending(path: $0.projectName, directoryHint: .isDirectory) },
+            projectURL: project.flatMap { project in
+                vault.url?.appending(path: project.projectName, directoryHint: .isDirectory)
+            },
             projectId: project?.projectId,
             projectName: project?.projectName,
             vaultURL: vault.url
@@ -244,7 +246,7 @@ final class RecordingCoordinator {
         Task {
             await viewModel.startListening(
                 dbQueue: dbQueue,
-                projectURL: item.projectName.map { sidebarViewModel.projectURL(for: $0) },
+                projectURL: item.projectName.flatMap { sidebarViewModel.projectURL(for: $0) },
                 vaultId: vault.id,
                 projectId: item.projectId,
                 projectName: item.projectName,

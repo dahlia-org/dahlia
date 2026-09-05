@@ -130,8 +130,10 @@ export function createUnavailableMeetingSyncStore(): MeetingSyncStore {
     claimStorageDeletes: () => Promise.reject(new SyncStoreUnavailableError()),
     hasStorageDelete: () => Promise.reject(new SyncStoreUnavailableError()),
     enqueueStorageDelete: () => Promise.reject(new SyncStoreUnavailableError()),
+    isStorageDeleteClaimCurrent: () => Promise.reject(new SyncStoreUnavailableError()),
     completeStorageDelete: () => Promise.reject(new SyncStoreUnavailableError()),
     failStorageDelete: () => Promise.reject(new SyncStoreUnavailableError()),
+    withStorageKeyLock: () => Promise.reject(new SyncStoreUnavailableError()),
   };
 }
 
@@ -145,10 +147,13 @@ function createStorageDeleteStore(db: PostgresDatabase, schema: SyncSchema, isPo
     async enqueueStorageDelete(storageKey: string): Promise<void> {
       await db.insert(schema.storageDeleteJob).values({ storageKey }).onConflictDoNothing();
     },
-    async claimStorageDeletes(limit: number): Promise<string[]> {
+    async claimStorageDeletes(limit: number) {
       return db.transaction(async (transaction) => {
         const now = new Date();
-        const query = transaction.select({ key: schema.storageDeleteJob.storageKey })
+        const query = transaction.select({
+          storageKey: schema.storageDeleteJob.storageKey,
+          attempts: schema.storageDeleteJob.attempts,
+        })
           .from(schema.storageDeleteJob).where(or(
             and(
               inArray(schema.storageDeleteJob.status, ["pending", "failed"]),
@@ -160,27 +165,59 @@ function createStorageDeleteStore(db: PostgresDatabase, schema: SyncSchema, isPo
             ),
           )).orderBy(asc(schema.storageDeleteJob.availableAt)).limit(limit);
         const rows = isPostgres ? await query.for("update", { skipLocked: true }) : await query;
-        const keys = rows.map(({ key }) => key);
+        const keys = rows.map(({ storageKey }) => storageKey);
         if (keys.length) await transaction.update(schema.storageDeleteJob).set({
           status: "processing",
           attempts: sql`${schema.storageDeleteJob.attempts} + 1`,
           claimedAt: now,
           leaseExpiresAt: new Date(now.getTime() + 60_000),
         }).where(inArray(schema.storageDeleteJob.storageKey, keys));
-        return keys;
+        return rows.map(({ storageKey, attempts }) => ({ storageKey, attempt: attempts + 1 }));
       });
     },
-    async completeStorageDelete(storageKey: string): Promise<void> {
-      await db.delete(schema.storageDeleteJob).where(eq(schema.storageDeleteJob.storageKey, storageKey));
+    async isStorageDeleteClaimCurrent(claim: { storageKey: string; attempt: number }): Promise<boolean> {
+      const [row] = await db.select({ storageKey: schema.storageDeleteJob.storageKey })
+        .from(schema.storageDeleteJob).where(and(
+          eq(schema.storageDeleteJob.storageKey, claim.storageKey),
+          eq(schema.storageDeleteJob.status, "processing"),
+          eq(schema.storageDeleteJob.attempts, claim.attempt),
+        )).limit(1);
+      return row !== undefined;
     },
-    async failStorageDelete(storageKey: string, code: string): Promise<void> {
+    async completeStorageDelete(claim: { storageKey: string; attempt: number }): Promise<void> {
+      await db.delete(schema.storageDeleteJob).where(and(
+        eq(schema.storageDeleteJob.storageKey, claim.storageKey),
+        eq(schema.storageDeleteJob.status, "processing"),
+        eq(schema.storageDeleteJob.attempts, claim.attempt),
+      ));
+    },
+    async failStorageDelete(claim: { storageKey: string; attempt: number }, code: string): Promise<void> {
       await db.update(schema.storageDeleteJob).set({
         status: "failed",
         availableAt: new Date(Date.now() + 60_000),
         claimedAt: null,
         leaseExpiresAt: null,
         lastErrorCode: code,
-      }).where(eq(schema.storageDeleteJob.storageKey, storageKey));
+      }).where(and(
+        eq(schema.storageDeleteJob.storageKey, claim.storageKey),
+        eq(schema.storageDeleteJob.status, "processing"),
+        eq(schema.storageDeleteJob.attempts, claim.attempt),
+      ));
+    },
+    async withStorageKeyLock<T>(storageKey: string, action: () => Promise<T>): Promise<T> {
+      if (!isPostgres) return action();
+      const client = await db.$client.connect();
+      const lockKey = `storage:${storageKey}`;
+      try {
+        await client.query("select pg_advisory_lock(hashtextextended($1, 0))", [lockKey]);
+        try {
+          return await action();
+        } finally {
+          await client.query("select pg_advisory_unlock(hashtextextended($1, 0))", [lockKey]);
+        }
+      } finally {
+        client.release();
+      }
     },
   };
 }
@@ -315,6 +352,12 @@ function createIdentityStore(
     ...(meetingId ? [eq(schema.syncedMeeting.meetingId, meetingId)] : []),
   );
   const vaultRole = (vault: AnyColumn) => sql<"owner" | "member">`case when ${ownerAccess(vault)} then 'owner' else 'member' end`;
+
+  async function lockVault(vaultId: string): Promise<void> {
+    if (searchBackend !== "sqlite") {
+      await db.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`vault:${vaultId}`}, 0))`);
+    }
+  }
 
   async function projectViews(vaultId: string): Promise<SyncProjectView[]> {
     const projects = await db.select().from(schema.syncedProject).where(and(
@@ -836,8 +879,8 @@ function createIdentityStore(
 
   async function commitTransaction(transaction: SyncTransaction): Promise<SyncTransactionResponse> {
     if (searchBackend !== "sqlite") {
-      await db.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`transaction:${transaction.id}`}, 0))`);
       await db.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`vault:${transaction.vaultId}`}, 0))`);
+      await db.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`transaction:${transaction.id}`}, 0))`);
     }
     const [receipt] = await db.select().from(schema.syncTransactionReceipt).where(
       eq(schema.syncTransactionReceipt.transactionId, transaction.id),
@@ -921,21 +964,29 @@ function createIdentityStore(
         } else if (operation.action === "reset") {
           const [owned] = await db.select({ id: schema.syncedVault.vaultId }).from(schema.syncedVault)
             .where(ownedVault(transaction.vaultId)).limit(1);
-          if (owned) {
-            const screenshots = await db.select({ storageKey: schema.syncedScreenshot.storageKey })
-              .from(schema.syncedScreenshot).where(eq(schema.syncedScreenshot.vaultId, transaction.vaultId));
-            if (screenshots.length) {
-              await db.insert(schema.storageDeleteJob).values(screenshots).onConflictDoNothing();
-            }
-            if (data.preservePermissions === true) {
-              await db.delete(schema.searchIndexJob).where(eq(schema.searchIndexJob.vaultId, transaction.vaultId));
-              await db.delete(schema.syncedMeeting).where(eq(schema.syncedMeeting.vaultId, transaction.vaultId));
-              await db.delete(schema.syncedProject).where(eq(schema.syncedProject.vaultId, transaction.vaultId));
-              await db.update(schema.syncedVault).set({ revision: 0, updatedAt: now })
-                .where(ownedVault(transaction.vaultId));
-            } else {
-              await db.delete(schema.syncedVault).where(ownedVault(transaction.vaultId));
-            }
+          if (!owned) {
+            throw new SyncTransactionError(409, "revision_conflict", [{
+              entity: "vault",
+              id: operation.entityId,
+              clientBaseRevision: operation.baseRevision,
+              serverRevision: null,
+              record: null,
+            }], operation.id);
+          }
+          await assertRevision(transaction, "vault", operation.entityId, operation.baseRevision);
+          const screenshots = await db.select({ storageKey: schema.syncedScreenshot.storageKey })
+            .from(schema.syncedScreenshot).where(eq(schema.syncedScreenshot.vaultId, transaction.vaultId));
+          if (screenshots.length) {
+            await db.insert(schema.storageDeleteJob).values(screenshots).onConflictDoNothing();
+          }
+          if (data.preservePermissions === true) {
+            await db.delete(schema.searchIndexJob).where(eq(schema.searchIndexJob.vaultId, transaction.vaultId));
+            await db.delete(schema.syncedMeeting).where(eq(schema.syncedMeeting.vaultId, transaction.vaultId));
+            await db.delete(schema.syncedProject).where(eq(schema.syncedProject.vaultId, transaction.vaultId));
+            await db.update(schema.syncedVault).set({ revision: 0, updatedAt: now })
+              .where(ownedVault(transaction.vaultId));
+          } else {
+            await db.delete(schema.syncedVault).where(ownedVault(transaction.vaultId));
           }
           cursor = await appendChange(transaction, "vault", operation.entityId, "reset", null);
           records.push({ entity: "vault", id: operation.entityId, revision: null, record: null });
@@ -1369,6 +1420,7 @@ function createIdentityStore(
   }
 
   return {
+    lockVault,
     commitTransaction,
     listChanges,
     latestChangeSequence,

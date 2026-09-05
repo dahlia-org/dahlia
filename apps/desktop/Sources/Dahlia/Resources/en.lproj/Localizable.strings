@@ -627,6 +627,7 @@
 "Loading Google Calendar…" = "Loading Google Calendar…";
 "Loading macOS Calendar…" = "Loading macOS Calendar…";
 "Retry" = "Retry";
+"Retry Sync" = "Retry Sync";
 "Join" = "Join";
 "All day" = "All day";
 "Google Calendar is not configured" = "Google Calendar is not configured";
@@ -685,7 +686,7 @@
 
 /* Vault Picker */
 "Create New Vault" = "Create New Vault";
-"Create a new folder to use as a vault." = "Create a new folder to use as a vault.";
+"Create a vault without a local export folder." = "Create a vault without a local export folder.";
 "Add Vault" = "Add Vault";
 "Registered Vaults" = "Registered Vaults";
 "Open Folder as Vault" = "Open Folder as Vault";
@@ -1642,3 +1643,7 @@
 "Use Server Version" = "Use Server Version";
 "Reapply Local Version" = "Reapply Local Version";
 "Choose Local Folder" = "Choose Local Folder";
+"No local export folder" = "No local export folder";
+"Set Local Export Folder" = "Set Local Export Folder";
+"Change Local Export Folder" = "Change Local Export Folder";
+"Remove Local Export Folder" = "Remove Local Export Folder";

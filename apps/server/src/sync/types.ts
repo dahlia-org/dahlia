@@ -163,6 +163,7 @@ export interface SyncSearchQuery {
 }
 
 export interface IdentitySyncStore {
+  lockVault(vaultId: string): Promise<void>;
   commitTransaction(transaction: SyncTransaction): Promise<SyncTransactionResponse>;
   listChanges(vaultId: string, after: number, through: number, limit: number): Promise<SyncChangeRecord[]>;
   latestChangeSequence(vaultId?: string): Promise<number>;
@@ -223,9 +224,16 @@ export interface IdentitySyncStore {
 export interface MeetingSyncStore {
   isAvailable(): Promise<boolean>;
   withIdentity<T>(identity: Identity, action: (store: IdentitySyncStore) => Promise<T>): Promise<T>;
-  claimStorageDeletes(limit: number): Promise<string[]>;
+  claimStorageDeletes(limit: number): Promise<StorageDeleteClaim[]>;
   hasStorageDelete(storageKey: string): Promise<boolean>;
   enqueueStorageDelete(storageKey: string): Promise<void>;
-  completeStorageDelete(storageKey: string): Promise<void>;
-  failStorageDelete(storageKey: string, code: string): Promise<void>;
+  isStorageDeleteClaimCurrent(claim: StorageDeleteClaim): Promise<boolean>;
+  completeStorageDelete(claim: StorageDeleteClaim): Promise<void>;
+  failStorageDelete(claim: StorageDeleteClaim, code: string): Promise<void>;
+  withStorageKeyLock<T>(storageKey: string, action: () => Promise<T>): Promise<T>;
+}
+
+export interface StorageDeleteClaim {
+  storageKey: string;
+  attempt: number;
 }

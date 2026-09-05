@@ -21,6 +21,8 @@ final class VaultManagementModel {
     private(set) var vaults: [VaultRecord] = []
     private(set) var cloudVaults: [CloudVaultRecord] = []
     private(set) var blockedSyncVaultIDs: Set<UUID> = []
+    private(set) var conflictedSyncVaultIDs: Set<UUID> = []
+    private(set) var validationBlockedSyncVaultIDs: Set<UUID> = []
     private(set) var pendingServerAdoption: PendingVaultServerAdoption?
     private(set) var errorMessage = ""
     private(set) var isLoading = false
@@ -53,6 +55,9 @@ final class VaultManagementModel {
         guard let repository else {
             vaults = []
             cloudVaults = []
+            blockedSyncVaultIDs = []
+            conflictedSyncVaultIDs = []
+            validationBlockedSyncVaultIDs = []
             hasLoadedVaults = false
             return
         }
@@ -65,6 +70,8 @@ final class VaultManagementModel {
             cloudVaults = try await fetchCloudVaults(repository: repository)
                 .filter { !localVaultIDs.contains($0.vaultId) }
             blockedSyncVaultIDs = try await repository.blockedSyncVaultIDs()
+            conflictedSyncVaultIDs = try await repository.conflictedSyncVaultIDs()
+            validationBlockedSyncVaultIDs = try await repository.validationBlockedSyncVaultIDs()
             hasLoadedVaults = true
         } catch {
             hasLoadedVaults = false
@@ -119,13 +126,11 @@ final class VaultManagementModel {
         }
     }
 
-    func registerCloudVault(_ cloudVault: CloudVaultRecord, at url: URL) async -> VaultRecord? {
+    func registerCloudVault(_ cloudVault: CloudVaultRecord) async -> VaultRecord? {
         guard let repository else { return nil }
-        let normalizedURL = Self.normalizedFileURL(url)
-        guard !vaults.contains(where: { Self.normalizedFileURL($0.url) == normalizedURL }) else { return nil }
         var vault = VaultRecord(
             id: cloudVault.vaultId,
-            path: normalizedURL.path,
+            path: nil,
             name: cloudVault.name,
             createdAt: cloudVault.createdAt,
             lastOpenedAt: .distantPast
@@ -160,6 +165,32 @@ final class VaultManagementModel {
         return await registerVault(at: url, markAsOpened: false)
     }
 
+    func createVault(named proposedName: String) async -> VaultRecord? {
+        guard let repository else {
+            presentError(L10n.vaultAddFailed, source: "createVault")
+            return nil
+        }
+        let name = proposedName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return nil }
+        let now = Date.now
+        var vault = VaultRecord(
+            id: .v7(),
+            path: nil,
+            name: name,
+            createdAt: now,
+            lastOpenedAt: .distantPast
+        )
+        VaultAISettingsModel.shared.snapshot(for: vault.id).applyAISettings(to: &vault)
+        do {
+            try await repository.insertVaultAsync(vault)
+            await loadVaults()
+            return vault
+        } catch {
+            presentError(L10n.vaultAddFailed, error: error, source: "createVault")
+            return nil
+        }
+    }
+
     func registerVault(
         at url: URL,
         markAsOpened: Bool = true
@@ -170,7 +201,9 @@ final class VaultManagementModel {
         }
 
         let normalizedURL = Self.normalizedFileURL(url)
-        if let existingVault = vaults.first(where: { Self.normalizedFileURL($0.url) == normalizedURL }) {
+        if let existingVault = vaults.first(where: {
+            $0.url.map(Self.normalizedFileURL) == normalizedURL
+        }) {
             return existingVault
         }
 
@@ -212,6 +245,30 @@ final class VaultManagementModel {
         } catch {
             presentError(L10n.vaultOperationFailed, error: error, source: "markVaultOpened")
             return false
+        }
+    }
+
+    func setExportFolder(for vault: VaultRecord, to url: URL?) async -> VaultRecord? {
+        guard let repository else { return nil }
+        let normalizedURL = url.map(Self.normalizedFileURL)
+        if let normalizedURL,
+           vaults.contains(where: { $0.id != vault.id && $0.url.map(Self.normalizedFileURL) == normalizedURL }) {
+            return nil
+        }
+        do {
+            if let normalizedURL {
+                try await Self.createDirectory(at: normalizedURL)
+            }
+            guard let updated = try await repository.updateVaultPath(id: vault.id, path: normalizedURL?.path) else {
+                return nil
+            }
+            if let index = vaults.firstIndex(where: { $0.id == vault.id }) {
+                vaults[index] = updated
+            }
+            return updated
+        } catch {
+            presentError(L10n.vaultFolderSelectionFailed, error: error, source: "setExportFolder")
+            return nil
         }
     }
 
@@ -287,8 +344,8 @@ final class VaultManagementModel {
         }
     }
 
-    func confirmServerAdoption() async -> VaultRecord? {
-        guard updatingVaultAccountID == nil, let pendingServerAdoption, let repository else { return nil }
+    func confirmServerAdoption(_ pendingServerAdoption: PendingVaultServerAdoption) async -> VaultRecord? {
+        guard updatingVaultAccountID == nil, let repository else { return nil }
         self.pendingServerAdoption = nil
         updatingVaultAccountID = pendingServerAdoption.vault.id
         defer { updatingVaultAccountID = nil }
@@ -314,6 +371,7 @@ final class VaultManagementModel {
                 serverVault: currentServerVault
             ) else { return nil }
             if let index = vaults.firstIndex(where: { $0.id == updated.id }) { vaults[index] = updated }
+            cloudVaults.removeAll(where: { $0.vaultId == updated.id })
             return updated
         } catch {
             presentError(L10n.vaultOperationFailed, error: error, source: "confirmServerAdoption")
@@ -330,6 +388,7 @@ final class VaultManagementModel {
         do {
             try await repository.acceptServerSyncVersion(vaultId: vault.id)
             blockedSyncVaultIDs.remove(vault.id)
+            conflictedSyncVaultIDs.remove(vault.id)
         } catch {
             presentError(L10n.vaultOperationFailed, error: error, source: "acceptServerSyncVersion")
         }
@@ -340,8 +399,31 @@ final class VaultManagementModel {
         do {
             try await repository.reapplyLocalSyncVersion(vaultId: vault.id)
             blockedSyncVaultIDs.remove(vault.id)
+            conflictedSyncVaultIDs.remove(vault.id)
         } catch {
             presentError(L10n.vaultOperationFailed, error: error, source: "reapplyLocalSyncVersion")
+        }
+    }
+
+    func discardInvalidSyncTransaction(for vault: VaultRecord) async {
+        guard let repository else { return }
+        do {
+            try await repository.discardInvalidSyncTransaction(vaultId: vault.id)
+            blockedSyncVaultIDs.remove(vault.id)
+            validationBlockedSyncVaultIDs.remove(vault.id)
+        } catch {
+            presentError(L10n.vaultOperationFailed, error: error, source: "discardInvalidSyncTransaction")
+        }
+    }
+
+    func retryInvalidSyncTransaction(for vault: VaultRecord) async {
+        guard let repository else { return }
+        do {
+            try await repository.retryInvalidSyncTransaction(vaultId: vault.id)
+            blockedSyncVaultIDs.remove(vault.id)
+            validationBlockedSyncVaultIDs.remove(vault.id)
+        } catch {
+            presentError(L10n.vaultOperationFailed, error: error, source: "retryInvalidSyncTransaction")
         }
     }
 

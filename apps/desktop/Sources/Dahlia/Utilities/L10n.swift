@@ -1925,9 +1925,14 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var loadingVaults: String { String(localized: "Loading Vaults…", bundle: bundle) }
     static var removingVault: String { String(localized: "Removing Vault…", bundle: bundle) }
     static var vaultSyncConflict: String { String(localized: "Sync conflict", bundle: bundle) }
+    static var retrySync: String { String(localized: "Retry Sync", bundle: bundle) }
     static var useServerVersion: String { String(localized: "Use Server Version", bundle: bundle) }
     static var reapplyLocalVersion: String { String(localized: "Reapply Local Version", bundle: bundle) }
     static var chooseLocalFolder: String { String(localized: "Choose Local Folder", bundle: bundle) }
+    static var noLocalExportFolder: String { String(localized: "No local export folder", bundle: bundle) }
+    static var setLocalExportFolder: String { String(localized: "Set Local Export Folder", bundle: bundle) }
+    static var changeLocalExportFolder: String { String(localized: "Change Local Export Folder", bundle: bundle) }
+    static var removeLocalExportFolder: String { String(localized: "Remove Local Export Folder", bundle: bundle) }
     static var confirmBulkMeetingDeletion: String { String(localized: "Confirm Meeting Deletions", bundle: bundle) }
     static var continueDeletion: String { String(localized: "Continue Deleting", bundle: bundle) }
 
@@ -2365,7 +2370,7 @@ enum L10n { // swiftlint:disable:this type_body_length
     // MARK: - Vault Picker
 
     static var createNewVault: String { String(localized: "Create New Vault", bundle: bundle) }
-    static var createNewVaultDescription: String { String(localized: "Create a new folder to use as a vault.", bundle: bundle) }
+    static var createNewVaultDescription: String { String(localized: "Create a vault without a local export folder.", bundle: bundle) }
     static var addVault: String { String(localized: "Add Vault", bundle: bundle) }
     static var registeredVaults: String { String(localized: "Registered Vaults", bundle: bundle) }
     static var openFolderAsVault: String { String(localized: "Open Folder as Vault", bundle: bundle) }

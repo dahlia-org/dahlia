@@ -63,6 +63,7 @@ const SCREENSHOT_CONTENT_TYPES = new Map([
   ["image/tiff", "tiff"],
 ]);
 const SCREENSHOT_DELETE_BATCH_SIZE = 25;
+const STORAGE_OPERATION_CONCURRENCY = 4;
 const QUERY_EMBEDDING_DEADLINE_MS = 2_000;
 const QUERY_EMBEDDING_CONCURRENCY = 8;
 const permissionPrincipalSchema = z.string().trim().min(1).max(200);
@@ -142,7 +143,9 @@ function missingMeetingConflict(meetingId: string): SyncTransactionError {
 
 export class MeetingSyncService {
   private readonly activeQueryEmbeddingUsers = new Set<string>();
-  private readonly screenshotUploads = new Map<string, Promise<void>>();
+  private readonly storageOperations = new Map<string, Promise<void>>();
+  private readonly storageOperationWaiters: Array<() => void> = [];
+  private activeStorageOperations = 0;
   private storageDeleteDrain?: Promise<void>;
   private storageDeleteRetry?: ReturnType<typeof setTimeout>;
 
@@ -193,6 +196,7 @@ export class MeetingSyncService {
     let response: Awaited<ReturnType<IdentitySyncStore["commitTransaction"]>>;
     try {
       response = await this.store.withIdentity(identity, async (scoped) => {
+        await scoped.lockVault(parsed.data.vaultId);
         const meetings = new Map<string, Awaited<ReturnType<IdentitySyncStore["getMeeting"]>>>();
         const prepared = [] as SyncTransaction["operations"];
         for (const operation of operations) {
@@ -300,15 +304,21 @@ export class MeetingSyncService {
   private async drainStorageDeletes(): Promise<void> {
     if (!this.storage) return;
     while (true) {
-      const storageKeys = await this.store.claimStorageDeletes(SCREENSHOT_DELETE_BATCH_SIZE);
-      if (storageKeys.length === 0) return;
-      for (const storageKey of storageKeys) {
+      const claims = await this.store.claimStorageDeletes(SCREENSHOT_DELETE_BATCH_SIZE);
+      if (claims.length === 0) return;
+      for (const claim of claims) {
         try {
-          await this.storageCall(() => this.storage!.delete(storageKey));
-          await this.store.completeStorageDelete(storageKey);
+          await this.withStorageOperation(claim.storageKey, () => this.store.withStorageKeyLock(
+            claim.storageKey,
+            async () => {
+              if (!await this.store.isStorageDeleteClaimCurrent(claim)) return;
+              await this.storageCall(() => this.storage!.delete(claim.storageKey));
+              await this.store.completeStorageDelete(claim);
+            },
+          ));
         } catch (error) {
           await this.store.failStorageDelete(
-            storageKey,
+            claim,
             error instanceof ObjectStorageError ? error.code : "artifact_storage_unavailable",
           );
           this.scheduleStorageDeleteRetry();
@@ -385,7 +395,7 @@ export class MeetingSyncService {
       throw new ArtifactRequestError(400, "invalid_screenshot_content_hash");
     }
     const storageKey = `meetings/${meetingId}/screenshots/${screenshotId}.${extension}`;
-    return this.withScreenshotUpload(storageKey, async () => {
+    return this.withStorageOperation(storageKey, () => this.store.withStorageKeyLock(storageKey, async () => {
       if (await this.store.hasStorageDelete(storageKey)) {
         throw new ArtifactRequestError(503, "screenshot_storage_delete_pending");
       }
@@ -474,21 +484,37 @@ export class MeetingSyncService {
         }
         throw error;
       }
-    });
+    }));
   }
 
-  private async withScreenshotUpload<T>(storageKey: string, operation: () => Promise<T>): Promise<T> {
-    const previous = this.screenshotUploads.get(storageKey);
-    let release!: () => void;
-    const current = new Promise<void>((resolve) => { release = resolve; });
-    this.screenshotUploads.set(storageKey, current);
+  private async withStorageOperation<T>(storageKey: string, operation: () => Promise<T>): Promise<T> {
+    const previous = this.storageOperations.get(storageKey) ?? Promise.resolve();
+    let releaseKey!: () => void;
+    const current = new Promise<void>((resolve) => { releaseKey = resolve; });
+    this.storageOperations.set(storageKey, current);
     await previous;
+    await this.acquireStorageOperationSlot();
     try {
       return await operation();
     } finally {
-      release();
-      if (this.screenshotUploads.get(storageKey) === current) this.screenshotUploads.delete(storageKey);
+      this.releaseStorageOperationSlot();
+      releaseKey();
+      if (this.storageOperations.get(storageKey) === current) this.storageOperations.delete(storageKey);
     }
+  }
+
+  private async acquireStorageOperationSlot(): Promise<void> {
+    if (this.activeStorageOperations < STORAGE_OPERATION_CONCURRENCY) {
+      this.activeStorageOperations += 1;
+      return;
+    }
+    await new Promise<void>((resolve) => this.storageOperationWaiters.push(resolve));
+  }
+
+  private releaseStorageOperationSlot(): void {
+    const next = this.storageOperationWaiters.shift();
+    if (next) next();
+    else this.activeStorageOperations -= 1;
   }
 
   async readScreenshot(
@@ -685,40 +711,8 @@ export class MeetingSyncService {
     }
   }
 
-  async deleteMeeting(identity: Identity, vaultId: string, meetingId: string): Promise<boolean> {
-    const screenshots = await this.store.withIdentity(
-      identity,
-      (scoped) => scoped.beginMeetingDeletion(vaultId, meetingId, SCREENSHOT_DELETE_BATCH_SIZE),
-    );
-    if (screenshots === null) throw new ArtifactRequestError(404, "meeting_not_found");
-    await this.deleteScreenshots(identity, screenshots);
-    return this.store.withIdentity(identity, (scoped) => scoped.finishMeetingDeletion(vaultId, meetingId));
-  }
-
-  async deleteVault(identity: Identity, vaultId: string): Promise<boolean> {
-    const screenshots = await this.store.withIdentity(
-      identity,
-      (scoped) => scoped.beginVaultDeletion(vaultId, SCREENSHOT_DELETE_BATCH_SIZE),
-    );
-    if (screenshots === null) throw new ArtifactRequestError(404, "vault_not_found");
-    await this.deleteScreenshots(identity, screenshots);
-    return this.store.withIdentity(identity, (scoped) => scoped.finishVaultDeletion(vaultId));
-  }
-
   private requireWritableIdentity(identity: Identity): void {
     if (identity.impersonated) throw new ArtifactRequestError(403, "impersonated_session_read_only");
-  }
-
-  private async deleteScreenshots(identity: Identity, screenshots: SyncScreenshotRecord[]): Promise<void> {
-    if (screenshots.length === 0) return;
-    const storage = this.requireStorage();
-    for (const screenshot of screenshots) {
-      await this.storageCall(() => storage.delete(screenshot.storageKey));
-      await this.store.withIdentity(
-        identity,
-        (scoped) => scoped.deleteScreenshot(screenshot.vaultId, screenshot.screenshotId, screenshot.storageKey),
-      );
-    }
   }
 
   private requireStorage(): ObjectStorage {
