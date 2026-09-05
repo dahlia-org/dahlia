@@ -1925,6 +1925,9 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var loadingVaults: String { String(localized: "Loading Vaults…", bundle: bundle) }
     static var removingVault: String { String(localized: "Removing Vault…", bundle: bundle) }
     static var vaultSyncConflict: String { String(localized: "Sync conflict", bundle: bundle) }
+    static var vaultSyncRecovering: String { String(localized: "Retrieving latest data…", bundle: bundle) }
+    static var vaultSyncRecoveryPending: String { String(localized: "Waiting to retrieve latest data", bundle: bundle) }
+    static var vaultSyncUpdateRequired: String { String(localized: "Update Dahlia and the Server to resume sync", bundle: bundle) }
     static var retrySync: String { String(localized: "Retry Sync", bundle: bundle) }
     static var useServerVersion: String { String(localized: "Use Server Version", bundle: bundle) }
     static var reapplyLocalVersion: String { String(localized: "Reapply Local Version", bundle: bundle) }

@@ -113,10 +113,20 @@ struct VaultSettingsView: View {
                             onSelect: { await requestServerAdoption(for: vault, connectionID: $0) }
                         )
                         .disabled(vault.accountConnectionId != nil)
-                        if model.blockedSyncVaultIDs.contains(vault.id) {
+                        if vault.syncRecoveryState == "updateRequired" {
+                            Label(L10n.vaultSyncUpdateRequired, systemImage: "exclamationmark.triangle")
+                                .font(.caption).foregroundStyle(.orange)
+                        } else if model.blockedSyncVaultIDs.contains(vault.id) {
                             Image(systemName: "exclamationmark.triangle.fill")
                                 .foregroundStyle(.orange)
                                 .help(L10n.vaultSyncConflict)
+                                .accessibilityLabel(L10n.vaultSyncConflict)
+                        } else if vault.syncRecoveryState != nil {
+                            Label(
+                                vault.syncRecoveryState == "recovering" ? L10n.vaultSyncRecovering : L10n.vaultSyncRecoveryPending,
+                                systemImage: "arrow.triangle.2.circlepath"
+                            )
+                            .font(.caption).foregroundStyle(.secondary)
                         }
                         vaultActions(for: vault)
                     }

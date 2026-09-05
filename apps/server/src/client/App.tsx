@@ -9,7 +9,7 @@ import {
   type DashboardCapabilities,
 } from "./routes";
 import { summaryDisplayText } from "../search/summary";
-import { json, RequestError, type SyncedVaultInfo, type OrganizationInfo, type SyncedMeetingInfo, type SyncedMeetingPage, type SyncedProjectInfo } from "./api";
+import { json, RequestError, syncMessage, type SyncedVaultInfo, type OrganizationInfo, type SyncedMeetingInfo, type SyncedMeetingPage, type SyncedProjectInfo } from "./api";
 import { Sidebar, SidebarProvider, useSidebar } from "./Sidebar";
 
 export interface SessionInfo {
@@ -150,6 +150,7 @@ interface SyncedScreenshotPage {
   nextCursor?: string;
 }
 
+
 type SyncOperation = {
   entity: "vault" | "project" | "meeting" | "summary";
   action: "create" | "update" | "delete" | "upsert";
@@ -158,9 +159,9 @@ type SyncOperation = {
   data: Record<string, unknown>;
 };
 
-async function commitSyncTransaction(vaultId: string, operations: SyncOperation[]) {
+export async function commitSyncTransaction(vaultId: string, operations: SyncOperation[], onRecovery: (active: boolean) => void = () => {}) {
   const transactionId = uuidV7();
-  return json("/api/v1/transactions", {
+  const request = {
     method: "POST",
     body: JSON.stringify({
       schemaVersion: 1,
@@ -169,7 +170,38 @@ async function commitSyncTransaction(vaultId: string, operations: SyncOperation[
       createdAt: new Date().toISOString(),
       operations: operations.map((operation) => ({ ...operation, id: uuidV7() })),
     }),
-  });
+  };
+  type Receipt = { id: string; status: "committed" | "unknown"; receipt?: "full" | "compact" };
+  try {
+    let result: Receipt;
+    try {
+      result = await json<Receipt>("/api/v1/transactions", request);
+    } catch (error) {
+      if (error instanceof RequestError && error.status && error.status < 500 && ![408, 410, 425, 429].includes(error.status)) throw error;
+      onRecovery(true);
+      let resolved: Receipt;
+      try {
+        resolved = await json<Receipt>("/api/v1/transactions/resolve", request);
+      } catch (resolveError) {
+        if (resolveError instanceof RequestError && resolveError.status === 404) {
+          throw new RequestError(syncMessage("sync_upgrade_required")!, 426, { cause: resolveError });
+        }
+        throw resolveError;
+      }
+      if (resolved.id !== transactionId) throw new Error("Invalid transaction receipt", { cause: error });
+      result = resolved.status === "unknown"
+        ? await json<Receipt>("/api/v1/transactions", request)
+        : resolved;
+    }
+    if (result.id !== transactionId || result.status !== "committed"
+      || (result.receipt !== undefined && !["full", "compact"].includes(result.receipt))) {
+      throw new Error("Invalid transaction receipt");
+    }
+    // Both receipt forms acknowledge the write. Callers reload canonical data rather than applying old content.
+    return result;
+  } finally {
+    onRecovery(false);
+  }
 }
 
 function uuidV7(): string {
@@ -467,6 +499,8 @@ function Artifacts() {
 function Vaults() {
   const { vaults, error: loadError, reload, organizationId } = useSidebar();
   const [error, setError] = useState<string>();
+  const [recovering, setRecovering] = useState(false);
+
   const createVault = async () => {
     const name = window.prompt("Vault name")?.trim();
     if (!name) return;
@@ -478,7 +512,7 @@ function Vaults() {
         entityId: id,
         baseRevision: null,
         data: { name, createdAt: new Date().toISOString() },
-      }]);
+      }], setRecovering);
       window.location.assign(`/vaults/${id}`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not create Vault");
@@ -487,6 +521,7 @@ function Vaults() {
   return (
     <>
       <PageHeader title="Vaults" />
+      {recovering && <p role="status">{syncMessage("sync_recovering")}</p>}
       <section className="section-block">
         <h2 className="section-label">Synchronized Vaults</h2>
         {!organizationId && <button className="secondary" onClick={() => void createVault()}>New Vault</button>}
@@ -619,6 +654,7 @@ function VaultMeetings({ session, vaultId }: { session: SessionInfo; vaultId: st
   const [nextCursor, setNextCursor] = useState<string>();
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string>();
+  const [recovering, setRecovering] = useState(false);
   const loadMeetings = useCallback(async (cursor?: string, signal?: AbortSignal) => {
     const params = new URLSearchParams();
     if (query) params.set("q", query);
@@ -665,8 +701,8 @@ function VaultMeetings({ session, vaultId }: { session: SessionInfo; vaultId: st
       await commitSyncTransaction(vaultId, [{
         entity: "vault", action: "update", entityId: vaultId,
         baseRevision: vault.revision, data: { name },
-      }]);
-      setVault({ ...vault, name, revision: vault.revision + 1 });
+      }], setRecovering);
+      setVault(await json<SyncedVaultInfo>(`/api/v1/vaults/${vaultId}`));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not rename Vault");
     }
@@ -685,7 +721,7 @@ function VaultMeetings({ session, vaultId }: { session: SessionInfo; vaultId: st
           projectType: "undefined",
           createdAt: new Date().toISOString(),
         },
-      }]);
+      }], setRecovering);
       window.location.assign(`/vaults/${vaultId}/projects/${id}`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not create Project");
@@ -694,6 +730,7 @@ function VaultMeetings({ session, vaultId }: { session: SessionInfo; vaultId: st
   return (
     <>
       <PageHeader title={vault?.name ?? "Vault"} />
+      {recovering && <p role="status">{syncMessage("sync_recovering")}</p>}
       <section className="section-block">
         <a className="secondary viewer-back" href="/vaults">All Vaults</a>
         {vault?.role === "owner" && <>
@@ -760,6 +797,7 @@ function SyncedProject({ vaultId, projectId }: { vaultId: string; projectId: str
   const [nextCursor, setNextCursor] = useState<string>();
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string>();
+  const [recovering, setRecovering] = useState(false);
   const loadMeetings = useCallback(async (cursor?: string, signal?: AbortSignal) => {
     const params = new URLSearchParams({ projectId });
     if (cursor) params.set("cursor", cursor);
@@ -799,7 +837,7 @@ function SyncedProject({ vaultId, projectId }: { vaultId: string; projectId: str
           description,
           projectType: project.parentProjectId ? null : project.projectType ?? "undefined",
         },
-      }]);
+      }], setRecovering);
       window.location.reload();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not update Project");
@@ -811,7 +849,7 @@ function SyncedProject({ vaultId, projectId }: { vaultId: string; projectId: str
       await commitSyncTransaction(vaultId, [{
         entity: "project", action: "delete", entityId: projectId,
         baseRevision: project.revision, data: {},
-      }]);
+      }], setRecovering);
       window.location.assign(`/vaults/${vaultId}`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not delete Project");
@@ -819,6 +857,7 @@ function SyncedProject({ vaultId, projectId }: { vaultId: string; projectId: str
   };
   return <>
     <PageHeader title={project?.path ?? "Project"} />
+      {recovering && <p role="status">{syncMessage("sync_recovering")}</p>}
     <a className="secondary viewer-back" href={`/vaults/${vaultId}`}>Back to Vault</a>
     {vault?.role === "owner" && <>
       <button className="secondary" onClick={() => void editProject()}>Edit Project</button>
@@ -852,6 +891,7 @@ function SyncedMeeting({ vaultId, meetingId }: { vaultId: string; meetingId: str
   const [screenshotCursor, setScreenshotCursor] = useState<string>();
   const [loadingScreenshots, setLoadingScreenshots] = useState(false);
   const [error, setError] = useState<string>();
+  const [recovering, setRecovering] = useState(false);
   const summaryText = summaryDisplayText(meeting?.summaryDocument ?? null);
   useEffect(() => {
     const controller = new AbortController();
@@ -888,7 +928,7 @@ function SyncedMeeting({ vaultId, meetingId }: { vaultId: string; meetingId: str
           recordingStartedAt: meeting.recordingStartedAt ?? null,
           updatedAt: new Date().toISOString(),
         },
-      }]);
+      }], setRecovering);
       window.location.reload();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not update Meeting");
@@ -904,7 +944,7 @@ function SyncedMeeting({ vaultId, meetingId }: { vaultId: string; meetingId: str
         entity: "summary", action: "upsert", entityId: meetingId,
         baseRevision: meeting.summaryRevision,
         data: { title, document: summaryDocument(title, text), createdAt: new Date().toISOString() },
-      }]);
+      }], setRecovering);
       window.location.reload();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not update Summary");
@@ -916,7 +956,7 @@ function SyncedMeeting({ vaultId, meetingId }: { vaultId: string; meetingId: str
       await commitSyncTransaction(vaultId, [{
         entity: "summary", action: "delete", entityId: meetingId,
         baseRevision: meeting.summaryRevision, data: {},
-      }]);
+      }], setRecovering);
       window.location.reload();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not delete Summary");
@@ -941,6 +981,7 @@ function SyncedMeeting({ vaultId, meetingId }: { vaultId: string; meetingId: str
   return (
     <>
       <PageHeader title={meeting?.name ?? "Meeting"} />
+      {recovering && <p role="status">{syncMessage("sync_recovering")}</p>}
       <a className="secondary viewer-back" href={`/vaults/${vaultId}`}>All meetings</a>
       {vault?.role === "owner" && <>
         <button className="secondary" onClick={() => void editMeeting()}>Edit Meeting</button>

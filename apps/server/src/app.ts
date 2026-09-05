@@ -396,6 +396,24 @@ export function createApp(dependencies: AppDependencies) {
       context.req.query("highWaterCursor"),
     ));
   });
+  app.post("/api/v1/transactions/resolve", syncBodyLimit, async (context) => {
+    const requiresBrowserOrigin = config.authProvider === "accounts" && !context.req.header("authorization");
+    if ((requiresBrowserOrigin || context.req.header("origin"))
+      && !mutationOriginAllowed(context.req.raw, config.baseUrl)) {
+      return context.json({ error: "invalid_origin" }, 403);
+    }
+    const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
+    return context.json(await sync.resolveTransaction(identity, await context.req.json().catch(() => null)));
+  });
+  app.get("/api/v1/vaults/:vaultId/snapshot", async (context) => {
+    const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
+    return context.json(await sync.listSnapshot(
+      identity,
+      sync.parseId(context.req.param("vaultId")),
+      context.req.query("cursor"),
+      context.req.query("startCursor"),
+    ));
+  });
   app.get("/api/v1/events", async (context) => {
     const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
     const suppliedCursor = context.req.query("cursor") ?? context.req.header("last-event-id");

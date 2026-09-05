@@ -30,6 +30,8 @@ const postgresPath = join(packageDirectory, "drizzle/postgres");
 const sqlitePath = join(packageDirectory, "drizzle/sqlite");
 const postgresAuthBaseline = "20260903034253_melodic_scalphunter/migration.sql";
 const postgresBaseline = "20260903173551_bumpy_freak/migration.sql";
+const postgresHistory = ["20260905172527_ancient_bedlam/migration.sql", "20260905172627_sync_history_backfill/migration.sql"];
+const sqliteHistory = ["20260905172528_unique_marvel_zombies/migration.sql", "20260905172654_sync_history_backfill/migration.sql"];
 const sqliteBaseline = "20260903173555_lying_slipstream/migration.sql";
 
 export const serverMigrationManifest: MigrationManifest = {
@@ -43,21 +45,22 @@ export const serverMigrationManifest: MigrationManifest = {
       {
         id: "server",
         path: postgresPath,
-        files: [postgresBaseline],
+        files: [postgresBaseline, ...postgresHistory],
       },
     ],
     files: [
       `drizzle/postgres-auth/${postgresAuthBaseline}`,
       `drizzle/postgres/${postgresBaseline}`,
+      ...postgresHistory.map((file) => `drizzle/postgres/${file}`),
     ],
   },
   sqlite: {
     directories: [{
       id: "server",
       path: sqlitePath,
-      files: [sqliteBaseline],
+      files: [sqliteBaseline, ...sqliteHistory],
     }],
-    files: [`drizzle/sqlite/${sqliteBaseline}`],
+    files: [`drizzle/sqlite/${sqliteBaseline}`, ...sqliteHistory.map((file) => `drizzle/sqlite/${file}`)],
   },
 };
 

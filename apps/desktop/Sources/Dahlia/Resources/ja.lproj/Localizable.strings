@@ -1647,3 +1647,7 @@
 "Set Local Export Folder" = "ローカル書き出しフォルダを設定";
 "Change Local Export Folder" = "ローカル書き出しフォルダを変更";
 "Remove Local Export Folder" = "ローカル書き出しフォルダを解除";
+
+"Retrieving latest data…" = "最新のデータを取得中…";
+"Waiting to retrieve latest data" = "最新データの再取得を待機中";
+"Update Dahlia and the Server to resume sync" = "同期を再開するにはDahliaとServerを更新してください";

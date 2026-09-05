@@ -50,9 +50,19 @@ export interface SyncedProjectInfo {
   subtreeMeetingCount: number;
 }
 
+export function syncMessage(code: string, language = globalThis.navigator?.language ?? "en"): string | undefined {
+  const messages: Record<string, [string, string]> = {
+    sync_recovering: ["Checking the saved result and retrieving latest data…", "保存結果を確認し、最新のデータを取得中…"],
+    revision_conflict: ["This data has changed. Reload the latest version before choosing your changes.", "データが変更されています。最新の状態を読み込み、変更内容を確認してください。"],
+    sync_upgrade_required: ["Update Dahlia Server and reload this page to resume sync.", "Dahlia Serverを更新し、このページを再読み込みして同期を再開してください。"],
+    sync_cursor_expired: ["Reload the latest data to resume sync.", "最新のデータを再読み込みして同期を再開してください。"],
+  };
+  return messages[code]?.[language.startsWith("ja") ? 1 : 0];
+}
+
 export class RequestError extends Error {
-  constructor(message: string, readonly status?: number) {
-    super(message);
+  constructor(message: string, readonly status?: number, options?: ErrorOptions) {
+    super(message, options);
   }
 }
 
@@ -68,7 +78,7 @@ export async function json<T>(url: string, init?: RequestInit): Promise<T> {
     } | null;
     const error = typeof detail?.error === "string" ? detail.error : detail?.error?.message;
     throw new RequestError(
-      detail?.message || error || `Request failed (${response.status})`,
+      (error && syncMessage(error)) || detail?.message || error || `Request failed (${response.status})`,
       response.status,
     );
   }

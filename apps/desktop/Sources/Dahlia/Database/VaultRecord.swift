@@ -22,6 +22,7 @@ struct VaultRecord: Codable, FetchableRecord, PersistableRecord, Identifiable, E
     var syncConfirmedConnectionId: UUID?
     var syncPullCursor: String?
     var syncLastCommittedCursor: String?
+    var syncRecoveryState: String?
 
     var localProvider: AIAccountProvider {
         get { AIAccountProvider(rawValue: localAIProvider) ?? .chatGPTSubscription }

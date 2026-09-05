@@ -40,3 +40,9 @@ Header mode でも `auth.user` を作り、検証済み `X-Forwarded-User`、未
 owner column と share table の重複を Vault permission に集約した。header mode で Auth schema を省く案は user 外部キーと migration 集合を分岐させたため撤回し、共通 user directory と生の user ID を採用した。organization ID 一覧を transaction context に渡す方式と `header_deployment` principal も廃止し、DB の現在 membership を参照する。
 
 認証方式を同じ DB 上で切り替える identity 移行は対象外。permission table に新しい access path を足す場合は同等の認可境界が必要。`app.artifact` の RLS 免除は認可/storage metadata だけを owner-scoped API から扱う条件に限る。
+
+## Sync retention metadata（2026-09-06）
+
+`app.sync_vault_state` は owner / Vault と latest sequence / pruned boundary のみを保持する運用 metadata とし、既存 change ledger と同様に RLS の対象外とする。identity-scoped sync store と管理用 retention 処理以外へ公開せず、正本・receipt の認可は引き続き RLS と application 層で強制する。内容を追加する場合はこの例外を再評価する。
+
+forward migration は既存 receipt 本文を保持したまま結果 ID / revision を抽出し、ledger と receipt の最大 sequence で Vault state を初期化する。PostgreSQL では migration owner が同一 transaction 内だけ receipt の FORCE RLS を解除して backfill し、完了前に復元する。保持処理は identity を transaction-local に設定し、失敗時は floor と削除を共に rollback する。

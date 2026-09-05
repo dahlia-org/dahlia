@@ -118,9 +118,10 @@ struct SyncTransactionResponse: Decodable, Sendable {
     let status: String
     let cursor: String
     let records: [Record]
+    var receipt: String?
 }
 
-struct SyncCanonicalPayload: Decodable, Sendable {
+struct SyncCanonicalPayload: Codable, Sendable {
     let parentProjectId: UUID?
     let projectId: UUID?
     let meetingId: UUID?
@@ -546,7 +547,7 @@ enum SyncTransactionQueue {
                     """,
                     arguments: [transaction.vaultId, transaction.sequence, record.entity, record.id]
                 ) ?? false
-                if !hasLaterOperation, let value = record.record {
+                if response.receipt != "compact", !hasLaterOperation, let value = record.record {
                     let canonical = try SyncJSON.decoder.decode(
                         SyncCanonicalPayload.self,
                         from: SyncJSON.encoder.encode(value)
@@ -574,7 +575,12 @@ enum SyncTransactionQueue {
                 sql: "UPDATE vaults SET syncLastCommittedCursor = ? WHERE id = ?",
                 arguments: [response.cursor, transaction.vaultId]
             )
-            if resetOperation {
+            if response.receipt == "compact" {
+                try db.execute(
+                    sql: "UPDATE vaults SET syncPullCursor = NULL, syncRecoveryState = 'pending' WHERE id = ?",
+                    arguments: [transaction.vaultId]
+                )
+            } else if resetOperation {
                 try db.execute(
                     sql: "UPDATE vaults SET syncPullCursor = ? WHERE id = ?",
                     arguments: [response.cursor, transaction.vaultId]

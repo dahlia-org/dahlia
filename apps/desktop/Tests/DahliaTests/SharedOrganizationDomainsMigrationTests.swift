@@ -109,7 +109,7 @@ import GRDB
                     sql: "SELECT identifier FROM grdb_migrations ORDER BY rowid DESC LIMIT 1"
                 )
             }
-            #expect(applied == "v42_meetingSync")
+            #expect(applied == "v43_syncRecovery")
         }
 
         private func insertRootOrganization(

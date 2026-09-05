@@ -122,8 +122,15 @@ jobs:
           DAHLIA_SEARCH_EMBEDDING_MODEL: test-embedding-model
           DAHLIA_SEARCH_EMBEDDING_DIMENSIONS: 32
 
+      - name: Validate PostgreSQL retention upgrade
+        run: |
+          psql postgresql://postgres@127.0.0.1:5432/postgres -v ON_ERROR_STOP=1 -c 'CREATE DATABASE dahlia_retention_upgrade OWNER dahlia'
+          pnpm exec vitest run tests/postgres-retention-upgrade.test.ts
+        env:
+          TEST_MIGRATION_DATABASE_URL: postgresql://dahlia@127.0.0.1:5432/dahlia_retention_upgrade
+
       - name: Validate PostgreSQL application store
-        run: pnpm exec vitest run tests/postgres-store.test.ts tests/sync-sqlite.test.ts
+        run: pnpm exec vitest run tests/postgres-store.test.ts tests/postgres-retention.test.ts tests/sync-sqlite.test.ts
         env:
           TEST_DATABASE_URL: postgresql://dahlia@127.0.0.1:5432/dahlia
 

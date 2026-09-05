@@ -272,6 +272,34 @@ final class AppDatabaseManager: Sendable {
             try MeetingSyncMigration.migrate(in: db)
         }
 
+        migrator.registerMigration("v43_syncRecovery") { db in
+            guard try db.tableExists("vaults"), try db.tableExists("sync_transactions") else { return }
+            let columns = try db.columns(in: "vaults").map(\.name)
+            if !columns.contains("syncRecoveryState") {
+                try db.alter(table: "vaults") { $0.add(column: "syncRecoveryState", .text) }
+            }
+            if !columns.contains("syncMutationGeneration") {
+                try db.alter(table: "vaults") {
+                    $0.add(column: "syncMutationGeneration", .integer).notNull().defaults(to: 0)
+                }
+            }
+            try db.execute(sql: """
+            CREATE TRIGGER IF NOT EXISTS sync_mutation_generation
+            AFTER INSERT ON sync_transactions BEGIN
+                UPDATE vaults SET syncMutationGeneration = syncMutationGeneration + 1
+                WHERE id = NEW.vaultId;
+            END;
+            CREATE TRIGGER IF NOT EXISTS sync_association_generation
+            AFTER UPDATE OF accountConnectionId, syncConfirmedConnectionId ON vaults
+            WHEN NEW.accountConnectionId IS NOT OLD.accountConnectionId
+                OR NEW.syncConfirmedConnectionId IS NOT OLD.syncConfirmedConnectionId
+            BEGIN
+                UPDATE vaults SET syncMutationGeneration = syncMutationGeneration + 1,
+                    syncRecoveryState = NULL WHERE id = NEW.id;
+            END;
+            """)
+        }
+
         return migrator
     }()
 

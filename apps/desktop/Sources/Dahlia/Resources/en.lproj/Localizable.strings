@@ -1647,3 +1647,7 @@
 "Set Local Export Folder" = "Set Local Export Folder";
 "Change Local Export Folder" = "Change Local Export Folder";
 "Remove Local Export Folder" = "Remove Local Export Folder";
+
+"Retrieving latest data…" = "Retrieving latest data…";
+"Waiting to retrieve latest data" = "Waiting to retrieve latest data";
+"Update Dahlia and the Server to resume sync" = "Update Dahlia and the Server to resume sync";
