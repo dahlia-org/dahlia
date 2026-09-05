@@ -72,11 +72,12 @@ try {
     if (typeof createPostgresApplicationStore !== "function" || typeof createPostgresAuthStore !== "function") {
       throw new Error("PostgreSQL store factories are missing from the Node package export");
     }
-    if (serverMigrationManifest.sqlite.files.length !== 1) {
+    if (serverMigrationManifest.sqlite.files.length !== 3) {
       throw new Error("Migration manifest is incomplete");
     }
     const style = await readFile(new URL(import.meta.resolve("@dahlia-ai/server/client/styles.css")), "utf8");
     const packageUrl = new URL(import.meta.resolve("@dahlia-ai/server/package.json"));
+    await readFile(new URL("./dist/server/db/prune-sync-history.js", packageUrl), "utf8");
     const codexLicense = await readFile(new URL("./Codex-LICENSE", packageUrl), "utf8");
     const codexNotice = await readFile(new URL("./Codex-NOTICE.txt", packageUrl), "utf8");
     const migration = await readFile(
@@ -123,7 +124,7 @@ try {
     const applied = database.prepare('SELECT "name" FROM "__drizzle_migrations"').all();
     database.close();
     await store.close?.();
-    if (applied.length !== 1 || applied.at(-1)?.name !== "20260903173555_lying_slipstream") {
+    if (applied.length !== 3 || applied.at(-1)?.name !== "20260905172654_sync_history_backfill") {
       throw new Error("Installed package migrations did not run from the package directory");
     }
   `);

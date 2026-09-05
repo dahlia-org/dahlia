@@ -58,6 +58,11 @@ struct SyncOperationBody: Encodable {
     }
 }
 
+private struct SyncTransactionResolution: Decodable {
+    let id: UUID
+    let status: String
+}
+
 private struct SyncTransactionBody: Encodable {
     let schemaVersion = 1
     let id: UUID
@@ -113,7 +118,7 @@ private struct ScreenshotOperationData: Decodable {
 }
 
 struct SyncChangePage: Decodable {
-    struct Change: Decodable {
+    struct Change: Codable, Sendable {
         let sequence: Int
         let entity: SyncEntity
         let entityId: UUID
@@ -134,6 +139,14 @@ struct SyncResetSnapshot {
     let summaries: Set<UUID>
     let transcripts: Set<UUID>
     let screenshots: Set<UUID>
+
+    init(ids: [SyncEntity: Set<UUID>]) {
+        projects = ids[.project, default: []]
+        meetings = ids[.meeting, default: []]
+        summaries = ids[.summary, default: []]
+        transcripts = ids[.transcript, default: []]
+        screenshots = ids[.screenshot, default: []]
+    }
 
     init?(_ changes: [SyncChangePage.Change]) {
         guard changes.contains(where: { $0.entity == .vault && $0.action == "reset" && $0.record != nil }) else {
@@ -193,6 +206,7 @@ private struct SyncTarget: Sendable {
     let connectionId: UUID
     let origin: URL
     let cursor: String?
+    let mutationGeneration: Int64
 }
 
 actor SyncWorker {
@@ -298,6 +312,17 @@ actor SyncWorker {
                 } catch is CancellationError {
                     throw CancellationError()
                 } catch let error as SyncHTTPError {
+                    if error.status == 426 {
+                        try await dbQueue.write { db in
+                            guard try SyncTransactionQueue.matchesExpectedConnection(
+                                vaultId: transaction.vaultId, connectionId: transaction.connectionId, in: db
+                            ) else { return }
+                            try db.execute(
+                                sql: "UPDATE vaults SET syncRecoveryState = 'updateRequired' WHERE id = ?",
+                                arguments: [transaction.vaultId]
+                            )
+                        }
+                    }
                     if let reason = error.blockedReason {
                         try await SyncTransactionQueue.block(
                             transaction,
@@ -332,10 +357,35 @@ actor SyncWorker {
         guard let target = try await connection(id: transaction.connectionId) else {
             throw SyncHTTPError(status: 403, body: Data("{\"error\":\"connection_missing\"}".utf8))
         }
+        let body = try await transactionBody(transaction, origin: target, stageAttachments: false)
+        let resolved = try await sendData(
+            request(origin: target, path: "api/v1/transactions/resolve", method: "POST", body: body, contentType: "application/json"),
+            connectionId: transaction.connectionId
+        )
+        let resolution = try SyncJSON.decoder.decode(SyncTransactionResolution.self, from: resolved)
+        guard resolution.id == transaction.id else { throw SyncTransactionQueueError.invalidReceipt }
+        if resolution.status == "committed" {
+            return try SyncJSON.decoder.decode(SyncTransactionResponse.self, from: resolved)
+        }
+        guard resolution.status == "unknown" else { throw SyncTransactionQueueError.invalidReceipt }
+        let stagedBody = try await transactionBody(transaction, origin: target, stageAttachments: true)
+        guard stagedBody == body else { throw SyncTransactionQueueError.invalidReceipt }
+        let data = try await sendData(
+            request(origin: target, path: "api/v1/transactions", method: "POST", body: body, contentType: "application/json"),
+            connectionId: transaction.connectionId
+        )
+        return try SyncJSON.decoder.decode(SyncTransactionResponse.self, from: data)
+    }
+
+    private func transactionBody(
+        _ transaction: SyncQueuedTransaction,
+        origin target: URL,
+        stageAttachments: Bool
+    ) async throws -> Data {
         var operations = transaction.operations
         for index in operations.indices {
             let operation = operations[index]
-            if operation.entity == .screenshot,
+            if stageAttachments, operation.entity == .screenshot,
                operation.action != .delete,
                let attachment = try await SyncTransactionQueue.screenshotAttachment(
                    operationId: operation.id,
@@ -355,7 +405,7 @@ actor SyncWorker {
                 upload.setValue(attachment.sha256, forHTTPHeaderField: "X-Dahlia-Content-SHA256")
                 try await send(upload, connectionId: transaction.connectionId)
             } else if operation.entity == .transcript, operation.action == .patch {
-                let payload = try await stageTranscriptPatch(operation, transaction: transaction, origin: target)
+                let payload = try await stageTranscriptPatch(operation, transaction: transaction, origin: target, sendUploads: stageAttachments)
                 operations[index] = SyncQueuedOperation(
                     id: operation.id,
                     entity: operation.entity,
@@ -367,7 +417,7 @@ actor SyncWorker {
             }
         }
 
-        let body = try SyncJSON.encoder.encode(SyncTransactionBody(
+        return try SyncJSON.encoder.encode(SyncTransactionBody(
             id: transaction.id,
             vaultId: transaction.vaultId,
             createdAt: transaction.createdAt,
@@ -382,17 +432,13 @@ actor SyncWorker {
                 )
             }
         ))
-        let data = try await sendData(
-            request(origin: target, path: "api/v1/transactions", method: "POST", body: body, contentType: "application/json"),
-            connectionId: transaction.connectionId
-        )
-        return try SyncJSON.decoder.decode(SyncTransactionResponse.self, from: data)
     }
 
     private func stageTranscriptPatch(
         _ operation: SyncQueuedOperation,
         transaction: SyncQueuedTransaction,
-        origin: URL
+        origin: URL,
+        sendUploads: Bool
     ) async throws -> Data {
         let snapshot = try await SyncTransactionQueue.transcriptPatch(operationId: operation.id, dbQueue: dbQueue)
         let transcriptChunks = try Self.transcriptChunks(snapshot)
@@ -406,15 +452,17 @@ actor SyncWorker {
             let body = chunk.body
             let data = chunk.data
             let hash = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
-            var upload = try request(
-                origin: origin,
-                path: "api/v1/vaults/\(transaction.vaultId.lowercase)/meetings/\(operation.entityId.lowercase)/transcripts/\(operation.id.lowercase)/chunks/\(index)",
-                method: "PUT",
-                body: data,
-                contentType: "application/json"
-            )
-            upload.setValue(hash, forHTTPHeaderField: "X-Dahlia-Content-SHA256")
-            try await send(upload, connectionId: transaction.connectionId)
+            if sendUploads {
+                var upload = try request(
+                    origin: origin,
+                    path: "api/v1/vaults/\(transaction.vaultId.lowercase)/meetings/\(operation.entityId.lowercase)/transcripts/\(operation.id.lowercase)/chunks/\(index)",
+                    method: "PUT",
+                    body: data,
+                    contentType: "application/json"
+                )
+                upload.setValue(hash, forHTTPHeaderField: "X-Dahlia-Content-SHA256")
+                try await send(upload, connectionId: transaction.connectionId)
+            }
             chunks.append(.init(
                 index: index,
                 sha256: hash,
@@ -516,11 +564,14 @@ actor SyncWorker {
                 try await pullRemoteChanges(for: target)
             } catch is CancellationError {
                 throw CancellationError()
+            } catch let error as SyncHTTPError where error.status == 410 && error.code == "sync_cursor_expired" {
+                try? await recoverSnapshot(target)
             } catch let error as SyncHTTPError where error.status == 404 && error.code == "vault_not_found" {
-                if try await RemoteChangeApplier.removeRevokedMemberVault(
+                if try await RemoteChangeApplier.reconcileMissingVault(
                     vaultId: target.vaultId,
                     expectedConnectionId: target.connectionId,
-                    dbQueue: dbQueue
+                    dbQueue: dbQueue,
+                    expectedMutationGeneration: target.mutationGeneration
                 ) {
                     await vaultsDidChange()
                 }
@@ -532,33 +583,7 @@ actor SyncWorker {
 
     private func pullRemoteChanges(for target: SyncTarget) async throws {
         if target.cursor == nil {
-            var cursor: String?
-            var highWaterCursor: String?
-            var changes: [String: SyncChangePage.Change] = [:]
-            var reset: SyncChangePage.Change?
-            repeat {
-                let page = try await loadChangePage(
-                    target: target,
-                    cursor: cursor,
-                    highWaterCursor: highWaterCursor
-                )
-                for change in page.items {
-                    if change.entity == .vault, change.action == "reset" {
-                        reset = change
-                        changes.removeAll()
-                        continue
-                    }
-                    changes["\(change.entity.rawValue):\(change.entityId.uuidString)"] = change
-                }
-                cursor = page.cursor
-                highWaterCursor = page.highWaterCursor
-                if !page.hasMore { break }
-            } while true
-            let snapshot = Self.initialSnapshotChanges((reset.map { [$0] } ?? []) + Array(changes.values))
-            try await SyncTransactionQueue.reconcileRevisions(
-                snapshot, vaultId: target.vaultId, connectionId: target.connectionId, dbQueue: dbQueue
-            )
-            _ = try await applySnapshot(snapshot, cursor: cursor, target: target, reconcilesMissingRecords: true)
+            try await recoverSnapshot(target)
             return
         }
 
@@ -595,6 +620,124 @@ actor SyncWorker {
             cursor = page.cursor
             if !page.hasMore { break }
         } while true
+    }
+
+    private func recoverSnapshot(_ target: SyncTarget) async throws {
+        try await setRecoveryState("pending", target: target, resetCursor: true)
+        let generation = try await RemoteChangeApplier.recoveryGeneration(
+            vaultId: target.vaultId, expectedConnectionId: target.connectionId, dbQueue: dbQueue
+        )
+        let needsRevisions = try await dbQueue.read { db in
+            try Bool.fetchOne(
+                db,
+                sql: "SELECT EXISTS(SELECT 1 FROM sync_entity_state WHERE vaultId = ? AND entity = 'vault' AND confirmedRevision IS NULL)",
+                arguments: [target.vaultId]
+            ) ?? false
+        }
+        guard generation != nil || needsRevisions else { return }
+        try await setRecoveryState("recovering", target: target)
+        do {
+            let completed = try await fetchAndApplySnapshot(target, generation: generation)
+            if !completed { try await setRecoveryState("pending", target: target) }
+        } catch {
+            let state = (error as? SyncHTTPError)?.status == 426 ? "updateRequired" : "pending"
+            try? await setRecoveryState(state, target: target)
+            throw error
+        }
+        await vaultsDidChange()
+    }
+
+    private func setRecoveryState(_ state: String, target: SyncTarget, resetCursor: Bool = false) async throws {
+        try await dbQueue.write { db in
+            guard try SyncTransactionQueue.matchesExpectedConnection(
+                vaultId: target.vaultId, connectionId: target.connectionId, in: db
+            ) else { return }
+            try db.execute(
+                sql: "UPDATE vaults SET syncRecoveryState = ?, syncPullCursor = CASE WHEN ? THEN NULL ELSE syncPullCursor END WHERE id = ?",
+                arguments: [state, resetCursor, target.vaultId]
+            )
+        }
+    }
+
+    private func fetchAndApplySnapshot(_ target: SyncTarget, generation: Int64?) async throws -> Bool {
+        let staged = try SyncSnapshotStore()
+        var position: String?
+        var startCursor: String?
+        repeat {
+            try Task.checkCancellation()
+            var components = URLComponents()
+            components.path = "/api/v1/vaults/\(target.vaultId.lowercase)/snapshot"
+            components.queryItems = []
+            if let position { components.queryItems?.append(URLQueryItem(name: "cursor", value: position)) }
+            if let startCursor { components.queryItems?.append(URLQueryItem(name: "startCursor", value: startCursor)) }
+            guard let path = components.string else { throw URLError(.badURL) }
+            let page = try await SyncJSON.decoder.decode(
+                SyncSnapshotPage.self,
+                from: sendData(request(origin: target.origin, path: path, method: "GET"), connectionId: target.connectionId)
+            )
+            if let startCursor, startCursor != page.startCursor { throw SyncTransactionQueueError.invalidReceipt }
+            try await staged.merge(page.items.map {
+                SyncChangePage.Change(sequence: 0, entity: $0.entity, entityId: $0.id, action: "upsert", revision: $0.revision, record: $0.record)
+            })
+            startCursor = page.startCursor
+            guard page.nextCursor == nil || page.nextCursor != position else { throw SyncTransactionQueueError.invalidReceipt }
+            position = page.nextCursor
+        } while position != nil
+
+        var cursor = startCursor
+        var highWater: String?
+        var deletedVault: SyncChangePage.Change?
+        repeat {
+            try Task.checkCancellation()
+            let page = try await loadChangePage(target: target, cursor: cursor, highWaterCursor: highWater)
+            highWater = page.highWaterCursor
+            for change in page.items where change.entity == .vault && change.action == "reset" {
+                deletedVault = change.record == nil ? change : nil
+            }
+            try await staged.merge(page.items)
+            guard !page.hasMore || page.cursor != cursor else { throw SyncTransactionQueueError.invalidReceipt }
+            cursor = page.cursor
+            if !page.hasMore { break }
+        } while true
+
+        if let deletedVault, let generation {
+            return try await RemoteChangeApplier.apply(
+                [deletedVault], screenshots: [:], transcripts: [:], cursor: nil,
+                vaultId: target.vaultId, expectedConnectionId: target.connectionId,
+                dbQueue: dbQueue, expectedMutationGeneration: generation
+            )
+        }
+        // Only the existing explicit Server-adoption path may initialize unknown base revisions.
+        // Cursor expiry must never rebase ordinary offline edits onto a newer Server revision.
+        try await SyncTransactionQueue.reconcileRevisions(
+            staged.revisionChanges(), vaultId: target.vaultId, connectionId: target.connectionId, dbQueue: dbQueue
+        )
+        guard let generation else { return false }
+        guard try await RemoteChangeApplier.reconcileRecoveryProjects(
+            staged.projects(), vaultId: target.vaultId, expectedConnectionId: target.connectionId,
+            dbQueue: dbQueue, generation: generation
+        ) else { return false }
+        let snapshotTarget = SyncTarget(
+            vaultId: target.vaultId,
+            connectionId: target.connectionId,
+            origin: target.origin,
+            cursor: nil,
+            mutationGeneration: generation
+        )
+        var last: SyncChangePage.Change?
+        while true {
+            try Task.checkCancellation()
+            let page = try await staged.page(after: last)
+            if page.isEmpty { break }
+            guard try await apply(
+                page.filter { $0.entity != .project }, cursor: nil, target: snapshotTarget, expectedMutationGeneration: generation
+            ) else { return false }
+            last = page.last
+        }
+        return try await RemoteChangeApplier.finishReset(
+            staged.resetSnapshot(), cursor: cursor, vaultId: target.vaultId, expectedConnectionId: target.connectionId,
+            dbQueue: dbQueue, expectedMutationGeneration: generation
+        )
     }
 
     private func applySnapshot(
@@ -756,7 +899,8 @@ actor SyncWorker {
     private func apply(
         _ changes: [SyncChangePage.Change],
         cursor: String?,
-        target: SyncTarget
+        target: SyncTarget,
+        expectedMutationGeneration: Int64? = nil
     ) async throws -> Bool {
         guard !changes.isEmpty else {
             guard let cursor else { return true }
@@ -764,7 +908,8 @@ actor SyncWorker {
                 cursor,
                 vaultId: target.vaultId,
                 expectedConnectionId: target.connectionId,
-                dbQueue: dbQueue
+                dbQueue: dbQueue,
+                expectedMutationGeneration: expectedMutationGeneration
             )
         }
         for (index, change) in changes.enumerated() {
@@ -785,12 +930,18 @@ actor SyncWorker {
                        appliedCursor,
                        vaultId: target.vaultId,
                        expectedConnectionId: target.connectionId,
-                       dbQueue: dbQueue
+                       dbQueue: dbQueue,
+                       expectedMutationGeneration: expectedMutationGeneration
                    ) { return false }
                 continue
             }
             if change.entity == .transcript, change.action == "upsert" {
-                guard try await applyTranscriptChange(change, cursor: appliedCursor, target: target) else {
+                guard try await applyTranscriptChange(
+                    change,
+                    cursor: appliedCursor,
+                    target: target,
+                    expectedMutationGeneration: expectedMutationGeneration
+                ) else {
                     return false
                 }
                 continue
@@ -803,7 +954,8 @@ actor SyncWorker {
                 cursor: appliedCursor,
                 vaultId: target.vaultId,
                 expectedConnectionId: target.connectionId,
-                dbQueue: dbQueue
+                dbQueue: dbQueue,
+                expectedMutationGeneration: expectedMutationGeneration
             ) else { return false }
         }
         return true
@@ -812,14 +964,16 @@ actor SyncWorker {
     private func applyTranscriptChange(
         _ change: SyncChangePage.Change,
         cursor appliedCursor: String?,
-        target: SyncTarget
+        target: SyncTarget,
+        expectedMutationGeneration: Int64? = nil
     ) async throws -> Bool {
         guard let revision = change.revision,
               try await RemoteChangeApplier.beginTranscript(
                   meetingId: change.entityId,
                   vaultId: target.vaultId,
                   expectedConnectionId: target.connectionId,
-                  dbQueue: dbQueue
+                  dbQueue: dbQueue,
+                  expectedMutationGeneration: expectedMutationGeneration
               )
         else { return false }
 
@@ -843,7 +997,8 @@ actor SyncWorker {
                     meetingId: change.entityId,
                     vaultId: target.vaultId,
                     expectedConnectionId: target.connectionId,
-                    dbQueue: dbQueue
+                    dbQueue: dbQueue,
+                    expectedMutationGeneration: expectedMutationGeneration
                 ) else { return false }
             }
             cursor = page.nextCursor
@@ -855,7 +1010,8 @@ actor SyncWorker {
             cursor: appliedCursor,
             vaultId: target.vaultId,
             expectedConnectionId: target.connectionId,
-            dbQueue: dbQueue
+            dbQueue: dbQueue,
+            expectedMutationGeneration: expectedMutationGeneration
         )
     }
 
@@ -895,7 +1051,7 @@ actor SyncWorker {
             try Row.fetchAll(
                 db,
                 sql: """
-                SELECT vaults.id, vaults.syncConfirmedConnectionId, vaults.syncPullCursor,
+                SELECT vaults.id, vaults.syncConfirmedConnectionId, vaults.syncPullCursor, vaults.syncMutationGeneration,
                     dahlia_account_connections.origin
                 FROM vaults
                 JOIN dahlia_account_connections
@@ -916,7 +1072,8 @@ actor SyncWorker {
                     vaultId: row["id"],
                     connectionId: row["syncConfirmedConnectionId"],
                     origin: origin,
-                    cursor: row["syncPullCursor"]
+                    cursor: row["syncPullCursor"],
+                    mutationGeneration: row["syncMutationGeneration"]
                 )
             }
         }
@@ -1042,7 +1199,13 @@ actor SyncWorker {
                 forceRefresh = true
                 continue
             }
-            throw SyncHTTPError(status: http.statusCode, body: data)
+            let error = SyncHTTPError(status: http.statusCode, body: data)
+            let path = unsignedRequest.url?.path ?? ""
+            if http.statusCode == 404, error.code != "vault_not_found",
+               path.hasSuffix("/snapshot") || path.hasSuffix("/transactions/resolve") {
+                throw SyncHTTPError(status: 426, body: Data("{\"error\":\"sync_upgrade_required\"}".utf8))
+            }
+            throw error
         }
         throw SyncHTTPError(status: 401, body: Data())
     }
@@ -1050,757 +1213,6 @@ actor SyncWorker {
     private func decode<T: Decodable>(_ type: T.Type, from data: Data?) throws -> T {
         guard let data else { throw SyncTransactionQueueError.invalidReceipt }
         return try SyncJSON.decoder.decode(type, from: data)
-    }
-}
-
-enum RemoteChangeApplier {
-    private static func withCurrentAssociation(
-        vaultId: UUID,
-        expectedConnectionId: UUID,
-        dbQueue: DatabaseQueue,
-        _ body: @Sendable (Database) throws -> Bool
-    ) async throws -> Bool {
-        try await dbQueue.write { db in
-            guard try SyncTransactionQueue.matchesExpectedConnection(
-                vaultId: vaultId,
-                connectionId: expectedConnectionId,
-                in: db
-            ) else { return false }
-            return try body(db)
-        }
-    }
-
-    private static func withStagedAudioDeletion(
-        meetingIds: Set<UUID>,
-        vaultId: UUID,
-        expectedConnectionId: UUID,
-        dbQueue: DatabaseQueue,
-        _ body: () async throws -> Bool
-    ) async throws -> Bool {
-        guard !meetingIds.isEmpty else { return try await body() }
-        let preflight = try await withCurrentAssociation(
-            vaultId: vaultId,
-            expectedConnectionId: expectedConnectionId,
-            dbQueue: dbQueue
-        ) { db in
-            try !SyncTransactionQueue.hasPending(vaultId: vaultId, in: db) && !hasActiveRecording(in: db)
-        }
-        guard preflight else { return false }
-
-        let sessions = try await dbQueue.read { db in
-            try Row.fetchAll(
-                db,
-                sql: """
-                SELECT DISTINCT recording_sessions.id, recording_sessions.meetingId
-                FROM recording_sessions
-                JOIN recording_audio_segments
-                  ON recording_audio_segments.recordingSessionId = recording_sessions.id
-                WHERE recording_sessions.meetingId IN (\(meetingIds.map { _ in "?" }.joined(separator: ",")))
-                """,
-                arguments: StatementArguments(meetingIds)
-            ).map { row in
-                RecordingAudioStore.ParentDeletionSession(meetingId: row["meetingId"], sessionId: row["id"])
-            }
-        }
-        let lease = try RecordingAudioStore.acquireParentDeletionLease(
-            sessions: sessions,
-            managedRootURL: BatchAudioStorage.managedRootURL
-        )
-        defer { withExtendedLifetime(lease) {} }
-        let segmentedTargets = try await dbQueue.read { db in
-            try String.fetchAll(
-                db,
-                sql: """
-                SELECT DISTINCT recording_audio_segments.finalRelativePath
-                FROM recording_audio_segments
-                JOIN recording_sessions
-                  ON recording_sessions.id = recording_audio_segments.recordingSessionId
-                WHERE recording_sessions.meetingId IN (\(meetingIds.map { _ in "?" }.joined(separator: ",")))
-                  AND recording_audio_segments.state <> ?
-                """,
-                arguments: StatementArguments(meetingIds) + [RecordingAudioSegmentState.purged]
-            ).map {
-                BatchAudioCleanupService.DeletionTarget(
-                    baseURL: BatchAudioStorage.managedRootURL,
-                    relativePath: $0
-                )
-            }
-        }
-        let targets = try BatchAudioCleanupService.deletionTargets(
-            meetingIds: meetingIds,
-            dbQueue: dbQueue
-        ) + segmentedTargets
-        let stagedFiles = try BatchAudioCleanupService.stageFiles(targets)
-        let applied: Bool
-        do {
-            applied = try await body()
-        } catch let operationError {
-            do {
-                try BatchAudioCleanupService.restoreStagedFiles(stagedFiles)
-            } catch let rollbackError {
-                throw ProjectWorkspaceError.rollbackFailed(
-                    operation: operationError.localizedDescription,
-                    rollback: rollbackError.localizedDescription
-                )
-            }
-            throw operationError
-        }
-        if applied {
-            try BatchAudioCleanupService.discardStagedFiles(stagedFiles)
-        } else {
-            try BatchAudioCleanupService.restoreStagedFiles(stagedFiles)
-        }
-        return applied
-    }
-
-    static func reconcileProjectSnapshot(
-        _ projects: [SyncProjectSnapshot],
-        vaultId: UUID,
-        expectedConnectionId: UUID,
-        dbQueue: DatabaseQueue
-    ) async throws -> Bool {
-        let orderedProjects = orderProjects(projects)
-        return try await withCurrentAssociation(
-            vaultId: vaultId,
-            expectedConnectionId: expectedConnectionId,
-            dbQueue: dbQueue
-        ) { db in
-            guard try !SyncTransactionQueue.hasPending(vaultId: vaultId, in: db),
-                  try !hasActiveRecording(in: db)
-            else { return false }
-
-            let existing = try ProjectRecord.fetchResolvedAll(vaultId: vaultId, in: db)
-            let existingByID = Dictionary(uniqueKeysWithValues: existing.map { ($0.id, $0) })
-            let incomingIDs = Set(projects.map(\.projectId))
-            let removedIDs = Set(existingByID.keys).subtracting(incomingIDs)
-
-            // Keep retained rows in place so local-only CRM references survive canonical refreshes.
-            let roots = orderedProjects.filter { $0.parentProjectId == nil }
-            let children = orderedProjects.filter { $0.parentProjectId != nil }
-            for project in roots where existingByID[project.projectId] != nil {
-                try db.execute(
-                    sql: "UPDATE projects SET parentProjectId = NULL, projectType = ? WHERE id = ? AND vaultId = ?",
-                    arguments: [project.projectType, project.projectId, vaultId]
-                )
-            }
-            for project in roots where existingByID[project.projectId] == nil {
-                try insert(project, vaultId: vaultId, in: db)
-            }
-            for project in existing where removedIDs.contains(project.id) && project.parentProjectId != nil {
-                try ProjectRecord.deleteOne(db, key: project.id)
-            }
-            for project in children where existingByID[project.projectId]?.parentProjectId != nil {
-                try db.execute(
-                    sql: "UPDATE projects SET parentProjectId = ?, projectType = NULL WHERE id = ? AND vaultId = ?",
-                    arguments: [project.parentProjectId, project.projectId, vaultId]
-                )
-            }
-            for project in existing where removedIDs.contains(project.id) && project.parentProjectId == nil {
-                try ProjectRecord.deleteOne(db, key: project.id)
-            }
-            for project in children where existingByID[project.projectId]?.parentProjectId == nil {
-                try db.execute(
-                    sql: "UPDATE projects SET parentProjectId = ?, projectType = NULL WHERE id = ? AND vaultId = ?",
-                    arguments: [project.parentProjectId, project.projectId, vaultId]
-                )
-            }
-            for project in children where existingByID[project.projectId] == nil {
-                try insert(project, vaultId: vaultId, in: db)
-            }
-
-            for project in orderedProjects {
-                let previous = existingByID[project.projectId]
-                try ProjectRecord.applyCanonical(
-                    id: project.projectId,
-                    vaultId: vaultId,
-                    parentProjectId: project.parentProjectId,
-                    name: project.name,
-                    createdAt: project.createdAt,
-                    description: project.description,
-                    projectType: project.projectType.flatMap(ProjectType.init(rawValue:)),
-                    in: db
-                )
-                if let previous {
-                    let hierarchyWasPreapplied = previous.parentProjectId != project.parentProjectId
-                        || previous.projectType?.rawValue != project.projectType
-                    if previous.name == project.name, hierarchyWasPreapplied {
-                        var invalidatedIDs = Set(
-                            ProjectRecord.hierarchy(projectId: previous.id, records: existing)
-                                .dropFirst()
-                                .map(\.id)
-                        )
-                        if previous.createdAt == project.createdAt,
-                           previous.description == project.description {
-                            invalidatedIDs.insert(previous.id)
-                        }
-                        try ProjectRecord.incrementRevisions(invalidatedIDs, in: db)
-                    }
-                }
-                try db.execute(
-                    sql: """
-                    INSERT INTO sync_entity_state(vaultId, entity, entityId, confirmedRevision)
-                    VALUES (?, 'project', ?, ?)
-                    ON CONFLICT(vaultId, entity, entityId) DO UPDATE SET
-                        confirmedRevision = excluded.confirmedRevision
-                    """,
-                    arguments: [vaultId, project.projectId, project.revision]
-                )
-            }
-            try db.execute(
-                sql: "DELETE FROM sync_entity_state WHERE vaultId = ? AND entity = 'project' AND entityId NOT IN (SELECT id FROM projects WHERE vaultId = ?)",
-                arguments: [vaultId, vaultId]
-            )
-            return true
-        }
-    }
-
-    private static func insert(_ project: SyncProjectSnapshot, vaultId: UUID, in db: Database) throws {
-        try ProjectRecord(
-            id: project.projectId,
-            vaultId: vaultId,
-            parentProjectId: project.parentProjectId,
-            name: project.name,
-            createdAt: project.createdAt,
-            description: project.description,
-            projectType: project.projectType.flatMap(ProjectType.init(rawValue:))
-        ).insert(db)
-    }
-
-    private static func hasActiveRecording(in db: Database) throws -> Bool {
-        try Bool.fetchOne(
-            db,
-            sql: "SELECT EXISTS (SELECT 1 FROM recording_sessions WHERE endedAt IS NULL)"
-        ) ?? false
-    }
-
-    static func beginTranscript(
-        meetingId: UUID,
-        vaultId: UUID,
-        expectedConnectionId: UUID,
-        dbQueue: DatabaseQueue
-    ) async throws -> Bool {
-        try await withCurrentAssociation(
-            vaultId: vaultId,
-            expectedConnectionId: expectedConnectionId,
-            dbQueue: dbQueue
-        ) { db in
-            guard try !SyncTransactionQueue.hasPending(vaultId: vaultId, in: db),
-                  try !hasActiveRecording(in: db)
-            else { return false }
-            try db.execute(sql: """
-            CREATE TEMP TABLE IF NOT EXISTS sync_remote_transcript_items (
-                meetingId BLOB NOT NULL,
-                segmentId BLOB NOT NULL,
-                startTime DATETIME NOT NULL,
-                endTime DATETIME,
-                text TEXT NOT NULL,
-                isConfirmed INTEGER NOT NULL,
-                audioSource TEXT,
-                speakerLabel TEXT,
-                PRIMARY KEY (meetingId, segmentId)
-            ) WITHOUT ROWID
-            """)
-            try db.execute(
-                sql: "DELETE FROM sync_remote_transcript_items WHERE meetingId = ?",
-                arguments: [meetingId]
-            )
-            return true
-        }
-    }
-
-    static func applyTranscriptPage(
-        _ segments: [SyncTranscriptPage.Segment],
-        meetingId: UUID,
-        vaultId: UUID,
-        expectedConnectionId: UUID,
-        dbQueue: DatabaseQueue
-    ) async throws -> Bool {
-        try await withCurrentAssociation(
-            vaultId: vaultId,
-            expectedConnectionId: expectedConnectionId,
-            dbQueue: dbQueue
-        ) { db in
-            guard try !SyncTransactionQueue.hasPending(vaultId: vaultId, in: db),
-                  try !hasActiveRecording(in: db)
-            else { return false }
-            for segment in segments {
-                try db.execute(
-                    sql: """
-                    INSERT INTO sync_remote_transcript_items(
-                        meetingId, segmentId, startTime, endTime, text,
-                        isConfirmed, audioSource, speakerLabel
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(meetingId, segmentId) DO UPDATE SET
-                        startTime = excluded.startTime,
-                        endTime = excluded.endTime,
-                        text = excluded.text,
-                        isConfirmed = excluded.isConfirmed,
-                        audioSource = excluded.audioSource,
-                        speakerLabel = excluded.speakerLabel
-                    """,
-                    arguments: [
-                        meetingId, segment.segmentId, segment.startTime, segment.endTime,
-                        segment.text, segment.isConfirmed, segment.audioSource, segment.speakerLabel,
-                    ]
-                )
-            }
-            return true
-        }
-    }
-
-    static func finishTranscript(
-        meetingId: UUID,
-        revision: Int,
-        cursor: String?,
-        vaultId: UUID,
-        expectedConnectionId: UUID,
-        dbQueue: DatabaseQueue
-    ) async throws -> Bool {
-        try await withCurrentAssociation(
-            vaultId: vaultId,
-            expectedConnectionId: expectedConnectionId,
-            dbQueue: dbQueue
-        ) { db in
-            guard try !SyncTransactionQueue.hasPending(vaultId: vaultId, in: db),
-                  try !hasActiveRecording(in: db)
-            else { return false }
-            try db.execute(
-                sql: """
-                INSERT INTO transcript_segments(
-                    id, meetingId, startTime, endTime, text, isConfirmed, audioSource, speakerLabel
-                )
-                SELECT segmentId, meetingId, startTime, endTime, text,
-                    isConfirmed, audioSource, speakerLabel
-                FROM sync_remote_transcript_items
-                WHERE meetingId = ?
-                ON CONFLICT(id) DO UPDATE SET
-                    meetingId = excluded.meetingId,
-                    startTime = excluded.startTime,
-                    endTime = excluded.endTime,
-                    text = excluded.text,
-                    isConfirmed = excluded.isConfirmed,
-                    audioSource = excluded.audioSource,
-                    speakerLabel = excluded.speakerLabel
-                """,
-                arguments: [meetingId]
-            )
-            try db.execute(
-                sql: """
-                DELETE FROM transcript_segments
-                WHERE meetingId = ? AND isConfirmed = 1
-                  AND NOT EXISTS (
-                      SELECT 1 FROM sync_remote_transcript_items remote
-                      WHERE remote.meetingId = transcript_segments.meetingId
-                        AND remote.segmentId = transcript_segments.id
-                  )
-                """,
-                arguments: [meetingId]
-            )
-            try db.execute(
-                sql: """
-                INSERT INTO sync_entity_state(vaultId, entity, entityId, confirmedRevision)
-                VALUES (?, 'transcript', ?, ?)
-                ON CONFLICT(vaultId, entity, entityId) DO UPDATE SET
-                    confirmedRevision = excluded.confirmedRevision
-                """,
-                arguments: [vaultId, meetingId, revision]
-            )
-            if let cursor {
-                try db.execute(sql: "UPDATE vaults SET syncPullCursor = ? WHERE id = ?", arguments: [cursor, vaultId])
-            }
-            try db.execute(
-                sql: "DELETE FROM sync_remote_transcript_items WHERE meetingId = ?",
-                arguments: [meetingId]
-            )
-            return true
-        }
-    }
-
-    private static func orderProjects(_ projects: [SyncProjectSnapshot]) -> [SyncProjectSnapshot] {
-        let roots = projects.filter { $0.parentProjectId == nil }
-            .sorted { $0.projectId.uuidString < $1.projectId.uuidString }
-        let rootIds = Set(roots.map(\.projectId))
-        let children = projects.filter { project in
-            project.parentProjectId.map(rootIds.contains) == true
-        }.sorted { $0.projectId.uuidString < $1.projectId.uuidString }
-        return roots + children
-    }
-
-    static func apply(
-        _ changes: [SyncChangePage.Change],
-        screenshots: [UUID: Data],
-        transcripts: [UUID: [SyncTranscriptPage.Segment]],
-        cursor: String?,
-        vaultId: UUID,
-        expectedConnectionId: UUID,
-        dbQueue: DatabaseQueue
-    ) async throws -> Bool {
-        let deletedMeetingIds = Set(changes.compactMap { change in
-            change.entity == .meeting && change.action == "delete" ? change.entityId : nil
-        })
-        return try await withStagedAudioDeletion(
-            meetingIds: deletedMeetingIds,
-            vaultId: vaultId,
-            expectedConnectionId: expectedConnectionId,
-            dbQueue: dbQueue
-        ) {
-            try await withCurrentAssociation(
-                vaultId: vaultId,
-                expectedConnectionId: expectedConnectionId,
-                dbQueue: dbQueue
-            ) { db in
-                guard try !SyncTransactionQueue.hasPending(vaultId: vaultId, in: db) else { return false }
-                if changes.contains(where: { $0.entity == .transcript }), try hasActiveRecording(in: db) {
-                    return false
-                }
-                if changes.contains(where: { $0.action == "reset" && $0.record != nil }),
-                   try hasActiveRecording(in: db) {
-                    return false
-                }
-                let deletingActiveMeeting = try changes.contains { change in
-                    guard change.entity == .meeting, change.action == "delete" else { return false }
-                    return try Bool.fetchOne(
-                        db,
-                        sql: """
-                        SELECT EXISTS (
-                            SELECT 1 FROM recording_sessions
-                            WHERE meetingId = ? AND endedAt IS NULL
-                        )
-                        """,
-                        arguments: [change.entityId]
-                    ) ?? false
-                }
-                guard !deletingActiveMeeting else { return false }
-                for change in changes {
-                    if change.action == "delete" {
-                        try delete(change.entity, id: change.entityId, vaultId: vaultId, in: db)
-                    } else if change.action == "reset" {
-                        try SyncTransactionQueue.discard(vaultId: vaultId, in: db)
-                        try db.execute(sql: "DELETE FROM sync_entity_state WHERE vaultId = ?", arguments: [vaultId])
-                        if let record = change.record {
-                            try upsert(change, record: record, screenshots: screenshots, transcripts: transcripts, vaultId: vaultId, in: db)
-                        } else {
-                            try db.execute(
-                                sql: """
-                                UPDATE vaults SET syncConfirmedConnectionId = NULL,
-                                    syncPullCursor = NULL, syncLastCommittedCursor = NULL
-                                WHERE id = ?
-                                """,
-                                arguments: [vaultId]
-                            )
-                            return true
-                        }
-                    } else if let record = change.record {
-                        try upsert(change, record: record, screenshots: screenshots, transcripts: transcripts, vaultId: vaultId, in: db)
-                    }
-                    try db.execute(
-                        sql: """
-                        INSERT INTO sync_entity_state(vaultId, entity, entityId, confirmedRevision)
-                        VALUES (?, ?, ?, ?)
-                        ON CONFLICT(vaultId, entity, entityId) DO UPDATE SET
-                            confirmedRevision = excluded.confirmedRevision
-                        """,
-                        arguments: [vaultId, change.entity, change.entityId, change.revision]
-                    )
-                }
-                if let cursor {
-                    try db.execute(sql: "UPDATE vaults SET syncPullCursor = ? WHERE id = ?", arguments: [cursor, vaultId])
-                }
-                return true
-            }
-        }
-    }
-
-    static func finishReset(
-        _ snapshot: SyncResetSnapshot,
-        cursor: String?,
-        vaultId: UUID,
-        expectedConnectionId: UUID,
-        dbQueue: DatabaseQueue
-    ) async throws -> Bool {
-        struct Existing {
-            let projects: [ProjectRecord]
-            let meetings: Set<UUID>
-            let summaries: Set<UUID>
-            let transcripts: Set<UUID>
-            let screenshots: Set<UUID>
-        }
-        let existing = try await dbQueue.read { db in
-            try Existing(
-                projects: ProjectRecord.filter(Column("vaultId") == vaultId).fetchAll(db),
-                meetings: Set(UUID.fetchAll(
-                    db,
-                    sql: "SELECT id FROM meetings WHERE vaultId = ?",
-                    arguments: [vaultId]
-                )),
-                summaries: Set(UUID.fetchAll(
-                    db,
-                    sql: """
-                    SELECT summaries.meetingId FROM summaries
-                    JOIN meetings ON meetings.id = summaries.meetingId
-                    WHERE meetings.vaultId = ?
-                    """,
-                    arguments: [vaultId]
-                )),
-                transcripts: Set(UUID.fetchAll(
-                    db,
-                    sql: """
-                    SELECT DISTINCT transcript_segments.meetingId FROM transcript_segments
-                    JOIN meetings ON meetings.id = transcript_segments.meetingId
-                    WHERE meetings.vaultId = ? AND transcript_segments.isConfirmed = 1
-                    """,
-                    arguments: [vaultId]
-                )),
-                screenshots: Set(UUID.fetchAll(
-                    db,
-                    sql: """
-                    SELECT screenshots.id FROM screenshots
-                    JOIN meetings ON meetings.id = screenshots.meetingId
-                    WHERE meetings.vaultId = ?
-                    """,
-                    arguments: [vaultId]
-                ))
-            )
-        }
-        let deletedProjects = existing.projects.filter { !snapshot.projects.contains($0.id) }
-            .sorted { ($0.parentProjectId == nil ? 1 : 0) < ($1.parentProjectId == nil ? 1 : 0) }
-            .map(\.id)
-        let deletedMeetings = existing.meetings.subtracting(snapshot.meetings)
-        let deletions: [(sql: String, vaultScoped: Bool, ids: [UUID])] = [
-            (
-                "DELETE FROM screenshots WHERE id = ?",
-                false,
-                Array(existing.screenshots.subtracting(snapshot.screenshots))
-            ),
-            (
-                "DELETE FROM transcript_segments WHERE meetingId = ? AND isConfirmed = 1",
-                false,
-                Array(existing.transcripts.subtracting(snapshot.transcripts))
-            ),
-            (
-                "DELETE FROM summaries WHERE meetingId = ?",
-                false,
-                Array(existing.summaries.subtracting(snapshot.summaries))
-            ),
-            (
-                "DELETE FROM meetings WHERE id = ? AND vaultId = ?",
-                true,
-                Array(deletedMeetings)
-            ),
-            ("DELETE FROM projects WHERE id = ? AND vaultId = ?", true, deletedProjects),
-        ]
-        for deletion in deletions {
-            let ids = deletion.ids
-            for batchStart in stride(from: 0, to: ids.count, by: 100) {
-                let batch = ids[batchStart ..< min(batchStart + 100, ids.count)]
-                let applyBatch = {
-                    try await withCurrentAssociation(
-                        vaultId: vaultId,
-                        expectedConnectionId: expectedConnectionId,
-                        dbQueue: dbQueue
-                    ) { db in
-                        guard try !SyncTransactionQueue.hasPending(vaultId: vaultId, in: db),
-                              try !hasActiveRecording(in: db)
-                        else { return false }
-                        for id in batch {
-                            let arguments: StatementArguments = deletion.vaultScoped ? [id, vaultId] : [id]
-                            try db.execute(sql: deletion.sql, arguments: arguments)
-                        }
-                        return true
-                    }
-                }
-                let completed = if deletion.vaultScoped, deletion.sql.hasPrefix("DELETE FROM meetings") {
-                    try await withStagedAudioDeletion(
-                        meetingIds: Set(batch),
-                        vaultId: vaultId,
-                        expectedConnectionId: expectedConnectionId,
-                        dbQueue: dbQueue,
-                        applyBatch
-                    )
-                } else {
-                    try await applyBatch()
-                }
-                guard completed else { return false }
-            }
-        }
-        return try await withCurrentAssociation(
-            vaultId: vaultId,
-            expectedConnectionId: expectedConnectionId,
-            dbQueue: dbQueue
-        ) { db in
-            guard try !SyncTransactionQueue.hasPending(vaultId: vaultId, in: db),
-                  try !hasActiveRecording(in: db)
-            else { return false }
-            try db.execute(
-                sql: "DELETE FROM sync_entity_state WHERE vaultId = ? AND confirmedRevision IS NULL",
-                arguments: [vaultId]
-            )
-            if let cursor {
-                try db.execute(sql: "UPDATE vaults SET syncPullCursor = ? WHERE id = ?", arguments: [cursor, vaultId])
-            }
-            return true
-        }
-    }
-
-    static func advancePullCursor(
-        _ cursor: String,
-        vaultId: UUID,
-        expectedConnectionId: UUID,
-        dbQueue: DatabaseQueue
-    ) async throws -> Bool {
-        try await withCurrentAssociation(
-            vaultId: vaultId,
-            expectedConnectionId: expectedConnectionId,
-            dbQueue: dbQueue
-        ) { db in
-            guard try !SyncTransactionQueue.hasPending(vaultId: vaultId, in: db) else { return false }
-            try db.execute(sql: "UPDATE vaults SET syncPullCursor = ? WHERE id = ?", arguments: [cursor, vaultId])
-            return true
-        }
-    }
-
-    static func removeRevokedMemberVault(
-        vaultId: UUID,
-        expectedConnectionId: UUID,
-        dbQueue: DatabaseQueue
-    ) async throws -> Bool {
-        let meetingIds = try await dbQueue.read { db in
-            try Set(UUID.fetchAll(db, sql: "SELECT id FROM meetings WHERE vaultId = ?", arguments: [vaultId]))
-        }
-        return try await withStagedAudioDeletion(
-            meetingIds: meetingIds,
-            vaultId: vaultId,
-            expectedConnectionId: expectedConnectionId,
-            dbQueue: dbQueue
-        ) {
-            try await withCurrentAssociation(
-                vaultId: vaultId,
-                expectedConnectionId: expectedConnectionId,
-                dbQueue: dbQueue
-            ) { db in
-                guard try !SyncTransactionQueue.hasPending(vaultId: vaultId, in: db),
-                      try !hasActiveRecording(in: db)
-                else { return false }
-                try db.execute(
-                    sql: "DELETE FROM vaults WHERE id = ? AND syncRole = 'member'",
-                    arguments: [vaultId]
-                )
-                return true
-            }
-        }
-    }
-
-    private static func delete(_ entity: SyncEntity, id: UUID, vaultId: UUID, in db: Database) throws {
-        switch entity {
-        case .project:
-            try db.execute(sql: "DELETE FROM projects WHERE id = ? AND vaultId = ?", arguments: [id, vaultId])
-        case .meeting:
-            try db.execute(sql: "DELETE FROM meetings WHERE id = ? AND vaultId = ?", arguments: [id, vaultId])
-        case .summary:
-            try db.execute(sql: "DELETE FROM summaries WHERE meetingId = ?", arguments: [id])
-        case .transcript:
-            try db.execute(sql: "DELETE FROM transcript_segments WHERE meetingId = ?", arguments: [id])
-        case .screenshot:
-            try db.execute(sql: "DELETE FROM screenshots WHERE id = ?", arguments: [id])
-        case .vault:
-            break
-        }
-    }
-
-    private static func upsert(
-        _ change: SyncChangePage.Change,
-        record: SyncCanonicalPayload,
-        screenshots: [UUID: Data],
-        transcripts: [UUID: [SyncTranscriptPage.Segment]],
-        vaultId: UUID,
-        in db: Database
-    ) throws {
-        switch change.entity {
-        case .vault, .project, .meeting, .summary:
-            try SyncTransactionQueue.applyCanonical(
-                change.entity,
-                id: change.entityId,
-                vaultId: vaultId,
-                value: record,
-                in: db
-            )
-        case .transcript:
-            try applyTranscript(
-                meetingId: change.entityId,
-                segments: transcripts[change.entityId, default: []],
-                in: db
-            )
-        case .screenshot:
-            guard let meetingId = record.meetingId, let capturedAt = record.capturedAt,
-                  let contentType = record.contentType, let image = screenshots[change.entityId] else { return }
-            try db.execute(sql: """
-            INSERT INTO screenshots(id, meetingId, capturedAt, imageData, mimeType, ocrText, caption)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(id) DO UPDATE SET capturedAt = excluded.capturedAt,
-                imageData = excluded.imageData, mimeType = excluded.mimeType,
-                ocrText = excluded.ocrText, caption = excluded.caption
-            """, arguments: [
-                change.entityId, meetingId, capturedAt, image, contentType, record.ocrText, record.caption,
-            ])
-            try db.execute(
-                sql: "DELETE FROM search_index_jobs WHERE indexKind = 'fts' AND targetKind = 'screenshotAnalysis' AND targetKey = ?",
-                arguments: [change.entityId]
-            )
-            let generation = try Int.fetchOne(
-                db,
-                sql: "SELECT indexGeneration FROM search_index_state WHERE indexKind = 'fts'"
-            ) ?? 1
-            try indexScreenshotDocument(id: change.entityId, generation: generation, in: db)
-        }
-    }
-
-    static func applyTranscript(
-        meetingId: UUID,
-        segments: [SyncTranscriptPage.Segment],
-        in db: Database
-    ) throws {
-        let canonicalIDs = segments.map(\.segmentId)
-        if canonicalIDs.isEmpty {
-            try db.execute(
-                sql: "DELETE FROM transcript_segments WHERE meetingId = ? AND isConfirmed = 1",
-                arguments: [meetingId]
-            )
-        } else {
-            try db.execute(
-                sql: """
-                DELETE FROM transcript_segments
-                WHERE meetingId = ? AND isConfirmed = 1
-                  AND id NOT IN (\(canonicalIDs.map { _ in "?" }.joined(separator: ",")))
-                """,
-                arguments: StatementArguments([meetingId]) + StatementArguments(canonicalIDs)
-            )
-        }
-        try upsertTranscriptSegments(segments, meetingId: meetingId, in: db)
-    }
-
-    private static func upsertTranscriptSegments(
-        _ segments: [SyncTranscriptPage.Segment],
-        meetingId: UUID,
-        in db: Database
-    ) throws {
-        for segment in segments {
-            try db.execute(sql: """
-            INSERT INTO transcript_segments(
-                id, meetingId, startTime, endTime, text, isConfirmed, audioSource, speakerLabel
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(id) DO UPDATE SET
-                meetingId = excluded.meetingId,
-                startTime = excluded.startTime,
-                endTime = excluded.endTime,
-                text = excluded.text,
-                isConfirmed = excluded.isConfirmed,
-                audioSource = excluded.audioSource,
-                speakerLabel = excluded.speakerLabel
-            """, arguments: [
-                segment.segmentId, meetingId, segment.startTime, segment.endTime,
-                segment.text, segment.isConfirmed, segment.audioSource, segment.speakerLabel,
-            ])
-        }
     }
 }
 

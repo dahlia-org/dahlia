@@ -63,6 +63,8 @@
     "db:migrate": "tsx --env-file-if-exists=.env.local src/db/migrate.ts",
     "db:migrate:d1:local": "pnpm run ensure:wrangler && WRANGLER_WRITE_LOGS=false WRANGLER_SEND_METRICS=false wrangler d1 migrations apply dahlia_db_prod --local",
     "db:migrate:prod": "node dist/server/db/migrate.js",
+    "db:prune-sync-history": "tsx --env-file-if-exists=.env.local src/db/prune-sync-history.ts",
+    "db:prune-sync-history:prod": "node dist/server/db/prune-sync-history.js",
     "dev": "concurrently -k -n api,web \"pnpm run dev:api\" \"pnpm run dev:client\"",
     "dev:api": "tsx watch --env-file-if-exists=.env.local src/node.ts",
     "dev:client": "vite",

@@ -78,7 +78,23 @@ export interface SyncTransactionResponse {
   id: string;
   status: "committed";
   cursor: string;
-  records: SyncCanonicalRecord[];
+  receipt?: "full" | "compact";
+  records: (Pick<SyncCanonicalRecord, "entity" | "id" | "revision"> & { record?: Record<string, unknown> | null })[];
+}
+
+export interface SyncSnapshotPosition {
+  entity: SyncEntity;
+  id: string;
+}
+
+export interface SyncRetentionResult {
+  changesDeleted: number;
+  receiptsCompacted: number;
+}
+
+export interface SyncHistoryTarget {
+  ownerUserId: string;
+  vaultId: string;
 }
 
 export interface SyncRevisionConflict {
@@ -165,6 +181,9 @@ export interface SyncSearchQuery {
 export interface IdentitySyncStore {
   lockVault(vaultId: string): Promise<void>;
   commitTransaction(transaction: SyncTransaction): Promise<SyncTransactionResponse>;
+  resolveTransaction(transaction: SyncTransaction): Promise<SyncTransactionResponse | null>;
+  assertCursorAvailable(vaultId: string, after: number): Promise<void>;
+  listSnapshot(vaultId: string, after: SyncSnapshotPosition | undefined, limit: number): Promise<SyncCanonicalRecord[]>;
   listChanges(vaultId: string, after: number, through: number, limit: number): Promise<SyncChangeRecord[]>;
   latestChangeSequence(vaultId?: string): Promise<number>;
   ensureUploadTarget(vaultId: string, meetingId: string): Promise<boolean>;
@@ -223,6 +242,8 @@ export interface IdentitySyncStore {
 
 export interface MeetingSyncStore {
   isAvailable(): Promise<boolean>;
+  listHistoryTargets(after?: SyncHistoryTarget): Promise<SyncHistoryTarget[]>;
+  pruneHistoryBatch(target: SyncHistoryTarget): Promise<SyncRetentionResult>;
   withIdentity<T>(identity: Identity, action: (store: IdentitySyncStore) => Promise<T>): Promise<T>;
   claimStorageDeletes(limit: number): Promise<StorageDeleteClaim[]>;
   hasStorageDelete(storageKey: string): Promise<boolean>;

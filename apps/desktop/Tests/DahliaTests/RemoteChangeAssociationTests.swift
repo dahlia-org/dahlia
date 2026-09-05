@@ -6,6 +6,113 @@
 
     @MainActor
     struct RemoteChangeAssociationTests {
+        @Test(arguments: ["owner", "member"])
+        func missingVaultOnlyDeletesMemberAudio(role: String) async throws {
+            let (database, originalVault) = try await syncedDatabase()
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent("missing-vault-\(UUID().uuidString)")
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let audioURL = directory.appendingPathComponent("audio.caf")
+            let bytes = Data([1, 2, 3, 4])
+            try bytes.write(to: audioURL)
+            var changedVault = originalVault
+            changedVault.path = directory.path
+            changedVault.syncRole = role
+            changedVault.syncRecoveryState = "pending"
+            let vault = changedVault
+            let connection = try #require(vault.syncConfirmedConnectionId)
+            let meeting = MeetingRecord(id: .v7(), vaultId: vault.id, projectId: nil, name: "Recorded", createdAt: .now, updatedAt: .now)
+            let session = RecordingSessionRecord(
+                id: .v7(),
+                meetingId: meeting.id,
+                startedAt: .now,
+                endedAt: .now,
+                duration: 1,
+                offsetSeconds: 0,
+                createdAt: .now,
+                updatedAt: .now
+            )
+            try await database.dbQueue.write { db in
+                try vault.update(db)
+                try meeting.insert(db)
+                try session.insert(db)
+                try db.execute(sql: """
+                INSERT INTO recording_audio_files(id, recordingSessionId, source, relativePath, storageLocation, sampleRate, channelCount, createdAt, updatedAt)
+                VALUES (?, ?, 'mic', 'audio.caf', 'vault', 16000, 1, ?, ?)
+                """, arguments: [UUID.v7(), session.id, Date.now, Date.now])
+            }
+            if role == "owner" {
+                #expect(try await !RemoteChangeApplier.removeRevokedMemberVault(
+                    vaultId: vault.id,
+                    expectedConnectionId: connection,
+                    dbQueue: database.dbQueue
+                ))
+                #expect(try Data(contentsOf: audioURL) == bytes)
+            }
+            #expect(try await RemoteChangeApplier.reconcileMissingVault(
+                vaultId: vault.id,
+                expectedConnectionId: connection,
+                dbQueue: database.dbQueue
+            ))
+            let saved = try await database.dbQueue.read { db in try VaultRecord.fetchOne(db, key: vault.id) }
+            if role == "owner" {
+                #expect(saved?.accountConnectionId == connection)
+                #expect(saved?.syncConfirmedConnectionId == nil)
+                #expect(saved?.syncRecoveryState == nil)
+                #expect(try Data(contentsOf: audioURL) == bytes)
+                #expect(try await database.dbQueue.read { db in try MeetingRecord.fetchOne(db, key: meeting.id) } != nil)
+            } else {
+                #expect(saved == nil)
+                #expect(!FileManager.default.fileExists(atPath: audioURL.path))
+            }
+        }
+
+        @Test(arguments: ["pending", "recording", "detached", "reconnected"])
+        func missingOwnerVaultDefersRecoveryWhenLocalStateChanged(state: String) async throws {
+            let (database, vault) = try await syncedDatabase()
+            let connection = try #require(vault.syncConfirmedConnectionId)
+            let generation = try #require(try await RemoteChangeApplier.recoveryGeneration(
+                vaultId: vault.id,
+                expectedConnectionId: connection,
+                dbQueue: database.dbQueue
+            ))
+            try await database.dbQueue.write { db in
+                switch state {
+                case "pending":
+                    try SyncTransactionRecorder.record(
+                        vaultId: vault.id,
+                        operations: [SyncInitialSnapshotBuilder.vaultOperation(vault, action: .update)],
+                        in: db
+                    )
+                case "recording":
+                    let meeting = MeetingRecord(id: .v7(), vaultId: vault.id, projectId: nil, name: "Recording", createdAt: .now, updatedAt: .now)
+                    try meeting.insert(db)
+                    try RecordingSessionRecord(
+                        id: .v7(),
+                        meetingId: meeting.id,
+                        startedAt: .now,
+                        endedAt: nil,
+                        duration: nil,
+                        offsetSeconds: 0,
+                        createdAt: .now,
+                        updatedAt: .now
+                    ).insert(db)
+                case "reconnected":
+                    try db.execute(sql: "UPDATE vaults SET syncConfirmedConnectionId = NULL WHERE id = ?", arguments: [vault.id])
+                    try db.execute(sql: "UPDATE vaults SET syncConfirmedConnectionId = ? WHERE id = ?", arguments: [connection, vault.id])
+                default:
+                    try db.execute(sql: "UPDATE vaults SET accountConnectionId = NULL WHERE id = ?", arguments: [vault.id])
+                }
+            }
+            #expect(try await !RemoteChangeApplier.reconcileMissingVault(
+                vaultId: vault.id,
+                expectedConnectionId: connection,
+                dbQueue: database.dbQueue,
+                expectedMutationGeneration: generation
+            ))
+            #expect(try await database.dbQueue.read { db in try VaultRecord.fetchOne(db, key: vault.id)?.syncConfirmedConnectionId } == connection)
+        }
+
         @Test
         func revokedMemberVaultIsRemovedFromTheWorkingCopy() async throws {
             let (database, originalVault) = try await syncedDatabase()

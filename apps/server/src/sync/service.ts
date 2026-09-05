@@ -23,7 +23,7 @@ import type {
   SyncTransaction,
   VaultPrincipalType,
 } from "./types";
-import { decodeSyncCursor, encodeSyncCursor, SyncTransactionError } from "./store";
+import { decodeSyncCursor, encodeSyncCursor, SYNC_SNAPSHOT_ENTITIES, SyncTransactionError } from "./store";
 
 const uuidSchema = z.uuid().transform((value) => value.toLowerCase());
 const dateSchema = z.iso.datetime().transform((value) => new Date(value));
@@ -173,30 +173,24 @@ export class MeetingSyncService {
     return parsed.data;
   }
 
+  async resolveTransaction(identity: Identity, body: unknown) {
+    this.requireWritableIdentity(identity);
+    const transaction = await normalizeTransaction(body);
+    return this.store.withIdentity(identity, async (scoped) =>
+      await scoped.resolveTransaction(transaction) ?? { id: transaction.id, status: "unknown" as const },
+    );
+  }
+
   async commitTransaction(identity: Identity, body: unknown) {
     this.requireWritableIdentity(identity);
-    const parsed = transactionSchema.safeParse(body);
-    if (!parsed.success
-      || new Set(parsed.data.operations.map(({ id }) => id)).size !== parsed.data.operations.length
-      || new Set(parsed.data.operations.map(({ entity, entityId }) => `${entity}:${entityId}`)).size !== parsed.data.operations.length) {
-      throw new ArtifactRequestError(400, "invalid_sync_transaction");
-    }
-    const operations: SyncTransaction["operations"] = [];
-    for (const operation of parsed.data.operations) {
-      const key = `${operation.entity}:${operation.action}` as keyof typeof transactionDataSchemas;
-      const schema = transactionDataSchemas[key];
-      const data = schema?.safeParse(operation.data ?? {});
-      if (!data?.success || (operation.entity === "vault" && operation.entityId !== parsed.data.vaultId)) {
-        throw new SyncTransactionError(400, "invalid_sync_operation", [], operation.id);
-      }
-      operations.push({ ...operation, data: data.data });
-    }
-    const normalized = { ...parsed.data, operations };
-    const requestHash = await sha256(canonicalJson(normalized));
+    const normalized = await normalizeTransaction(body);
+    const { operations, requestHash } = normalized;
     let response: Awaited<ReturnType<IdentitySyncStore["commitTransaction"]>>;
     try {
       response = await this.store.withIdentity(identity, async (scoped) => {
-        await scoped.lockVault(parsed.data.vaultId);
+        const receipt = await scoped.resolveTransaction(normalized);
+        if (receipt?.receipt === "compact") throw new SyncTransactionError(410, "transaction_receipt_expired");
+        if (receipt) return receipt;
         const meetings = new Map<string, Awaited<ReturnType<IdentitySyncStore["getMeeting"]>>>();
         const prepared = [] as SyncTransaction["operations"];
         for (const operation of operations) {
@@ -206,7 +200,7 @@ export class MeetingSyncService {
             if (meeting === undefined) {
               meeting = operation.entity === "meeting" && operation.action === "create"
                 ? null
-                : await scoped.getMeeting(parsed.data.vaultId, operation.entityId);
+                : await scoped.getMeeting(normalized.vaultId, operation.entityId);
             }
             const name = operation.entity === "meeting" && typeof data.name === "string" ? data.name : meeting?.name ?? "";
             const description = operation.entity === "meeting" && typeof data.description === "string"
@@ -225,15 +219,15 @@ export class MeetingSyncService {
             meetings.set(operation.entityId, {
               ...(meeting ?? {}),
               meetingId: operation.entityId,
-              vaultId: parsed.data.vaultId,
+              vaultId: normalized.vaultId,
               projectId: operation.entity === "meeting" ? data.projectId as string | null : meeting?.projectId ?? null,
               name,
               description,
               status: operation.entity === "meeting" ? String(data.status) : meeting?.status ?? "",
               duration: operation.entity === "meeting" ? data.duration as number | null : meeting?.duration ?? null,
               recordingStartedAt: operation.entity === "meeting" ? data.recordingStartedAt as Date | null : meeting?.recordingStartedAt ?? null,
-              createdAt: operation.entity === "meeting" && operation.action === "create" ? data.createdAt as Date : meeting?.createdAt ?? parsed.data.createdAt,
-              updatedAt: operation.entity === "meeting" ? data.updatedAt as Date : meeting?.updatedAt ?? parsed.data.createdAt,
+              createdAt: operation.entity === "meeting" && operation.action === "create" ? data.createdAt as Date : meeting?.createdAt ?? normalized.createdAt,
+              updatedAt: operation.entity === "meeting" ? data.updatedAt as Date : meeting?.updatedAt ?? normalized.createdAt,
               summaryTitle: operation.entity === "summary" && operation.action === "upsert" ? String(data.title) : operation.action === "delete" ? null : meeting?.summaryTitle ?? null,
               summaryDocument,
               summaryCreatedAt: operation.entity === "summary" && operation.action === "upsert" ? data.createdAt as Date : operation.action === "delete" ? null : meeting?.summaryCreatedAt ?? null,
@@ -260,10 +254,10 @@ export class MeetingSyncService {
           await this.store.withIdentity(identity, async (scoped) => {
             for (const operation of operations) {
               if (operation.entity === "transcript" && operation.action === "patch") {
-                await scoped.deleteTranscriptPatch(parsed.data.vaultId, operation.entityId, operation.id);
+                await scoped.deleteTranscriptPatch(normalized.vaultId, operation.entityId, operation.id);
               } else if (operation.entity === "screenshot" && operation.action === "upsert") {
                 discardedScreenshot = await scoped.discardInactiveScreenshot(
-                  parsed.data.vaultId,
+                  normalized.vaultId,
                   operation.entityId,
                 ) || discardedScreenshot;
               }
@@ -334,6 +328,7 @@ export class MeetingSyncService {
       throw new SyncTransactionError(400, "invalid_sync_cursor");
     }
     const { rows, highWater } = await this.store.withIdentity(identity, async (scoped) => {
+      await scoped.lockVault(vaultId);
       const highWater = suppliedHighWater ?? await scoped.latestChangeSequence(vaultId);
       return {
         rows: await scoped.listChanges(vaultId, after, highWater, SYNC_CHANGE_PAGE_SIZE + 1),
@@ -344,10 +339,38 @@ export class MeetingSyncService {
     const last = items.at(-1);
     return {
       items,
-      cursor: encodeSyncCursor(last?.sequence ?? after),
+      cursor: encodeSyncCursor(rows.length > SYNC_CHANGE_PAGE_SIZE ? last!.sequence : highWater),
       highWaterCursor: encodeSyncCursor(highWater),
       hasMore: rows.length > SYNC_CHANGE_PAGE_SIZE,
     };
+  }
+
+  async listSnapshot(identity: Identity, vaultId: string, cursor?: string, startCursor?: string) {
+    const position = cursor ? z.tuple([z.enum(SYNC_SNAPSHOT_ENTITIES), uuidSchema]).safeParse(cursor.split(",")) : undefined;
+    if ((position && !position.success) || (cursor && !startCursor)) {
+      throw new SyncTransactionError(400, "invalid_snapshot_cursor");
+    }
+    const suppliedStart = startCursor ? decodeSyncCursor(startCursor) : undefined;
+    return this.store.withIdentity(identity, async (scoped) => {
+      await scoped.lockVault(vaultId);
+      if (!await scoped.getVault(vaultId)) throw new SyncTransactionError(404, "vault_not_found");
+      const latest = await scoped.latestChangeSequence(vaultId);
+      const start = suppliedStart ?? latest;
+      if (start > latest) throw new SyncTransactionError(400, "invalid_snapshot_cursor");
+      await scoped.assertCursorAvailable(vaultId, start);
+      const rows = await scoped.listSnapshot(
+        vaultId,
+        position?.success ? { entity: position.data[0], id: position.data[1] } : undefined,
+        SYNC_CHANGE_PAGE_SIZE + 1,
+      );
+      const items = rows.slice(0, SYNC_CHANGE_PAGE_SIZE);
+      const last = items.at(-1);
+      return {
+        items,
+        startCursor: encodeSyncCursor(start),
+        nextCursor: rows.length > SYNC_CHANGE_PAGE_SIZE && last ? `${last.entity},${last.id}` : null,
+      };
+    });
   }
 
   latestCursor(identity: Identity) {
@@ -819,4 +842,26 @@ function canonicalJson(value: unknown): string {
 async function sha256(value: string): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function normalizeTransaction(body: unknown): Promise<SyncTransaction> {
+  const parsed = transactionSchema.safeParse(body);
+  if (!parsed.success
+    || new Set(parsed.data.operations.map(({ id }) => id)).size !== parsed.data.operations.length
+    || new Set(parsed.data.operations.map(({ entity, entityId }) => `${entity}:${entityId}`)).size !== parsed.data.operations.length) {
+    throw new ArtifactRequestError(400, "invalid_sync_transaction");
+  }
+  const operations: SyncTransaction["operations"] = [];
+  for (const operation of parsed.data.operations) {
+    const key = `${operation.entity}:${operation.action}` as keyof typeof transactionDataSchemas;
+    const schema = transactionDataSchemas[key];
+    const data = schema?.safeParse(operation.data ?? {});
+    if (!data?.success || (operation.entity === "vault" && operation.entityId !== parsed.data.vaultId)) {
+      throw new SyncTransactionError(400, "invalid_sync_operation", [], operation.id);
+    }
+    operations.push({ ...operation, data: data.data });
+  }
+  const normalized = { ...parsed.data, operations };
+  const requestHash = await sha256(canonicalJson(normalized));
+  return { ...normalized, requestHash };
 }

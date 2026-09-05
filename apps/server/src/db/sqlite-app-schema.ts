@@ -242,7 +242,8 @@ export const syncTransactionReceipt = sqliteTable("transaction_receipts", {
   ownerUserId: text("owner_user_id").notNull(),
   vaultId: text("vault_id").notNull(),
   requestHash: text("request_hash").notNull(),
-  responseJson: text("response_json").notNull(),
+  responseJson: text("response_json"),
+  resultsJson: text("results_json").default("[]").notNull(),
   cursor: integer("cursor").notNull(),
   createdAt: sqliteTimestamp("created_at").default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`).notNull(),
 }, (table) => [
@@ -265,6 +266,17 @@ export const syncChange = sqliteTable("sync_changes", {
   check("sync_change_action_check", sql`${table.action} IN ('upsert', 'delete', 'reset')`),
   index("sync_change_owner_vault_sequence_idx").on(table.ownerUserId, table.vaultId, table.sequence),
   index("sync_change_owner_sequence_idx").on(table.ownerUserId, table.sequence),
+]);
+
+// Survives Vault deletion and ledger pruning; contains no canonical content.
+export const syncVaultState = sqliteTable("sync_vault_state", {
+  ownerUserId: text("owner_user_id").notNull().references(() => authUser.id, { onDelete: "cascade" }),
+  vaultId: text("vault_id").notNull(),
+  latestSequence: integer("latest_sequence").default(0).notNull(),
+  prunedThrough: integer("pruned_through").default(0).notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.ownerUserId, table.vaultId] }),
+  check("sync_vault_state_boundary_check", sql`${table.prunedThrough} >= 0 AND ${table.latestSequence} >= ${table.prunedThrough}`),
 ]);
 
 export const storageDeleteJob = sqliteTable("storage_delete_jobs", {

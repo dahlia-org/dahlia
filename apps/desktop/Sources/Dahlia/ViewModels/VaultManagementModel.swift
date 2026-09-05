@@ -1,4 +1,5 @@
 import Foundation
+import GRDB
 import Observation
 
 struct PendingVaultServerAdoption: Identifiable {
@@ -35,6 +36,7 @@ final class VaultManagementModel {
     private(set) var hasLoadedVaults = false
     private var repository: MeetingRepository?
     private let cloudVaultFetcher: CloudVaultFetcher?
+    private var syncObservation: AnyDatabaseCancellable?
 
     init(cloudVaultFetcher: CloudVaultFetcher? = nil) {
         self.cloudVaultFetcher = cloudVaultFetcher
@@ -48,6 +50,25 @@ final class VaultManagementModel {
         self.appDatabase = appDatabase
         hasLoadedVaults = false
         repository = appDatabase.map { MeetingRepository(dbQueue: $0.dbQueue) }
+        syncObservation?.cancel()
+        if let dbQueue = appDatabase?.dbQueue {
+            syncObservation = ValueObservation.tracking { db in
+                try (
+                    VaultRecord.order(Column("lastOpenedAt").desc).fetchAll(db),
+                    UUID.fetchSet(db, sql: "SELECT DISTINCT vaultId FROM sync_transactions WHERE blockedReason IS NOT NULL"),
+                    UUID.fetchSet(db, sql: "SELECT DISTINCT vaultId FROM sync_transactions WHERE blockedReason = 'conflict'"),
+                    UUID.fetchSet(db, sql: "SELECT DISTINCT vaultId FROM sync_transactions WHERE blockedReason = 'validation'")
+                )
+            }.start(in: dbQueue, onError: { _ in }, onChange: { [weak self] values in
+                Task { @MainActor in
+                    guard let self, self.appDatabase?.dbQueue === dbQueue else { return }
+                    self.vaults = values.0
+                    self.blockedSyncVaultIDs = values.1
+                    self.conflictedSyncVaultIDs = values.2
+                    self.validationBlockedSyncVaultIDs = values.3
+                }
+            })
+        }
         await loadVaults()
     }
 

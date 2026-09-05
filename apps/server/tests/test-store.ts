@@ -5,6 +5,8 @@ export function testStore(overrides: Partial<AuthStore> = {}): AuthStore {
     database: {} as AuthStore["database"],
     sync: {
       isAvailable: () => Promise.resolve(false),
+      listHistoryTargets: () => Promise.resolve([]),
+      pruneHistoryBatch: () => Promise.resolve({ changesDeleted: 0, receiptsCompacted: 0 }),
       withIdentity: () => Promise.reject(new Error("sync unavailable in this test")),
       claimStorageDeletes: () => Promise.resolve([]),
       hasStorageDelete: () => Promise.resolve(false),

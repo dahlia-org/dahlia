@@ -5,6 +5,7 @@ export default defineConfig({
   dts: true,
   entry: {
     "db/migrate": "src/db/migrate.ts",
+    "db/prune-sync-history": "src/db/prune-sync-history.ts",
     index: "src/index.ts",
     migrations: "src/migration-api.ts",
     node: "src/node.ts",

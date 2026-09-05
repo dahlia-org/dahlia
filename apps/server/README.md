@@ -58,6 +58,28 @@ Desktop keeps immutable operations until the Server receipt is applied. Screensh
 
 Vault and Project operations are committed through the domain transaction endpoint before meeting data. Projects are available for hierarchy browsing and meeting filtering but are not added to full-text or vector search. Transcript segments keep `audioSource` (`mic` or `system`) separate from nullable `speakerLabel`, which is reserved for future diarization.
 
+### Sync history retention and recovery
+
+The change ledger is sync-only and guarantees 90 days of delta recovery. `app.sync_vault_state` retains the latest sequence and the pruned boundary even when every change has been deleted. Every delta page checks that boundary and returns `410 sync_cursor_expired` for an expired cursor.
+
+New devices and expired clients use `GET /api/v1/vaults/{vaultId}/snapshot`. It returns `{ items, startCursor, nextCursor }`, with at most 100 canonical `{ entity, id, revision, record }` items ordered by entity and ID. Pass `nextCursor` as `cursor` and preserve `startCursor` on subsequent pages. Fetch existing transcript and screenshot endpoints for their bodies. After enumeration, fetch delta pages from `startCursor` with a fixed high-water boundary and merge their changes/deletions before removing absent local records. A `410` during enumeration or catch-up requires a fresh snapshot. Each page reauthorizes current Vault access; this is not a transaction held open across requests.
+
+`POST /api/v1/transactions/resolve` accepts exactly the same body as the commit endpoint. It validates and normalizes the request and compares its hash without mutation or upload staging. Responses are `{ id, status: "unknown" }`, the original committed response, or `{ id, status: "committed", receipt: "compact", cursor, records: [{ entity, id, revision }] }`. Different content with the same ID remains `409 idempotency_key_reused`; another user cannot resolve the receipt. Resolve before restaging/retrying. An unknown result must keep the original ID, body and base revisions. Compact results acknowledge the queued operations, preserve later local edits, and require a canonical refresh without advancing the pull checkpoint to the receipt cursor. The legacy commit endpoint returns `410 transaction_receipt_expired` instead of passing a compact result off as an ordinary receipt.
+
+Receipt bodies are retained for 90 days. Transaction ID, owner, Vault, request hash, result IDs/revisions and commit cursor remain until the existing account-deletion contract removes them. Canonical meeting data has no new retention limit; lightweight receipt storage is not constant-sized.
+
+Cleanup is disabled unless explicitly invoked with `--apply`:
+
+```bash
+pnpm db:prune-sync-history --apply
+# Packaged operator command:
+pnpm db:prune-sync-history:prod --apply
+```
+
+Without the flag the command exits without opening the database. Configure an operator scheduler to run it daily only after recovery verification. It uses Server time, prunes a contiguous prefix older than 90 days in batches of at most 1,000, compacts receipt bodies in bounded batches, and shares the Vault commit lock. Boundary changes and deletion commit atomically; failures and overlapping runs can be retried. Output contains only success/failure and aggregate counts, never content or identifiers. D1 meeting-sync restrictions remain in force.
+
+Roll out the forward migrations, then **all** Server instances, then compatible Desktop/Web clients; test recovery before enabling the scheduled command. Do not enable cleanup while older Server instances can still write receipts without result metadata. Older clients must upgrade to recover expired cursors/receipts. Production migration and scheduler activation are separate operator actions.
+
 `GET /api/v1/vaults/{vaultId}/meetings` returns at most 200 meetings. Pass its opaque `nextCursor` as `cursor` to continue the same date-ordered Vault or Project listing. `query_meetings` exposes the same cursor contract. Search results remain a bounded relevance-ranked page and do not return a continuation cursor.
 
 `GET /api/v1/vaults/{vaultId}/meetings/{meetingId}/screenshots` likewise returns at most 200 screenshots. Pass `nextCursor` as `cursor` to continue chronological listings; MCP `get_meeting_screenshots` accepts the same cursor and emits the next cursor as JSON text before its resource links. Screenshot search remains a bounded page without a cursor.
