@@ -412,6 +412,11 @@ enum SyncTransactionQueue {
                 JOIN vaults v ON v.id = t.vaultId
                 WHERE v.accountConnectionId = t.connectionId
                   AND v.syncConfirmedConnectionId = t.connectionId
+                  AND NOT EXISTS (
+                    SELECT 1 FROM sync_entity_state s
+                    WHERE s.vaultId = t.vaultId AND s.entity = 'vault' AND s.entityId = t.vaultId
+                      AND s.confirmedRevision IS NULL
+                  )
                   AND t.blockedReason IS NULL
                   AND t.availableAt <= ?
                   AND (t.leaseExpiresAt IS NULL OR t.leaseExpiresAt < ?)
@@ -660,6 +665,74 @@ enum SyncTransactionQueue {
     static func hasPending(vaultId: UUID, dbQueue: DatabaseQueue) async throws -> Bool {
         try await dbQueue.read { db in
             try hasPending(vaultId: vaultId, in: db)
+        }
+    }
+
+    static func reconcileRevisions(
+        _ changes: [SyncChangePage.Change],
+        vaultId: UUID,
+        connectionId: UUID,
+        dbQueue: DatabaseQueue
+    ) async throws {
+        try await dbQueue.write { db in
+            guard try matchesExpectedConnection(vaultId: vaultId, connectionId: connectionId, in: db),
+                  try Bool.fetchOne(
+                      db,
+                      sql: "SELECT EXISTS(SELECT 1 FROM sync_entity_state WHERE vaultId = ? AND entity = 'vault' AND entityId = ? AND confirmedRevision IS NULL)",
+                      arguments: [vaultId, vaultId]
+                  ) == true else { return }
+            guard changes.contains(where: {
+                $0.entity == .vault && $0.entityId == vaultId && $0.record != nil && $0.revision != nil
+            }) else { throw SyncTransactionQueueError.invalidReceipt }
+
+            // These revisions permit queued edits to resume; the cursor stays nil until canonical data is applied.
+            var revisions: [String: Int] = [:]
+            for change in changes {
+                try db.execute(
+                    sql: """
+                    INSERT INTO sync_entity_state(vaultId, entity, entityId, confirmedRevision)
+                    VALUES (?, ?, ?, ?)
+                    ON CONFLICT(vaultId, entity, entityId) DO UPDATE SET confirmedRevision = excluded.confirmedRevision
+                    """,
+                    arguments: [vaultId, change.entity, change.entityId, change.revision]
+                )
+                if let revision = change.revision {
+                    revisions["\(change.entity.rawValue):\(change.entityId)"] = revision
+                }
+            }
+            let operations = try Row.fetchAll(
+                db,
+                sql: """
+                SELECT o.id, o.entity, o.entityId, o.action, o.baseRevision, t.attempts FROM sync_operations o
+                JOIN sync_transactions t ON t.id = o.transactionId
+                WHERE t.vaultId = ? ORDER BY t.sequence, o.position
+                """,
+                arguments: [vaultId]
+            )
+            for operation in operations {
+                let id: UUID = operation["id"]
+                let entity: SyncEntity = operation["entity"]
+                let entityId: UUID = operation["entityId"]
+                let action: SyncAction = operation["action"]
+                let key = "\(entity.rawValue):\(entityId)"
+                let baseRevision: Int? = if operation["attempts"] as Int > 0 {
+                    // A pre-upgrade attempt may already have committed; retain its idempotent request body.
+                    operation["baseRevision"]
+                } else if action == .create {
+                    nil
+                } else if let revision = revisions[key] {
+                    revision
+                } else if entity == .transcript || entity == .summary {
+                    0
+                } else {
+                    nil
+                }
+                try db.execute(
+                    sql: "UPDATE sync_operations SET baseRevision = ? WHERE id = ?",
+                    arguments: [baseRevision, id]
+                )
+                revisions[key] = action == .create ? 1 : (baseRevision ?? 0) + 1
+            }
         }
     }
 

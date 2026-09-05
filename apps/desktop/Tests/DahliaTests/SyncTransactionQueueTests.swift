@@ -392,6 +392,88 @@
         }
 
         @Test
+        func reconciliationRebasesDurableEditsBeforeTheyCanBeClaimed() async throws {
+            let (database, vault) = try await syncedDatabase()
+            let connectionId = try #require(vault.syncConfirmedConnectionId)
+            try await database.dbQueue.write { db in
+                try SyncTransactionRecorder.record(
+                    vaultId: vault.id,
+                    operations: [SyncInitialSnapshotBuilder.vaultOperation(vault, action: .update)], in: db
+                )
+            }
+            let rejected = try #require(try await SyncTransactionQueue.claim(dbQueue: database.dbQueue))
+            try await SyncTransactionQueue.block(rejected, reason: .conflict, response: Data("{}".utf8), dbQueue: database.dbQueue)
+            try await SyncTransactionQueue.acceptServerVersion(vaultId: vault.id, dbQueue: database.dbQueue)
+
+            let meetingId = UUID.v7()
+            let patch = SyncOperationDraft(entity: .transcript, action: .patch, entityId: meetingId)
+            let segment = SyncTranscriptPatchSegment(TranscriptSegmentRecord(
+                id: .v7(), meetingId: meetingId, sessionId: nil, startTime: .now, endTime: nil,
+                text: "Finalized during reconciliation", translatedText: nil, isConfirmed: true,
+                audioSource: "mic", speakerLabel: nil, audioFeatureVersion: nil,
+                audioActiveRmsDecibels: nil, audioMedianPitchHertz: nil,
+                audioVoicedFrameRatio: nil, audioPitchSpreadHertz: nil
+            ))
+            try await database.dbQueue.write { db in
+                for name in ["First edit", "Second edit"] {
+                    var edited = vault
+                    edited.name = name
+                    try edited.update(db)
+                    try SyncTransactionRecorder.record(
+                        vaultId: vault.id,
+                        operations: [SyncInitialSnapshotBuilder.vaultOperation(edited, action: .update)], in: db
+                    )
+                }
+                try SyncTransactionRecorder.record(
+                    vaultId: vault.id, operations: [patch], transcriptSegments: [patch.id: [segment]], in: db
+                )
+            }
+            #expect(try await SyncTransactionQueue.claim(dbQueue: database.dbQueue) == nil)
+            await #expect(throws: SyncTransactionQueueError.self) {
+                try await SyncTransactionQueue.reconcileRevisions(
+                    [], vaultId: vault.id, connectionId: connectionId, dbQueue: database.dbQueue
+                )
+            }
+            #expect(try await SyncTransactionQueue.claim(dbQueue: database.dbQueue) == nil)
+
+            let canonical = try SyncJSON.decoder.decode(SyncCanonicalPayload.self, from: Data("{\"name\":\"Server\"}".utf8))
+            let changes: [SyncChangePage.Change] = [
+                .init(sequence: 1, entity: .vault, entityId: vault.id, action: "upsert", revision: 8, record: canonical),
+                .init(sequence: 2, entity: .transcript, entityId: meetingId, action: "upsert", revision: 4, record: nil),
+            ]
+            try await SyncTransactionQueue.reconcileRevisions(
+                changes, vaultId: vault.id, connectionId: connectionId, dbQueue: database.dbQueue
+            )
+            let revisions = try await database.dbQueue.read { db in
+                try Int.fetchAll(db, sql: """
+                SELECT o.baseRevision FROM sync_operations o JOIN sync_transactions t ON t.id = o.transactionId
+                WHERE t.vaultId = ? ORDER BY t.sequence, o.position
+                """, arguments: [vault.id])
+            }
+            #expect(revisions == [8, 9, 4])
+            #expect(try await SyncTransactionQueue.transcriptPatch(operationId: patch.id, dbQueue: database.dbQueue).segments.first?.text == segment.text)
+            #expect(try await database.dbQueue.read { db in
+                try VaultRecord.fetchOne(db, key: vault.id)?.name
+            } == "Second edit")
+            let first = try #require(try await SyncTransactionQueue.claim(dbQueue: database.dbQueue))
+            #expect(first.operations.first?.baseRevision == 8)
+            // A pre-upgrade retry must retain its wire body even if a revision marker remains.
+            try await database.dbQueue.write { db in
+                try db.execute(
+                    sql: "UPDATE sync_entity_state SET confirmedRevision = NULL WHERE vaultId = ? AND entity = 'vault'",
+                    arguments: [vault.id]
+                )
+            }
+            try await SyncTransactionQueue.reconcileRevisions(
+                [.init(sequence: 3, entity: .vault, entityId: vault.id, action: "upsert", revision: 20, record: canonical)],
+                vaultId: vault.id, connectionId: connectionId, dbQueue: database.dbQueue
+            )
+            #expect(try await database.dbQueue.read { db in
+                try Int.fetchOne(db, sql: "SELECT baseRevision FROM sync_operations WHERE transactionId = ?", arguments: [first.id])
+            } == 8)
+        }
+
+        @Test
         func transcriptChunkEncodesRequiredNullableFields() throws {
             for hasValues in [false, true] {
                 let segment = TranscriptChunkBody.Segment(

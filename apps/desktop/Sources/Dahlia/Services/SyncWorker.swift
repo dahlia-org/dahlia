@@ -555,6 +555,9 @@ actor SyncWorker {
                 if !page.hasMore { break }
             } while true
             let snapshot = Self.initialSnapshotChanges((reset.map { [$0] } ?? []) + Array(changes.values))
+            try await SyncTransactionQueue.reconcileRevisions(
+                snapshot, vaultId: target.vaultId, connectionId: target.connectionId, dbQueue: dbQueue
+            )
             _ = try await applySnapshot(snapshot, cursor: cursor, target: target, reconcilesMissingRecords: true)
             return
         }
@@ -770,7 +773,7 @@ actor SyncWorker {
                 dbQueue: dbQueue
             ) else { return false }
             let appliedCursor = index == changes.indices.last ? cursor : nil
-            if change.action != "reset", try await SyncTransactionQueue.isConfirmed(
+            if target.cursor != nil, change.action != "reset", try await SyncTransactionQueue.isConfirmed(
                 vaultId: target.vaultId,
                 entity: change.entity,
                 entityId: change.entityId,
@@ -898,7 +901,14 @@ actor SyncWorker {
                 JOIN dahlia_account_connections
                   ON dahlia_account_connections.id = vaults.syncConfirmedConnectionId
                 WHERE vaults.accountConnectionId = vaults.syncConfirmedConnectionId
-                  AND NOT EXISTS (SELECT 1 FROM sync_transactions WHERE vaultId = vaults.id)
+                  AND (
+                    NOT EXISTS (SELECT 1 FROM sync_transactions WHERE vaultId = vaults.id)
+                    OR EXISTS (
+                      SELECT 1 FROM sync_entity_state s
+                      WHERE s.vaultId = vaults.id AND s.entity = 'vault' AND s.entityId = vaults.id
+                        AND s.confirmedRevision IS NULL
+                    )
+                  )
                 """
             ).compactMap { row in
                 guard let origin = URL(string: row["origin"] as String) else { return nil }
