@@ -14,9 +14,6 @@ export {
   type D1DatabaseLike,
   type D1PreparedStatementLike,
   type DahliaOAuthSession,
-  type ModelAliasInput,
-  type ModelAliasRecord,
-  type ModelAliasUpdate,
   type AdminUserRecord,
   type RemoveAdminResult,
 } from "./auth/store";

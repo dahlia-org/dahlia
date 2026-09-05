@@ -23,16 +23,16 @@ describe("auth schema generation", () => {
     }
   });
 
-  it("keeps the committed SQLite migration history synchronized with the declarative schema", () => {
-    const directory = mkdtempSync(join(tmpdir(), "dahlia-sqlite-schema-"));
+  it.each(["sqlite", "postgresql"] as const)("keeps the committed %s migration history synchronized with the declarative schema", (dialect) => {
+    const directory = mkdtempSync(join(tmpdir(), "dahlia-app-schema-"));
     const packageDirectory = new URL("..", import.meta.url);
     try {
-      cpSync(new URL("../drizzle/sqlite/", import.meta.url), directory, { recursive: true });
+      cpSync(new URL(`../drizzle/${dialect === "sqlite" ? "sqlite" : "postgres"}/`, import.meta.url), directory, { recursive: true });
       const migrations = readdirSync(directory).toSorted();
       const generated = spawnSync("pnpm", [
         "exec", "drizzle-kit", "generate",
-        "--dialect", "sqlite",
-        "--schema", "./src/db/sqlite-schema.ts",
+        "--dialect", dialect,
+        "--schema", dialect === "sqlite" ? "./src/db/sqlite-schema.ts" : "./src/db/postgres-app-schema.ts",
         "--out", directory,
         "--name", "schema-drift",
       ], { cwd: packageDirectory, encoding: "utf8" });

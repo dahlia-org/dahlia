@@ -5,16 +5,7 @@ import { user as authUser } from "./generated/sqlite-auth-schema";
 
 const sqliteTimestamp = (name: string) => integer(name, { mode: "timestamp_ms" });
 
-export const modelAlias = sqliteTable("core_model_alias", {
-  alias: text("alias").primaryKey(),
-  upstreamModel: text("upstream_model").notNull(),
-  displayName: text("display_name"),
-  enabled: integer("enabled", { mode: "boolean" }).default(true).notNull(),
-  createdAt: sqliteTimestamp("created_at").default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`).notNull(),
-  updatedAt: sqliteTimestamp("updated_at").default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`).notNull(),
-});
-
-export const artifact = sqliteTable("core_artifact", {
+export const artifact = sqliteTable("artifact", {
   id: text("id").primaryKey(),
   ownerWorkspaceId: text("owner_workspace_id").notNull(),
   contentType: text("content_type").notNull(),
@@ -26,7 +17,7 @@ export const artifact = sqliteTable("core_artifact", {
   check("artifact_visibility_check", sql`${table.visibility} IN ('private', 'public')`),
 ]);
 
-export const syncedVault = sqliteTable("core_vaults", {
+export const syncedVault = sqliteTable("vaults", {
   vaultId: text("vault_id").primaryKey(),
   name: text("name").notNull(),
   revision: integer("revision").default(1).notNull(),
@@ -35,7 +26,7 @@ export const syncedVault = sqliteTable("core_vaults", {
   updatedAt: sqliteTimestamp("updated_at").default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`).notNull(),
 });
 
-export const syncedProject = sqliteTable("core_projects", {
+export const syncedProject = sqliteTable("projects", {
   projectId: text("project_id").primaryKey(),
   vaultId: text("vault_id").notNull(),
   parentProjectId: text("parent_project_id"),
@@ -61,7 +52,7 @@ export const syncedProject = sqliteTable("core_projects", {
   index("project_vault_parent_name_idx").on(table.vaultId, table.parentProjectId, table.name),
 ]);
 
-export const syncedVaultPermission = sqliteTable("core_vault_permissions", {
+export const syncedVaultPermission = sqliteTable("vault_permissions", {
   vaultId: text("vault_id").notNull(),
   principalType: text("principal_type").notNull(),
   principalId: text("principal_id").notNull(),
@@ -86,7 +77,7 @@ export const syncedVaultPermission = sqliteTable("core_vault_permissions", {
     .on(table.principalType, table.principalId, table.role, table.vaultId),
 ]);
 
-export const syncedMeeting = sqliteTable("content_meetings", {
+export const syncedMeeting = sqliteTable("meetings", {
   meetingId: text("meeting_id").primaryKey(),
   vaultId: text("vault_id").notNull(),
   projectId: text("project_id"),
@@ -118,7 +109,7 @@ export const syncedMeeting = sqliteTable("content_meetings", {
   index("synced_meeting_vault_created_id_idx").on(table.vaultId, table.createdAt, table.meetingId),
 ]);
 
-export const syncedTranscriptSegment = sqliteTable("content_transcript_segments", {
+export const syncedTranscriptSegment = sqliteTable("transcript_segments", {
   vaultId: text("vault_id").notNull(),
   meetingId: text("meeting_id").notNull(),
   segmentId: text("segment_id").notNull(),
@@ -140,7 +131,7 @@ export const syncedTranscriptSegment = sqliteTable("content_transcript_segments"
     .on(table.vaultId, table.meetingId, table.startTime, table.segmentId),
 ]);
 
-export const transcriptPatchChunk = sqliteTable("content_transcript_patch_chunks", {
+export const transcriptPatchChunk = sqliteTable("transcript_patch_chunks", {
   vaultId: text("vault_id").notNull(),
   meetingId: text("meeting_id").notNull(),
   patchId: text("patch_id").notNull(),
@@ -156,7 +147,7 @@ export const transcriptPatchChunk = sqliteTable("content_transcript_patch_chunks
   }).onDelete("cascade"),
 ]);
 
-export const syncedScreenshot = sqliteTable("content_screenshots", {
+export const syncedScreenshot = sqliteTable("screenshots", {
   screenshotId: text("screenshot_id").primaryKey(),
   vaultId: text("vault_id").notNull(),
   meetingId: text("meeting_id").notNull(),
@@ -180,7 +171,7 @@ export const syncedScreenshot = sqliteTable("content_screenshots", {
     .on(table.vaultId, table.meetingId, table.capturedAt, table.screenshotId),
 ]);
 
-export const searchDocument = sqliteTable("content_search_documents", {
+export const searchDocument = sqliteTable("search_documents", {
   documentId: text("document_id").notNull(),
   vaultId: text("vault_id").notNull(),
   meetingId: text("meeting_id").notNull(),
@@ -200,7 +191,7 @@ export const searchDocument = sqliteTable("content_search_documents", {
     .on(table.vaultId, table.kind, table.meetingId, table.documentId),
 ]);
 
-export const searchEmbedding = sqliteTable("content_search_embeddings", {
+export const searchEmbedding = sqliteTable("search_embeddings", {
   vaultId: text("vault_id").notNull(),
   documentId: text("document_id").notNull(),
   model: text("model").notNull(),
@@ -217,7 +208,7 @@ export const searchEmbedding = sqliteTable("content_search_embeddings", {
   check("search_embedding_dimensions_check", sql`${table.dimensions} BETWEEN 32 AND 1024`),
 ]);
 
-export const searchIndexJob = sqliteTable("core_search_index_jobs", {
+export const searchIndexJob = sqliteTable("search_index_jobs", {
   vaultId: text("vault_id").notNull(),
   documentId: text("document_id").notNull(),
   ownerUserId: text("owner_user_id").notNull(),
@@ -246,7 +237,7 @@ export const searchIndexJob = sqliteTable("core_search_index_jobs", {
   index("search_index_job_claim_idx").on(table.status, table.availableAt, table.leaseExpiresAt),
 ]);
 
-export const syncTransactionReceipt = sqliteTable("core_transaction_receipts", {
+export const syncTransactionReceipt = sqliteTable("transaction_receipts", {
   transactionId: text("transaction_id").primaryKey(),
   ownerUserId: text("owner_user_id").notNull(),
   vaultId: text("vault_id").notNull(),
@@ -259,7 +250,7 @@ export const syncTransactionReceipt = sqliteTable("core_transaction_receipts", {
   index("transaction_receipt_owner_created_idx").on(table.ownerUserId, table.createdAt),
 ]);
 
-export const syncChange = sqliteTable("core_sync_changes", {
+export const syncChange = sqliteTable("sync_changes", {
   sequence: integer("sequence").primaryKey({ autoIncrement: true }),
   ownerUserId: text("owner_user_id").notNull(),
   vaultId: text("vault_id").notNull(),
@@ -276,7 +267,7 @@ export const syncChange = sqliteTable("core_sync_changes", {
   index("sync_change_owner_sequence_idx").on(table.ownerUserId, table.sequence),
 ]);
 
-export const storageDeleteJob = sqliteTable("core_storage_delete_jobs", {
+export const storageDeleteJob = sqliteTable("storage_delete_jobs", {
   storageKey: text("storage_key").primaryKey(),
   attempts: integer("attempts").default(0).notNull(),
   status: text("status").default("pending").notNull(),

@@ -139,7 +139,7 @@ macOS の Dahlia アカウントは Vault の所有者ではなく、アプリ�
 ChatGPT Subscription または Databricks AI Gateway を使い、Dahlia アカウントは接続先の Gateway を使う。この境界は
 [Codex account context](docs/adr/desktop/accounts.md#codex-account-context)を正本とする。
 Better Auth、Gateway 管理 metadata、meeting sync は単一の Drizzle application database を共有する。PostgreSQL は生成済み認証 table を
-`auth`、Web application と共有設定を `core`、meeting 実データを `content` schema に置き、参照は `auth <- core <- content` の方向だけを許可する。
+`auth`、Dahlia 所有の全テーブルを `app` schema に置き、参照は `app → auth` の方向とする。
 `DAHLIA_DATABASE_TYPE` は `sqlite`、`postgres`、`lakebase`、`hyperdrive`、`d1` から選び、SQLite／PostgreSQL の接続先は
 `DAHLIA_DATABASE_URL` で指定する。Node は SQLite／PostgreSQL／Lakebase、Workers は D1／Hyperdrive／PostgreSQL を扱う。
 Lakebase は公式 `@databricks/lakebase` connector で OAuth credential を更新する。
@@ -148,7 +148,7 @@ Databricks Apps の header identity は sessionless だが、認証・administra
 AI Gateway は `AIGatewayBackend.listModels` と `responses(body, context)` を共通境界とする。モデル一覧は backend が返し、Databricks は App service principal で `DATABRICKS_MODEL_SCHEMA` 配下を取得する。短い公開モデル名の上流変換とヘッダー構築は backend が所有する。
 Server 共通層は `CODEX_AUTO_REVIEW_MODEL` による予約モデル上書きを所有し、設定された上流 ID はスキーマを補完せず転送する。
 Responses request は上限内で検証し、upstream response body は streaming relay する。request と response の content は DB、cache、analytics、application log へ保存しない。
-Databricks request tags には認証済み user ID を付与する。Model Alias の既存データは残すが Gateway から参照せず、管理画面・API は廃止する ([Backend モデル契約](docs/adr/server/gateway.md#backend-モデル契約))。
+Databricks request tags には認証済み user ID を付与する。Model Alias テーブル・store 型・CRUD と管理画面・API は廃止する ([Backend モデル契約](docs/adr/server/gateway.md#backend-モデル契約))。
 
 ```text
 Dahlia macOS / bundled Codex 0.148.0
@@ -163,8 +163,8 @@ Dahlia macOS / bundled Codex 0.148.0
 
 Drizzle application store (SQLite, PostgreSQL, Lakebase, Hyperdrive, or D1)
     ├─ auth: 共通 user directory + session/OAuth/organization/Team membership
-    ├─ core: Model Alias + artifact + Vault + principal permission
-    └─ content: meetings + transcript_segments + screenshots
+    └─ app: artifact + Vault + Project + principal permission + meetings + transcript_segments + screenshots
+            + search projections + sync receipts / changes + jobs
 
 /api/v1/artifacts
     └─ POST → Server-generated UUIDv7; private by default
@@ -183,7 +183,7 @@ Drizzle application store (SQLite, PostgreSQL, Lakebase, Hyperdrive, or D1)
 /api/v1/events + /api/v1/vaults/{vault_id}/changes
     └─ SSE invalidation + cursor-based canonical catch-up
 
-core.vault_permissions
+app.vault_permissions
     ├─ raw user ID principal の単一 owner
     └─ user / Better Auth organization / Team の read-only member
 ```
@@ -198,11 +198,11 @@ Gateway、認証 store、upstream、artifact storage の停止は Server 操作�
 閲覧、検索はこの runtime を待たない。Artifact API は明示的に渡された任意 asset だけを扱う。これとは別に、ServerアカウントのVault、Project、meeting、summary、transcript 原文、screenshot、OCR、AI captionはDesktopとWebが共有するServer canonical dataである。Desktop は既存の domain table を offline working-copy record cache とし、ローカル変更と immutable domain transaction の記録を同じ SQLite transaction で確定する。これはローカルからServer copyを作る一方向転送ではない。サインインはローカルVaultを暗黙に関連付けず、明示的にServerへ移したVaultは常時同期する。サインアウトではServer canonical dataを変更せず、working copyを削除するかLocal Accountへ移す。owner が明示した場合だけ、
 複数の特定 Better Auth organization または Team へ read-only 共有する。header modeでは全proxy userを通常表示される固定`external` OrganizationへJIT登録し、同じpermission modelを使う。write、delete、共有設定変更は owner に限定する。
 PostgreSQL／LakebaseではBetter Authの機械生成migrationとDahlia application migrationを別ledgerに置き、認証方式によらず
-`auth`、`core`／`content`の順で適用する。Header identityは検証直後に`auth.user`へ射影するが、Better Auth runtimeは起動しない。Serverは各identity transactionで
-`app.user_id`だけをtransaction-localに設定する。Vault/content RLSは`core.vault_permissions`を評価し、organizationとTeam membershipを
+`auth`、`app`の順で適用する。Header identityは検証直後に`auth.user`へ射影するが、Better Auth runtimeは起動しない。Serverは各identity transactionで
+`app.user_id`だけをtransaction-localに設定する。Vault/content RLSは`app.vault_permissions`を評価し、organizationとTeam membershipを
 `auth.member`と`auth.team_member`から直接解決する。
 Server は meeting の名前・説明・summary 表示本文と screenshot の OCR・caption を domain transaction 受理時に自前で token 化し、
-共通の `content.search_documents` projection を canonical row と同じ transaction で更新する。PostgreSQL は GIN、Lakebase は
+共通の `app.search_documents` projection を canonical row と同じ transaction で更新する。PostgreSQL は GIN、Lakebase は
 `lakebase_text`、SQLite／D1 は FTS5 を使う。Node で embedding model が設定されている場合だけ、App service principal による
 非同期 worker が summary／OCR／caption の自然文から再生成可能な vector projection を作る。Lakebase は `lakebase_vector`、
 その他の PostgreSQL は pgvector、SQLite は exact cosine を使い、D1 は FTS-only とする。query 時は FTS と vector の上位候補を

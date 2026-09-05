@@ -56,24 +56,6 @@ export interface DahliaOAuthSession {
   userAgent: string | null;
 }
 
-export interface ModelAliasRecord {
-  alias: string;
-  upstreamModel: string;
-  displayName: string | null;
-  enabled: boolean;
-  createdAt: Date;
-  updatedAt: Date;
-}
-
-export interface ModelAliasInput {
-  alias: string;
-  upstreamModel: string;
-  displayName: string | null;
-  enabled: boolean;
-}
-
-export type ModelAliasUpdate = Omit<ModelAliasInput, "alias">;
-
 export interface AdminUserRecord {
   id: string;
   name: string;
@@ -152,11 +134,6 @@ export interface ApplicationStore {
   seedDahliaClient(config: AppConfig): Promise<void>;
   listDahliaSessions(userId: string): Promise<DahliaOAuthSession[]>;
   revokeDahliaSession(userId: string, refreshTokenId: string): Promise<boolean>;
-  listModelAliases(): Promise<ModelAliasRecord[]>;
-  getEnabledModelAlias(alias: string): Promise<ModelAliasRecord | null>;
-  createModelAlias(input: ModelAliasInput): Promise<boolean>;
-  updateModelAlias(alias: string, update: ModelAliasUpdate): Promise<boolean>;
-  deleteModelAlias(alias: string): Promise<boolean>;
   listAdminUsers(): Promise<AdminUserRecord[]>;
   isAdminUser(userId: string): Promise<boolean>;
   addAdminUser(email: string): Promise<AdminUserRecord | null>;
@@ -424,27 +401,6 @@ export function createPostgresApplicationStore(
       await db.delete(postgresSchema.oauthAccessToken)
         .where(eq(postgresSchema.oauthAccessToken.refreshId, refreshTokenId));
       return true;
-    },
-    listModelAliases: () => db.select().from(postgresSchema.modelAlias).orderBy(asc(postgresSchema.modelAlias.alias)),
-    async getEnabledModelAlias(alias) {
-      const [row] = await db.select().from(postgresSchema.modelAlias)
-        .where(and(eq(postgresSchema.modelAlias.alias, alias), eq(postgresSchema.modelAlias.enabled, true))).limit(1);
-      return row ?? null;
-    },
-    async createModelAlias(input) {
-      const [created] = await db.insert(postgresSchema.modelAlias).values(input).onConflictDoNothing()
-        .returning({ alias: postgresSchema.modelAlias.alias });
-      return created !== undefined;
-    },
-    async updateModelAlias(alias, update) {
-      const [updated] = await db.update(postgresSchema.modelAlias).set({ ...update, updatedAt: new Date() })
-        .where(eq(postgresSchema.modelAlias.alias, alias)).returning({ alias: postgresSchema.modelAlias.alias });
-      return updated !== undefined;
-    },
-    async deleteModelAlias(alias) {
-      const [deleted] = await db.delete(postgresSchema.modelAlias).where(eq(postgresSchema.modelAlias.alias, alias))
-        .returning({ alias: postgresSchema.modelAlias.alias });
-      return deleted !== undefined;
     },
     listAdminUsers: () => db.select({
       id: postgresAuthSchema.user.id,
@@ -930,28 +886,6 @@ export function createSqliteApplicationStore(
       if (!revoked) return false;
       await db.delete(sqliteSchema.oauthAccessToken).where(eq(sqliteSchema.oauthAccessToken.refreshId, refreshTokenId));
       return true;
-    },
-    listModelAliases: () => db.select().from(sqliteSchema.modelAlias).orderBy(asc(sqliteSchema.modelAlias.alias)),
-    async getEnabledModelAlias(alias) {
-      const [row] = await db.select().from(sqliteSchema.modelAlias)
-        .where(and(eq(sqliteSchema.modelAlias.alias, alias), eq(sqliteSchema.modelAlias.enabled, true))).limit(1);
-      return row ?? null;
-    },
-    async createModelAlias(input) {
-      const now = new Date();
-      const [created] = await db.insert(sqliteSchema.modelAlias).values({ ...input, createdAt: now, updatedAt: now })
-        .onConflictDoNothing().returning({ alias: sqliteSchema.modelAlias.alias });
-      return created !== undefined;
-    },
-    async updateModelAlias(alias, update) {
-      const [updated] = await db.update(sqliteSchema.modelAlias).set({ ...update, updatedAt: new Date() })
-        .where(eq(sqliteSchema.modelAlias.alias, alias)).returning({ alias: sqliteSchema.modelAlias.alias });
-      return updated !== undefined;
-    },
-    async deleteModelAlias(alias) {
-      const [deleted] = await db.delete(sqliteSchema.modelAlias).where(eq(sqliteSchema.modelAlias.alias, alias))
-        .returning({ alias: sqliteSchema.modelAlias.alias });
-      return deleted !== undefined;
     },
     listAdminUsers: () => db.select({
       id: sqliteAuthSchema.user.id,

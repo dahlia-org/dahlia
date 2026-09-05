@@ -2,7 +2,7 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 
 export const POSTGRES_MIGRATION_SCHEMA = "drizzle";
-export const POSTGRES_SEARCH_PATH = "core,content,auth";
+export const POSTGRES_SEARCH_PATH = "app,auth";
 
 export function createPostgresPool(connectionString: string, max: number): Pool {
   return new Pool({ connectionString, max, options: `-c search_path=${POSTGRES_SEARCH_PATH}` });

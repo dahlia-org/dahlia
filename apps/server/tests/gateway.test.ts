@@ -7,10 +7,6 @@ import { DatabricksBackend } from "../src/ai-gateway/databricks";
 import { createApp } from "../src/app";
 import { testStore } from "./test-store";
 
-const registry = {
-  listModelAliases: vi.fn(() => { throw new Error("Registry must not be read"); }),
-  getEnabledModelAlias: vi.fn(() => { throw new Error("Registry must not be read"); }),
-};
 const config: AppConfig = {
   authProvider: "header", authHeader: "X-Forwarded-Email", databaseType: "sqlite",
   baseUrl: "https://dahlia.example", oauthRedirectUris: [], maxRequestBytes: 1024,
@@ -41,7 +37,7 @@ describe("AI Gateway", () => {
     const sent = vi.fn<GatewayFetch>(async (url) => String(url).includes("model-services")
       ? Response.json({ model_services: [{ name: "model-services/dahlia.ai.codex-auto-review" }] })
       : new Response("{}"));
-    const service = new GatewayService({ ...backendConfig, codexAutoReviewModel: "other.schema.reviewer" }, registry, modelTransport(sent));
+    const service = new GatewayService({ ...backendConfig, codexAutoReviewModel: "other.schema.reviewer" }, modelTransport(sent));
     const models = await service.models();
     expect(models.data.filter((m) => m.id === "codex-auto-review")).toHaveLength(1);
     expect(models.models.filter((m) => m.slug === "codex-auto-review")).toHaveLength(1);
@@ -52,7 +48,7 @@ describe("AI Gateway", () => {
     expect(JSON.parse(String(sent.mock.calls.at(-1)![1]?.body))).toMatchObject({ model: "other.schema.reviewer" });
 
     for (const value of [undefined, " "]) {
-      const disabled = new GatewayService({ ...backendConfig, codexAutoReviewModel: value }, registry, modelTransport(sent));
+      const disabled = new GatewayService({ ...backendConfig, codexAutoReviewModel: value }, modelTransport(sent));
       const list = await disabled.models();
       expect(list.data.some((m) => m.id === "codex-auto-review")).toBe(false);
       expect(list.models.find((m) => m.slug === "codex-auto-review")?.visibility).toBe("hide");
@@ -63,7 +59,7 @@ describe("AI Gateway", () => {
 
   it.each(configs.slice(0, 2))("uses a mock list without reading the database ($provider.backend)", async (backendConfig) => {
     const transport = vi.fn<GatewayFetch>();
-    const models = await new GatewayService(backendConfig, registry, transport).models();
+    const models = await new GatewayService(backendConfig, transport).models();
     expect(models.data.map((m) => m.id)).toEqual(["gpt-5.6-luna"]);
     expect(models.models.find((m) => m.slug === "gpt-5.6-luna")).toMatchObject({ visibility: "list", input_modalities: ["text", "image"] });
     expect(transport).not.toHaveBeenCalled();
@@ -79,7 +75,7 @@ describe("AI Gateway", () => {
         ? { model_services: [{ name: "model-services/dahlia.ai.custom" }] }
         : { model_services: [{ name: "model-services/dahlia.ai.gpt-5-6-luna" }], next_page_token: "page-2" });
     });
-    const list = await new GatewayService(databricksConfig, registry, modelTransport(transport)).models(
+    const list = await new GatewayService(databricksConfig, modelTransport(transport)).models(
       new Request(`https://dahlia.example/api/v1/models?client_version=${LATEST_CODEX_CLIENT_VERSION}`, {
         headers: { "x-forwarded-access-token": "must-not-use" },
       }),
@@ -92,13 +88,13 @@ describe("AI Gateway", () => {
   });
 
   it("accepts an empty protobuf model list", async () => {
-    const models = await new GatewayService(databricksConfig, registry, modelTransport(async () => Response.json({}))).models();
+    const models = await new GatewayService(databricksConfig, modelTransport(async () => Response.json({}))).models();
     expect(models.data).toEqual([]);
   });
 
   it("maps the Cloudflare mock ID while preserving the rest of the request", async () => {
     const transport = vi.fn<GatewayFetch>(async () => new Response("{}"));
-    await new GatewayService(configs[1]!, registry, transport).responses(request({ model: "gpt-5.6-luna", input: "hello", max_output_tokens: 256 }), identity);
+    await new GatewayService(configs[1]!, transport).responses(request({ model: "gpt-5.6-luna", input: "hello", max_output_tokens: 256 }), identity);
     expect(JSON.parse(String(transport.mock.calls[0]![1]?.body))).toEqual({ model: "openai/gpt-5.6-luna", input: "hello", max_output_tokens: 256 });
     expect(new Headers(transport.mock.calls[0]![1]?.headers).get("cf-aig-collect-log-payload")).toBe("false");
   });
@@ -112,7 +108,7 @@ describe("AI Gateway", () => {
     { model_services: "invalid" },
   ])("rejects malformed model discovery: %j", async (body) => {
     const logs = vi.spyOn(console, "error").mockImplementation(() => {});
-    await expect(new GatewayService(databricksConfig, registry, modelTransport(async () => Response.json(body))).models())
+    await expect(new GatewayService(databricksConfig, modelTransport(async () => Response.json(body))).models())
       .rejects.toMatchObject({ status: 502, code: "provider_models_invalid" });
     logs.mockRestore();
   });
@@ -165,7 +161,7 @@ describe("AI Gateway", () => {
 
   it("rejects full model paths and missing OBO before sending", async () => {
     const transport = vi.fn<GatewayFetch>();
-    const service = new GatewayService(databricksConfig, registry, transport);
+    const service = new GatewayService(databricksConfig, transport);
     for (const model of ["other.ai.model", "dahlia.ai.model", "../model"]) {
       await expect(service.responses(request({ model, input: [] }), identity)).rejects.toMatchObject({ code: "invalid_model" });
     }
@@ -176,7 +172,7 @@ describe("AI Gateway", () => {
   it("streams incrementally and preserves upstream status and safe headers", async () => {
     let streamController!: ReadableStreamDefaultController<Uint8Array>;
     const stream = new ReadableStream<Uint8Array>({ start(controller) { streamController = controller; } });
-    const service = new GatewayService(config, registry, async () => new Response(stream, {
+    const service = new GatewayService(config, async () => new Response(stream, {
       status: 429, headers: { "content-type": "text/event-stream", "retry-after": "3", "set-cookie": "private" },
     }));
     const response = await service.responses(request({ model: "gpt-5.6-luna", input: [], stream: true }), identity);
@@ -193,7 +189,7 @@ describe("AI Gateway", () => {
 
   it.each(configs)("preserves optional Responses fields ($provider.backend)", async (backendConfig) => {
     const transport = vi.fn<GatewayFetch>(async () => new Response("{}"));
-    const service = new GatewayService(backendConfig, registry, transport);
+    const service = new GatewayService(backendConfig, transport);
     for (const body of [
       { model: "model", input: [], max_output_tokens: null },
       { model: "model", input: [], stream: null },
@@ -208,7 +204,7 @@ describe("AI Gateway", () => {
 
   it("rejects invalid input, compression, and excessive bytes without calling upstream", async () => {
     const transport = vi.fn<GatewayFetch>();
-    const service = new GatewayService(config, registry, transport);
+    const service = new GatewayService(config, transport);
     for (const body of [{ input: [] }, { model: "model", input: 1 }, { model: "model", input: [null] }, { model: "model", input: [], stream: "true" }, { model: "model", input: [], max_output_tokens: -1 }]) {
       await expect(service.responses(request(body), identity)).rejects.toMatchObject({ status: 400 });
     }
@@ -221,7 +217,7 @@ describe("AI Gateway", () => {
   });
 
   it("returns empty discovery and a clear error when no backend is configured", async () => {
-    const service = new GatewayService({ ...config, provider: undefined }, registry);
+    const service = new GatewayService({ ...config, provider: undefined });
     expect((await service.models()).data).toEqual([]);
     await expect(service.responses(request({ model: "model", input: [] }), identity)).rejects.toMatchObject({ status: 503, code: "provider_not_configured" });
   });

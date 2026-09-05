@@ -231,15 +231,15 @@ async function roleSupportsRls(db: PostgresDatabase): Promise<boolean> {
     )).rows[0];
     if (role?.rolsuper !== false || role.rolbypassrls !== false) return false;
     const tables = [
-      "core.vaults",
-      "core.projects",
-      "core.transaction_receipts",
-      "content.meetings",
-      "content.transcript_segments",
-      "content.transcript_patch_chunks",
-      "content.screenshots",
-      "content.search_documents",
-      "content.search_embeddings",
+      "app.vaults",
+      "app.projects",
+      "app.transaction_receipts",
+      "app.meetings",
+      "app.transcript_segments",
+      "app.transcript_patch_chunks",
+      "app.screenshots",
+      "app.search_documents",
+      "app.search_embeddings",
     ];
     const secured = (await client.query<{ count: number }>(`
       select count(*)::integer as count
@@ -256,7 +256,7 @@ async function roleSupportsRls(db: PostgresDatabase): Promise<boolean> {
     transaction = true;
     await client.query("select set_config('app.user_id', 'rls-probe', true)");
     await client.query("select set_config('app.sharing_enabled', 'false', true)");
-    await client.query("select vault_id from core.vaults limit 1");
+    await client.query("select vault_id from app.vaults limit 1");
     await client.query("commit");
     transaction = false;
     if (!await identityContextIsEmpty(client)) return false;
@@ -488,8 +488,8 @@ function createIdentityStore(
   function ftsExpressions(query: SyncSearchQuery) {
     if (searchBackend === "sqlite") {
       const match = query.tokens.map((token) => `"${token.replaceAll('"', '""')}"`).join(" AND ");
-      const table = sql.identifier("content_search_documents_fts");
-      const sourceTable = sql.identifier("content_search_documents");
+      const table = sql.identifier("search_documents_fts");
+      const sourceTable = sql.identifier("search_documents");
       return {
         filter: sql`exists (select 1 from ${table} where rowid = ${sourceTable}.rowid and ${table} match ${match})`,
         rank: sql<number>`(select rank from ${table} where rowid = ${sourceTable}.rowid and ${table} match ${match})`,
@@ -503,7 +503,7 @@ function createIdentityStore(
       rank: searchBackend === "lakebase"
         ? sql<number>`${vector} <@> to_bm25query(
             to_tsvector('simple', ${query.text}),
-            'content.search_documents_search_bm25'::regclass
+            'app.search_documents_search_bm25'::regclass
           )`
         : sql<number>`-${sql`ts_rank_cd(${vector}, ${tsquery})`}`,
     };

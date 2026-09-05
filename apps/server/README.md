@@ -16,9 +16,11 @@ Better Auth, Gateway administration, and meeting sync share one Drizzle applicat
 | `hyperdrive` | Cloudflare Worker | `HYPERDRIVE` binding |
 | `d1` | Cloudflare Worker | `dahlia_db_prod` binding |
 
-Node supports `sqlite`, `postgres`, and `lakebase`; Workers support `d1`, `hyperdrive`, and direct `postgres`. PostgreSQL-compatible connections keep generated Better Auth tables in `auth`, application and sharing state in `core`, and synchronized meeting data in `content`; all schemas are owned by the connection user. References flow only from `content` to `core` to `auth`. Lakebase uses the official `@databricks/lakebase` pool for OAuth credential refresh.
+Node supports `sqlite`, `postgres`, and `lakebase`; Workers support `d1`, `hyperdrive`, and direct `postgres`. PostgreSQL-compatible connections keep generated Better Auth tables in `auth`, all Dahlia-owned tables in `app`; all schemas are owned by the connection user. References flow from `app` to `auth`. Lakebase uses the official `@databricks/lakebase` pool for OAuth credential refresh.
 
-Better Auth schemas are generated unmodified into `src/db/generated`; Dahlia tables remain in the adjacent app schema files. `pnpm db:generate-auth` refreshes the auth definitions and `pnpm db:generate` produces separate PostgreSQL auth and application streams under `drizzle/postgres-auth` and `drizzle/postgres`. Every authentication mode applies both streams in that order. Header mode keeps Better Auth endpoints disabled and projects each verified proxy identity into `auth.user`; accounts mode leaves that table under Better Auth's control. The relations-v2 adapter is used with joins disabled. SQLite and D1 retain one stream with top-level Better Auth tables, prefix Dahlia tables with `core_` or `content_`, and rely on the same application permission checks instead of RLS.
+The unreleased application baseline now uses `app` / unprefixed SQLite tables. Existing development databases using `core` / `content` require an explicit rebuild or separately planned data migration; rerunning migrations does not convert them.
+
+Better Auth schemas are generated unmodified into `src/db/generated`; Dahlia tables remain in the adjacent app schema files. `pnpm db:generate-auth` refreshes the auth definitions and `pnpm db:generate` produces separate PostgreSQL auth and application streams under `drizzle/postgres-auth` and `drizzle/postgres`. Every authentication mode applies both streams in that order. Header mode keeps Better Auth endpoints disabled and projects each verified proxy identity into `auth.user`; accounts mode leaves that table under Better Auth's control. The relations-v2 adapter is used with joins disabled. SQLite and D1 retain one stream with top-level Better Auth tables, keep Dahlia table names unprefixed, and rely on the same application permission checks instead of RLS.
 
 ## API contract
 
@@ -46,7 +48,7 @@ OAuth access from Dahlia Desktop uses the single `all-apis` capability scope for
 
 ### Meeting sync and Vault sharing
 
-Server-account Vault changes propagate bidirectionally between Desktop and Private Web through the selected Dahlia account connection; pausing synchronization does not turn the Server record into a secondary copy. Local accounts remain device-local and create no sync transactions. Desktop API calls require `all-apis`; Server MCP reads require `mcp:read`. `core.vault_permissions` is the permission source of truth: every Vault has one immutable `user` owner identified by the authentication provider's raw user ID, while optional `user`, `organization`, and `team` members are read-only. Content rows carry only `vault_id`; PostgreSQL/Lakebase RLS and the SQLite/D1 store resolve access through the Vault permission. Screenshot bytes use deterministic object keys under `meetings/{meetingId}/screenshots/{screenshotId}.{extension}`.
+Server-account Vault changes propagate bidirectionally between Desktop and Private Web through the selected Dahlia account connection; pausing synchronization does not turn the Server record into a secondary copy. Local accounts remain device-local and create no sync transactions. Desktop API calls require `all-apis`; Server MCP reads require `mcp:read`. `app.vault_permissions` is the permission source of truth: every Vault has one immutable `user` owner identified by the authentication provider's raw user ID, while optional `user`, `organization`, and `team` members are read-only. Content rows carry only `vault_id`; PostgreSQL/Lakebase RLS and the SQLite/D1 store resolve access through the Vault permission. Screenshot bytes use deterministic object keys under `meetings/{meetingId}/screenshots/{screenshotId}.{extension}`.
 
 Desktop and Private Web mutations use `POST /api/v1/transactions`. Each UUIDv7 transaction is limited to one Vault, committed atomically, and replay-safe by transaction ID. Vault, Project, meeting metadata, and summary writes require the current canonical revision; conflicts return `409` with the Server record. Screenshot content and transcript chunks remain bounded staging uploads and are activated by a transaction.
 
@@ -70,10 +72,10 @@ In accounts mode, owners use Better Auth Organizations, invitations, and Teams. 
 
 Meeting and screenshot search is tokenized by the Server; it never reads Desktop's SQLite tokenizer or token data. Meeting search covers name, description, and visible summary text. Screenshot search covers OCR and caption. Original transcripts remain synchronized but are not searchable. Queries are limited to 500 characters and 16 AND-combined tokens. Node uses the pinned Lindera IPADIC WASM package, while Cloudflare Workers use `Intl.Segmenter`; changing runtime for an existing database requires recreating it or fully resynchronizing every meeting.
 
-`content.search_documents` is the shared rebuildable projection for meetings and screenshots. PostgreSQL uses its generated `tsvector` with GIN, SQLite uses an external-content FTS5 table, and Lakebase uses `lakebase_text` with BM25. D1 sync is fail-closed until its multi-statement writes use D1's atomic `batch()` API. Lakebase Search must be enabled by an operator before deployment; startup stops when the required extension cannot be loaded. After the first full synchronization, update BM25 corpus statistics once with:
+`app.search_documents` is the shared rebuildable projection for meetings and screenshots. PostgreSQL uses its generated `tsvector` with GIN, SQLite uses an external-content FTS5 table, and Lakebase uses `lakebase_text` with BM25. D1 sync is fail-closed until its multi-statement writes use D1's atomic `batch()` API. Lakebase Search must be enabled by an operator before deployment; startup stops when the required extension cannot be loaded. After the first full synchronization, update BM25 corpus statistics once with:
 
 ```sql
-VACUUM content.search_documents;
+VACUUM app.search_documents;
 ```
 
 Set `DAHLIA_SEARCH_EMBEDDING_MODEL` to enable asynchronous semantic indexing on Node; an empty or missing value keeps it off. `DAHLIA_SEARCH_EMBEDDING_DIMENSIONS` defaults to `1024` and accepts powers of two from 32 through 1024. The App service principal calls the Databricks embedding endpoint, and content or credentials are never stored in the queue. Lakebase uses `lakebase_vector` with `lakebase_ann`; other PostgreSQL deployments use pgvector's `vector` extension with HNSW. Install `vector` as a database operator before enabling embeddings when the application role cannot create extensions. SQLite performs exact cosine ranking in Node. Search automatically combines the top 100 FTS and vector candidates with RRF and falls back to FTS when embeddings are absent, rebuilding, or unavailable. Document text and the user's search query are sent to the configured embedding provider; Dahlia does not persist or log query text.
@@ -114,7 +116,7 @@ OPENAI_API_KEY=...
 # OPENAI_BASE_URL=https://api.openai.com/v1
 ```
 
-Non-local provider URLs must use HTTPS. Model Alias management UI and `/api/admin/models` endpoints have been removed. Historical database rows and exported store types remain intact but no longer control Gateway requests.
+Non-local provider URLs must use HTTPS. Model Alias management UI and `/api/admin/models` endpoints have been removed. The unreleased baseline also removes the Model Alias table, CRUD methods, and exported types. `GatewayService` takes `(config, transport?)` without a database store.
 
 Databricks native OpenAI Responses API:
 

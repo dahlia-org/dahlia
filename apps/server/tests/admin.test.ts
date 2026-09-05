@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { createApp } from "../src/app";
 import type { Identity } from "../src/auth/identity";
-import type { AdminUserRecord, ModelAliasInput, ModelAliasRecord } from "../src/auth/store";
+import type { AdminUserRecord } from "../src/auth/store";
 import type { AppConfig } from "../src/config";
 import { testStore } from "./test-store";
 
@@ -16,7 +16,6 @@ const config: AppConfig = {
 };
 const ownerHeaders = { "X-Forwarded-Email": "OWNER@example.com", origin: config.baseUrl };
 function administrativeStore() {
-  const models: ModelAliasRecord[] = [];
   const users = new Map<string, AdminUserRecord & { role: "admin" | "user" }>();
   const ensureIdentityUser = (identity: Identity) => {
     if (!users.has(identity.userId)) {
@@ -32,26 +31,6 @@ function administrativeStore() {
   };
   const store = testStore({
     ensureIdentityUser,
-    listModelAliases: () => Promise.resolve(models.toSorted((left, right) => left.alias.localeCompare(right.alias))),
-    getEnabledModelAlias: (alias) => Promise.resolve(models.find((model) => model.alias === alias && model.enabled) ?? null),
-    createModelAlias: (input: ModelAliasInput) => {
-      if (models.some((model) => model.alias === input.alias)) return Promise.resolve(false);
-      const now = new Date();
-      models.push({ ...input, createdAt: now, updatedAt: now });
-      return Promise.resolve(true);
-    },
-    updateModelAlias: (alias, update) => {
-      const model = models.find((candidate) => candidate.alias === alias);
-      if (!model) return Promise.resolve(false);
-      Object.assign(model, update, { updatedAt: new Date() });
-      return Promise.resolve(true);
-    },
-    deleteModelAlias: (alias) => {
-      const index = models.findIndex((model) => model.alias === alias);
-      if (index < 0) return Promise.resolve(false);
-      models.splice(index, 1);
-      return Promise.resolve(true);
-    },
     listAdminUsers: () => Promise.resolve(
       [...users.values()].filter((user) => user.role === "admin").toSorted((a, b) => a.email.localeCompare(b.email)),
     ),
@@ -72,7 +51,7 @@ function administrativeStore() {
       return Promise.resolve("removed");
     },
   });
-  return { models, store, users };
+  return { store, users };
 }
 
 describe("administration", () => {
@@ -96,13 +75,12 @@ describe("administration", () => {
     expect((await app.request("/api/admin/members", { headers })).status).toBe(403);
   });
 
-  it("removes all model management endpoints without modifying stored aliases", async () => {
-    const { store, models } = administrativeStore();
+  it("does not expose model management endpoints", async () => {
+    const { store } = administrativeStore();
     const app = createApp({ config, authStore: store });
     for (const [method, path] of [["GET", ""], ["POST", ""], ["PATCH", "/summary"], ["DELETE", "/summary"]]) {
       expect((await app.request(`/api/admin/models${path}`, { method, headers: ownerHeaders })).status).toBe(404);
     }
-    expect(models).toEqual([]);
   });
 
   it("manages registered administrators and keeps at least one through the Dahlia API", async () => {

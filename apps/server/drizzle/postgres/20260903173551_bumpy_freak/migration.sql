@@ -1,8 +1,6 @@
-CREATE SCHEMA "content";
+CREATE SCHEMA "app";
 --> statement-breakpoint
-CREATE SCHEMA "core";
---> statement-breakpoint
-CREATE TABLE "core"."artifact" (
+CREATE TABLE "app"."artifact" (
 	"id" uuid PRIMARY KEY,
 	"owner_workspace_id" text NOT NULL,
 	"content_type" text NOT NULL,
@@ -13,16 +11,7 @@ CREATE TABLE "core"."artifact" (
 	CONSTRAINT "artifact_visibility_check" CHECK ("visibility" IN ('private', 'public'))
 );
 --> statement-breakpoint
-CREATE TABLE "core"."model_alias" (
-	"alias" text PRIMARY KEY,
-	"upstream_model" text NOT NULL,
-	"display_name" text,
-	"enabled" boolean DEFAULT true NOT NULL,
-	"created_at" timestamp DEFAULT now() NOT NULL,
-	"updated_at" timestamp DEFAULT now() NOT NULL
-);
---> statement-breakpoint
-CREATE TABLE "content"."search_documents" (
+CREATE TABLE "app"."search_documents" (
 	"document_id" uuid,
 	"vault_id" uuid,
 	"meeting_id" uuid NOT NULL,
@@ -36,7 +25,8 @@ CREATE TABLE "content"."search_documents" (
 	CONSTRAINT "search_document_kind_check" CHECK ("kind" IN ('meeting', 'screenshot'))
 );
 --> statement-breakpoint
-CREATE TABLE "content"."search_embeddings" (
+ALTER TABLE "app"."search_documents" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
+CREATE TABLE "app"."search_embeddings" (
 	"vault_id" uuid,
 	"document_id" uuid,
 	"model" text NOT NULL,
@@ -48,7 +38,8 @@ CREATE TABLE "content"."search_embeddings" (
 	CONSTRAINT "search_embedding_dimensions_check" CHECK ("dimensions" BETWEEN 32 AND 1024)
 );
 --> statement-breakpoint
-CREATE TABLE "core"."search_index_jobs" (
+ALTER TABLE "app"."search_embeddings" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
+CREATE TABLE "app"."search_index_jobs" (
 	"vault_id" uuid,
 	"document_id" uuid,
 	"owner_user_id" text NOT NULL,
@@ -67,7 +58,7 @@ CREATE TABLE "core"."search_index_jobs" (
 	CONSTRAINT "search_index_job_dimensions_check" CHECK ("dimensions" BETWEEN 32 AND 1024)
 );
 --> statement-breakpoint
-CREATE TABLE "core"."storage_delete_jobs" (
+CREATE TABLE "app"."storage_delete_jobs" (
 	"storage_key" text PRIMARY KEY,
 	"attempts" integer DEFAULT 0 NOT NULL,
 	"status" text DEFAULT 'pending' NOT NULL,
@@ -79,7 +70,7 @@ CREATE TABLE "core"."storage_delete_jobs" (
 	CONSTRAINT "storage_delete_job_status_check" CHECK ("status" IN ('pending', 'processing', 'failed'))
 );
 --> statement-breakpoint
-CREATE TABLE "core"."sync_changes" (
+CREATE TABLE "app"."sync_changes" (
 	"sequence" bigserial PRIMARY KEY,
 	"owner_user_id" text NOT NULL,
 	"vault_id" uuid NOT NULL,
@@ -93,7 +84,7 @@ CREATE TABLE "core"."sync_changes" (
 	CONSTRAINT "sync_change_action_check" CHECK ("action" IN ('upsert', 'delete', 'reset'))
 );
 --> statement-breakpoint
-CREATE TABLE "core"."transaction_receipts" (
+CREATE TABLE "app"."transaction_receipts" (
 	"transaction_id" uuid PRIMARY KEY,
 	"owner_user_id" text NOT NULL,
 	"vault_id" uuid NOT NULL,
@@ -103,7 +94,8 @@ CREATE TABLE "core"."transaction_receipts" (
 	"created_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "content"."meetings" (
+ALTER TABLE "app"."transaction_receipts" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
+CREATE TABLE "app"."meetings" (
 	"meeting_id" uuid PRIMARY KEY,
 	"vault_id" uuid NOT NULL,
 	"project_id" uuid,
@@ -125,7 +117,8 @@ CREATE TABLE "content"."meetings" (
 	CONSTRAINT "synced_meeting_vault_meeting_unique" UNIQUE("vault_id","meeting_id")
 );
 --> statement-breakpoint
-CREATE TABLE "core"."projects" (
+ALTER TABLE "app"."meetings" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
+CREATE TABLE "app"."projects" (
 	"project_id" uuid PRIMARY KEY,
 	"vault_id" uuid NOT NULL,
 	"parent_project_id" uuid,
@@ -144,7 +137,8 @@ CREATE TABLE "core"."projects" (
 	CONSTRAINT "project_parent_check" CHECK ("parent_project_id" IS NULL OR "parent_project_id" <> "project_id")
 );
 --> statement-breakpoint
-CREATE TABLE "content"."screenshots" (
+ALTER TABLE "app"."projects" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
+CREATE TABLE "app"."screenshots" (
 	"screenshot_id" uuid PRIMARY KEY,
 	"vault_id" uuid NOT NULL,
 	"meeting_id" uuid NOT NULL,
@@ -161,7 +155,8 @@ CREATE TABLE "content"."screenshots" (
 	"updated_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "content"."transcript_segments" (
+ALTER TABLE "app"."screenshots" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
+CREATE TABLE "app"."transcript_segments" (
 	"vault_id" uuid,
 	"meeting_id" uuid,
 	"segment_id" uuid,
@@ -174,7 +169,8 @@ CREATE TABLE "content"."transcript_segments" (
 	CONSTRAINT "synced_transcript_segment_pk" PRIMARY KEY("vault_id","meeting_id","segment_id")
 );
 --> statement-breakpoint
-CREATE TABLE "core"."vaults" (
+ALTER TABLE "app"."transcript_segments" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
+CREATE TABLE "app"."vaults" (
 	"vault_id" uuid PRIMARY KEY,
 	"name" text NOT NULL,
 	"revision" integer DEFAULT 1 NOT NULL,
@@ -183,7 +179,8 @@ CREATE TABLE "core"."vaults" (
 	"updated_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "core"."vault_permissions" (
+ALTER TABLE "app"."vaults" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
+CREATE TABLE "app"."vault_permissions" (
 	"vault_id" uuid,
 	"principal_type" text,
 	"principal_id" text,
@@ -196,7 +193,7 @@ CREATE TABLE "core"."vault_permissions" (
 	CONSTRAINT "vault_permission_owner_user_check" CHECK ("role" <> 'owner' OR "principal_type" = 'user')
 );
 --> statement-breakpoint
-CREATE TABLE "content"."transcript_patch_chunks" (
+CREATE TABLE "app"."transcript_patch_chunks" (
 	"vault_id" uuid,
 	"meeting_id" uuid,
 	"patch_id" uuid,
@@ -207,41 +204,41 @@ CREATE TABLE "content"."transcript_patch_chunks" (
 	CONSTRAINT "transcript_patch_chunk_pk" PRIMARY KEY("vault_id","meeting_id","patch_id","chunk_index")
 );
 --> statement-breakpoint
-CREATE INDEX "search_document_vault_kind_meeting_document_idx" ON "content"."search_documents" ("vault_id","kind","meeting_id","document_id");--> statement-breakpoint
-CREATE INDEX "search_index_job_claim_idx" ON "core"."search_index_jobs" ("status","available_at","lease_expires_at");--> statement-breakpoint
-CREATE INDEX "storage_delete_job_claim_idx" ON "core"."storage_delete_jobs" ("status","available_at","lease_expires_at");--> statement-breakpoint
-CREATE INDEX "sync_change_owner_vault_sequence_idx" ON "core"."sync_changes" ("owner_user_id","vault_id","sequence");--> statement-breakpoint
-CREATE INDEX "sync_change_owner_sequence_idx" ON "core"."sync_changes" ("owner_user_id","sequence");--> statement-breakpoint
-CREATE INDEX "transaction_receipt_owner_created_idx" ON "core"."transaction_receipts" ("owner_user_id","created_at");--> statement-breakpoint
-CREATE INDEX "synced_meeting_vault_created_id_idx" ON "content"."meetings" ("vault_id","created_at","meeting_id");--> statement-breakpoint
-CREATE INDEX "project_vault_parent_name_idx" ON "core"."projects" ("vault_id","parent_project_id","name");--> statement-breakpoint
-CREATE INDEX "synced_screenshot_vault_meeting_captured_id_idx" ON "content"."screenshots" ("vault_id","meeting_id","captured_at","screenshot_id");--> statement-breakpoint
-CREATE INDEX "synced_transcript_vault_meeting_start_id_idx" ON "content"."transcript_segments" ("vault_id","meeting_id","start_time","segment_id");--> statement-breakpoint
-CREATE UNIQUE INDEX "vault_permission_single_owner_idx" ON "core"."vault_permissions" ("vault_id") WHERE "role" = 'owner';--> statement-breakpoint
-CREATE INDEX "vault_permission_principal_vault_idx" ON "core"."vault_permissions" ("principal_type","principal_id","role","vault_id");--> statement-breakpoint
-ALTER TABLE "content"."search_documents" ADD CONSTRAINT "search_document_meeting_fk" FOREIGN KEY ("vault_id","meeting_id") REFERENCES "content"."meetings"("vault_id","meeting_id") ON DELETE CASCADE;--> statement-breakpoint
-ALTER TABLE "content"."search_embeddings" ADD CONSTRAINT "search_embedding_document_fk" FOREIGN KEY ("vault_id","document_id") REFERENCES "content"."search_documents"("vault_id","document_id") ON DELETE CASCADE;--> statement-breakpoint
-ALTER TABLE "core"."search_index_jobs" ADD CONSTRAINT "search_index_job_vault_fk" FOREIGN KEY ("vault_id") REFERENCES "core"."vaults"("vault_id") ON DELETE CASCADE;--> statement-breakpoint
-ALTER TABLE "core"."search_index_jobs" ADD CONSTRAINT "search_index_job_owner_user_fk" FOREIGN KEY ("owner_user_id") REFERENCES "auth"."user"("id") ON DELETE CASCADE;--> statement-breakpoint
-ALTER TABLE "core"."transaction_receipts" ADD CONSTRAINT "transaction_receipt_owner_user_fk" FOREIGN KEY ("owner_user_id") REFERENCES "auth"."user"("id") ON DELETE CASCADE;--> statement-breakpoint
-ALTER TABLE "content"."meetings" ADD CONSTRAINT "synced_meeting_vault_fk" FOREIGN KEY ("vault_id") REFERENCES "core"."vaults"("vault_id") ON DELETE CASCADE;--> statement-breakpoint
-ALTER TABLE "content"."meetings" ADD CONSTRAINT "synced_meeting_project_fk" FOREIGN KEY ("vault_id","project_id") REFERENCES "core"."projects"("vault_id","project_id");--> statement-breakpoint
-ALTER TABLE "core"."projects" ADD CONSTRAINT "project_vault_fk" FOREIGN KEY ("vault_id") REFERENCES "core"."vaults"("vault_id") ON DELETE CASCADE;--> statement-breakpoint
-ALTER TABLE "core"."projects" ADD CONSTRAINT "project_parent_fk" FOREIGN KEY ("vault_id","parent_project_id") REFERENCES "core"."projects"("vault_id","project_id") ON DELETE RESTRICT;--> statement-breakpoint
-ALTER TABLE "content"."screenshots" ADD CONSTRAINT "synced_screenshot_meeting_fk" FOREIGN KEY ("vault_id","meeting_id") REFERENCES "content"."meetings"("vault_id","meeting_id") ON DELETE CASCADE;--> statement-breakpoint
-ALTER TABLE "content"."transcript_segments" ADD CONSTRAINT "synced_transcript_segment_meeting_fk" FOREIGN KEY ("vault_id","meeting_id") REFERENCES "content"."meetings"("vault_id","meeting_id") ON DELETE CASCADE;--> statement-breakpoint
-ALTER TABLE "core"."vault_permissions" ADD CONSTRAINT "vault_permission_vault_fk" FOREIGN KEY ("vault_id") REFERENCES "core"."vaults"("vault_id") ON DELETE CASCADE;--> statement-breakpoint
-ALTER TABLE "core"."vault_permissions" ADD CONSTRAINT "vault_permission_granted_by_user_fk" FOREIGN KEY ("granted_by_user_id") REFERENCES "auth"."user"("id") ON DELETE RESTRICT;--> statement-breakpoint
-ALTER TABLE "content"."transcript_patch_chunks" ADD CONSTRAINT "transcript_patch_chunk_meeting_fk" FOREIGN KEY ("vault_id","meeting_id") REFERENCES "content"."meetings"("vault_id","meeting_id") ON DELETE CASCADE;
---> statement-breakpoint
+ALTER TABLE "app"."transcript_patch_chunks" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
+CREATE INDEX "search_document_vault_kind_meeting_document_idx" ON "app"."search_documents" ("vault_id","kind","meeting_id","document_id");--> statement-breakpoint
+CREATE INDEX "search_index_job_claim_idx" ON "app"."search_index_jobs" ("status","available_at","lease_expires_at");--> statement-breakpoint
+CREATE INDEX "storage_delete_job_claim_idx" ON "app"."storage_delete_jobs" ("status","available_at","lease_expires_at");--> statement-breakpoint
+CREATE INDEX "sync_change_owner_vault_sequence_idx" ON "app"."sync_changes" ("owner_user_id","vault_id","sequence");--> statement-breakpoint
+CREATE INDEX "sync_change_owner_sequence_idx" ON "app"."sync_changes" ("owner_user_id","sequence");--> statement-breakpoint
+CREATE INDEX "transaction_receipt_owner_created_idx" ON "app"."transaction_receipts" ("owner_user_id","created_at");--> statement-breakpoint
+CREATE INDEX "synced_meeting_vault_created_id_idx" ON "app"."meetings" ("vault_id","created_at","meeting_id");--> statement-breakpoint
+CREATE INDEX "project_vault_parent_name_idx" ON "app"."projects" ("vault_id","parent_project_id","name");--> statement-breakpoint
+CREATE INDEX "synced_screenshot_vault_meeting_captured_id_idx" ON "app"."screenshots" ("vault_id","meeting_id","captured_at","screenshot_id");--> statement-breakpoint
+CREATE INDEX "synced_transcript_vault_meeting_start_id_idx" ON "app"."transcript_segments" ("vault_id","meeting_id","start_time","segment_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "vault_permission_single_owner_idx" ON "app"."vault_permissions" ("vault_id") WHERE "role" = 'owner';--> statement-breakpoint
+CREATE INDEX "vault_permission_principal_vault_idx" ON "app"."vault_permissions" ("principal_type","principal_id","role","vault_id");--> statement-breakpoint
+ALTER TABLE "app"."search_documents" ADD CONSTRAINT "search_document_meeting_fk" FOREIGN KEY ("vault_id","meeting_id") REFERENCES "app"."meetings"("vault_id","meeting_id") ON DELETE CASCADE;--> statement-breakpoint
+ALTER TABLE "app"."search_embeddings" ADD CONSTRAINT "search_embedding_document_fk" FOREIGN KEY ("vault_id","document_id") REFERENCES "app"."search_documents"("vault_id","document_id") ON DELETE CASCADE;--> statement-breakpoint
+ALTER TABLE "app"."search_index_jobs" ADD CONSTRAINT "search_index_job_vault_fk" FOREIGN KEY ("vault_id") REFERENCES "app"."vaults"("vault_id") ON DELETE CASCADE;--> statement-breakpoint
+ALTER TABLE "app"."search_index_jobs" ADD CONSTRAINT "search_index_job_owner_user_fk" FOREIGN KEY ("owner_user_id") REFERENCES "auth"."user"("id") ON DELETE CASCADE;--> statement-breakpoint
+ALTER TABLE "app"."transaction_receipts" ADD CONSTRAINT "transaction_receipt_owner_user_fk" FOREIGN KEY ("owner_user_id") REFERENCES "auth"."user"("id") ON DELETE CASCADE;--> statement-breakpoint
+ALTER TABLE "app"."meetings" ADD CONSTRAINT "synced_meeting_vault_fk" FOREIGN KEY ("vault_id") REFERENCES "app"."vaults"("vault_id") ON DELETE CASCADE;--> statement-breakpoint
+ALTER TABLE "app"."meetings" ADD CONSTRAINT "synced_meeting_project_fk" FOREIGN KEY ("vault_id","project_id") REFERENCES "app"."projects"("vault_id","project_id");--> statement-breakpoint
+ALTER TABLE "app"."projects" ADD CONSTRAINT "project_vault_fk" FOREIGN KEY ("vault_id") REFERENCES "app"."vaults"("vault_id") ON DELETE CASCADE;--> statement-breakpoint
+ALTER TABLE "app"."projects" ADD CONSTRAINT "project_parent_fk" FOREIGN KEY ("vault_id","parent_project_id") REFERENCES "app"."projects"("vault_id","project_id") ON DELETE RESTRICT;--> statement-breakpoint
+ALTER TABLE "app"."screenshots" ADD CONSTRAINT "synced_screenshot_meeting_fk" FOREIGN KEY ("vault_id","meeting_id") REFERENCES "app"."meetings"("vault_id","meeting_id") ON DELETE CASCADE;--> statement-breakpoint
+ALTER TABLE "app"."transcript_segments" ADD CONSTRAINT "synced_transcript_segment_meeting_fk" FOREIGN KEY ("vault_id","meeting_id") REFERENCES "app"."meetings"("vault_id","meeting_id") ON DELETE CASCADE;--> statement-breakpoint
+ALTER TABLE "app"."vault_permissions" ADD CONSTRAINT "vault_permission_vault_fk" FOREIGN KEY ("vault_id") REFERENCES "app"."vaults"("vault_id") ON DELETE CASCADE;--> statement-breakpoint
+ALTER TABLE "app"."vault_permissions" ADD CONSTRAINT "vault_permission_granted_by_user_fk" FOREIGN KEY ("granted_by_user_id") REFERENCES "auth"."user"("id") ON DELETE RESTRICT;--> statement-breakpoint
+ALTER TABLE "app"."transcript_patch_chunks" ADD CONSTRAINT "transcript_patch_chunk_meeting_fk" FOREIGN KEY ("vault_id","meeting_id") REFERENCES "app"."meetings"("vault_id","meeting_id") ON DELETE CASCADE;--> statement-breakpoint
 CREATE INDEX "member_user_organization_idx" ON "auth"."member" ("user_id","organization_id");
 --> statement-breakpoint
 CREATE INDEX "team_member_user_team_idx" ON "auth"."team_member" ("user_id","team_id");
 --> statement-breakpoint
-CREATE FUNCTION "core"."current_identity_owns_vault"(target_vault_id uuid)
+CREATE FUNCTION "app"."current_identity_owns_vault"(target_vault_id uuid)
 RETURNS boolean LANGUAGE sql STABLE AS $$
   SELECT coalesce(current_setting('app.user_id', true), '') <> '' AND EXISTS (
-    SELECT 1 FROM "core"."vault_permissions" permission
+    SELECT 1 FROM "app"."vault_permissions" permission
     WHERE permission."vault_id" = target_vault_id
       AND permission."principal_type" = 'user'
       AND permission."principal_id" = current_setting('app.user_id', true)
@@ -249,11 +246,11 @@ RETURNS boolean LANGUAGE sql STABLE AS $$
   )
 $$;
 --> statement-breakpoint
-CREATE FUNCTION "core"."current_identity_can_read_vault"(target_vault_id uuid)
+CREATE FUNCTION "app"."current_identity_can_read_vault"(target_vault_id uuid)
 RETURNS boolean LANGUAGE sql STABLE AS $$
-  SELECT "core"."current_identity_owns_vault"(target_vault_id) OR (
+  SELECT "app"."current_identity_owns_vault"(target_vault_id) OR (
     current_setting('app.sharing_enabled', true) = 'true' AND EXISTS (
-      SELECT 1 FROM "core"."vault_permissions" permission
+      SELECT 1 FROM "app"."vault_permissions" permission
       WHERE permission."vault_id" = target_vault_id AND permission."role" = 'member' AND (
         (permission."principal_type" = 'user' AND permission."principal_id" = current_setting('app.user_id', true))
         OR (permission."principal_type" = 'organization' AND EXISTS (
@@ -271,47 +268,42 @@ RETURNS boolean LANGUAGE sql STABLE AS $$
   )
 $$;
 --> statement-breakpoint
-ALTER TABLE "core"."vaults" ENABLE ROW LEVEL SECURITY;
-ALTER TABLE "core"."vaults" FORCE ROW LEVEL SECURITY;
-ALTER TABLE "core"."transaction_receipts" ENABLE ROW LEVEL SECURITY;
-ALTER TABLE "core"."transaction_receipts" FORCE ROW LEVEL SECURITY;
-CREATE POLICY "vault_select" ON "core"."vaults" FOR SELECT USING ("core"."current_identity_can_read_vault"("vault_id"));
-CREATE POLICY "vault_insert" ON "core"."vaults" FOR INSERT WITH CHECK (coalesce(current_setting('app.user_id', true), '') <> '');
-CREATE POLICY "vault_update" ON "core"."vaults" FOR UPDATE USING ("core"."current_identity_owns_vault"("vault_id")) WITH CHECK ("core"."current_identity_owns_vault"("vault_id"));
-CREATE POLICY "vault_delete" ON "core"."vaults" FOR DELETE USING ("core"."current_identity_owns_vault"("vault_id"));
-CREATE POLICY "transaction_receipt_owner" ON "core"."transaction_receipts" FOR ALL
-  USING ("owner_user_id" = current_setting('app.user_id', true))
-  WITH CHECK ("owner_user_id" = current_setting('app.user_id', true));
+CREATE POLICY "search_document_select" ON "app"."search_documents" AS PERMISSIVE FOR SELECT TO public USING ("app"."current_identity_can_read_vault"("app"."search_documents"."vault_id"));--> statement-breakpoint
+CREATE POLICY "search_document_write" ON "app"."search_documents" AS PERMISSIVE FOR ALL TO public USING ("app"."current_identity_owns_vault"("app"."search_documents"."vault_id")) WITH CHECK ("app"."current_identity_owns_vault"("app"."search_documents"."vault_id"));--> statement-breakpoint
+CREATE POLICY "search_embedding_select" ON "app"."search_embeddings" AS PERMISSIVE FOR SELECT TO public USING ("app"."current_identity_can_read_vault"("app"."search_embeddings"."vault_id"));--> statement-breakpoint
+CREATE POLICY "search_embedding_write" ON "app"."search_embeddings" AS PERMISSIVE FOR ALL TO public USING ("app"."current_identity_owns_vault"("app"."search_embeddings"."vault_id")) WITH CHECK ("app"."current_identity_owns_vault"("app"."search_embeddings"."vault_id"));--> statement-breakpoint
+CREATE POLICY "transaction_receipt_owner" ON "app"."transaction_receipts" AS PERMISSIVE FOR ALL TO public USING ("app"."transaction_receipts"."owner_user_id" = current_setting('app.user_id', true)) WITH CHECK ("app"."transaction_receipts"."owner_user_id" = current_setting('app.user_id', true));--> statement-breakpoint
+CREATE POLICY "meeting_select" ON "app"."meetings" AS PERMISSIVE FOR SELECT TO public USING ("app"."current_identity_can_read_vault"("app"."meetings"."vault_id"));--> statement-breakpoint
+CREATE POLICY "meeting_write" ON "app"."meetings" AS PERMISSIVE FOR ALL TO public USING ("app"."current_identity_owns_vault"("app"."meetings"."vault_id")) WITH CHECK ("app"."current_identity_owns_vault"("app"."meetings"."vault_id"));--> statement-breakpoint
+CREATE POLICY "project_select" ON "app"."projects" AS PERMISSIVE FOR SELECT TO public USING ("app"."current_identity_can_read_vault"("app"."projects"."vault_id"));--> statement-breakpoint
+CREATE POLICY "project_insert" ON "app"."projects" AS PERMISSIVE FOR INSERT TO public WITH CHECK ("app"."current_identity_owns_vault"("app"."projects"."vault_id"));--> statement-breakpoint
+CREATE POLICY "project_update" ON "app"."projects" AS PERMISSIVE FOR UPDATE TO public USING ("app"."current_identity_owns_vault"("app"."projects"."vault_id")) WITH CHECK ("app"."current_identity_owns_vault"("app"."projects"."vault_id"));--> statement-breakpoint
+CREATE POLICY "project_delete" ON "app"."projects" AS PERMISSIVE FOR DELETE TO public USING ("app"."current_identity_owns_vault"("app"."projects"."vault_id"));--> statement-breakpoint
+CREATE POLICY "screenshot_select" ON "app"."screenshots" AS PERMISSIVE FOR SELECT TO public USING ("app"."current_identity_can_read_vault"("app"."screenshots"."vault_id"));--> statement-breakpoint
+CREATE POLICY "screenshot_write" ON "app"."screenshots" AS PERMISSIVE FOR ALL TO public USING ("app"."current_identity_owns_vault"("app"."screenshots"."vault_id")) WITH CHECK ("app"."current_identity_owns_vault"("app"."screenshots"."vault_id"));--> statement-breakpoint
+CREATE POLICY "transcript_select" ON "app"."transcript_segments" AS PERMISSIVE FOR SELECT TO public USING ("app"."current_identity_can_read_vault"("app"."transcript_segments"."vault_id"));--> statement-breakpoint
+CREATE POLICY "transcript_write" ON "app"."transcript_segments" AS PERMISSIVE FOR ALL TO public USING ("app"."current_identity_owns_vault"("app"."transcript_segments"."vault_id")) WITH CHECK ("app"."current_identity_owns_vault"("app"."transcript_segments"."vault_id"));--> statement-breakpoint
+CREATE POLICY "vault_select" ON "app"."vaults" AS PERMISSIVE FOR SELECT TO public USING ("app"."current_identity_can_read_vault"("app"."vaults"."vault_id"));--> statement-breakpoint
+CREATE POLICY "vault_insert" ON "app"."vaults" AS PERMISSIVE FOR INSERT TO public WITH CHECK (coalesce(current_setting('app.user_id', true), '') <> '');--> statement-breakpoint
+CREATE POLICY "vault_update" ON "app"."vaults" AS PERMISSIVE FOR UPDATE TO public USING ("app"."current_identity_owns_vault"("app"."vaults"."vault_id")) WITH CHECK ("app"."current_identity_owns_vault"("app"."vaults"."vault_id"));--> statement-breakpoint
+CREATE POLICY "vault_delete" ON "app"."vaults" AS PERMISSIVE FOR DELETE TO public USING ("app"."current_identity_owns_vault"("app"."vaults"."vault_id"));--> statement-breakpoint
+CREATE POLICY "transcript_patch_select" ON "app"."transcript_patch_chunks" AS PERMISSIVE FOR SELECT TO public USING ("app"."current_identity_owns_vault"("app"."transcript_patch_chunks"."vault_id"));--> statement-breakpoint
+CREATE POLICY "transcript_patch_write" ON "app"."transcript_patch_chunks" AS PERMISSIVE FOR ALL TO public USING ("app"."current_identity_owns_vault"("app"."transcript_patch_chunks"."vault_id")) WITH CHECK ("app"."current_identity_owns_vault"("app"."transcript_patch_chunks"."vault_id"));
 --> statement-breakpoint
-ALTER TABLE "core"."projects" ENABLE ROW LEVEL SECURITY;
-ALTER TABLE "core"."projects" FORCE ROW LEVEL SECURITY;
-CREATE POLICY "project_select" ON "core"."projects" FOR SELECT USING ("core"."current_identity_can_read_vault"("vault_id"));
-CREATE POLICY "project_insert" ON "core"."projects" FOR INSERT WITH CHECK ("core"."current_identity_owns_vault"("vault_id"));
-CREATE POLICY "project_update" ON "core"."projects" FOR UPDATE USING ("core"."current_identity_owns_vault"("vault_id")) WITH CHECK ("core"."current_identity_owns_vault"("vault_id"));
-CREATE POLICY "project_delete" ON "core"."projects" FOR DELETE USING ("core"."current_identity_owns_vault"("vault_id"));
+ALTER TABLE "app"."search_documents" FORCE ROW LEVEL SECURITY;
 --> statement-breakpoint
-ALTER TABLE "content"."meetings" ENABLE ROW LEVEL SECURITY;
-ALTER TABLE "content"."meetings" FORCE ROW LEVEL SECURITY;
-ALTER TABLE "content"."transcript_segments" ENABLE ROW LEVEL SECURITY;
-ALTER TABLE "content"."transcript_segments" FORCE ROW LEVEL SECURITY;
-ALTER TABLE "content"."transcript_patch_chunks" ENABLE ROW LEVEL SECURITY;
-ALTER TABLE "content"."transcript_patch_chunks" FORCE ROW LEVEL SECURITY;
-ALTER TABLE "content"."screenshots" ENABLE ROW LEVEL SECURITY;
-ALTER TABLE "content"."screenshots" FORCE ROW LEVEL SECURITY;
-ALTER TABLE "content"."search_documents" ENABLE ROW LEVEL SECURITY;
-ALTER TABLE "content"."search_documents" FORCE ROW LEVEL SECURITY;
-ALTER TABLE "content"."search_embeddings" ENABLE ROW LEVEL SECURITY;
-ALTER TABLE "content"."search_embeddings" FORCE ROW LEVEL SECURITY;
+ALTER TABLE "app"."search_embeddings" FORCE ROW LEVEL SECURITY;
 --> statement-breakpoint
-CREATE POLICY "meeting_select" ON "content"."meetings" FOR SELECT USING ("core"."current_identity_can_read_vault"("vault_id"));
-CREATE POLICY "meeting_write" ON "content"."meetings" FOR ALL USING ("core"."current_identity_owns_vault"("vault_id")) WITH CHECK ("core"."current_identity_owns_vault"("vault_id"));
-CREATE POLICY "transcript_select" ON "content"."transcript_segments" FOR SELECT USING ("core"."current_identity_can_read_vault"("vault_id"));
-CREATE POLICY "transcript_write" ON "content"."transcript_segments" FOR ALL USING ("core"."current_identity_owns_vault"("vault_id")) WITH CHECK ("core"."current_identity_owns_vault"("vault_id"));
-CREATE POLICY "transcript_patch_select" ON "content"."transcript_patch_chunks" FOR SELECT USING ("core"."current_identity_owns_vault"("vault_id"));
-CREATE POLICY "transcript_patch_write" ON "content"."transcript_patch_chunks" FOR ALL USING ("core"."current_identity_owns_vault"("vault_id")) WITH CHECK ("core"."current_identity_owns_vault"("vault_id"));
-CREATE POLICY "screenshot_select" ON "content"."screenshots" FOR SELECT USING ("core"."current_identity_can_read_vault"("vault_id"));
-CREATE POLICY "screenshot_write" ON "content"."screenshots" FOR ALL USING ("core"."current_identity_owns_vault"("vault_id")) WITH CHECK ("core"."current_identity_owns_vault"("vault_id"));
-CREATE POLICY "search_document_select" ON "content"."search_documents" FOR SELECT USING ("core"."current_identity_can_read_vault"("vault_id"));
-CREATE POLICY "search_document_write" ON "content"."search_documents" FOR ALL USING ("core"."current_identity_owns_vault"("vault_id")) WITH CHECK ("core"."current_identity_owns_vault"("vault_id"));
-CREATE POLICY "search_embedding_select" ON "content"."search_embeddings" FOR SELECT USING ("core"."current_identity_can_read_vault"("vault_id"));
-CREATE POLICY "search_embedding_write" ON "content"."search_embeddings" FOR ALL USING ("core"."current_identity_owns_vault"("vault_id")) WITH CHECK ("core"."current_identity_owns_vault"("vault_id"));
+ALTER TABLE "app"."transaction_receipts" FORCE ROW LEVEL SECURITY;
+--> statement-breakpoint
+ALTER TABLE "app"."meetings" FORCE ROW LEVEL SECURITY;
+--> statement-breakpoint
+ALTER TABLE "app"."projects" FORCE ROW LEVEL SECURITY;
+--> statement-breakpoint
+ALTER TABLE "app"."screenshots" FORCE ROW LEVEL SECURITY;
+--> statement-breakpoint
+ALTER TABLE "app"."transcript_segments" FORCE ROW LEVEL SECURITY;
+--> statement-breakpoint
+ALTER TABLE "app"."vaults" FORCE ROW LEVEL SECURITY;
+--> statement-breakpoint
+ALTER TABLE "app"."transcript_patch_chunks" FORCE ROW LEVEL SECURITY;
