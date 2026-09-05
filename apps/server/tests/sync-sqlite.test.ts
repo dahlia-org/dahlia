@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -29,6 +30,100 @@ afterEach(() => {
 });
 
 describe("SQLite canonical sync", () => {
+  it("filters Vaults by owner or current organization and Team membership", async () => {
+    const { store, databasePath } = await setup();
+    await createVault(store);
+    const service = new MeetingSyncService(store.sync);
+    expect(await service.listVaults(owner)).toHaveLength(1);
+    expect(await service.listVaults(other)).toEqual([]);
+    expect(await service.listVaults(owner, undefined, "external")).toEqual([]);
+    const team = (await store.createExternalTeam(owner.userId, "Private team"))!;
+    await store.sync.withIdentity(owner, (sync) => sync.putMemberPermission(vaultId, "team", team.id));
+    expect(await service.listVaults(other, undefined, "external")).toEqual([]);
+    await store.addExternalTeamMember(owner.userId, team.id, other.userId);
+    expect(await service.listVaults(other, undefined, "external")).toMatchObject([{ vaultId, role: "member" }]);
+    // Two access paths must still produce one Vault.
+    await store.sync.withIdentity(owner, (sync) => sync.putMemberPermission(vaultId, "organization", "external"));
+    expect(await service.listVaults(other, undefined, "external")).toHaveLength(1);
+    expect(await service.listVaults(other)).toEqual([]);
+    const database = new DatabaseSync(databasePath);
+    database.exec(`
+      INSERT INTO organization (id, name, slug, created_at) VALUES ('another', 'Another', 'another', 0);
+      INSERT INTO member (id, organization_id, user_id, role, created_at)
+        VALUES ('another-member', 'another', 'other', 'member', 0);
+    `);
+    expect(await service.listVaults(other, undefined, "another")).toEqual([]);
+    // A stale Team row cannot bypass loss of organization membership.
+    database.prepare("DELETE FROM member WHERE user_id = ? AND organization_id = ?").run(other.userId, "external");
+    await expect(service.listVaults(other, undefined, "external")).rejects.toMatchObject({ status: 403 });
+    expect(await service.listOrganizations(other)).toMatchObject([{ id: "another" }]);
+    database.close();
+    await store.close?.();
+  });
+
+  it("validates the exclusive Vault query at the HTTP boundary", async () => {
+    const { store, databasePath } = await setup();
+    await createVault(store);
+    const app = createApp({ config: testConfig(databasePath), authStore: store });
+    for (const query of ["", "?userId=owner"]) {
+      const response = await app.request("/api/v1/vaults" + query, { headers: headers() });
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({ items: [{ vaultId }] });
+    }
+    for (const query of ["?userId=owner&organizationId=external", "?userId=", "?organizationId=", "?userId=%20owner", "?organizationId=%00"]) {
+      expect((await app.request("/api/v1/vaults" + query, { headers: headers() })).status).toBe(400);
+    }
+    for (const query of ["?userId=other", "?organizationId=unknown"]) {
+      expect((await app.request("/api/v1/vaults" + query, { headers: headers() })).status).toBe(403);
+    }
+    const organizations = await app.request("/api/v1/organizations", { headers: headers() });
+    expect(await organizations.json()).toMatchObject([{ id: "external" }]);
+    const disabled = createNodeApplicationStore({ ...testConfig(databasePath), syncSharingEnabled: false });
+    const disabledService = new MeetingSyncService(disabled.sync);
+    expect(await disabledService.listVaults(owner)).toHaveLength(1);
+    expect(await disabledService.listOrganizations(owner)).toEqual([]);
+    await expect(disabledService.listVaults(owner, undefined, "external")).rejects.toMatchObject({ status: 403 });
+    await disabled.close?.();
+    await store.close?.();
+  });
+
+  it("paginates direct and unassigned meetings without including child Project meetings", async () => {
+    const { store, databasePath } = await setup();
+    await createVault(store);
+    const childId = "019d3f46-8c00-7000-8000-000000000002";
+    const childMeetingId = "019d3f46-8c00-7000-8000-000000000003";
+    const unassignedId = "019d3f46-8c00-7000-8000-000000000004";
+    await commit(store, owner, transaction("019d4a01-9000-7000-8000-000000000001", [
+      { id: projectId, entity: "project", action: "create", entityId: projectId, baseRevision: null, data: projectData("Parent") },
+      { id: childId, entity: "project", action: "create", entityId: childId, baseRevision: null, data: { ...projectData("Child"), parentProjectId: projectId, projectType: null } },
+      ...Array.from({ length: 201 }, (_, index) => {
+        const id = `019d4a01-9100-7000-8000-${String(index).padStart(12, "0")}`;
+        return { id, entity: "meeting" as const, action: "create" as const, entityId: id, baseRevision: null, data: meetingData() };
+      }),
+      { id: childMeetingId, entity: "meeting", action: "create", entityId: childMeetingId, baseRevision: null, data: { ...meetingData(), projectId: childId } },
+      { id: unassignedId, entity: "meeting", action: "create", entityId: unassignedId, baseRevision: null, data: { ...meetingData(), projectId: null } },
+    ]));
+    const app = createApp({ config: testConfig(databasePath), authStore: store });
+    const get = async (query: string) => app.request(`/api/v1/vaults/${vaultId}/meetings?${query}`, { headers: headers() });
+    const pageSchema = z.object({ items: z.array(z.object({ meetingId: z.string(), projectId: z.string().nullable() })), nextCursor: z.string().optional() });
+    const first = pageSchema.parse(await (await get(`projectId=${projectId}&projectScope=direct`)).json());
+    expect(first.items).toHaveLength(200);
+    expect(first.items.every((item) => item.projectId === projectId)).toBe(true);
+    expect(first.nextCursor).toBeDefined();
+    const last = pageSchema.parse(await (await get(`projectId=${projectId}&projectScope=direct&cursor=${encodeURIComponent(first.nextCursor!)}`)).json());
+    expect(last.items).toHaveLength(1);
+    expect(last.nextCursor).toBeUndefined();
+    expect(new Set([...first.items, ...last.items].map(({ meetingId }) => meetingId)).size).toBe(201);
+    expect(await (await get("projectScope=unassigned")).json()).toMatchObject({ items: [{ meetingId: unassignedId }] });
+    expect(await (await get(`projectId=${childId}&projectScope=direct`)).json()).toMatchObject({ items: [{ meetingId: childMeetingId }] });
+    const legacy = await store.sync.withIdentity(owner, (sync) => sync.listMeetings(vaultId, undefined, 300, projectId));
+    expect(legacy).toHaveLength(202);
+    for (const query of ["projectScope=direct", "projectScope=unknown", `projectScope=unassigned&projectId=${projectId}`]) {
+      expect((await get(query)).status).toBe(400);
+    }
+    await store.close?.();
+  });
+
   it("commits atomic domain transactions and replays the same idempotency key", async () => {
     const { store } = await setup();
     const create = transaction("019d4a01-0000-7000-8000-000000000001", [{

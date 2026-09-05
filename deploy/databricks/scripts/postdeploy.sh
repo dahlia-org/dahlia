@@ -10,18 +10,32 @@ catalog=$2
 ai_schema=$3
 database_project_id=$4
 
-# Keep upstream response bodies and CLI diagnostics out of deployment logs.
+# Keep successful response bodies quiet, but preserve CLI failure diagnostics.
 cli() {
-  if ! databricks "$@" --profile "$profile" --output json 2>/dev/null; then
-    echo "Databricks command failed: $1 $2" >&2
+  if ! databricks "$@" --profile "$profile" --output json; then
+    echo "Databricks command failed: $1 $2 (${3:-})" >&2
     return 1
   fi
 }
 
+cli grants update catalog "$catalog" --json '{"changes":[{"principal":"account users","add":["USE_CATALOG"]}]}' >/dev/null
+
 cli api post "/api/2.0/postgres/projects/${database_project_id}/search-extensions" --json '{}' >/dev/null
+
+# The CLI collects all pages unless --limit is supplied. Fail before creating
+# anything if listing fails; a permission error does not mean a model is absent.
+existing_models=$(cli ai-gateway list-model-services --parent "schemas/${catalog}.${ai_schema}" | jq -ce '
+  if type == "array" then map(.name) else error("Expected a model service list") end
+')
 
 for source_name in gpt-5-6-luna gpt-6-astra gpt-5-6-sol gpt-5-6-terra kimi-k3 deepseek-v4-pro-0813; do
   registered_name=${source_name%-0813}
+  target_name="model-services/${catalog}.${ai_schema}.${registered_name}"
+  if jq -e --arg name "$target_name" 'index($name) != null' <<<"$existing_models" >/dev/null; then
+    echo "Keeping existing model service: $target_name"
+    continue
+  fi
+  echo "Creating model service: $target_name (source: system.ai.${source_name})"
   body=$(cli ai-gateway get-model-service "model-services/system.ai.${source_name}" | jq -ce '
     .config.routing.destinations
     | if length == 1 and .[0].destination_type == "DESTINATION_TYPE_PAY_PER_TOKEN_FOUNDATION_MODEL"
@@ -39,4 +53,4 @@ for source_name in gpt-5-6-luna gpt-6-astra gpt-5-6-sol gpt-5-6-terra kimi-k3 de
   cli ai-gateway create-model-service "schemas/${catalog}.${ai_schema}" "$registered_name" --json "$body" >/dev/null
 done
 
-echo "Initial model services created."
+echo "Initial model services ready."

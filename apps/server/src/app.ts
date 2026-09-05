@@ -485,7 +485,7 @@ export function createApp(dependencies: AppDependencies) {
   );
   app.get("/api/v1/vaults", async (context) => {
     const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
-    return context.json({ items: await sync.listVaults(identity) });
+    return context.json({ items: await sync.listVaults(identity, context.req.query("userId"), context.req.query("organizationId")) });
   });
   app.get("/api/v1/vaults/:vaultId", async (context) => {
     const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
@@ -513,8 +513,9 @@ export function createApp(dependencies: AppDependencies) {
       vaultId,
       context.req.query("q"),
       context.req.raw.signal,
-      context.req.query("projectId") ? sync.parseId(context.req.query("projectId")!) : undefined,
+      context.req.query("projectId") !== undefined ? sync.parseId(context.req.query("projectId")!) : undefined,
       context.req.query("cursor"),
+      context.req.query("projectScope"),
     ));
   });
   app.get("/api/v1/vaults/:vaultId/meetings/:meetingId", async (context) => {
@@ -599,12 +600,8 @@ export function createApp(dependencies: AppDependencies) {
   });
 
   app.get("/api/v1/organizations", async (context) => {
-    if (!config.syncSharingEnabled || config.authProvider !== "header") {
-      return context.json({ error: "not_found" }, 404);
-    }
-    const identity = await identities.fromBrowser(context.req.raw);
-    const organization = await store.getExternalOrganization(identity.userId);
-    return context.json(organization ? [organization] : []);
+    const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
+    return context.json(await sync.listOrganizations(identity));
   });
   app.get("/api/v1/organizations/:organizationId", async (context) => {
     if (!config.syncSharingEnabled || config.authProvider !== "header" || context.req.param("organizationId") !== EXTERNAL_ORGANIZATION_ID) {

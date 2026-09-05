@@ -7,8 +7,9 @@ resources:
         - principal: account users
           privileges:
             - EXECUTE
+            - USE_SCHEMA
       comment: AI model services for Dahlia Server
-    dahlia:
+    app_schema:
       catalog_name: ${var.catalog}
       name: ${var.app_schema}
       comment: Resources for Dahlia Server ${bundle.target}
@@ -16,7 +17,7 @@ resources:
   volumes:
     dahlia_storage:
       catalog_name: ${var.catalog}
-      schema_name: ${resources.schemas.dahlia.name}
+      schema_name: ${resources.schemas.app_schema.name}
       name: ${var.volume_name}
       volume_type: MANAGED
       comment: Dahlia Server stored content for ${bundle.target}

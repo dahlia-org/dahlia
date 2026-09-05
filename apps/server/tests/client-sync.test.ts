@@ -1,5 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { commitSyncTransaction, syncMessage } from "../src/client/App";
+import { commitSyncTransaction } from "../src/client/App";
+import { syncMessage } from "../src/client/api";
 
 afterEach(() => vi.unstubAllGlobals());
 

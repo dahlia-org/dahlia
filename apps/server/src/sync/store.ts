@@ -1684,7 +1684,43 @@ function createIdentityStore(
       )).returning({ screenshotId: schema.syncedScreenshot.screenshotId });
       return deleted !== undefined;
     },
-    async listVaults() {
+    async listOrganizations() {
+      if (!sharingEnabled) return [];
+      return db.select({
+        id: schema.organization.id, name: schema.organization.name, slug: schema.organization.slug,
+      }).from(schema.organization).where(exists(
+        db.select({ value: sql`1` }).from(schema.member).where(and(
+          eq(schema.member.organizationId, schema.organization.id),
+          eq(schema.member.userId, userPrincipalId),
+        )),
+      )).orderBy(asc(schema.organization.name), asc(schema.organization.id));
+    },
+    async listVaults(organizationId) {
+      const membership = organizationId ? and(
+        eq(schema.member.userId, userPrincipalId),
+        eq(schema.member.organizationId, organizationId),
+      ) : undefined;
+      if (organizationId) {
+        const [member] = await db.select({ id: schema.member.id }).from(schema.member).where(membership).limit(1);
+        if (!sharingEnabled || !member) throw new SyncTransactionError(403, "organization_forbidden");
+      }
+      const scope = organizationId
+        ? exists(db.select({ value: sql`1` }).from(schema.syncedVaultPermission).where(and(
+            eq(schema.syncedVaultPermission.vaultId, schema.syncedVault.vaultId),
+            eq(schema.syncedVaultPermission.role, "member"),
+            or(
+              and(eq(schema.syncedVaultPermission.principalType, "organization"),
+                eq(schema.syncedVaultPermission.principalId, organizationId)),
+              and(eq(schema.syncedVaultPermission.principalType, "team"),
+                exists(db.select({ value: sql`1` }).from(schema.team)
+                  .innerJoin(schema.teamMember, eq(schema.teamMember.teamId, schema.team.id)).where(and(
+                    eq(schema.team.id, schema.syncedVaultPermission.principalId),
+                    eq(schema.team.organizationId, organizationId),
+                    eq(schema.teamMember.userId, userPrincipalId),
+                  )))),
+            ),
+          )))
+        : ownerAccess(schema.syncedVault.vaultId);
       const rows = await db.select({
         vaultId: schema.syncedVault.vaultId,
         name: schema.syncedVault.name,
@@ -1694,6 +1730,8 @@ function createIdentityStore(
         role: vaultRole(schema.syncedVault.vaultId),
       }).from(schema.syncedVault).where(and(
         readable(schema.syncedVault.vaultId),
+        scope,
+        organizationId ? exists(db.select({ value: sql`1` }).from(schema.member).where(membership)) : undefined,
         isNull(schema.syncedVault.deletingAt),
       )).orderBy(desc(schema.syncedVault.updatedAt));
       return rows;
@@ -1719,16 +1757,17 @@ function createIdentityStore(
     async getProject(vaultId, projectId) {
       return (await projectViews(vaultId)).find((project) => project.projectId === projectId) ?? null;
     },
-    async listMeetings(vaultId, query, limit, projectId, cursor) {
+    async listMeetings(vaultId, query, limit, projectId, cursor, projectScope) {
       if (query && query.tokens.length === 0) return [];
       const projectIds = projectId
         ? (await projectViews(vaultId)).filter((project) =>
-            project.projectId === projectId || project.parentProjectId === projectId).map((project) => project.projectId)
+            project.projectId === projectId || (projectScope !== "direct" && project.parentProjectId === projectId)).map((project) => project.projectId)
         : undefined;
       if (projectId && projectIds?.length === 0) return [];
       const filter = and(
         readableMeeting(vaultId),
         ...(projectIds ? [inArray(schema.syncedMeeting.projectId, projectIds)] : []),
+        ...(projectScope === "unassigned" ? [isNull(schema.syncedMeeting.projectId)] : []),
         ...(cursor ? [or(
           lt(schema.syncedMeeting.createdAt, cursor.createdAt),
           and(
