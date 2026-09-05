@@ -14,8 +14,8 @@ const ExtensionPage = () => null;
 
 describe("dashboard navigation", () => {
   it("builds exclusive scopes and expands the selected Project ancestry by ID", () => {
-    expect(vaultListURL("user+1", "")).toBe("/api/v1/vaults?userId=user%2B1");
-    expect(vaultListURL("user+1", "org+1")).toBe("/api/v1/vaults?organizationId=org%2B1");
+    expect(vaultListURL("")).toBe("/api/v1/vaults");
+    expect(vaultListURL("org+1")).toBe("/api/v1/vaults?organizationId=org%2B1");
     const projects = [
       { projectId: "parent", name: "Same" },
       { projectId: "child", parentProjectId: "parent", name: "Same" },

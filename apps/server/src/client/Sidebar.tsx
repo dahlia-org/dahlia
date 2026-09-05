@@ -3,8 +3,8 @@ import type { SessionInfo } from "./App";
 import type { OrganizationInfo, SyncedMeetingInfo, SyncedMeetingPage, SyncedProjectInfo, SyncedVaultInfo } from "./api";
 import { json, RequestError } from "./api";
 
-export function vaultListURL(userId: string, organizationId: string) {
-  return `/api/v1/vaults?${new URLSearchParams(organizationId ? { organizationId } : { userId })}`;
+export function vaultListURL(organizationId: string) {
+  return organizationId ? `/api/v1/vaults?${new URLSearchParams({ organizationId })}` : "/api/v1/vaults";
 }
 
 export function projectAncestors(projects: SyncedProjectInfo[], projectId?: string): Set<string> {
@@ -86,7 +86,7 @@ export function SidebarProvider({ session, children }: { session: SessionInfo; c
     setError(undefined);
     if (!session.capabilities.sync) return;
     if (organizationId && !organizations?.some(({ id }) => id === organizationId)) return;
-    void json<{ items: SyncedVaultInfo[] }>(vaultListURL(session.user.id, organizationId), { signal: controller.signal })
+    void json<{ items: SyncedVaultInfo[] }>(vaultListURL(organizationId), { signal: controller.signal })
       .then(({ items }) => { if (!controller.signal.aborted) setVaults(items); })
       .catch((caught: unknown) => {
         if (controller.signal.aborted) return;
