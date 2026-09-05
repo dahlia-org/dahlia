@@ -7,6 +7,7 @@ resources:
         - principal: account users
           privileges:
             - EXECUTE
+            - USE_SCHEMA
       comment: AI model services for Dahlia Server
     dahlia:
       catalog_name: ${var.catalog}
