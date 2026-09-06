@@ -28,7 +28,7 @@ import ImageIO
             let width = try #require(properties[kCGImagePropertyPixelWidth] as? Int)
             let height = try #require(properties[kCGImagePropertyPixelHeight] as? Int)
 
-            #expect(max(width, height) == 1024)
+            #expect(max(width, height) == 1280)
             #expect(attachment.mimeType == "image/webp")
         }
 

@@ -187,7 +187,7 @@ actor ScreenshotContentProvider {
         try await acquireRead(variant: variant)
         defer { releaseRead(variant: variant) }
         try Task.checkCancellation()
-        let representation = variant == .original ? "content" : "variants/thumbnail"
+        let representation = variant == .original ? "content" : "variants/\(variant.rawValue)"
         let url = origin.appending(path: "api/v1/files/\(source.fileId.uuidString.lowercased())/\(representation)")
         for attempt in 0 ... 1 {
             var request = URLRequest(url: url)

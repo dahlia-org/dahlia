@@ -1,10 +1,13 @@
 import { projectAncestors, vaultListURL } from "../src/client/Sidebar";
 import { readFileSync } from "node:fs";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 
 import { describe, expect, it } from "vitest";
 
 import {
   canEmbedArtifact,
+  ScreenshotFigure,
   resolveDashboardExtensionRoute,
   type DashboardExtension,
 } from "../src/client/App";
@@ -13,6 +16,18 @@ import { artifactViewerId, resolveDashboardRoute, shouldRedirectToSignIn } from 
 const ExtensionPage = () => null;
 
 describe("dashboard navigation", () => {
+  it("uses advertised thumbnails for browsing and preserves the original link", () => {
+    const file = { id: "file", content_type: "image/png", metadata: { source: "screenshot" },
+      variants: { thumb_360: "/small", thumb_1280: "/large" } };
+    const html = renderToStaticMarkup(createElement(ScreenshotFigure, { file }));
+    expect(html).toContain('src="/small"');
+    expect(html).toContain('href="/large"');
+    expect(html).toContain('href="/api/v1/files/file/content"');
+    expect(html).toContain("Open original");
+    const portable = renderToStaticMarkup(createElement(ScreenshotFigure, { file: { ...file, variants: {} } }));
+    expect(portable).toContain('src="/api/v1/files/file/content"');
+    expect(portable).not.toContain("/large");
+  });
   it("builds exclusive scopes and expands the selected Project ancestry by ID", () => {
     expect(vaultListURL("")).toBe("/api/v1/vaults");
     expect(vaultListURL("org+1")).toBe("/api/v1/vaults?organizationId=org%2B1");

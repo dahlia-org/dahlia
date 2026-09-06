@@ -10,7 +10,7 @@ public enum ScreenshotContentError: Error, Sendable {
 
 public enum ScreenshotVariant: String, Codable, Sendable {
     case original
-    case thumbnail
+    case thumbnail = "thumb_360"
 }
 
 /// A content reference, not a credential. Clients must match its origin to a configured account.
@@ -29,7 +29,7 @@ public struct ScreenshotRemoteReference: Codable, Equatable, Sendable {
 
     public func cacheKey(variant: ScreenshotVariant) -> String {
         let scope = accountConnectionId.map { "server/\($0.uuidString.lowercased())" } ?? "local"
-        let representation = variant == .original ? "original" : "variants/v1/thumbnail.webp"
+        let representation = variant == .original ? "original" : "variants/v1/\(variant.rawValue).webp"
         return "\(scope)/files/\(fileId.uuidString.lowercased())/\(representation)"
     }
 

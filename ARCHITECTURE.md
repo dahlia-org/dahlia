@@ -101,7 +101,7 @@ runtime resource を所有しない。
 Server Account の画像本体は未送信分も含めて Application Support の共通ファイルストアへ保存し、SQLite には画像と送信 operation の独立したファイル参照を保持する。
 ファイルを検証・確定してから画像 metadata と operation を同じ SQLite transaction で保存する。未送信・再試行・競合中の原本は容量上限の対象外とし、同じ画像の Server 確定後にだけ削除可能とする。
 表示・解析・書き出しは `ScreenshotContentProvider` が 移行待ちの旧 BLOB、共通ファイル、認証付き取得を解決する。
-一覧用384pxサムネイルは Node Server が要求時に生成し Volume に永続化する。生成非対応の環境は variant を広告しない。拡大表示は原本を使い、中間サイズは保存しない。
+一覧用 `thumb_360`（長辺最大360px）と内容確認・AI入力用 `thumb_1280`（長辺最大1280px）は Node Server が要求時に生成し Volume に永続化する。生成非対応の環境は variant を広告しない。Web の画像リンクは1280px版を開き、原寸リンクも提供する。Desktop の要約・OCR・キャプション・チャット・MCP通常画像入力は共通の1280px上限を使い、原寸指定は維持する。
 MCP の cache miss は画像専用 broker でアプリに取得を依頼する。未送信原本は解放しない。Local Account への移動は必要な原本をファイルで揃えてから、所属変更とファイル参照を同じ transaction で確定する。バックアップの新規作成は Local Account の保管庫に限定する。
 `files` は Vault 所有の原本と metadata、`meeting_files` は会議への独立した紐付けを保持する。原本 URI は Volume の絶対パスで、Local Account と未確定の原本は NULL とする。端末の保存先は FileStore/index.sqlite と local/files/{fileId}/original または server/{accountConnectionId}/files/{fileId}/original。
 詳細は [同期 ADR](docs/adr/shared/sync.md) を参照する。

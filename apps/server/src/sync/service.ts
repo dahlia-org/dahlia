@@ -481,10 +481,17 @@ export class MeetingSyncService {
   async getFile(identity: Identity, fileId: string) {
     const file = await this.store.withIdentity(identity, (scoped) => scoped.getFile(fileId, true));
     if (!file) throw new ArtifactRequestError(404, "file_not_found");
-    return { ...fileResponse(file), contentURL: `/api/v1/files/${fileId}/content`,
-      variants: this.screenshotTransformer && imageContentTypes.has(file.contentType)
-        ? { thumbnail: `/api/v1/files/${fileId}/variants/thumbnail` } : {},
-    };
+    return this.fileMetadata(file);
+  }
+
+  private fileMetadata(file: FileRecord) {
+    const variants: Record<string, string> = {};
+    if (this.screenshotTransformer && imageContentTypes.has(file.contentType)) {
+      for (const variant of Object.keys(SCREENSHOT_VARIANTS)) {
+        variants[variant] = `/api/v1/files/${file.fileId}/variants/${variant}`;
+      }
+    }
+    return { ...fileResponse(file), contentURL: `/api/v1/files/${file.fileId}/content`, variants };
   }
 
   async listFiles(identity: Identity, vaultId: string, cursor?: string, meetingId?: string) {
@@ -492,11 +499,11 @@ export class MeetingSyncService {
     return this.store.withIdentity(identity, async (scoped) => {
       if (meetingId) {
         const rows = await scoped.listMeetingFiles(vaultId, meetingId, after, SYNC_READ_PAGE_SIZE + 1);
-        const items = rows.slice(0, SYNC_READ_PAGE_SIZE).map(({ file, ...link }) => ({ ...link, file: fileResponse(file) }));
+        const items = rows.slice(0, SYNC_READ_PAGE_SIZE).map(({ file, ...link }) => ({ ...link, file: this.fileMetadata(file) }));
         return { items, nextCursor: rows.length > SYNC_READ_PAGE_SIZE ? items.at(-1)!.id : null };
       }
       const rows = await scoped.listFiles(vaultId, after, SYNC_READ_PAGE_SIZE + 1);
-      const items = rows.slice(0, SYNC_READ_PAGE_SIZE).map(fileResponse);
+      const items = rows.slice(0, SYNC_READ_PAGE_SIZE).map((file) => this.fileMetadata(file));
       return { items, nextCursor: rows.length > SYNC_READ_PAGE_SIZE ? items.at(-1)!.id : null };
     });
   }
@@ -538,24 +545,33 @@ export class MeetingSyncService {
     return this.readFile(identity, image.fileId, method, request);
   }
 
-  async readFile(identity: Identity, fileId: string, method: ArtifactReadMethod, request: Request, thumbnail = false): Promise<Response> {
+  // Shared by HTTP delivery and server-side consumers; authorization is checked on every read.
+  async readFileContent(identity: Identity, fileId: string, variant?: ScreenshotVariant,
+    method: ArtifactReadMethod = "GET", request: Request = new Request("https://dahlia.invalid/")) {
     const file = await this.store.withIdentity(identity, (scoped) => scoped.getFile(fileId, true));
     if (!file) throw new ArtifactRequestError(404, "file_not_found");
-    if (thumbnail) {
-      if (!this.screenshotTransformer || !imageContentTypes.has(file.contentType)) {
+    if (variant !== undefined) {
+      if (!Object.hasOwn(SCREENSHOT_VARIANTS, variant) || !this.screenshotTransformer || !imageContentTypes.has(file.contentType)) {
         throw new ArtifactRequestError(404, "file_variant_unavailable");
       }
-      await this.ensureFileVariant(identity, file);
+      await this.ensureFileVariant(identity, file, variant);
     }
     const current = await this.store.withIdentity(identity, (scoped) => scoped.getFile(fileId, true));
     if (!current || current.checksum !== file.checksum) throw new ArtifactRequestError(404, "file_not_found");
     const upstream = await this.storageCall(() => this.requireStorage().read(
-      thumbnail ? fileVariantKey(fileId) : fileStorageKey(fileId), method, request,
+      variant ? fileVariantKey(fileId, variant) : fileStorageKey(fileId), method, request,
     ));
+    return { file, upstream, contentType: variant ? "image/webp" : file.contentType };
+  }
+
+  async readFile(identity: Identity, fileId: string, method: ArtifactReadMethod, request: Request, variant?: ScreenshotVariant): Promise<Response> {
+    const { file, upstream, contentType } = await this.readFileContent(identity, fileId, variant, method, request);
+    const checksum = file.checksum.slice(8);
+    const etag = variant ? `${checksum}-v1-${variant}` : checksum;
     const headers = new Headers({ "content-security-policy": "sandbox", "x-content-type-options": "nosniff",
-      "content-type": thumbnail ? "image/webp" : file.contentType, "cache-control": "private, no-cache",
-      "x-dahlia-original-sha256": file.checksum.slice(8), "x-dahlia-image-variant": thumbnail ? "thumbnail" : "original",
-      etag: `"${file.checksum.slice(8)}${thumbnail ? '-v1-thumbnail' : ''}"`,
+      "content-type": contentType, "cache-control": "private, no-cache",
+      "x-dahlia-original-sha256": checksum, "x-dahlia-image-variant": variant ?? "original",
+      etag: `"${etag}"`,
     });
     for (const name of ["accept-ranges", "content-length", "content-range", "last-modified"]) {
       const value = upstream.headers.get(name);
@@ -564,21 +580,21 @@ export class MeetingSyncService {
     return new Response(method === "HEAD" ? null : upstream.body, { status: upstream.status, headers });
   }
 
-  private ensureFileVariant(identity: Identity, file: FileRecord): Promise<void> {
-    const key = fileVariantKey(file.fileId);
+  private ensureFileVariant(identity: Identity, file: FileRecord, variant: ScreenshotVariant): Promise<void> {
+    const key = fileVariantKey(file.fileId, variant);
     const existing = this.variantJobs.get(key);
     if (existing) return existing;
     if (this.variantJobs.size >= 32) throw new ArtifactRequestError(503, "file_transform_busy");
-    const job = this.generateFileVariant(identity, file).finally(() => this.variantJobs.delete(key));
+    const job = this.generateFileVariant(identity, file, variant).finally(() => this.variantJobs.delete(key));
     this.variantJobs.set(key, job);
     return job;
   }
 
-  private async generateFileVariant(identity: Identity, file: FileRecord): Promise<void> {
+  private async generateFileVariant(identity: Identity, file: FileRecord, variant: ScreenshotVariant): Promise<void> {
     if (this.activeVariants >= 2) await new Promise<void>((resolve) => this.variantWaiters.push(resolve));
     else this.activeVariants += 1;
     const originalKey = fileStorageKey(file.fileId);
-    const key = fileVariantKey(file.fileId);
+    const key = fileVariantKey(file.fileId, variant);
     try {
       await this.withStorageOperation(originalKey, () => this.store.withStorageKeyLock(originalKey, async () => {
         const storage = this.requireStorage();
@@ -590,7 +606,7 @@ export class MeetingSyncService {
         if (await this.storageCall(() => storage.exists(key, request.signal))) return;
         const original = await this.storageCall(() => storage.read(originalKey, "GET", request));
         if (!original.ok || !original.body) throw new ArtifactRequestError(502, "file_original_unavailable");
-        const bytes = await this.screenshotTransformer!(original.body, SCREENSHOT_VARIANTS.thumbnail);
+        const bytes = await this.screenshotTransformer!(original.body, SCREENSHOT_VARIANTS[variant]);
         if (!await isCurrent()) throw new ArtifactRequestError(404, "file_not_found");
         try {
           await this.storageCall(() => storage.put(key, bytes, bytes.byteLength, "image/webp", request.signal));
