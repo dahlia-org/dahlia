@@ -16,6 +16,7 @@ import { MeetingSyncService } from "../src/sync/service";
 import { transformScreenshot } from "../src/sync/node-screenshot-transformer";
 import { fileStorageKey, fileVariantKey } from "../src/files/model";
 import sharp from "sharp";
+import { SCREENSHOT_VARIANTS } from "../src/sync/screenshot-variants";
 import type { SyncTransaction } from "../src/sync/types";
 
 const directories: string[] = [];
@@ -146,16 +147,71 @@ describe("SQLite canonical sync", () => {
     await store.close?.();
   });
 
+  it.each(Object.entries(SCREENSHOT_VARIANTS))("transforms %s without cropping or enlargement", async (_variant, longEdge) => {
+    for (const [width, height] of [[3400, 2200], [2200, 3400], [160, 80]] as const) {
+      const bytes = new Uint8Array(await sharp({ create: { width, height, channels: 3, background: "white" } }).png().toBuffer());
+      const result = await transformScreenshot(new Response(bytes).body!, longEdge);
+      const metadata = await sharp(result).metadata();
+      const scale = Math.min(1, longEdge / Math.max(width, height));
+      expect(metadata).toMatchObject({ format: "webp", width: Math.round(width * scale), height: Math.round(height * scale) });
+    }
+  });
+
+  it("advertises, serves and deletes both variants with distinct caches", async () => {
+    const { store, service, storage, file, publish, attach, transformer, databasePath } = await fileSetup();
+    await publish();
+    await attach();
+    const variants = Object.fromEntries(Object.keys(SCREENSHOT_VARIANTS).map((variant) => [variant, `/api/v1/files/${file.id}/variants/${variant}`]));
+    expect((await service.getFile(owner, file.id)).variants).toEqual(variants);
+    expect((await service.listFiles(owner, vaultId, undefined, meetingId)).items[0]).toMatchObject({ file: { variants } });
+    const app = createApp({ config: testConfig(databasePath), authStore: store, artifactStorage: storage, screenshotTransformer: transformer });
+    const etags = new Set<string | null>();
+    for (const variant of Object.keys(SCREENSHOT_VARIANTS) as Array<keyof typeof SCREENSHOT_VARIANTS>) {
+      const url = variants[variant]!;
+      const response = await app.request(url, { headers: headers() });
+      expect(response.status).toBe(200);
+      expect(response.headers.get("x-dahlia-image-variant")).toBe(variant);
+      etags.add(response.headers.get("etag"));
+      await response.arrayBuffer();
+      const head = await app.request(url, { method: "HEAD", headers: headers() });
+      expect(head.status).toBe(200);
+      expect(await head.text()).toBe("");
+      expect(head.headers.get("etag")).toBe(response.headers.get("etag"));
+      const range = await app.request(url, { headers: { ...headers(), range: "bytes=1-3" } });
+      expect(range.status).toBe(206);
+      expect((await range.arrayBuffer()).byteLength).toBe(3);
+      const internal = await service.readFileContent(owner, file.id, variant);
+      expect(internal.contentType).toBe("image/webp");
+      await internal.upstream.arrayBuffer();
+      await expect(service.readFileContent(other, file.id, variant)).rejects.toMatchObject({ status: 404 });
+    }
+    expect(etags.size).toBe(2);
+    expect(transformer).toHaveBeenCalledTimes(2);
+    for (const name of ["thumbnail", "unknown", "toString"]) {
+      expect((await app.request(`/api/v1/files/${file.id}/variants/${name}`, { headers: headers() })).status).toBe(404);
+    }
+    const portable = createApp({ config: testConfig(databasePath), authStore: store, artifactStorage: storage });
+    expect((await portable.request(variants.thumb_1280!, { headers: headers() })).status).toBe(404);
+    await service.commitTransaction(owner, wire([{ entity: "meeting_file", action: "delete", entityId: file.id, baseRevision: 1, data: {} }]));
+    await service.commitTransaction(owner, wire([{ entity: "file", action: "delete", entityId: file.id, baseRevision: 1, data: {} }]));
+    await vi.waitFor(async () => {
+      for (const variant of Object.keys(SCREENSHOT_VARIANTS) as Array<keyof typeof SCREENSHOT_VARIANTS>) {
+        expect(await storage.exists(fileVariantKey(file.id, variant))).toBe(false);
+      }
+    });
+    await store.close?.();
+  });
+
   it("generates thumbnails only on request, coalesces requests and reuses persisted variants", async () => {
     const { store, service, storage, file, publish, transformer, bytes } = await fileSetup();
     await publish();
     expect(transformer).not.toHaveBeenCalled();
-    const read = (value = service) => value.readFile(owner, file.id, "GET", new Request("https://test.invalid"), true);
+    const read = (value = service) => value.readFile(owner, file.id, "GET", new Request("https://test.invalid"), "thumb_360");
     const results = await Promise.all([read(), read()]);
-    expect(await sharp(await results[0].arrayBuffer()).metadata()).toMatchObject({ width: 384, height: 192, format: "webp" });
+    expect(await sharp(await results[0].arrayBuffer()).metadata()).toMatchObject({ width: 360, height: 180, format: "webp" });
     await results[1].arrayBuffer();
     expect(transformer).toHaveBeenCalledTimes(1);
-    expect(await storage.exists(fileVariantKey(file.id))).toBe(true);
+    expect(await storage.exists(fileVariantKey(file.id, "thumb_360"))).toBe(true);
     const restarted = new MeetingSyncService(store.sync, storage, undefined, undefined, transformer);
     await (await read(restarted)).arrayBuffer();
     expect(transformer).toHaveBeenCalledTimes(1);
@@ -163,7 +219,7 @@ describe("SQLite canonical sync", () => {
     const portable = new MeetingSyncService(store.sync, storage);
     expect(await portable.getFile(owner, file.id)).toMatchObject({ variants: {} });
     await expect(read(portable)).rejects.toMatchObject({ code: "file_variant_unavailable" });
-    await expect(service.readFile(other, file.id, "GET", new Request("https://test.invalid"), true)).rejects.toMatchObject({ status: 404 });
+    await expect(service.readFile(other, file.id, "GET", new Request("https://test.invalid"), "thumb_360")).rejects.toMatchObject({ status: 404 });
     await store.close?.();
   });
 
@@ -171,9 +227,9 @@ describe("SQLite canonical sync", () => {
     const { store, service, storage, file, publish, transformer } = await fileSetup();
     await publish();
     const put = vi.spyOn(storage, "put").mockRejectedValueOnce(new Error("storage failure"));
-    const read = () => service.readFile(owner, file.id, "GET", new Request("https://test.invalid"), true);
+    const read = () => service.readFile(owner, file.id, "GET", new Request("https://test.invalid"), "thumb_360");
     await expect(read()).rejects.toMatchObject({ status: 502 });
-    expect(await storage.exists(fileVariantKey(file.id))).toBe(false);
+    expect(await storage.exists(fileVariantKey(file.id, "thumb_360"))).toBe(false);
     put.mockRestore();
     await (await read()).arrayBuffer();
     expect(transformer).toHaveBeenCalledTimes(2);
@@ -192,14 +248,14 @@ describe("SQLite canonical sync", () => {
       await canFinish;
       return transformScreenshot(...args);
     });
-    const reading = service.readFile(owner, file.id, "GET", new Request("https://test.invalid"), true);
+    const reading = service.readFile(owner, file.id, "GET", new Request("https://test.invalid"), "thumb_360");
     const rejected = expect(reading).rejects.toMatchObject({ code: "file_not_found" });
     await didStart;
     await service.commitTransaction(owner, wire([{ entity: "file", action: "delete", entityId: file.id, baseRevision: 1, data: {} }]));
     release();
     await rejected;
     await vi.waitFor(async () => expect(await storage.exists(fileStorageKey(file.id))).toBe(false));
-    expect(await storage.exists(fileVariantKey(file.id))).toBe(false);
+    expect(await storage.exists(fileVariantKey(file.id, "thumb_360"))).toBe(false);
     await store.close?.();
   });
 

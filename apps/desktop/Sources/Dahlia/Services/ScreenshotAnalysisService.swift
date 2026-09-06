@@ -22,7 +22,7 @@ actor CodexScreenshotAnalysisService: ScreenshotAnalyzing {
     static let model = "gpt-5.6-luna"
     static let reasoningEffort = "low"
     static let maximumBatchSize = 1
-    static let maximumImageLongEdge = 2048
+    static let maximumImageLongEdge = ImageEncoder.aiInputMaximumLongEdge
 
     private let appServer: CodexAppServerService
 

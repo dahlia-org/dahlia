@@ -35,7 +35,7 @@ import {
 import type { ObjectStorage } from "./artifacts/storage";
 import { createArtifactMcpHandler, MCP_MAX_REQUEST_BYTES } from "./mcp";
 import { MeetingSyncService } from "./sync/service";
-import type { ScreenshotTransformer } from "./sync/screenshot-variants";
+import { SCREENSHOT_VARIANTS, type ScreenshotVariant, type ScreenshotTransformer } from "./sync/screenshot-variants";
 import { decodeSyncCursor, SyncStoreUnavailableError, SyncTransactionError } from "./sync/store";
 import type { SearchTokenizer } from "./search/tokenizer";
 import type { SearchEmbedder } from "./search/embedding";
@@ -717,9 +717,11 @@ export function createApp(dependencies: AppDependencies) {
     const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
     return sync.readFile(identity, sync.parseId(context.req.param("fileId")), context.req.method as "GET" | "HEAD", context.req.raw);
   });
-  app.on(["GET", "HEAD"], "/api/v1/files/:fileId/variants/thumbnail", async (context) => {
+  app.on(["GET", "HEAD"], "/api/v1/files/:fileId/variants/:variant", async (context) => {
     const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
-    return sync.readFile(identity, sync.parseId(context.req.param("fileId")), context.req.method as "GET" | "HEAD", context.req.raw, true);
+    const variant = context.req.param("variant");
+    if (!Object.hasOwn(SCREENSHOT_VARIANTS, variant)) return context.json({ error: "file_variant_unavailable" }, 404);
+    return sync.readFile(identity, sync.parseId(context.req.param("fileId")), context.req.method as "GET" | "HEAD", context.req.raw, variant as ScreenshotVariant);
   });
   app.on(
     ["GET", "HEAD"],

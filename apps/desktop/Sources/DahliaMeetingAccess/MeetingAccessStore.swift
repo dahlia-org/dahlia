@@ -822,7 +822,7 @@ extension MeetingAccessStore {
         guard let original else { throw MeetingAccessError.screenshotUnavailable }
         let imageData = originalSize
             ? original
-            : ImageEncoder.resizedIfPossible(original, maxLongEdge: 1024)
+            : ImageEncoder.resizedIfPossible(original, maxLongEdge: ImageEncoder.aiInputMaximumLongEdge)
         guard let imageData,
               let mimeType = ImageEncoder.mimeType(for: imageData) else {
             throw MeetingAccessError.screenshotEncodingFailed

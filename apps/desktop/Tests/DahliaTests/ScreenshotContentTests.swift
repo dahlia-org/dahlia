@@ -57,11 +57,14 @@
         @Test
         func gridRequestsThumbnailWhileLargerImagesRequestOriginal() async throws {
             let fixture = try ScreenshotContentFixture()
+            #expect(ScreenshotVariant.thumbnail.rawValue == "thumb_360")
+            #expect(ScreenshotVariant(rawValue: "thumbnail") == nil)
+            #expect(fixture.source.cacheKey(variant: .thumbnail).hasSuffix("variants/v1/thumb_360.webp"))
             let root = temporaryDirectory()
             defer { try? FileManager.default.removeItem(at: root) }
             let variants = Mutex<[String]>([])
             let provider = try makeProvider(fixture: fixture, cache: ScreenshotFileStore(directory: root)) { request in
-                let variant = request.url!.path.hasSuffix("variants/thumbnail") ? "thumbnail" : "original"
+                let variant = request.url!.path.hasSuffix("variants/thumb_360") ? "thumb_360" : "original"
                 variants.withLock { $0.append(variant) }
                 return (200, [
                     "content-type": "image/png",
@@ -78,7 +81,7 @@
             })
             _ = await loader.image(screenshotID: fixture.screenshotId, data: nil, maxPixelSize: ScreenshotGridSizing.maximumThumbnailPixelSize)
             _ = await loader.image(screenshotID: fixture.screenshotId, data: nil, maxPixelSize: 1200)
-            #expect(variants.withLock { $0 } == ["thumbnail", "original"])
+            #expect(variants.withLock { $0 } == ["thumb_360", "original"])
         }
 
         @Test(arguments: [false, true])

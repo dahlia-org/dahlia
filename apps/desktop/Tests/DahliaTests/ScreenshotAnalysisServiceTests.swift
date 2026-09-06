@@ -1,3 +1,5 @@
+import CoreGraphics
+import DahliaRuntimeSupport
 import Foundation
 @testable import Dahlia
 
@@ -6,6 +8,40 @@ import Foundation
 
     @MainActor
     struct ScreenshotAnalysisServiceTests {
+        @Test
+        func analysisAndSummaryUse1280PixelImages() async throws {
+            let context = try #require(CGContext(
+                data: nil, width: 2560, height: 1280, bitsPerComponent: 8, bytesPerRow: 0,
+                space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ))
+            let image = try #require(context.makeImage())
+            let data = try #require(ImageEncoder.encode(image))
+            let meetingID = UUID.v7()
+            let screenshotID = UUID.v7()
+            let analysis = try await CodexScreenshotAnalysisService.codexInputs(for: [
+                ScreenshotAnalysisInput(id: screenshotID, imageData: data, mimeType: "image/webp", runtimeProvider: .chatGPTSubscription),
+            ])
+            let summary = try await SummaryService.makeCodexInputs(.init(
+                promptContext: .init(meetingId: meetingID, recordedAt: .now, calendarEvent: nil, projectName: nil, projectDescription: nil),
+                transcriptText: "Transcript", noteText: nil,
+                screenshots: [.init(id: screenshotID, meetingId: meetingID, capturedAt: .now, imageData: data, mimeType: "image/webp")],
+                recordingSessions: []
+            ))
+            for inputs in [analysis, summary] {
+                let images = inputs.compactMap { input -> String? in
+                    if case let .imageDataURI(uri) = input { return uri }
+                    return nil
+                }
+                #expect(images.count == 1)
+                let uri = try #require(images.first)
+                let payload = try #require(uri.split(separator: ",", maxSplits: 1).last)
+                let bytes = try #require(Data(base64Encoded: String(payload)))
+                let decoded = try #require(CGImageDecoder.decode(bytes))
+                #expect(decoded.width == 1280)
+                #expect(decoded.height == 640)
+            }
+        }
+
         @Test
         func cancelledImagePreparationStopsBeforeEncoding() async {
             let preparation = Task {
