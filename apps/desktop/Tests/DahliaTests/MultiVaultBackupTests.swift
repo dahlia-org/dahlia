@@ -168,7 +168,12 @@ import GRDB
             try await result.dbQueue.read { db throws in
                 #expect(try MeetingRecord.filter(Column("vaultId") == successfulTarget).fetchOne(db)?.name == fixture.meeting.name)
                 #expect(try MeetingRecord.fetchOne(db, key: second.meeting.id)?.name == (failure == "missing" ? nil : "Changed"))
-                #expect(try VaultRecord.fetchCount(db) == (failure == "missing" ? 1 : failure == "safety" ? 3 : 2))
+                let expectedVaultCount = switch failure {
+                case "missing": 1
+                case "safety": 3
+                default: 2
+                }
+                #expect(try VaultRecord.fetchCount(db) == expectedVaultCount)
                 #expect(try ProjectRecord.filter(Column("vaultId") == second.vault.id).fetchCount(db) == 0)
                 try VaultBackupTransfer.validateIntegrity(in: db)
             }
