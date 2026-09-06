@@ -736,7 +736,7 @@ import ImageIO
                 screenshotID: fixture.firstScreenshotID
             )
             #expect(image.imageData != fixture.imageData)
-            #expect(["image/webp", "image/jpeg"].contains(image.mimeType))
+            #expect(image.mimeType == "image/webp")
             let source = CGImageSourceCreateWithData(image.imageData as CFData, nil)
             let properties = source.flatMap { CGImageSourceCopyPropertiesAtIndex($0, 0, nil) as? [CFString: Any] }
             #expect((properties?[kCGImagePropertyPixelWidth] as? Int ?? 0) <= 1024)
