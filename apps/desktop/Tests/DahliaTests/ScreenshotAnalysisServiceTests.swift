@@ -28,8 +28,15 @@ import Foundation
             }
         }
 
-        @Test
-        func sendsOneStructuredLunaRequestForOneScreenshot() async throws {
+        @Test(arguments: [
+            (CodexRuntimeProvider.chatGPTSubscription, "gpt-5.6-luna"),
+            (.databricks(profile: "test"), "gpt-5.6-luna"),
+            (.dahlia(connectionID: UUID.v7()), "gpt-5-6-luna"),
+        ])
+        func sendsOneStructuredLunaRequestForOneScreenshot(
+            provider: CodexRuntimeProvider,
+            expectedModel: String
+        ) async throws {
             let screenshotID = try #require(UUID(uuidString: "00000000-0000-0000-0000-000000000001"))
             let response = """
             {"screenshots":[
@@ -38,10 +45,13 @@ import Foundation
             """
             let transport = TestCodexAppServerTransport(
                 mode: .generationCompletes,
-                modelName: CodexScreenshotAnalysisService.model,
+                modelName: expectedModel,
                 generationResponse: response
             )
-            let appServer = makeTestCodexAppServerService(transportFactory: { transport })
+            let appServer = makeTestCodexAppServerService(
+                transportFactory: { transport },
+                runtimeProviderResolver: { provider }
+            )
             let analyzer = CodexScreenshotAnalysisService(appServer: appServer)
 
             let results = try await analyzer.analyze([
@@ -49,18 +59,19 @@ import Foundation
                     id: screenshotID,
                     imageData: Data([1]),
                     mimeType: "image/png",
-                    runtimeProvider: .chatGPTSubscription
+                    runtimeProvider: provider
                 ),
             ])
 
             #expect(results.map(\.screenshotID) == [screenshotID])
+            #expect(results.map(\.ocrText) == ["Visible text"])
             #expect(results.map(\.caption) == ["Visible caption"])
             _ = try await analyzer.analyze([
                 ScreenshotAnalysisInput(
                     id: screenshotID,
                     imageData: Data([1]),
                     mimeType: "image/png",
-                    runtimeProvider: .chatGPTSubscription
+                    runtimeProvider: provider
                 ),
             ])
             let messages = await transport.messages()
@@ -68,7 +79,7 @@ import Foundation
             let threadParams = try #require(messages.first {
                 $0.objectValue?["method"]?.stringValue == "thread/start"
             }?.objectValue?["params"]?.objectValue)
-            #expect(threadParams["model"] == .string(CodexScreenshotAnalysisService.model))
+            #expect(threadParams["model"] == .string(expectedModel))
             #expect(threadParams["config"]?.objectValue?["model_reasoning_effort"] == .string("low"))
             let turnParams = try #require(messages.first {
                 $0.objectValue?["method"]?.stringValue == "turn/start"

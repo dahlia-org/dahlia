@@ -43,7 +43,7 @@ actor CodexScreenshotAnalysisService: ScreenshotAnalyzing {
         }
         let inputs = try await Self.codexInputs(for: screenshots)
         let response = try await appServer.generate(.init(
-            model: Self.model,
+            model: screenshots[0].runtimeProvider.accountConnectionID != nil ? "gpt-5-6-luna" : Self.model,
             requiresExactModel: true,
             requiresImageInput: true,
             reasoningEffort: Self.reasoningEffort,

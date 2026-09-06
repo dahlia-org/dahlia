@@ -8,6 +8,20 @@
 
     @MainActor
     struct ScreenshotFilePersistenceTests {
+        @Test(arguments: ["png", "webp", "jpeg"])
+        func screenshotSyncNameIncludesExtension(extensionName: String) throws {
+            let screenshot = MeetingScreenshotRecord(
+                id: UUID(),
+                meetingId: UUID(),
+                capturedAt: Date(),
+                mimeType: "image/\(extensionName)",
+                contentHash: String(repeating: "a", count: 64)
+            )
+            let operation = try SyncInitialSnapshotBuilder.screenshotOperation(screenshot, action: .upsert)
+            let payload = try SyncJSON.decoder.decode(FileOperationPayload.self, from: #require(operation.payloadJSON))
+            #expect(payload.name == "capture.\(extensionName)")
+        }
+
         @Test(arguments: ["none", "meeting", "link"])
         func captureUploadAndAcknowledgementReuseOneFile(laterDeletion: String) async throws {
             let fixture = try Fixture()

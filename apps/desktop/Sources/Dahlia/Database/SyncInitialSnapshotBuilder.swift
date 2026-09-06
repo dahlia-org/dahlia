@@ -460,7 +460,7 @@ enum SyncInitialSnapshotBuilder {
     ) throws -> SyncOperationDraft {
         guard let hash = contentHash ?? screenshot.contentHash else { throw SyncTransactionQueueError.invalidReceipt }
         let payload = FileOperationPayload(
-            name: "capture",
+            name: "capture.\(screenshot.mimeType.split(separator: "/").last ?? "bin")",
             checksum: "SHA-256:" + hash,
             metadata: FileMetadata(
                 source: .screenshot,
