@@ -187,7 +187,7 @@ apps/
 - [TelemetryDeck SwiftSDK](https://github.com/TelemetryDeck/SwiftSDK) — Anonymous, non-blocking usage metrics
 - [Sparkle](https://github.com/sparkle-project/Sparkle) — Secure in-app updates
 - [WhisperKit](https://github.com/argmaxinc/WhisperKit) — On-device language detection for batch transcription
-- [libwebp](https://github.com/SDWebImage/libwebp-Xcode) — Lossy WebP screenshot encoding (quality 70), with JPEG fallback on encoding failure
+- [libwebp](https://github.com/SDWebImage/libwebp-Xcode) — Lossy WebP screenshot encoding (quality 75), with JPEG fallback on encoding failure
 
 ## License
 

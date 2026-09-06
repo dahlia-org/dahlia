@@ -311,6 +311,10 @@ final class AppDatabaseManager: Sendable {
             try RetireVectorSearchMigration.migrate(in: db)
         }
 
+        migrator.registerMigration("v45_screenshotContent", foreignKeyChecks: .deferred) { db in
+            try ScreenshotContentMigration.migrate(in: db)
+        }
+
         return migrator
     }()
 

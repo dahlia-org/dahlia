@@ -465,7 +465,7 @@ actor AutomaticScreenshotFrameProcessor {
         guard !Task.isCancelled else { return nil }
         let startedAt = ContinuousClock.now
         let state = ScreenshotCaptureMetrics.signposter.beginInterval("Encode")
-        let data = ImageEncoder.encode(image, quality: 0.70)
+        let data = ImageEncoder.encode(image)
         let mimeType = data.flatMap { ImageEncoder.mimeType(for: $0) }
         ScreenshotCaptureMetrics.signposter.endInterval("Encode", state)
         ScreenshotCaptureMetrics.recordSlowStage(.encoding, startedAt: startedAt)
@@ -748,7 +748,7 @@ actor AutomaticScreenshotCaptureService: AutomaticScreenshotCapturing {
             encodedData: encoded.data,
             mimeType: encoded.mimeType
         )
-        let attachment = SyncScreenshotAttachment(mimeType: record.mimeType, bytes: record.imageData)
+        let attachment = SyncScreenshotAttachment(mimeType: record.mimeType, bytes: encoded.data)
         let persistenceStartedAt = ContinuousClock.now
         let persistenceState = ScreenshotCaptureMetrics.signposter.beginInterval("Persist")
         do {
@@ -885,7 +885,9 @@ extension AutomaticScreenshotCaptureService {
             sessionId: sessionID,
             capturedAt: frame.capturedAt,
             imageData: encodedData,
-            mimeType: mimeType
+            mimeType: mimeType,
+            contentHash: ScreenshotRemoteReference.digest(encodedData),
+            contentLength: encodedData.count
         )
     }
 

@@ -148,7 +148,8 @@ struct ContentView: View {
                     onToggleSidebar: toggleSidebar,
                     onSearch: showSearch,
                     onGoBack: goBack,
-                    onGoForward: goForward
+                    onGoForward: goForward,
+                    syncState: mainWindowNavigation.section == .meetings ? viewModel.meetingSyncState : nil
                 )
             }
             .meetingSidebarHoverOverlay(

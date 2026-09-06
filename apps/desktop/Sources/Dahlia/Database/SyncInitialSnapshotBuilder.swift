@@ -5,7 +5,11 @@ enum SyncInitialSnapshotBuilder {
     private static let projectBatchSize = 100
     private static let transcriptBatchSize = 500
 
-    static func enqueuePending(dbQueue: DatabaseQueue) async throws {
+    static func enqueuePending(
+        dbQueue: DatabaseQueue,
+        screenshotContent: ScreenshotContentProvider = .shared,
+        onFailure: @Sendable (any Error) throws -> Void = { throw $0 }
+    ) async throws {
         let interruptedVaultId = try await dbQueue.read { db in
             try UUID.fetchOne(
                 db,
@@ -49,8 +53,8 @@ enum SyncInitialSnapshotBuilder {
             }
         }
 
-        let pending = try await dbQueue.read { db -> (UUID, UUID, Bool)? in
-            guard let row = try Row.fetchOne(
+        let pending = try await dbQueue.read { db -> [(UUID, UUID, Bool)] in
+            try Row.fetchAll(
                 db,
                 sql: """
                 SELECT v.id, v.accountConnectionId, EXISTS (
@@ -74,21 +78,34 @@ enum SyncInitialSnapshotBuilder {
                     )
                   )
                 ORDER BY v.createdAt, v.id
-                LIMIT 1
                 """
-            ) else { return nil }
-            return (row["id"], row["accountConnectionId"], row["restoring"])
+            ).map { ($0["id"], $0["accountConnectionId"], $0["restoring"]) }
         }
-        guard let (vaultId, connectionId, restoring) = pending else { return }
-        try await enqueue(vaultId: vaultId, connectionId: connectionId, restoring: restoring, dbQueue: dbQueue)
+        for (vaultId, connectionId, restoring) in pending {
+            do {
+                try await enqueue(
+                    vaultId: vaultId, connectionId: connectionId, restoring: restoring,
+                    dbQueue: dbQueue, screenshotContent: screenshotContent
+                )
+                return
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                // Background synchronization can report this Vault's failure and continue other Vaults.
+                // Explicit recovery callers keep the default throwing behavior.
+                try onFailure(error)
+            }
+        }
     }
 
     private static func enqueue(
         vaultId: UUID,
         connectionId: UUID,
         restoring: Bool,
-        dbQueue: DatabaseQueue
+        dbQueue: DatabaseQueue,
+        screenshotContent: ScreenshotContentProvider
     ) async throws {
+        try await screenshotContent.hydrateOriginals(vaultId: vaultId, dbQueue: dbQueue)
         guard let markerId = try await dbQueue.write({ db -> UUID? in
             guard try !hasActiveRecording(in: db),
                   let vault = try VaultRecord.fetchOne(db, key: vaultId),
@@ -331,7 +348,8 @@ enum SyncInitialSnapshotBuilder {
                     )
                 }
                 guard let screenshot else { return nil }
-                let attachment = SyncScreenshotAttachment(mimeType: screenshot.mimeType, bytes: screenshot.imageData)
+                let bytes = try screenshot.requiredOriginal()
+                let attachment = SyncScreenshotAttachment(mimeType: screenshot.mimeType, bytes: bytes)
                 let operation = try screenshotOperation(screenshot, action: .upsert, contentHash: attachment.sha256)
                 try SyncTransactionRecorder.record(
                     vaultId: vaultId,

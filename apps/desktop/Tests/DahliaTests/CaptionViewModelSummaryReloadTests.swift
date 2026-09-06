@@ -38,6 +38,46 @@ import GRDB
             #expect(viewModel.currentSummaryDocument == nil)
         }
 
+        @Test
+        func canonicalRevisionRefreshesTheOpenMeetingAndPendingStatusWithoutTouchingItsNote() async throws {
+            let context = try Self.makeContext()
+            defer { try? FileManager.default.removeItem(at: context.vaultURL) }
+            let connection = DahliaAccountConnectionRecord(id: .v7(), origin: "https://sync.example.test", clientID: "test", createdAt: .now)
+            let vaultId = try #require(try await context.manager.dbQueue.read {
+                try MeetingRecord.fetchOne($0, key: context.meetingID)?.vaultId
+            })
+            try await context.manager.dbQueue.write { db in
+                try connection.insert(db)
+                try db.execute(
+                    sql: "UPDATE vaults SET accountConnectionId = ?, syncConfirmedConnectionId = ?, syncPullCursor = 'ready' WHERE id = ?",
+                    arguments: [connection.id, connection.id, vaultId]
+                )
+                try db.execute(
+                    sql: "INSERT INTO sync_entity_state(vaultId, entity, entityId, confirmedRevision) VALUES (?, 'summary', ?, 1)",
+                    arguments: [vaultId, context.meetingID]
+                )
+            }
+            let viewModel = CaptionViewModel()
+            viewModel.loadMeeting(context.meetingID, dbQueue: context.manager.dbQueue, projectURL: nil, projectId: nil, vaultURL: context.vaultURL)
+            #expect(await pollUntil { viewModel.currentSummaryDocument?.title == "Original title" && viewModel.meetingSyncState == .synced })
+            viewModel.noteText = "Keep this local draft"
+            try context.replaceSummary(title: "Canonical title", body: "Updated elsewhere")
+            try await context.manager.dbQueue.write { db in
+                try db.execute(
+                    sql: "UPDATE sync_entity_state SET confirmedRevision = 2 WHERE vaultId = ? AND entity = 'summary'",
+                    arguments: [vaultId]
+                )
+                try db.execute(
+                    sql: "INSERT INTO sync_transactions(id, vaultId, connectionId, createdAt, availableAt) VALUES (?, ?, ?, ?, ?)",
+                    arguments: [UUID.v7(), vaultId, connection.id, Date(), Date()]
+                )
+            }
+            #expect(await pollUntil { viewModel.currentSummaryDocument?.title == "Canonical title" && viewModel.meetingSyncState == .pending })
+            #expect(viewModel.noteText == "Keep this local draft")
+            try await context.manager.dbQueue.write { try SyncTransactionQueue.discard(vaultId: vaultId, in: $0) }
+            #expect(await pollUntil { viewModel.meetingSyncState == .synced })
+        }
+
         // MARK: - Helpers
 
         private struct Context {

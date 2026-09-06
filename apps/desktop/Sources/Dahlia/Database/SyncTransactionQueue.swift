@@ -140,6 +140,7 @@ struct SyncCanonicalPayload: Codable, Sendable {
     let contentHash: String?
     let ocrText: String?
     let caption: String?
+    var contentLength: Int?
 }
 
 enum SyncJSON {
@@ -289,7 +290,7 @@ enum SyncTransactionRecorder {
             } else {
                 try Bool.fetchOne(
                     db,
-                    sql: "SELECT EXISTS (SELECT 1 FROM screenshots WHERE id = ?)",
+                    sql: "SELECT EXISTS (SELECT 1 FROM screenshots WHERE id = ? AND imageData IS NOT NULL)",
                     arguments: [operation.entityId]
                 ) ?? false
             }
@@ -651,10 +652,7 @@ enum SyncTransactionQueue {
                 try db.execute(sql: "DELETE FROM summaries WHERE meetingId = ?", arguments: [id])
             }
         case .screenshot:
-            try db.execute(
-                sql: "UPDATE screenshots SET capturedAt = coalesce(?, capturedAt), ocrText = ?, caption = ? WHERE id = ?",
-                arguments: [value.capturedAt, value.ocrText, value.caption, id]
-            )
+            try MeetingScreenshotRecord.applyCanonical(id: id, vaultId: vaultId, value: value, in: db)
         case .transcript:
             break
         }
@@ -893,7 +891,15 @@ enum SyncTransactionQueue {
         }
     }
 
-    static func reapplyLocalVersion(vaultId: UUID, dbQueue: DatabaseQueue) async throws {
+    static func reapplyLocalVersion(
+        vaultId: UUID,
+        dbQueue: DatabaseQueue,
+        screenshotContent: ScreenshotContentProvider = .shared
+    ) async throws {
+        let screenshotIds = try await dbQueue.read { db in
+            try screenshotIdsRequiringReupload(vaultId: vaultId, in: db)
+        }
+        try await screenshotContent.hydrateOriginals(vaultId: vaultId, dbQueue: dbQueue, screenshotIds: screenshotIds)
         let rebuildVault = try await dbQueue.write { db -> Bool in
             guard let first = try Row.fetchOne(
                 db,
@@ -992,9 +998,9 @@ enum SyncTransactionQueue {
                     var replacementAttachment: SyncScreenshotAttachment?
                     if missing, entity == .screenshot, action != .delete {
                         guard let screenshot = try MeetingScreenshotRecord.fetchOne(db, key: entityId) else { continue }
-                        let attachment = SyncScreenshotAttachment(
+                        let attachment = try SyncScreenshotAttachment(
                             mimeType: screenshot.mimeType,
-                            bytes: screenshot.imageData
+                            bytes: screenshot.requiredOriginal()
                         )
                         payload = try SyncInitialSnapshotBuilder.screenshotOperation(
                             screenshot,
@@ -1048,6 +1054,21 @@ enum SyncTransactionQueue {
         if rebuildVault {
             try await SyncInitialSnapshotBuilder.enqueuePending(dbQueue: dbQueue)
         }
+    }
+
+    /// A missing Vault requires a complete snapshot; otherwise only recreated screenshots need originals.
+    private static func screenshotIdsRequiringReupload(vaultId: UUID, in db: Database) throws -> [UUID]? {
+        guard let blocked = try Row.fetchOne(db, sql: """
+        SELECT sequence, serverResponseJSON FROM sync_transactions
+        WHERE vaultId = ? AND blockedReason = 'conflict' ORDER BY sequence LIMIT 1
+        """, arguments: [vaultId]) else { return [] }
+        let missing = missingConflictEntities(blocked["serverResponseJSON"])
+        if missing.contains(.init(entity: .vault, id: vaultId)) { return nil }
+        let sequence: Int64 = blocked["sequence"]
+        return try UUID.fetchAll(db, sql: """
+        SELECT DISTINCT o.entityId FROM sync_operations o JOIN sync_transactions t ON t.id = o.transactionId
+        WHERE t.vaultId = ? AND t.sequence >= ? AND o.entity = 'screenshot' AND o.action != 'delete'
+        """, arguments: [vaultId, sequence]).filter { missing.contains(.init(entity: .screenshot, id: $0)) }
     }
 
     private static func missingProjectOperations(

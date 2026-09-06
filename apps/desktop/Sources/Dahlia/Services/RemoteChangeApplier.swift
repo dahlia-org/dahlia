@@ -788,7 +788,7 @@ enum RemoteChangeApplier {
     private static func upsert(
         _ change: SyncChangePage.Change,
         record: SyncCanonicalPayload,
-        screenshots: [UUID: Data],
+        screenshots _: [UUID: Data],
         transcripts: [UUID: [SyncTranscriptPage.Segment]],
         vaultId: UUID,
         in db: Database
@@ -809,17 +809,7 @@ enum RemoteChangeApplier {
                 in: db
             )
         case .screenshot:
-            guard let meetingId = record.meetingId, let capturedAt = record.capturedAt,
-                  let contentType = record.contentType, let image = screenshots[change.entityId] else { return }
-            try db.execute(sql: """
-            INSERT INTO screenshots(id, meetingId, capturedAt, imageData, mimeType, ocrText, caption)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(id) DO UPDATE SET capturedAt = excluded.capturedAt,
-                imageData = excluded.imageData, mimeType = excluded.mimeType,
-                ocrText = excluded.ocrText, caption = excluded.caption
-            """, arguments: [
-                change.entityId, meetingId, capturedAt, image, contentType, record.ocrText, record.caption,
-            ])
+            try MeetingScreenshotRecord.applyCanonical(id: change.entityId, vaultId: vaultId, value: record, in: db)
             try db.execute(
                 sql: "DELETE FROM search_index_jobs WHERE indexKind = 'fts' AND targetKind = 'screenshotAnalysis' AND targetKey = ?",
                 arguments: [change.entityId]

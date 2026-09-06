@@ -32,6 +32,7 @@ struct DahliaApp: App {
     @State private var vaultManagementModel: VaultManagementModel
     @State private var dahliaAccountController = DahliaCloudAccountController.shared
     @State private var tokenBroker = DahliaTokenBrokerServer()
+    @State private var imageBroker: DahliaImageBrokerServer?
     private let mainWindowNavigation: MainWindowNavigation
     @State private var appDatabase: AppDatabaseManager?
     @State private var meetingSyncWorker: SyncWorker?
@@ -388,9 +389,11 @@ struct DahliaApp: App {
             isInitializingVault = false
             return
         }
+        try? await ScreenshotStorageMaintenance.compactAtStartup(dbQueue: db.dbQueue)
         appDatabase = db
         let vaultAISettings = VaultAISettingsModel.shared
         vaultAISettings.configure(dbQueue: db.dbQueue)
+        await ScreenshotContentProvider.shared.configure(dbQueue: db.dbQueue)
         await CodexRuntimeContextCoordinator.shared.configure(dbQueue: db.dbQueue)
         do {
             try await MeetingRepository(dbQueue: db.dbQueue)
@@ -409,6 +412,9 @@ struct DahliaApp: App {
         await meetingSyncWorker.start()
         do {
             try tokenBroker.start()
+            let imageBroker = DahliaImageBrokerServer(dbQueue: db.dbQueue)
+            try imageBroker.start()
+            self.imageBroker = imageBroker
         } catch {
             ErrorReportingService.capture(error, context: ["source": "dahliaTokenBroker"])
         }
@@ -418,8 +424,9 @@ struct DahliaApp: App {
         viewModel.configureBatchTranscription(dbQueue: db.dbQueue) { [weak sidebarViewModel] in
             await sidebarViewModel?.refreshUnprocessedRecordings()
         }
-        appDelegate.terminationHandler = { [weak viewModel, weak db, weak tokenBroker, weak meetingSyncWorker] in
+        appDelegate.terminationHandler = { [weak viewModel, weak db, weak tokenBroker, weak imageBroker, weak meetingSyncWorker] in
             tokenBroker?.stop()
+            imageBroker?.stop()
             await meetingSyncWorker?.stop()
             await db?.searchIndexer.stop()
             return await viewModel?.prepareForTermination()

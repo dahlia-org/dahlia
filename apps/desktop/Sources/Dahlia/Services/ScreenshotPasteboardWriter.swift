@@ -30,16 +30,17 @@ enum ScreenshotPasteboardWriter {
         detectMIMEType: (Data) async -> String?
     ) async -> Bool {
         let initialChangeCount = pasteboard.changeCount
-        guard !screenshot.imageData.isEmpty,
+        guard let screenshot = try? await ScreenshotContentProvider.shared.resolved(screenshot),
+              let imageData = screenshot.imageData, !imageData.isEmpty,
               let declaredContentType = contentType(for: screenshot.mimeType),
-              let detectedMIMEType = await detectMIMEType(screenshot.imageData),
+              let detectedMIMEType = await detectMIMEType(imageData),
               let detectedContentType = contentType(for: detectedMIMEType),
               declaredContentType == detectedContentType,
               pasteboard.changeCount == initialChangeCount else { return false }
 
         let item = NSPasteboardItem()
         guard item.setData(
-            screenshot.imageData,
+            imageData,
             forType: NSPasteboard.PasteboardType(detectedContentType.identifier)
         ) else { return false }
 

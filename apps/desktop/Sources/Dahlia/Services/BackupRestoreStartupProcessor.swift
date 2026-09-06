@@ -141,6 +141,13 @@ enum BackupRestoreStartupProcessor {
                     )
                 }
                 try combined.dbQueue.write { db in
+                    guard try Bool.fetchOne(db, sql: """
+                    SELECT EXISTS(SELECT 1 FROM backup_source.screenshots s
+                    JOIN backup_source.meetings m ON m.id = s.meetingId
+                    WHERE m.vaultId = ? AND s.imageData IS NULL)
+                    """, arguments: [request.sourceVaultId]) != true else {
+                        throw ScreenshotContentError.unavailable
+                    }
                     guard let original = try VaultRecord.fetchOne(
                         db,
                         sql: "SELECT * FROM backup_source.vaults WHERE id = ?",

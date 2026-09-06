@@ -13,6 +13,9 @@ import { LocalObjectStorage } from "../src/artifacts/local";
 import { createApp } from "../src/app";
 import type { AppConfig } from "../src/config";
 import { MeetingSyncService } from "../src/sync/service";
+import { transformScreenshot } from "../src/sync/node-screenshot-transformer";
+import { screenshotVariantKey } from "../src/sync/screenshot-variants";
+import sharp from "sharp";
 import type { SyncTransaction } from "../src/sync/types";
 
 const directories: string[] = [];
@@ -30,6 +33,112 @@ afterEach(() => {
 });
 
 describe("SQLite canonical sync", () => {
+  it.each([false, true])("reauthorizes thumbnail fallback per caller after access is revoked (conversion fails: %s)", async (conversionFails) => {
+    const { directory, store } = await setup();
+    await createVault(store);
+    await commit(store, owner, transaction("019d4a01-4600-7000-8000-000000000001", [{
+      id: "019d4a01-4600-7000-8000-000000000002", entity: "meeting", action: "create",
+      entityId: meetingId, baseRevision: null, data: { ...meetingData(), projectId: null },
+    }]));
+    await store.sync.withIdentity(owner, (sync) => sync.putMemberPermission(vaultId, "organization", "external"));
+    let markStarted!: () => void;
+    let finishTransform!: () => void;
+    const started = new Promise<void>((resolve) => { markStarted = resolve; });
+    const finish = new Promise<void>((resolve) => { finishTransform = resolve; });
+    const transformer = vi.fn(async () => {
+      markStarted();
+      await finish;
+      if (conversionFails) throw new Error("conversion_failed");
+      return new Uint8Array([4, 5, 6]);
+    });
+    const service = new MeetingSyncService(store.sync, new LocalObjectStorage(join(directory, "objects")), undefined, undefined, transformer);
+    const bytes = new Uint8Array([1, 2, 3]);
+    const hash = Buffer.from(await crypto.subtle.digest("SHA-256", bytes)).toString("hex");
+    const path = `http://localhost:5173/api/v1/vaults/${vaultId}/meetings/${meetingId}/screenshots/${screenshotId}/content`;
+    try {
+      await service.putScreenshot(owner, vaultId, meetingId, screenshotId, new Request(path, {
+        method: "PUT", body: bytes,
+        headers: { "content-length": String(bytes.byteLength), "content-type": "image/png", "x-dahlia-content-sha256": hash, "x-dahlia-captured-at": now.toISOString() },
+      }));
+      // Commit directly to leave the thumbnail cold until the member's request starts it.
+      await commit(store, owner, transaction("019d4a01-4600-7000-8000-000000000003", [{
+        id: "019d4a01-4600-7000-8000-000000000004", entity: "screenshot", action: "upsert",
+        entityId: screenshotId, baseRevision: null,
+        data: { meetingId, capturedAt: now, contentHash: hash, ocrText: null, caption: null },
+      }]));
+      const read = (identity: Identity) => service.readScreenshot(identity, vaultId, meetingId, screenshotId, "GET", new Request(`${path}?variant=thumbnail`));
+      const memberRequest = read(other);
+      await started;
+      const results = Promise.allSettled([memberRequest, read(owner)]);
+      await store.sync.withIdentity(owner, (sync) => sync.deleteMemberPermission(vaultId, "organization", "external"));
+      finishTransform();
+      const [memberResult, ownerResult] = await results;
+      expect(memberResult).toMatchObject({ status: "rejected", reason: { status: 404 } });
+      expect(ownerResult.status).toBe("fulfilled");
+      if (ownerResult.status === "fulfilled") {
+        expect(ownerResult.value.headers.get("x-dahlia-image-variant")).toBe("original");
+        expect(new Uint8Array(await ownerResult.value.arrayBuffer())).toEqual(bytes);
+      }
+      expect(transformer).toHaveBeenCalledTimes(1);
+    } finally {
+      finishTransform();
+      await store.close?.();
+    }
+  });
+
+  it("warms committed thumbnails, retains originals for full size viewing, and authorizes every cached read", async () => {
+    const { directory, store } = await setup();
+    await createVault(store);
+    await commit(store, owner, transaction("019d4a01-4500-7000-8000-000000000001", [{
+      id: "019d4a01-4500-7000-8000-000000000002", entity: "meeting", action: "create",
+      entityId: meetingId, baseRevision: null, data: { ...meetingData(), projectId: null },
+    }]));
+    const storage = new LocalObjectStorage(join(directory, "objects"));
+    const transformer = vi.fn(transformScreenshot);
+    const service = new MeetingSyncService(store.sync, storage, undefined, undefined, transformer);
+    const bytes = new Uint8Array(await sharp({ create: { width: 1800, height: 900, channels: 3, background: "white" } }).png().toBuffer());
+    const hash = Buffer.from(await crypto.subtle.digest("SHA-256", bytes)).toString("hex");
+    const path = `http://localhost:5173/api/v1/vaults/${vaultId}/meetings/${meetingId}/screenshots/${screenshotId}/content`;
+    const original = await service.putScreenshot(owner, vaultId, meetingId, screenshotId, new Request(path, {
+      method: "PUT", body: bytes,
+      headers: { "content-length": String(bytes.byteLength), "content-type": "image/png", "x-dahlia-content-sha256": hash, "x-dahlia-captured-at": now.toISOString() },
+    }));
+    expect(transformer).not.toHaveBeenCalled();
+    const committed = await service.commitTransaction(owner, {
+      schemaVersion: 1, id: "019d4a01-4500-7000-8000-000000000003", vaultId, createdAt: now.toISOString(),
+      operations: [{ id: "019d4a01-4500-7000-8000-000000000004", entity: "screenshot", action: "upsert", entityId: screenshotId, baseRevision: null,
+        data: { meetingId, capturedAt: now.toISOString(), contentHash: hash, ocrText: null, caption: null } }],
+    });
+    expect(committed.status).toBe("committed");
+    await vi.waitFor(() => expect(transformer).toHaveBeenCalledTimes(1));
+    const read = (variant: string) => service.readScreenshot(owner, vaultId, meetingId, screenshotId, "GET", new Request(`${path}?variant=${variant}`));
+    const thumbnail = await read("thumbnail");
+    expect(thumbnail.headers.get("x-dahlia-image-variant")).toBe("thumbnail");
+    expect(await sharp(await thumbnail.arrayBuffer()).metadata()).toMatchObject({ width: 384, height: 192, format: "webp" });
+    expect(await storage.exists(screenshotVariantKey(original.storageKey, "thumbnail"))).toBe(true);
+    const [first, concurrent] = await Promise.all([read("thumbnail"), read("thumbnail")]);
+    expect(await sharp(await first.arrayBuffer()).metadata()).toMatchObject({ width: 384, height: 192 });
+    await concurrent.arrayBuffer();
+    expect(new Uint8Array(await (await read("original")).arrayBuffer())).toEqual(bytes);
+    expect(transformer).toHaveBeenCalledTimes(1);
+    await expect(read("preview")).rejects.toMatchObject({ status: 400 });
+    await expect(service.readScreenshot(other, vaultId, meetingId, screenshotId, "GET", new Request(`${path}?variant=thumbnail`)))
+      .rejects.toMatchObject({ status: 404 });
+    await expect(read("arbitrary-size")).rejects.toMatchObject({ status: 400 });
+    // Workers and older integrations can keep serving the exact original without a native transformer.
+    const portable = new MeetingSyncService(store.sync, storage);
+    const fallback = await portable.readScreenshot(owner, vaultId, meetingId, screenshotId, "GET", new Request(`${path}?variant=thumbnail`));
+    expect(new Uint8Array(await fallback.arrayBuffer())).toEqual(bytes);
+    expect(fallback.headers.get("x-dahlia-image-variant")).toBe("original");
+    await service.commitTransaction(owner, {
+      schemaVersion: 1, id: "019d4a01-4500-7000-8000-000000000005", vaultId, createdAt: now.toISOString(),
+      operations: [{ id: "019d4a01-4500-7000-8000-000000000006", entity: "meeting", action: "delete", entityId: meetingId, baseRevision: 1, data: {} }],
+    });
+    await vi.waitFor(async () => expect(await storage.exists(original.storageKey)).toBe(false));
+    expect(await storage.exists(screenshotVariantKey(original.storageKey, "thumbnail"))).toBe(false);
+    await store.close?.();
+  });
+
   it("filters Vaults by owner or current organization and Team membership", async () => {
     const { store, databasePath } = await setup();
     await createVault(store);

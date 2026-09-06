@@ -794,6 +794,28 @@ import ImageIO
         }
 
         @Test
+        func screenshotCacheMissUsesImageResolverWithoutOmittingTheImage() throws {
+            let fixture = try Fixture()
+            let vaultID = fixture.primaryVaultID
+            let meetingID = fixture.firstMeetingID
+            let imageID = fixture.firstScreenshotID
+            let bytes = try fixture.manager.dbQueue.write { db in
+                let bytes = try #require(try Data.fetchOne(db, sql: "SELECT imageData FROM screenshots WHERE id = ?", arguments: [imageID]))
+                try db.execute(sql: "UPDATE screenshots SET imageData = NULL WHERE id = ?", arguments: [imageID])
+                return bytes
+            }
+            let store = try MeetingAccessStore(databaseURL: fixture.databaseURL, vaultID: vaultID, imageResolver: { vault, meeting, image in
+                #expect(vault == vaultID && meeting == meetingID && image == imageID)
+                return bytes
+            })
+            #expect(try store.screenshot(meetingID: meetingID, screenshotID: imageID, originalSize: true).imageData == bytes)
+            let unavailable = try fixture.store(vaultID: vaultID)
+            #expect(throws: MeetingAccessError.screenshotUnavailable) {
+                try unavailable.screenshot(meetingID: meetingID, screenshotID: imageID, originalSize: true)
+            }
+        }
+
+        @Test
         func screenshotImagesAreActuallyDownsampledAndRejectCorruptData() throws {
             let fixture = try Fixture()
             let largeImage = try #require(Self.makeImage(width: 2048, height: 512))
@@ -826,12 +848,12 @@ import ImageIO
                 try store.screenshot(meetingID: fixture.firstMeetingID, screenshotID: fixture.firstScreenshotID)
             }
 
-            let range = try store.screenshotImages(
-                meetingID: fixture.firstMeetingID,
-                query: ScreenshotQuery(fromElapsedSeconds: 0, toElapsedSeconds: 100)
-            )
-            #expect(range.images.map(\.metadata.id) == [fixture.secondScreenshotID])
-            #expect(range.page.screenshots.map(\.id) == [fixture.secondScreenshotID])
+            #expect(throws: MeetingAccessError.screenshotEncodingFailed) {
+                try store.screenshotImages(
+                    meetingID: fixture.firstMeetingID,
+                    query: ScreenshotQuery(fromElapsedSeconds: 0, toElapsedSeconds: 100)
+                )
+            }
         }
 
         @Test

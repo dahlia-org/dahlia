@@ -165,6 +165,7 @@ struct ScreenshotOverlayView: View {
             loadedScreenshotID = nil
             zoom = 1
             await imageLoader.loadTransient(
+                screenshotID: screenshot.id,
                 data: screenshot.imageData,
                 maxPixelSize: Self.maximumDisplayPixelSize,
                 requestedAt: requestedAt

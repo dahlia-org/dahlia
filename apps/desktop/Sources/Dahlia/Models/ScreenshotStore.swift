@@ -11,7 +11,7 @@ final class ScreenshotStore: ObservableObject {
     func replace(meetingID: UUID, records: [MeetingScreenshotRecord]) {
         self.meetingID = meetingID
         contentRevision &+= 1
-        self.records = records
+        self.records = records.map { $0.metadataOnly() }
     }
 
     func clear() {
@@ -25,11 +25,11 @@ final class ScreenshotStore: ObservableObject {
         guard meetingID == record.meetingId else { return }
         contentRevision &+= 1
         if let index = records.firstIndex(where: { $0.id == record.id }) {
-            records[index] = record
+            records[index] = record.metadataOnly()
             return
         }
         let insertIndex = records.firstIndex { $0.capturedAt > record.capturedAt } ?? records.endIndex
-        records.insert(record, at: insertIndex)
+        records.insert(record.metadataOnly(), at: insertIndex)
     }
 
     func remove(ids: Set<UUID>, meetingID: UUID) {

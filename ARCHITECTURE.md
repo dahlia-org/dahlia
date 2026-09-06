@@ -97,6 +97,12 @@ runtime resource を所有しない。
 録音音声は writer queue への受理や partial CAF への書き込みではまだ durable ではなく、検証済みの immutable CAF と
 対応する SQLite state が `ready` になった時点で再読込可能な正本となる。
 
+画像の保持境界はアカウントで分ける。Local Account は原本だけを永続保存し、Server Account は文字起こし・サマリー・OCR・画像 metadata をローカルに保持する。
+Server が確定した画像原本だけを SQLite から解放でき、表示・解析・書き出しは `ScreenshotContentProvider` がローカル原本、容量制限付き cache、認証付き取得の順に解決する。
+一覧用384pxサムネイルは Node Server が生成し、Workers は原本へフォールバックする。拡大表示は原本を使い、中間サイズは保存しない。
+MCP の cache miss は画像専用 broker でアプリに取得を依頼する。未送信原本は解放せず、Local Account への移動とバックアップ復元では必要な原本を揃えてから切り替える。
+詳細は [同期 ADR](docs/adr/shared/sync.md) を参照する。
+
 利用テレメトリは録音・永続化の正本から独立した lossy projection である。`CaptionViewModel` などの owner は低頻度の
 workflow 境界で型付き `UsageTelemetryEvent` を生成し、`UsageTelemetryService` が公式 SDK の非ブロッキングキューへ渡す。内蔵 MCP helper も型付きの粗い tool-call event だけを専用 adapter へ渡し、外部 MCP client は計測しない。
 SDK 初期化時の cache I/O は background で行い、準備完了前のイベントは欠測を許容する。送信完了を待たず、独自の再送・永続キューを持たない。許可データと SDK 境界は

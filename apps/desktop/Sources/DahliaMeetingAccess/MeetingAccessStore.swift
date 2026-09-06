@@ -15,11 +15,15 @@ public final class MeetingAccessStore: Sendable {
     let database: DatabaseQueue
     public let vaultID: UUID
     public let allowsWrites: Bool
+    private let screenshotCache: ScreenshotDiskCache?
+    private let imageResolver: @Sendable (UUID, UUID, UUID) throws -> Data
 
     public init(
         databaseURL: URL = MeetingAccessStore.defaultDatabaseURL,
         vaultID: UUID,
-        allowsWrites: Bool = false
+        allowsWrites: Bool = false,
+        screenshotCache: ScreenshotDiskCache? = nil,
+        imageResolver: (@Sendable (UUID, UUID, UUID) throws -> Data)? = nil
     ) throws {
         var configuration = Configuration()
         configuration.readonly = !allowsWrites
@@ -30,6 +34,14 @@ public final class MeetingAccessStore: Sendable {
         database = try DatabaseQueue(path: databaseURL.path, configuration: configuration)
         self.vaultID = vaultID
         self.allowsWrites = allowsWrites
+        let usesAppDatabase = databaseURL.standardizedFileURL == Self.defaultDatabaseURL.standardizedFileURL
+        self.screenshotCache = screenshotCache ?? (usesAppDatabase ? try? ScreenshotDiskCache() : nil)
+        self.imageResolver = imageResolver ?? { vaultId, meetingId, screenshotId in
+            guard usesAppDatabase else { throw MeetingAccessError.screenshotUnavailable }
+            do {
+                return try DahliaImageBrokerProtocol.requestImage(.init(vaultId: vaultId, meetingId: meetingId, screenshotId: screenshotId))
+            } catch { throw MeetingAccessError.screenshotUnavailable }
+        }
     }
 
     public func scopedVault() throws -> ScopedVault {
@@ -671,7 +683,7 @@ extension MeetingAccessStore {
         originalSize: Bool = false
     ) throws -> (page: MeetingScreenshotPage, images: [MeetingScreenshotImage]) {
         let result = try screenshotPageData(meetingID: meetingID, query: query, includeImageData: true)
-        let images = result.payloads.compactMap { Self.encodedScreenshot($0, originalSize: originalSize) }
+        let images = try result.payloads.map { try encodedScreenshot($0, meetingID: meetingID, originalSize: originalSize) }
         return (
             MeetingScreenshotPage(
                 vault: result.page.vault,
@@ -729,7 +741,7 @@ extension MeetingAccessStore {
                 ).encoded()
             } : nil
             let payloads = includeImageData ? zip(pageRows, screenshots).map {
-                ScreenshotPayload(metadata: $0.1, imageData: $0.0["imageData"])
+                ScreenshotPayload(metadata: $0.1, imageData: $0.0["imageData"], remoteReference: $0.0["remoteReference"])
             } : []
             return ScreenshotPageData(
                 page: MeetingScreenshotPage(
@@ -778,7 +790,7 @@ extension MeetingAccessStore {
             let referencedIDs = try referencedScreenshotIDs(meetingID: meetingID, in: db)
             let payloadsByID = Dictionary(uniqueKeysWithValues: rows.map { row in
                 let metadata = Self.screenshotMetadata(from: row, referencedIDs: referencedIDs)
-                return (metadata.id, ScreenshotPayload(metadata: metadata, imageData: row["imageData"]))
+                return (metadata.id, ScreenshotPayload(metadata: metadata, imageData: row["imageData"], remoteReference: row["remoteReference"]))
             })
             return try screenshotIDs.map { id in
                 guard let payload = payloadsByID[id] else { throw MeetingAccessError.screenshotNotFound }
@@ -786,23 +798,30 @@ extension MeetingAccessStore {
             }
         }
         return try payloads.map { payload in
-            guard let image = Self.encodedScreenshot(payload, originalSize: originalSize) else {
-                throw MeetingAccessError.screenshotEncodingFailed
-            }
-            return image
+            try encodedScreenshot(payload, meetingID: meetingID, originalSize: originalSize)
         }
     }
 
-    private static func encodedScreenshot(
+    private func encodedScreenshot(
         _ payload: ScreenshotPayload,
+        meetingID: UUID,
         originalSize: Bool
-    ) -> MeetingScreenshotImage? {
+    ) throws -> MeetingScreenshotImage {
+        var original = payload.imageData
+        if original == nil, let json = payload.remoteReference,
+           let source = try? JSONDecoder().decode(ScreenshotRemoteReference.self, from: Data(json.utf8)) {
+            original = try? screenshotCache?.read(source, variant: .original)?.data
+        }
+        if original == nil {
+            original = try imageResolver(vaultID, meetingID, payload.metadata.id)
+        }
+        guard let original else { throw MeetingAccessError.screenshotUnavailable }
         let imageData = originalSize
-            ? payload.imageData
-            : ImageEncoder.resizedIfPossible(payload.imageData, maxLongEdge: 1024)
+            ? original
+            : ImageEncoder.resizedIfPossible(original, maxLongEdge: 1024)
         guard let imageData,
               let mimeType = ImageEncoder.mimeType(for: imageData) else {
-            return nil
+            throw MeetingAccessError.screenshotEncodingFailed
         }
         let metadata = MeetingScreenshotMetadata(
             id: payload.metadata.id,
@@ -845,7 +864,9 @@ extension MeetingAccessStore {
             arguments += [cursor.elapsedSeconds, cursor.elapsedSeconds, cursor.screenshotID]
         }
         let filtering = predicates.isEmpty ? "" : "WHERE \(predicates.joined(separator: " AND "))"
-        let imageDataSelection = includeImageData ? "screenshots.imageData," : ""
+        let remoteSelection = try db.columns(in: "screenshots").contains { $0.name == "remoteReference" }
+            ? "screenshots.remoteReference" : "NULL AS remoteReference"
+        let imageDataSelection = includeImageData ? "screenshots.imageData, \(remoteSelection)," : ""
         arguments += [query.limit + 1]
         return try Row.fetchAll(
             db,
@@ -874,6 +895,8 @@ extension MeetingAccessStore {
     }
 
     private func screenshotImageRows(meetingID: UUID, screenshotIDs: [UUID], in db: Database) throws -> [Row] {
+        let remoteSelection = try db.columns(in: "screenshots").contains { $0.name == "remoteReference" }
+            ? "screenshots.remoteReference" : "NULL AS remoteReference"
         let placeholders = Array(repeating: "?", count: screenshotIDs.count).joined(separator: ", ")
         var arguments: StatementArguments = [meetingID, vaultID]
         arguments += StatementArguments(screenshotIDs)
@@ -885,6 +908,7 @@ extension MeetingAccessStore {
                 screenshots.capturedAt,
                 screenshots.mimeType,
                 screenshots.imageData,
+                \(remoteSelection),
                 \(Self.elapsedSecondsSQL(timestampColumn: "screenshots.capturedAt")) AS elapsedSeconds
             FROM screenshots
             JOIN meetings ON meetings.id = screenshots.meetingId
@@ -1051,7 +1075,8 @@ extension MeetingAccessStore {
 
 private struct ScreenshotPayload {
     let metadata: MeetingScreenshotMetadata
-    let imageData: Data
+    let imageData: Data?
+    let remoteReference: String?
 }
 
 private struct ScreenshotPageData {

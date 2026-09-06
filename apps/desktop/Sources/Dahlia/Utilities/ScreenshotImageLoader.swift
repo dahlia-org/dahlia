@@ -29,6 +29,7 @@ actor ScreenshotImageLoader {
     }
 
     private let cacheCostLimit: Int
+    private let contentProvider: ScreenshotContentProvider
     private let cacheableDecoder: Decoder
     private nonisolated let interactiveDecoder: Decoder
     private var cache: [CacheKey: CacheEntry] = [:]
@@ -40,20 +41,31 @@ actor ScreenshotImageLoader {
 
     init(
         cacheCostLimit: Int = 32 * 1024 * 1024,
+        contentProvider: ScreenshotContentProvider = .shared,
         cacheableDecoder: Decoder? = nil,
         interactiveDecoder: Decoder? = nil
     ) {
         self.cacheCostLimit = cacheCostLimit
+        self.contentProvider = contentProvider
         self.cacheableDecoder = cacheableDecoder ?? Self.makeDefaultDecoder(lane: .cacheable)
         self.interactiveDecoder = interactiveDecoder ?? Self.makeDefaultDecoder(lane: .interactive)
     }
 
-    func image(screenshotID: UUID, data: Data, maxPixelSize: Int) async -> CGImage? {
+    func image(screenshotID: UUID, data: Data?, maxPixelSize: Int) async -> CGImage? {
         guard !Task.isCancelled, maxPixelSize > 0 else { return nil }
 
+        let bytes: Data
+        if let data {
+            bytes = data
+        } else {
+            guard let content = try? await contentProvider.content(
+                id: screenshotID, variant: maxPixelSize <= ScreenshotGridSizing.maximumThumbnailPixelSize ? .thumbnail : .original
+            ) else { return nil }
+            bytes = content.data
+        }
         let key = CacheKey(screenshotID: screenshotID, maxPixelSize: maxPixelSize)
         if var entry = cache[key] {
-            if entry.sourceData == data {
+            if entry.sourceData == bytes {
                 accessCounter &+= 1
                 entry.lastAccess = accessCounter
                 cache[key] = entry
@@ -64,17 +76,17 @@ actor ScreenshotImageLoader {
         }
 
         if let decode = inFlightDecodes[key] {
-            if decode.sourceData == data {
+            if decode.sourceData == bytes {
                 return await waitForDecode(key: key, decodeID: decode.id)
             }
             invalidateDecode(for: key)
         }
 
         nextDecodeID &+= 1
-        let decode = InFlightDecode(id: nextDecodeID, sourceData: data)
+        let decode = InFlightDecode(id: nextDecodeID, sourceData: bytes)
         inFlightDecodes[key] = decode
         let decodeTask = Task { [cacheableDecoder] in
-            let image = await cacheableDecoder(data, maxPixelSize)
+            let image = await cacheableDecoder(bytes, maxPixelSize)
             self.finishDecode(image, key: key, id: decode.id)
         }
         inFlightDecodes[key]?.decodeTask = decodeTask
@@ -216,7 +228,7 @@ final class ScreenshotImageLoadModel {
         self.loader = loader
     }
 
-    func load(screenshotID: UUID, data: Data, maxPixelSize: Int) async {
+    func load(screenshotID: UUID, data: Data?, maxPixelSize: Int) async {
         loadGeneration &+= 1
         let generation = loadGeneration
         state = .loading
@@ -230,15 +242,24 @@ final class ScreenshotImageLoadModel {
     }
 
     func loadTransient(
-        data: Data,
+        screenshotID: UUID? = nil,
+        data: Data?,
         maxPixelSize: Int,
         requestedAt: ContinuousClock.Instant
     ) async {
         loadGeneration &+= 1
         let generation = loadGeneration
         state = .loading
+        var bytes = data
+        if bytes == nil, let screenshotID {
+            bytes = try? await ScreenshotContentProvider.shared.content(id: screenshotID).data
+        }
+        guard !Task.isCancelled, loadGeneration == generation else { return }
+        guard let bytes else { state = .failed
+            return
+        }
         let image = await loader.transientImage(
-            data: data,
+            data: bytes,
             maxPixelSize: maxPixelSize
         )
         guard !Task.isCancelled, loadGeneration == generation else { return }

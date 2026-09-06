@@ -7,6 +7,7 @@ import UniformTypeIdentifiers
 
 package enum ImageEncoder {
     package static let preferredFileExtension = "webp"
+    package static let defaultQuality: CGFloat = 0.75
 
     package static func mimeType(for data: Data) -> String? {
         guard let source = CGImageSourceCreateWithData(data as CFData, nil),
@@ -41,7 +42,7 @@ package enum ImageEncoder {
             ?? preferredFileExtension
     }
 
-    package static func encode(_ cgImage: CGImage, quality: CGFloat) -> Data? {
+    package static func encode(_ cgImage: CGImage, quality: CGFloat = Self.defaultQuality) -> Data? {
         guard quality.isFinite, (0 ... 1).contains(quality) else { return nil }
         if let data = encodeWebP(cgImage, quality: quality) {
             return data
@@ -99,12 +100,12 @@ package enum ImageEncoder {
         return data as Data
     }
 
-    package static func resizedIfPossible(_ data: Data, maxLongEdge: Int, quality: CGFloat = 0.70) -> Data? {
+    package static func resizedIfPossible(_ data: Data, maxLongEdge: Int, quality: CGFloat = Self.defaultQuality) -> Data? {
         guard let thumbnail = CGImageDecoder.decode(data, maxPixelSize: maxLongEdge) else { return nil }
         return encode(thumbnail, quality: quality)
     }
 
-    package static func resized(_ data: Data, maxLongEdge: Int, quality: CGFloat = 0.70) -> Data {
+    package static func resized(_ data: Data, maxLongEdge: Int, quality: CGFloat = Self.defaultQuality) -> Data {
         resizedIfPossible(data, maxLongEdge: maxLongEdge, quality: quality) ?? data
     }
 }

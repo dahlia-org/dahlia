@@ -56,7 +56,7 @@ final class DahliaTokenBrokerAuthorization: Sendable {
         _ = grants.withLock { $0.removeValue(forKey: profile.rawValue) }
     }
 
-    private static func resolveClient(descriptor: Int32) -> Client? {
+    static func resolveClient(descriptor: Int32) -> Client? {
         var peerPID: pid_t = 0
         var peerPIDLength = socklen_t(MemoryLayout<pid_t>.size)
         guard getsockopt(descriptor, SOL_LOCAL, LOCAL_PEERPID, &peerPID, &peerPIDLength) == 0 else { return nil }

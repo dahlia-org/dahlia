@@ -255,7 +255,8 @@ enum SummaryShareRenderer {
         guard destination == .googleDocs else { return captionHTML }
 
         guard let screenshot = screenshotsByID[screenshotID],
-              let encodedImage = GoogleDocsImageEncoder.encode(screenshot.imageData) else {
+              let bytes = screenshot.imageData,
+              let encodedImage = GoogleDocsImageEncoder.encode(bytes) else {
             return captionHTML.map { "<p>\($0)</p>" }
         }
 

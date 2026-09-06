@@ -13,7 +13,7 @@ enum ScreenshotExportService {
         SummaryScreenshotFilename.filename(
             id: screenshot.id,
             mimeType: screenshot.mimeType,
-            imageData: screenshot.imageData
+            imageData: screenshot.imageData ?? Data()
         )
     }
 
@@ -35,7 +35,8 @@ enum ScreenshotExportService {
             let filename = filename(for: screenshot)
             let relativePath = "_dahlia/screenshots/\(filename)"
             let fileURL = vaultURL.appendingPathComponent(relativePath)
-            try screenshot.imageData.write(to: fileURL, options: .atomic)
+            guard let bytes = screenshot.imageData else { throw ScreenshotContentError.unavailable }
+            try bytes.write(to: fileURL, options: .atomic)
             relativePaths.append(relativePath)
         }
 

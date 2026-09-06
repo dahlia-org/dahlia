@@ -601,7 +601,7 @@
                   "meetingId": "\(meeting.id.uuidString.lowercased())",
                   "capturedAt": "2026-09-03T00:00:00.000Z",
                   "contentType": "image/png",
-                  "contentHash": "hash",
+                  "contentHash": "039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81",
                   "ocrText": "canonical ocr",
                   "caption": "canonical caption"
                 }
@@ -611,7 +611,7 @@
 
             #expect(try await RemoteChangeApplier.apply(
                 [.init(sequence: 1, entity: .screenshot, entityId: screenshotID, action: "upsert", revision: 1, record: record)],
-                screenshots: [screenshotID: Data([1, 2, 3])],
+                screenshots: [:],
                 transcripts: [:],
                 cursor: nil,
                 vaultId: vault.id,
@@ -1373,7 +1373,10 @@
             )
             let meetingRecord = try SyncJSON.decoder.decode(
                 SyncCanonicalPayload.self,
-                from: Data("{\"projectId\":\"\(retainedProject.id.uuidString.lowercased())\",\"name\":\"Current meeting\",\"status\":\"READY\",\"createdAt\":\"2026-09-03T00:00:00.000Z\",\"updatedAt\":\"2026-09-03T00:00:00.000Z\"}".utf8)
+                from: Data(
+                    "{\"projectId\":\"\(retainedProject.id.uuidString.lowercased())\",\"name\":\"Current meeting\",\"status\":\"READY\",\"createdAt\":\"2026-09-03T00:00:00.000Z\",\"updatedAt\":\"2026-09-03T00:00:00.000Z\"}"
+                        .utf8
+                )
             )
             try await database.dbQueue.write { db in
                 try db.execute(
@@ -1415,7 +1418,7 @@
             #expect(stateBeforeReconciliation.1 == "old-cursor")
             #expect(stateBeforeReconciliation.2 != nil)
             #expect(try await RemoteChangeApplier.finishReset(
-                try #require(SyncResetSnapshot(changes)),
+                #require(SyncResetSnapshot(changes)),
                 cursor: "reset-cursor",
                 vaultId: vault.id,
                 expectedConnectionId: #require(vault.syncConfirmedConnectionId),
@@ -1625,7 +1628,9 @@
             }
             try await database.dbQueue.write { db in
                 try meeting.insert(db)
-                for record in records { try record.insert(db) }
+                for record in records {
+                    try record.insert(db)
+                }
                 let patch = SyncOperationDraft(entity: .transcript, action: .patch, entityId: meeting.id)
                 try SyncTransactionRecorder.record(
                     vaultId: vault.id,

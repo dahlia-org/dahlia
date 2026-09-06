@@ -299,9 +299,13 @@ actor SyncWorker {
     private func runDrain() async {
         while !Task.isCancelled {
             do {
-                try await SyncInitialSnapshotBuilder.enqueuePending(dbQueue: dbQueue)
+                try await SyncInitialSnapshotBuilder.enqueuePending(dbQueue: dbQueue) { error in
+                    ErrorReportingService.capture(error, context: ["source": "syncDrain"])
+                }
                 guard let transaction = try await SyncTransactionQueue.claim(dbQueue: dbQueue) else {
                     try await pullRemoteChanges()
+                    try? await ScreenshotContentProvider.shared.evictConfirmedOriginals(dbQueue: dbQueue)
+                    try? await ScreenshotStorageMaintenance.reclaimIncrementally(dbQueue: dbQueue)
                     try await Task.sleep(for: .seconds(5))
                     continue
                 }
@@ -945,11 +949,10 @@ actor SyncWorker {
                 }
                 continue
             }
-            let supplemental = try await loadSupplemental([change], target: target)
             guard try await RemoteChangeApplier.apply(
                 [change],
-                screenshots: supplemental.screenshots,
-                transcripts: supplemental.transcripts,
+                screenshots: [:],
+                transcripts: [:],
                 cursor: appliedCursor,
                 vaultId: target.vaultId,
                 expectedConnectionId: target.connectionId,
@@ -1076,32 +1079,6 @@ actor SyncWorker {
                 )
             }
         }
-    }
-
-    private func loadSupplemental(
-        _ changes: [SyncChangePage.Change],
-        target: SyncTarget
-    ) async throws -> (screenshots: [UUID: Data], transcripts: [UUID: [SyncTranscriptPage.Segment]]) {
-        var screenshots: [UUID: Data] = [:]
-        let transcripts: [UUID: [SyncTranscriptPage.Segment]] = [:]
-        for change in changes where change.action == "upsert" {
-            if change.entity == .screenshot, let meetingId = change.record?.meetingId {
-                let data = try await sendData(
-                    request(
-                        origin: target.origin,
-                        path: "api/v1/vaults/\(target.vaultId.lowercase)/meetings/\(meetingId.lowercase)/screenshots/\(change.entityId.lowercase)/content",
-                        method: "GET"
-                    ),
-                    connectionId: target.connectionId
-                )
-                guard let expectedHash = change.record?.contentHash,
-                      SHA256.hash(data: data).map({ String(format: "%02x", $0) }).joined() == expectedHash else {
-                    throw SyncTransactionQueueError.invalidReceipt
-                }
-                screenshots[change.entityId] = data
-            }
-        }
-        return (screenshots, transcripts)
     }
 
     private func restartEventStreams() async {

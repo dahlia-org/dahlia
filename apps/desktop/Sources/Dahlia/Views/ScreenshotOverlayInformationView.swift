@@ -19,7 +19,7 @@ struct ScreenshotOverlayInformationView: View {
                     LabeledContent(L10n.fileType, value: screenshot.mimeType)
                     LabeledContent(
                         L10n.fileSize,
-                        value: screenshot.imageData.count.formatted(.byteCount(style: .file))
+                        value: (screenshot.contentLength ?? screenshot.imageData?.count ?? 0).formatted(.byteCount(style: .file))
                     )
                     if let image {
                         LabeledContent(L10n.imageDimensions, value: "\(image.width) × \(image.height)")

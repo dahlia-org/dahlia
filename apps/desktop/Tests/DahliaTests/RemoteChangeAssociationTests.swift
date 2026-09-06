@@ -187,7 +187,7 @@
             let screenshotRecord = try SyncJSON.decoder.decode(
                 SyncCanonicalPayload.self,
                 from: Data(
-                    "{\"meetingId\":\"\(meeting.id.uuidString.lowercased())\",\"capturedAt\":\"2026-09-03T00:00:00.000Z\",\"contentType\":\"image/png\",\"contentHash\":\"late-hash\"}"
+                    "{\"meetingId\":\"\(meeting.id.uuidString.lowercased())\",\"capturedAt\":\"2026-09-03T00:00:00.000Z\",\"contentType\":\"image/png\",\"contentHash\":\"039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81\"}"
                         .utf8
                 )
             )

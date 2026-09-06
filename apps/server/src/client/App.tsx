@@ -1015,11 +1015,17 @@ function SyncedMeeting({ vaultId, meetingId }: { vaultId: string; meetingId: str
           <div className="screenshot-grid">
             {screenshots.map((screenshot) => (
               <figure className="panel" key={screenshot.screenshotId}>
-                <img
-                  src={`${base}/screenshots/${screenshot.screenshotId}/content`}
-                  alt={screenshot.caption || ""}
-                  loading="lazy"
-                />
+                <a href={`${base}/screenshots/${screenshot.screenshotId}/content`} target="_blank" rel="noreferrer" aria-label="Open screenshot">
+                  <img
+                    src={`${base}/screenshots/${screenshot.screenshotId}/content?variant=thumbnail`}
+                    alt={screenshot.caption || ""}
+                    loading="lazy"
+                    onError={(event) => {
+                      const image = event.currentTarget;
+                      if (image.src.includes("?variant=")) image.src = `${base}/screenshots/${screenshot.screenshotId}/content`;
+                    }}
+                  />
+                </a>
                 {(screenshot.caption || screenshot.ocrText) && <figcaption>{screenshot.caption || screenshot.ocrText}</figcaption>}
               </figure>
             ))}

@@ -35,6 +35,7 @@ import {
 import type { ObjectStorage } from "./artifacts/storage";
 import { createArtifactMcpHandler, MCP_MAX_REQUEST_BYTES } from "./mcp";
 import { MeetingSyncService } from "./sync/service";
+import type { ScreenshotTransformer } from "./sync/screenshot-variants";
 import { decodeSyncCursor, SyncStoreUnavailableError, SyncTransactionError } from "./sync/store";
 import type { SearchTokenizer } from "./search/tokenizer";
 import type { SearchEmbedder } from "./search/embedding";
@@ -96,6 +97,7 @@ export interface AppDependencies {
   artifactStorage?: ObjectStorage;
   searchTokenizer?: SearchTokenizer;
   searchEmbedder?: SearchEmbedder;
+  screenshotTransformer?: ScreenshotTransformer;
 }
 
 export async function authenticateMcpRequest(
@@ -160,6 +162,7 @@ export function createApp(dependencies: AppDependencies) {
     dependencies.artifactStorage,
     dependencies.searchTokenizer,
     dependencies.searchEmbedder,
+    dependencies.screenshotTransformer,
   );
   const mcp = createArtifactMcpHandler(config, artifacts, sync);
   const mcpMetadataUrl = `${config.baseUrl}/.well-known/oauth-protected-resource/mcp`;

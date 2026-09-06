@@ -75,18 +75,20 @@ extension MeetingRepository {
         vaultID: UUID,
         dbQueue: DatabaseQueue
     ) async throws -> Data? {
-        try await dbQueue.read { db in
-            try Data.fetchOne(
+        let exists = try await dbQueue.read { db in
+            try Bool.fetchOne(
                 db,
                 sql: """
-                SELECT screenshots.imageData
+                SELECT EXISTS(SELECT 1
                 FROM screenshots
                 JOIN meetings ON meetings.id = screenshots.meetingId
-                WHERE screenshots.id = ? AND meetings.vaultId = ?
+                WHERE screenshots.id = ? AND meetings.vaultId = ?)
                 """,
                 arguments: [id, vaultID]
             )
         }
+        guard exists == true else { return nil }
+        return try await ScreenshotContentProvider.shared.content(id: id, variant: .thumbnail, dbQueue: dbQueue).data
     }
 
     private nonisolated static func screenshotSearchResult(row: Row) -> ScreenshotSearchResult {

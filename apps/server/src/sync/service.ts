@@ -24,6 +24,7 @@ import type {
   VaultPrincipalType,
 } from "./types";
 import { decodeSyncCursor, encodeSyncCursor, SYNC_SNAPSHOT_ENTITIES, SyncTransactionError } from "./store";
+import { SCREENSHOT_VARIANTS, screenshotVariantKey, type ScreenshotTransformer, type ScreenshotVariant } from "./screenshot-variants";
 
 const uuidSchema = z.uuid().transform((value) => value.toLowerCase());
 const dateSchema = z.iso.datetime().transform((value) => new Date(value));
@@ -148,12 +149,16 @@ export class MeetingSyncService {
   private activeStorageOperations = 0;
   private storageDeleteDrain?: Promise<void>;
   private storageDeleteRetry?: ReturnType<typeof setTimeout>;
+  private readonly variantJobs = new Map<string, Promise<Uint8Array<ArrayBuffer> | undefined>>();
+  private readonly variantWaiters: Array<() => void> = [];
+  private activeVariants = 0;
 
   constructor(
     private readonly store: MeetingSyncStore,
     private readonly storage?: ObjectStorage,
     private readonly tokenizer: SearchTokenizer = createIntlSearchTokenizer(),
     private readonly embedder?: SearchEmbedder,
+    private readonly screenshotTransformer?: ScreenshotTransformer,
   ) {
     if (storage) {
       this.scheduleStorageDeletes();
@@ -274,6 +279,14 @@ export class MeetingSyncService {
       throw error;
     }
     this.scheduleStorageDeletes();
+    if (this.screenshotTransformer) {
+      for (const operation of operations) {
+        if (operation.entity !== "screenshot" || operation.action !== "upsert") continue;
+        // Best effort warming. Reads use the same path after interruption or a full queue.
+        if (this.variantJobs.size >= 32) break;
+        void this.warmThumbnail(identity, normalized.vaultId, String(operation.data?.meetingId), operation.entityId);
+      }
+    }
     return response;
   }
 
@@ -306,6 +319,9 @@ export class MeetingSyncService {
             claim.storageKey,
             async () => {
               if (!await this.store.isStorageDeleteClaimCurrent(claim)) return;
+              for (const variant of Object.keys(SCREENSHOT_VARIANTS) as ScreenshotVariant[]) {
+                await this.storageCall(() => this.storage!.delete(screenshotVariantKey(claim.storageKey, variant)));
+              }
               await this.storageCall(() => this.storage!.delete(claim.storageKey));
               await this.store.completeStorageDelete(claim);
             },
@@ -553,17 +569,126 @@ export class MeetingSyncService {
       return scoped.getScreenshot(vaultId, meetingId, screenshotId, true);
     });
     if (!screenshot) throw new ArtifactRequestError(404, "screenshot_not_found");
+    const requestedVariant = new URL(request.url).searchParams.get("variant") ?? "original";
+    if (!["original", "thumbnail"].includes(requestedVariant)) {
+      throw new ArtifactRequestError(400, "invalid_screenshot_variant");
+    }
+    if (requestedVariant !== "original" && this.screenshotTransformer) {
+      const variant = requestedVariant as ScreenshotVariant;
+      try {
+        const bytes = await this.ensureScreenshotVariant(identity, screenshot, variant);
+        const current = await this.store.withIdentity(identity, (scoped) =>
+          scoped.getScreenshot(vaultId, meetingId, screenshotId, true));
+        if (!current || current.contentHash !== screenshot.contentHash) {
+          throw new ArtifactRequestError(404, "screenshot_not_found");
+        }
+        const upstream = bytes
+          ? new Response(bytes, { headers: { "content-length": String(bytes.byteLength) } })
+          : await this.storageCall(() => storage.read(screenshotVariantKey(screenshot.storageKey, variant), method, request));
+        const headers = this.screenshotHeaders(screenshot, upstream, variant);
+        return new Response(method === "HEAD" ? null : upstream.body, { status: upstream.status, headers });
+      } catch {
+        // An unsupported or failed conversion must not make a durably stored original unreadable.
+        // A shared job may also have lost its initiator's access; authorize this caller below.
+      }
+    }
+    const current = await this.store.withIdentity(identity, (scoped) =>
+      scoped.getScreenshot(vaultId, meetingId, screenshotId, true));
+    if (!current || current.contentHash !== screenshot.contentHash || current.storageKey !== screenshot.storageKey) {
+      throw new ArtifactRequestError(404, "screenshot_not_found");
+    }
     const upstream = await this.storageCall(() => storage.read(screenshot.storageKey, method, request));
+    const headers = this.screenshotHeaders(screenshot, upstream, "original");
+    return new Response(method === "HEAD" ? null : upstream.body, { status: upstream.status, headers });
+  }
+
+  private screenshotHeaders(screenshot: SyncScreenshotRecord, upstream: Response, variant: ScreenshotVariant | "original") {
     const headers = new Headers({
       "content-security-policy": "sandbox allow-scripts",
-      "content-type": screenshot.contentType,
+      "content-type": variant === "original" ? screenshot.contentType : "image/webp",
       "x-content-type-options": "nosniff",
+      "cache-control": "private, no-cache",
+      "x-dahlia-image-variant": variant,
     });
+    if (screenshot.contentHash) headers.set("x-dahlia-original-sha256", screenshot.contentHash);
     for (const name of ["accept-ranges", "content-length", "content-range", "etag", "last-modified"]) {
       const value = upstream.headers.get(name);
       if (value) headers.set(name, value);
     }
-    return new Response(method === "HEAD" ? null : upstream.body, { status: upstream.status, headers });
+    return headers;
+  }
+
+  private async warmThumbnail(identity: Identity, vaultId: string, meetingId: string, screenshotId: string) {
+    try {
+      const screenshot = await this.store.withIdentity(identity, (scoped) =>
+        scoped.getScreenshot(vaultId, meetingId, screenshotId, true));
+      if (screenshot) await this.ensureScreenshotVariant(identity, screenshot, "thumbnail");
+    } catch {
+      // The read path retries. Thumbnail warming is not part of transaction durability.
+    }
+  }
+
+  private ensureScreenshotVariant(identity: Identity, screenshot: SyncScreenshotRecord, variant: ScreenshotVariant) {
+    const key = screenshotVariantKey(screenshot.storageKey, variant);
+    const existing = this.variantJobs.get(key);
+    if (existing) return existing;
+    if (this.variantJobs.size >= 32) throw new ArtifactRequestError(503, "screenshot_transform_busy");
+    const job = this.generateScreenshotVariant(identity, screenshot, variant)
+      .finally(() => this.variantJobs.delete(key));
+    this.variantJobs.set(key, job);
+    return job;
+  }
+
+  private async generateScreenshotVariant(identity: Identity, screenshot: SyncScreenshotRecord, variant: ScreenshotVariant) {
+    if (this.activeVariants >= 2) await new Promise<void>((resolve) => this.variantWaiters.push(resolve));
+    else this.activeVariants += 1;
+    try {
+      return await this.withStorageOperation(screenshot.storageKey, () => this.store.withStorageKeyLock(
+        screenshot.storageKey,
+        async () => {
+          const storage = this.requireStorage();
+          const key = screenshotVariantKey(screenshot.storageKey, variant);
+          const request = new Request("https://dahlia.invalid/", { signal: AbortSignal.timeout(20_000) });
+          const deleteVariantOrEnqueueRetry = async () => {
+            try {
+              await storage.delete(key);
+            } catch {
+              await this.store.enqueueStorageDelete(key);
+              this.scheduleStorageDeletes();
+            }
+          };
+          const isCurrent = async () => {
+            if (await this.store.hasStorageDelete(screenshot.storageKey)) return false;
+            const current = await this.store.withIdentity(identity, (scoped) =>
+              scoped.getScreenshot(screenshot.vaultId, screenshot.meetingId, screenshot.screenshotId, true));
+            return current?.contentHash === screenshot.contentHash && current?.storageKey === screenshot.storageKey;
+          };
+          if (!await isCurrent()) throw new ArtifactRequestError(404, "screenshot_not_found");
+          if (await this.store.hasStorageDelete(key)) throw new ArtifactRequestError(503, "screenshot_cache_delete_pending");
+          if (await storage.exists(key, request.signal)) return undefined;
+          const original = await storage.read(screenshot.storageKey, "GET", request);
+          if (!original.ok || !original.body) throw new Error("screenshot_original_unavailable");
+          const bytes = await this.screenshotTransformer!(original.body, SCREENSHOT_VARIANTS[variant]);
+          if (!await isCurrent()) throw new ArtifactRequestError(404, "screenshot_not_found");
+          try {
+            await storage.put(key, bytes, bytes.byteLength, "image/webp", request.signal);
+          } catch {
+            // Serve the generated image even when the rebuildable cache cannot be written.
+            await deleteVariantOrEnqueueRetry();
+          }
+          if (!await isCurrent()) {
+            // Also covers SQLite instances, where cross-process advisory locks are unavailable.
+            await deleteVariantOrEnqueueRetry();
+            throw new ArtifactRequestError(404, "screenshot_not_found");
+          }
+          return bytes;
+        },
+      ));
+    } finally {
+      const next = this.variantWaiters.shift();
+      if (next) next();
+      else this.activeVariants -= 1;
+    }
   }
 
   listOrganizations(identity: Identity) {

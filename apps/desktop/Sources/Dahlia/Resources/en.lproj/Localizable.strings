@@ -1652,3 +1652,13 @@
 "Vaults: %d" = "Vaults: %d";
 "%@ (Source: %@): Restored." = "%@ (Source: %@): Restored.";
 "%@ (Source: %@): Restore failed — %@" = "%@ (Source: %@): Restore failed — %@";
+
+// Meeting working copy and synchronization
+"meetingSync.local" = "Saved on this device";
+"meetingSync.pending" = "Saved on device · Vault sync pending";
+"meetingSync.synced" = "Vault synced";
+"meetingSync.authorization" = "Saved on device · Sign in to sync";
+"meetingSync.validation" = "Saved on device · Sync needs attention";
+
+"screenshot.cache.limit" = "Cloud image cache limit";
+"screenshot.cache.description" = "Synced images are downloaded as needed. Older cached images are removed when the limit is exceeded. Local account images, unsent images, and backups are excluded.";

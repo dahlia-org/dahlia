@@ -57,13 +57,15 @@ actor BackupService {
     private let fileManager: FileManager
     private let appVersion: String
     private let appBuild: String
+    private let screenshotContent: ScreenshotContentProvider
 
     init(
         dbQueue: DatabaseQueue,
         applicationSupportURL: URL = DahliaApplicationSupport.currentDirectoryURL,
         fileManager: FileManager = .default,
         appVersion: String = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "development",
-        appBuild: String = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "development"
+        appBuild: String = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "development",
+        screenshotContent: ScreenshotContentProvider = .shared
     ) {
         self.dbQueue = dbQueue
         backupDirectoryURL = applicationSupportURL.appending(path: Self.backupDirectoryName, directoryHint: .isDirectory)
@@ -71,6 +73,7 @@ actor BackupService {
         self.fileManager = fileManager
         self.appVersion = appVersion
         self.appBuild = appBuild
+        self.screenshotContent = screenshotContent
     }
 
     func listGenerations() throws -> [BackupGeneration] {
@@ -325,12 +328,12 @@ actor BackupService {
 
     func prepareRestore(
         from generation: BackupGeneration, requests: [VaultBackupRestoreRequest]
-    ) throws -> PendingDatabaseRestore {
+    ) async throws -> PendingDatabaseRestore {
         guard let listedMetadata = generation.metadata, generation.isValid else { throw BackupServiceError.invalidBackup }
         try validateManagedGenerationFile(generation.fileURL)
         let metadata = try Self.readAndValidateMetadata(at: generation.fileURL)
         guard metadata == listedMetadata else { throw BackupServiceError.invalidBackup }
-        _ = try dbQueue.read { try Self.validateRestoreRequests(requests, metadata: metadata, in: $0) }
+        _ = try await dbQueue.read { try Self.validateRestoreRequests(requests, metadata: metadata, in: $0) }
         guard try !preflightItems().contains(where: \.isWorkInProgress), try !hasProcessingAudio() else {
             throw BackupServiceError.unresolvedAudio(1)
         }
@@ -342,6 +345,25 @@ actor BackupService {
         do {
             try fileManager.copyItem(at: generation.fileURL, to: stagedURL)
             guard try Self.readAndValidateMetadata(at: stagedURL) == metadata else { throw BackupServiceError.invalidBackup }
+            // Portable restores become local Vaults. Resolve references before installing them.
+            let staged = try DatabaseQueue(path: stagedURL.path)
+            defer { try? staged.close() }
+            if try await staged.read({ try $0.columns(in: "screenshots").contains { $0.name == "remoteReference" } }) {
+                var failures: [any Error] = []
+                for request in requests {
+                    do {
+                        try await screenshotContent.hydrateOriginals(
+                            vaultId: request.sourceVaultId, dbQueue: staged, credentials: dbQueue
+                        )
+                    } catch is CancellationError {
+                        throw CancellationError()
+                    } catch { failures.append(error) }
+                }
+                if failures.count == requests.count, let failure = failures.first {
+                    throw failure
+                }
+            }
+            try staged.close()
             let marker = try PendingDatabaseRestore(
                 stagedFilename: stagedFilename, sha256: Self.sha256(of: stagedURL), requestedAt: .now,
                 sourceMetadata: metadata, requests: requests

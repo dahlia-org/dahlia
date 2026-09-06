@@ -310,7 +310,8 @@ final class MeetingRepository {
     nonisolated func resolveVaultsForSignOut(
         connectionID: UUID,
         disposition: DahliaAccountVaultDisposition,
-        managedRootURL: URL = BatchAudioStorage.managedRootURL
+        managedRootURL: URL = BatchAudioStorage.managedRootURL,
+        screenshotContent: ScreenshotContentProvider = .shared
     ) async throws {
         let vaultIds = try await dbQueue.read { db in
             try UUID.fetchAll(
@@ -322,7 +323,16 @@ final class MeetingRepository {
         guard !vaultIds.isEmpty else { return }
 
         if disposition == .moveToLocalAccount {
+            screenshotContent.retainOriginals(vaultIds: vaultIds, dbQueue: dbQueue)
+            defer { screenshotContent.releaseOriginals(vaultIds: vaultIds, dbQueue: dbQueue) }
+            for vaultId in vaultIds {
+                try await screenshotContent.hydrateOriginals(vaultId: vaultId, dbQueue: dbQueue)
+            }
             try await dbQueue.write { db in
+                guard try !Bool.fetchOne(db, sql: """
+                SELECT EXISTS(SELECT 1 FROM screenshots s JOIN meetings m ON m.id = s.meetingId
+                JOIN vaults v ON v.id = m.vaultId WHERE v.accountConnectionId = ? AND s.imageData IS NULL)
+                """, arguments: [connectionID])! else { throw ScreenshotContentError.unavailable }
                 for vaultId in vaultIds {
                     try SyncTransactionQueue.discard(vaultId: vaultId, in: db)
                 }
@@ -857,19 +867,28 @@ final class MeetingRepository {
                 hasLater = true
                 records = Array(fetched.prefix(pageLimit).reversed())
 
-            case let .after(cursor):
+            case let .after(cursor), let .startingAt(cursor):
+                let inclusive = if case .startingAt = direction { true } else { false }
                 let fetched = try TranscriptSegmentRecord.fetchAll(
                     db,
                     sql: """
                     SELECT * FROM transcript_segments
                     WHERE meetingId = ? AND isConfirmed = 1
-                      AND (startTime > ? OR (startTime = ? AND id > ?))
+                      AND (startTime > ? OR (startTime = ? AND id \(inclusive ? ">=" : ">") ?))
                     ORDER BY startTime ASC, id ASC
                     LIMIT ?
                     """,
                     arguments: [meetingId, cursor.startTime, cursor.startTime, cursor.id, fetchLimit]
                 )
-                hasEarlier = true
+                hasEarlier = try Bool.fetchOne(
+                    db,
+                    sql: """
+                    SELECT EXISTS(SELECT 1 FROM transcript_segments
+                    WHERE meetingId = ? AND isConfirmed = 1
+                      AND (startTime < ? OR (startTime = ? AND id \(inclusive ? "<" : "<=") ?)))
+                    """,
+                    arguments: [meetingId, cursor.startTime, cursor.startTime, cursor.id]
+                ) ?? false
                 hasLater = fetched.count > pageLimit
                 records = Array(fetched.prefix(pageLimit))
             }
@@ -911,6 +930,7 @@ final class MeetingRepository {
     nonisolated func fetchScreenshots(forMeetingId meetingId: UUID) throws -> [MeetingScreenshotRecord] {
         try dbQueue.read { db in
             try MeetingScreenshotRecord
+                .select(sql: MeetingScreenshotRecord.metadataSelection)
                 .filter(Column("meetingId") == meetingId)
                 .order(Column("capturedAt").asc)
                 .fetchAll(db)
@@ -1077,6 +1097,7 @@ final class MeetingRepository {
                 .order(Column("offsetSeconds").asc, Column("startedAt").asc)
                 .fetchAll(db)
             let screenshots = try MeetingScreenshotRecord
+                .select(sql: MeetingScreenshotRecord.metadataSelection)
                 .filter(Column("meetingId") == meetingId)
                 .order(Column("capturedAt").asc)
                 .fetchAll(db)

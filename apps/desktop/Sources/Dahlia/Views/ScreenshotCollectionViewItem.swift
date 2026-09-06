@@ -10,15 +10,17 @@ struct ScreenshotImageContentIdentity: Equatable {
     private static let maximumDirectComparisonByteCount = 64
 
     private let imageData: Data
+    private let contentHash: String?
     private let mimeType: String
 
     init(_ screenshot: MeetingScreenshotRecord) {
-        imageData = screenshot.imageData
+        imageData = screenshot.imageData ?? Data()
+        contentHash = screenshot.contentHash
         mimeType = screenshot.mimeType
     }
 
     static func == (lhs: Self, rhs: Self) -> Bool {
-        guard lhs.mimeType == rhs.mimeType,
+        guard lhs.mimeType == rhs.mimeType, lhs.contentHash == rhs.contentHash,
               lhs.imageData.count == rhs.imageData.count else { return false }
         if lhs.imageData.count <= maximumDirectComparisonByteCount {
             return lhs.imageData == rhs.imageData
@@ -54,7 +56,7 @@ private final class ScreenshotThumbnailButton: NSButton {
 
 @MainActor
 final class ScreenshotCollectionViewItem: NSCollectionViewItem {
-    typealias ThumbnailProvider = @Sendable (UUID, Data, Int) async -> CGImage?
+    typealias ThumbnailProvider = @Sendable (UUID, Data?, Int) async -> CGImage?
 
     private enum ThumbnailLoadState {
         case idle

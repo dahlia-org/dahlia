@@ -5,6 +5,8 @@ import Foundation
 
 /// ローカライズ文字列への型安全なアクセスを提供する。
 enum L10n { // swiftlint:disable:this type_body_length
+    static var screenshotCacheLimit: String { String(localized: "screenshot.cache.limit", bundle: bundle) }
+    static var screenshotCacheDescription: String { String(localized: "screenshot.cache.description", bundle: bundle) }
     /// キャッシュ済みの Bundle と、その生成元の言語 rawValue。
     /// 言語設定が変わらない限り Bundle を再生成しない。
     private nonisolated(unsafe) static var cachedBundle: Bundle = .appModule
@@ -29,6 +31,12 @@ enum L10n { // swiftlint:disable:this type_body_length
         cachedBundle = resolved
         return resolved
     }
+
+    static var meetingSyncLocalSaved: String { String(localized: "meetingSync.local", bundle: bundle) }
+    static var meetingSyncPending: String { String(localized: "meetingSync.pending", bundle: bundle) }
+    static var meetingSyncSynced: String { String(localized: "meetingSync.synced", bundle: bundle) }
+    static var meetingSyncAuthorization: String { String(localized: "meetingSync.authorization", bundle: bundle) }
+    static var meetingSyncValidation: String { String(localized: "meetingSync.validation", bundle: bundle) }
 
     // MARK: - Common
 
