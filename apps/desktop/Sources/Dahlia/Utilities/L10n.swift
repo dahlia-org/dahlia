@@ -1572,7 +1572,7 @@ enum L10n { // swiftlint:disable:this type_body_length
         bundle: bundle
     ) }
     static var vaultBackupRestoreDescription: String { String(
-        localized: "Restore selected vaults after one restart. Back up before overwrite; apply none if any restore fails. Audio and external files are excluded.",
+        localized: "Restore selected vaults after a restart. Back up and restore each vault independently; failed vaults stay unchanged. Audio and external files are excluded.",
         bundle: bundle
     ) }
     static func restoredVaultName(_ name: String) -> String {
@@ -1629,7 +1629,13 @@ enum L10n { // swiftlint:disable:this type_body_length
         String(format: String(localized: "The backup failed its integrity check: %@", bundle: bundle), message)
     }
 
-    static var backupRestored: String { String(localized: "Vault restored.", bundle: bundle) }
+    static func backupVaultRestored(_ name: String, id: UUID) -> String {
+        String(format: String(localized: "%@ (%@): Restored.", bundle: bundle), name, String(id.uuidString.prefix(8)))
+    }
+
+    static func backupVaultRestoreFailed(_ name: String, id: UUID, reason: String) -> String {
+        String(format: String(localized: "%@ (%@): Restore failed — %@", bundle: bundle), name, String(id.uuidString.prefix(8)), reason)
+    }
 
     static func backupRestoreFailed(_ reason: String) -> String {
         String(format: String(localized: "Could not restore the vault: %@", bundle: bundle), reason)

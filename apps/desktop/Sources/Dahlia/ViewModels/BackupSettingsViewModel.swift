@@ -44,8 +44,15 @@ final class BackupSettingsViewModel {
             switch AppDelegate.backupRestoreOutcome {
             case .none:
                 break
-            case .restored:
-                statusMessage = L10n.backupRestored
+            case let .completed(results):
+                let successes = results.filter { $0.error == nil }.map {
+                    L10n.backupVaultRestored($0.request.name, id: $0.request.targetVaultId)
+                }
+                let failures = results.compactMap { result in
+                    result.error.map { L10n.backupVaultRestoreFailed(result.request.name, id: result.request.targetVaultId, reason: $0) }
+                }
+                statusMessage = successes.isEmpty ? nil : successes.joined(separator: "\n")
+                errorMessage = failures.isEmpty ? nil : failures.joined(separator: "\n")
             case let .failed(message):
                 errorMessage = L10n.backupRestoreFailed(message)
             }

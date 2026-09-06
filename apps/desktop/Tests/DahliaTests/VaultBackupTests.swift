@@ -75,7 +75,7 @@ import GRDB
             }
             try lateWriter.close()
             let outcome = BackupRestoreStartupProcessor.applyPendingRestore(applicationSupportURL: fixture.testRootURL, databaseURL: databaseURL)
-            guard case .restored = outcome else { Issue.record("Restore failed: \(outcome)")
+            guard case let .completed(results) = outcome, results.allSatisfy({ $0.error == nil }) else { Issue.record("Restore failed: \(outcome)")
                 return
             }
             let result = try AppDatabaseManager(path: databaseURL.path)
@@ -154,7 +154,8 @@ import GRDB
                     sourceVaultId: fixture.meeting.vaultId, targetVaultId: .v7(), mode: .newVault, name: "Same name"
                 )])
                 let outcome = BackupRestoreStartupProcessor.applyPendingRestore(applicationSupportURL: fixture.testRootURL, databaseURL: databaseURL)
-                guard case .restored = outcome else { Issue.record("Restore failed: \(outcome)")
+                guard case let .completed(results) = outcome,
+                      results.allSatisfy({ $0.error == nil }) else { Issue.record("Restore failed: \(outcome)")
                     return
                 }
             }
@@ -216,7 +217,7 @@ import GRDB
             try FileManager.default.removeItem(at: backupDirectory)
             try Data("blocks directory creation".utf8).write(to: backupDirectory)
             let outcome = BackupRestoreStartupProcessor.applyPendingRestore(applicationSupportURL: fixture.testRootURL, databaseURL: databaseURL)
-            guard case .failed = outcome else { Issue.record("Expected safety failure")
+            guard case let .completed(results) = outcome, results.count == 1, results[0].error != nil else { Issue.record("Expected safety failure")
                 return
             }
             let result = try AppDatabaseManager(path: databaseURL.path)
@@ -284,7 +285,8 @@ import GRDB
             try fixture.database.dbQueue.backup(to: live.dbQueue)
             try live.close()
             let outcome = BackupRestoreStartupProcessor.applyPendingRestore(applicationSupportURL: fixture.testRootURL, databaseURL: databaseURL)
-            guard case .failed = outcome else { Issue.record("Invalid hierarchy must fail, not omit rows")
+            guard case let .completed(results) = outcome, results.count == 1,
+                  results[0].error != nil else { Issue.record("Invalid hierarchy must fail, not omit rows")
                 return
             }
             let result = try AppDatabaseManager(path: databaseURL.path)
@@ -340,7 +342,8 @@ import GRDB
             try fixture.database.dbQueue.backup(to: live.dbQueue)
             try live.close()
             let outcome = BackupRestoreStartupProcessor.applyPendingRestore(applicationSupportURL: fixture.testRootURL, databaseURL: databaseURL)
-            guard case .restored = outcome else { Issue.record("Older backup restore failed: \(outcome)")
+            guard case let .completed(results) = outcome,
+                  results.allSatisfy({ $0.error == nil }) else { Issue.record("Older backup restore failed: \(outcome)")
                 return
             }
             let result = try AppDatabaseManager(path: databaseURL.path)

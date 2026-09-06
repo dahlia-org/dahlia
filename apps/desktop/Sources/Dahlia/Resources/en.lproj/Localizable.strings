@@ -1642,7 +1642,7 @@
 "Restore as a New Local Vault" = "Restore as a New Local Vault";
 "Overwrite the Original Local Vault" = "Overwrite the Original Local Vault";
 "Overwrite requires the original local vault with no unprocessed recordings. Synced vaults cannot be overwritten." = "Overwrite requires the original local vault with no unprocessed recordings. Synced vaults cannot be overwritten.";
-"Restore selected vaults after one restart. Back up before overwrite; apply none if any restore fails. Audio and external files are excluded." = "Restore selected vaults after one restart. Back up before overwrite; apply none if any restore fails. Audio and external files are excluded.";
+"Restore selected vaults after a restart. Back up and restore each vault independently; failed vaults stay unchanged. Audio and external files are excluded." = "Restore selected vaults after a restart. Back up and restore each vault independently; failed vaults stay unchanged. Audio and external files are excluded.";
 "%@ (Restored)" = "%@ (Restored)";
 
 "Deselect All Vaults" = "Deselect All Vaults";
@@ -1650,3 +1650,5 @@
 "Do Not Restore" = "Do Not Restore";
 
 "Vaults: %d" = "Vaults: %d";
+"%@ (%@): Restored." = "%@ (%@): Restored.";
+"%@ (%@): Restore failed — %@" = "%@ (%@): Restore failed — %@";

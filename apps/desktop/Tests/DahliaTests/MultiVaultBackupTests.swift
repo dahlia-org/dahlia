@@ -64,7 +64,8 @@ import GRDB
                 BackupService.pendingRestoreURL(applicationSupportURL: fixture.testRootURL)))
             #expect(decoded == marker)
             let outcome = BackupRestoreStartupProcessor.applyPendingRestore(applicationSupportURL: fixture.testRootURL, databaseURL: databaseURL)
-            guard case .restored = outcome else { Issue.record("Mixed restore failed: \(outcome)")
+            guard case let .completed(results) = outcome,
+                  results.allSatisfy({ $0.error == nil }) else { Issue.record("Mixed restore failed: \(outcome)")
                 return
             }
             let result = try AppDatabaseManager(path: databaseURL.path)
@@ -93,7 +94,8 @@ import GRDB
                     VaultBackupRestoreRequest(sourceVaultId: $0.id, targetVaultId: .v7(), mode: .newVault, name: "Same")
                 })
                 let repeated = BackupRestoreStartupProcessor.applyPendingRestore(applicationSupportURL: fixture.testRootURL, databaseURL: databaseURL)
-                guard case .restored = repeated else { Issue.record("Repeated restore failed: \(repeated)")
+                guard case let .completed(results) = repeated,
+                      results.allSatisfy({ $0.error == nil }) else { Issue.record("Repeated restore failed: \(repeated)")
                     return
                 }
             }
@@ -106,8 +108,8 @@ import GRDB
             }
         }
 
-        @Test(arguments: ["content", "missing", "synced", "safety"])
-        func batchFailureNeverAppliesAnEarlierVault(failure: String) async throws {
+        @Test(arguments: ["content", "missing", "synced", "safety"], [false, true])
+        func failedVaultRollsBackWhileOtherVaultSucceeds(failure: String, failingFirst: Bool) async throws {
             let fixture = try BatchAudioTestFixture(name: "BatchFailure", endedAt: .now, batchCompletedAt: .now)
             defer { fixture.removeFiles() }
             let second = try addVault(to: fixture, name: "Second")
@@ -130,15 +132,18 @@ import GRDB
                 }
                 try editable.close()
             }
-            _ = try await service.prepareRestore(from: generation, requests: [
+            let successfulTarget = failure == "safety" ? UUID.v7() : fixture.meeting.vaultId
+            var requests = [
                 VaultBackupRestoreRequest(
                     sourceVaultId: fixture.meeting.vaultId,
-                    targetVaultId: fixture.meeting.vaultId,
-                    mode: .overwrite,
+                    targetVaultId: successfulTarget,
+                    mode: failure == "safety" ? .newVault : .overwrite,
                     name: "Test"
                 ),
                 VaultBackupRestoreRequest(sourceVaultId: second.vault.id, targetVaultId: second.vault.id, mode: .overwrite, name: "Second"),
-            ])
+            ]
+            if failingFirst { requests.reverse() }
+            _ = try await service.prepareRestore(from: generation, requests: requests)
             let databaseURL = try makeLiveCopy(fixture)
             let live = try AppDatabaseManager(path: databaseURL.path)
             try await live.dbQueue.write { db in
@@ -152,19 +157,25 @@ import GRDB
                 try Data("blocks safety backup".utf8).write(to: directory)
             }
             let outcome = BackupRestoreStartupProcessor.applyPendingRestore(applicationSupportURL: fixture.testRootURL, databaseURL: databaseURL)
-            guard case .failed = outcome else { Issue.record("Expected atomic failure: \(outcome)")
+            guard case let .completed(results) = outcome else { Issue.record("Expected per-vault results: \(outcome)")
                 return
             }
+            #expect(results.map(\.request) == requests)
+            #expect(results.first { $0.request.targetVaultId == successfulTarget }?.error == nil)
+            #expect(results.first { $0.request.targetVaultId == second.vault.id }?.error != nil)
             let result = try AppDatabaseManager(path: databaseURL.path)
             defer { try? result.close() }
             try await result.dbQueue.read { db throws in
-                #expect(try MeetingRecord.fetchOne(db, key: fixture.meeting.id)?.name == "Changed")
-                #expect(try VaultRecord.fetchCount(db) == (failure == "missing" ? 1 : 2))
+                #expect(try MeetingRecord.filter(Column("vaultId") == successfulTarget).fetchOne(db)?.name == fixture.meeting.name)
+                #expect(try MeetingRecord.fetchOne(db, key: second.meeting.id)?.name == (failure == "missing" ? nil : "Changed"))
+                #expect(try VaultRecord.fetchCount(db) == (failure == "missing" ? 1 : failure == "safety" ? 3 : 2))
+                #expect(try ProjectRecord.filter(Column("vaultId") == second.vault.id).fetchCount(db) == 0)
                 try VaultBackupTransfer.validateIntegrity(in: db)
             }
             if failure == "content" {
-                let safety = try #require(try await service.listGenerations().first { $0.metadata?.reason == .beforeRestore })
-                #expect(Set(safety.metadata?.vaults.map(\.id) ?? []) == [fixture.meeting.vaultId, second.vault.id])
+                let safety = try await service.listGenerations().filter { $0.metadata?.reason == .beforeRestore }
+                #expect(safety.count == 2)
+                #expect(Set(safety.flatMap { $0.metadata?.vaults.map(\.id) ?? [] }) == [fixture.meeting.vaultId, second.vault.id])
             }
         }
 
