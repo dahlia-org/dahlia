@@ -300,7 +300,7 @@ actor SearchIndexer {
                 sql: """
                 SELECT (SELECT COUNT(*) FROM meetings)
                      + (SELECT COUNT(*) FROM projects)
-                     + (SELECT COUNT(*) FROM screenshots WHERE ocrText IS NOT NULL AND caption IS NOT NULL)
+                     + (SELECT COUNT(*) FROM meeting_images WHERE ocrText IS NOT NULL AND caption IS NOT NULL)
                 """
             ) ?? 0
             try db.execute(
@@ -335,7 +335,7 @@ actor SearchIndexer {
         let screenshotIDs = try await dbQueue.read { db in
             try UUID.fetchAll(
                 db,
-                sql: "SELECT id FROM screenshots WHERE ocrText IS NOT NULL AND caption IS NOT NULL ORDER BY rowid"
+                sql: "SELECT id FROM meeting_images WHERE ocrText IS NOT NULL AND caption IS NOT NULL ORDER BY id"
             )
         }
         for id in screenshotIDs {
@@ -470,6 +470,8 @@ actor SearchIndexer {
                 where: "kind = 'project' AND projectId = ?",
                 arguments: [job.targetID]
             )
+        case "screenshot":
+            try await indexScreenshot(id: job.targetID, generation: generation)
         case "screenshotCleanup":
             try await deleteDocuments(
                 where: "kind = 'screenshot' AND sourceId = ?",
@@ -611,7 +613,7 @@ private extension SearchIndexer {
             for result in results {
                 guard try MeetingScreenshotRecord.fetchOne(db, key: result.screenshotID) != nil else { continue }
                 try db.execute(
-                    sql: "UPDATE screenshots SET ocrText = ?, caption = ? WHERE id = ?",
+                    sql: "UPDATE files SET metadata = json_set(metadata, '$.ocr_text', ?, '$.caption', ?) WHERE id = (SELECT fileId FROM meeting_files WHERE id = ?)",
                     arguments: [result.ocrText, result.caption, result.screenshotID]
                 )
                 if let screenshot = try MeetingScreenshotRecord.fetchOne(db, key: result.screenshotID),

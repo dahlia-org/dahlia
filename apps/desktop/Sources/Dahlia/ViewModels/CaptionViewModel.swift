@@ -161,7 +161,10 @@ final class CaptionViewModel: ObservableObject {
 
     @Published var isListening = false
     @Published var isFinalizingRecording = false {
-        didSet { updateCanBeginRecording() }
+        didSet {
+            updateCanBeginRecording()
+            if oldValue, !isFinalizingRecording { refreshObservedMeetingContent() }
+        }
     }
 
     @Published private(set) var canBeginRecording = true
@@ -314,7 +317,7 @@ final class CaptionViewModel: ObservableObject {
         return await (try? dbQueue.read { db in
             if let row = try Row.fetchOne(
                 db,
-                sql: "SELECT ocrText, caption FROM screenshots WHERE id = ?",
+                sql: "SELECT ocrText, caption FROM meeting_images WHERE id = ?",
                 arguments: [id]
             ), let text: String = row["ocrText"], let caption: String = row["caption"] {
                 return .completed(ocrText: text, caption: caption)
@@ -393,16 +396,27 @@ final class CaptionViewModel: ObservableObject {
     }
 
     func copyCurrentSummary(for destination: SummaryShareRenderer.Destination) {
-        guard let currentSummaryDocument, canShareCurrentSummary else { return }
-
-        let content = SummaryShareRenderer.render(
-            document: currentSummaryDocument,
-            actionItemsHeading: L10n.actionItems,
-            for: destination,
-            screenshots: screenshotStore.records
-        )
-        guard content.markdown.nilIfBlank != nil else { return }
-        SummaryPasteboardWriter.write(content)
+        guard let document = currentSummaryDocument, canShareCurrentSummary else { return }
+        let meetingId = currentMeetingId
+        let changeCount = NSPasteboard.general.changeCount
+        let screenshots = screenshotStore.records.filter { document.referencedScreenshotIds.contains($0.id) }
+        let dbQueue = currentDbQueue
+        let heading = L10n.actionItems
+        Task { [weak self] in
+            do {
+                let resolved = destination == .googleDocs
+                    ? try await ScreenshotContentProvider.shared.resolved(screenshots, dbQueue: dbQueue) : screenshots
+                let content = await Task.detached(priority: .userInitiated) {
+                    SummaryShareRenderer.render(document: document, actionItemsHeading: heading, for: destination, screenshots: resolved)
+                }.value
+                guard let self, self.currentMeetingId == meetingId,
+                      NSPasteboard.general.changeCount == changeCount,
+                      content.markdown.nilIfBlank != nil else { return }
+                SummaryPasteboardWriter.write(content)
+            } catch {
+                self?.errorMessage = L10n.screenshotDownloadFailed(error.localizedDescription)
+            }
+        }
     }
 
     @discardableResult
@@ -476,12 +490,15 @@ final class CaptionViewModel: ObservableObject {
         let existingArtifactURL = currentSummaryArtifactURL
         do {
             let expectedDocument = try document.databaseJSONString()
+            let resolved = try await ScreenshotContentProvider.shared.resolved(
+                screenshots.filter { document.referencedScreenshotIds.contains($0.id) }, dbQueue: dbQueue
+            )
             let html = await Task.detached(priority: .userInitiated) {
                 SummaryShareRenderer.render(
                     document: document,
                     actionItemsHeading: actionItemsHeading,
                     for: .googleDocs,
-                    screenshots: screenshots
+                    screenshots: resolved
                 ).html
             }.value
             let result = try await artifactSummaryExporter(
@@ -767,7 +784,7 @@ final class CaptionViewModel: ObservableObject {
     private var onBatchTranscriptionRecoveryCompleted: (@MainActor @Sendable () async -> Void)?
     private var recordingStopTask: Task<Void, Never>?
     private var isTerminationRequested = false
-    private let recordingSessionController = RecordingSessionController()
+    private let recordingSessionController: RecordingSessionController
     private var activeTranscriptionPlan: TranscriptionSessionPlan?
     private var activeRecordingSessionId: UUID?
     private var recordingLifecycle: RecordingLifecycle = .idle {
@@ -806,6 +823,12 @@ final class CaptionViewModel: ObservableObject {
     private var audioRetentionOperationTask: Task<Void, Never>?
     private var meetingLoadTask: Task<Void, Never>?
     private var meetingLoadGeneration: UInt64 = 0
+    @Published private(set) var meetingSyncState: MeetingSyncState?
+    private var meetingSyncObservation: AnyDatabaseCancellable?
+    private var meetingSyncSnapshot: MeetingSyncSnapshot?
+    private var appliedMeetingSyncSnapshot: MeetingSyncSnapshot?
+    private var meetingSyncGeneration: UInt64 = 0
+    private var meetingRefreshTask: Task<Void, Never>?
     private var summaryReloadTask: Task<Void, Never>?
     private var summaryProjectionGeneration: UInt64 = 0
     private var isSynchronizingLiveSubtitleLocale = false
@@ -834,6 +857,7 @@ final class CaptionViewModel: ObservableObject {
     }
 
     init(
+        recordingSessionController: RecordingSessionController = RecordingSessionController(),
         audioHardwareQueryService: AudioHardwareQueryService = .shared,
         automaticScreenshotCapture: any AutomaticScreenshotCapturing = AutomaticScreenshotCaptureService(),
         summaryGenerationRunner: @escaping SummaryGenerationRunner = { input in
@@ -880,6 +904,7 @@ final class CaptionViewModel: ObservableObject {
             UsageTelemetryService.shared.record(event)
         }
     ) {
+        self.recordingSessionController = recordingSessionController
         self.audioHardwareQueryService = audioHardwareQueryService
         automaticScreenshotCaptureControl = AutomaticScreenshotCaptureControl(
             capture: automaticScreenshotCapture
@@ -1900,6 +1925,9 @@ final class CaptionViewModel: ObservableObject {
     }()
 
     private struct LoadedMeetingData {
+        let syncSnapshot: MeetingSyncSnapshot?
+        let projectId: UUID?
+        let projectContext: (url: URL?, name: String)?
         let recordingStartedAt: Date?
         let recordingSessionRecords: [RecordingSessionRecord]
         let recordingSessions: [RecordingSessionTimeline]
@@ -1920,6 +1948,8 @@ final class CaptionViewModel: ObservableObject {
         vaultURL: URL?
     ) throws -> LoadedMeetingData {
         let repo = MeetingRepository(dbQueue: dbQueue)
+        // Read the revision first so a concurrent later commit is always detected after the load.
+        let syncSnapshot = try dbQueue.read { try MeetingRepository.fetchMeetingSyncSnapshot(meetingId: meetingId, in: $0) }
         let detail = try repo.fetchMeetingDetail(id: meetingId)
         let recordingSessions = detail.recordingSessions.map(RecordingSessionTimeline.init)
         let initialTranscriptPage = try repo.fetchTranscriptPage(
@@ -1946,6 +1976,9 @@ final class CaptionViewModel: ObservableObject {
         )
 
         return try LoadedMeetingData(
+            syncSnapshot: syncSnapshot,
+            projectId: detail.meeting?.projectId,
+            projectContext: Self.projectContext(projectId: detail.meeting?.projectId, dbQueue: dbQueue, vaultURL: vaultURL),
             recordingStartedAt: detail.meeting?.effectiveRecordingStartedAt,
             recordingSessionRecords: detail.recordingSessions,
             recordingSessions: recordingSessions,
@@ -2188,7 +2221,9 @@ final class CaptionViewModel: ObservableObject {
                 loaded,
                 expectedProjectionGeneration: projectionGeneration
             )
+            self.appliedMeetingSyncSnapshot = loaded.syncSnapshot
             self.generatePendingBatchSummaryIfReady(meetingId: meetingId)
+            self.refreshObservedMeetingContent()
         }
     }
 
@@ -2395,6 +2430,7 @@ final class CaptionViewModel: ObservableObject {
     func clearCurrentMeeting() {
         guard !isFinalizingRecording else { return }
         if case .starting = recordingLifecycle { return }
+        stopMeetingSyncObservation()
         meetingLoadTask?.cancel()
         meetingLoadGeneration &+= 1
 
@@ -2441,6 +2477,9 @@ final class CaptionViewModel: ObservableObject {
         currentProjectName = ctx.projectName
         currentVaultURL = ctx.vaultURL
         currentDbQueue = ctx.dbQueue
+        if let meetingId = ctx.meetingId, let dbQueue = ctx.dbQueue {
+            startMeetingSyncObservation(meetingId: meetingId, dbQueue: dbQueue)
+        }
         replaceVisibleScreenshots(meetingID: ctx.meetingId, records: [])
         batchTranscriptionState = ctx.batchTranscriptionState
         retranscribableBatchSessionIds = []
@@ -2579,6 +2618,7 @@ final class CaptionViewModel: ObservableObject {
 
     /// UI 状態をリセットし、次の文字起こし読み込みに備える。
     private func resetMeetingState() {
+        stopMeetingSyncObservation()
         saveNoteImmediately()
         meetingLoadTask?.cancel()
         meetingLoadGeneration &+= 1
@@ -2623,9 +2663,90 @@ final class CaptionViewModel: ObservableObject {
         draftMeeting = nil
         resetSummaryState()
         setupNoteAutoSave()
+        startMeetingSyncObservation(meetingId: id, dbQueue: dbQueue)
     }
 
-    private static func projectContext(
+    private func stopMeetingSyncObservation() {
+        meetingSyncGeneration &+= 1
+        meetingSyncObservation?.cancel()
+        meetingSyncObservation = nil
+        meetingRefreshTask?.cancel()
+        meetingRefreshTask = nil
+        meetingSyncSnapshot = nil
+        appliedMeetingSyncSnapshot = nil
+        meetingSyncState = nil
+    }
+
+    private func startMeetingSyncObservation(meetingId: UUID, dbQueue: DatabaseQueue) {
+        stopMeetingSyncObservation()
+        let generation = meetingSyncGeneration
+        meetingSyncObservation = ValueObservation.tracking { db in
+            try MeetingRepository.fetchMeetingSyncSnapshot(meetingId: meetingId, in: db)
+        }
+        .removeDuplicates()
+        .start(
+            in: dbQueue,
+            onError: { [weak self] _ in
+                guard let self, self.meetingSyncGeneration == generation else { return }
+                self.meetingSyncState = nil
+            },
+            onChange: { [weak self] snapshot in
+                guard let self, self.meetingSyncGeneration == generation,
+                      self.currentMeetingId == meetingId else { return }
+                self.meetingSyncSnapshot = snapshot
+                self.meetingSyncState = snapshot?.state
+                self.refreshObservedMeetingContent()
+            }
+        )
+    }
+
+    /// Canonical changes refresh only reloadable projections, never the note editor or live capture.
+    private func refreshObservedMeetingContent() {
+        guard let meetingId = currentMeetingId, let dbQueue = currentDbQueue,
+              !store.isLoadingInitialPage,
+              !(isListening && recordingMeetingId == meetingId),
+              !isFinalizingRecording else { return }
+        guard appliedMeetingSyncSnapshot?.revisions != meetingSyncSnapshot?.revisions
+            || appliedMeetingSyncSnapshot?.connectionId != meetingSyncSnapshot?.connectionId else { return }
+        meetingRefreshTask?.cancel()
+        let generation = meetingSyncGeneration
+        let connectionId = meetingSyncSnapshot?.connectionId
+        let projectionGeneration = summaryProjectionGeneration
+        let vaultURL = currentVaultURL
+        meetingRefreshTask = Task { [weak self] in
+            do {
+                let loaded = try await Task.detached(priority: .userInitiated) {
+                    try Self.fetchLoadedMeetingData(meetingId: meetingId, dbQueue: dbQueue, vaultURL: vaultURL)
+                }.value
+                guard let self, !Task.isCancelled,
+                      self.meetingSyncGeneration == generation,
+                      self.currentMeetingId == meetingId,
+                      self.meetingSyncSnapshot?.connectionId == connectionId,
+                      !(self.isListening && self.recordingMeetingId == meetingId),
+                      !self.isFinalizingRecording else { return }
+                self.replaceVisibleScreenshots(meetingID: meetingId, records: loaded.screenshots)
+                if self.summaryProjectionGeneration == projectionGeneration {
+                    self.currentSummaryDocument = loaded.summaryDocument
+                }
+                self.currentMeetingHasTranscriptSegments = loaded.hasTranscriptSegments
+                self.currentProjectId = loaded.projectId
+                self.currentProjectURL = loaded.projectContext?.url
+                self.currentProjectName = loaded.projectContext?.name
+                self.appliedMeetingSyncSnapshot = loaded.syncSnapshot
+                self.store.recordingStartTime = loaded.recordingStartedAt
+                self.store.loadRecordingSessions(loaded.recordingSessions)
+                await self.store.reloadVisible()
+                self.refreshObservedMeetingContent()
+            } catch is CancellationError {
+                return
+            } catch {
+                // Keep the last readable working copy. A later sync change retries the projection.
+                captionViewModelLogger.error("Meeting refresh failed")
+            }
+        }
+    }
+
+    private nonisolated static func projectContext(
         projectId: UUID?,
         dbQueue: DatabaseQueue,
         vaultURL: URL?
@@ -3077,6 +3198,9 @@ final class CaptionViewModel: ObservableObject {
     }
 
     private func completePersistenceStart(existingMeetingId: UUID?, activeDraftMeeting: DraftMeeting?) {
+        if let currentMeetingId, let currentDbQueue {
+            startMeetingSyncObservation(meetingId: currentMeetingId, dbQueue: currentDbQueue)
+        }
         guard existingMeetingId == nil else { return }
         if let activeDraftMeeting, let currentMeetingId {
             pendingDraftMaterializations.append(DraftMeetingMaterialization(
@@ -3833,10 +3957,8 @@ final class CaptionViewModel: ObservableObject {
         }.value
         guard !screenshots.isEmpty else { return }
         _ = await Task.detached(priority: .utility) {
-            try? ScreenshotExportService.exportScreenshots(
-                vaultURL: vaultURL,
-                screenshots: screenshots
-            )
+            guard let resolved = try? await ScreenshotContentProvider.shared.resolved(screenshots, dbQueue: dbQueue) else { return }
+            _ = try? ScreenshotExportService.exportScreenshots(vaultURL: vaultURL, screenshots: resolved)
         }.value
     }
 
@@ -4537,7 +4659,13 @@ final class CaptionViewModel: ObservableObject {
     ) async throws -> String {
         await acquireGoogleDocsExport()
         defer { releaseGoogleDocsExport() }
-        return try await googleDocsSummaryExporter(document, context, fileName)
+        let screenshots = try await ScreenshotContentProvider.shared.resolved(
+            context.screenshots.filter { document.referencedScreenshotIds.contains($0.id) }
+        )
+        let resolved = SummaryRenderContext(
+            meetingId: context.meetingId, createdAt: context.createdAt, screenshots: screenshots, accountScope: context.accountScope
+        )
+        return try await googleDocsSummaryExporter(document, resolved, fileName)
     }
 
     private func acquireGoogleDocsExport() async {
@@ -4618,10 +4746,8 @@ final class CaptionViewModel: ObservableObject {
 
         async let screenshotExport: Void = Task.detached {
             guard !screenshots.isEmpty else { return }
-            _ = try? ScreenshotExportService.exportScreenshots(
-                vaultURL: vaultURL,
-                screenshots: screenshots
-            )
+            guard let resolved = try? await ScreenshotContentProvider.shared.resolved(screenshots) else { return }
+            _ = try? ScreenshotExportService.exportScreenshots(vaultURL: vaultURL, screenshots: resolved)
         }.value
 
         _ = await transcriptPath
@@ -4821,7 +4947,7 @@ final class CaptionViewModel: ObservableObject {
     }
 
     func downloadScreenshot(_ screenshot: MeetingScreenshotRecord) {
-        let fileExtension = ImageEncoder.fileExtension(mimeType: screenshot.mimeType, data: screenshot.imageData)
+        let fileExtension = ImageEncoder.fileExtension(mimeType: screenshot.mimeType, data: screenshot.imageData ?? Data())
         let panel = NSSavePanel()
         if let contentType = UTType(filenameExtension: fileExtension) {
             panel.allowedContentTypes = [contentType]
@@ -4829,12 +4955,16 @@ final class CaptionViewModel: ObservableObject {
         panel.nameFieldStringValue = "screenshot_\(Self.fileDateFormatter.string(from: screenshot.capturedAt)).\(fileExtension)"
         panel.begin { [weak self] response in
             guard response == .OK, let url = panel.url else { return }
-            do {
-                try screenshot.imageData.write(to: url, options: .atomic)
-            } catch {
-                captionViewModelLogger.error("Failed to download screenshot: \(error)")
-                ErrorReportingService.capture(error, context: ["source": "downloadScreenshot"])
-                self?.errorMessage = L10n.screenshotDownloadFailed(error.localizedDescription)
+            Task {
+                do {
+                    let resolved = try await ScreenshotContentProvider.shared.resolved(screenshot)
+                    guard let bytes = resolved.imageData else { throw ScreenshotContentError.unavailable }
+                    try await Task.detached(priority: .userInitiated) {
+                        try bytes.write(to: url, options: .atomic)
+                    }.value
+                } catch {
+                    self?.errorMessage = L10n.screenshotDownloadFailed(error.localizedDescription)
+                }
             }
         }
     }

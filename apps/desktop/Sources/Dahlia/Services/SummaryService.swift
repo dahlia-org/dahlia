@@ -22,7 +22,7 @@ enum SummaryService {
         let generationSettings = generationSettings ?? .current()
 
         let systemPrompt = summaryGenerationInstructions(generationSettings: generationSettings)
-        let inputs = await makeCodexInputs(.init(
+        let inputs = try await makeCodexInputs(.init(
             promptContext: promptContext,
             transcriptText: transcriptText,
             noteText: noteText,

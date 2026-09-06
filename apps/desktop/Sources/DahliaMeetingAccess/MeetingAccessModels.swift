@@ -309,6 +309,7 @@ public enum MeetingAccessError: Error, LocalizedError, Equatable {
     case searchQueryTooShort(minimum: Int)
     case invalidTimeRange
     case screenshotNotFound
+    case screenshotUnavailable
     case screenshotEncodingFailed
     case writeAccessRequired
     case projectNotFound
@@ -363,6 +364,8 @@ public enum MeetingAccessError: Error, LocalizedError, Equatable {
             "Elapsed time values must be finite and nonnegative, and the start must be before the end."
         case .screenshotNotFound:
             "The screenshot was not found in the configured meeting and vault."
+        case .screenshotUnavailable:
+            "This image is not cached. Open Dahlia and connect the account to download it, then retry."
         case .screenshotEncodingFailed:
             "The screenshot could not be prepared for MCP access."
         case .writeAccessRequired:

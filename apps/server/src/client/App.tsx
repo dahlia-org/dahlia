@@ -138,11 +138,9 @@ interface SyncedTranscriptSegmentInfo {
 }
 
 interface SyncedScreenshotInfo {
-  screenshotId: string;
-  capturedAt: string;
-  contentType: string;
-  ocrText?: string;
-  caption?: string;
+  id: string;
+  capturedAt: string | null;
+  file: { id: string; content_type: string; metadata: { source: string; ocr_text?: string; caption?: string } };
 }
 
 interface SyncedScreenshotPage {
@@ -164,7 +162,7 @@ export async function commitSyncTransaction(vaultId: string, operations: SyncOpe
   const request = {
     method: "POST",
     body: JSON.stringify({
-      schemaVersion: 1,
+      schemaVersion: 2,
       id: transactionId,
       vaultId,
       createdAt: new Date().toISOString(),
@@ -899,7 +897,7 @@ function SyncedMeeting({ vaultId, meetingId }: { vaultId: string; meetingId: str
       json<SyncedMeetingInfo>(base, { signal: controller.signal }),
       json<SyncedVaultInfo>(`/api/v1/vaults/${vaultId}`, { signal: controller.signal }),
       json<{ items: SyncedTranscriptSegmentInfo[] }>(`${base}/transcript`, { signal: controller.signal }),
-      json<SyncedScreenshotPage>(`${base}/screenshots`, { signal: controller.signal }),
+      json<SyncedScreenshotPage>(`${base}/files`, { signal: controller.signal }),
     ]).then(([meetingValue, vaultValue, transcriptPage, screenshotPage]) => {
       setMeeting(meetingValue);
       setVault(vaultValue);
@@ -968,7 +966,7 @@ function SyncedMeeting({ vaultId, meetingId }: { vaultId: string; meetingId: str
     setError(undefined);
     try {
       const page = await json<SyncedScreenshotPage>(
-        `${base}/screenshots?cursor=${encodeURIComponent(screenshotCursor)}`,
+        `${base}/files?cursor=${encodeURIComponent(screenshotCursor)}`,
       );
       setScreenshots((current) => [...(current ?? []), ...page.items]);
       setScreenshotCursor(page.nextCursor);
@@ -1013,14 +1011,20 @@ function SyncedMeeting({ vaultId, meetingId }: { vaultId: string; meetingId: str
         <section className="section-block">
           <h2 className="section-label">Screenshots</h2>
           <div className="screenshot-grid">
-            {screenshots.map((screenshot) => (
-              <figure className="panel" key={screenshot.screenshotId}>
-                <img
-                  src={`${base}/screenshots/${screenshot.screenshotId}/content`}
-                  alt={screenshot.caption || ""}
-                  loading="lazy"
-                />
-                {(screenshot.caption || screenshot.ocrText) && <figcaption>{screenshot.caption || screenshot.ocrText}</figcaption>}
+            {screenshots.filter((screenshot) => screenshot.file.metadata.source === "screenshot").map((screenshot) => (
+              <figure className="panel" key={screenshot.id}>
+                <a href={`/api/v1/files/${screenshot.file.id}/content`} target="_blank" rel="noreferrer" aria-label="Open screenshot">
+                  <img
+                    src={`/api/v1/files/${screenshot.file.id}/variants/thumbnail`}
+                    alt={screenshot.file.metadata.caption || ""}
+                    loading="lazy"
+                    onError={(event) => {
+                      const image = event.currentTarget;
+                      if (image.src.includes("/variants/")) image.src = `/api/v1/files/${screenshot.file.id}/content`;
+                    }}
+                  />
+                </a>
+                {(screenshot.file.metadata.caption || screenshot.file.metadata.ocr_text) && <figcaption>{screenshot.file.metadata.caption || screenshot.file.metadata.ocr_text}</figcaption>}
               </figure>
             ))}
           </div>

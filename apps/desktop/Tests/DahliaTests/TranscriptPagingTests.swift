@@ -44,6 +44,34 @@
         }
 
         @Test
+        func canonicalRefreshPreservesOlderWindowAndReflectsEditsAndDeletions() async throws {
+            let fixture = try makePagingFixture(segmentCount: 1000)
+            let repository = MeetingRepository(dbQueue: fixture.database.dbQueue)
+            let store = TranscriptStore()
+            try store.configurePaging(
+                meetingId: fixture.meetingId,
+                loader: TranscriptPageLoader(dbQueue: fixture.database.dbQueue),
+                initialPage: repository.fetchTranscriptPage(
+                    forMeetingId: fixture.meetingId, direction: .latest, limit: TranscriptStore.initialPageSize
+                )
+            )
+            #expect(await store.loadEarlier())
+            #expect(await store.loadEarlier())
+            let first = try #require(store.segments.first)
+            let deleted = store.segments[5].id
+            try await fixture.database.dbQueue.write { db in
+                try db.execute(sql: "UPDATE transcript_segments SET text = 'Remote edit' WHERE id = ?", arguments: [first.id])
+                try db.execute(sql: "DELETE FROM transcript_segments WHERE id = ?", arguments: [deleted])
+            }
+            #expect(await store.reloadVisible())
+            #expect(store.segments.first?.id == first.id)
+            #expect(store.segments.first?.text == "Remote edit")
+            #expect(!store.segments.contains { $0.id == deleted })
+            #expect(store.hasEarlierSegments && store.hasLaterSegments)
+            #expect(store.confirmedSegmentCount <= TranscriptStore.maximumConfirmedSegmentCount)
+        }
+
+        @Test
         func pagingFiltersUnconfirmedAndOtherMeetingsAndReportsPageEdges() throws {
             let fixture = try makePagingFixture(segmentCount: 3)
             let otherMeetingId = UUID.v7()

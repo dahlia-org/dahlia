@@ -18,12 +18,13 @@ import type { SearchEmbedder } from "../search/embedding";
 import type {
   IdentitySyncStore,
   MeetingSyncStore,
-  SyncScreenshotRecord,
   SyncSearchQuery,
   SyncTransaction,
   VaultPrincipalType,
 } from "./types";
 import { decodeSyncCursor, encodeSyncCursor, SYNC_SNAPSHOT_ENTITIES, SyncTransactionError } from "./store";
+import { fileMetadataSchema, fileReservationSchema, fileResponse, fileStorageKey, fileVariantKey, imageContentTypes, type FileRecord } from "../files/model";
+import { SCREENSHOT_VARIANTS, screenshotVariantKey, type ScreenshotTransformer, type ScreenshotVariant } from "./screenshot-variants";
 
 const uuidSchema = z.uuid().transform((value) => value.toLowerCase());
 const dateSchema = z.iso.datetime().transform((value) => new Date(value));
@@ -55,13 +56,6 @@ const transcriptChunkSchema = z.object({
   deletions: z.array(uuidSchema).max(500),
 }).strict();
 
-const SCREENSHOT_CONTENT_TYPES = new Map([
-  ["image/png", "png"],
-  ["image/jpeg", "jpeg"],
-  ["image/webp", "webp"],
-  ["image/gif", "gif"],
-  ["image/tiff", "tiff"],
-]);
 const SCREENSHOT_DELETE_BATCH_SIZE = 25;
 const STORAGE_OPERATION_CONCURRENCY = 4;
 const QUERY_EMBEDDING_DEADLINE_MS = 2_000;
@@ -84,14 +78,14 @@ const uuidV7Schema = z.string()
   .transform((value) => value.toLowerCase());
 const transactionOperationSchema = z.object({
   id: uuidV7Schema,
-  entity: z.enum(["vault", "project", "meeting", "summary", "transcript", "screenshot"]),
+  entity: z.enum(["vault", "project", "meeting", "summary", "transcript", "file", "meeting_file"]),
   action: z.enum(["create", "update", "delete", "upsert", "patch", "reset"]),
   entityId: uuidSchema,
   baseRevision: z.number().int().nonnegative().nullable(),
   data: z.record(z.string(), z.unknown()).nullable(),
 }).strict();
 const transactionSchema = z.object({
-  schemaVersion: z.literal(1),
+  schemaVersion: z.literal(2),
   id: uuidV7Schema,
   vaultId: uuidSchema,
   createdAt: dateSchema,
@@ -126,8 +120,10 @@ const transactionDataSchemas = {
       context.addIssue({ code: "custom", message: "Invalid transcript patch manifest" });
     }
   }),
-  "screenshot:upsert": z.object({ meetingId: uuidSchema, capturedAt: dateSchema, ocrText: z.string().nullable(), caption: z.string().nullable(), contentHash: z.string().regex(/^[0-9a-f]{64}$/).nullable() }).strict(),
-  "screenshot:delete": z.object({}).strict(),
+  "file:upsert": z.object({ name: z.string().min(1).max(255).optional(), checksum: z.string().regex(/^SHA-256:[0-9a-f]{64}$/), metadata: fileMetadataSchema.partial() }).strict(),
+  "file:delete": z.object({}).strict(),
+  "meeting_file:upsert": z.object({ meetingId: uuidSchema, fileId: uuidSchema, capturedAt: nullableDateSchema, sessionId: uuidSchema.nullable(), createdAt: dateSchema }).strict(),
+  "meeting_file:delete": z.object({}).strict(),
 } as const;
 const SYNC_CHANGE_PAGE_SIZE = 100;
 
@@ -148,12 +144,17 @@ export class MeetingSyncService {
   private activeStorageOperations = 0;
   private storageDeleteDrain?: Promise<void>;
   private storageDeleteRetry?: ReturnType<typeof setTimeout>;
+  private readonly variantJobs = new Map<string, Promise<void>>();
+  private readonly variantWaiters: Array<() => void> = [];
+  private activeVariants = 0;
 
   constructor(
     private readonly store: MeetingSyncStore,
     private readonly storage?: ObjectStorage,
     private readonly tokenizer: SearchTokenizer = createIntlSearchTokenizer(),
     private readonly embedder?: SearchEmbedder,
+    private readonly screenshotTransformer?: ScreenshotTransformer,
+    private readonly fileStorageRoot?: string,
   ) {
     if (storage) {
       this.scheduleStorageDeletes();
@@ -193,6 +194,7 @@ export class MeetingSyncService {
         if (receipt) return receipt;
         const meetings = new Map<string, Awaited<ReturnType<IdentitySyncStore["getMeeting"]>>>();
         const prepared = [] as SyncTransaction["operations"];
+        const fileMetadata = new Map<string, FileRecord["metadata"]>();
         for (const operation of operations) {
           const data = { ...(operation.data ?? {}) };
           if ((operation.entity === "meeting" && operation.action !== "delete") || operation.entity === "summary") {
@@ -232,11 +234,15 @@ export class MeetingSyncService {
               summaryDocument,
               summaryCreatedAt: operation.entity === "summary" && operation.action === "upsert" ? data.createdAt as Date : operation.action === "delete" ? null : meeting?.summaryCreatedAt ?? null,
             });
-          } else if (operation.entity === "screenshot" && operation.action === "upsert") {
-            const embeddingText = [data.ocrText, data.caption]
+          } else if (["file", "meeting_file"].includes(operation.entity) && operation.action === "upsert") {
+            const fileId = operation.entity === "file" ? operation.entityId : String(data.fileId);
+            const file = fileMetadata.get(fileId) ?? (await scoped.getFile(fileId))?.metadata;
+            const metadata = { ...file, ...(operation.entity === "file" ? data.metadata as object : {}) };
+            if (metadata.source) fileMetadata.set(fileId, metadata as FileRecord["metadata"]);
+            const embeddingText = [metadata.ocr_text, metadata.caption]
               .filter((value): value is string => typeof value === "string" && value.trim().length > 0).join("\n") || null;
             Object.assign(data, {
-              searchText: createSearchText(this.tokenizer, [data.ocrText as string | null, data.caption as string | null]),
+              searchText: createSearchText(this.tokenizer, [metadata.ocr_text, metadata.caption]),
               embeddingText,
               embeddingContentHash: await embeddingContentHash(embeddingText),
             });
@@ -249,26 +255,16 @@ export class MeetingSyncService {
       if (error instanceof SyncTransactionError
         && error.status >= 400 && error.status < 500
         && ![408, 425, 429].includes(error.status)) {
-        let discardedScreenshot = false;
         try {
           await this.store.withIdentity(identity, async (scoped) => {
             for (const operation of operations) {
               if (operation.entity === "transcript" && operation.action === "patch") {
                 await scoped.deleteTranscriptPatch(normalized.vaultId, operation.entityId, operation.id);
-              } else if (operation.entity === "screenshot" && operation.action === "upsert") {
-                discardedScreenshot = await scoped.discardInactiveScreenshot(
-                  normalized.vaultId,
-                  operation.entityId,
-                ) || discardedScreenshot;
               }
             }
           });
-          if (discardedScreenshot) this.scheduleStorageDeletes();
-        } catch (cleanupError) {
-          if (operations.some(({ entity, action }) => entity === "screenshot" && action === "upsert")) {
-            throw cleanupError;
-          }
-          // A later transcript upload removes expired staging rows if immediate cleanup is unavailable.
+        } catch {
+          // A later upload removes expired staging rows. File reservations remain retryable for 24 hours.
         }
       }
       throw error;
@@ -306,6 +302,9 @@ export class MeetingSyncService {
             claim.storageKey,
             async () => {
               if (!await this.store.isStorageDeleteClaimCurrent(claim)) return;
+              for (const variant of (claim.storageKey.endsWith("/original") ? Object.keys(SCREENSHOT_VARIANTS) : []) as ScreenshotVariant[]) {
+                await this.storageCall(() => this.storage!.delete(screenshotVariantKey(claim.storageKey, variant)));
+              }
               await this.storageCall(() => this.storage!.delete(claim.storageKey));
               await this.store.completeStorageDelete(claim);
             },
@@ -399,114 +398,107 @@ export class MeetingSyncService {
     if (!accepted) throw missingMeetingConflict(meetingId);
   }
 
-  async putScreenshot(
-    identity: Identity,
-    vaultId: string,
-    meetingId: string,
-    screenshotId: string,
-    request: Request,
-  ): Promise<SyncScreenshotRecord> {
+  async reserveFile(identity: Identity, body: unknown) {
+    this.requireWritableIdentity(identity);
+    this.requireStorage();
+    if (!this.fileStorageRoot) throw new ArtifactRequestError(503, "file_storage_not_configured");
+    const parsed = fileReservationSchema.safeParse(body);
+    if (!parsed.success || !uuidV7Schema.safeParse(parsed.data.id).success) {
+      throw new ArtifactRequestError(400, "invalid_file_reservation");
+    }
+    const input = parsed.data;
+    const now = new Date();
+    const file = await this.store.withIdentity(identity, async (scoped) => {
+      await scoped.expireFileUploads(input.vaultId, new Date(now.getTime() - 86_400_000));
+      return scoped.reserveFile({ fileId: input.id, vaultId: input.vaultId,
+        uri: `${this.fileStorageRoot}/${fileStorageKey(input.id)}`, offset: input.offset, size: input.size,
+        contentType: input.content_type, checksum: input.checksum, name: input.name, metadata: input.metadata,
+        active: false, uploadedAt: null, revision: 0, createdAt: now, updatedAt: now,
+      });
+    });
+    this.scheduleStorageDeletes();
+    if (!file) throw new ArtifactRequestError(404, "file_or_vault_not_found");
+    if (file.size !== input.size || file.contentType !== input.content_type || file.checksum !== input.checksum
+      || file.metadata.source !== input.metadata.source) throw new ArtifactRequestError(409, "file_id_conflict");
+    return { ...fileResponse(file), contentURL: `/api/v1/files/${file.fileId}/content` };
+  }
+
+  async putFile(identity: Identity, fileId: string, request: Request) {
+    this.requireWritableIdentity(identity);
     const storage = this.requireStorage();
     const upload = parseUpload(request, DEFAULT_ARTIFACT_MAX_BYTES);
-    const extension = SCREENSHOT_CONTENT_TYPES.get(upload.contentType);
-    if (!extension) throw new ArtifactRequestError(415, "unsupported_screenshot_type");
-    const capturedAt = dateSchema.safeParse(request.headers.get("x-dahlia-captured-at"));
-    if (!capturedAt.success) throw new ArtifactRequestError(400, "invalid_screenshot_captured_at");
-    const contentHash = request.headers.get("x-dahlia-content-sha256")?.toLowerCase();
-    if (!contentHash || !/^[0-9a-f]{64}$/.test(contentHash)) {
-      throw new ArtifactRequestError(400, "invalid_screenshot_content_hash");
-    }
-    const storageKey = `meetings/${meetingId}/screenshots/${screenshotId}.${extension}`;
-    return this.withStorageOperation(storageKey, () => this.store.withStorageKeyLock(storageKey, async () => {
-      if (await this.store.hasStorageDelete(storageKey)) {
-        throw new ArtifactRequestError(503, "screenshot_storage_delete_pending");
+    const key = fileStorageKey(fileId);
+    return this.withStorageOperation(key, () => this.store.withStorageKeyLock(key, async () => {
+      const file = await this.store.withIdentity(identity, (scoped) => scoped.getFile(fileId));
+      if (!file) throw new ArtifactRequestError(404, "file_not_found");
+      if (file.size !== upload.contentLength || file.contentType !== upload.contentType) {
+        throw new ArtifactRequestError(409, "file_id_conflict");
       }
-      const reservation = await this.store.withIdentity(identity, async (scoped) => {
-        if (!await scoped.ensureUploadTarget(vaultId, meetingId)) throw missingMeetingConflict(meetingId);
-        const existing = await scoped.getScreenshot(vaultId, meetingId, screenshotId);
-        if (existing) return { existing, created: false };
-        const record: SyncScreenshotRecord = {
-          screenshotId,
-          vaultId,
-          meetingId,
-          capturedAt: capturedAt.data,
-          contentType: upload.contentType,
-          storageKey,
-          contentLength: upload.contentLength,
-          contentHash,
-          ocrText: null,
-          caption: null,
-          revision: 0,
-        };
-        return await scoped.createScreenshot(record) ? { existing: record, created: true } : null;
-      });
-      if (!reservation) throw new ArtifactRequestError(409, "screenshot_id_conflict");
-      if (
-        reservation.existing.vaultId !== vaultId
-        || reservation.existing.meetingId !== meetingId
-        || reservation.existing.contentType !== upload.contentType
-        || reservation.existing.storageKey !== storageKey
-        || reservation.existing.contentLength !== upload.contentLength
-        || reservation.existing.contentHash !== contentHash
-      ) {
-        throw new ArtifactRequestError(409, "screenshot_id_conflict");
-      }
-      if (!reservation.created && await this.storageCall(() => storage.exists(storageKey, request.signal))) {
-        const actualHash = await sha256Stream(request.body);
-        if (actualHash !== contentHash) throw new ArtifactRequestError(409, "screenshot_content_hash_mismatch");
-        const stored = await this.storageCall(() => storage.read(storageKey, "GET", request));
-        if (await sha256Stream(stored.body) !== contentHash) {
-          try {
-            await storage.delete(storageKey);
-          } catch {
-            await this.store.enqueueStorageDelete(storageKey);
-            this.scheduleStorageDeletes();
-          }
-          throw new ArtifactRequestError(503, "screenshot_stored_content_hash_mismatch");
+      if (await this.store.hasStorageDelete(key)) throw new ArtifactRequestError(503, "file_storage_delete_pending");
+      let received = 0;
+      const bounded = request.body?.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
+        transform(chunk, controller) {
+          received += chunk.byteLength;
+          if (received > file.size) throw new ArtifactRequestError(413, "file_size_mismatch");
+          controller.enqueue(chunk);
+        },
+        flush() {
+          if (received !== file.size) throw new ArtifactRequestError(400, "file_size_mismatch");
+        },
+      })) ?? null;
+      if (!bounded && file.size !== 0) throw new ArtifactRequestError(400, "file_size_mismatch");
+      if (file.uploadedAt) {
+        if (`SHA-256:${await sha256Stream(bounded)}` !== file.checksum) {
+          throw new ArtifactRequestError(409, "file_checksum_mismatch");
         }
-        return reservation.existing;
+        return fileResponse(file);
       }
       try {
-        const uploadBody = sha256Passthrough(request.body);
-        const [, actualHash] = await Promise.all([
-          this.storageCall(() => storage.put(
-            storageKey,
-            uploadBody.body,
-            upload.contentLength,
-            upload.contentType,
-            request.signal,
-          )),
-          uploadBody.digest,
+        const hashing = sha256Passthrough(bounded);
+        const [, hash] = await Promise.all([
+          this.storageCall(() => storage.put(key, hashing.body, file.size, file.contentType, request.signal)),
+          hashing.digest,
         ]);
-        if (actualHash !== contentHash) throw new ArtifactRequestError(409, "screenshot_content_hash_mismatch");
-        const current = await this.store.withIdentity(identity, async (scoped) => {
-          if (!await scoped.ensureUploadTarget(vaultId, meetingId)) throw missingMeetingConflict(meetingId);
-          return scoped.getScreenshot(vaultId, meetingId, screenshotId);
-        });
-        if (!current
-          || current.storageKey !== storageKey
-          || current.contentType !== upload.contentType
-          || current.contentLength !== upload.contentLength
-          || current.contentHash !== contentHash) {
-          throw new ArtifactRequestError(409, "screenshot_id_conflict");
+        if (`SHA-256:${hash}` !== file.checksum) throw new ArtifactRequestError(409, "file_checksum_mismatch");
+        if (!await this.store.withIdentity(identity, (scoped) => scoped.markFileUploaded(fileId, file.checksum))) {
+          const current = await this.store.withIdentity(identity, (scoped) => scoped.getFile(fileId));
+          if (current?.vaultId === file.vaultId && current.checksum === file.checksum && await this.store.hasStorageDelete(key)) {
+            throw new ArtifactRequestError(503, "file_storage_delete_pending");
+          }
+          throw new ArtifactRequestError(404, "file_not_found");
         }
-        return current;
+        return fileResponse(file);
       } catch (error) {
-        try {
-          await storage.delete(storageKey);
-        } catch {
-          await this.store.enqueueStorageDelete(storageKey);
+        try { await storage.delete(key); } catch {
+          await this.store.enqueueStorageDelete(key);
           this.scheduleStorageDeletes();
-        }
-        if (reservation.created) {
-          await this.store.withIdentity(
-            identity,
-            (scoped) => scoped.deleteScreenshot(vaultId, screenshotId, storageKey),
-          );
         }
         throw error;
       }
     }));
+  }
+
+  async getFile(identity: Identity, fileId: string) {
+    const file = await this.store.withIdentity(identity, (scoped) => scoped.getFile(fileId, true));
+    if (!file) throw new ArtifactRequestError(404, "file_not_found");
+    return { ...fileResponse(file), contentURL: `/api/v1/files/${fileId}/content`,
+      variants: this.screenshotTransformer && imageContentTypes.has(file.contentType)
+        ? { thumbnail: `/api/v1/files/${fileId}/variants/thumbnail` } : {},
+    };
+  }
+
+  async listFiles(identity: Identity, vaultId: string, cursor?: string, meetingId?: string) {
+    const after = cursor === undefined ? undefined : this.parseId(cursor);
+    return this.store.withIdentity(identity, async (scoped) => {
+      if (meetingId) {
+        const rows = await scoped.listMeetingFiles(vaultId, meetingId, after, SYNC_READ_PAGE_SIZE + 1);
+        const items = rows.slice(0, SYNC_READ_PAGE_SIZE).map(({ file, ...link }) => ({ ...link, file: fileResponse(file) }));
+        return { items, nextCursor: rows.length > SYNC_READ_PAGE_SIZE ? items.at(-1)!.id : null };
+      }
+      const rows = await scoped.listFiles(vaultId, after, SYNC_READ_PAGE_SIZE + 1);
+      const items = rows.slice(0, SYNC_READ_PAGE_SIZE).map(fileResponse);
+      return { items, nextCursor: rows.length > SYNC_READ_PAGE_SIZE ? items.at(-1)!.id : null };
+    });
   }
 
   private async withStorageOperation<T>(storageKey: string, operation: () => Promise<T>): Promise<T> {
@@ -539,31 +531,83 @@ export class MeetingSyncService {
     else this.activeStorageOperations -= 1;
   }
 
-  async readScreenshot(
-    identity: Identity,
-    vaultId: string,
-    meetingId: string,
-    screenshotId: string,
-    method: ArtifactReadMethod,
-    request: Request,
-  ): Promise<Response> {
-    const storage = this.requireStorage();
-    const screenshot = await this.store.withIdentity(identity, async (scoped) => {
-      if (!await scoped.getMeeting(vaultId, meetingId)) return null;
-      return scoped.getScreenshot(vaultId, meetingId, screenshotId, true);
+  async readScreenshot(identity: Identity, vaultId: string, meetingId: string, screenshotId: string,
+    method: ArtifactReadMethod, request: Request): Promise<Response> {
+    const image = await this.store.withIdentity(identity, (scoped) => scoped.getScreenshot(vaultId, meetingId, screenshotId, true));
+    if (!image) throw new ArtifactRequestError(404, "screenshot_not_found");
+    return this.readFile(identity, image.fileId, method, request);
+  }
+
+  async readFile(identity: Identity, fileId: string, method: ArtifactReadMethod, request: Request, thumbnail = false): Promise<Response> {
+    const file = await this.store.withIdentity(identity, (scoped) => scoped.getFile(fileId, true));
+    if (!file) throw new ArtifactRequestError(404, "file_not_found");
+    if (thumbnail) {
+      if (!this.screenshotTransformer || !imageContentTypes.has(file.contentType)) {
+        throw new ArtifactRequestError(404, "file_variant_unavailable");
+      }
+      await this.ensureFileVariant(identity, file);
+    }
+    const current = await this.store.withIdentity(identity, (scoped) => scoped.getFile(fileId, true));
+    if (!current || current.checksum !== file.checksum) throw new ArtifactRequestError(404, "file_not_found");
+    const upstream = await this.storageCall(() => this.requireStorage().read(
+      thumbnail ? fileVariantKey(fileId) : fileStorageKey(fileId), method, request,
+    ));
+    const headers = new Headers({ "content-security-policy": "sandbox", "x-content-type-options": "nosniff",
+      "content-type": thumbnail ? "image/webp" : file.contentType, "cache-control": "private, no-cache",
+      "x-dahlia-original-sha256": file.checksum.slice(8), "x-dahlia-image-variant": thumbnail ? "thumbnail" : "original",
+      etag: `"${file.checksum.slice(8)}${thumbnail ? '-v1-thumbnail' : ''}"`,
     });
-    if (!screenshot) throw new ArtifactRequestError(404, "screenshot_not_found");
-    const upstream = await this.storageCall(() => storage.read(screenshot.storageKey, method, request));
-    const headers = new Headers({
-      "content-security-policy": "sandbox allow-scripts",
-      "content-type": screenshot.contentType,
-      "x-content-type-options": "nosniff",
-    });
-    for (const name of ["accept-ranges", "content-length", "content-range", "etag", "last-modified"]) {
+    for (const name of ["accept-ranges", "content-length", "content-range", "last-modified"]) {
       const value = upstream.headers.get(name);
       if (value) headers.set(name, value);
     }
     return new Response(method === "HEAD" ? null : upstream.body, { status: upstream.status, headers });
+  }
+
+  private ensureFileVariant(identity: Identity, file: FileRecord): Promise<void> {
+    const key = fileVariantKey(file.fileId);
+    const existing = this.variantJobs.get(key);
+    if (existing) return existing;
+    if (this.variantJobs.size >= 32) throw new ArtifactRequestError(503, "file_transform_busy");
+    const job = this.generateFileVariant(identity, file).finally(() => this.variantJobs.delete(key));
+    this.variantJobs.set(key, job);
+    return job;
+  }
+
+  private async generateFileVariant(identity: Identity, file: FileRecord): Promise<void> {
+    if (this.activeVariants >= 2) await new Promise<void>((resolve) => this.variantWaiters.push(resolve));
+    else this.activeVariants += 1;
+    const originalKey = fileStorageKey(file.fileId);
+    const key = fileVariantKey(file.fileId);
+    try {
+      await this.withStorageOperation(originalKey, () => this.store.withStorageKeyLock(originalKey, async () => {
+        const storage = this.requireStorage();
+        const request = new Request("https://dahlia.invalid/", { signal: AbortSignal.timeout(20_000) });
+        const isCurrent = async () => !await this.store.hasStorageDelete(originalKey)
+          && (await this.store.withIdentity(identity, (scoped) => scoped.getFile(file.fileId, true)))?.checksum === file.checksum;
+        if (!await isCurrent()) throw new ArtifactRequestError(404, "file_not_found");
+        if (await this.store.hasStorageDelete(key)) throw new ArtifactRequestError(503, "file_cache_delete_pending");
+        if (await this.storageCall(() => storage.exists(key, request.signal))) return;
+        const original = await this.storageCall(() => storage.read(originalKey, "GET", request));
+        if (!original.ok || !original.body) throw new ArtifactRequestError(502, "file_original_unavailable");
+        const bytes = await this.screenshotTransformer!(original.body, SCREENSHOT_VARIANTS.thumbnail);
+        if (!await isCurrent()) throw new ArtifactRequestError(404, "file_not_found");
+        try {
+          await this.storageCall(() => storage.put(key, bytes, bytes.byteLength, "image/webp", request.signal));
+          if (!await isCurrent()) throw new ArtifactRequestError(404, "file_not_found");
+        } catch (error) {
+          try { await storage.delete(key); } catch {
+            await this.store.enqueueStorageDelete(key);
+            this.scheduleStorageDeletes();
+          }
+          throw error;
+        }
+      }));
+    } finally {
+      const next = this.variantWaiters.shift();
+      if (next) next();
+      else this.activeVariants -= 1;
+    }
   }
 
   listOrganizations(identity: Identity) {

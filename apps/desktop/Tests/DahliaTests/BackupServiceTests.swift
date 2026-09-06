@@ -105,7 +105,7 @@ import GRDB
 
             var configuration = Configuration()
             configuration.readonly = true
-            let backup = try DatabaseQueue(path: generation.fileURL.path, configuration: configuration)
+            let backup = try DatabaseQueue(path: extractedBackupDatabase(generation.fileURL).path, configuration: configuration)
             let result = try await backup.read { db in
                 let transcriptText = try String.fetchOne(
                     db,
@@ -190,7 +190,7 @@ import GRDB
 
             #expect(try await service.preflightItems().isEmpty)
             let generation = try await service.createGeneration(vaultIds: [fixture.meeting.vaultId])
-            let backup = try DatabaseQueue(path: generation.fileURL.path)
+            let backup = try DatabaseQueue(path: extractedBackupDatabase(generation.fileURL).path)
             let legacyCount = try await backup.read { db in
                 try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM recording_audio_files")
             }
@@ -228,7 +228,7 @@ import GRDB
             #expect(try BackupService.sha256(of: stagedURL) == marker.sha256)
             var configuration = Configuration()
             configuration.readonly = true
-            let staged = try DatabaseQueue(path: stagedURL.path, configuration: configuration)
+            let staged = try DatabaseQueue(path: extractedBackupDatabase(stagedURL).path, configuration: configuration)
             let isClean = try await staged.read { db in
                 let hasMetadata = try db.tableExists(BackupService.metadataTableName)
                 let migrationsComplete = try AppDatabaseManager.migrator.hasCompletedMigrations(db)
@@ -254,8 +254,7 @@ import GRDB
             let generation = try await service.createGeneration(vaultIds: [fixture.meeting.vaultId])
             let editedURL = fixture.testRootURL.appending(path: "future.sqlite")
             try FileManager.default.copyItem(at: generation.fileURL, to: editedURL)
-            let editable = try DatabaseQueue(path: editedURL.path)
-            try await editable.write { db in
+            try editBackupDatabase(editedURL) { db in
                 try db.execute(
                     sql: "UPDATE \(BackupService.metadataTableName) SET schemaVersion = 999, migrationIdentifier = 'v999_future'"
                 )
@@ -280,8 +279,7 @@ import GRDB
                 applicationSupportURL: fixture.testRootURL
             )
             let generation = try await service.createGeneration(vaultIds: [fixture.meeting.vaultId])
-            let editable = try DatabaseQueue(path: generation.fileURL.path)
-            try await editable.write { db in
+            try editBackupDatabase(generation.fileURL) { db in
                 try db.execute(
                     sql: """
                     CREATE TRIGGER malicious_audio_delete
@@ -292,7 +290,6 @@ import GRDB
                     """
                 )
             }
-            try editable.close()
 
             await #expect(throws: BackupServiceError.invalidBackup) {
                 try await service.prepareRestore(from: generation, requests: [VaultBackupRestoreRequest(
@@ -309,11 +306,10 @@ import GRDB
             defer { fixture.removeFiles() }
             let service = BackupService(dbQueue: fixture.database.dbQueue, applicationSupportURL: fixture.testRootURL)
             let generation = try await service.createGeneration(vaultIds: [fixture.meeting.vaultId])
-            let editable = try DatabaseQueue(path: generation.fileURL.path)
-            try await editable.write { db in
+            try editBackupDatabase(generation.fileURL) { db in
                 try db.execute(sql: "UPDATE dahlia_backup_metadata SET formatVersion = 1")
             }
-            try editable.close()
+
             await #expect(throws: BackupServiceError.incompatibleFormat(1)) {
                 try await service.importGeneration(from: generation.fileURL)
             }
@@ -366,16 +362,16 @@ import GRDB
             defer { fixture.removeFiles() }
             let service = BackupService(dbQueue: fixture.database.dbQueue, applicationSupportURL: fixture.testRootURL)
             let generation = try await service.createGeneration(vaultIds: [fixture.meeting.vaultId])
-            let editable = try DatabaseQueue(path: generation.fileURL.path)
-            try await editable.write { db in
+            try editBackupDatabase(generation.fileURL) { db in
                 try db
                     .execute(
                         sql: "DROP TABLE dahlia_backup_metadata; CREATE TABLE dahlia_backup_metadata (formatVersion); INSERT INTO dahlia_backup_metadata VALUES (2)"
                     )
             }
-            try editable.close()
+
             await #expect(throws: (any Error).self) { try await service.importGeneration(from: generation.fileURL) }
-            #expect(try await service.listGenerations().first?.isValid == false)
+            // Listing reads the manifest; import performs the full content validation above.
+            #expect(try await service.listGenerations().first?.isValid == true)
         }
 
         private func makeAudioSegment(fixture: BatchAudioTestFixture) -> RecordingAudioSegmentRecord {

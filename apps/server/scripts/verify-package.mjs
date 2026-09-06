@@ -72,7 +72,7 @@ try {
     if (typeof createPostgresApplicationStore !== "function" || typeof createPostgresAuthStore !== "function") {
       throw new Error("PostgreSQL store factories are missing from the Node package export");
     }
-    if (serverMigrationManifest.sqlite.files.length !== 3) {
+    if (serverMigrationManifest.sqlite.files.length !== 4) {
       throw new Error("Migration manifest is incomplete");
     }
     const style = await readFile(new URL(import.meta.resolve("@dahlia-ai/server/client/styles.css")), "utf8");
@@ -92,6 +92,10 @@ try {
       new URL(import.meta.resolve("@dahlia-ai/server/migrations/postgres/20260903173551_bumpy_freak/migration.sql")),
       "utf8",
     );
+    const fileRlsMigration = await readFile(
+      new URL(import.meta.resolve("@dahlia-ai/server/migrations/postgres/20260906142206_force_file_rls/migration.sql")),
+      "utf8",
+    );
     if (
       !style.includes(".app-shell")
       || !codexLicense.includes("Apache License")
@@ -105,6 +109,8 @@ try {
       || applicationMigration.includes('CREATE TABLE "auth".')
       || !applicationMigration.includes('REFERENCES "auth"."user"("id")')
       || !applicationMigration.includes('CREATE TABLE "app"."vaults"')
+      || !fileRlsMigration.includes('ALTER TABLE "app"."files" FORCE ROW LEVEL SECURITY')
+      || !fileRlsMigration.includes('ALTER TABLE "app"."meeting_files" FORCE ROW LEVEL SECURITY')
     ) {
       throw new Error("Package assets are incomplete");
     }
@@ -124,7 +130,7 @@ try {
     const applied = database.prepare('SELECT "name" FROM "__drizzle_migrations"').all();
     database.close();
     await store.close?.();
-    if (applied.length !== 3 || applied.at(-1)?.name !== "20260905172654_sync_history_backfill") {
+    if (applied.length !== 4 || applied.at(-1)?.name !== "20260906125718_dashing_roughhouse") {
       throw new Error("Installed package migrations did not run from the package directory");
     }
   `);

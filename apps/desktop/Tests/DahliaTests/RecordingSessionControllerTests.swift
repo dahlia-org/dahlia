@@ -5,6 +5,7 @@
     import os
     import Testing
     @testable import Dahlia
+    @testable import DahliaRuntimeSupport
 
     struct RecordingSessionControllerTests {
         private struct PlanExpectation {
@@ -43,7 +44,7 @@
             let runtime = try await makeRuntime(mode: .realtime, liveSubtitlesEnabled: true)
             let plan = TranscriptionSessionPlan(
                 finalMode: .realtime,
-                liveSubtitlesEnabled: true,
+                liveSubtitlesEnabled: true
             )
 
             await #expect(throws: RecordingSessionControllerError.self) {
@@ -175,7 +176,7 @@
                     startedAt: .now,
                     plan: TranscriptionSessionPlan(
                         finalMode: .batch,
-                        liveSubtitlesEnabled: true,
+                        liveSubtitlesEnabled: true
                     ),
                     locale: Locale(identifier: "ja_JP"),
                     sources: [.init(source: .microphone)],
@@ -217,7 +218,7 @@
                     startedAt: .now,
                     plan: TranscriptionSessionPlan(
                         finalMode: .realtime,
-                        liveSubtitlesEnabled: true,
+                        liveSubtitlesEnabled: true
                     ),
                     locale: Locale(identifier: "ja_JP"),
                     sources: [.init(source: .microphone)]
@@ -354,7 +355,7 @@
                     startedAt: .now,
                     plan: TranscriptionSessionPlan(
                         finalMode: .batch,
-                        liveSubtitlesEnabled: true,
+                        liveSubtitlesEnabled: true
                     ),
                     locale: Locale(identifier: "ja_JP"),
                     sources: [.init(source: .microphone), .init(source: .system)],
@@ -603,6 +604,82 @@
             )
             _ = try await controller.startPrepared()
             return (controller, probe)
+        }
+    }
+
+    @MainActor
+    struct RecordingMeetingSyncObservationTests {
+        @Test(arguments: [false, true])
+        func recordingCreatedMeetingObservesSyncOnlyAfterSuccessfulStart(failsStart: Bool) async throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            let connection = DahliaAccountConnectionRecord(id: .v7(), origin: "https://sync.example.test", clientID: "test", createdAt: .now)
+            let vault: VaultRecord = {
+                var value = VaultRecord(id: .v7(), path: nil, name: "Test", createdAt: .now, lastOpenedAt: .now)
+                value.accountConnectionId = connection.id
+                value.syncConfirmedConnectionId = connection.id
+                value.syncPullCursor = "ready"
+                return value
+            }()
+            try await database.dbQueue.write { db in
+                try connection.insert(db)
+                try vault.insert(db)
+            }
+            let probe = RecordingRuntimeProbe()
+            let controller = RecordingSessionController(
+                captureFactory: FakeAudioCaptureFactory(probe: probe, failingSource: failsStart ? .system : nil),
+                recognitionFactory: FakeRecognitionFactory(probe: probe),
+                batchRecordingFactory: FakeBatchFactory(probe: probe)
+            )
+            let viewModel = CaptionViewModel(
+                recordingSessionController: controller,
+                audioHardwareQueryService: AudioHardwareQueryService(
+                    availableInputDevicesProvider: { [] }, defaultInputDeviceIDProvider: { nil },
+                    inputVolumeStateProvider: { _ in nil }, inputVolumeSetter: { _, _ in false }
+                ),
+                usageTelemetryReporter: { _ in }
+            )
+            viewModel.microphoneSelection = .none
+            viewModel.isSystemAudioEnabled = true
+            viewModel.beginDraftMeeting(dbQueue: database.dbQueue, vaultURL: nil)
+            await viewModel.startListening(dbQueue: database.dbQueue, projectURL: nil, vaultId: vault.id, projectId: nil, vaultURL: nil)
+            if failsStart {
+                #expect(!viewModel.isListening)
+                #expect(viewModel.currentMeetingId == nil)
+                #expect(viewModel.meetingSyncState == nil)
+                #expect(await controller.snapshot() == nil)
+                return
+            }
+            let meetingId = try #require(viewModel.currentMeetingId)
+            #expect(viewModel.isListening)
+            #expect(await pollUntil { viewModel.meetingSyncState == .pending })
+            let document = try SummaryDocument(title: "Remote title", sections: []).databaseJSONString()
+            try await database.dbQueue.write { db in
+                try SyncTransactionQueue.discard(vaultId: vault.id, in: db)
+                try SummaryRecord(meetingId: meetingId, title: "Remote title", document: document, createdAt: .now).insert(db)
+                try db.execute(
+                    sql: "INSERT INTO sync_entity_state(vaultId, entity, entityId, confirmedRevision) VALUES (?, 'summary', ?, 1)",
+                    arguments: [vault.id, meetingId]
+                )
+            }
+            #expect(await pollUntil { viewModel.meetingSyncState == .synced })
+            #expect(viewModel.currentSummaryDocument == nil)
+            viewModel.stopListening()
+            #expect(await pollUntil { !viewModel.isRecordingLifecycleBusy && viewModel.currentSummaryDocument?.title == "Remote title" })
+            // Continuing the same meeting follows the same successful-start boundary.
+            await viewModel.startListening(
+                dbQueue: database.dbQueue,
+                projectURL: nil,
+                vaultId: vault.id,
+                projectId: nil,
+                vaultURL: nil,
+                appendingTo: meetingId
+            )
+            #expect(viewModel.currentMeetingId == meetingId)
+            #expect(await pollUntil { viewModel.meetingSyncState == .pending })
+            viewModel.stopListening()
+            #expect(await pollUntil { !viewModel.isRecordingLifecycleBusy })
+            viewModel.clearCurrentMeeting()
+            #expect(viewModel.meetingSyncState == nil)
         }
     }
 

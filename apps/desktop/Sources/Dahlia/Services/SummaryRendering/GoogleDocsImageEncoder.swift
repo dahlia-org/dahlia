@@ -23,7 +23,7 @@ enum GoogleDocsImageEncoder {
             nil
         ) else { return nil }
         CGImageDestinationAddImage(destination, image, [
-            kCGImageDestinationLossyCompressionQuality: 0.78,
+            kCGImageDestinationLossyCompressionQuality: ImageEncoder.defaultQuality,
         ] as CFDictionary)
         guard CGImageDestinationFinalize(destination) else { return nil }
 

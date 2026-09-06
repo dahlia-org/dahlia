@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -13,6 +13,9 @@ import { LocalObjectStorage } from "../src/artifacts/local";
 import { createApp } from "../src/app";
 import type { AppConfig } from "../src/config";
 import { MeetingSyncService } from "../src/sync/service";
+import { transformScreenshot } from "../src/sync/node-screenshot-transformer";
+import { fileStorageKey, fileVariantKey } from "../src/files/model";
+import sharp from "sharp";
 import type { SyncTransaction } from "../src/sync/types";
 
 const directories: string[] = [];
@@ -30,6 +33,242 @@ afterEach(() => {
 });
 
 describe("SQLite canonical sync", () => {
+  it.each([{ deleted: "file", reserveAgain: true }, { deleted: "vault", reserveAgain: true }, { deleted: "file", reserveAgain: false }])("rejects stale upload completion after $deleted deletion (reserved again=$reserveAgain) and permits a clean retry", async ({ deleted, reserveAgain }) => {
+    const { store, service, storage, file, bytes } = await fileSetup();
+    const replacement = { ...file, id: freshId() };
+    await service.reserveFile(owner, replacement);
+    let started!: () => void;
+    let release!: () => void;
+    const didStart = new Promise<void>((resolve) => { started = resolve; });
+    const canFinish = new Promise<void>((resolve) => { release = resolve; });
+    const put = storage.put.bind(storage);
+    vi.spyOn(storage, "put").mockImplementationOnce(async (...args) => {
+      started();
+      await canFinish;
+      await put(...args);
+    });
+    const upload = () => service.putFile(owner, replacement.id, new Request("https://test.invalid", { method: "PUT", body: bytes,
+      headers: { "content-type": "image/png", "content-length": String(bytes.length) } }));
+    const uploading = upload();
+    const rejected = expect(uploading).rejects.toMatchObject(reserveAgain
+      ? { status: 503, code: "file_storage_delete_pending" }
+      : { status: 404, code: "file_not_found" });
+    await didStart;
+    await service.commitTransaction(owner, wire(deleted === "file"
+      ? [{ entity: "file", action: "delete", entityId: replacement.id, baseRevision: null, data: {} }]
+      : [{ entity: "vault", action: "reset", entityId: vaultId, baseRevision: 1, data: { preservePermissions: true } }]));
+    if (reserveAgain) await service.reserveFile(owner, replacement);
+    release();
+    await rejected;
+    const current = await store.sync.withIdentity(owner, (sync) => sync.getFile(replacement.id));
+    if (reserveAgain) expect(current).toMatchObject({ active: false, uploadedAt: null });
+    else expect(current).toBeNull();
+    await vi.waitFor(async () => expect(await store.sync.hasStorageDelete(fileStorageKey(replacement.id))).toBe(false));
+    expect(await storage.exists(fileStorageKey(replacement.id))).toBe(false);
+    await service.reserveFile(owner, replacement);
+    await upload();
+    await service.commitTransaction(owner, wire([{ entity: "file", action: "upsert", entityId: replacement.id, baseRevision: null,
+      data: { checksum: file.checksum, metadata: {} } }]));
+    expect(await service.getFile(owner, replacement.id)).toMatchObject({ checksum: file.checksum, revision: 1 });
+    expect(new Uint8Array(await (await service.readFile(owner, replacement.id, "GET", new Request("https://test.invalid"))).arrayBuffer())).toEqual(bytes);
+    await store.close?.();
+  });
+
+  it("does not activate an uploaded reservation while original deletion is pending", async () => {
+    const { store, service, file, publish } = await fileSetup();
+    await store.sync.enqueueStorageDelete(fileStorageKey(file.id));
+    await expect(publish()).rejects.toMatchObject({ status: 503, code: "file_storage_delete_pending" });
+    expect(await store.sync.withIdentity(owner, (sync) => sync.getFile(file.id))).toMatchObject({ active: false });
+    await expect(service.getFile(owner, file.id)).rejects.toMatchObject({ status: 404 });
+    await store.close?.();
+  });
+
+  it("keeps a deleted file deleted in the delta while its ID is reserved again", async () => {
+    const { store, service, storage, file, publish } = await fileSetup();
+    await store.sync.withIdentity(owner, (sync) => sync.putMemberPermission(vaultId, "organization", "external"));
+    const published = await publish();
+    await service.commitTransaction(owner, wire([{ entity: "file", action: "delete", entityId: file.id, baseRevision: 1, data: {} }]));
+    await vi.waitFor(async () => {
+      expect(await storage.exists(fileStorageKey(file.id))).toBe(false);
+      expect(await store.sync.hasStorageDelete(fileStorageKey(file.id))).toBe(false);
+    });
+    await service.reserveFile(owner, { ...file, name: "Private pending replacement" });
+    for (const identity of [owner, other]) {
+      const delta = await service.listChanges(identity, vaultId, published.cursor);
+      expect(delta.items.filter((item) => item.entity === "file")).toMatchObject([
+        { entityId: file.id, action: "delete", record: null },
+      ]);
+    }
+    expect(await store.sync.withIdentity(owner, (sync) => sync.getFile(file.id))).toMatchObject({ active: false });
+    await store.close?.();
+  });
+
+  it.each([false, true])("reports a deleted meeting dependency for a new or stale association (existing=%s)", async (existing) => {
+    const { store, service, file, publish, attach } = await fileSetup();
+    await publish();
+    if (existing) await attach();
+    await service.commitTransaction(owner, wire([{ entity: "meeting", action: "delete", entityId: meetingId, baseRevision: 1, data: {} }]));
+    const link = { entity: "meeting_file" as const, action: "upsert" as const, entityId: file.id,
+      baseRevision: existing ? 1 : null,
+      data: { fileId: file.id, meetingId, capturedAt: now.toISOString(), sessionId: null, createdAt: now.toISOString() } };
+    await expect(service.commitTransaction(owner, wire([link]))).rejects.toMatchObject({ status: 409, code: "revision_conflict",
+      conflicts: expect.arrayContaining([{ entity: "meeting", id: meetingId, clientBaseRevision: null, serverRevision: null, record: null }]) as unknown });
+    await service.commitTransaction(owner, wire([
+      { entity: "meeting", action: "create", entityId: meetingId, baseRevision: null, data: { ...meetingData(), projectId: null, recordingStartedAt: now.toISOString(), createdAt: now.toISOString(), updatedAt: now.toISOString() } },
+      { ...link, baseRevision: null },
+    ]));
+    expect(await service.listFiles(owner, vaultId, undefined, meetingId)).toMatchObject({ items: [{ id: file.id }] });
+    await store.close?.();
+  });
+
+  it("keeps uploads private until commit, merges metadata, and preserves an unlinked original", async () => {
+    const { store, service, storage, file, publish, attach } = await fileSetup();
+    await expect(service.getFile(other, file.id)).rejects.toMatchObject({ status: 404 });
+    await expect(service.getFile(owner, file.id)).rejects.toMatchObject({ status: 404 });
+    expect(await service.listFiles(owner, vaultId)).toMatchObject({ items: [] });
+    await publish();
+    await attach();
+    expect(await service.getFile(owner, file.id)).toMatchObject({ uri: `/Volumes/test/app/files/${fileStorageKey(file.id)}`, metadata: { source: "screenshot", width: 1800 } });
+    await service.commitTransaction(owner, wire([{ entity: "file", action: "upsert", entityId: file.id, baseRevision: 1,
+      data: { checksum: file.checksum, metadata: { ocr_text: "Searchable text" } } }]));
+    expect(await service.getFile(owner, file.id)).toMatchObject({ metadata: { source: "screenshot", width: 1800, ocr_text: "Searchable text" }, revision: 2 });
+    expect((await service.listScreenshots(owner, vaultId, meetingId, "Searchable")).items).toHaveLength(1);
+    await expect(service.commitTransaction(owner, wire([{ entity: "file", action: "upsert", entityId: file.id, baseRevision: 1,
+      data: { checksum: file.checksum, metadata: { caption: "stale" } } }]))).rejects.toMatchObject({ status: 409 });
+    await expect(service.commitTransaction(owner, wire([{ entity: "file", action: "upsert", entityId: file.id, baseRevision: 2,
+      data: { checksum: file.checksum, metadata: { source: "upload" } } }]))).rejects.toMatchObject({ code: "file_source_immutable" });
+    await expect(service.commitTransaction(owner, wire([{ entity: "file", action: "delete", entityId: file.id, baseRevision: 2, data: {} }]))).rejects.toMatchObject({ code: "file_in_use" });
+    await service.commitTransaction(owner, wire([{ entity: "meeting", action: "delete", entityId: meetingId, baseRevision: 1, data: {} }]));
+    expect(await service.listFiles(owner, vaultId)).toMatchObject({ items: [{ id: file.id }] });
+    expect(await storage.exists(fileStorageKey(file.id))).toBe(true);
+    await service.commitTransaction(owner, wire([{ entity: "file", action: "delete", entityId: file.id, baseRevision: 2, data: {} }]));
+    await vi.waitFor(async () => expect(await storage.exists(fileStorageKey(file.id))).toBe(false));
+    await store.close?.();
+  });
+
+  it("generates thumbnails only on request, coalesces requests and reuses persisted variants", async () => {
+    const { store, service, storage, file, publish, transformer, bytes } = await fileSetup();
+    await publish();
+    expect(transformer).not.toHaveBeenCalled();
+    const read = (value = service) => value.readFile(owner, file.id, "GET", new Request("https://test.invalid"), true);
+    const results = await Promise.all([read(), read()]);
+    expect(await sharp(await results[0].arrayBuffer()).metadata()).toMatchObject({ width: 384, height: 192, format: "webp" });
+    await results[1].arrayBuffer();
+    expect(transformer).toHaveBeenCalledTimes(1);
+    expect(await storage.exists(fileVariantKey(file.id))).toBe(true);
+    const restarted = new MeetingSyncService(store.sync, storage, undefined, undefined, transformer);
+    await (await read(restarted)).arrayBuffer();
+    expect(transformer).toHaveBeenCalledTimes(1);
+    expect(new Uint8Array(await (await service.readFile(owner, file.id, "GET", new Request("https://test.invalid"))).arrayBuffer())).toEqual(bytes);
+    const portable = new MeetingSyncService(store.sync, storage);
+    expect(await portable.getFile(owner, file.id)).toMatchObject({ variants: {} });
+    await expect(read(portable)).rejects.toMatchObject({ code: "file_variant_unavailable" });
+    await expect(service.readFile(other, file.id, "GET", new Request("https://test.invalid"), true)).rejects.toMatchObject({ status: 404 });
+    await store.close?.();
+  });
+
+  it("fails and retries a thumbnail when durable storage fails", async () => {
+    const { store, service, storage, file, publish, transformer } = await fileSetup();
+    await publish();
+    const put = vi.spyOn(storage, "put").mockRejectedValueOnce(new Error("storage failure"));
+    const read = () => service.readFile(owner, file.id, "GET", new Request("https://test.invalid"), true);
+    await expect(read()).rejects.toMatchObject({ status: 502 });
+    expect(await storage.exists(fileVariantKey(file.id))).toBe(false);
+    put.mockRestore();
+    await (await read()).arrayBuffer();
+    expect(transformer).toHaveBeenCalledTimes(2);
+    await store.close?.();
+  });
+
+  it("does not publish a variant after its original is deleted during generation", async () => {
+    const { store, service, storage, file, publish, transformer } = await fileSetup();
+    await publish();
+    let started!: () => void;
+    let release!: () => void;
+    const didStart = new Promise<void>((resolve) => { started = resolve; });
+    const canFinish = new Promise<void>((resolve) => { release = resolve; });
+    transformer.mockImplementationOnce(async (...args) => {
+      started();
+      await canFinish;
+      return transformScreenshot(...args);
+    });
+    const reading = service.readFile(owner, file.id, "GET", new Request("https://test.invalid"), true);
+    const rejected = expect(reading).rejects.toMatchObject({ code: "file_not_found" });
+    await didStart;
+    await service.commitTransaction(owner, wire([{ entity: "file", action: "delete", entityId: file.id, baseRevision: 1, data: {} }]));
+    release();
+    await rejected;
+    await vi.waitFor(async () => expect(await storage.exists(fileStorageKey(file.id))).toBe(false));
+    expect(await storage.exists(fileVariantKey(file.id))).toBe(false);
+    await store.close?.();
+  });
+
+  it("shares one original across meetings and serves bounded GET and HEAD reads", async () => {
+    const { store, service, file, bytes, publish, attach } = await fileSetup();
+    await publish();
+    await attach();
+    const secondMeeting = freshId();
+    const linkId = freshId();
+    await service.commitTransaction(owner, wire([
+      { entity: "meeting", action: "create", entityId: secondMeeting, baseRevision: null, data: { projectId: null, name: "Second", status: "READY", duration: null,
+        recordingStartedAt: null, createdAt: now.toISOString(), updatedAt: now.toISOString() } },
+      { entity: "meeting_file", action: "upsert", entityId: linkId, baseRevision: null,
+        data: { fileId: file.id, meetingId: secondMeeting, capturedAt: null, sessionId: null, createdAt: now.toISOString() } },
+      { entity: "meeting_file", action: "delete", entityId: file.id, baseRevision: 1, data: {} },
+    ]));
+    expect(await service.listFiles(owner, vaultId, undefined, secondMeeting)).toMatchObject({ items: [{ id: linkId, file: { id: file.id } }] });
+    expect(await service.listFiles(owner, vaultId, undefined, meetingId)).toMatchObject({ items: [] });
+    const request = new Request("https://test.invalid", { headers: { range: "bytes=1-3" } });
+    const range = await service.readFile(owner, file.id, "GET", request);
+    expect(range.status).toBe(206);
+    expect(new Uint8Array(await range.arrayBuffer())).toEqual(bytes.slice(1, 4));
+    const head = await service.readFile(owner, file.id, "HEAD", request);
+    expect(head.status).toBe(206);
+    expect(await head.text()).toBe("");
+    expect(head.headers.get("content-range")).toBe(`bytes 1-3/${bytes.length}`);
+    await store.close?.();
+  });
+
+  it("keeps rejected file reservations retryable and expires only unpublished originals", async () => {
+    const { store, service, file, storage, publish } = await fileSetup();
+    await expect(service.commitTransaction(owner, wire([
+      { entity: "file", action: "upsert", entityId: file.id, baseRevision: null, data: { checksum: file.checksum, metadata: {} } },
+      { entity: "vault", action: "update", entityId: vaultId, baseRevision: 0, data: { name: "Conflict" } },
+    ]))).rejects.toMatchObject({ status: 409 });
+    expect(await store.sync.withIdentity(owner, (sync) => sync.getFile(file.id))).toMatchObject({ active: false });
+    expect(await storage.exists(fileStorageKey(file.id))).toBe(true);
+    await publish();
+    await store.sync.withIdentity(owner, (sync) => sync.expireFileUploads(vaultId, new Date(Date.now() + 86_400_000)));
+    expect(await service.getFile(owner, file.id)).toMatchObject({ id: file.id });
+    const pending = { ...file, id: freshId() };
+    await service.reserveFile(owner, pending);
+    await store.sync.withIdentity(owner, (sync) => sync.expireFileUploads(vaultId, new Date(Date.now() + 86_400_000)));
+    expect(await store.sync.withIdentity(owner, (sync) => sync.getFile(pending.id))).toBeNull();
+    expect(await store.sync.hasStorageDelete(fileStorageKey(pending.id))).toBe(true);
+    await store.close?.();
+  });
+
+  it("validates immutable bytes, lengths, ownership and reservation IDs at the HTTP boundary", async () => {
+    const { store, service, file, bytes, databasePath, storage } = await fileSetup();
+    const app = createApp({ config: { ...testConfig(databasePath), storageBackend: "databricks", storageDatabricksVolumePath: "/Volumes/test/app/files" }, authStore: store, artifactStorage: storage });
+    const reserve = (body: unknown) => app.request("/api/v1/files", { method: "POST", headers: headers(), body: JSON.stringify(body) });
+    expect((await reserve(file)).status).toBe(200);
+    expect((await reserve({ ...file, checksum: `SHA-256:${"b".repeat(64)}` })).status).toBe(409);
+    expect((await reserve({ ...file, metadata: { source: "other" } })).status).toBe(400);
+    expect((await reserve({ ...file, id: crypto.randomUUID() })).status).toBe(400);
+    const request = (body: Uint8Array<ArrayBuffer>, size = file.size) => new Request("https://test.invalid", {
+      method: "PUT", headers: { "content-type": file.content_type, "content-length": String(size) }, body,
+    });
+    await expect(service.putFile(owner, file.id, request(bytes))).resolves.toMatchObject({ checksum: file.checksum });
+    const wrong = new Uint8Array(bytes.length);
+    await expect(service.putFile(owner, file.id, request(wrong))).rejects.toMatchObject({ code: "file_checksum_mismatch" });
+    await expect(service.putFile(owner, file.id, request(bytes, 1))).rejects.toMatchObject({ code: "file_id_conflict" });
+    await expect(service.putFile(owner, file.id, request(new Uint8Array(bytes.length + 1)))).rejects.toMatchObject({ code: "file_size_mismatch" });
+    await expect(service.putFile(other, file.id, request(bytes))).rejects.toMatchObject({ status: 404 });
+    expect(await storage.exists(fileStorageKey(file.id))).toBe(true);
+    await store.close?.();
+  });
+
   it("filters Vaults by owner or current organization and Team membership", async () => {
     const { store, databasePath } = await setup();
     await createVault(store);
@@ -292,65 +531,6 @@ describe("SQLite canonical sync", () => {
     await store.close?.();
   });
 
-  it("reclaims inactive screenshot uploads after a terminal transaction rejection", async () => {
-    const { store } = await setup();
-    await createVault(store);
-    await commit(store, owner, transaction("019d4a01-1010-7000-8000-000000000001", [{
-      id: "019d4a01-1010-7000-8000-000000000002",
-      entity: "meeting",
-      action: "create",
-      entityId: meetingId,
-      baseRevision: null,
-      data: { ...meetingData(), projectId: null },
-    }]));
-    const contentHash = "a".repeat(64);
-    const storageKey = `meetings/${meetingId}/screenshots/${screenshotId}.png`;
-    expect(await store.sync.withIdentity(owner, (sync) => sync.createScreenshot({
-      screenshotId,
-      vaultId,
-      meetingId,
-      capturedAt: now,
-      contentType: "image/png",
-      storageKey,
-      contentLength: 3,
-      contentHash,
-      ocrText: null,
-      caption: null,
-      revision: 0,
-    }))).toBe(true);
-
-    const rejected = transaction(
-      "019d4a01-1010-7000-8000-000000000003",
-      [{
-        id: "019d4a01-1010-7000-8000-000000000004",
-        entity: "screenshot",
-        action: "upsert",
-        entityId: screenshotId,
-        baseRevision: null,
-        data: { meetingId, capturedAt: now, ocrText: null, caption: null, contentHash },
-      }, {
-        id: "019d4a01-1010-7000-8000-000000000005",
-        entity: "vault",
-        action: "update",
-        entityId: vaultId,
-        baseRevision: 0,
-        data: { name: "Conflicting rename" },
-      }],
-    );
-    const request = JSON.parse(JSON.stringify(rejected)) as Record<string, unknown>;
-    Reflect.deleteProperty(request, "requestHash");
-    await expect(new MeetingSyncService(store.sync).commitTransaction(owner, request))
-      .rejects.toMatchObject({ status: 409, code: "revision_conflict" });
-
-    expect(await store.sync.withIdentity(owner, (sync) => sync.getScreenshot(
-      vaultId,
-      meetingId,
-      screenshotId,
-    ))).toBeNull();
-    expect(await store.sync.hasStorageDelete(storageKey)).toBe(true);
-    await store.close?.();
-  });
-
   it("returns a structured missing-Vault conflict for dependent transactions", async () => {
     const { store } = await setup();
     const operationId = "019d4a01-1020-7000-8000-000000000002";
@@ -408,86 +588,12 @@ describe("SQLite canonical sync", () => {
     await store.close?.();
   });
 
-  it("rejects staging and reports conflicts after a meeting is deleted", async () => {
-    const { store } = await setup();
-    await createVault(store);
-    await commit(store, owner, transaction("019d4a01-1150-7000-8000-000000000001", [{
-      id: "019d4a01-1150-7000-8000-000000000002",
-      entity: "meeting",
-      action: "create",
-      entityId: meetingId,
-      baseRevision: null,
-      data: { ...meetingData(), projectId: null },
-    }]));
-    const contentHash = "c".repeat(64);
-    expect(await store.sync.withIdentity(owner, (sync) => sync.createScreenshot({
-      screenshotId,
-      vaultId,
-      meetingId,
-      capturedAt: now,
-      contentType: "image/png",
-      storageKey: `meetings/${meetingId}/screenshots/${screenshotId}.png`,
-      contentLength: 3,
-      contentHash,
-      ocrText: null,
-      caption: null,
-    }))).toBe(true);
-    await commit(store, owner, transaction("019d4a01-1150-7000-8000-000000000003", [{
-      id: "019d4a01-1150-7000-8000-000000000004",
-      entity: "screenshot",
-      action: "upsert",
-      entityId: screenshotId,
-      baseRevision: null,
-      data: { meetingId, capturedAt: now, ocrText: null, caption: null, contentHash },
-    }]));
-    await commit(store, owner, transaction("019d4a01-1150-7000-8000-000000000005", [{
-      id: "019d4a01-1150-7000-8000-000000000006",
-      entity: "meeting",
-      action: "delete",
-      entityId: meetingId,
-      baseRevision: 1,
-      data: {},
-    }]));
-
-    await expect(new MeetingSyncService(store.sync).putTranscriptChunk(
-      owner,
-      vaultId,
-      meetingId,
-      "019d4a01-1150-7000-8000-000000000009",
-      0,
-      "d".repeat(64),
-      { segments: [], deletions: [segmentId] },
-    )).rejects.toMatchObject({
-      status: 409,
-      code: "revision_conflict",
-      conflicts: [{ entity: "meeting", id: meetingId, serverRevision: null, record: null }],
-    });
-    expect(await store.sync.withIdentity(owner, (sync) => sync.ensureUploadTarget(vaultId, meetingId))).toBe(false);
-
-    await expect(commit(store, owner, transaction("019d4a01-1150-7000-8000-000000000007", [{
-      id: "019d4a01-1150-7000-8000-000000000008",
-      entity: "screenshot",
-      action: "upsert",
-      entityId: screenshotId,
-      baseRevision: 1,
-      data: { meetingId, capturedAt: now, ocrText: "local", caption: null, contentHash },
-    }]))).rejects.toMatchObject({
-      status: 409,
-      code: "revision_conflict",
-      conflicts: [
-        { entity: "screenshot", serverRevision: null },
-        { entity: "meeting", serverRevision: null },
-      ],
-    });
-    await store.close?.();
-  });
-
   it("rejects unknown meeting statuses and normalizes the legacy recording value", async () => {
     const { store } = await setup();
     await createVault(store);
     const service = new MeetingSyncService(store.sync);
     const body = (id: string, status: string) => ({
-      schemaVersion: 1,
+      schemaVersion: 2,
       id,
       vaultId,
       createdAt: now.toISOString(),
@@ -763,7 +869,7 @@ describe("SQLite canonical sync", () => {
     });
 
     await expect(service.commitTransaction(owner, {
-      schemaVersion: 1,
+      schemaVersion: 2,
       id: "019d4a01-2100-7000-8000-000000000004",
       vaultId,
       createdAt: now.toISOString(),
@@ -1010,7 +1116,7 @@ describe("SQLite canonical sync", () => {
       method: "POST",
       headers: headers(),
       body: JSON.stringify({
-        schemaVersion: 1,
+        schemaVersion: 2,
         id: "019d4a01-3000-7000-8000-000000000001",
         vaultId,
         createdAt: now,
@@ -1048,7 +1154,7 @@ describe("SQLite canonical sync", () => {
       method: "POST",
       headers: requestHeaders,
       body: JSON.stringify({
-        schemaVersion: 1,
+        schemaVersion: 2,
         id: "019d4a01-3050-7000-8000-000000000001",
         vaultId,
         createdAt: now,
@@ -1094,7 +1200,7 @@ describe("SQLite canonical sync", () => {
     const { store } = await setup();
     const service = new MeetingSyncService(store.sync);
     const response = await service.commitTransaction(owner, {
-      schemaVersion: 1,
+      schemaVersion: 2,
       id: "019D4A01-3100-7000-8000-000000000001",
       vaultId: vaultId.toUpperCase(),
       createdAt: now.toISOString(),
@@ -1117,7 +1223,7 @@ describe("SQLite canonical sync", () => {
     const { store } = await setup();
     const operationId = "019d4a01-3500-7000-8000-000000000002";
     await expect(new MeetingSyncService(store.sync).commitTransaction(owner, {
-      schemaVersion: 1,
+      schemaVersion: 2,
       id: "019d4a01-3500-7000-8000-000000000001",
       vaultId,
       createdAt: now.toISOString(),
@@ -1130,243 +1236,6 @@ describe("SQLite canonical sync", () => {
         data: { title: "Summary", document: "界".repeat(2_100_000), createdAt: now.toISOString() },
       }],
     })).rejects.toMatchObject({ status: 400, code: "invalid_sync_operation", operationId });
-    await store.close?.();
-  });
-
-  it("verifies screenshot bytes against the immutable content hash", async () => {
-    const { directory, store } = await setup();
-    await createVault(store);
-    await commit(store, owner, transaction("019d4a01-4000-7000-8000-000000000001", [{
-      id: "019d4a01-4000-7000-8000-000000000002",
-      entity: "meeting",
-      action: "create",
-      entityId: meetingId,
-      baseRevision: null,
-      data: { ...meetingData(), projectId: null },
-    }]));
-    const objectRoot = join(directory, "objects");
-    const app = createApp({
-      config: testConfig(join(directory, "server.sqlite")),
-      authStore: store,
-      artifactStorage: new LocalObjectStorage(objectRoot),
-    });
-    const response = await app.request(
-      `/api/v1/vaults/${vaultId}/meetings/${meetingId}/screenshots/${screenshotId}/content`,
-      {
-        method: "PUT",
-        headers: {
-          ...headers(),
-          "content-length": "3",
-          "content-type": "image/png",
-          "x-dahlia-captured-at": now.toISOString(),
-          "x-dahlia-content-sha256": "0".repeat(64),
-        },
-        body: new Uint8Array([1, 2, 3]),
-      },
-    );
-    expect(response.status).toBe(409);
-    expect(existsSync(join(objectRoot, `meetings/${meetingId}/screenshots/${screenshotId}.png`))).toBe(false);
-    await store.close?.();
-  });
-
-  it("rejects and removes stale stored screenshot bytes before accepting a retry", async () => {
-    const { directory, store } = await setup();
-    await createVault(store);
-    await commit(store, owner, transaction("019d4a01-4100-7000-8000-000000000001", [{
-      id: "019d4a01-4100-7000-8000-000000000002",
-      entity: "meeting",
-      action: "create",
-      entityId: meetingId,
-      baseRevision: null,
-      data: { ...meetingData(), projectId: null },
-    }]));
-    const objectRoot = join(directory, "objects");
-    const objectPath = join(objectRoot, `meetings/${meetingId}/screenshots/${screenshotId}.png`);
-    const app = createApp({
-      config: testConfig(join(directory, "server.sqlite")),
-      authStore: store,
-      artifactStorage: new LocalObjectStorage(objectRoot),
-    });
-    const bytes = new Uint8Array([1, 2, 3]);
-    const contentHash = "039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81";
-    const upload = () => app.request(
-      `/api/v1/vaults/${vaultId}/meetings/${meetingId}/screenshots/${screenshotId}/content`,
-      {
-        method: "PUT",
-        headers: {
-          ...headers(),
-          "content-length": String(bytes.length),
-          "content-type": "image/png",
-          "x-dahlia-captured-at": now.toISOString(),
-          "x-dahlia-content-sha256": contentHash,
-        },
-        body: bytes,
-      },
-    );
-
-    expect((await upload()).status).toBe(200);
-    writeFileSync(objectPath, new Uint8Array([4, 5, 6]));
-    expect((await upload()).status).toBe(503);
-    expect(existsSync(objectPath)).toBe(false);
-    expect((await upload()).status).toBe(200);
-    expect(readFileSync(objectPath)).toEqual(Buffer.from(bytes));
-    await store.close?.();
-  });
-
-  it("does not accept a restored screenshot while its old storage deletion is pending", async () => {
-    const { store } = await setup();
-    await createVault(store);
-    await commit(store, owner, transaction("019d4a01-4200-7000-8000-000000000001", [{
-      id: "019d4a01-4200-7000-8000-000000000002",
-      entity: "meeting",
-      action: "create",
-      entityId: meetingId,
-      baseRevision: null,
-      data: { ...meetingData(), projectId: null },
-    }]));
-    const storageKey = `meetings/${meetingId}/screenshots/${screenshotId}.png`;
-    expect(await store.sync.withIdentity(owner, (sync) => sync.createScreenshot({
-      screenshotId,
-      vaultId,
-      meetingId,
-      capturedAt: now,
-      contentType: "image/png",
-      storageKey,
-      contentLength: 3,
-      contentHash: "039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81",
-      ocrText: null,
-      caption: null,
-      revision: 0,
-    }))).toBe(true);
-    await commit(store, owner, transaction("019d4a01-4200-7000-8000-000000000003", [{
-      id: "019d4a01-4200-7000-8000-000000000004",
-      entity: "vault",
-      action: "reset",
-      entityId: vaultId,
-      baseRevision: 1,
-      data: {},
-    }]));
-    await commit(store, owner, transaction("019d4a01-4200-7000-8000-000000000005", [{
-      id: "019d4a01-4200-7000-8000-000000000006",
-      entity: "vault",
-      action: "create",
-      entityId: vaultId,
-      baseRevision: null,
-      data: { name: "Restored", createdAt: now },
-    }, {
-      id: "019d4a01-4200-7000-8000-000000000007",
-      entity: "meeting",
-      action: "create",
-      entityId: meetingId,
-      baseRevision: null,
-      data: { ...meetingData(), projectId: null },
-    }]));
-    const storage = {
-      put: async () => undefined,
-      exists: async () => true,
-      read: async () => new Response(new Uint8Array([1, 2, 3])),
-      delete: () => new Promise<void>(() => undefined),
-    };
-    const service = new MeetingSyncService(store.sync, storage);
-    await expect(service.putScreenshot(owner, vaultId, meetingId, screenshotId, new Request("https://server.test", {
-      method: "PUT",
-      headers: {
-        "content-length": "3",
-        "content-type": "image/png",
-        "x-dahlia-captured-at": now.toISOString(),
-        "x-dahlia-content-sha256": "039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81",
-      },
-      body: new Uint8Array([1, 2, 3]),
-    }))).rejects.toMatchObject({ status: 503, code: "screenshot_storage_delete_pending" });
-    expect(await store.sync.hasStorageDelete(storageKey)).toBe(true);
-    await store.close?.();
-  });
-
-  it("cleans up an upload that finishes after canonical screenshot deletion", async () => {
-    const { store } = await setup();
-    await createVault(store);
-    await commit(store, owner, transaction("019d4a01-4300-7000-8000-000000000001", [{
-      id: "019d4a01-4300-7000-8000-000000000002",
-      entity: "meeting",
-      action: "create",
-      entityId: meetingId,
-      baseRevision: null,
-      data: { ...meetingData(), projectId: null },
-    }]));
-    const storageKey = `meetings/${meetingId}/screenshots/${screenshotId}.png`;
-    expect(await store.sync.withIdentity(owner, (sync) => sync.createScreenshot({
-      screenshotId,
-      vaultId,
-      meetingId,
-      capturedAt: now,
-      contentType: "image/png",
-      storageKey,
-      contentLength: 3,
-      contentHash: "039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81",
-      ocrText: null,
-      caption: null,
-      revision: 0,
-    }))).toBe(true);
-    let releasePut!: () => void;
-    let markPutStarted!: () => void;
-    let markDeleted!: () => void;
-    const putGate = new Promise<void>((resolve) => { releasePut = resolve; });
-    const putStarted = new Promise<void>((resolve) => { markPutStarted = resolve; });
-    const deleted = new Promise<void>((resolve) => { markDeleted = resolve; });
-    let objectExists = false;
-    let deleteCalled = false;
-    const storage = {
-      async put(_key: string, body: ReadableStream<Uint8Array> | Uint8Array) {
-        if (!(body instanceof Uint8Array)) await new Response(body).arrayBuffer();
-        markPutStarted();
-        await putGate;
-        objectExists = true;
-      },
-      async exists() { return objectExists; },
-      async read() { return new Response(new Uint8Array([1, 2, 3])); },
-      async delete() {
-        deleteCalled = true;
-        objectExists = false;
-        markDeleted();
-      },
-    };
-    const uploadService = new MeetingSyncService(store.sync, storage);
-    const deleteService = new MeetingSyncService(store.sync, storage);
-    const upload = uploadService.putScreenshot(owner, vaultId, meetingId, screenshotId, new Request("https://server.test", {
-      method: "PUT",
-      headers: {
-        "content-length": "3",
-        "content-type": "image/png",
-        "x-dahlia-captured-at": now.toISOString(),
-        "x-dahlia-content-sha256": "039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81",
-      },
-      body: new Uint8Array([1, 2, 3]),
-    }));
-    await putStarted;
-    await deleteService.commitTransaction(owner, {
-      schemaVersion: 1,
-      id: "019d4a01-4300-7000-8000-000000000003",
-      vaultId,
-      createdAt: now.toISOString(),
-      operations: [{
-        id: "019d4a01-4300-7000-8000-000000000004",
-        entity: "meeting",
-        action: "delete",
-        entityId: meetingId,
-        baseRevision: 1,
-        data: {},
-      }],
-    });
-    await deleted;
-    expect(deleteCalled).toBe(true);
-
-    releasePut();
-    await expect(upload).rejects.toMatchObject({
-      status: 409,
-      code: "revision_conflict",
-      conflicts: [{ entity: "meeting", id: meetingId, serverRevision: null, record: null }],
-    });
-    expect(objectExists).toBe(false);
     await store.close?.();
   });
 
@@ -1449,7 +1318,7 @@ async function createVault(store: ReturnType<typeof createNodeApplicationStore>)
 }
 
 function transaction(id: string, operations: SyncTransaction["operations"]): SyncTransaction {
-  return { schemaVersion: 1, id, vaultId, createdAt: now, requestHash: id, operations };
+  return { schemaVersion: 2, id, vaultId, createdAt: now, requestHash: id, operations };
 }
 
 function commit(
@@ -1497,4 +1366,37 @@ function testConfig(path: string): AppConfig {
     maxRequestBytes: 1024 * 1024,
     syncSharingEnabled: true,
   };
+}
+
+function freshId() {
+  const id = crypto.randomUUID();
+  return `${id.slice(0, 14)}7${id.slice(15)}`;
+}
+
+function wire(operations: Omit<SyncTransaction["operations"][number], "id">[]) {
+  return { schemaVersion: 2, id: freshId(), vaultId, createdAt: new Date().toISOString(),
+    operations: operations.map((operation) => ({ ...operation, id: freshId() })) };
+}
+
+async function fileSetup() {
+  const setupValue = await setup();
+  const { store, directory } = setupValue;
+  await createVault(store);
+  await commit(store, owner, transaction(freshId(), [{ id: freshId(), entity: "meeting", action: "create", entityId: meetingId,
+    baseRevision: null, data: { ...meetingData(), projectId: null } }]));
+  const storage = new LocalObjectStorage(join(directory, "objects"));
+  const transformer = vi.fn(transformScreenshot);
+  const service = new MeetingSyncService(store.sync, storage, undefined, undefined, transformer, "/Volumes/test/app/files");
+  const bytes = new Uint8Array(await sharp({ create: { width: 1800, height: 900, channels: 3, background: "white" } }).png().toBuffer());
+  const hash = Buffer.from(await crypto.subtle.digest("SHA-256", bytes)).toString("hex");
+  const file = { id: screenshotId, vaultId, name: "capture.png", offset: 0, size: bytes.length,
+    content_type: "image/png", checksum: `SHA-256:${hash}`, metadata: { source: "screenshot", width: 1800, height: 900 } };
+  await service.reserveFile(owner, file);
+  await service.putFile(owner, file.id, new Request("https://test.invalid", { method: "PUT", body: bytes,
+    headers: { "content-type": "image/png", "content-length": String(bytes.length) } }));
+  const publish = () => service.commitTransaction(owner, wire([{ entity: "file", action: "upsert", entityId: file.id,
+    baseRevision: null, data: { checksum: file.checksum, metadata: {} } }]));
+  const attach = () => service.commitTransaction(owner, wire([{ entity: "meeting_file", action: "upsert", entityId: file.id,
+    baseRevision: null, data: { fileId: file.id, meetingId, capturedAt: now.toISOString(), sessionId: null, createdAt: now.toISOString() } }]));
+  return { ...setupValue, service, storage, transformer, file, bytes, publish, attach };
 }

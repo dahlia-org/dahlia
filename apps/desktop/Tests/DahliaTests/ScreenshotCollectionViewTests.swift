@@ -417,7 +417,7 @@ import Foundation
             var original = makeScreenshot()
             original.imageData = Data(repeating: 0, count: 256)
             var changed = original
-            changed.imageData[80] = 1
+            changed.imageData?[80] = 1
 
             #expect(ScreenshotImageContentIdentity(original) != ScreenshotImageContentIdentity(changed))
         }
@@ -426,7 +426,7 @@ import Foundation
     private actor ControlledThumbnailProvider {
         private var continuations: [UUID: CheckedContinuation<CGImage?, Never>] = [:]
 
-        func image(id: UUID, data _: Data, maxPixelSize _: Int) async -> CGImage? {
+        func image(id: UUID, data _: Data?, maxPixelSize _: Int) async -> CGImage? {
             await withCheckedContinuation { continuation in
                 continuations[id] = continuation
             }
@@ -449,7 +449,7 @@ import Foundation
             self.successfulImage = successfulImage
         }
 
-        func image(id _: UUID, data _: Data, maxPixelSize _: Int) -> CGImage? {
+        func image(id _: UUID, data _: Data?, maxPixelSize _: Int) -> CGImage? {
             callCount += 1
             return callCount == 1 ? nil : successfulImage
         }

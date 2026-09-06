@@ -6,10 +6,10 @@ import GRDB
 /// Keep this list explicit: adding a table must not silently export accounts or runtime state.
 enum VaultBackupTransfer {
     static let vaultTables = [
-        "projects", "organizations", "contacts", "instructions", "insights", "conversation_topics",
+        "files", "projects", "organizations", "contacts", "instructions", "insights", "conversation_topics",
     ]
     static let meetingTables = [
-        "recording_sessions", "transcript_segments", "notes", "screenshots", "summaries", "action_items",
+        "recording_sessions", "transcript_segments", "notes", "meeting_files", "summaries", "action_items",
         "summary_exports", "meeting_conversation_metrics", "meeting_conversation_source_metrics", "meeting_tags",
         "meeting_participants",
     ]
@@ -21,7 +21,7 @@ enum VaultBackupTransfer {
         "conversation_topic_references": ("topicId", "conversation_topics"),
     ]
     private static let references = [
-        "vaultId": "vaults", "projectId": "projects", "parentProjectId": "projects",
+        "fileId": "files", "vaultId": "vaults", "projectId": "projects", "parentProjectId": "projects",
         "meetingId": "meetings", "sessionId": "recording_sessions", "recordingSessionId": "recording_sessions",
         "organizationId": "organizations", "parentOrganizationId": "organizations", "contactId": "contacts",
         "insightId": "insights", "topicId": "conversation_topics", "tagId": "tags",
@@ -31,7 +31,8 @@ enum VaultBackupTransfer {
         vaultId: UUID,
         in db: Database,
         destinationVault: VaultRecord,
-        remapIDs: Bool
+        remapIDs: Bool,
+        storeOriginal: ((UUID, UUID) throws -> String)? = nil
     ) throws {
         guard try VaultRecord.fetchOne(db, sql: "SELECT * FROM backup_source.vaults WHERE id = ?", arguments: [vaultId]) != nil
         else { throw BackupServiceError.invalidBackup }
@@ -72,10 +73,18 @@ enum VaultBackupTransfer {
                 if table == "summary_exports", remapIDs || row["type"] as String == "vault" { continue }
                 let columns = Array(row.columnNames)
                 let values = try columns.map { column -> DatabaseValue in
+                    if table == "files" {
+                        if column == "uri" || column == "remoteReference" { return .null }
+                        if column == "localReference" {
+                            let originalId: UUID = row["id"]
+                            let destinationId = mappings["files"]?[originalId.databaseValue].flatMap(UUID.fromDatabaseValue) ?? originalId
+                            return try storeOriginal?(originalId, destinationId).databaseValue ?? .null
+                        }
+                    }
                     let value: DatabaseValue = row[column]
                     if value.isNull { return value }
                     if remapIDs, table == "summaries", column == "document" {
-                        return try remapSummary(row["document"], screenshots: mappings["screenshots"] ?? [:]).databaseValue
+                        return try remapSummary(row["document"], screenshots: mappings["meeting_files"] ?? [:]).databaseValue
                     }
                     let referencedTable: String? = if column == "id" {
                         table

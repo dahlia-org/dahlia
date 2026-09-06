@@ -92,7 +92,8 @@ enum VaultSummaryExportService {
             }
             if !screenshots.isEmpty {
                 group.addTask {
-                    _ = try exportScreenshots(vaultURL, screenshots)
+                    let resolved = try await ScreenshotContentProvider.shared.resolved(screenshots)
+                    _ = try exportScreenshots(vaultURL, resolved)
                     return nil
                 }
             }
@@ -157,7 +158,8 @@ enum VaultSummaryExportService {
             }
             if !screenshots.isEmpty {
                 group.addTask {
-                    _ = try exportScreenshots(vaultURL, screenshots)
+                    let resolved = try await ScreenshotContentProvider.shared.resolved(screenshots)
+                    _ = try exportScreenshots(vaultURL, resolved)
                 }
             }
             try await group.waitForAll()

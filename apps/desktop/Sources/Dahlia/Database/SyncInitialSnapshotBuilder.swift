@@ -1,3 +1,4 @@
+import DahliaRuntimeSupport
 import Foundation
 import GRDB
 
@@ -5,7 +6,11 @@ enum SyncInitialSnapshotBuilder {
     private static let projectBatchSize = 100
     private static let transcriptBatchSize = 500
 
-    static func enqueuePending(dbQueue: DatabaseQueue) async throws {
+    static func enqueuePending(
+        dbQueue: DatabaseQueue,
+        screenshotContent: ScreenshotContentProvider = .shared,
+        onFailure: @Sendable (any Error) throws -> Void = { throw $0 }
+    ) async throws {
         let interruptedVaultId = try await dbQueue.read { db in
             try UUID.fetchOne(
                 db,
@@ -49,8 +54,8 @@ enum SyncInitialSnapshotBuilder {
             }
         }
 
-        let pending = try await dbQueue.read { db -> (UUID, UUID, Bool)? in
-            guard let row = try Row.fetchOne(
+        let pending = try await dbQueue.read { db -> [(UUID, UUID, Bool)] in
+            try Row.fetchAll(
                 db,
                 sql: """
                 SELECT v.id, v.accountConnectionId, EXISTS (
@@ -74,21 +79,36 @@ enum SyncInitialSnapshotBuilder {
                     )
                   )
                 ORDER BY v.createdAt, v.id
-                LIMIT 1
                 """
-            ) else { return nil }
-            return (row["id"], row["accountConnectionId"], row["restoring"])
+            ).map { ($0["id"], $0["accountConnectionId"], $0["restoring"]) }
         }
-        guard let (vaultId, connectionId, restoring) = pending else { return }
-        try await enqueue(vaultId: vaultId, connectionId: connectionId, restoring: restoring, dbQueue: dbQueue)
+        for (vaultId, connectionId, restoring) in pending {
+            do {
+                try await enqueue(
+                    vaultId: vaultId, connectionId: connectionId, restoring: restoring,
+                    dbQueue: dbQueue, screenshotContent: screenshotContent
+                )
+                return
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                // Background synchronization can report this Vault's failure and continue other Vaults.
+                // Explicit recovery callers keep the default throwing behavior.
+                try onFailure(error)
+            }
+        }
     }
 
     private static func enqueue(
         vaultId: UUID,
         connectionId: UUID,
         restoring: Bool,
-        dbQueue: DatabaseQueue
+        dbQueue: DatabaseQueue,
+        screenshotContent: ScreenshotContentProvider
     ) async throws {
+        screenshotContent.retainOriginals(vaultIds: [vaultId], dbQueue: dbQueue)
+        defer { screenshotContent.releaseOriginals(vaultIds: [vaultId], dbQueue: dbQueue) }
+        try await screenshotContent.prepareOriginals(vaultId: vaultId, dbQueue: dbQueue)
         guard let markerId = try await dbQueue.write({ db -> UUID? in
             guard try !hasActiveRecording(in: db),
                   let vault = try VaultRecord.fetchOne(db, key: vaultId),
@@ -125,6 +145,7 @@ enum SyncInitialSnapshotBuilder {
             restoring: restoring,
             dbQueue: dbQueue
         )
+        try await enqueueFiles(vaultId: vaultId, connectionId: connectionId, markerId: markerId, restoring: restoring, dbQueue: dbQueue)
         try await enqueueMeetings(
             vaultId: vaultId,
             connectionId: connectionId,
@@ -315,28 +336,26 @@ enum SyncInitialSnapshotBuilder {
         var lastScreenshotId: UUID?
         while true {
             let cursor = lastScreenshotId
-            let screenshot = try await dbQueue.write { db -> MeetingScreenshotRecord? in
+            let screenshot = try await dbQueue.write { db -> MeetingFileRecord? in
                 guard try canContinue(markerId: markerId, vaultId: vaultId, in: db) else { return nil }
                 let screenshot = if let cursor {
-                    try MeetingScreenshotRecord.fetchOne(
+                    try MeetingFileRecord.fetchOne(
                         db,
-                        sql: "SELECT * FROM screenshots WHERE meetingId = ? AND id > ? ORDER BY id LIMIT 1",
+                        sql: "SELECT * FROM meeting_files WHERE meetingId = ? AND id > ? ORDER BY id LIMIT 1",
                         arguments: [meetingId, cursor]
                     )
                 } else {
-                    try MeetingScreenshotRecord.fetchOne(
+                    try MeetingFileRecord.fetchOne(
                         db,
-                        sql: "SELECT * FROM screenshots WHERE meetingId = ? ORDER BY id LIMIT 1",
+                        sql: "SELECT * FROM meeting_files WHERE meetingId = ? ORDER BY id LIMIT 1",
                         arguments: [meetingId]
                     )
                 }
                 guard let screenshot else { return nil }
-                let attachment = SyncScreenshotAttachment(mimeType: screenshot.mimeType, bytes: screenshot.imageData)
-                let operation = try screenshotOperation(screenshot, action: .upsert, contentHash: attachment.sha256)
+                let operation = try meetingFileOperation(screenshot)
                 try SyncTransactionRecorder.record(
                     vaultId: vaultId,
                     operations: [operation],
-                    screenshotAttachments: [operation.id: attachment],
                     allowAfterReset: restoring,
                     connectionIdOverride: connectionId,
                     in: db
@@ -439,18 +458,87 @@ enum SyncInitialSnapshotBuilder {
         action: SyncAction,
         contentHash: String? = nil
     ) throws -> SyncOperationDraft {
-        try operation(
-            entity: .screenshot,
-            action: action,
-            id: screenshot.id,
-            payload: [
-                "meetingId": screenshot.meetingId.uuidString.lowercased(),
-                "capturedAt": screenshot.capturedAt.ISO8601Format(),
-                "ocrText": json(screenshot.ocrText),
-                "caption": json(screenshot.caption),
-                "contentHash": json(contentHash),
-            ]
+        guard let hash = contentHash ?? screenshot.contentHash else { throw SyncTransactionQueueError.invalidReceipt }
+        let payload = FileOperationPayload(
+            name: "capture.\(screenshot.mimeType.split(separator: "/").last ?? "bin")",
+            checksum: "SHA-256:" + hash,
+            metadata: FileMetadata(
+                source: .screenshot,
+                width: screenshot.pixelWidth,
+                height: screenshot.pixelHeight,
+                ocrText: screenshot.ocrText,
+                caption: screenshot.caption
+            )
         )
+        return try SyncOperationDraft(
+            entity: .file,
+            action: action,
+            entityId: screenshot.originalFileId,
+            payloadJSON: SyncJSON.encoder.encode(payload)
+        )
+    }
+
+    static func fileOperation(_ file: FileRecord) throws -> SyncOperationDraft {
+        try SyncOperationDraft(
+            entity: .file,
+            action: .upsert,
+            entityId: file.id,
+            payloadJSON: SyncJSON.encoder.encode(FileOperationPayload(
+                name: file.name,
+                checksum: file.checksum,
+                metadata: file.metadata
+            ))
+        )
+    }
+
+    static func meetingFileOperation(_ screenshot: MeetingScreenshotRecord) throws -> SyncOperationDraft {
+        try meetingFileOperation(MeetingFileRecord(
+            id: screenshot.id,
+            meetingId: screenshot.meetingId,
+            fileId: screenshot.originalFileId,
+            capturedAt: screenshot.capturedAt,
+            sessionId: screenshot.sessionId,
+            createdAt: screenshot.capturedAt
+        ))
+    }
+
+    static func meetingFileOperation(_ link: MeetingFileRecord) throws -> SyncOperationDraft {
+        try operation(entity: .meetingFile, action: .upsert, id: link.id, payload: [
+            "meetingId": json(link.meetingId), "fileId": json(link.fileId), "capturedAt": json(link.capturedAt),
+            "sessionId": json(link.sessionId), "createdAt": link.createdAt.ISO8601Format(),
+        ])
+    }
+
+    private static func enqueueFiles(vaultId: UUID, connectionId: UUID, markerId: UUID, restoring: Bool, dbQueue: DatabaseQueue) async throws {
+        var lastId: UUID?
+        while true {
+            let cursor = lastId
+            let file = try await dbQueue.write { db -> FileRecord? in
+                guard try canContinue(markerId: markerId, vaultId: vaultId, in: db) else { return nil }
+                let file = try FileRecord.fetchOne(
+                    db,
+                    sql: "SELECT * FROM files WHERE vaultId = ? AND (? IS NULL OR id > ?) ORDER BY id LIMIT 1",
+                    arguments: [vaultId, cursor, cursor]
+                )
+                guard let file, let reference = file.localReference else { return nil }
+                let source = try JSONDecoder().decode(ScreenshotRemoteReference.self, from: Data(reference.utf8))
+                let operation = try fileOperation(file)
+                try SyncTransactionRecorder.record(
+                    vaultId: vaultId,
+                    operations: [operation],
+                    screenshotAttachments: [operation.id: SyncScreenshotAttachmentReference(
+                        mimeType: file.contentType,
+                        source: source
+                    )],
+                    allowAfterReset: restoring,
+                    connectionIdOverride: connectionId,
+                    in: db
+                )
+                return file
+            }
+            guard let file else { break }
+            lastId = file.id
+        }
     }
 
     static func projectOperation(_ project: ProjectRecord, action: SyncAction) throws -> SyncOperationDraft {

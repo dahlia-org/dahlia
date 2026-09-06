@@ -3,7 +3,7 @@ import Foundation
 
 struct ScreenshotAnalysisInput: Sendable {
     let id: UUID
-    let imageData: Data
+    let imageData: Data?
     let mimeType: String
     let runtimeProvider: CodexRuntimeProvider
 }
@@ -43,7 +43,7 @@ actor CodexScreenshotAnalysisService: ScreenshotAnalyzing {
         }
         let inputs = try await Self.codexInputs(for: screenshots)
         let response = try await appServer.generate(.init(
-            model: Self.model,
+            model: screenshots[0].runtimeProvider.accountConnectionID != nil ? "gpt-5-6-luna" : Self.model,
             requiresExactModel: true,
             requiresImageInput: true,
             reasoningEffort: Self.reasoningEffort,
@@ -90,8 +90,13 @@ actor CodexScreenshotAnalysisService: ScreenshotAnalyzing {
         inputs.reserveCapacity(screenshots.count * 2)
         for screenshot in screenshots {
             try Task.checkCancellation()
+            let bytes: Data = if let imageData = screenshot.imageData {
+                imageData
+            } else {
+                try await ScreenshotContentProvider.shared.content(id: screenshot.id).data
+            }
             let imageData = ImageEncoder.resized(
-                screenshot.imageData,
+                bytes,
                 maxLongEdge: maximumImageLongEdge
             )
             try Task.checkCancellation()

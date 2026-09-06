@@ -239,8 +239,8 @@ import GRDB
                 mimeType: "image/png"
             )
             try await context.manager.dbQueue.write { db in
-                try referencedScreenshot.insert(db)
-                try unreferencedScreenshot.insert(db)
+                try referencedScreenshot.insertLegacyForTesting(db)
+                try unreferencedScreenshot.insertLegacyForTesting(db)
             }
             let caption = SummaryText("Launch screen", transcriptRef: TranscriptReference(time: "00:00:42"))
             let document = SummaryDocument(
@@ -280,7 +280,7 @@ import GRDB
                 mimeType: "image/png"
             )
             try await context.manager.dbQueue.write { db in
-                try screenshot.insert(db)
+                try screenshot.insertLegacyForTesting(db)
             }
             let document = SummaryDocument(
                 title: "Summary",

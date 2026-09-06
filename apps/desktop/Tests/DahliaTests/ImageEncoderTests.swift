@@ -17,7 +17,7 @@ import Foundation
             context.fill(CGRect(x: 0, y: 32, width: 64, height: 32))
             // The fourth quadrant remains transparent.
             let original = try #require(context.makeImage())
-            let data = try #require(ImageEncoder.encode(original, quality: 0.70))
+            let data = try #require(ImageEncoder.encode(original, quality: 0.75))
             #expect(ImageEncoder.mimeType(for: data) == "image/webp")
             #expect(data.starts(with: Data("RIFF".utf8)))
             _ = try #require(data.range(of: Data("VP8 ".utf8)))
@@ -42,7 +42,7 @@ import Foundation
         func imageBeyondWebPDimensionLimitFallsBackToJPEG() throws {
             let context = try makeContext(width: 16384, height: 1)
             let image = try #require(context.makeImage())
-            let data = try #require(ImageEncoder.encode(image, quality: 0.70))
+            let data = try #require(ImageEncoder.encode(image, quality: 0.75))
             #expect(ImageEncoder.mimeType(for: data) == "image/jpeg")
             #expect(ImageEncoder.fileExtension(mimeType: "image/jpeg", data: data) == "jpeg")
             let decoded = try #require(CGImageDecoder.decode(data))
@@ -54,7 +54,7 @@ import Foundation
         func resizingLegacyJPEGProducesWebP() throws {
             let context = try makeContext(width: 16384, height: 1)
             let image = try #require(context.makeImage())
-            let jpeg = try #require(ImageEncoder.encode(image, quality: 0.70))
+            let jpeg = try #require(ImageEncoder.encode(image, quality: 0.75))
             let resized = try #require(ImageEncoder.resizedIfPossible(jpeg, maxLongEdge: 1024))
             #expect(ImageEncoder.mimeType(for: resized) == "image/webp")
             let decoded = try #require(CGImageDecoder.decode(resized))

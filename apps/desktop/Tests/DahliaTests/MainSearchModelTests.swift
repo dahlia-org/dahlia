@@ -538,7 +538,7 @@ import GRDB
                     mimeType: "image/png",
                     ocrText: text,
                     caption: "Visual description"
-                ).insert(db)
+                ).insertLegacyForTesting(db)
                 try upsertDocument(
                     SearchDocumentProjection(
                         kind: "screenshot",

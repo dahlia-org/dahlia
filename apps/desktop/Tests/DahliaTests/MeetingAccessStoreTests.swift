@@ -754,7 +754,7 @@ import ImageIO
                 let text = "Screenshot-only architecture needle"
                 let caption = "Architecture diagram for the meeting"
                 try db.execute(
-                    sql: "UPDATE screenshots SET ocrText = ?, caption = ? WHERE id = ?",
+                    sql: "UPDATE files SET metadata = json_set(metadata, '$.ocr_text', ?, '$.caption', ?) WHERE id = ?",
                     arguments: [text, caption, fixture.firstScreenshotID]
                 )
                 let meeting = try #require(try MeetingRecord.fetchOne(db, key: fixture.firstMeetingID))
@@ -794,6 +794,28 @@ import ImageIO
         }
 
         @Test
+        func screenshotCacheMissUsesImageResolverWithoutOmittingTheImage() throws {
+            let fixture = try Fixture()
+            let vaultID = fixture.primaryVaultID
+            let meetingID = fixture.firstMeetingID
+            let imageID = fixture.firstScreenshotID
+            let bytes = try fixture.manager.dbQueue.write { db in
+                let bytes = try #require(try Data.fetchOne(db, sql: "SELECT imageData FROM meeting_images WHERE id = ?", arguments: [imageID]))
+                try db.execute(sql: "DELETE FROM file_migration_content WHERE fileId = ?", arguments: [imageID])
+                return bytes
+            }
+            let store = try MeetingAccessStore(databaseURL: fixture.databaseURL, vaultID: vaultID, imageResolver: { vault, meeting, image in
+                #expect(vault == vaultID && meeting == meetingID && image == imageID)
+                return bytes
+            })
+            #expect(try store.screenshot(meetingID: meetingID, screenshotID: imageID, originalSize: true).imageData == bytes)
+            let unavailable = try fixture.store(vaultID: vaultID)
+            #expect(throws: MeetingAccessError.screenshotUnavailable) {
+                try unavailable.screenshot(meetingID: meetingID, screenshotID: imageID, originalSize: true)
+            }
+        }
+
+        @Test
         func screenshotImagesAreActuallyDownsampledAndRejectCorruptData() throws {
             let fixture = try Fixture()
             let largeImage = try #require(Self.makeImage(width: 2048, height: 512))
@@ -826,12 +848,12 @@ import ImageIO
                 try store.screenshot(meetingID: fixture.firstMeetingID, screenshotID: fixture.firstScreenshotID)
             }
 
-            let range = try store.screenshotImages(
-                meetingID: fixture.firstMeetingID,
-                query: ScreenshotQuery(fromElapsedSeconds: 0, toElapsedSeconds: 100)
-            )
-            #expect(range.images.map(\.metadata.id) == [fixture.secondScreenshotID])
-            #expect(range.page.screenshots.map(\.id) == [fixture.secondScreenshotID])
+            #expect(throws: MeetingAccessError.screenshotEncodingFailed) {
+                try store.screenshotImages(
+                    meetingID: fixture.firstMeetingID,
+                    query: ScreenshotQuery(fromElapsedSeconds: 0, toElapsedSeconds: 100)
+                )
+            }
         }
 
         @Test
@@ -3225,14 +3247,14 @@ import ImageIO
                 capturedAt: createdAt.addingTimeInterval(6),
                 imageData: imageData,
                 mimeType: "image/png"
-            ).insert(db)
+            ).insertLegacyForTesting(db)
             try MeetingScreenshotRecord(
                 id: secondScreenshotID,
                 meetingId: firstMeetingID,
                 capturedAt: createdAt.addingTimeInterval(25),
                 imageData: imageData,
                 mimeType: "image/png"
-            ).insert(db)
+            ).insertLegacyForTesting(db)
             try MeetingScreenshotRecord(
                 id: otherVaultScreenshotID,
                 meetingId: otherVaultMeetingID,
@@ -3240,7 +3262,7 @@ import ImageIO
                 capturedAt: createdAt.addingTimeInterval(6),
                 imageData: imageData,
                 mimeType: "image/png"
-            ).insert(db)
+            ).insertLegacyForTesting(db)
         }
 
         deinit {
@@ -3259,7 +3281,7 @@ import ImageIO
         func updateFirstScreenshot(data: Data) throws {
             try manager.dbQueue.write { db in
                 try db.execute(
-                    sql: "UPDATE screenshots SET imageData = ? WHERE id = ?",
+                    sql: "UPDATE file_migration_content SET imageData = ? WHERE fileId = ?",
                     arguments: [data, firstScreenshotID]
                 )
             }
@@ -3336,7 +3358,7 @@ import ImageIO
                     capturedAt: startedAt.addingTimeInterval(6),
                     imageData: imageData,
                     mimeType: "image/png"
-                ).insert(db)
+                ).insertLegacyForTesting(db)
             }
             return (segmentID, screenshotID)
         }
@@ -3363,7 +3385,7 @@ import ImageIO
         func corruptPrimaryScreenshotSessionAssociation() throws {
             try manager.dbQueue.write { db in
                 try db.execute(
-                    sql: "UPDATE screenshots SET sessionId = ? WHERE id = ?",
+                    sql: "UPDATE meeting_files SET sessionId = ? WHERE id = ?",
                     arguments: [otherVaultSessionID, firstScreenshotID]
                 )
             }

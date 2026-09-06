@@ -14,6 +14,7 @@ import { loadConfig } from "./config";
 import { createNodeSearchTokenizer } from "./search/node-tokenizer";
 import { createSearchEmbedder } from "./search/embedding";
 import { SearchIndexer } from "./search/node-indexer";
+import { transformScreenshot } from "./sync/node-screenshot-transformer";
 
 const config = loadConfig(process.env);
 const searchEmbedder = createSearchEmbedder(config);
@@ -42,6 +43,7 @@ const app = createApp({
   artifactStorage,
   searchTokenizer: createNodeSearchTokenizer(),
   searchEmbedder,
+  screenshotTransformer: transformScreenshot,
 });
 
 app.use("*", serveStatic({ root: "./dist/client" }));

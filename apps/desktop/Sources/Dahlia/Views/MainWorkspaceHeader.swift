@@ -10,6 +10,7 @@ struct MainWorkspaceHeader: View {
     let onSearch: () -> Void
     let onGoBack: () -> Void
     let onGoForward: () -> Void
+    var syncState: MeetingSyncState?
 
     var body: some View {
         DahliaWindowHeader(
@@ -54,6 +55,9 @@ struct MainWorkspaceHeader: View {
                     .keyboardShortcut("]", modifiers: .command)
                 }
                 Spacer(minLength: 12)
+                if let syncState {
+                    MeetingSyncStatusView(state: syncState)
+                }
             }
         }
         .allowsHitTesting(isVisible)

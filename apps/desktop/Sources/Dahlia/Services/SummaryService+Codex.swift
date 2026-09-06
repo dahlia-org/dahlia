@@ -66,7 +66,7 @@ extension SummaryService {
         return "<time>\(time)</time> <image_id>\(screenshot.id.uuidString)</image_id> <image_filename>\(imageFilename)</image_filename>"
     }
 
-    static func makeCodexInputs(_ context: CodexInputContext) async -> [CodexAppServerInput] {
+    static func makeCodexInputs(_ context: CodexInputContext) async throws -> [CodexAppServerInput] {
         var inputs: [CodexAppServerInput] = [
             .text(context.promptContext.xml),
         ]
@@ -78,9 +78,11 @@ extension SummaryService {
         inputs.append(.text(transcriptContent))
         guard !context.screenshots.isEmpty else { return inputs }
 
-        let imageDataURIs = await Task.detached(priority: .userInitiated) {
-            context.screenshots.map { screenshot in
-                let imageData = ImageEncoder.resized(screenshot.imageData, maxLongEdge: 1024)
+        let screenshots = try await ScreenshotContentProvider.shared.resolved(context.screenshots)
+        let imageDataURIs = try await Task.detached(priority: .userInitiated) {
+            try screenshots.map { screenshot in
+                guard let bytes = screenshot.imageData else { throw ScreenshotContentError.unavailable }
+                let imageData = ImageEncoder.resized(bytes, maxLongEdge: 1024)
                 let mimeType = ImageEncoder.mimeType(for: imageData) ?? screenshot.mimeType
                 return "data:\(mimeType);base64,\(imageData.base64EncodedString())"
             }

@@ -47,7 +47,7 @@ integration("PostgreSQL application store", () => {
     expect(await store.ensureIdentityUser(identity)).toBe(true);
     await store.sync.withIdentity(identity, (sync) => createVault(sync, vaultId));
     const update = (name: string) => store.sync.withIdentity(identity, (sync) => sync.commitTransaction({
-      schemaVersion: 1,
+      schemaVersion: 2,
       id: crypto.randomUUID(),
       vaultId,
       createdAt: new Date(),
@@ -68,8 +68,7 @@ integration("PostgreSQL application store", () => {
     if (rejected?.status !== "rejected") throw new Error("expected one revision conflict");
     expect(rejected.reason).toBeInstanceOf(SyncTransactionError);
     expect(rejected.reason as SyncTransactionError).toMatchObject({ status: 409, code: "revision_conflict" });
-    await store.sync.withIdentity(identity, (sync) => sync.beginVaultDeletion(vaultId, 25));
-    expect(await store.sync.withIdentity(identity, (sync) => sync.finishVaultDeletion(vaultId))).toBe(true);
+    await store.sync.withIdentity(identity, (sync) => resetVault(sync, vaultId));
   });
 
   it("enforces FORCE RLS and does not leak transaction-local identity", async () => {
@@ -101,25 +100,26 @@ integration("PostgreSQL application store", () => {
         ('app', 'meetings'),
         ('app', 'transcript_segments'),
         ('app', 'transcript_patch_chunks'),
-        ('app', 'screenshots'),
+        ('app', 'files'),
+        ('app', 'meeting_files'),
         ('app', 'search_documents'),
         ('app', 'search_embeddings')
       )
       order by namespace.nspname, class.relname
     `);
-    expect(protectedTables.rows).toHaveLength(9);
+    expect(protectedTables.rows).toHaveLength(10);
     expect(protectedTables.rows.every(({ rls, force_rls }) => rls && force_rls)).toBe(true);
     const legacyOwnerColumns = await connection!.db.execute(sql`
       select 1 from information_schema.columns
       where table_schema = 'app'
-        and table_name in ('vaults', 'meetings', 'transcript_segments', 'screenshots')
+        and table_name in ('vaults', 'meetings', 'transcript_segments', 'files', 'meeting_files')
         and column_name = 'owner_workspace_id'
     `);
     expect(legacyOwnerColumns.rows).toEqual([]);
     const searchColumns = await connection!.db.execute<{ table_name: string; column_name: string }>(sql`
       select table_name, column_name from information_schema.columns
       where table_schema = 'app'
-        and table_name in ('meetings', 'screenshots')
+        and table_name in ('meetings', 'files', 'meeting_files')
         and column_name in ('search_text', 'search_vector')
       order by table_name, column_name
     `);
@@ -206,8 +206,7 @@ integration("PostgreSQL application store", () => {
       select count(*)::text as count from app.transaction_receipts where vault_id = ${vaultId}
     `);
     expect(receiptsWithoutContext.rows[0]?.count).toBe("0");
-    await store.sync.withIdentity(owner, (sync) => sync.beginVaultDeletion(vaultId, 25));
-    expect(await store.sync.withIdentity(owner, (sync) => sync.finishVaultDeletion(vaultId))).toBe(true);
+    await store.sync.withIdentity(owner, (sync) => resetVault(sync, vaultId));
   });
 
   it("persists Better Auth administrators", async () => {
@@ -277,34 +276,15 @@ integration("PostgreSQL application store", () => {
           audioSource: "system",
           speakerLabel: null,
         }], [])).toBe(true);
-        expect(await sync.createScreenshot({
-          screenshotId,
-          vaultId,
-          meetingId,
-          capturedAt: now,
-          contentType: "image/png",
-          storageKey: `meetings/${meetingId}/screenshots/${screenshotId}.png`,
-          contentLength: 1,
-          contentHash: screenshotHash,
-          ocrText: "screen",
-          caption: null,
-        })).toBe(true);
-        await commit(sync, vaultId, [{
-          id: crypto.randomUUID(),
-          entity: "screenshot",
-          action: "upsert",
-          entityId: screenshotId,
-          baseRevision: null,
-          data: {
-            meetingId,
-            capturedAt: now,
-            ocrText: "screen",
-            caption: null,
-            contentHash: screenshotHash,
-            searchText: "screen",
-            embeddingText: "screen",
-            embeddingContentHash: "screen-hash",
-          },
+        expect(await sync.reserveFile({ fileId: screenshotId, vaultId, uri: `/Volumes/test/app/files/files/${screenshotId}/original`,
+          offset: 0, size: 1, contentType: "image/png", checksum: `SHA-256:${screenshotHash}`, name: "capture.png",
+          metadata: { source: "screenshot", ocr_text: "screen" }, active: false, uploadedAt: now, revision: 0, createdAt: now, updatedAt: now,
+        })).not.toBeNull();
+        await commit(sync, vaultId, [{ id: crypto.randomUUID(), entity: "file", action: "upsert", entityId: screenshotId, baseRevision: null,
+          data: { checksum: `SHA-256:${screenshotHash}`, metadata: {} },
+        }, { id: crypto.randomUUID(), entity: "meeting_file", action: "upsert", entityId: screenshotId, baseRevision: null,
+          data: { meetingId, fileId: screenshotId, capturedAt: now, sessionId: null, createdAt: now,
+            searchText: "screen", embeddingText: "screen", embeddingContentHash: "screen-hash" },
         }, {
           id: patchId,
           entity: "transcript",
@@ -319,7 +299,7 @@ integration("PostgreSQL application store", () => {
           },
         }]);
       });
-      for (const table of ["meetings", "transcript_segments", "screenshots"] as const) {
+      for (const table of ["meetings", "transcript_segments", "files", "meeting_files"] as const) {
         const hidden = await connection!.db.execute<{ count: string }>(
           sql.raw(`select count(*)::text as count from app.${table}`),
         );
@@ -355,11 +335,7 @@ integration("PostgreSQL application store", () => {
     } finally {
       await store.sync.withIdentity(owner, async (sync) => {
         await sync.deleteMemberPermission(vaultId, "organization", organizationId);
-        const screenshots = await sync.beginVaultDeletion(vaultId, 25) ?? [];
-        for (const screenshot of screenshots) {
-          await sync.deleteScreenshot(vaultId, screenshot.screenshotId, screenshot.storageKey);
-        }
-        await sync.finishVaultDeletion(vaultId);
+        await resetVault(sync, vaultId);
       }).catch(() => undefined);
       await connection!.db.delete(schema.organization).where(eq(schema.organization.id, organizationId));
       await connection!.db.delete(schema.user).where(eq(schema.user.id, owner.userId));
@@ -413,8 +389,7 @@ integration("PostgreSQL application store", () => {
       await store.sync.withIdentity(owner, async (sync) => {
         await sync.deleteMemberPermission(vaultId, "team", teamId);
         await sync.deleteMemberPermission(vaultId, "organization", "external");
-        await sync.beginVaultDeletion(vaultId, 25);
-        await sync.finishVaultDeletion(vaultId);
+        await resetVault(sync, vaultId);
       }).catch(() => undefined);
       await connection!.db.delete(schema.team).where(eq(schema.team.id, teamId));
     }
@@ -460,7 +435,7 @@ integration("PostgreSQL application store", () => {
           expect.objectContaining({ principalType: "user", principalId: member.userId, role: "member" }),
         ]);
         expect(await sync.ensureUploadTarget(vaultId, meetingId)).toBe(false);
-        expect(await sync.beginVaultDeletion(vaultId, 25)).toBeNull();
+        await expect(resetVault(sync, vaultId)).rejects.toMatchObject({ status: 409, code: "revision_conflict" });
         expect(await sync.putMemberPermission(vaultId, "organization", "external")).toBe(false);
       });
     } finally {
@@ -469,8 +444,7 @@ integration("PostgreSQL application store", () => {
         member.userId,
       ));
       await store.sync.withIdentity(owner, async (sync) => {
-        await sync.beginVaultDeletion(vaultId, 25);
-        await sync.finishVaultDeletion(vaultId);
+        await resetVault(sync, vaultId);
       }).catch(() => undefined);
     }
   });
@@ -520,7 +494,7 @@ function createVault(
 function commit(sync: IdentitySyncStore, vaultId: string, operations: SyncTransactionOperation[]) {
   const id = crypto.randomUUID();
   return sync.commitTransaction({
-    schemaVersion: 1,
+    schemaVersion: 2,
     id,
     vaultId,
     createdAt: new Date(),
@@ -548,4 +522,10 @@ function meetingData(
     embeddingText: null,
     embeddingContentHash: null,
   };
+}
+
+async function resetVault(sync: IdentitySyncStore, vaultId: string) {
+  const vault = await sync.getVault(vaultId);
+  return commit(sync, vaultId, [{ id: crypto.randomUUID(), entity: "vault", action: "reset", entityId: vaultId,
+    baseRevision: vault?.revision ?? null, data: {} }]);
 }

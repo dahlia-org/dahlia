@@ -64,11 +64,11 @@ func indexScreenshotDocument(id: UUID, generation: Int, in db: Database) throws 
     guard let row = try Row.fetchOne(
         db,
         sql: """
-        SELECT screenshots.id, screenshots.meetingId, screenshots.ocrText, screenshots.caption,
+        SELECT meeting_images.id, meeting_images.meetingId, meeting_images.ocrText, meeting_images.caption,
                meetings.vaultId, meetings.projectId
-        FROM screenshots
-        JOIN meetings ON meetings.id = screenshots.meetingId
-        WHERE screenshots.id = ? AND screenshots.ocrText IS NOT NULL AND screenshots.caption IS NOT NULL
+        FROM meeting_images
+        JOIN meetings ON meetings.id = meeting_images.meetingId
+        WHERE meeting_images.id = ? AND meeting_images.ocrText IS NOT NULL AND meeting_images.caption IS NOT NULL
         """,
         arguments: [id]
     ) else { return }

@@ -42,7 +42,7 @@ meeting vector は title + 有効 SummaryDocument の description / section body
 
 ## Screenshot 検索
 
-全保存画像を Codex `gpt-5.6-luna` / low で解析し、OCR と caption を正本保存する。モデル fallback はしない。既存 FTS queue の screenshotAnalysis job を最大8並行で処理し、正本と索引を更新する。未設定・未認証・モデル利用不可は試行回数を消費せず待機する。
+全保存画像を Codex `gpt-5.6-luna` / low で解析し、OCR と caption を正本保存する。サーバ側へ解析を移すまで、Dahlia Account では Gateway のモデル ID `gpt-5-6-luna` を指定し、他の接続先では従来の ID を維持する。モデル fallback はしない。既存 FTS queue の screenshotAnalysis job を最大8並行で処理し、正本と索引を更新する。未設定・未認証・モデル利用不可は試行回数を消費せず待機する。
 
 screenshot は独立結果と `query_screenshots` で返し、meeting に集約せず vector を作らない。caption は解釈なので BM25 重み0.4で OCR より下げる。要約には抽出 text ではなく画像を渡し続ける。アプリ言語を認識候補、要約言語を caption に使い、変更は将来解析分へだけ反映する。画像解析には Codex 経路を使い、全画像分の AI 処理量と DB 容量が増える。
 

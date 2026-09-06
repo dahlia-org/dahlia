@@ -14,6 +14,7 @@ enum TranscriptPageDirection: Equatable {
     case latest
     case before(TranscriptPageCursor)
     case after(TranscriptPageCursor)
+    case startingAt(TranscriptPageCursor)
 }
 
 struct TranscriptPage: Equatable {

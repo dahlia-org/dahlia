@@ -159,7 +159,8 @@ enum GoogleDocsSummaryRenderer {
             image = cached
         } else {
             guard let screenshot = screenshotsByID[screenshotID],
-                  let prepared = GoogleDocsImageEncoder.encode(screenshot.imageData) else {
+                  let bytes = screenshot.imageData,
+                  let prepared = GoogleDocsImageEncoder.encode(bytes) else {
                 return unavailableImageBlock(caption: caption, message: imageUnavailableText)
             }
             imageCache[screenshotID] = prepared

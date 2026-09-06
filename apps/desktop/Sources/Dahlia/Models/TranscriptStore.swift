@@ -20,6 +20,7 @@ final class TranscriptStore: ObservableObject { // swiftlint:disable:this type_b
         case earlier
         case later
         case latest
+        case visible
     }
 
     @Published private(set) var segments: [TranscriptSegment] = []
@@ -53,6 +54,7 @@ final class TranscriptStore: ObservableObject { // swiftlint:disable:this type_b
     private var isFollowingLatest = true
     private var failedPageLoad: FailedPageLoad?
     private var pendingLatestReloadWaiters: [CheckedContinuation<Bool, Never>] = []
+    private var needsVisibleReload = false
     private var deferredConfirmedSegments: [UUID: TranscriptSegment] = [:]
 
     // MARK: - Unconfirmed Segment Throttle (per source)
@@ -148,6 +150,18 @@ final class TranscriptStore: ObservableObject { // swiftlint:disable:this type_b
         await requestLatestReload()
     }
 
+    /// Refresh canonical edits without sending a reader of older pages back to the end.
+    @discardableResult
+    func reloadVisible() async -> Bool {
+        if isLoadingPage {
+            needsVisibleReload = true
+            return false
+        }
+        guard !isFollowingLatest,
+              let first = confirmedSegments.first else { return await reloadLatest() }
+        return await loadPage(.startingAt(TranscriptPageCursor(segment: first)), failure: .visible)
+    }
+
     @discardableResult
     func reloadLatestAfterUICompaction() async -> Bool {
         clearAllUnconfirmedSegmentsImmediately()
@@ -163,6 +177,8 @@ final class TranscriptStore: ObservableObject { // swiftlint:disable:this type_b
             await loadLater()
         case .latest:
             await reloadLatest()
+        case .visible:
+            await reloadVisible()
         case nil:
             false
         }
@@ -317,10 +333,10 @@ final class TranscriptStore: ObservableObject { // swiftlint:disable:this type_b
         failedPageLoad = nil
         let didLoad: Bool
         do {
-            let limit = if case .latest = direction {
-                Self.initialPageSize
-            } else {
-                Self.pageSize
+            let limit: Int = switch direction {
+            case .latest: Self.initialPageSize
+            case .startingAt: max(confirmedSegmentCount, Self.pageSize)
+            case .before, .after: Self.pageSize
             }
             let page = try await pageLoader.load(
                 meetingId: meetingId,
@@ -337,6 +353,10 @@ final class TranscriptStore: ObservableObject { // swiftlint:disable:this type_b
                     mergeEarlierPage(page, preservingExistingProjection: projectionChangedDuringLoad)
                 case .after:
                     mergeLaterPage(page, preservingExistingProjection: projectionChangedDuringLoad)
+                case .startingAt:
+                    applyLatestPage(page, preservingExistingProjection: projectionChangedDuringLoad)
+                    hasLaterSegments = page.hasLater
+                    isFollowingLatest = false
                 }
                 didLoad = true
             } else {
@@ -356,6 +376,10 @@ final class TranscriptStore: ObservableObject { // swiftlint:disable:this type_b
             isLoadingPage = false
             isLoadingInitialPage = false
             await performPendingLatestReloadIfNeeded()
+            if needsVisibleReload {
+                needsVisibleReload = false
+                await reloadVisible()
+            }
         }
         return didLoad
     }
@@ -429,6 +453,7 @@ final class TranscriptStore: ObservableObject { // swiftlint:disable:this type_b
     }
 
     private func cancelPendingLatestReloads() {
+        needsVisibleReload = false
         let waiters = pendingLatestReloadWaiters
         pendingLatestReloadWaiters.removeAll()
         waiters.forEach { $0.resume(returning: false) }

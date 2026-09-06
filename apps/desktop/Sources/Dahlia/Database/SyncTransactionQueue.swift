@@ -9,7 +9,8 @@ enum SyncEntity: String, Codable, DatabaseValueConvertible, Sendable {
     case meeting
     case summary
     case transcript
-    case screenshot
+    case file
+    case meetingFile = "meeting_file"
 }
 
 enum SyncAction: String, Codable, DatabaseValueConvertible, Sendable {
@@ -82,6 +83,28 @@ struct SyncScreenshotAttachment: Sendable {
     }
 }
 
+/// A retry references the immutable file independently of the current screenshot row.
+struct SyncScreenshotAttachmentReference: Sendable {
+    let mimeType: String
+    let source: ScreenshotRemoteReference
+
+    var sha256: String { source.contentHash }
+
+    init(_ record: MeetingScreenshotRecord) throws {
+        guard let source = record.localSource, source.contentHash == record.contentHash,
+              source.fileId == record.originalFileId else {
+            throw ScreenshotContentError.unavailable
+        }
+        mimeType = record.mimeType
+        self.source = source
+    }
+
+    init(mimeType: String, source: ScreenshotRemoteReference) {
+        self.mimeType = mimeType
+        self.source = source
+    }
+}
+
 struct SyncTranscriptPatchSnapshot: Sendable {
     let segments: [SyncTranscriptPatchSegment]
     let deletions: [UUID]
@@ -136,10 +159,20 @@ struct SyncCanonicalPayload: Codable, Sendable {
     let title: String?
     let document: String?
     let capturedAt: Date?
-    let contentType: String?
-    let contentHash: String?
-    let ocrText: String?
-    let caption: String?
+    var fileId: UUID?
+    var sessionId: UUID?
+    var uri: String?
+    var offset: Int64?
+    var size: Int64?
+    var contentType: String?
+    var checksum: String?
+    var metadata: FileMetadata?
+
+    enum CodingKeys: String, CodingKey {
+        case parentProjectId, projectId, meetingId, name, description, projectType, status, duration, recordingStartedAt
+        case createdAt, updatedAt, title, document, capturedAt, fileId, sessionId, uri, offset, size, checksum, metadata
+        case contentType = "content_type"
+    }
 }
 
 enum SyncJSON {
@@ -217,7 +250,7 @@ enum SyncTransactionRecorder {
         operations requestedOperations: [SyncOperationDraft],
         transcriptSegments: [UUID: [SyncTranscriptPatchSegment]] = [:],
         transcriptDeletions: [UUID: [UUID]] = [:],
-        screenshotAttachments: [UUID: SyncScreenshotAttachment] = [:],
+        screenshotAttachments: [UUID: SyncScreenshotAttachmentReference] = [:],
         allowAfterReset: Bool = false,
         connectionIdOverride: UUID? = nil,
         in db: Database
@@ -284,19 +317,12 @@ enum SyncTransactionRecorder {
 
         for (position, operation) in operations.enumerated() {
             let attachment = screenshotAttachments[operation.id]
-            let usesScreenshotRow = if attachment == nil {
-                false
-            } else {
-                try Bool.fetchOne(
-                    db,
-                    sql: "SELECT EXISTS (SELECT 1 FROM screenshots WHERE id = ?)",
-                    arguments: [operation.entityId]
-                ) ?? false
-            }
-            let attachmentBytes: Data? = if !usesScreenshotRow {
-                attachment?.bytes
-            } else {
-                nil
+            if let attachment {
+                guard operation.entity == .file, attachment.source.fileId == operation.entityId,
+                      attachment.source.accountConnectionId == connectionId,
+                      try DahliaAccountConnectionRecord.fetchOne(db, key: connectionId)?.origin == attachment.source.origin else {
+                    throw ScreenshotContentError.integrityFailure
+                }
             }
             let confirmedRevision = try Int.fetchOne(
                 db,
@@ -335,7 +361,7 @@ enum SyncTransactionRecorder {
                 sql: """
                 INSERT INTO sync_operations(
                     transactionId, position, id, entity, action, entityId,
-                    baseRevision, payloadJSON, attachmentMimeType, attachmentSHA256, attachmentBytes
+                    baseRevision, payloadJSON, attachmentMimeType, attachmentSHA256, attachmentReference
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 arguments: [
@@ -344,7 +370,7 @@ enum SyncTransactionRecorder {
                     operation.payloadJSON.map { String(decoding: $0, as: UTF8.self) },
                     attachment?.mimeType,
                     attachment?.sha256,
-                    attachmentBytes,
+                    attachment?.source.jsonString(),
                 ]
             )
             var patchPosition = 0
@@ -552,7 +578,21 @@ enum SyncTransactionQueue {
                         SyncCanonicalPayload.self,
                         from: SyncJSON.encoder.encode(value)
                     )
-                    try applyCanonical(record.entity, id: record.id, vaultId: transaction.vaultId, value: canonical, in: db)
+                    let parentMeetingId: UUID? = switch record.entity {
+                    case .meetingFile: canonical.meetingId
+                    case .summary, .transcript: record.id
+                    default: nil
+                    }
+                    let parentDeletedLater = try Bool.fetchOne(db, sql: """
+                    SELECT EXISTS(
+                        SELECT 1 FROM sync_operations o JOIN sync_transactions t ON t.id = o.transactionId
+                        WHERE t.vaultId = ? AND t.sequence > ? AND o.entity = 'meeting'
+                            AND o.entityId = ? AND o.action = 'delete'
+                    )
+                    """, arguments: [transaction.vaultId, transaction.sequence, parentMeetingId]) ?? false
+                    if !parentDeletedLater {
+                        try applyCanonical(record.entity, id: record.id, vaultId: transaction.vaultId, value: canonical, in: db)
+                    }
                 }
                 try db.execute(
                     sql: """
@@ -650,11 +690,10 @@ enum SyncTransactionQueue {
             } else {
                 try db.execute(sql: "DELETE FROM summaries WHERE meetingId = ?", arguments: [id])
             }
-        case .screenshot:
-            try db.execute(
-                sql: "UPDATE screenshots SET capturedAt = coalesce(?, capturedAt), ocrText = ?, caption = ? WHERE id = ?",
-                arguments: [value.capturedAt, value.ocrText, value.caption, id]
-            )
+        case .file:
+            try FileRecord.applyCanonical(id: id, vaultId: vaultId, value: value, in: db)
+        case .meetingFile:
+            try MeetingFileRecord.applyCanonical(id: id, vaultId: vaultId, value: value, in: db)
         case .transcript:
             break
         }
@@ -783,28 +822,12 @@ enum SyncTransactionQueue {
         }
     }
 
-    static func screenshotAttachment(operationId: UUID, dbQueue: DatabaseQueue) async throws -> SyncScreenshotAttachment? {
-        try await dbQueue.read { db in
-            guard let row = try Row.fetchOne(
-                db,
-                sql: """
-                SELECT operation.attachmentMimeType AS mimeType,
-                    operation.attachmentSHA256 AS sha256,
-                    COALESCE(operation.attachmentBytes, screenshot.imageData) AS bytes
-                FROM sync_operations operation
-                LEFT JOIN screenshots screenshot ON screenshot.id = operation.entityId
-                WHERE operation.id = ?
-                  AND operation.attachmentMimeType IS NOT NULL
-                  AND COALESCE(operation.attachmentBytes, screenshot.imageData) IS NOT NULL
-                """,
-                arguments: [operationId]
-            ) else { return nil }
-            return SyncScreenshotAttachment(
-                mimeType: row["mimeType"],
-                sha256: row["sha256"],
-                bytes: row["bytes"]
-            )
-        }
+    static func screenshotAttachment(
+        operationId: UUID,
+        dbQueue: DatabaseQueue,
+        screenshotContent: ScreenshotContentProvider = .shared
+    ) async throws -> SyncScreenshotAttachment? {
+        try await screenshotContent.attachment(operationId: operationId, dbQueue: dbQueue)
     }
 
     static func discard(vaultId: UUID, fromSequence: Int64 = 0, in db: Database) throws {
@@ -893,7 +916,17 @@ enum SyncTransactionQueue {
         }
     }
 
-    static func reapplyLocalVersion(vaultId: UUID, dbQueue: DatabaseQueue) async throws {
+    static func reapplyLocalVersion(
+        vaultId: UUID,
+        dbQueue: DatabaseQueue,
+        screenshotContent: ScreenshotContentProvider = .shared
+    ) async throws {
+        let screenshotIds = try await dbQueue.read { db in
+            try screenshotIdsRequiringReupload(vaultId: vaultId, in: db)
+        }
+        screenshotContent.retainOriginals(vaultIds: [vaultId], dbQueue: dbQueue)
+        defer { screenshotContent.releaseOriginals(vaultIds: [vaultId], dbQueue: dbQueue) }
+        try await screenshotContent.prepareOriginals(vaultId: vaultId, dbQueue: dbQueue, screenshotIds: screenshotIds)
         let rebuildVault = try await dbQueue.write { db -> Bool in
             guard let first = try Row.fetchOne(
                 db,
@@ -961,7 +994,7 @@ enum SyncTransactionQueue {
                     db,
                     sql: """
                     SELECT id, entity, action, entityId, payloadJSON,
-                        attachmentMimeType, attachmentSHA256, attachmentBytes
+                        attachmentMimeType, attachmentSHA256, attachmentReference
                     FROM sync_operations WHERE transactionId = ? ORDER BY position
                     """,
                     arguments: [transactionId]
@@ -969,7 +1002,7 @@ enum SyncTransactionQueue {
                 var operations: [SyncOperationDraft] = []
                 var segments: [UUID: [SyncTranscriptPatchSegment]] = [:]
                 var deletions: [UUID: [UUID]] = [:]
-                var attachments: [UUID: SyncScreenshotAttachment] = [:]
+                var attachments: [UUID: SyncScreenshotAttachmentReference] = [:]
                 for row in rows {
                     let oldOperationId: UUID = row["id"]
                     let entity: SyncEntity = row["entity"]
@@ -989,19 +1022,12 @@ enum SyncTransactionQueue {
                         conflictsWithExisting: existingEntities.contains(key)
                     )
                     var payload = (row["payloadJSON"] as String?).map { Data($0.utf8) }
-                    var replacementAttachment: SyncScreenshotAttachment?
-                    if missing, entity == .screenshot, action != .delete {
-                        guard let screenshot = try MeetingScreenshotRecord.fetchOne(db, key: entityId) else { continue }
-                        let attachment = SyncScreenshotAttachment(
-                            mimeType: screenshot.mimeType,
-                            bytes: screenshot.imageData
-                        )
-                        payload = try SyncInitialSnapshotBuilder.screenshotOperation(
-                            screenshot,
-                            action: .upsert,
-                            contentHash: attachment.sha256
-                        ).payloadJSON
-                        replacementAttachment = attachment
+                    var replacementAttachment: SyncScreenshotAttachmentReference?
+                    if missing, entity == .file, action != .delete {
+                        guard let file = try FileRecord.fetchOne(db, key: entityId), let reference = file.localReference else { continue }
+                        let source = try JSONDecoder().decode(ScreenshotRemoteReference.self, from: Data(reference.utf8))
+                        payload = try SyncInitialSnapshotBuilder.fileOperation(file).payloadJSON
+                        replacementAttachment = SyncScreenshotAttachmentReference(mimeType: file.contentType, source: source)
                     }
                     let operation = try SyncOperationDraft(
                         entity: entity,
@@ -1018,9 +1044,9 @@ enum SyncTransactionQueue {
                     if let replacementAttachment {
                         attachments[operation.id] = replacementAttachment
                     } else if let mime: String = row["attachmentMimeType"],
-                              let sha: String = row["attachmentSHA256"],
-                              let bytes: Data = row["attachmentBytes"] {
-                        attachments[operation.id] = SyncScreenshotAttachment(mimeType: mime, sha256: sha, bytes: bytes)
+                              let reference: String = row["attachmentReference"] {
+                        let source = try JSONDecoder().decode(ScreenshotRemoteReference.self, from: Data(reference.utf8))
+                        attachments[operation.id] = SyncScreenshotAttachmentReference(mimeType: mime, source: source)
                     }
                 }
                 if !operations.isEmpty {
@@ -1046,8 +1072,23 @@ enum SyncTransactionQueue {
             return false
         }
         if rebuildVault {
-            try await SyncInitialSnapshotBuilder.enqueuePending(dbQueue: dbQueue)
+            try await SyncInitialSnapshotBuilder.enqueuePending(dbQueue: dbQueue, screenshotContent: screenshotContent)
         }
+    }
+
+    /// A missing Vault requires a complete snapshot; otherwise only recreated screenshots need originals.
+    private static func screenshotIdsRequiringReupload(vaultId: UUID, in db: Database) throws -> [UUID]? {
+        guard let blocked = try Row.fetchOne(db, sql: """
+        SELECT sequence, serverResponseJSON FROM sync_transactions
+        WHERE vaultId = ? AND blockedReason = 'conflict' ORDER BY sequence LIMIT 1
+        """, arguments: [vaultId]) else { return [] }
+        let missing = missingConflictEntities(blocked["serverResponseJSON"])
+        if missing.contains(.init(entity: .vault, id: vaultId)) { return nil }
+        let sequence: Int64 = blocked["sequence"]
+        return try UUID.fetchAll(db, sql: """
+        SELECT DISTINCT o.entityId FROM sync_operations o JOIN sync_transactions t ON t.id = o.transactionId
+        WHERE t.vaultId = ? AND t.sequence >= ? AND o.entity = 'file' AND o.action != 'delete'
+        """, arguments: [vaultId, sequence]).filter { missing.contains(.init(entity: .file, id: $0)) }
     }
 
     private static func missingProjectOperations(
@@ -1187,14 +1228,6 @@ enum SyncTransactionQueueError: Error {
     case readOnlyVault
 }
 
-private extension SyncScreenshotAttachment {
-    init(mimeType: String, sha256: String, bytes: Data) {
-        self.mimeType = mimeType
-        self.sha256 = sha256
-        self.bytes = bytes
-    }
-}
-
 private extension SyncTranscriptPatchSegment {
     init(
         segmentId: UUID,
@@ -1219,5 +1252,5 @@ private struct RequeuedTransaction {
     let operations: [SyncOperationDraft]
     let segments: [UUID: [SyncTranscriptPatchSegment]]
     let deletions: [UUID: [UUID]]
-    let attachments: [UUID: SyncScreenshotAttachment]
+    let attachments: [UUID: SyncScreenshotAttachmentReference]
 }

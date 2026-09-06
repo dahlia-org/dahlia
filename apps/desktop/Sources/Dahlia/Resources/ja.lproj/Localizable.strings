@@ -1652,3 +1652,15 @@
 "Vaults: %d" = "保管庫数: %d";
 "%@ (Source: %@): Restored." = "%@（復元元: %@）: 復元しました。";
 "%@ (Source: %@): Restore failed — %@" = "%@（復元元: %@）: 復元に失敗しました — %@";
+
+// Meeting working copy and synchronization
+"meetingSync.local" = "この端末に保存済み";
+"meetingSync.pending" = "端末保存済み・保管庫の同期を待機中";
+"meetingSync.synced" = "保管庫の同期済み";
+"meetingSync.authorization" = "端末保存済み・同期にはサインインが必要";
+"meetingSync.validation" = "端末保存済み・同期内容の確認が必要";
+
+"screenshot.cache.limit" = "クラウド画像キャッシュの上限";
+"screenshot.cache.description" = "同期済み画像は、必要なときに取得して保存します。上限を超えると古いキャッシュを削除します。ローカルアカウントの画像、未送信の画像、バックアップは上限に含まれません。";
+
+"Only vaults in the Local Account can be backed up." = "バックアップできるのは、ローカルアカウント内の保管庫だけです。";

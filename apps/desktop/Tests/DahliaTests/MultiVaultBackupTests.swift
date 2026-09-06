@@ -36,9 +36,9 @@ import GRDB
             let selected: Set<UUID> = [fixture.meeting.vaultId, second.vault.id, skipped.vault.id]
             let generation = try await service.createGeneration(vaultIds: selected)
             let metadata = try #require(generation.metadata)
-            #expect(metadata.formatVersion == 3)
+            #expect(metadata.formatVersion == 4)
             #expect(Set(metadata.vaults.map(\.id)) == selected)
-            let backup = try DatabaseQueue(path: generation.fileURL.path)
+            let backup = try DatabaseQueue(path: extractedBackupDatabase(generation.fileURL).path)
             try await backup.read { db throws in
                 #expect(try VaultRecord.fetchCount(db) == 3)
                 #expect(try MeetingRecord.fetchCount(db) == 3)
@@ -116,8 +116,7 @@ import GRDB
             let service = BackupService(dbQueue: fixture.database.dbQueue, applicationSupportURL: fixture.testRootURL)
             let generation = try await service.createGeneration(vaultIds: [fixture.meeting.vaultId, second.vault.id])
             if failure == "content" {
-                let editable = try DatabaseQueue(path: generation.fileURL.path, configuration: AppDatabaseManager.configuration())
-                try await editable.write { db in
+                try editBackupDatabase(generation.fileURL) { db in
                     let trigger = try String.fetchOne(db, sql: "SELECT sql FROM sqlite_master WHERE name = 'projects_validate_parent_insert'")!
                     try db.execute(sql: "DROP TRIGGER projects_validate_parent_insert")
                     try ProjectRecord(
@@ -130,7 +129,7 @@ import GRDB
                     ).insert(db)
                     try db.execute(sql: trigger)
                 }
-                try editable.close()
+
             }
             let successfulTarget = failure == "safety" ? UUID.v7() : fixture.meeting.vaultId
             var requests = [
@@ -200,11 +199,10 @@ import GRDB
             let unknown = VaultBackupRestoreRequest(sourceVaultId: .v7(), targetVaultId: .v7(), mode: .newVault, name: "Unknown")
             await #expect(throws: BackupServiceError.invalidBackup) { try await service.prepareRestore(from: generation, requests: [unknown]) }
             #expect(!FileManager.default.fileExists(atPath: BackupService.pendingRestoreURL(applicationSupportURL: fixture.testRootURL).path))
-            let editable = try DatabaseQueue(path: generation.fileURL.path)
-            try await editable.write { db in
+            try editBackupDatabase(generation.fileURL) { db in
                 try db.execute(sql: "UPDATE dahlia_backup_metadata SET vaultsJSON = ?", arguments: ["[]"])
             }
-            try editable.close()
+
             await #expect(throws: BackupServiceError.invalidBackup) { try await service.importGeneration(from: generation.fileURL) }
         }
 

@@ -6,10 +6,10 @@ import UniformTypeIdentifiers
 
     struct BackupFileFormatTests {
         @Test
-        func contentTypeMatchesSQLiteFiles() {
-            #expect(BackupFileFormat.pathExtension == "sqlite")
-            #expect(BackupFileFormat.contentType == UTType(filenameExtension: "sqlite"))
-            #expect(BackupFileFormat.contentType != .database)
+        func contentTypeMatchesArchiveAndAcceptsLegacySQLite() {
+            #expect(BackupFileFormat.pathExtension == "dahliabackup")
+            #expect(BackupFileFormat.contentType == UTType(filenameExtension: "dahliabackup"))
+            #expect(BackupFileFormat.legacyContentType == UTType(filenameExtension: "sqlite"))
         }
     }
 #endif
