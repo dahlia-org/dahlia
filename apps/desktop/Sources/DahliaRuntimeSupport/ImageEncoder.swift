@@ -1,17 +1,12 @@
+import Accelerate
 import CoreGraphics
 import Foundation
 import ImageIO
+import libwebp
 import UniformTypeIdentifiers
 
 package enum ImageEncoder {
-    package static let supportsWebP: Bool = {
-        let types = CGImageDestinationCopyTypeIdentifiers() as? [String] ?? []
-        return types.contains(UTType.webP.identifier)
-    }()
-
-    package static var preferredFileExtension: String {
-        supportsWebP ? "webp" : "jpeg"
-    }
+    package static let preferredFileExtension = "webp"
 
     package static func mimeType(for data: Data) -> String? {
         guard let source = CGImageSourceCreateWithData(data as CFData, nil),
@@ -47,10 +42,49 @@ package enum ImageEncoder {
     }
 
     package static func encode(_ cgImage: CGImage, quality: CGFloat) -> Data? {
-        if supportsWebP, let data = encode(cgImage, quality: quality, typeIdentifier: UTType.webP.identifier) {
+        guard quality.isFinite, (0 ... 1).contains(quality) else { return nil }
+        if let data = encodeWebP(cgImage, quality: quality) {
             return data
         }
         return encode(cgImage, quality: quality, typeIdentifier: UTType.jpeg.identifier)
+    }
+
+    private static func encodeWebP(_ image: CGImage, quality: CGFloat) -> Data? {
+        // ImageIO decodes WebP but cannot encode it. libwebp expects straight RGBA.
+        guard image.width <= WEBP_MAX_DIMENSION, image.height <= WEBP_MAX_DIMENSION,
+              let colorSpace = CGColorSpace(name: CGColorSpace.sRGB),
+              let context = CGContext(
+                  data: nil,
+                  width: image.width,
+                  height: image.height,
+                  bitsPerComponent: 8,
+                  bytesPerRow: image.width * 4,
+                  space: colorSpace,
+                  bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue
+              ), let pixels = context.data else { return nil }
+        context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        var buffer = vImage_Buffer(
+            data: pixels,
+            height: vImagePixelCount(image.height),
+            width: vImagePixelCount(image.width),
+            rowBytes: context.bytesPerRow
+        )
+        var destination = buffer
+        guard vImageUnpremultiplyData_RGBA8888(&buffer, &destination, vImage_Flags(kvImageDoNotTile)) == kvImageNoError else {
+            return nil
+        }
+        var output: UnsafeMutablePointer<UInt8>?
+        // The simple API uses lossy compression, the default preset, and method 4.
+        let count = withExtendedLifetime(context) {
+            WebPEncodeRGBA(
+                pixels.assumingMemoryBound(to: UInt8.self),
+                Int32(image.width), Int32(image.height), Int32(context.bytesPerRow),
+                Float(quality * 100), &output
+            )
+        }
+        defer { WebPFree(output) }
+        guard count > 0, let output else { return nil }
+        return Data(bytes: output, count: count)
     }
 
     private static func encode(_ cgImage: CGImage, quality: CGFloat, typeIdentifier: String) -> Data? {

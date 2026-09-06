@@ -216,6 +216,30 @@ embed_whisperkit_licenses() {
     chmod u+w "${destination_dir}/LICENSE" "${destination_dir}/NOTICES"
 }
 
+embed_webp_licenses() {
+    local project_dir="$1"
+    local contents_dir="$2"
+    local checkout_dir="${project_dir}/.build/checkouts/libwebp-Xcode"
+    local destination_dir="${contents_dir}/Resources/Licenses/libwebp"
+    local notice_names=(LICENSE libwebp/COPYING libwebp/PATENTS libwebp/AUTHORS)
+    local notice_name
+    local destination_path
+
+    for notice_name in "${notice_names[@]}"; do
+        if [ ! -f "${checkout_dir}/${notice_name}" ]; then
+            echo "error: libwebp ${notice_name} was not found in the SwiftPM checkout" >&2
+            return 1
+        fi
+    done
+
+    mkdir -p "$destination_dir"
+    for notice_name in "${notice_names[@]}"; do
+        destination_path="${destination_dir}/${notice_name##*/}"
+        cp "${checkout_dir}/${notice_name}" "$destination_path"
+        chmod u+w "$destination_path"
+    done
+}
+
 embed_lindera_licenses() {
     local project_dir="$1"
     local contents_dir="$2"

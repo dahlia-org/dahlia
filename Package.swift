@@ -18,6 +18,7 @@ let package = Package(
         .package(url: "https://github.com/TelemetryDeck/SwiftSDK", from: "2.13.0"),
         .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.9.2"),
         .package(url: "https://github.com/argmaxinc/argmax-oss-swift.git", exact: "1.0.0"),
+        .package(url: "https://github.com/SDWebImage/libwebp-Xcode.git", exact: "1.6.0"),
     ],
     targets: [
         .binaryTarget(
@@ -30,6 +31,7 @@ let package = Package(
         ),
         .target(
             name: "DahliaRuntimeSupport",
+            dependencies: [.product(name: "libwebp", package: "libwebp-Xcode")],
             path: "apps/desktop/Sources/DahliaRuntimeSupport"
         ),
         .target(

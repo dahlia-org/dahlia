@@ -442,6 +442,24 @@ test_whisperkit_license_embedding_validation() {
     expect_failure embed_whisperkit_licenses "$fake_project" "$contents_dir"
 }
 
+test_webp_license_embedding_validation() {
+    local fake_project="${TEST_DIR}/webp-license-project"
+    local checkout_dir="${fake_project}/.build/checkouts/libwebp-Xcode"
+    local contents_dir="${TEST_DIR}/WebPContents"
+    local notice_name
+
+    mkdir -p "${checkout_dir}/libwebp"
+    for notice_name in LICENSE libwebp/COPYING libwebp/PATENTS libwebp/AUTHORS; do
+        printf '%s' "$notice_name fixture" > "${checkout_dir}/${notice_name}"
+    done
+    embed_webp_licenses "$fake_project" "$contents_dir"
+    for notice_name in LICENSE libwebp/COPYING libwebp/PATENTS libwebp/AUTHORS; do
+        cmp "${checkout_dir}/${notice_name}" "${contents_dir}/Resources/Licenses/libwebp/$(basename "$notice_name")"
+    done
+    rm "${checkout_dir}/libwebp/PATENTS"
+    expect_failure embed_webp_licenses "$fake_project" "$contents_dir"
+}
+
 test_lindera_license_embedding_validation() {
     local fake_project="${TEST_DIR}/lindera-license-project"
     local vendor_dir="${fake_project}/Vendor"
@@ -610,6 +628,7 @@ test_cleanup_removes_previous_release_plist
 test_framework_embedding_validation
 test_whisperkit_license_embedding_validation
 test_lindera_license_embedding_validation
+test_webp_license_embedding_validation
 test_telemetrydeck_configuration_and_embedding
 test_codex_code_mode_host_packaging
 test_telemetrydeck_adapter_allowlist
