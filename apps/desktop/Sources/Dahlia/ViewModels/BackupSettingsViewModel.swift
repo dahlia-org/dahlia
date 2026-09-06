@@ -3,19 +3,27 @@ import Foundation
 import GRDB
 import Observation
 
+struct BackupRestoreSelection: Identifiable {
+    let vault: BackupVault
+    var mode: VaultBackupRestoreRequest.Mode?
+    var name: String
+    var id: UUID { vault.id }
+}
+
 @Observable
 @MainActor
 final class BackupSettingsViewModel {
     private(set) var generations: [BackupGeneration] = []
     private(set) var vaults: [VaultRecord] = []
-    var selectedVaultId: UUID?
+    var selectedVaultIds: Set<UUID> = []
+    var restoreSelections: [BackupRestoreSelection] = []
     private(set) var allPreflightItems: [BackupPreflightItem] = []
-    var preflightItems: [BackupPreflightItem] { allPreflightItems.filter { $0.vaultId == selectedVaultId } }
+    var preflightItems: [BackupPreflightItem] { allPreflightItems.filter { selectedVaultIds.contains($0.vaultId) } }
     private(set) var hasWorkInProgress = false
 
-    func canOverwrite(_ metadata: BackupMetadata) -> Bool {
-        vaults.contains { $0.id == metadata.vaultId && $0.accountConnectionId == nil && $0.syncRole == nil && $0.syncConfirmedConnectionId == nil }
-            && !allPreflightItems.contains { $0.vaultId == metadata.vaultId }
+    func canOverwrite(vaultId: UUID) -> Bool {
+        vaults.contains { $0.id == vaultId && $0.accountConnectionId == nil && $0.syncRole == nil && $0.syncConfirmedConnectionId == nil }
+            && !allPreflightItems.contains { $0.vaultId == vaultId }
     }
 
     private(set) var isBusy = false
@@ -49,16 +57,16 @@ final class BackupSettingsViewModel {
             self.allPreflightItems = try await preflightItems
             hasWorkInProgress = try await service.hasProcessingAudio() || allPreflightItems.contains(where: \.isWorkInProgress)
             vaults = try await service.listVaults()
-            if !vaults.contains(where: { $0.id == selectedVaultId }) { selectedVaultId = vaults.first?.id }
+            selectedVaultIds.formIntersection(vaults.map(\.id))
         } catch {
             errorMessage = error.localizedDescription
         }
     }
 
     func createBackup() async {
-        guard let selectedVaultId else { return }
+        guard !selectedVaultIds.isEmpty else { return }
         await perform {
-            _ = try await requireService().createGeneration(vaultId: selectedVaultId)
+            _ = try await requireService().createGeneration(vaultIds: selectedVaultIds)
             statusMessage = L10n.backupCreated
         }
     }
@@ -97,7 +105,33 @@ final class BackupSettingsViewModel {
         }
     }
 
-    func prepareRestore(_ generation: BackupGeneration, request: VaultBackupRestoreRequest) async -> Bool {
+    func beginRestore(_ metadata: BackupMetadata) {
+        restoreSelections = metadata.vaults.map { BackupRestoreSelection(vault: $0, mode: nil, name: L10n.restoredVaultName($0.name)) }
+        errorMessage = nil
+    }
+
+    var canRestore: Bool {
+        !isBusy && !hasWorkInProgress
+            && restoreSelections.contains { $0.mode != nil }
+            && restoreSelections.allSatisfy { selection in
+                switch selection.mode {
+                case .none: true
+                case .overwrite: canOverwrite(vaultId: selection.id)
+                case .newVault: selection.name.nilIfBlank != nil
+                }
+            }
+    }
+
+    func prepareRestore(_ generation: BackupGeneration) async -> Bool {
+        guard canRestore else { return false }
+        let requests = restoreSelections.compactMap { selection -> VaultBackupRestoreRequest? in
+            guard let mode = selection.mode else { return nil }
+            return VaultBackupRestoreRequest(
+                sourceVaultId: selection.id,
+                targetVaultId: mode == .overwrite ? selection.id : .v7(),
+                mode: mode, name: mode == .overwrite ? selection.vault.name : selection.name
+            )
+        }
         guard AppDelegate.beginBackupRestorePreparation() else {
             errorMessage = BackupServiceError.restoreAlreadyPending.localizedDescription
             return false
@@ -109,7 +143,7 @@ final class BackupSettingsViewModel {
             }
         }
         await perform(refreshAfterward: false) {
-            _ = try await requireService().prepareRestore(from: generation, request: request)
+            _ = try await requireService().prepareRestore(from: generation, requests: requests)
             prepared = true
         }
         return prepared

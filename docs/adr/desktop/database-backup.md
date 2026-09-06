@@ -4,9 +4,10 @@
 
 ## 世代と対象
 
-保管庫を選択して SQLite backup を Application Support/Dahlia/Backups にユーザー削除まで保持する。自動で世代数を減らさない。
-形式 v2 の各 snapshot に元の保管庫 UUID・名前、世代 UUID、日時、schema / migration、app version/build、理由を埋め込む。
-旧形式 v1 は読み込み・復元に対応しない。旧世代は削除できる。
+複数の保管庫を選択して一つの SQLite backup を Application Support/Dahlia/Backups にユーザー削除まで保持する。自動で世代数を減らさない。
+形式 v3 の各 snapshot に元の保管庫 UUID・名前の一覧、世代 UUID、日時、schema / migration、app version/build、理由を埋め込む。
+単一の DB snapshot から選択した全保管庫を抽出し、途中で失敗した世代は公開しない。
+旧形式 v1 は読み込み・復元に対応しない。旧世代は削除できる。v2 は一つの保管庫を含む世代として読み込む。
 
 対象は選択した保管庫の DB 内データと参照関係。Project 階層、会議、文字起こし・翻訳、session timeline、要約、
 スクリーンショット本体と OCR / caption、顧客情報を含む。共有タグ・カレンダー情報は対象会議から参照されるものだけを保存する。
@@ -18,10 +19,12 @@
 
 import は管理領域の一時 copy を integrity / metadata / schema / migration 履歴で検証して atomic に世代追加する。
 未知の形式・schema、改変、追加 trigger / view、integrity 不良を拒否する。
-既知の旧 schema を持つ v2 は、その migration 時点の schema と履歴を検証して受け入れる。
+既知の旧 schema を持つ v2 / v3 は、その migration 時点の schema と履歴を検証して受け入れる。
 復元時に管理領域の作業コピーだけを現行 schema へ migration し、元の世代は変更しない。
 
-復元方法は次の二つ。
+復元画面では含まれる保管庫を一覧表示し、各行で「復元しない」（初期値）または次の方法を選ぶ。
+一部だけの選択と上書き・新規の混在を許可し、少なくとも一つ選択して1回の再起動で一括適用する。
+同名保管庫は名前と短縮 UUID で区別する。保存画面は現在の保管庫を初期選択し、すべて選択・解除を用意する。
 
 - 元の保管庫を上書き: 同じ UUID のローカル保管庫が存在し、未処理音声がない場合だけ選べる。
   保管庫 ID、現在のローカル出力先・AI 接続設定を維持し、保存内容を置き換える。
@@ -34,8 +37,8 @@ import は管理領域の一時 copy を integrity / metadata / schema / migrati
 同期保管庫への上書きは拒否し、新しいローカル保管庫としてのみ復元する。Server への操作・同期 transaction は生成しない。
 
 復元は再起動時、単一 process lock 取得後・通常 DB open 前に行う。録音・処理中には開始しない。
-その時点の最新 DB を作業コピーに保存し、上書きの場合は対象保管庫の安全 backup を作成してから、対象内容だけを transaction で置き換える。
-安全 backup の失敗では復元を中止する。他保管庫のデータ、アカウント、同期状態、音声参照は保持する。
+その時点の最新 DB を作業コピーに保存し、全要求を再検証する。上書き対象全てをまとめた安全 backup を1世代作成してから、選択内容を一つの transaction で復元する。
+元 UUID・復元先 UUID の重複、不正な対象、空の要求を拒否する。安全 backup または一件でも復元に失敗した場合は、全対象の適用を中止する。他保管庫のデータ、アカウント、同期状態、音声参照は保持する。
 検証済み作業コピーを WAL checkpoint 後に適用し、元 DB を recovery として残す。
 中断後の起動は recovery を優先する。検索索引は通常の索引処理で再構築する。
 

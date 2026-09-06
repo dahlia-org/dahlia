@@ -12,8 +12,6 @@ struct BackupSettingsView: View {
     @State private var model: BackupSettingsViewModel
     @State private var pendingDeleteGeneration: BackupGeneration?
     @State private var pendingRestoreGeneration: BackupGeneration?
-    @State private var restoreMode = VaultBackupRestoreRequest.Mode.newVault
-    @State private var restoredVaultName = ""
 
     private let dbQueue: DatabaseQueue?
     private let onShowUnprocessedRecordings: (UUID) -> Void
@@ -38,18 +36,36 @@ struct BackupSettingsView: View {
             }
 
             Section {
-                Picker(L10n.vault, selection: $model.selectedVaultId) {
-                    ForEach(model.vaults) { vault in
-                        Text(vault.name).tag(vault.id as UUID?)
-                    }
+                HStack {
+                    Button(L10n.selectAll) { model.selectedVaultIds = Set(model.vaults.map(\.id)) }
+                        .buttonStyle(.dahlia())
+                    Button(L10n.backupDeselectAll) { model.selectedVaultIds.removeAll() }
+                        .buttonStyle(.dahlia())
                 }
-                .disabled(model.isBusy)
+                .disabled(model.isBusy || model.vaults.isEmpty)
+                ForEach(model.vaults) { vault in
+                    Toggle(isOn: Binding(
+                        get: { model.selectedVaultIds.contains(vault.id) },
+                        set: { selected in
+                            if selected {
+                                model.selectedVaultIds.insert(vault.id)
+                            } else {
+                                model.selectedVaultIds.remove(vault.id)
+                            }
+                        }
+                    )) {
+                        Text(vault.name)
+                        Text(vault.id.uuidString.suffix(8)).font(.caption).foregroundStyle(.secondary)
+                    }
+                    .toggleStyle(.checkbox)
+                    .disabled(model.isBusy)
+                }
                 HStack {
                     Button(L10n.createBackup) {
                         Task { await model.createBackup() }
                     }
                     .buttonStyle(.dahlia(.primary))
-                    .disabled(dbQueue == nil || model.selectedVaultId == nil || model.isBusy || !model.preflightItems.isEmpty)
+                    .disabled(dbQueue == nil || model.selectedVaultIds.isEmpty || model.isBusy || !model.preflightItems.isEmpty)
 
                     Button(L10n.importBackup) {
                         importBackup()
@@ -91,7 +107,7 @@ struct BackupSettingsView: View {
         }
         .formStyle(.grouped)
         .task {
-            model.selectedVaultId = settings.currentVault?.id
+            model.selectedVaultIds = Set([settings.currentVault?.id].compactMap(\.self))
             while !Task.isCancelled {
                 if !model.isBusy {
                     await model.refresh()
@@ -117,36 +133,29 @@ struct BackupSettingsView: View {
             Text(L10n.deleteBackupDescription)
         }
         .overlay {
-            if let generation = pendingRestoreGeneration, let metadata = generation.metadata {
-                restoreDialog(generation, metadata: metadata)
+            if let generation = pendingRestoreGeneration {
+                restoreDialog(generation)
             }
         }
     }
 
-    private func restoreDialog(_ generation: BackupGeneration, metadata: BackupMetadata) -> some View {
-        let canOverwrite = model.canOverwrite(metadata)
-        return ZStack {
+    private func restoreDialog(_ generation: BackupGeneration) -> some View {
+        ZStack {
             Color.black.opacity(0.3)
                 .ignoresSafeArea()
                 .onTapGesture { if !model.isBusy { pendingRestoreGeneration = nil } }
             VStack(alignment: .leading, spacing: 16) {
                 Text(L10n.restoreBackupConfirmation).font(.headline)
-                Text(restoreMode == .overwrite
-                    ? model.vaults.first(where: { $0.id == metadata.vaultId })?.name ?? metadata.vaultName
-                    : metadata.vaultName)
-                Picker(L10n.backupRestoreMode, selection: $restoreMode) {
-                    Text(L10n.backupRestoreAsNewVault).tag(VaultBackupRestoreRequest.Mode.newVault)
-                    Text(L10n.backupOverwriteOriginalVault).tag(VaultBackupRestoreRequest.Mode.overwrite)
-                        .disabled(!canOverwrite)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        ForEach($model.restoreSelections) { $selection in
+                            restoreRow($selection)
+                            Divider()
+                        }
+                    }
                 }
-                .pickerStyle(.radioGroup)
-                if restoreMode == .newVault {
-                    TextField(L10n.vaultName, text: $restoredVaultName)
-                }
+                .frame(maxHeight: 320)
                 Text(L10n.vaultBackupRestoreDescription).font(.callout).foregroundStyle(.secondary)
-                if !canOverwrite {
-                    Text(L10n.backupRestoreTargetUnavailable).font(.callout).foregroundStyle(.secondary)
-                }
                 if let error = model.errorMessage {
                     Text(error).foregroundStyle(.red)
                 }
@@ -156,23 +165,15 @@ struct BackupSettingsView: View {
                         .buttonStyle(.dahlia())
                         .keyboardShortcut(.cancelAction)
                     Button(L10n.restoreBackup) {
-                        guard captionViewModel.canSwitchVault else { return }
-                        let isOverwriting = restoreMode == .overwrite
-                        let request = VaultBackupRestoreRequest(
-                            sourceVaultId: metadata.vaultId,
-                            targetVaultId: isOverwriting ? metadata.vaultId : .v7(),
-                            mode: restoreMode, name: isOverwriting ? metadata.vaultName : restoredVaultName
-                        )
                         Task {
-                            if await model.prepareRestore(generation, request: request) {
+                            guard captionViewModel.canSwitchVault else { return }
+                            if await model.prepareRestore(generation) {
                                 BackupRelaunchCoordinator.relaunchAfterTermination()
                             }
                         }
                     }
                     .buttonStyle(.dahlia(.primary))
-                    .disabled(!captionViewModel.canSwitchVault || model.hasWorkInProgress
-                        || (restoreMode == .overwrite && !canOverwrite)
-                        || (restoreMode == .newVault && restoredVaultName.nilIfBlank == nil))
+                    .disabled(!captionViewModel.canSwitchVault || !model.canRestore)
                 }
                 if model.isBusy { ProgressView().controlSize(.small) }
             }
@@ -182,6 +183,27 @@ struct BackupSettingsView: View {
             .background(Color(nsColor: .windowBackgroundColor))
             .clipShape(.rect(cornerRadius: DahliaDesign.Card.regularCornerRadius))
             .shadow(radius: 20)
+        }
+    }
+
+    private func restoreRow(_ selection: Binding<BackupRestoreSelection>) -> some View {
+        let vault = selection.wrappedValue.vault
+        let canOverwrite = model.canOverwrite(vaultId: vault.id)
+        return VStack(alignment: .leading, spacing: 8) {
+            Text(vault.name).font(.headline)
+            Text(vault.id.uuidString.suffix(8)).font(.caption).foregroundStyle(.secondary)
+            Picker(L10n.backupRestoreMode, selection: selection.mode) {
+                Text(L10n.backupSkipVault).tag(nil as VaultBackupRestoreRequest.Mode?)
+                Text(L10n.backupOverwriteOriginalVault).tag(VaultBackupRestoreRequest.Mode.overwrite as VaultBackupRestoreRequest.Mode?)
+                    .disabled(!canOverwrite)
+                Text(L10n.backupRestoreAsNewVault).tag(VaultBackupRestoreRequest.Mode.newVault as VaultBackupRestoreRequest.Mode?)
+            }
+            if selection.wrappedValue.mode == .newVault {
+                TextField(L10n.vaultName, text: selection.name)
+            }
+            if !canOverwrite {
+                Text(L10n.backupRestoreTargetUnavailable).font(.caption).foregroundStyle(.secondary)
+            }
         }
     }
 
@@ -241,9 +263,8 @@ struct BackupSettingsView: View {
                     .buttonStyle(.dahlia())
                     .disabled(!generation.isValid || model.isBusy)
                 Button(L10n.restoreBackup) {
-                    restoreMode = .newVault
-                    restoredVaultName = L10n.restoredVaultName(generation.metadata?.vaultName ?? "")
-                    model.errorMessage = nil
+                    guard let metadata = generation.metadata else { return }
+                    model.beginRestore(metadata)
                     pendingRestoreGeneration = generation
                 }
                 .buttonStyle(.dahlia())
@@ -259,7 +280,8 @@ struct BackupSettingsView: View {
             }
         } label: {
             if let metadata = generation.metadata {
-                Text(metadata.vaultName)
+                Text(L10n.backupVaultCount(metadata.vaults.count))
+                Text(metadata.vaults.map(\.name).joined(separator: ", ")).lineLimit(2)
                 Text(metadata.createdAt.formatted(date: .abbreviated, time: .standard))
                 Text(L10n.backupGenerationDetail(
                     schemaVersion: metadata.schemaVersion,

@@ -24,7 +24,7 @@ import GRDB
 
             let vault = makeVault(name: "WAL", path: rootURL.appending(path: "Vault").path)
             try await live.dbQueue.write { try vault.insert($0) }
-            _ = try await service.createGeneration(vaultId: vault.id)
+            _ = try await service.createGeneration(vaultIds: [vault.id])
 
             #expect(journalMode?.lowercased() == "wal")
             #expect(try await service.listGenerations().first?.isValid == true)
@@ -96,7 +96,7 @@ import GRDB
                 appVersion: "1.2.3",
                 appBuild: "45"
             )
-            let generation = try await service.createGeneration(vaultId: fixture.meeting.vaultId)
+            let generation = try await service.createGeneration(vaultIds: [fixture.meeting.vaultId])
             let metadata = try #require(generation.metadata)
             #expect(metadata.schemaVersion == AppDatabaseManager.currentSchemaVersion)
             #expect(metadata.migrationIdentifier == AppDatabaseManager.currentMigrationIdentifier)
@@ -156,7 +156,7 @@ import GRDB
             #expect(items.first?.hasUnavailableAudio == true)
             #expect(items.first?.statusDescription == L10n.batchRecordingAudioUnavailable)
             await #expect(throws: BackupServiceError.unresolvedAudio(1)) {
-                try await service.createGeneration(vaultId: fixture.meeting.vaultId)
+                try await service.createGeneration(vaultIds: [fixture.meeting.vaultId])
             }
         }
 
@@ -189,7 +189,7 @@ import GRDB
             )
 
             #expect(try await service.preflightItems().isEmpty)
-            let generation = try await service.createGeneration(vaultId: fixture.meeting.vaultId)
+            let generation = try await service.createGeneration(vaultIds: [fixture.meeting.vaultId])
             let backup = try DatabaseQueue(path: generation.fileURL.path)
             let legacyCount = try await backup.read { db in
                 try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM recording_audio_files")
@@ -213,11 +213,11 @@ import GRDB
                 appVersion: "1.2.3",
                 appBuild: "45"
             )
-            let generation = try await service.createGeneration(vaultId: fixture.meeting.vaultId)
+            let generation = try await service.createGeneration(vaultIds: [fixture.meeting.vaultId])
 
-            let marker = try await service.prepareRestore(from: generation, request: VaultBackupRestoreRequest(
+            let marker = try await service.prepareRestore(from: generation, requests: [VaultBackupRestoreRequest(
                 sourceVaultId: fixture.meeting.vaultId, targetVaultId: fixture.meeting.vaultId, mode: .overwrite, name: "Test"
-            ))
+            )])
             let generations = try await service.listGenerations()
             #expect(generations.count == 1)
             #expect(!generations.contains { $0.metadata?.reason == .beforeRestore })
@@ -251,7 +251,7 @@ import GRDB
                 dbQueue: fixture.database.dbQueue,
                 applicationSupportURL: fixture.testRootURL
             )
-            let generation = try await service.createGeneration(vaultId: fixture.meeting.vaultId)
+            let generation = try await service.createGeneration(vaultIds: [fixture.meeting.vaultId])
             let editedURL = fixture.testRootURL.appending(path: "future.sqlite")
             try FileManager.default.copyItem(at: generation.fileURL, to: editedURL)
             let editable = try DatabaseQueue(path: editedURL.path)
@@ -279,7 +279,7 @@ import GRDB
                 dbQueue: fixture.database.dbQueue,
                 applicationSupportURL: fixture.testRootURL
             )
-            let generation = try await service.createGeneration(vaultId: fixture.meeting.vaultId)
+            let generation = try await service.createGeneration(vaultIds: [fixture.meeting.vaultId])
             let editable = try DatabaseQueue(path: generation.fileURL.path)
             try await editable.write { db in
                 try db.execute(
@@ -295,9 +295,9 @@ import GRDB
             try editable.close()
 
             await #expect(throws: BackupServiceError.invalidBackup) {
-                try await service.prepareRestore(from: generation, request: VaultBackupRestoreRequest(
+                try await service.prepareRestore(from: generation, requests: [VaultBackupRestoreRequest(
                     sourceVaultId: fixture.meeting.vaultId, targetVaultId: fixture.meeting.vaultId, mode: .overwrite, name: "Test"
-                ))
+                )])
             }
             let vaultCount = try await fixture.database.dbQueue.read { db in try VaultRecord.fetchCount(db) }
             #expect(vaultCount == 1)
@@ -308,7 +308,7 @@ import GRDB
             let fixture = try BatchAudioTestFixture(name: "LegacyBackup")
             defer { fixture.removeFiles() }
             let service = BackupService(dbQueue: fixture.database.dbQueue, applicationSupportURL: fixture.testRootURL)
-            let generation = try await service.createGeneration(vaultId: fixture.meeting.vaultId)
+            let generation = try await service.createGeneration(vaultIds: [fixture.meeting.vaultId])
             let editable = try DatabaseQueue(path: generation.fileURL.path)
             try await editable.write { db in
                 try db.execute(sql: "UPDATE dahlia_backup_metadata SET formatVersion = 1")
@@ -331,10 +331,10 @@ import GRDB
             }
             let service = BackupService(dbQueue: fixture.database.dbQueue, applicationSupportURL: fixture.testRootURL)
             #expect(try await service.preflightItems(vaultId: other.id).isEmpty)
-            let generation = try await service.createGeneration(vaultId: other.id)
-            #expect(generation.metadata?.vaultId == other.id)
+            let generation = try await service.createGeneration(vaultIds: [other.id])
+            #expect(generation.metadata?.vaults.first?.id == other.id)
             await #expect(throws: BackupServiceError.unresolvedAudio(1)) {
-                try await service.createGeneration(vaultId: fixture.meeting.vaultId)
+                try await service.createGeneration(vaultIds: [fixture.meeting.vaultId])
             }
         }
 
@@ -343,7 +343,7 @@ import GRDB
             let fixture = try BatchAudioTestFixture(name: "RetranscriptionBackup", endedAt: .now, batchCompletedAt: .now)
             defer { fixture.removeFiles() }
             let service = BackupService(dbQueue: fixture.database.dbQueue, applicationSupportURL: fixture.testRootURL)
-            let generation = try await service.createGeneration(vaultId: fixture.meeting.vaultId)
+            let generation = try await service.createGeneration(vaultIds: [fixture.meeting.vaultId])
             let segment = makeAudioSegment(fixture: fixture)
             try await fixture.database.dbQueue.write { db in
                 try segment.insert(db)
@@ -354,9 +354,9 @@ import GRDB
             }
             #expect(try await service.hasProcessingAudio())
             await #expect(throws: BackupServiceError.unresolvedAudio(1)) {
-                try await service.prepareRestore(from: generation, request: VaultBackupRestoreRequest(
+                try await service.prepareRestore(from: generation, requests: [VaultBackupRestoreRequest(
                     sourceVaultId: fixture.meeting.vaultId, targetVaultId: .v7(), mode: .newVault, name: "New"
-                ))
+                )])
             }
         }
 
@@ -365,7 +365,7 @@ import GRDB
             let fixture = try BatchAudioTestFixture(name: "MalformedBackup")
             defer { fixture.removeFiles() }
             let service = BackupService(dbQueue: fixture.database.dbQueue, applicationSupportURL: fixture.testRootURL)
-            let generation = try await service.createGeneration(vaultId: fixture.meeting.vaultId)
+            let generation = try await service.createGeneration(vaultIds: [fixture.meeting.vaultId])
             let editable = try DatabaseQueue(path: generation.fileURL.path)
             try await editable.write { db in
                 try db

@@ -43,7 +43,7 @@ import GRDB
                 )
             }
             let service = BackupService(dbQueue: fixture.database.dbQueue, applicationSupportURL: fixture.testRootURL)
-            let generation = try await service.createGeneration(vaultId: fixture.meeting.vaultId)
+            let generation = try await service.createGeneration(vaultIds: [fixture.meeting.vaultId])
             try verifyExport(generation, fixture: fixture)
             let databaseURL = fixture.testRootURL.appending(path: "live.sqlite")
             let live = try AppDatabaseManager(path: databaseURL.path, enablesConcurrentSearch: true)
@@ -63,7 +63,7 @@ import GRDB
                 mode: mode,
                 name: "Restored"
             )
-            let marker = try await service.prepareRestore(from: generation, request: request)
+            let marker = try await service.prepareRestore(from: generation, requests: [request])
             let decoded = try JSONDecoder.backupDecoder.decode(
                 PendingDatabaseRestore.self,
                 from: Data(contentsOf: BackupService.pendingRestoreURL(applicationSupportURL: fixture.testRootURL))
@@ -143,16 +143,16 @@ import GRDB
             defer { fixture.removeFiles() }
             try seedRelationships(fixture)
             let service = BackupService(dbQueue: fixture.database.dbQueue, applicationSupportURL: fixture.testRootURL)
-            let generation = try await service.createGeneration(vaultId: fixture.meeting.vaultId)
+            let generation = try await service.createGeneration(vaultIds: [fixture.meeting.vaultId])
             let databaseURL = fixture.testRootURL.appending(path: "live.sqlite")
             let live = try AppDatabaseManager(path: databaseURL.path, enablesConcurrentSearch: true)
             try fixture.database.dbQueue.backup(to: live.dbQueue)
             try await live.dbQueue.write { try $0.execute(sql: "UPDATE tags SET colorHex = '#ffffff'") }
             try live.close()
             for _ in 0 ..< 2 {
-                _ = try await service.prepareRestore(from: generation, request: VaultBackupRestoreRequest(
+                _ = try await service.prepareRestore(from: generation, requests: [VaultBackupRestoreRequest(
                     sourceVaultId: fixture.meeting.vaultId, targetVaultId: .v7(), mode: .newVault, name: "Same name"
-                ))
+                )])
                 let outcome = BackupRestoreStartupProcessor.applyPendingRestore(applicationSupportURL: fixture.testRootURL, databaseURL: databaseURL)
                 guard case .restored = outcome else { Issue.record("Restore failed: \(outcome)")
                     return
@@ -175,7 +175,7 @@ import GRDB
             let fixture = try BatchAudioTestFixture(name: "RestoreTarget")
             defer { fixture.removeFiles() }
             let service = BackupService(dbQueue: fixture.database.dbQueue, applicationSupportURL: fixture.testRootURL)
-            let generation = try await service.createGeneration(vaultId: fixture.meeting.vaultId)
+            let generation = try await service.createGeneration(vaultIds: [fixture.meeting.vaultId])
             let request = VaultBackupRestoreRequest(
                 sourceVaultId: fixture.meeting.vaultId,
                 targetVaultId: fixture.meeting.vaultId,
@@ -185,10 +185,16 @@ import GRDB
             try await fixture.database.dbQueue.write { db in
                 try db.execute(sql: "UPDATE vaults SET syncRole = 'owner'")
             }
-            await #expect(throws: BackupServiceError.restoreTargetUnavailable) { try await service.prepareRestore(from: generation, request: request)
+            await #expect(throws: BackupServiceError.restoreTargetUnavailable) { try await service.prepareRestore(
+                from: generation,
+                requests: [request]
+            )
             }
             _ = try await fixture.database.dbQueue.write { try VaultRecord.deleteAll($0) }
-            await #expect(throws: BackupServiceError.restoreTargetUnavailable) { try await service.prepareRestore(from: generation, request: request)
+            await #expect(throws: BackupServiceError.restoreTargetUnavailable) { try await service.prepareRestore(
+                from: generation,
+                requests: [request]
+            )
             }
         }
 
@@ -197,10 +203,10 @@ import GRDB
             let fixture = try BatchAudioTestFixture(name: "SafetyFailure")
             defer { fixture.removeFiles() }
             let service = BackupService(dbQueue: fixture.database.dbQueue, applicationSupportURL: fixture.testRootURL)
-            let generation = try await service.createGeneration(vaultId: fixture.meeting.vaultId)
-            _ = try await service.prepareRestore(from: generation, request: VaultBackupRestoreRequest(
+            let generation = try await service.createGeneration(vaultIds: [fixture.meeting.vaultId])
+            _ = try await service.prepareRestore(from: generation, requests: [VaultBackupRestoreRequest(
                 sourceVaultId: fixture.meeting.vaultId, targetVaultId: fixture.meeting.vaultId, mode: .overwrite, name: "Test"
-            ))
+            )])
             let databaseURL = fixture.testRootURL.appending(path: "live.sqlite")
             let live = try AppDatabaseManager(path: databaseURL.path, enablesConcurrentSearch: true)
             try fixture.database.dbQueue.backup(to: live.dbQueue)
@@ -225,18 +231,19 @@ import GRDB
             let unavailable = BackupSettingsViewModel(dbQueue: nil, applicationSupportURL: fixture.testRootURL)
             await unavailable.refresh()
             #expect(unavailable.vaults.isEmpty)
-            #expect(unavailable.selectedVaultId == nil)
+            #expect(unavailable.selectedVaultIds.isEmpty)
             let model = BackupSettingsViewModel(dbQueue: fixture.database.dbQueue, applicationSupportURL: fixture.testRootURL)
+            model.selectedVaultIds = [fixture.meeting.vaultId]
             await model.refresh()
             #expect(model.generations.isEmpty)
-            #expect(model.selectedVaultId == fixture.meeting.vaultId)
+            #expect(model.selectedVaultIds == [fixture.meeting.vaultId])
             await model.createBackup()
             let metadata = try #require(model.generations.first?.metadata)
-            #expect(model.canOverwrite(metadata))
+            #expect(model.canOverwrite(vaultId: metadata.vaults[0].id))
             #expect(!model.isBusy)
             try await fixture.database.dbQueue.write { try $0.execute(sql: "UPDATE vaults SET syncRole = 'owner'") }
             await model.refresh()
-            #expect(!model.canOverwrite(metadata))
+            #expect(!model.canOverwrite(vaultId: metadata.vaults[0].id))
             await model.importBackup(from: fixture.testRootURL.appending(path: "missing.sqlite"))
             #expect(model.errorMessage != nil)
             #expect(!model.isBusy)
@@ -260,7 +267,7 @@ import GRDB
                 try child.insert(db)
             }
             let service = BackupService(dbQueue: fixture.database.dbQueue, applicationSupportURL: fixture.testRootURL)
-            let generation = try await service.createGeneration(vaultId: fixture.meeting.vaultId)
+            let generation = try await service.createGeneration(vaultIds: [fixture.meeting.vaultId])
             let editable = try DatabaseQueue(path: generation.fileURL.path, configuration: AppDatabaseManager.configuration())
             try await editable.write { db in
                 let trigger = try String.fetchOne(db, sql: "SELECT sql FROM sqlite_master WHERE name = 'projects_validate_parent_update'")!
@@ -269,9 +276,9 @@ import GRDB
                 try db.execute(sql: trigger)
             }
             try editable.close()
-            _ = try await service.prepareRestore(from: generation, request: VaultBackupRestoreRequest(
+            _ = try await service.prepareRestore(from: generation, requests: [VaultBackupRestoreRequest(
                 sourceVaultId: fixture.meeting.vaultId, targetVaultId: .v7(), mode: .newVault, name: "New"
-            ))
+            )])
             let databaseURL = fixture.testRootURL.appending(path: "live.sqlite")
             let live = try AppDatabaseManager(path: databaseURL.path)
             try fixture.database.dbQueue.backup(to: live.dbQueue)
@@ -287,12 +294,12 @@ import GRDB
             #expect(counts.1 == 2)
         }
 
-        @Test(arguments: [VaultBackupRestoreRequest.Mode.overwrite, .newVault])
-        func restoresKnownOlderV2SchemaWithoutChangingOriginal(mode: VaultBackupRestoreRequest.Mode) async throws {
+        @Test(arguments: [VaultBackupRestoreRequest.Mode.overwrite, .newVault], [2, 3])
+        func restoresKnownOlderSchemaWithoutChangingOriginal(mode: VaultBackupRestoreRequest.Mode, format: Int) async throws {
             let fixture = try BatchAudioTestFixture(name: "OlderV2", endedAt: .now, batchCompletedAt: .now)
             defer { fixture.removeFiles() }
             let service = BackupService(dbQueue: fixture.database.dbQueue, applicationSupportURL: fixture.testRootURL)
-            let generation = try await service.createGeneration(vaultId: fixture.meeting.vaultId)
+            let generation = try await service.createGeneration(vaultIds: [fixture.meeting.vaultId])
             let identifier = try #require(AppDatabaseManager.migrationIdentifiers.dropLast().last)
             let oldURL = fixture.testRootURL.appending(path: "older.sqlite")
             let old = try DatabaseQueue(path: oldURL.path, configuration: AppDatabaseManager.configuration())
@@ -304,26 +311,36 @@ import GRDB
                 try db.execute(sql: "INSERT INTO vaults SELECT * FROM current_backup.vaults")
                 try fixture.meeting.insert(db)
                 try fixture.session.insert(db)
-                try db.execute(sql: "CREATE TABLE dahlia_backup_metadata AS SELECT * FROM current_backup.dahlia_backup_metadata")
+                if format == 2 {
+                    try db.execute(sql: """
+                    CREATE TABLE dahlia_backup_metadata AS
+                    SELECT formatVersion, generationId, createdAt, schemaVersion, migrationIdentifier, appVersion, appBuild, reason,
+                        ? AS vaultId, ? AS vaultName FROM current_backup.dahlia_backup_metadata
+                    """, arguments: [fixture.meeting.vaultId.uuidString, "Test"])
+                } else {
+                    try db.execute(sql: "CREATE TABLE dahlia_backup_metadata AS SELECT * FROM current_backup.dahlia_backup_metadata")
+                }
                 try db.execute(
-                    sql: "UPDATE dahlia_backup_metadata SET migrationIdentifier = ?, schemaVersion = ?",
-                    arguments: [identifier, AppDatabaseManager.schemaVersion(from: identifier)]
+                    sql: "UPDATE dahlia_backup_metadata SET formatVersion = ?, migrationIdentifier = ?, schemaVersion = ?",
+                    arguments: [format, identifier, AppDatabaseManager.schemaVersion(from: identifier)]
                 )
             }
             try old.close()
             let originalHash = try BackupService.sha256(of: oldURL)
             let imported = try await service.importGeneration(from: oldURL)
-            _ = try await service.prepareRestore(from: imported, request: VaultBackupRestoreRequest(
+            #expect(imported.metadata?.formatVersion == format)
+            #expect(imported.metadata?.vaults == [BackupVault(id: fixture.meeting.vaultId, name: "Test")])
+            _ = try await service.prepareRestore(from: imported, requests: [VaultBackupRestoreRequest(
                 sourceVaultId: fixture.meeting.vaultId,
                 targetVaultId: mode == .overwrite ? fixture.meeting.vaultId : .v7(),
                 mode: mode, name: "Restored"
-            ))
+            )])
             let databaseURL = fixture.testRootURL.appending(path: "live.sqlite")
             let live = try AppDatabaseManager(path: databaseURL.path)
             try fixture.database.dbQueue.backup(to: live.dbQueue)
             try live.close()
             let outcome = BackupRestoreStartupProcessor.applyPendingRestore(applicationSupportURL: fixture.testRootURL, databaseURL: databaseURL)
-            guard case .restored = outcome else { Issue.record("Older v2 restore failed: \(outcome)")
+            guard case .restored = outcome else { Issue.record("Older backup restore failed: \(outcome)")
                 return
             }
             let result = try AppDatabaseManager(path: databaseURL.path)

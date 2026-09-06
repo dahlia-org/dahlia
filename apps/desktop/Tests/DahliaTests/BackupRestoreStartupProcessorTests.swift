@@ -164,14 +164,14 @@ import GRDB
                 migrationIdentifier: AppDatabaseManager.currentMigrationIdentifier,
                 appVersion: "1.2.3",
                 appBuild: "45",
-                reason: .manual, vaultId: .v7(), vaultName: "Test"
+                reason: .manual, vaults: [BackupVault(id: .v7(), name: "Test")]
             )
             let marker = try PendingDatabaseRestore(
                 stagedFilename: stagedURL.lastPathComponent,
                 sha256: BackupService.sha256(of: stagedURL),
                 requestedAt: .now,
                 sourceMetadata: metadata,
-                request: VaultBackupRestoreRequest(sourceVaultId: metadata.vaultId, targetVaultId: .v7(), mode: .newVault, name: "Restored")
+                requests: [VaultBackupRestoreRequest(sourceVaultId: metadata.vaults[0].id, targetVaultId: .v7(), mode: .newVault, name: "Restored")]
             )
             let encoder = JSONEncoder()
             encoder.dateEncodingStrategy = .deferredToDate

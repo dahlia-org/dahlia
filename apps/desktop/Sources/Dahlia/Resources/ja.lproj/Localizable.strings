@@ -1637,10 +1637,16 @@
 
 /* Vault backup */
 "Vault Backup" = "保管庫のバックアップ";
-"Back up the selected vault’s database content, including screenshots. Audio, external files, and account credentials are excluded." = "選択した保管庫のDB内データ（スクリーンショットを含む）を保存します。音声・外部ファイル・認証情報は含まれません。";
+"Back up the selected vaults together, including screenshots. Audio, external files, and account credentials are excluded." = "選択した複数の保管庫をまとめて保存します（スクリーンショットを含む）。音声・外部ファイル・認証情報は含まれません。";
 "Restore Method" = "復元方法";
 "Restore as a New Local Vault" = "別のローカル保管庫として復元";
 "Overwrite the Original Local Vault" = "元のローカル保管庫を上書き";
 "Overwrite requires the original local vault with no unprocessed recordings. Synced vaults cannot be overwritten." = "上書きには、未処理の録音がない元のローカル保管庫が必要です。同期保管庫には上書きできません。";
-"Dahlia will restart. Overwrite creates a safety backup first. Other vaults are preserved. Audio and external files are not restored." = "Dahliaを再起動して復元します。上書きでは退避バックアップを作成してから保存内容を置き換えます。他の保管庫は保持されます。音声と外部ファイルは復元されません。";
+"Restore selected vaults after one restart. Back up before overwrite; apply none if any restore fails. Audio and external files are excluded." = "保管庫ごとに復元方法を選択してください。1回の再起動でまとめて復元します。上書き前に退避バックアップを作成し、1件でも失敗した場合は適用しません。音声と外部ファイルは復元されません。";
 "%@ (Restored)" = "%@（復元）";
+
+"Deselect All Vaults" = "すべて解除";
+
+"Do Not Restore" = "復元しない";
+
+"Vaults: %d" = "保管庫数: %d";

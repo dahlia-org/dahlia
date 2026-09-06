@@ -1553,9 +1553,15 @@ enum L10n { // swiftlint:disable:this type_body_length
         localized: "Open Privacy & Security in System Settings and choose the relevant permission manually.",
         bundle: bundle
     ) }
+    static var backupDeselectAll: String { String(localized: "Deselect All Vaults", bundle: bundle) }
+    static var backupSkipVault: String { String(localized: "Do Not Restore", bundle: bundle) }
+    static func backupVaultCount(_ count: Int) -> String {
+        String(format: String(localized: "Vaults: %d", bundle: bundle), count)
+    }
+
     static var vaultBackup: String { String(localized: "Vault Backup", bundle: bundle) }
     static var vaultBackupDescription: String { String(
-        localized: "Back up the selected vault’s database content, including screenshots. Audio, external files, and account credentials are excluded.",
+        localized: "Back up the selected vaults together, including screenshots. Audio, external files, and account credentials are excluded.",
         bundle: bundle
     ) }
     static var backupRestoreMode: String { String(localized: "Restore Method", bundle: bundle) }
@@ -1566,7 +1572,7 @@ enum L10n { // swiftlint:disable:this type_body_length
         bundle: bundle
     ) }
     static var vaultBackupRestoreDescription: String { String(
-        localized: "Dahlia will restart. Overwrite creates a safety backup first. Other vaults are preserved. Audio and external files are not restored.",
+        localized: "Restore selected vaults after one restart. Back up before overwrite; apply none if any restore fails. Audio and external files are excluded.",
         bundle: bundle
     ) }
     static func restoredVaultName(_ name: String) -> String {

@@ -1637,10 +1637,16 @@
 
 /* Vault backup */
 "Vault Backup" = "Vault Backup";
-"Back up the selected vault’s database content, including screenshots. Audio, external files, and account credentials are excluded." = "Back up the selected vault’s database content, including screenshots. Audio, external files, and account credentials are excluded.";
+"Back up the selected vaults together, including screenshots. Audio, external files, and account credentials are excluded." = "Back up the selected vaults together, including screenshots. Audio, external files, and account credentials are excluded.";
 "Restore Method" = "Restore Method";
 "Restore as a New Local Vault" = "Restore as a New Local Vault";
 "Overwrite the Original Local Vault" = "Overwrite the Original Local Vault";
 "Overwrite requires the original local vault with no unprocessed recordings. Synced vaults cannot be overwritten." = "Overwrite requires the original local vault with no unprocessed recordings. Synced vaults cannot be overwritten.";
-"Dahlia will restart. Overwrite creates a safety backup first. Other vaults are preserved. Audio and external files are not restored." = "Dahlia will restart. Overwrite creates a safety backup first. Other vaults are preserved. Audio and external files are not restored.";
+"Restore selected vaults after one restart. Back up before overwrite; apply none if any restore fails. Audio and external files are excluded." = "Restore selected vaults after one restart. Back up before overwrite; apply none if any restore fails. Audio and external files are excluded.";
 "%@ (Restored)" = "%@ (Restored)";
+
+"Deselect All Vaults" = "Deselect All Vaults";
+
+"Do Not Restore" = "Do Not Restore";
+
+"Vaults: %d" = "Vaults: %d";

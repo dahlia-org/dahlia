@@ -54,7 +54,7 @@ enum BackupRestoreStartupProcessor {
 
             let combinedURL = restoreDirectoryURL.appending(path: "combined-\(UUID.v7()).sqlite")
             defer { try? fileManager.removeItem(at: combinedURL) }
-            try mergeVault(
+            try mergeVaults(
                 marker: marker,
                 sourceURL: candidateURL,
                 databaseURL: databaseURL,
@@ -75,7 +75,7 @@ enum BackupRestoreStartupProcessor {
         }
     }
 
-    private static func mergeVault(
+    private static func mergeVaults(
         marker: PendingDatabaseRestore,
         sourceURL: URL,
         databaseURL: URL,
@@ -83,12 +83,8 @@ enum BackupRestoreStartupProcessor {
         applicationSupportURL: URL
     ) throws {
         let metadata = try BackupService.readAndValidateMetadata(at: sourceURL)
-        let request = marker.request
-        guard metadata == marker.sourceMetadata, metadata.vaultId == request.sourceVaultId,
-              request.name.nilIfBlank != nil,
-              request.mode != .overwrite || request.sourceVaultId == request.targetVaultId else {
-            throw BackupServiceError.invalidBackup
-        }
+        let requests = marker.requests
+        guard metadata == marker.sourceMetadata else { throw BackupServiceError.invalidBackup }
         // Migrate only a managed copy; retain the original generation and staged checksum for retry.
         let migratedURL = sourceURL.deletingLastPathComponent().appending(path: "migrated-\(UUID.v7()).sqlite")
         defer { try? FileManager.default.removeItem(at: migratedURL) }
@@ -108,21 +104,12 @@ enum BackupRestoreStartupProcessor {
         defer { try? combined.close() }
         try current.backup(to: combined.dbQueue)
         try current.close()
-        let target = try combined.dbQueue.read { db -> VaultRecord? in
-            guard request.mode == .overwrite else {
-                guard try VaultRecord.fetchOne(db, key: request.targetVaultId) == nil else {
-                    throw BackupServiceError.restoreTargetUnavailable
-                }
-                return nil
-            }
-            let vault = try VaultBackupTransfer.validateLocalTarget(id: request.targetVaultId, in: db)
-            let count = try BackupService.unresolvedAudioCount(in: db, vaultId: vault.id)
-            guard count == 0 else { throw BackupServiceError.unresolvedAudio(count) }
-            return vault
+        let targets = try combined.dbQueue.read { db in
+            try BackupService.validateRestoreRequests(requests, metadata: metadata, in: db)
         }
-        if target != nil {
+        if !targets.isEmpty {
             _ = try BackupService.createGeneration(
-                vaultId: request.targetVaultId, dbQueue: combined.dbQueue,
+                vaultIds: Set(targets.keys), dbQueue: combined.dbQueue,
                 directoryURL: applicationSupportURL.appending(path: BackupService.backupDirectoryName),
                 reason: .beforeRestore,
                 appVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "development",
@@ -133,38 +120,41 @@ enum BackupRestoreStartupProcessor {
             try db.execute(sql: "ATTACH DATABASE ? AS backup_source", arguments: [migratedURL.path])
         }
         try combined.dbQueue.write { db in
-            guard let original = try VaultRecord.fetchOne(
-                db,
-                sql: "SELECT * FROM backup_source.vaults WHERE id = ?",
-                arguments: [request.sourceVaultId]
-            ) else {
-                throw BackupServiceError.invalidBackup
+            for request in requests {
+                let target = targets[request.targetVaultId]
+                guard let original = try VaultRecord.fetchOne(
+                    db,
+                    sql: "SELECT * FROM backup_source.vaults WHERE id = ?",
+                    arguments: [request.sourceVaultId]
+                ) else {
+                    throw BackupServiceError.invalidBackup
+                }
+                var restoredVault = VaultBackupTransfer.portableVault(original)
+                if let target {
+                    restoredVault.path = target.path
+                    restoredVault.accountConnectionId = target.accountConnectionId
+                    restoredVault.localAIProvider = target.localAIProvider
+                    restoredVault.databricksProfile = target.databricksProfile
+                    restoredVault.summaryModelID = target.summaryModelID
+                    restoredVault.summaryReasoningEffort = target.summaryReasoningEffort
+                    restoredVault.chatModelID = target.chatModelID
+                    restoredVault.chatReasoningEffort = target.chatReasoningEffort
+                } else {
+                    restoredVault.id = request.targetVaultId
+                    restoredVault.name = request.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                    restoredVault.createdAt = .now
+                    restoredVault.lastOpenedAt = .now
+                }
+                let retainedAudio = target == nil ? [] : try VaultBackupTransfer.retainedAudio(vaultId: request.targetVaultId, in: db)
+                if target != nil { try VaultBackupTransfer.removeVaultContent(id: request.targetVaultId, in: db) }
+                try VaultBackupTransfer.copy(
+                    vaultId: request.sourceVaultId,
+                    in: db,
+                    destinationVault: restoredVault,
+                    remapIDs: request.mode == .newVault
+                )
+                try VaultBackupTransfer.restoreRetainedAudio(retainedAudio, in: db)
             }
-            var restoredVault = VaultBackupTransfer.portableVault(original)
-            if let target {
-                restoredVault.path = target.path
-                restoredVault.accountConnectionId = target.accountConnectionId
-                restoredVault.localAIProvider = target.localAIProvider
-                restoredVault.databricksProfile = target.databricksProfile
-                restoredVault.summaryModelID = target.summaryModelID
-                restoredVault.summaryReasoningEffort = target.summaryReasoningEffort
-                restoredVault.chatModelID = target.chatModelID
-                restoredVault.chatReasoningEffort = target.chatReasoningEffort
-            } else {
-                restoredVault.id = request.targetVaultId
-                restoredVault.name = request.name.trimmingCharacters(in: .whitespacesAndNewlines)
-                restoredVault.createdAt = .now
-                restoredVault.lastOpenedAt = .now
-            }
-            let retainedAudio = target == nil ? [] : try VaultBackupTransfer.retainedAudio(vaultId: request.targetVaultId, in: db)
-            if target != nil { try VaultBackupTransfer.removeVaultContent(id: request.targetVaultId, in: db) }
-            try VaultBackupTransfer.copy(
-                vaultId: request.sourceVaultId,
-                in: db,
-                destinationVault: restoredVault,
-                remapIDs: request.mode == .newVault
-            )
-            try VaultBackupTransfer.restoreRetainedAudio(retainedAudio, in: db)
             try VaultBackupTransfer.validateIntegrity(in: db)
         }
         try combined.dbQueue.writeWithoutTransaction { db in

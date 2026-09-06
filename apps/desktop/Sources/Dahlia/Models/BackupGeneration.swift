@@ -1,7 +1,7 @@
 import Foundation
 
 struct BackupMetadata: Codable, Equatable, Sendable {
-    static let currentFormatVersion = 2
+    static let currentFormatVersion = 3
 
     enum Reason: String, Codable, Sendable {
         case manual
@@ -16,8 +16,12 @@ struct BackupMetadata: Codable, Equatable, Sendable {
     let appVersion: String
     let appBuild: String
     let reason: Reason
-    let vaultId: UUID
-    let vaultName: String
+    let vaults: [BackupVault]
+}
+
+struct BackupVault: Codable, Equatable, Sendable, Identifiable {
+    let id: UUID
+    let name: String
 }
 
 struct BackupGeneration: Identifiable, Equatable, Sendable {
