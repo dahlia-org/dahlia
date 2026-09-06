@@ -89,6 +89,19 @@ enum BackupRestoreStartupProcessor {
               request.mode != .overwrite || request.sourceVaultId == request.targetVaultId else {
             throw BackupServiceError.invalidBackup
         }
+        // Migrate only a managed copy; retain the original generation and staged checksum for retry.
+        let migratedURL = sourceURL.deletingLastPathComponent().appending(path: "migrated-\(UUID.v7()).sqlite")
+        defer { try? FileManager.default.removeItem(at: migratedURL) }
+        try FileManager.default.copyItem(at: sourceURL, to: migratedURL)
+        let migrated = try AppDatabaseManager(path: migratedURL.path)
+        defer { try? migrated.close() }
+        try migrated.dbQueue.read { db in
+            guard try AppDatabaseManager.hasExpectedCurrentSchema(db, excludingTableNames: [BackupService.metadataTableName]) else {
+                throw BackupServiceError.invalidBackup
+            }
+            try VaultBackupTransfer.validateIntegrity(in: db)
+        }
+        try migrated.close()
         let current = try DatabaseQueue(path: databaseURL.path, configuration: AppDatabaseManager.configuration())
         defer { try? current.close() }
         let combined = try AppDatabaseManager(path: combinedURL.path)
@@ -117,7 +130,7 @@ enum BackupRestoreStartupProcessor {
             )
         }
         try combined.dbQueue.writeWithoutTransaction { db in
-            try db.execute(sql: "ATTACH DATABASE ? AS backup_source", arguments: [sourceURL.path])
+            try db.execute(sql: "ATTACH DATABASE ? AS backup_source", arguments: [migratedURL.path])
         }
         try combined.dbQueue.write { db in
             guard let original = try VaultRecord.fetchOne(
@@ -143,6 +156,7 @@ enum BackupRestoreStartupProcessor {
                 restoredVault.createdAt = .now
                 restoredVault.lastOpenedAt = .now
             }
+            let retainedAudio = target == nil ? [] : try VaultBackupTransfer.retainedAudio(vaultId: request.targetVaultId, in: db)
             if target != nil { try VaultBackupTransfer.removeVaultContent(id: request.targetVaultId, in: db) }
             try VaultBackupTransfer.copy(
                 vaultId: request.sourceVaultId,
@@ -150,6 +164,7 @@ enum BackupRestoreStartupProcessor {
                 destinationVault: restoredVault,
                 remapIDs: request.mode == .newVault
             )
+            try VaultBackupTransfer.restoreRetainedAudio(retainedAudio, in: db)
             try VaultBackupTransfer.validateIntegrity(in: db)
         }
         try combined.dbQueue.writeWithoutTransaction { db in

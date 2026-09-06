@@ -336,8 +336,18 @@ final class AppDatabaseManager: Sendable {
         _ db: Database,
         excludingTableNames: Set<String> = []
     ) throws -> Bool {
-        let reference = try AppDatabaseManager(path: ":memory:")
-        let expected = try reference.dbQueue.read {
+        try hasExpectedSchema(db, upTo: currentMigrationIdentifier, excludingTableNames: excludingTableNames)
+    }
+
+    static func hasExpectedSchema(
+        _ db: Database,
+        upTo migrationIdentifier: String,
+        excludingTableNames: Set<String> = []
+    ) throws -> Bool {
+        let reference = try DatabaseQueue(configuration: configuration())
+        defer { try? reference.close() }
+        try migrator.migrate(reference, upTo: migrationIdentifier)
+        let expected = try reference.read {
             try schemaSignature(in: $0, excludingTableNames: excludingTableNames)
         }
         return try schemaSignature(in: db, excludingTableNames: excludingTableNames) == expected

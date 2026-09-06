@@ -158,6 +158,43 @@ enum VaultBackupTransfer {
         return result
     }
 
+    static func retainedAudio(vaultId: UUID, in db: Database) throws -> [(table: String, rows: [Row])] {
+        let sessions = """
+        SELECT current.id FROM recording_sessions current
+        JOIN meetings ON meetings.id = current.meetingId
+        JOIN backup_source.recording_sessions saved ON saved.id = current.id AND saved.meetingId = current.meetingId
+        WHERE meetings.vaultId = ?
+        """
+        let segments = "SELECT id FROM recording_audio_segments WHERE recordingSessionId IN (\(sessions))"
+        let files = "SELECT id FROM recording_audio_files WHERE recordingSessionId IN (\(sessions))"
+        let selections = [
+            ("recording_audio_segments", "recordingSessionId IN (\(sessions))"),
+            ("recording_audio_segment_ranges", "audioSegmentId IN (\(segments))"),
+            ("recording_audio_source_progress", "recordingSessionId IN (\(sessions))"),
+            ("recording_audio_files", "recordingSessionId IN (\(sessions))"),
+            ("recording_audio_ranges", "audioFileId IN (\(files))"),
+        ]
+        var retained = try selections.map { table, predicate in
+            try (table: table, rows: Row.fetchAll(db, sql: "SELECT * FROM \(table) WHERE \(predicate)", arguments: [vaultId]))
+        }
+        try retained.append(("recording_audio_reconciliation_issues", Row.fetchAll(db, sql: """
+        SELECT * FROM recording_audio_reconciliation_issues
+        WHERE (recordingSessionId IN (\(sessions)) OR audioSegmentId IN (\(segments)))
+          AND (recordingSessionId IS NULL OR recordingSessionId IN (\(sessions)))
+          AND (audioSegmentId IS NULL OR audioSegmentId IN (\(segments)))
+        """, arguments: [vaultId, vaultId, vaultId, vaultId])))
+        return retained
+    }
+
+    static func restoreRetainedAudio(_ retained: [(table: String, rows: [Row])], in db: Database) throws {
+        for (table, rows) in retained {
+            for row in rows {
+                let columns = Array(row.columnNames)
+                try insert(columns: columns, values: columns.map { row[$0] as DatabaseValue }, table: table, into: db)
+            }
+        }
+    }
+
     static func removeVaultContent(id: UUID, in db: Database) throws {
         let projects = try ProjectRecord.fetchResolvedAll(vaultId: id, in: db)
             .sorted { $0.path.split(separator: "/").count > $1.path.split(separator: "/").count }

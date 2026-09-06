@@ -408,16 +408,16 @@ actor BackupService {
                 reason: reason, vaultId: vaultID, vaultName: row.decode(forColumn: "vaultName")
             )
             if shouldValidateIntegrity {
-                guard metadata.migrationIdentifier == AppDatabaseManager.currentMigrationIdentifier,
-                      metadata.schemaVersion == AppDatabaseManager.currentSchemaVersion else {
+                guard let index = AppDatabaseManager.migrationIdentifiers.firstIndex(of: metadata.migrationIdentifier),
+                      metadata.schemaVersion == AppDatabaseManager.schemaVersion(from: metadata.migrationIdentifier) else {
                     throw BackupServiceError.newerSchema(metadata.migrationIdentifier)
                 }
-                guard try AppDatabaseManager.migrator.completedMigrations(db) == AppDatabaseManager.migrationIdentifiers,
+                guard try AppDatabaseManager.migrator.completedMigrations(db) == Array(AppDatabaseManager.migrationIdentifiers.prefix(index + 1)),
                       try !AppDatabaseManager.migrator.hasBeenSuperseded(db),
-                      try AppDatabaseManager.hasExpectedCurrentSchema(db, excludingTableNames: [metadataTableName]),
+                      try AppDatabaseManager.hasExpectedSchema(db, upTo: metadata.migrationIdentifier, excludingTableNames: [metadataTableName]),
                       try VaultRecord.fetchCount(db) == 1,
-                      let vault = try VaultRecord.fetchOne(db, key: metadata.vaultId),
-                      vault.name == metadata.vaultName else { throw BackupServiceError.invalidBackup }
+                      try String.fetchOne(db, sql: "SELECT name FROM vaults WHERE id = ?", arguments: [metadata.vaultId])
+                      == metadata.vaultName else { throw BackupServiceError.invalidBackup }
             }
             return metadata
         }

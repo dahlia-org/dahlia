@@ -12,6 +12,15 @@ import GRDB
         func restoresOnlySelectedVault(mode: VaultBackupRestoreRequest.Mode) async throws {
             let fixture = try BatchAudioTestFixture(name: "VaultRestore", endedAt: .now, batchCompletedAt: .now)
             defer { fixture.removeFiles() }
+            try await fixture.recordMicrophoneAudio()
+            let retainedSegments = try await fixture.database.dbQueue.read { try RecordingAudioSegmentRecord.fetchAll($0) }
+            try await fixture.database.dbQueue.write { db in
+                try db.execute(sql: """
+                INSERT INTO recording_audio_reconciliation_issues
+                    (id, recordingSessionId, audioSegmentId, relativePath, reason, firstObservedAt, lastObservedAt)
+                SELECT ?, recordingSessionId, id, finalRelativePath, 'test', ?, ? FROM recording_audio_segments
+                """, arguments: [UUID.v7(), fixture.now, fixture.now])
+            }
             try seedRelationships(fixture)
             let other = VaultRecord(id: .v7(), path: nil, name: "Other", createdAt: .now, lastOpenedAt: .now)
             let connection = DahliaAccountConnectionRecord(id: .v7(), origin: "https://example.invalid", clientID: "test", createdAt: .now)
@@ -82,6 +91,13 @@ import GRDB
                 let meeting = try #require(try MeetingRecord.filter(Column("vaultId") == targetID).fetchOne(db))
                 #expect(meeting.name == fixture.meeting.name)
                 #expect((meeting.id == fixture.meeting.id) == (mode == .overwrite))
+                let session = try #require(try RecordingSessionRecord.filter(Column("meetingId") == meeting.id).fetchOne(db))
+                #expect(try RecordingAudioSegmentRecord.filter(Column("recordingSessionId") == session.id).fetchCount(db)
+                    == (mode == .overwrite ? 1 : 0))
+                #expect(try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM recording_audio_segment_ranges") == 1)
+                #expect(try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM recording_audio_source_progress") == 1)
+                #expect(try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM recording_audio_reconciliation_issues") == 1)
+                #expect(try RecordingAudioSegmentRecord.fetchAll(db) == retainedSegments)
                 let screenshot = try #require(try MeetingScreenshotRecord.filter(Column("meetingId") == meeting.id).fetchOne(db))
                 let summary = try #require(try SummaryRecord.fetchOne(db, key: meeting.id))
                 #expect(try summary.loadDocument().referencedScreenshotIds == [screenshot.id])
@@ -269,6 +285,55 @@ import GRDB
             let counts = try await result.dbQueue.read { db in try (VaultRecord.fetchCount(db), ProjectRecord.fetchCount(db)) }
             #expect(counts.0 == 1)
             #expect(counts.1 == 2)
+        }
+
+        @Test(arguments: [VaultBackupRestoreRequest.Mode.overwrite, .newVault])
+        func restoresKnownOlderV2SchemaWithoutChangingOriginal(mode: VaultBackupRestoreRequest.Mode) async throws {
+            let fixture = try BatchAudioTestFixture(name: "OlderV2", endedAt: .now, batchCompletedAt: .now)
+            defer { fixture.removeFiles() }
+            let service = BackupService(dbQueue: fixture.database.dbQueue, applicationSupportURL: fixture.testRootURL)
+            let generation = try await service.createGeneration(vaultId: fixture.meeting.vaultId)
+            let identifier = try #require(AppDatabaseManager.migrationIdentifiers.dropLast().last)
+            let oldURL = fixture.testRootURL.appending(path: "older.sqlite")
+            let old = try DatabaseQueue(path: oldURL.path, configuration: AppDatabaseManager.configuration())
+            try AppDatabaseManager.migrator.migrate(old, upTo: identifier)
+            try await old.writeWithoutTransaction { db in
+                try db.execute(sql: "ATTACH DATABASE ? AS current_backup", arguments: [generation.fileURL.path])
+            }
+            try await old.write { db in
+                try db.execute(sql: "INSERT INTO vaults SELECT * FROM current_backup.vaults")
+                try fixture.meeting.insert(db)
+                try fixture.session.insert(db)
+                try db.execute(sql: "CREATE TABLE dahlia_backup_metadata AS SELECT * FROM current_backup.dahlia_backup_metadata")
+                try db.execute(
+                    sql: "UPDATE dahlia_backup_metadata SET migrationIdentifier = ?, schemaVersion = ?",
+                    arguments: [identifier, AppDatabaseManager.schemaVersion(from: identifier)]
+                )
+            }
+            try old.close()
+            let originalHash = try BackupService.sha256(of: oldURL)
+            let imported = try await service.importGeneration(from: oldURL)
+            _ = try await service.prepareRestore(from: imported, request: VaultBackupRestoreRequest(
+                sourceVaultId: fixture.meeting.vaultId,
+                targetVaultId: mode == .overwrite ? fixture.meeting.vaultId : .v7(),
+                mode: mode, name: "Restored"
+            ))
+            let databaseURL = fixture.testRootURL.appending(path: "live.sqlite")
+            let live = try AppDatabaseManager(path: databaseURL.path)
+            try fixture.database.dbQueue.backup(to: live.dbQueue)
+            try live.close()
+            let outcome = BackupRestoreStartupProcessor.applyPendingRestore(applicationSupportURL: fixture.testRootURL, databaseURL: databaseURL)
+            guard case .restored = outcome else { Issue.record("Older v2 restore failed: \(outcome)")
+                return
+            }
+            let result = try AppDatabaseManager(path: databaseURL.path)
+            defer { try? result.close() }
+            try await result.dbQueue.read { db throws in
+                #expect(try MeetingRecord.fetchCount(db) == (mode == .overwrite ? 1 : 2))
+                #expect(try AppDatabaseManager.hasExpectedCurrentSchema(db))
+            }
+            #expect(try BackupService.sha256(of: oldURL) == originalHash)
+            #expect(try BackupService.sha256(of: imported.fileURL) == originalHash)
         }
 
         private func verifyExport(_ generation: BackupGeneration, fixture: BatchAudioTestFixture) throws {
