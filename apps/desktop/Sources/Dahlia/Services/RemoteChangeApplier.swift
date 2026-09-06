@@ -554,6 +554,7 @@ enum RemoteChangeApplier {
             let summaries: Set<UUID>
             let transcripts: Set<UUID>
             let screenshots: Set<UUID>
+            let files: Set<UUID>
         }
         let existing = try await dbQueue.read { db in
             try Existing(
@@ -584,12 +585,13 @@ enum RemoteChangeApplier {
                 screenshots: Set(UUID.fetchAll(
                     db,
                     sql: """
-                    SELECT screenshots.id FROM screenshots
-                    JOIN meetings ON meetings.id = screenshots.meetingId
+                    SELECT meeting_files.id FROM meeting_files
+                    JOIN meetings ON meetings.id = meeting_files.meetingId
                     WHERE meetings.vaultId = ?
                     """,
                     arguments: [vaultId]
-                ))
+                )),
+                files: Set(UUID.fetchAll(db, sql: "SELECT id FROM files WHERE vaultId = ?", arguments: [vaultId]))
             )
         }
         let deletedProjects = existing.projects.filter { !snapshot.projects.contains($0.id) }
@@ -598,10 +600,11 @@ enum RemoteChangeApplier {
         let deletedMeetings = existing.meetings.subtracting(snapshot.meetings)
         let deletions: [(sql: String, vaultScoped: Bool, ids: [UUID])] = [
             (
-                "DELETE FROM screenshots WHERE id = ?",
+                "DELETE FROM meeting_files WHERE id = ?",
                 false,
                 Array(existing.screenshots.subtracting(snapshot.screenshots))
             ),
+            ("DELETE FROM files WHERE id = ? AND vaultId = ?", true, Array(existing.files.subtracting(snapshot.files))),
             (
                 "DELETE FROM transcript_segments WHERE meetingId = ? AND isConfirmed = 1",
                 false,
@@ -778,8 +781,10 @@ enum RemoteChangeApplier {
             try db.execute(sql: "DELETE FROM summaries WHERE meetingId = ?", arguments: [id])
         case .transcript:
             try db.execute(sql: "DELETE FROM transcript_segments WHERE meetingId = ?", arguments: [id])
-        case .screenshot:
-            try db.execute(sql: "DELETE FROM screenshots WHERE id = ?", arguments: [id])
+        case .file:
+            try db.execute(sql: "DELETE FROM files WHERE id = ? AND vaultId = ?", arguments: [id, vaultId])
+        case .meetingFile:
+            try db.execute(sql: "DELETE FROM meeting_files WHERE id = ?", arguments: [id])
         case .vault:
             break
         }
@@ -794,7 +799,7 @@ enum RemoteChangeApplier {
         in db: Database
     ) throws {
         switch change.entity {
-        case .vault, .project, .meeting, .summary:
+        case .vault, .project, .meeting, .summary, .file:
             try SyncTransactionQueue.applyCanonical(
                 change.entity,
                 id: change.entityId,
@@ -808,8 +813,8 @@ enum RemoteChangeApplier {
                 segments: transcripts[change.entityId, default: []],
                 in: db
             )
-        case .screenshot:
-            try MeetingScreenshotRecord.applyCanonical(id: change.entityId, vaultId: vaultId, value: record, in: db)
+        case .meetingFile:
+            try MeetingFileRecord.applyCanonical(id: change.entityId, vaultId: vaultId, value: record, in: db)
             try db.execute(
                 sql: "DELETE FROM search_index_jobs WHERE indexKind = 'fts' AND targetKind = 'screenshotAnalysis' AND targetKey = ?",
                 arguments: [change.entityId]

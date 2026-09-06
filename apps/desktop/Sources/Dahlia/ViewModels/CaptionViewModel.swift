@@ -317,7 +317,7 @@ final class CaptionViewModel: ObservableObject {
         return await (try? dbQueue.read { db in
             if let row = try Row.fetchOne(
                 db,
-                sql: "SELECT ocrText, caption FROM screenshots WHERE id = ?",
+                sql: "SELECT ocrText, caption FROM meeting_images WHERE id = ?",
                 arguments: [id]
             ), let text: String = row["ocrText"], let caption: String = row["caption"] {
                 return .completed(ocrText: text, caption: caption)

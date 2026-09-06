@@ -168,13 +168,22 @@ final class MeetingRepository {
     nonisolated func adoptVaultForServerSync(
         id: UUID,
         connectionID: UUID,
-        serverVault: CloudVaultRecord?
+        serverVault: CloudVaultRecord?,
+        screenshotContent: ScreenshotContentProvider = .shared
     ) async throws -> VaultRecord? {
-        try await dbQueue.write { db in
+        screenshotContent.retainOriginals(vaultIds: [id], dbQueue: dbQueue)
+        defer { screenshotContent.releaseOriginals(vaultIds: [id], dbQueue: dbQueue) }
+        let eligible = try await dbQueue.read { db in
+            try VaultRecord.fetchOne(db, key: id)?.accountConnectionId == nil && !SyncTransactionQueue.hasPending(vaultId: id, in: db)
+        }
+        guard eligible else { return nil }
+        let files = try await screenshotContent.prepareAccountTransfer(vaultId: id, connectionId: connectionID, dbQueue: dbQueue)
+        return try await dbQueue.write { db in
             guard var vault = try VaultRecord.fetchOne(db, key: id),
                   vault.accountConnectionId == nil,
                   try !SyncTransactionQueue.hasPending(vaultId: id, in: db)
             else { return nil }
+            try ScreenshotContentProvider.installTransfers(files, vaultId: id, in: db)
             vault.accountConnectionId = connectionID
             vault.syncRole = serverVault?.role
             if let serverVault, serverVault.role == "member" {
@@ -325,14 +334,17 @@ final class MeetingRepository {
         if disposition == .moveToLocalAccount {
             screenshotContent.retainOriginals(vaultIds: vaultIds, dbQueue: dbQueue)
             defer { screenshotContent.releaseOriginals(vaultIds: vaultIds, dbQueue: dbQueue) }
+            var prepared: [UUID: [FileTransfer]] = [:]
             for vaultId in vaultIds {
-                try await screenshotContent.hydrateOriginals(vaultId: vaultId, dbQueue: dbQueue)
+                prepared[vaultId] = try await screenshotContent.prepareAccountTransfer(vaultId: vaultId, connectionId: nil, dbQueue: dbQueue)
             }
+            let transfers = prepared
             try await dbQueue.write { db in
-                guard try !Bool.fetchOne(db, sql: """
-                SELECT EXISTS(SELECT 1 FROM screenshots s JOIN meetings m ON m.id = s.meetingId
-                JOIN vaults v ON v.id = m.vaultId WHERE v.accountConnectionId = ? AND s.imageData IS NULL)
-                """, arguments: [connectionID])! else { throw ScreenshotContentError.unavailable }
+                for vaultId in vaultIds {
+                    guard try VaultRecord.fetchOne(db, key: vaultId)?.accountConnectionId == connectionID
+                    else { throw ScreenshotContentError.authorizationRequired }
+                    try ScreenshotContentProvider.installTransfers(transfers[vaultId, default: []], vaultId: vaultId, in: db)
+                }
                 for vaultId in vaultIds {
                     try SyncTransactionQueue.discard(vaultId: vaultId, in: db)
                 }
@@ -953,7 +965,7 @@ final class MeetingRepository {
             guard !deletedScreenshots.isEmpty else { return [] }
             let deletedIds = Set(deletedScreenshots.map(\.id))
 
-            _ = try MeetingScreenshotRecord
+            _ = try MeetingFileRecord
                 .filter(deletedIds.contains(Column("id")))
                 .deleteAll(db)
             guard let vaultId = try UUID.fetchOne(
@@ -964,7 +976,7 @@ final class MeetingRepository {
             try SyncTransactionRecorder.recordBatches(
                 vaultId: vaultId,
                 operations: deletedScreenshots.map {
-                    SyncOperationDraft(entity: .screenshot, action: .delete, entityId: $0.id)
+                    SyncOperationDraft(entity: .meetingFile, action: .delete, entityId: $0.id)
                 },
                 in: db
             )

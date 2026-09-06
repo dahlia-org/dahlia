@@ -163,6 +163,7 @@ export function createApp(dependencies: AppDependencies) {
     dependencies.searchTokenizer,
     dependencies.searchEmbedder,
     dependencies.screenshotTransformer,
+    config.storageBackend === "databricks" ? config.storageDatabricksVolumePath : undefined,
   );
   const mcp = createArtifactMcpHandler(config, artifacts, sync);
   const mcpMetadataUrl = `${config.baseUrl}/.well-known/oauth-protected-resource/mcp`;
@@ -471,21 +472,30 @@ export function createApp(dependencies: AppDependencies) {
       return context.body(null, 204);
     },
   );
-  app.put(
-    "/api/v1/vaults/:vaultId/meetings/:meetingId/screenshots/:screenshotId/content",
-    async (context) => {
-      const identity = await identities.fromGateway(context.req.raw, ALL_APIS_SCOPE);
-      const vaultId = sync.parseId(context.req.param("vaultId"));
-      const meetingId = sync.parseId(context.req.param("meetingId"));
-      const screenshotId = sync.parseId(context.req.param("screenshotId"));
-      const screenshot = await sync.putScreenshot(identity, vaultId, meetingId, screenshotId, context.req.raw);
-      return context.json({
-        screenshotId: screenshot.screenshotId,
-        contentType: screenshot.contentType,
-        contentLength: screenshot.contentLength,
-      });
-    },
-  );
+  app.post("/api/v1/files", artifactPatchBodyLimit, async (context) => {
+    const requiresBrowserOrigin = config.authProvider === "accounts" && !context.req.header("authorization");
+    if ((requiresBrowserOrigin || context.req.header("origin")) && !mutationOriginAllowed(context.req.raw, config.baseUrl)) {
+      return context.json({ error: "invalid_origin" }, 403);
+    }
+    const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
+    return context.json(await sync.reserveFile(identity, await context.req.json().catch(() => null)));
+  });
+  app.put("/api/v1/files/:fileId/content", async (context) => {
+    const requiresBrowserOrigin = config.authProvider === "accounts" && !context.req.header("authorization");
+    if ((requiresBrowserOrigin || context.req.header("origin")) && !mutationOriginAllowed(context.req.raw, config.baseUrl)) {
+      return context.json({ error: "invalid_origin" }, 403);
+    }
+    const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
+    return context.json(await sync.putFile(identity, sync.parseId(context.req.param("fileId")), context.req.raw));
+  });
+  app.get("/api/v1/files/:fileId", async (context) => {
+    const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
+    return context.json(await sync.getFile(identity, sync.parseId(context.req.param("fileId"))));
+  });
+  app.get("/api/v1/vaults/:vaultId/files", async (context) => {
+    const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
+    return context.json(await sync.listFiles(identity, sync.parseId(context.req.param("vaultId")), context.req.query("cursor")));
+  });
   app.get("/api/v1/vaults", async (context) => {
     const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
     return context.json({ items: await sync.listVaults(identity, context.req.query("userId"), context.req.query("organizationId")) });
@@ -536,18 +546,10 @@ export function createApp(dependencies: AppDependencies) {
     const meetingId = sync.parseId(context.req.param("meetingId"));
     return context.json(await sync.listTranscript(identity, vaultId, meetingId, context.req.query("cursor")));
   });
-  app.get("/api/v1/vaults/:vaultId/meetings/:meetingId/screenshots", async (context) => {
+  app.get("/api/v1/vaults/:vaultId/meetings/:meetingId/files", async (context) => {
     const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
-    const vaultId = sync.parseId(context.req.param("vaultId"));
-    const meetingId = sync.parseId(context.req.param("meetingId"));
-    return context.json(await sync.listScreenshots(
-      identity,
-      vaultId,
-      meetingId,
-      context.req.query("q"),
-      context.req.raw.signal,
-      context.req.query("cursor"),
-    ));
+    return context.json(await sync.listFiles(identity, sync.parseId(context.req.param("vaultId")),
+      context.req.query("cursor"), sync.parseId(context.req.param("meetingId"))));
   });
   app.get("/api/v1/vaults/:vaultId/permissions", async (context) => {
     const identity = await identities.fromBrowser(context.req.raw);
@@ -711,21 +713,14 @@ export function createApp(dependencies: AppDependencies) {
       sync.parsePermissionPrincipal(context.req.param("userId")),
     ) ? context.body(null, 204) : context.json({ error: "not_found" }, 404);
   });
-  app.on(
-    ["GET", "HEAD"],
-    "/api/v1/vaults/:vaultId/meetings/:meetingId/screenshots/:screenshotId/content",
-    async (context) => {
-      const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
-      return sync.readScreenshot(
-        identity,
-        sync.parseId(context.req.param("vaultId")),
-        sync.parseId(context.req.param("meetingId")),
-        sync.parseId(context.req.param("screenshotId")),
-        context.req.method as "GET" | "HEAD",
-        context.req.raw,
-      );
-    },
-  );
+  app.on(["GET", "HEAD"], "/api/v1/files/:fileId/content", async (context) => {
+    const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
+    return sync.readFile(identity, sync.parseId(context.req.param("fileId")), context.req.method as "GET" | "HEAD", context.req.raw);
+  });
+  app.on(["GET", "HEAD"], "/api/v1/files/:fileId/variants/thumbnail", async (context) => {
+    const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
+    return sync.readFile(identity, sync.parseId(context.req.param("fileId")), context.req.method as "GET" | "HEAD", context.req.raw, true);
+  });
   app.on(
     ["GET", "HEAD"],
     "/mcp/resources/vaults/:vaultId/meetings/:meetingId/screenshots/:screenshotId/content",

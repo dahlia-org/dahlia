@@ -48,7 +48,8 @@
             }
             available.withLock { $0 = true }
             try await SyncInitialSnapshotBuilder.enqueuePending(dbQueue: missing.dbQueue, screenshotContent: provider)
-            #expect(try await missing.storedBytes() == missing.bytes)
+            #expect(try await missing.storedBytes() == nil)
+            #expect(try await provider.content(id: missing.screenshotId, dbQueue: missing.dbQueue).data == missing.bytes)
             #expect(try await missing.dbQueue.read { try VaultRecord.fetchOne($0, key: missing.vaultId)?.syncConfirmedConnectionId } == missing
                 .connectionId)
         }
@@ -59,9 +60,8 @@
             let root = temporaryDirectory()
             defer { try? FileManager.default.removeItem(at: root) }
             let variants = Mutex<[String]>([])
-            let provider = try makeProvider(fixture: fixture, cache: ScreenshotDiskCache(directory: root)) { request in
-                let variant = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?
-                    .queryItems?.first(where: { $0.name == "variant" })?.value ?? "original"
+            let provider = try makeProvider(fixture: fixture, cache: ScreenshotFileStore(directory: root)) { request in
+                let variant = request.url!.path.hasSuffix("variants/thumbnail") ? "thumbnail" : "original"
                 variants.withLock { $0.append(variant) }
                 return (200, [
                     "content-type": "image/png",
@@ -70,8 +70,8 @@
                 ], fixture.bytes)
             }
             defer { ImageURLProtocol.remove(origin: fixture.source.origin) }
-            await provider.configure(dbQueue: fixture.dbQueue)
             try await fixture.makeRemoteOnly()
+            await provider.configure(dbQueue: fixture.dbQueue)
             let loader = ScreenshotImageLoader(contentProvider: provider, cacheableDecoder: { data, _ in
                 #expect(data == fixture.bytes)
                 return nil
@@ -92,7 +92,7 @@
                 return (404, [:], Data())
             }
             defer { ImageURLProtocol.remove(origin: fixture.source.origin) }
-            let entity: SyncEntity = deletesScreenshot ? .screenshot : .meeting
+            let entity: SyncEntity = deletesScreenshot ? .meetingFile : .meeting
             let entityId = deletesScreenshot ? fixture.screenshotId : fixture.meetingId
             try await fixture.dbQueue.write { db in
                 try db.execute(
@@ -123,14 +123,58 @@
             }
         }
 
+        @Test
+        func reapplyingAssociationRecreatesItsMissingMeetingBeforeTheLink() async throws {
+            let fixture = try ScreenshotContentFixture()
+            try await fixture.makeRemoteOnly()
+            try await fixture.dbQueue.write { db in
+                let image = try #require(try MeetingScreenshotRecord.fetchOne(db, key: fixture.screenshotId))
+                try db.execute(
+                    sql: "INSERT INTO sync_entity_state(vaultId, entity, entityId, confirmedRevision) VALUES (?, 'meeting_file', ?, 1)",
+                    arguments: [fixture.vaultId, image.id]
+                )
+                try SyncTransactionRecorder.record(
+                    vaultId: fixture.vaultId,
+                    operations: [SyncInitialSnapshotBuilder.meetingFileOperation(image)],
+                    in: db
+                )
+            }
+            let transaction = try #require(try await SyncTransactionQueue.claim(dbQueue: fixture.dbQueue))
+            try await SyncTransactionQueue.block(transaction, reason: .conflict, response: Data("""
+            {"conflicts":[
+              {"entity":"meeting_file","id":"\(fixture.screenshotId)","serverRevision":null},
+              {"entity":"meeting","id":"\(fixture.meetingId)","serverRevision":null}
+            ]}
+            """.utf8), dbQueue: fixture.dbQueue)
+            try await SyncTransactionQueue.reapplyLocalVersion(
+                vaultId: fixture.vaultId,
+                dbQueue: fixture.dbQueue,
+                screenshotContent: ScreenshotContentProvider()
+            )
+            try await fixture.dbQueue.read { db in
+                let operations = try Row.fetchAll(db, sql: """
+                SELECT o.entity, o.action, o.baseRevision, o.payloadJSON FROM sync_operations o
+                JOIN sync_transactions t ON t.id = o.transactionId ORDER BY t.sequence, o.position
+                """)
+                #expect(operations.map { $0["entity"] as String } == ["meeting", "meeting_file"])
+                #expect(operations.map { $0["action"] as String } == ["create", "upsert"])
+                #expect(operations.allSatisfy { ($0["baseRevision"] as Int?) == nil })
+                let link = try #require(operations.last)
+                let payload = try SyncJSON.decoder.decode(SyncCanonicalPayload.self, from: Data((link["payloadJSON"] as String).utf8))
+                #expect(payload.meetingId == fixture.meetingId)
+                #expect(payload.fileId == fixture.screenshotId)
+                #expect(payload.createdAt != nil)
+            }
+        }
+
         @Test(.timeLimit(.minutes(1)), arguments: [false, true])
         func movingAnAccountRetainsAllItsVaultsUntilCompletion(failsSecondImage: Bool) async throws {
             let first = try ScreenshotContentFixture()
             let second = try ScreenshotContentFixture(dbQueue: first.dbQueue)
             let unrelated = try ScreenshotContentFixture(dbQueue: first.dbQueue)
             let secondSource = ScreenshotRemoteReference(
-                origin: first.source.origin, vaultId: second.vaultId, meetingId: second.meetingId,
-                screenshotId: second.screenshotId, contentHash: second.source.contentHash
+                origin: first.source.origin, accountConnectionId: first.connectionId,
+                fileId: second.screenshotId, contentHash: second.source.contentHash
             )
             try await first.dbQueue.write { db in
                 try db.execute(
@@ -138,7 +182,7 @@
                     arguments: [first.connectionId, first.connectionId, second.vaultId]
                 )
                 try db.execute(
-                    sql: "UPDATE screenshots SET remoteReference = ? WHERE id = ?",
+                    sql: "UPDATE files SET remoteReference = ? WHERE id = ?",
                     arguments: [secondSource.jsonString(), second.screenshotId]
                 )
             }
@@ -170,110 +214,175 @@
                 )
             }
             #expect(await events.next() == "second image")
-            #expect(try await first.storedBytes() == first.bytes)
-            try await provider.evictConfirmedOriginals(dbQueue: first.dbQueue)
-            #expect(try await first.storedBytes() == first.bytes)
-            #expect(try await unrelated.storedBytes() == nil)
+            #expect(try await first.storedBytes() == nil)
+            #expect(try await provider.content(id: first.screenshotId, dbQueue: first.dbQueue).data == first.bytes)
+            try await provider.trimFiles(dbQueue: first.dbQueue, budget: 0)
+            #expect(try await first.storedBytes() == nil)
+            #expect(try await provider.content(id: first.screenshotId, dbQueue: first.dbQueue).data == first.bytes)
+            #expect(try await unrelated.storedBytes() == unrelated.bytes)
             await gate.releaseAll()
             if failsSecondImage {
                 await #expect(throws: ScreenshotContentError.deleted) { try await moving.value }
                 #expect(try await first.dbQueue.read { try VaultRecord.fetchOne($0, key: first.vaultId)?.accountConnectionId } == first.connectionId)
                 // Failure releases the protection, so normal cache maintenance can resume.
-                try await provider.evictConfirmedOriginals(dbQueue: first.dbQueue)
+                try await provider.trimFiles(dbQueue: first.dbQueue, budget: 0)
                 #expect(try await first.storedBytes() == nil)
             } else {
                 try await moving.value
-                #expect(try await first.storedBytes() == first.bytes)
-                #expect(try await second.storedBytes() == second.bytes)
+                #expect(try await first.storedBytes() == nil)
+                #expect(try await provider.content(id: first.screenshotId, dbQueue: first.dbQueue).data == first.bytes)
+                #expect(try await second.storedBytes() == nil)
+                #expect(try await provider.content(id: second.screenshotId, dbQueue: second.dbQueue).data == second.bytes)
                 #expect(try await first.dbQueue.read {
                     try Int.fetchOne($0, sql: "SELECT count(*) FROM vaults WHERE accountConnectionId = ?", arguments: [first.connectionId])
                 } == 0)
             }
         }
 
+        @Test(arguments: ["screenshot", "meeting", "none"], [false, true])
+        func v44UpgradeDropsOnlySupersededImageMetadata(deletion: String, keepsUnrelatedOperation: Bool) async throws {
+            let queue = try DatabaseQueue(configuration: AppDatabaseManager.configuration())
+            try AppDatabaseManager.migrator.migrate(queue, upTo: "v44_retireVectorSearch")
+            let fixture = try ScreenshotContentFixture(dbQueue: queue, priorSchema: true)
+            let updateTransaction = UUID.v7()
+            let deleteTransaction = UUID.v7()
+            let metadataOperation = UUID.v7()
+            let unrelatedOperation = UUID.v7()
+            let deleteOperation = UUID.v7()
+            try await queue.write { db in
+                for id in [updateTransaction, deleteTransaction] {
+                    try db.execute(sql: """
+                    INSERT INTO sync_transactions(id, vaultId, connectionId, createdAt, availableAt) VALUES (?, ?, ?, ?, ?)
+                    """, arguments: [id, fixture.vaultId, fixture.connectionId, Date(), Date()])
+                }
+                let payload = "{\"meetingId\":\"\(fixture.meetingId.uuidString.lowercased())\",\"ocrText\":\"Pending OCR\",\"caption\":\"Pending caption\"}"
+                try db.execute(sql: """
+                INSERT INTO sync_operations(transactionId, position, id, entity, action, entityId, payloadJSON)
+                VALUES (?, 0, ?, 'screenshot', 'upsert', ?, ?)
+                """, arguments: [updateTransaction, metadataOperation, fixture.screenshotId, payload])
+                if keepsUnrelatedOperation {
+                    try db.execute(sql: """
+                    INSERT INTO sync_operations(transactionId, position, id, entity, action, entityId, payloadJSON)
+                    VALUES (?, 1, ?, 'vault', 'update', ?, '{"name":"Preserved"}')
+                    """, arguments: [updateTransaction, unrelatedOperation, fixture.vaultId])
+                }
+                try db.execute(sql: "DELETE FROM screenshots WHERE id = ?", arguments: [fixture.screenshotId])
+                if deletion != "none" {
+                    let target = deletion == "meeting" ? fixture.meetingId : fixture.screenshotId
+                    try db.execute(sql: """
+                    INSERT INTO sync_operations(transactionId, position, id, entity, action, entityId, payloadJSON)
+                    VALUES (?, 0, ?, ?, 'delete', ?, '{}')
+                    """, arguments: [deleteTransaction, deleteOperation, deletion, target])
+                    if deletion == "meeting" { try MeetingRecord.deleteOne(db, key: fixture.meetingId) }
+                }
+            }
+            if deletion == "none" {
+                #expect(throws: ScreenshotContentError.unavailable) { try AppDatabaseManager.migrator.migrate(queue) }
+                return
+            }
+            try AppDatabaseManager.migrator.migrate(queue)
+            try await queue.read { db throws in
+                #expect(try FileRecord.fetchCount(db) == 0)
+                #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_operations WHERE id = ?", arguments: [metadataOperation]) == 0)
+                #expect(try String.fetchOne(db, sql: "SELECT action FROM sync_operations WHERE id = ?", arguments: [deleteOperation]) == "delete")
+                #expect(try Int
+                    .fetchOne(db, sql: "SELECT count(*) FROM sync_operations WHERE id = ?", arguments: [unrelatedOperation]) ==
+                    (keepsUnrelatedOperation ? 1 : 0))
+                #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_transactions") == (keepsUnrelatedOperation ? 2 : 1))
+                #expect(try Row.fetchAll(db, sql: "PRAGMA foreign_key_check").isEmpty)
+            }
+        }
+
         @Test
-        func v44UpgradePreservesOriginalAndQueuedAttachmentGuards() throws {
+        func v44UpgradeExternalizesImagesAndPreservesQueuedAttachments() async throws {
             let dbQueue = try DatabaseQueue(configuration: AppDatabaseManager.configuration())
             try AppDatabaseManager.migrator.migrate(dbQueue, upTo: "v44_retireVectorSearch")
             let fixture = try ScreenshotContentFixture(dbQueue: dbQueue, priorSchema: true)
-            let objects = try dbQueue.read { db in
-                try String.fetchAll(db, sql: "SELECT sql FROM sqlite_master WHERE tbl_name = 'screenshots' AND type = 'trigger' ORDER BY name")
+            let transactionId = UUID.v7()
+            let operationId = UUID.v7()
+            try await dbQueue.write { db in
+                try db.execute(
+                    sql: "INSERT INTO sync_transactions(id, vaultId, connectionId, createdAt, availableAt) VALUES (?, ?, ?, ?, ?)",
+                    arguments: [transactionId, fixture.vaultId, fixture.connectionId, Date(), Date()]
+                )
+                try db.execute(sql: """
+                INSERT INTO sync_operations(transactionId, position, id, entity, action, entityId, attachmentMimeType, attachmentSHA256)
+                VALUES (?, 0, ?, 'screenshot', 'upsert', ?, 'image/png', ?)
+                """, arguments: [transactionId, operationId, fixture.screenshotId, fixture.source.contentHash])
             }
             try AppDatabaseManager.migrator.migrate(dbQueue)
-            try dbQueue.write { db in
+            try await dbQueue.read { db in
                 let row = try #require(try MeetingScreenshotRecord.fetchOne(db, key: fixture.screenshotId))
                 #expect(row.imageData == fixture.bytes)
                 #expect(row.ocrText == "durable OCR")
                 #expect(row.caption == "durable caption")
                 #expect(row.contentLength == fixture.bytes.count)
                 #expect(try Row.fetchAll(db, sql: "PRAGMA foreign_key_check").isEmpty)
-                #expect(try String.fetchAll(
-                    db,
-                    sql: "SELECT sql FROM sqlite_master WHERE tbl_name = 'screenshots' AND type = 'trigger' ORDER BY name"
-                ) == objects)
-                let operation = try SyncInitialSnapshotBuilder.screenshotOperation(row, action: .upsert, contentHash: fixture.source.contentHash)
-                _ = try SyncTransactionRecorder.record(
-                    vaultId: fixture.vaultId, operations: [operation],
-                    screenshotAttachments: [operation.id: SyncScreenshotAttachment(mimeType: "image/png", bytes: fixture.bytes)], in: db
-                )
-                try db.execute(sql: "UPDATE screenshots SET imageData = NULL WHERE id = ?", arguments: [fixture.screenshotId])
-                #expect(try Data.fetchOne(db, sql: "SELECT attachmentBytes FROM sync_operations WHERE id = ?", arguments: [operation.id]) == fixture
-                    .bytes)
-                #expect(try MeetingScreenshotRecord.fetchOne(db, key: fixture.screenshotId)?.imageData == nil)
+                #expect(try db.tableExists("screenshots") == false)
+                #expect(try db.tableExists("files"))
+                #expect(try db.tableExists("meeting_files"))
             }
+            let provider = ScreenshotContentProvider()
+            try await provider.migrateLegacyImages(vaultId: fixture.vaultId, dbQueue: dbQueue)
+            try await provider.migrateLegacyImages(vaultId: fixture.vaultId, dbQueue: dbQueue)
+            #expect(try await fixture.storedBytes() == nil)
+            #expect(try await provider.content(id: fixture.screenshotId, dbQueue: dbQueue).data == fixture.bytes)
+            try await dbQueue.write { db in
+                #expect(try String.fetchOne(db, sql: "SELECT attachmentReference FROM sync_operations WHERE id = ?", arguments: [operationId]) != nil)
+                #expect(try Data.fetchOne(db, sql: "SELECT attachmentBytes FROM sync_operations WHERE id = ?", arguments: [operationId]) == nil)
+                _ = try MeetingFileRecord.deleteOne(db, key: fixture.screenshotId)
+                #expect(try Data.fetchOne(db, sql: "SELECT attachmentBytes FROM sync_operations WHERE id = ?", arguments: [operationId]) == nil)
+            }
+            #expect(try await provider.attachment(operationId: operationId, dbQueue: dbQueue)?.bytes == fixture.bytes)
         }
 
-        @Test
-        func evictionProtectsPendingRecoveryRecordingAndLocalOriginals() async throws {
+        @Test(arguments: [false, true])
+        func evictionProtectsUnconfirmedQueuedAndRecoveryOriginals(remoteOnly: Bool) async throws {
             let fixture = try ScreenshotContentFixture()
             let root = temporaryDirectory()
             defer { try? FileManager.default.removeItem(at: root) }
-            let cache = try ScreenshotDiskCache(directory: root)
+            let cache = try ScreenshotFileStore(directory: root)
             let provider = ScreenshotContentProvider(cache: cache)
-            try await fixture.confirm()
             let queue = fixture.dbQueue
             let vaultId = fixture.vaultId
+            try await provider.prepareOriginals(vaultId: vaultId, dbQueue: queue)
+            #expect(try await fixture.storedBytes() == nil)
+            try await provider.trimFiles(dbQueue: queue, budget: 0)
+            #expect(try cache.read(fixture.source, variant: .original)?.data == fixture.bytes)
+            try await fixture.confirm()
+            if remoteOnly {
+                try await queue.write { db in
+                    try db.execute(sql: "UPDATE files SET localReference = NULL WHERE id = ?", arguments: [fixture.screenshotId])
+                }
+            }
             try await queue.write { db in
-                try db.execute(
-                    sql: "INSERT INTO sync_transactions(id, vaultId, connectionId, createdAt, availableAt) VALUES (?, ?, ?, ?, ?)",
-                    arguments: [UUID.v7(), vaultId, fixture.connectionId, Date(), Date()]
+                let record = try #require(try MeetingScreenshotRecord.fetchOne(db, key: fixture.screenshotId))
+                let operation = try SyncInitialSnapshotBuilder.screenshotOperation(record, action: .upsert, contentHash: fixture.source.contentHash)
+                try SyncTransactionRecorder.record(
+                    vaultId: vaultId,
+                    operations: [operation],
+                    in: db
                 )
             }
-            try await provider.evictConfirmedOriginals(dbQueue: queue)
-            #expect(try await fixture.storedBytes() == fixture.bytes)
+            try await provider.trimFiles(dbQueue: queue, budget: 0)
+            #expect(try cache.read(fixture.source, variant: .original)?.data == fixture.bytes)
+            let transaction = try #require(try await SyncTransactionQueue.claim(dbQueue: queue))
+            try await SyncTransactionQueue.block(transaction, reason: .conflict, response: Data("{}".utf8), dbQueue: queue)
+            try await provider.trimFiles(dbQueue: queue, budget: 0)
+            #expect(try cache.read(fixture.source, variant: .original)?.data == fixture.bytes)
             try await queue.write { db in
                 try SyncTransactionQueue.discard(vaultId: vaultId, in: db)
                 try db.execute(sql: "UPDATE vaults SET syncRecoveryState = 'pending' WHERE id = ?", arguments: [vaultId])
             }
-            try await provider.evictConfirmedOriginals(dbQueue: queue)
-            #expect(try await fixture.storedBytes() == fixture.bytes)
-            let session = RecordingSessionRecord(
-                id: .v7(),
-                meetingId: fixture.meetingId,
-                startedAt: .now,
-                endedAt: nil,
-                offsetSeconds: 0,
-                createdAt: .now,
-                updatedAt: .now
-            )
+            try await provider.trimFiles(dbQueue: queue, budget: 0)
+            #expect(try cache.read(fixture.source, variant: .original)?.data == fixture.bytes)
             try await queue.write { db in
                 try db.execute(sql: "UPDATE vaults SET syncRecoveryState = NULL WHERE id = ?", arguments: [vaultId])
-                try session.insert(db)
             }
-            try await provider.evictConfirmedOriginals(dbQueue: queue)
-            #expect(try await fixture.storedBytes() == fixture.bytes)
-            try await queue.write { db in
-                try db.execute(sql: "UPDATE recording_sessions SET endedAt = ? WHERE id = ?", arguments: [Date(), session.id])
-            }
-            try await provider.evictConfirmedOriginals(dbQueue: queue)
-            #expect(try await fixture.storedBytes() == nil)
-            #expect(try await provider.content(id: fixture.screenshotId, dbQueue: queue).data == fixture.bytes)
+            try await provider.trimFiles(dbQueue: queue, budget: 0)
+            #expect(try cache.read(fixture.source, variant: .original) == nil)
             #expect(try await queue.read { try VaultRecord.fetchOne($0, key: vaultId)?.syncPullCursor } == "cursor")
             #expect(try await !SyncTransactionQueue.hasPending(vaultId: vaultId, dbQueue: queue))
-            try await provider.hydrateOriginals(vaultId: vaultId, dbQueue: queue)
-            try await MeetingRepository(dbQueue: queue).resolveVaultsForSignOut(connectionID: fixture.connectionId, disposition: .moveToLocalAccount)
-            try await provider.evictConfirmedOriginals(dbQueue: queue)
-            #expect(try await fixture.storedBytes() == fixture.bytes)
         }
 
         @Test
@@ -281,7 +390,7 @@
             let fixture = try ScreenshotContentFixture()
             let root = temporaryDirectory()
             defer { try? FileManager.default.removeItem(at: root) }
-            let cache = try ScreenshotDiskCache(directory: root)
+            let cache = try ScreenshotFileStore(directory: root)
             let calls = Mutex(0)
             let provider = makeProvider(fixture: fixture, cache: cache) { request in
                 calls.withLock { $0 += 1 }
@@ -295,7 +404,7 @@
             #expect(thumbnail.data == fixture.bytes)
             #expect(try await provider.content(id: fixture.screenshotId, dbQueue: fixture.dbQueue).data == fixture.bytes)
             #expect(calls.withLock { $0 } == 1)
-            try Data([0]).write(to: root.appending(path: "\(fixture.source.cacheKey(variant: .original)).bin"))
+            try Data([0]).write(to: root.appending(path: "\(fixture.source.cacheKey(variant: .original))"))
             #expect(try await provider.content(id: fixture.screenshotId, dbQueue: fixture.dbQueue).data == fixture.bytes)
             #expect(calls.withLock { $0 } == 2)
         }
@@ -393,53 +502,115 @@
         }
 
         @Test
-        func backupSavesReferencesAndRestoreHydratesOnlyItsStagedCopy() async throws {
+        func backupIncludesLocalOriginalsWithoutCloudReads() async throws {
             let fixture = try ScreenshotContentFixture()
             let root = temporaryDirectory()
             defer { try? FileManager.default.removeItem(at: root) }
             let calls = Mutex(0)
-            let provider = makeProvider(fixture: fixture) { _ in
+            let provider = try makeProvider(fixture: fixture, cache: ScreenshotFileStore(directory: root.appending(path: "FileStore"))) { _ in
                 calls.withLock { $0 += 1 }
-                return (200, ["content-type": "image/png"], fixture.bytes)
+                return (404, [:], Data())
             }
             defer { ImageURLProtocol.remove(origin: fixture.source.origin) }
-            try await fixture.makeRemoteOnly()
-            let backup = BackupService(dbQueue: fixture.dbQueue, applicationSupportURL: root, screenshotContent: provider)
+            let backup = BackupService(dbQueue: fixture.dbQueue, applicationSupportURL: root)
+            await #expect(throws: BackupServiceError.localVaultsOnly) { try await backup.createGeneration(vaultIds: [fixture.vaultId]) }
+            try await MeetingRepository(dbQueue: fixture.dbQueue).resolveVaultsForSignOut(
+                connectionID: fixture.connectionId, disposition: .moveToLocalAccount, screenshotContent: provider
+            )
             let generation = try await backup.createGeneration(vaultIds: [fixture.vaultId])
-            #expect(calls.withLock { $0 } == 0)
             let marker = try await backup.prepareRestore(from: generation, requests: [VaultBackupRestoreRequest(
                 sourceVaultId: fixture.vaultId, targetVaultId: .v7(), mode: .newVault, name: "Restored"
             )])
-            #expect(calls.withLock { $0 } == 1)
-            let staged = try DatabaseQueue(path: root.appending(path: "Restore/\(marker.stagedFilename)").path)
+            #expect(calls.withLock { $0 } == 0)
+            let archiveURL = root.appending(path: "Restore/\(marker.stagedFilename)")
+            let original = try BackupArchive.withExtracted(at: archiveURL) { directory, _ in
+                try Data(contentsOf: directory.appending(path: "files/\(fixture.screenshotId.uuidString.lowercased())/original"))
+            }
+            #expect(original == fixture.bytes)
+            let staged = try DatabaseQueue(path: extractedBackupDatabase(archiveURL).path)
             let restored = try await staged.read { try MeetingScreenshotRecord.fetchOne($0, key: fixture.screenshotId) }
-            #expect(restored?.imageData == fixture.bytes)
-            #expect(try await fixture.storedBytes() == nil)
-            let saved = try DatabaseQueue(path: generation.fileURL.path)
-            #expect(try await saved.read { try MeetingScreenshotRecord.fetchOne($0, key: fixture.screenshotId)?.imageData } == nil)
+            #expect(restored?.imageData == nil)
+            #expect(restored?.localReference == nil)
+            #expect(restored?.remoteReference == nil)
             try staged.close()
-            try saved.close()
+        }
+
+        @Test(arguments: [false, true])
+        func cachedThumbnailsFollowTheOriginalChecksum(readOnly: Bool) throws {
+            let fixture = try ScreenshotContentFixture()
+            let root = temporaryDirectory()
+            defer { try? FileManager.default.removeItem(at: root) }
+            let cache = try ScreenshotFileStore(directory: root)
+            let replacement = ScreenshotRemoteReference(
+                origin: fixture.source.origin,
+                accountConnectionId: fixture.connectionId,
+                fileId: fixture.screenshotId,
+                contentHash: ScreenshotRemoteReference.digest(Data([2]))
+            )
+            try cache.write(ScreenshotContent(data: fixture.bytes, mimeType: "image/png", variant: .original), source: fixture.source)
+            try cache.write(ScreenshotContent(data: Data([1]), mimeType: "image/webp", variant: .thumbnail), source: fixture.source)
+            let reopened = try ScreenshotFileStore(directory: root, readOnly: readOnly)
+            #expect(try reopened.read(replacement, variant: .thumbnail) == nil)
+            #expect(try reopened.read(fixture.source, variant: .thumbnail)?.data == Data([1]))
+            try cache.write(ScreenshotContent(data: Data([3]), mimeType: "image/webp", variant: .thumbnail), source: replacement)
+            #expect(try reopened.read(fixture.source, variant: .thumbnail) == nil)
+            #expect(try reopened.read(replacement, variant: .thumbnail)?.data == Data([3]))
+            #expect(try reopened.read(fixture.source, variant: .original)?.data == fixture.bytes)
+        }
+
+        @Test
+        func cacheIndexUpgradePreservesOriginalsAndRefetchesUnboundThumbnails() throws {
+            let fixture = try ScreenshotContentFixture()
+            let root = temporaryDirectory()
+            defer { try? FileManager.default.removeItem(at: root) }
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            let index = try DatabaseQueue(path: root.appending(path: "index.sqlite").path)
+            try index.write { db in
+                try db
+                    .execute(
+                        sql: "CREATE TABLE images (key TEXT PRIMARY KEY, mimeType TEXT NOT NULL, variant TEXT NOT NULL, byteCount INTEGER NOT NULL, digest TEXT NOT NULL, accessedAt REAL NOT NULL)"
+                    )
+                for variant in [ScreenshotVariant.original, .thumbnail] {
+                    let key = fixture.source.cacheKey(variant: variant)
+                    let file = root.appending(path: key)
+                    try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+                    try fixture.bytes.write(to: file)
+                    try db.execute(
+                        sql: "INSERT INTO images VALUES (?, 'image/png', ?, ?, ?, 0)",
+                        arguments: [key, variant.rawValue, fixture.bytes.count, fixture.source.contentHash]
+                    )
+                }
+            }
+            try index.close()
+            let helper = try ScreenshotFileStore(directory: root, readOnly: true)
+            #expect(try helper.read(fixture.source, variant: .original)?.data == fixture.bytes)
+            #expect(try helper.read(fixture.source, variant: .thumbnail) == nil)
+            let upgraded = try ScreenshotFileStore(directory: root)
+            #expect(try upgraded.read(fixture.source, variant: .original)?.data == fixture.bytes)
+            #expect(try upgraded.read(fixture.source, variant: .thumbnail) == nil)
+            try upgraded.write(ScreenshotContent(data: fixture.bytes, mimeType: "image/png", variant: .thumbnail), source: fixture.source)
+            #expect(try upgraded.read(fixture.source, variant: .thumbnail)?.data == fixture.bytes)
         }
 
         @Test
         func cacheEnforcesBudgetAndVacuumActuallyShrinksTheFile() async throws {
             let root = temporaryDirectory()
             defer { try? FileManager.default.removeItem(at: root) }
-            let cache = try ScreenshotDiskCache(directory: root.appending(path: "cache"))
+            let cache = try ScreenshotFileStore(directory: root.appending(path: "cache"))
             let fixture = try ScreenshotContentFixture()
             let content = ScreenshotContent(data: fixture.bytes, mimeType: "image/png", variant: .original)
             try cache.write(content, source: fixture.source, budget: fixture.bytes.count)
             let second = ScreenshotRemoteReference(
                 origin: fixture.source.origin,
-                vaultId: fixture.vaultId,
-                meetingId: fixture.meetingId,
-                screenshotId: .v7(),
+                accountConnectionId: fixture.connectionId,
+                fileId: .v7(),
                 contentHash: fixture.source.contentHash
             )
             try cache.write(content, source: second, budget: fixture.bytes.count)
+            try cache.trim(budget: fixture.bytes.count, protecting: [])
             #expect(try cache.read(fixture.source, variant: .original) == nil)
             try cache.write(content, source: fixture.source, budget: 100)
-            try cache.trim(budget: 0)
+            try cache.trim(budget: 0, protecting: [])
             #expect(try cache.read(fixture.source, variant: .original) == nil)
             let path = root.appending(path: "compact.sqlite")
             let database = try AppDatabaseManager(path: path.path)
@@ -459,53 +630,26 @@
             try database.close()
         }
 
-        @Test(arguments: [false, true])
-        func unavailableBackupImagesFailOnlyTheirVault(failAll: Bool) async throws {
-            let first = try ScreenshotContentFixture()
-            let second = try ScreenshotContentFixture(dbQueue: first.dbQueue)
-            try await first.makeRemoteOnly()
-            try await second.makeRemoteOnly()
+        @Test
+        func backupRejectsServerOnlyAndMixedSelections() async throws {
+            let server = try ScreenshotContentFixture()
+            let local = try ScreenshotContentFixture(dbQueue: server.dbQueue)
+            try await local.dbQueue.write { db in
+                try db.execute(
+                    sql: "UPDATE vaults SET accountConnectionId = NULL, syncConfirmedConnectionId = NULL WHERE id = ?",
+                    arguments: [local.vaultId]
+                )
+            }
             let root = temporaryDirectory()
             defer { try? FileManager.default.removeItem(at: root) }
-            let provider = makeProvider(fixture: first) { _ in
-                (failAll ? 404 : 200, ["content-type": "image/png"], first.bytes)
+            let service = BackupService(dbQueue: server.dbQueue, applicationSupportURL: root)
+            #expect(try await service.listVaults().map(\.id) == [local.vaultId])
+            await #expect(throws: BackupServiceError.localVaultsOnly) { try await service.createGeneration(vaultIds: [server.vaultId]) }
+            await #expect(throws: BackupServiceError.localVaultsOnly) { try await service.createGeneration(vaultIds: [server.vaultId, local.vaultId])
             }
-            defer { ImageURLProtocol.remove(origin: first.source.origin) }
-            let service = BackupService(dbQueue: first.dbQueue, applicationSupportURL: root, screenshotContent: provider)
-            let generation = try await service.createGeneration(vaultIds: [first.vaultId, second.vaultId])
-            let requests = [first, second].map {
-                VaultBackupRestoreRequest(sourceVaultId: $0.vaultId, targetVaultId: .v7(), mode: .newVault, name: "Restored")
-            }
-            if failAll {
-                await #expect(throws: ScreenshotContentError.deleted) { try await service.prepareRestore(from: generation, requests: requests) }
-                #expect(!FileManager.default.fileExists(atPath: BackupService.pendingRestoreURL(applicationSupportURL: root).path))
-                return
-            }
-            _ = try await service.prepareRestore(from: generation, requests: requests)
-            let path = root.appending(path: "live.sqlite")
-            let live = try AppDatabaseManager(path: path.path)
-            try first.dbQueue.backup(to: live.dbQueue)
-            try live.close()
-            let outcome = BackupRestoreStartupProcessor.applyPendingRestore(applicationSupportURL: root, databaseURL: path)
-            guard case let .completed(results) = outcome else { Issue.record("Restore failed: \(outcome)")
-                return
-            }
-            #expect(results.count == 2)
-            #expect(results.first?.error == nil)
-            #expect(results.last?.error != nil)
-            let restored = try AppDatabaseManager(path: path.path)
-            defer { try? restored.close() }
-            let firstTarget = requests[0].targetVaultId
-            let secondTarget = requests[1].targetVaultId
-            try await restored.dbQueue.read { db throws in
-                #expect(try VaultRecord.fetchOne(db, key: firstTarget) != nil)
-                #expect(try VaultRecord.fetchOne(db, key: secondTarget) == nil)
-                #expect(try Data.fetchOne(
-                    db,
-                    sql: "SELECT s.imageData FROM screenshots s JOIN meetings m ON m.id = s.meetingId WHERE m.vaultId = ?",
-                    arguments: [firstTarget]
-                ) == first.bytes)
-            }
+            #expect(try await service.listGenerations().isEmpty)
+            #expect(try await server.storedBytes() == server.bytes)
+            #expect(try await local.storedBytes() == local.bytes)
         }
 
         private func temporaryDirectory() -> URL {
@@ -514,7 +658,7 @@
 
         private func makeProvider(
             fixture: ScreenshotContentFixture,
-            cache: ScreenshotDiskCache? = nil,
+            cache: ScreenshotFileStore? = nil,
             handler: @escaping ImageURLProtocol.Handler
         ) -> ScreenshotContentProvider {
             ImageURLProtocol.register(origin: fixture.source.origin, handler: handler)
@@ -564,9 +708,8 @@
             self.dbQueue = try dbQueue ?? AppDatabaseManager(path: ":memory:").dbQueue
             source = ScreenshotRemoteReference(
                 origin: "https://\(UUID().uuidString.lowercased()).example.test",
-                vaultId: vaultId,
-                meetingId: meetingId,
-                screenshotId: screenshotId,
+                accountConnectionId: connectionId,
+                fileId: screenshotId,
                 contentHash: ScreenshotRemoteReference.digest(bytes)
             )
             let connection = DahliaAccountConnectionRecord(id: connectionId, origin: source.origin, clientID: "test", createdAt: .now)
@@ -579,15 +722,22 @@
                 try connection.insert(db)
                 try vault.insert(db)
                 try meeting.insert(db)
-                try db.execute(
-                    sql: "INSERT INTO screenshots(id, meetingId, capturedAt, imageData, mimeType, ocrText, caption) VALUES (?, ?, ?, ?, 'image/png', 'durable OCR', 'durable caption')",
-                    arguments: [screenshotId, meetingId, Date(), bytes]
-                )
-                if !priorSchema {
+                if priorSchema {
                     try db.execute(
-                        sql: "UPDATE screenshots SET contentHash = ?, contentLength = ?, remoteReference = ? WHERE id = ?",
-                        arguments: [source.contentHash, bytes.count, source.jsonString(), screenshotId]
+                        sql: "INSERT INTO screenshots(id, meetingId, capturedAt, imageData, mimeType, ocrText, caption) VALUES (?, ?, ?, ?, 'image/png', 'durable OCR', 'durable caption')",
+                        arguments: [screenshotId, meetingId, Date(), bytes]
                     )
+                } else {
+                    try MeetingScreenshotRecord(
+                        id: screenshotId,
+                        meetingId: meetingId,
+                        capturedAt: .now,
+                        imageData: bytes,
+                        mimeType: "image/png",
+                        ocrText: "durable OCR",
+                        caption: "durable caption",
+                        remoteReference: source.jsonString()
+                    ).insertLegacyForTesting(db)
                 }
             }
         }
@@ -595,7 +745,7 @@
         func confirm() async throws {
             try await dbQueue.write { db in
                 try db.execute(
-                    sql: "INSERT INTO sync_entity_state(vaultId, entity, entityId, confirmedRevision) VALUES (?, 'screenshot', ?, 1)",
+                    sql: "INSERT INTO sync_entity_state(vaultId, entity, entityId, confirmedRevision) VALUES (?, 'file', ?, 1)",
                     arguments: [vaultId, screenshotId]
                 )
             }
@@ -603,7 +753,7 @@
 
         func makeRemoteOnly() async throws {
             try await dbQueue.write { db in
-                try db.execute(sql: "UPDATE screenshots SET imageData = NULL WHERE id = ?", arguments: [screenshotId])
+                try db.execute(sql: "DELETE FROM file_migration_content WHERE fileId = ?", arguments: [screenshotId])
             }
         }
 

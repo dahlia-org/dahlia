@@ -98,9 +98,12 @@ runtime resource を所有しない。
 対応する SQLite state が `ready` になった時点で再読込可能な正本となる。
 
 画像の保持境界はアカウントで分ける。Local Account は原本だけを永続保存し、Server Account は文字起こし・サマリー・OCR・画像 metadata をローカルに保持する。
-Server が確定した画像原本だけを SQLite から解放でき、表示・解析・書き出しは `ScreenshotContentProvider` がローカル原本、容量制限付き cache、認証付き取得の順に解決する。
-一覧用384pxサムネイルは Node Server が生成し、Workers は原本へフォールバックする。拡大表示は原本を使い、中間サイズは保存しない。
-MCP の cache miss は画像専用 broker でアプリに取得を依頼する。未送信原本は解放せず、Local Account への移動とバックアップ復元では必要な原本を揃えてから切り替える。
+Server Account の画像本体は未送信分も含めて Application Support の共通ファイルストアへ保存し、SQLite には画像と送信 operation の独立したファイル参照を保持する。
+ファイルを検証・確定してから画像 metadata と operation を同じ SQLite transaction で保存する。未送信・再試行・競合中の原本は容量上限の対象外とし、同じ画像の Server 確定後にだけ削除可能とする。
+表示・解析・書き出しは `ScreenshotContentProvider` が 移行待ちの旧 BLOB、共通ファイル、認証付き取得を解決する。
+一覧用384pxサムネイルは Node Server が要求時に生成し Volume に永続化する。生成非対応の環境は variant を広告しない。拡大表示は原本を使い、中間サイズは保存しない。
+MCP の cache miss は画像専用 broker でアプリに取得を依頼する。未送信原本は解放しない。Local Account への移動は必要な原本をファイルで揃えてから、所属変更とファイル参照を同じ transaction で確定する。バックアップの新規作成は Local Account の保管庫に限定する。
+`files` は Vault 所有の原本と metadata、`meeting_files` は会議への独立した紐付けを保持する。原本 URI は Volume の絶対パスで、Local Account と未確定の原本は NULL とする。端末の保存先は FileStore/index.sqlite と local/files/{fileId}/original または server/{accountConnectionId}/files/{fileId}/original。
 詳細は [同期 ADR](docs/adr/shared/sync.md) を参照する。
 
 利用テレメトリは録音・永続化の正本から独立した lossy projection である。`CaptionViewModel` などの owner は低頻度の
@@ -297,7 +300,7 @@ recording-critical lane から捨てる根拠にはしない。
 画面や選択対象が変わった場合は不要な処理をキャンセルし、identity または generation を確認して古い完了結果を捨てる。
 UI projection を破棄しても、durable source of truth は変更しない。
 
-全文検索は `search_documents` registry と contentless `search_documents_fts` を再構築可能な projection として扱う。meeting metadata、構造化 summary の本文、project、全 screenshot の検出文字と画像説明を索引し、summary の metadata・内部識別子と文字起こし・翻訳文は対象にしない。ミーティング自由文検索はアプリと MCP のどちらも title、description、summary、calendar、tags を対象とし、project path は Project 専用検索と明示的な Project 絞り込みだけに使う。画像解析の正本は `screenshots.ocrText` と `screenshots.caption` に保存し、screenshot insert trigger は coalesce 可能な `screenshotAnalysis` job の upsert だけを行う。utility-priority の `SearchIndexer` actor は Codex app-server の `gpt-5.6-luna`、reasoning effort `low` に1枚ずつ最大8並行で送り、正本保存、Lindera tokenization、FTS 更新を一つの複合 job として処理する。指定モデルへフォールバックせず、Codex の未設定、未認証、モデル利用不可では並行処理を停止し、試行回数を消費せず job を queue に残す。Indexer は録音開始前に停止して録音終了後に再開し、録音中は画像解析を含む projection work を実行しない。screenshot は meeting 検索結果へ統合せず、同じ検索画面と MCP の独立した結果として返す。要約生成には従来どおり画像を渡し、抽出結果を代替入力にしない。初期構築・再構築中は不完全な結果を返さず検索 unavailable とし、索引の遅延や failure は録音、確定文字起こし、正本 metadata と summary の commit を待たせない。
+全文検索は `search_documents` registry と contentless `search_documents_fts` を再構築可能な projection として扱う。meeting metadata、構造化 summary の本文、project、全 screenshot の検出文字と画像説明を索引し、summary の metadata・内部識別子と文字起こし・翻訳文は対象にしない。ミーティング自由文検索はアプリと MCP のどちらも title、description、summary、calendar、tags を対象とし、project path は Project 専用検索と明示的な Project 絞り込みだけに使う。画像解析の正本は `files.metadata.ocr_text` と `files.metadata.caption` に保存し、meeting_files insert trigger は coalesce 可能な `screenshotAnalysis` job の upsert だけを行う。utility-priority の `SearchIndexer` actor は Codex app-server の `gpt-5.6-luna`、reasoning effort `low` に1枚ずつ最大8並行で送り、正本保存、Lindera tokenization、FTS 更新を一つの複合 job として処理する。指定モデルへフォールバックせず、Codex の未設定、未認証、モデル利用不可では並行処理を停止し、試行回数を消費せず job を queue に残す。Indexer は録音開始前に停止して録音終了後に再開し、録音中は画像解析を含む projection work を実行しない。screenshot は meeting 検索結果へ統合せず、同じ検索画面と MCP の独立した結果として返す。要約生成には従来どおり画像を渡し、抽出結果を代替入力にしない。初期構築・再構築中は不完全な結果を返さず検索 unavailable とし、索引の遅延や failure は録音、確定文字起こし、正本 metadata と summary の commit を待たせない。
 
 Desktop 検索は旧 Advanced 相当の全文検索に統一し、Simple／Neural とモード切替を廃止した。Gemma 推論、モデル取得、vector worker は実行しない。追加 migration で vector 検索を無効化し、専用 trigger を撤去する。互換性のため旧 schema、既存 vector と job は保持する。起動時に現在のアプリプロファイルの `Models/EmbeddingGemma` だけをバックグラウンド削除し、失敗時は次回起動で再試行する。MCP と Server の検索契約は変更しない。
 

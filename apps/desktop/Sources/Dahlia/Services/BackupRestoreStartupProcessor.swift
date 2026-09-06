@@ -1,4 +1,5 @@
 import AppKit
+import DahliaMeetingAccess
 import DahliaRuntimeSupport
 import Foundation
 import GRDB
@@ -67,13 +68,27 @@ enum BackupRestoreStartupProcessor {
 
             let combinedURL = restoreDirectoryURL.appending(path: "combined-\(UUID.v7()).sqlite")
             defer { try? fileManager.removeItem(at: combinedURL) }
-            let results = try mergeVaults(
-                marker: marker,
-                sourceURL: candidateURL,
-                databaseURL: databaseURL,
-                combinedURL: combinedURL,
-                applicationSupportURL: applicationSupportURL
-            )
+            let results: [VaultBackupRestoreResult] = if try BackupArchive.isArchive(candidateURL) {
+                try BackupArchive.withExtracted(at: candidateURL) { directory, manifest in
+                    guard manifest.metadata == marker.sourceMetadata else { throw BackupServiceError.invalidBackup }
+                    return try mergeVaults(
+                        marker: marker,
+                        sourceURL: directory.appending(path: "database.sqlite"),
+                        databaseURL: databaseURL,
+                        combinedURL: combinedURL,
+                        applicationSupportURL: applicationSupportURL,
+                        archiveDirectory: directory
+                    )
+                }
+            } else {
+                try mergeVaults(
+                    marker: marker,
+                    sourceURL: candidateURL,
+                    databaseURL: databaseURL,
+                    combinedURL: combinedURL,
+                    applicationSupportURL: applicationSupportURL
+                )
+            }
             if results.contains(where: { $0.error == nil }) {
                 try install(stagedURL: combinedURL, databaseURL: databaseURL, fileManager: fileManager)
             }
@@ -95,7 +110,8 @@ enum BackupRestoreStartupProcessor {
         sourceURL: URL,
         databaseURL: URL,
         combinedURL: URL,
-        applicationSupportURL: URL
+        applicationSupportURL: URL,
+        archiveDirectory: URL? = nil
     ) throws -> [VaultBackupRestoreResult] {
         let metadata = try BackupService.readAndValidateMetadata(at: sourceURL)
         let requests = marker.requests
@@ -137,17 +153,11 @@ enum BackupRestoreStartupProcessor {
                         directoryURL: applicationSupportURL.appending(path: BackupService.backupDirectoryName),
                         reason: .beforeRestore,
                         appVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "development",
-                        appBuild: Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "development"
+                        appBuild: Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "development",
+                        fileStoreDirectory: applicationSupportURL.appending(path: "FileStore")
                     )
                 }
                 try combined.dbQueue.write { db in
-                    guard try Bool.fetchOne(db, sql: """
-                    SELECT EXISTS(SELECT 1 FROM backup_source.screenshots s
-                    JOIN backup_source.meetings m ON m.id = s.meetingId
-                    WHERE m.vaultId = ? AND s.imageData IS NULL)
-                    """, arguments: [request.sourceVaultId]) != true else {
-                        throw ScreenshotContentError.unavailable
-                    }
                     guard let original = try VaultRecord.fetchOne(
                         db,
                         sql: "SELECT * FROM backup_source.vaults WHERE id = ?",
@@ -177,7 +187,40 @@ enum BackupRestoreStartupProcessor {
                         vaultId: request.sourceVaultId,
                         in: db,
                         destinationVault: restoredVault,
-                        remapIDs: request.mode == .newVault
+                        remapIDs: request.mode == .newVault,
+                        storeOriginal: { sourceId, destinationId in
+                            guard let file = try FileRecord
+                                .fetchOne(db, sql: "SELECT * FROM backup_source.files WHERE id = ?", arguments: [sourceId]) else {
+                                throw BackupServiceError.invalidBackup
+                            }
+                            let bytes: Data
+                            if let archiveDirectory {
+                                bytes = try Data(contentsOf: archiveDirectory.appending(path: "files/\(sourceId.uuidString.lowercased())/original"))
+                            } else {
+                                guard let legacy = try Data.fetchOne(
+                                    db,
+                                    sql: "SELECT imageData FROM backup_source.file_migration_content WHERE fileId = ?",
+                                    arguments: [sourceId]
+                                ) else {
+                                    throw BackupServiceError.invalidBackup
+                                }
+                                bytes = legacy
+                            }
+                            guard Int64(bytes.count) == file.size else { throw BackupServiceError.invalidBackup }
+                            let source = ScreenshotRemoteReference(
+                                origin: "",
+                                accountConnectionId: nil,
+                                fileId: destinationId,
+                                contentHash: file.contentHash
+                            )
+                            let store = try ScreenshotFileStore(directory: applicationSupportURL.appending(path: "FileStore"))
+                            try store.write(
+                                ScreenshotContent(data: bytes, mimeType: file.contentType, variant: .original),
+                                source: source,
+                                required: true
+                            )
+                            return try source.jsonString()
+                        }
                     )
                     try VaultBackupTransfer.restoreRetainedAudio(retainedAudio, in: db)
                     try VaultBackupTransfer.validateIntegrity(in: db)

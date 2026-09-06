@@ -1568,6 +1568,7 @@ enum L10n { // swiftlint:disable:this type_body_length
     }
 
     static var vaultBackup: String { String(localized: "Vault Backup", bundle: bundle) }
+    static var backupLocalVaultsOnly: String { String(localized: "Only vaults in the Local Account can be backed up.", bundle: bundle) }
     static var vaultBackupDescription: String { String(
         localized: "Back up the selected vaults together, including screenshots. Audio, external files, and account credentials are excluded.",
         bundle: bundle

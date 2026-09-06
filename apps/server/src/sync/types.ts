@@ -1,3 +1,4 @@
+import type { FileRecord, MeetingFileRecord } from "../files/model";
 import type { Identity } from "../auth/identity";
 
 export interface SyncTranscriptSegment {
@@ -46,7 +47,7 @@ export interface SyncProjectView extends SyncProjectRecord {
 
 export type VaultRole = "owner" | "member";
 export type VaultPrincipalType = "user" | "organization" | "team";
-export type SyncEntity = "vault" | "project" | "meeting" | "summary" | "transcript" | "screenshot";
+export type SyncEntity = "vault" | "project" | "meeting" | "summary" | "transcript" | "file" | "meeting_file";
 export type SyncAction = "create" | "update" | "delete" | "upsert" | "patch" | "reset";
 
 export interface SyncTransactionOperation {
@@ -59,7 +60,7 @@ export interface SyncTransactionOperation {
 }
 
 export interface SyncTransaction {
-  schemaVersion: 1;
+  schemaVersion: 2;
   id: string;
   vaultId: string;
   createdAt: Date;
@@ -154,6 +155,7 @@ export interface SyncScreenshotCursor {
 }
 
 export interface SyncScreenshotRecord {
+  fileId: string;
   screenshotId: string;
   vaultId: string;
   meetingId: string;
@@ -203,9 +205,12 @@ export interface IdentitySyncStore {
     screenshotId: string,
     activeOnly?: boolean,
   ): Promise<SyncScreenshotRecord | null>;
-  createScreenshot(input: SyncScreenshotRecord): Promise<boolean>;
-  discardInactiveScreenshot(vaultId: string, screenshotId: string): Promise<boolean>;
-  deleteScreenshot(vaultId: string, screenshotId: string, storageKey: string): Promise<boolean>;
+  getFile(fileId: string, activeOnly?: boolean): Promise<FileRecord | null>;
+  reserveFile(input: FileRecord): Promise<FileRecord | null>;
+  markFileUploaded(fileId: string, checksum: string): Promise<boolean>;
+  expireFileUploads(vaultId: string, before: Date): Promise<void>;
+  listFiles(vaultId: string, after: string | undefined, limit: number): Promise<FileRecord[]>;
+  listMeetingFiles(vaultId: string, meetingId: string, after: string | undefined, limit: number): Promise<(MeetingFileRecord & { file: FileRecord })[]>;
   listOrganizations(): Promise<{ id: string; name: string; slug: string }[]>;
   listVaults(organizationId?: string): Promise<SyncVaultRecord[]>;
   getVault(vaultId: string): Promise<SyncVaultRecord | null>;
@@ -236,10 +241,6 @@ export interface IdentitySyncStore {
   listPermissions(vaultId: string): Promise<VaultPermissionRecord[] | null>;
   putMemberPermission(vaultId: string, principalType: VaultPrincipalType, principalId: string): Promise<boolean>;
   deleteMemberPermission(vaultId: string, principalType: VaultPrincipalType, principalId: string): Promise<boolean>;
-  beginMeetingDeletion(vaultId: string, meetingId: string, limit: number): Promise<SyncScreenshotRecord[] | null>;
-  finishMeetingDeletion(vaultId: string, meetingId: string): Promise<boolean>;
-  beginVaultDeletion(vaultId: string, limit: number): Promise<SyncScreenshotRecord[] | null>;
-  finishVaultDeletion(vaultId: string): Promise<boolean>;
 }
 
 export interface MeetingSyncStore {

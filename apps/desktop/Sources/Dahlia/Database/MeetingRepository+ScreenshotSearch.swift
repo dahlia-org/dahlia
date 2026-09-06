@@ -40,18 +40,18 @@ extension MeetingRepository {
             var rows = try Row.fetchAll(
                 db,
                 sql: """
-                SELECT screenshots.id, screenshots.meetingId, screenshots.capturedAt,
-                       screenshots.mimeType, screenshots.ocrText, screenshots.caption,
+                SELECT meeting_images.id, meeting_images.meetingId, meeting_images.capturedAt,
+                       meeting_images.mimeType, meeting_images.ocrText, meeting_images.caption,
                        meetings.name AS meetingTitle, meetings.description AS meetingDescription
                 FROM search_documents
                 JOIN search_documents_fts ON search_documents_fts.rowid = search_documents.id
-                JOIN screenshots ON screenshots.id = search_documents.sourceId
-                JOIN meetings ON meetings.id = screenshots.meetingId
+                JOIN meeting_images ON meeting_images.id = search_documents.sourceId
+                JOIN meetings ON meetings.id = meeting_images.meetingId
                 WHERE search_documents.kind = 'screenshot'
                   AND search_documents.vaultId = ?
                   AND search_documents_fts MATCH ?
                   \(filter.condition)
-                ORDER BY \(SearchFTS5Tokenizer.screenshotRankingSQL), screenshots.capturedAt DESC, screenshots.id
+                ORDER BY \(SearchFTS5Tokenizer.screenshotRankingSQL), meeting_images.capturedAt DESC, meeting_images.id
                 LIMIT ? OFFSET ?
                 """,
                 arguments: arguments
@@ -80,9 +80,9 @@ extension MeetingRepository {
                 db,
                 sql: """
                 SELECT EXISTS(SELECT 1
-                FROM screenshots
-                JOIN meetings ON meetings.id = screenshots.meetingId
-                WHERE screenshots.id = ? AND meetings.vaultId = ?)
+                FROM meeting_images
+                JOIN meetings ON meetings.id = meeting_images.meetingId
+                WHERE meeting_images.id = ? AND meetings.vaultId = ?)
                 """,
                 arguments: [id, vaultID]
             )

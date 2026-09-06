@@ -36,7 +36,7 @@
             let operationColumns = try database.dbQueue.read { db in
                 try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('sync_operations')")
             }
-            #expect(operationColumns.contains("attachmentBytes"))
+            #expect(operationColumns.contains("attachmentReference"))
             #expect(!operationColumns.contains("expectedRevision"))
 
             let stateColumns = try database.dbQueue.read { db in
@@ -70,7 +70,7 @@
         }
 
         @Test
-        func recorderUsesTheScreenshotRowUntilDeletionThenPreservesItsAttachment() async throws {
+        func recorderReferencesTheSameFileAfterTheScreenshotRowIsDeleted() async throws {
             let (database, vault) = try await syncedDatabase()
             let firstId = UUID.v7()
             let secondId = UUID.v7()
@@ -82,10 +82,16 @@
                 id: .v7(), meetingId: meeting.id, sessionId: nil, capturedAt: .now,
                 imageData: Data([1, 2, 3]), mimeType: "image/png", ocrText: nil, caption: nil
             )
-            let attachment = SyncScreenshotAttachment(mimeType: "image/png", bytes: Data([1, 2, 3]))
+            let provider = ScreenshotContentProvider()
+            let staged = try await provider.stage(
+                screenshot,
+                connectionId: #require(vault.accountConnectionId),
+                dbQueue: database.dbQueue
+            )
+            let attachment = try SyncScreenshotAttachmentReference(staged)
             let first = SyncOperationDraft(
                 id: firstId,
-                entity: .screenshot,
+                entity: .file,
                 action: .upsert,
                 entityId: screenshot.id,
                 payloadJSON: Data("{\"caption\":\"first\"}".utf8)
@@ -99,7 +105,7 @@
             )
             _ = try await database.dbQueue.write { db in
                 try meeting.insert(db)
-                try screenshot.insert(db)
+                try staged.insert(db)
                 try SyncTransactionRecorder.record(
                     vaultId: vault.id,
                     operations: [first],
@@ -122,13 +128,13 @@
             } == nil)
             let stored = try #require(try await SyncTransactionQueue.screenshotAttachment(
                 operationId: firstId,
-                dbQueue: database.dbQueue
+                dbQueue: database.dbQueue, screenshotContent: provider
             ))
-            #expect(stored.bytes == attachment.bytes)
+            #expect(stored.bytes == Data([1, 2, 3]))
             #expect(stored.sha256 == attachment.sha256)
 
             try await database.dbQueue.write { db in
-                _ = try MeetingScreenshotRecord.deleteOne(db, key: screenshot.id)
+                _ = try MeetingFileRecord.deleteOne(db, key: screenshot.id)
             }
             #expect(try await database.dbQueue.read { db in
                 try Int.fetchOne(
@@ -136,11 +142,11 @@
                     sql: "SELECT length(attachmentBytes) FROM sync_operations WHERE id = ?",
                     arguments: [firstId]
                 )
-            } == 3)
+            } == nil)
             #expect(try await SyncTransactionQueue.screenshotAttachment(
                 operationId: firstId,
-                dbQueue: database.dbQueue
-            )?.bytes == attachment.bytes)
+                dbQueue: database.dbQueue, screenshotContent: provider
+            )?.bytes == Data([1, 2, 3]))
         }
 
         @Test
@@ -429,14 +435,17 @@
             )
             try await database.dbQueue.write { db in
                 try meeting.insert(db)
-                try screenshot.insert(db)
+                try screenshot.insertLegacyForTesting(db)
                 try db.execute(
-                    sql: "INSERT INTO sync_entity_state(vaultId, entity, entityId, confirmedRevision) VALUES (?, 'meeting', ?, 2), (?, 'screenshot', ?, 1)",
+                    sql: "INSERT INTO sync_entity_state(vaultId, entity, entityId, confirmedRevision) VALUES (?, 'meeting', ?, 2), (?, 'file', ?, 1)",
                     arguments: [vault.id, meeting.id, vault.id, screenshot.id]
                 )
                 try SyncTransactionRecorder.record(
                     vaultId: vault.id,
-                    operations: [SyncInitialSnapshotBuilder.screenshotOperation(screenshot, action: .upsert)],
+                    operations: [
+                        SyncInitialSnapshotBuilder.fileOperation(#require(try FileRecord.fetchOne(db, key: screenshot.id))),
+                        SyncInitialSnapshotBuilder.meetingFileOperation(screenshot),
+                    ],
                     in: db
                 )
             }
@@ -446,7 +455,7 @@
                 reason: .conflict,
                 response: Data("""
                 {"conflicts":[
-                  {"entity":"screenshot","id":"\(screenshot.id.uuidString)","serverRevision":null,"record":null},
+                  {"entity":"file","id":"\(screenshot.id.uuidString)","serverRevision":null,"record":null},
                   {"entity":"meeting","id":"\(meeting.id.uuidString)","serverRevision":null,"record":null}
                 ]}
                 """.utf8),
@@ -468,10 +477,10 @@
                     arguments: [vault.id]
                 )
             }
-            #expect(rows.count == 2)
+            #expect(rows.count == 3)
             #expect(rows[0]["entity"] as String == "meeting")
             #expect(rows[0]["action"] as String == "create")
-            #expect(rows[1]["entity"] as String == "screenshot")
+            #expect(rows[1]["entity"] as String == "file")
             #expect(rows[1]["baseRevision"] as Int? == nil)
             #expect(rows[1]["attachmentLength"] as Int? == nil)
             let hash: String = rows[1]["attachmentSHA256"]
@@ -594,23 +603,11 @@
                 createdAt: .now, updatedAt: .now
             )
             let screenshotID = UUID.v7()
-            let record = try SyncJSON.decoder.decode(
-                SyncCanonicalPayload.self,
-                from: Data("""
-                {
-                  "meetingId": "\(meeting.id.uuidString.lowercased())",
-                  "capturedAt": "2026-09-03T00:00:00.000Z",
-                  "contentType": "image/png",
-                  "contentHash": "039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81",
-                  "ocrText": "canonical ocr",
-                  "caption": "canonical caption"
-                }
-                """.utf8)
-            )
+            let records = try canonicalImageChanges(fileId: screenshotID, meetingId: meeting.id, ocr: "canonical ocr", caption: "canonical caption")
             try await database.dbQueue.write { db in try meeting.insert(db) }
 
             #expect(try await RemoteChangeApplier.apply(
-                [.init(sequence: 1, entity: .screenshot, entityId: screenshotID, action: "upsert", revision: 1, record: record)],
+                records,
                 screenshots: [:],
                 transcripts: [:],
                 cursor: nil,
@@ -1294,6 +1291,51 @@
         }
 
         @Test
+        func clearingFileAnalysisEncodesExplicitNullWithoutLosingDimensions() throws {
+            var metadata = FileMetadata(source: .screenshot, width: 1920, height: 1080, ocrText: "old", caption: "old")
+            metadata.ocrText = nil
+            metadata.caption = nil
+            let data = try SyncJSON.encoder.encode(metadata)
+            let object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+            #expect(object["ocr_text"] is NSNull)
+            #expect(object["caption"] is NSNull)
+            #expect(object["width"] as? Int == 1920)
+            #expect(object["source"] as? String == "screenshot")
+            #expect(try SyncJSON.decoder.decode(FileMetadata.self, from: data) == metadata)
+        }
+
+        @Test
+        func associationDeltaReconcilesItsFileFromAnotherPage() async throws {
+            let (database, vault) = try await syncedDatabase()
+            let meeting = MeetingRecord(id: .v7(), vaultId: vault.id, projectId: nil, name: "Meeting", createdAt: .now, updatedAt: .now)
+            try await database.dbQueue.write { try meeting.insert($0) }
+            let fileId = UUID.v7()
+            let changes = try canonicalImageChanges(fileId: fileId, meetingId: meeting.id)
+            let association = changes.filter { $0.entity == .meetingFile }
+            #expect(try await SyncWorker.missingParentFileIDs(in: association, vaultId: vault.id, dbQueue: database.dbQueue) == [fileId])
+            #expect(try await RemoteChangeApplier.apply(
+                changes.filter { $0.entity == .file },
+                screenshots: [:],
+                transcripts: [:],
+                cursor: nil,
+                vaultId: vault.id,
+                expectedConnectionId: #require(vault.accountConnectionId),
+                dbQueue: database.dbQueue
+            ))
+            #expect(try await SyncWorker.missingParentFileIDs(in: association, vaultId: vault.id, dbQueue: database.dbQueue).isEmpty)
+            #expect(try await RemoteChangeApplier.apply(
+                association,
+                screenshots: [:],
+                transcripts: [:],
+                cursor: "after-association",
+                vaultId: vault.id,
+                expectedConnectionId: #require(vault.accountConnectionId),
+                dbQueue: database.dbQueue
+            ))
+            #expect(try await database.dbQueue.read { try MeetingFileRecord.fetchOne($0, key: fileId)?.fileId } == fileId)
+        }
+
+        @Test
         func childDeltaReconcilesItsMeetingFromAnotherPage() async throws {
             let (database, vault) = try await syncedDatabase()
             let meetingId = UUID.v7()
@@ -1313,7 +1355,7 @@
                 ),
                 SyncChangePage.Change(
                     sequence: 2,
-                    entity: .screenshot,
+                    entity: .meetingFile,
                     entityId: screenshotId,
                     action: "upsert",
                     revision: 1,

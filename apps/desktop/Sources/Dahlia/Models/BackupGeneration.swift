@@ -1,7 +1,7 @@
 import Foundation
 
 struct BackupMetadata: Codable, Equatable, Sendable {
-    static let currentFormatVersion = 3
+    static let currentFormatVersion = 4
 
     enum Reason: String, Codable, Sendable {
         case manual

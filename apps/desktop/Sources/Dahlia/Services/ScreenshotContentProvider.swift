@@ -4,22 +4,24 @@ import Foundation
 import GRDB
 import Synchronization
 
-/// Owns optional image retrieval. Durable capture and canonical metadata never wait on this service.
+/// Owns image file persistence and retrieval; audio and transcript persistence never wait on this service.
 actor ScreenshotContentProvider {
     static let shared = ScreenshotContentProvider()
 
     private var database: DatabaseQueue?
-    private var cache: ScreenshotDiskCache?
+    private let cache: ScreenshotFileStore?
+    private var stores: [ObjectIdentifier: (database: DatabaseQueue, files: ScreenshotFileStore)] = [:]
+    var activeFileWork = 0
     private let session: URLSession
     private let tokenProvider: @Sendable (UUID, Bool) async throws -> String
     private var activeReads = 0
     private var activeThumbnails = 0
     private var waiters: [(id: UUID, variant: ScreenshotVariant, continuation: CheckedContinuation<Bool, Never>)] = []
-    private nonisolated let retainedVaults = Mutex<[ObjectIdentifier: [UUID: Int]]>([:])
+    nonisolated let retainedVaults = Mutex<[ObjectIdentifier: [UUID: Int]]>([:])
 
     init(
         session: URLSession? = nil,
-        cache: ScreenshotDiskCache? = nil,
+        cache: ScreenshotFileStore? = nil,
         tokenProvider: @escaping @Sendable (UUID, Bool) async throws -> String = {
             try await DahliaCloudTokenServiceRegistry.shared.validAccessToken(connectionID: $0, forceRefresh: $1)
         }
@@ -33,13 +35,39 @@ actor ScreenshotContentProvider {
         self.tokenProvider = tokenProvider
     }
 
-    func configure(dbQueue: DatabaseQueue) {
+    func configure(dbQueue: DatabaseQueue) async {
         database = dbQueue
-        if cache == nil { cache = try? ScreenshotDiskCache() }
+        do {
+            let vaultIds = try await dbQueue.read { db in
+                try UUID.fetchAll(db, sql: "SELECT id FROM vaults")
+            }
+            for vaultId in vaultIds {
+                do {
+                    try await migrateLegacyImages(vaultId: vaultId, dbQueue: dbQueue)
+                } catch {
+                    ErrorReportingService.capture(error, context: ["source": "screenshotFileMigration"])
+                }
+            }
+        } catch {
+            ErrorReportingService.capture(error, context: ["source": "screenshotFileMigration"])
+        }
+    }
+
+    func fileStore(for dbQueue: DatabaseQueue) throws -> ScreenshotFileStore {
+        if let cache { return cache }
+        let key = ObjectIdentifier(dbQueue)
+        if let entry = stores[key] { return entry.files }
+        let directory = dbQueue.path == ":memory:"
+            ? FileManager.default.temporaryDirectory.appending(path: "dahlia-images-\(UUID().uuidString)")
+            : URL(filePath: dbQueue.path).deletingLastPathComponent().appending(path: "FileStore")
+        let files = try ScreenshotFileStore(directory: directory)
+        stores[key] = (dbQueue, files)
+        return files
     }
 
     func trimCache() {
-        try? cache?.trim()
+        guard let database else { return }
+        try? trimFiles(dbQueue: database)
     }
 
     func content(
@@ -52,31 +80,50 @@ actor ScreenshotContentProvider {
             try MeetingScreenshotRecord.fetchOne(db, key: id)
         }
         guard let record else { throw ScreenshotContentError.deleted }
-        if let data = record.imageData {
-            return ScreenshotContent(data: data, mimeType: record.mimeType, variant: .original)
+        return try await fileContent(id: record.originalFileId, variant: variant, dbQueue: dbQueue)
+    }
+
+    func fileContent(id: UUID, variant: ScreenshotVariant = .original, dbQueue: DatabaseQueue) async throws -> ScreenshotContent {
+        activeFileWork += 1
+        defer { activeFileWork -= 1 }
+        guard let file = try await dbQueue.read({ try FileRecord.fetchOne($0, key: id) }) else { throw ScreenshotContentError.deleted }
+        if let bytes = try await dbQueue.read({ try Data.fetchOne(
+            $0,
+            sql: "SELECT imageData FROM file_migration_content WHERE fileId = ?",
+            arguments: [id]
+        ) }) {
+            return ScreenshotContent(data: bytes, mimeType: file.contentType, variant: .original)
         }
-        guard let source = record.remoteSource else { throw ScreenshotContentError.unavailable }
-        guard try await matchesCurrentSource(source, id: id, dbQueue: dbQueue) else {
+        guard let reference = file.localReference ?? file.remoteReference else { throw ScreenshotContentError.unavailable }
+        let source = try JSONDecoder().decode(ScreenshotRemoteReference.self, from: Data(reference.utf8))
+        guard source.fileId == id, source.contentHash == file.contentHash,
+              try await matchesCurrentSource(source, vaultId: file.vaultId, dbQueue: dbQueue) else {
             throw ScreenshotContentError.authorizationRequired
         }
-        let content = try await remoteContent(source, variant: variant, credentials: dbQueue)
-        try Task.checkCancellation()
-        let current = try await dbQueue.read { db in
-            try String.fetchOne(db, sql: "SELECT remoteReference FROM screenshots WHERE id = ?", arguments: [id])
+        let content: ScreenshotContent
+        if file.remoteReference == nil || file.localReference != nil && file.localReference != file.remoteReference {
+            guard let original = try fileStore(for: dbQueue).read(source, variant: .original) else { throw ScreenshotContentError.unavailable }
+            content = original
+        } else {
+            do {
+                content = try await remoteContent(source, variant: variant, credentials: dbQueue)
+            } catch where variant == .thumbnail {
+                content = try await remoteContent(source, variant: .original, credentials: dbQueue)
+            }
         }
-        guard current == record.remoteReference,
-              try await matchesCurrentSource(source, id: id, dbQueue: dbQueue) else { throw ScreenshotContentError.deleted }
+        try Task.checkCancellation()
+        let current = try await dbQueue.read { try FileRecord.fetchOne($0, key: id) }
+        guard current?.localReference == file.localReference, current?.remoteReference == file.remoteReference,
+              try await matchesCurrentSource(source, vaultId: file.vaultId, dbQueue: dbQueue) else { throw ScreenshotContentError.deleted }
         return content
     }
 
-    private func matchesCurrentSource(_ source: ScreenshotRemoteReference, id: UUID, dbQueue: DatabaseQueue) async throws -> Bool {
-        guard source.screenshotId == id else { return false }
-        return try await dbQueue.read { db in
-            try Bool.fetchOne(db, sql: """
-            SELECT EXISTS(SELECT 1 FROM screenshots s JOIN meetings m ON m.id = s.meetingId
-            JOIN vaults v ON v.id = m.vaultId JOIN dahlia_account_connections c ON c.id = v.accountConnectionId
-            WHERE s.id = ? AND m.id = ? AND v.id = ? AND c.origin = ?)
-            """, arguments: [id, source.meetingId, source.vaultId, source.origin]) ?? false
+    private func matchesCurrentSource(_ source: ScreenshotRemoteReference, vaultId: UUID, dbQueue: DatabaseQueue) async throws -> Bool {
+        try await dbQueue.read { db in
+            guard let vault = try VaultRecord.fetchOne(db, key: vaultId),
+                  vault.accountConnectionId == source.accountConnectionId else { return false }
+            guard let connectionId = source.accountConnectionId else { return source.origin.isEmpty }
+            return try DahliaAccountConnectionRecord.fetchOne(db, key: connectionId)?.origin == source.origin
         }
     }
 
@@ -117,94 +164,20 @@ actor ScreenshotContentProvider {
         }
     }
 
-    func hydrateOriginals(
-        vaultId: UUID,
-        dbQueue: DatabaseQueue,
-        credentials: DatabaseQueue? = nil,
-        screenshotIds: [UUID]? = nil
-    ) async throws {
-        if let screenshotIds, screenshotIds.isEmpty { return }
-        while true {
-            try Task.checkCancellation()
-            let record = try await dbQueue.read { db in
-                var request = MeetingScreenshotRecord
-                    .filter(sql: "meetingId IN (SELECT id FROM meetings WHERE vaultId = ?)", arguments: [vaultId])
-                    .filter(Column("imageData") == nil)
-                if let screenshotIds { request = request.filter(screenshotIds.contains(Column("id"))) }
-                return try request.order(Column("id")).fetchOne(db)
-            }
-            guard let record else { return }
-            guard let source = record.remoteSource else { throw ScreenshotContentError.unavailable }
-            let content = try await remoteContent(source, credentials: credentials ?? dbQueue)
-            try await dbQueue.write { db in
-                try db.execute(sql: """
-                UPDATE screenshots SET imageData = ?, mimeType = ?, contentLength = ?
-                WHERE id = ? AND imageData IS NULL AND remoteReference = ?
-                  AND meetingId IN (SELECT id FROM meetings WHERE vaultId = ?)
-                """, arguments: [content.data, content.mimeType, content.data.count, record.id, record.remoteReference, vaultId])
-            }
-        }
-    }
-
-    /// Eviction is a projection change. Recheck durability and recording state in the same write.
-    func evictConfirmedOriginals(dbQueue: DatabaseQueue, limit: Int = 16) async throws {
-        for _ in 0 ..< limit {
-            try Task.checkCancellation()
-            let record = try await dbQueue.read { db in
-                let retained = self.retainedVaults.withLock { $0[ObjectIdentifier(dbQueue)]?.keys.map(\.self) ?? [] }
-                let exclusion = retained.isEmpty ? "" : "AND v.id NOT IN (\(retained.map { _ in "?" }.joined(separator: ",")))"
-                return try MeetingScreenshotRecord.fetchOne(db, sql: """
-                SELECT s.* FROM screenshots s JOIN meetings m ON m.id = s.meetingId
-                JOIN vaults v ON v.id = m.vaultId
-                JOIN sync_entity_state e ON e.vaultId = v.id AND e.entity = 'screenshot' AND e.entityId = s.id
-                WHERE s.imageData IS NOT NULL AND s.remoteReference IS NOT NULL AND s.contentHash IS NOT NULL
-                  AND e.confirmedRevision > 0 AND v.accountConnectionId = v.syncConfirmedConnectionId
-                  AND v.syncPullCursor IS NOT NULL AND v.syncRecoveryState IS NULL
-                  AND NOT EXISTS (SELECT 1 FROM sync_transactions t WHERE t.vaultId = v.id)
-                  AND NOT EXISTS (SELECT 1 FROM recording_sessions WHERE endedAt IS NULL)
-                  \(exclusion)
-                ORDER BY s.capturedAt LIMIT 1
-                """, arguments: StatementArguments(retained))
-            }
-            guard let record, let source = record.remoteSource, let bytes = record.imageData,
-                  source.contentHash == record.contentHash,
-                  ScreenshotRemoteReference.digest(bytes) == source.contentHash else { return }
-            try? cache?.write(ScreenshotContent(data: bytes, mimeType: record.mimeType, variant: .original), source: source)
-            try await dbQueue.write { db in
-                // A retention request can arrive after candidate selection. Earlier writes finish
-                // before hydration reads on this queue, so an already-running eviction is refilled.
-                guard self.retainedVaults.withLock({ $0[ObjectIdentifier(dbQueue)]?[source.vaultId] == nil }) else { return }
-                try db.execute(sql: """
-                UPDATE screenshots SET imageData = NULL WHERE id = ? AND remoteReference = ? AND contentHash = ?
-                  AND EXISTS (
-                    SELECT 1 FROM meetings m JOIN vaults v ON v.id = m.vaultId
-                    JOIN dahlia_account_connections c ON c.id = v.accountConnectionId
-                    JOIN sync_entity_state e ON e.vaultId = v.id AND e.entity = 'screenshot' AND e.entityId = screenshots.id
-                    WHERE m.id = screenshots.meetingId AND v.id = ? AND c.origin = ?
-                      AND e.confirmedRevision > 0 AND v.accountConnectionId = v.syncConfirmedConnectionId
-                      AND v.syncPullCursor IS NOT NULL AND v.syncRecoveryState IS NULL
-                      AND NOT EXISTS (SELECT 1 FROM sync_transactions t WHERE t.vaultId = v.id)
-                  )
-                  AND NOT EXISTS (SELECT 1 FROM recording_sessions WHERE endedAt IS NULL)
-                """, arguments: [record.id, record.remoteReference, record.contentHash, source.vaultId, source.origin])
-            }
-        }
-    }
-
-    /// Restore may reference original server IDs after local IDs have been remapped.
     /// Only a matching configured origin may receive the account's credential.
     func remoteContent(
         _ source: ScreenshotRemoteReference,
         variant: ScreenshotVariant = .original,
         credentials: DatabaseQueue
     ) async throws -> ScreenshotContent {
-        if let content = try? cache?.read(source, variant: variant) { return content }
-        if variant != .original, let content = try? cache?.read(source, variant: .original) { return content }
+        let files = try? fileStore(for: credentials)
+        if let content = try? files?.read(source, variant: variant) { return content }
+        if variant != .original, let content = try? files?.read(source, variant: .original) { return content }
         let connection = try await credentials.read { db in
             try DahliaAccountConnectionRecord.fetchOne(
                 db,
-                sql: "SELECT * FROM dahlia_account_connections WHERE origin = ?",
-                arguments: [source.origin]
+                sql: "SELECT * FROM dahlia_account_connections WHERE id = ? AND origin = ?",
+                arguments: [source.accountConnectionId, source.origin]
             )
         }
         guard let connection, let origin = URL(string: connection.origin),
@@ -214,11 +187,10 @@ actor ScreenshotContentProvider {
         try await acquireRead(variant: variant)
         defer { releaseRead(variant: variant) }
         try Task.checkCancellation()
-        let path = "api/v1/vaults/\(source.vaultId.uuidString.lowercased())/meetings/\(source.meetingId.uuidString.lowercased())/screenshots/\(source.screenshotId.uuidString.lowercased())/content"
-        var components = URLComponents(url: origin.appending(path: path), resolvingAgainstBaseURL: false)!
-        if variant == .thumbnail { components.queryItems = [URLQueryItem(name: "variant", value: "thumbnail")] }
+        let representation = variant == .original ? "content" : "variants/thumbnail"
+        let url = origin.appending(path: "api/v1/files/\(source.fileId.uuidString.lowercased())/\(representation)")
         for attempt in 0 ... 1 {
-            var request = URLRequest(url: components.url!)
+            var request = URLRequest(url: url)
             let token = try await tokenProvider(connection.id, attempt == 1)
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
             let (stream, response) = try await session.bytes(for: request)
@@ -238,11 +210,12 @@ actor ScreenshotContentProvider {
             guard variant != .original || actual == .original,
                   actual != .original || ScreenshotRemoteReference.digest(bytes) == source.contentHash,
                   actual == .original || http.value(forHTTPHeaderField: "x-dahlia-original-sha256") == source.contentHash,
-                  let mimeType = response.mimeType, ["image/png", "image/jpeg", "image/webp", "image/gif", "image/tiff"].contains(mimeType) else {
+                  let mimeType = response.mimeType else {
                 throw ScreenshotContentError.integrityFailure
             }
             let content = ScreenshotContent(data: bytes, mimeType: mimeType, variant: actual)
-            try? cache?.write(content, source: source)
+            try? files?.write(content, source: source)
+            try? trimFiles(dbQueue: credentials)
             return content
         }
         throw ScreenshotContentError.authorizationRequired

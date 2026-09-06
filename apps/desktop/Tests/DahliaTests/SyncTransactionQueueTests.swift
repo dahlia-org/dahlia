@@ -500,6 +500,32 @@
         }
 
         @Test
+        func summaryReceiptAcknowledgesAfterLaterMeetingDeletion() async throws {
+            let (database, vault) = try await syncedDatabase()
+            let meeting = MeetingRecord(id: .v7(), vaultId: vault.id, projectId: nil, name: "Deleted", createdAt: .now, updatedAt: .now)
+            try await database.dbQueue.write { db in
+                try meeting.insert(db)
+                try SyncTransactionRecorder.record(vaultId: vault.id, operations: [
+                    SyncOperationDraft(entity: .summary, action: .upsert, entityId: meeting.id),
+                ], in: db)
+            }
+            let sent = try #require(try await SyncTransactionQueue.claim(dbQueue: database.dbQueue))
+            try MeetingRepository(dbQueue: database.dbQueue).deleteMeeting(id: meeting.id)
+            let response = try SyncJSON.decoder.decode(SyncTransactionResponse.self, from: Data("""
+            {"id":"\(sent.id)","status":"committed","cursor":"summary-receipt","records":[
+              {"entity":"summary","id":"\(meeting.id)","revision":2,"record":{
+                "title":"Summary","document":"Body","createdAt":"2026-09-06T00:00:00Z"
+              }}
+            ]}
+            """.utf8))
+            try await SyncTransactionQueue.complete(sent, response: response, dbQueue: database.dbQueue)
+            #expect(try await database.dbQueue.read { try SummaryRecord.fetchOne($0, key: meeting.id) } == nil)
+            let next = try #require(try await SyncTransactionQueue.claim(dbQueue: database.dbQueue))
+            #expect(next.operations.first?.entity == .meeting)
+            #expect(next.operations.first?.action == .delete)
+        }
+
+        @Test
         func compactReceiptPreservesLaterEditAndItsBaseRevision() async throws {
             let (database, vault) = try await syncedDatabase()
             try await database.dbQueue.write { db in

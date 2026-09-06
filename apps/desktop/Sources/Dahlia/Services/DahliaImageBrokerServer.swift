@@ -28,7 +28,7 @@ final class DahliaImageBrokerServer: Sendable {
         self.init(helperURL: helperURL) { request in
             let matches = try await dbQueue.read { db in
                 try Bool.fetchOne(db, sql: """
-                SELECT EXISTS(SELECT 1 FROM screenshots s JOIN meetings m ON m.id = s.meetingId
+                SELECT EXISTS(SELECT 1 FROM meeting_images s JOIN meetings m ON m.id = s.meetingId
                 WHERE s.id = ? AND s.meetingId = ? AND m.vaultId = ?)
                 """, arguments: [request.screenshotId, request.meetingId, request.vaultId]) ?? false
             }

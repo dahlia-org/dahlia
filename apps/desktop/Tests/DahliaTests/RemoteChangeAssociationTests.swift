@@ -184,17 +184,15 @@
                         .utf8
                 )
             )
-            let screenshotRecord = try SyncJSON.decoder.decode(
-                SyncCanonicalPayload.self,
-                from: Data(
-                    "{\"meetingId\":\"\(meeting.id.uuidString.lowercased())\",\"capturedAt\":\"2026-09-03T00:00:00.000Z\",\"contentType\":\"image/png\",\"contentHash\":\"039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81\"}"
-                        .utf8
-                )
-            )
-            let changes: [SyncChangePage.Change] = [
-                .init(sequence: 1, entity: .meeting, entityId: meeting.id, action: "upsert", revision: 2, record: meetingRecord),
-                .init(sequence: 2, entity: .screenshot, entityId: screenshotId, action: "upsert", revision: 1, record: screenshotRecord),
-            ]
+            let changes = try [SyncChangePage.Change(
+                sequence: 1,
+                entity: .meeting,
+                entityId: meeting.id,
+                action: "upsert",
+                revision: 2,
+                record: meetingRecord
+            )]
+                + canonicalImageChanges(fileId: screenshotId, meetingId: meeting.id)
             let transcript = SyncTranscriptPage.Segment(
                 segmentId: .v7(), startTime: .now, endTime: nil, text: "Late transcript",
                 isConfirmed: true, audioSource: "mic", speakerLabel: nil

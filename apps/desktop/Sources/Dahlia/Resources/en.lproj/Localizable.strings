@@ -1662,3 +1662,5 @@
 
 "screenshot.cache.limit" = "Cloud image cache limit";
 "screenshot.cache.description" = "Synced images are downloaded as needed. Older cached images are removed when the limit is exceeded. Local account images, unsent images, and backups are excluded.";
+
+"Only vaults in the Local Account can be backed up." = "Only vaults in the Local Account can be backed up.";

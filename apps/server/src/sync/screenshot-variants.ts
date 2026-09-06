@@ -4,5 +4,5 @@ export type ScreenshotTransformer = (source: ReadableStream<Uint8Array>, longEdg
 
 export function screenshotVariantKey(originalKey: string, variant: ScreenshotVariant): string {
   // Original IDs are immutable. Fixed keys also let durable deletion remove derivatives after the row is gone.
-  return `${originalKey}.v1-${variant}.webp`;
+  return `${originalKey.slice(0, -"original".length)}variants/v1/${variant}.webp`;
 }

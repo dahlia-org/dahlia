@@ -1,9 +1,11 @@
 import CryptoKit
+import DahliaMeetingAccess
 import DahliaRuntimeSupport
 import Foundation
 import GRDB
 
 enum BackupServiceError: LocalizedError, Equatable {
+    case localVaultsOnly
     case unresolvedAudio(Int)
     case invalidBackup
     case incompatibleFormat(Int)
@@ -15,6 +17,8 @@ enum BackupServiceError: LocalizedError, Equatable {
 
     var errorDescription: String? {
         switch self {
+        case .localVaultsOnly:
+            L10n.backupLocalVaultsOnly
         case let .unresolvedAudio(count):
             L10n.resolveUnprocessedRecordings(count)
         case .invalidBackup:
@@ -57,15 +61,13 @@ actor BackupService {
     private let fileManager: FileManager
     private let appVersion: String
     private let appBuild: String
-    private let screenshotContent: ScreenshotContentProvider
 
     init(
         dbQueue: DatabaseQueue,
         applicationSupportURL: URL = DahliaApplicationSupport.currentDirectoryURL,
         fileManager: FileManager = .default,
         appVersion: String = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "development",
-        appBuild: String = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "development",
-        screenshotContent: ScreenshotContentProvider = .shared
+        appBuild: String = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "development"
     ) {
         self.dbQueue = dbQueue
         backupDirectoryURL = applicationSupportURL.appending(path: Self.backupDirectoryName, directoryHint: .isDirectory)
@@ -73,7 +75,6 @@ actor BackupService {
         self.fileManager = fileManager
         self.appVersion = appVersion
         self.appBuild = appBuild
-        self.screenshotContent = screenshotContent
     }
 
     func listGenerations() throws -> [BackupGeneration] {
@@ -83,7 +84,7 @@ actor BackupService {
             includingPropertiesForKeys: [.fileSizeKey, .creationDateKey, .isRegularFileKey, .isSymbolicLinkKey],
             options: [.skipsHiddenFiles]
         )
-        .filter { $0.pathExtension.lowercased() == "sqlite" }
+        .filter { ["sqlite", BackupArchive.pathExtension].contains($0.pathExtension.lowercased()) }
         .compactMap { url in
             let values = try? url.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey, .isSymbolicLinkKey])
             guard values?.isRegularFile == true, values?.isSymbolicLink != true else { return nil }
@@ -210,7 +211,10 @@ actor BackupService {
     }
 
     func listVaults() throws -> [VaultRecord] {
-        try dbQueue.read { try VaultRecord.order(Column("name")).fetchAll($0) }
+        try dbQueue.read {
+            try VaultRecord.filter(Column("accountConnectionId") == nil && Column("syncRole") == nil && Column("syncConfirmedConnectionId") == nil)
+                .order(Column("name")).fetchAll($0)
+        }
     }
 
     func createGeneration(vaultIds: Set<UUID>, reason: BackupMetadata.Reason = .manual) throws -> BackupGeneration {
@@ -220,7 +224,8 @@ actor BackupService {
             directoryURL: backupDirectoryURL,
             reason: reason,
             appVersion: appVersion,
-            appBuild: appBuild
+            appBuild: appBuild,
+            fileStoreDirectory: backupDirectoryURL.deletingLastPathComponent().appending(path: "FileStore")
         )
     }
 
@@ -230,7 +235,8 @@ actor BackupService {
         directoryURL: URL,
         reason: BackupMetadata.Reason,
         appVersion: String,
-        appBuild: String
+        appBuild: String,
+        fileStoreDirectory: URL? = nil
     ) throws -> BackupGeneration {
         guard !vaultIds.isEmpty else { throw BackupServiceError.invalidBackup }
         let manager = FileManager.default
@@ -259,6 +265,9 @@ actor BackupService {
                 guard let vault = try VaultRecord.fetchOne(db, sql: "SELECT * FROM backup_source.vaults WHERE id = ?", arguments: [vaultId]) else {
                     throw BackupServiceError.invalidBackup
                 }
+                guard vault.accountConnectionId == nil, vault.syncRole == nil, vault.syncConfirmedConnectionId == nil else {
+                    throw BackupServiceError.localVaultsOnly
+                }
                 let unresolved = try Self.unresolvedAudioCount(in: db, vaultId: vaultId, schema: "backup_source.")
                 guard unresolved == 0 else { throw BackupServiceError.unresolvedAudio(unresolved) }
                 try VaultBackupTransfer.copy(
@@ -278,10 +287,53 @@ actor BackupService {
             try VaultBackupTransfer.validateIntegrity(in: db)
             return metadata
         }
+        let archiveDirectory = directoryURL.appending(path: ".\(generationID).archive")
+        try manager.createDirectory(at: archiveDirectory, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
+        defer { try? manager.removeItem(at: archiveDirectory) }
+        let storeDirectory = fileStoreDirectory ?? URL(filePath: dbQueue.path).deletingLastPathComponent().appending(path: "FileStore")
+        let originals = try? ScreenshotFileStore(directory: storeDirectory, readOnly: true)
+        var paths = ["database.sqlite"]
+        try destination.dbQueue.read { db in
+            for vaultId in vaultIds {
+                let rows = try Row.fetchCursor(db, sql: """
+                SELECT f.*, b.imageData AS legacyBytes FROM backup_source.files f
+                LEFT JOIN backup_source.file_migration_content b ON b.fileId = f.id WHERE f.vaultId = ? ORDER BY f.id
+                """, arguments: [vaultId])
+                while let row = try rows.next() {
+                    let file = try FileRecord(row: row)
+                    let bytes: Data
+                    if let legacy: Data = row["legacyBytes"] {
+                        bytes = legacy
+                    } else {
+                        guard let reference = file.localReference,
+                              let content = try originals?.read(
+                                  JSONDecoder().decode(ScreenshotRemoteReference.self, from: Data(reference.utf8)),
+                                  variant: .original
+                              ) else {
+                            throw ScreenshotContentError.unavailable
+                        }
+                        bytes = content.data
+                    }
+                    guard Int64(bytes.count) == file.size,
+                          ScreenshotRemoteReference.digest(bytes) == file.contentHash else { throw ScreenshotContentError.integrityFailure }
+                    let path = "files/\(file.id.uuidString.lowercased())/original"
+                    let output = archiveDirectory.appending(path: path)
+                    try manager.createDirectory(at: output.deletingLastPathComponent(), withIntermediateDirectories: true)
+                    try bytes.write(to: output, options: .atomic)
+                    paths.append(path)
+                }
+            }
+        }
         try destination.close()
-        let url = directoryURL.appending(path: "Dahlia-\(metadata.generationId).sqlite")
-        try manager.moveItem(at: temporaryURL, to: url)
-        return try BackupGeneration(fileURL: url, metadata: readAndValidateMetadata(at: url), fileSize: fileSize(at: url), validationError: nil)
+        try manager.moveItem(at: temporaryURL, to: archiveDirectory.appending(path: "database.sqlite"))
+        let temporaryArchive = directoryURL.appending(path: ".\(generationID).tmp.\(BackupArchive.pathExtension)")
+        defer { try? manager.removeItem(at: temporaryArchive) }
+        let persistedMetadata = try readAndValidateMetadata(at: archiveDirectory.appending(path: "database.sqlite"))
+        try BackupArchive.create(directory: archiveDirectory, metadata: persistedMetadata, paths: paths, at: temporaryArchive)
+        let url = directoryURL.appending(path: "Dahlia-\(metadata.generationId).\(BackupArchive.pathExtension)")
+        let validatedMetadata = try readAndValidateMetadata(at: temporaryArchive)
+        try manager.moveItem(at: temporaryArchive, to: url)
+        return BackupGeneration(fileURL: url, metadata: validatedMetadata, fileSize: fileSize(at: url), validationError: nil)
     }
 
     private nonisolated static func clearSearchIndex(in db: Database) throws {
@@ -295,6 +347,7 @@ actor BackupService {
         defer { try? fileManager.removeItem(at: temporaryURL) }
         try fileManager.copyItem(at: sourceURL, to: temporaryURL)
         let metadata = try Self.readAndValidateMetadata(at: temporaryURL)
+        guard try metadata.formatVersion < 4 || BackupArchive.isArchive(temporaryURL) else { throw BackupServiceError.invalidBackup }
         try fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: temporaryURL.path)
         let importedURL = backupDirectoryURL.appending(
             path: "Imported-\(filename(for: metadata, uniqueSuffix: UUID.v7().uuidString))"
@@ -340,30 +393,11 @@ actor BackupService {
         try ensureDirectory(restoreDirectoryURL)
         let markerURL = restoreDirectoryURL.appending(path: Self.pendingRestoreFilename)
         guard !fileManager.fileExists(atPath: markerURL.path) else { throw BackupServiceError.restoreAlreadyPending }
-        let stagedFilename = "staged-\(UUID.v7()).sqlite"
+        let stagedFilename = "staged-\(UUID.v7()).\(generation.fileURL.pathExtension)"
         let stagedURL = restoreDirectoryURL.appending(path: stagedFilename)
         do {
             try fileManager.copyItem(at: generation.fileURL, to: stagedURL)
             guard try Self.readAndValidateMetadata(at: stagedURL) == metadata else { throw BackupServiceError.invalidBackup }
-            // Portable restores become local Vaults. Resolve references before installing them.
-            let staged = try DatabaseQueue(path: stagedURL.path)
-            defer { try? staged.close() }
-            if try await staged.read({ try $0.columns(in: "screenshots").contains { $0.name == "remoteReference" } }) {
-                var failures: [any Error] = []
-                for request in requests {
-                    do {
-                        try await screenshotContent.hydrateOriginals(
-                            vaultId: request.sourceVaultId, dbQueue: staged, credentials: dbQueue
-                        )
-                    } catch is CancellationError {
-                        throw CancellationError()
-                    } catch { failures.append(error) }
-                }
-                if failures.count == requests.count, let failure = failures.first {
-                    throw failure
-                }
-            }
-            try staged.close()
             let marker = try PendingDatabaseRestore(
                 stagedFilename: stagedFilename, sha256: Self.sha256(of: stagedURL), requestedAt: .now,
                 sourceMetadata: metadata, requests: requests
@@ -419,6 +453,31 @@ actor BackupService {
         at url: URL,
         validateIntegrity shouldValidateIntegrity: Bool
     ) throws -> BackupMetadata {
+        if try BackupArchive.isArchive(url) {
+            guard shouldValidateIntegrity else { return try BackupArchive.readManifest(at: url).metadata }
+            return try BackupArchive.withExtracted(at: url) { directory, manifest in
+                let databaseURL = directory.appending(path: "database.sqlite")
+                let metadata = try readMetadata(at: databaseURL, validateIntegrity: true)
+                guard metadata == manifest.metadata else { throw BackupServiceError.invalidBackup }
+                var config = Configuration()
+                config.readonly = true
+                let database = try DatabaseQueue(path: databaseURL.path, configuration: config)
+                defer { try? database.close() }
+                try database.read { db in
+                    let files = try FileRecord.fetchAll(db)
+                    guard manifest.entries.count == files.count + 1,
+                          try Int.fetchOne(db, sql: "SELECT count(*) FROM file_migration_content") == 0
+                    else { throw BackupServiceError.invalidBackup }
+                    let entries = Dictionary(uniqueKeysWithValues: manifest.entries.map { ($0.path, $0) })
+                    for file in files {
+                        guard let entry = entries["files/\(file.id.uuidString.lowercased())/original"],
+                              entry.size == file.size, entry.checksum == file.checksum, file.uri == nil,
+                              file.localReference == nil, file.remoteReference == nil else { throw BackupServiceError.invalidBackup }
+                    }
+                }
+                return metadata
+            }
+        }
         var configuration = Configuration()
         configuration.readonly = true
         let queue = try DatabaseQueue(path: url.path, configuration: configuration)
@@ -433,7 +492,7 @@ actor BackupService {
                 throw BackupServiceError.invalidBackup
             }
             let format: Int = try row.decode(forColumn: "formatVersion")
-            guard format == 2 || format == BackupMetadata.currentFormatVersion else { throw BackupServiceError.incompatibleFormat(format) }
+            guard [2, 3, BackupMetadata.currentFormatVersion].contains(format) else { throw BackupServiceError.incompatibleFormat(format) }
             guard let generationID = try UUID(uuidString: row.decode(String.self, forColumn: "generationId")),
                   let reason = try BackupMetadata.Reason(rawValue: row.decode(String.self, forColumn: "reason")) else {
                 throw BackupServiceError.invalidBackup
@@ -492,7 +551,7 @@ actor BackupService {
         formatter.timeZone = .current
         formatter.dateFormat = "yyyyMMdd-HHmmss"
         let suffix = uniqueSuffix ?? metadata.generationId.uuidString
-        return "Dahlia-Backup-\(formatter.string(from: metadata.createdAt))-schema-v\(metadata.schemaVersion)-\(suffix).sqlite"
+        return "Dahlia-Backup-\(formatter.string(from: metadata.createdAt))-schema-v\(metadata.schemaVersion)-\(suffix).\(metadata.formatVersion >= 4 ? BackupArchive.pathExtension : "sqlite")"
     }
 
     private func ensureDirectory(_ url: URL) throws {

@@ -7,7 +7,7 @@
 Server account の Vault / Project / meeting は Desktop と Web が共有する Server canonical record とし、Desktop の既存 SQLite 行を offline working copy にする。Local Account は独立して動作し、sync transaction を作らない。録音と確定文字起こしの保存はネットワークを待たない。
 
 - サインインだけでは Local Vault を移さない。明示移行時に同じ Vault ID の存在を確認し、新規なら初期同期、既存 owner Vault なら通常の revision conflict 解決、member Vault なら Server version の採用だけを許可する。Server-managed Vault は常時同期し、別の同期 toggle は持たない。
-- サインアウト前に local working copy を削除するか Local Account へ移す。どちらも Server record は残す。Local Account への移動では不足する画像原本を先に SQLite へ保存し、全原本が揃ったことを確認してから queue、confirmed revision、cursor と接続関連を外す。取得失敗時は接続と未送信データを保持する。
+- サインアウト前に local working copy を削除するか Local Account へ移す。どちらも Server record は残す。Local Account への移動では不足する画像原本を先に共通ファイルストアへ揃え、ファイル参照の保存と queue、confirmed revision、cursor、接続関連の解除を同じ SQLite transaction で確定する。取得失敗時は接続と未送信データを保持する。
 - export folder は任意の端末固有設定で、同期しない。未設定でも SQLite と同期データは利用でき、Markdown export / filesystem watch だけを無効にする。
 
 ## 同期対象とモデル
@@ -22,7 +22,7 @@ transcript の収録経路は `audio_source: mic | system`、人・diarization �
 
 - `POST /api/v1/transactions` は1 Vault の operation 群を atomic commit する。UUIDv7 transaction ID を冪等キーとし、commit response を保存する。同じ ID と異なる内容の再利用は拒否する。
 - Vault、Project、meeting metadata、summary は optimistic revision を使う。古い base revision は対象 entity と canonical record を含む `409` とし、暗黙の last-write-wins をしない。
-- Desktop は local record と retry 用 snapshot を同じ SQLite transaction に書く。追加 schema は `sync_transactions`（順序・lease・retry・block）、`sync_operations`（immutable JSON と screenshot bytes）、`sync_entity_state`（Server-confirmed revision のみ）、`sync_transcript_patch_items`（upsert / delete）に限定する。expected / optimistic revision や pending/running の派生状態を重複保存しない。
+- Desktop は local record と retry 用 snapshot を同じ SQLite transaction に書く。追加 schema は `sync_transactions`（順序・lease・retry・block）、`sync_operations`（immutable JSON と独立した画像ファイル参照）、`sync_entity_state`（Server-confirmed revision のみ）、`sync_transcript_patch_items`（upsert / delete）に限定する。expected / optimistic revision や pending/running の派生状態を重複保存しない。
 - transcript patch と画像は bounded staging endpoint へ送り、その後に元の domain transaction を commit する。staging だけでは read surface に公開しない。全段階で現在の Vault 権限、ID、親子関係、hash、payload limit を検証する。
 - local mutation は recorder を明示的に呼び、remote applier は呼ばない。receipt 反映時は新しい optimistic operation を上書きせず、confirmed revision と commit cursor の保存後に acknowledge 済み transaction を削除する。
 - validation、revision conflict、authorization、transport failure は別状態で永続化する。自動 retry は transport error、408、425、429、5xx のみ。blocked transaction は同じ Vault の後続も止める。
@@ -36,7 +36,11 @@ Server は Vault ごとの durable change ledger と opaque cursor を持つ。d
 
 `GET /api/v1/events` は cursor だけの SSE invalidation。起動、foreground 復帰、再接続、イベント欠落は必ず delta API で追いつく。Web も同じ transaction endpoint を使い、同期データの Server MCP は read-only。OAuth と認可は [共通 OAuth](oauth.md) と [Vault permission](../server/database-and-identity.md#vault-permission) に従う。
 
-画像は既存 ObjectStorage を利用するが Artifact API には入れない。検証済み MIME から拡張子を決め、PNG / JPEG / WebP / GIF / TIFF、64 MiB、immutable screenshot ID、CSP sandbox、nosniff、Range relay を守る。object key は `meetings/{meetingId}/screenshots/{screenshotId}.{extension}`。削除は再開可能とし、bytes 削除の進捗を失わない。
+原本は Vault 所有の `files`、会議との関係は独立 ID の `meeting_files` に保存する。`files` の基本項目は `uri`、`offset`（現在は0）、`size`、`content_type`、`checksum`（`SHA-256:` 接頭辞）とし、source / OCR / caption / 寸法は metadata に置く。source は作成時に固定し、metadata の部分更新は未指定キーを保持する。同じ Vault の複数会議で同じ file を共有でき、紐付けを解除しても原本を削除しない。参照が残る明示 file 削除は拒否する。
+
+`POST /api/v1/files` の予約、`PUT /api/v1/files/{id}/content` の最大64 MiBの immutable upload、`file` / `meeting_file` transaction の順に確定する。pending は通常の一覧から除外し、24時間後は再 upload を要求する。schemaVersion 2 へ Desktop / Web / Server を同時に切り替える。
+原本 key は `files/{fileId}/original`、サムネイルは `files/{fileId}/variants/v1/thumbnail.webp`。新 File API は Databricks Volume に保存し、canonical URI は `/Volumes/.../files/{fileId}/original` とする。既存 Artifact API は変更しない。既存 cloud file がないため旧 key migration は行わない。
+GET / HEAD の content と variant は Vault 認可、CSP sandbox、nosniff、Range を適用する。source は認可条件にしない。
 
 ## ローカル参照と画像の部分保持（2026-09-06）
 
@@ -44,29 +48,41 @@ Local / Server の両アカウントで UI の読み書きは既存 `MeetingRepo
 同期済み revision の観測で開いている会議の projection を更新する。文字起こしは閲覧中の bounded window を再読込し、
 過去を読んでいる位置を末尾へ飛ばさない。ヘッダーでは端末への保存と Server 同期完了、保留・復旧・競合を区別する。
 
-画像一覧は metadata だけを保持する。原本の所在は `ScreenshotContentProvider` が解決し、SQLite 原本、再取得可能なファイル cache、
-認証済み Server read の順で読む。delta / snapshot は画像ダウンロードを待たず metadata を適用する。
-撮影した原本と送信 operation は従来どおり一つの SQLite transaction で確定する。原本 BLOB を外せるのは同じ接続・Vault・hash の
-canonical revision が確定し、その Vault に未処理 operation、復旧処理がなく、録音中でない場合だけとする。
+画像一覧は metadata だけを保持する。`ScreenshotContentProvider` が 移行待ちの旧 BLOB、共通ファイル、認証済み Server read を解決する。
+delta / snapshot は画像ダウンロードを待たず metadata を適用する。Server Account の画像は未送信分と取得済み分を
+Application Support/Dahlia/FileStore/server/{accountConnectionId}/files/{fileId}/original の同じ immutable file として管理する。画像行の `localReference` と送信 operation の
+`attachmentReference` は独立して同じファイルを指すため、画像行を削除しても確定前の送信に必要な原本を保持できる。
+撮影した原本を検証・確定した後、metadata と送信 operation を同じ SQLite transaction へ保存して完了を通知する。
+Server は原本の削除待ちがある間、upload 完了の反映と file の確定を DB transaction 内で拒否する。同じ ID の再予約も削除完了後に原本を再送する。
+現在の予約が有効で削除待ちだけが原因なら503で自動再試行し、予約自体が消えた場合の404とは区別する。
+Server の staging upload 成功では保持を解除せず、同じ接続・Vault・hash の canonical revision と未処理 operation の参照を検査する。
+未送信、再試行、競合、確定状態が不明な原本はキャッシュ容量の対象外とし、確定後はコピー・移動なしで削除可能となる。
+添付のないメタデータ編集も含め、保留中の transaction がある Vault では取得済み原本を保持する。
+receipt は後続の会議削除で消えた子を復元せず ACK し、Server の添付競合は欠損した親会議を返して明示的なローカル版の再適用で復旧できるようにする。
+ファイル確定中とアカウント移動中は削除を止め、アプリの所有者だけが DB writer 内で参照を再検査して有界な件数を削除する。
+取得済み画像の破損は再取得できるが、未送信画像の欠損・破損はエラーとして保持する。ファイルストアを開く処理や読み取りだけで画像を削除しない。
 cache の追加・削除・破損回復は domain transaction と pull cursor を変更しない。
 
-Server は一覧用に長辺384px、拡大なし、WebP quality 75 のサムネイルだけを作る。Node は `sharp` を使用し、canonical commit 後に
-非同期で生成、未生成なら最初の参照時に再試行して既存 ObjectStorage に保存する。変換は最大2並行で同じ画像の処理を共有する。
-生成失敗や変換器を持たない Worker は原本を返す。拡大表示・コピー・書き出しは原本を取得し、中間サイズのプレビューは保存しない。
+Server は一覧用に長辺384px、拡大なし、WebP quality 75 のサムネイルだけを作る。Node は `sharp` を使用し、最初の参照時だけ生成して Volume に保存する。upload / commit では生成しない。変換は最大2並行で同じ画像の処理を共有する。
+生成や保存の失敗はエラーとし再試行できる。変換器を持たない環境は variant を広告しない。variant endpoint が原本を返すことはない。拡大表示・コピー・書き出しは原本を取得し、中間サイズのプレビューは保存しない。
 撮影原本、サムネイル、リサイズ・書き出し時の再エンコードは品質75に統一する。
 Local Account は原本だけを永続保存し、表示時の縮小デコードは既存メモリ cache / decode worker に任せる。
 
 クラウド画像のファイル cache は全 Vault 合計で既定2 GiB、設定は1 / 2 / 5 / 10 GiB。LRU で上限超過時に80%まで戻し、
 サムネイル用に20%を残す。未使用枠は原本も利用できる。ローカル原本、未送信原本、backup 世代はこの上限の対象外。
-キャッシュキーは接続先・Vault・会議・画像 ID・原本 hash・生成 recipe を含む。取得は最大4並行、不要な表示要求はキャンセルする。
+ファイルパスはアカウント接続 ID・file ID・生成 recipe で決め、索引に原本 hash と保持状態を記録する。
+サムネイルは索引の原本 hash が現在の file と一致する場合だけ再利用し、旧索引の未記録項目や ID 再利用時は再取得する。会議や Vault の ID はパスに含めない。取得は最大4並行、不要な表示要求はキャンセルする。
 書き込みは atomic とし、読込時に長さと hash を検証する。キャッシュが書けなくても取得した画像を表示できる。
 
-MCP の画像参照は同じ cache を利用する。未取得の場合は起動中のアプリへ画像だけを要求する専用 IPC を使い、
+MCP の画像参照は同じファイルストアを read-only で利用し、作成・削除は行わない。未取得の場合は起動中のアプリへ画像だけを要求する専用 IPC を使い、
 同じ OS ユーザーと同梱 helper executable を確認し、アプリ側でも Vault / 会議 / 画像の所属を検証する。token broker の権限は広げない。
 未取得・破損画像をリストから黙って省かず、取得不能として返す。
 
-v45 は原本 BLOB を nullable にし、hash・長さ・寸法・remote reference を追加する。既存原本と retry 用 attachment trigger を保持し、
-次の canonical metadata 取得で既存画像の参照を確定する。解放した SQLite ページは次回起動時、録音開始前に空き容量を確認して
+未リリースの v45 は screenshots table を files と meeting_files に移し、既存画像 ID を両方の ID に引き継ぐ。旧 BLOB は file_migration_content へ退避し、ファイル検証後に解放する。operation の独立 attachment reference を追加する。
+v44 以前の BLOB はファイルの検証と参照切り替えが成功した分だけ解放し、移行前の retry 用 BLOB 保護は維持する。
+移行は起動時と同期前に再開でき、失敗時は元データを保持する。Local Account から Server への移動もファイルを準備し、
+所属変更と参照の切り替えを同じ transaction で確定する。旧 v45 と旧 cache 形式は未リリースのため互換処理を持たない。
+次の canonical metadata 取得で既存画像の Server 参照を確定する。解放した SQLite ページは次回起動時、録音開始前に空き容量を確認して
 標準 `VACUUM` で回収し、以後は録音外で incremental vacuum を行う。失敗時は元の DB を維持して後の起動で再試行する。
 
 ## 経緯と未解決事項

@@ -24,7 +24,7 @@ describe.runIf(databaseUrl)("PostgreSQL retention", () => {
     try {
       await store.ensureIdentityUser(identity);
       const initial = await store.sync.withIdentity(identity, (sync) => sync.commitTransaction({
-        schemaVersion: 1, id: crypto.randomUUID(), vaultId, createdAt: new Date(), requestHash: "initial",
+        schemaVersion: 2, id: crypto.randomUUID(), vaultId, createdAt: new Date(), requestHash: "initial",
         operations: [
           { id: crypto.randomUUID(), entity: "vault", action: "create", entityId: vaultId, baseRevision: null, data: { name: "Vault", createdAt: new Date() } },
           { id: crypto.randomUUID(), entity: "meeting", action: "create", entityId: meetingId, baseRevision: null, data: meetingData },
@@ -32,15 +32,17 @@ describe.runIf(databaseUrl)("PostgreSQL retention", () => {
       }));
       await raw.query("BEGIN");
       await raw.query("SELECT set_config('app.user_id', $1, true)", [userId]);
-      await raw.query(`INSERT INTO app.screenshots(screenshot_id, vault_id, meeting_id, captured_at, content_type, storage_key, content_length, content_hash)
-        SELECT gen_random_uuid(), $1, $2, now(), 'image/png', 'test/' || gen_random_uuid(), 1, repeat('a', 64) FROM generate_series(1, 105)`, [vaultId, meetingId]);
+      await raw.query(`INSERT INTO app.files(file_id, vault_id, uri, size, content_type, checksum, name, metadata, active, uploaded_at, revision)
+        SELECT gen_random_uuid(), $1, '/Volumes/test/app/files/test', 1, 'image/png', 'SHA-256:' || repeat('a', 64), 'capture.png', '{"source":"screenshot"}', true, now(), 1 FROM generate_series(1, 105)`, [vaultId]);
+      await raw.query(`INSERT INTO app.meeting_files(id, vault_id, meeting_id, file_id, captured_at)
+        SELECT file_id, vault_id, $2, file_id, now() FROM app.files WHERE vault_id = $1`, [vaultId, meetingId]);
       await raw.query("COMMIT");
       await store.sync.withIdentity(identity, (sync) => sync.commitTransaction({
-        schemaVersion: 1, id: crypto.randomUUID(), vaultId, createdAt: new Date(), requestHash: "delete",
+        schemaVersion: 2, id: crypto.randomUUID(), vaultId, createdAt: new Date(), requestHash: "delete",
         operations: [{ id: crypto.randomUUID(), entity: "meeting", action: "delete", entityId: meetingId, baseRevision: 1, data: {} }],
       }));
       const recreated = await store.sync.withIdentity(identity, (sync) => sync.commitTransaction({
-        schemaVersion: 1, id: crypto.randomUUID(), vaultId, createdAt: new Date(), requestHash: "recreate",
+        schemaVersion: 2, id: crypto.randomUUID(), vaultId, createdAt: new Date(), requestHash: "recreate",
         operations: [{ id: crypto.randomUUID(), entity: "meeting", action: "create", entityId: meetingId, baseRevision: null, data: meetingData }],
       }));
       const service = new MeetingSyncService(store.sync);
@@ -52,7 +54,7 @@ describe.runIf(databaseUrl)("PostgreSQL retention", () => {
       expect(second.hasMore).toBe(false);
       expect(second.cursor).toBe(recreated.cursor);
       const items = [...first.items, ...second.items];
-      expect(items.filter(({ entity, action }) => entity === "screenshot" && action === "delete")).toHaveLength(105);
+      expect(items.filter(({ entity, action }) => entity === "meeting_file" && action === "delete")).toHaveLength(105);
       expect(items.find(({ entity }) => entity === "summary")).toMatchObject({ record: { document: null } });
       expect(items.find(({ entity }) => entity === "transcript")).toMatchObject({ revision: 0 });
     } finally {
@@ -77,7 +79,7 @@ describe.runIf(databaseUrl)("PostgreSQL retention", () => {
     try {
       await store.ensureIdentityUser(owner);
       const receipt = await store.sync.withIdentity(owner, (sync) => sync.commitTransaction({
-        schemaVersion: 1, id: transactionId, vaultId, createdAt: new Date(), requestHash: "retention-test",
+        schemaVersion: 2, id: transactionId, vaultId, createdAt: new Date(), requestHash: "retention-test",
         operations: [{ id: crypto.randomUUID(), entity: "vault", action: "create", entityId: vaultId, baseRevision: null,
           data: { name: "Preserved", createdAt: new Date().toISOString() } }],
       }));
@@ -99,7 +101,7 @@ describe.runIf(databaseUrl)("PostgreSQL retention", () => {
       const results = await Promise.all([
         store.sync.pruneHistoryBatch(target), store.sync.pruneHistoryBatch(target),
         store.sync.withIdentity(owner, (sync) => sync.commitTransaction({
-          schemaVersion: 1, id: crypto.randomUUID(), vaultId, createdAt: new Date(), requestHash: "new-edit",
+          schemaVersion: 2, id: crypto.randomUUID(), vaultId, createdAt: new Date(), requestHash: "new-edit",
           operations: [{ id: crypto.randomUUID(), entity: "vault", action: "update", entityId: vaultId, baseRevision: 1, data: { name: "Latest" } }],
         })),
       ]);

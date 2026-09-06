@@ -1,23 +1,26 @@
-# SQLite backup / restore
+# Vault archive backup / restore
 
 対象: Desktop。採択: 2026-07-18。保管庫単位の保存・復元へ更新: 2026-09-06。
 
 ## 世代と対象
 
-複数の保管庫を選択して一つの SQLite backup を Application Support/Dahlia/Backups にユーザー削除まで保持する。自動で世代数を減らさない。
-形式 v3 の各 snapshot に元の保管庫 UUID・名前の一覧、世代 UUID、日時、schema / migration、app version/build、理由を埋め込む。
+Local Account 配下の複数の保管庫を選択して一つの Apple Archive（`.dahliabackup`） を Application Support/Dahlia/Backups にユーザー削除まで保持する。自動で世代数を減らさない。
+形式 v4 の manifest と各 DB snapshot に元の保管庫 UUID・名前の一覧、世代 UUID、日時、schema / migration、app version/build、理由を埋め込む。
 単一の DB snapshot から選択した全保管庫を抽出し、途中で失敗した世代は公開しない。
 旧形式 v1 は読み込み・復元に対応しない。旧世代は削除できる。v2 は一つの保管庫を含む世代として読み込む。
 
 対象は選択した保管庫の DB 内データと参照関係。Project 階層、会議、文字起こし・翻訳、session timeline、要約、
-スクリーンショット metadata と OCR / caption、顧客情報を含む。ローカルアカウントと未送信画像の原本は必ず保存する。
-同期済み画像は保存時に SQLite にある原本または Server の hash 付き参照を保持し、cache と未取得原本を全件取得する処理は含めない。
+files の metadata、会議との紐付け、スクリーンショットの OCR / caption、顧客情報を含む。原本は `files/{fileId}/original`、DB は `database.sqlite` として格納し、`manifest.json` に各 entry のサイズと SHA-256 を記録する。
+Server Account の保管庫とその未送信画像は対象外。Local Account の対象保管庫の原本は FileStore から取り込む。画面の選択肢と作成元 snapshot の所属を検証し、
+Server Account の保管庫を一つでも含む作成要求は世代を公開せず拒否する。端末固有の画像ファイル参照は含めない。
 共有タグ・カレンダー情報は対象会議から参照されるものだけを保存する。
 明示した対象テーブルから新しい DB へコピーするため、他保管庫の内容は含まれない。
 音声本体・参照、Vault Markdown / 添付、端末の出力先、UserDefaults、アカウント接続、Keychain / token、同期キュー・カーソル、
 検索索引は含めない。対象保管庫に未文字起こし segmented audio があれば、文字起こしか明示破棄まで作成を拒否する。
 
 ## Import と復元
+
+展開は隔離した作業ディレクトリで行い、manifest にない entry、重複、リンク、パス逸脱、サイズ超過、hash 不一致を拒否する。復元先の原本を検証・確定した後にだけ DB を置き換える。
 
 import は管理領域の一時 copy を integrity / metadata / schema / migration 履歴で検証して atomic に世代追加する。
 未知の形式・schema、改変、追加 trigger / view、integrity 不良を拒否する。
@@ -35,11 +38,9 @@ import は管理領域の一時 copy を integrity / metadata / schema / migrati
   外部キー・多態参照・要約内のスクリーンショット参照も置き換える。同名は許可する。
   接続、同期状態、出力先（要約の書き出し先参照を含む）は引き継がない。共有タグは名前で対応付け、既存タグや共有カレンダー情報は上書きしない。
 
-同期保管庫のローカル working copy も保存できるが、Server の未取得データまで含む完全な Server backup ではない。
-同期保管庫への上書きは拒否し、新しいローカル保管庫としてのみ復元する。Server への操作・同期 transaction は生成しない。
-ローカル復元の準備では、選択した保管庫の不足原本を検証済み作業コピーへ取得する。保存済みの接続先と一致するアカウントだけを使い、
-backup 内の任意 URL へ token を送らない。原本を確保できない保管庫は復元せず、他の選択保管庫は処理を続ける。
-全保管庫で原本取得に失敗した場合は再起動を準備しない。元の backup 世代と現在の DB は変更しない。
+Server Account の保管庫への上書きは拒否する。復元による Server への操作・同期 transaction は生成しない。
+既存の対応済み v2 / v3 世代のローカル復元は維持するが、未リリースの旧 v45 に含まれた Server 画像参照は互換対象にしない。
+バックアップは原本を内包するため、復元時にクラウドから画像を取得しない。
 
 復元は再起動時、単一 process lock 取得後・通常 DB open 前に行う。録音・処理中には開始しない。
 その時点の最新 DB を作業コピーに保存し、保管庫ごとに対象を再検証する。上書き前にその保管庫の安全 backup を作成し、保管庫ごとの transaction で復元する。

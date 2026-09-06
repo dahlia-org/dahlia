@@ -34,7 +34,7 @@ function id() {
 
 function body(vaultId: string, operations: Omit<SyncTransactionOperation, "id">[]) {
   return {
-    schemaVersion: 1, id: id(), vaultId, createdAt: new Date().toISOString(),
+    schemaVersion: 2, id: id(), vaultId, createdAt: new Date().toISOString(),
     operations: operations.map((operation) => ({ id: id(), ...operation })),
   };
 }
@@ -82,10 +82,12 @@ describe("sync history retention", () => {
         data: { title: "Old summary", document: "{}", createdAt },
       }]));
       raw.prepare("UPDATE meetings SET transcript_revision = 1 WHERE meeting_id = ?").run(meetingId);
-      raw.prepare("INSERT INTO screenshots(screenshot_id, vault_id, meeting_id, captured_at, content_type, storage_key, content_length, content_hash) VALUES (?, ?, ?, ?, 'image/png', ?, 1, ?)")
-        .run(screenshotId, vaultId, meetingId, Date.now(), `test/${screenshotId}.png`, "a".repeat(64));
+      raw.prepare("INSERT INTO files(file_id, vault_id, uri, size, content_type, checksum, name, metadata, active, uploaded_at, revision) VALUES (?, ?, ?, 1, 'image/png', ?, 'capture.png', ?, 1, ?, 1)")
+        .run(screenshotId, vaultId, `/Volumes/test/app/files/files/${screenshotId}/original`, `SHA-256:${"a".repeat(64)}`, '{"source":"screenshot"}', Date.now());
+      raw.prepare("INSERT INTO meeting_files(id, vault_id, meeting_id, file_id, captured_at) VALUES (?, ?, ?, ?, ?)")
+        .run(screenshotId, vaultId, meetingId, screenshotId, Date.now());
       const snapshot = await service.listSnapshot(owner, vaultId);
-      expect(snapshot.items.map(({ entity }) => entity)).toEqual(["vault", "meeting", "summary", "transcript", "screenshot"]);
+      expect(snapshot.items.map(({ entity }) => entity)).toEqual(["vault", "meeting", "summary", "transcript", "file", "meeting_file"]);
       if (scenario === "updated") {
         await service.commitTransaction(owner, body(vaultId, [{
           entity: "meeting", action: "update", entityId: meetingId, baseRevision: 1,
@@ -108,7 +110,7 @@ describe("sync history retention", () => {
       expect(delta.items).toEqual(expect.arrayContaining([
         expect.objectContaining({ entity: "transcript", entityId: meetingId,
           action: scenario === "deleted" ? "delete" : "upsert", revision: scenario === "deleted" ? null : 0 }),
-        expect.objectContaining({ entity: "screenshot", entityId: screenshotId, action: "delete" }),
+        expect.objectContaining({ entity: "meeting_file", entityId: screenshotId, action: "delete" }),
         expect.objectContaining({ entity: "meeting", entityId: meetingId, action: scenario === "deleted" ? "delete" : "upsert" }),
       ]));
       const summary = delta.items.find(({ entity }) => entity === "summary");

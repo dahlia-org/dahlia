@@ -748,29 +748,10 @@ actor AutomaticScreenshotCaptureService: AutomaticScreenshotCapturing {
             encodedData: encoded.data,
             mimeType: encoded.mimeType
         )
-        let attachment = SyncScreenshotAttachment(mimeType: record.mimeType, bytes: encoded.data)
         let persistenceStartedAt = ContinuousClock.now
         let persistenceState = ScreenshotCaptureMetrics.signposter.beginInterval("Persist")
         do {
-            try await request.dbQueue.write { db in
-                try record.insert(db)
-                guard let vaultId = try UUID.fetchOne(
-                    db,
-                    sql: "SELECT vaultId FROM meetings WHERE id = ?",
-                    arguments: [record.meetingId]
-                ) else { return }
-                let operation = try SyncInitialSnapshotBuilder.screenshotOperation(
-                    record,
-                    action: .upsert,
-                    contentHash: attachment.sha256
-                )
-                try SyncTransactionRecorder.record(
-                    vaultId: vaultId,
-                    operations: [operation],
-                    screenshotAttachments: [operation.id: attachment],
-                    in: db
-                )
-            }
+            try await ScreenshotContentProvider.shared.persistCapture(record, dbQueue: request.dbQueue)
         } catch {
             ScreenshotCaptureMetrics.signposter.endInterval("Persist", persistenceState)
             ScreenshotCaptureMetrics.recordSlowStage(.persistence, startedAt: persistenceStartedAt)

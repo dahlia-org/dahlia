@@ -16,22 +16,21 @@ public enum ScreenshotVariant: String, Codable, Sendable {
 /// A content reference, not a credential. Clients must match its origin to a configured account.
 public struct ScreenshotRemoteReference: Codable, Equatable, Sendable {
     public let origin: String
-    public let vaultId: UUID
-    public let meetingId: UUID
-    public let screenshotId: UUID
+    public let accountConnectionId: UUID?
+    public let fileId: UUID
     public let contentHash: String
 
-    public init(origin: String, vaultId: UUID, meetingId: UUID, screenshotId: UUID, contentHash: String) {
+    public init(origin: String, accountConnectionId: UUID?, fileId: UUID, contentHash: String) {
         self.origin = origin
-        self.vaultId = vaultId
-        self.meetingId = meetingId
-        self.screenshotId = screenshotId
+        self.accountConnectionId = accountConnectionId
+        self.fileId = fileId
         self.contentHash = contentHash
     }
 
     public func cacheKey(variant: ScreenshotVariant) -> String {
-        let identity = "\(origin)|\(vaultId)|\(meetingId)|\(screenshotId)|\(contentHash)|v1|\(variant.rawValue)"
-        return Self.digest(Data(identity.utf8))
+        let scope = accountConnectionId.map { "server/\($0.uuidString.lowercased())" } ?? "local"
+        let representation = variant == .original ? "original" : "variants/v1/thumbnail.webp"
+        return "\(scope)/files/\(fileId.uuidString.lowercased())/\(representation)"
     }
 
     public static func digest(_ bytes: Data) -> String {
@@ -39,7 +38,9 @@ public struct ScreenshotRemoteReference: Codable, Equatable, Sendable {
     }
 
     public func jsonString() throws -> String {
-        try String(decoding: JSONEncoder().encode(self), as: UTF8.self)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        return try String(decoding: encoder.encode(self), as: UTF8.self)
     }
 }
 

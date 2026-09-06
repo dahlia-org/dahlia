@@ -51,10 +51,13 @@
             try await db.dbQueue.write { db in
                 try vault.insert(db)
                 try meeting.insert(db)
-                try db.execute(
-                    sql: "INSERT INTO screenshots(id, meetingId, capturedAt, imageData, mimeType) VALUES (?, ?, ?, ?, 'image/png')",
-                    arguments: [imageId, meeting.id, Date(), Data([1, 2, 3])]
-                )
+                try MeetingScreenshotRecord(
+                    id: imageId,
+                    meetingId: meeting.id,
+                    capturedAt: .now,
+                    imageData: Data([1, 2, 3]),
+                    mimeType: "image/png"
+                ).insertLegacyForTesting(db)
             }
             let broker = DahliaImageBrokerServer(dbQueue: db.dbQueue, helperURL: executableURL())
             try broker.start(socketURL: socket)

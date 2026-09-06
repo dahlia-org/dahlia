@@ -64,7 +64,7 @@ private struct SyncTransactionResolution: Decodable {
 }
 
 private struct SyncTransactionBody: Encodable {
-    let schemaVersion = 1
+    let schemaVersion = 2
     let id: UUID
     let vaultId: UUID
     let createdAt: Date
@@ -111,12 +111,6 @@ private struct TranscriptPatchData: Codable {
     let chunks: [Chunk]
 }
 
-private struct ScreenshotOperationData: Decodable {
-    let meetingId: UUID
-    let capturedAt: Date?
-    let contentHash: String?
-}
-
 struct SyncChangePage: Decodable {
     struct Change: Codable, Sendable {
         let sequence: Int
@@ -139,13 +133,15 @@ struct SyncResetSnapshot {
     let summaries: Set<UUID>
     let transcripts: Set<UUID>
     let screenshots: Set<UUID>
+    let files: Set<UUID>
 
     init(ids: [SyncEntity: Set<UUID>]) {
         projects = ids[.project, default: []]
         meetings = ids[.meeting, default: []]
         summaries = ids[.summary, default: []]
         transcripts = ids[.transcript, default: []]
-        screenshots = ids[.screenshot, default: []]
+        screenshots = ids[.meetingFile, default: []]
+        files = ids[.file, default: []]
     }
 
     init?(_ changes: [SyncChangePage.Change]) {
@@ -163,7 +159,8 @@ struct SyncResetSnapshot {
         meetings = ids(.meeting)
         summaries = ids(.summary)
         transcripts = ids(.transcript)
-        screenshots = ids(.screenshot)
+        screenshots = ids(.meetingFile)
+        files = ids(.file)
     }
 }
 
@@ -304,12 +301,13 @@ actor SyncWorker {
                 }
                 guard let transaction = try await SyncTransactionQueue.claim(dbQueue: dbQueue) else {
                     try await pullRemoteChanges()
-                    try? await ScreenshotContentProvider.shared.evictConfirmedOriginals(dbQueue: dbQueue)
+                    try? await ScreenshotContentProvider.shared.trimFiles(dbQueue: dbQueue)
                     try? await ScreenshotStorageMaintenance.reclaimIncrementally(dbQueue: dbQueue)
                     try await Task.sleep(for: .seconds(5))
                     continue
                 }
                 do {
+                    try await ScreenshotContentProvider.shared.migrateLegacyImages(vaultId: transaction.vaultId, dbQueue: dbQueue)
                     let response = try await push(transaction)
                     try await SyncTransactionQueue.complete(transaction, response: response, dbQueue: dbQueue)
                 } catch is CancellationError {
@@ -388,25 +386,36 @@ actor SyncWorker {
         var operations = transaction.operations
         for index in operations.indices {
             let operation = operations[index]
-            if stageAttachments, operation.entity == .screenshot,
+            if stageAttachments, operation.entity == .file,
                operation.action != .delete,
                let attachment = try await SyncTransactionQueue.screenshotAttachment(
                    operationId: operation.id,
                    dbQueue: dbQueue
                ) {
-                let payload = try decode(ScreenshotOperationData.self, from: operation.payloadJSON)
-                var upload = try request(
+                let payload = try decode(FileOperationPayload.self, from: operation.payloadJSON)
+                let reservation: [String: JSONValue] = try [
+                    "id": .string(operation.entityId.lowercase), "vaultId": .string(transaction.vaultId.lowercase),
+                    "name": .string(payload.name), "offset": .number(0), "size": .number(Double(attachment.bytes.count)),
+                    "content_type": .string(attachment.mimeType), "checksum": .string("SHA-256:" + attachment.sha256),
+                    "metadata": SyncJSON.decoder.decode(JSONValue.self, from: SyncJSON.encoder.encode(payload.metadata)),
+                ]
+                try await send(
+                    request(
+                        origin: target,
+                        path: "api/v1/files",
+                        method: "POST",
+                        body: SyncJSON.encoder.encode(reservation),
+                        contentType: "application/json"
+                    ),
+                    connectionId: transaction.connectionId
+                )
+                try await send(request(
                     origin: target,
-                    path: "api/v1/vaults/\(transaction.vaultId.lowercase)/meetings/\(payload.meetingId.lowercase)/screenshots/\(operation.entityId.lowercase)/content",
+                    path: "api/v1/files/\(operation.entityId.lowercase)/content",
                     method: "PUT",
                     body: attachment.bytes,
                     contentType: attachment.mimeType
-                )
-                if let capturedAt = payload.capturedAt {
-                    upload.setValue(capturedAt.ISO8601Format(), forHTTPHeaderField: "X-Dahlia-Captured-At")
-                }
-                upload.setValue(attachment.sha256, forHTTPHeaderField: "X-Dahlia-Content-SHA256")
-                try await send(upload, connectionId: transaction.connectionId)
+                ), connectionId: transaction.connectionId)
             } else if operation.entity == .transcript, operation.action == .patch {
                 let payload = try await stageTranscriptPatch(operation, transaction: transaction, origin: target, sendUploads: stageAttachments)
                 operations[index] = SyncQueuedOperation(
@@ -564,6 +573,7 @@ actor SyncWorker {
         defer { isPulling = false }
         for target in try await pullTargets() {
             do {
+                try await ScreenshotContentProvider.shared.migrateLegacyImages(vaultId: target.vaultId, dbQueue: dbQueue)
                 try await pullRemoteChanges(for: target)
             } catch is CancellationError {
                 throw CancellationError()
@@ -794,8 +804,33 @@ actor SyncWorker {
                 record: record
             ))
         }
+        var parentFiles: [SyncChangePage.Change] = []
+        for fileId in try await Self.missingParentFileIDs(in: changes, vaultId: target.vaultId, dbQueue: dbQueue) {
+            if let canonical = changes.first(where: { $0.entity == .file && $0.entityId == fileId && $0.action == "upsert" }) {
+                parentFiles.append(canonical)
+                continue
+            }
+            let data = try await sendData(
+                request(origin: target.origin, path: "api/v1/files/\(fileId.lowercase)", method: "GET"),
+                connectionId: target.connectionId
+            )
+            struct Header: Decodable { let id: UUID
+                let vaultId: UUID
+                let revision: Int
+            }
+            let header = try SyncJSON.decoder.decode(Header.self, from: data)
+            guard header.id == fileId, header.vaultId == target.vaultId else { throw SyncTransactionQueueError.invalidReceipt }
+            try parentFiles.append(.init(
+                sequence: 0,
+                entity: .file,
+                entityId: fileId,
+                action: "upsert",
+                revision: header.revision,
+                record: SyncJSON.decoder.decode(SyncCanonicalPayload.self, from: data)
+            ))
+        }
         guard try await reconcilingProjects(in: parentMeetings + changes, target: target) != nil,
-              try await apply(parentMeetings, cursor: nil, target: target) else {
+              try await apply(parentFiles + parentMeetings, cursor: nil, target: target) else {
             return nil
         }
         return changes.filter { $0.entity != .project }
@@ -864,9 +899,9 @@ actor SyncWorker {
             switch change.entity {
             case .summary, .transcript:
                 return change.entityId
-            case .screenshot:
+            case .meetingFile:
                 return change.record?.meetingId
-            case .vault, .project, .meeting:
+            case .vault, .project, .meeting, .file:
                 return nil
             }
         })
@@ -876,6 +911,17 @@ actor SyncWorker {
                 try MeetingRecord
                     .filter(Column("id") == meetingID && Column("vaultId") == vaultId)
                     .fetchCount(db) == 0
+            }.sorted { $0.uuidString < $1.uuidString }
+        }
+    }
+
+    static func missingParentFileIDs(in changes: [SyncChangePage.Change], vaultId: UUID, dbQueue: DatabaseQueue) async throws -> [UUID] {
+        let referenced = Set(changes.compactMap { change in
+            change.entity == .meetingFile && change.action == "upsert" ? change.record?.fileId : nil
+        })
+        return try await dbQueue.read { db in
+            try referenced.filter { id in
+                try FileRecord.filter(Column("id") == id && Column("vaultId") == vaultId).fetchCount(db) == 0
             }.sorted { $0.uuidString < $1.uuidString }
         }
     }
@@ -1045,7 +1091,7 @@ actor SyncWorker {
         }
         let deletes = current.values.filter { $0.action == "delete" }.sorted { $0.sequence < $1.sequence }
         return (reset.map { [$0] } ?? []) + sorted(.vault) + orderedProjects + sorted(.meeting) + sorted(.summary)
-            + sorted(.transcript) + sorted(.screenshot) + deletes
+            + sorted(.transcript) + sorted(.file) + sorted(.meetingFile) + deletes
     }
 
     private func pullTargets() async throws -> [SyncTarget] {

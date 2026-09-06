@@ -15,14 +15,14 @@ public final class MeetingAccessStore: Sendable {
     let database: DatabaseQueue
     public let vaultID: UUID
     public let allowsWrites: Bool
-    private let screenshotCache: ScreenshotDiskCache?
+    private let screenshotCache: ScreenshotFileStore?
     private let imageResolver: @Sendable (UUID, UUID, UUID) throws -> Data
 
     public init(
         databaseURL: URL = MeetingAccessStore.defaultDatabaseURL,
         vaultID: UUID,
         allowsWrites: Bool = false,
-        screenshotCache: ScreenshotDiskCache? = nil,
+        screenshotCache: ScreenshotFileStore? = nil,
         imageResolver: (@Sendable (UUID, UUID, UUID) throws -> Data)? = nil
     ) throws {
         var configuration = Configuration()
@@ -35,7 +35,7 @@ public final class MeetingAccessStore: Sendable {
         self.vaultID = vaultID
         self.allowsWrites = allowsWrites
         let usesAppDatabase = databaseURL.standardizedFileURL == Self.defaultDatabaseURL.standardizedFileURL
-        self.screenshotCache = screenshotCache ?? (usesAppDatabase ? try? ScreenshotDiskCache() : nil)
+        self.screenshotCache = screenshotCache ?? (usesAppDatabase ? try? ScreenshotFileStore(readOnly: true) : nil)
         self.imageResolver = imageResolver ?? { vaultId, meetingId, screenshotId in
             guard usesAppDatabase else { throw MeetingAccessError.screenshotUnavailable }
             do {
@@ -118,26 +118,26 @@ public final class MeetingAccessStore: Sendable {
                     arguments += [projectID]
                 }
                 if let createdFrom = query.createdFrom {
-                    conditions.append("screenshots.capturedAt >= ?")
+                    conditions.append("meeting_images.capturedAt >= ?")
                     arguments += [createdFrom]
                 }
                 if let createdBefore = query.createdBefore {
-                    conditions.append("screenshots.capturedAt < ?")
+                    conditions.append("meeting_images.capturedAt < ?")
                     arguments += [createdBefore]
                 }
                 arguments += [query.limit + 1, cursor?.offset ?? 0]
                 var rows = try Row.fetchAll(
                     db,
                     sql: """
-                    SELECT screenshots.id, screenshots.meetingId, meetings.name AS meetingName,
-                           screenshots.capturedAt, screenshots.mimeType,
-                           screenshots.ocrText AS detectedText, screenshots.caption
+                    SELECT meeting_images.id, meeting_images.meetingId, meetings.name AS meetingName,
+                           meeting_images.capturedAt, meeting_images.mimeType,
+                           meeting_images.ocrText AS detectedText, meeting_images.caption
                     FROM search_documents
                     JOIN search_documents_fts ON search_documents_fts.rowid = search_documents.id
-                    JOIN screenshots ON screenshots.id = search_documents.sourceId
-                    JOIN meetings ON meetings.id = screenshots.meetingId
+                    JOIN meeting_images ON meeting_images.id = search_documents.sourceId
+                    JOIN meetings ON meetings.id = meeting_images.meetingId
                     WHERE \(conditions.joined(separator: " AND "))
-                    ORDER BY \(SearchFTS5Tokenizer.screenshotRankingSQL), screenshots.capturedAt DESC, screenshots.id
+                    ORDER BY \(SearchFTS5Tokenizer.screenshotRankingSQL), meeting_images.capturedAt DESC, meeting_images.id
                     LIMIT ? OFFSET ?
                     """,
                     arguments: arguments
@@ -741,7 +741,7 @@ extension MeetingAccessStore {
                 ).encoded()
             } : nil
             let payloads = includeImageData ? zip(pageRows, screenshots).map {
-                ScreenshotPayload(metadata: $0.1, imageData: $0.0["imageData"], remoteReference: $0.0["remoteReference"])
+                ScreenshotPayload(fileId: $0.0["fileId"], metadata: $0.1, imageData: $0.0["imageData"], remoteReference: $0.0["remoteReference"])
             } : []
             return ScreenshotPageData(
                 page: MeetingScreenshotPage(
@@ -790,7 +790,10 @@ extension MeetingAccessStore {
             let referencedIDs = try referencedScreenshotIDs(meetingID: meetingID, in: db)
             let payloadsByID = Dictionary(uniqueKeysWithValues: rows.map { row in
                 let metadata = Self.screenshotMetadata(from: row, referencedIDs: referencedIDs)
-                return (metadata.id, ScreenshotPayload(metadata: metadata, imageData: row["imageData"], remoteReference: row["remoteReference"]))
+                return (
+                    metadata.id,
+                    ScreenshotPayload(fileId: row["fileId"], metadata: metadata, imageData: row["imageData"], remoteReference: row["remoteReference"])
+                )
             })
             return try screenshotIDs.map { id in
                 guard let payload = payloadsByID[id] else { throw MeetingAccessError.screenshotNotFound }
@@ -809,7 +812,8 @@ extension MeetingAccessStore {
     ) throws -> MeetingScreenshotImage {
         var original = payload.imageData
         if original == nil, let json = payload.remoteReference,
-           let source = try? JSONDecoder().decode(ScreenshotRemoteReference.self, from: Data(json.utf8)) {
+           let source = try? JSONDecoder().decode(ScreenshotRemoteReference.self, from: Data(json.utf8)),
+           source.fileId == payload.fileId {
             original = try? screenshotCache?.read(source, variant: .original)?.data
         }
         if original == nil {
@@ -864,26 +868,28 @@ extension MeetingAccessStore {
             arguments += [cursor.elapsedSeconds, cursor.elapsedSeconds, cursor.screenshotID]
         }
         let filtering = predicates.isEmpty ? "" : "WHERE \(predicates.joined(separator: " AND "))"
-        let remoteSelection = try db.columns(in: "screenshots").contains { $0.name == "remoteReference" }
-            ? "screenshots.remoteReference" : "NULL AS remoteReference"
-        let imageDataSelection = includeImageData ? "screenshots.imageData, \(remoteSelection)," : ""
+        let columns = try db.columns(in: "meeting_images").map(\.name)
+        let remoteSelection = columns.contains("localReference")
+            ? "coalesce(meeting_images.localReference, meeting_images.remoteReference) AS remoteReference"
+            : columns.contains("remoteReference") ? "meeting_images.remoteReference" : "NULL AS remoteReference"
+        let imageDataSelection = includeImageData ? "meeting_images.fileId, meeting_images.imageData, \(remoteSelection)," : ""
         arguments += [query.limit + 1]
         return try Row.fetchAll(
             db,
             sql: """
             WITH candidates AS (
                 SELECT
-                    screenshots.id,
-                    screenshots.capturedAt,
-                    screenshots.mimeType,
+                    meeting_images.id,
+                    meeting_images.capturedAt,
+                    meeting_images.mimeType,
                     \(imageDataSelection)
-                    \(Self.elapsedSecondsSQL(timestampColumn: "screenshots.capturedAt")) AS elapsedSeconds
-                FROM screenshots
-                JOIN meetings ON meetings.id = screenshots.meetingId
+                    \(Self.elapsedSecondsSQL(timestampColumn: "meeting_images.capturedAt")) AS elapsedSeconds
+                FROM meeting_images
+                JOIN meetings ON meetings.id = meeting_images.meetingId
                 LEFT JOIN recording_sessions AS sessions
-                  ON sessions.id = screenshots.sessionId
-                 AND sessions.meetingId = screenshots.meetingId
-                WHERE screenshots.meetingId = ? AND meetings.vaultId = ?
+                  ON sessions.id = meeting_images.sessionId
+                 AND sessions.meetingId = meeting_images.meetingId
+                WHERE meeting_images.meetingId = ? AND meetings.vaultId = ?
             )
             SELECT * FROM candidates
             \(filtering)
@@ -895,8 +901,10 @@ extension MeetingAccessStore {
     }
 
     private func screenshotImageRows(meetingID: UUID, screenshotIDs: [UUID], in db: Database) throws -> [Row] {
-        let remoteSelection = try db.columns(in: "screenshots").contains { $0.name == "remoteReference" }
-            ? "screenshots.remoteReference" : "NULL AS remoteReference"
+        let columns = try db.columns(in: "meeting_images").map(\.name)
+        let remoteSelection = columns.contains("localReference")
+            ? "coalesce(meeting_images.localReference, meeting_images.remoteReference) AS remoteReference"
+            : columns.contains("remoteReference") ? "meeting_images.remoteReference" : "NULL AS remoteReference"
         let placeholders = Array(repeating: "?", count: screenshotIDs.count).joined(separator: ", ")
         var arguments: StatementArguments = [meetingID, vaultID]
         arguments += StatementArguments(screenshotIDs)
@@ -904,19 +912,20 @@ extension MeetingAccessStore {
             db,
             sql: """
             SELECT
-                screenshots.id,
-                screenshots.capturedAt,
-                screenshots.mimeType,
-                screenshots.imageData,
+                meeting_images.id,
+                meeting_images.capturedAt,
+                meeting_images.mimeType,
+                meeting_images.fileId,
+                meeting_images.imageData,
                 \(remoteSelection),
-                \(Self.elapsedSecondsSQL(timestampColumn: "screenshots.capturedAt")) AS elapsedSeconds
-            FROM screenshots
-            JOIN meetings ON meetings.id = screenshots.meetingId
+                \(Self.elapsedSecondsSQL(timestampColumn: "meeting_images.capturedAt")) AS elapsedSeconds
+            FROM meeting_images
+            JOIN meetings ON meetings.id = meeting_images.meetingId
             LEFT JOIN recording_sessions AS sessions
-              ON sessions.id = screenshots.sessionId
-             AND sessions.meetingId = screenshots.meetingId
-            WHERE screenshots.meetingId = ? AND meetings.vaultId = ?
-              AND screenshots.id IN (\(placeholders))
+              ON sessions.id = meeting_images.sessionId
+             AND sessions.meetingId = meeting_images.meetingId
+            WHERE meeting_images.meetingId = ? AND meetings.vaultId = ?
+              AND meeting_images.id IN (\(placeholders))
             """,
             arguments: arguments
         )
@@ -1074,6 +1083,7 @@ extension MeetingAccessStore {
 }
 
 private struct ScreenshotPayload {
+    let fileId: UUID
     let metadata: MeetingScreenshotMetadata
     let imageData: Data?
     let remoteReference: String?

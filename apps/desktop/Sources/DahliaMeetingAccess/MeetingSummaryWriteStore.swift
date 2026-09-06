@@ -220,10 +220,10 @@ extension MeetingAccessStore {
         let ids = try UUID.fetchAll(
             db,
             sql: """
-            SELECT screenshots.id
-            FROM screenshots
-            JOIN meetings ON meetings.id = screenshots.meetingId
-            WHERE screenshots.meetingId = ? AND meetings.vaultId = ?
+            SELECT meeting_images.id
+            FROM meeting_images
+            JOIN meetings ON meetings.id = meeting_images.meetingId
+            WHERE meeting_images.meetingId = ? AND meetings.vaultId = ?
             """,
             arguments: [meetingID, vaultID]
         )
@@ -306,11 +306,11 @@ extension MeetingAccessStore {
         let rows = try Row.fetchAll(
             db,
             sql: """
-            SELECT screenshots.id, screenshots.mimeType, screenshots.imageData
-            FROM screenshots
-            JOIN meetings ON meetings.id = screenshots.meetingId
-            WHERE screenshots.meetingId = ? AND meetings.vaultId = ?
-              AND screenshots.id IN (\(placeholders))
+            SELECT meeting_images.id, meeting_images.mimeType, meeting_images.imageData
+            FROM meeting_images
+            JOIN meetings ON meetings.id = meeting_images.meetingId
+            WHERE meeting_images.meetingId = ? AND meetings.vaultId = ?
+              AND meeting_images.id IN (\(placeholders))
             """,
             arguments: arguments
         )

@@ -57,10 +57,11 @@ extension MeetingRepository {
             SELECT entity, entityId, confirmedRevision FROM sync_entity_state
             WHERE vaultId = ? AND (
                 (entity IN ('meeting', 'summary', 'transcript') AND entityId = ?)
-                OR (entity = 'screenshot' AND entityId IN (SELECT id FROM screenshots WHERE meetingId = ?))
+                OR (entity = 'meeting_file' AND entityId IN (SELECT id FROM meeting_files WHERE meetingId = ?))
+                OR (entity = 'file' AND entityId IN (SELECT fileId FROM meeting_files WHERE meetingId = ?))
             ) ORDER BY entity, entityId
             """,
-            arguments: [vault.id, meetingId, meetingId]
+            arguments: [vault.id, meetingId, meetingId, meetingId]
         )
         return MeetingSyncSnapshot(connectionId: connectionId, state: state, revisions: revisions)
     }

@@ -21,6 +21,8 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 
+import type { FileMetadata } from "../files/model";
+
 import { user as authUser } from "./generated/postgres-auth-schema";
 
 export const appSchema = pgSchema("app");
@@ -248,39 +250,74 @@ export const transcriptPatchChunk = appSchema.table("transcript_patch_chunks", {
   }),
 ]).enableRLS();
 
-export const syncedScreenshot = appSchema.table("screenshots", {
-  screenshotId: uuid("screenshot_id").primaryKey(),
+export const syncedFile = appSchema.table("files", {
+  fileId: uuid("file_id").primaryKey(),
+  vaultId: uuid("vault_id").notNull().references(() => syncedVault.vaultId, { onDelete: "cascade" }),
+  uri: text("uri").notNull(),
+  offset: bigint("offset", { mode: "number" }).notNull().default(0),
+  size: bigint("size", { mode: "number" }).notNull(),
+  contentType: text("content_type").notNull(),
+  checksum: text("checksum").notNull(),
+  name: text("name").notNull(),
+  metadata: jsonb("metadata").$type<FileMetadata>().notNull(),
+  active: boolean("active").default(false).notNull(),
+  uploadedAt: timestamp("uploaded_at"),
+  revision: integer("revision").default(0).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  unique("files_vault_file_unique").on(table.vaultId, table.fileId),
+  index("files_vault_file_idx").on(table.vaultId, table.fileId),
+  check("files_offset_check", sql`${table.offset} = 0`),
+  check("files_size_check", sql`${table.size} >= 0`),
+  pgPolicy("file_select", { for: "select", using: sql`"app"."current_identity_can_read_vault"(${table.vaultId})` }),
+  pgPolicy("file_write", { for: "all", using: sql`"app"."current_identity_owns_vault"(${table.vaultId})`, withCheck: sql`"app"."current_identity_owns_vault"(${table.vaultId})` })
+]).enableRLS();
+
+export const meetingFile = appSchema.table("meeting_files", {
+  id: uuid("id").primaryKey(),
+  vaultId: uuid("vault_id").notNull(),
+  meetingId: uuid("meeting_id").notNull(),
+  fileId: uuid("file_id").notNull(),
+  capturedAt: timestamp("captured_at"),
+  sessionId: uuid("session_id"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  revision: integer("revision").default(1).notNull(),
+}, (table) => [
+  foreignKey({ columns: [table.vaultId, table.meetingId], foreignColumns: [syncedMeeting.vaultId, syncedMeeting.meetingId] }).onDelete("cascade"),
+  foreignKey({ columns: [table.vaultId, table.fileId], foreignColumns: [syncedFile.vaultId, syncedFile.fileId] }),
+  unique("meeting_files_meeting_file_unique").on(table.meetingId, table.fileId),
+  index("meeting_files_vault_meeting_id_idx").on(table.vaultId, table.meetingId, table.id),
+  pgPolicy("meeting_file_select", { for: "select", using: sql`"app"."current_identity_can_read_vault"(${table.vaultId})` }),
+  pgPolicy("meeting_file_write", { for: "all", using: sql`"app"."current_identity_owns_vault"(${table.vaultId})`, withCheck: sql`"app"."current_identity_owns_vault"(${table.vaultId})` })
+]).enableRLS();
+
+// Read-only image projection. All writes belong to files and meeting_files.
+export const syncedScreenshot = appSchema.view("meeting_images", {
+  screenshotId: uuid("screenshot_id").notNull(),
+  fileId: uuid("file_id").notNull(),
   vaultId: uuid("vault_id").notNull(),
   meetingId: uuid("meeting_id").notNull(),
   capturedAt: timestamp("captured_at").notNull(),
   contentType: text("content_type").notNull(),
   storageKey: text("storage_key").notNull(),
-  contentLength: integer("content_length").notNull(),
+  contentLength: bigint("content_length", { mode: "number" }).notNull(),
   contentHash: text("content_hash").notNull(),
-  active: boolean("active").default(true).notNull(),
+  active: boolean("active").notNull(),
   ocrText: text("ocr_text"),
   caption: text("caption"),
-  revision: integer("revision").default(1).notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull(),
-}, (table) => [
-  foreignKey({
-    name: "synced_screenshot_meeting_fk",
-    columns: [table.vaultId, table.meetingId],
-    foreignColumns: [syncedMeeting.vaultId, syncedMeeting.meetingId],
-  }).onDelete("cascade"),
-  index("synced_screenshot_vault_meeting_captured_id_idx")
-    .on(table.vaultId, table.meetingId, table.capturedAt, table.screenshotId),
-  pgPolicy("screenshot_select", {
-    for: "select",
-    using: sql`"app"."current_identity_can_read_vault"(${table.vaultId})`,
-  }),
-  pgPolicy("screenshot_write", {
-    for: "all",
-    using: sql`"app"."current_identity_owns_vault"(${table.vaultId})`,
-    withCheck: sql`"app"."current_identity_owns_vault"(${table.vaultId})`,
-  }),
-]).enableRLS();
+  revision: integer("revision").notNull(),
+}).with({ securityInvoker: true }).as(sql`
+  SELECT m.id AS screenshot_id, f.file_id, m.vault_id, m.meeting_id,
+    coalesce(m.captured_at, m.created_at) AS captured_at, f.content_type,
+    'files/' || f.file_id || '/original' AS storage_key,
+    f.size AS content_length, substr(f.checksum, 9) AS content_hash, f.active,
+    f.metadata ->> 'ocr_text' AS ocr_text,
+    f.metadata ->> 'caption' AS caption,
+    m.revision
+  FROM app.meeting_files m JOIN app.files f ON f.file_id = m.file_id AND f.vault_id = m.vault_id
+  WHERE f.metadata ->> 'source' = 'screenshot'
+`);
 
 export const searchDocument = appSchema.table("search_documents", {
   documentId: uuid("document_id").notNull(),
@@ -406,7 +443,7 @@ export const syncChange = appSchema.table("sync_changes", {
   transactionId: uuid("transaction_id").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
-  check("sync_change_entity_check", sql`${table.entity} IN ('vault', 'project', 'meeting', 'summary', 'transcript', 'screenshot')`),
+  check("sync_change_entity_check", sql`${table.entity} IN ('vault', 'project', 'meeting', 'summary', 'transcript', 'file', 'meeting_file')`),
   check("sync_change_action_check", sql`${table.action} IN ('upsert', 'delete', 'reset')`),
   index("sync_change_owner_vault_sequence_idx").on(table.ownerUserId, table.vaultId, table.sequence),
   index("sync_change_owner_sequence_idx").on(table.ownerUserId, table.sequence),

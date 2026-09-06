@@ -754,7 +754,7 @@ import ImageIO
                 let text = "Screenshot-only architecture needle"
                 let caption = "Architecture diagram for the meeting"
                 try db.execute(
-                    sql: "UPDATE screenshots SET ocrText = ?, caption = ? WHERE id = ?",
+                    sql: "UPDATE files SET metadata = json_set(metadata, '$.ocr_text', ?, '$.caption', ?) WHERE id = ?",
                     arguments: [text, caption, fixture.firstScreenshotID]
                 )
                 let meeting = try #require(try MeetingRecord.fetchOne(db, key: fixture.firstMeetingID))
@@ -800,8 +800,8 @@ import ImageIO
             let meetingID = fixture.firstMeetingID
             let imageID = fixture.firstScreenshotID
             let bytes = try fixture.manager.dbQueue.write { db in
-                let bytes = try #require(try Data.fetchOne(db, sql: "SELECT imageData FROM screenshots WHERE id = ?", arguments: [imageID]))
-                try db.execute(sql: "UPDATE screenshots SET imageData = NULL WHERE id = ?", arguments: [imageID])
+                let bytes = try #require(try Data.fetchOne(db, sql: "SELECT imageData FROM meeting_images WHERE id = ?", arguments: [imageID]))
+                try db.execute(sql: "DELETE FROM file_migration_content WHERE fileId = ?", arguments: [imageID])
                 return bytes
             }
             let store = try MeetingAccessStore(databaseURL: fixture.databaseURL, vaultID: vaultID, imageResolver: { vault, meeting, image in
@@ -3247,14 +3247,14 @@ import ImageIO
                 capturedAt: createdAt.addingTimeInterval(6),
                 imageData: imageData,
                 mimeType: "image/png"
-            ).insert(db)
+            ).insertLegacyForTesting(db)
             try MeetingScreenshotRecord(
                 id: secondScreenshotID,
                 meetingId: firstMeetingID,
                 capturedAt: createdAt.addingTimeInterval(25),
                 imageData: imageData,
                 mimeType: "image/png"
-            ).insert(db)
+            ).insertLegacyForTesting(db)
             try MeetingScreenshotRecord(
                 id: otherVaultScreenshotID,
                 meetingId: otherVaultMeetingID,
@@ -3262,7 +3262,7 @@ import ImageIO
                 capturedAt: createdAt.addingTimeInterval(6),
                 imageData: imageData,
                 mimeType: "image/png"
-            ).insert(db)
+            ).insertLegacyForTesting(db)
         }
 
         deinit {
@@ -3281,7 +3281,7 @@ import ImageIO
         func updateFirstScreenshot(data: Data) throws {
             try manager.dbQueue.write { db in
                 try db.execute(
-                    sql: "UPDATE screenshots SET imageData = ? WHERE id = ?",
+                    sql: "UPDATE file_migration_content SET imageData = ? WHERE fileId = ?",
                     arguments: [data, firstScreenshotID]
                 )
             }
@@ -3358,7 +3358,7 @@ import ImageIO
                     capturedAt: startedAt.addingTimeInterval(6),
                     imageData: imageData,
                     mimeType: "image/png"
-                ).insert(db)
+                ).insertLegacyForTesting(db)
             }
             return (segmentID, screenshotID)
         }
@@ -3385,7 +3385,7 @@ import ImageIO
         func corruptPrimaryScreenshotSessionAssociation() throws {
             try manager.dbQueue.write { db in
                 try db.execute(
-                    sql: "UPDATE screenshots SET sessionId = ? WHERE id = ?",
+                    sql: "UPDATE meeting_files SET sessionId = ? WHERE id = ?",
                     arguments: [otherVaultSessionID, firstScreenshotID]
                 )
             }

@@ -1,9 +1,11 @@
+import { fileResponse, fileStorageKey, type FileMetadata } from "../files/model";
 import {
   and,
   asc,
   desc,
   eq,
   exists,
+  notExists,
   inArray,
   isNull,
   isNotNull,
@@ -44,7 +46,7 @@ const TRANSCRIPT_PATCH_RETENTION_MS = 24 * 60 * 60 * 1_000;
 export const SYNC_HISTORY_RETENTION_MS = 90 * 24 * 60 * 60 * 1_000;
 export const SYNC_RETENTION_BATCH_SIZE = 1_000;
 export const SYNC_SNAPSHOT_PAGE_BYTES = 8 * 1024 * 1024;
-export const SYNC_SNAPSHOT_ENTITIES = ["vault", "project", "meeting", "summary", "transcript", "screenshot"] as const;
+export const SYNC_SNAPSHOT_ENTITIES = ["vault", "project", "meeting", "summary", "transcript", "file", "meeting_file"] as const;
 
 function batches<T>(values: T[], size: number): T[][] {
   const result: T[][] = [];
@@ -307,7 +309,8 @@ async function roleSupportsRls(db: PostgresDatabase): Promise<boolean> {
       "app.meetings",
       "app.transcript_segments",
       "app.transcript_patch_chunks",
-      "app.screenshots",
+      "app.files",
+      "app.meeting_files",
       "app.search_documents",
       "app.search_embeddings",
     ];
@@ -763,10 +766,16 @@ function createIdentityStore(
           : record;
       return { entity, id: entityId, revision: revision ?? null, record: value ?? null };
     }
-    const [record] = await db.select().from(schema.syncedScreenshot).where(and(
-      eq(schema.syncedScreenshot.vaultId, vaultId),
-      eq(schema.syncedScreenshot.screenshotId, entityId),
-      canAccess(schema.syncedScreenshot.vaultId),
+    if (entity === "file") {
+      const [record] = await db.select().from(schema.syncedFile).where(and(
+        eq(schema.syncedFile.vaultId, vaultId), eq(schema.syncedFile.fileId, entityId), canAccess(schema.syncedFile.vaultId),
+        ...(access === "read" ? [eq(schema.syncedFile.active, true)] : []),
+      )).limit(1);
+      return { entity, id: entityId, revision: record?.active ? record.revision : null,
+        record: record ? { ...fileResponse(record), active: record.active } : null };
+    }
+    const [record] = await db.select().from(schema.meetingFile).where(and(
+      eq(schema.meetingFile.vaultId, vaultId), eq(schema.meetingFile.id, entityId), canAccess(schema.meetingFile.vaultId),
     )).limit(1);
     return { entity, id: entityId, revision: record?.revision ?? null, record: record ?? null };
   }
@@ -1080,11 +1089,12 @@ function createIdentityStore(
             }], operation.id);
           }
           await assertRevision(transaction, "vault", operation.entityId, operation.baseRevision);
-          const screenshots = await db.select({ storageKey: schema.syncedScreenshot.storageKey })
-            .from(schema.syncedScreenshot).where(eq(schema.syncedScreenshot.vaultId, transaction.vaultId));
-          if (screenshots.length) {
-            await db.insert(schema.storageDeleteJob).values(screenshots).onConflictDoNothing();
-          }
+          const files = await db.select({ id: schema.syncedFile.fileId }).from(schema.syncedFile)
+            .where(eq(schema.syncedFile.vaultId, transaction.vaultId));
+          if (files.length) await db.insert(schema.storageDeleteJob)
+            .values(files.map(({ id }) => ({ storageKey: fileStorageKey(id) }))).onConflictDoNothing();
+          await db.delete(schema.meetingFile).where(eq(schema.meetingFile.vaultId, transaction.vaultId));
+          await db.delete(schema.syncedFile).where(eq(schema.syncedFile.vaultId, transaction.vaultId));
           if (data.preservePermissions === true) {
             await db.delete(schema.searchIndexJob).where(eq(schema.searchIndexJob.vaultId, transaction.vaultId));
             await db.delete(schema.syncedMeeting).where(eq(schema.syncedMeeting.vaultId, transaction.vaultId));
@@ -1184,18 +1194,15 @@ function createIdentityStore(
           }).where(ownedMeeting(transaction.vaultId, operation.entityId));
         } else if (operation.action === "delete") {
           await assertRevision(transaction, "meeting", operation.entityId, operation.baseRevision);
-          const screenshots = await db.select({ storageKey: schema.syncedScreenshot.storageKey, id: schema.syncedScreenshot.screenshotId })
-            .from(schema.syncedScreenshot).where(and(
-              eq(schema.syncedScreenshot.vaultId, transaction.vaultId),
-              eq(schema.syncedScreenshot.meetingId, operation.entityId),
-            ));
-          if (screenshots.length) await db.insert(schema.storageDeleteJob).values(screenshots.map(({ storageKey }) => ({ storageKey }))).onConflictDoNothing();
+          const attachments = await db.select({ id: schema.meetingFile.id }).from(schema.meetingFile).where(and(
+            eq(schema.meetingFile.vaultId, transaction.vaultId), eq(schema.meetingFile.meetingId, operation.entityId),
+          ));
           await db.delete(schema.syncedMeeting).where(ownedMeeting(transaction.vaultId, operation.entityId));
           // A coalesced delete/recreate must still invalidate the old canonical children.
           cursor = await appendChanges(transaction, [
             { entity: "summary", entityId: operation.entityId, action: "delete", revision: null },
             { entity: "transcript", entityId: operation.entityId, action: "delete", revision: null },
-            ...screenshots.map(({ id: entityId }) => ({ entity: "screenshot" as const, entityId, action: "delete" as const, revision: null })),
+            ...attachments.map(({ id: entityId }) => ({ entity: "meeting_file" as const, entityId, action: "delete" as const, revision: null })),
             { entity: "meeting", entityId: operation.entityId, action: "delete", revision: null },
           ]);
           records.push({ entity: "meeting", id: operation.entityId, revision: null, record: null });
@@ -1298,64 +1305,79 @@ function createIdentityStore(
           eq(schema.transcriptPatchChunk.meetingId, operation.entityId),
           eq(schema.transcriptPatchChunk.patchId, patchId),
         ));
-      } else if (operation.entity === "screenshot") {
-        const meetingId = String(data.meetingId);
+      } else if (operation.entity === "file") {
+        const [file] = await db.select().from(schema.syncedFile).where(and(
+          eq(schema.syncedFile.fileId, operation.entityId), eq(schema.syncedFile.vaultId, transaction.vaultId),
+          ownerAccess(schema.syncedFile.vaultId),
+        )).limit(1);
+        if (!file && operation.baseRevision !== null) await assertRevision(transaction, "file", operation.entityId, operation.baseRevision);
+        if (!file) throw new SyncTransactionError(422, "file_content_missing", [], operation.id);
+        if (file.active || operation.baseRevision !== null) {
+          await assertRevision(transaction, "file", operation.entityId, operation.baseRevision);
+        }
         if (operation.action === "delete") {
-          await assertRevision(transaction, "screenshot", operation.entityId, operation.baseRevision);
-          const [screenshot] = await db.select().from(schema.syncedScreenshot).where(and(
-            eq(schema.syncedScreenshot.vaultId, transaction.vaultId),
-            eq(schema.syncedScreenshot.screenshotId, operation.entityId),
-            ownerAccess(schema.syncedScreenshot.vaultId),
-          )).limit(1);
-          if (!screenshot) throw new SyncTransactionError(404, "screenshot_not_found");
-          await db.insert(schema.storageDeleteJob).values({ storageKey: screenshot.storageKey }).onConflictDoNothing();
-          await db.delete(schema.searchIndexJob).where(and(
-            eq(schema.searchIndexJob.vaultId, transaction.vaultId),
-            eq(schema.searchIndexJob.documentId, operation.entityId),
-          ));
-          await db.delete(schema.searchDocument).where(and(
-            eq(schema.searchDocument.vaultId, transaction.vaultId),
-            eq(schema.searchDocument.documentId, operation.entityId),
-          ));
-          await db.delete(schema.syncedScreenshot).where(eq(schema.syncedScreenshot.screenshotId, operation.entityId));
-          cursor = await appendChange(transaction, "screenshot", operation.entityId, "delete", null);
-          records.push({ entity: "screenshot", id: operation.entityId, revision: null, record: null });
+          const [reference] = await db.select({ id: schema.meetingFile.id }).from(schema.meetingFile)
+            .where(eq(schema.meetingFile.fileId, file.fileId)).limit(1);
+          if (reference) throw new SyncTransactionError(409, "file_in_use", [], operation.id);
+          await db.insert(schema.storageDeleteJob).values({ storageKey: fileStorageKey(file.fileId) }).onConflictDoNothing();
+          await db.delete(schema.syncedFile).where(eq(schema.syncedFile.fileId, file.fileId));
+          cursor = await appendChange(transaction, "file", operation.entityId, "delete", null);
+          records.push({ entity: "file", id: operation.entityId, revision: null, record: null });
           continue;
         }
-        const current = await canonicalRecord("screenshot", transaction.vaultId, operation.entityId);
-        if (operation.baseRevision === null) {
-          if (current.record !== null && (current.record as { active?: boolean }).active !== false) {
-            throw new SyncTransactionError(409, "revision_conflict", [{
-              entity: "screenshot",
-              id: operation.entityId,
-              clientBaseRevision: null,
-              serverRevision: current.revision,
-              record: current.record,
-            }]);
-          }
+        const [pendingDelete] = await db.select({ key: schema.storageDeleteJob.storageKey }).from(schema.storageDeleteJob)
+          .where(eq(schema.storageDeleteJob.storageKey, fileStorageKey(file.fileId))).limit(1);
+        if (pendingDelete) throw new SyncTransactionError(503, "file_storage_delete_pending", [], operation.id);
+        if (!file.uploadedAt || data.checksum !== file.checksum) {
+          throw new SyncTransactionError(422, "file_content_missing", [], operation.id);
+        }
+        const metadata = { ...file.metadata, ...data.metadata as Partial<FileMetadata> };
+        if (metadata.source !== file.metadata.source) throw new SyncTransactionError(409, "file_source_immutable", [], operation.id);
+        await db.update(schema.syncedFile).set({ active: true, metadata,
+          name: typeof data.name === "string" ? data.name : file.name,
+          revision: file.revision + 1, updatedAt: now,
+        }).where(eq(schema.syncedFile.fileId, file.fileId));
+      } else if (operation.entity === "meeting_file") {
+        const previous = await canonicalRecord("meeting_file", transaction.vaultId, operation.entityId);
+        if (previous.record !== null || operation.baseRevision !== null || operation.action === "delete") {
+          await assertRevision(transaction, "meeting_file", operation.entityId, operation.baseRevision,
+            operation.action === "delete" ? [] : [{ entity: "meeting", id: String(data.meetingId) }]);
+        }
+        if (operation.action === "delete") {
+          await db.delete(schema.meetingFile).where(and(eq(schema.meetingFile.id, operation.entityId),
+            eq(schema.meetingFile.vaultId, transaction.vaultId)));
+          await db.delete(schema.searchIndexJob).where(and(eq(schema.searchIndexJob.vaultId, transaction.vaultId), eq(schema.searchIndexJob.documentId, operation.entityId)));
+          await db.delete(schema.searchDocument).where(and(eq(schema.searchDocument.vaultId, transaction.vaultId), eq(schema.searchDocument.documentId, operation.entityId)));
+          cursor = await appendChange(transaction, "meeting_file", operation.entityId, "delete", null);
+          records.push({ entity: "meeting_file", id: operation.entityId, revision: null, record: null });
+          continue;
+        }
+        const meetingId = String(data.meetingId);
+        const fileId = String(data.fileId);
+        const meeting = await canonicalRecord("meeting", transaction.vaultId, meetingId);
+        if (!meeting.record || meeting.record.deletingAt || meeting.record.active === false) {
+          throw new SyncTransactionError(409, "revision_conflict", [{
+            entity: "meeting", id: meetingId, clientBaseRevision: null, serverRevision: null, record: null,
+          }], operation.id);
+        }
+        if (previous.record && (previous.record.meetingId !== meetingId || previous.record.fileId !== fileId)) {
+          throw new SyncTransactionError(409, "meeting_file_identity_immutable", [], operation.id);
+        }
+        const [file] = await db.select().from(schema.syncedFile).where(and(
+          eq(schema.syncedFile.fileId, fileId), eq(schema.syncedFile.vaultId, transaction.vaultId), eq(schema.syncedFile.active, true),
+        )).limit(1);
+        if (!file) throw new SyncTransactionError(422, "file_not_found", [], operation.id);
+        const values = { capturedAt: data.capturedAt as Date | null, sessionId: data.sessionId as string | null,
+          revision: (previous.revision ?? 0) + 1 };
+        if (previous.record) {
+          await db.update(schema.meetingFile).set(values).where(and(eq(schema.meetingFile.id, operation.entityId),
+            eq(schema.meetingFile.vaultId, transaction.vaultId)));
         } else {
-          await assertRevision(transaction, "screenshot", operation.entityId, operation.baseRevision, [
-            { entity: "meeting", id: meetingId },
-          ]);
+          const [inserted] = await db.insert(schema.meetingFile).values({ ...values, id: operation.entityId,
+            vaultId: transaction.vaultId, meetingId, fileId, createdAt: data.createdAt as Date,
+          }).onConflictDoNothing().returning({ id: schema.meetingFile.id });
+          if (!inserted) throw new SyncTransactionError(409, "meeting_file_id_conflict", [], operation.id);
         }
-        if (data.contentHash
-          && (current.record as { contentHash?: string } | null)?.contentHash !== data.contentHash) {
-          throw new SyncTransactionError(409, "screenshot_content_hash_mismatch");
-        }
-        const [updated] = await db.update(schema.syncedScreenshot).set({
-          active: true,
-          capturedAt: data.capturedAt as Date,
-          ocrText: data.ocrText as string | null,
-          caption: data.caption as string | null,
-          revision: sql`${schema.syncedScreenshot.revision} + 1`,
-          updatedAt: now,
-        }).where(and(
-          eq(schema.syncedScreenshot.vaultId, transaction.vaultId),
-          eq(schema.syncedScreenshot.meetingId, meetingId),
-          eq(schema.syncedScreenshot.screenshotId, operation.entityId),
-          ownerAccess(schema.syncedScreenshot.vaultId),
-        )).returning({ id: schema.syncedScreenshot.screenshotId });
-        if (!updated) throw new SyncTransactionError(422, "screenshot_content_missing", [], operation.id);
       }
 
       if (["meeting", "summary"].includes(operation.entity) && typeof data.searchText === "string") {
@@ -1374,22 +1396,21 @@ function createIdentityStore(
           embeddingContentHash: data.embeddingContentHash as string | null,
           currentEmbeddingContentHash: current?.hash ?? null,
         }]);
-      } else if (operation.entity === "screenshot" && typeof data.searchText === "string") {
-        const [current] = await db.select({ hash: schema.searchDocument.embeddingContentHash })
-          .from(schema.searchDocument).where(and(
-            eq(schema.searchDocument.vaultId, transaction.vaultId),
-            eq(schema.searchDocument.documentId, operation.entityId),
-          )).limit(1);
-        await updateSearchDocuments([{
-          documentId: operation.entityId,
-          vaultId: transaction.vaultId,
-          meetingId: String(data.meetingId),
-          kind: "screenshot",
-          searchText: data.searchText,
-          embeddingText: data.embeddingText as string | null,
-          embeddingContentHash: data.embeddingContentHash as string | null,
-          currentEmbeddingContentHash: current?.hash ?? null,
-        }]);
+      }
+      if (operation.entity === "file" || operation.entity === "meeting_file") {
+        const images = await db.select().from(schema.syncedScreenshot).where(and(
+          eq(schema.syncedScreenshot.vaultId, transaction.vaultId),
+          operation.entity === "file" ? eq(schema.syncedScreenshot.fileId, operation.entityId) : eq(schema.syncedScreenshot.screenshotId, operation.entityId),
+        ));
+        for (const image of images) {
+          const [current] = await db.select({ hash: schema.searchDocument.embeddingContentHash }).from(schema.searchDocument)
+            .where(and(eq(schema.searchDocument.vaultId, transaction.vaultId), eq(schema.searchDocument.documentId, image.screenshotId))).limit(1);
+          await updateSearchDocuments([{
+            documentId: image.screenshotId, vaultId: transaction.vaultId, meetingId: image.meetingId, kind: "screenshot",
+            searchText: typeof data.searchText === "string" ? data.searchText : "", embeddingText: data.embeddingText as string | null ?? null,
+            embeddingContentHash: data.embeddingContentHash as string | null ?? null, currentEmbeddingContentHash: current?.hash ?? null,
+          }]);
+        }
       }
 
       const record = await canonicalRecord(operation.entity, transaction.vaultId, operation.entityId);
@@ -1571,15 +1592,8 @@ function createIdentityStore(
       }
       const source = entity === "project"
         ? { table: schema.syncedProject, id: schema.syncedProject.projectId, active: undefined }
-        : entity === "screenshot"
-          ? { table: schema.syncedScreenshot, id: schema.syncedScreenshot.screenshotId, active: and(
-              eq(schema.syncedScreenshot.active, true),
-              exists(db.select({ value: sql`1` }).from(schema.syncedMeeting).where(and(
-                eq(schema.syncedMeeting.vaultId, vaultId),
-                eq(schema.syncedMeeting.meetingId, schema.syncedScreenshot.meetingId),
-                eq(schema.syncedMeeting.active, true), isNull(schema.syncedMeeting.deletingAt),
-              ))),
-            ) }
+        : entity === "file" ? { table: schema.syncedFile, id: schema.syncedFile.fileId, active: eq(schema.syncedFile.active, true) }
+        : entity === "meeting_file" ? { table: schema.meetingFile, id: schema.meetingFile.id, active: undefined }
           : { table: schema.syncedMeeting, id: schema.syncedMeeting.meetingId, active: and(
               eq(schema.syncedMeeting.active, true), isNull(schema.syncedMeeting.deletingAt),
               entity === "summary" ? isNotNull(schema.syncedMeeting.summaryDocument) : undefined,
@@ -1648,54 +1662,55 @@ function createIdentityStore(
       )).limit(1);
       return (row as SyncScreenshotRecord | undefined) ?? null;
     },
-    async createScreenshot(input) {
+    async getFile(fileId, activeOnly = false) {
+      const [file] = await db.select().from(schema.syncedFile).where(and(
+        eq(schema.syncedFile.fileId, fileId), readable(schema.syncedFile.vaultId),
+        activeOnly ? eq(schema.syncedFile.active, true) : ownerAccess(schema.syncedFile.vaultId),
+      )).limit(1);
+      return file ?? null;
+    },
+    async reserveFile(input) {
       const [vault] = await db.select({ id: schema.syncedVault.vaultId }).from(schema.syncedVault)
         .where(ownedVault(input.vaultId)).limit(1);
-      if (!vault) return false;
-      const [created] = await db.insert(schema.syncedScreenshot).values({
-        ...input,
-        active: false,
-        revision: 0,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      }).onConflictDoNothing().returning({ screenshotId: schema.syncedScreenshot.screenshotId });
-      return created !== undefined;
+      if (!vault) return null;
+      await db.insert(schema.syncedFile).values(input).onConflictDoNothing();
+      const [file] = await db.select().from(schema.syncedFile).where(and(
+        eq(schema.syncedFile.fileId, input.fileId), eq(schema.syncedFile.vaultId, input.vaultId), ownerAccess(schema.syncedFile.vaultId),
+      )).limit(1);
+      return file ?? null;
     },
-    async discardInactiveScreenshot(vaultId, screenshotId) {
-      const [deleted] = await db.delete(schema.syncedScreenshot).where(and(
-        eq(schema.syncedScreenshot.vaultId, vaultId),
-        eq(schema.syncedScreenshot.screenshotId, screenshotId),
-        eq(schema.syncedScreenshot.active, false),
-        ownerAccess(schema.syncedScreenshot.vaultId),
-      )).returning({ storageKey: schema.syncedScreenshot.storageKey });
-      if (!deleted) return false;
-      await db.delete(schema.searchIndexJob).where(and(
-        eq(schema.searchIndexJob.vaultId, vaultId),
-        eq(schema.searchIndexJob.documentId, screenshotId),
-      ));
-      await db.delete(schema.searchDocument).where(and(
-        eq(schema.searchDocument.vaultId, vaultId),
-        eq(schema.searchDocument.documentId, screenshotId),
-      ));
-      await db.insert(schema.storageDeleteJob).values({ storageKey: deleted.storageKey }).onConflictDoNothing();
-      return true;
+    async markFileUploaded(fileId, checksum) {
+      const [file] = await db.update(schema.syncedFile).set({ uploadedAt: new Date(), updatedAt: new Date() })
+        .where(and(eq(schema.syncedFile.fileId, fileId), eq(schema.syncedFile.checksum, checksum), ownerAccess(schema.syncedFile.vaultId),
+          notExists(db.select({ key: schema.storageDeleteJob.storageKey }).from(schema.storageDeleteJob)
+            .where(eq(schema.storageDeleteJob.storageKey, fileStorageKey(fileId))))))
+        .returning({ id: schema.syncedFile.fileId });
+      return file !== undefined;
     },
-    async deleteScreenshot(vaultId, screenshotId, storageKey) {
-      await db.delete(schema.searchIndexJob).where(and(
-        eq(schema.searchIndexJob.vaultId, vaultId),
-        eq(schema.searchIndexJob.documentId, screenshotId),
-      ));
-      await db.delete(schema.searchDocument).where(and(
-        eq(schema.searchDocument.vaultId, vaultId),
-        eq(schema.searchDocument.documentId, screenshotId),
-      ));
-      const [deleted] = await db.delete(schema.syncedScreenshot).where(and(
-        eq(schema.syncedScreenshot.vaultId, vaultId),
-        eq(schema.syncedScreenshot.screenshotId, screenshotId),
-        eq(schema.syncedScreenshot.storageKey, storageKey),
-        ownerAccess(schema.syncedScreenshot.vaultId),
-      )).returning({ screenshotId: schema.syncedScreenshot.screenshotId });
-      return deleted !== undefined;
+    async expireFileUploads(vaultId, before) {
+      const files = await db.select({ id: schema.syncedFile.fileId }).from(schema.syncedFile).where(and(
+        eq(schema.syncedFile.vaultId, vaultId), eq(schema.syncedFile.active, false), lt(schema.syncedFile.updatedAt, before), ownerAccess(schema.syncedFile.vaultId),
+      )).limit(25);
+      for (const file of files) {
+        const deleted = await db.delete(schema.syncedFile).where(and(
+          eq(schema.syncedFile.fileId, file.id), eq(schema.syncedFile.active, false), lt(schema.syncedFile.updatedAt, before),
+        )).returning({ id: schema.syncedFile.fileId });
+        if (deleted.length) await db.insert(schema.storageDeleteJob).values({ storageKey: fileStorageKey(file.id) }).onConflictDoNothing();
+      }
+    },
+    async listFiles(vaultId, after, limit) {
+      return db.select().from(schema.syncedFile).where(and(
+        eq(schema.syncedFile.vaultId, vaultId), readable(schema.syncedFile.vaultId), eq(schema.syncedFile.active, true),
+        after ? gt(schema.syncedFile.fileId, after) : undefined,
+      )).orderBy(asc(schema.syncedFile.fileId)).limit(limit);
+    },
+    async listMeetingFiles(vaultId, meetingId, after, limit) {
+      const rows = await db.select({ link: schema.meetingFile, file: schema.syncedFile }).from(schema.meetingFile)
+        .innerJoin(schema.syncedFile, eq(schema.syncedFile.fileId, schema.meetingFile.fileId)).where(and(
+          eq(schema.meetingFile.vaultId, vaultId), eq(schema.meetingFile.meetingId, meetingId), readable(schema.meetingFile.vaultId),
+          eq(schema.syncedFile.active, true), after ? gt(schema.meetingFile.id, after) : undefined,
+        )).orderBy(asc(schema.meetingFile.id)).limit(limit);
+      return rows.map(({ link, file }) => ({ ...link, file }));
     },
     async listOrganizations() {
       if (!sharingEnabled) return [];
@@ -1938,98 +1953,7 @@ function createIdentityStore(
       )).returning({ vaultId: schema.syncedVaultPermission.vaultId });
       return deleted !== undefined;
     },
-    async beginMeetingDeletion(vaultId, meetingId, limit) {
-      const [meeting] = await db.update(schema.syncedMeeting).set({ deletingAt: new Date() })
-        .where(ownedMeeting(vaultId, meetingId)).returning({ meetingId: schema.syncedMeeting.meetingId });
-      if (!meeting) return null;
-      await db.delete(schema.searchIndexJob).where(and(
-        eq(schema.searchIndexJob.vaultId, vaultId),
-        inArray(
-          schema.searchIndexJob.documentId,
-          db.select({ id: schema.searchDocument.documentId }).from(schema.searchDocument).where(and(
-            eq(schema.searchDocument.vaultId, vaultId),
-            eq(schema.searchDocument.meetingId, meetingId),
-          )),
-        ),
-      ));
-      return db.select(screenshotSelection(schema)).from(schema.syncedScreenshot).where(and(
-        eq(schema.syncedScreenshot.vaultId, vaultId),
-        eq(schema.syncedScreenshot.meetingId, meetingId),
-      )).orderBy(asc(schema.syncedScreenshot.screenshotId)).limit(limit);
-    },
-    async finishMeetingDeletion(vaultId, meetingId) {
-      const [existingMeeting] = await db.select({ id: schema.syncedMeeting.meetingId })
-        .from(schema.syncedMeeting).where(ownedMeeting(vaultId, meetingId)).limit(1);
-      if (!existingMeeting) return false;
-      const [remaining] = await db.select({ id: schema.syncedScreenshot.screenshotId })
-        .from(schema.syncedScreenshot).where(and(
-          eq(schema.syncedScreenshot.vaultId, vaultId),
-          eq(schema.syncedScreenshot.meetingId, meetingId),
-          ownerAccess(schema.syncedScreenshot.vaultId),
-        )).limit(1);
-      if (remaining) return false;
-      const documents = await db.select({ id: schema.searchDocument.documentId })
-        .from(schema.searchDocument).where(and(
-          eq(schema.searchDocument.vaultId, vaultId),
-          eq(schema.searchDocument.meetingId, meetingId),
-        ));
-      if (documents.length > 0) {
-        await db.delete(schema.searchIndexJob).where(and(
-          eq(schema.searchIndexJob.vaultId, vaultId),
-          inArray(schema.searchIndexJob.documentId, documents.map(({ id }) => id)),
-        ));
-      }
-      const transactionId = crypto.randomUUID();
-      await db.insert(schema.syncChange).values({
-        ownerUserId: userPrincipalId,
-        vaultId,
-        entity: "meeting",
-        entityId: meetingId,
-        action: "delete",
-        revision: null,
-        transactionId,
-      });
-      const [deleted] = await db.delete(schema.syncedMeeting).where(ownedMeeting(vaultId, meetingId))
-        .returning({ meetingId: schema.syncedMeeting.meetingId });
-      return deleted !== undefined;
-    },
-    async beginVaultDeletion(vaultId, limit) {
-      const [vault] = await db.update(schema.syncedVault).set({ deletingAt: new Date() })
-        .where(ownedVault(vaultId)).returning({ vaultId: schema.syncedVault.vaultId });
-      if (!vault) return null;
-      await db.delete(schema.searchIndexJob).where(eq(schema.searchIndexJob.vaultId, vaultId));
-      await db.update(schema.syncedMeeting).set({ deletingAt: new Date() }).where(and(
-        eq(schema.syncedMeeting.vaultId, vaultId),
-        ownerAccess(schema.syncedMeeting.vaultId),
-      ));
-      return db.select(screenshotSelection(schema)).from(schema.syncedScreenshot).where(and(
-        eq(schema.syncedScreenshot.vaultId, vaultId),
-      )).orderBy(asc(schema.syncedScreenshot.screenshotId)).limit(limit);
-    },
-    async finishVaultDeletion(vaultId) {
-      const [existingVault] = await db.select({ id: schema.syncedVault.vaultId })
-        .from(schema.syncedVault).where(ownedVault(vaultId)).limit(1);
-      if (!existingVault) return false;
-      const [remaining] = await db.select({ id: schema.syncedScreenshot.screenshotId })
-        .from(schema.syncedScreenshot).where(and(
-          eq(schema.syncedScreenshot.vaultId, vaultId),
-          ownerAccess(schema.syncedScreenshot.vaultId),
-        )).limit(1);
-      if (remaining) return false;
-      const transactionId = crypto.randomUUID();
-      await db.insert(schema.syncChange).values({
-        ownerUserId: userPrincipalId,
-        vaultId,
-        entity: "vault",
-        entityId: vaultId,
-        action: "reset",
-        revision: null,
-        transactionId,
-      });
-      const [deleted] = await db.delete(schema.syncedVault).where(ownedVault(vaultId))
-        .returning({ vaultId: schema.syncedVault.vaultId });
-      return deleted !== undefined;
-    },
+
   };
 }
 
@@ -2094,6 +2018,7 @@ function meetingSelection(schema: SyncSchema) {
 function screenshotSelection(schema: SyncSchema) {
   return {
     screenshotId: schema.syncedScreenshot.screenshotId,
+    fileId: schema.syncedScreenshot.fileId,
     vaultId: schema.syncedScreenshot.vaultId,
     meetingId: schema.syncedScreenshot.meetingId,
     capturedAt: schema.syncedScreenshot.capturedAt,

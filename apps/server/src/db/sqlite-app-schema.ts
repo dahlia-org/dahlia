@@ -1,5 +1,7 @@
 import { sql } from "drizzle-orm";
-import { blob, check, foreignKey, index, integer, primaryKey, real, sqliteTable, text, unique, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { blob, check, foreignKey, index, integer, primaryKey, real, sqliteTable, sqliteView, text, unique, uniqueIndex } from "drizzle-orm/sqlite-core";
+
+import type { FileMetadata } from "../files/model";
 
 import { user as authUser } from "./generated/sqlite-auth-schema";
 
@@ -147,8 +149,48 @@ export const transcriptPatchChunk = sqliteTable("transcript_patch_chunks", {
   }).onDelete("cascade"),
 ]);
 
-export const syncedScreenshot = sqliteTable("screenshots", {
-  screenshotId: text("screenshot_id").primaryKey(),
+export const syncedFile = sqliteTable("files", {
+  fileId: text("file_id").primaryKey(),
+  vaultId: text("vault_id").notNull().references(() => syncedVault.vaultId, { onDelete: "cascade" }),
+  uri: text("uri").notNull(),
+  offset: integer("offset").notNull().default(0),
+  size: integer("size").notNull(),
+  contentType: text("content_type").notNull(),
+  checksum: text("checksum").notNull(),
+  name: text("name").notNull(),
+  metadata: text("metadata", { mode: "json" }).$type<FileMetadata>().notNull(),
+  active: integer("active", { mode: "boolean" }).default(false).notNull(),
+  uploadedAt: sqliteTimestamp("uploaded_at"),
+  revision: integer("revision").default(0).notNull(),
+  createdAt: sqliteTimestamp("created_at").default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`).notNull(),
+  updatedAt: sqliteTimestamp("updated_at").default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`).notNull(),
+}, (table) => [
+  unique("files_vault_file_unique").on(table.vaultId, table.fileId),
+  index("files_vault_file_idx").on(table.vaultId, table.fileId),
+  check("files_offset_check", sql`${table.offset} = 0`),
+  check("files_size_check", sql`${table.size} >= 0`)
+]);
+
+export const meetingFile = sqliteTable("meeting_files", {
+  id: text("id").primaryKey(),
+  vaultId: text("vault_id").notNull(),
+  meetingId: text("meeting_id").notNull(),
+  fileId: text("file_id").notNull(),
+  capturedAt: sqliteTimestamp("captured_at"),
+  sessionId: text("session_id"),
+  createdAt: sqliteTimestamp("created_at").default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`).notNull(),
+  revision: integer("revision").default(1).notNull(),
+}, (table) => [
+  foreignKey({ columns: [table.vaultId, table.meetingId], foreignColumns: [syncedMeeting.vaultId, syncedMeeting.meetingId] }).onDelete("cascade"),
+  foreignKey({ columns: [table.vaultId, table.fileId], foreignColumns: [syncedFile.vaultId, syncedFile.fileId] }),
+  unique("meeting_files_meeting_file_unique").on(table.meetingId, table.fileId),
+  index("meeting_files_vault_meeting_id_idx").on(table.vaultId, table.meetingId, table.id)
+]);
+
+// Read-only image projection. All writes belong to files and meeting_files.
+export const syncedScreenshot = sqliteView("meeting_images", {
+  screenshotId: text("screenshot_id").notNull(),
+  fileId: text("file_id").notNull(),
   vaultId: text("vault_id").notNull(),
   meetingId: text("meeting_id").notNull(),
   capturedAt: sqliteTimestamp("captured_at").notNull(),
@@ -156,20 +198,21 @@ export const syncedScreenshot = sqliteTable("screenshots", {
   storageKey: text("storage_key").notNull(),
   contentLength: integer("content_length").notNull(),
   contentHash: text("content_hash").notNull(),
-  active: integer("active", { mode: "boolean" }).default(true).notNull(),
+  active: integer("active", { mode: "boolean" }).notNull(),
   ocrText: text("ocr_text"),
   caption: text("caption"),
-  revision: integer("revision").default(1).notNull(),
-  createdAt: sqliteTimestamp("created_at").default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`).notNull(),
-  updatedAt: sqliteTimestamp("updated_at").default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`).notNull(),
-}, (table) => [
-  foreignKey({
-    columns: [table.vaultId, table.meetingId],
-    foreignColumns: [syncedMeeting.vaultId, syncedMeeting.meetingId],
-  }).onDelete("cascade"),
-  index("synced_screenshot_vault_meeting_captured_id_idx")
-    .on(table.vaultId, table.meetingId, table.capturedAt, table.screenshotId),
-]);
+  revision: integer("revision").notNull(),
+}).as(sql`
+  SELECT m.id AS screenshot_id, f.file_id, m.vault_id, m.meeting_id,
+    coalesce(m.captured_at, m.created_at) AS captured_at, f.content_type,
+    'files/' || f.file_id || '/original' AS storage_key,
+    f.size AS content_length, substr(f.checksum, 9) AS content_hash, f.active,
+    json_extract(f.metadata, '$.ocr_text') AS ocr_text,
+    json_extract(f.metadata, '$.caption') AS caption,
+    m.revision
+  FROM meeting_files m JOIN files f ON f.file_id = m.file_id AND f.vault_id = m.vault_id
+  WHERE json_extract(f.metadata, '$.source') = 'screenshot'
+`);
 
 export const searchDocument = sqliteTable("search_documents", {
   documentId: text("document_id").notNull(),
@@ -262,7 +305,7 @@ export const syncChange = sqliteTable("sync_changes", {
   transactionId: text("transaction_id").notNull(),
   createdAt: sqliteTimestamp("created_at").default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`).notNull(),
 }, (table) => [
-  check("sync_change_entity_check", sql`${table.entity} IN ('vault', 'project', 'meeting', 'summary', 'transcript', 'screenshot')`),
+  check("sync_change_entity_check", sql`${table.entity} IN ('vault', 'project', 'meeting', 'summary', 'transcript', 'file', 'meeting_file')`),
   check("sync_change_action_check", sql`${table.action} IN ('upsert', 'delete', 'reset')`),
   index("sync_change_owner_vault_sequence_idx").on(table.ownerUserId, table.vaultId, table.sequence),
   index("sync_change_owner_sequence_idx").on(table.ownerUserId, table.sequence),

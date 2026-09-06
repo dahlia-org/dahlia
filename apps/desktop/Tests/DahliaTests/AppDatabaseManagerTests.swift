@@ -871,7 +871,7 @@ import os
                 try (
                     db.tableExists("recording_sessions"),
                     String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('transcript_segments')"),
-                    String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('screenshots')")
+                    String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('meeting_files')")
                 )
             }
 
@@ -1028,6 +1028,7 @@ import os
                 .appendingPathComponent(UUID().uuidString)
                 .appendingPathExtension("sqlite")
             let meetingID = UUID.v7()
+            let vaultID = UUID.v7()
             let segmentID = UUID.v7()
             let screenshotID = UUID.v7()
             let meetingStart = Date(timeIntervalSince1970: 1_776_384_000)
@@ -1038,6 +1039,14 @@ import os
 
             let legacyQueue = try DatabaseQueue(path: databaseURL.path)
             try legacyQueue.write { db in
+                try db
+                    .execute(
+                        sql: "CREATE TABLE vaults (id BLOB PRIMARY KEY, path TEXT NOT NULL, name TEXT NOT NULL, createdAt DATETIME NOT NULL, lastOpenedAt DATETIME NOT NULL)"
+                    )
+                try db.execute(
+                    sql: "INSERT INTO vaults VALUES (?, ?, ?, ?, ?)",
+                    arguments: [vaultID, "/tmp/legacy", "Legacy", meetingStart, meetingStart]
+                )
                 try db.execute(
                     sql: """
                     CREATE TABLE meetings (
@@ -1094,7 +1103,7 @@ import os
                     INSERT INTO meetings (id, vaultId, name, status, duration, createdAt, updatedAt)
                     VALUES (?, ?, ?, ?, ?, ?, ?)
                     """,
-                    arguments: [meetingID, UUID.v7(), "Legacy", MeetingStatus.ready.rawValue, nil as TimeInterval?, meetingStart, meetingStart]
+                    arguments: [meetingID, vaultID, "Legacy", MeetingStatus.ready.rawValue, nil as TimeInterval?, meetingStart, meetingStart]
                 )
                 try db.execute(
                     sql: """

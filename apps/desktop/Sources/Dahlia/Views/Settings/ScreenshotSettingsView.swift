@@ -5,7 +5,7 @@ import SwiftUI
 struct ScreenshotSettingsView: View {
     let onOpenLanguageSettings: () -> Void
     @ObservedObject private var settings = AppSettings.shared
-    @AppStorage(ScreenshotDiskCache.budgetDefaultsKey) private var screenshotCacheGiB = 2
+    @AppStorage(ScreenshotFileStore.budgetDefaultsKey) private var screenshotCacheGiB = 2
 
     var body: some View {
         Form {

@@ -1,3 +1,4 @@
+import DahliaMeetingAccess
 import DahliaRuntimeSupport
 import Foundation
 import GRDB
@@ -31,12 +32,6 @@ import GRDB
                 synced.syncRole = "owner"
                 synced.syncPullCursor = "keep-cursor"
                 try synced.insert(db)
-                if mode == .newVault {
-                    try db.execute(
-                        sql: "UPDATE vaults SET accountConnectionId = ?, syncConfirmedConnectionId = ?, syncRole = 'member', syncPullCursor = 'member-cursor' WHERE id = ?",
-                        arguments: [connection.id, connection.id, fixture.meeting.vaultId]
-                    )
-                }
                 try db.execute(
                     sql: "INSERT INTO sync_transactions(id, vaultId, connectionId, createdAt, availableAt) VALUES (?, ?, ?, ?, ?)",
                     arguments: [UUID.v7(), other.id, connection.id, Date(), Date()]
@@ -45,6 +40,14 @@ import GRDB
             let service = BackupService(dbQueue: fixture.database.dbQueue, applicationSupportURL: fixture.testRootURL)
             let generation = try await service.createGeneration(vaultIds: [fixture.meeting.vaultId])
             try verifyExport(generation, fixture: fixture)
+            try await fixture.database.dbQueue.write { db in
+                if mode == .newVault {
+                    try db.execute(
+                        sql: "UPDATE vaults SET accountConnectionId = ?, syncConfirmedConnectionId = ?, syncRole = 'member', syncPullCursor = 'member-cursor' WHERE id = ?",
+                        arguments: [connection.id, connection.id, fixture.meeting.vaultId]
+                    )
+                }
+            }
             let databaseURL = fixture.testRootURL.appending(path: "live.sqlite")
             let live = try AppDatabaseManager(path: databaseURL.path, enablesConcurrentSearch: true)
             try fixture.database.dbQueue.backup(to: live.dbQueue)
@@ -102,7 +105,10 @@ import GRDB
                 let summary = try #require(try SummaryRecord.fetchOne(db, key: meeting.id))
                 #expect(try summary.loadDocument().referencedScreenshotIds == [screenshot.id])
                 #expect(try SummaryExportRecord.filter(Column("meetingId") == meeting.id).fetchCount(db) == (mode == .overwrite ? 1 : 0))
-                #expect(screenshot.imageData == Data([1, 2, 3]))
+                #expect(screenshot.imageData == nil)
+                let source = try #require(screenshot.localSource)
+                let files = try ScreenshotFileStore(directory: fixture.testRootURL.appending(path: "FileStore"), readOnly: true)
+                #expect(try files.read(source, variant: .original)?.data == Data([1, 2, 3]))
                 let projects = try ProjectRecord.fetchResolvedAll(vaultId: targetID, in: db)
                 #expect(Set(projects.map(\.path)) == ["Parent", "Parent/Child"])
                 #expect(try Int.fetchOne(
@@ -269,14 +275,13 @@ import GRDB
             }
             let service = BackupService(dbQueue: fixture.database.dbQueue, applicationSupportURL: fixture.testRootURL)
             let generation = try await service.createGeneration(vaultIds: [fixture.meeting.vaultId])
-            let editable = try DatabaseQueue(path: generation.fileURL.path, configuration: AppDatabaseManager.configuration())
-            try await editable.write { db in
+            try editBackupDatabase(generation.fileURL) { db in
                 let trigger = try String.fetchOne(db, sql: "SELECT sql FROM sqlite_master WHERE name = 'projects_validate_parent_update'")!
                 try db.execute(sql: "DROP TRIGGER projects_validate_parent_update")
                 try db.execute(sql: "UPDATE projects SET parentProjectId = ? WHERE id = ?", arguments: [UUID.v7(), child.id])
                 try db.execute(sql: trigger)
             }
-            try editable.close()
+
             _ = try await service.prepareRestore(from: generation, requests: [VaultBackupRestoreRequest(
                 sourceVaultId: fixture.meeting.vaultId, targetVaultId: .v7(), mode: .newVault, name: "New"
             )])
@@ -307,7 +312,7 @@ import GRDB
             let old = try DatabaseQueue(path: oldURL.path, configuration: AppDatabaseManager.configuration())
             try AppDatabaseManager.migrator.migrate(old, upTo: identifier)
             try await old.writeWithoutTransaction { db in
-                try db.execute(sql: "ATTACH DATABASE ? AS current_backup", arguments: [generation.fileURL.path])
+                try db.execute(sql: "ATTACH DATABASE ? AS current_backup", arguments: [extractedBackupDatabase(generation.fileURL).path])
             }
             try await old.write { db in
                 try db.execute(sql: "INSERT INTO vaults SELECT * FROM current_backup.vaults")
@@ -357,7 +362,7 @@ import GRDB
         }
 
         private func verifyExport(_ generation: BackupGeneration, fixture: BatchAudioTestFixture) throws {
-            let exported = try DatabaseQueue(path: generation.fileURL.path)
+            let exported = try DatabaseQueue(path: extractedBackupDatabase(generation.fileURL).path)
             defer { try? exported.close() }
             try exported.read { db throws in
                 #expect(try VaultRecord.fetchCount(db) == 1)
@@ -402,7 +407,7 @@ import GRDB
                 try parent.insert(db)
                 try child.insert(db)
                 try db.execute(sql: "UPDATE meetings SET projectId = ? WHERE id = ?", arguments: [child.id, fixture.meeting.id])
-                try screenshot.insert(db)
+                try screenshot.insertLegacyForTesting(db)
                 try SummaryRecord(meetingId: fixture.meeting.id, title: "Summary", document: document.databaseJSONString(), createdAt: fixture.now)
                     .insert(db)
                 try SummaryExportRecord(

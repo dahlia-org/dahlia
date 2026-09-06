@@ -4,8 +4,9 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 enum BackupFileFormat {
-    static let pathExtension = "sqlite"
+    static let pathExtension = BackupArchive.pathExtension
     static let contentType = UTType(filenameExtension: pathExtension) ?? .data
+    static let legacyContentType = UTType(filenameExtension: "sqlite") ?? .database
 }
 
 struct BackupSettingsView: View {
@@ -88,7 +89,7 @@ struct BackupSettingsView: View {
             } header: {
                 Text(L10n.vaultBackup)
             } footer: {
-                Text(L10n.vaultBackupDescription)
+                Text(L10n.vaultBackupDescription + "\n" + L10n.backupLocalVaultsOnly)
             }
 
             Section(L10n.backupGenerations) {
@@ -303,7 +304,7 @@ struct BackupSettingsView: View {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
-        panel.allowedContentTypes = [BackupFileFormat.contentType]
+        panel.allowedContentTypes = [BackupFileFormat.contentType, BackupFileFormat.legacyContentType]
         panel.begin { response in
             guard response == .OK, let url = panel.url else { return }
             Task {
@@ -320,7 +321,7 @@ struct BackupSettingsView: View {
 
     private func exportBackup(_ generation: BackupGeneration) {
         let panel = NSSavePanel()
-        panel.allowedContentTypes = [BackupFileFormat.contentType]
+        panel.allowedContentTypes = [generation.fileURL.pathExtension == "sqlite" ? BackupFileFormat.legacyContentType : BackupFileFormat.contentType]
         panel.nameFieldStringValue = generation.fileURL.lastPathComponent
         panel.begin { response in
             guard response == .OK, let url = panel.url else { return }

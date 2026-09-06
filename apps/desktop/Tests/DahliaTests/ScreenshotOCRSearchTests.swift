@@ -65,13 +65,13 @@ import GRDB
                 try connection.insert(db)
                 try vault.insert(db)
                 try meeting.insert(db)
-                try screenshot.insert(db)
+                try screenshot.insertLegacyForTesting(db)
                 try localVault.insert(db)
                 try localMeeting.insert(db)
-                try localScreenshot.insert(db)
+                try localScreenshot.insertLegacyForTesting(db)
                 try hostedVault.insert(db)
                 try hostedMeeting.insert(db)
-                try hostedScreenshot.insert(db)
+                try hostedScreenshot.insertLegacyForTesting(db)
             }
 
             let coreSearchHasPriority = try await database.dbQueue.read { db in
@@ -93,7 +93,7 @@ import GRDB
             let storedText = try await database.dbQueue.read { db in
                 try String.fetchOne(
                     db,
-                    sql: "SELECT ocrText FROM screenshots WHERE id = ?",
+                    sql: "SELECT ocrText FROM meeting_images WHERE id = ?",
                     arguments: [screenshot.id]
                 )
             }
@@ -148,7 +148,7 @@ import GRDB
                         capturedAt: Date(timeIntervalSince1970: TimeInterval(second)),
                         imageData: Data([UInt8(second)]),
                         mimeType: "image/png"
-                    ).insert(db)
+                    ).insertLegacyForTesting(db)
                 }
             }
 
@@ -189,12 +189,12 @@ import GRDB
                 imageData: Data([1]),
                 mimeType: "image/png"
             )
-            try await database.dbQueue.write { db in try screenshot.insert(db) }
+            try await database.dbQueue.write { db in try screenshot.insertLegacyForTesting(db) }
             await database.searchIndexer.drain()
             let paused = try await database.dbQueue.read { db in
                 try String.fetchOne(
                     db,
-                    sql: "SELECT ocrText FROM screenshots WHERE id = ?",
+                    sql: "SELECT ocrText FROM meeting_images WHERE id = ?",
                     arguments: [screenshot.id]
                 )
             }
@@ -205,7 +205,7 @@ import GRDB
                 await (try? database.dbQueue.read { db in
                     try String.fetchOne(
                         db,
-                        sql: "SELECT ocrText FROM screenshots WHERE id = ?",
+                        sql: "SELECT ocrText FROM meeting_images WHERE id = ?",
                         arguments: [screenshot.id]
                     ) == "録音終了後"
                 }) ?? false
@@ -237,7 +237,7 @@ import GRDB
             }
             try await database.dbQueue.write { db in
                 for screenshot in screenshots {
-                    try screenshot.insert(db)
+                    try screenshot.insertLegacyForTesting(db)
                 }
             }
             #expect(await pollUntil { await analyzer.startedCount == 8 })
@@ -248,7 +248,7 @@ import GRDB
                 try (
                     Int.fetchOne(
                         db,
-                        sql: "SELECT COUNT(*) FROM screenshots WHERE ocrText IS NOT NULL"
+                        sql: "SELECT COUNT(*) FROM meeting_images WHERE ocrText IS NOT NULL"
                     ) ?? 0,
                     Int.fetchOne(
                         db,
@@ -281,7 +281,7 @@ import GRDB
                         capturedAt: Date(timeIntervalSince1970: TimeInterval(index)),
                         imageData: Data([UInt8(index)]),
                         mimeType: "image/png"
-                    ).insert(db)
+                    ).insertLegacyForTesting(db)
                 }
             }
             let rebuildTask = Task { try await database.searchIndexer.requestRebuild() }
@@ -292,7 +292,7 @@ import GRDB
 
             let state = try await database.dbQueue.read { db in
                 try (
-                    Int.fetchOne(db, sql: "SELECT COUNT(*) FROM screenshots WHERE ocrText IS NOT NULL") ?? 0,
+                    Int.fetchOne(db, sql: "SELECT COUNT(*) FROM meeting_images WHERE ocrText IS NOT NULL") ?? 0,
                     Int.fetchOne(
                         db,
                         sql: """
@@ -322,7 +322,7 @@ import GRDB
                         capturedAt: Date(timeIntervalSince1970: TimeInterval(second)),
                         imageData: Data([UInt8(second)]),
                         mimeType: "image/png"
-                    ).insert(db)
+                    ).insertLegacyForTesting(db)
                 }
             }
             await database.searchIndexer.drain()
@@ -370,7 +370,7 @@ import GRDB
                 try vault.insert(db)
                 try meeting.insert(db)
                 for screenshot in screenshots {
-                    try screenshot.insert(db)
+                    try screenshot.insertLegacyForTesting(db)
                 }
             }
 
@@ -386,7 +386,7 @@ import GRDB
             let indexedCount = try await database.dbQueue.read { db in
                 try Int.fetchOne(
                     db,
-                    sql: "SELECT COUNT(*) FROM screenshots WHERE ocrText IS NOT NULL AND caption IS NOT NULL"
+                    sql: "SELECT COUNT(*) FROM meeting_images WHERE ocrText IS NOT NULL AND caption IS NOT NULL"
                 ) ?? 0
             }
             #expect(indexedCount == 9)
@@ -411,7 +411,7 @@ import GRDB
                         capturedAt: .now,
                         imageData: Data([1]),
                         mimeType: "image/png"
-                    ).insert(db)
+                    ).insertLegacyForTesting(db)
                 }
             }
 
@@ -421,7 +421,7 @@ import GRDB
                 try (
                     Int.fetchOne(
                         db,
-                        sql: "SELECT COUNT(*) FROM screenshots WHERE ocrText = 'isolated text'"
+                        sql: "SELECT COUNT(*) FROM meeting_images WHERE ocrText = 'isolated text'"
                     ) ?? 0,
                     Int.fetchOne(
                         db,
@@ -456,13 +456,13 @@ import GRDB
                         capturedAt: .now,
                         imageData: id == failingID ? Data([255]) : Data([1]),
                         mimeType: "image/png"
-                    ).insert(db)
+                    ).insertLegacyForTesting(db)
                 }
                 try db.execute(
                     sql: """
                     CREATE TEMP TRIGGER reject_screenshot_analysis
-                    BEFORE UPDATE OF ocrText, caption ON screenshots
-                    WHEN OLD.imageData = X'FF'
+                    BEFORE UPDATE OF metadata ON files
+                    WHEN (SELECT imageData FROM file_migration_content WHERE fileId = OLD.id) = X'FF'
                     BEGIN
                         SELECT RAISE(FAIL, 'forced screenshot persistence failure');
                     END
@@ -474,7 +474,7 @@ import GRDB
 
             let state = try database.dbQueue.read { db -> (Int, Int, Row?) in
                 try (
-                    Int.fetchOne(db, sql: "SELECT COUNT(*) FROM screenshots WHERE ocrText = 'stored text'") ?? 0,
+                    Int.fetchOne(db, sql: "SELECT COUNT(*) FROM meeting_images WHERE ocrText = 'stored text'") ?? 0,
                     Int.fetchOne(
                         db,
                         sql: """
@@ -520,7 +520,7 @@ import GRDB
                 try vault.insert(db)
                 try meeting.insert(db)
                 for screenshot in screenshots {
-                    try screenshot.insert(db)
+                    try screenshot.insertLegacyForTesting(db)
                 }
                 try db.execute(
                     sql: "UPDATE search_index_jobs SET attempts = 3 WHERE targetKind = 'screenshotAnalysis'"
@@ -559,7 +559,7 @@ import GRDB
             #expect(try await database.dbQueue.read { db in
                 try Int.fetchOne(
                     db,
-                    sql: "SELECT COUNT(*) FROM screenshots WHERE ocrText = 'retry text' AND caption = 'retry caption'"
+                    sql: "SELECT COUNT(*) FROM meeting_images WHERE ocrText = 'retry text' AND caption = 'retry caption'"
                 ) ?? 0
             } == 9)
         }
@@ -583,7 +583,7 @@ import GRDB
             }
             await database.searchIndexer.drain()
             try await database.dbQueue.write { db in
-                try screenshot.insert(db)
+                try screenshot.insertLegacyForTesting(db)
                 try db.execute(
                     sql: """
                     UPDATE search_index_jobs SET attempts = 4
@@ -663,7 +663,7 @@ import GRDB
             let snapshot = try queue.read { db in
                 try (
                     MeetingScreenshotRecord.fetchOne(db, key: screenshot.id),
-                    Set(String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('screenshots')")),
+                    Set(String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('meeting_images')")),
                     Int.fetchOne(
                         db,
                         sql: """
@@ -732,7 +732,7 @@ import GRDB
         @Test
         func reappliesUnreleasedV38ForDevelopmentDatabases() throws {
             let queue = try DatabaseQueue(configuration: AppDatabaseManager.configuration())
-            try AppDatabaseManager.migrator.migrate(queue)
+            try AppDatabaseManager.migrator.migrate(queue, upTo: "v44_retireVectorSearch")
             let vault = makeVault()
             let meeting = makeMeeting(vaultID: vault.id)
             let screenshot = MeetingScreenshotRecord(
@@ -748,7 +748,18 @@ import GRDB
             try queue.write { db in
                 try vault.insert(db)
                 try meeting.insert(db)
-                try screenshot.insert(db)
+                try db.execute(
+                    sql: "INSERT INTO screenshots(id, meetingId, capturedAt, imageData, mimeType, ocrText, caption) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    arguments: [
+                        screenshot.id,
+                        meeting.id,
+                        screenshot.capturedAt,
+                        screenshot.imageData,
+                        screenshot.mimeType,
+                        screenshot.ocrText,
+                        screenshot.caption,
+                    ]
+                )
                 try db.execute(
                     sql: "DELETE FROM grdb_migrations WHERE identifier = 'v38_screenshotOCRSearch'"
                 )
