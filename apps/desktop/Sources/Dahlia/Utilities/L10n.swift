@@ -1629,12 +1629,17 @@ enum L10n { // swiftlint:disable:this type_body_length
         String(format: String(localized: "The backup failed its integrity check: %@", bundle: bundle), message)
     }
 
-    static func backupVaultRestored(_ name: String, id: UUID) -> String {
-        String(format: String(localized: "%@ (%@): Restored.", bundle: bundle), name, String(id.uuidString.prefix(8)))
+    static func backupVaultRestored(_ name: String, sourceVaultId: UUID) -> String {
+        String(format: String(localized: "%@ (Source: %@): Restored.", bundle: bundle), name, String(sourceVaultId.uuidString.suffix(8)))
     }
 
-    static func backupVaultRestoreFailed(_ name: String, id: UUID, reason: String) -> String {
-        String(format: String(localized: "%@ (%@): Restore failed — %@", bundle: bundle), name, String(id.uuidString.prefix(8)), reason)
+    static func backupVaultRestoreFailed(_ name: String, sourceVaultId: UUID, reason: String) -> String {
+        String(
+            format: String(localized: "%@ (Source: %@): Restore failed — %@", bundle: bundle),
+            name,
+            String(sourceVaultId.uuidString.suffix(8)),
+            reason
+        )
     }
 
     static func backupRestoreFailed(_ reason: String) -> String {

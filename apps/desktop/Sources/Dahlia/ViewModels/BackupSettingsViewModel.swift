@@ -45,12 +45,8 @@ final class BackupSettingsViewModel {
             case .none:
                 break
             case let .completed(results):
-                let successes = results.filter { $0.error == nil }.map {
-                    L10n.backupVaultRestored($0.request.name, id: $0.request.targetVaultId)
-                }
-                let failures = results.compactMap { result in
-                    result.error.map { L10n.backupVaultRestoreFailed(result.request.name, id: result.request.targetVaultId, reason: $0) }
-                }
+                let successes = results.filter { $0.error == nil }.map(\.localizedMessage)
+                let failures = results.filter { $0.error != nil }.map(\.localizedMessage)
                 statusMessage = successes.isEmpty ? nil : successes.joined(separator: "\n")
                 errorMessage = failures.isEmpty ? nil : failures.joined(separator: "\n")
             case let .failed(message):

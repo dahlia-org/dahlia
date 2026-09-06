@@ -12,6 +12,14 @@ enum BackupRestoreStartupOutcome: Equatable, Sendable {
 struct VaultBackupRestoreResult: Equatable, Sendable {
     let request: VaultBackupRestoreRequest
     let error: String?
+
+    var localizedMessage: String {
+        if let error {
+            L10n.backupVaultRestoreFailed(request.name, sourceVaultId: request.sourceVaultId, reason: error)
+        } else {
+            L10n.backupVaultRestored(request.name, sourceVaultId: request.sourceVaultId)
+        }
+    }
 }
 
 enum BackupRestoreStartupProcessor {

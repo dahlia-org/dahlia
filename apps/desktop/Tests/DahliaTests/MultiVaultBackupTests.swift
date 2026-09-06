@@ -209,6 +209,20 @@ import GRDB
         }
 
         @Test
+        func restoreResultsIdentifySameNameSourceVaults() throws {
+            let targetId = try #require(UUID(uuidString: "019A0000-0000-7000-8000-000033333333"))
+            for suffix in ["11111111", "22222222"] {
+                let sourceId = try #require(UUID(uuidString: "019A0000-0000-7000-8000-0000\(suffix)"))
+                let request = VaultBackupRestoreRequest(sourceVaultId: sourceId, targetVaultId: targetId, mode: .newVault, name: "Same")
+                for error in [nil, "Failure"] as [String?] {
+                    let message = VaultBackupRestoreResult(request: request, error: error).localizedMessage
+                    #expect(message.contains(suffix))
+                    #expect(!message.contains("33333333"))
+                }
+            }
+        }
+
+        @Test
         func settingsKeepsExplicitSelectionAndRequiresPerVaultRestoreChoice() async throws {
             let fixture = try BatchAudioTestFixture(name: "MultiSettings", endedAt: .now, batchCompletedAt: .now)
             defer { fixture.removeFiles() }

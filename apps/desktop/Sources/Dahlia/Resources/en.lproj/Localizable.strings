@@ -1650,5 +1650,5 @@
 "Do Not Restore" = "Do Not Restore";
 
 "Vaults: %d" = "Vaults: %d";
-"%@ (%@): Restored." = "%@ (%@): Restored.";
-"%@ (%@): Restore failed — %@" = "%@ (%@): Restore failed — %@";
+"%@ (Source: %@): Restored." = "%@ (Source: %@): Restored.";
+"%@ (Source: %@): Restore failed — %@" = "%@ (Source: %@): Restore failed — %@";
