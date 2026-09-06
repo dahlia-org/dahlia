@@ -22,7 +22,9 @@ import GRDB
                 try String.fetchOne(db, sql: "PRAGMA journal_mode")
             }
 
-            _ = try await service.createGeneration()
+            let vault = makeVault(name: "WAL", path: rootURL.appending(path: "Vault").path)
+            try await live.dbQueue.write { try vault.insert($0) }
+            _ = try await service.createGeneration(vaultId: vault.id)
 
             #expect(journalMode?.lowercased() == "wal")
             #expect(try await service.listGenerations().first?.isValid == true)
@@ -94,7 +96,7 @@ import GRDB
                 appVersion: "1.2.3",
                 appBuild: "45"
             )
-            let generation = try await service.createGeneration()
+            let generation = try await service.createGeneration(vaultId: fixture.meeting.vaultId)
             let metadata = try #require(generation.metadata)
             #expect(metadata.schemaVersion == AppDatabaseManager.currentSchemaVersion)
             #expect(metadata.migrationIdentifier == AppDatabaseManager.currentMigrationIdentifier)
@@ -154,7 +156,7 @@ import GRDB
             #expect(items.first?.hasUnavailableAudio == true)
             #expect(items.first?.statusDescription == L10n.batchRecordingAudioUnavailable)
             await #expect(throws: BackupServiceError.unresolvedAudio(1)) {
-                try await service.createGeneration()
+                try await service.createGeneration(vaultId: fixture.meeting.vaultId)
             }
         }
 
@@ -187,7 +189,7 @@ import GRDB
             )
 
             #expect(try await service.preflightItems().isEmpty)
-            let generation = try await service.createGeneration()
+            let generation = try await service.createGeneration(vaultId: fixture.meeting.vaultId)
             let backup = try DatabaseQueue(path: generation.fileURL.path)
             let legacyCount = try await backup.read { db in
                 try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM recording_audio_files")
@@ -196,7 +198,7 @@ import GRDB
         }
 
         @Test
-        func restorePreparationCreatesSafetyGenerationAndSanitizedStagingDatabase() async throws {
+        func restorePreparationStagesVaultAndDefersSafetyBackupUntilStartup() async throws {
             let fixture = try BatchAudioTestFixture(
                 name: "BackupRestorePreparation",
                 meetingStatus: .ready,
@@ -211,12 +213,14 @@ import GRDB
                 appVersion: "1.2.3",
                 appBuild: "45"
             )
-            let generation = try await service.createGeneration()
+            let generation = try await service.createGeneration(vaultId: fixture.meeting.vaultId)
 
-            let marker = try await service.prepareRestore(from: generation)
+            let marker = try await service.prepareRestore(from: generation, request: VaultBackupRestoreRequest(
+                sourceVaultId: fixture.meeting.vaultId, targetVaultId: fixture.meeting.vaultId, mode: .overwrite, name: "Test"
+            ))
             let generations = try await service.listGenerations()
-            #expect(generations.count == 2)
-            #expect(generations.contains { $0.metadata?.reason == .beforeRestore })
+            #expect(generations.count == 1)
+            #expect(!generations.contains { $0.metadata?.reason == .beforeRestore })
 
             let stagedURL = fixture.testRootURL
                 .appending(path: BackupService.restoreDirectoryName)
@@ -229,7 +233,7 @@ import GRDB
                 let hasMetadata = try db.tableExists(BackupService.metadataTableName)
                 let migrationsComplete = try AppDatabaseManager.migrator.hasCompletedMigrations(db)
                 let audioCount = try RecordingAudioSegmentRecord.fetchCount(db)
-                return !hasMetadata && migrationsComplete && audioCount == 0
+                return hasMetadata && migrationsComplete && audioCount == 0
             }
             #expect(isClean)
         }
@@ -247,7 +251,7 @@ import GRDB
                 dbQueue: fixture.database.dbQueue,
                 applicationSupportURL: fixture.testRootURL
             )
-            let generation = try await service.createGeneration()
+            let generation = try await service.createGeneration(vaultId: fixture.meeting.vaultId)
             let editedURL = fixture.testRootURL.appending(path: "future.sqlite")
             try FileManager.default.copyItem(at: generation.fileURL, to: editedURL)
             let editable = try DatabaseQueue(path: editedURL.path)
@@ -275,7 +279,7 @@ import GRDB
                 dbQueue: fixture.database.dbQueue,
                 applicationSupportURL: fixture.testRootURL
             )
-            let generation = try await service.createGeneration()
+            let generation = try await service.createGeneration(vaultId: fixture.meeting.vaultId)
             let editable = try DatabaseQueue(path: generation.fileURL.path)
             try await editable.write { db in
                 try db.execute(
@@ -291,80 +295,87 @@ import GRDB
             try editable.close()
 
             await #expect(throws: BackupServiceError.invalidBackup) {
-                try await service.prepareRestore(from: generation)
+                try await service.prepareRestore(from: generation, request: VaultBackupRestoreRequest(
+                    sourceVaultId: fixture.meeting.vaultId, targetVaultId: fixture.meeting.vaultId, mode: .overwrite, name: "Test"
+                ))
             }
             let vaultCount = try await fixture.database.dbQueue.read { db in try VaultRecord.fetchCount(db) }
             #expect(vaultCount == 1)
         }
 
         @Test
-        // swiftlint:disable:next function_body_length
-        func restorePreparationMigratesKnownOlderSchemaAndPreservesData() async throws {
-            let rootURL = FileManager.default.temporaryDirectory
-                .appending(path: "dahlia-old-backup-\(UUID.v7().uuidString)", directoryHint: .isDirectory)
-            defer { try? FileManager.default.removeItem(at: rootURL) }
-            try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
-            let live = try AppDatabaseManager(path: rootURL.appending(path: "live.sqlite").path)
-            let service = BackupService(dbQueue: live.dbQueue, applicationSupportURL: rootURL)
+        func importRejectsLegacyFormat() async throws {
+            let fixture = try BatchAudioTestFixture(name: "LegacyBackup")
+            defer { fixture.removeFiles() }
+            let service = BackupService(dbQueue: fixture.database.dbQueue, applicationSupportURL: fixture.testRootURL)
+            let generation = try await service.createGeneration(vaultId: fixture.meeting.vaultId)
+            let editable = try DatabaseQueue(path: generation.fileURL.path)
+            try await editable.write { db in
+                try db.execute(sql: "UPDATE dahlia_backup_metadata SET formatVersion = 1")
+            }
+            try editable.close()
+            await #expect(throws: BackupServiceError.incompatibleFormat(1)) {
+                try await service.importGeneration(from: generation.fileURL)
+            }
+        }
 
-            let migrationIdentifier = "v17_calendarEventIntegrity"
-            let oldURL = rootURL.appending(path: "old.sqlite")
-            let oldQueue = try DatabaseQueue(path: oldURL.path)
-            try AppDatabaseManager.migrator.migrate(oldQueue, upTo: migrationIdentifier)
-            let vault = makeVault(name: "Preserved old vault", path: rootURL.appending(path: "Vault").path)
-            let metadata = try BackupMetadata(
-                formatVersion: BackupMetadata.currentFormatVersion,
-                generationId: .v7(),
-                createdAt: .now,
-                schemaVersion: #require(AppDatabaseManager.schemaVersion(from: migrationIdentifier)),
-                migrationIdentifier: migrationIdentifier,
-                appVersion: "0.9.0",
-                appBuild: "9",
-                reason: .manual
-            )
-            try await oldQueue.write { db in
-                try insertLegacyVault(vault, in: db)
+        @Test
+        func unprocessedAudioInAnotherVaultDoesNotBlockBackup() async throws {
+            let fixture = try BatchAudioTestFixture(name: "ScopedPreflight", endedAt: .now)
+            defer { fixture.removeFiles() }
+            let other = makeVault(name: "Other", path: fixture.testRootURL.appending(path: "Other").path)
+            let segment = makeAudioSegment(fixture: fixture)
+            try await fixture.database.dbQueue.write { db in
+                try segment.insert(db)
+                try other.insert(db)
+            }
+            let service = BackupService(dbQueue: fixture.database.dbQueue, applicationSupportURL: fixture.testRootURL)
+            #expect(try await service.preflightItems(vaultId: other.id).isEmpty)
+            let generation = try await service.createGeneration(vaultId: other.id)
+            #expect(generation.metadata?.vaultId == other.id)
+            await #expect(throws: BackupServiceError.unresolvedAudio(1)) {
+                try await service.createGeneration(vaultId: fixture.meeting.vaultId)
+            }
+        }
+
+        @Test
+        func runningRetranscriptionBlocksRestoreEvenWithPreviousTranscript() async throws {
+            let fixture = try BatchAudioTestFixture(name: "RetranscriptionBackup", endedAt: .now, batchCompletedAt: .now)
+            defer { fixture.removeFiles() }
+            let service = BackupService(dbQueue: fixture.database.dbQueue, applicationSupportURL: fixture.testRootURL)
+            let generation = try await service.createGeneration(vaultId: fixture.meeting.vaultId)
+            let segment = makeAudioSegment(fixture: fixture)
+            try await fixture.database.dbQueue.write { db in
+                try segment.insert(db)
                 try db.execute(
-                    sql: """
-                    CREATE TABLE dahlia_backup_metadata (
-                        formatVersion INTEGER NOT NULL, generationId TEXT NOT NULL,
-                        createdAt DATETIME NOT NULL, schemaVersion INTEGER NOT NULL,
-                        migrationIdentifier TEXT NOT NULL, appVersion TEXT NOT NULL,
-                        appBuild TEXT NOT NULL, reason TEXT NOT NULL
+                    sql: "UPDATE recording_sessions SET batchLastAttemptAt = ? WHERE id = ?",
+                    arguments: [Date().addingTimeInterval(1), fixture.session.id]
+                )
+            }
+            #expect(try await service.hasProcessingAudio())
+            await #expect(throws: BackupServiceError.unresolvedAudio(1)) {
+                try await service.prepareRestore(from: generation, request: VaultBackupRestoreRequest(
+                    sourceVaultId: fixture.meeting.vaultId, targetVaultId: .v7(), mode: .newVault, name: "New"
+                ))
+            }
+        }
+
+        @Test
+        func malformedMetadataIsRejectedWithoutCrashing() async throws {
+            let fixture = try BatchAudioTestFixture(name: "MalformedBackup")
+            defer { fixture.removeFiles() }
+            let service = BackupService(dbQueue: fixture.database.dbQueue, applicationSupportURL: fixture.testRootURL)
+            let generation = try await service.createGeneration(vaultId: fixture.meeting.vaultId)
+            let editable = try DatabaseQueue(path: generation.fileURL.path)
+            try await editable.write { db in
+                try db
+                    .execute(
+                        sql: "DROP TABLE dahlia_backup_metadata; CREATE TABLE dahlia_backup_metadata (formatVersion); INSERT INTO dahlia_backup_metadata VALUES (2)"
                     )
-                    """
-                )
-                try db.execute(
-                    sql: """
-                    INSERT INTO dahlia_backup_metadata
-                        (formatVersion, generationId, createdAt, schemaVersion,
-                         migrationIdentifier, appVersion, appBuild, reason)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    arguments: [
-                        metadata.formatVersion, metadata.generationId.uuidString, metadata.createdAt,
-                        metadata.schemaVersion, metadata.migrationIdentifier, metadata.appVersion,
-                        metadata.appBuild, metadata.reason.rawValue,
-                    ]
-                )
             }
-            try oldQueue.close()
-
-            let imported = try await service.importGeneration(from: oldURL)
-            let marker = try await service.prepareRestore(from: imported)
-            let stagedURL = rootURL.appending(path: BackupService.restoreDirectoryName)
-                .appending(path: marker.stagedFilename)
-            let staged = try DatabaseQueue(path: stagedURL.path)
-            let result = try await staged.read { db in
-                try (
-                    AppDatabaseManager.migrator.hasCompletedMigrations(db),
-                    AppDatabaseManager.hasExpectedCurrentSchema(db),
-                    String.fetchOne(db, sql: "SELECT name FROM vaults WHERE id = ?", arguments: [vault.id])
-                )
-            }
-            #expect(result.0)
-            #expect(result.1)
-            #expect(result.2 == vault.name)
+            try editable.close()
+            await #expect(throws: (any Error).self) { try await service.importGeneration(from: generation.fileURL) }
+            #expect(try await service.listGenerations().first?.isValid == false)
         }
 
         private func makeAudioSegment(fixture: BatchAudioTestFixture) -> RecordingAudioSegmentRecord {

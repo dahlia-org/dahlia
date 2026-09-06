@@ -10,6 +10,7 @@ enum BackupServiceError: LocalizedError, Equatable {
     case newerSchema(String)
     case integrityCheckFailed(String)
     case restoreAlreadyPending
+    case restoreTargetUnavailable
     case generationNotFound
 
     var errorDescription: String? {
@@ -26,6 +27,8 @@ enum BackupServiceError: LocalizedError, Equatable {
             L10n.backupIntegrityCheckFailed(message)
         case .restoreAlreadyPending:
             L10n.backupRestoreAlreadyPending
+        case .restoreTargetUnavailable:
+            L10n.backupRestoreTargetUnavailable
         case .generationNotFound:
             L10n.backupGenerationMissing
         }
@@ -37,6 +40,7 @@ struct PendingDatabaseRestore: Codable, Equatable, Sendable {
     let sha256: String
     let requestedAt: Date
     let sourceMetadata: BackupMetadata
+    let request: VaultBackupRestoreRequest
 }
 
 // Backup operations intentionally share one serialized filesystem/database owner.
@@ -185,53 +189,98 @@ actor BackupService {
         }
     }
 
-    func createGeneration(reason: BackupMetadata.Reason = .manual) throws -> BackupGeneration {
-        let unresolved = try preflightItems()
-        guard unresolved.isEmpty else { throw BackupServiceError.unresolvedAudio(unresolved.count) }
-        try ensureDirectory(backupDirectoryURL)
+    func hasProcessingAudio() throws -> Bool {
+        try dbQueue.read { db in
+            try Bool.fetchOne(db, sql: """
+            SELECT EXISTS(
+                SELECT 1 FROM recording_sessions
+                WHERE transcriptionMode = ? AND batchDiscardedAt IS NULL
+                  AND batchLastAttemptAt IS NOT NULL AND batchLastError IS NULL AND batchFailureKind IS NULL
+                  AND (batchCompletedAt IS NULL OR batchLastAttemptAt > batchCompletedAt)
+                  AND EXISTS (
+                    SELECT 1 FROM recording_audio_segments
+                    WHERE recordingSessionId = recording_sessions.id AND state != ?
+                  )
+            )
+            """, arguments: [TranscriptionMode.batch.rawValue, RecordingAudioSegmentState.purged.rawValue]) ?? false
+        }
+    }
 
-        let metadata = BackupMetadata(
-            formatVersion: BackupMetadata.currentFormatVersion,
-            generationId: .v7(),
-            createdAt: .now,
-            schemaVersion: AppDatabaseManager.currentSchemaVersion,
-            migrationIdentifier: AppDatabaseManager.currentMigrationIdentifier,
+    func listVaults() throws -> [VaultRecord] {
+        try dbQueue.read { try VaultRecord.order(Column("name")).fetchAll($0) }
+    }
+
+    func createGeneration(vaultId: UUID, reason: BackupMetadata.Reason = .manual) throws -> BackupGeneration {
+        try Self.createGeneration(
+            vaultId: vaultId,
+            dbQueue: dbQueue,
+            directoryURL: backupDirectoryURL,
+            reason: reason,
             appVersion: appVersion,
-            appBuild: appBuild,
-            reason: reason
+            appBuild: appBuild
         )
-        let destinationURL = backupDirectoryURL.appending(path: filename(for: metadata))
-        let temporaryURL = backupDirectoryURL.appending(path: ".\(metadata.generationId.uuidString).tmp.sqlite")
-        defer { try? fileManager.removeItem(at: temporaryURL) }
+    }
 
-        let destinationQueue = try DatabaseQueue(
-            path: temporaryURL.path,
-            configuration: AppDatabaseManager.configuration()
-        )
-        try dbQueue.backup(to: destinationQueue)
-        try destinationQueue.write { db in
-            let unresolvedCount = try Self.unresolvedAudioCount(in: db)
-            guard unresolvedCount == 0 else {
-                throw BackupServiceError.unresolvedAudio(unresolvedCount)
+    nonisolated static func createGeneration(
+        vaultId: UUID,
+        dbQueue: DatabaseQueue,
+        directoryURL: URL,
+        reason: BackupMetadata.Reason,
+        appVersion: String,
+        appBuild: String
+    ) throws -> BackupGeneration {
+        let manager = FileManager.default
+        try ensureDirectory(directoryURL, fileManager: manager)
+        let generationID = UUID.v7()
+        let temporaryURL = directoryURL.appending(path: ".\(generationID).tmp.sqlite")
+        defer { try? manager.removeItem(at: temporaryURL) }
+        let snapshotURL = directoryURL.appending(path: ".\(generationID).source.sqlite")
+        defer { try? manager.removeItem(at: snapshotURL) }
+        let snapshot = try DatabaseQueue(path: snapshotURL.path, configuration: AppDatabaseManager.configuration())
+        defer { try? snapshot.close() }
+        try manager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: snapshotURL.path)
+        try dbQueue.backup(to: snapshot)
+        try snapshot.writeWithoutTransaction { db in
+            _ = try String.fetchOne(db, sql: "PRAGMA journal_mode = DELETE")
+        }
+        try snapshot.close()
+        let destination = try AppDatabaseManager(path: temporaryURL.path)
+        defer { try? destination.close() }
+        try destination.dbQueue.writeWithoutTransaction { db in
+            try db.execute(sql: "ATTACH DATABASE ? AS backup_source", arguments: [snapshotURL.path])
+        }
+        let metadata = try destination.dbQueue.write { db in
+            guard let vault = try VaultRecord.fetchOne(db, sql: "SELECT * FROM backup_source.vaults WHERE id = ?", arguments: [vaultId]) else {
+                throw BackupServiceError.invalidBackup
             }
-            try Self.sanitizeAudioReferences(in: db)
-            try Self.writeMetadata(metadata, in: db)
-            try Self.validateIntegrity(in: db)
+            let unresolved = try Self.unresolvedAudioCount(in: db, vaultId: vaultId, schema: "backup_source.")
+            guard unresolved == 0 else { throw BackupServiceError.unresolvedAudio(unresolved) }
+            let metadata = BackupMetadata(
+                formatVersion: BackupMetadata.currentFormatVersion, generationId: generationID, createdAt: .now,
+                schemaVersion: AppDatabaseManager.currentSchemaVersion,
+                migrationIdentifier: AppDatabaseManager.currentMigrationIdentifier,
+                appVersion: appVersion, appBuild: appBuild, reason: reason, vaultId: vault.id, vaultName: vault.name
+            )
+            try VaultBackupTransfer.copy(
+                vaultId: vaultId,
+                in: db,
+                destinationVault: VaultBackupTransfer.portableVault(vault),
+                remapIDs: false
+            )
+            try clearSearchIndex(in: db)
+            try writeMetadata(metadata, in: db)
+            try VaultBackupTransfer.validateIntegrity(in: db)
+            return metadata
         }
-        try destinationQueue.writeWithoutTransaction { db in
-            let journalMode = try String.fetchOne(db, sql: "PRAGMA journal_mode = DELETE")
-            guard journalMode?.lowercased() == "delete" else { throw BackupServiceError.invalidBackup }
-        }
-        try destinationQueue.close()
-        try fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: temporaryURL.path)
-        try fileManager.moveItem(at: temporaryURL, to: destinationURL)
-        let storedMetadata = try Self.readAndValidateMetadata(at: destinationURL)
-        return BackupGeneration(
-            fileURL: destinationURL,
-            metadata: storedMetadata,
-            fileSize: Self.fileSize(at: destinationURL),
-            validationError: nil
-        )
+        try destination.close()
+        let url = directoryURL.appending(path: "Dahlia-\(metadata.generationId).sqlite")
+        try manager.moveItem(at: temporaryURL, to: url)
+        return try BackupGeneration(fileURL: url, metadata: readAndValidateMetadata(at: url), fileSize: fileSize(at: url), validationError: nil)
+    }
+
+    private nonisolated static func clearSearchIndex(in db: Database) throws {
+        try db.execute(sql: "DELETE FROM search_documents_fts; DELETE FROM search_documents; DELETE FROM search_index_jobs")
+        try db.execute(sql: "UPDATE search_index_state SET phase = 'pending', totalCount = 0, completedCount = 0")
     }
 
     func importGeneration(from sourceURL: URL) throws -> BackupGeneration {
@@ -240,7 +289,6 @@ actor BackupService {
         defer { try? fileManager.removeItem(at: temporaryURL) }
         try fileManager.copyItem(at: sourceURL, to: temporaryURL)
         let metadata = try Self.readAndValidateMetadata(at: temporaryURL)
-        try ensureCompatible(metadata: metadata, at: temporaryURL)
         try fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: temporaryURL.path)
         let importedURL = backupDirectoryURL.appending(
             path: "Imported-\(filename(for: metadata, uniqueSuffix: UUID.v7().uuidString))"
@@ -272,60 +320,39 @@ actor BackupService {
         try fileManager.removeItem(at: generation.fileURL)
     }
 
-    func prepareRestore(from generation: BackupGeneration) throws -> PendingDatabaseRestore {
-        guard let listedMetadata = generation.metadata, generation.isValid else {
+    func prepareRestore(
+        from generation: BackupGeneration, request: VaultBackupRestoreRequest
+    ) throws -> PendingDatabaseRestore {
+        guard let listedMetadata = generation.metadata, generation.isValid,
+              request.sourceVaultId == listedMetadata.vaultId,
+              request.name.nilIfBlank != nil,
+              request.mode != .overwrite || request.targetVaultId == request.sourceVaultId else {
             throw BackupServiceError.invalidBackup
         }
-        let unresolved = try preflightItems()
-        guard unresolved.isEmpty else { throw BackupServiceError.unresolvedAudio(unresolved.count) }
         try validateManagedGenerationFile(generation.fileURL)
-
         let metadata = try Self.readAndValidateMetadata(at: generation.fileURL)
         guard metadata == listedMetadata else { throw BackupServiceError.invalidBackup }
-        try ensureCompatible(metadata: metadata, at: generation.fileURL)
+        if request.mode == .overwrite {
+            _ = try dbQueue.read { try VaultBackupTransfer.validateLocalTarget(id: request.targetVaultId, in: $0) }
+            let unresolved = try preflightItems(vaultId: request.targetVaultId)
+            guard unresolved.isEmpty else { throw BackupServiceError.unresolvedAudio(unresolved.count) }
+        }
+        guard try !preflightItems().contains(where: \.isWorkInProgress), try !hasProcessingAudio() else {
+            throw BackupServiceError.unresolvedAudio(1)
+        }
         try ensureDirectory(restoreDirectoryURL)
         let markerURL = restoreDirectoryURL.appending(path: Self.pendingRestoreFilename)
-        guard !fileManager.fileExists(atPath: markerURL.path) else {
-            throw BackupServiceError.restoreAlreadyPending
-        }
-
-        _ = try createGeneration(reason: .beforeRestore)
-        let finalUnresolved = try preflightItems()
-        guard finalUnresolved.isEmpty else {
-            throw BackupServiceError.unresolvedAudio(finalUnresolved.count)
-        }
-        let stagedFilename = "staged-\(UUID.v7().uuidString).sqlite"
+        guard !fileManager.fileExists(atPath: markerURL.path) else { throw BackupServiceError.restoreAlreadyPending }
+        let stagedFilename = "staged-\(UUID.v7()).sqlite"
         let stagedURL = restoreDirectoryURL.appending(path: stagedFilename)
         do {
             try fileManager.copyItem(at: generation.fileURL, to: stagedURL)
-            let stagedMetadata = try Self.readAndValidateMetadata(at: stagedURL)
-            guard stagedMetadata == metadata else { throw BackupServiceError.invalidBackup }
-            try ensureCompatible(metadata: stagedMetadata, at: stagedURL)
-            let stagedDatabase = try AppDatabaseManager(path: stagedURL.path)
-            try stagedDatabase.dbQueue.write { db in
-                guard try AppDatabaseManager.hasExpectedCurrentSchema(
-                    db,
-                    excludingTableNames: [Self.metadataTableName]
-                ) else {
-                    throw BackupServiceError.invalidBackup
-                }
-                try Self.sanitizeAudioReferences(in: db)
-                try db.execute(sql: "DROP TABLE IF EXISTS \(Self.metadataTableName)")
-                guard try AppDatabaseManager.hasExpectedCurrentSchema(db) else {
-                    throw BackupServiceError.invalidBackup
-                }
-                try Self.validateIntegrity(in: db)
-            }
-            try stagedDatabase.close()
-            let checksum = try Self.sha256(of: stagedURL)
-            let marker = PendingDatabaseRestore(
-                stagedFilename: stagedFilename,
-                sha256: checksum,
-                requestedAt: .now,
-                sourceMetadata: metadata
+            guard try Self.readAndValidateMetadata(at: stagedURL) == metadata else { throw BackupServiceError.invalidBackup }
+            let marker = try PendingDatabaseRestore(
+                stagedFilename: stagedFilename, sha256: Self.sha256(of: stagedURL), requestedAt: .now,
+                sourceMetadata: metadata, request: request
             )
-            let data = try JSONEncoder.backupEncoder.encode(marker)
-            try data.write(to: markerURL, options: [.atomic])
+            try JSONEncoder.backupEncoder.encode(marker).write(to: markerURL, options: [.atomic])
             try fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: markerURL.path)
             return marker
         } catch {
@@ -353,31 +380,44 @@ actor BackupService {
         var configuration = Configuration()
         configuration.readonly = true
         let queue = try DatabaseQueue(path: url.path, configuration: configuration)
+        defer { try? queue.close() }
         return try queue.read { db in
             if shouldValidateIntegrity {
-                try validateIntegrity(in: db)
+                try VaultBackupTransfer.validateIntegrity(in: db)
             }
             guard try db.tableExists(metadataTableName),
+                  try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM \(metadataTableName)") == 1,
                   let row = try Row.fetchOne(db, sql: "SELECT * FROM \(metadataTableName) LIMIT 1") else {
                 throw BackupServiceError.invalidBackup
             }
-            let generationIdString: String = row["generationId"]
-            guard let generationId = UUID(uuidString: generationIdString),
-                  let reason = BackupMetadata.Reason(rawValue: row["reason"]) else {
+            let format: Int = try row.decode(forColumn: "formatVersion")
+            guard format == BackupMetadata.currentFormatVersion else { throw BackupServiceError.incompatibleFormat(format) }
+            guard let vaultID = try UUID(uuidString: row.decode(String.self, forColumn: "vaultId")),
+                  let generationID = try UUID(uuidString: row.decode(String.self, forColumn: "generationId")),
+                  let reason = try BackupMetadata.Reason(rawValue: row.decode(String.self, forColumn: "reason")) else {
                 throw BackupServiceError.invalidBackup
             }
-            let metadata = BackupMetadata(
-                formatVersion: row["formatVersion"],
-                generationId: generationId,
-                createdAt: row["createdAt"],
-                schemaVersion: row["schemaVersion"],
-                migrationIdentifier: row["migrationIdentifier"],
-                appVersion: row["appVersion"],
-                appBuild: row["appBuild"],
-                reason: reason
+            let metadata = try BackupMetadata(
+                formatVersion: format,
+                generationId: generationID,
+                createdAt: row.decode(forColumn: "createdAt"),
+                schemaVersion: row.decode(forColumn: "schemaVersion"),
+                migrationIdentifier: row.decode(forColumn: "migrationIdentifier"),
+                appVersion: row.decode(forColumn: "appVersion"),
+                appBuild: row.decode(forColumn: "appBuild"),
+                reason: reason, vaultId: vaultID, vaultName: row.decode(forColumn: "vaultName")
             )
-            guard metadata.formatVersion == BackupMetadata.currentFormatVersion else {
-                throw BackupServiceError.incompatibleFormat(metadata.formatVersion)
+            if shouldValidateIntegrity {
+                guard metadata.migrationIdentifier == AppDatabaseManager.currentMigrationIdentifier,
+                      metadata.schemaVersion == AppDatabaseManager.currentSchemaVersion else {
+                    throw BackupServiceError.newerSchema(metadata.migrationIdentifier)
+                }
+                guard try AppDatabaseManager.migrator.completedMigrations(db) == AppDatabaseManager.migrationIdentifiers,
+                      try !AppDatabaseManager.migrator.hasBeenSuperseded(db),
+                      try AppDatabaseManager.hasExpectedCurrentSchema(db, excludingTableNames: [metadataTableName]),
+                      try VaultRecord.fetchCount(db) == 1,
+                      let vault = try VaultRecord.fetchOne(db, key: metadata.vaultId),
+                      vault.name == metadata.vaultName else { throw BackupServiceError.invalidBackup }
             }
             return metadata
         }
@@ -393,29 +433,6 @@ actor BackupService {
         return digest.finalize().map { String(format: "%02x", $0) }.joined()
     }
 
-    private func ensureCompatible(metadata: BackupMetadata, at url: URL) throws {
-        guard metadata.formatVersion == BackupMetadata.currentFormatVersion else {
-            throw BackupServiceError.incompatibleFormat(metadata.formatVersion)
-        }
-        guard let index = AppDatabaseManager.migrationIdentifiers.firstIndex(of: metadata.migrationIdentifier) else {
-            throw BackupServiceError.newerSchema(metadata.migrationIdentifier)
-        }
-        let expectedVersion = AppDatabaseManager.schemaVersion(from: metadata.migrationIdentifier)
-        guard expectedVersion == metadata.schemaVersion else { throw BackupServiceError.invalidBackup }
-
-        var configuration = Configuration()
-        configuration.readonly = true
-        let queue = try DatabaseQueue(path: url.path, configuration: configuration)
-        try queue.read { db in
-            let completed = try AppDatabaseManager.migrator.completedMigrations(db)
-            let expected = Array(AppDatabaseManager.migrationIdentifiers.prefix(index + 1))
-            guard completed == expected,
-                  try !AppDatabaseManager.migrator.hasBeenSuperseded(db) else {
-                throw BackupServiceError.newerSchema(metadata.migrationIdentifier)
-            }
-        }
-    }
-
     private func filename(for metadata: BackupMetadata, uniqueSuffix: String? = nil) -> String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
@@ -426,6 +443,10 @@ actor BackupService {
     }
 
     private func ensureDirectory(_ url: URL) throws {
+        try Self.ensureDirectory(url, fileManager: fileManager)
+    }
+
+    private nonisolated static func ensureDirectory(_ url: URL, fileManager: FileManager) throws {
         try fileManager.createDirectory(at: url, withIntermediateDirectories: true)
         let values = try url.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
         guard values.isDirectory == true, values.isSymbolicLink != true else {
@@ -459,12 +480,14 @@ actor BackupService {
             table.column("appVersion", .text).notNull()
             table.column("appBuild", .text).notNull()
             table.column("reason", .text).notNull()
+            table.column("vaultId", .text).notNull()
+            table.column("vaultName", .text).notNull()
         }
         try db.execute(
             sql: """
             INSERT INTO \(metadataTableName)
-                (formatVersion, generationId, createdAt, schemaVersion, migrationIdentifier, appVersion, appBuild, reason)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                (formatVersion, generationId, createdAt, schemaVersion, migrationIdentifier, appVersion, appBuild, reason, vaultId, vaultName)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             arguments: [
                 metadata.formatVersion,
@@ -475,49 +498,30 @@ actor BackupService {
                 metadata.appVersion,
                 metadata.appBuild,
                 metadata.reason.rawValue,
+                metadata.vaultId.uuidString,
+                metadata.vaultName,
             ]
         )
     }
 
-    private nonisolated static func sanitizeAudioReferences(in db: Database) throws {
-        for table in [
-            "recording_audio_ranges",
-            "recording_audio_files",
-            "recording_audio_reconciliation_issues",
-            "recording_audio_segment_ranges",
-            "recording_audio_source_progress",
-            "recording_audio_segments",
-        ] where try db.tableExists(table) {
-            try db.execute(sql: "DELETE FROM \(table)")
-        }
-    }
-
-    private nonisolated static func unresolvedAudioCount(in db: Database) throws -> Int {
+    nonisolated static func unresolvedAudioCount(in db: Database, vaultId: UUID, schema: String = "") throws -> Int {
         try Int.fetchOne(
             db,
             sql: """
             SELECT COUNT(*)
-            FROM recording_sessions
-            WHERE transcriptionMode = ?
+            FROM \(schema)recording_sessions
+            WHERE meetingId IN (SELECT id FROM \(schema)meetings WHERE vaultId = ?)
+              AND transcriptionMode = ?
               AND batchCompletedAt IS NULL
               AND batchDiscardedAt IS NULL
               AND EXISTS (
-                  SELECT 1 FROM recording_audio_segments
+                  SELECT 1 FROM \(schema)recording_audio_segments
                   WHERE recording_audio_segments.recordingSessionId = recording_sessions.id
                     AND recording_audio_segments.state != ?
               )
             """,
-            arguments: [TranscriptionMode.batch.rawValue, RecordingAudioSegmentState.purged.rawValue]
+            arguments: [vaultId, TranscriptionMode.batch.rawValue, RecordingAudioSegmentState.purged.rawValue]
         ) ?? 0
-    }
-
-    private nonisolated static func validateIntegrity(in db: Database) throws {
-        let quickCheck = try String.fetchOne(db, sql: "PRAGMA quick_check") ?? "unknown"
-        guard quickCheck == "ok" else { throw BackupServiceError.integrityCheckFailed(quickCheck) }
-        let foreignKeyFailures = try Row.fetchAll(db, sql: "PRAGMA foreign_key_check")
-        guard foreignKeyFailures.isEmpty else {
-            throw BackupServiceError.integrityCheckFailed("foreign key check failed")
-        }
     }
 
     private nonisolated static func fileSize(at url: URL) -> Int64 {
@@ -529,7 +533,7 @@ actor BackupService {
 private extension JSONEncoder {
     static var backupEncoder: JSONEncoder {
         let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
+        encoder.dateEncodingStrategy = .deferredToDate
         return encoder
     }
 }
@@ -537,7 +541,7 @@ private extension JSONEncoder {
 extension JSONDecoder {
     static var backupDecoder: JSONDecoder {
         let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
+        decoder.dateDecodingStrategy = .deferredToDate
         return decoder
     }
 }

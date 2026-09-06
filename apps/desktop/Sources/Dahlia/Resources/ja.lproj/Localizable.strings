@@ -10,13 +10,13 @@
 "Delete Backup" = "バックアップを削除";
 "Backup Generations" = "バックアップ世代";
 "No Backups" = "バックアップはありません";
-"Create a backup to preserve the current database." = "現在のデータベースを保存するバックアップを作成できます。";
+"Create a backup to preserve the selected vault." = "選択した保管庫を保存するにはバックアップを作成してください。";
 "Backup created." = "バックアップを作成しました。";
 "Backup imported." = "バックアップを読み込みました。";
 "Backup exported." = "バックアップを書き出しました。";
 "Backup deleted." = "バックアップを削除しました。";
 "The selected file is not a valid Dahlia backup." = "選択したファイルは有効なDahliaバックアップではありません。";
-"Another database restore is already pending." = "別のデータベース復元がすでに予約されています。";
+"Another vault restore is already pending." = "別の保管庫の復元がすでに予約されています。";
 "The selected backup generation no longer exists." = "選択したバックアップ世代は存在しません。";
 "Untitled Meeting" = "名称未設定のミーティング";
 "Resolve %lld unprocessed recording before continuing." = "続行する前に、%lld件の未処理録音を解決してください。";
@@ -24,8 +24,8 @@
 "Backup format %lld is not supported by this version of Dahlia." = "バックアップ形式%lldは、このバージョンのDahliaでは使用できません。";
 "This backup uses the newer database schema %@." = "このバックアップは新しいデータベーススキーマ%@を使用しています。";
 "The backup failed its integrity check: %@" = "バックアップの完全性確認に失敗しました: %@";
-"Database restored from schema v%lld." = "スキーマ v%lld のバックアップからデータベースを復元しました。";
-"Could not restore the database: %@" = "データベースを復元できませんでした: %@";
+"Vault restored." = "保管庫を復元しました。";
+"Could not restore the vault: %@" = "保管庫を復元できませんでした: %@";
 "Invalid backup" = "無効なバックアップ";
 "Created before restore" = "復元前に作成";
 "Delete this backup?" = "このバックアップを削除しますか？";
@@ -1634,3 +1634,13 @@
 "Retrieving latest data…" = "最新のデータを取得中…";
 "Waiting to retrieve latest data" = "最新データの再取得を待機中";
 "Update Dahlia and the Server to resume sync" = "同期を再開するにはDahliaとServerを更新してください";
+
+/* Vault backup */
+"Vault Backup" = "保管庫のバックアップ";
+"Back up the selected vault’s database content, including screenshots. Audio, external files, and account credentials are excluded." = "選択した保管庫のDB内データ（スクリーンショットを含む）を保存します。音声・外部ファイル・認証情報は含まれません。";
+"Restore Method" = "復元方法";
+"Restore as a New Local Vault" = "別のローカル保管庫として復元";
+"Overwrite the Original Local Vault" = "元のローカル保管庫を上書き";
+"Overwrite requires the original local vault with no unprocessed recordings. Synced vaults cannot be overwritten." = "上書きには、未処理の録音がない元のローカル保管庫が必要です。同期保管庫には上書きできません。";
+"Dahlia will restart. Overwrite creates a safety backup first. Other vaults are preserved. Audio and external files are not restored." = "Dahliaを再起動して復元します。上書きでは退避バックアップを作成してから保存内容を置き換えます。他の保管庫は保持されます。音声と外部ファイルは復元されません。";
+"%@ (Restored)" = "%@（復元）";

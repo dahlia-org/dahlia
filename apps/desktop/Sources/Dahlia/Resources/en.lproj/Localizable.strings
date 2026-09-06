@@ -10,13 +10,13 @@
 "Delete Backup" = "Delete Backup";
 "Backup Generations" = "Backup Generations";
 "No Backups" = "No Backups";
-"Create a backup to preserve the current database." = "Create a backup to preserve the current database.";
+"Create a backup to preserve the selected vault." = "Create a backup to preserve the selected vault.";
 "Backup created." = "Backup created.";
 "Backup imported." = "Backup imported.";
 "Backup exported." = "Backup exported.";
 "Backup deleted." = "Backup deleted.";
 "The selected file is not a valid Dahlia backup." = "The selected file is not a valid Dahlia backup.";
-"Another database restore is already pending." = "Another database restore is already pending.";
+"Another vault restore is already pending." = "Another vault restore is already pending.";
 "The selected backup generation no longer exists." = "The selected backup generation no longer exists.";
 "Untitled Meeting" = "Untitled Meeting";
 "Resolve %lld unprocessed recording before continuing." = "Resolve %lld unprocessed recording before continuing.";
@@ -24,8 +24,8 @@
 "Backup format %lld is not supported by this version of Dahlia." = "Backup format %lld is not supported by this version of Dahlia.";
 "This backup uses the newer database schema %@." = "This backup uses the newer database schema %@.";
 "The backup failed its integrity check: %@" = "The backup failed its integrity check: %@";
-"Database restored from schema v%lld." = "Database restored from schema v%lld.";
-"Could not restore the database: %@" = "Could not restore the database: %@";
+"Vault restored." = "Vault restored.";
+"Could not restore the vault: %@" = "Could not restore the vault: %@";
 "Invalid backup" = "Invalid backup";
 "Created before restore" = "Created before restore";
 "Delete this backup?" = "Delete this backup?";
@@ -1634,3 +1634,13 @@
 "Retrieving latest data…" = "Retrieving latest data…";
 "Waiting to retrieve latest data" = "Waiting to retrieve latest data";
 "Update Dahlia and the Server to resume sync" = "Update Dahlia and the Server to resume sync";
+
+/* Vault backup */
+"Vault Backup" = "Vault Backup";
+"Back up the selected vault’s database content, including screenshots. Audio, external files, and account credentials are excluded." = "Back up the selected vault’s database content, including screenshots. Audio, external files, and account credentials are excluded.";
+"Restore Method" = "Restore Method";
+"Restore as a New Local Vault" = "Restore as a New Local Vault";
+"Overwrite the Original Local Vault" = "Overwrite the Original Local Vault";
+"Overwrite requires the original local vault with no unprocessed recordings. Synced vaults cannot be overwritten." = "Overwrite requires the original local vault with no unprocessed recordings. Synced vaults cannot be overwritten.";
+"Dahlia will restart. Overwrite creates a safety backup first. Other vaults are preserved. Audio and external files are not restored." = "Dahlia will restart. Overwrite creates a safety backup first. Other vaults are preserved. Audio and external files are not restored.";
+"%@ (Restored)" = "%@ (Restored)";

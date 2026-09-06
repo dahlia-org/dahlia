@@ -16,9 +16,7 @@ enum BackupRestoreStartupProcessor {
     static func applyPendingRestore(
         applicationSupportURL: URL = DahliaApplicationSupport.currentDirectoryURL,
         databaseURL: URL = AppDatabaseManager.databaseURL,
-        audioRootURL: URL = BatchAudioStorage.managedRootURL,
-        fileManager: FileManager = .default,
-        audioCleanup: (URL, FileManager) -> Void = trashManagedAudio
+        fileManager: FileManager = .default
     ) -> BackupRestoreStartupOutcome {
         let markerURL = BackupService.pendingRestoreURL(applicationSupportURL: applicationSupportURL)
         do {
@@ -54,11 +52,19 @@ enum BackupRestoreStartupProcessor {
                 throw BackupServiceError.invalidBackup
             }
 
-            try install(stagedURL: candidateURL, databaseURL: databaseURL, fileManager: fileManager)
+            let combinedURL = restoreDirectoryURL.appending(path: "combined-\(UUID.v7()).sqlite")
+            defer { try? fileManager.removeItem(at: combinedURL) }
+            try mergeVault(
+                marker: marker,
+                sourceURL: candidateURL,
+                databaseURL: databaseURL,
+                combinedURL: combinedURL,
+                applicationSupportURL: applicationSupportURL
+            )
+            try install(stagedURL: combinedURL, databaseURL: databaseURL, fileManager: fileManager)
 
             try? fileManager.removeItem(at: markerURL)
             try? fileManager.removeItem(at: candidateURL)
-            audioCleanup(audioRootURL, fileManager)
             return .restored(marker.sourceMetadata)
         } catch {
             try? fileManager.removeItem(at: markerURL)
@@ -67,6 +73,89 @@ enum BackupRestoreStartupProcessor {
             }
             return .failed(error.localizedDescription)
         }
+    }
+
+    private static func mergeVault(
+        marker: PendingDatabaseRestore,
+        sourceURL: URL,
+        databaseURL: URL,
+        combinedURL: URL,
+        applicationSupportURL: URL
+    ) throws {
+        let metadata = try BackupService.readAndValidateMetadata(at: sourceURL)
+        let request = marker.request
+        guard metadata == marker.sourceMetadata, metadata.vaultId == request.sourceVaultId,
+              request.name.nilIfBlank != nil,
+              request.mode != .overwrite || request.sourceVaultId == request.targetVaultId else {
+            throw BackupServiceError.invalidBackup
+        }
+        let current = try DatabaseQueue(path: databaseURL.path, configuration: AppDatabaseManager.configuration())
+        defer { try? current.close() }
+        let combined = try AppDatabaseManager(path: combinedURL.path)
+        defer { try? combined.close() }
+        try current.backup(to: combined.dbQueue)
+        try current.close()
+        let target = try combined.dbQueue.read { db -> VaultRecord? in
+            guard request.mode == .overwrite else {
+                guard try VaultRecord.fetchOne(db, key: request.targetVaultId) == nil else {
+                    throw BackupServiceError.restoreTargetUnavailable
+                }
+                return nil
+            }
+            let vault = try VaultBackupTransfer.validateLocalTarget(id: request.targetVaultId, in: db)
+            let count = try BackupService.unresolvedAudioCount(in: db, vaultId: vault.id)
+            guard count == 0 else { throw BackupServiceError.unresolvedAudio(count) }
+            return vault
+        }
+        if target != nil {
+            _ = try BackupService.createGeneration(
+                vaultId: request.targetVaultId, dbQueue: combined.dbQueue,
+                directoryURL: applicationSupportURL.appending(path: BackupService.backupDirectoryName),
+                reason: .beforeRestore,
+                appVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "development",
+                appBuild: Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "development"
+            )
+        }
+        try combined.dbQueue.writeWithoutTransaction { db in
+            try db.execute(sql: "ATTACH DATABASE ? AS backup_source", arguments: [sourceURL.path])
+        }
+        try combined.dbQueue.write { db in
+            guard let original = try VaultRecord.fetchOne(
+                db,
+                sql: "SELECT * FROM backup_source.vaults WHERE id = ?",
+                arguments: [request.sourceVaultId]
+            ) else {
+                throw BackupServiceError.invalidBackup
+            }
+            var restoredVault = VaultBackupTransfer.portableVault(original)
+            if let target {
+                restoredVault.path = target.path
+                restoredVault.accountConnectionId = target.accountConnectionId
+                restoredVault.localAIProvider = target.localAIProvider
+                restoredVault.databricksProfile = target.databricksProfile
+                restoredVault.summaryModelID = target.summaryModelID
+                restoredVault.summaryReasoningEffort = target.summaryReasoningEffort
+                restoredVault.chatModelID = target.chatModelID
+                restoredVault.chatReasoningEffort = target.chatReasoningEffort
+            } else {
+                restoredVault.id = request.targetVaultId
+                restoredVault.name = request.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                restoredVault.createdAt = .now
+                restoredVault.lastOpenedAt = .now
+            }
+            if target != nil { try VaultBackupTransfer.removeVaultContent(id: request.targetVaultId, in: db) }
+            try VaultBackupTransfer.copy(
+                vaultId: request.sourceVaultId,
+                in: db,
+                destinationVault: restoredVault,
+                remapIDs: request.mode == .newVault
+            )
+            try VaultBackupTransfer.validateIntegrity(in: db)
+        }
+        try combined.dbQueue.writeWithoutTransaction { db in
+            _ = try String.fetchOne(db, sql: "PRAGMA journal_mode = DELETE")
+        }
+        try combined.close()
     }
 
     private static func install(stagedURL: URL, databaseURL: URL, fileManager: FileManager) throws {
@@ -170,15 +259,6 @@ enum BackupRestoreStartupProcessor {
         }
     }
 
-    private static func trashManagedAudio(_ audioRootURL: URL, _ fileManager: FileManager) {
-        guard fileManager.fileExists(atPath: audioRootURL.path) else { return }
-        var resultingURL: NSURL?
-        do {
-            try fileManager.trashItem(at: audioRootURL, resultingItemURL: &resultingURL)
-        } catch {
-            ErrorReportingService.capture(error, context: ["source": "backupRestoreAudioCleanup"])
-        }
-    }
 }
 
 @MainActor

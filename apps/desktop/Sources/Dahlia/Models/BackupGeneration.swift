@@ -1,7 +1,7 @@
 import Foundation
 
 struct BackupMetadata: Codable, Equatable, Sendable {
-    static let currentFormatVersion = 1
+    static let currentFormatVersion = 2
 
     enum Reason: String, Codable, Sendable {
         case manual
@@ -16,6 +16,8 @@ struct BackupMetadata: Codable, Equatable, Sendable {
     let appVersion: String
     let appBuild: String
     let reason: Reason
+    let vaultId: UUID
+    let vaultName: String
 }
 
 struct BackupGeneration: Identifiable, Equatable, Sendable {
@@ -83,4 +85,16 @@ struct BackupPreflightItem: Identifiable, Equatable, Sendable {
         case .failed: failureMessage ?? L10n.transcriptionFailed
         }
     }
+}
+
+struct VaultBackupRestoreRequest: Codable, Equatable, Sendable {
+    enum Mode: String, Codable, Sendable {
+        case overwrite
+        case newVault
+    }
+
+    let sourceVaultId: UUID
+    let targetVaultId: UUID
+    let mode: Mode
+    let name: String
 }

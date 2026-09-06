@@ -1,3 +1,4 @@
+import DahliaRuntimeSupport
 import Foundation
 import GRDB
 import Observation
@@ -6,7 +7,17 @@ import Observation
 @MainActor
 final class BackupSettingsViewModel {
     private(set) var generations: [BackupGeneration] = []
-    private(set) var preflightItems: [BackupPreflightItem] = []
+    private(set) var vaults: [VaultRecord] = []
+    var selectedVaultId: UUID?
+    private(set) var allPreflightItems: [BackupPreflightItem] = []
+    var preflightItems: [BackupPreflightItem] { allPreflightItems.filter { $0.vaultId == selectedVaultId } }
+    private(set) var hasWorkInProgress = false
+
+    func canOverwrite(_ metadata: BackupMetadata) -> Bool {
+        vaults.contains { $0.id == metadata.vaultId && $0.accountConnectionId == nil && $0.syncRole == nil && $0.syncConfirmedConnectionId == nil }
+            && !allPreflightItems.contains { $0.vaultId == metadata.vaultId }
+    }
+
     private(set) var isBusy = false
     var statusMessage: String?
     var errorMessage: String?
@@ -14,9 +25,9 @@ final class BackupSettingsViewModel {
     private let dbQueue: DatabaseQueue?
     private let service: BackupService?
 
-    init(dbQueue: DatabaseQueue?) {
+    init(dbQueue: DatabaseQueue?, applicationSupportURL: URL = DahliaApplicationSupport.currentDirectoryURL) {
         self.dbQueue = dbQueue
-        service = dbQueue.map { BackupService(dbQueue: $0) }
+        service = dbQueue.map { BackupService(dbQueue: $0, applicationSupportURL: applicationSupportURL) }
     }
 
     func refresh() async {
@@ -25,8 +36,8 @@ final class BackupSettingsViewModel {
             switch AppDelegate.backupRestoreOutcome {
             case .none:
                 break
-            case let .restored(metadata):
-                statusMessage = L10n.backupRestored(schemaVersion: metadata.schemaVersion)
+            case .restored:
+                statusMessage = L10n.backupRestored
             case let .failed(message):
                 errorMessage = L10n.backupRestoreFailed(message)
             }
@@ -35,15 +46,19 @@ final class BackupSettingsViewModel {
             async let generations = service.listGenerations()
             async let preflightItems = service.preflightItems()
             self.generations = try await generations
-            self.preflightItems = try await preflightItems
+            self.allPreflightItems = try await preflightItems
+            hasWorkInProgress = try await service.hasProcessingAudio() || allPreflightItems.contains(where: \.isWorkInProgress)
+            vaults = try await service.listVaults()
+            if !vaults.contains(where: { $0.id == selectedVaultId }) { selectedVaultId = vaults.first?.id }
         } catch {
             errorMessage = error.localizedDescription
         }
     }
 
     func createBackup() async {
+        guard let selectedVaultId else { return }
         await perform {
-            _ = try await requireService().createGeneration()
+            _ = try await requireService().createGeneration(vaultId: selectedVaultId)
             statusMessage = L10n.backupCreated
         }
     }
@@ -82,7 +97,7 @@ final class BackupSettingsViewModel {
         }
     }
 
-    func prepareRestore(_ generation: BackupGeneration) async -> Bool {
+    func prepareRestore(_ generation: BackupGeneration, request: VaultBackupRestoreRequest) async -> Bool {
         guard AppDelegate.beginBackupRestorePreparation() else {
             errorMessage = BackupServiceError.restoreAlreadyPending.localizedDescription
             return false
@@ -94,7 +109,7 @@ final class BackupSettingsViewModel {
             }
         }
         await perform(refreshAfterward: false) {
-            _ = try await requireService().prepareRestore(from: generation)
+            _ = try await requireService().prepareRestore(from: generation, request: request)
             prepared = true
         }
         return prepared
