@@ -1553,6 +1553,32 @@ enum L10n { // swiftlint:disable:this type_body_length
         localized: "Open Privacy & Security in System Settings and choose the relevant permission manually.",
         bundle: bundle
     ) }
+    static var backupDeselectAll: String { String(localized: "Deselect All Vaults", bundle: bundle) }
+    static var backupSkipVault: String { String(localized: "Do Not Restore", bundle: bundle) }
+    static func backupVaultCount(_ count: Int) -> String {
+        String(format: String(localized: "Vaults: %d", bundle: bundle), count)
+    }
+
+    static var vaultBackup: String { String(localized: "Vault Backup", bundle: bundle) }
+    static var vaultBackupDescription: String { String(
+        localized: "Back up the selected vaults together, including screenshots. Audio, external files, and account credentials are excluded.",
+        bundle: bundle
+    ) }
+    static var backupRestoreMode: String { String(localized: "Restore Method", bundle: bundle) }
+    static var backupRestoreAsNewVault: String { String(localized: "Restore as a New Local Vault", bundle: bundle) }
+    static var backupOverwriteOriginalVault: String { String(localized: "Overwrite the Original Local Vault", bundle: bundle) }
+    static var backupRestoreTargetUnavailable: String { String(
+        localized: "Overwrite requires the original local vault with no unprocessed recordings. Synced vaults cannot be overwritten.",
+        bundle: bundle
+    ) }
+    static var vaultBackupRestoreDescription: String { String(
+        localized: "Restore selected vaults after a restart. Back up and restore each vault independently; failed vaults stay unchanged. Audio and external files are excluded.",
+        bundle: bundle
+    ) }
+    static func restoredVaultName(_ name: String) -> String {
+        String(format: String(localized: "%@ (Restored)", bundle: bundle), name)
+    }
+
     static var backups: String { String(localized: "Backups", bundle: bundle) }
     static var databaseBackup: String { String(localized: "Database Backup", bundle: bundle) }
     static var databaseBackupDescription: String { String(
@@ -1566,13 +1592,13 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var deleteBackup: String { String(localized: "Delete Backup", bundle: bundle) }
     static var backupGenerations: String { String(localized: "Backup Generations", bundle: bundle) }
     static var noBackups: String { String(localized: "No Backups", bundle: bundle) }
-    static var noBackupsDescription: String { String(localized: "Create a backup to preserve the current database.", bundle: bundle) }
+    static var noBackupsDescription: String { String(localized: "Create a backup to preserve the selected vault.", bundle: bundle) }
     static var backupCreated: String { String(localized: "Backup created.", bundle: bundle) }
     static var backupImported: String { String(localized: "Backup imported.", bundle: bundle) }
     static var backupExported: String { String(localized: "Backup exported.", bundle: bundle) }
     static var backupDeleted: String { String(localized: "Backup deleted.", bundle: bundle) }
     static var selectedBackupInvalid: String { String(localized: "The selected file is not a valid Dahlia backup.", bundle: bundle) }
-    static var backupRestoreAlreadyPending: String { String(localized: "Another database restore is already pending.", bundle: bundle) }
+    static var backupRestoreAlreadyPending: String { String(localized: "Another vault restore is already pending.", bundle: bundle) }
     static var backupGenerationMissing: String { String(localized: "The selected backup generation no longer exists.", bundle: bundle) }
     static var untitledMeeting: String { String(localized: "Untitled Meeting", bundle: bundle) }
 
@@ -1603,12 +1629,21 @@ enum L10n { // swiftlint:disable:this type_body_length
         String(format: String(localized: "The backup failed its integrity check: %@", bundle: bundle), message)
     }
 
-    static func backupRestored(schemaVersion: Int) -> String {
-        String(format: String(localized: "Database restored from schema v%lld.", bundle: bundle), Int64(schemaVersion))
+    static func backupVaultRestored(_ name: String, sourceVaultId: UUID) -> String {
+        String(format: String(localized: "%@ (Source: %@): Restored.", bundle: bundle), name, String(sourceVaultId.uuidString.suffix(8)))
+    }
+
+    static func backupVaultRestoreFailed(_ name: String, sourceVaultId: UUID, reason: String) -> String {
+        String(
+            format: String(localized: "%@ (Source: %@): Restore failed — %@", bundle: bundle),
+            name,
+            String(sourceVaultId.uuidString.suffix(8)),
+            reason
+        )
     }
 
     static func backupRestoreFailed(_ reason: String) -> String {
-        String(format: String(localized: "Could not restore the database: %@", bundle: bundle), reason)
+        String(format: String(localized: "Could not restore the vault: %@", bundle: bundle), reason)
     }
 
     static var invalidBackup: String { String(localized: "Invalid backup", bundle: bundle) }

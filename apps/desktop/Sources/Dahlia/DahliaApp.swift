@@ -405,10 +405,8 @@ struct DahliaApp: App {
             await reconcileVaultsAfterAccountChange()
         }
         self.meetingSyncWorker = meetingSyncWorker
-        await meetingSyncWorker.start(restored: {
-            if case .restored = AppDelegate.backupRestoreOutcome { return true }
-            return false
-        }())
+        // Backup restore only changes local vaults; existing canonical sync resumes normally.
+        await meetingSyncWorker.start()
         do {
             try tokenBroker.start()
         } catch {

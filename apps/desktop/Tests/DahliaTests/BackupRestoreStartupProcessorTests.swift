@@ -49,9 +49,7 @@ import GRDB
 
             let outcome = BackupRestoreStartupProcessor.applyPendingRestore(
                 applicationSupportURL: rootURL,
-                databaseURL: databaseURL,
-                audioRootURL: rootURL.appending(path: "BatchAudio"),
-                audioCleanup: { _, _ in }
+                databaseURL: databaseURL
             )
             guard case .failed = outcome else {
                 Issue.record("Expected restore failure, got \(outcome)")
@@ -84,9 +82,7 @@ import GRDB
 
             let outcome = BackupRestoreStartupProcessor.applyPendingRestore(
                 applicationSupportURL: rootURL,
-                databaseURL: databaseURL,
-                audioRootURL: rootURL.appending(path: "BatchAudio"),
-                audioCleanup: { _, _ in }
+                databaseURL: databaseURL
             )
 
             #expect(outcome == .none)
@@ -110,9 +106,7 @@ import GRDB
 
             let outcome = BackupRestoreStartupProcessor.applyPendingRestore(
                 applicationSupportURL: rootURL,
-                databaseURL: rootURL.appending(path: "dahlia.sqlite"),
-                audioRootURL: rootURL.appending(path: "BatchAudio"),
-                audioCleanup: { _, _ in }
+                databaseURL: rootURL.appending(path: "dahlia.sqlite")
             )
 
             guard case .failed = outcome else {
@@ -145,9 +139,7 @@ import GRDB
 
             let outcome = BackupRestoreStartupProcessor.applyPendingRestore(
                 applicationSupportURL: rootURL,
-                databaseURL: databaseURL,
-                audioRootURL: rootURL.appending(path: "BatchAudio"),
-                audioCleanup: { _, _ in }
+                databaseURL: databaseURL
             )
 
             guard case .failed = outcome else {
@@ -157,79 +149,6 @@ import GRDB
             let reopened = try AppDatabaseManager(path: databaseURL.path)
             let names = try reopened.dbQueue.read { db in try String.fetchAll(db, sql: "SELECT name FROM vaults") }
             #expect(names == ["Current"])
-        }
-
-        @Test
-        // swiftlint:disable:next function_body_length
-        func appliesVerifiedStagingDatabaseBeforeOpenAndRemovesAudio() throws {
-            let rootURL = FileManager.default.temporaryDirectory
-                .appending(path: "dahlia-restore-startup-\(UUID.v7().uuidString)", directoryHint: .isDirectory)
-            defer { try? FileManager.default.removeItem(at: rootURL) }
-            let databaseURL = rootURL.appending(path: "dahlia.sqlite")
-            let restoreDirectoryURL = rootURL.appending(path: BackupService.restoreDirectoryName, directoryHint: .isDirectory)
-            let stagedURL = restoreDirectoryURL.appending(path: "staged.sqlite")
-            let audioURL = rootURL.appending(path: "BatchAudio", directoryHint: .isDirectory)
-            try FileManager.default.createDirectory(at: restoreDirectoryURL, withIntermediateDirectories: true)
-            try FileManager.default.createDirectory(at: audioURL, withIntermediateDirectories: true)
-            try Data("audio".utf8).write(to: audioURL.appending(path: "orphan.caf"))
-
-            let current = try AppDatabaseManager(path: databaseURL.path)
-            try current.dbQueue.write { db in
-                try makeVault(name: "Current", path: rootURL.appending(path: "CurrentVault").path).insert(db)
-            }
-            try current.close()
-
-            let staged = try AppDatabaseManager(path: stagedURL.path)
-            try staged.dbQueue.write { db in
-                try makeVault(name: "Restored", path: rootURL.appending(path: "RestoredVault").path).insert(db)
-            }
-            try staged.close()
-
-            let metadata = BackupMetadata(
-                formatVersion: BackupMetadata.currentFormatVersion,
-                generationId: .v7(),
-                createdAt: .now,
-                schemaVersion: AppDatabaseManager.currentSchemaVersion,
-                migrationIdentifier: AppDatabaseManager.currentMigrationIdentifier,
-                appVersion: "1.2.3",
-                appBuild: "45",
-                reason: .manual
-            )
-            let marker = try PendingDatabaseRestore(
-                stagedFilename: stagedURL.lastPathComponent,
-                sha256: BackupService.sha256(of: stagedURL),
-                requestedAt: .now,
-                sourceMetadata: metadata
-            )
-            let encoder = JSONEncoder()
-            encoder.dateEncodingStrategy = .iso8601
-            try encoder.encode(marker).write(
-                to: restoreDirectoryURL.appending(path: BackupService.pendingRestoreFilename),
-                options: [.atomic]
-            )
-
-            let outcome = BackupRestoreStartupProcessor.applyPendingRestore(
-                applicationSupportURL: rootURL,
-                databaseURL: databaseURL,
-                audioRootURL: audioURL,
-                audioCleanup: { url, fileManager in try? fileManager.removeItem(at: url) }
-            )
-
-            guard case let .restored(restoredMetadata) = outcome else {
-                Issue.record("Expected restore success, got \(outcome)")
-                return
-            }
-            #expect(restoredMetadata.generationId == metadata.generationId)
-            #expect(restoredMetadata.migrationIdentifier == metadata.migrationIdentifier)
-            let restored = try AppDatabaseManager(path: databaseURL.path)
-            let vaultNames = try restored.dbQueue.read { db in
-                try String.fetchAll(db, sql: "SELECT name FROM vaults")
-            }
-            #expect(vaultNames == ["Restored"])
-            #expect(!FileManager.default.fileExists(atPath: audioURL.path))
-            #expect(!FileManager.default.fileExists(
-                atPath: BackupService.pendingRestoreURL(applicationSupportURL: rootURL).path
-            ))
         }
 
         private func makeVault(name: String, path: String) -> VaultRecord {
@@ -245,16 +164,17 @@ import GRDB
                 migrationIdentifier: AppDatabaseManager.currentMigrationIdentifier,
                 appVersion: "1.2.3",
                 appBuild: "45",
-                reason: .manual
+                reason: .manual, vaults: [BackupVault(id: .v7(), name: "Test")]
             )
             let marker = try PendingDatabaseRestore(
                 stagedFilename: stagedURL.lastPathComponent,
                 sha256: BackupService.sha256(of: stagedURL),
                 requestedAt: .now,
-                sourceMetadata: metadata
+                sourceMetadata: metadata,
+                requests: [VaultBackupRestoreRequest(sourceVaultId: metadata.vaults[0].id, targetVaultId: .v7(), mode: .newVault, name: "Restored")]
             )
             let encoder = JSONEncoder()
-            encoder.dateEncodingStrategy = .iso8601
+            encoder.dateEncodingStrategy = .deferredToDate
             try encoder.encode(marker).write(
                 to: restoreDirectoryURL.appending(path: BackupService.pendingRestoreFilename),
                 options: [.atomic]

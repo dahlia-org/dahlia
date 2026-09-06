@@ -233,12 +233,11 @@ actor SyncWorker {
         self.vaultsDidChange = vaultsDidChange
     }
 
-    func start(restored: Bool) async {
+    func start() async {
         guard drainTask == nil else { return }
         drainTask = Task { [weak self] in
             guard let self else { return }
             do {
-                if restored { try await SyncInitialSnapshotBuilder.prepareRestore(dbQueue: dbQueue) }
                 try await retryAuthorizationBlocks()
                 await restartEventStreams()
                 try await pullRemoteChanges()

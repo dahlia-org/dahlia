@@ -37,11 +37,35 @@ struct BackupSettingsView: View {
 
             Section {
                 HStack {
+                    Button(L10n.selectAll) { model.selectedVaultIds = Set(model.vaults.map(\.id)) }
+                        .buttonStyle(.dahlia())
+                    Button(L10n.backupDeselectAll) { model.selectedVaultIds.removeAll() }
+                        .buttonStyle(.dahlia())
+                }
+                .disabled(model.isBusy || model.vaults.isEmpty)
+                ForEach(model.vaults) { vault in
+                    Toggle(isOn: Binding(
+                        get: { model.selectedVaultIds.contains(vault.id) },
+                        set: { selected in
+                            if selected {
+                                model.selectedVaultIds.insert(vault.id)
+                            } else {
+                                model.selectedVaultIds.remove(vault.id)
+                            }
+                        }
+                    )) {
+                        Text(vault.name)
+                        Text(vault.id.uuidString.suffix(8)).font(.caption).foregroundStyle(.secondary)
+                    }
+                    .toggleStyle(.checkbox)
+                    .disabled(model.isBusy)
+                }
+                HStack {
                     Button(L10n.createBackup) {
                         Task { await model.createBackup() }
                     }
                     .buttonStyle(.dahlia(.primary))
-                    .disabled(dbQueue == nil || model.isBusy || !model.preflightItems.isEmpty)
+                    .disabled(dbQueue == nil || model.selectedVaultIds.isEmpty || model.isBusy || !model.preflightItems.isEmpty)
 
                     Button(L10n.importBackup) {
                         importBackup()
@@ -62,9 +86,9 @@ struct BackupSettingsView: View {
                     SettingsStatusMessage(text: errorMessage, systemImage: "exclamationmark.triangle", tint: .orange)
                 }
             } header: {
-                Text(L10n.databaseBackup)
+                Text(L10n.vaultBackup)
             } footer: {
-                Text(L10n.databaseBackupDescription)
+                Text(L10n.vaultBackupDescription)
             }
 
             Section(L10n.backupGenerations) {
@@ -83,6 +107,7 @@ struct BackupSettingsView: View {
         }
         .formStyle(.grouped)
         .task {
+            model.selectedVaultIds = Set([settings.currentVault?.id].compactMap(\.self))
             while !Task.isCancelled {
                 if !model.isBusy {
                     await model.refresh()
@@ -107,27 +132,78 @@ struct BackupSettingsView: View {
         } message: {
             Text(L10n.deleteBackupDescription)
         }
-        .confirmationDialog(
-            L10n.restoreBackupConfirmation,
-            isPresented: Binding(
-                get: { pendingRestoreGeneration != nil },
-                set: { if !$0 { pendingRestoreGeneration = nil } }
-            ),
-            titleVisibility: .visible
-        ) {
-            Button(L10n.restoreBackup, role: .destructive) {
-                guard let generation = pendingRestoreGeneration,
-                      !captionViewModel.isListening else { return }
-                pendingRestoreGeneration = nil
-                Task {
-                    if await model.prepareRestore(generation) {
-                        BackupRelaunchCoordinator.relaunchAfterTermination()
+        .overlay {
+            if let generation = pendingRestoreGeneration {
+                restoreDialog(generation)
+            }
+        }
+    }
+
+    private func restoreDialog(_ generation: BackupGeneration) -> some View {
+        ZStack {
+            Color.black.opacity(0.3)
+                .ignoresSafeArea()
+                .onTapGesture { if !model.isBusy { pendingRestoreGeneration = nil } }
+            VStack(alignment: .leading, spacing: 16) {
+                Text(L10n.restoreBackupConfirmation).font(.headline)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        ForEach($model.restoreSelections) { $selection in
+                            restoreRow($selection)
+                            Divider()
+                        }
                     }
                 }
+                .frame(maxHeight: 320)
+                Text(L10n.vaultBackupRestoreDescription).font(.callout).foregroundStyle(.secondary)
+                if let error = model.errorMessage {
+                    Text(error).foregroundStyle(.red)
+                }
+                HStack {
+                    Spacer()
+                    Button(L10n.cancel) { pendingRestoreGeneration = nil }
+                        .buttonStyle(.dahlia())
+                        .keyboardShortcut(.cancelAction)
+                    Button(L10n.restoreBackup) {
+                        Task {
+                            guard captionViewModel.canSwitchVault else { return }
+                            if await model.prepareRestore(generation) {
+                                BackupRelaunchCoordinator.relaunchAfterTermination()
+                            }
+                        }
+                    }
+                    .buttonStyle(.dahlia(.primary))
+                    .disabled(!captionViewModel.canSwitchVault || !model.canRestore)
+                }
+                if model.isBusy { ProgressView().controlSize(.small) }
             }
-            Button(L10n.cancel, role: .cancel) { pendingRestoreGeneration = nil }
-        } message: {
-            Text(L10n.restoreBackupDescription)
+            .disabled(model.isBusy)
+            .padding(24)
+            .frame(maxWidth: 520)
+            .background(Color(nsColor: .windowBackgroundColor))
+            .clipShape(.rect(cornerRadius: DahliaDesign.Card.regularCornerRadius))
+            .shadow(radius: 20)
+        }
+    }
+
+    private func restoreRow(_ selection: Binding<BackupRestoreSelection>) -> some View {
+        let vault = selection.wrappedValue.vault
+        let canOverwrite = model.canOverwrite(vaultId: vault.id)
+        return VStack(alignment: .leading, spacing: 8) {
+            Text(vault.name).font(.headline)
+            Text(vault.id.uuidString.suffix(8)).font(.caption).foregroundStyle(.secondary)
+            Picker(L10n.backupRestoreMode, selection: selection.mode) {
+                Text(L10n.backupSkipVault).tag(nil as VaultBackupRestoreRequest.Mode?)
+                Text(L10n.backupOverwriteOriginalVault).tag(VaultBackupRestoreRequest.Mode.overwrite as VaultBackupRestoreRequest.Mode?)
+                    .disabled(!canOverwrite)
+                Text(L10n.backupRestoreAsNewVault).tag(VaultBackupRestoreRequest.Mode.newVault as VaultBackupRestoreRequest.Mode?)
+            }
+            if selection.wrappedValue.mode == .newVault {
+                TextField(L10n.vaultName, text: selection.name)
+            }
+            if !canOverwrite {
+                Text(L10n.backupRestoreTargetUnavailable).font(.caption).foregroundStyle(.secondary)
+            }
         }
     }
 
@@ -186,20 +262,26 @@ struct BackupSettingsView: View {
                 Button(L10n.exportBackup) { exportBackup(generation) }
                     .buttonStyle(.dahlia())
                     .disabled(!generation.isValid || model.isBusy)
-                Button(L10n.restoreBackup) { pendingRestoreGeneration = generation }
-                    .buttonStyle(.dahlia())
-                    .disabled(
-                        !generation.isValid
-                            || model.isBusy
-                            || captionViewModel.isListening
-                            || !model.preflightItems.isEmpty
-                    )
+                Button(L10n.restoreBackup) {
+                    guard let metadata = generation.metadata else { return }
+                    model.beginRestore(metadata)
+                    pendingRestoreGeneration = generation
+                }
+                .buttonStyle(.dahlia())
+                .disabled(
+                    !generation.isValid
+                        || model.isBusy
+                        || !captionViewModel.canSwitchVault
+                        || model.hasWorkInProgress
+                )
                 Button(L10n.delete, role: .destructive) { pendingDeleteGeneration = generation }
                     .buttonStyle(.dahlia(.destructive))
                     .disabled(model.isBusy)
             }
         } label: {
             if let metadata = generation.metadata {
+                Text(L10n.backupVaultCount(metadata.vaults.count))
+                Text(metadata.vaults.map(\.name).joined(separator: ", ")).lineLimit(2)
                 Text(metadata.createdAt.formatted(date: .abbreviated, time: .standard))
                 Text(L10n.backupGenerationDetail(
                     schemaVersion: metadata.schemaVersion,
