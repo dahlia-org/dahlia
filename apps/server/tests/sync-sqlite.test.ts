@@ -51,8 +51,13 @@ describe("SQLite canonical sync", () => {
     const detail = async () => (await send(`vaults/${vaultId}/meetings/${meetingId}`)).json();
     const capabilities = await send("capabilities");
     expect(capabilities.status).toBe(200);
-    expect(await capabilities.json()).toEqual({ version: 1, meetingEvents: 1 });
+    expect(await capabilities.json()).toEqual({ syncVersion: 1, meetingEventsVersion: 1 });
     expect((await send("sync-content")).status).toBe(404);
+    const availability = vi.spyOn(store.sync, "isAvailable").mockResolvedValueOnce(false);
+    const unsupported = await send("capabilities");
+    expect(unsupported.status).toBe(200);
+    expect(await unsupported.json()).toEqual({});
+    availability.mockRestore();
     const session = freshId();
     expect((await write(event("recording_ended", session, new Date(now.getTime() + 60000)))).status).toBe(200);
     expect((await write(event("recording_started", session, now))).status).toBe(200);
