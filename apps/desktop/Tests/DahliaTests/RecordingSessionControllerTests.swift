@@ -611,6 +611,78 @@
     @MainActor
     struct RecordingMeetingSyncObservationTests {
         @Test(arguments: [false, true])
+        func reopenedServerWorkingCopyRecordsAndPersistsWithoutSettings(expiredAuthentication: Bool) async throws {
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let path = directory.appendingPathComponent("offline.sqlite").path
+            let connection = DahliaAccountConnectionRecord(id: .v7(), origin: "https://offline.example.test", clientID: "test", createdAt: .now)
+            let vault: VaultRecord = {
+                var value = VaultRecord(id: .v7(), path: nil, name: "Offline", createdAt: .now, lastOpenedAt: .now)
+                value.accountConnectionId = connection.id
+                value.syncConfirmedConnectionId = connection.id
+                return value
+            }()
+            do {
+                let initial = try AppDatabaseManager(path: path)
+                try await initial.dbQueue.write { db in
+                    try connection.insert(db)
+                    try vault.insert(db)
+                }
+            }
+            let database = try AppDatabaseManager(path: path)
+            let settings = ServerAccountSettingsModel(client: SyncAPIClient(session: .shared, tokenProvider: { _, _ in
+                if expiredAuthentication { throw SyncHTTPError(status: 401, body: Data()) }
+                throw URLError(.notConnectedToInternet)
+            }), initialValues: { .init(outputLanguage: .ja, analysisLanguages: .init(scope: .all, identifiers: [])) })
+            settings.updateConnections([.init(record: connection, account: .init(id: "user", name: nil, email: nil), isCloud: false)])
+            await settings.refresh(connectionID: connection.id)?.value
+            #expect(settings.state(for: connection.id).settings == nil)
+            let persistence = try await MeetingPersistenceService.createNew(
+                store: TranscriptStore(), dbQueue: database.dbQueue, vaultId: vault.id, projectId: nil, initialName: "Offline recording"
+            )
+            let probe = RecordingRuntimeProbe()
+            let controller = RecordingSessionController(
+                captureFactory: FakeAudioCaptureFactory(probe: probe), recognitionFactory: FakeRecognitionFactory(probe: probe),
+                batchRecordingFactory: FakeBatchFactory(probe: probe)
+            )
+            try await controller.prepare(.init(
+                sessionId: persistence.recordingSessionId, startedAt: .now,
+                plan: .init(finalMode: .realtime, liveSubtitlesEnabled: false), locale: Locale(identifier: "ja_JP"),
+                sources: [.init(source: .system)], managedAudioRootURL: directory
+            ), onEvent: { event in try? await persistence.persist(event) }, onRuntimeFailure: { _, _, _ in })
+            _ = try await controller.startPrepared()
+            settings.networkAvailabilityChanged(false)
+            let segment = TranscriptSegment(
+                sessionId: persistence.recordingSessionId,
+                startTime: .now,
+                text: "Offline transcript",
+                isConfirmed: true,
+                audioSource: "system"
+            )
+            try await persistence.persist(.finalized(segment))
+            let files = try ScreenshotFileStore(directory: directory.appendingPathComponent("files"))
+            let provider = ScreenshotContentProvider(cache: files, tokenProvider: { _, _ in throw URLError(.notConnectedToInternet) })
+            let screenshot = MeetingScreenshotRecord(
+                id: .v7(),
+                meetingId: persistence.meetingId,
+                sessionId: persistence.recordingSessionId,
+                capturedAt: .now,
+                imageData: Data([1, 2, 3]),
+                mimeType: "image/png"
+            )
+            try await provider.persistCapture(screenshot, dbQueue: database.dbQueue)
+            _ = try await controller.stop()
+            _ = await persistence.stop()
+            await controller.completeStop()
+            let reopened = try AppDatabaseManager(path: path)
+            #expect(try await reopened.dbQueue.read { db in try fetchTranscriptContent(id: segment.id, in: db)?.text } == "Offline transcript")
+            #expect(try await provider.content(id: screenshot.id, dbQueue: reopened.dbQueue).data == Data([1, 2, 3]))
+            #expect(try await reopened.dbQueue.read { db in try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_operations") ?? 0 } > 0)
+            #expect(await controller.snapshot() == nil)
+        }
+
+        @Test(arguments: [false, true])
         func recordingCreatedMeetingObservesSyncOnlyAfterSuccessfulStart(failsStart: Bool) async throws {
             let database = try AppDatabaseManager(path: ":memory:")
             let connection = DahliaAccountConnectionRecord(id: .v7(), origin: "https://sync.example.test", clientID: "test", createdAt: .now)

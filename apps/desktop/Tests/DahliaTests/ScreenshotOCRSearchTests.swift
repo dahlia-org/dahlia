@@ -9,6 +9,40 @@ import GRDB
     // swiftlint:disable:next type_body_length
     struct ScreenshotOCRSearchTests {
         @Test
+        func discardsInFlightAnalysisAfterVaultMovesToServer() async throws {
+            let analyzer = ConcurrentScreenshotAnalyzer()
+            let database = try makeDatabase(screenshotAnalyzer: analyzer)
+            let connection = DahliaAccountConnectionRecord(id: .v7(), origin: "https://server.example.test", clientID: "test", createdAt: .now)
+            let vault = makeVault()
+            let meeting = makeMeeting(vaultID: vault.id)
+            let screenshot = MeetingScreenshotRecord(
+                id: .v7(),
+                meetingId: meeting.id,
+                sessionId: nil,
+                capturedAt: .now,
+                imageData: Data([1]),
+                mimeType: "image/png"
+            )
+            try await database.dbQueue.write { db in
+                try vault.insert(db)
+                try meeting.insert(db)
+                try screenshot.insertLegacyForTesting(db)
+                try connection.insert(db)
+            }
+            let drainTask = Task { await database.searchIndexer.drain() }
+            let started = await pollUntil { await analyzer.callSizes.count == 1 }
+            try await database.dbQueue.write { db in
+                try db.execute(sql: "UPDATE vaults SET accountConnectionId = ? WHERE id = ?", arguments: [connection.id, vault.id])
+            }
+            await analyzer.releaseFirstWave()
+            await drainTask.value
+            #expect(started)
+            #expect(try await database.dbQueue.read { db in
+                try MeetingScreenshotRecord.fetchOne(db, key: screenshot.id)?.ocrText
+            } == nil)
+        }
+
+        @Test
         func storesOCRAndReturnsTheImageWithoutMergingItsMeeting() async throws {
             let analyzer = StubScreenshotAnalyzer(text: "画像だけの固有検索語")
             let database = try AppDatabaseManager(

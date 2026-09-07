@@ -88,6 +88,220 @@
             }
         }
 
+        @Test(arguments: ["file", "vault", "meeting", "meeting_file", "transcript", "other-file"])
+        func recordingFileFetchProtectsOnlyRelatedPendingWrites(pending: String) async throws {
+            let fixture = try textFixture()
+            let fileId = UUID.v7()
+            try await fixture.queue.write { db in
+                try FileRecord(
+                    id: fileId,
+                    vaultId: fixture.vaultId,
+                    size: 0,
+                    contentType: "image/png",
+                    checksum: "SHA-256:" + String(repeating: "a", count: 64),
+                    name: "image",
+                    metadata: .init(source: .screenshot),
+                    createdAt: .now,
+                    updatedAt: .now
+                ).insert(db)
+                try MeetingFileRecord(id: fileId, meetingId: fixture.meetingId, fileId: fileId, capturedAt: .now, createdAt: .now).insert(db)
+                try FileTextBodyRecord(fileId: fileId, ocrText: "local", caption: "local").save(db)
+                try db.execute(sql: "INSERT INTO sync_entity_state VALUES (?, 'file', ?, 1)", arguments: [fixture.vaultId, fileId])
+                try db.execute(
+                    sql: "INSERT INTO sync_content_state(vaultId, entity, entityId, residentRevision, complete) VALUES (?, 'file', ?, 1, 1)",
+                    arguments: [fixture.vaultId, fileId]
+                )
+                let entity: SyncEntity = pending == "other-file" ? .file : try #require(SyncEntity(rawValue: pending))
+                let id = switch pending {
+                case "vault": fixture.vaultId
+                case "meeting", "transcript": fixture.meetingId
+                case "other-file": UUID.v7()
+                default: fileId
+                }
+                // An immutable queued deletion is enough to exercise the entity boundary.
+                try SyncTransactionRecorder.record(
+                    vaultId: fixture.vaultId,
+                    operations: [.init(entity: entity, action: .delete, entityId: id)],
+                    in: db
+                )
+                let expected = try #require(try TextContentStore.source(entity: .file, id: fileId, in: db))
+                #expect(try TextContentStore.mayFetch(expected, entity: .file, id: fileId, in: db) == ["transcript", "other-file"].contains(pending))
+                #expect(try !TextContentStore.mayReplace(expected, entity: .file, id: fileId, in: db))
+                try db.execute(sql: "UPDATE files SET checksum = ? WHERE id = ?", arguments: ["SHA-256:" + String(repeating: "b", count: 64), fileId])
+                #expect(try !TextContentStore.mayFetch(expected, entity: .file, id: fileId, in: db))
+            }
+        }
+
+        @Test
+        func recordingFileAnalysisUsesSyncedRevisionWithoutAdvancingCursor() async throws {
+            let fixture = try textFixture()
+            let fileId = UUID.v7()
+            let sessionId = UUID.v7()
+            let checksum = "SHA-256:" + String(repeating: "a", count: 64)
+            let header: [String: Any] = [
+                "id": fileId.uuidString, "vaultId": fixture.vaultId.uuidString, "revision": 2,
+                "contentOmitted": true, "contentPresent": true, "contentCount": 2,
+                "uri": "/Volumes/test/app/files/original", "offset": 0, "size": 3, "content_type": "image/png",
+                "checksum": checksum,
+                "name": "image", "metadata": ["source": "screenshot"],
+                "createdAt": "2026-01-01T00:00:00.000Z", "updatedAt": "2026-01-01T00:00:01.000Z",
+            ]
+            let headerData = try JSONSerialization.data(withJSONObject: header)
+            var digest = TextContentDigest()
+            digest.add("")
+            digest.add("Server caption during recording")
+            let manifest: [String: Any] = [
+                "version": 1, "entity": "file", "entityId": fileId.uuidString, "revision": 2,
+                "present": true, "count": 2, "byteCount": digest.byteCount, "sha256": digest.digestHex(),
+            ]
+            let manifestData = try JSONSerialization.data(withJSONObject: manifest)
+            let bodyData = try JSONSerialization.data(withJSONObject: manifest.merging([
+                "record": ["ocr_text": "", "caption": "Server caption during recording"],
+            ]) { _, new in new })
+            let connectionId = try await fixture.queue.write { db -> UUID in
+                let connectionId = try #require(try VaultRecord.fetchOne(db, key: fixture.vaultId)?.accountConnectionId)
+                let reference = try ScreenshotRemoteReference(
+                    origin: fixture.origin,
+                    accountConnectionId: connectionId,
+                    fileId: fileId,
+                    contentHash: String(repeating: "a", count: 64)
+                ).jsonString()
+                try FileRecord(
+                    id: fileId,
+                    vaultId: fixture.vaultId,
+                    size: 3,
+                    contentType: "image/png",
+                    checksum: checksum,
+                    name: "image",
+                    metadata: .init(source: .screenshot),
+                    createdAt: .now,
+                    updatedAt: .now,
+                    localReference: reference,
+                    remoteReference: reference
+                ).insert(db)
+                try MeetingFileRecord(id: fileId, meetingId: fixture.meetingId, fileId: fileId, capturedAt: .now, createdAt: .now).insert(db)
+                try FileTextBodyRecord(fileId: fileId, ocrText: nil, caption: nil).save(db)
+                try db.execute(sql: "INSERT INTO sync_entity_state VALUES (?, 'file', ?, 1)", arguments: [fixture.vaultId, fileId])
+                try db.execute(
+                    sql: "INSERT INTO sync_content_state(vaultId, entity, entityId, residentRevision, complete) VALUES (?, 'file', ?, 1, 1)",
+                    arguments: [fixture.vaultId, fileId]
+                )
+                try db.execute(sql: "UPDATE vaults SET syncPullCursor = 'before'")
+                try RecordingSessionRecord(
+                    id: sessionId,
+                    meetingId: fixture.meetingId,
+                    startedAt: .now,
+                    endedAt: nil,
+                    duration: nil,
+                    offsetSeconds: 0,
+                    createdAt: .now,
+                    updatedAt: .now
+                ).insert(db)
+                try db.execute(
+                    sql: "INSERT INTO transcript_segment_bodies(segmentId, text) VALUES (?, 'local recording')",
+                    arguments: [fixture.segmentId]
+                )
+                try db.execute(sql: "UPDATE sync_content_state SET complete = 1, residentRevision = 3, contentCount = 1 WHERE entity = 'transcript'")
+                let patch = SyncOperationDraft(entity: .transcript, action: .patch, entityId: fixture.meetingId)
+                let segment = try #require(try fetchTranscriptContent(id: fixture.segmentId, in: db))
+                try SyncTransactionRecorder.record(
+                    vaultId: fixture.vaultId,
+                    operations: [patch],
+                    transcriptSegments: [patch.id: [.init(segment)]],
+                    in: db
+                )
+                return connectionId
+            }
+            let calls = Mutex<[String]>([])
+            let provider = provider(fixture) { request in
+                calls.withLock { $0.append(request.url!.path) }
+                #expect(!request.url!.path.contains("/api/v1/files/"))
+                #expect(request.url!.query!.contains("revision=2"))
+                return (200, [:], request.url!.query!.contains("manifest") ? manifestData : bodyData)
+            }
+            defer { ImageURLProtocol.remove(origin: fixture.origin) }
+            let viewModel = CaptionViewModel()
+            viewModel.loadMeeting(fixture.meetingId, dbQueue: fixture.queue, projectURL: nil, projectId: nil, vaultURL: nil)
+            defer { viewModel.clearCurrentMeeting() }
+            let pending = await viewModel.screenshotOCRState(id: fileId, contentProvider: provider)
+            #expect(pending == .remote(ocrText: nil, caption: nil, state: .ready))
+            #expect(!pending.isTerminal)
+            let context = try await fixture.queue.read { db in
+                try RemoteChangePolicy.Context(
+                    vaultId: fixture.vaultId,
+                    connectionId: connectionId,
+                    generation: #require(try Int64.fetchOne(db, sql: "SELECT syncMutationGeneration FROM vaults"))
+                )
+            }
+            let record = try SyncJSON.decoder.decode(SyncCanonicalPayload.self, from: headerData)
+            #expect(try await RemoteChangeApplier.applyIncremental(
+                .init(sequence: 2, entity: .file, entityId: fileId, action: "upsert", revision: 2, record: record),
+                context: context, dbQueue: fixture.queue
+            ) == .applied)
+            let completed = await viewModel.screenshotOCRState(id: fileId, refresh: true, contentProvider: provider)
+            #expect(completed == .remote(ocrText: "", caption: "Server caption during recording", state: .ready))
+            #expect(completed.isTerminal)
+            #expect(calls.withLock { $0.count } == 2)
+            try await provider.trim(dbQueue: fixture.queue, capacity: 1)
+            try await fixture.queue.read { db throws in
+                #expect(try String.fetchOne(db, sql: "SELECT syncPullCursor FROM vaults") == "before")
+                #expect(try SyncTransactionQueue.hasPending(vaultId: fixture.vaultId, in: db))
+                #expect(try String.fetchOne(
+                    db,
+                    sql: "SELECT text FROM transcript_segment_bodies WHERE segmentId = ?",
+                    arguments: [fixture.segmentId]
+                ) == "local recording")
+                #expect(try TextContentAccess.fileText(fileId: fileId, in: db)?.caption == "Server caption during recording")
+            }
+            // A stale response must not roll back the synchronized result; it asks sync to read again.
+            #expect(try await RemoteChangeApplier.applyIncremental(
+                .init(sequence: 1, entity: .file, entityId: fileId, action: "upsert", revision: 1, record: record),
+                context: context, dbQueue: fixture.queue
+            ) == .retry)
+            try await fixture.queue.read { db throws in
+                #expect(try Int.fetchOne(db, sql: "SELECT confirmedRevision FROM sync_entity_state WHERE entity = 'file'") == 2)
+                #expect(try TextContentAccess.availability(entity: .file, id: fileId, in: db).state == .ready)
+            }
+        }
+
+        @Test
+        func anotherMeetingsTranscriptCanHydrateWhileRecordingAndSending() async throws {
+            let fixture = try textFixture()
+            let recording = UUID.v7()
+            try await fixture.queue.write { db in
+                try MeetingRecord(id: recording, vaultId: fixture.vaultId, projectId: nil, name: "Recording", createdAt: .now, updatedAt: .now)
+                    .insert(db)
+                try RecordingSessionRecord(
+                    id: .v7(),
+                    meetingId: recording,
+                    startedAt: .now,
+                    endedAt: nil,
+                    duration: nil,
+                    offsetSeconds: 0,
+                    createdAt: .now,
+                    updatedAt: .now
+                ).insert(db)
+                let segment = TranscriptContent(id: .v7(), meetingId: recording, startTime: .now, text: "durable recording", isConfirmed: true)
+                try segment.insert(db)
+                let patch = SyncOperationDraft(entity: .transcript, action: .patch, entityId: recording)
+                try SyncTransactionRecorder.record(
+                    vaultId: fixture.vaultId,
+                    operations: [patch],
+                    transcriptSegments: [patch.id: [.init(segment)]],
+                    in: db
+                )
+            }
+            let provider = provider(fixture) { fixture.response($0) }
+            defer { ImageURLProtocol.remove(origin: fixture.origin) }
+            try await provider.ensure(entity: .transcript, id: fixture.meetingId, dbQueue: fixture.queue)
+            try await provider.trim(dbQueue: fixture.queue, capacity: 1)
+            try await fixture.queue.read { db throws in
+                #expect(try TextContentAccess.transcript(meetingId: fixture.meetingId, in: db).count == 2)
+                #expect(try TextContentAccess.transcript(meetingId: recording, in: db).first?.text == "durable recording")
+                #expect(try SyncTransactionQueue.hasPending(vaultId: fixture.vaultId, in: db))
+            }
+        }
+
         @Test
         func checkedReadersRejectMissingBodiesWithoutCallerPreconditions() throws {
             let (queue, vaultId, meetingId) = try database()

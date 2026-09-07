@@ -9,6 +9,20 @@
 
     @MainActor
     struct ScreenshotContentTests {
+        @Test(arguments: [nil, "", " \n\t"] as [String?])
+        func remoteAnalysisWaitIsBoundedWithoutDiscardingText(caption: String?) {
+            let pending = ScreenshotOCRState.remote(ocrText: "OCR", caption: caption, state: .ready)
+            #expect(!pending.isTerminal)
+            #expect(pending.limitingRemoteWait(to: .seconds(299)) == pending)
+            let timedOut = pending.limitingRemoteWait(to: .seconds(300))
+            #expect(timedOut == .remote(ocrText: "OCR", caption: caption, state: .failed))
+            #expect(timedOut.isTerminal)
+            let complete = ScreenshotOCRState.remote(ocrText: "", caption: "Caption", state: .ready)
+            #expect(complete.isTerminal)
+            #expect(complete.limitingRemoteWait(to: .seconds(300)) == complete)
+            #expect(ScreenshotOCRState.processing.limitingRemoteWait(to: .seconds(300)) == .processing)
+        }
+
         @Test
         func missingSnapshotOriginalDoesNotStarveOtherVaultsAndCanRetry() async throws {
             let missing = try ScreenshotContentFixture()
@@ -55,7 +69,7 @@
         }
 
         @Test(arguments: [false, true])
-        func newlyCapturedServerImageKeepsLocalAnalysisProgress(uploaded: Bool) async throws {
+        func newlyCapturedServerImageUsesRemoteStateOnceUploaded(uploaded: Bool) async throws {
             let fixture = try ScreenshotContentFixture()
             try await fixture.dbQueue.write { db in
                 try db.execute(
@@ -78,26 +92,29 @@
             let viewModel = CaptionViewModel()
             defer { viewModel.clearCurrentMeeting() }
             viewModel.loadMeeting(fixture.meetingId, dbQueue: fixture.dbQueue, projectURL: nil, projectId: nil, vaultURL: nil)
-            #expect(await viewModel.screenshotOCRState(id: fixture.screenshotId) == .pending)
+            let remotePending = ScreenshotOCRState.remote(ocrText: nil, caption: nil, state: .ready)
+            #expect(await viewModel.screenshotOCRState(id: fixture.screenshotId) == (uploaded ? remotePending : .pending))
             try await fixture.dbQueue.write { db in
                 try db.execute(sql: "UPDATE search_index_jobs SET status = 'processing', attempts = 1 WHERE targetKind = 'screenshotAnalysis'")
             }
-            #expect(await viewModel.screenshotOCRState(id: fixture.screenshotId) == .processing)
+            #expect(await viewModel.screenshotOCRState(id: fixture.screenshotId) == (uploaded ? remotePending : .processing))
             try await fixture.dbQueue.write { db in
                 try db.execute(sql: "UPDATE search_index_jobs SET status = 'pending', attempts = 5 WHERE targetKind = 'screenshotAnalysis'")
             }
-            #expect(await viewModel.screenshotOCRState(id: fixture.screenshotId) == .failed)
+            #expect(await viewModel.screenshotOCRState(id: fixture.screenshotId) == (uploaded ? remotePending : .failed))
             try await fixture.dbQueue.write { db in
                 try db.execute(sql: "UPDATE search_index_jobs SET status = 'pending', attempts = 0 WHERE targetKind = 'screenshotAnalysis'")
             }
-            #expect(await viewModel.screenshotOCRState(id: fixture.screenshotId) == .pending)
+            #expect(await viewModel.screenshotOCRState(id: fixture.screenshotId) == (uploaded ? remotePending : .pending))
             try await fixture.dbQueue.write { db in
                 try db.execute(
                     sql: "UPDATE file_text_bodies SET ocrText = 'Recognized text', caption = 'Image caption' WHERE fileId = ?",
                     arguments: [fixture.screenshotId]
                 )
             }
-            #expect(await viewModel.screenshotOCRState(id: fixture.screenshotId) == .completed(ocrText: "Recognized text", caption: "Image caption"))
+            #expect(await viewModel.screenshotOCRState(id: fixture.screenshotId) == (uploaded
+                    ? .remote(ocrText: "Recognized text", caption: "Image caption", state: .ready)
+                    : .completed(ocrText: "Recognized text", caption: "Image caption")))
         }
 
         @Test

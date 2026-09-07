@@ -666,7 +666,8 @@ enum SyncTransactionQueue {
                 }
             }
             try db.execute(
-                sql: "UPDATE vaults SET syncLastCommittedCursor = ? WHERE id = ?",
+                // An ACK can remove the operation protecting a record while a remote read is in flight.
+                sql: "UPDATE vaults SET syncLastCommittedCursor = ?, syncMutationGeneration = syncMutationGeneration + 1 WHERE id = ?",
                 arguments: [response.cursor, transaction.vaultId]
             )
             if response.receipt == "compact" {
@@ -908,6 +909,9 @@ enum SyncTransactionQueue {
             sql: "DELETE FROM sync_transactions WHERE vaultId = ? AND sequence >= ?",
             arguments: [vaultId, fromSequence]
         )
+        if db.changesCount > 0 {
+            try db.execute(sql: "UPDATE vaults SET syncMutationGeneration = syncMutationGeneration + 1 WHERE id = ?", arguments: [vaultId])
+        }
     }
 
     static func acceptServerVersion(vaultId: UUID, dbQueue: DatabaseQueue) async throws {

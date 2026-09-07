@@ -5,6 +5,11 @@ import Foundation
 
 /// ローカライズ文字列への型安全なアクセスを提供する。
 enum L10n { // swiftlint:disable:this type_body_length
+    static var serverAccountLanguages: String { String(localized: "account.settings.languages", bundle: bundle) }
+    static var imageAnalysisLanguages: String { String(localized: "account.settings.imageLanguages", bundle: bundle) }
+    static var serverAccountSettingsDescription: String { String(localized: "account.settings.description", bundle: bundle) }
+    static var serverAccountSettingsNotLoaded: String { String(localized: "account.settings.notLoaded", bundle: bundle) }
+    static var serverAccountSettingsUnavailable: String { String(localized: "account.settings.unavailable", bundle: bundle) }
     static var textContentSearchMore: String { String(localized: "text.content.searchMore", bundle: bundle) }
     static var textContentServerMatch: String { String(localized: "text.content.serverMatch", bundle: bundle) }
     static var textContentMissing: String { String(localized: "text.content.missing", bundle: bundle) }

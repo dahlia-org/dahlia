@@ -219,6 +219,8 @@ Server は meeting の名前・説明・summary 表示本文と screenshot の O
 RRF で統合し、embedding の未設定・未完成・障害時は FTS に縮退する。transcript と内部識別子は Server 検索対象に含めず、
 すべての検索 query は `vault_id` 経由の permission／RLS を通す。現時点の D1 adapter は domain transaction の複数 statement を
 atomic batch にできないため meeting sync capability を fail-closed とし、D1 の FTS-only 検索は atomic batch adapter 実装後の target state とする。
+Node の画像解析 worker は canonical 登録済みの会議画像をファイル単位で扱い、既存1280px variant と App service principal を使って不足する OCR・caption を生成する。現在の所有権・checksum・revision・lease を再確認し、正本・差分・検索 projection・embedding job を同じ transaction で更新する。Desktop は Local Account の画像だけを解析する。
+Server の出力言語・画像解析言語は本人の account settings API を正本とし、Desktop はメモリに保持する。SSE は invalidation のみ、再接続時に再取得する。設定用のローカル table・revision・再送 queue は作らず、設定や認証の取得を録音開始・継続・停止の前提にしない。会議要約生成は引き続き Desktop が担当する。
 翻訳文、音声、SQLite file、note、tag、calendar、
 Project は階層参照と meeting 絞り込みのためだけに同期し、Server の全文・vector projection へは含めない。transcript の `audio_source` は `mic`／`system` の収録経路、nullable な `speaker_label` は将来の話者分離ラベルとし、音声特徴量は同期しない。runtime と data boundary の判断は次を正本とする。
 
@@ -230,6 +232,8 @@ Project は階層参照と meeting 絞り込みのためだけに同期し、Ser
 - [Server Hybrid 検索](docs/adr/server/search.md#hybrid-検索): 同期済み content の検索 projection。
 
 Desktop SQLite は offline working copy であり、単方向の転送元ではない。Server Account の本文は `sync_content_state` で完全性・保持 revision・検証済み hash・byte 数・利用日時を管理する。metadata-only snapshot / delta は本文取得を待たず進み、`MeetingContentProvider` が SQLite を先に読み、必要時だけ指定 revision の全ページを一時領域へ取得して manifest と照合する。全 Server Account の本文予算は128 MiB、検証済みで再取得できる未使用本文だけを LRU で80%まで解放する。Local Account・queue・復旧・録音・利用中本文は保全し、翻訳・音声特徴量・summary export の参照は残す。詳細は [本文の部分保持](docs/adr/shared/sync.md#テキスト本文の部分保持2026-09-07)。SSE はデータ本体を運ばない。Server 側採用では未送信変更を破棄して cursor をリセットし、Server の revision 一覧を取得するまで revision 未確定の Vault 同期行を保持して送信を停止する。この間のローカル変更と確定文字起こしはキューへ保存し、取得した revision で未送信操作を順序どおり補正してから送信を再開する。revision 取得と canonical 本体の適用は区別し、cursor が未設定なら同じ revision でも本体を再取得・適用する。これを初期送信の中断と混同して create を再生成してはならない。local mutation は record cache と operation snapshot を同じ SQLite transaction へ明示的に書き、remote applier は recorder を呼ばない。
+
+通常差分と本文反映の競合判定は同期層の `RemoteChangePolicy` が共有する。録音中も安全な差分は適用し、保留を含むページ以降の永続 cursor は進めず次回に再取得する。本文 provider は同期済み revision の本文だけを取得する。復旧・reset と本文の破棄は通常差分より厳しい保護単位を維持する。詳細は [録音中の通常差分適用](docs/adr/shared/sync.md#録音中の通常差分適用2026-09-07)。
 
 ## Workload Classes
 

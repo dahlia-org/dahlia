@@ -51,8 +51,10 @@ resources:
             value: /Volumes/${resources.volumes.dahlia_storage.catalog_name}/${resources.volumes.dahlia_storage.schema_name}/${resources.volumes.dahlia_storage.name}
           - name: DAHLIA_DATABASE_TYPE
             value: lakebase
-          - name: DAHLIA_SEARCH_EMBEDDING_MODEL
-            value: ${var.search_embedding_model}
+          - name: DAHLIA_EMBEDDING_MODEL
+            value: ${var.catalog}.${var.ai_schema}.embedding
+          - name: DAHLIA_CAPTIONING_MODEL
+            value: ${var.catalog}.${var.ai_schema}.gpt-5-6-luna
           - name: DAHLIA_SEARCH_EMBEDDING_DIMENSIONS
             value: ${var.search_embedding_dimensions}
           - name: DAHLIA_SYNC_SHARING_ENABLED

@@ -17,6 +17,7 @@ enum RemoteChangeApplier {
         expectedConnectionId: UUID,
         dbQueue: DatabaseQueue,
         expectedMutationGeneration: Int64? = nil,
+        incrementalContext: RemoteChangePolicy.Context? = nil,
         _ body: @Sendable (Database) throws -> Bool
     ) async throws -> Bool {
         try await dbQueue.write { db in
@@ -25,7 +26,9 @@ enum RemoteChangeApplier {
                 connectionId: expectedConnectionId,
                 in: db
             ) else { return false }
-            if let expectedMutationGeneration {
+            if let incrementalContext {
+                guard try incrementalContext.isCurrent(in: db) else { return false }
+            } else if let expectedMutationGeneration {
                 guard try Int64.fetchOne(
                     db, sql: "SELECT syncMutationGeneration FROM vaults WHERE id = ?", arguments: [vaultId]
                 ) == expectedMutationGeneration, try !hasActiveRecording(in: db) else { return false }
@@ -40,6 +43,7 @@ enum RemoteChangeApplier {
         expectedConnectionId: UUID,
         dbQueue: DatabaseQueue,
         expectedMutationGeneration: Int64? = nil,
+        incrementalContext: RemoteChangePolicy.Context? = nil,
         _ body: () async throws -> Bool
     ) async throws -> Bool {
         guard !meetingIds.isEmpty else { return try await body() }
@@ -47,9 +51,13 @@ enum RemoteChangeApplier {
             vaultId: vaultId,
             expectedConnectionId: expectedConnectionId,
             dbQueue: dbQueue,
-            expectedMutationGeneration: expectedMutationGeneration
+            expectedMutationGeneration: expectedMutationGeneration,
+            incrementalContext: incrementalContext
         ) { db in
-            try !SyncTransactionQueue.hasPending(vaultId: vaultId, in: db) && !hasActiveRecording(in: db)
+            if incrementalContext != nil {
+                return try meetingIds.allSatisfy { try RemoteChangePolicy.permits(.meeting, id: $0, action: "delete", vaultId: vaultId, in: db) }
+            }
+            return try !SyncTransactionQueue.hasPending(vaultId: vaultId, in: db) && !hasActiveRecording(in: db)
         }
         guard preflight else { return false }
 
@@ -183,23 +191,36 @@ enum RemoteChangeApplier {
         expectedConnectionId: UUID,
         dbQueue: DatabaseQueue,
         expectedMutationGeneration: Int64? = nil,
-        removeMissing: Bool = true
+        removeMissing: Bool = true,
+        incrementalContext: RemoteChangePolicy.Context? = nil
     ) async throws -> Bool {
         let orderedProjects = removeMissing ? orderProjects(projects) : projects
         return try await withCurrentAssociation(
             vaultId: vaultId,
             expectedConnectionId: expectedConnectionId,
             dbQueue: dbQueue,
-            expectedMutationGeneration: expectedMutationGeneration
+            expectedMutationGeneration: expectedMutationGeneration,
+            incrementalContext: incrementalContext
         ) { db in
-            guard try !SyncTransactionQueue.hasPending(vaultId: vaultId, in: db),
-                  try !hasActiveRecording(in: db)
-            else { return false }
-
             let existing = try ProjectRecord.fetchResolvedAll(vaultId: vaultId, in: db)
             let existingByID = Dictionary(uniqueKeysWithValues: existing.map { ($0.id, $0) })
             let incomingIDs = Set(projects.map(\.projectId))
             let removedIDs = removeMissing ? Set(existingByID.keys).subtracting(incomingIDs) : []
+            if incrementalContext != nil {
+                for project in projects {
+                    guard try RemoteChangePolicy.permits(.project, id: project.projectId, vaultId: vaultId, in: db) else { return false }
+                    if let revision = try Int.fetchOne(
+                        db,
+                        sql: "SELECT confirmedRevision FROM sync_entity_state WHERE vaultId = ? AND entity = 'project' AND entityId = ?",
+                        arguments: [vaultId, project.projectId]
+                    ), revision > project.revision { return false }
+                }
+                for id in removedIDs {
+                    guard try RemoteChangePolicy.permits(.project, id: id, action: "delete", vaultId: vaultId, in: db) else { return false }
+                }
+            } else {
+                guard try !SyncTransactionQueue.hasPending(vaultId: vaultId, in: db), try !hasActiveRecording(in: db) else { return false }
+            }
 
             // Keep retained rows in place so local-only CRM references survive canonical refreshes.
             let roots = orderedProjects.filter { $0.parentProjectId == nil }
@@ -305,17 +326,21 @@ enum RemoteChangeApplier {
         vaultId: UUID,
         expectedConnectionId: UUID,
         dbQueue: DatabaseQueue,
-        expectedMutationGeneration: Int64? = nil
+        expectedMutationGeneration: Int64? = nil,
+        incrementalContext: RemoteChangePolicy.Context? = nil
     ) async throws -> Bool {
         try await withCurrentAssociation(
             vaultId: vaultId,
             expectedConnectionId: expectedConnectionId,
             dbQueue: dbQueue,
-            expectedMutationGeneration: expectedMutationGeneration
+            expectedMutationGeneration: expectedMutationGeneration,
+            incrementalContext: incrementalContext
         ) { db in
-            guard try !SyncTransactionQueue.hasPending(vaultId: vaultId, in: db),
-                  try !hasActiveRecording(in: db)
-            else { return false }
+            if incrementalContext != nil {
+                guard try RemoteChangePolicy.permits(.transcript, id: meetingId, vaultId: vaultId, in: db) else { return false }
+            } else {
+                guard try !SyncTransactionQueue.hasPending(vaultId: vaultId, in: db), try !hasActiveRecording(in: db) else { return false }
+            }
             try db.execute(sql: """
             CREATE TEMP TABLE IF NOT EXISTS sync_remote_transcript_items (
                 meetingId BLOB NOT NULL,
@@ -343,17 +368,21 @@ enum RemoteChangeApplier {
         vaultId: UUID,
         expectedConnectionId: UUID,
         dbQueue: DatabaseQueue,
-        expectedMutationGeneration: Int64? = nil
+        expectedMutationGeneration: Int64? = nil,
+        incrementalContext: RemoteChangePolicy.Context? = nil
     ) async throws -> Bool {
         try await withCurrentAssociation(
             vaultId: vaultId,
             expectedConnectionId: expectedConnectionId,
             dbQueue: dbQueue,
-            expectedMutationGeneration: expectedMutationGeneration
+            expectedMutationGeneration: expectedMutationGeneration,
+            incrementalContext: incrementalContext
         ) { db in
-            guard try !SyncTransactionQueue.hasPending(vaultId: vaultId, in: db),
-                  try !hasActiveRecording(in: db)
-            else { return false }
+            if incrementalContext != nil {
+                guard try RemoteChangePolicy.permits(.transcript, id: meetingId, vaultId: vaultId, in: db) else { return false }
+            } else {
+                guard try !SyncTransactionQueue.hasPending(vaultId: vaultId, in: db), try !hasActiveRecording(in: db) else { return false }
+            }
             for segment in segments {
                 try db.execute(
                     sql: """
@@ -394,9 +423,7 @@ enum RemoteChangeApplier {
             dbQueue: dbQueue,
             expectedMutationGeneration: expectedMutationGeneration
         ) { db in
-            guard try !SyncTransactionQueue.hasPending(vaultId: vaultId, in: db),
-                  try !hasActiveRecording(in: db)
-            else { return false }
+            guard try !SyncTransactionQueue.hasPending(vaultId: vaultId, in: db), try !hasActiveRecording(in: db) else { return false }
             try installStagedTranscript(meetingId: meetingId, in: db)
             try db.execute(
                 sql: """
@@ -467,6 +494,42 @@ enum RemoteChangeApplier {
         return roots + children
     }
 
+    static func applyIncremental(
+        _ change: SyncChangePage.Change,
+        context: RemoteChangePolicy.Context,
+        dbQueue: DatabaseQueue
+    ) async throws -> RemoteChangePolicy.Result {
+        try Task.checkCancellation()
+        let decision = try await dbQueue.read { try RemoteChangePolicy.decision(change, context: context, in: $0) }
+        guard decision == .applied else { return decision }
+        if try await apply(
+            [change],
+            screenshots: [:],
+            transcripts: [:],
+            cursor: nil,
+            vaultId: context.vaultId,
+            expectedConnectionId: context.connectionId,
+            dbQueue: dbQueue,
+            incrementalContext: context
+        ) { return .applied }
+        return try await dbQueue.read { try context.isCurrent(in: $0) ? .deferred : .retry }
+    }
+
+    static func advanceIncrementalCursor(
+        _ cursor: String,
+        from previous: String?,
+        context: RemoteChangePolicy.Context,
+        dbQueue: DatabaseQueue
+    ) async throws -> Bool {
+        try await dbQueue.write { db in
+            guard try context.isCurrent(in: db),
+                  try String.fetchOne(db, sql: "SELECT syncPullCursor FROM vaults WHERE id = ?", arguments: [context.vaultId]) == previous
+            else { return false }
+            try db.execute(sql: "UPDATE vaults SET syncPullCursor = ? WHERE id = ?", arguments: [cursor, context.vaultId])
+            return true
+        }
+    }
+
     static func apply(
         _ changes: [SyncChangePage.Change],
         screenshots: [UUID: Data],
@@ -475,7 +538,8 @@ enum RemoteChangeApplier {
         vaultId: UUID,
         expectedConnectionId: UUID,
         dbQueue: DatabaseQueue,
-        expectedMutationGeneration: Int64? = nil
+        expectedMutationGeneration: Int64? = nil,
+        incrementalContext: RemoteChangePolicy.Context? = nil
     ) async throws -> Bool {
         let deletedMeetingIds = Set(changes.compactMap { change in
             change.entity == .meeting && change.action == "delete" ? change.entityId : nil
@@ -485,16 +549,21 @@ enum RemoteChangeApplier {
             vaultId: vaultId,
             expectedConnectionId: expectedConnectionId,
             dbQueue: dbQueue,
-            expectedMutationGeneration: expectedMutationGeneration
+            expectedMutationGeneration: expectedMutationGeneration,
+            incrementalContext: incrementalContext
         ) {
             try await withCurrentAssociation(
                 vaultId: vaultId,
                 expectedConnectionId: expectedConnectionId,
                 dbQueue: dbQueue,
-                expectedMutationGeneration: expectedMutationGeneration
+                expectedMutationGeneration: expectedMutationGeneration,
+                incrementalContext: incrementalContext
             ) { db in
-                guard try !SyncTransactionQueue.hasPending(vaultId: vaultId, in: db) else { return false }
-                if changes.contains(where: { $0.entity == .transcript }), try hasActiveRecording(in: db) {
+                try Task.checkCancellation()
+                if incrementalContext == nil {
+                    guard try !SyncTransactionQueue.hasPending(vaultId: vaultId, in: db) else { return false }
+                }
+                if incrementalContext == nil, changes.contains(where: { $0.entity == .transcript }), try hasActiveRecording(in: db) {
                     return false
                 }
                 if changes.contains(where: { $0.action == "reset" && $0.record != nil }),
@@ -516,6 +585,13 @@ enum RemoteChangeApplier {
                 }
                 guard !deletingActiveMeeting else { return false }
                 for change in changes {
+                    if let incrementalContext {
+                        switch try RemoteChangePolicy.decision(change, context: incrementalContext, in: db) {
+                        case .alreadyApplied: continue
+                        case .deferred, .retry: return false
+                        case .applied: break
+                        }
+                    }
                     if change.action == "delete" {
                         try delete(change.entity, id: change.entityId, vaultId: vaultId, in: db)
                     } else if change.action == "reset" {

@@ -530,7 +530,8 @@ private extension SearchIndexer {
             try Dictionary(uniqueKeysWithValues: jobs.compactMap { job -> (UUID, ScreenshotAnalysisInput)? in
                 guard let screenshot = try MeetingScreenshotRecord.fetchOne(db, key: job.targetID),
                       let meeting = try MeetingRecord.fetchOne(db, key: screenshot.meetingId),
-                      let vault = try VaultRecord.fetchOne(db, key: meeting.vaultId)
+                      let vault = try VaultRecord.fetchOne(db, key: meeting.vaultId),
+                      vault.accountConnectionId == nil
                 else { return nil }
                 guard screenshot.remoteReference == nil || screenshot.localReference != nil,
                       (try? TextContentAccess.requireComplete(entity: .file, id: screenshot.originalFileId, in: db)) != nil else { return nil }
@@ -614,6 +615,9 @@ private extension SearchIndexer {
         try await dbQueue.write { db in
             for result in results {
                 guard let existing = try MeetingScreenshotRecord.fetchOne(db, key: result.screenshotID),
+                      let meeting = try MeetingRecord.fetchOne(db, key: existing.meetingId),
+                      let vault = try VaultRecord.fetchOne(db, key: meeting.vaultId),
+                      vault.accountConnectionId == nil,
                       existing.remoteReference == nil || existing.localReference != nil,
                       (try? TextContentAccess.requireComplete(entity: .file, id: existing.originalFileId, in: db)) != nil,
                       try TextContentAccess.availability(entity: .file, id: existing.originalFileId, in: db).state != .stale else { continue }

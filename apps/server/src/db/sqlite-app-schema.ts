@@ -2,10 +2,17 @@ import { sql } from "drizzle-orm";
 import { blob, check, foreignKey, index, integer, primaryKey, real, sqliteTable, sqliteView, text, unique, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 import type { FileMetadata } from "../files/model";
+import type { AccountSettings } from "../account-settings";
 
 import { user as authUser } from "./generated/sqlite-auth-schema";
 
 const sqliteTimestamp = (name: string) => integer(name, { mode: "timestamp_ms" });
+
+export const accountSettings = sqliteTable("account_settings", {
+  userId: text("user_id").primaryKey().references(() => authUser.id, { onDelete: "cascade" }),
+  outputLanguage: text("output_language").$type<AccountSettings["outputLanguage"]>().notNull(),
+  analysisLanguages: text("analysis_languages", { mode: "json" }).$type<AccountSettings["analysisLanguages"]>().notNull(),
+});
 
 export const artifact = sqliteTable("artifact", {
   id: text("id").primaryKey(),
@@ -370,4 +377,21 @@ export const storageDeleteJob = sqliteTable("storage_delete_jobs", {
 }, (table) => [
   check("storage_delete_job_status_check", sql`${table.status} IN ('pending', 'processing', 'failed')`),
   index("storage_delete_job_claim_idx").on(table.status, table.availableAt, table.leaseExpiresAt),
+]);
+
+// Operational queue metadata only; canonical image/text access remains owner-scoped.
+export const imageAnalysisJob = sqliteTable("image_analysis_jobs", {
+  fileId: text("file_id").primaryKey().references(() => syncedFile.fileId, { onDelete: "cascade" }),
+  vaultId: text("vault_id").notNull().references(() => syncedVault.vaultId, { onDelete: "cascade" }),
+  ownerUserId: text("owner_user_id").notNull().references(() => authUser.id, { onDelete: "cascade" }),
+  model: text("model").notNull(),
+  status: text("status").default("pending").notNull(),
+  attempts: integer("attempts").default(0).notNull(),
+  availableAt: sqliteTimestamp("available_at").default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`).notNull(),
+  claimedAt: sqliteTimestamp("claimed_at"),
+  leaseExpiresAt: sqliteTimestamp("lease_expires_at"),
+  lastErrorCode: text("last_error_code"),
+}, (table) => [
+  check("image_analysis_job_status_check", sql`${table.status} IN ('pending', 'processing', 'failed')`),
+  index("image_analysis_job_claim_idx").on(table.status, table.availableAt, table.leaseExpiresAt),
 ]);

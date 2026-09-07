@@ -46,3 +46,9 @@ owner column と share table の重複を Vault permission に集約した。hea
 `app.sync_vault_state` は owner / Vault と latest sequence / pruned boundary のみを保持する運用 metadata とし、既存 change ledger と同様に RLS の対象外とする。identity-scoped sync store と管理用 retention 処理以外へ公開せず、正本・receipt の認可は引き続き RLS と application 層で強制する。内容を追加する場合はこの例外を再評価する。
 
 forward migration は既存 receipt 本文を保持したまま結果 ID / revision を抽出し、ledger と receipt の最大 sequence で Vault state を初期化する。PostgreSQL では migration owner が同一 transaction 内だけ receipt の FORCE RLS を解除して backfill し、完了前に復元する。保持処理は identity を transaction-local に設定し、失敗時は floor と削除を共に rollback する。
+
+## アカウント設定と画像解析 job（2026-09-07）
+
+`app.account_settings` は `auth.user.id` を正本キーに出力言語と解析言語範囲・一覧を保持する。本人の GET/PATCH だけを公開し、PostgreSQL は transaction-local identity と FORCE RLS、SQLite は user ID predicate で分離する。PATCH は指定項目だけの upsert、初回初期化は conditional INSERT。設定用 revision は持たない。
+
+`app.image_analysis_jobs` は file ID / Vault ID / owner user ID / model / lease / retry 状態だけの運用 metadata。既存の search job と同様に RLS の対象外とし、Node worker だけが利用する。画像・OCR・caption は queue に複製せず、identity-scoped store の認可と RLS を通して読取り・保存する。追加は forward migration で行い、既存の user / Vault / meeting / file を書き換えない。

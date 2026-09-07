@@ -68,6 +68,7 @@ export interface AppConfig {
     model: string;
     dimensions: number;
   };
+  captioningModel?: string;
   syncSharingEnabled?: boolean;
 }
 
@@ -217,7 +218,7 @@ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
   const aiBackend = aiBackendSchema.parse(env.DAHLIA_AI_BACKEND?.trim() || "openai");
   const codexAutoReviewModel = env.CODEX_AUTO_REVIEW_MODEL?.trim();
   const storageBackend = storageBackendSchema.parse(env.DAHLIA_STORAGE_BACKEND?.trim() || "local");
-  const searchEmbeddingModel = env.DAHLIA_SEARCH_EMBEDDING_MODEL?.trim();
+  const searchEmbeddingModel = env.DAHLIA_EMBEDDING_MODEL?.trim();
   const searchEmbedding = searchEmbeddingModel ? {
     model: searchEmbeddingModel,
     dimensions: z.coerce.number().int().min(32).max(1024)
@@ -270,11 +271,17 @@ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
     artifactMaxBytes,
     databricksWorkspace,
     searchEmbedding,
+    captioningModel: env.DAHLIA_CAPTIONING_MODEL?.trim()
+      ? z.string().max(UPSTREAM_MODEL_MAX_LENGTH).parse(env.DAHLIA_CAPTIONING_MODEL.trim())
+      : undefined,
     syncSharingEnabled: z.enum(["true", "false"]).parse(env.DAHLIA_SYNC_SHARING_ENABLED?.trim() || "false") === "true",
   };
 
   if (config.searchEmbedding && config.provider?.backend !== "databricks") {
-    throw new Error("DAHLIA_SEARCH_EMBEDDING_MODEL requires DAHLIA_AI_BACKEND=databricks");
+    throw new Error("DAHLIA_EMBEDDING_MODEL requires DAHLIA_AI_BACKEND=databricks");
+  }
+  if (config.captioningModel && config.provider?.backend !== "databricks") {
+    throw new Error("DAHLIA_CAPTIONING_MODEL requires DAHLIA_AI_BACKEND=databricks");
   }
 
   if (authProvider === "accounts") {

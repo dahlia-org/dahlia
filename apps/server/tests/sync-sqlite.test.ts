@@ -19,6 +19,10 @@ import { fileStorageKey, fileVariantKey } from "../src/files/model";
 import sharp from "sharp";
 import { SCREENSHOT_VARIANTS } from "../src/sync/screenshot-variants";
 import type { SyncTransaction } from "../src/sync/types";
+import { ImageAnalysisWorker } from "../src/image-analysis/node-worker";
+import type { ImageCaptioner } from "../src/image-analysis/captioner";
+import type { AccountSettings } from "../src/account-settings";
+import { ImageAnalysisError } from "../src/image-analysis/model";
 
 const directories: string[] = [];
 const owner: Identity = { userId: "owner", workspaceId: "personal:owner", source: "header" };
@@ -169,6 +173,175 @@ describe("SQLite canonical sync", () => {
     expect((await get(paths[0]!)).status).toBe(404);
     db.close();
     await store.close?.();
+  });
+
+  it("notifies setting changes without exposing content or a settings revision", async () => {
+    const { store, databasePath } = await setup();
+    const app = createApp({ config: testConfig(databasePath), authStore: store });
+    const abort = new AbortController();
+    const response = await app.request("/api/v1/events", {
+      headers: { "x-forwarded-email": "owner@example.com", "x-forwarded-user": "owner" }, signal: abort.signal,
+    });
+    const reader = response.body!.getReader();
+    const nextSettingsEvent = async () => {
+      let text = "";
+      while (!text.includes("event: account_settings")) {
+        const chunk = await reader.read();
+        if (chunk.done) throw new Error("Settings stream ended");
+        text += new TextDecoder().decode(chunk.value);
+      }
+      return text;
+    };
+    try {
+      expect(await nextSettingsEvent()).toContain("data: {}");
+      await store.accountSettings.update("owner", { outputLanguage: "fr" });
+      const event = await nextSettingsEvent();
+      expect(event).toContain("data: {}");
+      expect(event).not.toContain("outputLanguage");
+      expect(event).not.toContain("id:");
+    } finally {
+      abort.abort();
+      await reader.cancel();
+      await store.close?.();
+    }
+  });
+
+
+  it("adds account settings and image jobs without changing existing canonical files", async () => {
+    const { store, service, publish, attach, file, databasePath } = await fileSetup();
+    await publish();
+    await attach();
+    const original = await service.getFile(owner, file.id);
+    await store.close?.();
+    const database = new DatabaseSync(databasePath);
+    database.exec("DROP TABLE image_analysis_jobs; DROP TABLE account_settings");
+    database.prepare("DELETE FROM __drizzle_migrations WHERE name = ?").run("20260907091207_funny_black_bird");
+    database.close();
+    const reopened = createNodeApplicationStore(testConfig(databasePath));
+    await reopened.migrate();
+    const restored = new MeetingSyncService(reopened.sync);
+    expect(await restored.getFile(owner, file.id)).toMatchObject({ ...original, variants: {} });
+    expect(await reopened.accountSettings.get(owner.userId)).toBeNull();
+    await reopened.close?.();
+  });
+
+  it("initializes account settings once and merges only specified fields across clients", async () => {
+    const { store } = await setup();
+    expect(await store.accountSettings.get(owner.userId)).toBeNull();
+    const initial = { outputLanguage: "en" as const, analysisLanguages: { scope: "selected" as const, identifiers: ["en", "ja"] } };
+    await store.accountSettings.update(owner.userId, initial, true);
+    expect(await store.accountSettings.update(owner.userId, { ...initial, outputLanguage: "ja" }, true)).toEqual(initial);
+    await Promise.all([
+      store.accountSettings.update(owner.userId, { outputLanguage: "fr" }),
+      store.accountSettings.update(owner.userId, { analysisLanguages: { scope: "all", identifiers: [] } }),
+    ]);
+    expect(await store.accountSettings.get(owner.userId)).toEqual({ outputLanguage: "fr", analysisLanguages: { scope: "all", identifiers: [] } });
+    expect(await store.accountSettings.get(other.userId)).toBeNull();
+    await store.close?.();
+  });
+
+  it("analyzes only published attached files and commits text, delta and embeddings atomically", async () => {
+    const { store, service, publish, attach, file, databasePath } = await fileSetup("catalog.ai.gpt-5-6-luna");
+    const jobs = store.imageAnalysis!;
+    const analyze = vi.fn(async (_bytes: Uint8Array, settings: AccountSettings) => {
+      expect(settings.outputLanguage).toBe("en");
+      return { ocr_text: "", caption: "Architecture diagram" };
+    });
+    const captioner: ImageCaptioner = { model: "catalog.ai.gpt-5-6-luna", analyze };
+    await store.accountSettings.update(owner.userId, { outputLanguage: "en" });
+    const worker = new ImageAnalysisWorker(jobs, captioner, store.sync, service, store.accountSettings);
+    await jobs.reconcile(captioner.model);
+    expect(await worker.processOne()).toBe(false);
+    await publish();
+    await jobs.reconcile(captioner.model);
+    expect(await worker.processOne()).toBe(false);
+    await attach();
+    const secondMeeting = freshId();
+    await service.commitTransaction(owner, wire([
+      { entity: "meeting", action: "create", entityId: secondMeeting, baseRevision: null, data: { projectId: null, name: "Second", status: "READY", duration: null,
+        recordingStartedAt: null, createdAt: now.toISOString(), updatedAt: now.toISOString() } },
+      { entity: "meeting_file", action: "upsert", entityId: freshId(), baseRevision: null,
+        data: { fileId: file.id, meetingId: secondMeeting, capturedAt: now.toISOString(), sessionId: null, createdAt: now.toISOString() } },
+    ]));
+    const cursor = await service.latestCursor(owner);
+    await jobs.reconcile(captioner.model);
+    expect(await worker.processOne()).toBe(true);
+    expect(analyze).toHaveBeenCalledTimes(1);
+    expect(await service.getFile(owner, file.id)).toMatchObject({ revision: 2, metadata: { ocr_text: "", caption: "Architecture diagram" } });
+    expect(await service.latestCursor(owner)).not.toBe(cursor);
+    const database = new DatabaseSync(databasePath);
+    expect(database.prepare("SELECT embedding_text FROM search_documents WHERE kind = 'screenshot'").all())
+      .toEqual([{ embedding_text: "Architecture diagram" }, { embedding_text: "Architecture diagram" }]);
+    expect(database.prepare("SELECT count(*) AS n FROM search_index_jobs").get()).toMatchObject({ n: 2 });
+    expect(database.prepare("SELECT count(*) AS n FROM image_analysis_jobs").get()).toMatchObject({ n: 0 });
+    database.close();
+    await jobs.reconcile(captioner.model);
+    expect(await worker.processOne()).toBe(false);
+    await store.close?.();
+  });
+
+  it("preserves existing captions while backfilling OCR and excludes other identities", async () => {
+    const { store, service, publish, attach, file } = await fileSetup("model");
+    await publish();
+    await attach();
+    await service.commitTransaction(owner, wire([{ entity: "file", action: "upsert", entityId: file.id, baseRevision: 1,
+      data: { checksum: file.checksum, metadata: { caption: "Existing caption" } } }]));
+    await store.imageAnalysis!.reconcile("model");
+    const claim = (await store.imageAnalysis!.claim("model"))!;
+    expect(await store.sync.withIdentity(other, (scoped) => scoped.loadImageAnalysis(claim))).toBeNull();
+    const input = (await store.sync.withIdentity(owner, (scoped) => scoped.loadImageAnalysis(claim)))!;
+    expect(await service.completeImageAnalysis(other, input, { ocr_text: "OCR", caption: "Replacement" })).toBe(false);
+    expect(await service.completeImageAnalysis(owner, input, { ocr_text: "OCR", caption: "Replacement" })).toBe(true);
+    expect(await service.getFile(owner, file.id)).toMatchObject({ metadata: { caption: "Existing caption", ocr_text: "OCR" } });
+    await store.close?.();
+  });
+
+  it.each(["edit", "detach", "delete", "lease", "permission"])("rejects an image result after concurrent %s", async (change) => {
+    const { store, service, publish, attach, file, databasePath } = await fileSetup("model");
+    await publish();
+    await attach();
+    await store.imageAnalysis!.reconcile("model");
+    const claim = (await store.imageAnalysis!.claim("model"))!;
+    const input = (await store.sync.withIdentity(owner, (scoped) => scoped.loadImageAnalysis(claim)))!;
+    if (change === "edit") {
+      await service.commitTransaction(owner, wire([{ entity: "file", action: "upsert", entityId: file.id, baseRevision: 1,
+        data: { checksum: file.checksum, metadata: { caption: "Concurrent caption" } } }]));
+    } else if (change === "permission") {
+      const database = new DatabaseSync(databasePath);
+      database.prepare("DELETE FROM vault_permissions WHERE principal_id = ?").run(owner.userId);
+      database.close();
+    } else if (change === "lease") {
+      const database = new DatabaseSync(databasePath);
+      database.prepare("UPDATE image_analysis_jobs SET lease_expires_at = 0").run();
+      database.close();
+      const nextClaim = await store.imageAnalysis!.claim("model");
+      expect(nextClaim).not.toBeNull();
+    } else {
+      await service.commitTransaction(owner, wire([{ entity: "meeting_file", action: "delete", entityId: file.id, baseRevision: 1, data: {} }]));
+      if (change === "delete") await service.commitTransaction(owner, wire([{ entity: "file", action: "delete", entityId: file.id, baseRevision: 1, data: {} }]));
+    }
+    expect(await service.completeImageAnalysis(owner, input, { ocr_text: "stale", caption: "stale" })).toBe(false);
+    if (change !== "delete" && change !== "permission") expect((await service.getFile(owner, file.id)).metadata).not.toHaveProperty("ocr_text", "stale");
+    await store.close?.();
+  });
+
+  it("retries transient captioning failures after reopening the database", async () => {
+    const { store, service, publish, attach, databasePath } = await fileSetup("model");
+    await publish();
+    await attach();
+    await store.imageAnalysis!.reconcile("model");
+    const captioner: ImageCaptioner = { model: "model", analyze: async () => { throw new ImageAnalysisError("captioning_http_429", true); } };
+    const worker = new ImageAnalysisWorker(store.imageAnalysis!, captioner, store.sync, service, store.accountSettings);
+    expect(await worker.processOne()).toBe(true);
+    await store.close?.();
+    const database = new DatabaseSync(databasePath);
+    expect(database.prepare("SELECT status, attempts, last_error_code FROM image_analysis_jobs").get())
+      .toEqual({ status: "pending", attempts: 1, last_error_code: "captioning_http_429" });
+    database.prepare("UPDATE image_analysis_jobs SET available_at = 0").run();
+    database.close();
+    const reopened = createNodeApplicationStore({ ...testConfig(databasePath), captioningModel: "model" });
+    expect(await reopened.imageAnalysis!.claim("model")).toMatchObject({ attempts: 1 });
+    await reopened.close?.();
   });
 
   it.each([{ deleted: "file", reserveAgain: true }, { deleted: "vault", reserveAgain: true }, { deleted: "file", reserveAgain: false }])("rejects stale upload completion after $deleted deletion (reserved again=$reserveAgain) and permits a clean retry", async ({ deleted, reserveAgain }) => {
@@ -1590,11 +1763,11 @@ describe("SQLite canonical sync", () => {
   });
 });
 
-async function setup(searchEmbedding?: AppConfig["searchEmbedding"]) {
+async function setup(searchEmbedding?: AppConfig["searchEmbedding"], captioningModel?: string) {
   const directory = mkdtempSync(join(tmpdir(), "dahlia-sync-"));
   directories.push(directory);
   const databasePath = join(directory, "server.sqlite");
-  const store = createNodeApplicationStore({ ...testConfig(databasePath), searchEmbedding });
+  const store = createNodeApplicationStore({ ...testConfig(databasePath), searchEmbedding, captioningModel });
   await store.migrate();
   await store.ensureIdentityUser(owner);
   await store.ensureIdentityUser(other);
@@ -1673,8 +1846,8 @@ function wire(operations: Omit<SyncTransaction["operations"][number], "id">[]) {
     operations: operations.map((operation) => ({ ...operation, id: freshId() })) };
 }
 
-async function fileSetup() {
-  const setupValue = await setup();
+async function fileSetup(captioningModel?: string) {
+  const setupValue = await setup(captioningModel ? { model: "embedding", dimensions: 32 } : undefined, captioningModel);
   const { store, directory } = setupValue;
   await createVault(store);
   await commit(store, owner, transaction(freshId(), [{ id: freshId(), entity: "meeting", action: "create", entityId: meetingId,

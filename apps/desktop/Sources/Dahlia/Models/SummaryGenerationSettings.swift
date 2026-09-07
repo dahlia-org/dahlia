@@ -29,7 +29,9 @@ struct SummaryGenerationSettings: Equatable, Sendable {
                 ? vaultAISettings.summaryReasoningEffort
                 : settings.codexReasoningEffort,
             detailLevelInstruction: (detailLevel ?? settings.summaryDetailLevel).instruction,
-            languageDisplayName: settings.llmSummaryLanguage.displayName,
+            languageDisplayName: ((usesVaultSettings ? vaultAISettings.accountConnectionID : nil).flatMap {
+                ServerAccountSettingsModel.shared.state(for: $0).settings?.outputLanguage
+            } ?? settings.llmSummaryLanguage).displayName,
             runtimeProvider: CodexRuntimeProvider(
                 accountConnectionID: usesVaultSettings ? vaultAISettings.accountConnectionID : nil,
                 localProvider: localProvider,
@@ -45,6 +47,16 @@ struct SummaryGenerationSettings: Equatable, Sendable {
             reasoningEffort: reasoningEffort,
             detailLevelInstruction: detailLevel.instruction,
             languageDisplayName: languageDisplayName,
+            runtimeProvider: runtimeProvider
+        )
+    }
+
+    func applying(language: SummaryLanguage) -> Self {
+        Self(
+            modelID: modelID,
+            reasoningEffort: reasoningEffort,
+            detailLevelInstruction: detailLevelInstruction,
+            languageDisplayName: language.displayName,
             runtimeProvider: runtimeProvider
         )
     }

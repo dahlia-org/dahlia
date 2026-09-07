@@ -1,3 +1,4 @@
+import { createAccountSettingsStore, type AccountSettingsStore } from "../account-settings";
 import type { DBAdapterInstance } from "better-auth";
 import { drizzleAdapter } from "@better-auth/drizzle-adapter/relations-v2";
 import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
@@ -129,6 +130,7 @@ export interface D1DatabaseLike {
 
 export interface ApplicationStore {
   database: DBAdapterInstance;
+  accountSettings: AccountSettingsStore;
   sync: MeetingSyncStore;
   ensureIdentityUser(identity: Identity): Promise<boolean>;
   seedDahliaClient(config: AppConfig): Promise<void>;
@@ -189,6 +191,7 @@ export function createPostgresApplicationStore(
   };
   return {
     database: drizzleAdapter(db, { provider: "pg", schema: postgresAuthSchema, schemaName: "auth" }),
+    accountSettings: createAccountSettingsStore(db, true),
     sync: createPostgresMeetingSyncStore(db, searchBackend, searchEmbedding, sharingEnabled),
     async ensureIdentityUser(identity) {
       const now = new Date();
@@ -675,6 +678,7 @@ export function createSqliteApplicationStore(
   };
   return {
     database: drizzleAdapter(db, { provider: "sqlite", schema: sqliteAuthSchema, transaction: transactions }),
+    accountSettings: createAccountSettingsStore(db, false),
     sync: createSqliteMeetingSyncStore(db, searchEmbedding, sharingEnabled),
     async ensureIdentityUser(identity) {
       const now = new Date();

@@ -321,8 +321,10 @@ final class CaptionViewModel: ObservableObject {
                 sql: """
                 SELECT a.fileId FROM meeting_files a JOIN files f ON f.id = a.fileId
                 JOIN sync_content_state c ON c.entity = 'file' AND c.entityId = f.id
-                WHERE a.id = ? AND NOT (
-                    c.complete = 1 AND (f.remoteReference IS NULL OR f.localReference IS NOT NULL)
+                JOIN vaults v ON v.id = f.vaultId
+                LEFT JOIN sync_entity_state s ON s.vaultId = v.id AND s.entity = 'file' AND s.entityId = f.id
+                WHERE a.id = ? AND (v.accountConnectionId IS NULL OR s.confirmedRevision > 0) AND NOT (
+                    v.accountConnectionId IS NULL AND c.complete = 1 AND (f.remoteReference IS NULL OR f.localReference IS NOT NULL)
                     AND EXISTS(SELECT 1 FROM search_index_jobs j WHERE j.indexKind = 'fts'
                         AND j.targetKind = 'screenshotAnalysis' AND j.targetKey = a.id)
                 )
@@ -344,7 +346,11 @@ final class CaptionViewModel: ObservableObject {
                     guard try FileRecord.fetchOne(db, key: fileId) != nil else { return .remote(ocrText: nil, caption: nil, state: .deleted) }
                     let text = try TextContentAccess.cachedFileText(fileId: fileId, in: db)
                     let state = try TextContentAccess.availability(entity: .file, id: fileId, in: db).state
-                    return .remote(ocrText: text?.ocrText, caption: text?.caption, state: state == .stale ? .stale : .failed)
+                    return .remote(
+                        ocrText: text?.ocrText,
+                        caption: text?.caption,
+                        state: state == .stale ? .stale : (error as? TextContentError == .changed ? .loading : .failed)
+                    )
                 }) ?? .remote(ocrText: nil, caption: nil, state: .failed)
             }
         }

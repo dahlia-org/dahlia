@@ -2,6 +2,7 @@ import CryptoKit
 import DahliaRuntimeSupport
 import Foundation
 import GRDB
+import Synchronization
 
 struct SyncOperationBody: Encodable {
     let id: UUID
@@ -186,6 +187,10 @@ private struct SyncTarget: Sendable {
     let origin: URL
     let cursor: String?
     let mutationGeneration: Int64
+
+    var context: RemoteChangePolicy.Context {
+        .init(vaultId: vaultId, connectionId: connectionId, generation: mutationGeneration)
+    }
 }
 
 actor SyncWorker {
@@ -202,6 +207,12 @@ actor SyncWorker {
     private var drainTask: Task<Void, Never>?
     private var eventTasks: [UUID: Task<Void, Never>] = [:]
     private var isPulling = false
+    private struct PullKey: Hashable { let database: ObjectIdentifier
+        let vaultId: UUID
+    }
+
+    /// Transfer checks create another worker; serialize only reads of the same Vault in the same database.
+    private static let pullingVaults = Mutex<Set<PullKey>>([])
 
     init(
         dbQueue: DatabaseQueue,
@@ -279,13 +290,17 @@ actor SyncWorker {
     }
 
     private func runDrain() async {
+        var nextPull = ContinuousClock.now
         while !Task.isCancelled {
             do {
+                if ContinuousClock.now >= nextPull {
+                    try await pullRemoteChanges()
+                    nextPull = .now.advanced(by: .seconds(5))
+                }
                 try await SyncInitialSnapshotBuilder.enqueuePending(dbQueue: dbQueue) { error in
                     ErrorReportingService.capture(error, context: ["source": "syncDrain"])
                 }
                 guard let transaction = try await SyncTransactionQueue.claim(dbQueue: dbQueue) else {
-                    try await pullRemoteChanges()
                     try? await ScreenshotContentProvider.shared.trimFiles(dbQueue: dbQueue)
                     try? await ScreenshotStorageMaintenance.reclaimIncrementally(dbQueue: dbQueue)
                     try await Task.sleep(for: .seconds(5))
@@ -586,7 +601,7 @@ actor SyncWorker {
         guard let target = try await pullTargets().first(where: { $0.vaultId == vaultId && $0.connectionId == connectionId }) else {
             throw TextContentError.changed
         }
-        try await pullRemoteChanges(for: target)
+        guard try await pullRemoteChanges(for: target) else { throw TextContentError.changed }
         guard try await dbQueue.read({ db in
             try SyncTransactionQueue.matchesExpectedConnection(vaultId: vaultId, connectionId: connectionId, in: db)
                 && !SyncTransactionQueue.hasPending(vaultId: vaultId, in: db)
@@ -612,7 +627,7 @@ actor SyncWorker {
         for target in try await pullTargets() {
             do {
                 try await ScreenshotContentProvider.shared.migrateLegacyImages(vaultId: target.vaultId, dbQueue: dbQueue)
-                try await pullRemoteChanges(for: target)
+                _ = try await pullRemoteChanges(for: target)
                 await MeetingContentProvider.shared.scheduleMaintenance(dbQueue: dbQueue)
             } catch is CancellationError {
                 throw CancellationError()
@@ -635,7 +650,10 @@ actor SyncWorker {
         }
     }
 
-    private func pullRemoteChanges(for target: SyncTarget) async throws {
+    private func pullRemoteChanges(for target: SyncTarget) async throws -> Bool {
+        let key = PullKey(database: ObjectIdentifier(dbQueue), vaultId: target.vaultId)
+        guard Self.pullingVaults.withLock({ $0.insert(key).inserted }) else { throw TextContentError.changed }
+        defer { _ = Self.pullingVaults.withLock { $0.remove(key) } }
         do {
             let data = try await sendData(
                 request(origin: target.origin, path: "api/v1/capabilities", method: "GET"),
@@ -671,10 +689,12 @@ actor SyncWorker {
         }
         if target.cursor == nil {
             try await recoverSnapshot(target)
-            return
+            return true
         }
 
         var cursor = target.cursor
+        var committedCursor = target.cursor
+        var deferred = false
         var highWaterCursor: String?
         repeat {
             let page = try await loadChangePage(
@@ -695,18 +715,27 @@ actor SyncWorker {
                     snapshotItems.append(contentsOf: snapshotPage.items)
                 }
                 let snapshot = Self.initialSnapshotChanges(snapshotItems)
-                _ = try await applySnapshot(snapshot, cursor: snapshotPage.cursor, target: target)
-                return
+                return try await applySnapshot(snapshot, cursor: snapshotPage.cursor, target: target)
             }
-            guard let applicable = try await reconcilingDependencies(in: page.items, target: target) else {
-                return
+            switch try await applyIncrementalPage(page.items, target: target) {
+            case .retry: return false
+            case .deferred: deferred = true
+            case .applied, .alreadyApplied: break
             }
-            guard try await apply(applicable, cursor: page.cursor, target: target) else {
-                return
+            if !deferred {
+                guard try await RemoteChangeApplier.advanceIncrementalCursor(
+                    page.cursor,
+                    from: committedCursor,
+                    context: target.context,
+                    dbQueue: dbQueue
+                ) else { return false }
+                committedCursor = page.cursor
             }
+            // The scan may pass a protected item, but its durable cursor never does.
             cursor = page.cursor
             if !page.hasMore { break }
         } while true
+        return !deferred
     }
 
     private func recoverSnapshot(_ target: SyncTarget) async throws {
@@ -851,7 +880,8 @@ actor SyncWorker {
 
     private func reconcilingDependencies(
         in changes: [SyncChangePage.Change],
-        target: SyncTarget
+        target: SyncTarget,
+        incrementalContext: RemoteChangePolicy.Context? = nil
     ) async throws -> [SyncChangePage.Change]? {
         let missingMeetingIDs = try await Self.missingParentMeetingIDs(
             in: changes,
@@ -904,16 +934,21 @@ actor SyncWorker {
                 record: SyncJSON.decoder.decode(SyncCanonicalPayload.self, from: data)
             ))
         }
-        guard try await reconcilingProjects(in: parentMeetings + changes, target: target) != nil,
-              try await apply(parentFiles + parentMeetings, cursor: nil, target: target) else {
-            return nil
+        guard try await reconcilingProjects(in: parentMeetings + changes, target: target, incrementalContext: incrementalContext) != nil
+        else { return nil }
+        if incrementalContext != nil {
+            let result = try await applyIncrementalPage(parentFiles + parentMeetings, target: target)
+            guard result == .applied else { return nil }
+        } else {
+            guard try await apply(parentFiles + parentMeetings, cursor: nil, target: target) else { return nil }
         }
         return changes.filter { $0.entity != .project }
     }
 
     private func reconcilingProjects(
         in changes: [SyncChangePage.Change],
-        target: SyncTarget
+        target: SyncTarget,
+        incrementalContext: RemoteChangePolicy.Context? = nil
     ) async throws -> [SyncChangePage.Change]? {
         guard try await Self.needsProjectReconciliation(
             changes,
@@ -938,7 +973,8 @@ actor SyncWorker {
             projects,
             vaultId: target.vaultId,
             expectedConnectionId: target.connectionId,
-            dbQueue: dbQueue
+            dbQueue: dbQueue,
+            incrementalContext: incrementalContext
         ) else {
             return nil
         }
@@ -1021,6 +1057,39 @@ actor SyncWorker {
         let page = try SyncJSON.decoder.decode(SyncChangePage.self, from: data)
         guard page.contentMode == "metadata-v1" else { throw SyncHTTPError(status: 426, body: Data()) }
         return page
+    }
+
+    private func applyIncrementalPage(_ changes: [SyncChangePage.Change], target: SyncTarget) async throws -> RemoteChangePolicy.Result {
+        var deferred = false
+        for change in changes {
+            try Task.checkCancellation()
+            let decision = try await dbQueue.read { try RemoteChangePolicy.decision(change, context: target.context, in: $0) }
+            switch decision {
+            case .retry:
+                if try await dbQueue.read({ try target.context.isCurrent(in: $0) }) {
+                    // A fresh canonical revision lower than our copy requires the existing fenced snapshot recovery.
+                    try await recoverSnapshot(target)
+                }
+                return .retry
+            case .deferred:
+                deferred = true
+                continue
+            case .alreadyApplied, .applied: break
+            }
+            guard try await reconcilingDependencies(in: [change], target: target, incrementalContext: target.context) != nil else {
+                guard try await dbQueue.read({ try target.context.isCurrent(in: $0) }) else { return .retry }
+                deferred = true
+                continue
+            }
+            if change.entity == .project { continue } // Project hierarchy was reconciled as a unit above.
+            let result = try await RemoteChangeApplier.applyIncremental(change, context: target.context, dbQueue: dbQueue)
+            switch result {
+            case .retry: return .retry
+            case .deferred: deferred = true
+            case .applied, .alreadyApplied: break
+            }
+        }
+        return deferred ? .deferred : .applied
     }
 
     private func apply(
@@ -1184,7 +1253,8 @@ actor SyncWorker {
                   ON dahlia_account_connections.id = vaults.syncConfirmedConnectionId
                 WHERE vaults.accountConnectionId = vaults.syncConfirmedConnectionId
                   AND (
-                    NOT EXISTS (SELECT 1 FROM sync_transactions WHERE vaultId = vaults.id)
+                    (vaults.syncPullCursor IS NOT NULL AND vaults.syncRecoveryState IS NULL)
+                    OR NOT EXISTS (SELECT 1 FROM sync_transactions WHERE vaultId = vaults.id)
                     OR EXISTS (
                       SELECT 1 FROM sync_entity_state s
                       WHERE s.vaultId = vaults.id AND s.entity = 'vault' AND s.entityId = vaults.id
@@ -1213,15 +1283,7 @@ actor SyncWorker {
         }
         eventTasks.removeAll()
         let connections = await (try? dbQueue.read { db in
-            try DahliaAccountConnectionRecord.fetchAll(
-                db,
-                sql: """
-                SELECT DISTINCT c.*
-                FROM dahlia_account_connections c
-                JOIN vaults v ON v.syncConfirmedConnectionId = c.id
-                WHERE v.accountConnectionId = c.id
-                """
-            )
+            try DahliaAccountConnectionRecord.fetchAll(db)
         }) ?? []
         for connection in connections where eventTasks[connection.id] == nil {
             guard let origin = URL(string: connection.origin) else { continue }
@@ -1241,9 +1303,20 @@ actor SyncWorker {
                 guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
                     throw URLError(.badServerResponse)
                 }
-                for try await line in bytes.lines where line.hasPrefix("data:") {
+                await MainActor.run { ServerAccountSettingsModel.shared.refresh(connectionID: connectionId) }
+                var event = ""
+                for try await line in bytes.lines {
                     guard !Task.isCancelled else { return }
-                    try await pullRemoteChanges()
+                    if line.hasPrefix("event:") {
+                        event = String(line.dropFirst(6)).trimmingCharacters(in: .whitespaces)
+                    } else if line.hasPrefix("data:") {
+                        if event == "account_settings" {
+                            await MainActor.run { ServerAccountSettingsModel.shared.refresh(connectionID: connectionId) }
+                        } else {
+                            try await pullRemoteChanges()
+                        }
+                        event = ""
+                    }
                 }
             } catch is CancellationError {
                 return

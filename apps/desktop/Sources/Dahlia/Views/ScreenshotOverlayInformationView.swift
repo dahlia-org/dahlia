@@ -76,7 +76,7 @@ struct ScreenshotOverlayInformationView: View {
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
         case let .remote(_, caption, state):
-            remoteContent(caption, state: state)
+            remoteContent(caption?.nilIfBlank == nil ? nil : caption, state: state)
         case .failed:
             Text(L10n.imageAnalysisFailed)
                 .foregroundStyle(.secondary)
@@ -87,7 +87,7 @@ struct ScreenshotOverlayInformationView: View {
 
     @ViewBuilder
     private func remoteContent(_ value: String?, state: TextContentAvailability.State) -> some View {
-        TextContentStatusView(state: value == nil && state == .ready ? .empty : state, retry: retry)
+        TextContentStatusView(state: value == nil && state == .ready ? .loading : state, retry: retry)
         if let value {
             Text(value).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
         }

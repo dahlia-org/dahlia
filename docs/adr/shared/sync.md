@@ -134,7 +134,7 @@ manifest hash は各 nullable UTF-8 field の `byteLength:bytes`、NULL は `-:`
 
 会話分析も共通 provider の lease で全文を確保し、Repository は未保持本文から空の分析を生成しない。本文の取得・revision 更新は表示中の分析を無効化し、計算結果の保存時にも完全性と保持 revision を確認する。録音後の分析は既存のバックグラウンド処理のまま実行する。
 
-端末が解析する画像に未完了の解析 job がある場合は、Server へのアップロード後も既存の待機・処理・失敗表示と完了までの更新を維持する。Server から受信しただけの画像は共通 provider で OCR / caption を取得し、ローカル解析の待機として扱わない。
+Local Account の画像は端末の解析 job の待機・処理・失敗表示を維持する。Server Account の同期済み画像は共通 provider で OCR / caption を取得し、端末に残る解析 job を待たない。
 
 全 Server Account 合計128 MiBを超えると、再取得可能な検証済み本文を LRU で80%まで解放する。直近20会議は空き枠内だけ先読みする。閲覧済み本文を先読みのために追い出さず、解放した項目を次の先読みで取り直さない。Local Account、使用中、未送信・競合・復旧中の Vault、録音中は対象外。容量は本文だけを数え、metadata・翻訳・session・音声特徴量・ユーザーの Markdown・backup を含めない。解放は本文行だけを削除し、transcript metadata・summary header・file metadata と export 参照、端末固有属性を保持する。対応する FTS・旧 vector を除去し metadata 索引を再構築する。既存の起動時 VACUUM と録音外 incremental vacuum で空きページを回収する。
 
@@ -143,3 +143,21 @@ manifest hash は各 nullable UTF-8 field の `byteLength:bytes`、NULL は `-:`
 本文編集は完全性を検査し、操作の base revision は編集した保持 revision を使う。明示的なローカル版再適用だけが最新 revision を使える。未保持会議への録音追加は既存の durable write を使い、不足する過去本文を完全にしたと判定しない。Local Account への移動は metadata 同期、全本文・画像原本取得後に、各 Vault の Server high-water cursor が取得開始時の同期済み cursor と一致することを再確認する。不一致や通信失敗では移動を中止し、再試行時に同期と取得をやり直す。確定 transaction 内でも接続 generation・同期済み cursor・完全性を再検査する。失敗時は接続・queue・ローカル変更を保持する。
 
 Server 版の採用や確定済み Vault の無効操作破棄では、破棄対象の本文だけを同じ transaction で通常の未保持表現へ解放し、Server revision が変わらなくても正本を再取得する。本文行を削除し、対応する FTS と開いている表示 projection も更新する。行・metadata・翻訳・音声特徴量は保持する。未確定 Vault の初期アップロード再構築と、明示的なローカル版再適用ではローカル本文を保持する。
+
+## Server アカウント言語設定（2026-09-07）
+
+出力言語と画像解析言語は Server DB を正本とし、Desktop は接続・認証 user ID に束縛したメモリだけで保持する。設定用ローカル table、revision、永続再送 queue は追加しない。初回 GET が未作成なら端末の現在値で conditional INSERT し、他端末の初期化を上書きしない。
+
+起動・接続・再接続・画面表示と `account_settings` SSE invalidation で再取得する。取得をキャンセルし要求世代を照合して古い応答を捨てる。オフライン中は取得済み値か未取得状態を表示し、編集しない。再接続時の正本取得で通知欠落を回復する。要約生成処理は Desktop に残し、Server Account の出力言語を使う。
+
+設定取得と認証更新は録音開始・継続・停止の前提にしない。既存 working copy は設定未取得・期限切れ認証でもローカル録音と文字起こしを継続し、音声・確定文字起こし・画像・同期待ち操作を既存経路で保持する。再認証が必要なら同期だけを待機させる。新規サインインのオフライン対応は対象外。
+
+## 録音中の通常差分適用（2026-09-07）
+
+画像専用の最新 metadata 取得は撤回し、confirmed revision は通常同期が管理する。`RemoteChangePolicy` が通常差分・依存取得・指定 revision の本文反映の適用条件を共有する。送信待ち・送信中・競合停止中の操作と、現在および要求内の親子参照を検査する。録音中の transcript、会議や参照の削除、録音画像の原本差し替えを保護する。他の会議や競合しない OCR / caption 更新は録音だけを理由に止めない。Project 階層の整合は既存の snapshot 単位を維持する。
+
+通常差分は保留があっても後続ページを読む。永続 cursor は保留のないページまでしか進めず、先読み cursor と high-water は実行中だけ保持する。次回・再起動後は永続 cursor から再取得し、同一 revision を再適用しない。SSE に加えて、送信 queue が空でなくても既存の5秒間隔の受信確認を行う。同一 DB / Vault の受信は transfer 用 worker とも重複させない。接続・復旧状態と mutation generation を適用時に再検査し、ACK と操作破棄でも generation を進めて保護解除前の応答を無効化する。
+
+Server の差分は現在の正本を返し、削除は null revision を持つ。小さい数値 revision はそのまま上書きせず、削除・再作成が集約された可能性を既存の snapshot 復旧で確認する。復旧・reset は未送信操作や録音を保護する従来の一貫した適用単位を維持し、部分適用しない。参照が残る file の削除も保留して後続の参照削除を待つ。
+
+`MeetingContentProvider` は同期済み revision の manifest・件数・hash を検証して本文を反映し、metadata や confirmed revision は更新しない。表示中の OCR / caption は未完了または stale なら既存2秒間隔で確認する。完了条件は Server の解析判定と揃え、空の OCR は有効、caption は空白除去後に非空であることを要求する。Server の解析 job 状態は本文 API に含まれないため、5分で自動取得を停止し、取得済み本文を残して再取得操作を表示する。画像を開き直すか再取得すると待機を再開する。ネットワーク待機を録音・確定文字起こしの保存経路へ持ち込まず、本文の破棄・eviction は引き続き Vault 全体の未送信・復旧状態と録音状態で保護する。

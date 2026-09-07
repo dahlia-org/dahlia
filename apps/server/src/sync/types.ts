@@ -1,5 +1,6 @@
 import type { FileRecord, MeetingFileRecord } from "../files/model";
 import type { Identity } from "../auth/identity";
+import type { ImageAnalysisClaim, ImageAnalysisInput } from "../image-analysis/model";
 
 export interface SyncTranscriptSegment {
   segmentId: string;
@@ -182,6 +183,8 @@ export interface SyncSearchQuery {
 }
 
 export interface IdentitySyncStore {
+  loadImageAnalysis(claim: ImageAnalysisClaim): Promise<ImageAnalysisInput | null>;
+  completeImageAnalysis(input: ImageAnalysisInput, transaction: SyncTransaction): Promise<boolean>;
   countTranscript(vaultId: string, meetingId: string): Promise<number>;
   searchTextPage(vaultId: string, query: SyncSearchQuery, kind: "meeting" | "screenshot", offset: number, limit: number): Promise<{
     id: string; meetingId: string; snippet: string;

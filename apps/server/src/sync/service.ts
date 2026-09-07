@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { uuidV7 } from "../id";
+import { imageAnalysisSchema, type ImageAnalysisInput, type ImageAnalysis } from "../image-analysis/model";
 
 import type { Identity } from "../auth/identity";
 import { DEFAULT_ARTIFACT_MAX_BYTES } from "../config";
@@ -188,6 +190,34 @@ export class MeetingSyncService {
     );
   }
 
+  async completeImageAnalysis(identity: Identity, input: ImageAnalysisInput, output: ImageAnalysis): Promise<boolean> {
+    const analysis = imageAnalysisSchema.parse(output);
+    const metadata = {
+      ...input.file.metadata,
+      ocr_text: input.file.metadata.ocr_text ?? analysis.ocr_text,
+      caption: input.file.metadata.caption?.trim() ? input.file.metadata.caption : analysis.caption,
+    };
+    const transaction = await normalizeTransaction({
+      schemaVersion: 2, id: uuidV7(), vaultId: input.vaultId, createdAt: new Date().toISOString(),
+      operations: [{
+        id: uuidV7(), entity: "file", action: "upsert", entityId: input.fileId,
+        baseRevision: input.file.revision, data: { checksum: input.file.checksum, metadata },
+      }],
+    });
+    Object.assign(transaction.operations[0]!.data!, await this.fileSearchData(metadata));
+    return this.store.withIdentity(identity, (scoped) => scoped.completeImageAnalysis(input, transaction));
+  }
+
+  private async fileSearchData(metadata: Partial<FileRecord["metadata"]>) {
+    const embeddingText = [metadata.ocr_text, metadata.caption]
+      .filter((value): value is string => typeof value === "string" && value.trim().length > 0).join("\n") || null;
+    return {
+      searchText: createSearchText(this.tokenizer, [metadata.ocr_text, metadata.caption]),
+      embeddingText,
+      embeddingContentHash: await embeddingContentHash(embeddingText),
+    };
+  }
+
   async commitTransaction(identity: Identity, body: unknown) {
     this.requireWritableIdentity(identity);
     const normalized = await normalizeTransaction(body);
@@ -245,13 +275,7 @@ export class MeetingSyncService {
             const file = fileMetadata.get(fileId) ?? (await scoped.getFile(fileId))?.metadata;
             const metadata = { ...file, ...(operation.entity === "file" ? data.metadata as object : {}) };
             if (metadata.source) fileMetadata.set(fileId, metadata as FileRecord["metadata"]);
-            const embeddingText = [metadata.ocr_text, metadata.caption]
-              .filter((value): value is string => typeof value === "string" && value.trim().length > 0).join("\n") || null;
-            Object.assign(data, {
-              searchText: createSearchText(this.tokenizer, [metadata.ocr_text, metadata.caption]),
-              embeddingText,
-              embeddingContentHash: await embeddingContentHash(embeddingText),
-            });
+            Object.assign(data, await this.fileSearchData(metadata));
           }
           prepared.push({ ...operation, data });
         }

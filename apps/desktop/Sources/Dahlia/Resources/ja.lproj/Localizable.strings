@@ -1678,3 +1678,10 @@
 "text.content.searchFailed" = "Server検索は未完了です。この端末の結果のみ表示しています。";
 "text.content.searchMore" = "Server検索の続きがあります。「さらに表示」で検索範囲を広げます。";
 "text.content.serverMatch" = "Server";
+
+// Server account language settings
+"account.settings.languages" = "アカウントの解析言語";
+"account.settings.imageLanguages" = "画像解析の対象言語";
+"account.settings.description" = "このアカウントの端末間で共有します。出力言語は要約と画像の説明に適用されます。録音・文字起こしの言語設定は変更しません。";
+"account.settings.notLoaded" = "アカウント設定は未取得です。";
+"account.settings.unavailable" = "サーバに接続できないため、設定を変更できません。録音は引き続き利用できます。";

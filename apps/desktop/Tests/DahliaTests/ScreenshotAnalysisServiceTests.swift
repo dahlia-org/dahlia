@@ -67,7 +67,6 @@ import Foundation
         @Test(arguments: [
             (CodexRuntimeProvider.chatGPTSubscription, "gpt-5.6-luna"),
             (.databricks(profile: "test"), "gpt-5.6-luna"),
-            (.dahlia(connectionID: UUID.v7()), "gpt-5-6-luna"),
         ])
         func sendsOneStructuredLunaRequestForOneScreenshot(
             provider: CodexRuntimeProvider,
