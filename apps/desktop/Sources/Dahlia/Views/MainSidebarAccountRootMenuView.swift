@@ -19,6 +19,7 @@ struct MainSidebarAccountRootMenuView: View {
     let onManageVaults: () -> Void
     let onAccountAction: () -> Void
 
+    @State private var accountController = DahliaCloudAccountController.shared
     @State private var pendingHoverTask: Task<Void, Never>?
 
     var body: some View {
@@ -38,7 +39,7 @@ struct MainSidebarAccountRootMenuView: View {
                 MainSidebarAccountMenuRow(
                     title: connection.displayName,
                     subtitle: connection.isCloud ? L10n.dahliaCloud : L10n.dahliaServer,
-                    image: Image(systemName: connection.isCloud ? "icloud" : "xserve"),
+                    syncState: accountController.syncStates[connection.id] ?? .pending,
                     selectionState: connection.id == currentConnectionID,
                     isEnabled: connection.vaultCount > 0,
                     isKeyboardHighlighted: navigation.activeMenu == .root && navigation.rootSelection == index,

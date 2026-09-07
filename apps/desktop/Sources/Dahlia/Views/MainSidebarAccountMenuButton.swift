@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 
 struct MainSidebarAccountMenuButton: NSViewRepresentable {
+    @State private var accountController = DahliaCloudAccountController.shared
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     let vaults: [VaultRecord]
@@ -72,17 +73,16 @@ struct MainSidebarAccountMenuButton: NSViewRepresentable {
             vaultName: vaultTitle
         )
         let font = NSFont.preferredFont(forTextStyle: .body)
-        button.image = NSImage(systemSymbolName: accountSystemImage, accessibilityDescription: nil)?
-            .withSymbolConfiguration(.init(pointSize: font.pointSize, weight: .regular))
-        button.setAccessibilityLabel("\(L10n.account), \(accountTitle); \(L10n.currentVault), \(vaultTitle)")
-    }
-
-    private var accountSystemImage: String {
-        if isLocalAccount { return "person.2" }
-        guard let currentConnection = connections.first(where: { $0.id == currentConnectionID }) else {
-            return "icloud.slash"
+        if !isLocalAccount, let currentConnectionID {
+            let state = accountController.syncStates[currentConnectionID] ?? .pending
+            button.image = NSImage(systemSymbolName: state.symbol, accessibilityDescription: state.title)?
+                .withSymbolConfiguration(.init(pointSize: font.pointSize, weight: .regular)
+                    .applying(.init(paletteColors: [state == .synced ? .systemGreen : .secondaryLabelColor, .secondaryLabelColor])))
+        } else {
+            button.image = NSImage(systemSymbolName: isLocalAccount ? "person.2" : "icloud.slash", accessibilityDescription: nil)?
+                .withSymbolConfiguration(.init(pointSize: font.pointSize, weight: .regular))
         }
-        return currentConnection.isCloud ? "icloud" : "xserve"
+        button.setAccessibilityLabel("\(L10n.account), \(accountTitle); \(L10n.currentVault), \(vaultTitle)")
     }
 
     private var accountSelection: MainSidebarAccountSelection {

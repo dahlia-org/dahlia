@@ -5,20 +5,24 @@ struct MeetingSyncStatusView: View {
 
     var body: some View {
         Label {
-            Text(title)
+            Text(state.title)
         } icon: {
-            Image(systemName: symbol)
+            Image(systemName: state.symbol)
                 .symbolRenderingMode(.palette)
                 .foregroundStyle(state == .synced ? Color.green : Color.secondary, Color.secondary)
         }
+        .labelStyle(.iconOnly)
         .font(.caption)
         .foregroundStyle(.secondary)
-        .help(title)
-        .accessibilityLabel(title)
+        .dahliaHoverHelp(label: state.title)
+        .accessibilityLabel(state.title)
     }
 
-    private var title: String {
-        switch state {
+}
+
+extension MeetingSyncState {
+    var title: String {
+        switch self {
         case .local: L10n.meetingSyncLocalSaved
         case .pending: L10n.meetingSyncPending
         case .synced: L10n.meetingSyncSynced
@@ -30,8 +34,8 @@ struct MeetingSyncStatusView: View {
         }
     }
 
-    private var symbol: String {
-        switch state {
+    var symbol: String {
+        switch self {
         case .local: "internaldrive"
         case .pending, .recovering: "arrow.triangle.2.circlepath"
         case .synced: "checkmark.icloud"

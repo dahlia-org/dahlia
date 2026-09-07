@@ -45,24 +45,7 @@ extension MeetingRepository {
         guard let connectionId = vault.accountConnectionId else {
             return MeetingSyncSnapshot(connectionId: nil, state: .local, revisions: [])
         }
-        let blocked = try String.fetchOne(
-            db,
-            sql: "SELECT blockedReason FROM sync_transactions WHERE vaultId = ? AND blockedReason IS NOT NULL ORDER BY sequence LIMIT 1",
-            arguments: [vault.id]
-        ).flatMap(SyncBlockedReason.init(rawValue:))
-        let hasPending = try SyncTransactionQueue.hasPending(vaultId: vault.id, in: db)
-        let state: MeetingSyncState = if let blocked {
-            .blocked(blocked)
-        } else if vault.syncRecoveryState == "updateRequired" {
-            .updateRequired
-        } else if vault.syncRecoveryState != nil {
-            .recovering
-        } else if vault.syncConfirmedConnectionId != connectionId || vault.syncPullCursor == nil
-            || hasPending {
-            .pending
-        } else {
-            .synced
-        }
+        let state = try fetchVaultSyncState(vault, in: db)
         let revisions = try MeetingSyncSnapshot.Revision.fetchAll(
             db,
             sql: """
@@ -82,5 +65,56 @@ extension MeetingRepository {
         ORDER BY entity, entityId
         """, arguments: [vault.id, meetingId, meetingId])
         return MeetingSyncSnapshot(connectionId: connectionId, state: state, revisions: revisions, content: content)
+    }
+
+    nonisolated static func fetchVaultSyncState(_ vault: VaultRecord, in db: Database) throws -> MeetingSyncState {
+        guard let connectionId = vault.accountConnectionId else { return .local }
+        let blocked = try String.fetchOne(
+            db,
+            sql: "SELECT blockedReason FROM sync_transactions WHERE vaultId = ? AND blockedReason IS NOT NULL ORDER BY sequence LIMIT 1",
+            arguments: [vault.id]
+        ).flatMap(SyncBlockedReason.init(rawValue:))
+        let hasPending = try SyncTransactionQueue.hasPending(vaultId: vault.id, in: db)
+        return if let blocked {
+            .blocked(blocked)
+        } else if vault.syncRecoveryState == "updateRequired" {
+            .updateRequired
+        } else if vault.syncRecoveryState != nil {
+            .recovering
+        } else if vault.syncConfirmedConnectionId != connectionId || vault.syncPullCursor == nil
+            || hasPending {
+            .pending
+        } else {
+            .synced
+        }
+    }
+
+    nonisolated static func fetchAccountSyncStates(in db: Database) throws -> [UUID: MeetingSyncState] {
+        let vaults = try VaultRecord.filter(Column("accountConnectionId") != nil).fetchAll(db)
+        var states: [UUID: MeetingSyncState] = [:]
+        for vault in vaults {
+            guard let connectionId = vault.accountConnectionId else { continue }
+            let state = try fetchVaultSyncState(vault, in: db)
+            if states[connectionId].map({ $0.accountPriority < state.accountPriority }) ?? true {
+                states[connectionId] = state
+            }
+        }
+        return states
+    }
+
+}
+
+private extension MeetingSyncState {
+    var accountPriority: Int {
+        switch self {
+        case .local: 0
+        case .synced: 1
+        case .pending: 2
+        case .recovering: 3
+        case .updateRequired: 4
+        case .blocked(.validation): 5
+        case .blocked(.conflict): 6
+        case .blocked(.authorization): 7
+        }
     }
 }

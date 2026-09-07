@@ -4,6 +4,7 @@ struct MainSidebarAccountMenuRow: View {
     let title: String
     var subtitle: String?
     var image: Image?
+    var syncState: MeetingSyncState?
     var showsDisclosure = false
     var selectionState: Bool?
     var isEnabled = true
@@ -22,7 +23,10 @@ struct MainSidebarAccountMenuRow: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 8) {
-                if let image {
+                if let syncState {
+                    MeetingSyncStatusView(state: syncState)
+                        .frame(width: 18)
+                } else if let image {
                     image
                         .resizable()
                         .scaledToFit()

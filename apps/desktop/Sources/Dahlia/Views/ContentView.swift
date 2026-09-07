@@ -148,15 +148,7 @@ struct ContentView: View {
                     onToggleSidebar: toggleSidebar,
                     onSearch: showSearch,
                     onGoBack: goBack,
-                    onGoForward: goForward,
-                    syncState: mainWindowNavigation.section == .meetings ? viewModel.meetingSyncState : nil,
-                    textContentState: mainWindowNavigation.section == .meetings ? viewModel.textContentState : nil,
-                    retryTextContent: viewModel.retryTextContent
-                )
-                .padding(
-                    .trailing,
-                    !chatCoordinator.isDockedVisible && !isShowingFullScreenChat
-                        ? DahliaDesign.windowHeaderControlSize + 2 * DahliaDesign.windowHeaderHorizontalPadding : 0
+                    onGoForward: goForward
                 )
             }
             .meetingSidebarHoverOverlay(
