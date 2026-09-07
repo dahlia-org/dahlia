@@ -2,7 +2,7 @@ import { projectAncestors, selectedSidebarVault, Sidebar, SidebarProvider, vault
 import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { MeetingTabs, parseSummary, SummaryContent, SummaryTags } from "../src/client/MeetingContent";
+import { MeetingTabs, parseSummary, SummaryContent, SummaryTags, TranscriptTime } from "../src/client/MeetingContent";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -21,6 +21,22 @@ const ExtensionPage = () => null;
 afterEach(() => vi.unstubAllGlobals());
 
 describe("desktop-style meeting layout", () => {
+  it("renders elapsed transcript timestamps independently of locale, midnight and duration length", () => {
+    for (const language of ["en-US", "ja-JP"]) {
+      vi.stubGlobal("navigator", { language });
+      for (const [startTime, timeBase, expected] of [
+        ["2026-09-07T14:02:00+09:00", "2026-09-07T14:00:00+09:00", "00:02:00"],
+        ["2026-09-08T00:01:02.999+09:00", "2026-09-07T23:00:00+09:00", "01:01:02"],
+        ["2026-09-08T15:02:00Z", "2026-09-07T14:00:00Z", "25:02:00"],
+        ["2026-09-07T14:00:00Z", "2026-09-07T14:00:01Z", "00:00:00"],
+        ["invalid", "2026-09-07T14:00:00Z", "—"],
+      ]) {
+        const html = renderToStaticMarkup(createElement(TranscriptTime, { startTime: startTime!, timeBase: timeBase! }));
+        expect(html).toBe(`<time dateTime="${startTime}">${expected}</time>`);
+      }
+    }
+  });
+
   it("renders structured content and escapes untrusted summary text", () => {
     const document = parseSummary(JSON.stringify({
       description: "Meeting overview",

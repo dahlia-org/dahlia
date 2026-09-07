@@ -77,6 +77,14 @@ export function SummaryContent({ document }: { document: Record<string, unknown>
   </div>;
 }
 
+export function TranscriptTime({ startTime, timeBase }: { startTime: string; timeBase: string }) {
+  const seconds = Math.max(0, Math.floor((Date.parse(startTime) - Date.parse(timeBase)) / 1000));
+  const timestamp = Number.isFinite(seconds)
+    ? [Math.floor(seconds / 3600), Math.floor(seconds / 60) % 60, seconds % 60].map((part) => String(part).padStart(2, "0")).join(":")
+    : "—";
+  return <time dateTime={startTime}>{timestamp}</time>;
+}
+
 export function MeetingTabs({ summary, screenshots, transcript, actions }: { summary: ReactNode; screenshots: ReactNode; transcript: ReactNode; actions?: ReactNode }) {
   const tabs = [
     { id: "summary", label: uiText("Summary", "要約"), content: summary },

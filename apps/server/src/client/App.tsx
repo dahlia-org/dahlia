@@ -10,7 +10,7 @@ import {
 import { dashboardNavigationPath } from "./navigation";
 import { summaryDisplayText } from "../search/summary";
 import { clientMutationEvent, json, RequestError, syncMessage, uiText, type SyncedVaultInfo, type OrganizationInfo, type SyncedMeetingInfo, type SyncedMeetingPage, type SyncedProjectInfo } from "./api";
-import { MeetingTabs, parseSummary, SummaryContent, SummaryTags } from "./MeetingContent";
+import { MeetingTabs, parseSummary, SummaryContent, SummaryTags, TranscriptTime } from "./MeetingContent";
 import { MenuIcon, Sidebar, SidebarProvider, useSidebar } from "./Sidebar";
 
 export interface SessionInfo {
@@ -160,13 +160,13 @@ export async function commitSyncTransaction(vaultId: string, operations: SyncOpe
   try {
     let result: Receipt;
     try {
-      result = await json<Receipt>("/api/v1/transactions", request);
+      result = await json<Receipt>("/api/v1/transactions", request, { notifyMutation: false });
     } catch (error) {
       if (error instanceof RequestError && error.status && error.status < 500 && ![408, 410, 425, 429].includes(error.status)) throw error;
       onRecovery(true);
       let resolved: Receipt;
       try {
-        resolved = await json<Receipt>("/api/v1/transactions/resolve", request);
+        resolved = await json<Receipt>("/api/v1/transactions/resolve", request, { notifyMutation: false });
       } catch (resolveError) {
         if (resolveError instanceof RequestError && resolveError.status === 404) {
           throw new RequestError(syncMessage("sync_upgrade_required")!, 426, { cause: resolveError });
@@ -175,7 +175,7 @@ export async function commitSyncTransaction(vaultId: string, operations: SyncOpe
       }
       if (resolved.id !== transactionId) throw new Error("Invalid transaction receipt", { cause: error });
       result = resolved.status === "unknown"
-        ? await json<Receipt>("/api/v1/transactions", request)
+        ? await json<Receipt>("/api/v1/transactions", request, { notifyMutation: false })
         : resolved;
     }
     if (result.id !== transactionId || result.status !== "committed"
@@ -183,6 +183,7 @@ export async function commitSyncTransaction(vaultId: string, operations: SyncOpe
       throw new Error("Invalid transaction receipt");
     }
     // Both receipt forms acknowledge the write. Callers reload canonical data rather than applying old content.
+    if (typeof window !== "undefined") window.dispatchEvent(new Event(clientMutationEvent));
     return result;
   } finally {
     onRecovery(false);
@@ -968,7 +969,7 @@ function SyncedMeeting({ vaultId, meetingId }: { vaultId: string; meetingId: str
         transcript={<div className="transcript-document">
           {transcript?.length === 0 && <p className="content-empty">{uiText("No transcript", "文字起こしはありません")}</p>}
           {transcript?.slice(0, 500).map((segment) => <div className="transcript-segment" key={segment.segmentId}>
-            <time dateTime={segment.startTime}>{new Date(segment.startTime).toLocaleTimeString()}</time>
+            <TranscriptTime startTime={segment.startTime} timeBase={meeting.recordingStartedAt ?? transcript?.[0]?.startTime ?? meeting.createdAt} />
             <p>{segment.speakerLabel && <strong>{segment.speakerLabel}: </strong>}{segment.text}</p>
           </div>)}
           {transcript && transcript.length > 500 && <p className="muted">{uiText("Showing the first 500 transcript segments.", "文字起こしの最初の500件を表示しています。")}</p>}

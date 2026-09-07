@@ -72,7 +72,7 @@ export class RequestError extends Error {
 
 export const clientMutationEvent = "dahlia:mutation";
 
-export async function json<T>(url: string, init?: RequestInit): Promise<T> {
+export async function json<T>(url: string, init?: RequestInit, { notifyMutation = true }: { notifyMutation?: boolean } = {}): Promise<T> {
   const response = await fetch(url, {
     ...init,
     headers: init?.body ? { "content-type": "application/json", ...init.headers } : init?.headers,
@@ -92,7 +92,7 @@ export async function json<T>(url: string, init?: RequestInit): Promise<T> {
     );
   }
   const value = response.status === 204 ? undefined : await response.json();
-  if (typeof window !== "undefined" && !["GET", "HEAD", "OPTIONS"].includes(init?.method?.toUpperCase() ?? "GET")) {
+  if (notifyMutation && typeof window !== "undefined" && !["GET", "HEAD", "OPTIONS"].includes(init?.method?.toUpperCase() ?? "GET")) {
     window.dispatchEvent(new Event(clientMutationEvent));
   }
   return value as T;
