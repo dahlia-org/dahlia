@@ -161,7 +161,12 @@ describe("dashboard navigation", () => {
       for (const contentType of ["image/png", "image/tiff", "text/html", "image/svg+xml"]) {
         query.mockReturnValue({ data: { id: "f1", name: "Example", content_type: contentType, metadata: {}, variants: { thumb_1568: "/preview" } }, error: undefined, loading: false, reload: vi.fn() });
         const html = renderToStaticMarkup(createElement(FileViewer, { fileId: "f1", separateTab: true }));
-        expect(html).toContain('href="/files/f1"');
+        expect(html).toContain('aria-label="Image information" aria-expanded="false"');
+        expect(html).toContain('aria-label="Copy image"');
+        expect(html).toContain('aria-label="Zoom out"');
+        expect(html).toContain('aria-label="Zoom in"');
+        expect(html).toContain('100%');
+        expect(html).not.toContain('<aside');
         expect(html).toContain('download="Example"');
         expect(html.includes('<img')).toBe(contentType === "image/png" || contentType === "image/tiff");
         expect(html).not.toMatch(/<(iframe|object|embed)/);

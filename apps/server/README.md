@@ -320,9 +320,14 @@ Vault details provide Meetings, Projects, and Settings tabs; sharing and renamin
 in Settings. Project details show breadcrumbs, description, meeting count, and a meeting
 list with owner-only edit/delete actions. Both support English and Japanese.
 
-Clicking a file opens an accessible modal with a gray backdrop without changing the
+Clicking a file opens an accessible full-window preview with a dark backdrop without changing the
 current URL. Escape, the close button, or the backdrop closes it and restores focus.
-Modified clicks and Open in new tab use `/files/{file_id}`. The standalone page shares
-the preview and download controls. Supported images use the existing 1568px variant
+The top-right circular buttons toggle image information, copy the displayed image, download
+the original, and close the preview. The information panel shows available capture time, format,
+file size, dimensions, caption, and OCR text. Copy requires browser clipboard permission and
+reports failures inline. Bottom-center controls zoom from 25% to 400%; clicking the percentage
+restores the fitted view (100%). Enlarged images can be scrolled. On narrow screens the
+information panel overlays the image. Modified clicks and Open in new tab (inside information)
+use `/files/{file_id}`. The standalone page shares the preview controls. Supported images use the existing 1568px variant
 when available; other file types offer download without embedding active content.
 Live refreshes preserve current tabs, filters, loaded pages, scroll, and an open preview.

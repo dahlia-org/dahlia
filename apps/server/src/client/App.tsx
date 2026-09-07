@@ -905,7 +905,7 @@ export function ScreenshotFigure({ file, capturedAt }: { file: SyncedScreenshotI
   }, []);
   const original = `/api/v1/files/${file.id}/content`;
   return <figure className="panel">
-    <FileLink fileId={file.id} label={uiText("Open screenshot", "スクリーンショットを開く")}>
+    <FileLink fileId={file.id} capturedAt={capturedAt} label={uiText("Open screenshot", "スクリーンショットを開く")}>
       {failed ? <span role="alert">{uiText("Unable to load screenshot.", "スクリーンショットを読み込めませんでした。")}</span> : <img
         src={file.variants.thumb_480 ?? original}
         alt={file.metadata.caption || uiText("Screenshot", "スクリーンショット")}
