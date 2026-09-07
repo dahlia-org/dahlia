@@ -1,3 +1,4 @@
+import { RECORDING_MAX_BYTES, recordingManifestSchema, recordingSourceSchema, recordingStorageKey, recordingContentURL, recordingResponse } from "../recordings/model";
 import { z } from "zod";
 import { uuidV7 } from "../id";
 import { imageAnalysisSchema, type ImageAnalysisInput, type ImageAnalysis } from "../image-analysis/model";
@@ -81,7 +82,7 @@ const uuidV7Schema = z.string()
   .transform((value) => value.toLowerCase());
 const transactionOperationSchema = z.object({
   id: uuidV7Schema,
-  entity: z.enum(["vault", "project", "meeting", "summary", "transcript", "file", "meeting_file", "meeting_event"]),
+  entity: z.enum(["vault", "project", "meeting", "summary", "transcript", "file", "meeting_file", "meeting_event", "recording"]),
   action: z.enum(["create", "update", "delete", "upsert", "patch", "reset"]),
   entityId: uuidSchema,
   baseRevision: z.number().int().nonnegative().nullable(),
@@ -128,6 +129,7 @@ const transactionDataSchemas = {
       context.addIssue({ code: "custom", message: "Invalid transcript patch manifest" });
     }
   }),
+  "recording:upsert": z.object({ source: recordingSourceSchema, checksum: z.string().regex(/^SHA-256:[0-9a-f]{64}$/), manifest: recordingManifestSchema }).strict(),
   "file:upsert": z.object({ name: z.string().min(1).max(255).optional(), checksum: z.string().regex(/^SHA-256:[0-9a-f]{64}$/), metadata: fileMetadataSchema.partial() }).strict(),
   "file:delete": z.object({}).strict(),
   "meeting_file:upsert": z.object({ meetingId: uuidSchema, fileId: uuidSchema, capturedAt: nullableDateSchema, sessionId: uuidSchema.nullable(), createdAt: dateSchema }).strict(),
@@ -359,6 +361,7 @@ export class MeetingSyncService {
     }
     const { rows, highWater } = await this.store.withIdentity(identity, async (scoped) => {
       await scoped.lockVault(vaultId);
+      await scoped.expireRecordingUploads(vaultId, new Date(Date.now() - 86_400_000));
       const highWater = suppliedHighWater ?? await scoped.latestChangeSequence(vaultId);
       const rows = await scoped.listChanges(vaultId, after, highWater, SYNC_CHANGE_PAGE_SIZE + 1);
       if (contentMode) {
@@ -368,6 +371,7 @@ export class MeetingSyncService {
       }
       return { rows, highWater };
     });
+    this.scheduleStorageDeletes();
     const items = rows.slice(0, SYNC_CHANGE_PAGE_SIZE);
     const last = items.at(-1);
     return {
@@ -472,6 +476,123 @@ export class MeetingSyncService {
       parsed.data.deletions,
     ));
     if (!accepted) throw missingMeetingConflict(meetingId);
+  }
+
+  async postRecording(identity: Identity, meetingId: string, request: Request) {
+    this.requireWritableIdentity(identity);
+    const url = new URL(request.url);
+    const sessionId = uuidV7Schema.safeParse(url.searchParams.get("sessionId"));
+    const parsedSource = recordingSourceSchema.safeParse(url.searchParams.get("source"));
+    if (!sessionId.success || !parsedSource.success) throw new ArtifactRequestError(400, "invalid_recording_target");
+    const source = parsedSource.data;
+    const upload = parseUpload(request, RECORDING_MAX_BYTES);
+    if (upload.contentType !== "audio/mp4" || upload.contentLength < 16 || !request.body) {
+      throw new ArtifactRequestError(415, "invalid_recording_format");
+    }
+    const storage = this.requireStorage();
+    const vaultId = await this.store.withIdentity(identity, async (scoped) => {
+      const vaultId = await scoped.resolveEntityVault("meeting", meetingId);
+      if (!vaultId || !await scoped.ensureUploadTarget(vaultId, meetingId)) throw new ArtifactRequestError(404, "meeting_not_found");
+      await scoped.expireRecordingUploads(vaultId, new Date(Date.now() - 86_400_000));
+      return vaultId;
+    });
+    // Expiration must commit even when reservation waits for the queued physical deletion.
+    this.scheduleStorageDeletes();
+    const reservation = await this.store.withIdentity(identity, (scoped) =>
+      scoped.reserveRecording(vaultId, meetingId, sessionId.data, source));
+    const key = recordingStorageKey(reservation, source);
+    const generation = reservation.audio[source]!.generation;
+    return this.withStorageOperation(key, () => this.store.withStorageKeyLock(key, async () => {
+      const record = await this.store.withIdentity(identity, (scoped) => scoped.getRecording(meetingId, reservation.number, true));
+      const previous = record?.audio[source];
+      if (!record || previous?.generation !== generation) throw new ArtifactRequestError(409, "recording_upload_expired");
+      if (await this.store.hasStorageDelete(key)) throw new ArtifactRequestError(503, "recording_storage_delete_pending");
+      let received = 0;
+      const prefix = new Uint8Array(12);
+      const bounded = request.body!.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
+        transform(chunk, controller) {
+          if (received < prefix.length) prefix.set(chunk.subarray(0, prefix.length - received), received);
+          received += chunk.byteLength;
+          if (received > upload.contentLength) throw new ArtifactRequestError(413, "recording_size_mismatch");
+          if (received >= 12 && (String.fromCharCode(...prefix.subarray(4, 8)) !== "ftyp"
+            || new DataView(prefix.buffer).getUint32(0) < 16)) throw new ArtifactRequestError(415, "invalid_recording_format");
+          controller.enqueue(chunk);
+        },
+        flush() { if (received !== upload.contentLength) throw new ArtifactRequestError(400, "recording_size_mismatch"); },
+      }));
+      if (previous.uploadedAt) {
+        const checksum = `SHA-256:${await sha256Stream(bounded)}`;
+        if (previous.size !== received || previous.checksum !== checksum) throw new ArtifactRequestError(409, "recording_content_conflict");
+        return { created: false, record: { id: record.number, source, content_type: previous.content_type,
+          size: previous.size, checksum, revision: record.revision || null, contentURL: recordingContentURL(record, source) } };
+      }
+      const hashing = sha256Passthrough(bounded);
+      const abort = new AbortController();
+      const writing = this.storageCall(() => storage.put(key, hashing.body, upload.contentLength, upload.contentType,
+        AbortSignal.any([request.signal, abort.signal])));
+      try {
+        const [, digest] = await Promise.all([
+          writing,
+          hashing.digest,
+        ]);
+        const checksum = `SHA-256:${digest}`;
+        const completed = await this.store.withIdentity(identity, (scoped) =>
+          scoped.markRecordingUploaded(record.sessionId, source, generation, received, checksum));
+        if (!completed) throw new ArtifactRequestError(409, "recording_upload_expired");
+        return { created: true, record: { id: completed.number, source, content_type: upload.contentType,
+          size: received, checksum, revision: completed.revision || null, contentURL: recordingContentURL(completed, source) } };
+      } catch (error) {
+        // Do not release the key lock while an upstream write can still publish bytes.
+        abort.abort();
+        await writing.catch(() => {});
+        await hashing.body.cancel().catch(() => {});
+        await hashing.digest.catch(() => {});
+        await this.store.enqueueStorageDelete(key);
+        this.scheduleStorageDeletes();
+        throw error;
+      }
+    }));
+  }
+
+  async listRecordings(identity: Identity, meetingId: string, cursor?: string) {
+    const after = cursor === undefined ? 0 : Number(cursor);
+    if (!Number.isSafeInteger(after) || after < 0) throw new ArtifactRequestError(400, "invalid_recording_cursor");
+    const records = await this.store.withIdentity(identity, async (scoped) => {
+      if (!await scoped.resolveEntityVault("meeting", meetingId)) throw new ArtifactRequestError(404, "meeting_not_found");
+      return scoped.listRecordings(meetingId, after, SYNC_READ_PAGE_SIZE + 1);
+    });
+    const items = records.slice(0, SYNC_READ_PAGE_SIZE);
+    return { items: items.map((record) => recordingResponse(record)),
+      nextCursor: records.length > SYNC_READ_PAGE_SIZE ? String(items[items.length - 1]!.number) : null };
+  }
+
+  async recordingContent(identity: Identity, meetingId: string, numberValue: string, sourceValue: string, request: Request) {
+    const number = Number(numberValue);
+    const parsedSource = recordingSourceSchema.safeParse(sourceValue);
+    if (!Number.isSafeInteger(number) || number < 1 || !parsedSource.success) throw new ArtifactRequestError(400, "invalid_recording_target");
+    const source = parsedSource.data;
+    const authorize = () => this.store.withIdentity(identity, async (scoped) => {
+      if (!await scoped.resolveEntityVault("meeting", meetingId)) throw new ArtifactRequestError(404, "meeting_not_found");
+      const record = await scoped.getRecording(meetingId, number);
+      if (!record?.audio[source]?.uploadedAt || (!record.audio[source].active && new Date(record.audio[source].createdAt).getTime() <= Date.now() - 86_400_000) || (!record.audio[source].active && !await scoped.getRecording(meetingId, number, true))) {
+        throw new ArtifactRequestError(404, "recording_not_found");
+      }
+      return record;
+    });
+    const initial = await authorize();
+    const key = recordingStorageKey(initial, source);
+    return this.withStorageOperation(key, () => this.store.withStorageKeyLock(key, async () => {
+      const record = await authorize();
+      if (await this.store.hasStorageDelete(key)) throw new ArtifactRequestError(404, "recording_not_found");
+      const response = await this.storageCall(() => this.requireStorage().read(key, request.method as ArtifactReadMethod, request));
+      const headers = new Headers(response.headers);
+      headers.set("content-type", "audio/mp4");
+      headers.set("cache-control", "private, no-store");
+      headers.set("vary", "Authorization, Cookie");
+      headers.set("x-content-type-options", "nosniff");
+      headers.set("etag", `"${record.audio[source]!.checksum}"`);
+      return new Response(response.body, { status: response.status, headers });
+    }));
   }
 
   async postFile(identity: Identity, request: Request) {

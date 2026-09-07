@@ -1,3 +1,4 @@
+import type { RecordingRecord, RecordingSource } from "../recordings/model";
 import type { FileRecord, MeetingFileRecord } from "../files/model";
 import type { Identity } from "../auth/identity";
 import type { ImageAnalysisClaim, ImageAnalysisInput } from "../image-analysis/model";
@@ -48,7 +49,7 @@ export interface SyncProjectView extends SyncProjectRecord {
 
 export type VaultRole = "owner" | "member";
 export type VaultPrincipalType = "user" | "organization" | "team";
-export type SyncEntity = "vault" | "project" | "meeting" | "summary" | "transcript" | "file" | "meeting_file" | "meeting_event";
+export type SyncEntity = "vault" | "project" | "meeting" | "summary" | "transcript" | "file" | "meeting_file" | "meeting_event" | "recording";
 export type SyncAction = "create" | "update" | "delete" | "upsert" | "patch" | "reset";
 
 export interface SyncTransactionOperation {
@@ -185,6 +186,12 @@ export interface SyncSearchQuery {
 export interface IdentitySyncStore {
   loadImageAnalysis(claim: ImageAnalysisClaim): Promise<ImageAnalysisInput | null>;
   completeImageAnalysis(input: ImageAnalysisInput, transaction: SyncTransaction): Promise<boolean>;
+  reserveRecording(vaultId: string, meetingId: string, sessionId: string, source: RecordingSource): Promise<RecordingRecord>;
+  getRecording(meetingId: string, number: number, ownerOnly?: boolean): Promise<RecordingRecord | null>;
+  markRecordingUploaded(sessionId: string, source: RecordingSource, generation: string, size: number, checksum: string): Promise<RecordingRecord | null>;
+  listRecordings(meetingId: string, after: number, limit: number): Promise<RecordingRecord[]>;
+  expireRecordingUploads(vaultId: string, before: Date): Promise<void>;
+
   countTranscript(vaultId: string, meetingId: string): Promise<number>;
   searchTextPage(vaultId: string, query: SyncSearchQuery, kind: "meeting" | "screenshot", offset: number, limit: number): Promise<{
     id: string; meetingId: string; snippet: string;

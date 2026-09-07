@@ -46,6 +46,7 @@ actor BatchTranscriptionCoordinator {
     }
 
     private let dbQueue: DatabaseQueue
+    private let recordingArchiveService: RecordingArchiveService
     private let recordingAudioStore: RecordingAudioStore?
     private let languageDetector: any BatchLanguageDetecting
     private let speechRecognizer: any BatchSpeechRecognizing
@@ -61,6 +62,7 @@ actor BatchTranscriptionCoordinator {
     private var progressNotificationTask: Task<Void, Never>?
     private var audioRetentionPeriod: BatchAudioRetentionPeriod
     private var audioRetentionTask: Task<Void, Never>?
+    private var audioArchiveTask: Task<Void, Never>?
     private var isShuttingDown = false
     private var shutdownInterruptionSessionIds: Set<UUID> = []
     private var activeConfirmationCount = 0
@@ -80,6 +82,7 @@ actor BatchTranscriptionCoordinator {
         onStateChange: @escaping StateHandler
     ) {
         self.dbQueue = dbQueue
+        recordingArchiveService = RecordingArchiveService(dbQueue: dbQueue, root: managedRootURL)
         recordingAudioStore = try? RecordingAudioStore(
             dbQueue: dbQueue,
             managedRootURL: managedRootURL
@@ -100,6 +103,7 @@ actor BatchTranscriptionCoordinator {
 
     func recoverAndEnqueue() async throws {
         _ = await recordingAudioStore?.reconcileStartup()
+        startAudioArchiving()
         await purgeExpiredAudio()
         restartAudioRetentionTask()
         try await markPreviouslyQueuedSessionsInterrupted()
@@ -187,6 +191,9 @@ actor BatchTranscriptionCoordinator {
         retentionTask?.cancel()
         await retentionTask?.value
         audioRetentionTask = nil
+        audioArchiveTask?.cancel()
+        await audioArchiveTask?.value
+        audioArchiveTask = nil
 
         var firstError: (any Error)?
         for sessionId in Array(shutdownInterruptionSessionIds) {
@@ -310,6 +317,7 @@ actor BatchTranscriptionCoordinator {
         } catch {
             ErrorReportingService.capture(error, context: ["source": "batchTranscriptExport"])
         }
+        startAudioArchiving()
         await purgeExpiredAudio()
     }
 
@@ -357,6 +365,15 @@ actor BatchTranscriptionCoordinator {
     private func transcribe(job: Job) async throws -> [TranscriptSegment] {
         guard let recordingAudioStore else {
             throw RecordingAudioStoreError.storageUnavailable
+        }
+        let hasLocalAudio = try await dbQueue.read { db in
+            try RecordingAudioSegmentRecord.filter(Column("recordingSessionId") == job.session.id)
+                .filter(Column("state") != RecordingAudioSegmentState.purged.rawValue).fetchCount(db) > 0
+        }
+        if !hasLocalAudio {
+            return try await recordingArchiveService.withArchivedSegments(sessionId: job.session.id) { verified in
+                try await self.transcribe(verifiedSegments: verified, job: job)
+            }
         }
         return try await recordingAudioStore.withVerifiedTranscribableSegments(sessionId: job.session.id) { verified in
             try await self.transcribe(
@@ -512,7 +529,7 @@ actor BatchTranscriptionCoordinator {
             let segmentCount = try RecordingAudioSegmentRecord
                 .filter(Column("recordingSessionId") == sessionId)
                 .fetchCount(db)
-            guard segmentCount > 0 else {
+            guard try segmentCount > 0 || RecordingArchiveRecord.isAvailable(sessionId: sessionId, in: db) else {
                 throw CocoaError(.fileNoSuchFile)
             }
             return Job(
@@ -755,6 +772,21 @@ extension BatchTranscriptionCoordinator {
         await purgeExpiredAudio(now: now)
     }
 
+    private func startAudioArchiving() {
+        guard audioArchiveTask == nil, !isShuttingDown else { return }
+        audioArchiveTask = Task(priority: .utility) { [weak self] in
+            guard let self else { return }
+            try? await self.recordingArchiveService.runNext(localOnly: true)
+            await self.finishAudioArchiving()
+        }
+    }
+
+    private func finishAudioArchiving() { audioArchiveTask = nil }
+
+    func retryRecordingArchives() async {
+        startAudioArchiving()
+    }
+
     func refreshExpiredAudio(now: Date = .now) async {
         await purgeExpiredAudio(now: now)
     }
@@ -762,7 +794,7 @@ extension BatchTranscriptionCoordinator {
     private func restartAudioRetentionTask() {
         audioRetentionTask?.cancel()
         audioRetentionTask = nil
-        guard audioRetentionPeriod != .forever, !isShuttingDown else { return }
+        guard !isShuttingDown else { return }
         audioRetentionTask = Task { [weak self] in
             while !Task.isCancelled {
                 do {
@@ -771,6 +803,7 @@ extension BatchTranscriptionCoordinator {
                     return
                 }
                 guard let self else { return }
+                await self.startAudioArchiving()
                 await self.purgeExpiredAudio()
             }
         }
@@ -796,11 +829,11 @@ extension BatchTranscriptionCoordinator {
                       sessions.batchLastAttemptAt IS NULL
                       OR sessions.batchLastAttemptAt <= sessions.batchCompletedAt
                   )
-                  AND EXISTS (
+                  AND (EXISTS (
                       SELECT 1 FROM recording_audio_segments AS segments
                       WHERE segments.recordingSessionId = sessions.id
                         AND segments.state != ?
-                  )
+                  ) OR EXISTS (SELECT 1 FROM recording_archives a WHERE a.sessionId = sessions.id AND a.connectionId IS NULL AND a.state = 'saved'))
                   AND NOT EXISTS (
                       SELECT 1 FROM recording_audio_segments AS segments
                       WHERE segments.recordingSessionId = sessions.id

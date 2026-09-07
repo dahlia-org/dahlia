@@ -1,5 +1,6 @@
 import { fileResponse, fileStorageKey, imageContentTypes, type FileMetadata } from "../files/model";
 import { needsImageAnalysis, type ImageAnalysisClaim, type ImageAnalysisInput } from "../image-analysis/model";
+import { recordingCanonical, recordingStorageKey, type RecordingRecord, type RecordingSource, type RecordingManifest } from "../recordings/model";
 import {
   and,
   asc,
@@ -47,7 +48,7 @@ const TRANSCRIPT_PATCH_RETENTION_MS = 24 * 60 * 60 * 1_000;
 export const SYNC_HISTORY_RETENTION_MS = 90 * 24 * 60 * 60 * 1_000;
 export const SYNC_RETENTION_BATCH_SIZE = 1_000;
 export const SYNC_SNAPSHOT_PAGE_BYTES = 8 * 1024 * 1024;
-export const SYNC_SNAPSHOT_ENTITIES = ["vault", "project", "meeting", "summary", "transcript", "file", "meeting_file"] as const;
+export const SYNC_SNAPSHOT_ENTITIES = ["vault", "project", "meeting", "summary", "transcript", "file", "meeting_file", "recording"] as const;
 
 function batches<T>(values: T[], size: number): T[][] {
   const result: T[][] = [];
@@ -313,6 +314,7 @@ async function roleSupportsRls(db: PostgresDatabase): Promise<boolean> {
       "app.transcript_patch_chunks",
       "app.files",
       "app.meeting_files",
+      "app.recordings",
       "app.search_documents",
       "app.search_embeddings",
       "app.account_settings",
@@ -724,6 +726,18 @@ function createIdentityStore(
     return meeting?.active === true && meeting.deletingAt === null;
   }
 
+  async function queueRecordingDeletes(vaultId: string, meetingId?: string) {
+    const records = await db.select().from(schema.syncedRecording).where(and(
+      eq(schema.syncedRecording.vaultId, vaultId),
+      meetingId ? eq(schema.syncedRecording.meetingId, meetingId) : undefined,
+    ));
+    for (const record of records) {
+      await db.insert(schema.storageDeleteJob).values((["mic", "system"] as const)
+        .map((source) => ({ storageKey: recordingStorageKey(record, source) }))).onConflictDoNothing();
+    }
+    return records;
+  }
+
   async function canonicalRecord(
     entity: SyncCanonicalRecord["entity"],
     vaultId: string,
@@ -768,6 +782,14 @@ function createIdentityStore(
           ? { meetingId: record.meetingId }
           : record;
       return { entity, id: entityId, revision: revision ?? null, record: value ?? null };
+    }
+    if (entity === "recording") {
+      const [record] = await db.select().from(schema.syncedRecording).where(and(
+        eq(schema.syncedRecording.vaultId, vaultId), eq(schema.syncedRecording.sessionId, entityId),
+        canAccess(schema.syncedRecording.vaultId),
+      )).limit(1);
+      return { entity, id: entityId, revision: record?.revision || null,
+        record: record && record.revision > 0 ? recordingCanonical(record) : null };
     }
     if (entity === "file") {
       const [record] = await db.select().from(schema.syncedFile).where(and(
@@ -1134,6 +1156,7 @@ function createIdentityStore(
             }], operation.id);
           }
           await assertRevision(transaction, "vault", operation.entityId, operation.baseRevision);
+          await queueRecordingDeletes(transaction.vaultId);
           const files = await db.select({ id: schema.syncedFile.fileId }).from(schema.syncedFile)
             .where(eq(schema.syncedFile.vaultId, transaction.vaultId));
           if (files.length) await db.insert(schema.storageDeleteJob)
@@ -1244,6 +1267,7 @@ function createIdentityStore(
           const attachments = await db.select({ id: schema.meetingFile.id }).from(schema.meetingFile).where(and(
             eq(schema.meetingFile.vaultId, transaction.vaultId), eq(schema.meetingFile.meetingId, operation.entityId),
           ));
+          const deletedRecordings = await queueRecordingDeletes(transaction.vaultId, operation.entityId);
           await redactMeetingEvents(transaction.vaultId, operation.entityId);
           await insertMeetingEvent({ id: operation.id, vaultId: transaction.vaultId, meetingId: operation.entityId, kind: "meeting_deleted", occurredAt: now, receivedAt: now });
           await db.delete(schema.syncedMeeting).where(ownedMeeting(transaction.vaultId, operation.entityId));
@@ -1251,6 +1275,7 @@ function createIdentityStore(
           cursor = await appendChanges(transaction, [
             { entity: "summary", entityId: operation.entityId, action: "delete", revision: null },
             { entity: "transcript", entityId: operation.entityId, action: "delete", revision: null },
+            ...deletedRecordings.map(({ sessionId: entityId }) => ({ entity: "recording" as const, entityId, action: "delete" as const, revision: null })),
             ...attachments.map(({ id: entityId }) => ({ entity: "meeting_file" as const, entityId, action: "delete" as const, revision: null })),
             { entity: "meeting", entityId: operation.entityId, action: "delete", revision: null },
           ]);
@@ -1365,6 +1390,33 @@ function createIdentityStore(
           eq(schema.transcriptPatchChunk.meetingId, operation.entityId),
           eq(schema.transcriptPatchChunk.patchId, patchId),
         ));
+      } else if (operation.entity === "recording") {
+        const [record] = await db.select().from(schema.syncedRecording).where(and(
+          eq(schema.syncedRecording.vaultId, transaction.vaultId), eq(schema.syncedRecording.sessionId, operation.entityId),
+          ownerAccess(schema.syncedRecording.vaultId),
+        )).limit(1);
+        if (!record || !await ensureUploadTarget(transaction.vaultId, record.meetingId)) {
+          throw new SyncTransactionError(409, "recording_not_found", [], operation.id);
+        }
+        if (record.revision > 0 || operation.baseRevision !== null) {
+          await assertRevision(transaction, "recording", operation.entityId, operation.baseRevision);
+        }
+        const source = data.source as RecordingSource;
+        const audio = record.audio[source];
+        const [pendingDelete] = await db.select().from(schema.storageDeleteJob)
+          .where(eq(schema.storageDeleteJob.storageKey, recordingStorageKey(record, source))).limit(1);
+        if (pendingDelete || !audio?.uploadedAt || audio.checksum !== data.checksum
+          || (!audio.active && new Date(audio.createdAt).getTime() <= now.getTime() - 86_400_000)) {
+          throw new SyncTransactionError(409, "recording_content_missing", [], operation.id);
+        }
+        const manifest = data.manifest as RecordingManifest;
+        if (audio.active && JSON.stringify(audio.manifest) !== JSON.stringify(manifest)) {
+          throw new SyncTransactionError(409, "recording_immutable", [], operation.id);
+        }
+        await db.update(schema.syncedRecording).set({
+          audio: { ...record.audio, [source]: { ...audio, active: true, manifest } },
+          revision: record.revision + 1, updatedAt: now,
+        }).where(eq(schema.syncedRecording.sessionId, operation.entityId));
       } else if (operation.entity === "file") {
         const [file] = await db.select().from(schema.syncedFile).where(and(
           eq(schema.syncedFile.fileId, operation.entityId), eq(schema.syncedFile.vaultId, transaction.vaultId),
@@ -1694,6 +1746,7 @@ function createIdentityStore(
       }
       const source = entity === "project"
         ? { table: schema.syncedProject, id: schema.syncedProject.projectId, active: undefined }
+        : entity === "recording" ? { table: schema.syncedRecording, id: schema.syncedRecording.sessionId, active: gt(schema.syncedRecording.revision, 0) }
         : entity === "file" ? { table: schema.syncedFile, id: schema.syncedFile.fileId, active: eq(schema.syncedFile.active, true) }
         : entity === "meeting_file" ? { table: schema.meetingFile, id: schema.meetingFile.id, active: undefined }
           : { table: schema.syncedMeeting, id: schema.syncedMeeting.meetingId, active: and(
@@ -1772,6 +1825,93 @@ function createIdentityStore(
         activeOnly ? eq(schema.syncedFile.active, true) : ownerAccess(schema.syncedFile.vaultId),
       )).limit(1);
       return file ?? null;
+    },
+    async reserveRecording(vaultId, meetingId, sessionId, source) {
+      await lockVault(vaultId);
+      if (!await ensureUploadTarget(vaultId, meetingId)) throw new SyncTransactionError(404, "meeting_not_found");
+      const [session] = await db.select().from(schema.recordingSession).where(and(
+        eq(schema.recordingSession.vaultId, vaultId), eq(schema.recordingSession.meetingId, meetingId),
+        eq(schema.recordingSession.sessionId, sessionId),
+      )).limit(1);
+      if (!session?.startedAt || !session.endedAt) throw new SyncTransactionError(409, "recording_session_not_finalized");
+      let [record] = await db.select().from(schema.syncedRecording)
+        .where(eq(schema.syncedRecording.sessionId, sessionId)).limit(1);
+      if (record && (record.vaultId !== vaultId || record.meetingId !== meetingId)) {
+        throw new SyncTransactionError(409, "recording_session_meeting_mismatch");
+      }
+      const now = new Date();
+      if (!record) {
+        const [last] = await db.select({ number: schema.syncedRecording.number }).from(schema.syncedRecording)
+          .where(eq(schema.syncedRecording.meetingId, meetingId)).orderBy(desc(schema.syncedRecording.number)).limit(1);
+        [record] = await db.insert(schema.syncedRecording).values({ sessionId, vaultId, meetingId,
+          number: (last?.number ?? 0) + 1, startedAt: session.startedAt, endedAt: session.endedAt,
+          audio: {}, revision: 0, createdAt: now, updatedAt: now,
+        }).returning();
+      }
+      if (!record) throw new SyncTransactionError(409, "recording_session_conflict");
+      const [pending] = await db.select().from(schema.storageDeleteJob)
+        .where(eq(schema.storageDeleteJob.storageKey, recordingStorageKey(record, source))).limit(1);
+      if (pending) throw new SyncTransactionError(503, "recording_storage_delete_pending");
+      if (!record.audio[source]) {
+        const audio = { ...record.audio, [source]: { generation: crypto.randomUUID(), createdAt: now.toISOString(),
+          uploadedAt: null, active: false, content_type: "audio/mp4" as const, size: 0, checksum: null } };
+        await db.update(schema.syncedRecording).set({ audio, updatedAt: now }).where(eq(schema.syncedRecording.sessionId, sessionId));
+        record = { ...record, audio };
+      }
+      return record;
+    },
+    async getRecording(meetingId, number, ownerOnly = false) {
+      const [record] = await db.select().from(schema.syncedRecording).where(and(
+        eq(schema.syncedRecording.meetingId, meetingId), eq(schema.syncedRecording.number, number),
+        ownerOnly ? ownerAccess(schema.syncedRecording.vaultId) : readable(schema.syncedRecording.vaultId),
+      )).limit(1);
+      return record ?? null;
+    },
+    async markRecordingUploaded(sessionId, source, generation, size, checksum) {
+      const [initial] = await db.select().from(schema.syncedRecording).where(and(
+        eq(schema.syncedRecording.sessionId, sessionId), ownerAccess(schema.syncedRecording.vaultId),
+      )).limit(1);
+      if (!initial) return null;
+      await lockVault(initial.vaultId);
+      const [record] = await db.select().from(schema.syncedRecording).where(eq(schema.syncedRecording.sessionId, sessionId)).limit(1);
+      const audio = record?.audio[source];
+      if (!record || audio?.generation !== generation || !await ensureUploadTarget(record.vaultId, record.meetingId)) return null;
+      const [pending] = await db.select().from(schema.storageDeleteJob)
+        .where(eq(schema.storageDeleteJob.storageKey, recordingStorageKey(record, source))).limit(1);
+      if (pending) return null;
+      const updated: RecordingRecord = { ...record, updatedAt: new Date(), audio: { ...record.audio,
+        [source]: { ...audio, size, checksum, uploadedAt: new Date().toISOString() } } };
+      await db.update(schema.syncedRecording).set({ audio: updated.audio, updatedAt: updated.updatedAt })
+        .where(eq(schema.syncedRecording.sessionId, sessionId));
+      return updated;
+    },
+    async listRecordings(meetingId, after, limit) {
+      return db.select().from(schema.syncedRecording).where(and(
+        eq(schema.syncedRecording.meetingId, meetingId), gt(schema.syncedRecording.number, after),
+        gt(schema.syncedRecording.revision, 0), readable(schema.syncedRecording.vaultId),
+      )).orderBy(asc(schema.syncedRecording.number)).limit(limit);
+    },
+    async expireRecordingUploads(vaultId, before) {
+      await lockVault(vaultId);
+      const expired = (source: RecordingSource) => searchBackend === "sqlite"
+        ? sql`json_extract(${schema.syncedRecording.audio}, ${`$.${source}.active`}) = 0 AND json_extract(${schema.syncedRecording.audio}, ${`$.${source}.createdAt`}) < ${before.toISOString()}`
+        : sql`${schema.syncedRecording.audio}->${source}->>'active' = 'false' AND ${schema.syncedRecording.audio}->${source}->>'createdAt' < ${before.toISOString()}`;
+      const records = await db.select().from(schema.syncedRecording).where(and(
+        eq(schema.syncedRecording.vaultId, vaultId), ownerAccess(schema.syncedRecording.vaultId),
+        or(expired("mic"), expired("system")),
+      )).limit(100);
+      for (const record of records) {
+        const audio = { ...record.audio };
+        for (const source of ["mic", "system"] as const) {
+          const value = audio[source];
+          if (!value || value.active || new Date(value.createdAt) >= before) continue;
+          await db.insert(schema.storageDeleteJob).values({ storageKey: recordingStorageKey(record, source) }).onConflictDoNothing();
+          delete audio[source];
+        }
+        if (Object.keys(audio).length !== Object.keys(record.audio).length) {
+          await db.update(schema.syncedRecording).set({ audio }).where(eq(schema.syncedRecording.sessionId, record.sessionId));
+        }
+      }
     },
     async reserveFile(input) {
       const [vault] = await db.select({ id: schema.syncedVault.vaultId }).from(schema.syncedVault)

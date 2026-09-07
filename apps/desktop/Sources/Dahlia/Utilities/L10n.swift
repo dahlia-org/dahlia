@@ -62,6 +62,9 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var remove: String { String(localized: "Remove", bundle: bundle) }
     static var removeProjectAssignment: String { String(localized: "Remove from Project", bundle: bundle) }
     static var rename: String { String(localized: "Rename", bundle: bundle) }
+    static var recordingArchiveSaved: String { String(localized: "Recording Audio Saved", bundle: bundle) }
+    static var recordingArchivePending: String { String(localized: "Recording Audio Save Pending", bundle: bundle) }
+    static var recordingArchiveFailed: String { String(localized: "Recording Audio Save Failed", bundle: bundle) }
     static var retry: String { String(localized: "Retry", bundle: bundle) }
     static var create: String { String(localized: "Create", bundle: bundle) }
     static var auto: String { String(localized: "Auto", bundle: bundle) }

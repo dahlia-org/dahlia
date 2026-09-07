@@ -1,3 +1,4 @@
+import type { RecordingRecord } from "../recordings/model";
 import { sql } from "drizzle-orm";
 import {
   bigint,
@@ -325,6 +326,27 @@ export const syncedFile = appSchema.table("files", {
   pgPolicy("file_write", { for: "all", using: sql`"app"."current_identity_owns_vault"(${table.vaultId})`, withCheck: sql`"app"."current_identity_owns_vault"(${table.vaultId})` })
 ]).enableRLS();
 
+
+export const syncedRecording = appSchema.table("recordings", {
+  sessionId: uuid("session_id").primaryKey(),
+  vaultId: uuid("vault_id").notNull(),
+  meetingId: uuid("meeting_id").notNull(),
+  number: integer("number").notNull(),
+  startedAt: timestamp("started_at").notNull(),
+  endedAt: timestamp("ended_at").notNull(),
+  audio: jsonb("audio").$type<RecordingRecord["audio"]>().notNull(),
+  revision: integer("revision").default(0).notNull(),
+  createdAt: timestamp("created_at").notNull(),
+  updatedAt: timestamp("updated_at").notNull(),
+}, (table) => [
+  foreignKey({ columns: [table.vaultId, table.meetingId], foreignColumns: [syncedMeeting.vaultId, syncedMeeting.meetingId] }).onDelete("cascade"),
+  unique("recordings_meeting_number_unique").on(table.meetingId, table.number),
+  index("recordings_vault_session_idx").on(table.vaultId, table.sessionId),
+  check("recordings_number_check", sql`${table.number} > 0`),
+  pgPolicy("recording_select", { for: "select", using: sql`"app"."current_identity_can_read_vault"(${table.vaultId})` }),
+  pgPolicy("recording_write", { for: "all", using: sql`"app"."current_identity_owns_vault"(${table.vaultId})`, withCheck: sql`"app"."current_identity_owns_vault"(${table.vaultId})` }),
+]).enableRLS();
+
 export const meetingFile = appSchema.table("meeting_files", {
   id: uuid("id").primaryKey(),
   vaultId: uuid("vault_id").notNull(),
@@ -494,7 +516,7 @@ export const syncChange = appSchema.table("sync_changes", {
   transactionId: uuid("transaction_id").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
-  check("sync_change_entity_check", sql`${table.entity} IN ('vault', 'project', 'meeting', 'summary', 'transcript', 'file', 'meeting_file')`),
+  check("sync_change_entity_check", sql`${table.entity} IN ('vault', 'project', 'meeting', 'summary', 'transcript', 'file', 'meeting_file', 'recording')`),
   check("sync_change_action_check", sql`${table.action} IN ('upsert', 'delete', 'reset')`),
   index("sync_change_owner_vault_sequence_idx").on(table.ownerUserId, table.vaultId, table.sequence),
   index("sync_change_owner_sequence_idx").on(table.ownerUserId, table.sequence),

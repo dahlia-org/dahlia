@@ -356,6 +356,7 @@ private enum MeetingPersistenceStarter {
                 transcriptionMode: request.transcriptionMode
             )
             try recordingSession.insert(db)
+            try RecordingArchiveRecord.enqueue(recordingSession, in: db)
             let projectName = try projectId.flatMap { id in
                 try ProjectRecord.fetchResolved(id: id, in: db)?.path
             }
@@ -423,6 +424,7 @@ private enum MeetingPersistenceStarter {
                 transcriptionMode: request.transcriptionMode
             )
             try recordingSession.insert(db)
+            try RecordingArchiveRecord.enqueue(recordingSession, in: db)
             return AppendResult(
                 recordingSession: recordingSession,
                 existingSegmentIds: Set(segments.map { $0["id"] as UUID }),

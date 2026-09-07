@@ -323,6 +323,41 @@ final class AppDatabaseManager: Sendable {
             try MeetingEventMigration.migrate(in: db)
         }
 
+        migrator.registerMigration("v48_recordingArchives", foreignKeyChecks: .deferred) { db in
+            try db.execute(sql: """
+            CREATE TABLE recording_archives (
+                sessionId TEXT PRIMARY KEY NOT NULL REFERENCES recording_sessions(id) ON DELETE CASCADE,
+                meetingId TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
+                vaultId TEXT NOT NULL REFERENCES vaults(id) ON DELETE CASCADE,
+                connectionId TEXT,
+                number INTEGER,
+                audioJSON TEXT NOT NULL DEFAULT '{}',
+                preparedJSON TEXT NOT NULL DEFAULT '{}',
+                state TEXT NOT NULL DEFAULT 'pending',
+                retryAt DATETIME,
+                failureCode TEXT,
+                verifiedAt DATETIME
+            );
+            CREATE INDEX recording_archives_meeting ON recording_archives(meetingId);
+            """)
+            guard let original = try String.fetchOne(db, sql: "SELECT sql FROM sqlite_master WHERE name = 'sync_operations' AND type = 'table'")
+            else { return }
+            let replacement = original.replacingOccurrences(of: "sync_operations", with: "sync_operations_v48")
+                .replacingOccurrences(of: "'meeting_event'", with: "'meeting_event', 'recording'")
+            try db.execute(sql: replacement)
+            // Reuse the preceding queue migration's preservation of cascading transcript payloads.
+            try db.execute(sql: """
+            CREATE TEMP TABLE recording_archive_patch_backup AS SELECT * FROM sync_transcript_patch_items;
+            INSERT INTO sync_operations_v48 SELECT * FROM sync_operations;
+            DROP TABLE sync_operations;
+            ALTER TABLE sync_operations_v48 RENAME TO sync_operations;
+            INSERT OR IGNORE INTO sync_transcript_patch_items SELECT * FROM recording_archive_patch_backup;
+            DROP TABLE recording_archive_patch_backup;
+            CREATE INDEX sync_operations_entity_idx ON sync_operations(entity, entityId, transactionId);
+            CREATE INDEX sync_operations_attachment_reference_idx ON sync_operations(attachmentReference);
+            """)
+        }
+
         return migrator
     }()
 

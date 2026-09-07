@@ -868,6 +868,7 @@ final class CaptionViewModel: ObservableObject {
     private var textContentTask: Task<Void, Never>?
     private var textContentLease: (UUID, DatabaseQueue, Task<Void, Never>)?
     private var meetingSyncObservation: AnyDatabaseCancellable?
+    @Published private(set) var recordingArchiveState: String?
     private var meetingSyncSnapshot: MeetingSyncSnapshot?
     private var appliedMeetingSyncSnapshot: MeetingSyncSnapshot?
     private var meetingSyncGeneration: UInt64 = 0
@@ -2096,7 +2097,7 @@ final class CaptionViewModel: ObservableObject {
         meetingId: UUID,
         db: Database
     ) throws -> [UUID] {
-        try UUID.fetchAll(
+        let local = try UUID.fetchAll(
             db,
             sql: """
                 SELECT DISTINCT sessions.id
@@ -2138,6 +2139,18 @@ final class CaptionViewModel: ObservableObject {
                 RecordingAudioSegmentState.ready.rawValue,
             ]
         )
+        let remote = try UUID.fetchAll(db, sql: """
+        SELECT a.sessionId FROM recording_archives a
+        JOIN vaults v ON v.id = a.vaultId
+        JOIN recording_sessions s ON s.id = a.sessionId
+        WHERE a.meetingId = ?
+          AND ((a.connectionId IS NULL AND v.accountConnectionId IS NULL AND a.state = 'saved' AND a.preparedJSON <> '{}')
+            OR (a.number IS NOT NULL AND a.audioJSON <> '{}' AND v.accountConnectionId = a.connectionId AND v.syncConfirmedConnectionId = a.connectionId))
+          AND COALESCE(v.syncRole, 'owner') = 'owner' AND v.syncRecoveryState IS NULL
+          AND s.batchDiscardedAt IS NULL
+        ORDER BY s.startedAt
+        """, arguments: [meetingId])
+        return local + remote.filter { !local.contains($0) }
     }
 
     // MARK: - Meeting Loading
@@ -2740,8 +2753,19 @@ final class CaptionViewModel: ObservableObject {
         meetingRefreshTask?.cancel()
         meetingRefreshTask = nil
         meetingSyncSnapshot = nil
+        recordingArchiveState = nil
         appliedMeetingSyncSnapshot = nil
         meetingSyncState = nil
+    }
+
+    func retryRecordingArchive() {
+        guard let meetingId = currentMeetingId, let dbQueue = currentDbQueue else { return }
+        Task {
+            do {
+                try await MeetingRepository(dbQueue: dbQueue).retryRecordingArchives(meetingId: meetingId)
+                await batchTranscriptionCoordinator?.retryRecordingArchives()
+            } catch { self.errorMessage = L10n.recordingArchiveFailed }
+        }
     }
 
     private func startMeetingSyncObservation(meetingId: UUID, dbQueue: DatabaseQueue) {
@@ -2774,6 +2798,7 @@ final class CaptionViewModel: ObservableObject {
                 guard let self, self.meetingSyncGeneration == generation,
                       self.currentMeetingId == meetingId else { return }
                 self.meetingSyncSnapshot = snapshot
+                self.recordingArchiveState = snapshot?.recordingArchiveState
                 self.meetingSyncState = snapshot?.state
                 let states = snapshot?.content.filter { $0.entity != "file" } ?? []
                 self.textContentState = states.isEmpty ? nil : states.contains(where: { $0.fetchError == "deleted" }) ? .deleted

@@ -11,6 +11,7 @@ enum SyncEntity: String, Codable, DatabaseValueConvertible, Sendable {
     case summary
     case transcript
     case file
+    case recording
     case meetingFile = "meeting_file"
     case meetingEvent = "meeting_event"
 }
@@ -174,11 +175,17 @@ struct SyncCanonicalPayload: Codable, Sendable {
     var contentType: String?
     var checksum: String?
     var metadata: FileMetadata?
+    var recordingNumber: Int?
+    var startedAt: Date?
+    var endedAt: Date?
+    var audio: [String: RecordingArchivedAudio]?
 
     enum CodingKeys: String, CodingKey {
         case contentOmitted, contentPresent, contentCount, hasSummary, transcriptRevision
         case parentProjectId, projectId, meetingId, name, description, projectType, status, duration, recordingStartedAt
         case createdAt, updatedAt, title, document, capturedAt, fileId, sessionId, uri, offset, size, checksum, metadata
+        case recordingNumber
+        case startedAt, endedAt, audio
         case contentType = "content_type"
     }
 }
@@ -313,6 +320,16 @@ enum SyncTransactionRecorder {
             connectionId = confirmedConnectionId
         }
         guard vault.syncRole != "member" else { throw SyncTransactionQueueError.readOnlyVault }
+        for operation in operations where (operation.entity == .meeting && operation.action == .delete)
+            || (operation.entity == .vault && operation.action == .reset) {
+            // Parent deletion also abandons its derived audio uploads, including an unacknowledged commit.
+            try db.execute(sql: """
+            DELETE FROM sync_transactions WHERE vaultId = ? AND id IN (
+                SELECT o.transactionId FROM sync_operations o JOIN recording_archives a ON a.sessionId = o.entityId
+                WHERE o.entity = 'recording' AND (? = 'vault' OR a.meetingId = ?)
+            ) AND NOT EXISTS (SELECT 1 FROM sync_operations o WHERE o.transactionId = sync_transactions.id AND o.entity <> 'recording')
+            """, arguments: [vaultId, operation.entity.rawValue, operation.entityId])
+        }
         if !allowAfterReset {
             let resetIsLast = try Bool.fetchOne(
                 db,
@@ -615,7 +632,7 @@ enum SyncTransactionQueue {
                         from: SyncJSON.encoder.encode(value)
                     )
                     let parentMeetingId: UUID? = switch record.entity {
-                    case .meetingFile: canonical.meetingId
+                    case .meetingFile, .recording: canonical.meetingId
                     case .summary, .transcript: record.id
                     default: nil
                     }
@@ -757,6 +774,8 @@ enum SyncTransactionQueue {
             } else {
                 try db.execute(sql: "DELETE FROM summaries WHERE meetingId = ?", arguments: [id])
             }
+        case .recording:
+            try RecordingArchiveRecord.applyCanonical(id: id, vaultId: vaultId, value: value, in: db)
         case .file:
             try FileRecord.applyCanonical(id: id, vaultId: vaultId, value: value, in: db)
         case .meetingFile:

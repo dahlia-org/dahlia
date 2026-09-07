@@ -135,6 +135,24 @@ struct ControlPanelView: View {
                 )
             }
 
+            if let archiveState = viewModel.recordingArchiveState {
+                HStack {
+                    Label(
+                        archiveState == "saved" ? L10n.recordingArchiveSaved : archiveState == "failed" ? L10n.recordingArchiveFailed : L10n
+                            .recordingArchivePending,
+                        systemImage: archiveState == "saved" ? "checkmark.circle" : "waveform"
+                    )
+                    Spacer()
+                    if archiveState == "failed", sidebarViewModel.canEditCurrentVault {
+                        Button(L10n.retry, action: viewModel.retryRecordingArchive)
+                    }
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, DahliaDesign.detailHorizontalPadding)
+                .padding(.vertical, 6)
+            }
+
             // エラー表示
             if let error = viewModel.errorMessage {
                 detailErrorBanner(message: error, tint: .red)

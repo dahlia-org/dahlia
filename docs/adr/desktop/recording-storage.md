@@ -76,3 +76,7 @@ partial と final が両方あれば期待 metadata と一致する方だけを�
 ファイル数、DB 行、I/O と reconciliation が増える代わりに損失範囲を限定する。単一 CAF の rename 強化だけ、同一 volume への二重書き込み、SQLite BLOB、user folder への直接録音、Launch Services / NSFileCoordinator だけの排他は、所有権・障害範囲・耐久性の問題を解決しないため却下した。
 
 実 process / file system で lock 競合、各 commit / sync / rename の前後の crash、DB × partial/final の状態 matrix、同長 digest mismatch、frame 連続性、backlog 縮退、複数音源 cursor、unlink 再試行、root guard、既存データ保持を検証する。実装適合状況は architecture とテストを確認し、本 ADR の Accepted を rollout 完了の証拠にしない。
+
+## 新規バッチ録音の結合保存
+
+2026-09-07: [結合音声保管のADR](../shared/recording-audio-archive.md) に従い、新規 Local／Server Account バッチ録音を音源別M4Aに結合する。Local は既存保存期間を維持し、Server は確定音声を期限なく保管する。品質ゲート未通過のため元CAFの自動置換はまだ無効。

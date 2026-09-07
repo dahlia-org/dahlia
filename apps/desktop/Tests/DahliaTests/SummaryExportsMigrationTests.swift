@@ -133,6 +133,9 @@ import GRDB
                 sections: [SummarySection(id: .v7(), heading: "Summary", blocks: [.paragraph("Body")])]
             ).databaseJSONString()
             try dbQueue.write { db in
+                // These parent tables also exist in a released v20 database.
+                try db.create(table: "vaults") { $0.primaryKey("id", .blob) }
+                try db.create(table: "recording_sessions") { $0.primaryKey("id", .blob) }
                 try db.create(table: "meetings") { table in
                     table.primaryKey("id", .blob)
                 }

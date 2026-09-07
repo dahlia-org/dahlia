@@ -10,6 +10,7 @@ macOS、ローカル SQLite、録音、UI、内蔵 Codex / local MCP。
 
 - [サマリーの構造と更新](desktop/summary.md)
 - [録音ストレージと保存期間](desktop/recording-storage.md)
+- [録音音声の結合保存と Server 保管](shared/recording-audio-archive.md)
 - [実行コンテキストと UI projection](desktop/concurrency-and-projection.md)
 - [SQLite backup / restore](desktop/database-backup.md)
 - [Local MCP と Project 階層](desktop/local-mcp-and-projects.md)

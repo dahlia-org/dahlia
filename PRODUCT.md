@@ -145,9 +145,9 @@ Dahlia の scope 外であり、妨げない。
 **設計上の判断**:
 
 - 文字起こしはリアルタイムもバッチも Apple Speech の `SpeechTranscriber` が on-device で行い、録音音声を外部へ
-  送信しない。WhisperKit は付加機能であるバッチ自動言語判定で言語を選ぶためだけに使い、文字起こし自体は行わない。
+  送信して認識しない。Server Account の新規バッチ録音は、[結合音声保管のADR](docs/adr/shared/recording-audio-archive.md) に従い保管できる。WhisperKit は付加機能であるバッチ自動言語判定で言語を選ぶためだけに使い、文字起こし自体は行わない。
 - ローカルアカウントの会議データと端末固有ファイルはローカルの SQLite と file system だけで完結する。一方、ServerアカウントのVault／ProjectはNotionやAsanaと同様にDesktopとWebが共有するServer canonical recordであり、Desktopからクラウドへ転送するコピーではない。SQLite は即時反映できるoffline working copyとし、
-  Vault 名、Project の名前・説明・階層、meeting metadata、summary、transcript 原文、screenshot、OCR、AI caption を双方向同期する。翻訳文と音声は同期しない
+  Vault 名、Project の名前・説明・階層、meeting metadata、summary、transcript 原文、screenshot、OCR、AI caption を双方向同期する。翻訳文は同期しない。新規バッチ録音の結合音声は [音声保管契約](docs/adr/shared/recording-audio-archive.md) に従う
   ([正本とアカウント境界](docs/adr/shared/sync.md#正本とアカウント境界), [同期対象とモデル](docs/adr/shared/sync.md#同期対象とモデル), [Transaction と競合](docs/adr/shared/sync.md#transaction-と競合))。Server record は個人所有を維持し、owner が複数の特定 organization
   または特定 Team へ明示した場合だけ read-only 共有できる。Header認証のuserは固定`external` Organizationへ所属する
   ([共有境界](docs/adr/server/sharing-and-administration.md#共有境界))。サインインだけではローカルVaultをServerアカウントへ移さず、ユーザーがVault単位で明示的に移行する。ServerアカウントのVaultは常時同期し、サインアウト時はServer recordを残したままローカルworking copyを削除するかローカルアカウントへ移す。
@@ -201,7 +201,7 @@ Drive への書き出し、Codex による要約生成、Sparkle の更新確認
 
 - 共同編集
 - CRM や SFA との双方向同期
-- クラウドでの音声処理と保管
+- クラウドでの音声処理（Server Account の結合音声保管は [承認済みの例外](docs/adr/shared/recording-audio-archive.md)）
 - 汎用の統合ハブ、ワークフロー自動化
 - Vault 横断または全社の人物 identity 解決
 

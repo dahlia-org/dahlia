@@ -43,7 +43,7 @@ enum BatchAudioCleanupService {
                 """,
                 arguments: arguments
             )
-            return rows.compactMap { row in
+            let legacy: [DeletionTarget] = rows.compactMap { row in
                 guard let location = RecordingAudioStorageLocation(rawValue: row["storageLocation"]) else { return nil }
                 let baseURL: URL
                 switch location {
@@ -58,6 +58,11 @@ enum BatchAudioCleanupService {
                     relativePath: row["relativePath"]
                 )
             }
+            let archives = try RecordingArchiveRecord.filter(meetingIds.contains(Column("meetingId"))).fetchAll(db)
+            let compressed = archives.map { archive in
+                DeletionTarget(baseURL: BatchAudioStorage.managedRootURL, relativePath: "archives/\(archive.sessionId.uuidString.lowercased())")
+            }
+            return legacy + compressed
         }
     }
 
