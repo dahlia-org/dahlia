@@ -50,6 +50,10 @@ export interface SyncedProjectInfo {
   subtreeMeetingCount: number;
 }
 
+export function uiText(english: string, japanese: string): string {
+  return globalThis.navigator?.language.startsWith("ja") ? japanese : english;
+}
+
 export function syncMessage(code: string, language = globalThis.navigator?.language ?? "en"): string | undefined {
   const messages: Record<string, [string, string]> = {
     sync_recovering: ["Checking the saved result and retrieving latest data…", "保存結果を確認し、最新のデータを取得中…"],
@@ -66,12 +70,17 @@ export class RequestError extends Error {
   }
 }
 
+export const clientMutationEvent = "dahlia:mutation";
+
 export async function json<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, {
     ...init,
     headers: init?.body ? { "content-type": "application/json", ...init.headers } : init?.headers,
   });
   if (!response.ok) {
+    if (response.status === 401 && typeof window !== "undefined") {
+      window.dispatchEvent(new Event("dahlia:unauthorized"));
+    }
     const detail = (await response.json().catch(() => null)) as {
       message?: string;
       error?: string | { message?: string };
@@ -82,5 +91,9 @@ export async function json<T>(url: string, init?: RequestInit): Promise<T> {
       response.status,
     );
   }
-  return (response.status === 204 ? undefined : await response.json()) as T;
+  const value = response.status === 204 ? undefined : await response.json();
+  if (typeof window !== "undefined" && !["GET", "HEAD", "OPTIONS"].includes(init?.method?.toUpperCase() ?? "GET")) {
+    window.dispatchEvent(new Event(clientMutationEvent));
+  }
+  return value as T;
 }

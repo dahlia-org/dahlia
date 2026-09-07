@@ -1,10 +1,14 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { commitSyncTransaction } from "../src/client/App";
-import { syncMessage } from "../src/client/api";
+import { clientMutationEvent, syncMessage } from "../src/client/api";
 
 afterEach(() => vi.unstubAllGlobals());
 
 it("resolves a lost response as a compact receipt without another mutation", async () => {
+  const browser = new EventTarget();
+  const changed = vi.fn();
+  browser.addEventListener(clientMutationEvent, changed);
+  vi.stubGlobal("window", browser);
   const bodies: string[] = [];
   const fetch = vi.fn(async (_url: string, init: RequestInit) => {
     const body = String(init.body);
@@ -20,6 +24,7 @@ it("resolves a lost response as a compact receipt without another mutation", asy
   expect(fetch.mock.calls[1]?.[0]).toBe("/api/v1/transactions/resolve");
   expect(bodies[0]).toBe(bodies[1]);
   expect(progress.mock.calls).toEqual([[true], [false]]);
+  expect(changed).toHaveBeenCalledTimes(1);
 });
 
 it("retains the transaction ID when resolution reports an uncommitted request", async () => {

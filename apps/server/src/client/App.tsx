@@ -1,16 +1,17 @@
 import { createAuthClient } from "better-auth/react";
-import { useCallback, useEffect, useMemo, useState, type ComponentType, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type MouseEvent, type ReactNode } from "react";
 
 import {
-  artifactViewerId,
   isCoreDashboardPath,
   resolveDashboardRoute,
   shouldRedirectToSignIn,
   type DashboardCapabilities,
 } from "./routes";
+import { dashboardNavigationPath } from "./navigation";
 import { summaryDisplayText } from "../search/summary";
-import { json, RequestError, syncMessage, type SyncedVaultInfo, type OrganizationInfo, type SyncedMeetingInfo, type SyncedMeetingPage, type SyncedProjectInfo } from "./api";
-import { Sidebar, SidebarProvider, useSidebar } from "./Sidebar";
+import { clientMutationEvent, json, RequestError, syncMessage, uiText, type SyncedVaultInfo, type OrganizationInfo, type SyncedMeetingInfo, type SyncedMeetingPage, type SyncedProjectInfo } from "./api";
+import { MeetingTabs, parseSummary, SummaryContent, SummaryTags } from "./MeetingContent";
+import { MenuIcon, Sidebar, SidebarProvider, useSidebar } from "./Sidebar";
 
 export interface SessionInfo {
   capabilities: DashboardCapabilities;
@@ -46,7 +47,6 @@ export interface AppProps {
 }
 
 const defaultBrand: DashboardBrand = { name: "Dahlia", product: "Server" };
-const artifactMetadataMediaType = "application/vnd.dahlia.artifact+json";
 
 export function resolveDashboardExtensionRoute(
   path: string,
@@ -77,19 +77,6 @@ interface AdminMember {
   email: string;
   role: "admin";
   removable: boolean;
-}
-
-interface ArtifactInfo {
-  id: string;
-  visibility: "private" | "public";
-  contentType: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-interface ArtifactPage {
-  items: ArtifactInfo[];
-  nextCursor?: string;
 }
 
 interface OrganizationMember {
@@ -330,39 +317,49 @@ function Shell({
   children,
   extensions,
   session,
+  path,
+  navigate,
 }: {
   brand: DashboardBrand;
   children: ReactNode;
   extensions: readonly DashboardExtension[];
   session: SessionInfo;
+  path: string;
+  navigate: (path: string) => void;
 }) {
-  const route = window.location.pathname;
+  const main = useRef<HTMLElement>(null);
+  useEffect(() => {
+    main.current?.focus({ preventScroll: true });
+    window.scrollTo(0, 0);
+  }, [path]);
+  const followLink = (event: MouseEvent<HTMLDivElement>) => {
+    if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    const link = event.target instanceof Element ? event.target.closest("a") : null;
+    if (!link || !link.hasAttribute("href") || link.hasAttribute("download") || (link.target && link.target !== "_self")) return;
+    const next = dashboardNavigationPath(link.href, window.location.href);
+    if (!next) return;
+    event.preventDefault();
+    link.closest<HTMLElement>("[popover]")?.hidePopover();
+    navigate(next);
+  };
   return (
     <SidebarProvider session={session}>
-      <div className="app-shell">
+      <div className="app-shell" onClick={followLink}>
         <Sidebar brand={<Brand brand={brand} />} session={session}>
           <nav aria-label="Account navigation">
-            <a className={route === "/dashboard" ? "active" : ""} href="/dashboard">Overview</a>
-            <a className={route === "/artifacts" ? "active" : ""} href="/artifacts">Artifacts</a>
             {extensions.flatMap((extension) => extension.navigation ?? []).map((item) => (
               (!item.capability || session.capabilities[item.capability])
-                ? <a className={route === item.path ? "active" : ""} href={item.path} key={item.path}>{item.label}</a>
+                ? <a className={path === item.path ? "active" : ""} href={item.path} key={item.path}><MenuIcon name="artifact" />{item.label}</a>
                 : null
             ))}
             {session.capabilities.sessions && (
-              <a className={route === "/dashboard/settings" ? "active" : ""} href="/dashboard/settings">
-                Settings
+              <a className={path === "/dashboard/settings" ? "active" : ""} href="/dashboard/settings">
+                <MenuIcon name="settings" />{uiText("Settings", "設定")}
               </a>
-            )}
-            {session.capabilities.admin && (
-              <>
-                <span className="nav-divider" />
-                <a className={route === "/admin/members" ? "active" : ""} href="/admin/members">Members</a>
-              </>
             )}
           </nav>
         </Sidebar>
-        <main className="workspace">{children}</main>
+        <main className="workspace" key={path} ref={main} tabIndex={-1}>{children}</main>
       </div>
     </SidebarProvider>
   );
@@ -433,62 +430,6 @@ function Settings() {
           ))}
         </div>
         <p className="section-note">Revoked access can remain valid for up to 15 minutes.</p>
-      </section>
-    </>
-  );
-}
-
-function Artifacts() {
-  const [artifacts, setArtifacts] = useState<ArtifactInfo[]>();
-  const [nextCursor, setNextCursor] = useState<string>();
-  const [error, setError] = useState<string>();
-  const [loadingMore, setLoadingMore] = useState(false);
-
-  const load = useCallback(async (cursor?: string) => {
-    setError(undefined);
-    if (cursor) setLoadingMore(true);
-    try {
-      const page = await json<ArtifactPage>(`/api/v1/artifacts${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`);
-      setArtifacts((current) => cursor ? [...(current ?? []), ...page.items] : page.items);
-      setNextCursor(page.nextCursor);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not load artifacts");
-    } finally {
-      setLoadingMore(false);
-    }
-  }, []);
-  useEffect(() => { void load(); }, [load]);
-
-  return (
-    <>
-      <PageHeader title="Artifacts" />
-      <section className="section-block">
-        <h2 className="section-label">Exported artifacts</h2>
-        <div className="panel artifact-list">
-          {!artifacts && !error && <p className="muted">Loading artifacts…</p>}
-          {artifacts?.length === 0 && (
-            <div className="empty-state">
-              <strong>No artifacts yet</strong><span>Artifacts exported by your AI will appear here.</span>
-            </div>
-          )}
-          {artifacts?.map((artifact) => (
-            <a className="artifact-row" href={`/artifacts/${artifact.id}`} key={artifact.id}>
-              <span className="artifact-copy">
-                <strong>{artifact.id}</strong>
-                <span>{artifact.contentType} · Updated {new Date(artifact.updatedAt).toLocaleString()}</span>
-              </span>
-              <span className={`status ${artifact.visibility === "public" ? "good" : ""}`}>
-                {artifact.visibility}
-              </span>
-            </a>
-          ))}
-        </div>
-        {error && <p className="error artifact-error">{error}</p>}
-        {nextCursor && (
-          <button className="secondary load-more" disabled={loadingMore} onClick={() => void load(nextCursor)}>
-            {loadingMore ? "Loading…" : "Load more"}
-          </button>
-        )}
       </section>
     </>
   );
@@ -883,6 +824,7 @@ function SyncedProject({ vaultId, projectId }: { vaultId: string; projectId: str
 function SyncedMeeting({ vaultId, meetingId }: { vaultId: string; meetingId: string }) {
   const base = `/api/v1/vaults/${vaultId}/meetings/${meetingId}`;
   const [meeting, setMeeting] = useState<SyncedMeetingInfo>();
+  const [projects, setProjects] = useState<SyncedProjectInfo[]>([]);
   const [vault, setVault] = useState<SyncedVaultInfo>();
   const [transcript, setTranscript] = useState<SyncedTranscriptSegmentInfo[]>();
   const [screenshots, setScreenshots] = useState<SyncedScreenshotInfo[]>();
@@ -891,6 +833,8 @@ function SyncedMeeting({ vaultId, meetingId }: { vaultId: string; meetingId: str
   const [error, setError] = useState<string>();
   const [recovering, setRecovering] = useState(false);
   const summaryText = summaryDisplayText(meeting?.summaryDocument ?? null);
+  const document = useMemo(() => parseSummary(meeting?.summaryDocument), [meeting?.summaryDocument]);
+  const project = projects.find((item) => item.projectId === meeting?.projectId);
   useEffect(() => {
     const controller = new AbortController();
     void Promise.all([
@@ -907,8 +851,12 @@ function SyncedMeeting({ vaultId, meetingId }: { vaultId: string; meetingId: str
     }).catch((caught: Error) => {
       if (caught.name !== "AbortError") setError(caught.message);
     });
+    // Project names are supplementary metadata; their availability must not gate the meeting body.
+    void json<{ items: SyncedProjectInfo[] }>(`/api/v1/vaults/${vaultId}/projects`, { signal: controller.signal })
+      .then(({ items }) => { if (!controller.signal.aborted) setProjects(items); })
+      .catch((caught: Error) => { if (!controller.signal.aborted) setError(caught.message); });
     return () => controller.abort();
-  }, [base]);
+  }, [base, vaultId]);
   const editMeeting = async () => {
     if (!meeting) return;
     const name = window.prompt("Meeting name", meeting.name)?.trim();
@@ -976,70 +924,75 @@ function SyncedMeeting({ vaultId, meetingId }: { vaultId: string; meetingId: str
       setLoadingScreenshots(false);
     }
   };
+  const visibleScreenshots = screenshots?.filter((screenshot) => screenshot.file.metadata.source === "screenshot");
   return (
-    <>
-      <PageHeader title={meeting?.name ?? "Meeting"} />
+    <article className="meeting-detail">
+      <header className="meeting-header">
+        <h1>{meeting?.name || uiText("Meeting", "ミーティング")}</h1>
+        {meeting && <div className="meeting-metadata">
+          <span className="metadata-chip"><time dateTime={meeting.recordingStartedAt ?? meeting.createdAt}>
+            {new Date(meeting.recordingStartedAt ?? meeting.createdAt).toLocaleString(undefined, { year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+          </time>{meeting.duration != null && <> · {Math.floor(meeting.duration / 60)}:{String(Math.floor(meeting.duration % 60)).padStart(2, "0")}</>}</span>
+          {meeting.projectId ? <a className="metadata-chip" href={`/vaults/${vaultId}/projects/${meeting.projectId}`}>
+            <span aria-hidden="true">▱</span>{project?.path ?? uiText("Project", "プロジェクト")}
+          </a> : <span className="metadata-chip">{uiText("Unassigned", "未分類")}</span>}
+          <SummaryTags document={document} />
+        </div>}
+      </header>
       {recovering && <p role="status">{syncMessage("sync_recovering")}</p>}
-      <a className="secondary viewer-back" href={`/vaults/${vaultId}`}>All meetings</a>
-      {vault?.role === "owner" && <>
-        <button className="secondary" onClick={() => void editMeeting()}>Edit Meeting</button>
-        <button className="secondary" onClick={() => void editSummary()}>{summaryText ? "Edit Summary" : "New Summary"}</button>
-        {summaryText && <button className="secondary" onClick={() => void deleteSummary()}>Delete Summary</button>}
-      </>}
-      {error && <p className="error">{error}</p>}
-      {!meeting && !error && <p className="muted">Loading meeting…</p>}
-      {summaryText && (
-        <section className="section-block">
-          <h2 className="section-label">{meeting?.summaryTitle || "Summary"}</h2>
-          <div className="panel meeting-content"><pre>{summaryText}</pre></div>
-        </section>
-      )}
-      {transcript && (
-        <section className="section-block">
-          <h2 className="section-label">Transcript</h2>
-          <div className="panel meeting-content">
-            {transcript.slice(0, 500).map((segment) => (
-              <p key={segment.segmentId}>
-                {segment.speakerLabel && <strong>{segment.speakerLabel}: </strong>}{segment.text}
-              </p>
-            ))}
-            {transcript.length > 500 && <p className="muted">Showing the first 500 transcript segments.</p>}
+      {error && <p className="error" role="alert">{error}</p>}
+      {!meeting && !error && <p className="muted">{uiText("Loading meeting…", "ミーティングを読み込み中…")}</p>}
+      {meeting && <MeetingTabs
+        actions={vault?.role === "owner" && <div className="meeting-actions">
+          <button className="action-trigger" popoverTarget="meeting-actions">{uiText("⋯ Actions", "⋯ 操作")} <span aria-hidden="true">⌄</span></button>
+          <div id="meeting-actions" popover="auto" className="action-menu">
+            <button onClick={() => void editMeeting()}>{uiText("Edit Meeting", "ミーティングを編集")}</button>
+            <button onClick={() => void editSummary()}>{meeting.summaryDocument ? uiText("Edit Summary", "要約を編集") : uiText("New Summary", "要約を追加")}</button>
+            {meeting.summaryDocument && <button className="danger-button" onClick={() => void deleteSummary()}>{uiText("Delete Summary", "要約を削除")}</button>}
           </div>
-        </section>
-      )}
-      {screenshots && screenshots.length > 0 && (
-        <section className="section-block">
-          <h2 className="section-label">Screenshots</h2>
+        </div>}
+        summary={meeting.summaryDocument
+          ? <>{meeting.summaryTitle && meeting.summaryTitle !== meeting.name && <h2 className="summary-title">{meeting.summaryTitle}</h2>}<SummaryContent document={document} /></>
+          : <p className="content-empty">{uiText("No summary yet", "要約はまだありません")}</p>}
+        screenshots={<>
+          {visibleScreenshots?.length === 0 && <p className="content-empty">{uiText("No screenshots", "スクリーンショットはありません")}</p>}
           <div className="screenshot-grid">
-            {screenshots.filter((screenshot) => screenshot.file.metadata.source === "screenshot").map((screenshot) => (
-              <ScreenshotFigure key={screenshot.id} file={screenshot.file} />
+            {visibleScreenshots?.map((screenshot) => (
+              <ScreenshotFigure key={screenshot.id} file={screenshot.file} capturedAt={screenshot.capturedAt} />
             ))}
           </div>
-          {screenshotCursor && (
-            <button className="secondary load-more" disabled={loadingScreenshots} onClick={() => void loadMoreScreenshots()}>
-              {loadingScreenshots ? "Loading…" : "Load more"}
-            </button>
-          )}
-        </section>
-      )}
-    </>
+          {screenshotCursor && <button className="secondary load-more" disabled={loadingScreenshots} onClick={() => void loadMoreScreenshots()}>
+            {loadingScreenshots ? uiText("Loading…", "読み込み中…") : uiText("Load more", "さらに表示")}
+          </button>}
+        </>}
+        transcript={<div className="transcript-document">
+          {transcript?.length === 0 && <p className="content-empty">{uiText("No transcript", "文字起こしはありません")}</p>}
+          {transcript?.slice(0, 500).map((segment) => <div className="transcript-segment" key={segment.segmentId}>
+            <time dateTime={segment.startTime}>{new Date(segment.startTime).toLocaleTimeString()}</time>
+            <p>{segment.speakerLabel && <strong>{segment.speakerLabel}: </strong>}{segment.text}</p>
+          </div>)}
+          {transcript && transcript.length > 500 && <p className="muted">{uiText("Showing the first 500 transcript segments.", "文字起こしの最初の500件を表示しています。")}</p>}
+        </div>}
+      />}
+    </article>
   );
 }
 
-export function ScreenshotFigure({ file }: { file: SyncedScreenshotInfo["file"] }) {
+export function ScreenshotFigure({ file, capturedAt }: { file: SyncedScreenshotInfo["file"]; capturedAt?: string | null }) {
   const [failed, setFailed] = useState(false);
   const original = `/api/v1/files/${file.id}/content`;
   return <figure className="panel">
-    <a href={file.variants.thumb_1280 ?? original} target="_blank" rel="noreferrer" aria-label="Open screenshot">
-      {failed ? <span role="alert">Unable to load screenshot.</span> : <img
+    <a href={file.variants.thumb_1280 ?? original} target="_blank" rel="noreferrer" aria-label={uiText("Open screenshot", "スクリーンショットを開く")}>
+      {failed ? <span role="alert">{uiText("Unable to load screenshot.", "スクリーンショットを読み込めませんでした。")}</span> : <img
         src={file.variants.thumb_360 ?? original}
-        alt={file.metadata.caption || "Screenshot"}
+        alt={file.metadata.caption || uiText("Screenshot", "スクリーンショット")}
         loading="lazy"
         onError={() => setFailed(true)}
       />}
     </a>
+    {capturedAt && <time className="screenshot-time" dateTime={capturedAt}>{new Date(capturedAt).toLocaleTimeString()}</time>}
     {(file.metadata.caption || file.metadata.ocr_text) && <figcaption>{file.metadata.caption || file.metadata.ocr_text}</figcaption>}
-    <a href={original} target="_blank" rel="noreferrer">Open original</a>
+    <a href={original} target="_blank" rel="noreferrer">{uiText("Open original", "原本を開く")}</a>
   </figure>;
 }
 
@@ -1471,71 +1424,6 @@ export function canEmbedArtifact(contentType: string): boolean {
     || ["application/json", "application/pdf", "application/xml", "application/xhtml+xml"].includes(type);
 }
 
-function ArtifactViewer({ brand, id }: { brand: DashboardBrand; id: string }) {
-  const [artifact, setArtifact] = useState<ArtifactInfo>();
-  const [loadError, setLoadError] = useState<Error>();
-  const [signInError, setSignInError] = useState<string>();
-  const load = useCallback(async () => {
-    setLoadError(undefined);
-    try {
-      setArtifact(await json<ArtifactInfo>(`/api/v1/artifacts/${encodeURIComponent(id)}`, {
-        headers: { accept: artifactMetadataMediaType },
-      }));
-    } catch (caught) {
-      setLoadError(caught instanceof Error ? caught : new Error("Could not load artifact"));
-    }
-  }, [id]);
-  useEffect(() => { void load(); }, [load]);
-
-  const contentURL = `/api/v1/artifacts/${encodeURIComponent(id)}/content`;
-  const requiresSignIn = loadError instanceof RequestError && loadError.status === 401;
-  return (
-    <main className="artifact-viewer">
-      <header className="viewer-header">
-        <Brand brand={brand} />
-        <a className="secondary viewer-back" href="/artifacts">All artifacts</a>
-      </header>
-      {!artifact && !loadError && <div className="viewer-state muted">Loading artifact…</div>}
-      {requiresSignIn && (
-        <div className="viewer-state panel">
-          <strong>Sign in to view this artifact</strong>
-          <span>This artifact is private.</span>
-          <button className="primary" onClick={() => void beginSignIn(window.location.pathname).then(setSignInError)}>
-            Continue with Google
-          </button>
-          {signInError && <span className="error">{signInError}</span>}
-        </div>
-      )}
-      {loadError && !requiresSignIn && (
-        <div className="viewer-state panel">
-          <strong>Artifact unavailable</strong><span>{loadError.message}</span>
-          <button className="secondary" onClick={() => void load()}>Try again</button>
-        </div>
-      )}
-      {artifact && (
-        <>
-          <section className="viewer-title">
-            <div>
-              <span className="eyebrow">{artifact.visibility} artifact</span>
-              <h1>{artifact.id}</h1>
-              <p>{artifact.contentType} · Updated {new Date(artifact.updatedAt).toLocaleString()}</p>
-            </div>
-            <a className="secondary" href={contentURL} download={artifact.id}>Download</a>
-          </section>
-          {canEmbedArtifact(artifact.contentType)
-            ? <iframe className="artifact-frame" src={contentURL} sandbox="allow-scripts" title={`Artifact ${artifact.id}`} />
-            : (
-                <div className="viewer-state panel">
-                  <strong>Preview unavailable</strong>
-                  <span>Download this artifact to open it in a compatible application.</span>
-                </div>
-              )}
-        </>
-      )}
-    </main>
-  );
-}
-
 function AdminMembers() {
   const [members, setMembers] = useState<AdminMember[]>();
   const [email, setEmail] = useState("");
@@ -1597,29 +1485,60 @@ function AdminMembers() {
 }
 
 export function App({ brand = defaultBrand, extensions = [] }: AppProps) {
-  const path = window.location.pathname;
-  const viewerId = artifactViewerId(path);
+  const [path, setPath] = useState(window.location.pathname);
+  const needsSession = path !== "/sign-in" && path !== "/oauth/consent";
+  const showsVault = path.startsWith("/vaults");
   const [session, setSession] = useState<SessionInfo>();
   const [sessionError, setSessionError] = useState<string>();
   const [unauthorized, setUnauthorized] = useState(false);
   const [sessionAttempt, setSessionAttempt] = useState(0);
 
   useEffect(() => {
-    if (path === "/sign-in" || path === "/oauth/consent" || viewerId) return;
+    if (!needsSession) return;
+    const sessionExpired = () => setUnauthorized(true);
+    const refreshSession = () => setSessionAttempt((attempt) => attempt + 1);
+    window.addEventListener("dahlia:unauthorized", sessionExpired);
+    window.addEventListener(clientMutationEvent, refreshSession);
+    return () => {
+      window.removeEventListener("dahlia:unauthorized", sessionExpired);
+      window.removeEventListener(clientMutationEvent, refreshSession);
+    };
+  }, [needsSession]);
+
+  useEffect(() => {
+    if (unauthorized) window.location.replace(`/sign-in?next=${encodeURIComponent(path)}`);
+  }, [unauthorized, path]);
+
+  useEffect(() => {
+    const followHistory = () => setPath(window.location.pathname);
+    window.addEventListener("popstate", followHistory);
+    return () => window.removeEventListener("popstate", followHistory);
+  }, []);
+  const navigate = (next: string) => {
+    if (next === window.location.pathname) return;
+    window.history.pushState(null, "", next);
+    setPath(next);
+  };
+
+  useEffect(() => {
+    if (!needsSession) return;
+    const controller = new AbortController();
     setSessionError(undefined);
-    void json<SessionInfo>("/api/session")
-      .then(setSession)
+    void json<SessionInfo>("/api/session", { signal: controller.signal })
+      .then((value) => { if (!controller.signal.aborted) setSession(value); })
       .catch((caught: unknown) => {
+        if (controller.signal.aborted) return;
         if (shouldRedirectToSignIn(caught instanceof RequestError ? caught.status : undefined)) {
           setUnauthorized(true);
           return;
         }
         setSessionError(caught instanceof Error ? caught.message : "Could not load your account");
       });
-  }, [path, sessionAttempt, viewerId]);
+    return () => controller.abort();
+  }, [needsSession, sessionAttempt]);
 
   useEffect(() => {
-    if (!session || !path.startsWith("/vaults")) return;
+    if (!session || !showsVault) return;
     const checkpoint = sessionStorage.getItem("dahlia-sync-cursor");
     const source = new EventSource(`/api/v1/events${checkpoint ? `?cursor=${encodeURIComponent(checkpoint)}` : ""}`);
     source.addEventListener("invalidation", (event) => {
@@ -1628,15 +1547,11 @@ export function App({ brand = defaultBrand, extensions = [] }: AppProps) {
       window.location.reload();
     });
     return () => source.close();
-  }, [path, session]);
+  }, [showsVault, session]);
 
   if (path === "/sign-in") return <SignIn brand={brand} />;
   if (path === "/oauth/consent") return <Consent brand={brand} />;
-  if (viewerId) return <ArtifactViewer brand={brand} id={viewerId} />;
-  if (unauthorized) {
-    window.location.replace(`/sign-in?next=${encodeURIComponent(path)}`);
-    return null;
-  }
+  if (unauthorized) return null;
   if (sessionError) {
     return (
       <main className="loading">
@@ -1665,7 +1580,6 @@ export function App({ brand = defaultBrand, extensions = [] }: AppProps) {
     page = <ExtensionPage session={session} />;
   }
   else if (route.page === "admin-members") page = <AdminMembers />;
-  else if (route.page === "artifacts") page = <Artifacts />;
   else if (route.page === "vaults") page = <Vaults />;
   else if (route.page === "vault") page = <VaultMeetings session={session} vaultId={route.vaultId!} />;
   else if (route.page === "meeting") page = <SyncedMeeting vaultId={route.vaultId!} meetingId={route.meetingId!} />;
@@ -1674,5 +1588,5 @@ export function App({ brand = defaultBrand, extensions = [] }: AppProps) {
   else if (route.page === "invitation") page = <Invitation invitationId={route.invitationId!} />;
   else if (route.page === "settings") page = <Settings />;
   else page = <Overview session={session} />;
-  return <Shell brand={brand} extensions={extensions} session={session}>{page}</Shell>;
+  return <Shell brand={brand} extensions={extensions} session={session} path={path} navigate={navigate}>{page}</Shell>;
 }
