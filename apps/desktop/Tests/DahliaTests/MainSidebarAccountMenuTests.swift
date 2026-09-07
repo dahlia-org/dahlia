@@ -97,7 +97,7 @@
         }
 
         @Test
-        func accountHelpCentersBelowTheRowAndStaysOnScreen() {
+        func accountHelpCentersAboveTheRowAndStaysOnScreen() {
             let origin = MainSidebarAccountMenuLayout.helpOrigin(
                 panelSize: CGSize(width: 240, height: 36),
                 rowFrame: CGRect(x: 6, y: 36, width: 268, height: 30),
@@ -105,7 +105,20 @@
                 screenFrame: CGRect(x: 0, y: 0, width: 1000, height: 800)
             )
 
-            #expect(origin == CGPoint(x: 720, y: 272))
+            #expect(origin == CGPoint(x: 720, y: 350))
+        }
+
+        @Test
+        func accountHelpFallsBelowTheRowWhenSpaceAboveIsInsufficient() {
+            let origin = MainSidebarAccountMenuLayout.helpOrigin(
+                panelSize: CGSize(width: 240, height: 36),
+                rowFrame: CGRect(x: 6, y: 36, width: 268, height: 30),
+                mainPanelFrame: CGRect(x: 700, y: 614, width: 280, height: 180),
+                screenFrame: CGRect(x: 0, y: 0, width: 1000, height: 800)
+            )
+
+            #expect(origin == CGPoint(x: 720, y: 686))
+            #expect(origin.y + 36 < 794 - 66)
         }
 
         @Test
@@ -214,16 +227,25 @@
                 onAccountAction: { didManageAccounts = true }
             )
 
+            var openedURLs: [URL] = []
+            coordinator.openURL = { openedURLs.append($0) }
             coordinator.moveSelection(1)
             coordinator.moveSelection(1)
             coordinator.activateSelection()
             #expect(selectedConnectionID == server.id)
+            #expect(openedURLs.isEmpty)
 
             coordinator.moveSelection(1)
             coordinator.moveSelection(1)
             coordinator.moveSelection(1)
             coordinator.activateSelection()
             #expect(didSelectAccount)
+            #expect(selectedConnectionID == nil)
+            #expect(openedURLs.isEmpty)
+
+            coordinator.moveSelection(1)
+            coordinator.activateSelection()
+            #expect(openedURLs.map(\.absoluteString) == [cloud.origin])
             #expect(selectedConnectionID == nil)
 
             coordinator.moveSelection(-1)
@@ -251,6 +273,7 @@
                 onAccountAction: {}
             )
 
+            coordinator.openURL = { _ in }
             coordinator.moveSelection(1)
             coordinator.activateSelection()
 
