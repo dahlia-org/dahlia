@@ -919,7 +919,7 @@ export function createApp(dependencies: AppDependencies) {
     return artifact;
   }
 
-  return app;
+  return Object.assign(app, { runStorageMaintenance: () => sync.runStorageMaintenance() });
 }
 
 function requestRoute(path: string): string {

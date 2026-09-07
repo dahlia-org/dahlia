@@ -43,7 +43,8 @@ POST 後は owner だけが読める staging とし、クライアントの照�
 `recordingAudioVersion: 1` を広告する。新 Desktop は syncVersion 1/2 を読み、音声送信は
 recordingAudioVersion 1 の Server に限定する。旧 Desktop は更新要求状態になるため Desktop を先に更新する。
 
-未確定 staging は24時間で失効する。削除キュー・キー排他・世代照合で再送／明示削除と競合しないようにする。
+未確定 staging は24時間で失効する。Node の1分間隔の保守処理と Worker の毎分 Cron が全 Vault の運用 metadata をページングし、owner identity の transaction 内で期限切れ音源を削除キューへ入れる。Vault への後続リクエストは不要。削除キュー・キー排他・世代照合で再送／明示削除と競合しないようにする。
+CAF の削除開始は `purgeRequestedAt` で判定し、削除時の整合性異常で行が `failed` になっても、その CAF を再文字起こしの入力に戻さない。
 
 ## 認識品質の評価
 

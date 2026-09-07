@@ -213,6 +213,50 @@ import GRDB
         }
 
         @Test
+        func archiveRemainsTranscribableAfterAmbiguousCAFCleanup() async throws {
+            let fixture = try BatchAudioTestFixture(name: "ArchiveAmbiguousCleanup")
+            defer { fixture.removeFiles() }
+            try await fixture.recordMicrophoneAudio()
+            let segment = try await fixture.database.dbQueue.write { db in
+                try RecordingArchiveRecord.enqueue(fixture.session, in: db)
+                try db.execute(
+                    sql: "UPDATE recording_sessions SET endedAt = ?, batchCompletedAt = ? WHERE id = ?",
+                    arguments: [fixture.now, fixture.now, fixture.session.id]
+                )
+                return try #require(try RecordingAudioSegmentRecord.fetchOne(db))
+            }
+            let partial = fixture.managedRootURL.appending(path: segment.partialRelativePath)
+            try Data("mismatched partial".utf8).write(to: partial)
+            let service = RecordingArchiveService(dbQueue: fixture.database.dbQueue, root: fixture.managedRootURL)
+            try await service.runNext(localOnly: true)
+            try await fixture.database.dbQueue.read { db in
+                let source = try #require(try RecordingAudioSegmentRecord.fetchOne(db, key: segment.id))
+                #expect(source.state == .failed)
+                #expect(source.failureCode == "ambiguousFiles")
+                #expect(source.purgeRequestedAt != nil)
+                #expect(try RecordingArchiveRecord.isAvailable(sessionId: fixture.session.id, in: db))
+            }
+            #expect(FileManager.default.fileExists(atPath: partial.path))
+            _ = try await BatchTranscriptionConfirmationService.confirmRetranscription(
+                sessionIds: [fixture.session.id], languageSelection: .manual(localeIdentifier: "en_US"),
+                automaticLanguageCandidates: nil, dbQueue: fixture.database.dbQueue
+            )
+            let coordinator = BatchTranscriptionCoordinator(
+                dbQueue: fixture.database.dbQueue, managedRootURL: fixture.managedRootURL,
+                speechRecognizer: TestBatchSpeechRecognizer(), audioRetentionPeriod: .forever,
+                supportedLocalesProvider: { testSupportedSpeechLocales }, onStateChange: { _ in }
+            )
+            await coordinator.enqueue(sessionId: fixture.session.id)
+            #expect(await pollUntil {
+                await (try? fixture.database.dbQueue.read { db in
+                    let session = try RecordingSessionRecord.fetchOne(db, key: fixture.session.id)
+                    return session?.batchCompletedAt.map { $0 > fixture.now } == true && session?.batchLastError == nil
+                }) == true
+            })
+            try await coordinator.shutdown()
+        }
+
+        @Test
         func joinsPhysicalSegmentsPreservingGapAndLanguageBoundary() async throws {
             let fixture = try BatchAudioTestFixture(name: "ArchiveGap")
             defer { fixture.removeFiles() }

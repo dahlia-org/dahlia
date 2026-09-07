@@ -16,6 +16,7 @@
     "binding": "DAHLIA_STORAGE",
     "bucket_name": "replace-with-r2-bucket-name"
   }],
+  "triggers": { "crons": ["* * * * *"] },
   "observability": {
     "enabled": false,
     "logs": { "enabled": false, "invocation_logs": false }

@@ -368,6 +368,7 @@ actor BatchTranscriptionCoordinator {
         }
         let useArchive = try await dbQueue.read { db in
             try RecordingAudioSegmentRecord.filter(Column("recordingSessionId") == job.session.id)
+                .filter(Column("purgeRequestedAt") == nil)
                 .filter(![RecordingAudioSegmentState.purgePending.rawValue, RecordingAudioSegmentState.purged.rawValue].contains(Column("state")))
                 .fetchCount(db) == 0
         }

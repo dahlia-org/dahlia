@@ -22,6 +22,7 @@ import type {
   IdentitySyncStore,
   MeetingSyncStore,
   SyncSearchQuery,
+  SyncHistoryTarget,
   SyncTransaction,
   VaultPrincipalType,
 } from "./types";
@@ -153,6 +154,7 @@ export class MeetingSyncService {
   private readonly storageOperationWaiters: Array<() => void> = [];
   private activeStorageOperations = 0;
   private storageDeleteDrain?: Promise<void>;
+  private storageMaintenance?: Promise<void>;
   private storageDeleteRetry?: ReturnType<typeof setTimeout>;
   private readonly variantJobs = new Map<string, Promise<void>>();
   private readonly variantWaiters: Array<() => void> = [];
@@ -305,6 +307,29 @@ export class MeetingSyncService {
     return response;
   }
 
+  runStorageMaintenance(): Promise<void> {
+    return this.storageMaintenance ??= this.maintainStorage().finally(() => { this.storageMaintenance = undefined; });
+  }
+
+  private async maintainStorage(): Promise<void> {
+    if (!this.storage) return;
+    let after: SyncHistoryTarget | undefined;
+    const before = new Date(Date.now() - 86_400_000);
+    for (;;) {
+      const targets = await this.store.listHistoryTargets(after);
+      if (!targets.length) break;
+      for (const target of targets) {
+        await this.store.withIdentity({
+          userId: target.ownerUserId, workspaceId: `personal:${target.ownerUserId}`, source: "header",
+        }, (scoped) => scoped.expireRecordingUploads(target.vaultId, before));
+      }
+      after = targets.at(-1);
+    }
+    await this.storageDeleteDrain;
+    this.scheduleStorageDeletes();
+    await this.storageDeleteDrain;
+  }
+
   private scheduleStorageDeletes(): void {
     this.storageDeleteDrain ??= this.drainStorageDeletes()
       .catch(() => undefined)
@@ -318,7 +343,7 @@ export class MeetingSyncService {
     if (this.storageDeleteRetry) return;
     this.storageDeleteRetry = setTimeout(() => {
       this.storageDeleteRetry = undefined;
-      this.scheduleStorageDeletes();
+      void this.runStorageMaintenance().catch(() => undefined).finally(() => this.scheduleStorageDeleteRetry());
     }, 60_000);
     this.storageDeleteRetry.unref?.();
   }

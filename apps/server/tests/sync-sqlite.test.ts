@@ -39,6 +39,23 @@ afterEach(() => {
 });
 
 describe("SQLite canonical sync", () => {
+  it("runs storage maintenance on the timer without Vault requests", async () => {
+    const { store, directory } = await setup();
+    const targets = vi.spyOn(store.sync, "listHistoryTargets");
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const service = new MeetingSyncService(store.sync, new LocalObjectStorage(join(directory, "objects")));
+      await service.runStorageMaintenance();
+      targets.mockClear();
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(targets).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+      await store.close?.();
+    }
+  });
+
   it.each(["node", "worker"])("stores raw recording uploads, hides staging and retains source identity through %s", async (runtime) => {
     const { store, directory, databasePath } = await setup();
     await createVault(store);
@@ -103,16 +120,30 @@ describe("SQLite canonical sync", () => {
     expect(snapshot.items.find((record) => record.entity === "recording")?.record).toMatchObject({ sessionId, audio: { mic: { manifest } } });
     const staged = await store.sync.withIdentity(owner, (scoped) => scoped.getRecording(meetingId, 1, true));
     const oldGeneration = staged!.audio.system!.generation;
-    await store.sync.withIdentity(owner, (scoped) => scoped.expireRecordingUploads(vaultId, new Date(Date.now() + 1000)));
-    expect(await store.sync.hasStorageDelete(`meetings/${meetingId}/recordings/audio_system_01.m4a`)).toBe(true);
-    expect(await store.sync.hasStorageDelete(`meetings/${meetingId}/recordings/audio_mic_01.m4a`)).toBe(false);
-    const claims = await store.sync.claimStorageDeletes(10);
-    expect(claims).toHaveLength(1);
-    for (const claim of claims) {
-      await storage.delete(claim.storageKey);
-      await store.sync.completeStorageDelete(claim);
-    }
+    const database = new DatabaseSync(databasePath);
+    try {
+      database.prepare("UPDATE recordings SET audio = json_set(audio, '$.system.createdAt', ?, '$.mic.createdAt', ?) WHERE session_id = ?")
+        .run("2020-01-01T00:00:00.000Z", "2020-01-01T00:00:00.000Z", sessionId);
+    } finally { database.close(); }
+    // No further request to this Vault: Node maintenance or a cold Worker cron must find the upload.
+    const maintain = async () => {
+      if (runtime === "node") return app.runStorageMaintenance();
+      const coldWorker = createWorkerHandler(async () => app);
+      const pending: Promise<unknown>[] = [];
+      const scheduled = coldWorker.scheduled!.bind(coldWorker) as unknown as (
+        controller: ScheduledController, env: Cloudflare.Env, context: ExecutionContext,
+      ) => Promise<void>;
+      await scheduled({} as ScheduledController, {} as Cloudflare.Env, { waitUntil: (task: Promise<unknown>) => pending.push(task) } as unknown as ExecutionContext);
+      await Promise.all(pending);
+    };
+    await maintain();
+    expect(await storage.exists(`meetings/${meetingId}/recordings/audio_system_01.m4a`)).toBe(false);
+    expect(await storage.exists(`meetings/${meetingId}/recordings/audio_mic_01.m4a`)).toBe(true);
+    const cleaned = await store.sync.withIdentity(owner, (scoped) => scoped.getRecording(meetingId, 1, true));
+    expect(cleaned!.audio.system).toBeUndefined();
+    expect(cleaned!.audio.mic!.active).toBe(true);
     expect((await post("system")).status).toBe(201);
+    await maintain();
     expect(await store.sync.withIdentity(owner, (scoped) => scoped.markRecordingUploaded(sessionId, "system", oldGeneration, bytes.length, uploaded.checksum))).toBeNull();
     expect(await storage.exists(`meetings/${meetingId}/recordings/audio_system_01.m4a`)).toBe(true);
     await commit(store, owner, transaction(freshId(), [{ id: freshId(), entity: "meeting", action: "delete", entityId: meetingId, baseRevision: 1, data: {} }]));

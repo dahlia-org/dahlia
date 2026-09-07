@@ -154,14 +154,17 @@ function requiredR2Binding(env: WorkerEnv): R2BucketLike {
 
 export function createWorkerHandler(initialize: WorkerAppInitializer = initializeWorkerApp): ExportedHandler<WorkerEnv> {
   let appPromise: Promise<WorkerApp> | undefined;
+  const application = (env: WorkerEnv) => appPromise ??= initialize(env).catch((error: unknown) => {
+    appPromise = undefined;
+    throw error;
+  });
   return {
     async fetch(request, env): Promise<Response> {
       if (new URL(request.url).pathname === "/healthz") return healthApp.fetch(request, env);
-      appPromise ??= initialize(env).catch((error: unknown) => {
-        appPromise = undefined;
-        throw error;
-      });
-      return (await appPromise).fetch(request, env);
+      return (await application(env)).fetch(request, env);
+    },
+    async scheduled(_controller, env, context): Promise<void> {
+      context.waitUntil((await application(env)).runStorageMaintenance());
     },
   };
 }
