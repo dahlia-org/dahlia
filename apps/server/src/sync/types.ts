@@ -172,7 +172,16 @@ export interface SyncScreenshotRecord {
   revision?: number;
 }
 
+export interface SyncSearchFilters {
+  meetingIds?: string[];
+  projectIds?: string[];
+  from?: Date;
+  to?: Date;
+  unassigned?: boolean;
+}
+
 export interface SyncSearchQuery {
+  filters?: SyncSearchFilters;
   text: string;
   tokens: string[];
   ftsCandidateIds?: string[];
@@ -230,6 +239,7 @@ export interface IdentitySyncStore {
   listVaults(organizationId?: string): Promise<SyncVaultRecord[]>;
   getVault(vaultId: string): Promise<SyncVaultRecord | null>;
   listProjects(vaultId: string): Promise<SyncProjectView[]>;
+  searchProjectActivity(vaultId: string, filters: SyncSearchFilters): Promise<{ projectId: string | null; updatedAt: string }[]>;
   resolveEntityVault(entity: "meeting" | "project", id: string): Promise<string | null>;
   getProject(vaultId: string, projectId: string): Promise<SyncProjectView | null>;
   listMeetings(
@@ -239,6 +249,7 @@ export interface IdentitySyncStore {
     projectId?: string,
     cursor?: SyncMeetingCursor,
     projectScope?: "direct" | "unassigned",
+    filters?: SyncSearchFilters,
   ): Promise<SyncMeetingRecord[]>;
   getMeeting(vaultId: string, meetingId: string): Promise<SyncMeetingRecord | null>;
   listTranscript(
@@ -249,10 +260,11 @@ export interface IdentitySyncStore {
   ): Promise<SyncTranscriptSegment[]>;
   listScreenshots(
     vaultId: string,
-    meetingId: string,
+    meetingId: string | undefined,
     query: SyncSearchQuery | undefined,
     limit: number,
     cursor?: SyncScreenshotCursor,
+    filters?: SyncSearchFilters,
   ): Promise<SyncScreenshotRecord[]>;
   listPermissions(vaultId: string): Promise<VaultPermissionRecord[] | null>;
   putMemberPermission(vaultId: string, principalType: VaultPrincipalType, principalId: string): Promise<boolean>;

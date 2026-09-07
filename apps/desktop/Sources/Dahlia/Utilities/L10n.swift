@@ -5,6 +5,15 @@ import Foundation
 
 /// ローカライズ文字列への型安全なアクセスを提供する。
 enum L10n { // swiftlint:disable:this type_body_length
+    static var serverSearchPendingUnavailable: String { String(localized: "search.server.pendingUnavailable", bundle: bundle) }
+    static var serverSearchRanked: String { String(localized: "search.server.ranked", bundle: bundle) }
+    static var serverSearchTopResults: String { String(localized: "search.server.top", bundle: bundle) }
+    static var serverSearchLocalFallback: String { String(localized: "search.server.localFallback", bundle: bundle) }
+    static var serverSearchPending: String { String(localized: "search.server.pending", bundle: bundle) }
+    static var serverSearchKind: String { String(localized: "search.server.kind", bundle: bundle) }
+    static var serverSearchAllKinds: String { String(localized: "search.server.allKinds", bundle: bundle) }
+    static var serverSearchPendingProjects: String { String(localized: "search.server.pendingProjects", bundle: bundle) }
+    static var serverSearchPendingImages: String { String(localized: "search.server.pendingImages", bundle: bundle) }
     static var serverAccountLanguages: String { String(localized: "account.settings.languages", bundle: bundle) }
     static var imageAnalysisLanguages: String { String(localized: "account.settings.imageLanguages", bundle: bundle) }
     static var serverAccountSettingsDescription: String { String(localized: "account.settings.description", bundle: bundle) }

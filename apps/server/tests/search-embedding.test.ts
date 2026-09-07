@@ -156,6 +156,42 @@ describe("search embeddings", () => {
     warn.mockRestore();
   });
 
+  it.each(["hybrid", "offline", "revoked"])("shares one query embedding across common search kinds: %s", async (mode) => {
+    const vaultId = "019d3f46-7e0d-7d21-98d9-f1456c0bfb58";
+    const meetingId = "019d3f46-8b72-77f1-b232-93726eec3e9e";
+    let allowed = true;
+    const meeting = { meetingId, vaultId, projectId: null, name: "契約", description: "", createdAt: new Date(), summaryDocument: null } as SyncMeetingRecord;
+    const listMeetings = vi.fn((_vault: string, query?: SyncSearchQuery) => {
+      if (query?.embedding) expect(query.ftsCandidateIds).toBeUndefined();
+      return Promise.resolve([meeting]);
+    });
+    const listScreenshots = vi.fn((_vault: string, _meeting: string | undefined, query?: SyncSearchQuery) => {
+      if (query?.embedding) expect(query.ftsCandidateIds).toBeUndefined();
+      return Promise.resolve([]);
+    });
+    const scoped = { getVault: () => Promise.resolve(allowed ? { vaultId } : undefined),
+      listProjects: () => Promise.resolve([]), searchProjectActivity: () => Promise.resolve([]), listMeetings, listScreenshots } as unknown as IdentitySyncStore;
+    const store = { withIdentity: <T>(_identity: unknown, action: (store: IdentitySyncStore) => Promise<T>) => action(scoped) } as MeetingSyncStore;
+    const embedQuery = vi.fn(async () => {
+      if (mode === "revoked") allowed = false;
+      if (mode === "offline") throw new Error("offline");
+      return Array<number>(32).fill(1);
+    });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const service = new MeetingSyncService(store, undefined, { tokenize: (text) => [text] },
+        { model: "model", dimensions: 32, embedDocuments: vi.fn(), embedQuery });
+      const result = service.searchAll({ userId: "owner", workspaceId: "personal:owner", source: "header" }, { vaultId, query: "契約" });
+      if (mode === "revoked") await expect(result).rejects.toMatchObject({ status: 404 });
+      else {
+        expect((await result).meetings.map((hit) => hit.id)).toEqual([meetingId]);
+        expect(listScreenshots).toHaveBeenCalledTimes(mode === "hybrid" ? 2 : 1);
+        expect(listMeetings).toHaveBeenCalledTimes(mode === "hybrid" ? 2 : 1);
+      }
+      expect(embedQuery).toHaveBeenCalledTimes(1);
+    } finally { warn.mockRestore(); }
+  });
+
   it("processes a claimed batch and retries stale results", async () => {
     const document: SearchIndexDocumentRecord = {
       vaultId: "vault",

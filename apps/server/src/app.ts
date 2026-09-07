@@ -453,13 +453,19 @@ export function createApp(dependencies: AppDependencies) {
   app.get("/api/v1/capabilities", async (context) => {
     await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
     return context.json(await store.sync.isAvailable()
-      ? { syncVersion: 2, recordingAudioVersion: 1, meetingEventsVersion: 1, imageAnalysis: dependencies.imageAnalysisEnabled === true } : {});
+      ? { syncVersion: 2, recordingAudioVersion: 1, meetingEventsVersion: 1, searchVersion: 1, imageAnalysis: dependencies.imageAnalysisEnabled === true } : {});
   });
   app.get("/api/v1/vaults/:vaultId/text/:entity/:entityId", async (context) => {
     const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
     return context.json(await sync.textContent(identity, sync.parseId(context.req.param("vaultId")),
       context.req.param("entity"), sync.parseId(context.req.param("entityId")),
       context.req.query("revision"), context.req.query("manifest"), context.req.query("cursor")));
+  });
+  app.post("/api/v1/search", bodyLimit({ maxSize: 16 * 1024,
+    onError: (context) => context.json({ error: "search_request_too_large" }, 413) }), async (context) => {
+    const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
+    context.header("Cache-Control", "no-store");
+    return context.json(await sync.searchAll(identity, await context.req.json().catch(() => null), context.req.raw.signal));
   });
   app.get("/api/v1/vaults/:vaultId/search", async (context) => {
     const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);

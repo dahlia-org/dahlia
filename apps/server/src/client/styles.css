@@ -353,3 +353,22 @@ a.metadata-chip:hover { background: #e8e8e8; }
 
 .recording-indicator { display: inline-flex; align-items: center; gap: 0.35em; flex: none; white-space: nowrap; font-size: 0.8em; font-weight: 500; }
 .recording-dot { width: 0.55em; height: 0.55em; flex: none; border-radius: 50%; background: #dc2626; }
+
+.sidebar-search { display: flex; justify-content: space-between; margin: 12px; padding: 10px; }
+.search-dialog { width: min(900px, calc(100vw - 32px)); max-height: calc(100dvh - 48px); padding: 0; border: 1px solid var(--line); border-radius: 20px; color: inherit; background: var(--paper); box-shadow: 0 20px 80px #0003; }
+.search-dialog::backdrop { background: #0004; }
+.search-toolbar { display: flex; gap: 12px; padding: 20px; border-bottom: 1px solid var(--line); }
+.search-toolbar input { flex: 1; min-width: 0; }
+.search-filters { display: flex; flex-wrap: wrap; gap: 12px; padding: 16px 20px; }
+.search-filters label { display: grid; gap: 4px; }
+.search-results { overflow: auto; max-height: 65dvh; padding: 20px; }
+.search-results h2 { font-size: 1rem; color: var(--muted, GrayText); margin: 20px 0 10px; }
+.search-result { display: flex; align-items: center; gap: 12px; width: 100%; border: 0; background: transparent; padding: 12px; text-align: left; color: inherit; border-radius: 10px; }
+.search-result:hover, .search-result[data-selected="true"] { background: color-mix(in srgb, currentColor 8%, transparent); }
+.search-result-copy { display: grid; gap: 4px; flex: 1; min-width: 0; }
+.search-result-copy > * { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.search-result small, .search-result time, .search-result kbd { color: var(--muted, GrayText); }
+.search-result img { width: 100px; height: 64px; object-fit: contain; }
+.search-preview { width: calc(100vw - 32px); height: calc(100dvh - 48px); }
+.search-preview .file-viewer { position: absolute; inset: 0; }
+@media (max-width: 600px) { .search-toolbar { flex-wrap: wrap; } .search-toolbar input { flex-basis: 100%; } .search-result time, .search-result kbd { display: none; } }

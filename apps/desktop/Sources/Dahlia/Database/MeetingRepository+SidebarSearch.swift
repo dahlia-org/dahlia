@@ -448,12 +448,14 @@ extension MeetingRepository {
     ) -> (condition: String, arguments: StatementArguments) {
         var conditions: [String] = []
         var arguments: StatementArguments = []
+        if criteria.pendingOnly { conditions.append(pendingSearchMeetingSQL) }
+        let dateSQL = criteria.pendingOnly ? "meetings.createdAt" : sidebarRecordingStartedAtSQL
         if let start = criteria.startDate {
-            conditions.append("\(sidebarRecordingStartedAtSQL) >= ?")
+            conditions.append("\(dateSQL) >= ?")
             arguments += [start]
         }
         if let end = criteria.endDate {
-            conditions.append("\(sidebarRecordingStartedAtSQL) < ?")
+            conditions.append("\(dateSQL) < ?")
             arguments += [end]
         }
         if !criteria.projectIDs.isEmpty {

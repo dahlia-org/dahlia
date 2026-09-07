@@ -11,6 +11,7 @@ import type { ArtifactRecord } from "./auth/store";
 import type { Identity } from "./auth/identity";
 import { hasApiScope, MCP_READ_SCOPE, MCP_SCOPE } from "./auth/scopes";
 import type { AppConfig } from "./config";
+import { searchRequestSchema } from "./search/model";
 import { MeetingSyncService } from "./sync/service";
 
 export const MCP_MAX_REQUEST_BYTES = 12 * 1024 * 1024;
@@ -93,6 +94,13 @@ export function createArtifactMcpHandler(
     }
 
     if (sync && hasApiScope(authInfo?.scopes ?? [], MCP_READ_SCOPE)) {
+      server.registerTool("search", {
+        description: "Search meetings, screenshots and projects in a readable Vault. Returns up to 100 ranked results per kind.",
+        inputSchema: searchRequestSchema,
+        annotations: { readOnlyHint: true },
+      }, async (request) => jsonToolResult(() => sync.searchAll(identity, {
+        ...request, from: request.from?.toISOString(), to: request.to?.toISOString(),
+      })));
       const meetingInput = z.object({ vault_id: z.string(), meeting_id: z.string() }).strict();
       server.registerTool("query_meetings", {
         description: "List meetings in a synchronized Vault you can read.",

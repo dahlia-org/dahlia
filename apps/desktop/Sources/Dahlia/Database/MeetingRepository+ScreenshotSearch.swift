@@ -12,17 +12,19 @@ extension MeetingRepository {
         dbQueue: DatabaseQueue
     ) async throws -> ScreenshotSearchPage {
         try await dbQueue.read { db in
-            guard !criteria.text.isEmpty else { return ScreenshotSearchPage(items: [], nextCursor: nil, replacesResults: false) }
-            let phase = try String.fetchOne(
-                db,
-                sql: "SELECT phase FROM search_index_state WHERE indexKind = 'fts'"
-            )
-            guard phase == "ready" else { throw MeetingSearchError.indexUnavailable }
-            let tokens = try SearchFTS5Tokenizer.queryTokens(for: criteria.text, in: db)
-            guard !tokens.isEmpty else { return ScreenshotSearchPage(items: [], nextCursor: nil, replacesResults: false) }
-            let query = "{ocr caption} : (" + tokens.enumerated().map { index, token in
-                SearchFTS5Tokenizer.quotedQueryToken(token, isPrefix: index == tokens.count - 1)
-            }.joined(separator: " AND ") + ")"
+            guard !criteria.text.isEmpty || criteria.pendingOnly else {
+                return ScreenshotSearchPage(items: [], nextCursor: nil, replacesResults: false)
+            }
+            var query: String?
+            if !criteria.text.isEmpty {
+                let phase = try String.fetchOne(db, sql: "SELECT phase FROM search_index_state WHERE indexKind = 'fts'")
+                guard phase == "ready" else { throw MeetingSearchError.indexUnavailable }
+                let tokens = try SearchFTS5Tokenizer.queryTokens(for: criteria.text, in: db)
+                guard !tokens.isEmpty else { return ScreenshotSearchPage(items: [], nextCursor: nil, replacesResults: false) }
+                query = "{ocr caption} : (" + tokens.enumerated().map { index, token in
+                    SearchFTS5Tokenizer.quotedQueryToken(token, isPrefix: index == tokens.count - 1)
+                }.joined(separator: " AND ") + ")"
+            }
             let revision = try Int.fetchOne(
                 db,
                 sql: "SELECT indexRevision FROM search_index_state WHERE indexKind = 'fts'"
@@ -35,7 +37,8 @@ extension MeetingRepository {
                 projects: projects
             )
             let filter = screenshotSearchFilter(criteria, includedProjectIDs: includedProjectIDs)
-            var arguments: StatementArguments = [vaultID, query]
+            var arguments: StatementArguments = [vaultID]
+            if let query { arguments += [query] }
             arguments += filter.arguments
             arguments += [limit + 1, offset]
             var rows = try Row.fetchAll(
@@ -44,15 +47,14 @@ extension MeetingRepository {
                 SELECT meeting_images.id, meeting_images.meetingId, meeting_images.capturedAt,
                        meeting_images.mimeType, meeting_images.ocrText, meeting_images.caption,
                        meetings.name AS meetingTitle, meetings.description AS meetingDescription
-                FROM search_documents
-                JOIN search_documents_fts ON search_documents_fts.rowid = search_documents.id
-                JOIN meeting_images ON meeting_images.id = search_documents.sourceId
+                FROM meeting_images
                 JOIN meetings ON meetings.id = meeting_images.meetingId
-                WHERE search_documents.kind = 'screenshot'
-                  AND search_documents.vaultId = ?
-                  AND search_documents_fts MATCH ?
+                \(query == nil ? "" :
+                    "JOIN search_documents ON search_documents.sourceId = meeting_images.id AND search_documents.kind = 'screenshot' JOIN search_documents_fts ON search_documents_fts.rowid = search_documents.id")
+                WHERE meetings.vaultId = ?
+                  \(query == nil ? "" : "AND search_documents_fts MATCH ?")
                   \(filter.condition)
-                ORDER BY \(SearchFTS5Tokenizer.screenshotRankingSQL), meeting_images.capturedAt DESC, meeting_images.id
+                ORDER BY \(query == nil ? "" : SearchFTS5Tokenizer.screenshotRankingSQL + ",") meeting_images.capturedAt DESC, meeting_images.id
                 LIMIT ? OFFSET ?
                 """,
                 arguments: arguments
@@ -147,12 +149,16 @@ extension MeetingRepository {
     ) -> (condition: String, arguments: StatementArguments) {
         var conditions: [String] = []
         var arguments: StatementArguments = []
+        if criteria.pendingOnly {
+            conditions.append(pendingSearchScreenshotSQL)
+        }
+        let dateSQL = criteria.pendingOnly ? "meeting_images.capturedAt" : "COALESCE(meetings.recordingStartedAt, meetings.createdAt)"
         if let startDate = criteria.startDate {
-            conditions.append("COALESCE(meetings.recordingStartedAt, meetings.createdAt) >= ?")
+            conditions.append("\(dateSQL) >= ?")
             arguments += [startDate]
         }
         if let endDate = criteria.endDate {
-            conditions.append("COALESCE(meetings.recordingStartedAt, meetings.createdAt) < ?")
+            conditions.append("\(dateSQL) < ?")
             arguments += [endDate]
         }
         if !criteria.projectIDs.isEmpty {

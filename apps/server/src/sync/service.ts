@@ -1,5 +1,6 @@
 import { RECORDING_MAX_BYTES, recordingManifestSchema, recordingSourceSchema, recordingStorageKey, recordingContentURL, recordingResponse } from "../recordings/model";
 import { z } from "zod";
+import { searchRequestSchema, searchSnippet, type SearchHit, type SearchResults } from "../search/model";
 import { uuidV7 } from "../id";
 import { imageAnalysisSchema, type ImageAnalysisInput, type ImageAnalysis } from "../image-analysis/model";
 
@@ -449,6 +450,91 @@ export class MeetingSyncService {
       await scoped.lockVault(vaultId);
       return readTextContent(scoped, vaultId, entity, entityId, Number(revisionValue), manifestValue === "1", after);
     });
+  }
+
+  async searchAll(identity: Identity, body: unknown, signal?: AbortSignal): Promise<SearchResults> {
+    const parsed = searchRequestSchema.safeParse(body);
+    if (!parsed.success) throw new ArtifactRequestError(400, "invalid_search_request");
+    const { vaultId, query, kind, limit, from, to, projectId } = parsed.data;
+    const allowed = await this.store.withIdentity(identity, (scoped) => scoped.getVault(vaultId));
+    if (!allowed) throw new ArtifactRequestError(404, "vault_not_found");
+    const hits = await this.search(identity, this.parseSearchQuery(query), async (scoped, prepared) => {
+      if (!await scoped.getVault(vaultId)) throw new ArtifactRequestError(404, "vault_not_found");
+      const projects = await scoped.listProjects(vaultId);
+      const included = projectId ? new Set([projectId]) : undefined;
+      if (included) {
+        if (!projects.some((project) => project.projectId === projectId)) throw new ArtifactRequestError(404, "project_not_found");
+        for (let previous = -1; previous !== included.size;) {
+          previous = included.size;
+          for (const project of projects) if (project.parentProjectId && included.has(project.parentProjectId)) included.add(project.projectId);
+        }
+      }
+      const filters = { from, to, projectIds: included ? [...included] : undefined };
+      // Each kind owns its FTS ranks; combining them would shift screenshot ranks.
+      const search = prepared ? { ...prepared, ftsCandidateIds: undefined } : undefined;
+      const [meetings, screenshots, activity] = await Promise.all([
+        !kind || kind === "meeting" ? scoped.listMeetings(vaultId, search, 100, undefined, undefined, undefined, filters) : [],
+        !kind || kind === "screenshot" ? scoped.listScreenshots(vaultId, undefined, search, 100, undefined, filters) : [],
+        !kind || kind === "project" ? scoped.searchProjectActivity(vaultId, filters) : [],
+      ]);
+      const parents = screenshots.length ? await scoped.listMeetings(vaultId, undefined, 100, undefined, undefined, undefined,
+        { meetingIds: [...new Set(screenshots.map((item) => item.meetingId))] }) : [];
+      const byMeeting = new Map(parents.map((meeting) => [meeting.meetingId, meeting]));
+      const byProject = new Map(projects.map((project) => [project.projectId, project]));
+      const projectFields = (id: string | null | undefined) => id ? { projectId: id, projectPath: byProject.get(id)?.path } : {};
+      const result: SearchHit[] = meetings.map((meeting) => ({
+        kind: "meeting", id: meeting.meetingId, meetingId: meeting.meetingId, title: meeting.name,
+        date: meeting.createdAt.toISOString(), ...projectFields(meeting.projectId),
+        snippet: searchSnippet([meeting.description, summarySearchableText(meeting.summaryDocument)].filter(Boolean).join("\n"), query),
+      }));
+      for (const screenshot of screenshots) {
+        const meeting = byMeeting.get(screenshot.meetingId);
+        if (!meeting) continue;
+        result.push({ kind: "screenshot", id: screenshot.screenshotId, meetingId: screenshot.meetingId,
+          title: meeting.name, date: screenshot.capturedAt.toISOString(), ...projectFields(meeting.projectId),
+          snippet: searchSnippet([screenshot.caption, screenshot.ocrText].filter(Boolean).join("\n"), query), fileId: screenshot.fileId });
+      }
+      if (!kind || kind === "project") {
+        const recent = new Map(activity.filter((item) => item.projectId).map((item) => [item.projectId!, item.updatedAt]));
+        for (const project of projects) {
+          const date = recent.get(project.projectId);
+          let parentId = project.parentProjectId;
+          const seen = new Set<string>();
+          while (date && parentId && !seen.has(parentId)) {
+            seen.add(parentId);
+            if ((recent.get(parentId) ?? "") < date) recent.set(parentId, date);
+            parentId = byProject.get(parentId)?.parentProjectId ?? null;
+          }
+        }
+        const terms = query.normalize("NFKC").toLocaleLowerCase().split(/\s+/).filter(Boolean);
+        const matches = projects.filter((project) => (!included || included.has(project.projectId))
+          && (!(from || to) || recent.has(project.projectId))
+          && terms.every((term) => project.path.normalize("NFKC").toLocaleLowerCase().includes(term)))
+          .sort((a, b) => (recent.get(b.projectId) ?? "").localeCompare(recent.get(a.projectId) ?? "")
+            || a.path.localeCompare(b.path) || a.projectId.localeCompare(b.projectId));
+        result.push(...matches.slice(0, 101).map((project): SearchHit => ({
+          kind: "project", id: project.projectId, title: project.name, projectId: project.projectId,
+          projectPath: project.path, date: recent.get(project.projectId) ?? project.createdAt.toISOString(),
+          snippet: "", meetingCount: project.subtreeMeetingCount,
+        })));
+      }
+      return result;
+    }, (hit) => hit.id, signal);
+    if (!await this.store.withIdentity(identity, (scoped) => scoped.getVault(vaultId))) throw new ArtifactRequestError(404, "vault_not_found");
+    const meetings = hits.filter((hit) => hit.kind === "meeting");
+    const screenshots = hits.filter((hit) => hit.kind === "screenshot");
+    const projects = hits.filter((hit) => hit.kind === "project");
+    return {
+      vaultId,
+      meetings: meetings.slice(0, limit),
+      screenshots: screenshots.slice(0, limit),
+      projects: projects.slice(0, limit),
+      limited: {
+        meeting: meetings.length > limit || meetings.length === 100,
+        screenshot: screenshots.length > limit || screenshots.length === 100,
+        project: projects.length > limit,
+      },
+    };
   }
 
   async searchText(identity: Identity, vaultId: string, queryValue?: string, kindValue?: string, cursor?: string, limitValue?: string) {
@@ -932,7 +1018,7 @@ export class MeetingSyncService {
     if (search) {
       return {
         items: await this.search(identity, search, (scoped, prepared) =>
-          scoped.listMeetings(vaultId, prepared, SYNC_READ_PAGE_SIZE, projectId, undefined, scope),
+          scoped.listMeetings(vaultId, prepared, 100, projectId, undefined, scope),
         (meeting) => meeting.meetingId, signal),
       };
     }
@@ -1009,7 +1095,7 @@ export class MeetingSyncService {
     if (search) {
       return {
         items: await this.search(identity, search, (scoped, prepared) =>
-          scoped.listScreenshots(vaultId, meetingId, prepared, SYNC_READ_PAGE_SIZE),
+          scoped.listScreenshots(vaultId, meetingId, prepared, 100),
         (screenshot) => screenshot.screenshotId, signal),
       };
     }

@@ -34,6 +34,16 @@ D1 は FTS-only target だが、現在の adapter は canonical content と proj
 Node / Worker は tokenizer と vector capability が異なり、同じ DB の runtime 変更には再同期または projection 全再構築が必要。初期の LIKE 検索と各 canonical row 内の検索列は、再生成境界と非同期 vector 処理を共有する統合 projection に置き換えた。
 
 
+## 共通検索 API とクライアント切替（2026-09-08）
+
+`POST /api/v1/search` を Desktop Server account・Web・Server MCP `search` の共通検索とする。検索語は `query: string` のみ。必須 `vaultId`、省略時空の query、任意 kind／子孫を含む projectId／タイムゾーン付き from・to／種類ごと既定50・最大100の limit を受け取る。trim後500 UTF-16コード単位、16 KiB body、厳密な型と期間を既存の認証境界で検証する。日付は meeting 作成日時、screenshot 撮影日時の開始以上・終了未満。project は名前・階層パスの NFKC 小文字化した各語を AND 検索し、所属する子孫会議の更新順で返す。日付指定時は該当期間に作成された会議を持つ project に限る。
+
+既存 FTS／vector／RRF を再利用し、全種類で1回の query embedding を共有する。認可・project・日付条件を候補上限の前に適用し、応答直前にも共有権限を再確認する。返すのは種類別の ID、タイトル、所属、日時、snippet、画像参照、件数制限情報。score、vector、全件用 cursor は返さない。`Cache-Control: no-store` とし query を log に残さない。既存一覧の query も同じ検索処理を維持する。
+
+`searchVersion: 1` capability がある Server の Desktop 主検索はこの順位を保持し、未保持本文を取得せず同期済み metadata に投影する。未同期項目は別枠とし順位へ混ぜない。Local account は従来の FTS。オフライン・旧 Server・metadata 同期待ち・タグ指定・複数 project 指定は端末内検索と明示する。Web は native dialog、300ms debounce、IME 抑制、AbortSignal、Vault 単位の mount、既存 live query を使う。上位100件は全件完了と表現せず、段階表示と絞り込みを提供する。
+
+既存 GET 全件探索と local content broker の契約は以下のとおり維持する。今回 schema／依存／本番 migration／配備変更はない。Lakebase 実環境の BM25／ANN と実 embedding の検証は未実施で、既存設定の検証環境で同一 fixture・query・filter の REST／MCP 結果と embedding 障害時の FTS を比較する必要がある。
+
 ## 部分保持クライアント用の全件探索
 
 全件探索は document ID 順に固定する。別Vaultの更新で変化する索引全体の関連度をページ順に使わず、Vault単位のrevisionとcursorで重複・欠落を防ぐ。
