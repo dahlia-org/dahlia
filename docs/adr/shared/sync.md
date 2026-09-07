@@ -48,7 +48,9 @@ Server は Vault ごとの durable change ledger と opaque cursor を持つ。d
 
 原本は Vault 所有の `files`、会議との関係は独立 ID の `meeting_files` に保存する。`files` の基本項目は `uri`、`offset`（現在は0）、`size`、`content_type`、`checksum`（`SHA-256:` 接頭辞）とし、source / OCR / caption / 寸法は metadata に置く。source は作成時に固定し、metadata の部分更新は未指定キーを保持する。同じ Vault の複数会議で同じ file を共有でき、紐付けを解除しても原本を削除しない。参照が残る明示 file 削除は拒否する。
 
-`POST /api/v1/files` の予約、`PUT /api/v1/files/{id}/content` の最大64 MiBの immutable upload、`file` / `meeting_file` transaction の順に確定する。pending は通常の一覧から除外し、24時間後は再 upload を要求する。schemaVersion 2 へ Desktop / Web / Server を同時に切り替える。
+2026-09-07: `POST /api/v1/files` の body を最大64 MiBの immutable file bytes とし、予約 POST と upload PUT を統合する。id / vaultId / name / source と任意の width / height は query、MIME は Content-Type で渡す。Content-Length は転送の長さ検証に使い、size と SHA-256 checksum は Server が streaming 受信から算出する。同じ ID の同一内容の再送は既存 bytes / metadata を変更せず成功する。異内容は409で拒否する。
+その後に `file` / `meeting_file` transaction で確定する。pending は通常の一覧から除外し、24時間後は再 upload を要求する。旧 upload API は残さず Desktop / Server を同時に切り替え、transaction schemaVersion 2 は維持する。
+確定済み file の OCR / caption / 寸法は `PATCH /api/v1/files/{id}` でも更新できる。baseRevision と metadata の JSON 部分更新を受け付け、未指定キーを保持し、OCR / caption の null はクリアを表す。source と bytes は不変。PATCH は認可後に Server 内部で単一の `file:upsert` transaction を生成し、既存の競合検出・検索更新・durable delta を通す。Desktop は既存の永続 transaction queue を維持する。
 原本 key は `files/{fileId}/original`、派生画像は `files/{fileId}/variants/v1/{variant}.webp`（`thumb_480` / `thumb_1280` / `thumb_1568` / `thumb_1920`）。新 File API は Databricks Volume に保存し、canonical URI は `/Volumes/.../files/{fileId}/original` とする。既存 Artifact API は変更しない。既存 cloud file がないため旧 key migration は行わない。
 GET / HEAD の content と variant は Vault 認可、CSP sandbox、nosniff、Range を適用する。source は認可条件にしない。
 File API の原本・variant は `private, no-cache` とし、クライアントは保存した画像の再利用前に現在の認可を再確認する。ETag が一致すれば304を返し、画像生成・ストレージ読込・画像転送を省略する。ただし `If-Unmodified-Since` も指定された場合は Range を除いた HEAD で日時条件を先に検証する。削除・権限失効後の要求は404を返すが、すでに画面に表示中の画像を消す通知は行わない。`Vary: Authorization, Cookie` で認証状態ごとのキャッシュを分ける。

@@ -23,6 +23,155 @@
             #expect(ScreenshotOCRState.processing.limitingRemoteWait(to: .seconds(300)) == .processing)
         }
 
+        @Test(.timeLimit(.minutes(1)), arguments: ["retry", "checksum", "size", "id", "vaultId"])
+        func rawFileUploadPreservesTheQueuedTransactionAcrossRetries(firstFailure: String) async throws {
+            let fixture = try ScreenshotContentFixture()
+            let fileStore = try await ScreenshotContentProvider.shared.fileStore(for: fixture.dbQueue)
+            try fileStore.write(
+                ScreenshotContent(data: fixture.bytes, mimeType: "image/png", variant: .original),
+                source: fixture.source,
+                required: true
+            )
+            let filename = "会議 + 売上&#?.png"
+            let payload = FileOperationPayload(
+                name: filename,
+                checksum: "SHA-256:" + fixture.source.contentHash,
+                metadata: FileMetadata(
+                    source: .screenshot,
+                    width: 1800,
+                    height: 900,
+                    ocrText: "durable OCR",
+                    caption: "durable caption"
+                )
+            )
+            let operation = try SyncOperationDraft(
+                entity: .file,
+                action: .upsert,
+                entityId: fixture.screenshotId,
+                payloadJSON: SyncJSON.encoder.encode(payload)
+            )
+            let transactionId = try await fixture.dbQueue.write { db in
+                try #require(try SyncTransactionRecorder.record(vaultId: fixture.vaultId, operations: [operation], screenshotAttachments: [
+                    operation.id: SyncScreenshotAttachmentReference(mimeType: "image/png", source: fixture.source),
+                ], in: db))
+            }
+            let uploadRecord: [String: JSONValue] = try [
+                "id": .string(fixture.screenshotId.uuidString), "vaultId": .string(fixture.vaultId.uuidString),
+                "size": .number(Double(fixture.bytes.count)), "checksum": .string(payload.checksum),
+                "uri": .string("/Volumes/test/app/files/files/\(fixture.screenshotId.uuidString.lowercased())/original"),
+                "offset": .number(0), "content_type": .string("image/png"), "name": .string(filename),
+                "metadata": SyncJSON.decoder.decode(JSONValue.self, from: SyncJSON.encoder.encode(payload.metadata)),
+                "revision": .number(1), "createdAt": .string("2026-09-07T00:00:00Z"), "updatedAt": .string("2026-09-07T00:00:00Z"),
+            ]
+            let uploaded = try SyncJSON.encoder.encode(uploadRecord)
+            var incorrect = uploadRecord
+            switch firstFailure {
+            case "checksum": incorrect["checksum"] = .string("SHA-256:" + String(repeating: "0", count: 64))
+            case "size": incorrect["size"] = .number(0)
+            case "id", "vaultId": incorrect[firstFailure] = .string(UUID.v7().uuidString)
+            default: break
+            }
+            let firstUpload = try SyncJSON.encoder.encode(incorrect)
+            let receipt = try SyncJSON.encoder.encode(JSONValue.object([
+                "id": .string(transactionId.uuidString), "status": .string("committed"), "cursor": .string("after"),
+                "records": .array([.object([
+                    "entity": .string("file"),
+                    "id": .string(fixture.screenshotId.uuidString),
+                    "revision": .number(1),
+                    "record": .object(uploadRecord),
+                ])]),
+            ]))
+            let requests = Mutex<[URLRequest]>([])
+            ImageURLProtocol.register(origin: fixture.source.origin) { request in
+                var recorded = request
+                if let stream = request.httpBodyStream, request.httpBody == nil {
+                    stream.open()
+                    defer { stream.close() }
+                    var body = Data()
+                    var buffer = [UInt8](repeating: 0, count: 1024)
+                    while stream.hasBytesAvailable {
+                        let count = stream.read(&buffer, maxLength: buffer.count)
+                        if count <= 0 { break }
+                        body.append(contentsOf: buffer.prefix(count))
+                    }
+                    recorded.httpBody = body
+                }
+                requests.withLock { $0.append(recorded) }
+                let path = request.url!.path
+                if path == "/api/v1/transactions/resolve" {
+                    return (200, [:], Data("{\"id\":\"\(transactionId)\",\"status\":\"unknown\"}".utf8))
+                }
+                if path == "/api/v1/files" {
+                    let first = requests.withLock { $0.filter { $0.url?.path == path }.count } == 1
+                    return (first ? 201 : 200, [:], first ? firstUpload : uploaded)
+                }
+                if path == "/api/v1/transactions" {
+                    let first = requests.withLock { $0.filter { $0.url?.path == path }.count } == 1
+                    return firstFailure == "retry" && first ? (503, [:], Data()) : (200, [:], receipt)
+                }
+                return (503, [:], Data())
+            }
+            defer { ImageURLProtocol.remove(origin: fixture.source.origin) }
+            let configuration = URLSessionConfiguration.ephemeral
+            configuration.protocolClasses = [ImageURLProtocol.self]
+            let session = URLSession(configuration: configuration)
+            let worker = SyncWorker(
+                dbQueue: fixture.dbQueue,
+                session: session,
+                apiClient: SyncAPIClient(session: session, tokenProvider: { _, _ in "test-token" })
+            )
+            let retries = ValueObservation.tracking { db in
+                try String.fetchOne(db, sql: "SELECT serverResponseJSON FROM sync_transactions WHERE id = ?", arguments: [transactionId])
+            }.values(in: fixture.dbQueue)
+            await worker.drain()
+            for try await retry in retries where retry == (firstFailure == "retry" ? "http_503" : "sync_failed") {
+                break
+            }
+            await worker.stop()
+            try await fixture.dbQueue.write { db in
+                #expect(try Data.fetchOne(db, sql: "SELECT payloadJSON FROM sync_operations WHERE id = ?", arguments: [operation.id]) == operation
+                    .payloadJSON)
+                try db.execute(sql: "UPDATE sync_transactions SET availableAt = ? WHERE id = ?", arguments: [Date.distantPast, transactionId])
+            }
+            let counts = ValueObservation.tracking { db in
+                try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_transactions WHERE id = ?", arguments: [transactionId]) ?? 0
+            }.values(in: fixture.dbQueue)
+            await worker.drain()
+            for try await count in counts where count == 0 {
+                break
+            }
+            await worker.stop()
+            let all = requests.withLock { $0 }
+            let uploads = all.filter { $0.url?.path == "/api/v1/files" }
+            #expect(uploads.count == 2)
+            for upload in uploads {
+                #expect(upload.httpMethod == "POST")
+                #expect(upload.httpBody == fixture.bytes)
+                #expect(upload.value(forHTTPHeaderField: "Content-Type") == "image/png")
+                #expect(upload.value(forHTTPHeaderField: "Content-Length") == String(fixture.bytes.count))
+                let url = try #require(upload.url)
+                let components = try #require(URLComponents(url: url, resolvingAgainstBaseURL: false))
+                let query = Dictionary(uniqueKeysWithValues: (components.queryItems ?? []).map { ($0.name, $0.value ?? "") })
+                #expect(query == [
+                    "id": fixture.screenshotId.uuidString.lowercased(),
+                    "vaultId": fixture.vaultId.uuidString.lowercased(),
+                    "name": filename,
+                    "source": "screenshot",
+                    "width": "1800",
+                    "height": "900",
+                ])
+                #expect(upload.url?.absoluteString.contains("%2B") == true)
+            }
+            #expect(!all.contains { $0.httpMethod == "PUT" })
+            let resolves = all.filter { $0.url?.path == "/api/v1/transactions/resolve" }
+            #expect(resolves.count == 2)
+            let resolvedBody = try #require(resolves.first?.httpBody)
+            #expect(resolves.last?.httpBody == resolvedBody)
+            let commits = all.filter { $0.url?.path == "/api/v1/transactions" }
+            #expect(commits.count == (firstFailure == "retry" ? 2 : 1))
+            #expect(commits.allSatisfy { $0.httpBody == resolvedBody })
+        }
+
         @Test
         func missingSnapshotOriginalDoesNotStarveOtherVaultsAndCanRetry() async throws {
             let missing = try ScreenshotContentFixture()

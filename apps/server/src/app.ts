@@ -526,21 +526,23 @@ export function createApp(dependencies: AppDependencies) {
       return context.body(null, 204);
     },
   );
-  app.post("/api/v1/files", artifactPatchBodyLimit, async (context) => {
+  app.post("/api/v1/files", async (context) => {
     const requiresBrowserOrigin = config.authProvider === "accounts" && !context.req.header("authorization");
     if ((requiresBrowserOrigin || context.req.header("origin")) && !mutationOriginAllowed(context.req.raw, config.baseUrl)) {
       return context.json({ error: "invalid_origin" }, 403);
     }
     const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
-    return context.json(await sync.reserveFile(identity, await context.req.json().catch(() => null)));
+    const result = await sync.postFile(identity, context.req.raw);
+    return context.json(result.file, result.created ? 201 : 200);
   });
-  app.put("/api/v1/files/:fileId/content", async (context) => {
+  app.patch("/api/v1/files/:fileId", bodyLimit({ maxSize: 128 * 1024,
+    onError: (context) => context.json({ error: "file_patch_too_large" }, 413) }), async (context) => {
     const requiresBrowserOrigin = config.authProvider === "accounts" && !context.req.header("authorization");
     if ((requiresBrowserOrigin || context.req.header("origin")) && !mutationOriginAllowed(context.req.raw, config.baseUrl)) {
       return context.json({ error: "invalid_origin" }, 403);
     }
     const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
-    return context.json(await sync.putFile(identity, sync.parseId(context.req.param("fileId")), context.req.raw));
+    return context.json(await sync.patchFile(identity, sync.parseId(context.req.param("fileId")), await context.req.json().catch(() => null)));
   });
   app.get("/api/v1/files/:fileId", async (context) => {
     const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);

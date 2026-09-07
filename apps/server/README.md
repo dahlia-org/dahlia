@@ -136,9 +136,28 @@ Meeting details follow the desktop document layout: title, date/duration, Projec
 **Client compatibility:** the default Vault listing now returns owned Vaults, rather than all accessible Vaults. Clients needing all accessible Vaults must union the default listing with each `organizationId` listing by Vault ID. `GET /api/v1/organizations` lists the authenticated user's Organizations in both accounts and header modes and accepts browser or `all-apis` gateway authentication; sharing-disabled deployments return an empty array. Desktop Vault discovery performs this union. Update Desktop along with Server to preserve shared Vault discovery; older Desktop versions continue synchronizing already-registered Vaults but will not discover additional shared Vaults through the default list.
 
 
-Files API storage currently requires the Databricks Volume backend. `POST /api/v1/files` reserves a client-generated lowercase UUIDv7 with `id`, `vaultId`, `name`, `offset: 0`, `size` (up to 64 MiB), `content_type`, `checksum`, and `metadata`. Metadata requires immutable `source: "upload" | "screenshot"` and optionally contains `width`, `height`, `ocr_text`, and `caption`. The canonical `uri` is the full `/Volumes/{catalog}/{schema}/{volume}/files/{fileId}/original` path. Device-local paths never cross this API.
+Files API storage currently requires the Databricks Volume backend. `POST /api/v1/files` accepts the file itself as an uncompressed raw body, with required query parameters `id` (client-generated UUIDv7), `vaultId`, `name` (1–255 characters), and `source` (`upload` or `screenshot`). Optional `width` and `height` are positive integers up to 33,554,432. Query values must be URL-encoded; OCR and captions belong in metadata mutations, not URLs. Use `Content-Type` for the MIME type and a required `Content-Length` up to 64 MiB. The Server counts the received bytes and computes SHA-256 while streaming to storage, checks that the received length matches `Content-Length`, and records `size`, `checksum` (`SHA-256:` plus lowercase hex), and `offset: 0`. Clients do not submit these fields. A missing length returns `411`, an excessive length returns `413`, and unsupported content encoding returns `415`.
 
-`PUT /api/v1/files/{fileId}/content` streams the reserved immutable bytes with matching `Content-Length` and `Content-Type`. The reservation remains private staging until a revision-checked `file:upsert` commits through `/api/v1/transactions`; its `metadata` patch preserves other keys. Replacing bytes requires a new file ID. Unpublished reservations expire after 24 hours and can be reserved and uploaded again. `meeting_file:upsert` associates an existing canonical file and meeting in the same Vault, with an independent association ID, nullable `capturedAt` and `sessionId`, and `createdAt`. A file may be attached to multiple meetings. `meeting_file:delete` only unlinks; `file:delete` rejects remaining associations, which may be removed earlier in the same atomic transaction.
+```http
+POST /api/v1/files?id=<UUIDv7>&vaultId=<UUID>&name=capture.png&source=screenshot&width=1800&height=900
+Content-Type: image/png
+Content-Length: 12345
+
+<raw PNG bytes>
+```
+
+The response contains file metadata, including the computed `size` and `checksum`, `contentURL`, and available `variants`. A completed new upload returns `201`; retrying an uploaded ID with identical bytes, MIME type, and source returns `200` without changing its bytes, name, or metadata. Different content for an uploaded ID returns `409`. Failed uploads remain retryable; partial storage objects are removed, with failed removals retried by the storage deletion queue. The canonical `uri` is the full `/Volumes/{catalog}/{schema}/{volume}/files/{fileId}/original` path. Device-local paths never cross this API. The former JSON reservation POST and upload PUT are no longer supported; deploy Server and Desktop changes together.
+
+Uploads remain private staging until a revision-checked `file:upsert` commits through `/api/v1/transactions`; its checksum must match the Server result and its `metadata` patch preserves other keys. Replacing bytes requires a new file ID. Unpublished uploads expire after 24 hours and can be uploaded again. `meeting_file:upsert` associates an existing canonical file and meeting in the same Vault, with an independent association ID, nullable `capturedAt` and `sessionId`, and `createdAt`. A file may be attached to multiple meetings. `meeting_file:delete` only unlinks; `file:delete` rejects remaining associations, which may be removed earlier in the same atomic transaction.
+
+`PATCH /api/v1/files/{fileId}` updates metadata on an owner's committed file with a JSON body containing required `baseRevision` and `metadata`. Allowed metadata keys are `width`, `height`, `ocr_text` (up to 20,000 characters), and `caption` (up to 500 characters). Omitted keys are preserved; `null` clears OCR or caption. `source`, bytes, `size`, and `checksum` cannot be changed. Invalid fields return `400`, missing/staged files and non-owner access return `404`, and stale revisions return `409` with the canonical conflict record. Success returns `200` with the committed file metadata, content URL, variants, and new revision. PATCH uses the same transaction, search, and delta machinery as Desktop metadata updates; clients receiving a conflict refetch/reconcile before retrying.
+
+```http
+PATCH /api/v1/files/{fileId}
+Content-Type: application/json
+
+{"baseRevision":3,"metadata":{"ocr_text":"Recognized text","caption":"Quarterly revenue"}}
+```
 
 `GET /api/v1/files/{fileId}` returns canonical metadata, a content URL, and available named variants. File lists include the same content URL and variants. `GET /api/v1/vaults/{vaultId}/files` and `GET /api/v1/vaults/{vaultId}/meetings/{meetingId}/files` return at most 200 rows ordered by ID, with `nextCursor` for the next page. Pending files are excluded. MCP `get_meeting_screenshots` reads the screenshot projection and retains chronological pagination and bounded search.
 
