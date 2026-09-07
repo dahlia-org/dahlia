@@ -140,7 +140,7 @@ interface SyncedTranscriptSegmentInfo {
 interface SyncedScreenshotInfo {
   id: string;
   capturedAt: string | null;
-  file: { id: string; content_type: string; metadata: { source: string; ocr_text?: string; caption?: string } };
+  file: { id: string; content_type: string; variants: Partial<Record<"thumb_360" | "thumb_1280", string>>; metadata: { source: string; ocr_text?: string; caption?: string } };
 }
 
 interface SyncedScreenshotPage {
@@ -1012,20 +1012,7 @@ function SyncedMeeting({ vaultId, meetingId }: { vaultId: string; meetingId: str
           <h2 className="section-label">Screenshots</h2>
           <div className="screenshot-grid">
             {screenshots.filter((screenshot) => screenshot.file.metadata.source === "screenshot").map((screenshot) => (
-              <figure className="panel" key={screenshot.id}>
-                <a href={`/api/v1/files/${screenshot.file.id}/content`} target="_blank" rel="noreferrer" aria-label="Open screenshot">
-                  <img
-                    src={`/api/v1/files/${screenshot.file.id}/variants/thumbnail`}
-                    alt={screenshot.file.metadata.caption || ""}
-                    loading="lazy"
-                    onError={(event) => {
-                      const image = event.currentTarget;
-                      if (image.src.includes("/variants/")) image.src = `/api/v1/files/${screenshot.file.id}/content`;
-                    }}
-                  />
-                </a>
-                {(screenshot.file.metadata.caption || screenshot.file.metadata.ocr_text) && <figcaption>{screenshot.file.metadata.caption || screenshot.file.metadata.ocr_text}</figcaption>}
-              </figure>
+              <ScreenshotFigure key={screenshot.id} file={screenshot.file} />
             ))}
           </div>
           {screenshotCursor && (
@@ -1037,6 +1024,23 @@ function SyncedMeeting({ vaultId, meetingId }: { vaultId: string; meetingId: str
       )}
     </>
   );
+}
+
+export function ScreenshotFigure({ file }: { file: SyncedScreenshotInfo["file"] }) {
+  const [failed, setFailed] = useState(false);
+  const original = `/api/v1/files/${file.id}/content`;
+  return <figure className="panel">
+    <a href={file.variants.thumb_1280 ?? original} target="_blank" rel="noreferrer" aria-label="Open screenshot">
+      {failed ? <span role="alert">Unable to load screenshot.</span> : <img
+        src={file.variants.thumb_360 ?? original}
+        alt={file.metadata.caption || "Screenshot"}
+        loading="lazy"
+        onError={() => setFailed(true)}
+      />}
+    </a>
+    {(file.metadata.caption || file.metadata.ocr_text) && <figcaption>{file.metadata.caption || file.metadata.ocr_text}</figcaption>}
+    <a href={original} target="_blank" rel="noreferrer">Open original</a>
+  </figure>;
 }
 
 function OrganizationCard({

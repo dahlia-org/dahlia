@@ -739,8 +739,8 @@ import ImageIO
             #expect(image.mimeType == "image/webp")
             let source = CGImageSourceCreateWithData(image.imageData as CFData, nil)
             let properties = source.flatMap { CGImageSourceCopyPropertiesAtIndex($0, 0, nil) as? [CFString: Any] }
-            #expect((properties?[kCGImagePropertyPixelWidth] as? Int ?? 0) <= 1024)
-            #expect((properties?[kCGImagePropertyPixelHeight] as? Int ?? 0) <= 1024)
+            #expect((properties?[kCGImagePropertyPixelWidth] as? Int ?? 0) <= 1280)
+            #expect((properties?[kCGImagePropertyPixelHeight] as? Int ?? 0) <= 1280)
             #expect(throws: MeetingAccessError.screenshotNotFound) {
                 try store.screenshot(meetingID: fixture.firstMeetingID, screenshotID: fixture.otherVaultScreenshotID)
             }
@@ -826,8 +826,8 @@ import ImageIO
             let image = try store.screenshot(meetingID: fixture.firstMeetingID, screenshotID: fixture.firstScreenshotID)
             let source = try #require(CGImageSourceCreateWithData(image.imageData as CFData, nil))
             let properties = try #require(CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any])
-            #expect(properties[kCGImagePropertyPixelWidth] as? Int == 1024)
-            #expect(properties[kCGImagePropertyPixelHeight] as? Int == 256)
+            #expect(properties[kCGImagePropertyPixelWidth] as? Int == 1280)
+            #expect(properties[kCGImagePropertyPixelHeight] as? Int == 320)
 
             let original = try store.screenshot(
                 meetingID: fixture.firstMeetingID,

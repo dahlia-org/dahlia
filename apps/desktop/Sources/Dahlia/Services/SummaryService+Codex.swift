@@ -82,7 +82,7 @@ extension SummaryService {
         let imageDataURIs = try await Task.detached(priority: .userInitiated) {
             try screenshots.map { screenshot in
                 guard let bytes = screenshot.imageData else { throw ScreenshotContentError.unavailable }
-                let imageData = ImageEncoder.resized(bytes, maxLongEdge: 1024)
+                let imageData = ImageEncoder.resized(bytes, maxLongEdge: ImageEncoder.aiInputMaximumLongEdge)
                 let mimeType = ImageEncoder.mimeType(for: imageData) ?? screenshot.mimeType
                 return "data:\(mimeType);base64,\(imageData.base64EncodedString())"
             }

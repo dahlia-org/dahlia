@@ -6,6 +6,20 @@ import Foundation
     import Testing
 
     struct ImageEncoderTests {
+        @Test(arguments: [(3400, 2200), (2200, 3400), (160, 80)])
+        func aiInputPreservesAspectRatioWithoutEnlargement(size: (Int, Int)) throws {
+            let context = try makeContext(width: size.0, height: size.1)
+            let image = try #require(context.makeImage())
+            let data = try #require(ImageEncoder.encode(image))
+            let resized = try #require(ImageEncoder.resizedIfPossible(data, maxLongEdge: ImageEncoder.aiInputMaximumLongEdge))
+            let decoded = try #require(CGImageDecoder.decode(resized))
+            let scale = min(1, 1280.0 / Double(max(size.0, size.1)))
+            #expect(abs(Double(decoded.width) - Double(size.0) * scale) <= 1)
+            #expect(abs(Double(decoded.height) - Double(size.1) * scale) <= 1)
+            #expect(max(decoded.width, decoded.height) <= 1280)
+            #expect(ImageEncoder.mimeType(for: resized) == "image/webp")
+        }
+
         @Test(arguments: [CGFloat(1), CGFloat(0.5)])
         func encodesLossyWebPWithColorAlphaAndOrientation(alpha: CGFloat) throws {
             let context = try makeContext(width: 128, height: 64)

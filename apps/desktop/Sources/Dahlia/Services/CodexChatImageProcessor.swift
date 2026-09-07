@@ -4,13 +4,11 @@ import Foundation
 actor CodexChatImageProcessor {
     static let shared = CodexChatImageProcessor()
 
-    private static let maximumLongEdge = 1024
-
     func process(_ data: Data) -> CodexChatImageAttachment? {
         guard data.count <= CodexChatImageAttachment.maximumInputByteCount,
               let resized = ImageEncoder.resizedIfPossible(
                   data,
-                  maxLongEdge: Self.maximumLongEdge
+                  maxLongEdge: ImageEncoder.aiInputMaximumLongEdge
               ), let mimeType = ImageEncoder.mimeType(for: resized) else { return nil }
         return CodexChatImageAttachment(data: resized, mimeType: mimeType)
     }

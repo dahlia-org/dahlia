@@ -1,4 +1,4 @@
-export const SCREENSHOT_VARIANTS = { thumbnail: 384 } as const;
+export const SCREENSHOT_VARIANTS = { thumb_360: 360, thumb_1280: 1280 } as const;
 export type ScreenshotVariant = keyof typeof SCREENSHOT_VARIANTS;
 export type ScreenshotTransformer = (source: ReadableStream<Uint8Array>, longEdge: number) => Promise<Uint8Array<ArrayBuffer>>;
 

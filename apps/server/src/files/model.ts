@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { screenshotVariantKey, type ScreenshotVariant } from "../sync/screenshot-variants";
 
 export const fileMetadataSchema = z.object({
   source: z.enum(["upload", "screenshot"]),
@@ -49,7 +50,7 @@ export interface MeetingFileRecord {
 }
 
 export const fileStorageKey = (id: string) => `files/${id}/original`;
-export const fileVariantKey = (id: string) => `files/${id}/variants/v1/thumbnail.webp`;
+export const fileVariantKey = (id: string, variant: ScreenshotVariant) => screenshotVariantKey(fileStorageKey(id), variant);
 export const imageContentTypes = new Set(["image/png", "image/jpeg", "image/webp", "image/gif", "image/tiff"]);
 
 export function fileResponse(file: FileRecord) {

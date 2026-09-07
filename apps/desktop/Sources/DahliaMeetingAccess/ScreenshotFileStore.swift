@@ -113,10 +113,11 @@ public final class ScreenshotFileStore: Sendable {
                 .filter { !keys.contains($0["key"] as String) && !(($0["key"] as String).hasPrefix("local/")) }
             var total = rows.reduce(0) { $0 + ($1["byteCount"] as Int) }
             guard total > budget else { return }
-            var thumbnails = rows.filter { $0["variant"] as String == "thumbnail" }.reduce(0) { $0 + ($1["byteCount"] as Int) }
+            var thumbnails = rows.filter { $0["variant"] as String == ScreenshotVariant.thumbnail.rawValue }
+                .reduce(0) { $0 + ($1["byteCount"] as Int) }
             var removed = 0
             for row in rows where total > budget * 4 / 5 && removed < limit {
-                let isThumbnail = row["variant"] as String == "thumbnail"
+                let isThumbnail = row["variant"] as String == ScreenshotVariant.thumbnail.rawValue
                 if isThumbnail, thumbnails <= budget / 5 { continue }
                 let key: String = row["key"]
                 let file = directory.appending(path: key)
