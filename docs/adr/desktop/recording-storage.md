@@ -79,4 +79,4 @@ partial と final が両方あれば期待 metadata と一致する方だけを�
 
 ## 新規バッチ録音の結合保存
 
-2026-09-07: [結合音声保管のADR](../shared/recording-audio-archive.md) に従い、新規 Local／Server Account バッチ録音を音源別M4Aに結合する。Local は既存保存期間を維持し、Server は確定音声を期限なく保管する。品質ゲート未通過のため元CAFの自動置換はまだ無効。
+2026-09-07: [結合音声保管のADR](../shared/recording-audio-archive.md) に従い、新規 Local／Server Account バッチ録音を音源別M4Aに結合する。Local は既存保存期間を維持し、Server は確定音声を期限なく保管する。2026-09-08の方針変更により、全音源の保存・整合性検証後に元CAFを削除する（Serverは確定・再取得検証後）。

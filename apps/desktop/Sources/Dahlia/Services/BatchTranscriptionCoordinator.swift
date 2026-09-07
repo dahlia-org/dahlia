@@ -366,11 +366,12 @@ actor BatchTranscriptionCoordinator {
         guard let recordingAudioStore else {
             throw RecordingAudioStoreError.storageUnavailable
         }
-        let hasLocalAudio = try await dbQueue.read { db in
+        let useArchive = try await dbQueue.read { db in
             try RecordingAudioSegmentRecord.filter(Column("recordingSessionId") == job.session.id)
-                .filter(Column("state") != RecordingAudioSegmentState.purged.rawValue).fetchCount(db) > 0
+                .filter(![RecordingAudioSegmentState.purgePending.rawValue, RecordingAudioSegmentState.purged.rawValue].contains(Column("state")))
+                .fetchCount(db) == 0
         }
-        if !hasLocalAudio {
+        if useArchive {
             return try await recordingArchiveService.withArchivedSegments(sessionId: job.session.id) { verified in
                 try await self.transcribe(verifiedSegments: verified, job: job)
             }

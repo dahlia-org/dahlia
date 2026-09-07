@@ -8,8 +8,8 @@ import GRDB
 
     @MainActor
     struct RecordingArchiveTests {
-        @Test
-        func localArchiveRoundTripPreservesShortTailRangesAndOriginal() async throws {
+        @Test(arguments: ["pending", "saved", "corrupt"])
+        func localArchiveReplacesCAFOnlyAfterVerification(initialState: String) async throws {
             let fixture = try BatchAudioTestFixture(name: "ArchiveRoundTrip")
             defer { fixture.removeFiles() }
             try await fixture.recordMicrophoneAudio()
@@ -20,12 +20,35 @@ import GRDB
                     arguments: [fixture.now, fixture.now, fixture.session.id]
                 )
             }
+            let store = try RecordingAudioStore(dbQueue: fixture.database.dbQueue, managedRootURL: fixture.managedRootURL)
+            let originals = try await store.withVerifiedTranscribableSegments(sessionId: fixture.session.id) { $0.map(\.url) }
+            if initialState != "pending" {
+                let prepared = try await store.withVerifiedTranscribableSegments(sessionId: fixture.session.id) { segments in
+                    try RecordingArchiveEncoder.encode(segments, relativePath: "archives/existing.m4a", root: fixture.managedRootURL)
+                }
+                let json = try String(decoding: SyncJSON.encoder.encode(["mic": prepared]), as: UTF8.self)
+                try await fixture.database.dbQueue.write { db in
+                    try db.execute(
+                        sql: "UPDATE recording_archives SET state = 'saved', preparedJSON = ? WHERE sessionId = ?",
+                        arguments: [json, fixture.session.id]
+                    )
+                }
+                if initialState == "corrupt" {
+                    try Data("broken audio".utf8).write(to: fixture.managedRootURL.appending(path: prepared.relativePath))
+                }
+            }
             let service = RecordingArchiveService(dbQueue: fixture.database.dbQueue, root: fixture.managedRootURL)
             try await service.runNext(localOnly: true)
             let archive = try await fixture.database.dbQueue.read { db in
                 try #require(try RecordingArchiveRecord.fetchOne(db, key: fixture.session.id))
             }
+            if initialState == "corrupt" {
+                #expect(archive.state == "failed")
+                #expect(originals.allSatisfy { FileManager.default.fileExists(atPath: $0.path) })
+                return
+            }
             #expect(archive.state == "saved")
+            #expect(originals.allSatisfy { !FileManager.default.fileExists(atPath: $0.path) })
             #expect(archive.failureCode == nil)
             let prepared = try SyncJSON.decoder.decode([String: RecordingArchiveEncoder.Prepared].self, from: Data(archive.preparedJSON.utf8))
             let file = try #require(prepared["mic"])
@@ -41,11 +64,7 @@ import GRDB
             let count = try await fixture.database.dbQueue.read { db in
                 try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM recording_audio_segments WHERE state = 'ready'")
             }
-            #expect(count == 1)
-            #expect(!RecordingArchiveEncoder.qualityValidatedForSourceDeletion)
-            let store = try RecordingAudioStore(dbQueue: fixture.database.dbQueue, managedRootURL: fixture.managedRootURL)
-            // Simulate source release in disposable storage to exercise the real retranscription entry point.
-            try await store.requestPurge(sessionId: fixture.session.id)
+            #expect(count == 0)
             _ = try await BatchTranscriptionConfirmationService.confirmRetranscription(
                 sessionIds: [fixture.session.id], languageSelection: .manual(localeIdentifier: "en_US"),
                 automaticLanguageCandidates: nil, dbQueue: fixture.database.dbQueue
@@ -73,6 +92,124 @@ import GRDB
             try await store.requestRetentionPurge(sessionId: fixture.session.id, cutoff: Date.now.addingTimeInterval(1))
             #expect(!FileManager.default.fileExists(atPath: fixture.managedRootURL.appending(path: file.relativePath).path))
             #expect(try await fixture.database.dbQueue.read { try RecordingArchiveRecord.fetchOne($0, key: fixture.session.id)?.state } == "expired")
+        }
+
+        @Test(arguments: [false, true])
+        func interruptedSourcePurgeKeepsArchiveReadableAndRetries(serverRetry: Bool) async throws {
+            let fixture = try BatchAudioTestFixture(name: "ArchivePurgeRetry")
+            defer { fixture.removeFiles() }
+            try await fixture.recordMicrophoneAudio()
+            let recorder = try BatchAudioRecordingSession(
+                dbQueue: fixture.database.dbQueue, managedRootURL: fixture.managedRootURL,
+                meetingId: fixture.meeting.id, recordingSessionId: fixture.session.id,
+                recordingStartTime: fixture.now, sampleRate: 16000,
+                configuration: .init(
+                    targetSegmentDuration: .seconds(30),
+                    maximumFinalizingSegmentCountPerSource: 2,
+                    maximumActiveSegmentDuration: .seconds(600),
+                    maximumActiveSegmentByteCount: 64 * 1024 * 1024,
+                    minimumAvailableCapacity: 0,
+                    capacityCheckInterval: .seconds(5)
+                )
+            )
+            let writer = try await recorder.beginRange(source: .system, locale: Locale(identifier: "ja_JP"), at: fixture.now)
+            let buffer = try #require(AVAudioPCMBuffer(pcmFormat: recorder.targetFormat, frameCapacity: 160))
+            buffer.frameLength = 160
+            writer.appendBuffer(buffer)
+            try await recorder.finish()
+            let sources = try await fixture.database.dbQueue.write { db in
+                try RecordingArchiveRecord.enqueue(fixture.session, in: db)
+                try db.execute(
+                    sql: "UPDATE recording_sessions SET endedAt = ?, batchCompletedAt = ? WHERE id = ?",
+                    arguments: [fixture.now, fixture.now, fixture.session.id]
+                )
+                return try RecordingAudioSegmentRecord.fetchAll(db)
+            }
+            let system = try #require(sources.first { $0.source == .system })
+            let systemURL = fixture.managedRootURL.appending(path: system.finalRelativePath)
+            try FileManager.default.setAttributes([.immutable: true], ofItemAtPath: systemURL.path)
+            defer { try? FileManager.default.setAttributes([.immutable: false], ofItemAtPath: systemURL.path) }
+            let service = RecordingArchiveService(dbQueue: fixture.database.dbQueue, root: fixture.managedRootURL)
+            try await service.runNext(localOnly: true)
+            try await fixture.database.dbQueue.read { db in
+                let archive = try #require(try RecordingArchiveRecord.fetchOne(db, key: fixture.session.id))
+                #expect(archive.state == "saved")
+                #expect(archive.retryAt != nil)
+                #expect(try RecordingArchiveRecord.isAvailable(sessionId: fixture.session.id, in: db))
+                let segments = try RecordingAudioSegmentRecord.fetchAll(db)
+                #expect(segments.contains { $0.state == .purgePending })
+                #expect(segments.contains { $0.state == .purged })
+            }
+            try FileManager.default.setAttributes([.immutable: false], ofItemAtPath: systemURL.path)
+            _ = try await BatchTranscriptionConfirmationService.confirmRetranscription(
+                sessionIds: [fixture.session.id], languageSelection: .manual(localeIdentifier: "en_US"),
+                automaticLanguageCandidates: nil, dbQueue: fixture.database.dbQueue
+            )
+            let coordinator = BatchTranscriptionCoordinator(
+                dbQueue: fixture.database.dbQueue, managedRootURL: fixture.managedRootURL,
+                speechRecognizer: TestBatchSpeechRecognizer(), audioRetentionPeriod: .forever,
+                supportedLocalesProvider: { testSupportedSpeechLocales }, onStateChange: { _ in }
+            )
+            await coordinator.enqueue(sessionId: fixture.session.id)
+            #expect(await pollUntil {
+                await (try? fixture.database.dbQueue.read { db in
+                    let session = try RecordingSessionRecord.fetchOne(db, key: fixture.session.id)
+                    return session?.batchCompletedAt.map { $0 > fixture.now } == true && session?.batchLastError == nil
+                }) == true
+            })
+            try await coordinator.shutdown()
+            var retryService = service
+            if serverRetry {
+                let connection = DahliaAccountConnectionRecord(id: .v7(), origin: "https://archive.invalid", clientID: "test", createdAt: fixture.now)
+                try await fixture.database.dbQueue.write { db in
+                    try connection.insert(db)
+                    try db.execute(
+                        sql: "UPDATE vaults SET accountConnectionId = ?, syncConfirmedConnectionId = ? WHERE id = ?",
+                        arguments: [connection.id, connection.id, fixture.meeting.vaultId]
+                    )
+                    let archive = try #require(try RecordingArchiveRecord.fetchOne(db, key: fixture.session.id))
+                    let files = try SyncJSON.decoder.decode([String: RecordingArchiveEncoder.Prepared].self, from: Data(archive.preparedJSON.utf8))
+                    let audio = files.mapValues {
+                        RecordingArchivedAudio(contentType: "audio/mp4", size: $0.size, checksum: $0.checksum, contentURL: "", manifest: $0.manifest)
+                    }
+                    let json = try String(decoding: SyncJSON.encoder.encode(audio), as: UTF8.self)
+                    try db.execute(
+                        sql: "UPDATE recording_archives SET connectionId = ?, number = 1, audioJSON = ? WHERE sessionId = ?",
+                        arguments: [connection.id, json, fixture.session.id]
+                    )
+                }
+                retryService = RecordingArchiveService(
+                    dbQueue: fixture.database.dbQueue,
+                    api: SyncAPIClient(session: .shared, tokenProvider: { _, _ in throw URLError(.notConnectedToInternet) }),
+                    root: fixture.managedRootURL
+                )
+            }
+            // Repeated unlink failure must stay in cleanup, including when Server access is unavailable.
+            try FileManager.default.setAttributes([.immutable: true], ofItemAtPath: systemURL.path)
+            try await fixture.database.dbQueue.write { db in
+                try db.execute(sql: "UPDATE recording_archives SET retryAt = NULL WHERE sessionId = ?", arguments: [fixture.session.id])
+            }
+            try await retryService.runNext(localOnly: !serverRetry)
+            try await fixture.database.dbQueue.read { db in
+                let archive = try #require(try RecordingArchiveRecord.fetchOne(db, key: fixture.session.id))
+                #expect(archive.state == "saved")
+                #expect(archive.failureCode == "source_purge_failed")
+                #expect(archive.retryAt != nil)
+                #expect(try RecordingArchiveRecord.isAvailable(sessionId: fixture.session.id, in: db))
+            }
+            try FileManager.default.setAttributes([.immutable: false], ofItemAtPath: systemURL.path)
+            try await fixture.database.dbQueue.write { db in
+                try db.execute(sql: "UPDATE recording_archives SET retryAt = NULL WHERE sessionId = ?", arguments: [fixture.session.id])
+            }
+            try await retryService.runNext(localOnly: !serverRetry)
+            try await fixture.database.dbQueue.read { db in
+                let archive = try #require(try RecordingArchiveRecord.fetchOne(db, key: fixture.session.id))
+                #expect(archive.state == "saved")
+                #expect(archive.retryAt == nil)
+                #expect(archive.failureCode == nil)
+                #expect(try RecordingAudioSegmentRecord.fetchAll(db).allSatisfy { $0.state == .purged })
+            }
+            #expect(sources.allSatisfy { !FileManager.default.fileExists(atPath: fixture.managedRootURL.appending(path: $0.finalRelativePath).path) })
         }
 
         @Test

@@ -7,8 +7,6 @@ enum RecordingArchiveEncoder {
     static let sampleRate = 16000
     /// Native AAC at 16 kHz mono rejects 64/96 kbps; retain the original sample rate.
     static let bitRate = 48000
-    /// Enable only after the documented Apple Speech / Whisper corpus acceptance check passes.
-    static let qualityValidatedForSourceDeletion = false
 
     struct Prepared: Codable, Sendable {
         let relativePath: String

@@ -42,14 +42,17 @@ actor RecordingArchiveService {
             JOIN recording_sessions s ON s.id = a.sessionId
             JOIN vaults v ON v.id = a.vaultId
             LEFT JOIN dahlia_account_connections c ON c.id = a.connectionId
-            WHERE a.state IN ('pending', 'failed', 'syncing') AND (a.retryAt IS NULL OR a.retryAt <= ?)
+            WHERE (a.state IN ('pending', 'failed', 'syncing')
+                   OR a.state = 'saved' AND EXISTS (SELECT 1 FROM recording_audio_segments
+                       WHERE recordingSessionId = a.sessionId AND state IN ('ready', 'purgePending')))
+              AND (a.retryAt IS NULL OR a.retryAt <= ?)
               AND ((a.connectionId IS NULL AND v.accountConnectionId IS NULL)
                    OR (v.accountConnectionId = a.connectionId AND v.syncConfirmedConnectionId = a.connectionId))
               AND (a.connectionId IS NULL) = ?
               AND v.syncRecoveryState IS NULL AND COALESCE(v.syncRole, 'owner') = 'owner'
               AND s.endedAt IS NOT NULL AND s.batchCompletedAt IS NOT NULL AND s.batchDiscardedAt IS NULL
               AND (s.batchLastAttemptAt IS NULL OR s.batchLastAttemptAt <= s.batchCompletedAt)
-              AND NOT EXISTS (SELECT 1 FROM recording_audio_segments WHERE recordingSessionId = a.sessionId AND state NOT IN ('ready', 'purged'))
+              AND NOT EXISTS (SELECT 1 FROM recording_audio_segments WHERE recordingSessionId = a.sessionId AND state NOT IN ('ready', 'purgePending', 'purged'))
               AND NOT EXISTS (SELECT 1 FROM sync_transactions WHERE vaultId = a.vaultId)
               AND NOT EXISTS (SELECT 1 FROM recording_audio_segments WHERE state IN ('recording', 'finalizing'))
               AND NOT EXISTS (SELECT 1 FROM recording_sessions WHERE batchLastAttemptAt > COALESCE(batchCompletedAt, 0)
@@ -94,6 +97,17 @@ actor RecordingArchiveService {
 
     private func process(_ target: Target) async throws {
         let archive = target.archive
+        let store = try RecordingAudioStore(dbQueue: dbQueue, managedRootURL: root)
+        let cleanupStarted = try await dbQueue.read { db in
+            try Self.checkTarget(archive, in: db)
+            return try RecordingAudioSegmentRecord.filter(Column("recordingSessionId") == archive.sessionId)
+                .filter([RecordingAudioSegmentState.purgePending.rawValue, RecordingAudioSegmentState.purged.rawValue].contains(Column("state")))
+                .fetchCount(db) > 0
+        }
+        if archive.verifiedAt != nil, cleanupStarted {
+            try await purgeSources(archive, store: store)
+            return
+        }
         if let origin = target.origin, let connectionId = archive.connectionId {
             let data = try await api.data(
                 for: URLRequest(url: origin.appending(path: "api/v1/capabilities")),
@@ -105,7 +119,6 @@ actor RecordingArchiveService {
             }
         }
         var prepared = try SyncJSON.decoder.decode([String: RecordingArchiveEncoder.Prepared].self, from: Data(archive.preparedJSON.utf8))
-        let store = try RecordingAudioStore(dbQueue: dbQueue, managedRootURL: root)
         if prepared.isEmpty {
             let root = root
             prepared = try await store.withVerifiedTranscribableSegments(sessionId: archive.sessionId) { verified in
@@ -137,14 +150,7 @@ actor RecordingArchiveService {
                       try RecordingArchiveEncoder.checksum(url) == file.checksum else { throw RecordingAudioStoreError.integrityMismatch }
                 try RecordingArchiveEncoder.validate(url, manifest: file.manifest)
             }
-            try await dbQueue.write { db in
-                try Self.checkTarget(archive, in: db)
-                try db.execute(
-                    sql: "UPDATE recording_archives SET state = 'saved', verifiedAt = ?, failureCode = NULL, retryAt = NULL WHERE sessionId = ?",
-                    arguments: [Date.now, archive.sessionId]
-                )
-            }
-            if RecordingArchiveEncoder.qualityValidatedForSourceDeletion { try await store.requestPurge(sessionId: archive.sessionId) }
+            try await markSavedAndPurgeSources(archive, store: store)
             return
         }
         guard let origin = target.origin, let connectionId = archive.connectionId else { throw RecordingAudioStoreError.storageUnavailable }
@@ -182,6 +188,10 @@ actor RecordingArchiveService {
             guard try RecordingArchiveEncoder.checksum(url) == file.checksum else { throw RecordingAudioStoreError.integrityMismatch }
             try RecordingArchiveEncoder.validate(url, manifest: file.manifest)
         }
+        try await markSavedAndPurgeSources(archive, store: store)
+    }
+
+    private func markSavedAndPurgeSources(_ archive: RecordingArchiveRecord, store: RecordingAudioStore) async throws {
         try await dbQueue.write { db in
             try Self.checkTarget(archive, in: db)
             try db.execute(
@@ -189,8 +199,25 @@ actor RecordingArchiveService {
                 arguments: [Date.now, archive.sessionId]
             )
         }
-        if RecordingArchiveEncoder.qualityValidatedForSourceDeletion {
+        try await purgeSources(archive, store: store)
+    }
+
+    private func purgeSources(_ archive: RecordingArchiveRecord, store: RecordingAudioStore) async throws {
+        var failed = false
+        do {
             try await store.requestPurge(sessionId: archive.sessionId)
+        } catch {
+            failed = true
+        }
+        // Source retirement is committed: cleanup failures cannot invalidate the verified archive.
+        let retryAt: Date? = failed ? Date.now.addingTimeInterval(60) : nil
+        let failureCode: String? = failed ? "source_purge_failed" : nil
+        try await dbQueue.write { db in
+            try Self.checkTarget(archive, in: db)
+            try db.execute(
+                sql: "UPDATE recording_archives SET state = 'saved', failureCode = ?, retryAt = ? WHERE sessionId = ?",
+                arguments: [failureCode, retryAt, archive.sessionId]
+            )
         }
     }
 
