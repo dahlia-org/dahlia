@@ -35,7 +35,7 @@ On a new installation, Dahlia creates `Documents/Dahlia`, registers it as the `D
 
 Dahlia keeps its bundled Codex state and authentication separate from other Codex apps and the Codex CLI. In **Settings → Accounts and Vaults → Local Account → Model Provider**, choose a ChatGPT Subscription or create a Databricks profile by entering its profile name and workspace URL in the setup dialog, then signing in through the browser. Existing Databricks OAuth profiles remain selectable. Dahlia does not bundle the Databricks CLI; when it is missing, Settings links to the official installation and license information and can open Terminal with `brew install databricks/tap/databricks`. ChatGPT login is stored under Dahlia's Application Support directory, while Databricks tokens remain managed by the Databricks CLI.
 
-In the sidebar account menu, hovering over a Server or Cloud account shows its URL above the row. Clicking the selected account opens that URL in the default browser; clicking a different account switches accounts.
+In the sidebar account menu, hovering over a Server or Cloud account shows its URL above the row, or below it when there is insufficient space above. Clicking the selected account opens that URL in the default browser; clicking a different account switches accounts.
 
 Automatic batch transcription downloads the pinned multilingual WhisperKit `tiny` model and tokenizer on first use and caches them in Dahlia's Application Support directory. Language detection and transcription run on-device; recording audio is not uploaded.
 
