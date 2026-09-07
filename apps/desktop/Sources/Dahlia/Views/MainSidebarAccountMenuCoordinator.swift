@@ -21,6 +21,7 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
     private var onOpenSettings: (SettingsCategory?) -> Void
     private var onSelectAccount: (DahliaAccountConnection?) -> Void
     private var onAccountAction: () -> Void
+    var openURL: (URL) -> Void = { NSWorkspace.shared.open($0) }
     private let navigation = MainSidebarAccountMenuNavigationState()
     private var mainPanel: NSPanel?
     private var submenuPanel: NSPanel?
@@ -276,7 +277,14 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
 
     private func selectAccount(_ connection: DahliaAccountConnection?) {
         dismissMenu()
-        onSelectAccount(connection)
+        guard let connection, connection.id == currentConnectionID else {
+            onSelectAccount(connection)
+            return
+        }
+        if let url = URL(string: connection.origin),
+           ["https", "http"].contains(url.scheme?.lowercased()), url.host != nil {
+            openURL(url)
+        }
     }
 
     private func closeSubmenu() {

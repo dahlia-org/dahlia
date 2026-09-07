@@ -60,8 +60,8 @@ enum MainSidebarAccountMenuLayout {
     ) -> CGPoint {
         let centeredX = mainPanelFrame.minX + rowFrame.midX - panelSize.width / 2
         let x = min(max(centeredX, screenFrame.minX + screenInset), screenFrame.maxX - panelSize.width - screenInset)
-        let rowBottom = mainPanelFrame.maxY - rowFrame.maxY
-        let preferredY = rowBottom - panelSize.height - panelGap
+        let rowTop = mainPanelFrame.maxY - rowFrame.minY
+        let preferredY = rowTop + panelGap
         let y = min(max(preferredY, screenFrame.minY + screenInset), screenFrame.maxY - panelSize.height - screenInset)
         return CGPoint(x: x, y: y)
     }

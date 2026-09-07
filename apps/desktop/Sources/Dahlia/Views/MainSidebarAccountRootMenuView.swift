@@ -46,9 +46,7 @@ struct MainSidebarAccountRootMenuView: View {
                     showsHelp: false,
                     onHoverStart: { hover(index: index, submenu: nil, action: onDismissSubmenu) },
                     onHoverStartInFrame: { frame in
-                        if !connection.isCloud {
-                            onShowAccountHelp(connection.origin, frame)
-                        }
+                        onShowAccountHelp(connection.origin, frame)
                     },
                     onHoverEnd: {
                         cancelPendingHover()
