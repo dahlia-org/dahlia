@@ -729,6 +729,16 @@ export class MeetingSyncService {
     return this.store.withIdentity(identity, (scoped) => scoped.listProjects(vaultId));
   }
 
+  async getProjectById(identity: Identity, projectId: string) {
+    const vaultId = await this.store.withIdentity(identity, (scoped) => scoped.resolveEntityVault("project", projectId));
+    return vaultId ? this.getProject(identity, vaultId, projectId) : null;
+  }
+
+  async getMeetingById(identity: Identity, meetingId: string, content?: string) {
+    const vaultId = await this.store.withIdentity(identity, (scoped) => scoped.resolveEntityVault("meeting", meetingId));
+    return vaultId ? this.getMeeting(identity, vaultId, meetingId, content) : null;
+  }
+
   getProject(identity: Identity, vaultId: string, projectId: string) {
     return this.store.withIdentity(identity, (scoped) => scoped.getProject(vaultId, projectId));
   }

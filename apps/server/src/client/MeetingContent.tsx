@@ -91,11 +91,15 @@ export function MeetingTabs({ summary, screenshots, transcript, actions }: { sum
     { id: "screenshots", label: uiText("Screenshots", "スクリーンショット"), content: screenshots },
     { id: "transcript", label: uiText("Transcript", "文字起こし"), content: transcript },
   ];
+  return <DetailTabs tabs={tabs} actions={actions} label={uiText("Meeting content", "ミーティングの内容")} />;
+}
+
+export function DetailTabs({ tabs, actions, label }: { tabs: { id: string; label: string; content: ReactNode }[]; actions?: ReactNode; label: string }) {
   const [selected, setSelected] = useState(0);
   const id = useId();
   return <>
     <div className="meeting-toolbar">
-      <div className="meeting-tabs" role="tablist" aria-label={uiText("Meeting content", "ミーティングの内容")}>
+      <div className="meeting-tabs" role="tablist" aria-label={label}>
         {tabs.map((tab, index) => <button key={tab.id} type="button" role="tab" id={`${id}-${tab.id}`} aria-controls={`${id}-panel-${tab.id}`}
           aria-selected={selected === index} tabIndex={selected === index ? 0 : -1} onClick={() => setSelected(index)}
           onKeyDown={(event) => {

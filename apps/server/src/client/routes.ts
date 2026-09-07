@@ -24,13 +24,15 @@ const coreDashboardPaths = new Set([
 export function isCoreDashboardPath(path: string): boolean {
   return coreDashboardPaths.has(path)
     || Boolean(artifactViewerId(path))
+    || /^\/(?:meetings|projects|files)\/[^/]+$/.test(path)
     || /^\/vaults\/[^/]+(?:\/(?:meetings|projects)\/[^/]+)?$/.test(path)
     || /^\/accept-invitation\/[^/]+$/.test(path);
 }
 
 export type DashboardRoute = {
-  page?: "overview" | "settings" | "artifacts" | "vaults" | "vault" | "meeting" | "project" | "organizations" | "invitation" | "admin-members";
+  page?: "file" | "overview" | "settings" | "artifacts" | "vaults" | "vault" | "meeting" | "project" | "organizations" | "invitation" | "admin-members";
   redirect?: string;
+  fileId?: string;
   vaultId?: string;
   meetingId?: string;
   projectId?: string;
@@ -57,18 +59,15 @@ export function resolveDashboardRoute(
       : { redirect: "/dashboard" };
   }
   if (path === "/vaults") return capabilities.sync ? { page: "vaults" } : { redirect: "/dashboard" };
-  const meeting = path.match(/^\/vaults\/([^/]+)\/meetings\/([^/]+)$/);
-  if (meeting) {
-    return capabilities.sync
-      ? { page: "meeting", vaultId: meeting[1], meetingId: meeting[2] }
-      : { redirect: "/dashboard" };
+  const detail = path.match(/^\/(meetings|projects|files)\/([^/]+)$/);
+  if (detail) {
+    if (!capabilities.sync) return { redirect: "/dashboard" };
+    if (detail[1] === "meetings") return { page: "meeting", meetingId: detail[2] };
+    if (detail[1] === "projects") return { page: "project", projectId: detail[2] };
+    return { page: "file", fileId: detail[2] };
   }
-  const project = path.match(/^\/vaults\/([^/]+)\/projects\/([^/]+)$/);
-  if (project) {
-    return capabilities.sync
-      ? { page: "project", vaultId: project[1], projectId: project[2] }
-      : { redirect: "/dashboard" };
-  }
+  const legacy = path.match(/^\/vaults\/[^/]+\/(meetings|projects)\/([^/]+)$/);
+  if (legacy) return { redirect: capabilities.sync ? `/${legacy[1]}/${legacy[2]}` : "/dashboard" };
   const vault = path.match(/^\/vaults\/([^/]+)$/);
   if (vault) return capabilities.sync ? { page: "vault", vaultId: vault[1] } : { redirect: "/dashboard" };
   if (path === "/dashboard/settings") {

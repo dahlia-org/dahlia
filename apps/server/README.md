@@ -304,4 +304,25 @@ The Worker-safe package root exports the backend extension contract from `@dahli
 
 ### Browser regression check for live updates
 
-Run `pnpm dev:client` and open `/tests/browser/live-data.html` on the Vite origin. This isolated fixture renders the real App under React Strict Mode, replaces API/SSE with local fixtures, and never calls the backend. A successful run sets `document.body.dataset.testResult` to `passed` and prints `PASS` in the console. It checks thumbnail failure recovery through Retry/reconnect/online, DOM identity, tabs and scroll, empty Project rows during refresh, live sharing settings, paginated additions/deletions, reconnects, transient failures/retry, obsolete reads, failed then successful edits, search, deleted Project filter recovery, browser history, Project creation/deletion, Organization switching, and 403/404 removal.
+Run `pnpm dev:client` and open `/tests/browser/live-data.html` on the Vite origin. This isolated fixture renders the real App under React Strict Mode, replaces API/SSE with local fixtures, and never calls the backend. A successful run sets `document.body.dataset.testResult` to `passed` and prints `PASS` in the console. It checks thumbnail failure recovery through Retry/reconnect/online, DOM identity, tabs and scroll, empty Project rows during refresh, live sharing settings, paginated additions/deletions, reconnects, transient failures/retry, obsolete reads, failed then successful edits, search, deleted Project filter recovery, browser history, Project creation/deletion, Organization switching, canonical URL redirects, file modals and standalone previews, focus restoration, and 403/404 removal.
+
+### Private Web detail navigation
+
+The canonical detail URLs are `/projects/{project_id}`, `/meetings/{meeting_id}`, and
+`/files/{file_id}`. Older `/vaults/{vault_id}/projects/{project_id}` and meeting URLs
+replace browser history with the canonical URL. Direct loads and refreshes resolve the
+owning Vault through authenticated `GET /api/v1/projects/:projectId` and
+`GET /api/v1/meetings/:meetingId`. These return the existing detail representation,
+including `vaultId`; missing, deleted, and inaccessible records return 404. Existing
+Vault-scoped APIs remain supported.
+
+Vault details provide Meetings, Projects, and Settings tabs; sharing and renaming live
+in Settings. Project details show breadcrumbs, description, meeting count, and a meeting
+list with owner-only edit/delete actions. Both support English and Japanese.
+
+Clicking a file opens an accessible modal with a gray backdrop without changing the
+current URL. Escape, the close button, or the backdrop closes it and restores focus.
+Modified clicks and Open in new tab use `/files/{file_id}`. The standalone page shares
+the preview and download controls. Supported images use the existing 1568px variant
+when available; other file types offer download without embedding active content.
+Live refreshes preserve current tabs, filters, loaded pages, scroll, and an open preview.

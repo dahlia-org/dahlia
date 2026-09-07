@@ -11,6 +11,7 @@ import { initializeDahliaAuth } from "../src/auth/better-auth";
 import { createNodeApplicationStore } from "../src/auth/node-store";
 import { LocalObjectStorage } from "../src/artifacts/local";
 import { createApp } from "../src/app";
+import { createWorkerHandler } from "../src/worker";
 import type { AppConfig } from "../src/config";
 import { MeetingSyncService } from "../src/sync/service";
 import { transformScreenshot } from "../src/sync/node-screenshot-transformer";
@@ -34,6 +35,42 @@ afterEach(() => {
 });
 
 describe("SQLite canonical sync", () => {
+  it.each(["node", "worker"])("resolves canonical detail IDs only for readable active records through %s", async (runtime) => {
+    const { store, databasePath } = await setup();
+    await createVault(store);
+    await commit(store, owner, transaction(freshId(), [
+      { id: freshId(), entity: "project", action: "create", entityId: projectId, baseRevision: null, data: projectData("Planning") },
+      { id: freshId(), entity: "meeting", action: "create", entityId: meetingId, baseRevision: null, data: meetingData() },
+    ]));
+    const app = createApp({ config: testConfig(databasePath), authStore: store });
+    const worker = createWorkerHandler(async () => app);
+    const workerFetch = worker.fetch!.bind(worker) as unknown as (request: Request, env: Cloudflare.Env, context: ExecutionContext) => Promise<Response>;
+    const get = async (path: string, user = owner) => {
+      const request = new Request(`http://localhost:5173${path}`, { headers: { ...headers(), "x-forwarded-user": user.userId, "x-forwarded-email": `${user.userId}@example.com` } });
+      return runtime === "node" ? app.request(request) : workerFetch(request, {} as Cloudflare.Env, {} as ExecutionContext);
+    };
+    const paths = [`/api/v1/projects/${projectId}`, `/api/v1/meetings/${meetingId}`];
+    for (const path of paths) {
+      expect((await get(path)).status).toBe(200);
+      expect(await (await get(path)).json()).toMatchObject({ vaultId });
+      expect((await get(path, other)).status).toBe(404);
+    }
+    await store.sync.withIdentity(owner, (sync) => sync.putMemberPermission(vaultId, "organization", "external"));
+    for (const path of paths) expect((await get(path, other)).status).toBe(200);
+    await store.sync.withIdentity(owner, (sync) => sync.deleteMemberPermission(vaultId, "organization", "external"));
+    for (const path of paths) expect((await get(path, other)).status).toBe(404);
+    expect((await get(`/api/v1/projects/${freshId()}`)).status).toBe(404);
+    expect((await get(`/api/v1/meetings/${freshId()}`)).status).toBe(404);
+    expect((await get("/api/v1/projects/invalid")).status).toBe(400);
+    const db = new DatabaseSync(databasePath);
+    db.prepare("UPDATE meetings SET active = 0 WHERE meeting_id = ?").run(meetingId);
+    expect((await get(paths[1]!)).status).toBe(404);
+    db.prepare("UPDATE vaults SET deleting_at = ? WHERE vault_id = ?").run(now.getTime(), vaultId);
+    expect((await get(paths[0]!)).status).toBe(404);
+    db.close();
+    await store.close?.();
+  });
+
   it.each([{ deleted: "file", reserveAgain: true }, { deleted: "vault", reserveAgain: true }, { deleted: "file", reserveAgain: false }])("rejects stale upload completion after $deleted deletion (reserved again=$reserveAgain) and permits a clean retry", async ({ deleted, reserveAgain }) => {
     const { store, service, storage, file, bytes } = await fileSetup();
     const replacement = { ...file, id: freshId() };

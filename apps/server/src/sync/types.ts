@@ -219,6 +219,7 @@ export interface IdentitySyncStore {
   listVaults(organizationId?: string): Promise<SyncVaultRecord[]>;
   getVault(vaultId: string): Promise<SyncVaultRecord | null>;
   listProjects(vaultId: string): Promise<SyncProjectView[]>;
+  resolveEntityVault(entity: "meeting" | "project", id: string): Promise<string | null>;
   getProject(vaultId: string, projectId: string): Promise<SyncProjectView | null>;
   listMeetings(
     vaultId: string,

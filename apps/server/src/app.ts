@@ -526,6 +526,16 @@ export function createApp(dependencies: AppDependencies) {
     const vault = await sync.getVault(identity, sync.parseId(context.req.param("vaultId")));
     return vault ? context.json(vault) : context.json({ error: "vault_not_found" }, 404);
   });
+  app.get("/api/v1/projects/:projectId", async (context) => {
+    const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
+    const project = await sync.getProjectById(identity, sync.parseId(context.req.param("projectId")));
+    return project ? context.json(project) : context.json({ error: "project_not_found" }, 404);
+  });
+  app.get("/api/v1/meetings/:meetingId", async (context) => {
+    const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
+    const meeting = await sync.getMeetingById(identity, sync.parseId(context.req.param("meetingId")), context.req.query("content"));
+    return meeting ? context.json(meeting) : context.json({ error: "meeting_not_found" }, 404);
+  });
   app.get("/api/v1/vaults/:vaultId/projects", async (context) => {
     const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
     return context.json({ items: await sync.listProjects(identity, sync.parseId(context.req.param("vaultId"))) });
