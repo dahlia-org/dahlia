@@ -1,5 +1,6 @@
 #if canImport(Testing)
     @preconcurrency import AVFoundation
+    import DahliaMeetingAccess
     import Foundation
     import GRDB
     import os
@@ -655,7 +656,7 @@
             let document = try SummaryDocument(title: "Remote title", sections: []).databaseJSONString()
             try await database.dbQueue.write { db in
                 try SyncTransactionQueue.discard(vaultId: vault.id, in: db)
-                try SummaryRecord(meetingId: meetingId, title: "Remote title", document: document, createdAt: .now).insert(db)
+                try SummaryContent(meetingId: meetingId, title: "Remote title", document: document, createdAt: .now).insert(db)
                 try db.execute(
                     sql: "INSERT INTO sync_entity_state(vaultId, entity, entityId, confirmedRevision) VALUES (?, 'summary', ?, 1)",
                     arguments: [vault.id, meetingId]

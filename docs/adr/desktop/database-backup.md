@@ -14,7 +14,7 @@ files の metadata、会議との紐付け、スクリーンショットの OCR 
 Server Account の保管庫とその未送信画像は対象外。Local Account の対象保管庫の原本は FileStore から取り込む。画面の選択肢と作成元 snapshot の所属を検証し、
 Server Account の保管庫を一つでも含む作成要求は世代を公開せず拒否する。端末固有の画像ファイル参照は含めない。
 共有タグ・カレンダー情報は対象会議から参照されるものだけを保存する。
-明示した対象テーブルから新しい DB へコピーするため、他保管庫の内容は含まれない。
+明示した対象テーブルから新しい DB へコピーするため、他保管庫の内容は含まれない。原文・要約・OCR / caption の専用本文テーブルもコピーし、親 metadata に対応する本文の欠損があれば世代の公開・復元を拒否する。本文の保持状態や同期 state はコピーしない。
 音声本体・参照、Vault Markdown / 添付、端末の出力先、UserDefaults、アカウント接続、Keychain / token、同期キュー・カーソル、
 検索索引は含めない。対象保管庫に未文字起こし segmented audio があれば、文字起こしか明示破棄まで作成を拒否する。
 
@@ -57,3 +57,6 @@ Server Account の保管庫への上書きは拒否する。復元による Serv
 復元時に既存音声ファイルを削除しない。外部 Markdown / 添付の書き換えも行わない。
 復元対象以外の保管庫で、バックアップ後から再起動までに追加されたデータも最新 DB のコピーを通じて保持する。
 Server canonical data は [同期契約](../shared/sync.md) の境界で扱い、backup restore を Server 削除の許可とみなさない。
+
+
+Server Account の本文部分保持で backup の対象は広げない。Local Account へ移す場合は、metadata 同期と全本文・画像原本の取得を完了してから所属を変更する。途中失敗した接続や未送信 queue は保持し、不完全な working copy を Local Account の完全な backup として扱わない。既存 backup 世代や書き出し済み Markdown は本文 cache の容量管理で削除しない。

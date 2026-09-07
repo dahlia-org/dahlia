@@ -1,3 +1,4 @@
+import DahliaMeetingAccess
 import Foundation
 import GRDB
 @testable import Dahlia
@@ -31,7 +32,7 @@ import GRDB
             let result = await service.stop()
 
             let persisted = try await fixture.database.dbQueue.read { db in
-                try TranscriptSegmentRecord.fetchOne(db, key: segment.id)
+                try fetchTranscriptContent(id: segment.id, in: db)
             }
             #expect(result.succeeded)
             #expect(persisted?.sessionId == service.recordingSessionId)
@@ -128,7 +129,7 @@ import GRDB
                     createdAt: fixture.vault.createdAt,
                     updatedAt: fixture.vault.createdAt
                 ).insert(db)
-                try TranscriptSegmentRecord(from: legacySegment, meetingId: meetingId).insert(db)
+                try TranscriptContent(from: legacySegment, meetingId: meetingId).insert(db)
             }
             let store = TranscriptStore()
             store.loadSegments([legacySegment])
@@ -149,7 +150,7 @@ import GRDB
             let result = await service.stop()
 
             let records = try await fixture.database.dbQueue.read { db in
-                try TranscriptSegmentRecord.order(Column("startTime").asc).fetchAll(db)
+                try TextContentAccess.transcript(meetingId: meetingId, in: db)
             }
             #expect(result.succeeded)
             #expect(records.first(where: { $0.id == legacySegment.id })?.sessionId == nil)

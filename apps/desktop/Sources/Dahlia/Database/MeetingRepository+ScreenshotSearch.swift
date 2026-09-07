@@ -1,4 +1,5 @@
 import DahliaMeetingAccess
+import DahliaRuntimeSupport
 import Foundation
 import GRDB
 
@@ -70,6 +71,38 @@ extension MeetingRepository {
         }
     }
 
+    nonisolated static func remoteScreenshotPage(
+        vaultId: UUID, criteria: MeetingSearchCriteria, cursor: String?, dbQueue: DatabaseQueue, contentProvider: MeetingContentProvider = .shared
+    ) async throws -> (items: [ScreenshotSearchResult], cursor: String?) {
+        var position = cursor
+        repeat {
+            let page = try await contentProvider.search(vaultId: vaultId, query: criteria.text, kind: .screenshot, cursor: position, dbQueue: dbQueue)
+            let items = try await dbQueue.read { db in
+                let allowed = try Set(filterRemoteSearchMeetingIDs(page.items.map(\.meetingId), vaultId: vaultId, criteria: criteria, in: db))
+                return try page.items.compactMap { hit -> ScreenshotSearchResult? in
+                    guard allowed.contains(hit.meetingId) else { return nil }
+                    guard let row = try Row.fetchOne(db, sql: """
+                    SELECT s.id, s.meetingId, s.capturedAt, s.mimeType, m.name, m.description
+                    FROM meeting_images s JOIN meetings m ON m.id = s.meetingId
+                    WHERE s.id = ? AND m.id = ? AND m.vaultId = ?
+                    """, arguments: [hit.id, hit.meetingId, vaultId]) else { throw TextContentError.changed }
+                    return ScreenshotSearchResult(
+                        id: hit.id,
+                        meetingID: hit.meetingId,
+                        meetingTitle: row["name"],
+                        meetingDescription: row["description"],
+                        capturedAt: row["capturedAt"],
+                        mimeType: row["mimeType"],
+                        snippet: hit.snippet
+                    )
+                }
+            }
+            position = page.nextCursor
+            if !items.isEmpty || position == nil { return (items, position) }
+            try Task.checkCancellation()
+        } while true
+    }
+
     nonisolated static func screenshotImageData(
         id: UUID,
         vaultID: UUID,
@@ -100,7 +133,7 @@ extension MeetingRepository {
             capturedAt: row["capturedAt"],
             mimeType: row["mimeType"],
             snippet: String(
-                [row["caption"] as String, row["ocrText"] as String]
+                [row["caption"] as String? ?? "", row["ocrText"] as String? ?? ""]
                     .filter { !$0.isEmpty }
                     .joined(separator: " ")
                     .prefix(180)

@@ -54,6 +54,52 @@
                 .connectionId)
         }
 
+        @Test(arguments: [false, true])
+        func newlyCapturedServerImageKeepsLocalAnalysisProgress(uploaded: Bool) async throws {
+            let fixture = try ScreenshotContentFixture()
+            try await fixture.dbQueue.write { db in
+                try db.execute(
+                    sql: "UPDATE files SET remoteReference = ?, localReference = ? WHERE id = ?",
+                    arguments: [uploaded ? fixture.source.jsonString() : nil, uploaded ? fixture.source.jsonString() : nil, fixture.screenshotId]
+                )
+                try db.execute(sql: "UPDATE file_text_bodies SET ocrText = NULL, caption = NULL WHERE fileId = ?", arguments: [fixture.screenshotId])
+                try db.execute(
+                    sql: "INSERT INTO search_index_jobs(indexKind, targetKind, targetKey, priority, availableAt, updatedAt) VALUES ('fts', 'screenshotAnalysis', ?, -10, ?, ?)",
+                    arguments: [fixture.screenshotId, Date(), Date()]
+                )
+                try SyncTransactionRecorder.record(vaultId: fixture.vaultId, operations: [
+                    SyncOperationDraft(entity: .file, action: .upsert, entityId: fixture.screenshotId),
+                ], in: db)
+                if uploaded {
+                    try db.execute(sql: "INSERT INTO sync_entity_state VALUES (?, 'file', ?, 1)", arguments: [fixture.vaultId, fixture.screenshotId])
+                    try db.execute(sql: "UPDATE sync_content_state SET residentRevision = 1 WHERE entity = 'file'")
+                }
+            }
+            let viewModel = CaptionViewModel()
+            defer { viewModel.clearCurrentMeeting() }
+            viewModel.loadMeeting(fixture.meetingId, dbQueue: fixture.dbQueue, projectURL: nil, projectId: nil, vaultURL: nil)
+            #expect(await viewModel.screenshotOCRState(id: fixture.screenshotId) == .pending)
+            try await fixture.dbQueue.write { db in
+                try db.execute(sql: "UPDATE search_index_jobs SET status = 'processing', attempts = 1 WHERE targetKind = 'screenshotAnalysis'")
+            }
+            #expect(await viewModel.screenshotOCRState(id: fixture.screenshotId) == .processing)
+            try await fixture.dbQueue.write { db in
+                try db.execute(sql: "UPDATE search_index_jobs SET status = 'pending', attempts = 5 WHERE targetKind = 'screenshotAnalysis'")
+            }
+            #expect(await viewModel.screenshotOCRState(id: fixture.screenshotId) == .failed)
+            try await fixture.dbQueue.write { db in
+                try db.execute(sql: "UPDATE search_index_jobs SET status = 'pending', attempts = 0 WHERE targetKind = 'screenshotAnalysis'")
+            }
+            #expect(await viewModel.screenshotOCRState(id: fixture.screenshotId) == .pending)
+            try await fixture.dbQueue.write { db in
+                try db.execute(
+                    sql: "UPDATE file_text_bodies SET ocrText = 'Recognized text', caption = 'Image caption' WHERE fileId = ?",
+                    arguments: [fixture.screenshotId]
+                )
+            }
+            #expect(await viewModel.screenshotOCRState(id: fixture.screenshotId) == .completed(ocrText: "Recognized text", caption: "Image caption"))
+        }
+
         @Test
         func gridRequestsThumbnailWhileLargerImagesRequestOriginal() async throws {
             let fixture = try ScreenshotContentFixture()
@@ -170,8 +216,10 @@
             }
         }
 
-        @Test(.timeLimit(.minutes(1)), arguments: [false, true])
-        func movingAnAccountRetainsAllItsVaultsUntilCompletion(failsSecondImage: Bool) async throws {
+        @Test(.timeLimit(.minutes(1)), arguments: ["success", "missingImage", "serverChanged"])
+        func movingAnAccountRetainsAllItsVaultsUntilCompletion(scenario: String) async throws {
+            let failsSecondImage = scenario == "missingImage"
+            let serverChanged = Mutex(false)
             let first = try ScreenshotContentFixture()
             let second = try ScreenshotContentFixture(dbQueue: first.dbQueue)
             let unrelated = try ScreenshotContentFixture(dbQueue: first.dbQueue)
@@ -195,7 +243,16 @@
             try await first.makeRemoteOnly()
             try await second.makeRemoteOnly()
             ImageURLProtocol.register(origin: first.source.origin) { request in
-                let fails = failsSecondImage && request.url!.path.contains(second.screenshotId.uuidString.lowercased())
+                let path = request.url!.path
+                if path.hasSuffix("/changes"), path.contains(first.vaultId.uuidString.lowercased()), serverChanged.withLock({ $0 }) {
+                    return (200, [:], Data("""
+                    {"items":[],"cursor":"new-server-update","highWaterCursor":"new-server-update","hasMore":false,"contentMode":"metadata-v1"}
+                    """.utf8))
+                }
+                if let text = cachedTextResponse(request, queue: first.dbQueue) { return text }
+                let secondImage = path.contains(second.screenshotId.uuidString.lowercased())
+                if secondImage, scenario == "serverChanged" { serverChanged.withLock { $0 = true } }
+                let fails = failsSecondImage && secondImage
                 return (fails ? 404 : 200, ["content-type": "image/png"], first.bytes)
             }
             defer { ImageURLProtocol.remove(origin: first.source.origin) }
@@ -213,7 +270,11 @@
             var events = gate.events.makeAsyncIterator()
             let moving = Task {
                 try await MeetingRepository(dbQueue: first.dbQueue).resolveVaultsForSignOut(
-                    connectionID: first.connectionId, disposition: .moveToLocalAccount, screenshotContent: provider
+                    connectionID: first.connectionId, disposition: .moveToLocalAccount, screenshotContent: provider,
+                    textContent: MeetingContentProvider(client: SyncAPIClient(
+                        session: URLSession(configuration: configuration),
+                        tokenProvider: { _, _ in "test-token" }
+                    ))
                 )
             }
             #expect(await events.next() == "second image")
@@ -224,9 +285,19 @@
             #expect(try await provider.content(id: first.screenshotId, dbQueue: first.dbQueue).data == first.bytes)
             #expect(try await unrelated.storedBytes() == unrelated.bytes)
             await gate.releaseAll()
-            if failsSecondImage {
-                await #expect(throws: ScreenshotContentError.deleted) { try await moving.value }
-                #expect(try await first.dbQueue.read { try VaultRecord.fetchOne($0, key: first.vaultId)?.accountConnectionId } == first.connectionId)
+            if scenario != "success" {
+                if failsSecondImage {
+                    await #expect(throws: ScreenshotContentError.deleted) { try await moving.value }
+                } else {
+                    await #expect(throws: TextContentError.changed) { try await moving.value }
+                }
+                try await first.dbQueue.read { db throws in
+                    for vaultId in [first.vaultId, second.vaultId] {
+                        #expect(try VaultRecord.fetchOne(db, key: vaultId)?.accountConnectionId == first.connectionId)
+                        #expect(try VaultRecord.fetchOne(db, key: vaultId)?.syncPullCursor == "after")
+                        #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_entity_state WHERE vaultId = ?", arguments: [vaultId])! > 0)
+                    }
+                }
                 // Failure releases the protection, so normal cache maintenance can resume.
                 try await provider.trimFiles(dbQueue: first.dbQueue, budget: 0)
                 #expect(try await first.storedBytes() == nil)
@@ -510,15 +581,22 @@
             let root = temporaryDirectory()
             defer { try? FileManager.default.removeItem(at: root) }
             let calls = Mutex(0)
-            let provider = try makeProvider(fixture: fixture, cache: ScreenshotFileStore(directory: root.appending(path: "FileStore"))) { _ in
+            let provider = try makeProvider(fixture: fixture, cache: ScreenshotFileStore(directory: root.appending(path: "FileStore"))) { request in
+                if let text = cachedTextResponse(request, queue: fixture.dbQueue) { return text }
                 calls.withLock { $0 += 1 }
                 return (404, [:], Data())
             }
             defer { ImageURLProtocol.remove(origin: fixture.source.origin) }
             let backup = BackupService(dbQueue: fixture.dbQueue, applicationSupportURL: root)
             await #expect(throws: BackupServiceError.localVaultsOnly) { try await backup.createGeneration(vaultIds: [fixture.vaultId]) }
+            let configuration = URLSessionConfiguration.ephemeral
+            configuration.protocolClasses = [ImageURLProtocol.self]
+            let textProvider = MeetingContentProvider(client: SyncAPIClient(
+                session: URLSession(configuration: configuration),
+                tokenProvider: { _, _ in "test-token" }
+            ))
             try await MeetingRepository(dbQueue: fixture.dbQueue).resolveVaultsForSignOut(
-                connectionID: fixture.connectionId, disposition: .moveToLocalAccount, screenshotContent: provider
+                connectionID: fixture.connectionId, disposition: .moveToLocalAccount, screenshotContent: provider, textContent: textProvider
             )
             let generation = try await backup.createGeneration(vaultIds: [fixture.vaultId])
             let marker = try await backup.prepareRestore(from: generation, requests: [VaultBackupRestoreRequest(
@@ -675,6 +753,44 @@
         @TaskLocal static var kind = ""
     }
 
+    /// Canonical text responses for cached bodies and the fixtures' empty transcripts.
+    private func cachedTextResponse(_ request: URLRequest, queue: DatabaseQueue) -> (Int, [String: String], Data)? {
+        guard let url = request.url else { return nil }
+        if url.path.hasSuffix("/sync-content") { return (200, [:], Data("{\"version\":1}".utf8)) }
+        if url.path.hasSuffix("/changes") {
+            return (
+                200,
+                [:],
+                Data("{\"items\":[],\"cursor\":\"after\",\"highWaterCursor\":\"after\",\"hasMore\":false,\"contentMode\":\"metadata-v1\"}".utf8)
+            )
+        }
+        guard url.path.contains("/text/") else { return nil }
+        do {
+            let id = try #require(UUID(uuidString: url.lastPathComponent))
+            let entity = try #require(TextContentEntity(rawValue: url.deletingLastPathComponent().lastPathComponent))
+            let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            let revision = Int(query.first { $0.name == "revision" }?.value ?? "0") ?? 0
+            let body = try queue.read { db in try #require(try TextContentStore.fingerprint(entity: entity, id: id, in: db)) }
+            let itemCount = body.count
+            var json: [String: Any] = [
+                "version": 1,
+                "entity": entity.rawValue,
+                "entityId": id.uuidString,
+                "revision": revision,
+                "present": entity != .summary || itemCount > 0,
+                "count": body.count,
+                "byteCount": body.bytes,
+                "sha256": body.hash,
+            ]
+            if query.first(where: { $0.name == "manifest" })?.value != "1", entity == .transcript {
+                try #require(itemCount == 0)
+                json["items"] = [] as [String]
+                json["nextCursor"] = NSNull()
+            }
+            return try (200, [:], JSONSerialization.data(withJSONObject: json))
+        } catch { return (500, [:], Data()) }
+    }
+
     private actor ImageRequestGate {
         nonisolated let events: AsyncStream<String>
         private let continuation: AsyncStream<String>.Continuation
@@ -766,7 +882,7 @@
     }
 
     /// URLProtocol callbacks are synchronous here; handler registration is protected across parallel tests.
-    private final class ImageURLProtocol: URLProtocol, @unchecked Sendable {
+    final class ImageURLProtocol: URLProtocol, @unchecked Sendable {
         typealias Handler = @Sendable (URLRequest) -> (Int, [String: String], Data)
         private static let handlers = Mutex<[String: Handler]>([:])
 

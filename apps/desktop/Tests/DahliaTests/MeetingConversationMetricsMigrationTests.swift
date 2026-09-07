@@ -1,3 +1,4 @@
+import DahliaMeetingAccess
 import Foundation
 import GRDB
 @testable import Dahlia
@@ -64,7 +65,7 @@ import GRDB
             let result = try queue.read { db in
                 try (
                     MeetingRecord.fetchOne(db, key: meeting.id),
-                    TranscriptSegmentRecord.fetchOne(db, key: segmentID),
+                    fetchTranscriptContent(id: segmentID, in: db),
                     db.tableExists(MeetingConversationMetricsRecord.databaseTableName),
                     db.tableExists(MeetingConversationSourceMetricsRecord.databaseTableName)
                 )

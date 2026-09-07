@@ -199,6 +199,8 @@ struct MeetingSidebarRow: View {
             L10n.descriptionMatch
         case .summary:
             L10n.summaryMatch
+        case .server:
+            L10n.textContentServerMatch
         case .calendar:
             L10n.calendarMatch
         case .tag:

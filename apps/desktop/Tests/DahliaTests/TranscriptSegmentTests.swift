@@ -1,3 +1,4 @@
+import DahliaMeetingAccess
 import Foundation
 @testable import Dahlia
 
@@ -206,7 +207,7 @@ import Foundation
                 audioFeatures: audioFeatures
             )
 
-            let record = TranscriptSegmentRecord(from: segment, meetingId: meetingID)
+            let record = TranscriptContent(from: segment, meetingId: meetingID)
             let roundTripped = TranscriptSegment(from: record)
 
             #expect(record.translatedText == "こんにちは、世界")

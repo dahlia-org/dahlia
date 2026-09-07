@@ -1,10 +1,12 @@
 import CoreGraphics
+import DahliaRuntimeSupport
 import SwiftUI
 
 struct ScreenshotOverlayInformationView: View {
     let screenshot: MeetingScreenshotRecord
     let image: CGImage?
     let ocrState: ScreenshotOCRState
+    var retry: () -> Void = {}
 
     var body: some View {
         ScrollView {
@@ -56,6 +58,8 @@ struct ScreenshotOverlayInformationView: View {
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
+        case let .remote(text, _, state):
+            remoteContent(text, state: state)
         case .failed:
             Text(L10n.imageAnalysisFailed)
                 .foregroundStyle(.secondary)
@@ -71,6 +75,8 @@ struct ScreenshotOverlayInformationView: View {
             Text(caption)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
+        case let .remote(_, caption, state):
+            remoteContent(caption, state: state)
         case .failed:
             Text(L10n.imageAnalysisFailed)
                 .foregroundStyle(.secondary)
@@ -78,4 +84,13 @@ struct ScreenshotOverlayInformationView: View {
             ProgressView(L10n.analyzingImage)
         }
     }
+
+    @ViewBuilder
+    private func remoteContent(_ value: String?, state: TextContentAvailability.State) -> some View {
+        TextContentStatusView(state: value == nil && state == .ready ? .empty : state, retry: retry)
+        if let value {
+            Text(value).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
 }

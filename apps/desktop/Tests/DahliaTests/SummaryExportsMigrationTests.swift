@@ -15,12 +15,13 @@ import GRDB
             let result = try database.dbQueue.read { db in
                 try (
                     db.columns(in: "summaries"),
-                    String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('summary_exports')")
+                    String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('summary_exports')"),
+                    db.columns(in: "summary_bodies")
                 )
             }
 
-            #expect(result.0.map(\.name) == ["meetingId", "title", "document", "createdAt"])
-            #expect(result.0.first(where: { $0.name == "document" })?.isNotNull == true)
+            #expect(result.0.map(\.name) == ["meetingId", "title", "createdAt"])
+            #expect(result.2.first(where: { $0.name == "document" })?.isNotNull == true)
             #expect(result.1 == ["meetingId", "type", "url", "createdAt", "updatedAt"])
         }
 

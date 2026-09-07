@@ -169,7 +169,16 @@ struct MainSearchPanel: View {
 
     @ViewBuilder
     private var searchContent: some View {
-        if let errorMessage = model.errorMessage {
+        if let coverage = model.searchCoverage {
+            HStack {
+                Text(coverage).font(.caption).foregroundStyle(.secondary)
+                if model.serverSearchFailed {
+                    Button(L10n.retry) { model.retryServerSearch(using: sidebarViewModel) }
+                        .buttonStyle(.borderless)
+                }
+            }.padding(.horizontal, 12).padding(.vertical, 6)
+        }
+        if let errorMessage = model.errorMessage, !model.hasResults {
             ContentUnavailableView(
                 L10n.searchUnavailable,
                 systemImage: "exclamationmark.magnifyingglass",

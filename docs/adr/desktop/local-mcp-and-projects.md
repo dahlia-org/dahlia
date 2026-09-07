@@ -31,3 +31,12 @@ slash-delimited path identity、親 ID と path の二重正本、Finder との�
 旧 path migration は UUID、description、日時、membership を保ち、深い階層を元 root の直下へ平坦化し、名前衝突を決定的 suffix で解消した。既存 Summary は動かさず legacy path を保持し、旧 directory-sync / context column と CONTEXT.md 依存を廃止した。
 
 local MCP の Project delete / merge は復旧契約を決めるまで公開しない。Server の domain transaction による削除は [同期契約](../shared/sync.md) の別経路として扱う。
+
+
+## 部分保持本文の読み取り
+
+helper は SQLite の完全性と保持 revision を検査し、不足する本文の取得と Server 全体の検索をアプリ側 `MeetingContentProvider` に既存の同梱 helper 用 IPC で依頼する。helper へ token を渡さず、アプリ側も要求の Vault / meeting を検査する。保持済み本文はオフラインでも読み、利用日時の更新は best-effort の通知にする。transcript cursor に保持 revision を含め、異なる版をページ間で混ぜない。本文状態を `text_content` に返す。
+
+本文 IPC は provider のページごとの通信期限で失敗を判定し、全ページ取得に画像用の合計30秒期限を適用しない。helper は本文取得完了の応答まで待つ。要求の書き込みと broker 側の応答書き込みには既存の期限を保ち、応答サイズ上限も維持する。broker 停止時は処理中の取得をキャンセルし socket を閉じる。
+
+検索結果は従来のローカル `meetings` または `screenshots` / `next_cursor` と `search_scope` に、Server の `items` / `next_cursor` / `complete` / `error` を加える。Server の続きは独立した `server_cursor` で渡す。filter を適用してから Server ページを返し、取得失敗は未完了として表す。本文・要約を書き出す処理と同様、未保持の本文を空として成功させない。

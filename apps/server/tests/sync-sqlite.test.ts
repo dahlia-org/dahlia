@@ -133,6 +133,11 @@ describe("SQLite canonical sync", () => {
     await service.commitTransaction(owner, wire([{ entity: "file", action: "upsert", entityId: file.id, baseRevision: 1,
       data: { checksum: file.checksum, metadata: { ocr_text: "Searchable text" } } }]));
     expect(await service.getFile(owner, file.id)).toMatchObject({ metadata: { source: "screenshot", width: 1800, ocr_text: "Searchable text" }, revision: 2 });
+    const metadataOnly = await service.getFile(owner, file.id, "metadata-v1");
+    expect(metadataOnly).toMatchObject({ contentOmitted: true, contentPresent: true, revision: 2,
+      contentURL: `/api/v1/files/${file.id}/content`, metadata: { source: "screenshot", width: 1800 },
+      variants: { thumb_360: `/api/v1/files/${file.id}/variants/thumb_360`, thumb_1280: `/api/v1/files/${file.id}/variants/thumb_1280` } });
+    expect(metadataOnly.metadata).not.toHaveProperty("ocr_text");
     expect((await service.listScreenshots(owner, vaultId, meetingId, "Searchable")).items).toHaveLength(1);
     await expect(service.commitTransaction(owner, wire([{ entity: "file", action: "upsert", entityId: file.id, baseRevision: 1,
       data: { checksum: file.checksum, metadata: { caption: "stale" } } }]))).rejects.toMatchObject({ status: 409 });

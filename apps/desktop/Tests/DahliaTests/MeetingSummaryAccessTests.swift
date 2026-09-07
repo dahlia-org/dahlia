@@ -14,7 +14,7 @@ import GRDB
             let fixture = try Fixture()
             try fixture.manager.dbQueue.write { db in
                 try db.execute(
-                    sql: "UPDATE summaries SET document = 'not-json' WHERE meetingId = ?",
+                    sql: "UPDATE summary_bodies SET document = 'not-json' WHERE meetingId = ?",
                     arguments: [fixture.firstMeetingID]
                 )
             }
@@ -29,7 +29,7 @@ import GRDB
             let fixture = try Fixture()
             try fixture.manager.dbQueue.write { db in
                 try db.execute(
-                    sql: "UPDATE summaries SET document = ? WHERE meetingId = ?",
+                    sql: "UPDATE summary_bodies SET document = ? WHERE meetingId = ?",
                     arguments: [
                         #"""
                         {"schemaVersion":3,"title":"Invalid","sections":[
@@ -59,7 +59,7 @@ import GRDB
             """#
             try fixture.manager.dbQueue.write { db in
                 try db.execute(
-                    sql: "UPDATE summaries SET document = ? WHERE meetingId = ?",
+                    sql: "UPDATE summary_bodies SET document = ? WHERE meetingId = ?",
                     arguments: [document, fixture.firstMeetingID]
                 )
             }
@@ -83,7 +83,7 @@ import GRDB
             """#
             try fixture.manager.dbQueue.write { db in
                 try db.execute(
-                    sql: "UPDATE summaries SET document = ? WHERE meetingId = ?",
+                    sql: "UPDATE summary_bodies SET document = ? WHERE meetingId = ?",
                     arguments: [document, fixture.firstMeetingID]
                 )
             }

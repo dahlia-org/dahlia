@@ -1,4 +1,5 @@
 import CoreServices
+import DahliaMeetingAccess
 import Foundation
 import GRDB
 @testable import Dahlia
@@ -255,7 +256,7 @@ import GRDB
                 try meeting.insert(db)
             }
             try repository.upsertSummary(
-                SummaryRecord(
+                SummaryContent(
                     meetingId: meeting.id,
                     title: "Summary",
                     document: SummaryDocument(title: "Summary", sections: []).databaseJSONString(),
@@ -298,7 +299,7 @@ import GRDB
                 try meeting.insert(db)
             }
             try repository.upsertSummary(
-                SummaryRecord(
+                SummaryContent(
                     meetingId: meeting.id,
                     title: "Summary",
                     document: SummaryDocument(title: "Summary", sections: []).databaseJSONString(),

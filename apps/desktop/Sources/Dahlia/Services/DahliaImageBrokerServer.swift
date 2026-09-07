@@ -1,3 +1,4 @@
+import DahliaMeetingAccess
 import DahliaRuntimeSupport
 import Darwin
 import Foundation
@@ -26,14 +27,18 @@ final class DahliaImageBrokerServer: Sendable {
 
     convenience init(dbQueue: DatabaseQueue, helperURL: URL = DahliaMCPBundle.expectedExecutableURL()) {
         self.init(helperURL: helperURL) { request in
+            if let text = request.text {
+                return try await MeetingContentProvider.shared.resolve(text, vaultId: request.vaultId, dbQueue: dbQueue)
+            }
+            guard let screenshotId = request.screenshotId else { throw ScreenshotContentError.deleted }
             let matches = try await dbQueue.read { db in
                 try Bool.fetchOne(db, sql: """
                 SELECT EXISTS(SELECT 1 FROM meeting_images s JOIN meetings m ON m.id = s.meetingId
                 WHERE s.id = ? AND s.meetingId = ? AND m.vaultId = ?)
-                """, arguments: [request.screenshotId, request.meetingId, request.vaultId]) ?? false
+                """, arguments: [screenshotId, request.meetingId, request.vaultId]) ?? false
             }
             guard matches else { throw ScreenshotContentError.deleted }
-            return try await ScreenshotContentProvider.shared.content(id: request.screenshotId, dbQueue: dbQueue).data
+            return try await ScreenshotContentProvider.shared.content(id: screenshotId, dbQueue: dbQueue).data
         }
     }
 
@@ -141,7 +146,9 @@ final class DahliaImageBrokerServer: Sendable {
             guard running else { task.cancel()
                 return
             }
-            guard semaphore.wait(timeout: .now() + .seconds(30)) == .success else {
+            // Text hydration has per-page network deadlines; its total duration depends on the transcript size.
+            let deadline: DispatchTime = request.text == nil ? .now() + .seconds(30) : .distantFuture
+            guard semaphore.wait(timeout: deadline) == .success else {
                 task.cancel()
                 throw ScreenshotContentError.unavailable
             }

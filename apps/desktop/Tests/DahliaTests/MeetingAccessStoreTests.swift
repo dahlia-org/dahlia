@@ -397,7 +397,7 @@ import ImageIO
             try Data("Legacy".utf8).write(to: legacySummary, options: .atomic)
             try Data("Keep".utf8).write(to: unrelatedFile, options: .atomic)
             try fixture.manager.dbQueue.write { db in
-                try SummaryRecord(
+                try SummaryContent(
                     meetingId: fixture.secondMeetingID,
                     title: "Budget",
                     document: "{}",
@@ -469,7 +469,7 @@ import ImageIO
                     sql: "UPDATE meetings SET projectId = ? WHERE id = ?",
                     arguments: [child.projectID, fixture.secondMeetingID]
                 )
-                try SummaryRecord(
+                try SummaryContent(
                     meetingId: fixture.secondMeetingID,
                     title: "Shared",
                     document: "{}",
@@ -754,7 +754,7 @@ import ImageIO
                 let text = "Screenshot-only architecture needle"
                 let caption = "Architecture diagram for the meeting"
                 try db.execute(
-                    sql: "UPDATE files SET metadata = json_set(metadata, '$.ocr_text', ?, '$.caption', ?) WHERE id = ?",
+                    sql: "UPDATE file_text_bodies SET ocrText = ?, caption = ? WHERE fileId = ?",
                     arguments: [text, caption, fixture.firstScreenshotID]
                 )
                 let meeting = try #require(try MeetingRecord.fetchOne(db, key: fixture.firstMeetingID))
@@ -3166,7 +3166,7 @@ import ImageIO
         }
 
         private func insertContent(in db: Database, createdAt: Date, sessionID: UUID) throws {
-            try SummaryRecord(
+            try SummaryContent(
                 meetingId: firstMeetingID,
                 title: "AI planning title",
                 document: SummaryDocument(
@@ -3208,7 +3208,7 @@ import ImageIO
                 createdAt: createdAt,
                 updatedAt: createdAt
             ).insert(db)
-            try TranscriptSegmentRecord(
+            try TranscriptContent(
                 id: firstSegmentID,
                 meetingId: firstMeetingID,
                 sessionId: sessionID,
@@ -3219,7 +3219,7 @@ import ImageIO
                 isConfirmed: true,
                 audioSource: "mic"
             ).insert(db)
-            try TranscriptSegmentRecord(
+            try TranscriptContent(
                 id: secondSegmentID,
                 meetingId: firstMeetingID,
                 sessionId: sessionID,
@@ -3230,7 +3230,7 @@ import ImageIO
                 isConfirmed: true,
                 audioSource: "system"
             ).insert(db)
-            try TranscriptSegmentRecord(
+            try TranscriptContent(
                 id: .v7(),
                 meetingId: firstMeetingID,
                 sessionId: sessionID,
@@ -3304,7 +3304,7 @@ import ImageIO
             try manager.dbQueue.read { db in
                 try String.fetchOne(
                     db,
-                    sql: "SELECT document FROM summaries WHERE meetingId = ?",
+                    sql: "SELECT document FROM summary_bodies WHERE meetingId = ?",
                     arguments: [meetingID]
                 )
             } ?? ""
@@ -3317,7 +3317,7 @@ import ImageIO
         func replaceSummaryDocument(meetingID: UUID, databaseJSON: String) throws {
             try manager.dbQueue.write { db in
                 try db.execute(
-                    sql: "UPDATE summaries SET document = ? WHERE meetingId = ?",
+                    sql: "UPDATE summary_bodies SET document = ? WHERE meetingId = ?",
                     arguments: [databaseJSON, meetingID]
                 )
             }
@@ -3340,7 +3340,7 @@ import ImageIO
                     createdAt: startedAt,
                     updatedAt: startedAt
                 ).insert(db)
-                try TranscriptSegmentRecord(
+                try TranscriptContent(
                     id: segmentID,
                     meetingId: firstMeetingID,
                     sessionId: sessionID,

@@ -181,6 +181,10 @@ export interface SyncSearchQuery {
 }
 
 export interface IdentitySyncStore {
+  countTranscript(vaultId: string, meetingId: string): Promise<number>;
+  searchTextPage(vaultId: string, query: SyncSearchQuery, kind: "meeting" | "screenshot", offset: number, limit: number): Promise<{
+    id: string; meetingId: string; snippet: string;
+  }[]>;
   lockVault(vaultId: string): Promise<void>;
   commitTransaction(transaction: SyncTransaction): Promise<SyncTransactionResponse>;
   resolveTransaction(transaction: SyncTransaction): Promise<SyncTransactionResponse | null>;

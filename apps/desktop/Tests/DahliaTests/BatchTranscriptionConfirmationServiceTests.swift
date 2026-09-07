@@ -1,4 +1,5 @@
 @preconcurrency import AVFoundation
+import DahliaMeetingAccess
 import Foundation
 import GRDB
 @testable import Dahlia
@@ -19,7 +20,7 @@ import GRDB
             )
             defer { fixture.removeFiles() }
             try await fixture.recordMicrophoneAudio()
-            let previousTranscript = TranscriptSegmentRecord(
+            let previousTranscript = TranscriptContent(
                 id: .v7(),
                 meetingId: fixture.meeting.id,
                 sessionId: fixture.session.id,
@@ -56,7 +57,7 @@ import GRDB
             let persisted = try await fixture.database.dbQueue.read { db in
                 try (
                     RecordingSessionRecord.fetchOne(db, key: fixture.session.id),
-                    TranscriptSegmentRecord.fetchOne(db, key: previousTranscript.id),
+                    fetchTranscriptContent(id: previousTranscript.id, in: db),
                     RecordingAudioSegmentRangeRecord.fetchAll(db)
                 )
             }
@@ -70,7 +71,7 @@ import GRDB
             #expect(persisted.2.map(\.localeIdentifier) == ["en_US"])
             #expect(try await fetchLegacyRetentionState(fixture) == legacyRetentionState)
 
-            let replacement = TranscriptSegmentRecord(
+            let replacement = TranscriptContent(
                 id: .v7(),
                 meetingId: fixture.meeting.id,
                 sessionId: fixture.session.id,
@@ -91,9 +92,7 @@ import GRDB
             let completedResult = try await fixture.database.dbQueue.read { db in
                 try (
                     RecordingSessionRecord.fetchOne(db, key: fixture.session.id),
-                    TranscriptSegmentRecord
-                        .filter(Column("sessionId") == fixture.session.id)
-                        .fetchAll(db)
+                    fetchSessionTranscriptContent(sessionId: fixture.session.id, in: db)
                 )
             }
             #expect(completedResult.0?.isBatchRetranscriptionPending == false)

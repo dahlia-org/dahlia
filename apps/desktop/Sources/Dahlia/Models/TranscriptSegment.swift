@@ -1,3 +1,4 @@
+import DahliaMeetingAccess
 import Foundation
 
 enum Formatters {
@@ -114,8 +115,8 @@ struct TranscriptSegment: Identifiable, Equatable {
         self.audioFeatures = audioFeatures
     }
 
-    /// TranscriptSegmentRecord からの変換イニシャライザ。
-    init(from record: TranscriptSegmentRecord) {
+    /// TranscriptContent からの変換イニシャライザ。
+    init(from record: TranscriptContent) {
         self.id = record.id
         self.sessionId = record.sessionId
         self.startTime = record.startTime

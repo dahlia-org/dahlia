@@ -1,3 +1,4 @@
+import DahliaMeetingAccess
 import Foundation
 import GRDB
 @testable import Dahlia
@@ -43,9 +44,7 @@ import GRDB
                 )
             }
             let transcripts = try await fixture.database.dbQueue.read { db in
-                try TranscriptSegmentRecord
-                    .filter(Column("sessionId") == fixture.session.id)
-                    .fetchAll(db)
+                try fetchSessionTranscriptContent(sessionId: fixture.session.id, in: db)
             }
             #expect(transcripts.map(\.text) == ["previous transcript"])
         }
@@ -153,8 +152,8 @@ import GRDB
         private func makeTranscriptRecord(
             fixture: BatchAudioTestFixture,
             text: String
-        ) -> TranscriptSegmentRecord {
-            TranscriptSegmentRecord(
+        ) -> TranscriptContent {
+            TranscriptContent(
                 id: .v7(),
                 meetingId: fixture.meeting.id,
                 sessionId: fixture.session.id,

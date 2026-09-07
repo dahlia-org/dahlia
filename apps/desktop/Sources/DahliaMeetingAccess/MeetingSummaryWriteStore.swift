@@ -113,15 +113,10 @@ extension MeetingAccessStore {
             throw MeetingAccessError.meetingNotFound
         }
 
-        guard let summaryRow = try Row.fetchOne(
-            db,
-            sql: "SELECT title, document, createdAt FROM summaries WHERE meetingId = ?",
-            arguments: [meetingID]
-        ) else {
+        guard let summary = try TextContentAccess.summary(meetingId: meetingID, in: db) else {
             throw MeetingAccessError.summaryNotFound
         }
-
-        let existingDocument: String = summaryRow["document"]
+        let existingDocument = summary.document
         guard Self.summaryDocumentVersion(existingDocument) == expectedDocumentVersion else {
             throw MeetingAccessError.summaryVersionConflict
         }
@@ -135,7 +130,7 @@ extension MeetingAccessStore {
         }
         try validateScreenshotReferences(document, meetingID: meetingID, in: db)
 
-        let existingTitle: String = summaryRow["title"]
+        let existingTitle = summary.title
         let meetingName = SummaryGeneratedMetadata.normalizedTitle(document.title) ?? ""
         let meetingDescription = SummaryGeneratedMetadata.normalizedDescription(document.description) ?? ""
 
@@ -152,7 +147,7 @@ extension MeetingAccessStore {
             ))
         }
 
-        let createdAt: Date = summaryRow["createdAt"]
+        let createdAt = summary.createdAt
         let vaultFile = try makeVaultFileWrite(
             meetingID: meetingID,
             document: document,
@@ -373,11 +368,7 @@ extension MeetingAccessStore {
     }
 
     func commitSummaryUpdate(_ update: SummaryUpdate, in db: Database) throws -> [String] {
-        guard let currentDocument = try String.fetchOne(
-            db,
-            sql: "SELECT document FROM summaries WHERE meetingId = ?",
-            arguments: [update.meetingID]
-        ) else {
+        guard let currentDocument = try TextContentAccess.summary(meetingId: update.meetingID, in: db)?.document else {
             throw MeetingAccessError.summaryNotFound
         }
         guard Self.summaryDocumentVersion(currentDocument) == update.expectedDocumentVersion else {
@@ -386,12 +377,14 @@ extension MeetingAccessStore {
 
         let now = Date()
         try db.execute(
-            sql: "UPDATE summaries SET title = ?, document = ? WHERE meetingId = ? AND document = ?",
-            arguments: [update.summaryTitle, update.storedDocument, update.meetingID, currentDocument]
+            sql: "UPDATE summary_bodies SET document = ? WHERE meetingId = ? AND document = ?",
+            arguments: [update.storedDocument, update.meetingID, currentDocument]
         )
         guard db.changesCount == 1 else {
             throw MeetingAccessError.summaryVersionConflict
         }
+
+        try db.execute(sql: "UPDATE summaries SET title = ? WHERE meetingId = ?", arguments: [update.summaryTitle, update.meetingID])
 
         try db.execute(
             sql: "UPDATE meetings SET name = ?, description = ?, updatedAt = ? WHERE id = ? AND vaultId = ?",

@@ -1,5 +1,6 @@
-import CoreAudio
 import Combine
+import CoreAudio
+import DahliaMeetingAccess
 import Dispatch
 import Foundation
 import GRDB
@@ -535,8 +536,8 @@ import os
 
         @Test
         func noMeetingSwitchResetsTheStoreWhileFinalizingRecording() throws {
-            // Every entry point that swaps the current meeting must leave the in-flight recording's
-            // segments alone until finalization completes.
+            /// Every entry point that swaps the current meeting must leave the in-flight recording's
+            /// segments alone until finalization completes.
             func expectStorePreserved(_ switchMeeting: (CaptionViewModel) throws -> Void) throws {
                 let viewModel = summaryReadyViewModel()
                 let originalMeetingId = try #require(viewModel.currentMeetingId)

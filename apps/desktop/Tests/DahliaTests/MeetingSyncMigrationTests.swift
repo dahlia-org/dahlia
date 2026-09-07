@@ -1,4 +1,5 @@
 #if canImport(Testing)
+    import DahliaMeetingAccess
     import Foundation
     import GRDB
     import Testing
@@ -16,6 +17,7 @@
                 )
             }
             #expect(tables == [
+                "sync_content_state",
                 "sync_entity_state",
                 "sync_operations",
                 "sync_transactions",
@@ -371,7 +373,7 @@
                 createdAt: .now,
                 updatedAt: .now
             )
-            let summary = SummaryRecord(
+            let summary = SummaryContent(
                 meetingId: meeting.id,
                 title: "Summary",
                 document: "{}",
@@ -443,7 +445,7 @@
                 try SyncTransactionRecorder.record(
                     vaultId: vault.id,
                     operations: [
-                        SyncInitialSnapshotBuilder.fileOperation(#require(try FileRecord.fetchOne(db, key: screenshot.id))),
+                        SyncInitialSnapshotBuilder.fileOperation(#require(try FileRecord.fetchOne(db, key: screenshot.id)), in: db),
                         SyncInitialSnapshotBuilder.meetingFileOperation(screenshot),
                     ],
                     in: db
@@ -497,7 +499,7 @@
         func recorderQueuesOnlyConfirmedTranscriptSegments() async throws {
             let (database, vault) = try await syncedDatabase()
             let patch = SyncOperationDraft(entity: .transcript, action: .patch, entityId: UUID.v7())
-            let segment = TranscriptSegmentRecord(
+            let segment = TranscriptContent(
                 id: .v7(),
                 meetingId: patch.entityId,
                 sessionId: nil,
@@ -644,14 +646,14 @@
             let previewId = UUID.v7()
             try await database.dbQueue.write { db in
                 try meeting.insert(db)
-                try TranscriptSegmentRecord(
+                try TranscriptContent(
                     id: confirmedId, meetingId: meeting.id, sessionId: UUID.v7(), startTime: .now,
                     endTime: nil, text: "old", translatedText: "translation", isConfirmed: true,
                     audioSource: "mic", speakerLabel: nil, audioFeatureVersion: 1,
                     audioActiveRmsDecibels: -20, audioMedianPitchHertz: 180,
                     audioVoicedFrameRatio: 0.8, audioPitchSpreadHertz: 20
                 ).insert(db)
-                try TranscriptSegmentRecord(
+                try TranscriptContent(
                     id: previewId, meetingId: meeting.id, sessionId: UUID.v7(), startTime: .now,
                     endTime: nil, text: "preview", translatedText: nil, isConfirmed: false,
                     audioSource: "system", speakerLabel: nil, audioFeatureVersion: nil,
@@ -669,7 +671,7 @@
             }
 
             let segments = try await database.dbQueue.read { db in
-                try TranscriptSegmentRecord.filter(Column("meetingId") == meeting.id).fetchAll(db)
+                try TextContentAccess.transcript(meetingId: meeting.id, in: db)
             }
             let confirmed = try #require(segments.first { $0.id == confirmedId })
             #expect(confirmed.text == "canonical")
@@ -697,7 +699,7 @@
             )
             try await database.dbQueue.write { db in
                 try meeting.insert(db)
-                try TranscriptSegmentRecord(
+                try TranscriptContent(
                     id: removedId, meetingId: meeting.id, sessionId: UUID.v7(), startTime: .now,
                     endTime: nil, text: "removed", translatedText: nil, isConfirmed: true,
                     audioSource: "mic", speakerLabel: nil, audioFeatureVersion: nil,
@@ -1625,7 +1627,7 @@
         func transcriptChunksStayBelowTheServerRequestLimit() throws {
             let meetingId = UUID.v7()
             let segments = (0 ..< 70).map { index in
-                SyncTranscriptPatchSegment(TranscriptSegmentRecord(
+                SyncTranscriptPatchSegment(TranscriptContent(
                     id: .v7(),
                     meetingId: meetingId,
                     sessionId: nil,
@@ -1659,7 +1661,7 @@
                 createdAt: .now, updatedAt: .now
             )
             let records = (0 ..< 101).map { index in
-                TranscriptSegmentRecord(
+                TranscriptContent(
                     id: .v7(), meetingId: meeting.id, sessionId: nil,
                     startTime: Date(timeIntervalSince1970: Double(index)), endTime: nil,
                     text: "segment \(index)", translatedText: nil, isConfirmed: true,

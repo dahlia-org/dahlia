@@ -25,6 +25,13 @@ struct FileMetadata: Codable, Equatable, Sendable {
     }
 }
 
+/// Attributes retained independently of the downloadable OCR/caption body.
+struct FileStorageMetadata: Codable, Equatable, Sendable {
+    var source: FileMetadata.Source
+    var width: Int?
+    var height: Int?
+}
+
 struct FileRecord: Codable, FetchableRecord, PersistableRecord, Sendable {
     static let databaseTableName = "files"
 
@@ -36,7 +43,7 @@ struct FileRecord: Codable, FetchableRecord, PersistableRecord, Sendable {
     var contentType: String
     var checksum: String
     var name: String
-    var metadata: FileMetadata
+    var metadata: FileStorageMetadata
     var createdAt: Date
     var updatedAt: Date
     var localReference: String?
@@ -76,11 +83,14 @@ struct FileRecord: Codable, FetchableRecord, PersistableRecord, Sendable {
             contentType: type,
             checksum: checksum,
             name: name,
-            metadata: metadata,
+            metadata: FileStorageMetadata(source: metadata.source, width: metadata.width, height: metadata.height),
             createdAt: createdAt,
             updatedAt: updatedAt,
             localReference: existing?.checksum == checksum ? existing?.localReference : nil,
             remoteReference: source.jsonString()
         ).save(db)
+        if value.contentOmitted != true {
+            try FileTextBodyRecord(fileId: id, ocrText: metadata.ocrText, caption: metadata.caption).save(db)
+        }
     }
 }

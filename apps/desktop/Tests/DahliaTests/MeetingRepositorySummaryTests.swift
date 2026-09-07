@@ -1,3 +1,4 @@
+import DahliaMeetingAccess
 import Foundation
 import GRDB
 @testable import Dahlia
@@ -60,7 +61,7 @@ import GRDB
 
         @Test
         func invalidSummaryDocumentThrows() {
-            let record = SummaryRecord(
+            let record = SummaryContent(
                 meetingId: UUID.v7(),
                 title: "Invalid",
                 document: "not-json",
@@ -77,7 +78,7 @@ import GRDB
             let context = try makeRepositoryContext()
             let oldDocument = try SummaryDocument(title: "Old", sections: []).databaseJSONString()
             try context.repo.upsertSummary(
-                SummaryRecord(
+                SummaryContent(
                     meetingId: context.meeting.id,
                     title: "Old",
                     document: oldDocument,
@@ -120,7 +121,7 @@ import GRDB
             let context = try makeRepositoryContext()
             let document = try SummaryDocument(title: "Summary", sections: []).databaseJSONString()
             try context.repo.upsertSummary(
-                SummaryRecord(
+                SummaryContent(
                     meetingId: context.meeting.id,
                     title: "Summary",
                     document: document,
@@ -286,7 +287,7 @@ import GRDB
                 title: "Summary",
                 sections: [SummarySection(id: .v7(), heading: "Notes", blocks: [.paragraph("No screenshot reference")])]
             )
-            try context.repo.upsertSummary(SummaryRecord(
+            try context.repo.upsertSummary(SummaryContent(
                 meetingId: context.meeting.id,
                 title: document.title,
                 document: document.databaseJSONString(),

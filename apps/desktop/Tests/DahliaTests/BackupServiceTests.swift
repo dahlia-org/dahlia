@@ -1,3 +1,4 @@
+import DahliaMeetingAccess
 import Foundation
 import GRDB
 @testable import Dahlia
@@ -42,7 +43,7 @@ import GRDB
             )
             defer { fixture.removeFiles() }
             let segment = makeAudioSegment(fixture: fixture)
-            let transcript = TranscriptSegmentRecord(
+            let transcript = TranscriptContent(
                 id: .v7(),
                 meetingId: fixture.meeting.id,
                 sessionId: fixture.session.id,
@@ -109,7 +110,7 @@ import GRDB
             let result = try await backup.read { db in
                 let transcriptText = try String.fetchOne(
                     db,
-                    sql: "SELECT text FROM transcript_segments WHERE id = ?",
+                    sql: "SELECT text FROM transcript_segment_bodies WHERE segmentId = ?",
                     arguments: [transcript.id]
                 )
                 let session = try RecordingSessionRecord.fetchOne(db, key: fixture.session.id)

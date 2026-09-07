@@ -1,3 +1,4 @@
+import DahliaMeetingAccess
 import Foundation
 import GRDB
 @testable import Dahlia
@@ -197,7 +198,7 @@ import GRDB
                     sql: "INSERT INTO meeting_tags(meetingId, tagId) VALUES(?, ?)",
                     arguments: [meetingID, db.lastInsertedRowID]
                 )
-                try SummaryRecord(
+                try SummaryContent(
                     meetingId: meetingID,
                     title: "Summary",
                     document: SummaryDocument(
@@ -240,7 +241,7 @@ import GRDB
                     entries: [.init(meetingID: .v7(), grade: .exact)]
                 )]
             )
-            defaults.set(try JSONEncoder().encode(list), forKey: "meetingSearchBenchmarkJudgments")
+            try defaults.set(JSONEncoder().encode(list), forKey: "meetingSearchBenchmarkJudgments")
 
             #expect(AppSettings.meetingSearchJudgmentList(in: defaults) == nil)
 

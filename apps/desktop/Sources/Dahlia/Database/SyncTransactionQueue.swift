@@ -1,4 +1,5 @@
 import CryptoKit
+import DahliaMeetingAccess
 import DahliaRuntimeSupport
 import Foundation
 import GRDB
@@ -60,7 +61,7 @@ struct SyncTranscriptPatchSegment: Sendable {
     let audioSource: String?
     let speakerLabel: String?
 
-    init(_ record: TranscriptSegmentRecord) {
+    init(_ record: TranscriptContent) {
         segmentId = record.id
         startTime = record.startTime
         endTime = record.endTime
@@ -145,6 +146,11 @@ struct SyncTransactionResponse: Decodable, Sendable {
 }
 
 struct SyncCanonicalPayload: Codable, Sendable {
+    var contentOmitted: Bool?
+    var contentPresent: Bool?
+    var contentCount: Int?
+    var hasSummary: Bool?
+    var transcriptRevision: Int?
     let parentProjectId: UUID?
     let projectId: UUID?
     let meetingId: UUID?
@@ -169,6 +175,7 @@ struct SyncCanonicalPayload: Codable, Sendable {
     var metadata: FileMetadata?
 
     enum CodingKeys: String, CodingKey {
+        case contentOmitted, contentPresent, contentCount, hasSummary, transcriptRevision
         case parentProjectId, projectId, meetingId, name, description, projectType, status, duration, recordingStartedAt
         case createdAt, updatedAt, title, document, capturedAt, fileId, sessionId, uri, offset, size, checksum, metadata
         case contentType = "content_type"
@@ -243,6 +250,28 @@ enum SyncTransactionRecorder {
         }
     }
 
+    private static func contentRevision(for operation: SyncOperationDraft, vaultId: UUID, in db: Database) throws -> Int? {
+        let contentEntity = TextContentEntity(rawValue: operation.entity.rawValue)
+        if operation.action != .delete {
+            if let contentEntity {
+                try TextContentStore.registerLocal(entity: contentEntity, id: operation.entityId, vaultId: vaultId, in: db)
+                if operation.action != .create, contentEntity != .transcript {
+                    try TextContentAccess.requireComplete(entity: contentEntity, id: operation.entityId, in: db)
+                }
+            } else if operation.entity == .meeting, operation.action == .create {
+                for entity in [TextContentEntity.summary, .transcript] {
+                    try TextContentStore.registerLocal(entity: entity, id: operation.entityId, vaultId: vaultId, in: db)
+                }
+            }
+        }
+        guard let contentEntity else { return nil }
+        return try Int.fetchOne(
+            db,
+            sql: "SELECT residentRevision FROM sync_content_state WHERE vaultId = ? AND entity = ? AND entityId = ?",
+            arguments: [vaultId, contentEntity.rawValue, operation.entityId]
+        )
+    }
+
     /// Records an immutable domain transaction. A Vault without a confirmed remote target stays local-only.
     @discardableResult
     static func record(
@@ -253,6 +282,7 @@ enum SyncTransactionRecorder {
         screenshotAttachments: [UUID: SyncScreenshotAttachmentReference] = [:],
         allowAfterReset: Bool = false,
         connectionIdOverride: UUID? = nil,
+        reapplyOnCurrentRevision: Bool = false,
         in db: Database
     ) throws -> UUID? {
         let confirmedSegments = transcriptSegments.mapValues { $0.filter(\.isConfirmed) }
@@ -316,6 +346,7 @@ enum SyncTransactionRecorder {
         )
 
         for (position, operation) in operations.enumerated() {
+            let residentRevision = try contentRevision(for: operation, vaultId: vaultId, in: db)
             let attachment = screenshotAttachments[operation.id]
             if let attachment {
                 guard operation.entity == .file, attachment.source.fileId == operation.entityId,
@@ -349,6 +380,8 @@ enum SyncTransactionRecorder {
                 nil
             } else if let precedingExpected {
                 precedingExpected
+            } else if let residentRevision, !reapplyOnCurrentRevision {
+                residentRevision
             } else if let confirmedRevision {
                 confirmedRevision
             } else if operation.entity == .summary || operation.entity == .transcript {
@@ -603,6 +636,24 @@ enum SyncTransactionQueue {
                     """,
                     arguments: [transaction.vaultId, record.entity, record.id, record.revision]
                 )
+                if record.entity == .transcript,
+                   let operation = transaction.operations.first(where: { $0.entity == .transcript && $0.entityId == record.id }) {
+                    // A rebased patch does not supply the remote segments missing from our older complete copy.
+                    // Advance matching queued patches one ACK at a time; pending work still prevents eviction.
+                    try db.execute(
+                        sql: """
+                        UPDATE sync_content_state SET residentRevision = ?, verifiedHash = NULL
+                        WHERE vaultId = ? AND entity = 'transcript' AND entityId = ? AND complete = 1
+                          AND coalesce(residentRevision, 0) = ?
+                        """,
+                        arguments: [record.revision, transaction.vaultId, record.id, operation.baseRevision]
+                    )
+                } else if TextContentEntity(rawValue: record.entity.rawValue) != nil, !hasLaterOperation {
+                    try db.execute(
+                        sql: "UPDATE sync_content_state SET residentRevision = ?, verifiedHash = NULL WHERE vaultId = ? AND entity = ? AND entityId = ? AND complete = 1",
+                        arguments: [record.revision, transaction.vaultId, record.entity, record.id]
+                    )
+                }
                 if record.entity == .vault,
                    transaction.operations.contains(where: { $0.entity == .vault && $0.action == .create }) {
                     try db.execute(
@@ -651,6 +702,7 @@ enum SyncTransactionQueue {
         value: SyncCanonicalPayload,
         in db: Database
     ) throws {
+        if try TextContentStore.observe(entity: entity, id: id, vaultId: vaultId, value: value, in: db) { return }
         switch entity {
         case .vault:
             if let name = value.name {
@@ -684,9 +736,20 @@ enum SyncTransactionQueue {
                 id, vaultId, value.projectId, name, value.description ?? "", status,
                 value.duration, createdAt, updatedAt, value.recordingStartedAt,
             ])
+            if value.contentOmitted == true {
+                for (entity, present, complete) in [
+                    ("summary", value.hasSummary ?? false, value.hasSummary == false),
+                    ("transcript", true, value.transcriptRevision == 0),
+                ] {
+                    try db.execute(sql: """
+                    INSERT INTO sync_content_state(vaultId, entity, entityId, present, complete)
+                    VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING
+                    """, arguments: [vaultId, entity, id, present, complete])
+                }
+            }
         case .summary:
             if let title = value.title, let document = value.document, let createdAt = value.createdAt {
-                try SummaryRecord(meetingId: id, title: title, document: document, createdAt: createdAt).save(db)
+                try SummaryContent(meetingId: id, title: title, document: document, createdAt: createdAt).save(db)
             } else {
                 try db.execute(sql: "DELETE FROM summaries WHERE meetingId = ?", arguments: [id])
             }
@@ -765,6 +828,13 @@ enum SyncTransactionQueue {
                     operation["baseRevision"]
                 } else if action == .create {
                     nil
+                } else if TextContentEntity(rawValue: entity.rawValue) != nil,
+                          try Int.fetchOne(
+                              db,
+                              sql: "SELECT residentRevision FROM sync_content_state WHERE vaultId = ? AND entity = ? AND entityId = ?",
+                              arguments: [vaultId, entity, entityId]
+                          ) != nil {
+                    operation["baseRevision"]
                 } else if let revision = revisions[key] {
                     revision
                 } else if entity == .transcript || entity == .summary {
@@ -894,6 +964,23 @@ enum SyncTransactionQueue {
             ) ?? false
             let rebuildInitialSnapshot = reason == .validation && !hasConfirmedVault
             let sequence: Int64 = blocked["sequence"]
+            if !rebuildInitialSnapshot {
+                let abandoned = try Row.fetchAll(db, sql: """
+                SELECT DISTINCT c.entity, c.entityId FROM sync_content_state c
+                JOIN sync_operations o ON o.entity = c.entity AND o.entityId = c.entityId
+                JOIN sync_transactions t ON t.id = o.transactionId AND t.vaultId = c.vaultId
+                WHERE c.vaultId = ? AND t.sequence >= ?
+                """, arguments: [vaultId, sequence])
+                for row in abandoned {
+                    guard let entity = TextContentEntity(rawValue: row["entity"]) else { throw TextContentError.integrityFailure }
+                    let id: UUID = row["entityId"]
+                    try TextContentStore.releaseBody(entity: entity, id: id, in: db)
+                    try db.execute(
+                        sql: "UPDATE sync_content_state SET present = 1, residentRevision = NULL WHERE vaultId = ? AND entity = ? AND entityId = ?",
+                        arguments: [vaultId, entity.rawValue, id]
+                    )
+                }
+            }
             try discard(vaultId: vaultId, fromSequence: sequence, in: db)
             try db.execute(sql: "DELETE FROM sync_entity_state WHERE vaultId = ?", arguments: [vaultId])
             if !rebuildInitialSnapshot {
@@ -1026,7 +1113,7 @@ enum SyncTransactionQueue {
                     if missing, entity == .file, action != .delete {
                         guard let file = try FileRecord.fetchOne(db, key: entityId), let reference = file.localReference else { continue }
                         let source = try JSONDecoder().decode(ScreenshotRemoteReference.self, from: Data(reference.utf8))
-                        payload = try SyncInitialSnapshotBuilder.fileOperation(file).payloadJSON
+                        payload = try SyncInitialSnapshotBuilder.fileOperation(file, in: db).payloadJSON
                         replacementAttachment = SyncScreenshotAttachmentReference(mimeType: file.contentType, source: source)
                     }
                     let operation = try SyncOperationDraft(
@@ -1066,6 +1153,7 @@ enum SyncTransactionQueue {
                     transcriptSegments: transaction.segments,
                     transcriptDeletions: transaction.deletions,
                     screenshotAttachments: transaction.attachments,
+                    reapplyOnCurrentRevision: true,
                     in: db
                 )
             }

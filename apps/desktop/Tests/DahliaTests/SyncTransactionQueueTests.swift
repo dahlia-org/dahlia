@@ -1,4 +1,5 @@
 #if canImport(Testing)
+    import DahliaMeetingAccess
     import Foundation
     import GRDB
     import Testing
@@ -288,7 +289,15 @@
             _ = try await repository.updateVaultName(id: savedVault.id, name: "Sent name")
             let claimed = try #require(try await SyncTransactionQueue.claim(dbQueue: database.dbQueue))
 
-            try await repository.resolveVaultsForSignOut(connectionID: connection.id, disposition: .moveToLocalAccount)
+            // Simulate a completed detach so the delayed receipt exercises the association guard.
+            try await database.dbQueue.write { db in
+                try SyncTransactionQueue.discard(vaultId: savedVault.id, in: db)
+                try db.execute(sql: "DELETE FROM sync_entity_state WHERE vaultId = ?", arguments: [savedVault.id])
+                try db.execute(
+                    sql: "UPDATE vaults SET accountConnectionId = NULL, syncConfirmedConnectionId = NULL, syncPullCursor = NULL WHERE id = ?",
+                    arguments: [savedVault.id]
+                )
+            }
             _ = try await repository.updateVaultName(id: savedVault.id, name: "Local after sign out")
             try await SyncTransactionQueue.complete(
                 claimed,
@@ -407,7 +416,7 @@
 
             let meetingId = UUID.v7()
             let patch = SyncOperationDraft(entity: .transcript, action: .patch, entityId: meetingId)
-            let segment = SyncTranscriptPatchSegment(TranscriptSegmentRecord(
+            let segment = SyncTranscriptPatchSegment(TranscriptContent(
                 id: .v7(), meetingId: meetingId, sessionId: nil, startTime: .now, endTime: nil,
                 text: "Finalized during reconciliation", translatedText: nil, isConfirmed: true,
                 audioSource: "mic", speakerLabel: nil, audioFeatureVersion: nil,
@@ -519,7 +528,7 @@
             ]}
             """.utf8))
             try await SyncTransactionQueue.complete(sent, response: response, dbQueue: database.dbQueue)
-            #expect(try await database.dbQueue.read { try SummaryRecord.fetchOne($0, key: meeting.id) } == nil)
+            #expect(try await database.dbQueue.read { try SummaryContent.fetchOne($0, key: meeting.id) } == nil)
             let next = try #require(try await SyncTransactionQueue.claim(dbQueue: database.dbQueue))
             #expect(next.operations.first?.entity == .meeting)
             #expect(next.operations.first?.action == .delete)
@@ -738,7 +747,7 @@
             let meeting = MeetingRecord(id: .v7(), vaultId: vault.id, projectId: nil, name: "Meeting", createdAt: .now, updatedAt: .now)
             try await database.dbQueue.write { db in
                 try meeting.insert(db)
-                try SummaryRecord(meetingId: meeting.id, title: "Old summary", document: "{}", createdAt: .now).insert(db)
+                try SummaryContent(meetingId: meeting.id, title: "Old summary", document: "{}", createdAt: .now).insert(db)
             }
             let store = try SyncSnapshotStore()
             let old = try SyncJSON.decoder.decode(
@@ -783,7 +792,7 @@
                 dbQueue: database.dbQueue,
                 expectedMutationGeneration: generation
             ))
-            #expect(try await database.dbQueue.read { db in try SummaryRecord.fetchOne(db, key: meeting.id) } == nil)
+            #expect(try await database.dbQueue.read { db in try SummaryContent.fetchOne(db, key: meeting.id) } == nil)
             #expect(try await database.dbQueue.read { db in try VaultRecord.fetchOne(db, key: vault.id)?.syncPullCursor } == "recreated")
             #expect(try await !SyncTransactionQueue.hasPending(vaultId: vault.id, dbQueue: database.dbQueue))
         }

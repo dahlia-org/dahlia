@@ -1,3 +1,4 @@
+import DahliaMeetingAccess
 import Foundation
 import GRDB
 import os
@@ -273,7 +274,7 @@ private struct TranscriptPersistencePlan {
     var persistedSegmentTranslations: [UUID: String]
     var pendingTranslations: [UUID: String]
     private var insertOrder: [UUID] = []
-    private var inserts: [UUID: TranscriptSegmentRecord] = [:]
+    private var inserts: [UUID: TranscriptContent] = [:]
     private(set) var translationUpdates: [UUID: String] = [:]
 
     init(
@@ -286,7 +287,7 @@ private struct TranscriptPersistencePlan {
         self.pendingTranslations = pendingTranslations
     }
 
-    var records: [TranscriptSegmentRecord] {
+    var records: [TranscriptContent] {
         insertOrder.compactMap { inserts[$0] }
     }
 
@@ -314,7 +315,7 @@ private struct TranscriptPersistencePlan {
         meetingId: UUID,
         recordingSessionId: UUID
     ) {
-        var record = TranscriptSegmentRecord(
+        var record = TranscriptContent(
             from: segment,
             meetingId: meetingId,
             defaultSessionId: recordingSessionId

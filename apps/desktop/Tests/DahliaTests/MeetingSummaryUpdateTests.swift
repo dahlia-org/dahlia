@@ -53,10 +53,10 @@ import GRDB
                 try Row.fetchOne(
                     db,
                     sql: """
-                    SELECT summaries.title AS summaryTitle, summaries.document AS document,
+                    SELECT summaries.title AS summaryTitle, summary_bodies.document AS document,
                            summaries.createdAt AS summaryCreatedAt,
                            meetings.name AS meetingName, meetings.description AS meetingDescription
-                    FROM summaries JOIN meetings ON meetings.id = summaries.meetingId
+                    FROM summaries JOIN summary_bodies ON summary_bodies.meetingId = summaries.meetingId JOIN meetings ON meetings.id = summaries.meetingId
                     WHERE summaries.meetingId = ?
                     """,
                     arguments: [fixture.firstMeetingID]

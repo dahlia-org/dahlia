@@ -1,3 +1,4 @@
+import DahliaMeetingAccess
 import Foundation
 import GRDB
 @testable import Dahlia
@@ -130,7 +131,7 @@ import GRDB
             try await database.dbQueue.write { db in
                 try vault.insert(db)
                 try meeting.insert(db)
-                try SummaryRecord(
+                try SummaryContent(
                     meetingId: meeting.id,
                     title: "Excluded summary title",
                     document: Self.summaryDocument(body: "要約固有語を記録").databaseJSONString(),
@@ -150,7 +151,7 @@ import GRDB
 
             try await database.dbQueue.write { db in
                 try db.execute(
-                    sql: "UPDATE summaries SET document = ? WHERE meetingId = ?",
+                    sql: "UPDATE summary_bodies SET document = ? WHERE meetingId = ?",
                     arguments: [Self.summaryDocument(body: "更新後要約語を記録").databaseJSONString(), meeting.id]
                 )
             }
@@ -195,7 +196,7 @@ import GRDB
             try await database.dbQueue.write { db in
                 try vault.insert(db)
                 try meeting.insert(db)
-                try SummaryRecord(meetingId: meeting.id, title: "Invalid", document: "{}", createdAt: .now).insert(db)
+                try SummaryContent(meetingId: meeting.id, title: "Invalid", document: "{}", createdAt: .now).insert(db)
             }
 
             await database.searchIndexer.drain()
@@ -836,7 +837,7 @@ import GRDB
                 try (
                     ProjectRecord.fetchOne(db, key: project.id),
                     MeetingRecord.fetchOne(db, key: meeting.id),
-                    TranscriptSegmentRecord.fetchOne(db, key: segment.id),
+                    fetchTranscriptContent(id: segment.id, in: db),
                     String.fetchOne(db, sql: "SELECT phase FROM search_index_state WHERE indexKind = 'fts'"),
                     Int.fetchOne(db, sql: "SELECT COUNT(*) FROM search_documents") ?? -1
                 )
@@ -893,7 +894,7 @@ import GRDB
             let migrated = try await queue.read { db in
                 try (
                     MeetingRecord.fetchOne(db, key: meeting.id),
-                    SummaryRecord.fetchOne(db, key: meeting.id),
+                    SummaryContent.fetchOne(db, key: meeting.id),
                     Set(String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('search_documents_fts')")),
                     String.fetchOne(db, sql: "SELECT phase FROM search_index_state WHERE indexKind = 'fts'"),
                     Int.fetchOne(db, sql: "SELECT COUNT(*) FROM search_documents_fts") ?? -1
@@ -927,7 +928,7 @@ import GRDB
             let triggerCount = try database.dbQueue.read { db in
                 try Int.fetchOne(
                     db,
-                    sql: "SELECT COUNT(*) FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'search_queue_summaries_%'"
+                    sql: "SELECT COUNT(*) FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'search_queue_summaries_%' AND tbl_name = 'summaries'"
                 ) ?? 0
             }
             #expect(triggerCount == 3)
@@ -987,9 +988,9 @@ import GRDB
             translatedText: String? = nil,
             offset: TimeInterval,
             isConfirmed: Bool = true
-        ) -> TranscriptSegmentRecord {
+        ) -> TranscriptContent {
             let start = Date(timeIntervalSince1970: 1_800_000_000 + offset)
-            return TranscriptSegmentRecord(
+            return TranscriptContent(
                 id: .v7(),
                 meetingId: meetingID,
                 startTime: start,

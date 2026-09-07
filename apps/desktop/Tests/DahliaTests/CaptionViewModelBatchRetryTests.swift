@@ -61,10 +61,16 @@ import GRDB
                 name: "retained-completed-audio",
                 endedAt: Date(timeIntervalSince1970: 1_776_384_001),
                 duration: 1,
-                batchCompletedAt: Date(timeIntervalSince1970: 1_776_384_002)
+                batchCompletedAt: .now
             )
             defer { batch.removeFiles() }
             try await batch.recordMicrophoneAudio()
+            let retention = BatchTranscriptionCoordinator(
+                dbQueue: batch.database.dbQueue,
+                managedRootURL: batch.managedRootURL,
+                audioRetentionPeriod: .oneDay
+            ) { _ in }
+            await retention.refreshExpiredAudio()
 
             let viewModel = CaptionViewModel()
             viewModel.configureBatchTranscription(

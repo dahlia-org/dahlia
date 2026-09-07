@@ -1,3 +1,4 @@
+import DahliaMeetingAccess
 import Foundation
 import GRDB
 @testable import Dahlia
@@ -77,7 +78,7 @@ import GRDB
 
             try fixture.manager.dbQueue.write { db in
                 try db.execute(
-                    sql: "UPDATE transcript_segments SET text = ? WHERE id = ?",
+                    sql: "INSERT INTO transcript_segment_bodies(segmentId, text) SELECT id, ? FROM transcript_segments WHERE id = ? ON CONFLICT(segmentId) DO UPDATE SET text = excluded.text",
                     arguments: ["same-size replacement", segmentId]
                 )
             }
@@ -227,7 +228,7 @@ import GRDB
                 let microphoneId = UUID()
                 try manager.dbQueue.write { db in
                     try session.insert(db)
-                    try TranscriptSegmentRecord(
+                    try TranscriptContent(
                         id: microphoneId,
                         meetingId: meeting.id,
                         sessionId: session.id,
@@ -239,7 +240,7 @@ import GRDB
                         audioSource: RecordingAudioSource.microphone.audioSource
                     )
                     .insert(db)
-                    try TranscriptSegmentRecord(
+                    try TranscriptContent(
                         id: UUID(),
                         meetingId: meeting.id,
                         sessionId: session.id,
@@ -269,7 +270,7 @@ import GRDB
                 try manager.dbQueue.write { db in
                     try session.insert(db)
                     for _ in 0 ..< count {
-                        try TranscriptSegmentRecord(
+                        try TranscriptContent(
                             id: UUID(),
                             meetingId: meeting.id,
                             sessionId: session.id,
@@ -300,7 +301,7 @@ import GRDB
                 try manager.dbQueue.write { db in
                     try session.insert(db)
                     for (index, id) in ids.enumerated() {
-                        try TranscriptSegmentRecord(
+                        try TranscriptContent(
                             id: id,
                             meetingId: meeting.id,
                             sessionId: session.id,

@@ -1,4 +1,5 @@
 @preconcurrency import AVFoundation
+import DahliaMeetingAccess
 import Foundation
 import GRDB
 @testable import Dahlia
@@ -103,7 +104,7 @@ import GRDB
             failedSession.batchLastError = "Audio is damaged"
             let sessionToPersist = failedSession
             let failedSessionId = failedSession.id
-            let existingSegment = TranscriptSegmentRecord(
+            let existingSegment = TranscriptContent(
                 id: .v7(),
                 meetingId: fixture.meeting.id,
                 sessionId: nil,
@@ -167,7 +168,7 @@ import GRDB
             let result = try await fixture.database.dbQueue.read { db in
                 let session = try RecordingSessionRecord.fetchOne(db, key: failedSessionId)
                 let audioSegment = try RecordingAudioSegmentRecord.fetchOne(db, key: ready.id)
-                let transcriptSegment = try TranscriptSegmentRecord.fetchOne(db, key: existingSegment.id)
+                let transcriptSegment = try fetchTranscriptContent(id: existingSegment.id, in: db)
                 return try (#require(session), #require(audioSegment), #require(transcriptSegment))
             }
             #expect(discarded)

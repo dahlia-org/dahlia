@@ -1,3 +1,5 @@
+import DahliaMeetingAccess
+import DahliaRuntimeSupport
 import Foundation
 import GRDB
 
@@ -7,6 +9,7 @@ extension MeetingRepository {
         let sessions: [RecordingSessionRecord]
         let metrics: MeetingConversationMetricsRecord?
         let sources: [MeetingConversationSourceMetricsRecord]
+        let residentRevision: Int?
     }
 
     private nonisolated static let transcriptPageSize = 500
@@ -20,6 +23,7 @@ extension MeetingRepository {
             guard let meeting = try MeetingRecord.fetchOne(db, key: meetingId) else {
                 throw CocoaError(.fileNoSuchFile)
             }
+            try TextContentAccess.requireComplete(entity: .transcript, id: meetingId, in: db)
             let sessions = try RecordingSessionRecord
                 .filter(Column("meetingId") == meetingId)
                 .order(Column("offsetSeconds").asc, Column("startedAt").asc, Column("id").asc)
@@ -29,11 +33,12 @@ extension MeetingRepository {
                 .filter(Column("meetingId") == meetingId)
                 .order(Column("source").asc)
                 .fetchAll(db)
-            return StoredConversationMetricsInput(
+            return try StoredConversationMetricsInput(
                 meetingDuration: meeting.duration,
                 sessions: sessions,
                 metrics: metrics,
-                sources: sources
+                sources: sources,
+                residentRevision: TextContentAccess.availability(entity: .transcript, id: meetingId, in: db).revision
             )
         }
         let segmentRecords = try loadConversationMetricSegmentRecords(meetingId: meetingId)
@@ -80,6 +85,9 @@ extension MeetingRepository {
             guard try MeetingRecord.fetchOne(db, key: meetingId) != nil else {
                 throw CocoaError(.fileNoSuchFile)
             }
+            try TextContentAccess.requireComplete(entity: .transcript, id: meetingId, in: db)
+            guard try TextContentAccess.availability(entity: .transcript, id: meetingId, in: db).revision == stored.residentRevision
+            else { throw TextContentError.changed }
             try MeetingConversationMetricsRecord(
                 meetingId: meetingId,
                 calculationVersion: MeetingConversationMetrics.calculationVersion,
@@ -111,42 +119,32 @@ extension MeetingRepository {
 
     private nonisolated func loadConversationMetricSegmentRecords(
         meetingId: UUID
-    ) throws -> [TranscriptSegmentRecord] {
-        var records: [TranscriptSegmentRecord] = []
-        var lastStartTime: Date?
-        var lastID: UUID?
+    ) throws -> [TranscriptContent] {
+        var records: [TranscriptContent] = []
+        var position: TextContentAccess.TranscriptPosition?
         while true {
             try Task.checkCancellation()
             let page = try dbQueue.read { db in
-                var request = TranscriptSegmentRecord
-                    .filter(Column("meetingId") == meetingId)
-                    .filter(Column("isConfirmed") == true)
-                    .filter(
-                        Column("audioSource") == RecordingAudioSource.microphone.audioSource
-                            || Column("audioSource") == RecordingAudioSource.system.audioSource
-                    )
-                    .order(Column("startTime").asc, Column("id").asc)
-                    .limit(Self.transcriptPageSize)
-                if let lastStartTime, let lastID {
-                    request = request.filter(
-                        Column("startTime") > lastStartTime
-                            || (Column("startTime") == lastStartTime && Column("id") > lastID)
-                    )
-                }
-                return try request.fetchAll(db)
+                try TextContentAccess.transcript(
+                    meetingId: meetingId,
+                    position: position,
+                    confirmedOnly: true, limit: Self.transcriptPageSize, in: db
+                )
             }
-            records.append(contentsOf: page)
+            records.append(contentsOf: page.filter {
+                $0.audioSource == RecordingAudioSource.microphone.audioSource
+                    || $0.audioSource == RecordingAudioSource.system.audioSource
+            })
             guard page.count == Self.transcriptPageSize,
                   let lastRecord = page.last else {
                 return records
             }
-            lastStartTime = lastRecord.startTime
-            lastID = lastRecord.id
+            position = .init(id: lastRecord.id, startTime: lastRecord.startTime)
         }
     }
 
     private nonisolated static func conversationMetricSegment(
-        _ record: TranscriptSegmentRecord
+        _ record: TranscriptContent
     ) -> MeetingConversationMetricsInput.Segment? {
         guard let audioSource = record.audioSource else { return nil }
         return MeetingConversationMetricsInput.Segment(

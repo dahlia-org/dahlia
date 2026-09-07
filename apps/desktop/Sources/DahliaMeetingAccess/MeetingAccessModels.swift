@@ -14,6 +14,7 @@ public struct MeetingQuery: Sendable, Equatable {
     public var createdBefore: Date?
     public var limit: Int
     public var cursor: String?
+    public var serverCursor: String?
 
     public init(
         query: String? = nil,
@@ -27,7 +28,8 @@ public struct MeetingQuery: Sendable, Equatable {
         createdFrom: Date? = nil,
         createdBefore: Date? = nil,
         limit: Int = 25,
-        cursor: String? = nil
+        cursor: String? = nil,
+        serverCursor: String? = nil
     ) {
         self.query = query
         self.simple = simple
@@ -41,6 +43,7 @@ public struct MeetingQuery: Sendable, Equatable {
         self.createdBefore = createdBefore
         self.limit = limit
         self.cursor = cursor
+        self.serverCursor = serverCursor
     }
 }
 
@@ -48,6 +51,8 @@ public struct MeetingQueryPage: Codable, Sendable, Equatable {
     public let vault: ScopedVault
     public let meetings: [MeetingMetadata]
     public let nextCursor: String?
+    public var searchScope: String?
+    public var server: RemoteTextSearchResults?
 }
 
 public struct ScreenshotTextQuery: Sendable, Equatable {
@@ -57,6 +62,7 @@ public struct ScreenshotTextQuery: Sendable, Equatable {
     public var createdBefore: Date?
     public var limit: Int
     public var cursor: String?
+    public var serverCursor: String?
 
     public init(
         query: String,
@@ -64,7 +70,8 @@ public struct ScreenshotTextQuery: Sendable, Equatable {
         createdFrom: Date? = nil,
         createdBefore: Date? = nil,
         limit: Int = 20,
-        cursor: String? = nil
+        cursor: String? = nil,
+        serverCursor: String? = nil
     ) {
         self.query = query
         self.projectID = projectID
@@ -72,6 +79,7 @@ public struct ScreenshotTextQuery: Sendable, Equatable {
         self.createdBefore = createdBefore
         self.limit = limit
         self.cursor = cursor
+        self.serverCursor = serverCursor
     }
 }
 
@@ -79,6 +87,8 @@ public struct ScreenshotTextQueryPage: Codable, Sendable, Equatable {
     public let vault: ScopedVault
     public let screenshots: [ScreenshotTextMetadata]
     public let nextCursor: String?
+    public var searchScope: String?
+    public var server: RemoteTextSearchResults?
 }
 
 public struct ScreenshotTextMetadata: Codable, Sendable, Equatable {
@@ -120,6 +130,7 @@ public struct MeetingDetail: Codable, Sendable, Equatable {
     public let summaryDocument: JSONValue?
     /// `update_meeting_summary` に渡す compare-and-swap 用の版。
     public let summaryDocumentVersion: String?
+    public var textContent: TextContentAvailability?
 }
 
 public struct SummaryMutationResult: Codable, Sendable, Equatable {
@@ -149,6 +160,7 @@ public struct TranscriptPage: Codable, Sendable, Equatable {
     public let meetingID: UUID
     public let segments: [TranscriptEntry]
     public let nextCursor: String?
+    public var textContent: TextContentAvailability?
 }
 
 public struct TranscriptEntry: Codable, Sendable, Equatable {

@@ -97,12 +97,13 @@ runtime resource を所有しない。
 録音音声は writer queue への受理や partial CAF への書き込みではまだ durable ではなく、検証済みの immutable CAF と
 対応する SQLite state が `ready` になった時点で再読込可能な正本となる。
 
-画像の保持境界はアカウントで分ける。Local Account は原本だけを永続保存し、Server Account は文字起こし・サマリー・OCR・画像 metadata をローカルに保持する。
+画像の保持境界はアカウントで分ける。Local Account は原本だけを永続保存し、Server Account は一覧用 metadata を常時保持し、文字起こし原文・サマリー・OCR・caption の本文を部分保持する。
+文字起こし原文・要約・画像解析本文は専用の本文テーブルへ保存し、metadata・翻訳・音声特徴量・端末固有参照から分離する。アプリと MCP の完全な本文読取は共通 `TextContentAccess` が同一 DB snapshot 内で検査・取得する。
 Server Account の画像本体は未送信分も含めて Application Support の共通ファイルストアへ保存し、SQLite には画像と送信 operation の独立したファイル参照を保持する。
 ファイルを検証・確定してから画像 metadata と operation を同じ SQLite transaction で保存する。未送信・再試行・競合中の原本は容量上限の対象外とし、同じ画像の Server 確定後にだけ削除可能とする。
 表示・解析・書き出しは `ScreenshotContentProvider` が 移行待ちの旧 BLOB、共通ファイル、認証付き取得を解決する。
 一覧用 `thumb_360`（長辺最大360px）と内容確認・AI入力用 `thumb_1280`（長辺最大1280px）は Node Server が要求時に生成し Volume に永続化する。生成非対応の環境は variant を広告しない。Web の画像リンクは1280px版を開き、原寸リンクも提供する。Desktop の要約・OCR・キャプション・チャット・MCP通常画像入力は共通の1280px上限を使い、原寸指定は維持する。
-MCP の cache miss は画像専用 broker でアプリに取得を依頼する。未送信原本は解放しない。Local Account への移動は必要な原本をファイルで揃えてから、所属変更とファイル参照を同じ transaction で確定する。バックアップの新規作成は Local Account の保管庫に限定する。
+MCP の本文・画像の cache miss は同梱 helper 用 broker でアプリの共通 provider に取得を依頼する。未送信原本は解放しない。Local Account への移動は metadata 同期と全本文取得を完了し、必要な原本をファイルで揃えてから、所属変更とファイル参照を同じ transaction で確定する。バックアップの新規作成は Local Account の保管庫に限定する。
 `files` は Vault 所有の原本と metadata、`meeting_files` は会議への独立した紐付けを保持する。原本 URI は Volume の絶対パスで、Local Account と未確定の原本は NULL とする。端末の保存先は FileStore/index.sqlite と local/files/{fileId}/original または server/{accountConnectionId}/files/{fileId}/original。
 詳細は [同期 ADR](docs/adr/shared/sync.md) を参照する。
 
@@ -228,7 +229,7 @@ Project は階層参照と meeting 絞り込みのためだけに同期し、Ser
 - [Vault 共有と管理者](docs/adr/server/sharing-and-administration.md): shared read、Organization／Team 共有、Server 管理者権限。
 - [Server Hybrid 検索](docs/adr/server/search.md#hybrid-検索): 同期済み content の検索 projection。
 
-Desktop SQLite は offline working copy であり、単方向の転送元ではない。SSE はデータ本体を運ばない。Server 側採用では未送信変更を破棄して cursor をリセットし、Server の revision 一覧を取得するまで revision 未確定の Vault 同期行を保持して送信を停止する。この間のローカル変更と確定文字起こしはキューへ保存し、取得した revision で未送信操作を順序どおり補正してから送信を再開する。revision 取得と canonical 本体の適用は区別し、cursor が未設定なら同じ revision でも本体を再取得・適用する。これを初期送信の中断と混同して create を再生成してはならない。local mutation は record cache と operation snapshot を同じ SQLite transaction へ明示的に書き、remote applier は recorder を呼ばない。
+Desktop SQLite は offline working copy であり、単方向の転送元ではない。Server Account の本文は `sync_content_state` で完全性・保持 revision・検証済み hash・byte 数・利用日時を管理する。metadata-only snapshot / delta は本文取得を待たず進み、`MeetingContentProvider` が SQLite を先に読み、必要時だけ指定 revision の全ページを一時領域へ取得して manifest と照合する。全 Server Account の本文予算は128 MiB、検証済みで再取得できる未使用本文だけを LRU で80%まで解放する。Local Account・queue・復旧・録音・利用中本文は保全し、翻訳・音声特徴量・summary export の参照は残す。詳細は [本文の部分保持](docs/adr/shared/sync.md#テキスト本文の部分保持2026-09-07)。SSE はデータ本体を運ばない。Server 側採用では未送信変更を破棄して cursor をリセットし、Server の revision 一覧を取得するまで revision 未確定の Vault 同期行を保持して送信を停止する。この間のローカル変更と確定文字起こしはキューへ保存し、取得した revision で未送信操作を順序どおり補正してから送信を再開する。revision 取得と canonical 本体の適用は区別し、cursor が未設定なら同じ revision でも本体を再取得・適用する。これを初期送信の中断と混同して create を再生成してはならない。local mutation は record cache と operation snapshot を同じ SQLite transaction へ明示的に書き、remote applier は recorder を呼ばない。
 
 ## Workload Classes
 
@@ -300,9 +301,9 @@ recording-critical lane から捨てる根拠にはしない。
 画面や選択対象が変わった場合は不要な処理をキャンセルし、identity または generation を確認して古い完了結果を捨てる。
 UI projection を破棄しても、durable source of truth は変更しない。
 
-全文検索は `search_documents` registry と contentless `search_documents_fts` を再構築可能な projection として扱う。meeting metadata、構造化 summary の本文、project、全 screenshot の検出文字と画像説明を索引し、summary の metadata・内部識別子と文字起こし・翻訳文は対象にしない。ミーティング自由文検索はアプリと MCP のどちらも title、description、summary、calendar、tags を対象とし、project path は Project 専用検索と明示的な Project 絞り込みだけに使う。画像解析の正本は `files.metadata.ocr_text` と `files.metadata.caption` に保存し、meeting_files insert trigger は coalesce 可能な `screenshotAnalysis` job の upsert だけを行う。utility-priority の `SearchIndexer` actor は Codex app-server の `gpt-5.6-luna`（Dahlia Account は Gateway の `gpt-5-6-luna`）、reasoning effort `low` に1枚ずつ最大8並行で送り、正本保存、Lindera tokenization、FTS 更新を一つの複合 job として処理する。指定モデルへフォールバックせず、Codex の未設定、未認証、モデル利用不可では並行処理を停止し、試行回数を消費せず job を queue に残す。Indexer は録音開始前に停止して録音終了後に再開し、録音中は画像解析を含む projection work を実行しない。screenshot は meeting 検索結果へ統合せず、同じ検索画面と MCP の独立した結果として返す。要約生成には従来どおり画像を渡し、抽出結果を代替入力にしない。初期構築・再構築中は不完全な結果を返さず検索 unavailable とし、索引の遅延や failure は録音、確定文字起こし、正本 metadata と summary の commit を待たせない。
+全文検索は `search_documents` registry と contentless `search_documents_fts` を再構築可能な projection として扱う。meeting metadata、構造化 summary の本文、project、全 screenshot の検出文字と画像説明を索引し、summary の metadata・内部識別子と文字起こし・翻訳文は対象にしない。ミーティング自由文検索はアプリと MCP のどちらも title、description、summary、calendar、tags を対象とし、project path は Project 専用検索と明示的な Project 絞り込みだけに使う。画像解析の正本は `file_text_bodies.ocrText` と `file_text_bodies.caption` に保存し、meeting_files insert trigger は coalesce 可能な `screenshotAnalysis` job の upsert だけを行う。utility-priority の `SearchIndexer` actor は Codex app-server の `gpt-5.6-luna`（Dahlia Account は Gateway の `gpt-5-6-luna`）、reasoning effort `low` に1枚ずつ最大8並行で送り、正本保存、Lindera tokenization、FTS 更新を一つの複合 job として処理する。指定モデルへフォールバックせず、Codex の未設定、未認証、モデル利用不可では並行処理を停止し、試行回数を消費せず job を queue に残す。Indexer は録音開始前に停止して録音終了後に再開し、録音中は画像解析を含む projection work を実行しない。screenshot は meeting 検索結果へ統合せず、同じ検索画面と MCP の独立した結果として返す。要約生成には従来どおり画像を渡し、抽出結果を代替入力にしない。初期構築・再構築中は不完全な結果を返さず検索 unavailable とし、索引の遅延や failure は録音、確定文字起こし、正本 metadata と summary の commit を待たせない。
 
-Desktop 検索は旧 Advanced 相当の全文検索に統一し、Simple／Neural とモード切替を廃止した。Gemma 推論、モデル取得、vector worker は実行しない。追加 migration で vector 検索を無効化し、専用 trigger を撤去する。互換性のため旧 schema、既存 vector と job は保持する。起動時に現在のアプリプロファイルの `Models/EmbeddingGemma` だけをバックグラウンド削除し、失敗時は次回起動で再試行する。MCP と Server の検索契約は変更しない。
+Desktop 検索は旧 Advanced 相当の全文検索に統一し、Simple／Neural とモード切替を廃止した。Gemma 推論、モデル取得、vector worker は実行しない。追加 migration で vector 検索を無効化し、専用 trigger を撤去する。互換性のため旧 schema、既存 vector と job は保持する。起動時に現在のアプリプロファイルの `Models/EmbeddingGemma` だけをバックグラウンド削除し、失敗時は次回起動で再試行する。Server Account の未保持本文は別の Server FTS ページングで補い、Desktop と MCP はローカル範囲・Server の探索中／未完了を明示する。
 
 ミーティングサイドバーは SQLite を正本とし、最新 50 件から keyset pagination で段階表示する。表示用 projection は
 最大 500 件に制限し、それ以前は全履歴の FTS projection から検索可能にする。文字列検索は索引 revision 付き relevance

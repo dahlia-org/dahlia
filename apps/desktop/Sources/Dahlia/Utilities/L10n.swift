@@ -5,6 +5,19 @@ import Foundation
 
 /// ローカライズ文字列への型安全なアクセスを提供する。
 enum L10n { // swiftlint:disable:this type_body_length
+    static var textContentSearchMore: String { String(localized: "text.content.searchMore", bundle: bundle) }
+    static var textContentServerMatch: String { String(localized: "text.content.serverMatch", bundle: bundle) }
+    static var textContentMissing: String { String(localized: "text.content.missing", bundle: bundle) }
+    static var textContentLoading: String { String(localized: "text.content.loading", bundle: bundle) }
+    static var textContentFailed: String { String(localized: "text.content.failed", bundle: bundle) }
+    static var textContentReady: String { String(localized: "text.content.ready", bundle: bundle) }
+    static var textContentStale: String { String(localized: "text.content.stale", bundle: bundle) }
+    static var textContentEmpty: String { String(localized: "text.content.empty", bundle: bundle) }
+    static var textContentDeleted: String { String(localized: "text.content.deleted", bundle: bundle) }
+    static var textContentSearchLocal: String { String(localized: "text.content.searchLocal", bundle: bundle) }
+    static var textContentSearchLoading: String { String(localized: "text.content.searchLoading", bundle: bundle) }
+    static var textContentSearchComplete: String { String(localized: "text.content.searchComplete", bundle: bundle) }
+    static var textContentSearchFailed: String { String(localized: "text.content.searchFailed", bundle: bundle) }
     static var screenshotCacheLimit: String { String(localized: "screenshot.cache.limit", bundle: bundle) }
     static var screenshotCacheDescription: String { String(localized: "screenshot.cache.description", bundle: bundle) }
     /// キャッシュ済みの Bundle と、その生成元の言語 rawValue。

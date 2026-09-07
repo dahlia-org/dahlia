@@ -1664,3 +1664,18 @@
 "screenshot.cache.description" = "Synced images are downloaded as needed. Older cached images are removed when the limit is exceeded. Local account images, unsent images, and backups are excluded.";
 
 "Only vaults in the Local Account can be backed up." = "Only vaults in the Local Account can be backed up.";
+
+// Server text availability and search coverage
+"text.content.missing" = "Text not downloaded";
+"text.content.loading" = "Downloading text";
+"text.content.failed" = "Text unavailable. Check your connection and retry.";
+"text.content.ready" = "Text saved on this device";
+"text.content.stale" = "Showing an older saved version";
+"text.content.empty" = "No text";
+"text.content.deleted" = "Text deleted";
+"text.content.searchLocal" = "Searching metadata and saved text on this device, including tags and calendar";
+"text.content.searchLoading" = "Showing device results. Searching the whole server…";
+"text.content.searchComplete" = "Searched the whole server plus device tags, calendar and unsent changes";
+"text.content.searchFailed" = "Server search is incomplete. Showing device results only.";
+"text.content.searchMore" = "More server matches are available. Load more to continue searching.";
+"text.content.serverMatch" = "Server";

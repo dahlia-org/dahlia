@@ -1,5 +1,6 @@
 #if canImport(Testing)
     // swiftlint:disable file_length
+    import DahliaMeetingAccess
     import Foundation
     import GRDB
     import Testing
@@ -60,7 +61,16 @@
             let first = try #require(store.segments.first)
             let deleted = store.segments[5].id
             try await fixture.database.dbQueue.write { db in
-                try db.execute(sql: "UPDATE transcript_segments SET text = 'Remote edit' WHERE id = ?", arguments: [first.id])
+                try db.execute(
+                    sql: """
+                    INSERT INTO transcript_segment_bodies(segmentId, text)
+                    SELECT id, 'Remote edit'
+                    FROM transcript_segments
+                    WHERE id = ?
+                    ON CONFLICT(segmentId) DO UPDATE SET text = excluded.text
+                    """,
+                    arguments: [first.id]
+                )
                 try db.execute(sql: "DELETE FROM transcript_segments WHERE id = ?", arguments: [deleted])
             }
             #expect(await store.reloadVisible())
@@ -87,7 +97,7 @@
                     createdAt: timestamp,
                     updatedAt: timestamp
                 ).insert(db)
-                try TranscriptSegmentRecord(
+                try TranscriptContent(
                     id: unconfirmedId,
                     meetingId: fixture.meetingId,
                     startTime: timestamp,
@@ -96,7 +106,7 @@
                     isConfirmed: false,
                     audioSource: "mic"
                 ).insert(db)
-                try TranscriptSegmentRecord(
+                try TranscriptContent(
                     id: .v7(),
                     meetingId: otherMeetingId,
                     startTime: timestamp,
@@ -351,7 +361,7 @@
             )
             store.addSegment(deferred)
             try await fixture.database.dbQueue.write { db in
-                try TranscriptSegmentRecord(
+                try TranscriptContent(
                     id: deferred.id,
                     meetingId: fixture.meetingId,
                     startTime: deferred.startTime,
@@ -556,7 +566,7 @@
                 updatedAt: timestamp
             ).insert(db)
             for (index, id) in orderedIds.enumerated() {
-                try TranscriptSegmentRecord(
+                try TranscriptContent(
                     id: id,
                     meetingId: meetingId,
                     startTime: timestamp,

@@ -1,3 +1,4 @@
+import DahliaMeetingAccess
 import Foundation
 import GRDB
 
@@ -16,7 +17,7 @@ import GRDB
             liveStore.start(sessionId: sessionID)
             let plan = TranscriptionSessionPlan(
                 finalMode: .realtime,
-                liveSubtitlesEnabled: true,
+                liveSubtitlesEnabled: true
             )
 
             TranscriptionEventRouter.routeTranscriptProjection(
@@ -43,7 +44,7 @@ import GRDB
             liveStore.start(sessionId: sessionID)
             let plan = TranscriptionSessionPlan(
                 finalMode: .batch,
-                liveSubtitlesEnabled: true,
+                liveSubtitlesEnabled: true
             )
 
             TranscriptionEventRouter.routeTranscriptProjection(
@@ -70,7 +71,7 @@ import GRDB
             liveStore.start(sessionId: sessionID)
             let plan = TranscriptionSessionPlan(
                 finalMode: .batch,
-                liveSubtitlesEnabled: false,
+                liveSubtitlesEnabled: false
             )
 
             TranscriptionEventRouter.routeTranscriptProjection(
@@ -95,7 +96,7 @@ import GRDB
             liveStore.start(sessionId: sessionID)
             let plan = TranscriptionSessionPlan(
                 finalMode: .realtime,
-                liveSubtitlesEnabled: false,
+                liveSubtitlesEnabled: false
             )
 
             for index in 0 ... TranscriptStore.maximumConfirmedSegmentCount {
@@ -142,7 +143,7 @@ import GRDB
             let segment = makeSegment(sessionID: persistenceService.recordingSessionId)
             let plan = TranscriptionSessionPlan(
                 finalMode: .realtime,
-                liveSubtitlesEnabled: false,
+                liveSubtitlesEnabled: false
             )
             let pipeline = TranscriptionEventPipeline(
                 uiSink: { events in
@@ -172,7 +173,7 @@ import GRDB
             try await pipeline.finish()
 
             let persistedTranslation = try await database.dbQueue.read { db in
-                try TranscriptSegmentRecord.fetchOne(db, key: segment.id)?.translatedText
+                try fetchTranscriptContent(id: segment.id, in: db)?.translatedText
             }
             #expect(persistedTranslation == "Translated")
             #expect(transcriptStore.segments.first?.translatedText == "Translated")
@@ -187,7 +188,7 @@ import GRDB
             let transcriptStore = TranscriptStore()
             let plan = TranscriptionSessionPlan(
                 finalMode: .realtime,
-                liveSubtitlesEnabled: false,
+                liveSubtitlesEnabled: false
             )
             let preview = TranscriptSegment(
                 id: segmentID,

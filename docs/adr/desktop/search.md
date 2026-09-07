@@ -53,3 +53,12 @@ screenshot は独立結果と `query_screenshots` で返し、meeting に集約�
 enqueue と projection 更新で revision を同 transaction で進め、query cursor を無効化する。初期 / 全再構築中は unavailable とし、勝手に LIKE へ縮退しない。正本は保持し、snippet は正本から再生成する。contentless column の直接 SELECT は本文取得ではない。FTS secure-delete と索引削除時の SQLite secure_delete を使い、contentless-delete に SQLite 3.43以上を要求する。
 
 固定 evidence class、80文字の vector 足切り、Project による meeting 補正は廃止した。Project を除いた benchmark は旧正解データを再利用せず別 key で生成する。保存済み projectPath 重みは無視し、残りを保つ。schema / model / 索引条件の変更は意味を変えずに履歴へ残す。
+
+
+## Server Account の部分保持検索（2026-09）
+
+ローカル FTS の結果を先に表示し、Server の meeting / screenshot FTS ページを別に取得して ID で重複を除いて追加する。Server の対象は meeting 名・説明・summary、OCR・captionのままとし、transcript は追加しない。端末固有の tag / calendar と未送信変更はローカル検索に残る。既存 Project・日時・tag 等の filter は Server ページに適用してから返し、全件が除外されても後続ページの探索を続ける。
+
+Server 検索は前後の空白を除いた500 UTF-16 code unit までとし、UI と MCP が通る共通 provider で通信前に検査する。Server の JavaScript `String.length` と同じ数え方を使い、絵文字なども同じ境界で受理・拒否する。
+
+オフラインは「この端末に保持した本文」が対象で、Server の取得中、続きあり、失敗、探索完了を分ける。失敗時もローカル結果を保持し、再試行は新しい Server cursor から始める。Server snippet は軽量な結果にだけ使い、本文として DB に保存しない。本文解放は対応 FTS / 旧 vector を消し、要約がなくても metadata の索引を維持する。未保持 OCR / caption を未解析とみなして画像を再取得・再生成しない。

@@ -1,3 +1,4 @@
+import DahliaRuntimeSupport
 import Foundation
 import GRDB
 
@@ -20,6 +21,17 @@ struct MeetingSyncSnapshot: Equatable, Sendable {
     let connectionId: UUID?
     let state: MeetingSyncState
     let revisions: [Revision]
+    var content: [Content] = []
+
+    struct Content: FetchableRecord, Decodable, Equatable, Sendable {
+        let entity: String
+        let entityId: UUID
+        let residentRevision: Int?
+        let complete: Bool
+        let present: Bool
+        let contentCount: Int?
+        let fetchError: String?
+    }
 }
 
 extension MeetingRepository {
@@ -63,6 +75,12 @@ extension MeetingRepository {
             """,
             arguments: [vault.id, meetingId, meetingId, meetingId]
         )
-        return MeetingSyncSnapshot(connectionId: connectionId, state: state, revisions: revisions)
+        let content = try MeetingSyncSnapshot.Content.fetchAll(db, sql: """
+        SELECT entity, entityId, residentRevision, complete, present, contentCount, fetchError FROM sync_content_state
+        WHERE vaultId = ? AND (entityId = ? AND entity IN ('summary', 'transcript')
+          OR entity = 'file' AND entityId IN (SELECT fileId FROM meeting_files WHERE meetingId = ?))
+        ORDER BY entity, entityId
+        """, arguments: [vault.id, meetingId, meetingId])
+        return MeetingSyncSnapshot(connectionId: connectionId, state: state, revisions: revisions, content: content)
     }
 }
