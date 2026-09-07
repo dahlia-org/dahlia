@@ -26,7 +26,9 @@ extension MeetingContentProvider {
         limit: Int = 200,
         dbQueue: DatabaseQueue
     ) async throws -> TextSearchPage {
-        guard !query.isEmpty, query.count <= 1024, (1 ... 200).contains(limit) else { throw TextContentError.unavailable }
+        let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Server's JavaScript String.length counts UTF-16 code units.
+        guard !query.isEmpty, query.utf16.count <= 500, (1 ... 200).contains(limit) else { throw TextContentError.unavailable }
         guard let source = try await dbQueue.read({ try SearchSource.read(vaultId: vaultId, in: $0) }),
               var url = URLComponents(string: source.origin) else { throw TextContentError.unavailable }
         url.path = "/api/v1/vaults/\(vaultId.uuidString.lowercased())/search"

@@ -602,6 +602,43 @@
         }
 
         @Test
+        func serverSearchValidatesTheSameLengthForUIAndBroker() async throws {
+            let fixture = try textFixture()
+            let queries = Mutex<[String]>([])
+            let provider = provider(fixture) { request in
+                let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!.queryItems!
+                    .first { $0.name == "q" }!.value!
+                queries.withLock { $0.append(query) }
+                return (200, [:], Data(#"{"version":1,"scope":"server","items":[],"nextCursor":null}"#.utf8))
+            }
+            defer { ImageURLProtocol.remove(origin: fixture.origin) }
+            for (query, accepted) in [
+                (String(repeating: "a", count: 500), true),
+                (String(repeating: "a", count: 501), false),
+                (String(repeating: "🙂", count: 250), true),
+                (String(repeating: "🙂", count: 251), false),
+                ("  " + String(repeating: "a", count: 500) + "\n", true),
+                (" \n", false),
+            ] {
+                queries.withLock { $0.removeAll() }
+                let request = TextBrokerRequest(operation: .search, query: query, kind: .screenshot)
+                if accepted {
+                    _ = try await provider.search(vaultId: fixture.vaultId, query: query, kind: .meeting, dbQueue: fixture.queue)
+                    _ = try await provider.resolve(request, vaultId: fixture.vaultId, dbQueue: fixture.queue)
+                    #expect(queries.withLock { $0 } == Array(repeating: query.trimmingCharacters(in: .whitespacesAndNewlines), count: 2))
+                } else {
+                    await #expect(throws: TextContentError.unavailable) {
+                        try await provider.search(vaultId: fixture.vaultId, query: query, kind: .meeting, dbQueue: fixture.queue)
+                    }
+                    await #expect(throws: TextContentError.unavailable) {
+                        try await provider.resolve(request, vaultId: fixture.vaultId, dbQueue: fixture.queue)
+                    }
+                    #expect(queries.withLock { $0.isEmpty })
+                }
+            }
+        }
+
+        @Test
         func serverSearchContinuesAfterFilteredPageWithoutHydratingText() async throws {
             let fixture = try textFixture()
             let includedId = UUID.v7()

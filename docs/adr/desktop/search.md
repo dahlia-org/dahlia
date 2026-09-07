@@ -59,4 +59,6 @@ enqueue と projection 更新で revision を同 transaction で進め、query c
 
 ローカル FTS の結果を先に表示し、Server の meeting / screenshot FTS ページを別に取得して ID で重複を除いて追加する。Server の対象は meeting 名・説明・summary、OCR・captionのままとし、transcript は追加しない。端末固有の tag / calendar と未送信変更はローカル検索に残る。既存 Project・日時・tag 等の filter は Server ページに適用してから返し、全件が除外されても後続ページの探索を続ける。
 
+Server 検索は前後の空白を除いた500 UTF-16 code unit までとし、UI と MCP が通る共通 provider で通信前に検査する。Server の JavaScript `String.length` と同じ数え方を使い、絵文字なども同じ境界で受理・拒否する。
+
 オフラインは「この端末に保持した本文」が対象で、Server の取得中、続きあり、失敗、探索完了を分ける。失敗時もローカル結果を保持し、再試行は新しい Server cursor から始める。Server snippet は軽量な結果にだけ使い、本文として DB に保存しない。本文解放は対応 FTS / 旧 vector を消し、要約がなくても metadata の索引を維持する。未保持 OCR / caption を未解析とみなして画像を再取得・再生成しない。
