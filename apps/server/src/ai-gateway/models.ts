@@ -29,6 +29,10 @@ const modelDisplayNames = new Map([
   ["kimi-k3", "Kimi K3"],
   ["deepseek-v4-pro", "DeepSeek V4 Pro"],
   ["deepseek-v4-pro-0813", "DeepSeek V4 Pro"],
+  ["glm-5-3-flash", "GLM 5.3 Flash"],
+  ["glm-5-3", "GLM 5.3"],
+  ["gemini-3-8-flash", "Gemini 3.8 Flash"],
+  ["gemini-3-7-flash", "Gemini 3.7 Flash"],
 ]);
 const ossReasoningLevels = [
   { effort: "none", description: "Fast responses without reasoning" },
