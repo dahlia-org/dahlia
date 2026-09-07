@@ -357,7 +357,7 @@ actor SyncWorker {
         }
         if transaction.operations.allSatisfy({ $0.entity == .meetingEvent }) {
             let capabilities = try await sendData(
-                request(origin: target, path: "api/v1/sync-content", method: "GET"),
+                request(origin: target, path: "api/v1/capabilities", method: "GET"),
                 connectionId: transaction.connectionId
             )
             if try (JSONSerialization.jsonObject(with: capabilities) as? [String: Int])?["meetingEvents"] != 1 {
@@ -637,7 +637,7 @@ actor SyncWorker {
     private func pullRemoteChanges(for target: SyncTarget) async throws {
         do {
             let data = try await sendData(
-                request(origin: target.origin, path: "api/v1/sync-content", method: "GET"),
+                request(origin: target.origin, path: "api/v1/capabilities", method: "GET"),
                 connectionId: target.connectionId
             )
             let capabilities = try JSONSerialization.jsonObject(with: data) as? [String: Int]
@@ -1288,7 +1288,7 @@ actor SyncWorker {
         } catch let error as SyncHTTPError {
             let path = unsignedRequest.url?.path ?? ""
             if error.status == 404, error.code != "vault_not_found",
-               path.hasSuffix("/snapshot") || path.hasSuffix("/transactions/resolve") || path.hasSuffix("/sync-content") {
+               path.hasSuffix("/snapshot") || path.hasSuffix("/transactions/resolve") || path.hasSuffix("/capabilities") {
                 throw SyncHTTPError(status: 426, body: Data("{\"error\":\"sync_upgrade_required\"}".utf8))
             }
             throw error

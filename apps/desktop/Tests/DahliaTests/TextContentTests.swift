@@ -1125,7 +1125,7 @@
             ])
             let provider = provider(fixture) { request in
                 let path = request.url!.path
-                if path.hasSuffix("/sync-content") { return (200, [:], Data("{\"version\":1}".utf8)) }
+                if path.hasSuffix("/capabilities") { return (200, [:], Data("{\"version\":1}".utf8)) }
                 if path.hasSuffix("/changes") {
                     let count = changeRequests.withLock { $0 += 1
                         return $0
@@ -1241,7 +1241,7 @@
             let calls = Mutex([String]())
             let provider = provider(fixture) { request in
                 calls.withLock { $0.append(request.url!.path) }
-                if request.url!.path.hasSuffix("/sync-content") { return (200, [:], Data("{\"version\":1}".utf8)) }
+                if request.url!.path.hasSuffix("/capabilities") { return (200, [:], Data("{\"version\":1}".utf8)) }
                 return (200, [:], payload)
             }
             defer { ImageURLProtocol.remove(origin: fixture.origin) }

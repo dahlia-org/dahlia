@@ -423,7 +423,7 @@ export function createApp(dependencies: AppDependencies) {
       context.req.query("content"),
     ));
   });
-  app.get("/api/v1/sync-content", async (context) => {
+  app.get("/api/v1/capabilities", async (context) => {
     await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
     if (!await store.sync.isAvailable()) return context.json({ error: "sync_unavailable" }, 503);
     return context.json({ version: 1, meetingEvents: 1 });

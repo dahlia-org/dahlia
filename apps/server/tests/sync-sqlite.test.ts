@@ -49,7 +49,10 @@ describe("SQLite canonical sync", () => {
     const event = (kind: string, sessionId: string, occurredAt: Date) => ({ id: freshId(), entity: "meeting_event" as const, action: "create" as const, entityId: freshId(), baseRevision: null, data: { meetingId, kind, sessionId, occurredAt } });
     const write = (operation: SyncTransaction["operations"][number]) => send("transactions", transaction(freshId(), [operation]));
     const detail = async () => (await send(`vaults/${vaultId}/meetings/${meetingId}`)).json();
-    expect(await (await send("sync-content")).json()).toMatchObject({ meetingEvents: 1 });
+    const capabilities = await send("capabilities");
+    expect(capabilities.status).toBe(200);
+    expect(await capabilities.json()).toEqual({ version: 1, meetingEvents: 1 });
+    expect((await send("sync-content")).status).toBe(404);
     const session = freshId();
     expect((await write(event("recording_ended", session, new Date(now.getTime() + 60000)))).status).toBe(200);
     expect((await write(event("recording_started", session, now))).status).toBe(200);
