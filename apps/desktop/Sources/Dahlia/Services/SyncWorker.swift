@@ -928,7 +928,7 @@ actor SyncWorker {
                 continue
             }
             let data = try await sendData(
-                request(origin: target.origin, path: "api/v1/files/\(fileId.lowercase)?content=metadata-v1", method: "GET"),
+                request(origin: target.origin, path: "api/v1/files/\(fileId.lowercase)/metadata?content=metadata-v1", method: "GET"),
                 connectionId: target.connectionId
             )
             struct Header: Decodable { let id: UUID

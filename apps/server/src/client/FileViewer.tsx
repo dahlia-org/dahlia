@@ -16,14 +16,14 @@ function ViewerIcon({ path }: { path: string }) {
 }
 
 export function FileViewer({ fileId, separateTab = false, capturedAt, onClose }: { fileId: string; separateTab?: boolean; capturedAt?: string | null; onClose?: () => void }) {
-  const query = useLiveJSON<FileInfo>(`/api/v1/files/${fileId}`);
+  const query = useLiveJSON<FileInfo>(`/api/v1/files/${fileId}/metadata`);
   const file = query.data;
   const [failed, setFailed] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
   const [zoom, setZoom] = useState(100);
   const [copyStatus, setCopyStatus] = useState("");
   const previewImage = useRef<HTMLImageElement>(null);
-  const content = `/api/v1/files/${fileId}/content`;
+  const content = `/api/v1/files/${fileId}`;
   useEffect(() => setFailed(false), [file]);
   useEffect(() => { setZoom(100); setInfoOpen(false); setCopyStatus(""); }, [fileId]);
 

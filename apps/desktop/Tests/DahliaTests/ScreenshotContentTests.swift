@@ -278,6 +278,9 @@
             let variants = Mutex<[String]>([])
             let provider = try makeProvider(fixture: fixture, cache: ScreenshotFileStore(directory: root)) { request in
                 let variant = request.url!.path.hasSuffix("variants/thumb_480") ? "thumb_480" : "original"
+                if variant == "original" {
+                    #expect(request.url!.path == "/api/v1/files/\(fixture.source.fileId.uuidString.lowercased())")
+                }
                 variants.withLock { $0.append(variant) }
                 return (200, [
                     "content-type": "image/png",

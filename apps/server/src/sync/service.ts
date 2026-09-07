@@ -583,7 +583,7 @@ export class MeetingSyncService {
         variants[variant] = `/api/v1/files/${file.id}/variants/${variant}`;
       }
     }
-    return { ...file, contentURL: `/api/v1/files/${file.id}/content`, variants };
+    return { ...file, contentURL: `/api/v1/files/${file.id}`, variants };
   }
 
   async listFiles(identity: Identity, vaultId: string, cursor?: string, meetingId?: string) {

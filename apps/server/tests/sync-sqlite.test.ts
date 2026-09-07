@@ -447,7 +447,7 @@ describe("SQLite canonical sync", () => {
     expect(await service.getFile(owner, file.id)).toMatchObject({ metadata: { source: "screenshot", width: 1800, ocr_text: "Searchable text" }, revision: 2 });
     const metadataOnly = await service.getFile(owner, file.id, "metadata-v1");
     expect(metadataOnly).toMatchObject({ contentOmitted: true, contentPresent: true, revision: 2,
-      contentURL: `/api/v1/files/${file.id}/content`, metadata: { source: "screenshot", width: 1800 },
+      contentURL: `/api/v1/files/${file.id}`, metadata: { source: "screenshot", width: 1800 },
       variants: { thumb_480: `/api/v1/files/${file.id}/variants/thumb_480`, thumb_1280: `/api/v1/files/${file.id}/variants/thumb_1280`,
         thumb_1568: `/api/v1/files/${file.id}/variants/thumb_1568`, thumb_1920: `/api/v1/files/${file.id}/variants/thumb_1920` } });
     expect(metadataOnly.metadata).not.toHaveProperty("ocr_text");
@@ -525,8 +525,8 @@ describe("SQLite canonical sync", () => {
       const { store, service, storage, file, publish, transformer, databasePath } = await fileSetup();
       await publish();
       const app = createApp({ config: testConfig(databasePath), authStore: store, artifactStorage: storage, screenshotTransformer: transformer });
-      const url = `/api/v1/files/${file.id}/${variant ? `variants/${variant}` : "content"}`;
-      const metadata = await app.request(`/api/v1/files/${file.id}`, { headers: headers() });
+      const url = `/api/v1/files/${file.id}${variant ? `/variants/${variant}` : ""}`;
+      const metadata = await app.request(`/api/v1/files/${file.id}/metadata`, { headers: headers() });
       expect(metadata.headers.get("cache-control")).toBe("no-store");
       const original = await app.request(url, { headers: headers() });
       expect(original.status).toBe(200);
@@ -718,7 +718,7 @@ describe("SQLite canonical sync", () => {
     await store.close?.();
   });
 
-  it.each(["node", "worker"])("uploads raw bytes and patches canonical metadata through %s", async (runtime) => {
+  it.each(["node", "worker"].flatMap((runtime) => ["POST", "PUT", "PATCH"].map((method) => [runtime, method])))("uploads raw bytes and updates canonical metadata through %s %s", async (runtime, method) => {
     const { store, service, file, bytes, databasePath, storage, publish, attach } = await fileSetup();
     const app = createApp({ config: { ...testConfig(databasePath), storageBackend: "databricks", storageDatabricksVolumePath: "/Volumes/test/app/files" }, authStore: store, artifactStorage: storage });
     const worker = createWorkerHandler(async () => app);
@@ -727,14 +727,14 @@ describe("SQLite canonical sync", () => {
       for (const [key, value] of Object.entries(headers())) if (!request.headers.has(key)) request.headers.set(key, value);
       return runtime === "node" ? app.request(request) : workerFetch(request, {} as Cloudflare.Env, {} as ExecutionContext);
     };
-    const patch = (body: unknown, id = file.id) => send(new Request(`http://localhost:5173/api/v1/files/${id}`, {
-      method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+    const patch = (body: unknown, id = file.id) => send(new Request(`http://localhost:5173/api/v1/files/${id}/metadata`, {
+      method, headers: { "content-type": "application/json" }, body: JSON.stringify(body),
     }));
     const fresh = { ...file, id: freshId(), name: "会議 + 売上&#?.png" };
     const created = await send(fileUploadRequest(fresh, bytes));
     expect(created.status).toBe(201);
     expect(await created.json()).toMatchObject({ id: fresh.id, name: fresh.name, size: bytes.length, checksum: file.checksum,
-      offset: 0, contentURL: `/api/v1/files/${fresh.id}/content`, metadata: { source: "screenshot", width: 1800, height: 900 } });
+      offset: 0, contentURL: `/api/v1/files/${fresh.id}`, metadata: { source: "screenshot", width: 1800, height: 900 } });
     expect(await service.listFiles(owner, vaultId)).toMatchObject({ items: [] });
     expect((await patch({ baseRevision: 1, metadata: { caption: "pending" } }, fresh.id)).status).toBe(404);
     const put = vi.spyOn(storage, "put");
@@ -768,15 +768,32 @@ describe("SQLite canonical sync", () => {
     expect(await empty.json()).toMatchObject({ size: 0, checksum: `SHA-256:${Buffer.from(await crypto.subtle.digest("SHA-256", new Uint8Array())).toString("hex")}` });
     await publish();
     await attach();
+    const originalURL = `http://localhost:5173/api/v1/files/${file.id}`;
+    const original = await send(new Request(originalURL));
+    expect(original.status).toBe(200);
+    expect(new Uint8Array(await original.arrayBuffer())).toEqual(bytes);
+    const head = await send(new Request(originalURL, { method: "HEAD" }));
+    expect(head.status).toBe(200);
+    expect(head.headers.get("content-length")).toBe(String(bytes.length));
+    expect(head.headers.get("content-type")).toBe("image/png");
+    expect(head.headers.get("etag")).toBe(original.headers.get("etag"));
+    expect(await head.text()).toBe("");
+    expect((await send(new Request(`${originalURL}/content`))).status).toBe(404);
+    expect((await send(new Request(originalURL, { method: "PATCH", body: "{}" }))).status).toBe(404);
+    const metadata = await send(new Request(`${originalURL}/metadata`));
+    expect(metadata.status).toBe(200);
+    expect(await metadata.json()).toMatchObject({ id: file.id, revision: 1, metadata: { source: "screenshot" } });
     const cursor = await service.latestCursor(owner);
     const updated = await patch({ baseRevision: 1, metadata: { ocr_text: "QuarterlyRevenue", caption: "Quarterly chart" } });
     expect(updated.status).toBe(200);
     expect(await updated.json()).toMatchObject({ id: file.id, size: bytes.length, checksum: file.checksum, revision: 2,
-      contentURL: `/api/v1/files/${file.id}/content`, metadata: { source: "screenshot", width: 1800, height: 900, ocr_text: "QuarterlyRevenue", caption: "Quarterly chart" } });
+      contentURL: `/api/v1/files/${file.id}`, metadata: { source: "screenshot", width: 1800, height: 900, ocr_text: "QuarterlyRevenue", caption: "Quarterly chart" } });
     expect((await service.listChanges(owner, vaultId, cursor)).items).toEqual(expect.arrayContaining([
       expect.objectContaining({ entity: "file", entityId: file.id, revision: 2, record: expect.objectContaining({ metadata: expect.objectContaining({ caption: "Quarterly chart" }) as unknown }) as unknown }),
     ]));
     expect(await service.searchText(owner, vaultId, "QuarterlyRevenue", "screenshot")).toMatchObject({ items: [expect.anything()] });
+    expect(await (await send(new Request(`${originalURL}/metadata`))).json()).toMatchObject({ revision: 2,
+      metadata: { ocr_text: "QuarterlyRevenue", caption: "Quarterly chart" } });
     const stale = await patch({ baseRevision: 1, metadata: { caption: "stale" } });
     expect(stale.status).toBe(409);
     expect(await stale.json()).toMatchObject({ conflicts: [{ serverRevision: 2, record: { metadata: { caption: "Quarterly chart" } } }] });
@@ -789,7 +806,7 @@ describe("SQLite canonical sync", () => {
     expect((await patch({ metadata: { caption: "missing revision" } })).status).toBe(400);
     expect((await patch({ baseRevision: 3, size: 0, metadata: {} })).status).toBe(400);
     await store.sync.withIdentity(owner, (sync) => sync.putMemberPermission(vaultId, "organization", "external"));
-    const memberPatch = new Request(`http://localhost:5173/api/v1/files/${file.id}`, { method: "PATCH",
+    const memberPatch = new Request(`http://localhost:5173/api/v1/files/${file.id}/metadata`, { method,
       headers: { ...headers(), "x-forwarded-user": other.userId, "x-forwarded-email": "other@example.com" },
       body: JSON.stringify({ baseRevision: 3, metadata: { caption: "member" } }) });
     expect((await send(memberPatch)).status).toBe(404);

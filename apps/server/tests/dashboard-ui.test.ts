@@ -157,11 +157,11 @@ describe("dashboard navigation", () => {
     expect(html).toContain('src="/small"');
     expect(html).toContain('href="/files/file"');
     expect(html).not.toContain('target="_blank"');
-    expect(html).toContain('href="/api/v1/files/file/content"');
+    expect(html).toContain('href="/api/v1/files/file"');
     expect(html).toContain("Download original");
     expect(html).toContain(`dateTime="${capturedAt}"`);
     const portable = renderToStaticMarkup(createElement(ScreenshotFigure, { file: { ...file, variants: {} } }));
-    expect(portable).toContain('src="/api/v1/files/file/content"');
+    expect(portable).toContain('src="/api/v1/files/file"');
     expect(portable).not.toContain("/large");
   });
   it("previews images but never embeds active file content, and removes inaccessible previews", () => {
@@ -238,7 +238,7 @@ describe("dashboard navigation", () => {
       expect(dashboardNavigationPath(path, current)).toBe(path);
       expect(dashboardNavigationPath(`https://dahlia.example${path}`, current)).toBe(path);
     }
-    for (const href of ["https://other.example/dashboard", "/api/v1/files/f1/content", "/sign-in", "/oauth/consent", "/dashboard/extension", "/dashboard?q=search", "#section", "mailto:user@example.com"]) {
+    for (const href of ["https://other.example/dashboard", "/api/v1/files/f1", "/sign-in", "/oauth/consent", "/dashboard/extension", "/dashboard?q=search", "#section", "mailto:user@example.com"]) {
       expect(dashboardNavigationPath(href, current)).toBeUndefined();
     }
   });
