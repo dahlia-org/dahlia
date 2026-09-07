@@ -1,9 +1,10 @@
-import { projectAncestors, vaultListURL } from "../src/client/Sidebar";
+import { projectAncestors, selectedSidebarVault, Sidebar, SidebarProvider, vaultListURL } from "../src/client/Sidebar";
 import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { MeetingTabs, parseSummary, SummaryContent, SummaryTags, TranscriptTime } from "../src/client/MeetingContent";
 
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   canEmbedArtifact,
@@ -13,21 +14,196 @@ import {
 } from "../src/client/App";
 import { artifactViewerId, resolveDashboardRoute, shouldRedirectToSignIn } from "../src/client/routes";
 
+import { dashboardNavigationPath } from "../src/client/navigation";
+import { clientMutationEvent, json } from "../src/client/api";
+
 const ExtensionPage = () => null;
+afterEach(() => vi.unstubAllGlobals());
+
+describe("desktop-style meeting layout", () => {
+  it("renders elapsed transcript timestamps independently of locale, midnight and duration length", () => {
+    for (const language of ["en-US", "ja-JP"]) {
+      vi.stubGlobal("navigator", { language });
+      for (const [startTime, timeBase, expected] of [
+        ["2026-09-07T14:02:00+09:00", "2026-09-07T14:00:00+09:00", "00:02:00"],
+        ["2026-09-08T00:01:02.999+09:00", "2026-09-07T23:00:00+09:00", "01:01:02"],
+        ["2026-09-08T15:02:00Z", "2026-09-07T14:00:00Z", "25:02:00"],
+        ["2026-09-07T14:00:00Z", "2026-09-07T14:00:01Z", "00:00:00"],
+        ["invalid", "2026-09-07T14:00:00Z", "—"],
+      ]) {
+        const html = renderToStaticMarkup(createElement(TranscriptTime, { startTime: startTime!, timeBase: timeBase! }));
+        expect(html).toBe(`<time dateTime="${startTime}">${expected}</time>`);
+      }
+    }
+  });
+
+  it("renders structured content and escapes untrusted summary text", () => {
+    const document = parseSummary(JSON.stringify({
+      description: "Meeting overview",
+      sections: [{ heading: "Decisions", blocks: [
+        { type: "bulleted_list", items: [{ text: "Keep the API", transcript_ref: "00:02:27" }] },
+        { type: "numbered_list", items: [{ text: "First step" }] },
+        { type: "checklist", items: [{ text: "Completed", checked: true }] },
+        { type: "table", headers: [{ text: "Owner" }], rows: [[{ text: "Team" }]] },
+        { type: "quote", content: { text: "First line\nSecond line" } },
+        { type: "paragraph", content: { text: '<img src=x onerror="alert(1)">' } },
+      ] }],
+      tags: ["project", { text: "bad tag" }],
+      actionItems: [{ title: "Follow up", assignee: "Team" }],
+    }));
+    const html = renderToStaticMarkup(createElement(SummaryContent, { document }));
+    expect(html).toContain("<h2>Decisions</h2>");
+    expect(html).toContain("<ul><li>Keep the API");
+    expect(html).toContain("00:02:27");
+    expect(html).toContain("<ol><li>First step</li></ol>");
+    expect(html).toContain('checked=""');
+    expect(html).toContain("<th>Owner</th>");
+    expect(html).toContain("<blockquote>First line\nSecond line</blockquote>");
+    expect(html).toContain("Follow up");
+    expect(html).toContain("&lt;img");
+    expect(html).not.toContain("<img");
+    const tags = renderToStaticMarkup(createElement(SummaryTags, { document }));
+    expect(tags).toContain("project");
+    expect(tags).not.toContain("bad tag");
+    expect(parseSummary("malformed")).toEqual({});
+    expect(() => renderToStaticMarkup(createElement(SummaryContent, { document: { sections: [null, { blocks: [null, { type: "table", rows: [null] }] }] } }))).not.toThrow();
+  });
+
+  it("defaults to Summary with linked accessible tabs and defers hidden content", () => {
+    vi.stubGlobal("navigator", { language: "ja-JP" });
+    const html = renderToStaticMarkup(createElement(MeetingTabs, { summary: "Summary body", screenshots: "Hidden screenshots", transcript: "Hidden transcript" }));
+    expect(html.match(/role="tab"/g)).toHaveLength(3);
+    expect(html).toContain('aria-selected="true"');
+    expect(html).toContain('aria-controls=');
+    expect(html).toContain('role="tabpanel"');
+    expect(html).toContain("要約");
+    expect(html).toContain("文字起こし");
+    expect(html).toContain("Summary body");
+    expect(html).not.toContain("Hidden screenshots");
+    expect(html).not.toContain("Hidden transcript");
+  });
+
+  it("groups the account, Vaults, organizations and sign-out in the footer menu", () => {
+    vi.stubGlobal("navigator", { language: "en" });
+    const session = { user: { id: "user", name: "Example User" }, workspace: { id: "personal", type: "personal" as const }, capabilities: { sync: true, sharing: true, sessions: true, admin: false } };
+    const html = renderToStaticMarkup(createElement(SidebarProvider, { session, children: createElement(Sidebar, {
+      session, brand: "Dahlia", children: createElement("a", { href: "/dashboard/settings" }, "Settings"),
+    }) }));
+    const [navigation, footer] = html.split('<div class="sidebar-footer">');
+    expect(navigation).toContain("Project navigation");
+    expect(navigation).not.toContain("organization-switcher");
+    expect(navigation).not.toContain("Settings");
+    expect(footer).toContain('popoverTarget="account-menu"');
+    expect(footer).toContain("Personal");
+    expect(footer).toContain('<strong>Vaults</strong>');
+    expect(footer).toContain('<strong>Organizations</strong>');
+    expect(footer).toContain('class="menu-account" href="/dashboard"');
+    expect(footer).toContain('class="menu-icon"');
+    expect(footer).toContain("Sign out");
+    expect(footer).not.toContain("Workspace");
+    expect(footer).not.toContain("Local account");
+    expect(footer).toContain("Manage organizations");
+    expect(footer).toContain("Settings");
+    expect(footer).not.toContain("Artifacts");
+  });
+
+  it("omits unsupported sign-out and sharing sections for proxy accounts", () => {
+    vi.stubGlobal("navigator", { language: "ja-JP" });
+    const session = { user: { id: "user", name: "Example User" }, workspace: { id: "personal", type: "personal" as const }, capabilities: { sync: true, sharing: false, sessions: false, admin: false } };
+    const html = renderToStaticMarkup(createElement(SidebarProvider, { session, children: createElement(Sidebar, {
+      session, brand: "Dahlia", children: null,
+    }) }));
+    expect(html).toContain('<strong>保管庫</strong>');
+    expect(html).toContain("保管庫を管理");
+    expect(html).not.toContain("サインアウト");
+    expect(html).not.toContain('<strong>組織</strong>');
+    expect(html).not.toContain("組織を管理");
+    expect(html).not.toContain('href="/admin/members"');
+  });
+
+  it.each([false, true])("places platform Members under Organizations with sharing=%s", (sharing) => {
+    vi.stubGlobal("navigator", { language: "ja-JP" });
+    const session = { user: { id: "user", name: "Example User" }, workspace: { id: "personal", type: "personal" as const }, capabilities: { sync: true, sharing, sessions: true, admin: true } };
+    const html = renderToStaticMarkup(createElement(SidebarProvider, { session, children: createElement(Sidebar, {
+      session, brand: "Dahlia", children: createElement("a", { href: "/dashboard/settings" }, "設定"),
+    }) }));
+    const organizationSection = html.split('<strong>組織</strong>')[1]?.split('<span class="nav-divider">')[0];
+    expect(organizationSection).toContain('href="/admin/members"');
+    expect(organizationSection).toContain("メンバー");
+    expect(organizationSection).not.toContain("設定");
+    expect(html.match(/href="\/admin\/members"/g)).toHaveLength(1);
+  });
+});
 
 describe("dashboard navigation", () => {
   it("uses advertised thumbnails for browsing and preserves the original link", () => {
     const file = { id: "file", content_type: "image/png", metadata: { source: "screenshot" },
       variants: { thumb_360: "/small", thumb_1280: "/large" } };
-    const html = renderToStaticMarkup(createElement(ScreenshotFigure, { file }));
+    const capturedAt = "2026-09-07T00:00:00Z";
+    const html = renderToStaticMarkup(createElement(ScreenshotFigure, { file, capturedAt }));
     expect(html).toContain('src="/small"');
     expect(html).toContain('href="/large"');
     expect(html).toContain('href="/api/v1/files/file/content"');
     expect(html).toContain("Open original");
+    expect(html).toContain(`dateTime="${capturedAt}"`);
     const portable = renderToStaticMarkup(createElement(ScreenshotFigure, { file: { ...file, variants: {} } }));
     expect(portable).toContain('src="/api/v1/files/file/content"');
     expect(portable).not.toContain("/large");
   });
+  it("invalidates shared projections only after successful write responses", async () => {
+    const browser = new EventTarget();
+    const changed = vi.fn();
+    browser.addEventListener(clientMutationEvent, changed);
+    vi.stubGlobal("window", browser);
+    for (const method of [undefined, "GET", "HEAD", "OPTIONS", "POST", "PUT", "PATCH", "delete"]) {
+      changed.mockClear();
+      const result = { id: "updated" };
+      vi.stubGlobal("fetch", vi.fn(async () => method === "delete" ? new Response(null, { status: 204 }) : Response.json(result)));
+      await expect(json("/api/resource", { method })).resolves.toEqual(method === "delete" ? undefined : result);
+      expect(changed).toHaveBeenCalledTimes(method && !["GET", "HEAD", "OPTIONS"].includes(method) ? 1 : 0);
+    }
+    changed.mockClear();
+    for (const response of [Response.json({ error: "forbidden" }, { status: 403 }), Response.json({ error: "conflict" }, { status: 409 }), new Response("malformed JSON")]) {
+      vi.stubGlobal("fetch", vi.fn(async () => response));
+      await expect(json("/api/resource", { method: "POST" })).rejects.toThrow();
+      expect(changed).not.toHaveBeenCalled();
+    }
+  });
+
+  it("signals expired sessions without treating authorization or other failures as sign-out", async () => {
+    const browser = new EventTarget();
+    const sessionExpired = vi.fn();
+    browser.addEventListener("dahlia:unauthorized", sessionExpired);
+    vi.stubGlobal("window", browser);
+    for (const status of [401, 403, 409, 503]) {
+      vi.stubGlobal("fetch", vi.fn(async () => Response.json({ error: "request_failed" }, { status })));
+      await expect(json("/api/protected")).rejects.toMatchObject({ status, message: "request_failed" });
+      expect(sessionExpired).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it("selects only the current Vault and restores the saved selection off Vault routes", () => {
+    const vaults = [{ vaultId: "v1", name: "First" }, { vaultId: "v2", name: "Second" }] as NonNullable<Parameters<typeof selectedSidebarVault>[0]>;
+    expect(selectedSidebarVault(vaults, "v2", "v1")).toBe(vaults[1]);
+    expect(selectedSidebarVault(vaults, undefined, "v2")).toBe(vaults[1]);
+    expect(selectedSidebarVault(vaults)).toBe(vaults[0]);
+    expect(selectedSidebarVault(vaults, undefined, "removed")).toBe(vaults[0]);
+    expect(selectedSidebarVault(vaults, "outside-scope", "v1")).toBeUndefined();
+    expect(selectedSidebarVault([], undefined, "v2")).toBeUndefined();
+    expect(selectedSidebarVault(undefined, "v2")).toBeUndefined();
+  });
+
+  it("navigates dashboard links in place and leaves other URLs to the browser", () => {
+    const current = "https://dahlia.example/vaults/v1/meetings/m1";
+    for (const path of ["/dashboard", "/vaults/v1", "/vaults/v1/meetings/m2", "/vaults/v1/projects/p1", "/dashboard/settings", "/artifacts", "/artifacts/a1"]) {
+      expect(dashboardNavigationPath(path, current)).toBe(path);
+      expect(dashboardNavigationPath(`https://dahlia.example${path}`, current)).toBe(path);
+    }
+    for (const href of ["https://other.example/dashboard", "/api/v1/files/f1/content", "/sign-in", "/oauth/consent", "/dashboard/extension", "/dashboard?q=search", "#section", "mailto:user@example.com"]) {
+      expect(dashboardNavigationPath(href, current)).toBeUndefined();
+    }
+  });
+
   it("builds exclusive scopes and expands the selected Project ancestry by ID", () => {
     expect(vaultListURL("")).toBe("/api/v1/vaults");
     expect(vaultListURL("org+1")).toBe("/api/v1/vaults?organizationId=org%2B1");
@@ -51,8 +227,11 @@ describe("dashboard navigation", () => {
     expect(resolveDashboardRoute("/dashboard", { admin: false, sessions: false })).toEqual({ page: "overview" });
   });
 
-  it("routes the artifact repository and recognizes only item viewer paths", () => {
-    expect(resolveDashboardRoute("/artifacts", { admin: false, sessions: false })).toEqual({ page: "artifacts" });
+  it("hides the artifact list and viewer without changing artifact ID parsing", () => {
+    for (const path of ["/artifacts", "/artifacts/a1"]) {
+      expect(resolveDashboardRoute(path, { admin: false, sessions: false })).toEqual({ redirect: "/dashboard" });
+      expect(resolveDashboardExtensionRoute(path, { admin: false, sessions: false }, [{ routes: [{ path, component: ExtensionPage }] }])).toEqual({ allowed: true });
+    }
     expect(artifactViewerId("/artifacts/019cc4dd-e5c5-7bd4-94e0-98df9cc40db9"))
       .toBe("019cc4dd-e5c5-7bd4-94e0-98df9cc40db9");
     expect(artifactViewerId("/artifacts")).toBeUndefined();
@@ -145,9 +324,9 @@ describe("dashboard navigation", () => {
     expect(source).not.toContain("On-Demand Usage");
     expect(source).not.toContain('className="nav-label"');
     expect(source).toContain('<svg className="brand-mark"');
-    expect(source).toContain('sandbox="allow-scripts"');
-    expect(source).toContain("application/vnd.dahlia.artifact+json");
-    expect(source).toContain("Loading artifacts…");
+    expect(source).not.toContain('href="/artifacts"');
+    expect(source).not.toContain("/api/v1/artifacts");
+    expect(source).not.toContain("Loading artifacts…");
     expect(source).toContain("/api/auth/organization/list-user-teams?");
     expect(source).not.toContain("/api/auth/organization/list-team-members?");
     expect(source).toContain('team.id !== "external-default"');

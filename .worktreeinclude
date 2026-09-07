@@ -1,5 +1,7 @@
 # Local environment used by the build and release scripts.
 /.env.local
+/apps/server/.env.local
+/apps/desktop/.env.local
 
 # Personal Claude Code permissions and settings.
 /.claude/settings.local.json

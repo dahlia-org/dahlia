@@ -23,6 +23,7 @@ const coreDashboardPaths = new Set([
 
 export function isCoreDashboardPath(path: string): boolean {
   return coreDashboardPaths.has(path)
+    || Boolean(artifactViewerId(path))
     || /^\/vaults\/[^/]+(?:\/(?:meetings|projects)\/[^/]+)?$/.test(path)
     || /^\/accept-invitation\/[^/]+$/.test(path);
 }
@@ -43,7 +44,7 @@ export function resolveDashboardRoute(
   if (path === "/") return { redirect: "/dashboard" };
   if (path === "/sessions") return { redirect: "/dashboard/settings" };
   if (path === "/dashboard") return { page: "overview" };
-  if (path === "/artifacts") return { page: "artifacts" };
+  if (path === "/artifacts" || artifactViewerId(path)) return { redirect: "/dashboard" };
   if (path === "/organizations") {
     return capabilities.sharing
       ? { page: "organizations" }

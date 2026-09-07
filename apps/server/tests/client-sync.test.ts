@@ -1,10 +1,14 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { commitSyncTransaction } from "../src/client/App";
-import { syncMessage } from "../src/client/api";
+import { clientMutationEvent, syncMessage } from "../src/client/api";
 
 afterEach(() => vi.unstubAllGlobals());
 
 it("resolves a lost response as a compact receipt without another mutation", async () => {
+  const browser = new EventTarget();
+  const changed = vi.fn();
+  browser.addEventListener(clientMutationEvent, changed);
+  vi.stubGlobal("window", browser);
   const bodies: string[] = [];
   const fetch = vi.fn(async (_url: string, init: RequestInit) => {
     const body = String(init.body);
@@ -20,11 +24,17 @@ it("resolves a lost response as a compact receipt without another mutation", asy
   expect(fetch.mock.calls[1]?.[0]).toBe("/api/v1/transactions/resolve");
   expect(bodies[0]).toBe(bodies[1]);
   expect(progress.mock.calls).toEqual([[true], [false]]);
+  expect(changed).toHaveBeenCalledTimes(1);
 });
 
 it("retains the transaction ID when resolution reports an uncommitted request", async () => {
+  const browser = new EventTarget();
+  const changed = vi.fn();
+  browser.addEventListener(clientMutationEvent, changed);
+  vi.stubGlobal("window", browser);
   const bodies: string[] = [];
   vi.stubGlobal("fetch", vi.fn(async (_url: string, init: RequestInit) => {
+    expect(changed).not.toHaveBeenCalled();
     bodies.push(String(init.body));
     if (bodies.length === 1) return Response.json({ error: "unavailable" }, { status: 503 });
     const { id } = JSON.parse(String(init.body)) as { id: string };
@@ -33,6 +43,40 @@ it("retains the transaction ID when resolution reports an uncommitted request", 
   await commitSyncTransaction(crypto.randomUUID(), []);
   expect(bodies).toHaveLength(3);
   expect(new Set(bodies).size).toBe(1);
+  expect(changed).toHaveBeenCalledTimes(1);
+});
+
+it("notifies only after a validated committed receipt on every commit path", async () => {
+  const browser = new EventTarget();
+  const changed = vi.fn();
+  browser.addEventListener(clientMutationEvent, changed);
+  vi.stubGlobal("window", browser);
+  for (const recovery of [false, true]) {
+    for (const outcome of ["committed", "wrong-id", "unknown", "invalid-receipt", "failed"]) {
+      changed.mockClear();
+      let calls = 0;
+      vi.stubGlobal("fetch", vi.fn(async (_url: string, init: RequestInit) => {
+        expect(changed).not.toHaveBeenCalled();
+        if ((recovery && ++calls === 1) || outcome === "failed") {
+          return Response.json({ error: "unavailable" }, { status: 503 });
+        }
+        const { id } = JSON.parse(String(init.body)) as { id: string };
+        return Response.json({
+          id: outcome === "wrong-id" ? "other" : id,
+          status: outcome === "unknown" ? "unknown" : "committed",
+          receipt: outcome === "invalid-receipt" ? "invalid" : "full",
+        });
+      }));
+      const commit = commitSyncTransaction(crypto.randomUUID(), []);
+      if (outcome === "committed") {
+        await expect(commit).resolves.toMatchObject({ status: "committed" });
+        expect(changed).toHaveBeenCalledTimes(1);
+      } else {
+        await expect(commit).rejects.toThrow();
+        expect(changed).not.toHaveBeenCalled();
+      }
+    }
+  }
 });
 
 it("does not retry revision conflicts and provides English and Japanese recovery messages", async () => {
