@@ -139,6 +139,7 @@ import GRDB
                     sql: "UPDATE vaults SET accountConnectionId = ?, syncConfirmedConnectionId = ? WHERE id = ?",
                     arguments: [connection.id, connection.id, fixture.meeting.vaultId]
                 )
+                #expect(try RemoteChangePolicy.permits(.recording, id: sessionId, record: payload, vaultId: fixture.meeting.vaultId, in: db))
                 try SyncTransactionQueue.applyCanonical(.recording, id: sessionId, vaultId: fixture.meeting.vaultId, value: payload, in: db)
                 #expect(try RecordingArchiveRecord.isAvailable(sessionId: sessionId, in: db))
                 #expect(try RecordingArchiveRecord.fetchOne(db, key: sessionId)?.number == 12)
@@ -147,10 +148,13 @@ import GRDB
                     SyncOperationDraft(entity: .recording, action: .upsert, entityId: sessionId, payloadJSON: Data("{}".utf8)),
                 ], in: db)
                 #expect(try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM sync_operations WHERE entity = 'recording'") == 1)
+                #expect(try !RemoteChangePolicy.permits(.meeting, id: fixture.meeting.id, action: "delete", vaultId: fixture.meeting.vaultId, in: db))
                 try SyncTransactionRecorder.record(vaultId: fixture.meeting.vaultId, operations: [
                     SyncOperationDraft(entity: .meeting, action: .delete, entityId: fixture.meeting.id),
                 ], in: db)
                 #expect(try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM sync_operations WHERE entity = 'recording'") == 0)
+                #expect(try !RemoteChangePolicy.permits(.recording, id: sessionId, record: payload, vaultId: fixture.meeting.vaultId, in: db))
+                #expect(try !RemoteChangePolicy.permits(.recording, id: sessionId, action: "delete", vaultId: fixture.meeting.vaultId, in: db))
                 try db.execute(sql: "UPDATE vaults SET syncRole = 'member' WHERE id = ?", arguments: [fixture.meeting.vaultId])
                 #expect(try !RecordingArchiveRecord.isAvailable(sessionId: sessionId, in: db))
             }

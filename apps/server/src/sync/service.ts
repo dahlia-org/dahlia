@@ -6,7 +6,7 @@ import { imageAnalysisSchema, type ImageAnalysisInput, type ImageAnalysis } from
 import type { Identity } from "../auth/identity";
 import { DEFAULT_ARTIFACT_MAX_BYTES } from "../config";
 import { ObjectStorageError, type ArtifactReadMethod, type ObjectStorage } from "../artifacts/storage";
-import { ArtifactRequestError, parseUpload } from "../artifacts/upload";
+import { ArtifactRequestError, boundedUploadBody, parseUpload, type ParsedUpload } from "../artifacts/upload";
 import { sha256Passthrough, sha256Stream } from "../artifacts/sha256";
 import {
   createSearchText,
@@ -489,7 +489,7 @@ export class MeetingSyncService {
     if (upload.contentType !== "audio/mp4" || upload.contentLength < 16 || !request.body) {
       throw new ArtifactRequestError(415, "invalid_recording_format");
     }
-    const storage = this.requireStorage();
+    this.requireStorage();
     const vaultId = await this.store.withIdentity(identity, async (scoped) => {
       const vaultId = await scoped.resolveEntityVault("meeting", meetingId);
       if (!vaultId || !await scoped.ensureUploadTarget(vaultId, meetingId)) throw new ArtifactRequestError(404, "meeting_not_found");
@@ -507,50 +507,28 @@ export class MeetingSyncService {
       const previous = record?.audio[source];
       if (!record || previous?.generation !== generation) throw new ArtifactRequestError(409, "recording_upload_expired");
       if (await this.store.hasStorageDelete(key)) throw new ArtifactRequestError(503, "recording_storage_delete_pending");
-      let received = 0;
+      let prefixLength = 0;
       const prefix = new Uint8Array(12);
-      const bounded = request.body!.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
-        transform(chunk, controller) {
-          if (received < prefix.length) prefix.set(chunk.subarray(0, prefix.length - received), received);
-          received += chunk.byteLength;
-          if (received > upload.contentLength) throw new ArtifactRequestError(413, "recording_size_mismatch");
-          if (received >= 12 && (String.fromCharCode(...prefix.subarray(4, 8)) !== "ftyp"
-            || new DataView(prefix.buffer).getUint32(0) < 16)) throw new ArtifactRequestError(415, "invalid_recording_format");
-          controller.enqueue(chunk);
-        },
-        flush() { if (received !== upload.contentLength) throw new ArtifactRequestError(400, "recording_size_mismatch"); },
-      }));
+      const bounded = boundedUploadBody(request.body, upload.contentLength, "recording_size_mismatch", (chunk) => {
+        const part = chunk.subarray(0, prefix.length - prefixLength);
+        prefix.set(part, prefixLength);
+        prefixLength += part.length;
+        if (prefixLength === 12 && (String.fromCharCode(...prefix.subarray(4, 8)) !== "ftyp"
+          || new DataView(prefix.buffer).getUint32(0) < 16)) throw new ArtifactRequestError(415, "invalid_recording_format");
+      });
       if (previous.uploadedAt) {
         const checksum = `SHA-256:${await sha256Stream(bounded)}`;
-        if (previous.size !== received || previous.checksum !== checksum) throw new ArtifactRequestError(409, "recording_content_conflict");
+        if (previous.size !== upload.contentLength || previous.checksum !== checksum) throw new ArtifactRequestError(409, "recording_content_conflict");
         return { created: false, record: { id: record.number, source, content_type: previous.content_type,
           size: previous.size, checksum, revision: record.revision || null, contentURL: recordingContentURL(record, source) } };
       }
-      const hashing = sha256Passthrough(bounded);
-      const abort = new AbortController();
-      const writing = this.storageCall(() => storage.put(key, hashing.body, upload.contentLength, upload.contentType,
-        AbortSignal.any([request.signal, abort.signal])));
-      try {
-        const [, digest] = await Promise.all([
-          writing,
-          hashing.digest,
-        ]);
-        const checksum = `SHA-256:${digest}`;
+      return this.storeUpload(key, bounded, upload, request.signal, async (checksum) => {
         const completed = await this.store.withIdentity(identity, (scoped) =>
-          scoped.markRecordingUploaded(record.sessionId, source, generation, received, checksum));
+          scoped.markRecordingUploaded(record.sessionId, source, generation, upload.contentLength, checksum));
         if (!completed) throw new ArtifactRequestError(409, "recording_upload_expired");
         return { created: true, record: { id: completed.number, source, content_type: upload.contentType,
-          size: received, checksum, revision: completed.revision || null, contentURL: recordingContentURL(completed, source) } };
-      } catch (error) {
-        // Do not release the key lock while an upstream write can still publish bytes.
-        abort.abort();
-        await writing.catch(() => {});
-        await hashing.body.cancel().catch(() => {});
-        await hashing.digest.catch(() => {});
-        await this.store.enqueueStorageDelete(key);
-        this.scheduleStorageDeletes();
-        throw error;
-      }
+          size: upload.contentLength, checksum, revision: completed.revision || null, contentURL: recordingContentURL(completed, source) } };
+      });
     }));
   }
 
@@ -597,7 +575,7 @@ export class MeetingSyncService {
 
   async postFile(identity: Identity, request: Request) {
     this.requireWritableIdentity(identity);
-    const storage = this.requireStorage();
+    this.requireStorage();
     if (!this.fileStorageRoot) throw new ArtifactRequestError(503, "file_storage_not_configured");
     const query = new URL(request.url).searchParams;
     const parsed = fileUploadQuerySchema.safeParse(Object.fromEntries(query));
@@ -627,35 +605,15 @@ export class MeetingSyncService {
         throw new ArtifactRequestError(409, "file_id_conflict");
       }
       if (await this.store.hasStorageDelete(key)) throw new ArtifactRequestError(503, "file_storage_delete_pending");
-      let received = 0;
-      const bounded = request.body?.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
-        transform(chunk, controller) {
-          received += chunk.byteLength;
-          if (received > upload.contentLength) throw new ArtifactRequestError(413, "file_size_mismatch");
-          controller.enqueue(chunk);
-        },
-        flush() {
-          if (received !== upload.contentLength) throw new ArtifactRequestError(400, "file_size_mismatch");
-        },
-      })) ?? null;
-      if (!bounded && upload.contentLength !== 0) throw new ArtifactRequestError(400, "file_size_mismatch");
+      const bounded = boundedUploadBody(request.body, upload.contentLength, "file_size_mismatch");
       if (file.uploadedAt) {
         if (`SHA-256:${await sha256Stream(bounded)}` !== file.checksum) {
           throw new ArtifactRequestError(409, "file_checksum_mismatch");
         }
         return { file: this.fileMetadata(fileResponse(file)), created: false };
       }
-      try {
-        const hashing = sha256Passthrough(bounded);
-        const storing = this.storageCall(() => storage.put(key, hashing.body, upload.contentLength, file.contentType, request.signal))
-          .catch(async (error: unknown) => {
-            await hashing.cancel(error).catch(() => undefined);
-            throw error;
-          });
-        const [stored, digest] = await Promise.allSettled([storing, hashing.digest]);
-        if (digest.status === "rejected") throw digest.reason;
-        if (stored.status === "rejected") throw stored.reason;
-        const uploaded = await this.store.withIdentity(identity, (scoped) => scoped.markFileUploaded(file, received, `SHA-256:${digest.value}`));
+      return this.storeUpload(key, bounded, upload, request.signal, async (checksum) => {
+        const uploaded = await this.store.withIdentity(identity, (scoped) => scoped.markFileUploaded(file, upload.contentLength, checksum));
         if (!uploaded) {
           const current = await this.store.withIdentity(identity, (scoped) => scoped.getFile(fileId));
           if (current?.vaultId === file.vaultId && await this.store.hasStorageDelete(key)) {
@@ -664,14 +622,35 @@ export class MeetingSyncService {
           throw new ArtifactRequestError(404, "file_not_found");
         }
         return { file: this.fileMetadata(fileResponse(uploaded)), created: true };
-      } catch (error) {
-        try { await storage.delete(key); } catch {
-          await this.store.enqueueStorageDelete(key);
-          this.scheduleStorageDeletes();
-        }
-        throw error;
-      }
+      });
     }));
+  }
+
+  // Call under the storage key lock; metadata is published only after the entire body is stored and hashed.
+  private async storeUpload<T>(key: string, body: ReadableStream<Uint8Array> | null,
+    upload: ParsedUpload, signal: AbortSignal, complete: (checksum: string) => Promise<T>): Promise<T> {
+    const storage = this.requireStorage();
+    const hashing = sha256Passthrough(body);
+    const abort = new AbortController();
+    const storing = this.storageCall(() => storage.put(key, hashing.body, upload.contentLength, upload.contentType,
+      AbortSignal.any([signal, abort.signal]))).catch(async (error: unknown) => {
+      await hashing.cancel(error).catch(() => undefined);
+      throw error;
+    });
+    const digest = hashing.digest.catch((error: unknown) => { abort.abort(error); throw error; });
+    try {
+      // Settle the write before cleanup or unlocking, including when validation interrupts the stream.
+      const [stored, hashed] = await Promise.allSettled([storing, digest]);
+      if (hashed.status === "rejected") throw hashed.reason;
+      if (stored.status === "rejected") throw stored.reason;
+      return await complete(`SHA-256:${hashed.value}`);
+    } catch (error) {
+      try { await storage.delete(key); } catch {
+        await this.store.enqueueStorageDelete(key);
+        this.scheduleStorageDeletes();
+      }
+      throw error;
+    }
   }
 
   async patchFile(identity: Identity, fileId: string, body: unknown) {

@@ -980,6 +980,39 @@ describe("SQLite canonical sync", () => {
     await store.close?.();
   });
 
+  it.each(["storage", "cleanup", "interrupted"])("keeps a failed recording upload retryable (%s)", async (failure) => {
+    const { store, service, storage } = await fileSetup();
+    const sessionId = freshId();
+    for (const kind of ["recording_started", "recording_ended"]) {
+      await commit(store, owner, transaction(freshId(), [{ id: freshId(), entity: "meeting_event", action: "create",
+        entityId: freshId(), baseRevision: null, data: { meetingId, sessionId, kind, occurredAt: now } }]));
+    }
+    const bytes = new Uint8Array([0, 0, 0, 20, 102, 116, 121, 112, 77, 52, 65, 32, 0, 0, 0, 0, 77, 52, 65, 32]);
+    const url = `http://localhost:5173/api/v1/meetings/${meetingId}/recordings?sessionId=${sessionId}&source=mic`;
+    const headers = { "content-type": "audio/mp4", "content-length": String(bytes.length) };
+    const cancelled = vi.fn();
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (failure === "interrupted") controller.error(new Error("interrupted upload"));
+        else controller.enqueue(bytes);
+      },
+      cancel: cancelled,
+    });
+    if (failure !== "interrupted") vi.spyOn(storage, "put").mockRejectedValueOnce(new Error("storage failed before consuming the stream"));
+    if (failure === "cleanup") vi.spyOn(storage, "delete").mockRejectedValueOnce(new Error("cleanup failed"));
+    await expect(service.postRecording(owner, meetingId,
+      new Request(url, { method: "POST", headers, body, duplex: "half" } as RequestInit))).rejects.toBeDefined();
+    const key = `meetings/${meetingId}/recordings/audio_mic_01.m4a`;
+    const record = await store.sync.withIdentity(owner, (scoped) => scoped.getRecording(meetingId, 1, true));
+    expect(record?.audio.mic?.uploadedAt).toBeNull();
+    if (failure !== "interrupted") await vi.waitFor(() => expect(cancelled).toHaveBeenCalled());
+    await vi.waitFor(async () => expect(await store.sync.hasStorageDelete(key)).toBe(false));
+    expect(await storage.exists(key)).toBe(false);
+    const retried = await service.postRecording(owner, meetingId, new Request(url, { method: "POST", headers, body: bytes }));
+    expect(retried).toMatchObject({ created: true, record: { id: 1, size: bytes.length } });
+    await store.close?.();
+  });
+
   it("serializes competing uploads without replacing the first completed bytes", async () => {
     const { store, service, storage, file, bytes } = await fileSetup();
     const pending = { ...file, id: freshId() };
