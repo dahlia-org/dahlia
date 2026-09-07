@@ -1,7 +1,9 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { useLiveJSON, useLivePage } from "./live-data";
+import { navigateDashboard } from "./navigation";
+import { createContext, Fragment, useContext, useEffect, useState, type ReactNode } from "react";
 import type { SessionInfo } from "./App";
-import type { OrganizationInfo, SyncedMeetingInfo, SyncedMeetingPage, SyncedProjectInfo, SyncedVaultInfo } from "./api";
-import { clientMutationEvent, json, RequestError, uiText } from "./api";
+import type { OrganizationInfo, SyncedMeetingInfo, SyncedProjectInfo, SyncedVaultInfo } from "./api";
+import { json, RequestError, uiText } from "./api";
 
 export function vaultListURL(organizationId: string) {
   return organizationId ? `/api/v1/vaults?${new URLSearchParams({ organizationId })}` : "/api/v1/vaults";
@@ -51,65 +53,36 @@ export function useSidebar() {
 
 export function SidebarProvider({ session, children }: { session: SessionInfo; children: ReactNode }) {
   const [organizationId, setOrganizationId] = useState(() => session.capabilities.sharing ? readSelection(`dahlia:sidebar:${session.user.id}:organization`) : "");
-  const [organizations, setOrganizations] = useState<OrganizationInfo[]>();
-  const [organizationError, setOrganizationError] = useState<string>();
-  const [vaults, setVaults] = useState<SyncedVaultInfo[]>();
-  const [error, setError] = useState<string>();
-  const [attempt, setAttempt] = useState(0);
-  useEffect(() => {
-    const refresh = () => setAttempt((value) => value + 1);
-    window.addEventListener(clientMutationEvent, refresh);
-    return () => window.removeEventListener(clientMutationEvent, refresh);
-  }, []);
+  let organizationsURL: string | undefined;
+  if (session.capabilities.sharing) {
+    organizationsURL = session.capabilities.sessions ? "/api/auth/organization/list" : "/api/v1/organizations";
+  }
+  const organizationsQuery = useLiveJSON<OrganizationInfo[]>(organizationsURL);
+  const organizations = organizationsQuery.data;
+  const organizationAllowed = !organizationId || organizations?.some(({ id }) => id === organizationId);
+  const vaultsQuery = useLiveJSON<{ items: SyncedVaultInfo[] }>(session.capabilities.sync && organizationAllowed
+    ? vaultListURL(organizationId) : undefined);
   const select = (id: string) => {
     save(`dahlia:sidebar:${session.user.id}:organization`, id);
-    setVaults(undefined);
     setOrganizationId(id);
-    window.location.assign("/vaults");
+    document.getElementById("account-menu")?.hidePopover();
+    navigateDashboard("/vaults");
   };
   useEffect(() => {
-    const controller = new AbortController();
-    setOrganizationError(undefined);
-    void (async () => {
-      try {
-        let items: OrganizationInfo[] = [];
-        if (session.capabilities.sharing) {
-          const url = session.capabilities.sessions ? "/api/auth/organization/list" : "/api/v1/organizations";
-          items = await json<OrganizationInfo[]>(url, { signal: controller.signal });
-        }
-        if (controller.signal.aborted) return;
-        setOrganizations(items);
-        if (organizationId && !items.some(({ id }) => id === organizationId)) {
-          save(`dahlia:sidebar:${session.user.id}:organization`, "");
-          setOrganizationId("");
-          setVaults(undefined);
-        }
-      } catch (caught) {
-        if (!controller.signal.aborted) setOrganizationError(caught instanceof Error ? caught.message : "Could not load organizations");
-      }
-    })();
-    return () => controller.abort();
-  }, [session.user.id, session.capabilities.sharing, session.capabilities.sessions, organizationId, attempt]);
-  useEffect(() => {
-    const controller = new AbortController();
-    setVaults(undefined);
-    setError(undefined);
-    if (!session.capabilities.sync) return;
-    if (organizationId && !organizations?.some(({ id }) => id === organizationId)) return;
-    void json<{ items: SyncedVaultInfo[] }>(vaultListURL(organizationId), { signal: controller.signal })
-      .then(({ items }) => { if (!controller.signal.aborted) setVaults(items); })
-      .catch((caught: unknown) => {
-        if (controller.signal.aborted) return;
-        if (organizationId && caught instanceof RequestError && caught.status === 403) {
-          save(`dahlia:sidebar:${session.user.id}:organization`, "");
-          setOrganizationId("");
-        } else setError(caught instanceof Error ? caught.message : "Could not load Vaults");
-      });
-    return () => controller.abort();
-  }, [session.user.id, session.capabilities.sync, organizationId, organizations, attempt]);
-  const vaultError = error ?? (organizationId && !organizations ? organizationError : undefined);
-  return <SidebarContext.Provider value={{ userId: session.user.id, organizationId, organizations, organizationError, vaults, error: vaultError, select, reload: () => setAttempt((value) => value + 1) }}>
-    {children}
+    if (!organizationId) return;
+    const membershipRemoved = organizations && !organizationAllowed;
+    const accessDenied = vaultsQuery.error instanceof RequestError && vaultsQuery.error.status === 403;
+    if (!membershipRemoved && !accessDenied) return;
+    save(`dahlia:sidebar:${session.user.id}:organization`, "");
+    setOrganizationId("");
+    navigateDashboard("/vaults", true);
+  }, [organizationId, organizations, organizationAllowed, vaultsQuery.error, session.user.id]);
+  const reload = () => { organizationsQuery.reload(); vaultsQuery.reload(); };
+  const organizationError = organizationsQuery.error?.message;
+  const vaultError = vaultsQuery.error?.message ?? (organizationId && !organizations ? organizationError : undefined);
+  return <SidebarContext.Provider value={{ userId: session.user.id, organizationId, organizations,
+    organizationError, vaults: vaultsQuery.data?.items, error: vaultError, select, reload }}>
+    <Fragment key={organizationId}>{children}</Fragment>
   </SidebarContext.Provider>;
 }
 
@@ -252,40 +225,17 @@ function TreeNode({ id, name, href, initialOpen, children }: { id: string; name:
 }
 
 function VaultChildren({ vaultId }: { vaultId: string }) {
-  const [projects, setProjects] = useState<SyncedProjectInfo[]>();
-  const [meeting, setMeeting] = useState<SyncedMeetingInfo>();
-  const [error, setError] = useState<string>();
-  const [selectionError, setSelectionError] = useState<string>();
-  const [attempt, setAttempt] = useState(0);
   const base = `/vaults/${vaultId}`;
   const route = window.location.pathname;
   const meetingId = route.startsWith(`${base}/meetings/`) ? route.split("/")[4] : undefined;
   const projectId = route.startsWith(`${base}/projects/`) ? route.split("/")[4] : undefined;
-  const selectedMeeting = meeting?.meetingId === meetingId ? meeting : undefined;
-  useEffect(() => {
-    const controller = new AbortController();
-    setError(undefined);
-    void json<{ items: SyncedProjectInfo[] }>(`/api/v1/vaults/${vaultId}/projects`, { signal: controller.signal }).then(({ items }) => {
-      if (!controller.signal.aborted) setProjects(items);
-    }).catch((caught: unknown) => {
-      if (!controller.signal.aborted) setError(caught instanceof Error ? caught.message : "Could not load Projects");
-    });
-    return () => controller.abort();
-  }, [vaultId, attempt]);
-  useEffect(() => {
-    const controller = new AbortController();
-    setSelectionError(undefined);
-    if (meetingId) {
-      void json<SyncedMeetingInfo>(`/api/v1/vaults/${vaultId}/meetings/${meetingId}`, { signal: controller.signal }).then((value) => {
-        if (!controller.signal.aborted) setMeeting(value);
-      }).catch((caught: unknown) => {
-        if (!controller.signal.aborted) setSelectionError(caught instanceof Error ? caught.message : "Could not load meeting");
-      });
-    }
-    return () => controller.abort();
-  }, [vaultId, meetingId, attempt]);
-  if (error) return <Failure message={error} retry={() => setAttempt((value) => value + 1)} />;
-  if (!projects) return <p className="sidebar-status">{uiText("Loading Projects…", "プロジェクトを読み込み中…")}</p>;
+  const projectsQuery = useLiveJSON<{ items: SyncedProjectInfo[] }>(`/api/v1/vaults/${vaultId}/projects`);
+  const meetingQuery = useLiveJSON<SyncedMeetingInfo>(meetingId ? `/api/v1/vaults/${vaultId}/meetings/${meetingId}` : undefined);
+  const projects = projectsQuery.data?.items;
+  const selectedMeeting = meetingQuery.data;
+  if (!projects) return projectsQuery.error
+    ? <Failure message={projectsQuery.error.message} retry={projectsQuery.reload} />
+    : <p className="sidebar-status">{uiText("Loading Projects…", "プロジェクトを読み込み中…")}</p>;
   const ancestors = projectAncestors(projects, projectId ?? selectedMeeting?.projectId);
   const childrenByParent = new Map<string | undefined, SyncedProjectInfo[]>();
   for (const project of projects) {
@@ -302,7 +252,8 @@ function VaultChildren({ vaultId }: { vaultId: string }) {
       </ul>
     </TreeNode>);
   return <>
-    {selectionError && <Failure message={selectionError} retry={() => setAttempt((value) => value + 1)} />}
+    {projectsQuery.error && <Failure message={projectsQuery.error.message} retry={projectsQuery.reload} />}
+    {meetingQuery.error && <Failure message={meetingQuery.error.message} retry={meetingQuery.reload} />}
     <ul className="sidebar-tree">
       {projectsUnder()}
       <TreeNode id={`${vaultId}:unassigned`} name={uiText("Unassigned", "未分類")}
@@ -314,32 +265,12 @@ function VaultChildren({ vaultId }: { vaultId: string }) {
 }
 
 function Meetings({ vaultId, projectId, selectedMeeting }: { vaultId: string; projectId?: string; selectedMeeting?: SyncedMeetingInfo }) {
-  const [items, setItems] = useState<SyncedMeetingInfo[]>([]);
-  const [nextCursor, setNextCursor] = useState<string>();
-  const [cursor, setCursor] = useState<string>();
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string>();
-  const [attempt, setAttempt] = useState(0);
-  useEffect(() => {
-    const controller = new AbortController();
-    setLoading(true);
-    setError(undefined);
-    const params = new URLSearchParams(projectId ? { projectId, projectScope: "direct" } : { projectScope: "unassigned" });
-    if (cursor) params.set("cursor", cursor);
-    void json<SyncedMeetingPage>(`/api/v1/vaults/${vaultId}/meetings?${params}`, { signal: controller.signal }).then((page) => {
-      if (controller.signal.aborted) return;
-      setItems((previous) => {
-        if (!cursor) return page.items;
-        const previousIds = new Set(previous.map(({ meetingId }) => meetingId));
-        const newItems = page.items.filter(({ meetingId }) => !previousIds.has(meetingId));
-        return [...previous, ...newItems];
-      });
-      setNextCursor(page.nextCursor);
-    }).catch((caught: unknown) => {
-      if (!controller.signal.aborted) setError(caught instanceof Error ? caught.message : "Could not load meetings");
-    }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
-    return () => controller.abort();
-  }, [vaultId, projectId, cursor, attempt]);
+  const params = new URLSearchParams(projectId ? { projectId, projectScope: "direct" } : { projectScope: "unassigned" });
+  const query = useLivePage<SyncedMeetingInfo>(`/api/v1/vaults/${vaultId}/meetings?${params}`);
+  const items = query.data?.items ?? [];
+  const nextCursor = query.data?.nextCursor;
+  const loading = query.loading;
+  const error = query.error?.message;
   let visibleMeetings = items;
   if (selectedMeeting
     && (selectedMeeting.projectId ?? undefined) === projectId
@@ -358,9 +289,9 @@ function Meetings({ vaultId, projectId, selectedMeeting }: { vaultId: string; pr
         </a>
       </li>;
     })}
-    {loading && <li className="sidebar-status">{uiText("Loading meetings…", "ミーティングを読み込み中…")}</li>}
-    {error && <li><Failure message={error} retry={() => setAttempt((value) => value + 1)} /></li>}
-    {!loading && !error && visibleMeetings.length === 0 && <li className="sidebar-status">{uiText("No meetings", "ミーティングがありません")}</li>}
-    {!loading && !error && nextCursor && <li><button className="sidebar-action" onClick={() => setCursor(nextCursor)}>{uiText("Show more", "さらに表示")}</button></li>}
+    {loading && !query.data && <li className="sidebar-status">{uiText("Loading meetings…", "ミーティングを読み込み中…")}</li>}
+    {error && <li><Failure message={error} retry={query.reload} /></li>}
+    {query.data && !error && visibleMeetings.length === 0 && <li className="sidebar-status">{uiText("No meetings", "ミーティングがありません")}</li>}
+    {nextCursor && <li><button className="sidebar-action" disabled={query.loadingMore} onClick={query.loadMore}>{uiText("Show more", "さらに表示")}</button></li>}
   </>;
 }
