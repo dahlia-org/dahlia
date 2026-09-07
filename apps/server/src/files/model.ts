@@ -1,24 +1,32 @@
 import { z } from "zod";
 import { screenshotVariantKey, type ScreenshotVariant } from "../sync/screenshot-variants";
 
+const fileDimensionSchema = z.number().int().positive().max(33_554_432);
+
 export const fileMetadataSchema = z.object({
   source: z.enum(["upload", "screenshot"]),
-  width: z.number().int().positive().max(33_554_432).optional(),
-  height: z.number().int().positive().max(33_554_432).optional(),
+  width: fileDimensionSchema.optional(),
+  height: fileDimensionSchema.optional(),
   ocr_text: z.string().max(20_000).nullable().optional(),
   caption: z.string().max(500).nullable().optional(),
 }).strict();
 export type FileMetadata = z.infer<typeof fileMetadataSchema>;
 
-export const fileReservationSchema = z.object({
-  id: z.uuid().transform((id) => id.toLowerCase()),
+const dimensionQuerySchema = z.string().regex(/^[1-9][0-9]*$/)
+  .transform(Number).pipe(fileDimensionSchema);
+
+export const fileUploadQuerySchema = z.object({
+  id: z.uuidv7().transform((id) => id.toLowerCase()),
   vaultId: z.uuid().transform((id) => id.toLowerCase()),
   name: z.string().min(1).max(255),
-  offset: z.literal(0),
-  size: z.number().int().nonnegative().max(64 * 1024 * 1024),
-  content_type: z.string().regex(/^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/).max(255),
-  checksum: z.string().regex(/^SHA-256:[0-9a-f]{64}$/),
-  metadata: fileMetadataSchema,
+  source: fileMetadataSchema.shape.source,
+  width: dimensionQuerySchema.optional(),
+  height: dimensionQuerySchema.optional(),
+}).strict();
+
+export const filePatchSchema = z.object({
+  baseRevision: z.number().int().positive(),
+  metadata: fileMetadataSchema.omit({ source: true }).partial(),
 }).strict();
 
 export interface FileRecord {

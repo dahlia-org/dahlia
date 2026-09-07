@@ -25,7 +25,7 @@ import type {
   VaultPrincipalType,
 } from "./types";
 import { decodeSyncCursor, encodeSyncCursor, SYNC_SNAPSHOT_ENTITIES, SyncTransactionError } from "./store";
-import { fileMetadataSchema, fileReservationSchema, fileResponse, fileStorageKey, fileVariantKey, imageContentTypes, type FileRecord } from "../files/model";
+import { fileMetadataSchema, fileUploadQuerySchema, filePatchSchema, fileResponse, fileStorageKey, fileVariantKey, imageContentTypes, type FileRecord } from "../files/model";
 import { SCREENSHOT_VARIANTS, screenshotVariantKey, type ScreenshotTransformer, type ScreenshotVariant } from "./screenshot-variants";
 import { fileTextMetadata, metadataRecord, parseContentMode, parseTextEntity, readTextContent, TEXT_CONTENT_VERSION } from "./text-content";
 
@@ -474,40 +474,35 @@ export class MeetingSyncService {
     if (!accepted) throw missingMeetingConflict(meetingId);
   }
 
-  async reserveFile(identity: Identity, body: unknown) {
-    this.requireWritableIdentity(identity);
-    this.requireStorage();
-    if (!this.fileStorageRoot) throw new ArtifactRequestError(503, "file_storage_not_configured");
-    const parsed = fileReservationSchema.safeParse(body);
-    if (!parsed.success || !uuidV7Schema.safeParse(parsed.data.id).success) {
-      throw new ArtifactRequestError(400, "invalid_file_reservation");
-    }
-    const input = parsed.data;
-    const now = new Date();
-    const file = await this.store.withIdentity(identity, async (scoped) => {
-      await scoped.expireFileUploads(input.vaultId, new Date(now.getTime() - 86_400_000));
-      return scoped.reserveFile({ fileId: input.id, vaultId: input.vaultId,
-        uri: `${this.fileStorageRoot}/${fileStorageKey(input.id)}`, offset: input.offset, size: input.size,
-        contentType: input.content_type, checksum: input.checksum, name: input.name, metadata: input.metadata,
-        active: false, uploadedAt: null, revision: 0, createdAt: now, updatedAt: now,
-      });
-    });
-    this.scheduleStorageDeletes();
-    if (!file) throw new ArtifactRequestError(404, "file_or_vault_not_found");
-    if (file.size !== input.size || file.contentType !== input.content_type || file.checksum !== input.checksum
-      || file.metadata.source !== input.metadata.source) throw new ArtifactRequestError(409, "file_id_conflict");
-    return { ...fileResponse(file), contentURL: `/api/v1/files/${file.fileId}/content` };
-  }
-
-  async putFile(identity: Identity, fileId: string, request: Request) {
+  async postFile(identity: Identity, request: Request) {
     this.requireWritableIdentity(identity);
     const storage = this.requireStorage();
+    if (!this.fileStorageRoot) throw new ArtifactRequestError(503, "file_storage_not_configured");
+    const query = new URL(request.url).searchParams;
+    const parsed = fileUploadQuerySchema.safeParse(Object.fromEntries(query));
+    if (!parsed.success || [...query.keys()].some((key) => query.getAll(key).length !== 1)) {
+      throw new ArtifactRequestError(400, "invalid_file_upload");
+    }
+    const { id: fileId, vaultId, name, ...metadata } = parsed.data;
     const upload = parseUpload(request, DEFAULT_ARTIFACT_MAX_BYTES);
+    if (!/^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/.test(upload.contentType)) {
+      throw new ArtifactRequestError(400, "invalid_content_type");
+    }
     const key = fileStorageKey(fileId);
     return this.withStorageOperation(key, () => this.store.withStorageKeyLock(key, async () => {
-      const file = await this.store.withIdentity(identity, (scoped) => scoped.getFile(fileId));
-      if (!file) throw new ArtifactRequestError(404, "file_not_found");
-      if (file.size !== upload.contentLength || file.contentType !== upload.contentType) {
+      const now = new Date();
+      const file = await this.store.withIdentity(identity, async (scoped) => {
+        await scoped.expireFileUploads(vaultId, new Date(now.getTime() - 86_400_000));
+        return scoped.reserveFile({ fileId, vaultId,
+          uri: `${this.fileStorageRoot}/${key}`, offset: 0, size: 0, checksum: "",
+          contentType: upload.contentType, name, metadata,
+          active: false, uploadedAt: null, revision: 0, createdAt: now, updatedAt: now,
+        });
+      });
+      this.scheduleStorageDeletes();
+      if (!file) throw new ArtifactRequestError(404, "file_or_vault_not_found");
+      if (file.contentType !== upload.contentType || file.metadata.source !== metadata.source
+        || (file.uploadedAt && file.size !== upload.contentLength)) {
         throw new ArtifactRequestError(409, "file_id_conflict");
       }
       if (await this.store.hasStorageDelete(key)) throw new ArtifactRequestError(503, "file_storage_delete_pending");
@@ -515,35 +510,39 @@ export class MeetingSyncService {
       const bounded = request.body?.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
         transform(chunk, controller) {
           received += chunk.byteLength;
-          if (received > file.size) throw new ArtifactRequestError(413, "file_size_mismatch");
+          if (received > upload.contentLength) throw new ArtifactRequestError(413, "file_size_mismatch");
           controller.enqueue(chunk);
         },
         flush() {
-          if (received !== file.size) throw new ArtifactRequestError(400, "file_size_mismatch");
+          if (received !== upload.contentLength) throw new ArtifactRequestError(400, "file_size_mismatch");
         },
       })) ?? null;
-      if (!bounded && file.size !== 0) throw new ArtifactRequestError(400, "file_size_mismatch");
+      if (!bounded && upload.contentLength !== 0) throw new ArtifactRequestError(400, "file_size_mismatch");
       if (file.uploadedAt) {
         if (`SHA-256:${await sha256Stream(bounded)}` !== file.checksum) {
           throw new ArtifactRequestError(409, "file_checksum_mismatch");
         }
-        return fileResponse(file);
+        return { file: this.fileMetadata(fileResponse(file)), created: false };
       }
       try {
         const hashing = sha256Passthrough(bounded);
-        const [, hash] = await Promise.all([
-          this.storageCall(() => storage.put(key, hashing.body, file.size, file.contentType, request.signal)),
-          hashing.digest,
-        ]);
-        if (`SHA-256:${hash}` !== file.checksum) throw new ArtifactRequestError(409, "file_checksum_mismatch");
-        if (!await this.store.withIdentity(identity, (scoped) => scoped.markFileUploaded(fileId, file.checksum))) {
+        const storing = this.storageCall(() => storage.put(key, hashing.body, upload.contentLength, file.contentType, request.signal))
+          .catch(async (error: unknown) => {
+            await hashing.cancel(error).catch(() => undefined);
+            throw error;
+          });
+        const [stored, digest] = await Promise.allSettled([storing, hashing.digest]);
+        if (digest.status === "rejected") throw digest.reason;
+        if (stored.status === "rejected") throw stored.reason;
+        const uploaded = await this.store.withIdentity(identity, (scoped) => scoped.markFileUploaded(file, received, `SHA-256:${digest.value}`));
+        if (!uploaded) {
           const current = await this.store.withIdentity(identity, (scoped) => scoped.getFile(fileId));
-          if (current?.vaultId === file.vaultId && current.checksum === file.checksum && await this.store.hasStorageDelete(key)) {
+          if (current?.vaultId === file.vaultId && await this.store.hasStorageDelete(key)) {
             throw new ArtifactRequestError(503, "file_storage_delete_pending");
           }
           throw new ArtifactRequestError(404, "file_not_found");
         }
-        return fileResponse(file);
+        return { file: this.fileMetadata(fileResponse(uploaded)), created: true };
       } catch (error) {
         try { await storage.delete(key); } catch {
           await this.store.enqueueStorageDelete(key);
@@ -554,22 +553,37 @@ export class MeetingSyncService {
     }));
   }
 
+  async patchFile(identity: Identity, fileId: string, body: unknown) {
+    this.requireWritableIdentity(identity);
+    const parsed = filePatchSchema.safeParse(body);
+    if (!parsed.success) throw new ArtifactRequestError(400, "invalid_file_patch");
+    const file = await this.store.withIdentity(identity, (scoped) => scoped.getFile(fileId));
+    if (!file?.active) throw new ArtifactRequestError(404, "file_not_found");
+    const response = await this.commitTransaction(identity, {
+      schemaVersion: 2, id: uuidV7(), vaultId: file.vaultId, createdAt: new Date().toISOString(),
+      operations: [{ id: uuidV7(), entity: "file", action: "upsert", entityId: fileId,
+        baseRevision: parsed.data.baseRevision, data: { checksum: file.checksum, metadata: parsed.data.metadata } }],
+    });
+    const record = response.records.find((record) => record.entity === "file" && record.id === fileId)!;
+    return this.fileMetadata(record.record as ReturnType<typeof fileResponse>);
+  }
+
   async getFile(identity: Identity, fileId: string, content?: string) {
     const mode = parseContentMode(content);
     const file = await this.store.withIdentity(identity, (scoped) => scoped.getFile(fileId, true));
     if (!file) throw new ArtifactRequestError(404, "file_not_found");
-    const record = this.fileMetadata(file);
+    const record = this.fileMetadata(fileResponse(file));
     return mode ? fileTextMetadata(record) : record;
   }
 
-  private fileMetadata(file: FileRecord) {
+  private fileMetadata(file: ReturnType<typeof fileResponse>) {
     const variants: Record<string, string> = {};
-    if (this.screenshotTransformer && imageContentTypes.has(file.contentType)) {
+    if (this.screenshotTransformer && imageContentTypes.has(file.content_type)) {
       for (const variant of Object.keys(SCREENSHOT_VARIANTS)) {
-        variants[variant] = `/api/v1/files/${file.fileId}/variants/${variant}`;
+        variants[variant] = `/api/v1/files/${file.id}/variants/${variant}`;
       }
     }
-    return { ...fileResponse(file), contentURL: `/api/v1/files/${file.fileId}/content`, variants };
+    return { ...file, contentURL: `/api/v1/files/${file.id}`, variants };
   }
 
   async listFiles(identity: Identity, vaultId: string, cursor?: string, meetingId?: string) {
@@ -577,11 +591,11 @@ export class MeetingSyncService {
     return this.store.withIdentity(identity, async (scoped) => {
       if (meetingId) {
         const rows = await scoped.listMeetingFiles(vaultId, meetingId, after, SYNC_READ_PAGE_SIZE + 1);
-        const items = rows.slice(0, SYNC_READ_PAGE_SIZE).map(({ file, ...link }) => ({ ...link, file: this.fileMetadata(file) }));
+        const items = rows.slice(0, SYNC_READ_PAGE_SIZE).map(({ file, ...link }) => ({ ...link, file: this.fileMetadata(fileResponse(file)) }));
         return { items, nextCursor: rows.length > SYNC_READ_PAGE_SIZE ? items.at(-1)!.id : null };
       }
       const rows = await scoped.listFiles(vaultId, after, SYNC_READ_PAGE_SIZE + 1);
-      const items = rows.slice(0, SYNC_READ_PAGE_SIZE).map((file) => this.fileMetadata(file));
+      const items = rows.slice(0, SYNC_READ_PAGE_SIZE).map((file) => this.fileMetadata(fileResponse(file)));
       return { items, nextCursor: rows.length > SYNC_READ_PAGE_SIZE ? items.at(-1)!.id : null };
     });
   }

@@ -1783,13 +1783,15 @@ function createIdentityStore(
       )).limit(1);
       return file ?? null;
     },
-    async markFileUploaded(fileId, checksum) {
-      const [file] = await db.update(schema.syncedFile).set({ uploadedAt: new Date(), updatedAt: new Date() })
-        .where(and(eq(schema.syncedFile.fileId, fileId), eq(schema.syncedFile.checksum, checksum), ownerAccess(schema.syncedFile.vaultId),
+    async markFileUploaded(pending, size, checksum) {
+      const [file] = await db.update(schema.syncedFile).set({ size, checksum, uploadedAt: new Date(), updatedAt: new Date() })
+        .where(and(eq(schema.syncedFile.fileId, pending.fileId), eq(schema.syncedFile.vaultId, pending.vaultId),
+          eq(schema.syncedFile.createdAt, pending.createdAt), isNull(schema.syncedFile.uploadedAt),
+          eq(schema.syncedFile.active, false), ownerAccess(schema.syncedFile.vaultId),
           notExists(db.select({ key: schema.storageDeleteJob.storageKey }).from(schema.storageDeleteJob)
-            .where(eq(schema.storageDeleteJob.storageKey, fileStorageKey(fileId))))))
-        .returning({ id: schema.syncedFile.fileId });
-      return file !== undefined;
+            .where(eq(schema.storageDeleteJob.storageKey, fileStorageKey(pending.fileId))))))
+        .returning();
+      return file ?? null;
     },
     async expireFileUploads(vaultId, before) {
       const files = await db.select({ id: schema.syncedFile.fileId }).from(schema.syncedFile).where(and(

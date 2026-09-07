@@ -1,8 +1,9 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import { existsSync, mkdirSync, readdirSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, realpathSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { DatabaseSync } from "node:sqlite";
+import { setTimeout } from "node:timers/promises";
 import { drizzle } from "drizzle-orm/sqlite-proxy";
 import { migrate as migrateSqlite } from "drizzle-orm/sqlite-proxy/migrator";
 
@@ -142,6 +143,32 @@ export function createNodeApplicationStore(
   };
   return {
     ...store,
+    sync: {
+      ...store.sync,
+      async withStorageKeyLock<T>(_storageKey: string, action: () => Promise<T>): Promise<T> {
+        // ponytail: SQLite serializes storage I/O; use PostgreSQL per-key locks for concurrent storage workloads.
+        // A separate database keeps network I/O from holding the canonical database's write lock.
+        const lock = new DatabaseSync(`${realpathSync(databasePath)}.storage-lock`);
+        try {
+          for (;;) {
+            try {
+              lock.exec("BEGIN IMMEDIATE");
+              break;
+            } catch (error) {
+              if ((error as { errcode?: number }).errcode !== 5) throw error; // SQLITE_BUSY
+              await setTimeout(25);
+            }
+          }
+          try {
+            return await action();
+          } finally {
+            lock.exec("ROLLBACK");
+          }
+        } finally {
+          lock.close();
+        }
+      },
+    },
     searchIndex: config.searchEmbedding ? createSqliteSearchIndexStore(transactionalSqlite) : undefined,
     imageAnalysis: config.captioningModel ? createImageAnalysisStore(transactionalSqlite, false) : undefined,
     close: () => {

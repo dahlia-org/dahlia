@@ -190,7 +190,7 @@ export function createApp(dependencies: AppDependencies) {
   app.use("/api/*", async (context, next) => {
     await next();
     const fileRead = ["GET", "HEAD"].includes(context.req.method)
-      && /^\/api\/v1\/files\/[^/]+\/(?:content|variants\/[^/]+)$/.test(context.req.path)
+      && /^\/api\/v1\/files\/[^/]+(?:\/variants\/[^/]+)?$/.test(context.req.path)
       && (context.res.ok || context.res.status === 304);
     if (!fileRead) context.header("Cache-Control", "no-store");
   });
@@ -526,23 +526,25 @@ export function createApp(dependencies: AppDependencies) {
       return context.body(null, 204);
     },
   );
-  app.post("/api/v1/files", artifactPatchBodyLimit, async (context) => {
+  app.post("/api/v1/files", async (context) => {
     const requiresBrowserOrigin = config.authProvider === "accounts" && !context.req.header("authorization");
     if ((requiresBrowserOrigin || context.req.header("origin")) && !mutationOriginAllowed(context.req.raw, config.baseUrl)) {
       return context.json({ error: "invalid_origin" }, 403);
     }
     const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
-    return context.json(await sync.reserveFile(identity, await context.req.json().catch(() => null)));
+    const result = await sync.postFile(identity, context.req.raw);
+    return context.json(result.file, result.created ? 201 : 200);
   });
-  app.put("/api/v1/files/:fileId/content", async (context) => {
+  app.on(["POST", "PUT", "PATCH"], "/api/v1/files/:fileId/metadata", bodyLimit({ maxSize: 128 * 1024,
+    onError: (context) => context.json({ error: "file_patch_too_large" }, 413) }), async (context) => {
     const requiresBrowserOrigin = config.authProvider === "accounts" && !context.req.header("authorization");
     if ((requiresBrowserOrigin || context.req.header("origin")) && !mutationOriginAllowed(context.req.raw, config.baseUrl)) {
       return context.json({ error: "invalid_origin" }, 403);
     }
     const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
-    return context.json(await sync.putFile(identity, sync.parseId(context.req.param("fileId")), context.req.raw));
+    return context.json(await sync.patchFile(identity, sync.parseId(context.req.param("fileId")), await context.req.json().catch(() => null)));
   });
-  app.get("/api/v1/files/:fileId", async (context) => {
+  app.get("/api/v1/files/:fileId/metadata", async (context) => {
     const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
     return context.json(await sync.getFile(identity, sync.parseId(context.req.param("fileId")), context.req.query("content")));
   });
@@ -778,7 +780,7 @@ export function createApp(dependencies: AppDependencies) {
       sync.parsePermissionPrincipal(context.req.param("userId")),
     ) ? context.body(null, 204) : context.json({ error: "not_found" }, 404);
   });
-  app.on(["GET", "HEAD"], "/api/v1/files/:fileId/content", async (context) => {
+  app.on(["GET", "HEAD"], "/api/v1/files/:fileId", async (context) => {
     const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
     return sync.readFile(identity, sync.parseId(context.req.param("fileId")), context.req.method as "GET" | "HEAD", context.req.raw);
   });

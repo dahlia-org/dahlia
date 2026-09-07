@@ -53,7 +53,7 @@ window.fetch = (input, init) => Promise.resolve((() => {
     return project ? Response.json(project) : Response.json({ error: "project_not_found" }, { status: 404 });
   }
   if (url.pathname.startsWith("/api/v1/meetings/")) return Response.json(meeting(url.pathname.split("/").at(-1)!));
-  if (url.pathname.startsWith("/api/v1/files/")) return Response.json(file(Number(url.pathname.split("/").at(-1)!.slice(1))).file);
+  if (url.pathname.startsWith("/api/v1/files/")) return Response.json(file(Number(url.pathname.split("/").at(-2)!.slice(1))).file);
   if (url.pathname === `${base}/projects`) return Response.json({ items: projects });
   if (url.pathname.startsWith(`${base}/projects/`)) return Response.json(projects.find((p) => p.projectId === url.pathname.split("/").at(-1)));
   if (url.pathname === `${base}/meetings`) return Response.json({ items: (url.searchParams.get("projectId") === "p0" && projects.some((project) => project.projectId === "p0")) || (!url.searchParams.has("projectId") && !url.searchParams.has("projectScope")) ? [meeting("m1"), meeting("m2")] : [] });
@@ -129,13 +129,13 @@ async function run() {
   notify();
   await until(() => preview?.getAttribute("alt") === caption);
   assert(preview === dialog.querySelector("img") && dialog.matches(":modal"), "Live refresh replaced or closed modal");
-  failures.set("/api/v1/files/f0", 404); notify();
+  failures.set("/api/v1/files/f0/metadata", 404); notify();
   await until(() => dialog.querySelector('[role="alert"]') && !dialog.querySelector("img"));
   assert(dialog.matches(":modal") && selectedTab() === "Screenshots", "File failure changed its background page");
   failures.clear();
   dialog.querySelector<HTMLButtonElement>('[role="alert"] button')!.click();
   await until(() => dialog.querySelector<HTMLImageElement>("img")?.complete);
-  dialog.querySelector<HTMLButtonElement>(".file-close")!.click();
+  dialog.querySelector<HTMLButtonElement>('[aria-label="Close"]')!.click();
   await until(() => !document.querySelector("dialog"));
   assert(document.activeElement === fileLink, "Closing modal did not restore focus");
   assert(document.body.style.overflow !== "hidden", "Closing modal left scrolling locked");

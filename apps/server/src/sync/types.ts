@@ -215,7 +215,7 @@ export interface IdentitySyncStore {
   ): Promise<SyncScreenshotRecord | null>;
   getFile(fileId: string, activeOnly?: boolean): Promise<FileRecord | null>;
   reserveFile(input: FileRecord): Promise<FileRecord | null>;
-  markFileUploaded(fileId: string, checksum: string): Promise<boolean>;
+  markFileUploaded(file: FileRecord, size: number, checksum: string): Promise<FileRecord | null>;
   expireFileUploads(vaultId: string, before: Date): Promise<void>;
   listFiles(vaultId: string, after: string | undefined, limit: number): Promise<FileRecord[]>;
   listMeetingFiles(vaultId: string, meetingId: string, after: string | undefined, limit: number): Promise<(MeetingFileRecord & { file: FileRecord })[]>;

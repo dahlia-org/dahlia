@@ -95,6 +95,7 @@ export async function sha256Stream(
 export function sha256Passthrough(value: ReadableStream<Uint8Array> | null): {
   body: ReadableStream<Uint8Array>;
   digest: Promise<string>;
+  cancel: (reason: unknown) => Promise<void>;
 } {
   const input = value ?? new ReadableStream<Uint8Array>({ start: (controller) => controller.close() });
   const reader = input.getReader();
@@ -105,6 +106,10 @@ export function sha256Passthrough(value: ReadableStream<Uint8Array> | null): {
     resolveDigest = resolve;
     rejectDigest = reject;
   });
+  async function cancel(reason: unknown): Promise<void> {
+    rejectDigest(reason);
+    await reader.cancel(reason);
+  }
   const body = new ReadableStream<Uint8Array>({
     async pull(controller) {
       try {
@@ -121,10 +126,7 @@ export function sha256Passthrough(value: ReadableStream<Uint8Array> | null): {
         controller.error(error);
       }
     },
-    async cancel(reason) {
-      rejectDigest(reason);
-      await reader.cancel(reason);
-    },
+    cancel,
   });
-  return { body, digest };
+  return { body, digest, cancel };
 }

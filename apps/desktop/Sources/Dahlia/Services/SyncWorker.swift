@@ -40,6 +40,13 @@ struct SyncOperationBody: Encodable {
     }
 }
 
+private struct FileUploadResponse: Decodable {
+    let id: UUID
+    let vaultId: UUID
+    let size: Int
+    let checksum: String
+}
+
 private struct SyncTransactionResolution: Decodable {
     let id: UUID
     let status: String
@@ -423,29 +430,34 @@ actor SyncWorker {
                    dbQueue: dbQueue
                ) {
                 let payload = try decode(FileOperationPayload.self, from: operation.payloadJSON)
-                let reservation: [String: JSONValue] = try [
-                    "id": .string(operation.entityId.lowercase), "vaultId": .string(transaction.vaultId.lowercase),
-                    "name": .string(payload.name), "offset": .number(0), "size": .number(Double(attachment.bytes.count)),
-                    "content_type": .string(attachment.mimeType), "checksum": .string("SHA-256:" + attachment.sha256),
-                    "metadata": SyncJSON.decoder.decode(JSONValue.self, from: SyncJSON.encoder.encode(payload.metadata)),
+                var components = URLComponents()
+                components.path = "api/v1/files"
+                components.queryItems = [
+                    URLQueryItem(name: "id", value: operation.entityId.lowercase),
+                    URLQueryItem(name: "vaultId", value: transaction.vaultId.lowercase),
+                    URLQueryItem(name: "name", value: payload.name),
+                    URLQueryItem(name: "source", value: payload.metadata.source.rawValue),
                 ]
-                try await send(
-                    request(
-                        origin: target,
-                        path: "api/v1/files",
-                        method: "POST",
-                        body: SyncJSON.encoder.encode(reservation),
-                        contentType: "application/json"
-                    ),
-                    connectionId: transaction.connectionId
-                )
-                try await send(request(
+                if let width = payload.metadata.width {
+                    components.queryItems?.append(URLQueryItem(name: "width", value: String(width)))
+                }
+                if let height = payload.metadata.height {
+                    components.queryItems?.append(URLQueryItem(name: "height", value: String(height)))
+                }
+                // URL query parsers treat a literal plus as a space.
+                guard let path = components.string?.replacingOccurrences(of: "+", with: "%2B") else { throw URLError(.badURL) }
+                let data = try await sendData(request(
                     origin: target,
-                    path: "api/v1/files/\(operation.entityId.lowercase)/content",
-                    method: "PUT",
+                    path: path,
+                    method: "POST",
                     body: attachment.bytes,
                     contentType: attachment.mimeType
                 ), connectionId: transaction.connectionId)
+                let uploaded = try SyncJSON.decoder.decode(FileUploadResponse.self, from: data)
+                guard uploaded.id == operation.entityId, uploaded.vaultId == transaction.vaultId,
+                      uploaded.size == attachment.bytes.count,
+                      uploaded.checksum == "SHA-256:" + attachment.sha256,
+                      uploaded.checksum == payload.checksum else { throw SyncTransactionQueueError.invalidReceipt }
             } else if operation.entity == .transcript, operation.action == .patch {
                 let payload = try await stageTranscriptPatch(operation, transaction: transaction, origin: target, sendUploads: stageAttachments)
                 operations[index] = SyncQueuedOperation(
@@ -916,7 +928,7 @@ actor SyncWorker {
                 continue
             }
             let data = try await sendData(
-                request(origin: target.origin, path: "api/v1/files/\(fileId.lowercase)?content=metadata-v1", method: "GET"),
+                request(origin: target.origin, path: "api/v1/files/\(fileId.lowercase)/metadata?content=metadata-v1", method: "GET"),
                 connectionId: target.connectionId
             )
             struct Header: Decodable { let id: UUID

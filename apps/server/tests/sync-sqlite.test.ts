@@ -350,7 +350,7 @@ describe("SQLite canonical sync", () => {
   it.each([{ deleted: "file", reserveAgain: true }, { deleted: "vault", reserveAgain: true }, { deleted: "file", reserveAgain: false }])("rejects stale upload completion after $deleted deletion (reserved again=$reserveAgain) and permits a clean retry", async ({ deleted, reserveAgain }) => {
     const { store, service, storage, file, bytes } = await fileSetup();
     const replacement = { ...file, id: freshId() };
-    await service.reserveFile(owner, replacement);
+    await reservePendingFile(store, replacement);
     let started!: () => void;
     let release!: () => void;
     const didStart = new Promise<void>((resolve) => { started = resolve; });
@@ -361,8 +361,7 @@ describe("SQLite canonical sync", () => {
       await canFinish;
       await put(...args);
     });
-    const upload = () => service.putFile(owner, replacement.id, new Request("https://test.invalid", { method: "PUT", body: bytes,
-      headers: { "content-type": "image/png", "content-length": String(bytes.length) } }));
+    const upload = () => service.postFile(owner, fileUploadRequest(replacement, bytes));
     const uploading = upload();
     const rejected = expect(uploading).rejects.toMatchObject(reserveAgain
       ? { status: 503, code: "file_storage_delete_pending" }
@@ -371,7 +370,7 @@ describe("SQLite canonical sync", () => {
     await service.commitTransaction(owner, wire(deleted === "file"
       ? [{ entity: "file", action: "delete", entityId: replacement.id, baseRevision: null, data: {} }]
       : [{ entity: "vault", action: "reset", entityId: vaultId, baseRevision: 1, data: { preservePermissions: true } }]));
-    if (reserveAgain) await service.reserveFile(owner, replacement);
+    if (reserveAgain) await reservePendingFile(store, replacement);
     release();
     await rejected;
     const current = await store.sync.withIdentity(owner, (sync) => sync.getFile(replacement.id));
@@ -379,7 +378,7 @@ describe("SQLite canonical sync", () => {
     else expect(current).toBeNull();
     await vi.waitFor(async () => expect(await store.sync.hasStorageDelete(fileStorageKey(replacement.id))).toBe(false));
     expect(await storage.exists(fileStorageKey(replacement.id))).toBe(false);
-    await service.reserveFile(owner, replacement);
+    await reservePendingFile(store, replacement);
     await upload();
     await service.commitTransaction(owner, wire([{ entity: "file", action: "upsert", entityId: replacement.id, baseRevision: null,
       data: { checksum: file.checksum, metadata: {} } }]));
@@ -398,7 +397,7 @@ describe("SQLite canonical sync", () => {
   });
 
   it("keeps a deleted file deleted in the delta while its ID is reserved again", async () => {
-    const { store, service, storage, file, publish } = await fileSetup();
+    const { store, service, storage, file, bytes, publish } = await fileSetup();
     await store.sync.withIdentity(owner, (sync) => sync.putMemberPermission(vaultId, "organization", "external"));
     const published = await publish();
     await service.commitTransaction(owner, wire([{ entity: "file", action: "delete", entityId: file.id, baseRevision: 1, data: {} }]));
@@ -406,7 +405,7 @@ describe("SQLite canonical sync", () => {
       expect(await storage.exists(fileStorageKey(file.id))).toBe(false);
       expect(await store.sync.hasStorageDelete(fileStorageKey(file.id))).toBe(false);
     });
-    await service.reserveFile(owner, { ...file, name: "Private pending replacement" });
+    await service.postFile(owner, fileUploadRequest({ ...file, name: "Private pending replacement" }, bytes));
     for (const identity of [owner, other]) {
       const delta = await service.listChanges(identity, vaultId, published.cursor);
       expect(delta.items.filter((item) => item.entity === "file")).toMatchObject([
@@ -448,7 +447,7 @@ describe("SQLite canonical sync", () => {
     expect(await service.getFile(owner, file.id)).toMatchObject({ metadata: { source: "screenshot", width: 1800, ocr_text: "Searchable text" }, revision: 2 });
     const metadataOnly = await service.getFile(owner, file.id, "metadata-v1");
     expect(metadataOnly).toMatchObject({ contentOmitted: true, contentPresent: true, revision: 2,
-      contentURL: `/api/v1/files/${file.id}/content`, metadata: { source: "screenshot", width: 1800 },
+      contentURL: `/api/v1/files/${file.id}`, metadata: { source: "screenshot", width: 1800 },
       variants: { thumb_480: `/api/v1/files/${file.id}/variants/thumb_480`, thumb_1280: `/api/v1/files/${file.id}/variants/thumb_1280`,
         thumb_1568: `/api/v1/files/${file.id}/variants/thumb_1568`, thumb_1920: `/api/v1/files/${file.id}/variants/thumb_1920` } });
     expect(metadataOnly.metadata).not.toHaveProperty("ocr_text");
@@ -526,8 +525,8 @@ describe("SQLite canonical sync", () => {
       const { store, service, storage, file, publish, transformer, databasePath } = await fileSetup();
       await publish();
       const app = createApp({ config: testConfig(databasePath), authStore: store, artifactStorage: storage, screenshotTransformer: transformer });
-      const url = `/api/v1/files/${file.id}/${variant ? `variants/${variant}` : "content"}`;
-      const metadata = await app.request(`/api/v1/files/${file.id}`, { headers: headers() });
+      const url = `/api/v1/files/${file.id}${variant ? `/variants/${variant}` : ""}`;
+      const metadata = await app.request(`/api/v1/files/${file.id}/metadata`, { headers: headers() });
       expect(metadata.headers.get("cache-control")).toBe("no-store");
       const original = await app.request(url, { headers: headers() });
       expect(original.status).toBe(200);
@@ -701,7 +700,7 @@ describe("SQLite canonical sync", () => {
   });
 
   it("keeps rejected file reservations retryable and expires only unpublished originals", async () => {
-    const { store, service, file, storage, publish } = await fileSetup();
+    const { store, service, file, bytes, storage, publish } = await fileSetup();
     await expect(service.commitTransaction(owner, wire([
       { entity: "file", action: "upsert", entityId: file.id, baseRevision: null, data: { checksum: file.checksum, metadata: {} } },
       { entity: "vault", action: "update", entityId: vaultId, baseRevision: 0, data: { name: "Conflict" } },
@@ -712,33 +711,234 @@ describe("SQLite canonical sync", () => {
     await store.sync.withIdentity(owner, (sync) => sync.expireFileUploads(vaultId, new Date(Date.now() + 86_400_000)));
     expect(await service.getFile(owner, file.id)).toMatchObject({ id: file.id });
     const pending = { ...file, id: freshId() };
-    await service.reserveFile(owner, pending);
+    await service.postFile(owner, fileUploadRequest(pending, bytes));
     await store.sync.withIdentity(owner, (sync) => sync.expireFileUploads(vaultId, new Date(Date.now() + 86_400_000)));
     expect(await store.sync.withIdentity(owner, (sync) => sync.getFile(pending.id))).toBeNull();
     expect(await store.sync.hasStorageDelete(fileStorageKey(pending.id))).toBe(true);
     await store.close?.();
   });
 
-  it("validates immutable bytes, lengths, ownership and reservation IDs at the HTTP boundary", async () => {
-    const { store, service, file, bytes, databasePath, storage } = await fileSetup();
-    const app = createApp({ config: { ...testConfig(databasePath), storageBackend: "databricks", storageDatabricksVolumePath: "/Volumes/test/app/files" }, authStore: store, artifactStorage: storage });
-    const reserve = (body: unknown) => app.request("/api/v1/files", { method: "POST", headers: headers(), body: JSON.stringify(body) });
-    expect((await reserve(file)).status).toBe(200);
-    expect((await reserve({ ...file, checksum: `SHA-256:${"b".repeat(64)}` })).status).toBe(409);
-    expect((await reserve({ ...file, metadata: { source: "other" } })).status).toBe(400);
-    expect((await reserve({ ...file, id: crypto.randomUUID() })).status).toBe(400);
-    const request = (body: Uint8Array<ArrayBuffer>, size = file.size) => new Request("https://test.invalid", {
-      method: "PUT", headers: { "content-type": file.content_type, "content-length": String(size) }, body,
+  it("shares SQLite storage locks across connections without blocking canonical writes", async () => {
+    const { store, databasePath } = await setup();
+    const second = createNodeApplicationStore(testConfig(databasePath));
+    let entered!: () => void;
+    let release!: () => void;
+    const didEnter = new Promise<void>((resolve) => { entered = resolve; });
+    const canFinish = new Promise<void>((resolve) => { release = resolve; });
+    const first = store.sync.withStorageKeyLock("original", async () => {
+      entered();
+      await canFinish;
+      throw new Error("failed storage operation");
     });
-    await expect(service.putFile(owner, file.id, request(bytes))).resolves.toMatchObject({ checksum: file.checksum });
-    const wrong = new Uint8Array(bytes.length);
-    await expect(service.putFile(owner, file.id, request(wrong))).rejects.toMatchObject({ code: "file_checksum_mismatch" });
-    await expect(service.putFile(owner, file.id, request(bytes, 1))).rejects.toMatchObject({ code: "file_id_conflict" });
-    await expect(service.putFile(owner, file.id, request(new Uint8Array(bytes.length + 1)))).rejects.toMatchObject({ code: "file_size_mismatch" });
-    await expect(service.putFile(other, file.id, request(bytes))).rejects.toMatchObject({ status: 404 });
-    expect(await storage.exists(fileStorageKey(file.id))).toBe(true);
+    const rejected = expect(first).rejects.toThrow("failed storage operation");
+    await didEnter;
+    let secondEntered = false;
+    const next = second.sync.withStorageKeyLock("variant", async () => { secondEntered = true; });
+    try {
+      await createVault(store);
+      expect(secondEntered).toBe(false);
+    } finally {
+      release();
+      await rejected;
+      await next;
+      await second.close?.();
+      await store.close?.();
+    }
+    expect(secondEntered).toBe(true);
+  });
+
+  it.each([false, true])("preserves immutable uploads across SQLite instances (different bytes: %s)", async (different) => {
+    const { store, service, storage, file, bytes } = await fileSetup();
+    const second = new MeetingSyncService(store.sync, storage, undefined, undefined, undefined, "/Volumes/test/app/files");
+    const pending = { ...file, id: freshId() };
+    try {
+      const results = await Promise.allSettled([
+        service.postFile(owner, fileUploadRequest(pending, bytes)),
+        second.postFile(owner, fileUploadRequest(pending, different ? new Uint8Array(bytes.length) : bytes)),
+      ]);
+      const record = await store.sync.withIdentity(owner, (scoped) => scoped.getFile(pending.id));
+      expect(record?.uploadedAt).not.toBeNull();
+      const response = await storage.read(fileStorageKey(pending.id), "GET", new Request("http://localhost"));
+      expect(response.status).toBe(200);
+      expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(different ? 1 : 2);
+      if (different) expect(results.find((result) => result.status === "rejected")).toMatchObject({ reason: { status: 409 } });
+      const stored = await response.arrayBuffer();
+      expect(`SHA-256:${Buffer.from(await crypto.subtle.digest("SHA-256", stored)).toString("hex")}`).toBe(record?.checksum);
+    } finally {
+      await store.close?.();
+    }
+  });
+
+  it.each(["node", "worker"].flatMap((runtime) => ["POST", "PUT", "PATCH"].map((method) => [runtime, method])))("uploads raw bytes and updates canonical metadata through %s %s", async (runtime, method) => {
+    const { store, service, file, bytes, databasePath, storage, publish, attach } = await fileSetup();
+    const app = createApp({ config: { ...testConfig(databasePath), storageBackend: "databricks", storageDatabricksVolumePath: "/Volumes/test/app/files" }, authStore: store, artifactStorage: storage });
+    const worker = createWorkerHandler(async () => app);
+    const workerFetch = worker.fetch!.bind(worker) as unknown as (request: Request, env: Cloudflare.Env, context: ExecutionContext) => Promise<Response>;
+    const send = (request: Request) => {
+      for (const [key, value] of Object.entries(headers())) if (!request.headers.has(key)) request.headers.set(key, value);
+      return runtime === "node" ? app.request(request) : workerFetch(request, {} as Cloudflare.Env, {} as ExecutionContext);
+    };
+    const patch = (body: unknown, id = file.id) => send(new Request(`http://localhost:5173/api/v1/files/${id}/metadata`, {
+      method, headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+    }));
+    const fresh = { ...file, id: freshId(), name: "会議 + 売上&#?.png" };
+    const created = await send(fileUploadRequest(fresh, bytes));
+    expect(created.status).toBe(201);
+    expect(await created.json()).toMatchObject({ id: fresh.id, name: fresh.name, size: bytes.length, checksum: file.checksum,
+      offset: 0, contentURL: `/api/v1/files/${fresh.id}`, metadata: { source: "screenshot", width: 1800, height: 900 } });
+    expect(await service.listFiles(owner, vaultId)).toMatchObject({ items: [] });
+    expect((await patch({ baseRevision: 1, metadata: { caption: "pending" } }, fresh.id)).status).toBe(404);
+    const put = vi.spyOn(storage, "put");
+    expect((await send(fileUploadRequest(file, bytes))).status).toBe(200);
+    expect((await send(fileUploadRequest(file, new Uint8Array(bytes.length)))).status).toBe(409);
+    expect((await send(fileUploadRequest(file, bytes, 1))).status).toBe(409);
+    expect((await send(fileUploadRequest(file, new Uint8Array(bytes.length + 1), bytes.length))).status).toBe(413);
+    expect((await send(fileUploadRequest(file, bytes.subarray(1), bytes.length))).status).toBe(400);
+    expect(put).not.toHaveBeenCalled();
+    expect((await send(fileUploadRequest({ ...file, metadata: { source: "other" } }, bytes))).status).toBe(400);
+    expect((await send(fileUploadRequest({ ...file, id: crypto.randomUUID() }, bytes))).status).toBe(400);
+    const duplicate = fileUploadRequest(file, bytes);
+    expect((await send(new Request(`${duplicate.url}&id=${freshId()}`, duplicate))).status).toBe(400);
+    const oldSize = fileUploadRequest(file, bytes);
+    expect((await send(new Request(`${oldSize.url}&size=${bytes.length}`, oldSize))).status).toBe(400);
+    expect((await send(new Request("http://localhost:5173/api/v1/files", { method: "POST", body: JSON.stringify(file) }))).status).toBe(400);
+    expect((await send(new Request(`http://localhost:5173/api/v1/files/${file.id}/content`, { method: "PUT", body: bytes }))).status).toBe(404);
+    const missingLength = fileUploadRequest(fresh, bytes);
+    missingLength.headers.delete("content-length");
+    expect((await send(missingLength)).status).toBe(411);
+    expect((await send(fileUploadRequest(fresh, bytes, 64 * 1024 * 1024 + 1))).status).toBe(413);
+    const foreign = fileUploadRequest({ ...file, id: freshId() }, bytes);
+    foreign.headers.set("x-forwarded-user", other.userId);
+    foreign.headers.set("x-forwarded-email", "other@example.com");
+    expect((await send(foreign)).status).toBe(404);
+    const crossOrigin = fileUploadRequest(fresh, bytes);
+    crossOrigin.headers.set("origin", "https://other.example");
+    expect((await send(crossOrigin)).status).toBe(403);
+    const empty = await send(fileUploadRequest({ ...fresh, id: freshId() }, new Uint8Array()));
+    expect(empty.status).toBe(201);
+    expect(await empty.json()).toMatchObject({ size: 0, checksum: `SHA-256:${Buffer.from(await crypto.subtle.digest("SHA-256", new Uint8Array())).toString("hex")}` });
+    await publish();
+    await attach();
+    const originalURL = `http://localhost:5173/api/v1/files/${file.id}`;
+    const original = await send(new Request(originalURL));
+    expect(original.status).toBe(200);
+    expect(new Uint8Array(await original.arrayBuffer())).toEqual(bytes);
+    const head = await send(new Request(originalURL, { method: "HEAD" }));
+    expect(head.status).toBe(200);
+    expect(head.headers.get("content-length")).toBe(String(bytes.length));
+    expect(head.headers.get("content-type")).toBe("image/png");
+    expect(head.headers.get("etag")).toBe(original.headers.get("etag"));
+    expect(await head.text()).toBe("");
+    expect((await send(new Request(`${originalURL}/content`))).status).toBe(404);
+    expect((await send(new Request(originalURL, { method: "PATCH", body: "{}" }))).status).toBe(404);
+    const metadata = await send(new Request(`${originalURL}/metadata`));
+    expect(metadata.status).toBe(200);
+    expect(await metadata.json()).toMatchObject({ id: file.id, revision: 1, metadata: { source: "screenshot" } });
+    const cursor = await service.latestCursor(owner);
+    const updated = await patch({ baseRevision: 1, metadata: { ocr_text: "QuarterlyRevenue", caption: "Quarterly chart" } });
+    expect(updated.status).toBe(200);
+    expect(await updated.json()).toMatchObject({ id: file.id, size: bytes.length, checksum: file.checksum, revision: 2,
+      contentURL: `/api/v1/files/${file.id}`, metadata: { source: "screenshot", width: 1800, height: 900, ocr_text: "QuarterlyRevenue", caption: "Quarterly chart" } });
+    expect((await service.listChanges(owner, vaultId, cursor)).items).toEqual(expect.arrayContaining([
+      expect.objectContaining({ entity: "file", entityId: file.id, revision: 2, record: expect.objectContaining({ metadata: expect.objectContaining({ caption: "Quarterly chart" }) as unknown }) as unknown }),
+    ]));
+    expect(await service.searchText(owner, vaultId, "QuarterlyRevenue", "screenshot")).toMatchObject({ items: [expect.anything()] });
+    expect(await (await send(new Request(`${originalURL}/metadata`))).json()).toMatchObject({ revision: 2,
+      metadata: { ocr_text: "QuarterlyRevenue", caption: "Quarterly chart" } });
+    const stale = await patch({ baseRevision: 1, metadata: { caption: "stale" } });
+    expect(stale.status).toBe(409);
+    expect(await stale.json()).toMatchObject({ conflicts: [{ serverRevision: 2, record: { metadata: { caption: "Quarterly chart" } } }] });
+    const cleared = await patch({ baseRevision: 2, metadata: { caption: null } });
+    expect(cleared.status).toBe(200);
+    expect(await cleared.json()).toMatchObject({ revision: 3, metadata: { caption: null, ocr_text: "QuarterlyRevenue", width: 1800 } });
+    for (const metadata of [{ source: "upload" }, { width: 0 }, { caption: "x".repeat(501) }, { ocr_text: "x".repeat(20001) }, { unexpected: "value" }]) {
+      expect((await patch({ baseRevision: 3, metadata })).status).toBe(400);
+    }
+    expect((await patch({ metadata: { caption: "missing revision" } })).status).toBe(400);
+    expect((await patch({ baseRevision: 3, size: 0, metadata: {} })).status).toBe(400);
+    await store.sync.withIdentity(owner, (sync) => sync.putMemberPermission(vaultId, "organization", "external"));
+    const memberPatch = new Request(`http://localhost:5173/api/v1/files/${file.id}/metadata`, { method,
+      headers: { ...headers(), "x-forwarded-user": other.userId, "x-forwarded-email": "other@example.com" },
+      body: JSON.stringify({ baseRevision: 3, metadata: { caption: "member" } }) });
+    expect((await send(memberPatch)).status).toBe(404);
+    expect((await send(fileUploadRequest({ ...file, name: "different", metadata: { ...file.metadata, width: 1 } }, bytes))).status).toBe(200);
+    expect(await service.getFile(owner, file.id)).toMatchObject({ name: file.name, revision: 3, metadata: { width: 1800, ocr_text: "QuarterlyRevenue", caption: null } });
+    expect(new Uint8Array(await (await service.readFile(owner, file.id, "GET", new Request("http://localhost:5173"))).arrayBuffer())).toEqual(bytes);
     await store.close?.();
   });
+
+  it.each(["short", "long", "interrupted", "storage", "cleanup"])("keeps a failed raw upload retryable (%s)", async (failure) => {
+    const { store, service, storage, file, bytes } = await fileSetup();
+    const pending = { ...file, id: freshId() };
+    const key = fileStorageKey(pending.id);
+    let request = fileUploadRequest(pending, bytes);
+    if (failure === "short") request = fileUploadRequest(pending, bytes.subarray(1), bytes.length);
+    if (failure === "long") request = fileUploadRequest(pending, bytes, bytes.length - 1);
+    if (failure === "interrupted") {
+      const body = new ReadableStream<Uint8Array>({ start(controller) {
+        controller.enqueue(bytes.subarray(0, 1));
+        controller.error(new Error("interrupted upload"));
+      } });
+      request = new Request(request.url, { method: "POST", headers: request.headers, body, duplex: "half" } as RequestInit);
+    }
+    const cancelled = vi.fn();
+    if (failure === "storage" || failure === "cleanup") {
+      const body = new ReadableStream<Uint8Array>({ pull(controller) { controller.enqueue(bytes); }, cancel: cancelled });
+      request = new Request(request.url, { method: "POST", headers: request.headers, body, duplex: "half" } as RequestInit);
+      vi.spyOn(storage, "put").mockRejectedValueOnce(new Error("storage failed before consuming the stream"));
+    }
+    if (failure === "cleanup") vi.spyOn(storage, "delete").mockRejectedValueOnce(new Error("cleanup failed"));
+    await expect(service.postFile(owner, request)).rejects.toBeDefined();
+    expect(await store.sync.withIdentity(owner, (scoped) => scoped.getFile(pending.id))).toMatchObject({ active: false, uploadedAt: null, size: 0, checksum: "" });
+    if (failure === "storage" || failure === "cleanup") await vi.waitFor(() => expect(cancelled).toHaveBeenCalled());
+    await vi.waitFor(async () => expect(await store.sync.hasStorageDelete(key)).toBe(false));
+    expect(await storage.exists(key)).toBe(false);
+    const retried = await service.postFile(owner, fileUploadRequest(pending, bytes));
+    expect(retried.file).toMatchObject({ id: pending.id, size: bytes.length, checksum: file.checksum });
+    await store.close?.();
+  });
+
+  it("serializes competing uploads without replacing the first completed bytes", async () => {
+    const { store, service, storage, file, bytes } = await fileSetup();
+    const pending = { ...file, id: freshId() };
+    const put = vi.spyOn(storage, "put");
+    const results = await Promise.allSettled([
+      service.postFile(owner, fileUploadRequest(pending, bytes)),
+      service.postFile(owner, fileUploadRequest(pending, bytes)),
+      service.postFile(owner, fileUploadRequest(pending, new Uint8Array(bytes.length))),
+    ]);
+    expect(results).toMatchObject([
+      { status: "fulfilled", value: { created: true, file: { checksum: file.checksum } } },
+      { status: "fulfilled", value: { created: false, file: { checksum: file.checksum } } },
+      { status: "rejected", reason: { status: 409 } },
+    ]);
+    expect(put).toHaveBeenCalledTimes(1);
+    await store.close?.();
+  });
+
+  it("streams exactly 64 MiB without accepting an extra byte", async () => {
+    const { store, service, storage, file } = await fileSetup();
+    const maximum = 64 * 1024 * 1024;
+    const chunk = new Uint8Array(1024 * 1024);
+    vi.spyOn(storage, "put").mockImplementation(async (_key, body) => {
+      if (body instanceof Uint8Array) throw new Error("upload must stream");
+      const reader = body.getReader();
+      while (!(await reader.read()).done) { /* Drain without buffering. */ }
+    });
+    for (const extra of [false, true]) {
+      const pending = { ...file, id: freshId() };
+      const request = fileUploadRequest(pending, new Uint8Array(), maximum);
+      let sent = 0;
+      const body = new ReadableStream<Uint8Array>({ pull(controller) {
+        if (sent < maximum) { sent += chunk.byteLength; controller.enqueue(chunk); }
+        else { if (extra) controller.enqueue(new Uint8Array(1)); controller.close(); }
+      } });
+      const uploading = service.postFile(owner, new Request(request.url, { method: "POST", headers: request.headers, body, duplex: "half" } as RequestInit));
+      if (extra) await expect(uploading).rejects.toMatchObject({ status: 413, code: "file_size_mismatch" });
+      else expect((await uploading).file).toMatchObject({ size: maximum, checksum: `SHA-256:${Buffer.from(await crypto.subtle.digest("SHA-256", new Uint8Array(maximum))).toString("hex")}` });
+    }
+    await store.close?.();
+  }, 15000);
 
   it("filters Vaults by owner or current organization and Team membership", async () => {
     const { store, databasePath } = await setup();
@@ -1862,12 +2062,25 @@ async function fileSetup(captioningModel?: string) {
   const hash = Buffer.from(await crypto.subtle.digest("SHA-256", bytes)).toString("hex");
   const file = { id: screenshotId, vaultId, name: "capture.png", offset: 0, size: bytes.length,
     content_type: "image/png", checksum: `SHA-256:${hash}`, metadata: { source: "screenshot", width: 1800, height: 900 } };
-  await service.reserveFile(owner, file);
-  await service.putFile(owner, file.id, new Request("https://test.invalid", { method: "PUT", body: bytes,
-    headers: { "content-type": "image/png", "content-length": String(bytes.length) } }));
+  await service.postFile(owner, fileUploadRequest(file, bytes));
   const publish = () => service.commitTransaction(owner, wire([{ entity: "file", action: "upsert", entityId: file.id,
     baseRevision: null, data: { checksum: file.checksum, metadata: {} } }]));
   const attach = () => service.commitTransaction(owner, wire([{ entity: "meeting_file", action: "upsert", entityId: file.id,
     baseRevision: null, data: { fileId: file.id, meetingId, capturedAt: now.toISOString(), sessionId: null, createdAt: now.toISOString() } }]));
   return { ...setupValue, service, storage, transformer, file, bytes, publish, attach };
+}
+
+function fileUploadRequest(file: { id: string; vaultId: string; name: string; content_type: string; metadata: { source: string; width?: number; height?: number } }, bytes: Uint8Array<ArrayBuffer>, size = bytes.length) {
+  const query = new URLSearchParams({ id: file.id, vaultId: file.vaultId, name: file.name, source: file.metadata.source });
+  if (file.metadata.width !== undefined) query.set("width", String(file.metadata.width));
+  if (file.metadata.height !== undefined) query.set("height", String(file.metadata.height));
+  return new Request(`http://localhost:5173/api/v1/files?${query}`, { method: "POST", body: bytes,
+    headers: { "content-type": file.content_type, "content-length": String(size) } });
+}
+
+async function reservePendingFile(store: Awaited<ReturnType<typeof setup>>["store"], file: { id: string; vaultId: string; name: string; content_type: string; metadata: { source: string; width?: number; height?: number } }) {
+  return store.sync.withIdentity(owner, (scoped) => scoped.reserveFile({ fileId: file.id, vaultId: file.vaultId,
+    uri: `/Volumes/test/app/files/${fileStorageKey(file.id)}`, offset: 0, size: 0, checksum: "", contentType: file.content_type,
+    name: file.name, metadata: { ...file.metadata, source: "screenshot" }, active: false, uploadedAt: null, revision: 0,
+    createdAt: new Date(), updatedAt: new Date() }));
 }
