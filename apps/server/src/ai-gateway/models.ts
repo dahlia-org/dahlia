@@ -2,6 +2,7 @@ import codexFallback from "./codex-0.149.1-fallback.json";
 import codexCatalog from "./codex-0.149.1-models.json";
 
 import type { GatewayModelList } from "./backend";
+import { CODEX_AUTO_REVIEW_ALIAS } from "./model-alias";
 
 export interface CodexModelWire {
   [key: string]: unknown;
@@ -35,7 +36,6 @@ const modelDisplayNames = new Map([
   ["gemini-3-7-flash", "Gemini 3.7 Flash"],
 ]);
 const ossReasoningLevels = [
-  { effort: "none", description: "Fast responses without reasoning" },
   { effort: "low", description: "Fast responses with lighter reasoning" },
   { effort: "high", description: "Greater reasoning depth for complex problems" },
   { effort: "max", description: "Maximum reasoning depth for the hardest problems" },
@@ -70,6 +70,7 @@ function codexModels(entries: ModelInfo[]): CodexModelWire[] {
     hiddenCodexModel(model.slug),
   ]));
   entries.forEach((entry, priority) => {
+    if (!/^(gpt|glm|kimi|deepseek)-/.test(entry.id) && entry.id !== CODEX_AUTO_REVIEW_ALIAS) return;
     const model = knownCodexModel(entry.id)
       ?? ossCodexModel(entry.id);
     models.set(entry.id, {
