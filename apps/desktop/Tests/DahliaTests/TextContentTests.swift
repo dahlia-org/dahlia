@@ -1125,7 +1125,7 @@
             ])
             let provider = provider(fixture) { request in
                 let path = request.url!.path
-                if path.hasSuffix("/sync-content") { return (200, [:], Data("{\"version\":1}".utf8)) }
+                if path.hasSuffix("/capabilities") { return (200, [:], Data("{\"syncVersion\":1}".utf8)) }
                 if path.hasSuffix("/changes") {
                     let count = changeRequests.withLock { $0 += 1
                         return $0
@@ -1179,8 +1179,8 @@
             }
         }
 
-        @Test
-        func incompatibleServerStopsMetadataSyncWithoutDiscardingExistingText() async throws {
+        @Test(arguments: [nil, "{}", #"{"syncVersion":2}"#])
+        func incompatibleServerStopsMetadataSyncWithoutDiscardingExistingText(capabilities: String?) async throws {
             let fixture = try textFixture()
             let connectionId = try await fixture.queue.write { db in
                 try db.execute(sql: "UPDATE vaults SET syncPullCursor = 'before'")
@@ -1200,6 +1200,7 @@
             let calls = Mutex(0)
             let provider = provider(fixture) { _ in
                 calls.withLock { $0 += 1 }
+                if let capabilities { return (200, [:], Data(capabilities.utf8)) }
                 return (404, [:], Data())
             }
             defer { ImageURLProtocol.remove(origin: fixture.origin) }
@@ -1241,7 +1242,9 @@
             let calls = Mutex([String]())
             let provider = provider(fixture) { request in
                 calls.withLock { $0.append(request.url!.path) }
-                if request.url!.path.hasSuffix("/sync-content") { return (200, [:], Data("{\"version\":1}".utf8)) }
+                if request.url!.path.hasSuffix("/capabilities") {
+                    return (200, [:], Data(#"{"syncVersion":1,"futureFeature":{"enabled":true}}"#.utf8))
+                }
                 return (200, [:], payload)
             }
             defer { ImageURLProtocol.remove(origin: fixture.origin) }

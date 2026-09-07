@@ -356,11 +356,12 @@ actor SyncWorker {
             throw SyncHTTPError(status: 403, body: Data("{\"error\":\"connection_missing\"}".utf8))
         }
         if transaction.operations.allSatisfy({ $0.entity == .meetingEvent }) {
-            let capabilities = try await sendData(
-                request(origin: target, path: "api/v1/sync-content", method: "GET"),
+            let data = try await sendData(
+                request(origin: target, path: "api/v1/capabilities", method: "GET"),
                 connectionId: transaction.connectionId
             )
-            if try (JSONSerialization.jsonObject(with: capabilities) as? [String: Int])?["meetingEvents"] != 1 {
+            let capabilities = try decode(ServerCapabilities.self, from: data)
+            if capabilities.meetingEventsVersion != 1 {
                 // A downgraded Server must not block unrelated durable content behind unsupported diagnostics.
                 try await dbQueue.write { db in
                     guard try SyncTransactionQueue.matchesExpectedConnection(
@@ -637,14 +638,14 @@ actor SyncWorker {
     private func pullRemoteChanges(for target: SyncTarget) async throws {
         do {
             let data = try await sendData(
-                request(origin: target.origin, path: "api/v1/sync-content", method: "GET"),
+                request(origin: target.origin, path: "api/v1/capabilities", method: "GET"),
                 connectionId: target.connectionId
             )
-            let capabilities = try JSONSerialization.jsonObject(with: data) as? [String: Int]
-            guard capabilities?["version"] == 1 else {
+            let capabilities = try decode(ServerCapabilities.self, from: data)
+            guard capabilities.syncVersion == 1 else {
                 throw SyncHTTPError(status: 426, body: Data())
             }
-            let meetingEventsVersion = capabilities?["meetingEvents"] == 1 ? 1 : 0
+            let meetingEventsVersion = capabilities.meetingEventsVersion == 1 ? 1 : 0
             try await dbQueue.write { db in
                 guard try SyncTransactionQueue.matchesExpectedConnection(
                     vaultId: target.vaultId, connectionId: target.connectionId, in: db
@@ -1288,7 +1289,7 @@ actor SyncWorker {
         } catch let error as SyncHTTPError {
             let path = unsignedRequest.url?.path ?? ""
             if error.status == 404, error.code != "vault_not_found",
-               path.hasSuffix("/snapshot") || path.hasSuffix("/transactions/resolve") || path.hasSuffix("/sync-content") {
+               path.hasSuffix("/snapshot") || path.hasSuffix("/transactions/resolve") || path.hasSuffix("/capabilities") {
                 throw SyncHTTPError(status: 426, body: Data("{\"error\":\"sync_upgrade_required\"}".utf8))
             }
             throw error
@@ -1299,6 +1300,11 @@ actor SyncWorker {
         guard let data else { throw SyncTransactionQueueError.invalidReceipt }
         return try SyncJSON.decoder.decode(type, from: data)
     }
+}
+
+private struct ServerCapabilities: Decodable {
+    let syncVersion: Int?
+    let meetingEventsVersion: Int?
 }
 
 private extension UUID {

@@ -59,9 +59,21 @@ Desktop keeps immutable operations until the Server receipt is applied. File ope
 
 Vault and Project operations are committed through the domain transaction endpoint before meeting data. Projects are available for hierarchy browsing and meeting filtering but are not added to full-text or vector search. Transcript segments keep `audioSource` (`mic` or `system`) separate from nullable `speakerLabel`, which is reserved for future diarization.
 
+### Server capabilities
+
+`GET /api/v1/capabilities` requires the existing browser authentication or `all-apis` scope and returns supported feature versions:
+
+```json
+{ "syncVersion": 1, "meetingEventsVersion": 1 }
+```
+
+`syncVersion: 1` advertises the synchronization contract described here: atomic transactions (transaction schema version 2), snapshot/delta recovery and receipt resolution, metadata-only reads, and separately hydrated text bodies. `meetingEventsVersion: 1` advertises the meeting-event acceptance contract described below. Feature versions are independent of entity revisions and payload schema versions. Desktop currently accepts version 1 for each feature and ignores unknown fields.
+
+Unsupported features are omitted. Stores without atomic sync support neither of these features and return `200 {}`; lack of a feature does not make the capabilities endpoint unavailable. Authentication and operational errors still return errors. Roll out Server and Desktop together; the old response fields `version` / `meetingEvents` and the old `/api/v1/sync-content` route are not supported.
+
 ### Partial text reads
 
-Roll out `GET /api/v1/sync-content` (version 1) before updating Desktop. It uses existing authenticated sync capabilities and remains unavailable on stores without atomic sync. Older clients keep their default full representations and transaction schema version 2. New clients must fail closed with an update-required state when this capability or the `metadata-v1` response marker is missing.
+Desktop requires `syncVersion: 1` before using partial text synchronization and must fail closed with an update-required state when this capability or the `metadata-v1` response marker is missing. Default full representations and transaction schema version 2 remain unchanged.
 
 Add `content=metadata-v1` to snapshot, changes, meeting and file dependency reads to omit transcript bodies, summary documents (including meeting/search duplicates), OCR and caption. Canonical IDs, revisions, metadata, body presence and transcript counts remain available; snapshot/delta responses include `contentMode: "metadata-v1"`. Text hydration does not advance sync cursors.
 
@@ -83,7 +95,7 @@ New devices and expired clients use `GET /api/v1/vaults/{vaultId}/snapshot`. It 
 
 `meeting_events` is Server-only domain history, separate from the 90-day synchronization ledger. Server records `meeting_created`, `meeting_updated` (changed field names only), and `meeting_deleted` atomically with accepted meeting mutations. Desktop sends `tag_added`, `tag_removed`, `recording_started`, `recording_ended`, and `segment_rotated` through `meeting_event:create` transaction operations, with `baseRevision: null` and the event UUID as `entityId`. Event data contains `meetingId`, `kind`, `occurredAt`, and only the relevant `sessionId`, `relatedId` (local numeric tag ID or segment UUID), `audioSource` (`mic` / `system`), and positive `segmentIndex`. Tag names, field values, audio, and file paths are never included. A segment rotation means switching to the next physical segment, not successful finalization; initial file creation is not a rotation.
 
-`GET /api/v1/sync-content` advertises `meetingEvents: 1`. Desktop queues events only after confirming this capability for the current Server Vault, rechecks before upload, and omits diagnostic uploads if the Server has been downgraded. Unsupported and Local accounts do not record events. Normal transactions and event IDs are independently idempotent; different content with an existing event ID is rejected. Owner authorization and session-to-meeting relationships are checked before accepting events. This is a diagnostic history of accepted operations, not a tamper-proof audit trail or telemetry.
+`GET /api/v1/capabilities` advertises `meetingEventsVersion: 1`. Desktop queues events only after confirming this capability for the current Server Vault, rechecks before upload, and omits diagnostic uploads if the Server has been downgraded. Unsupported and Local accounts do not record events. Normal transactions and event IDs are independently idempotent; different content with an existing event ID is rejected. Owner authorization and session-to-meeting relationships are checked before accepting events. This is a diagnostic history of accepted operations, not a tamper-proof audit trail or telemetry.
 
 The SQL view `recording_sessions` groups recording start/end events by Vault, meeting and session ID. Meeting list/detail responses expose derived `isRecording`; a session with a start and no end displays “Recording” / “録音中” in the list, detail and sidebar. Existing SSE meeting invalidations refresh these indicators. There is no heartbeat or timeout: offline Desktop recording remains marked active until its end event synchronizes. Events are not included in snapshots or copied into another Desktop's local recording runtime. Existing historical operations are not backfilled.
 

@@ -34,7 +34,7 @@ worker は録音中も push / pull できるが、transcript patch は確定済�
 
 2026-09-07: Server の調査用履歴は `meeting_events` に保持する。会議の作成・メタデータ変更・削除は Server の確定 transaction 内で記録し、変更した項目名だけを残す。Server Account の Desktop はタグ付与・解除、成功した録音開始、終了、音源ごとの物理セグメント切り替えを既存の永続 queue から送る。Local Account、タグ名、変更前後の本文、音声、ファイルパスは対象外。切り替えはファイル確定成功とは区別し、初回ファイル作成では発生させない。
 
-`sync-content` の `meetingEvents: 1` を確認した接続だけで送信を有効にする。イベントは ID で冪等化し、履歴は Server だけに残す。開始・終了イベントから `recording_sessions` SQL view を構成し、未終了セッションがある会議を Web の一覧・詳細・サイドバーで録音中と表示する。生存通知や有効期限、状態カラムは追加しない。終了情報が同期されるまで表示が残る。録音・保存はネットワークを待たず、他端末のセッションをローカルの録音テーブルへ適用しない。
+`capabilities` の `meetingEventsVersion: 1` を確認した接続だけで送信を有効にする。イベントは ID で冪等化し、履歴は Server だけに残す。開始・終了イベントから `recording_sessions` SQL view を構成し、未終了セッションがある会議を Web の一覧・詳細・サイドバーで録音中と表示する。生存通知や有効期限、状態カラムは追加しない。終了情報が同期されるまで表示が残る。録音・保存はネットワークを待たず、他端末のセッションをローカルの録音テーブルへ適用しない。
 
 イベント履歴は同期差分の90日保持とは独立し、期間削除や過去操作の補完は行わない。会議削除時は追加情報を除去し、ID・種別・時刻だけを残す。Vault・owner account 削除時は履歴も消す。調査はDBから行い、閲覧APIや専用UIは追加しない。
 
@@ -124,7 +124,9 @@ metadata の全保持と本文の部分保持を分ける。`v46_textContent` �
 
 metadata の Record は本文を持たず、本文を含む読取結果とは型を分ける。アプリの Repository と MCP は共通 `TextContentAccess` で完全性検査と本文取得を同じ SQLite 読取内で行い、呼び出し元の事前検査に依存しない。ページ取得でも会議全体の欠損を検出し、JOIN が欠損行を黙って除外しない。一覧・検索用の cached projection は明示した別の読取口を使う。録音・バッチ結果・本文編集は metadata、本文、同期 operation を従来の同じ transaction で確定する。
 
-`GET /api/v1/sync-content` の version 1 を確認してから `content=metadata-v1` の snapshot / delta / dependency read を使う。meeting の重複 summary と検索用本文、summary document、file の OCR / caption、transcript 本文を省く。非対応では `updateRequired` を表示し、既存本文を保持して部分同期・解放を止める。既存クライアントの既定レスポンスと transaction schema 2 は維持する。導入は Server capability を先に公開し、次に Desktop を更新する。本番 deploy は別の操作。
+capabilities は `{ "syncVersion": 1, "meetingEventsVersion": 1 }` のように機能別の対応 version を返す。`syncVersion: 1` は transaction schema 2、snapshot / delta 復旧、receipt 解決、metadata 同期と本文の個別取得を含む同期契約を表す。`meetingEventsVersion: 1` は会議イベントの受付契約を表す。entity revision や payload schema の version とは区別する。非対応の機能はフィールドを省略し、atomic sync 非対応の store は両機能を省いた `200 {}` を返す。認証・運用エラーは通常のエラーとして返す。クライアントは未知のフィールドを無視する。旧フィールドと旧ルートは維持しない。
+
+`GET /api/v1/capabilities` の `syncVersion: 1` を確認してから `content=metadata-v1` の snapshot / delta / dependency read を使う。meeting の重複 summary と検索用本文、summary document、file の OCR / caption、transcript 本文を省く。非対応では `updateRequired` を表示し、既存本文を保持して部分同期・解放を止める。既存クライアントの既定レスポンスと transaction schema 2 は維持する。導入は Server capability を先に公開し、次に Desktop を更新する。本番 deploy は別の操作。
 
 `MeetingContentProvider` は SQLite を先に読み、古い完全な内容も stale として利用できる。明示操作・UI・AI・MCP は共通の保持 lease を使う。最大2取得を共有し、先読みは1枠まで、待機中の明示操作を優先する。文字起こしは一時 table に500件以下のページで取り込み、指定 revision、全体の件数・byte 数・hash を照合してから既存 remote applier の transaction で反映する。中断した一時行は掃除する。summary は会議単位、OCR / caption は共有 file 単位で取得する。本文 I/O は pull checkpoint と録音の永続保存を進めない・待たせない。
 

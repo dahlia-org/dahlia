@@ -130,8 +130,8 @@
             ImageURLProtocol.register(origin: origin) { request in
                 let path = request.url!.path
                 paths.withLock { $0.append(path) }
-                if path == "/api/v1/sync-content" {
-                    return (200, [:], Data((meetingDeleted ? "{\"version\":1,\"meetingEvents\":1}" : "{\"version\":1}").utf8))
+                if path == "/api/v1/capabilities" {
+                    return (200, [:], Data((meetingDeleted ? "{\"syncVersion\":1,\"meetingEventsVersion\":1}" : "{\"syncVersion\":1}").utf8))
                 }
                 if path == "/api/v1/transactions/resolve" {
                     let isFirstResolve = paths.withLock { $0.filter { $0 == path }.count } == 1
