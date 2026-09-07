@@ -565,6 +565,16 @@ actor SyncWorker {
         }) else { throw TextContentError.changed }
     }
 
+    func validateTransferCursor(vaultId: UUID, connectionId: UUID, cursor: String) async throws {
+        guard let target = try await pullTargets().first(where: { $0.vaultId == vaultId && $0.connectionId == connectionId }),
+              target.cursor == cursor else { throw TextContentError.changed }
+        // Do not pin the old high-water mark: observe changes committed during text/image hydration.
+        let page = try await loadChangePage(target: target, cursor: cursor, highWaterCursor: nil)
+        guard page.highWaterCursor == cursor, page.cursor == cursor, page.items.isEmpty, !page.hasMore else {
+            throw TextContentError.changed
+        }
+    }
+
     private func pullRemoteChanges() async throws {
         guard !isPulling else { return }
         isPulling = true

@@ -343,6 +343,7 @@ final class MeetingRepository {
                 prepared[vaultId] = try await screenshotContent.prepareAccountTransfer(vaultId: vaultId, connectionId: nil, dbQueue: dbQueue)
             }
             let transfers = prepared
+            try await textContent.validateAccountTransfer(textSources, dbQueue: dbQueue)
             try await dbQueue.write { db in
                 guard try Set(UUID.fetchAll(db, sql: "SELECT id FROM vaults WHERE accountConnectionId = ?", arguments: [connectionID])) ==
                     Set(vaultIds)
@@ -350,7 +351,7 @@ final class MeetingRepository {
                 for vaultId in vaultIds {
                     guard try VaultRecord.fetchOne(db, key: vaultId)?.accountConnectionId == connectionID
                     else { throw ScreenshotContentError.authorizationRequired }
-                    guard try MeetingContentProvider.SearchSource.read(vaultId: vaultId, in: db) == textSources[vaultId]
+                    guard try MeetingContentProvider.TransferSource.read(vaultId: vaultId, in: db) == textSources[vaultId]
                     else { throw TextContentError.changed }
                     try TextContentStore.requireVaultComplete(vaultId: vaultId, in: db)
                     try ScreenshotContentProvider.installTransfers(transfers[vaultId, default: []], vaultId: vaultId, in: db)

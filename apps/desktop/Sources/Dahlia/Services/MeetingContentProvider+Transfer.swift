@@ -3,17 +3,29 @@ import Foundation
 import GRDB
 
 extension MeetingContentProvider {
-    func prepareAccountTransfer(vaultIds: [UUID], connectionId: UUID, dbQueue: DatabaseQueue) async throws -> [UUID: SearchSource] {
+    struct TransferSource: Equatable, Sendable {
+        let source: SearchSource
+        let cursor: String
+
+        static func read(vaultId: UUID, in db: Database) throws -> Self? {
+            guard let source = try SearchSource.read(vaultId: vaultId, in: db),
+                  let cursor = try String.fetchOne(db, sql: "SELECT syncPullCursor FROM vaults WHERE id = ?", arguments: [vaultId])
+            else { return nil }
+            return Self(source: source, cursor: cursor)
+        }
+    }
+
+    func prepareAccountTransfer(vaultIds: [UUID], connectionId: UUID, dbQueue: DatabaseQueue) async throws -> [UUID: TransferSource] {
         for vaultId in vaultIds {
             retainVault(vaultId, dbQueue: dbQueue)
         }
         do {
-            var sources: [UUID: SearchSource] = [:]
+            var sources: [UUID: TransferSource] = [:]
             let worker = SyncWorker(dbQueue: dbQueue, session: client.session, apiClient: client)
             for vaultId in vaultIds {
                 try await worker.synchronizeForTransfer(vaultId: vaultId, connectionId: connectionId)
-                guard let source = try await dbQueue.read({ try SearchSource.read(vaultId: vaultId, in: $0) }),
-                      source.connectionId == connectionId else { throw TextContentError.changed }
+                guard let source = try await dbQueue.read({ try TransferSource.read(vaultId: vaultId, in: $0) }),
+                      source.source.connectionId == connectionId else { throw TextContentError.changed }
                 sources[vaultId] = source
                 for (table, entities) in [("meetings", [TextContentEntity.summary, .transcript]), ("files", [.file])] {
                     var cursor: UUID?
@@ -36,7 +48,7 @@ extension MeetingContentProvider {
                     }
                 }
                 try await dbQueue.read { db in
-                    guard try SearchSource.read(vaultId: vaultId, in: db) == source else { throw TextContentError.changed }
+                    guard try TransferSource.read(vaultId: vaultId, in: db) == source else { throw TextContentError.changed }
                     try TextContentStore.requireVaultComplete(vaultId: vaultId, in: db)
                 }
             }
@@ -45,6 +57,14 @@ extension MeetingContentProvider {
             releaseAccountTransfer(vaultIds: vaultIds, dbQueue: dbQueue)
             throw error
         }
+    }
+
+    func validateAccountTransfer(_ sources: [UUID: TransferSource], dbQueue: DatabaseQueue) async throws {
+        let worker = SyncWorker(dbQueue: dbQueue, session: client.session, apiClient: client)
+        for (vaultId, source) in sources {
+            try await worker.validateTransferCursor(vaultId: vaultId, connectionId: source.source.connectionId, cursor: source.cursor)
+        }
+        try Task.checkCancellation()
     }
 
     func releaseAccountTransfer(vaultIds: [UUID], dbQueue: DatabaseQueue) {

@@ -1102,8 +1102,10 @@
             #expect(await provider.requests.isEmpty)
         }
 
-        @Test(arguments: [false, true])
-        func localAccountTransferRequiresAllTextAndPreservesConnectionOnFailure(fail: Bool) async throws {
+        @Test(arguments: ["success", "textFailure", "serverChanged", "checkFailed", "localCursorChanged"])
+        func localAccountTransferRequiresAllTextAndPreservesConnectionOnFailure(scenario: String) async throws {
+            let fail = scenario != "success"
+            let changeRequests = Mutex(0)
             let fixture = try textFixture()
             let connectionId = try await fixture.queue.write { db in
                 try db.execute(sql: "UPDATE vaults SET syncPullCursor = 'before'")
@@ -1125,15 +1127,29 @@
                 let path = request.url!.path
                 if path.hasSuffix("/sync-content") { return (200, [:], Data("{\"version\":1}".utf8)) }
                 if path.hasSuffix("/changes") {
-                    return (
-                        200,
-                        [:],
-                        Data("{\"items\":[],\"cursor\":\"after\",\"highWaterCursor\":\"after\",\"hasMore\":false,\"contentMode\":\"metadata-v1\"}"
-                            .utf8)
-                    )
+                    let count = changeRequests.withLock { $0 += 1
+                        return $0
+                    }
+                    if count == 2 {
+                        let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems
+                        #expect(query?.first { $0.name == "cursor" }?.value == "after")
+                        #expect(query?.contains { $0.name == "highWaterCursor" } == false)
+                        if scenario == "checkFailed" { return (503, [:], Data()) }
+                        if scenario == "localCursorChanged" {
+                            do {
+                                try fixture.queue.write { db in
+                                    try db.execute(sql: "UPDATE vaults SET syncPullCursor = 'concurrent'")
+                                }
+                            } catch { Issue.record(error) }
+                        }
+                    }
+                    let cursor = count >= 2 && scenario == "serverChanged" ? "new-server-update" : "after"
+                    return (200, [:], Data("""
+                    {"items":[],"cursor":"\(cursor)","highWaterCursor":"\(cursor)","hasMore":false,"contentMode":"metadata-v1"}
+                    """.utf8))
                 }
                 if path.contains("/summary/") { return (200, [:], summaryManifest) }
-                if fail { return (503, [:], Data()) }
+                if scenario == "textFailure" { return (503, [:], Data()) }
                 return fixture.response(request)
             }
             defer { ImageURLProtocol.remove(origin: fixture.origin) }
@@ -1147,8 +1163,19 @@
             }
             try await fixture.queue.read { db throws in
                 #expect(try UUID.fetchOne(db, sql: "SELECT accountConnectionId FROM vaults") == (fail ? connectionId : nil))
-                #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM transcript_segment_bodies") == (fail ? 0 : 2))
+                #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM transcript_segment_bodies") == (scenario == "textFailure" ? 0 : 2))
                 if !fail { #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_content_state") == 0) }
+                if fail {
+                    #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_entity_state")! > 0)
+                    #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_content_state")! > 0)
+                }
+            }
+            #expect(changeRequests.withLock { $0 } == (scenario == "textFailure" ? 1 : 2))
+            if scenario == "serverChanged" {
+                // A retry synchronizes to the newer cursor before hydrating and validating again.
+                try await repository.resolveVaultsForSignOut(connectionID: connectionId, disposition: .moveToLocalAccount, textContent: provider)
+                #expect(changeRequests.withLock { $0 } == 4)
+                #expect(try await fixture.queue.read { try VaultRecord.fetchOne($0, key: fixture.vaultId)?.accountConnectionId } == nil)
             }
         }
 

@@ -216,8 +216,10 @@
             }
         }
 
-        @Test(.timeLimit(.minutes(1)), arguments: [false, true])
-        func movingAnAccountRetainsAllItsVaultsUntilCompletion(failsSecondImage: Bool) async throws {
+        @Test(.timeLimit(.minutes(1)), arguments: ["success", "missingImage", "serverChanged"])
+        func movingAnAccountRetainsAllItsVaultsUntilCompletion(scenario: String) async throws {
+            let failsSecondImage = scenario == "missingImage"
+            let serverChanged = Mutex(false)
             let first = try ScreenshotContentFixture()
             let second = try ScreenshotContentFixture(dbQueue: first.dbQueue)
             let unrelated = try ScreenshotContentFixture(dbQueue: first.dbQueue)
@@ -241,8 +243,16 @@
             try await first.makeRemoteOnly()
             try await second.makeRemoteOnly()
             ImageURLProtocol.register(origin: first.source.origin) { request in
+                let path = request.url!.path
+                if path.hasSuffix("/changes"), path.contains(first.vaultId.uuidString.lowercased()), serverChanged.withLock({ $0 }) {
+                    return (200, [:], Data("""
+                    {"items":[],"cursor":"new-server-update","highWaterCursor":"new-server-update","hasMore":false,"contentMode":"metadata-v1"}
+                    """.utf8))
+                }
                 if let text = cachedTextResponse(request, queue: first.dbQueue) { return text }
-                let fails = failsSecondImage && request.url!.path.contains(second.screenshotId.uuidString.lowercased())
+                let secondImage = path.contains(second.screenshotId.uuidString.lowercased())
+                if secondImage, scenario == "serverChanged" { serverChanged.withLock { $0 = true } }
+                let fails = failsSecondImage && secondImage
                 return (fails ? 404 : 200, ["content-type": "image/png"], first.bytes)
             }
             defer { ImageURLProtocol.remove(origin: first.source.origin) }
@@ -275,9 +285,19 @@
             #expect(try await provider.content(id: first.screenshotId, dbQueue: first.dbQueue).data == first.bytes)
             #expect(try await unrelated.storedBytes() == unrelated.bytes)
             await gate.releaseAll()
-            if failsSecondImage {
-                await #expect(throws: ScreenshotContentError.deleted) { try await moving.value }
-                #expect(try await first.dbQueue.read { try VaultRecord.fetchOne($0, key: first.vaultId)?.accountConnectionId } == first.connectionId)
+            if scenario != "success" {
+                if failsSecondImage {
+                    await #expect(throws: ScreenshotContentError.deleted) { try await moving.value }
+                } else {
+                    await #expect(throws: TextContentError.changed) { try await moving.value }
+                }
+                try await first.dbQueue.read { db throws in
+                    for vaultId in [first.vaultId, second.vaultId] {
+                        #expect(try VaultRecord.fetchOne(db, key: vaultId)?.accountConnectionId == first.connectionId)
+                        #expect(try VaultRecord.fetchOne(db, key: vaultId)?.syncPullCursor == "after")
+                        #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_entity_state WHERE vaultId = ?", arguments: [vaultId])! > 0)
+                    }
+                }
                 // Failure releases the protection, so normal cache maintenance can resume.
                 try await provider.trimFiles(dbQueue: first.dbQueue, budget: 0)
                 #expect(try await first.storedBytes() == nil)

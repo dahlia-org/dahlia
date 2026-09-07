@@ -126,6 +126,6 @@ manifest hash は各 nullable UTF-8 field の `byteLength:bytes`、NULL は `-:`
 
 反映・解放 transaction は接続 ID / origin、Vault、mutation generation、対象の存在、revision、queue、復旧・録音状態を再検査する。権限・所属の変更は generation で進行中取得を失効させる。状態は missing / loading / failed / ready / stale / empty / deleted を区別し、失敗で完全な旧本文を消さない。
 
-本文編集は完全性を検査し、操作の base revision は編集した保持 revision を使う。明示的なローカル版再適用だけが最新 revision を使える。未保持会議への録音追加は既存の durable write を使い、不足する過去本文を完全にしたと判定しない。Local Account への移動は metadata 同期、全本文・画像原本取得、接続 generation と完全性の最終検査を終えてから確定する。失敗時は接続・queue・ローカル変更を保持する。
+本文編集は完全性を検査し、操作の base revision は編集した保持 revision を使う。明示的なローカル版再適用だけが最新 revision を使える。未保持会議への録音追加は既存の durable write を使い、不足する過去本文を完全にしたと判定しない。Local Account への移動は metadata 同期、全本文・画像原本取得後に、各 Vault の Server high-water cursor が取得開始時の同期済み cursor と一致することを再確認する。不一致や通信失敗では移動を中止し、再試行時に同期と取得をやり直す。確定 transaction 内でも接続 generation・同期済み cursor・完全性を再検査する。失敗時は接続・queue・ローカル変更を保持する。
 
 Server 版の採用や確定済み Vault の無効操作破棄では、破棄対象の本文だけを同じ transaction で通常の未保持表現へ解放し、Server revision が変わらなくても正本を再取得する。本文行を削除し、対応する FTS と開いている表示 projection も更新する。行・metadata・翻訳・音声特徴量は保持する。未確定 Vault の初期アップロード再構築と、明示的なローカル版再適用ではローカル本文を保持する。
