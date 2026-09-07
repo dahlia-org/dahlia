@@ -28,7 +28,7 @@ existing_models=$(cli ai-gateway list-model-services --parent "schemas/${catalog
   if type == "array" then map(.name) else error("Expected a model service list") end
 ')
 
-for mapping in gpt-5-6-luna gpt-6-astra gpt-5-6-sol gpt-5-6-terra kimi-k3 deepseek-v4-pro:deepseek-v4-pro-0813 qwen3-embedding-0-6b codex-auto-review:gpt-5-6-luna; do
+for mapping in gpt-5-6-luna gpt-6-astra gpt-5-6-sol gpt-5-6-terra kimi-k3 deepseek-v4-pro:deepseek-v4-pro-0813 embedding:qwen3-embedding-0-6b codex-auto-review:gpt-5-6-luna; do
   registered_name=${mapping%%:*}
   source_name=${mapping##*:}
   target_name="model-services/${catalog}.${ai_schema}.${registered_name}"

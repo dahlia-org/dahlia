@@ -63,7 +63,7 @@ if (command === "list-model-services") {
     assert.equal(JSON.parse(readFileSync(state, "utf8")).length, 8);
     for (const [name, source] of [
       ["deepseek-v4-pro", "deepseek-v4-pro-0813"],
-      ["qwen3-embedding-0-6b", "qwen3-embedding-0-6b"],
+      ["embedding", "qwen3-embedding-0-6b"],
       ["codex-auto-review", "gpt-5-6-luna"],
     ]) {
       const call = readCalls().find(args => args[1] === "create-model-service" && args[3] === name);
