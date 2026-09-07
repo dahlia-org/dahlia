@@ -12,6 +12,7 @@ enum SyncEntity: String, Codable, DatabaseValueConvertible, Sendable {
     case transcript
     case file
     case meetingFile = "meeting_file"
+    case meetingEvent = "meeting_event"
 }
 
 enum SyncAction: String, Codable, DatabaseValueConvertible, Sendable {
@@ -595,6 +596,8 @@ enum SyncTransactionQueue {
                 arguments: [transaction.vaultId, transaction.sequence]
             ) ?? false
             for record in response.records {
+                // Events are acknowledged uploads, never local canonical/runtime records.
+                if record.entity == .meetingEvent { continue }
                 let hasLaterOperation = try Bool.fetchOne(
                     db,
                     sql: """
@@ -757,7 +760,7 @@ enum SyncTransactionQueue {
             try FileRecord.applyCanonical(id: id, vaultId: vaultId, value: value, in: db)
         case .meetingFile:
             try MeetingFileRecord.applyCanonical(id: id, vaultId: vaultId, value: value, in: db)
-        case .transcript:
+        case .transcript, .meetingEvent:
             break
         }
     }

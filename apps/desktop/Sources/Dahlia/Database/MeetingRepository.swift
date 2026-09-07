@@ -776,6 +776,9 @@ final class MeetingRepository {
                         sql: "INSERT OR IGNORE INTO meeting_tags (meetingId, tagId) VALUES (?, ?)",
                         arguments: [meetingId, tagId]
                     )
+                    if db.changesCount > 0 {
+                        try MeetingEventRecorder.record(.tagAdded, meetingId: meetingId, relatedId: String(tagId), in: db)
+                    }
                 }
             }
         }
@@ -798,6 +801,9 @@ final class MeetingRepository {
                 sql: "INSERT OR IGNORE INTO meeting_tags (meetingId, tagId) VALUES (?, ?)",
                 arguments: [meetingId, tagId]
             )
+            if db.changesCount > 0 {
+                try MeetingEventRecorder.record(.tagAdded, meetingId: meetingId, relatedId: String(tagId), in: db)
+            }
         }
     }
 
@@ -806,9 +812,12 @@ final class MeetingRepository {
         try dbQueue.write { db in
             guard let tag = try TagRecord.filter(Column("name") == name).fetchOne(db),
                   let tagId = tag.id else { return }
-            _ = try MeetingTagRecord
+            let removed = try MeetingTagRecord
                 .filter(Column("meetingId") == meetingId && Column("tagId") == tagId)
                 .deleteAll(db)
+            if removed > 0 {
+                try MeetingEventRecorder.record(.tagRemoved, meetingId: meetingId, relatedId: String(tagId), in: db)
+            }
             let count = try MeetingTagRecord.filter(Column("tagId") == tagId).fetchCount(db)
             if count == 0 {
                 _ = try TagRecord.deleteOne(db, key: tagId)

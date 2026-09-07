@@ -319,6 +319,10 @@ final class AppDatabaseManager: Sendable {
             try TextContentMigration.migrate(in: db)
         }
 
+        migrator.registerMigration("v47_meetingEvents", foreignKeyChecks: .deferred) { db in
+            try MeetingEventMigration.migrate(in: db)
+        }
+
         return migrator
     }()
 

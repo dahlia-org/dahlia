@@ -426,7 +426,7 @@ export function createApp(dependencies: AppDependencies) {
   app.get("/api/v1/sync-content", async (context) => {
     await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
     if (!await store.sync.isAvailable()) return context.json({ error: "sync_unavailable" }, 503);
-    return context.json({ version: 1 });
+    return context.json({ version: 1, meetingEvents: 1 });
   });
   app.get("/api/v1/vaults/:vaultId/text/:entity/:entityId", async (context) => {
     const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);

@@ -188,6 +188,44 @@ export const syncedMeeting = appSchema.table("meetings", {
   }),
 ]).enableRLS();
 
+// Domain history survives meeting deletion; Vault deletion removes it.
+export const meetingEvent = appSchema.table("meeting_events", {
+  id: uuid("id").primaryKey(),
+  vaultId: uuid("vault_id").notNull().references(() => syncedVault.vaultId, { onDelete: "cascade" }),
+  ownerUserId: text("owner_user_id").notNull().references(() => authUser.id, { onDelete: "cascade" }),
+  meetingId: uuid("meeting_id").notNull(),
+  kind: text("kind").notNull(),
+  occurredAt: timestamp("occurred_at").notNull(),
+  receivedAt: timestamp("received_at").notNull(),
+  sessionId: uuid("session_id"),
+  relatedId: text("related_id"),
+  audioSource: text("audio_source"),
+  segmentIndex: integer("segment_index"),
+  changedFields: text("changed_fields"),
+}, (table) => [
+  index("meeting_events_meeting_time_idx").on(table.vaultId, table.meetingId, table.occurredAt, table.id),
+  index("meeting_events_session_idx").on(table.vaultId, table.sessionId),
+  check("meeting_events_kind_check", sql`${table.kind} IN ('meeting_created', 'meeting_updated', 'meeting_deleted', 'tag_added', 'tag_removed', 'recording_started', 'recording_ended', 'segment_rotated')`),
+  check("meeting_events_source_check", sql`${table.audioSource} IN ('mic', 'system')`),
+  pgPolicy("meeting_event_select", { for: "select", using: sql`"app"."current_identity_can_read_vault"(${table.vaultId})` }),
+  pgPolicy("meeting_event_write", { for: "all", using: sql`"app"."current_identity_owns_vault"(${table.vaultId})`, withCheck: sql`"app"."current_identity_owns_vault"(${table.vaultId})` }),
+]).enableRLS();
+
+export const recordingSession = appSchema.view("recording_sessions", {
+  vaultId: uuid("vault_id").notNull(),
+  meetingId: uuid("meeting_id").notNull(),
+  sessionId: uuid("session_id").notNull(),
+  startedAt: timestamp("started_at"),
+  endedAt: timestamp("ended_at"),
+}).with({ securityInvoker: true }).as(sql`
+  SELECT vault_id, meeting_id, session_id,
+    min(CASE WHEN kind = 'recording_started' THEN occurred_at END) AS started_at,
+    max(CASE WHEN kind = 'recording_ended' THEN occurred_at END) AS ended_at
+  FROM app.meeting_events
+  WHERE session_id IS NOT NULL AND kind IN ('recording_started', 'recording_ended')
+  GROUP BY vault_id, meeting_id, session_id
+`);
+
 export const syncedTranscriptSegment = appSchema.table("transcript_segments", {
   vaultId: uuid("vault_id").notNull(),
   meetingId: uuid("meeting_id").notNull(),

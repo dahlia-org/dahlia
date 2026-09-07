@@ -1,3 +1,4 @@
+import { RecordingIndicator } from "../src/client/RecordingIndicator";
 import { projectAncestors, selectedSidebarVault, Sidebar, SidebarProvider, vaultListURL } from "../src/client/Sidebar";
 import { readFileSync } from "node:fs";
 import { createElement } from "react";
@@ -24,6 +25,15 @@ const ExtensionPage = () => null;
 afterEach(() => vi.unstubAllGlobals());
 
 describe("desktop-style meeting layout", () => {
+  it("renders a text-labelled recording indicator only for active sessions in both languages", () => {
+    for (const [language, label] of [["ja-JP", "録音中"], ["en-US", "Recording"]]) {
+      vi.stubGlobal("navigator", { language });
+      expect(renderToStaticMarkup(createElement(RecordingIndicator, { isRecording: true }))).toContain(label);
+      expect(renderToStaticMarkup(createElement(RecordingIndicator, { isRecording: false }))).toBe("");
+      expect(renderToStaticMarkup(createElement(RecordingIndicator, {}))).toBe("");
+    }
+  });
+
   it("renders elapsed transcript timestamps independently of locale, midnight and duration length", () => {
     for (const language of ["en-US", "ja-JP"]) {
       vi.stubGlobal("navigator", { language });

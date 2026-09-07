@@ -79,7 +79,7 @@ const uuidV7Schema = z.string()
   .transform((value) => value.toLowerCase());
 const transactionOperationSchema = z.object({
   id: uuidV7Schema,
-  entity: z.enum(["vault", "project", "meeting", "summary", "transcript", "file", "meeting_file"]),
+  entity: z.enum(["vault", "project", "meeting", "summary", "transcript", "file", "meeting_file", "meeting_event"]),
   action: z.enum(["create", "update", "delete", "upsert", "patch", "reset"]),
   entityId: uuidSchema,
   baseRevision: z.number().int().nonnegative().nullable(),
@@ -93,6 +93,11 @@ const transactionSchema = z.object({
   operations: z.array(transactionOperationSchema).min(1).max(10_000),
 }).strict();
 const transactionDataSchemas = {
+  "meeting_event:create": z.discriminatedUnion("kind", [
+    z.object({ meetingId: uuidSchema, kind: z.enum(["tag_added", "tag_removed"]), occurredAt: dateSchema, relatedId: z.string().regex(/^[0-9]{1,19}$/) }).strict(),
+    z.object({ meetingId: uuidSchema, kind: z.enum(["recording_started", "recording_ended"]), occurredAt: dateSchema, sessionId: uuidSchema }).strict(),
+    z.object({ meetingId: uuidSchema, kind: z.literal("segment_rotated"), occurredAt: dateSchema, sessionId: uuidSchema, relatedId: uuidSchema, audioSource: z.enum(["mic", "system"]), segmentIndex: z.number().int().positive().max(2147483647) }).strict(),
+  ]),
   "vault:create": z.object({ name: z.string().trim().min(1), createdAt: dateSchema }).strict(),
   "vault:update": z.object({ name: z.string().trim().min(1) }).strict(),
   "vault:reset": z.object({ preservePermissions: z.boolean().optional() }).strict(),

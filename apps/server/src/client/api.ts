@@ -22,6 +22,7 @@ export interface SyncedMeetingInfo {
   status: string;
   duration?: number;
   recordingStartedAt?: string;
+  isRecording?: boolean;
   createdAt: string;
   updatedAt: string;
   summaryTitle?: string;

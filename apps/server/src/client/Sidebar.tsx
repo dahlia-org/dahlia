@@ -1,3 +1,4 @@
+import { RecordingIndicator } from "./RecordingIndicator";
 import { useLiveJSON, useLivePage } from "./live-data";
 import { navigateDashboard } from "./navigation";
 import { createContext, Fragment, useContext, useEffect, useState, type ReactNode } from "react";
@@ -287,6 +288,7 @@ function Meetings({ vaultId, projectId, selectedMeeting }: { vaultId: string; pr
       return <li key={meeting.meetingId} className={`tree-row meeting-row${active ? " active" : ""}`}>
         <a href={href} title={meeting.name} aria-current={active ? "page" : undefined}>
           <span>{meeting.name || uiText("Untitled meeting", "無題のミーティング")}</span>
+          <RecordingIndicator isRecording={meeting.isRecording} />
           <time dateTime={meetingDate}>{new Date(meetingDate).toLocaleString(undefined, { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}</time>
         </a>
       </li>;

@@ -151,7 +151,7 @@ actor SegmentedAudioSourceWriter {
 
     func start(sessionOffsetSeconds: TimeInterval) async throws {
         guard current == nil else { return }
-        current = try await createPhysicalSegment(sessionOffsetSeconds: sessionOffsetSeconds)
+        try await beginPhysicalSegment(sessionOffsetSeconds: sessionOffsetSeconds)
         if let beforeConsumingChunk {
             writerTask = Task { [weak self, stream, beforeConsumingChunk] in
                 for await chunk in stream {
@@ -297,9 +297,18 @@ actor SegmentedAudioSourceWriter {
 
         let nextOffset = current.record.sessionStartOffsetSeconds
             + Double(current.frameCount) / format.sampleRate
-        let next = try await createPhysicalSegment(sessionOffsetSeconds: nextOffset)
-        self.current = next
+        try await beginPhysicalSegment(sessionOffsetSeconds: nextOffset)
         try await sealAndEnqueueFinalization(current)
+    }
+
+    private func beginPhysicalSegment(sessionOffsetSeconds: TimeInterval) async throws {
+        let next = try await createPhysicalSegment(sessionOffsetSeconds: sessionOffsetSeconds)
+        current = next
+        do {
+            try await store.recordRotation(segmentId: next.record.id)
+        } catch {
+            ErrorReportingService.capture(error, context: ["source": "recordingEvent"])
+        }
     }
 
     private func createPhysicalSegment(sessionOffsetSeconds: TimeInterval) async throws -> PhysicalSegment {

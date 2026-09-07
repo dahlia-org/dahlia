@@ -3579,6 +3579,7 @@ final class CaptionViewModel: ObservableObject {
                 )
             }
             pendingRealtimeRecognitionFailure = nil
+            await MeetingEventRecorder.recordStarted(sessionId: recordingSessionId, dbQueue: dbQueue)
         } catch {
             await handleRecordingStartFailure(
                 error,

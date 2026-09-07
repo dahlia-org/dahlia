@@ -1006,6 +1006,23 @@ function createIdentityStore(
     return { id: transaction.id, status: "committed", receipt: "compact", cursor: encodeSyncCursor(receipt.cursor), records: results };
   }
 
+  async function insertMeetingEvent(values: Omit<typeof schema.meetingEvent.$inferInsert, "ownerUserId">) {
+    const [existing] = await db.select().from(schema.meetingEvent).where(eq(schema.meetingEvent.id, values.id)).limit(1);
+    if (!existing) {
+      await db.insert(schema.meetingEvent).values({ ...values, ownerUserId: userPrincipalId });
+      return;
+    }
+    const fields = ["vaultId", "meetingId", "kind", "occurredAt", "sessionId", "relatedId", "audioSource", "segmentIndex", "changedFields"] as const;
+    if (fields.some((field) => JSON.stringify(existing[field] ?? null) !== JSON.stringify(values[field] ?? null))) {
+      throw new SyncTransactionError(409, "event_id_reused");
+    }
+  }
+
+  async function redactMeetingEvents(vaultId: string, meetingId?: string) {
+    await db.update(schema.meetingEvent).set({ sessionId: null, relatedId: null, audioSource: null, segmentIndex: null, changedFields: null })
+      .where(and(eq(schema.meetingEvent.vaultId, vaultId), meetingId ? eq(schema.meetingEvent.meetingId, meetingId) : undefined));
+  }
+
   async function commitTransaction(transaction: SyncTransaction): Promise<SyncTransactionResponse> {
     const receipt = await resolveTransaction(transaction);
     if (receipt?.receipt === "compact") throw new SyncTransactionError(410, "transaction_receipt_expired");
@@ -1029,9 +1046,34 @@ function createIdentityStore(
       }], transaction.operations[0]?.id);
     }
     for (const operation of transaction.operations) {
-      await assertCreateAvailable(transaction, operation);
       const data = operation.data ?? {};
       const now = new Date();
+      if (operation.entity === "meeting_event") {
+        if (operation.baseRevision !== null) throw new SyncTransactionError(400, "invalid_sync_operation", [], operation.id);
+        const meetingId = String(data.meetingId);
+        const meeting = await canonicalRecord("meeting", transaction.vaultId, meetingId);
+        if (!meeting.record || meeting.record.active !== true || meeting.record.deletingAt) {
+          throw new SyncTransactionError(410, "meeting_event_parent_unavailable", [], operation.id);
+        }
+        if (data.sessionId) {
+          const [other] = await db.select({ meetingId: schema.meetingEvent.meetingId }).from(schema.meetingEvent).where(and(
+            eq(schema.meetingEvent.vaultId, transaction.vaultId), eq(schema.meetingEvent.sessionId, data.sessionId as string),
+            sql`${schema.meetingEvent.meetingId} <> ${meetingId}`,
+          )).limit(1);
+          if (other) throw new SyncTransactionError(409, "recording_session_meeting_mismatch", [], operation.id);
+        }
+        await insertMeetingEvent({
+          id: operation.entityId, vaultId: transaction.vaultId, meetingId, kind: String(data.kind),
+          occurredAt: data.occurredAt as Date, receivedAt: now,
+          sessionId: data.sessionId as string | undefined, relatedId: data.relatedId as string | undefined,
+          audioSource: data.audioSource as string | undefined, segmentIndex: data.segmentIndex as number | undefined,
+        });
+        // Invalidate the existing meeting projection; event history is not a sync entity to pull.
+        cursor = await appendChange(transaction, "meeting", meetingId, "upsert", meeting.revision);
+        records.push({ entity: "meeting_event", id: operation.entityId, revision: null, record: null });
+        continue;
+      }
+      await assertCreateAvailable(transaction, operation);
       if (operation.entity === "vault") {
         if (operation.action === "create") {
           const [existing] = await db.select({
@@ -1096,6 +1138,7 @@ function createIdentityStore(
           await db.delete(schema.meetingFile).where(eq(schema.meetingFile.vaultId, transaction.vaultId));
           await db.delete(schema.syncedFile).where(eq(schema.syncedFile.vaultId, transaction.vaultId));
           if (data.preservePermissions === true) {
+            await redactMeetingEvents(transaction.vaultId);
             await db.delete(schema.searchIndexJob).where(eq(schema.searchIndexJob.vaultId, transaction.vaultId));
             await db.delete(schema.syncedMeeting).where(eq(schema.syncedMeeting.vaultId, transaction.vaultId));
             await db.delete(schema.syncedProject).where(eq(schema.syncedProject.vaultId, transaction.vaultId));
@@ -1153,6 +1196,7 @@ function createIdentityStore(
           continue;
         }
       } else if (operation.entity === "meeting") {
+        const previous = operation.action === "update" ? await canonicalRecord("meeting", transaction.vaultId, operation.entityId) : null;
         if (operation.action === "create") {
           const [existing] = await db.select({ active: schema.syncedMeeting.active })
             .from(schema.syncedMeeting).where(ownedMeeting(transaction.vaultId, operation.entityId)).limit(1);
@@ -1197,6 +1241,8 @@ function createIdentityStore(
           const attachments = await db.select({ id: schema.meetingFile.id }).from(schema.meetingFile).where(and(
             eq(schema.meetingFile.vaultId, transaction.vaultId), eq(schema.meetingFile.meetingId, operation.entityId),
           ));
+          await redactMeetingEvents(transaction.vaultId, operation.entityId);
+          await insertMeetingEvent({ id: operation.id, vaultId: transaction.vaultId, meetingId: operation.entityId, kind: "meeting_deleted", occurredAt: now, receivedAt: now });
           await db.delete(schema.syncedMeeting).where(ownedMeeting(transaction.vaultId, operation.entityId));
           // A coalesced delete/recreate must still invalidate the old canonical children.
           cursor = await appendChanges(transaction, [
@@ -1207,6 +1253,17 @@ function createIdentityStore(
           ]);
           records.push({ entity: "meeting", id: operation.entityId, revision: null, record: null });
           continue;
+        }
+        const changedFields = operation.action === "update"
+          ? ["projectId", "name", "description", "status", "duration", "recordingStartedAt"].filter((field) =>
+            JSON.stringify(previous?.record?.[field] ?? null) !== JSON.stringify(data[field] ?? null))
+          : [];
+        if (operation.action === "create" || changedFields.length) {
+          await insertMeetingEvent({
+            id: operation.id, vaultId: transaction.vaultId, meetingId: operation.entityId,
+            kind: operation.action === "create" ? "meeting_created" : "meeting_updated",
+            occurredAt: now, receivedAt: now, changedFields: changedFields.length ? JSON.stringify(changedFields) : null,
+          });
         }
       } else if (operation.entity === "summary") {
         await assertRevision(transaction, "summary", operation.entityId, operation.baseRevision);
@@ -2042,6 +2099,18 @@ function meetingSelection(schema: SyncSchema) {
     status: schema.syncedMeeting.status,
     duration: schema.syncedMeeting.duration,
     recordingStartedAt: schema.syncedMeeting.recordingStartedAt,
+    isRecording: sql<boolean>`exists (
+      select 1 from ${schema.meetingEvent} as started
+      where started.vault_id = "meetings"."vault_id"
+        and started.meeting_id = "meetings"."meeting_id"
+        and started.kind = 'recording_started'
+        and started.session_id is not null
+        and not exists (
+          select 1 from ${schema.meetingEvent} as ended
+          where ended.vault_id = started.vault_id and ended.meeting_id = started.meeting_id
+            and ended.session_id = started.session_id and ended.kind = 'recording_ended'
+        )
+    )`.mapWith(Boolean),
     createdAt: schema.syncedMeeting.createdAt,
     updatedAt: schema.syncedMeeting.updatedAt,
     summaryTitle: schema.syncedMeeting.summaryTitle,

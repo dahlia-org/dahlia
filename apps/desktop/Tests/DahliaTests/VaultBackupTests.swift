@@ -315,7 +315,7 @@ import GRDB
             defer { fixture.removeFiles() }
             let service = BackupService(dbQueue: fixture.database.dbQueue, applicationSupportURL: fixture.testRootURL)
             let generation = try await service.createGeneration(vaultIds: [fixture.meeting.vaultId])
-            let identifier = try #require(AppDatabaseManager.migrationIdentifiers.dropLast().last)
+            let identifier = "v45_screenshotContent"
             let oldURL = fixture.testRootURL.appending(path: "older.sqlite")
             let old = try DatabaseQueue(path: oldURL.path, configuration: AppDatabaseManager.configuration())
             try AppDatabaseManager.migrator.migrate(old, upTo: identifier)
@@ -323,7 +323,8 @@ import GRDB
                 try db.execute(sql: "ATTACH DATABASE ? AS current_backup", arguments: [extractedBackupDatabase(generation.fileURL).path])
             }
             try await old.write { db in
-                try db.execute(sql: "INSERT INTO vaults SELECT * FROM current_backup.vaults")
+                let vaultColumns = try db.columns(in: "vaults").map(\.name.quotedDatabaseIdentifier).joined(separator: ", ")
+                try db.execute(sql: "INSERT INTO vaults (\(vaultColumns)) SELECT \(vaultColumns) FROM current_backup.vaults")
                 try fixture.meeting.insert(db)
                 try fixture.session.insert(db)
                 try db.execute(

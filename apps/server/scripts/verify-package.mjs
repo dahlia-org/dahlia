@@ -72,7 +72,7 @@ try {
     if (typeof createPostgresApplicationStore !== "function" || typeof createPostgresAuthStore !== "function") {
       throw new Error("PostgreSQL store factories are missing from the Node package export");
     }
-    if (serverMigrationManifest.sqlite.files.length !== 4) {
+    if (serverMigrationManifest.sqlite.files.length !== 5) {
       throw new Error("Migration manifest is incomplete");
     }
     const style = await readFile(new URL(import.meta.resolve("@dahlia-ai/server/client/styles.css")), "utf8");
@@ -130,7 +130,7 @@ try {
     const applied = database.prepare('SELECT "name" FROM "__drizzle_migrations"').all();
     database.close();
     await store.close?.();
-    if (applied.length !== 4 || applied.at(-1)?.name !== "20260906125718_dashing_roughhouse") {
+    if (applied.length !== 5 || applied.at(-1)?.name !== "20260907070728_dashing_sinister_six") {
       throw new Error("Installed package migrations did not run from the package directory");
     }
   `);

@@ -111,6 +111,42 @@ export const syncedMeeting = sqliteTable("meetings", {
   index("synced_meeting_vault_created_id_idx").on(table.vaultId, table.createdAt, table.meetingId),
 ]);
 
+// Domain history survives meeting deletion; Vault deletion removes it.
+export const meetingEvent = sqliteTable("meeting_events", {
+  id: text("id").primaryKey(),
+  vaultId: text("vault_id").notNull().references(() => syncedVault.vaultId, { onDelete: "cascade" }),
+  ownerUserId: text("owner_user_id").notNull().references(() => authUser.id, { onDelete: "cascade" }),
+  meetingId: text("meeting_id").notNull(),
+  kind: text("kind").notNull(),
+  occurredAt: sqliteTimestamp("occurred_at").notNull(),
+  receivedAt: sqliteTimestamp("received_at").notNull(),
+  sessionId: text("session_id"),
+  relatedId: text("related_id"),
+  audioSource: text("audio_source"),
+  segmentIndex: integer("segment_index"),
+  changedFields: text("changed_fields"),
+}, (table) => [
+  index("meeting_events_meeting_time_idx").on(table.vaultId, table.meetingId, table.occurredAt, table.id),
+  index("meeting_events_session_idx").on(table.vaultId, table.sessionId),
+  check("meeting_events_kind_check", sql`${table.kind} IN ('meeting_created', 'meeting_updated', 'meeting_deleted', 'tag_added', 'tag_removed', 'recording_started', 'recording_ended', 'segment_rotated')`),
+  check("meeting_events_source_check", sql`${table.audioSource} IN ('mic', 'system')`),
+]);
+
+export const recordingSession = sqliteView("recording_sessions", {
+  vaultId: text("vault_id").notNull(),
+  meetingId: text("meeting_id").notNull(),
+  sessionId: text("session_id").notNull(),
+  startedAt: sqliteTimestamp("started_at"),
+  endedAt: sqliteTimestamp("ended_at"),
+}).as(sql`
+  SELECT vault_id, meeting_id, session_id,
+    min(CASE WHEN kind = 'recording_started' THEN occurred_at END) AS started_at,
+    max(CASE WHEN kind = 'recording_ended' THEN occurred_at END) AS ended_at
+  FROM meeting_events
+  WHERE session_id IS NOT NULL AND kind IN ('recording_started', 'recording_ended')
+  GROUP BY vault_id, meeting_id, session_id
+`);
+
 export const syncedTranscriptSegment = sqliteTable("transcript_segments", {
   vaultId: text("vault_id").notNull(),
   meetingId: text("meeting_id").notNull(),
