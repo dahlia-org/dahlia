@@ -32,3 +32,10 @@ Lakebase Search と有効にした vector extension は operator が準備する
 D1 は FTS-only target だが、現在の adapter は canonical content と projection の複数 statement を atomic batch にできないため sync capability 自体を fail-closed とする。専用 `D1Database.batch()` adapter と rollback 相当の失敗契約を実装するまで有効化しない。
 
 Node / Worker は tokenizer と vector capability が異なり、同じ DB の runtime 変更には再同期または projection 全再構築が必要。初期の LIKE 検索と各 canonical row 内の検索列は、再生成境界と非同期 vector 処理を共有する統合 projection に置き換えた。
+
+
+## 部分保持クライアント用の全件探索
+
+全件探索は document ID 順に固定する。別Vaultの更新で変化する索引全体の関連度をページ順に使わず、Vault単位のrevisionとcursorで重複・欠落を防ぐ。
+
+`GET /api/v1/vaults/{vaultId}/search?q=...&kind=meeting|screenshot` は既存 FTS projection を直接ページングする。Hybrid の上位100候補制限を使わず、200件以下の ID・meeting ID・180文字以内の snippet と `nextCursor` を返す。cursor は Vault、種類、query、ledger revision、offset を束縛し、途中の canonical 更新は409として新しい探索を要求する。ページごとに現在の identity と Vault 権限を検査する。全件探索完了は nextCursor がない場合だけで、client 側 filter は未探索ページを黙って捨てない。

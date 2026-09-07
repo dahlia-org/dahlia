@@ -3,25 +3,6 @@ import DahliaRuntimeSupport
 import Foundation
 import GRDB
 
-private struct SyncHTTPError: Error {
-    let status: Int
-    let body: Data
-
-    var code: String? {
-        guard let object = try? JSONSerialization.jsonObject(with: body) as? [String: String] else { return nil }
-        return object["error"]
-    }
-
-    var blockedReason: SyncBlockedReason? {
-        switch status {
-        case 401, 403: .authorization
-        case 409: .conflict
-        case 400 ..< 500 where ![408, 425, 429].contains(status): .validation
-        default: nil
-        }
-    }
-}
-
 struct SyncOperationBody: Encodable {
     let id: UUID
     let entity: SyncEntity
@@ -125,6 +106,7 @@ struct SyncChangePage: Decodable {
     let cursor: String
     let highWaterCursor: String
     let hasMore: Bool
+    var contentMode: String?
 }
 
 struct SyncResetSnapshot {
@@ -215,6 +197,7 @@ actor SyncWorker {
 
     private let dbQueue: DatabaseQueue
     private let session: URLSession
+    private let apiClient: SyncAPIClient
     private let vaultsDidChange: @MainActor @Sendable () async -> Void
     private var drainTask: Task<Void, Never>?
     private var eventTasks: [UUID: Task<Void, Never>] = [:]
@@ -223,10 +206,12 @@ actor SyncWorker {
     init(
         dbQueue: DatabaseQueue,
         session: URLSession = .shared,
+        apiClient: SyncAPIClient? = nil,
         vaultsDidChange: @escaping @MainActor @Sendable () async -> Void = {}
     ) {
         self.dbQueue = dbQueue
         self.session = session
+        self.apiClient = apiClient ?? SyncAPIClient(session: session)
         self.vaultsDidChange = vaultsDidChange
     }
 
@@ -567,6 +552,19 @@ actor SyncWorker {
         return result
     }
 
+    func synchronizeForTransfer(vaultId: UUID, connectionId: UUID) async throws {
+        guard let target = try await pullTargets().first(where: { $0.vaultId == vaultId && $0.connectionId == connectionId }) else {
+            throw TextContentError.changed
+        }
+        try await pullRemoteChanges(for: target)
+        guard try await dbQueue.read({ db in
+            try SyncTransactionQueue.matchesExpectedConnection(vaultId: vaultId, connectionId: connectionId, in: db)
+                && !SyncTransactionQueue.hasPending(vaultId: vaultId, in: db)
+                && String
+                .fetchOne(db, sql: "SELECT syncPullCursor FROM vaults WHERE id = ? AND syncRecoveryState IS NULL", arguments: [vaultId]) != nil
+        }) else { throw TextContentError.changed }
+    }
+
     private func pullRemoteChanges() async throws {
         guard !isPulling else { return }
         isPulling = true
@@ -575,8 +573,11 @@ actor SyncWorker {
             do {
                 try await ScreenshotContentProvider.shared.migrateLegacyImages(vaultId: target.vaultId, dbQueue: dbQueue)
                 try await pullRemoteChanges(for: target)
+                await MeetingContentProvider.shared.scheduleMaintenance(dbQueue: dbQueue)
             } catch is CancellationError {
                 throw CancellationError()
+            } catch let error as SyncHTTPError where error.status == 426 {
+                try? await setRecoveryState("updateRequired", target: target)
             } catch let error as SyncHTTPError where error.status == 410 && error.code == "sync_cursor_expired" {
                 try? await recoverSnapshot(target)
             } catch let error as SyncHTTPError where error.status == 404 && error.code == "vault_not_found" {
@@ -595,6 +596,28 @@ actor SyncWorker {
     }
 
     private func pullRemoteChanges(for target: SyncTarget) async throws {
+        do {
+            let data = try await sendData(
+                request(origin: target.origin, path: "api/v1/sync-content", method: "GET"),
+                connectionId: target.connectionId
+            )
+            guard try (JSONSerialization.jsonObject(with: data) as? [String: Int])?["version"] == 1 else {
+                throw SyncHTTPError(status: 426, body: Data())
+            }
+        } catch let error as SyncHTTPError where error.status == 426 {
+            try await setRecoveryState("updateRequired", target: target)
+            throw error
+        }
+        if try await dbQueue
+            .read({ try String.fetchOne($0, sql: "SELECT syncRecoveryState FROM vaults WHERE id = ?", arguments: [target.vaultId]) }) ==
+            "updateRequired" {
+            try await dbQueue.write { db in
+                try db.execute(
+                    sql: "UPDATE vaults SET syncRecoveryState = NULL WHERE id = ? AND accountConnectionId = ?",
+                    arguments: [target.vaultId, target.connectionId]
+                )
+            }
+        }
         if target.cursor == nil {
             try await recoverSnapshot(target)
             return
@@ -680,7 +703,7 @@ actor SyncWorker {
             try Task.checkCancellation()
             var components = URLComponents()
             components.path = "/api/v1/vaults/\(target.vaultId.lowercase)/snapshot"
-            components.queryItems = []
+            components.queryItems = [URLQueryItem(name: "content", value: "metadata-v1")]
             if let position { components.queryItems?.append(URLQueryItem(name: "cursor", value: position)) }
             if let startCursor { components.queryItems?.append(URLQueryItem(name: "startCursor", value: startCursor)) }
             guard let path = components.string else { throw URLError(.badURL) }
@@ -688,6 +711,7 @@ actor SyncWorker {
                 SyncSnapshotPage.self,
                 from: sendData(request(origin: target.origin, path: path, method: "GET"), connectionId: target.connectionId)
             )
+            guard page.contentMode == "metadata-v1" else { throw SyncHTTPError(status: 426, body: Data()) }
             if let startCursor, startCursor != page.startCursor { throw SyncTransactionQueueError.invalidReceipt }
             try await staged.merge(page.items.map {
                 SyncChangePage.Change(sequence: 0, entity: $0.entity, entityId: $0.id, action: "upsert", revision: $0.revision, record: $0.record)
@@ -788,7 +812,7 @@ actor SyncWorker {
             let data = try await sendData(
                 request(
                     origin: target.origin,
-                    path: "api/v1/vaults/\(target.vaultId.lowercase)/meetings/\(meetingId.lowercase)",
+                    path: "api/v1/vaults/\(target.vaultId.lowercase)/meetings/\(meetingId.lowercase)?content=metadata-v1",
                     method: "GET"
                 ),
                 connectionId: target.connectionId
@@ -811,7 +835,7 @@ actor SyncWorker {
                 continue
             }
             let data = try await sendData(
-                request(origin: target.origin, path: "api/v1/files/\(fileId.lowercase)", method: "GET"),
+                request(origin: target.origin, path: "api/v1/files/\(fileId.lowercase)?content=metadata-v1", method: "GET"),
                 connectionId: target.connectionId
             )
             struct Header: Decodable { let id: UUID
@@ -934,6 +958,7 @@ actor SyncWorker {
         var components = URLComponents()
         components.path = "/api/v1/vaults/\(target.vaultId.lowercase)/changes"
         components.queryItems = [
+            URLQueryItem(name: "content", value: "metadata-v1"),
             cursor.map { URLQueryItem(name: "cursor", value: $0) },
             highWaterCursor.map { URLQueryItem(name: "highWaterCursor", value: $0) },
         ].compactMap(\.self)
@@ -942,7 +967,9 @@ actor SyncWorker {
             request(origin: target.origin, path: path, method: "GET"),
             connectionId: target.connectionId
         )
-        return try SyncJSON.decoder.decode(SyncChangePage.self, from: data)
+        let page = try SyncJSON.decoder.decode(SyncChangePage.self, from: data)
+        guard page.contentMode == "metadata-v1" else { throw SyncHTTPError(status: 426, body: Data()) }
+        return page
     }
 
     private func apply(
@@ -984,7 +1011,7 @@ actor SyncWorker {
                    ) { return false }
                 continue
             }
-            if change.entity == .transcript, change.action == "upsert" {
+            if change.entity == .transcript, change.action == "upsert", change.record?.contentOmitted != true {
                 guard try await applyTranscriptChange(
                     change,
                     cursor: appliedCursor,
@@ -1206,30 +1233,16 @@ actor SyncWorker {
     }
 
     private func perform(_ unsignedRequest: URLRequest, connectionId: UUID) async throws -> Data {
-        var forceRefresh = false
-        for attempt in 0 ... 1 {
-            var request = unsignedRequest
-            let token = try await DahliaCloudTokenServiceRegistry.shared.validAccessToken(
-                connectionID: connectionId,
-                forceRefresh: forceRefresh
-            )
-            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-            let (data, response) = try await session.data(for: request)
-            guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
-            if (200 ..< 300).contains(http.statusCode) { return data }
-            if http.statusCode == 401, attempt == 0 {
-                forceRefresh = true
-                continue
-            }
-            let error = SyncHTTPError(status: http.statusCode, body: data)
+        do {
+            return try await apiClient.data(for: unsignedRequest, connectionId: connectionId)
+        } catch let error as SyncHTTPError {
             let path = unsignedRequest.url?.path ?? ""
-            if http.statusCode == 404, error.code != "vault_not_found",
-               path.hasSuffix("/snapshot") || path.hasSuffix("/transactions/resolve") {
+            if error.status == 404, error.code != "vault_not_found",
+               path.hasSuffix("/snapshot") || path.hasSuffix("/transactions/resolve") || path.hasSuffix("/sync-content") {
                 throw SyncHTTPError(status: 426, body: Data("{\"error\":\"sync_upgrade_required\"}".utf8))
             }
             throw error
         }
-        throw SyncHTTPError(status: 401, body: Data())
     }
 
     private func decode<T: Decodable>(_ type: T.Type, from data: Data?) throws -> T {

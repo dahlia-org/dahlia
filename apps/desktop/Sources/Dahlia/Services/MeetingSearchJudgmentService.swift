@@ -88,7 +88,7 @@ enum MeetingSearchJudgmentService {
                     """,
                     arguments: [id]
                 ).joined(separator: " ")
-                let summary = try SummaryRecord.fetchOne(db, key: id)
+                let summary = try SummaryRecord.filter(Column("meetingId") == id && Column("document") != nil).fetchOne(db)
                     .flatMap { try? $0.loadDocument().searchableBodyText } ?? ""
                 let calendar = [row["calendarTitle"] as String?, row["calendarDescription"] as String?]
                     .compactMap(\.self)

@@ -398,6 +398,7 @@ export function createApp(dependencies: AppDependencies) {
       sync.parseId(context.req.param("vaultId")),
       context.req.query("cursor"),
       context.req.query("highWaterCursor"),
+      context.req.query("content"),
     ));
   });
   app.post("/api/v1/transactions/resolve", syncBodyLimit, async (context) => {
@@ -416,7 +417,24 @@ export function createApp(dependencies: AppDependencies) {
       sync.parseId(context.req.param("vaultId")),
       context.req.query("cursor"),
       context.req.query("startCursor"),
+      context.req.query("content"),
     ));
+  });
+  app.get("/api/v1/sync-content", async (context) => {
+    await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
+    if (!await store.sync.isAvailable()) return context.json({ error: "sync_unavailable" }, 503);
+    return context.json({ version: 1 });
+  });
+  app.get("/api/v1/vaults/:vaultId/text/:entity/:entityId", async (context) => {
+    const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
+    return context.json(await sync.textContent(identity, sync.parseId(context.req.param("vaultId")),
+      context.req.param("entity"), sync.parseId(context.req.param("entityId")),
+      context.req.query("revision"), context.req.query("manifest"), context.req.query("cursor")));
+  });
+  app.get("/api/v1/vaults/:vaultId/search", async (context) => {
+    const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
+    return context.json(await sync.searchText(identity, sync.parseId(context.req.param("vaultId")),
+      context.req.query("q"), context.req.query("kind"), context.req.query("cursor"), context.req.query("limit")));
   });
   app.get("/api/v1/events", async (context) => {
     const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
@@ -490,7 +508,7 @@ export function createApp(dependencies: AppDependencies) {
   });
   app.get("/api/v1/files/:fileId", async (context) => {
     const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
-    return context.json(await sync.getFile(identity, sync.parseId(context.req.param("fileId"))));
+    return context.json(await sync.getFile(identity, sync.parseId(context.req.param("fileId")), context.req.query("content")));
   });
   app.get("/api/v1/vaults/:vaultId/files", async (context) => {
     const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
@@ -537,6 +555,7 @@ export function createApp(dependencies: AppDependencies) {
       identity,
       sync.parseId(context.req.param("vaultId")),
       sync.parseId(context.req.param("meetingId")),
+      context.req.query("content"),
     );
     return meeting ? context.json(meeting) : context.json({ error: "meeting_not_found" }, 404);
   });

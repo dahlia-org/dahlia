@@ -121,6 +121,7 @@ extension MeetingAccessStore {
             throw MeetingAccessError.summaryNotFound
         }
 
+        try TextContentAccess.requireComplete(entity: .summary, id: meetingID, in: db)
         let existingDocument: String = summaryRow["document"]
         guard Self.summaryDocumentVersion(existingDocument) == expectedDocumentVersion else {
             throw MeetingAccessError.summaryVersionConflict

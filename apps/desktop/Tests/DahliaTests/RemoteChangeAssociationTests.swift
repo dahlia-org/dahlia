@@ -162,10 +162,15 @@
             ))
 
             let repository = MeetingRepository(dbQueue: database.dbQueue)
-            try await repository.resolveVaultsForSignOut(
-                connectionID: oldConnectionId,
-                disposition: .moveToLocalAccount
-            )
+            // Model the completed transfer; its network/completeness boundary is covered by TextContentTests.
+            try await database.dbQueue.write { db in
+                try db.execute(sql: "DELETE FROM sync_entity_state WHERE vaultId = ?", arguments: [vault.id])
+                try db.execute(sql: "DELETE FROM sync_content_state WHERE vaultId = ?", arguments: [vault.id])
+                try db.execute(
+                    sql: "UPDATE vaults SET accountConnectionId = NULL, syncConfirmedConnectionId = NULL, syncPullCursor = NULL WHERE id = ?",
+                    arguments: [vault.id]
+                )
+            }
             _ = try await repository.updateVaultName(id: vault.id, name: "Local after sign out")
 
             let remoteProject = SyncProjectSnapshot(

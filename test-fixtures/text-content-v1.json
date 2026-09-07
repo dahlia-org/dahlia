@@ -1,0 +1,57 @@
+[
+  {
+    "name": "unicode-transcript",
+    "fields": [
+      {
+        "value": "019d4a01-0000-7000-8000-000000000001",
+        "body": false
+      },
+      {
+        "value": "こんにちは\n\"世界\"🙂",
+        "body": true
+      },
+      {
+        "value": "019d4a01-0000-7000-8000-000000000002",
+        "body": false
+      },
+      {
+        "value": "é",
+        "body": true
+      }
+    ],
+    "sha256": "b82923c5e55e7bb82a62c90aab6a8f2d4fa36ef8e9b6d13d89ebf109dd81f116",
+    "byteCount": 31
+  },
+  {
+    "name": "summary",
+    "fields": [
+      {
+        "value": "{\"schema_version\":3,\"title\":\"会議\",\"sections\":[]}",
+        "body": true
+      }
+    ],
+    "sha256": "26e58887a270d27ba2ce9e9bcb57fd5246db2385a9b2b1ac4bacf92d0e71dd01",
+    "byteCount": 51
+  },
+  {
+    "name": "nullable-file",
+    "fields": [
+      {
+        "value": null,
+        "body": true
+      },
+      {
+        "value": "",
+        "body": true
+      }
+    ],
+    "sha256": "492ca18b372a75105c825f865395ab7edebb381ffd9f60cf2e45d219b5e2a991",
+    "byteCount": 0
+  },
+  {
+    "name": "empty-transcript",
+    "fields": [],
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "byteCount": 0
+  }
+]

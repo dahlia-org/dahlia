@@ -5,6 +5,7 @@ import AppKit
 import Combine
 import CoreAudio
 import CoreMedia
+import DahliaMeetingAccess
 import DahliaRuntimeSupport
 import GRDB
 import os
@@ -312,8 +313,39 @@ final class CaptionViewModel: ObservableObject {
     @Published var requestShowSummaryTab = false
     @Published var requestOpenScreenshotID: UUID?
 
-    func screenshotOCRState(id: UUID) async -> ScreenshotOCRState {
+    func screenshotOCRState(id: UUID, refresh: Bool = false, contentProvider: MeetingContentProvider = .shared) async -> ScreenshotOCRState {
         guard let dbQueue = currentDbQueue else { return .pending }
+        if let fileId = try? await dbQueue.read({ db in
+            try UUID.fetchOne(
+                db,
+                sql: """
+                SELECT a.fileId FROM meeting_files a JOIN files f ON f.id = a.fileId
+                JOIN sync_content_state c ON c.entity = 'file' AND c.entityId = f.id
+                WHERE a.id = ? AND NOT (
+                    c.complete = 1 AND (f.remoteReference IS NULL OR f.localReference IS NOT NULL)
+                    AND EXISTS(SELECT 1 FROM search_index_jobs j WHERE j.indexKind = 'fts'
+                        AND j.targetKind = 'screenshotAnalysis' AND j.targetKey = a.id)
+                )
+                """,
+                arguments: [id]
+            )
+        }) {
+            do {
+                return try await contentProvider.withFileContent(id: fileId, dbQueue: dbQueue, refresh: refresh) {
+                    try await dbQueue.read { db in
+                        guard let file = try FileRecord.fetchOne(db, key: fileId) else { return .remote(ocrText: nil, caption: nil, state: .deleted) }
+                        let state = try TextContentAccess.availability(entity: .file, id: fileId, in: db).state
+                        return .remote(ocrText: file.metadata.ocrText, caption: file.metadata.caption, state: state)
+                    }
+                }
+            } catch {
+                return await (try? dbQueue.read { db in
+                    guard let file = try FileRecord.fetchOne(db, key: fileId) else { return .remote(ocrText: nil, caption: nil, state: .deleted) }
+                    let state = try TextContentAccess.availability(entity: .file, id: fileId, in: db).state
+                    return .remote(ocrText: file.metadata.ocrText, caption: file.metadata.caption, state: state == .stale ? .stale : .failed)
+                }) ?? .remote(ocrText: nil, caption: nil, state: .failed)
+            }
+        }
         return await (try? dbQueue.read { db in
             if let row = try Row.fetchOne(
                 db,
@@ -824,6 +856,9 @@ final class CaptionViewModel: ObservableObject {
     private var meetingLoadTask: Task<Void, Never>?
     private var meetingLoadGeneration: UInt64 = 0
     @Published private(set) var meetingSyncState: MeetingSyncState?
+    @Published private(set) var textContentState: TextContentAvailability.State?
+    private var textContentTask: Task<Void, Never>?
+    private var textContentLease: (UUID, DatabaseQueue, Task<Void, Never>)?
     private var meetingSyncObservation: AnyDatabaseCancellable?
     private var meetingSyncSnapshot: MeetingSyncSnapshot?
     private var appliedMeetingSyncSnapshot: MeetingSyncSnapshot?
@@ -894,11 +929,12 @@ final class CaptionViewModel: ObservableObject {
             )
         },
         summaryDocumentLoader: @escaping SummaryDocumentLoader = { meetingId, dbQueue in
-            try await Task.detached(priority: .userInitiated) {
-                try dbQueue.read { db in
-                    try SummaryRecord.fetchOne(db, key: meetingId)?.loadDocument()
+            try await MeetingContentProvider.shared.withContent(meetingId: meetingId, entities: [.summary], dbQueue: dbQueue) {
+                try await dbQueue.read { db in
+                    try TextContentAccess.requireComplete(entity: .summary, id: meetingId, in: db)
+                    return try SummaryRecord.fetchOne(db, key: meetingId)?.loadDocument()
                 }
-            }.value
+            }
         },
         usageTelemetryReporter: @escaping UsageTelemetryReporter = { event in
             UsageTelemetryService.shared.record(event)
@@ -1952,11 +1988,11 @@ final class CaptionViewModel: ObservableObject {
         let syncSnapshot = try dbQueue.read { try MeetingRepository.fetchMeetingSyncSnapshot(meetingId: meetingId, in: $0) }
         let detail = try repo.fetchMeetingDetail(id: meetingId)
         let recordingSessions = detail.recordingSessions.map(RecordingSessionTimeline.init)
-        let initialTranscriptPage = try repo.fetchTranscriptPage(
+        let initialTranscriptPage = try [.ready, .stale, .empty].contains(detail.transcriptContent.state) ? repo.fetchTranscriptPage(
             forMeetingId: meetingId,
             direction: .latest,
             limit: TranscriptStore.initialPageSize
-        )
+        ) : TranscriptPage(segments: [], hasEarlier: false, hasLater: false)
         let vaultExport = detail.summaryExports.first(where: { $0.type == .vault })
         let googleDocsExport = detail.summaryExports.first(where: { $0.type == .googleDocs })
         let artifactExport = detail.summaryExports.first(where: { $0.type == .dahliaArtifact })
@@ -1983,7 +2019,7 @@ final class CaptionViewModel: ObservableObject {
             recordingSessionRecords: detail.recordingSessions,
             recordingSessions: recordingSessions,
             initialTranscriptPage: initialTranscriptPage,
-            hasTranscriptSegments: !initialTranscriptPage.segments.isEmpty,
+            hasTranscriptSegments: dbQueue.read { try TextContentAccess.transcriptCount(meetingId: meetingId, in: $0) > 0 },
             screenshots: detail.screenshots,
             summaryDocument: detail.summary?.loadDocument(),
             googleFileId: googleDocsExport?.googleDocumentID,
@@ -2666,7 +2702,31 @@ final class CaptionViewModel: ObservableObject {
         startMeetingSyncObservation(meetingId: id, dbQueue: dbQueue)
     }
 
+    func retryTextContent() {
+        guard let id = currentMeetingId, let queue = currentDbQueue else { return }
+        textContentTask?.cancel()
+        textContentTask = Task {
+            for entity in [TextContentEntity.summary, .transcript] {
+                try? await MeetingContentProvider.shared.ensure(entity: entity, id: id, dbQueue: queue, refresh: true)
+            }
+        }
+    }
+
     private func stopMeetingSyncObservation() {
+        let previousContentTask = textContentTask
+        previousContentTask?.cancel()
+        textContentTask = nil
+        if let (id, queue, acquisition) = textContentLease {
+            Task {
+                await acquisition.value
+                await previousContentTask?.value
+                for entity in [TextContentEntity.summary, .transcript] {
+                    await MeetingContentProvider.shared.release(entity: entity, id: id, dbQueue: queue)
+                }
+            }
+        }
+        textContentLease = nil
+        textContentState = nil
         meetingSyncGeneration &+= 1
         meetingSyncObservation?.cancel()
         meetingSyncObservation = nil
@@ -2680,6 +2740,19 @@ final class CaptionViewModel: ObservableObject {
     private func startMeetingSyncObservation(meetingId: UUID, dbQueue: DatabaseQueue) {
         stopMeetingSyncObservation()
         let generation = meetingSyncGeneration
+        let acquisition = Task {
+            for entity in [TextContentEntity.summary, .transcript] {
+                await MeetingContentProvider.shared.retain(entity: entity, id: meetingId, dbQueue: dbQueue)
+            }
+        }
+        textContentLease = (meetingId, dbQueue, acquisition)
+        textContentTask = Task {
+            await acquisition.value
+            guard !Task.isCancelled else { return }
+            for entity in [TextContentEntity.summary, .transcript] {
+                try? await MeetingContentProvider.shared.ensure(entity: entity, id: meetingId, dbQueue: dbQueue)
+            }
+        }
         meetingSyncObservation = ValueObservation.tracking { db in
             try MeetingRepository.fetchMeetingSyncSnapshot(meetingId: meetingId, in: db)
         }
@@ -2695,6 +2768,19 @@ final class CaptionViewModel: ObservableObject {
                       self.currentMeetingId == meetingId else { return }
                 self.meetingSyncSnapshot = snapshot
                 self.meetingSyncState = snapshot?.state
+                let states = snapshot?.content.filter { $0.entity != "file" } ?? []
+                self.textContentState = states.isEmpty ? nil : states.contains(where: { $0.fetchError == "deleted" }) ? .deleted
+                    : states.contains(where: { $0.fetchError == "loading" }) ? .loading
+                    : states.contains(where: { !$0.complete && $0.fetchError != nil }) ? .failed
+                    : states.contains(where: { !$0.complete && $0.present }) ? .missing
+                    : states
+                    .contains(where: { content in
+                        snapshot?.revisions
+                            .contains(where: {
+                                $0.entity == content.entity && $0.entityId == content.entityId && $0.confirmedRevision != content.residentRevision
+                            }) == true
+                    }) ? .stale
+                    : states.allSatisfy { !$0.present || ($0.entity == "transcript" && $0.complete && $0.contentCount == 0) } ? .empty : .ready
                 self.refreshObservedMeetingContent()
             }
         )
@@ -2707,7 +2793,8 @@ final class CaptionViewModel: ObservableObject {
               !(isListening && recordingMeetingId == meetingId),
               !isFinalizingRecording else { return }
         guard appliedMeetingSyncSnapshot?.revisions != meetingSyncSnapshot?.revisions
-            || appliedMeetingSyncSnapshot?.connectionId != meetingSyncSnapshot?.connectionId else { return }
+            || appliedMeetingSyncSnapshot?.connectionId != meetingSyncSnapshot?.connectionId
+            || appliedMeetingSyncSnapshot?.content != meetingSyncSnapshot?.content else { return }
         meetingRefreshTask?.cancel()
         let generation = meetingSyncGeneration
         let connectionId = meetingSyncSnapshot?.connectionId
@@ -2732,10 +2819,23 @@ final class CaptionViewModel: ObservableObject {
                 self.currentProjectId = loaded.projectId
                 self.currentProjectURL = loaded.projectContext?.url
                 self.currentProjectName = loaded.projectContext?.name
+                let oldTranscript = self.appliedMeetingSyncSnapshot?.content.first(where: { $0.entity == "transcript" })
+                let newTranscript = loaded.syncSnapshot?.content.first(where: { $0.entity == "transcript" })
+                if oldTranscript?.residentRevision != newTranscript?.residentRevision || oldTranscript?.complete != newTranscript?.complete {
+                    self.conversationMetricsStore.invalidate(meetingId: meetingId)
+                }
                 self.appliedMeetingSyncSnapshot = loaded.syncSnapshot
                 self.store.recordingStartTime = loaded.recordingStartedAt
                 self.store.loadRecordingSessions(loaded.recordingSessions)
-                await self.store.reloadVisible()
+                if loaded.syncSnapshot?.content.first(where: { $0.entity == "transcript" })?.complete != false {
+                    await self.store.reloadVisible()
+                } else {
+                    self.store.configurePaging(
+                        meetingId: meetingId,
+                        loader: TranscriptPageLoader(dbQueue: dbQueue),
+                        initialPage: loaded.initialTranscriptPage
+                    )
+                }
                 self.refreshObservedMeetingContent()
             } catch is CancellationError {
                 return
@@ -3639,8 +3739,6 @@ final class CaptionViewModel: ObservableObject {
         if !isTerminationRequested {
             await searchIndexer?.start()
         }
-        var segments = context.store.segments
-        let recordingSessions = context.store.recordingSessions
         isFinalizingRecording = false
         finalizingMeetingId = nil
 
@@ -3668,19 +3766,28 @@ final class CaptionViewModel: ObservableObject {
             return
         }
 
-        if let meetingId = context.meetingId, let dbQueue = context.dbQueue {
-            segments = await mergedSegmentsForExport(
-                meetingId: meetingId,
-                dbQueue: dbQueue,
-                activeSegments: segments
-            )
+        await exportStoppedRecording(context)
+    }
+
+    private func exportStoppedRecording(_ context: RecordingStopContext) async {
+        var segments = context.store.segments
+        let recordingSessions = context.store.recordingSessions
+        if currentMeetingId == context.meetingId, !segments.isEmpty {
+            currentMeetingHasTranscriptSegments = true
+        }
+        guard let vaultURL = context.vaultURL, let meetingId = context.meetingId else { return }
+        if let dbQueue = context.dbQueue {
+            do {
+                segments = try await mergedSegmentsForExport(meetingId: meetingId, dbQueue: dbQueue, activeSegments: segments)
+            } catch {
+                errorMessage = L10n.textContentFailed
+                return
+            }
             if currentMeetingId == meetingId {
                 currentMeetingHasTranscriptSegments = !segments.isEmpty
             }
         }
-        guard let vaultURL = context.vaultURL,
-              let meetingId = context.meetingId,
-              !segments.isEmpty else { return }
+        guard !segments.isEmpty else { return }
         await exportFiles(
             vaultURL: vaultURL,
             meetingId: meetingId,
@@ -3966,14 +4073,12 @@ final class CaptionViewModel: ObservableObject {
         meetingId: UUID,
         dbQueue: DatabaseQueue,
         activeSegments: [TranscriptSegment]
-    ) async -> [TranscriptSegment] {
-        let persistedSegments = await (try? dbQueue.read { db in
-            try TranscriptSegmentRecord
-                .filter(Column("meetingId") == meetingId)
-                .order(Column("startTime").asc)
-                .fetchAll(db)
-                .map(TranscriptSegment.init(from:))
-        }) ?? []
+    ) async throws -> [TranscriptSegment] {
+        let persistedSegments = try await MeetingContentProvider.shared.withContent(meetingId: meetingId, entities: [.transcript], dbQueue: dbQueue) {
+            try await Task.detached(priority: .utility) {
+                try MeetingRepository(dbQueue: dbQueue).fetchSegments(forMeetingId: meetingId).map(TranscriptSegment.init(from:))
+            }.value
+        }
         var segmentsById = Dictionary(uniqueKeysWithValues: persistedSegments.map { ($0.id, $0) })
         for segment in activeSegments {
             segmentsById[segment.id] = segment
@@ -4415,7 +4520,17 @@ final class CaptionViewModel: ObservableObject {
     }
 
     private func runSummaryGeneration(_ request: SummaryGenerationRequest, job: SummaryGenerationJob) async {
-        defer { finishSummaryGeneration(request, job: job) }
+        for entity in [TextContentEntity.summary, .transcript] {
+            await MeetingContentProvider.shared.retain(entity: entity, id: request.meetingId, dbQueue: request.dbQueue)
+        }
+        defer {
+            finishSummaryGeneration(request, job: job)
+            Task {
+                for entity in [TextContentEntity.summary, .transcript] {
+                    await MeetingContentProvider.shared.release(entity: entity, id: request.meetingId, dbQueue: request.dbQueue)
+                }
+            }
+        }
 
         if request.retriesFailedPersistence {
             if let message = await recoverFailedPersistenceForSummary() {
@@ -4425,14 +4540,16 @@ final class CaptionViewModel: ObservableObject {
         }
 
         do {
-            let summaryInput = try await Task.detached(priority: .userInitiated) {
-                try FullTranscriptLoader.summaryInput(
-                    meetingId: request.meetingId,
-                    dbQueue: request.dbQueue,
-                    recordingSessions: request.recordingSessions,
-                    timeBase: request.recordingStartedAt
-                )
-            }.value
+            let summaryInput = try await MeetingContentProvider.shared.withContent(meetingId: request.meetingId, dbQueue: request.dbQueue) {
+                try await Task.detached(priority: .userInitiated) {
+                    try FullTranscriptLoader.summaryInput(
+                        meetingId: request.meetingId,
+                        dbQueue: request.dbQueue,
+                        recordingSessions: request.recordingSessions,
+                        timeBase: request.recordingStartedAt
+                    )
+                }.value
+            }
             guard !summaryInput.text.isEmpty else { throw SummaryGenerationPreparationError.emptyTranscript }
             try await generateSummary(request: request, summaryInput: summaryInput, job: job)
         } catch {
@@ -4989,15 +5106,17 @@ final class CaptionViewModel: ObservableObject {
                     return
                 }
                 do {
-                    try await Task.detached(priority: .userInitiated) {
-                        let text = try FullTranscriptLoader.plainText(
-                            meetingId: meetingId,
-                            dbQueue: dbQueue,
-                            recordingSessions: recordingSessions,
-                            timeBase: timeBase
-                        )
-                        try text.write(to: url, atomically: true, encoding: .utf8)
-                    }.value
+                    try await MeetingContentProvider.shared.withContent(meetingId: meetingId, entities: [.transcript], dbQueue: dbQueue) {
+                        try await Task.detached(priority: .userInitiated) {
+                            let text = try FullTranscriptLoader.plainText(
+                                meetingId: meetingId,
+                                dbQueue: dbQueue,
+                                recordingSessions: recordingSessions,
+                                timeBase: timeBase
+                            )
+                            try text.write(to: url, atomically: true, encoding: .utf8)
+                        }.value
+                    }
                     self.usageTelemetryReporter(.export(.completed, destination: .localFiles, trigger: .manual))
                 } catch {
                     self.errorMessage = error.localizedDescription

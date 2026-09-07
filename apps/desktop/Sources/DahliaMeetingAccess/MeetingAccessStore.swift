@@ -17,13 +17,15 @@ public final class MeetingAccessStore: Sendable {
     public let allowsWrites: Bool
     private let screenshotCache: ScreenshotFileStore?
     private let imageResolver: @Sendable (UUID, UUID, UUID) throws -> Data
+    let textResolver: (@Sendable (UUID, TextBrokerRequest) throws -> Data)?
 
     public init(
         databaseURL: URL = MeetingAccessStore.defaultDatabaseURL,
         vaultID: UUID,
         allowsWrites: Bool = false,
         screenshotCache: ScreenshotFileStore? = nil,
-        imageResolver: (@Sendable (UUID, UUID, UUID) throws -> Data)? = nil
+        imageResolver: (@Sendable (UUID, UUID, UUID) throws -> Data)? = nil,
+        textResolver: (@Sendable (UUID, TextBrokerRequest) throws -> Data)? = nil
     ) throws {
         var configuration = Configuration()
         configuration.readonly = !allowsWrites
@@ -35,6 +37,9 @@ public final class MeetingAccessStore: Sendable {
         self.vaultID = vaultID
         self.allowsWrites = allowsWrites
         let usesAppDatabase = databaseURL.standardizedFileURL == Self.defaultDatabaseURL.standardizedFileURL
+        self.textResolver = textResolver ?? (usesAppDatabase ? { @Sendable vaultId, request in
+            try DahliaImageBrokerProtocol.requestImage(.init(vaultId: vaultId, text: request))
+        } : nil)
         self.screenshotCache = screenshotCache ?? (usesAppDatabase ? try? ScreenshotFileStore(readOnly: true) : nil)
         self.imageResolver = imageResolver ?? { vaultId, meetingId, screenshotId in
             guard usesAppDatabase else { throw MeetingAccessError.screenshotUnavailable }
@@ -44,11 +49,94 @@ public final class MeetingAccessStore: Sendable {
         }
     }
 
+    /// App-side broker reads use the same scoped SQL without recursively entering IPC.
+    public init(database: DatabaseQueue, vaultID: UUID) {
+        self.database = database
+        self.vaultID = vaultID
+        allowsWrites = false
+        screenshotCache = nil
+        imageResolver = { _, _, _ in throw MeetingAccessError.screenshotUnavailable }
+        textResolver = nil
+    }
+
+    private func remoteSearch(
+        query: String,
+        kind: TextSearchKind,
+        cursor: String?,
+        scope: String,
+        limit: Int,
+        filter: ([TextSearchPage.Item], Database) throws -> [TextSearchPage.Item]
+    ) -> RemoteTextSearchResults? {
+        let isServer = (try? database.read { db in
+            try Bool.fetchOne(db, sql: "SELECT accountConnectionId IS NOT NULL FROM vaults WHERE id = ?", arguments: [vaultID]) == true
+        }) == true
+        guard isServer else { return nil }
+        do {
+            guard let textResolver else { throw TextContentError.unavailable }
+            var position = try cursor.map { try AccessCursorCodec.decode(ServerSearchCursor.self, from: $0) { $0.scope == scope }.position }
+            repeat {
+                let page = try JSONDecoder().decode(
+                    TextSearchPage.self,
+                    from: textResolver(vaultID, .init(operation: .search, query: query, kind: kind, cursor: position, limit: limit))
+                )
+                let items = try database.read { db in
+                    _ = try fetchVault(in: db)
+                    guard !page.items.isEmpty else { return [TextSearchPage.Item]() }
+                    let ids = Array(Set(page.items.map(\.meetingId)))
+                    let known = try Int.fetchOne(
+                        db,
+                        sql: "SELECT count(*) FROM meetings WHERE vaultId = ? AND id IN (\(Array(repeating: "?", count: ids.count).joined(separator: ",")))",
+                        arguments: StatementArguments([vaultID] + ids)
+                    )
+                    guard known == ids.count else { throw TextContentError.changed }
+                    return try filter(page.items, db)
+                }
+                position = page.nextCursor
+                if !items.isEmpty || position == nil {
+                    return RemoteTextSearchResults(
+                        items: items,
+                        nextCursor: position.map { AccessCursorCodec.encode(ServerSearchCursor(scope: scope, position: $0)) },
+                        complete: position == nil
+                    )
+                }
+            } while true
+        } catch {
+            return RemoteTextSearchResults(items: [], nextCursor: cursor, complete: false, error: "server_search_incomplete")
+        }
+    }
+
     public func scopedVault() throws -> ScopedVault {
         try database.read(fetchVault(in:))
     }
 
     public func queryMeetings(_ query: MeetingQuery = MeetingQuery()) throws -> MeetingQueryPage {
+        var result = try cachedQueryMeetings(query)
+        if query.query?.isEmpty == false {
+            result.searchScope = query.simple ? "device_metadata" : "device_metadata_and_retained_text_including_tags_calendar"
+            if !query.simple {
+                result.server = remoteSearch(
+                    query: query.query ?? "",
+                    kind: .meeting,
+                    cursor: query.serverCursor,
+                    scope: meetingCursorScope(query),
+                    limit: query.limit
+                ) { hits, db in
+                    var metadataQuery = query
+                    metadataQuery.query = nil
+                    metadataQuery.cursor = nil
+                    metadataQuery.limit = 200
+                    var components = try self.meetingQueryComponents(metadataQuery, cursor: nil, in: db)
+                    components.predicates.append("meetings.id IN (\(Array(repeating: "?", count: hits.count).joined(separator: ",")))")
+                    components.arguments += StatementArguments(hits.map(\.meetingId))
+                    let allowed = try Set(self.meetingRows(in: db, components: components, limit: metadataQuery.limit).map { $0["id"] as UUID })
+                    return hits.filter { allowed.contains($0.meetingId) }
+                }
+            }
+        }
+        return result
+    }
+
+    private func cachedQueryMeetings(_ query: MeetingQuery) throws -> MeetingQueryPage {
         guard (1 ... 100).contains(query.limit) else {
             throw MeetingAccessError.invalidLimit(maximum: 100)
         }
@@ -67,7 +155,7 @@ public final class MeetingAccessStore: Sendable {
                     try MeetingCursor.decode($0, vaultID: vaultID, scope: cursorScope, indexRevision: indexRevision)
                 }
                 let queryComponents = try meetingQueryComponents(query, cursor: cursor, in: db)
-                let rows = try meetingRows(in: db, components: queryComponents)
+                let rows = try meetingRows(in: db, components: queryComponents, limit: query.limit)
                 let hasMore = rows.count > query.limit
                 let pageRows = hasMore ? Array(rows.prefix(query.limit)) : rows
                 let meetings = pageRows.map(Self.metadata(from:))
@@ -86,6 +174,31 @@ public final class MeetingAccessStore: Sendable {
     }
 
     public func queryScreenshots(_ query: ScreenshotTextQuery) throws -> ScreenshotTextQueryPage {
+        var result = try cachedQueryScreenshots(query)
+        result.searchScope = "device_retained_text"
+        result.server = remoteSearch(
+            query: query.query,
+            kind: .screenshot,
+            cursor: query.serverCursor,
+            scope: screenshotCursorScope(text: query.query, query: query),
+            limit: query.limit
+        ) { hits, db in
+            try hits.filter { hit in
+                guard let row = try Row.fetchOne(db, sql: """
+                SELECT m.projectId, s.capturedAt FROM meeting_images s JOIN meetings m ON m.id = s.meetingId
+                WHERE s.id = ? AND m.id = ? AND m.vaultId = ?
+                """, arguments: [hit.id, hit.meetingId, self.vaultID]) else { throw TextContentError.changed }
+                let projectId: UUID? = row["projectId"]
+                let date: Date = row["capturedAt"]
+                return (query.projectID == nil || query.projectID == projectId)
+                    && (query.createdFrom == nil || date >= query.createdFrom!)
+                    && (query.createdBefore == nil || date < query.createdBefore!)
+            }
+        }
+        return result
+    }
+
+    private func cachedQueryScreenshots(_ query: ScreenshotTextQuery) throws -> ScreenshotTextQueryPage {
         guard (1 ... 100).contains(query.limit) else {
             throw MeetingAccessError.invalidLimit(maximum: 100)
         }
@@ -151,7 +264,7 @@ public final class MeetingAccessStore: Sendable {
                         meetingName: row["meetingName"],
                         capturedAt: row["capturedAt"],
                         mimeType: row["mimeType"],
-                        detectedText: String((row["detectedText"] as String).prefix(500)),
+                        detectedText: String((row["detectedText"] as String? ?? "").prefix(500)),
                         caption: row["caption"]
                     )
                 }
@@ -294,7 +407,6 @@ public final class MeetingAccessStore: Sendable {
             components.predicates.append("(meetings.createdAt < ? OR (meetings.createdAt = ? AND meetings.id < ?))")
             components.arguments += [cursor.createdAt, cursor.createdAt, cursor.meetingID]
         }
-        components.arguments += [query.limit + 1]
         return components
     }
 
@@ -338,9 +450,16 @@ public final class MeetingAccessStore: Sendable {
         }.joined(separator: " AND ")
     }
 
-    private func meetingRows(in db: Database, components: QueryComponents) throws -> [Row] {
+    private func transcriptCountSQL(in db: Database) throws -> String {
+        let local = "(SELECT COUNT(*) FROM transcript_segments WHERE transcript_segments.meetingId = meetings.id AND transcript_segments.isConfirmed = 1)"
+        guard try db.tableExists("sync_content_state") else { return local }
+        return "max(\(local), coalesce((SELECT contentCount FROM sync_content_state WHERE entity = 'transcript' AND entityId = meetings.id AND complete = 0), 0))"
+    }
+
+    private func meetingRows(in db: Database, components: QueryComponents, limit: Int) throws -> [Row] {
         var arguments: StatementArguments = [vaultID, vaultID]
         arguments += components.arguments
+        arguments += [limit + 1]
         return try Row.fetchAll(
             db,
             sql: """
@@ -367,9 +486,7 @@ public final class MeetingAccessStore: Sendable {
                 meetings.duration,
                 meetings.createdAt,
                 summaries.meetingId IS NOT NULL AS hasSummary,
-                (SELECT COUNT(*) FROM transcript_segments
-                 WHERE transcript_segments.meetingId = meetings.id
-                   AND transcript_segments.isConfirmed = 1) AS transcriptSegmentCount,
+                \(transcriptCountSQL(in: db)) AS transcriptSegmentCount,
                 (SELECT GROUP_CONCAT(tags.name, char(31))
                  FROM meeting_tags JOIN tags ON tags.id = meeting_tags.tagId
                  WHERE meeting_tags.meetingId = meetings.id) AS tags
@@ -390,11 +507,23 @@ public final class MeetingAccessStore: Sendable {
     }
 
     public func meeting(id: UUID) throws -> MeetingDetail {
+        do {
+            let result = try cachedMeeting(id: id)
+            touchText(entity: .summary, meetingId: id)
+            return result
+        } catch TextContentError.incomplete {
+            guard let textResolver else { throw TextContentError.incomplete }
+            return try JSONDecoder().decode(MeetingDetail.self, from: textResolver(vaultID, .init(operation: .meeting, meetingId: id)))
+        }
+    }
+
+    private func cachedMeeting(id: UUID) throws -> MeetingDetail {
         try database.read { db in
             let vault = try fetchVault(in: db)
             guard let row = try meetingRow(id: id, in: db) else {
                 throw MeetingAccessError.meetingNotFound
             }
+            try TextContentAccess.requireComplete(entity: .summary, id: id, in: db)
             let document: String? = row["summaryDocument"]
             let summary: String?
             let summaryDocument: JSONValue?
@@ -410,12 +539,13 @@ public final class MeetingAccessStore: Sendable {
             } catch {
                 throw MeetingAccessError.invalidSummaryDocument
             }
-            return MeetingDetail(
+            return try MeetingDetail(
                 vault: vault,
                 meeting: Self.metadata(from: row),
                 summary: summary,
                 summaryDocument: summaryDocument,
-                summaryDocumentVersion: document.map(Self.summaryDocumentVersion)
+                summaryDocumentVersion: document.map(Self.summaryDocumentVersion),
+                textContent: TextContentAccess.availability(entity: .summary, id: id, in: db)
             )
         }
     }
@@ -435,6 +565,42 @@ public final class MeetingAccessStore: Sendable {
         toElapsedSeconds: Double? = nil,
         limit: Int = 200,
         cursor: String? = nil
+    ) throws -> TranscriptPage {
+        do {
+            let result = try cachedTranscript(
+                meetingID: meetingID,
+                fromElapsedSeconds: fromElapsedSeconds,
+                toElapsedSeconds: toElapsedSeconds,
+                limit: limit,
+                cursor: cursor
+            )
+            touchText(entity: .transcript, meetingId: meetingID)
+            return result
+        } catch TextContentError.incomplete {
+            guard let textResolver else { throw TextContentError.incomplete }
+            return try JSONDecoder().decode(
+                TranscriptPage.self,
+                from: textResolver(
+                    vaultID,
+                    .init(
+                        operation: .transcript,
+                        meetingId: meetingID,
+                        cursor: cursor,
+                        limit: limit,
+                        fromElapsedSeconds: fromElapsedSeconds,
+                        toElapsedSeconds: toElapsedSeconds
+                    )
+                )
+            )
+        }
+    }
+
+    private func touchText(entity: TextContentEntity, meetingId: UUID) {
+        _ = try? textResolver?(vaultID, .init(operation: .touch, meetingId: meetingId, entity: entity))
+    }
+
+    private func cachedTranscript(
+        meetingID: UUID, fromElapsedSeconds: Double?, toElapsedSeconds: Double?, limit: Int, cursor: String?
     ) throws -> TranscriptPage {
         guard (1 ... 500).contains(limit) else {
             throw MeetingAccessError.invalidLimit(maximum: 500)
@@ -459,6 +625,9 @@ public final class MeetingAccessStore: Sendable {
             ) == true else {
                 throw MeetingAccessError.meetingNotFound
             }
+            try TextContentAccess.requireComplete(entity: .transcript, id: meetingID, in: db)
+            let resident = try TextContentAccess.availability(entity: .transcript, id: meetingID, in: db).revision
+            if let expected = decodedCursor?.contentRevision, expected != resident { throw TextContentError.changed }
             let rows = try transcriptRows(
                 in: db,
                 meetingID: meetingID,
@@ -478,10 +647,17 @@ public final class MeetingAccessStore: Sendable {
                     elapsedSeconds: $0.elapsedSeconds,
                     segmentID: $0.id,
                     fromElapsedSeconds: fromElapsedSeconds,
-                    toElapsedSeconds: toElapsedSeconds
+                    toElapsedSeconds: toElapsedSeconds,
+                    contentRevision: resident
                 ).encoded()
             } : nil
-            return TranscriptPage(vault: vault, meetingID: meetingID, segments: segments, nextCursor: nextCursor)
+            return try TranscriptPage(
+                vault: vault,
+                meetingID: meetingID,
+                segments: segments,
+                nextCursor: nextCursor,
+                textContent: TextContentAccess.availability(entity: .transcript, id: meetingID, in: db)
+            )
         }
     }
 
@@ -1034,9 +1210,7 @@ extension MeetingAccessStore {
                 meetings.createdAt,
                 summaries.meetingId IS NOT NULL AS hasSummary,
                 summaries.document AS summaryDocument,
-                (SELECT COUNT(*) FROM transcript_segments
-                 WHERE transcript_segments.meetingId = meetings.id
-                   AND transcript_segments.isConfirmed = 1) AS transcriptSegmentCount,
+                \(transcriptCountSQL(in: db)) AS transcriptSegmentCount,
                 (SELECT GROUP_CONCAT(tags.name, char(31))
                  FROM meeting_tags JOIN tags ON tags.id = meeting_tags.tagId
                  WHERE meeting_tags.meetingId = meetings.id) AS tags
@@ -1164,6 +1338,7 @@ private struct TranscriptCursor: Codable {
     let segmentID: UUID
     let fromElapsedSeconds: Double?
     let toElapsedSeconds: Double?
+    var contentRevision: Int?
 
     func encoded() -> String {
         AccessCursorCodec.encode(self)
@@ -1233,4 +1408,8 @@ private struct ScreenshotTextCursorFilterScope: Codable {
     let projectID: UUID?
     let createdFrom: Date?
     let createdBefore: Date?
+}
+
+private struct ServerSearchCursor: Codable { let scope: String
+    let position: String
 }

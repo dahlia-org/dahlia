@@ -288,7 +288,15 @@
             _ = try await repository.updateVaultName(id: savedVault.id, name: "Sent name")
             let claimed = try #require(try await SyncTransactionQueue.claim(dbQueue: database.dbQueue))
 
-            try await repository.resolveVaultsForSignOut(connectionID: connection.id, disposition: .moveToLocalAccount)
+            // Simulate a completed detach so the delayed receipt exercises the association guard.
+            try await database.dbQueue.write { db in
+                try SyncTransactionQueue.discard(vaultId: savedVault.id, in: db)
+                try db.execute(sql: "DELETE FROM sync_entity_state WHERE vaultId = ?", arguments: [savedVault.id])
+                try db.execute(
+                    sql: "UPDATE vaults SET accountConnectionId = NULL, syncConfirmedConnectionId = NULL, syncPullCursor = NULL WHERE id = ?",
+                    arguments: [savedVault.id]
+                )
+            }
             _ = try await repository.updateVaultName(id: savedVault.id, name: "Local after sign out")
             try await SyncTransactionQueue.complete(
                 claimed,

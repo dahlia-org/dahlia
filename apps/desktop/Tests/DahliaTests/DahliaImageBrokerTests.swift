@@ -71,7 +71,29 @@
         }
 
         @Test(.timeLimit(.minutes(1)))
-        func stoppingBrokerCancelsItsInFlightRetrieval() async throws {
+        func textRetrievalCanOutlastTheImageDeadline() async throws {
+            let root = URL(filePath: "/tmp/dahlia-text-\(UUID().uuidString)")
+            defer { try? FileManager.default.removeItem(at: root) }
+            let socket = root.appending(path: "text.sock")
+            let pages = Mutex(0)
+            let broker = DahliaImageBrokerServer(helperURL: executableURL()) { _ in
+                // Simulated healthy page latency; the aggregate exceeds both image IPC deadlines.
+                for _ in 0 ..< 3 {
+                    try await Task.sleep(for: .seconds(12))
+                    pages.withLock { $0 += 1 }
+                }
+                return Data("complete transcript".utf8)
+            }
+            try broker.start(socketURL: socket)
+            defer { broker.stop() }
+            let request = DahliaImageBrokerProtocol.Request(vaultId: .v7(), text: .init(operation: .transcript, meetingId: .v7()))
+            let data = try await Task.detached { try DahliaImageBrokerProtocol.requestImage(request, socketURL: socket) }.value
+            #expect(data == Data("complete transcript".utf8))
+            #expect(pages.withLock { $0 } == 3)
+        }
+
+        @Test(.timeLimit(.minutes(1)), arguments: [false, true])
+        func stoppingBrokerCancelsItsInFlightRetrieval(text: Bool) async throws {
             let root = URL(filePath: "/tmp/dahlia-image-\(UUID().uuidString)")
             defer { try? FileManager.default.removeItem(at: root) }
             let socket = root.appending(path: "image.sock")
@@ -88,7 +110,9 @@
                 return Data([1])
             }
             try broker.start(socketURL: socket)
-            let request = DahliaImageBrokerProtocol.Request(vaultId: .v7(), meetingId: .v7(), screenshotId: .v7())
+            let request = text
+                ? DahliaImageBrokerProtocol.Request(vaultId: .v7(), text: .init(operation: .transcript, meetingId: .v7()))
+                : DahliaImageBrokerProtocol.Request(vaultId: .v7(), meetingId: .v7(), screenshotId: .v7())
             let client = Task.detached { try DahliaImageBrokerProtocol.requestImage(request, socketURL: socket) }
             var iterator = events.makeAsyncIterator()
             #expect(await iterator.next() == "started")

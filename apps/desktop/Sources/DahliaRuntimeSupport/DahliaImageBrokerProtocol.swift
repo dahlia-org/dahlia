@@ -1,17 +1,26 @@
 import Darwin
 import Foundation
 
-/// Image-only IPC: helpers receive bytes and never receive account credentials.
+/// Scoped content IPC: helpers receive bytes and never receive account credentials.
 public enum DahliaImageBrokerProtocol {
     public struct Request: Codable, Sendable {
         public let vaultId: UUID
         public let meetingId: UUID
-        public let screenshotId: UUID
+        public let screenshotId: UUID?
+        public let text: TextBrokerRequest?
 
         public init(vaultId: UUID, meetingId: UUID, screenshotId: UUID) {
             self.vaultId = vaultId
             self.meetingId = meetingId
             self.screenshotId = screenshotId
+            text = nil
+        }
+
+        public init(vaultId: UUID, text: TextBrokerRequest) {
+            self.vaultId = vaultId
+            meetingId = text.meetingId ?? vaultId
+            screenshotId = nil
+            self.text = text
         }
     }
 
@@ -37,7 +46,8 @@ public enum DahliaImageBrokerProtocol {
         let descriptor = socket(AF_UNIX, SOCK_STREAM, 0)
         guard descriptor >= 0 else { throw POSIXError(.EIO) }
         defer { Darwin.close(descriptor) }
-        try configure(descriptor, timeout: 35)
+        // Full text uses the app's per-page network deadlines; keep request writes bounded.
+        try configure(descriptor, timeout: 35, receiveTimeout: request.text == nil ? 35 : 0)
         var address = try DahliaTokenBrokerProtocol.unixAddress(path: socketURL.path)
         let connected = withUnsafePointer(to: &address) { pointer in
             pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
@@ -64,11 +74,12 @@ public enum DahliaImageBrokerProtocol {
         return bytes
     }
 
-    public static func configure(_ descriptor: Int32, timeout: Int) throws {
+    public static func configure(_ descriptor: Int32, timeout: Int, receiveTimeout: Int? = nil) throws {
         var noSignal: Int32 = 1
         var interval = timeval(tv_sec: timeout, tv_usec: 0)
+        var receiveInterval = timeval(tv_sec: receiveTimeout ?? timeout, tv_usec: 0)
         guard setsockopt(descriptor, SOL_SOCKET, SO_NOSIGPIPE, &noSignal, socklen_t(MemoryLayout.size(ofValue: noSignal))) == 0,
-              setsockopt(descriptor, SOL_SOCKET, SO_RCVTIMEO, &interval, socklen_t(MemoryLayout.size(ofValue: interval))) == 0,
+              setsockopt(descriptor, SOL_SOCKET, SO_RCVTIMEO, &receiveInterval, socklen_t(MemoryLayout.size(ofValue: receiveInterval))) == 0,
               setsockopt(descriptor, SOL_SOCKET, SO_SNDTIMEO, &interval, socklen_t(MemoryLayout.size(ofValue: interval))) == 0 else {
             throw POSIXError(.EIO)
         }

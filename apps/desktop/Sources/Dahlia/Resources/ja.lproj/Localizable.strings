@@ -1664,3 +1664,18 @@
 "screenshot.cache.description" = "同期済み画像は、必要なときに取得して保存します。上限を超えると古いキャッシュを削除します。ローカルアカウントの画像、未送信の画像、バックアップは上限に含まれません。";
 
 "Only vaults in the Local Account can be backed up." = "バックアップできるのは、ローカルアカウント内の保管庫だけです。";
+
+// Server text availability and search coverage
+"text.content.missing" = "本文は未取得";
+"text.content.loading" = "本文を取得中";
+"text.content.failed" = "本文を取得できません。接続を確認して再試行してください。";
+"text.content.ready" = "本文を保持済み";
+"text.content.stale" = "古い保持内容を表示中";
+"text.content.empty" = "本文なし";
+"text.content.deleted" = "本文は削除されました";
+"text.content.searchLocal" = "この端末のメタデータと保持した本文を検索（タグ・カレンダーを含む）";
+"text.content.searchLoading" = "端末の結果を表示中。Server全体を検索しています…";
+"text.content.searchComplete" = "Server全体と端末のタグ・カレンダー・未送信変更を検索済み";
+"text.content.searchFailed" = "Server検索は未完了です。この端末の結果のみ表示しています。";
+"text.content.searchMore" = "Server検索の続きがあります。「さらに表示」で検索範囲を広げます。";
+"text.content.serverMatch" = "Server";

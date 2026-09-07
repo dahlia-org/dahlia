@@ -5,7 +5,7 @@ private struct ScreenshotOverlayPresentationModifier: ViewModifier {
     let screenshots: () -> [MeetingScreenshotRecord]
     let summaryScreenshotIDs: () -> [UUID]
     let onDownload: (MeetingScreenshotRecord) -> Void
-    let ocrStateProvider: @Sendable (UUID) async -> ScreenshotOCRState
+    let ocrStateProvider: @Sendable (UUID, Bool) async -> ScreenshotOCRState
 
     func body(content: Content) -> some View {
         content.overlay {
@@ -76,7 +76,7 @@ extension View {
         screenshots: @escaping () -> [MeetingScreenshotRecord],
         summaryScreenshotIDs: @escaping () -> [UUID],
         onDownload: @escaping (MeetingScreenshotRecord) -> Void,
-        ocrStateProvider: @escaping @Sendable (UUID) async -> ScreenshotOCRState
+        ocrStateProvider: @escaping @Sendable (UUID, Bool) async -> ScreenshotOCRState
     ) -> some View {
         modifier(ScreenshotOverlayPresentationModifier(
             presentation: presentation,

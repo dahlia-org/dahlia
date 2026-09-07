@@ -149,7 +149,9 @@ struct ContentView: View {
                     onSearch: showSearch,
                     onGoBack: goBack,
                     onGoForward: goForward,
-                    syncState: mainWindowNavigation.section == .meetings ? viewModel.meetingSyncState : nil
+                    syncState: mainWindowNavigation.section == .meetings ? viewModel.meetingSyncState : nil,
+                    textContentState: mainWindowNavigation.section == .meetings ? viewModel.textContentState : nil,
+                    retryTextContent: viewModel.retryTextContent
                 )
             }
             .meetingSidebarHoverOverlay(
@@ -238,7 +240,7 @@ struct ContentView: View {
             screenshots: { viewModel.screenshotStore.records },
             summaryScreenshotIDs: { viewModel.currentSummaryDocument?.orderedScreenshotIds ?? [] },
             onDownload: viewModel.downloadScreenshot,
-            ocrStateProvider: viewModel.screenshotOCRState
+            ocrStateProvider: { id, refresh in await viewModel.screenshotOCRState(id: id, refresh: refresh) }
         )
         .projectModalPresentation(
             editorRequest: $projectEditorRequest,

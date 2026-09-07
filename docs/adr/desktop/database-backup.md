@@ -57,3 +57,6 @@ Server Account の保管庫への上書きは拒否する。復元による Serv
 復元時に既存音声ファイルを削除しない。外部 Markdown / 添付の書き換えも行わない。
 復元対象以外の保管庫で、バックアップ後から再起動までに追加されたデータも最新 DB のコピーを通じて保持する。
 Server canonical data は [同期契約](../shared/sync.md) の境界で扱い、backup restore を Server 削除の許可とみなさない。
+
+
+Server Account の本文部分保持で backup の対象は広げない。Local Account へ移す場合は、metadata 同期と全本文・画像原本の取得を完了してから所属を変更する。途中失敗した接続や未送信 queue は保持し、不完全な working copy を Local Account の完全な backup として扱わない。既存 backup 世代や書き出し済み Markdown は本文 cache の容量管理で削除しない。

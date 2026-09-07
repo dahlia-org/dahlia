@@ -1,4 +1,5 @@
 import DahliaMeetingAccess
+import DahliaRuntimeSupport
 import Foundation
 import GRDB
 
@@ -50,6 +51,51 @@ extension MeetingRepository {
                 )
             }
         }
+    }
+
+    nonisolated static func remoteMeetingPage(
+        vaultId: UUID, criteria: MeetingSearchCriteria, cursor: String?, dbQueue: DatabaseQueue, contentProvider: MeetingContentProvider = .shared
+    ) async throws -> (items: [MeetingSidebarItem], cursor: String?) {
+        var position = cursor
+        repeat {
+            let page = try await contentProvider.search(vaultId: vaultId, query: criteria.text, kind: .meeting, cursor: position, dbQueue: dbQueue)
+            let items = try await dbQueue.read { db in
+                let ids = try filterRemoteSearchMeetingIDs(page.items.map(\.meetingId), vaultId: vaultId, criteria: criteria, in: db)
+                let byId = try Dictionary(uniqueKeysWithValues: fetchMeetingSidebarItems(ids: ids, vaultId: vaultId, in: db).map { ($0.id, $0) })
+                return page.items.compactMap { hit -> MeetingSidebarItem? in
+                    guard var item = byId[hit.id] else { return nil }
+                    item.searchMatchContext = .init(kind: .server, text: hit.snippet)
+                    return item
+                }
+            }
+            position = page.nextCursor
+            if !items.isEmpty || position == nil { return (items, position) }
+            try Task.checkCancellation()
+        } while true
+    }
+
+    /// Filter each bounded server page before deciding whether another page is necessary.
+    nonisolated static func filterRemoteSearchMeetingIDs(
+        _ ids: [UUID], vaultId: UUID, criteria: MeetingSearchCriteria, in db: Database
+    ) throws -> [UUID] {
+        let unique = Array(Set(ids))
+        guard !unique.isEmpty else { return [] }
+        let placeholders = searchPlaceholders(unique.count)
+        let known = try Int.fetchOne(
+            db,
+            sql: "SELECT count(*) FROM meetings WHERE vaultId = ? AND id IN (\(placeholders))",
+            arguments: StatementArguments([vaultId] + unique)
+        )
+        guard known == unique.count else { throw TextContentError.changed }
+        let projects = try includedProjectIDs(for: criteria, vaultId: vaultId, in: db)
+        let filter = searchFilters(criteria: criteria, includedProjectIDs: projects)
+        var arguments = StatementArguments([vaultId] + unique)
+        arguments += filter.arguments
+        return try UUID.fetchAll(
+            db,
+            sql: "SELECT meetings.id FROM meetings WHERE meetings.vaultId = ? AND meetings.id IN (\(placeholders)) \(filter.condition)",
+            arguments: arguments
+        )
     }
 
     private nonisolated static func withSearchDeadline<Result: Sendable>(
@@ -514,7 +560,7 @@ extension MeetingRepository {
     }
 
     private nonisolated static func summaryBodyText(meetingID: UUID, in db: Database) throws -> String {
-        try SummaryRecord.fetchOne(db, key: meetingID)
+        try SummaryRecord.filter(Column("meetingId") == meetingID && Column("document") != nil).fetchOne(db)
             .flatMap { try? $0.loadDocument().searchableBodyText } ?? ""
     }
 

@@ -1,4 +1,4 @@
-import { cpSync, mkdtempSync, rmSync } from "node:fs";
+import { cpSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -10,6 +10,7 @@ import type { Identity } from "../src/auth/identity";
 import type { AppConfig } from "../src/config";
 import { serverMigrationManifest } from "../src/migrations";
 import { pruneSyncHistory } from "../src/sync/retention";
+import { TextContentDigest } from "../src/sync/text-content";
 import { MeetingSyncService } from "../src/sync/service";
 import { decodeSyncCursor, SYNC_HISTORY_RETENTION_MS, SYNC_SNAPSHOT_PAGE_BYTES } from "../src/sync/store";
 import type { SyncTransactionOperation } from "../src/sync/types";
@@ -329,5 +330,142 @@ describe("sync history retention", () => {
     } finally { await upgraded.close?.(); }
     expect(await store.sync.isAvailable()).toBe(true);
     expect(raw.prepare("SELECT count(*) AS count FROM transaction_receipts").get()).toEqual({ count: 1 });
+  });
+});
+
+
+describe("partial text content", () => {
+  it("shares byte-exact Unicode and nullable hashes with Swift", () => {
+    const fixtures = JSON.parse(readFileSync(new URL("../../../test-fixtures/text-content-v1.json", import.meta.url), "utf8")) as {
+      fields: { value: string | null; body: boolean }[]; sha256: string; byteCount: number;
+    }[];
+    for (const fixture of fixtures) {
+      const digest = new TextContentDigest();
+      for (const field of fixture.fields) digest.add(field.value, field.body);
+      expect(digest.digestHex()).toBe(fixture.sha256);
+      expect(digest.byteCount).toBe(fixture.byteCount);
+    }
+  });
+
+  it("synchronizes 10000 historical meetings without transferring any text body", async () => {
+    const { raw, service, vaultId } = await setup();
+    const insert = raw.prepare(`INSERT INTO meetings(meeting_id, vault_id, name, status, created_at, updated_at,
+      summary_title, summary_document, summary_created_at, summary_revision, transcript_revision, active)
+      VALUES (?, ?, 'History', 'READY', ?, ?, 'Summary', ?, ?, 1, 1, 1)`);
+    const transcript = raw.prepare("INSERT INTO transcript_segments(vault_id, meeting_id, segment_id, start_time, text, is_confirmed) VALUES (?, ?, ?, ?, ?, 1)");
+    const text = "large_text_marker".repeat(64);
+    raw.exec("BEGIN");
+    for (let index = 0; index < 10000; index += 1) {
+      const meeting = id();
+      insert.run(meeting, vaultId, index, index, text, index);
+      transcript.run(vaultId, meeting, id(), index, text);
+    }
+    raw.exec("COMMIT");
+    let cursor: string | undefined;
+    let start: string | undefined;
+    let meetings = 0;
+    let transcripts = 0;
+    do {
+      const page = await service.listSnapshot(owner, vaultId, cursor, start, "metadata-v1");
+      start = page.startCursor;
+      expect(page.contentMode).toBe("metadata-v1");
+      expect(JSON.stringify(page)).not.toContain("large_text_marker");
+      meetings += page.items.filter((item) => item.entity === "meeting").length;
+      for (const item of page.items.filter((item) => item.entity === "transcript")) {
+        expect(item.record).toMatchObject({ contentOmitted: true, contentCount: 1 });
+        transcripts += 1;
+      }
+      cursor = page.nextCursor ?? undefined;
+    } while (cursor);
+    expect(meetings).toBe(10000);
+    expect(transcripts).toBe(10000);
+  }, 60000);
+
+  it("pins every content page to its revision and reauthorizes deleted or revoked content", async () => {
+    const { raw, service, vaultId } = await setup();
+    const meetingId = id();
+    const time = new Date().toISOString();
+    await service.commitTransaction(owner, body(vaultId, [{ entity: "meeting", action: "create", entityId: meetingId, baseRevision: null,
+      data: { name: "Metadata", projectId: null, description: "", status: "READY", duration: null, recordingStartedAt: null, createdAt: time, updatedAt: time } },
+    { entity: "summary", action: "upsert", entityId: meetingId, baseRevision: 0, data: { title: "Summary", document: "{}", createdAt: time } }]));
+    raw.prepare("UPDATE meetings SET transcript_revision = 1 WHERE meeting_id = ?").run(meetingId);
+    const insert = raw.prepare("INSERT INTO transcript_segments(vault_id, meeting_id, segment_id, start_time, text, is_confirmed) VALUES (?, ?, ?, ?, ?, 1)");
+    const digest = new TextContentDigest();
+    const segments = Array.from({ length: 501 }, (_, index) => ({ id: id(), text: `原文${index}`, index }));
+    raw.exec("BEGIN");
+    for (const segment of segments) {
+      insert.run(vaultId, meetingId, segment.id, segment.index, segment.text);
+      digest.add(segment.id, false); digest.add(segment.text);
+    }
+    raw.exec("COMMIT");
+    const manifest = await service.textContent(owner, vaultId, "transcript", meetingId, "1", "1");
+    expect(manifest).toMatchObject({ count: 501, sha256: digest.digestHex(), byteCount: digest.byteCount });
+    expect(manifest).not.toHaveProperty("items");
+    const first = await service.textContent(owner, vaultId, "transcript", meetingId, "1");
+    expect(first.items).toHaveLength(500);
+    expect(first.nextCursor).toBeTruthy();
+    expect((await service.textContent(owner, vaultId, "transcript", meetingId, "1", undefined, first.nextCursor!)).items).toHaveLength(1);
+    raw.prepare("UPDATE meetings SET transcript_revision = 2 WHERE meeting_id = ?").run(meetingId);
+    await expect(service.textContent(owner, vaultId, "transcript", meetingId, "1", undefined, first.nextCursor!)).rejects.toMatchObject({ status: 409 });
+    const metadata = await service.listChanges(owner, vaultId, undefined, undefined, "metadata-v1");
+    expect(metadata.items.find((item) => item.entity === "summary")?.record).toMatchObject({ contentOmitted: true, contentPresent: true });
+    expect(await service.getMeeting(owner, vaultId, meetingId)).toHaveProperty("summaryDocument", "{}");
+    expect(await service.getMeeting(owner, vaultId, meetingId, "metadata-v1")).not.toHaveProperty("summaryDocument");
+    await expect(service.textContent(member, vaultId, "transcript", meetingId, "2")).rejects.toMatchObject({ status: 404 });
+    raw.prepare("UPDATE meetings SET active = 0 WHERE meeting_id = ?").run(meetingId);
+    await expect(service.textContent(owner, vaultId, "transcript", meetingId, "2")).rejects.toMatchObject({ status: 404 });
+  });
+
+  it("keeps search pages stable when another Vault changes corpus-wide FTS statistics", async () => {
+    const { raw, service, vaultId } = await setup();
+    const otherVaultId = id();
+    await service.commitTransaction(owner, body(otherVaultId, [{ entity: "vault", action: "create", entityId: otherVaultId,
+      baseRevision: null, data: { name: "Other", createdAt: new Date().toISOString() } }]));
+    const meeting = raw.prepare("INSERT INTO meetings(meeting_id, vault_id, name, status, created_at, updated_at, active) VALUES (?, ?, 'Metadata', 'READY', 0, 0, 1)");
+    const document = raw.prepare("INSERT INTO search_documents(document_id, vault_id, meeting_id, kind, search_text, embedding_text, embedding_content_hash) VALUES (?, ?, ?, 'meeting', ?, ?, 'hash')");
+    const ids = [id(), id()];
+    for (const [index, text] of ["alpha beta", "alpha beta beta beta " + "noise ".repeat(10)].entries()) {
+      const meetingId = ids[index]!;
+      meeting.run(meetingId, vaultId);
+      document.run(meetingId, vaultId, meetingId, text, text);
+    }
+    const first = await service.searchText(owner, vaultId, "alpha beta", "meeting", undefined, "1");
+    expect(first.nextCursor).toBeTruthy();
+    for (let index = 0; index < 10; index += 1) {
+      const meetingId = id();
+      const text = "alpha ".repeat(50) + "noise ".repeat(300);
+      meeting.run(meetingId, otherVaultId);
+      document.run(meetingId, otherVaultId, meetingId, text, text);
+    }
+    const second = await service.searchText(owner, vaultId, "alpha beta", "meeting", first.nextCursor!, "1");
+    expect(second.nextCursor).toBeNull();
+    expect([...first.items, ...second.items].map((item) => item.id).sort()).toEqual(ids.sort());
+  });
+
+  it("pages every FTS result without a hybrid candidate cap and rejects malformed cursors", async () => {
+    const { raw, service, vaultId } = await setup();
+    const meeting = raw.prepare("INSERT INTO meetings(meeting_id, vault_id, name, status, created_at, updated_at, active) VALUES (?, ?, 'Metadata', 'READY', 0, 0, 1)");
+    const document = raw.prepare("INSERT INTO search_documents(document_id, vault_id, meeting_id, kind, search_text, embedding_text, embedding_content_hash) VALUES (?, ?, ?, 'meeting', 'needle', ?, 'hash')");
+    raw.exec("BEGIN");
+    for (let index = 0; index < 1101; index += 1) {
+      const meetingId = id();
+      meeting.run(meetingId, vaultId);
+      document.run(meetingId, vaultId, meetingId, "needle ".repeat(100));
+    }
+    raw.exec("COMMIT");
+    const found = new Set<string>();
+    let cursor: string | undefined;
+    do {
+      const page = await service.searchText(owner, vaultId, "needle", "meeting", cursor);
+      for (const item of page.items) {
+        expect(item.snippet.length).toBeLessThanOrEqual(180);
+        expect(found.has(item.id)).toBe(false);
+        found.add(item.id);
+      }
+      cursor = page.nextCursor ?? undefined;
+    } while (cursor);
+    expect(found.size).toBe(1101);
+    await expect(service.searchText(owner, vaultId, "needle", "meeting", "{")).rejects.toMatchObject({ status: 400 });
+    await expect(service.searchText(member, vaultId, "needle", "meeting")).rejects.toMatchObject({ status: 404 });
   });
 });

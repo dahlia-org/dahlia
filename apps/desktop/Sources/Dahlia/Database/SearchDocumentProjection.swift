@@ -68,10 +68,17 @@ func indexScreenshotDocument(id: UUID, generation: Int, in db: Database) throws 
                meetings.vaultId, meetings.projectId
         FROM meeting_images
         JOIN meetings ON meetings.id = meeting_images.meetingId
-        WHERE meeting_images.id = ? AND meeting_images.ocrText IS NOT NULL AND meeting_images.caption IS NOT NULL
+        WHERE meeting_images.id = ? AND (meeting_images.ocrText IS NOT NULL OR meeting_images.caption IS NOT NULL)
         """,
         arguments: [id]
-    ) else { return }
+    ) else {
+        try db.execute(
+            sql: "DELETE FROM search_documents_fts WHERE rowid IN (SELECT id FROM search_documents WHERE kind = 'screenshot' AND sourceId = ?)",
+            arguments: [id]
+        )
+        try db.execute(sql: "DELETE FROM search_documents WHERE kind = 'screenshot' AND sourceId = ?", arguments: [id])
+        return
+    }
     try upsertDocument(
         SearchDocumentProjection(
             kind: "screenshot",
@@ -85,8 +92,8 @@ func indexScreenshotDocument(id: UUID, generation: Int, in db: Database) throws 
                 calendar: "",
                 tags: "",
                 projectPath: "",
-                ocr: row["ocrText"],
-                caption: row["caption"]
+                ocr: row["ocrText"] ?? "",
+                caption: row["caption"] ?? ""
             )
         ),
         generation: generation,
@@ -215,4 +222,58 @@ private func updateFTS(rowID: Int64, fields: SearchDocumentFields, in db: Databa
             rowID,
         ]
     )
+}
+
+func indexMeetingDocument(id: UUID, generation: Int, projectPath knownProjectPath: String? = nil, in db: Database) throws {
+    guard let meeting = try MeetingRecord.fetchOne(db, key: id) else { return }
+    let calendar = try Row.fetchOne(
+        db,
+        sql: """
+        SELECT title, description FROM calendar_events
+        WHERE ical_uid = ? AND recurrence_id = ?
+        """,
+        arguments: [meeting.calendarEventIcalUid, meeting.calendarEventRecurrenceId]
+    )
+    let tags = try String.fetchAll(
+        db,
+        sql: """
+        SELECT tags.name FROM tags JOIN meeting_tags ON meeting_tags.tagId = tags.id
+        WHERE meeting_tags.meetingId = ? ORDER BY tags.id
+        """,
+        arguments: [id]
+    ).joined(separator: " ")
+    let projectPath: String = if let knownProjectPath {
+        knownProjectPath
+    } else if let projectID = meeting.projectId {
+        try ProjectRecord.fetchResolved(id: projectID, in: db)?.path ?? ""
+    } else {
+        ""
+    }
+    let calendarText = [calendar?["title"] as String?, calendar?["description"] as String?]
+        .compactMap(\.self).joined(separator: " ")
+    let summaryDocument = try SummaryRecord.filter(Column("meetingId") == id).filter(Column("document") != nil).fetchOne(db)
+        .flatMap { try? $0.loadDocument() }
+    let summaryText = summaryDocument?.searchableBodyText ?? ""
+    let fields = SearchDocumentFields(
+        title: meeting.name,
+        description: meeting.description,
+        summary: summaryText,
+        calendar: calendarText,
+        tags: tags,
+        projectPath: projectPath,
+        summaryDescription: summaryDocument?.description ?? ""
+    )
+    try db.execute(
+        sql: "UPDATE search_documents SET projectId = ? WHERE meetingId = ? AND projectId IS NOT ?",
+        arguments: [meeting.projectId, id, meeting.projectId]
+    )
+    let document = SearchDocumentProjection(
+        kind: "meeting",
+        sourceID: id,
+        vaultID: meeting.vaultId,
+        meetingID: id,
+        projectID: meeting.projectId,
+        fields: fields
+    )
+    try upsertDocument(document, generation: generation, in: db)
 }

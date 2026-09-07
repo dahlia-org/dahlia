@@ -88,6 +88,7 @@ struct MeetingSearchMatchContext: Equatable, Hashable, Sendable {
         case title
         case description
         case summary
+        case server
         case calendar
         case tag
         case project

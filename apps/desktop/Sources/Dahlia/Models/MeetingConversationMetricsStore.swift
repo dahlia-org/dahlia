@@ -16,15 +16,7 @@ final class MeetingConversationMetricsStore: ObservableObject {
     private let metricsLoader: MetricsLoader
 
     init(metricsLoader: @escaping MetricsLoader = { meetingId, dbQueue in
-        let worker = Task.detached(priority: .userInitiated) {
-            try MeetingRepository(dbQueue: dbQueue)
-                .loadOrRebuildConversationMetrics(meetingId: meetingId)
-        }
-        return try await withTaskCancellationHandler {
-            try await worker.value
-        } onCancel: {
-            worker.cancel()
-        }
+        try await MeetingConversationMetricsRefreshService.load(meetingId: meetingId, dbQueue: dbQueue)
     }) {
         self.metricsLoader = metricsLoader
     }

@@ -1,3 +1,4 @@
+import DahliaMeetingAccess
 import DahliaRuntimeSupport
 import Foundation
 import GRDB
@@ -320,7 +321,8 @@ final class MeetingRepository {
         connectionID: UUID,
         disposition: DahliaAccountVaultDisposition,
         managedRootURL: URL = BatchAudioStorage.managedRootURL,
-        screenshotContent: ScreenshotContentProvider = .shared
+        screenshotContent: ScreenshotContentProvider = .shared,
+        textContent: MeetingContentProvider = .shared
     ) async throws {
         let vaultIds = try await dbQueue.read { db in
             try UUID.fetchAll(
@@ -334,19 +336,28 @@ final class MeetingRepository {
         if disposition == .moveToLocalAccount {
             screenshotContent.retainOriginals(vaultIds: vaultIds, dbQueue: dbQueue)
             defer { screenshotContent.releaseOriginals(vaultIds: vaultIds, dbQueue: dbQueue) }
+            let textSources = try await textContent.prepareAccountTransfer(vaultIds: vaultIds, connectionId: connectionID, dbQueue: dbQueue)
+            defer { Task { await textContent.releaseAccountTransfer(vaultIds: vaultIds, dbQueue: dbQueue) } }
             var prepared: [UUID: [FileTransfer]] = [:]
             for vaultId in vaultIds {
                 prepared[vaultId] = try await screenshotContent.prepareAccountTransfer(vaultId: vaultId, connectionId: nil, dbQueue: dbQueue)
             }
             let transfers = prepared
             try await dbQueue.write { db in
+                guard try Set(UUID.fetchAll(db, sql: "SELECT id FROM vaults WHERE accountConnectionId = ?", arguments: [connectionID])) ==
+                    Set(vaultIds)
+                else { throw TextContentError.changed }
                 for vaultId in vaultIds {
                     guard try VaultRecord.fetchOne(db, key: vaultId)?.accountConnectionId == connectionID
                     else { throw ScreenshotContentError.authorizationRequired }
+                    guard try MeetingContentProvider.SearchSource.read(vaultId: vaultId, in: db) == textSources[vaultId]
+                    else { throw TextContentError.changed }
+                    try TextContentStore.requireVaultComplete(vaultId: vaultId, in: db)
                     try ScreenshotContentProvider.installTransfers(transfers[vaultId, default: []], vaultId: vaultId, in: db)
                 }
                 for vaultId in vaultIds {
                     try SyncTransactionQueue.discard(vaultId: vaultId, in: db)
+                    try db.execute(sql: "DELETE FROM sync_content_state WHERE vaultId = ?", arguments: [vaultId])
                 }
                 try db.execute(
                     sql: "DELETE FROM sync_entity_state WHERE vaultId IN (\(vaultIds.map { _ in "?" }.joined(separator: ",")))",
@@ -707,6 +718,7 @@ final class MeetingRepository {
         try dbQueue.write { db in
             guard var meeting = try MeetingRecord.fetchOne(db, key: meetingId) else { return }
 
+            try TextContentAccess.requireComplete(entity: .summary, id: meetingId, in: db)
             let existingSummary = try SummaryRecord.fetchOne(db, key: meetingId)
             let normalizedTitle = SummaryGeneratedMetadata.normalizedTitle(document.title)
             if let normalizedTitle {
@@ -824,7 +836,8 @@ final class MeetingRepository {
 
     nonisolated func fetchSegments(forMeetingId meetingId: UUID) throws -> [TranscriptSegmentRecord] {
         try dbQueue.read { db in
-            try TranscriptSegmentRecord
+            try TextContentAccess.requireComplete(entity: .transcript, id: meetingId, in: db)
+            return try TranscriptSegmentRecord
                 .filter(Column("meetingId") == meetingId)
                 .order(Column("startTime").asc, Column("id").asc)
                 .fetchAll(db)
@@ -843,6 +856,7 @@ final class MeetingRepository {
         let fetchLimit = pageLimit + 1
 
         return try dbQueue.read { db in
+            try TextContentAccess.requireComplete(entity: .transcript, id: meetingId, in: db)
             let records: [TranscriptSegmentRecord]
             let hasEarlier: Bool
             let hasLater: Bool
@@ -952,6 +966,7 @@ final class MeetingRepository {
     func deleteScreenshots(ids: Set<UUID>, meetingId: UUID) async throws -> [MeetingScreenshotRecord] {
         guard !ids.isEmpty else { return [] }
         return try await dbQueue.write { db in
+            try TextContentAccess.requireComplete(entity: .summary, id: meetingId, in: db)
             let referencedScreenshotIds = try SummaryRecord.fetchOne(db, key: meetingId)?
                 .loadDocument()
                 .referencedScreenshotIds ?? []
@@ -988,7 +1003,8 @@ final class MeetingRepository {
 
     func fetchSummary(forMeetingId meetingId: UUID) throws -> SummaryRecord? {
         try dbQueue.read { db in
-            try SummaryRecord.fetchOne(db, key: meetingId)
+            try TextContentAccess.requireComplete(entity: .summary, id: meetingId, in: db)
+            return try SummaryRecord.fetchOne(db, key: meetingId)
         }
     }
 
@@ -998,6 +1014,7 @@ final class MeetingRepository {
         expectedDocument: String
     ) throws -> Bool {
         try dbQueue.write { db in
+            try TextContentAccess.requireComplete(entity: .summary, id: meetingId, in: db)
             guard let summary = try SummaryRecord.fetchOne(db, key: meetingId),
                   try summary.loadDocument().databaseJSONString() == expectedDocument else { return false }
             let googleDocsURL = googleFileId?.nilIfBlank.flatMap { fileId in
@@ -1019,6 +1036,7 @@ final class MeetingRepository {
         expectedDocument: String
     ) async throws -> Bool {
         try await dbQueue.write { db in
+            try TextContentAccess.requireComplete(entity: .summary, id: meetingId, in: db)
             guard let summary = try SummaryRecord.fetchOne(db, key: meetingId),
                   try summary.loadDocument().databaseJSONString() == expectedDocument else { return false }
             try SummaryExportRecord.setURL(url, meetingId: meetingId, type: .dahliaArtifact, in: db)
@@ -1028,7 +1046,7 @@ final class MeetingRepository {
 
     nonisolated func updateSummaryVaultRelativePath(forMeetingId meetingId: UUID, relativePath: String?) throws {
         try dbQueue.write { db in
-            guard try SummaryRecord.fetchOne(db, key: meetingId) != nil else { return }
+            guard try SummaryRecord.filter(Column("meetingId") == meetingId).fetchCount(db) > 0 else { return }
             try SummaryExportRecord.setURL(
                 relativePath?.nilIfBlank.flatMap(SummaryExportRecord.vaultURL(relativePath:)),
                 meetingId: meetingId,
@@ -1073,6 +1091,7 @@ final class MeetingRepository {
     /// サマリーを保存する（insert or update）。
     nonisolated func upsertSummary(_ summary: SummaryRecord) throws {
         try dbQueue.write { db in
+            try TextContentAccess.requireComplete(entity: .summary, id: summary.meetingId, in: db)
             try summary.save(db)
             guard let vaultId = try UUID.fetchOne(
                 db,
@@ -1097,6 +1116,8 @@ final class MeetingRepository {
         let screenshots: [MeetingScreenshotRecord]
         let note: MeetingNoteRecord?
         let summary: SummaryRecord?
+        let summaryContent: TextContentAvailability
+        let transcriptContent: TextContentAvailability
         let summaryExports: [SummaryExportRecord]
     }
 
@@ -1114,7 +1135,9 @@ final class MeetingRepository {
                 .order(Column("capturedAt").asc)
                 .fetchAll(db)
             let note = try MeetingNoteRecord.fetchOne(db, key: meetingId)
-            let summary = try SummaryRecord.fetchOne(db, key: meetingId)
+            let summaryContent = try TextContentAccess.availability(entity: .summary, id: meetingId, in: db)
+            let transcriptContent = try TextContentAccess.availability(entity: .transcript, id: meetingId, in: db)
+            let summary = try SummaryRecord.filter(Column("meetingId") == meetingId && Column("document") != nil).fetchOne(db)
             let summaryExports = try SummaryExportRecord
                 .filter(Column("meetingId") == meetingId)
                 .fetchAll(db)
@@ -1125,6 +1148,8 @@ final class MeetingRepository {
                 screenshots: screenshots,
                 note: note,
                 summary: summary,
+                summaryContent: summaryContent,
+                transcriptContent: transcriptContent,
                 summaryExports: summaryExports
             )
         }

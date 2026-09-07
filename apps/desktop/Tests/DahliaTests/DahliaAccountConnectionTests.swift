@@ -150,7 +150,8 @@
             #expect(vaults.allSatisfy { $0.databricksProfile == "work" })
             #expect(vaults.allSatisfy { $0.summaryModelID == "summary-model" })
             #expect(vaults.allSatisfy { $0.chatModelID == "chat-model" })
-            #expect(vaults.allSatisfy { $0.aiSettingsBackfilled })
+            let allAISettingsBackfilled = vaults.allSatisfy(\.aiSettingsBackfilled)
+            #expect(allAISettingsBackfilled)
 
             try await repository.backfillVaultAISettings(VaultAISettingsLegacyValues(
                 localProvider: .chatGPTSubscription,
@@ -246,7 +247,7 @@
         }
 
         @Test
-        func signOutCanMoveServerVaultsToTheLocalAccount() async throws {
+        func signOutPreservesPendingServerEditsAndCredentials() async throws {
             let manager = try AppDatabaseManager(path: ":memory:")
             let repository = MeetingRepository(dbQueue: manager.dbQueue)
             let connection = makeConnection(origin: "https://server.example.com")
@@ -284,16 +285,17 @@
             await signOut.value
 
             let local = try #require(try repository.fetchAllVaults().first)
-            #expect(local.accountConnectionId == nil)
-            #expect(local.syncConfirmedConnectionId == nil)
-            #expect(local.syncRole == nil)
-            #expect(store.credential(for: connection.id) == nil)
+            #expect(local.accountConnectionId == connection.id)
+            #expect(local.syncConfirmedConnectionId == connection.id)
+            #expect(local.syncRole == "owner")
+            #expect(store.credential(for: connection.id) != nil)
+            #expect(controller.errorMessage != nil)
             #expect(try await manager.dbQueue.read { db in
                 try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_transactions")
-            } == 0)
+            } == 1)
             #expect(try await manager.dbQueue.read { db in
                 try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_entity_state")
-            } == 0)
+            } == 1)
         }
 
         @Test

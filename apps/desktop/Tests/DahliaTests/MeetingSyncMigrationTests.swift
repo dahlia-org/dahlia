@@ -16,6 +16,7 @@
                 )
             }
             #expect(tables == [
+                "sync_content_state",
                 "sync_entity_state",
                 "sync_operations",
                 "sync_transactions",

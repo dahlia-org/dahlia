@@ -1827,6 +1827,35 @@ function createIdentityStore(
       )).limit(1);
       return row ?? null;
     },
+    async countTranscript(vaultId, meetingId) {
+      const [row] = await db.select({ count: sql<number>`count(*)` }).from(schema.syncedTranscriptSegment)
+        .where(and(readable(schema.syncedTranscriptSegment.vaultId),
+          eq(schema.syncedTranscriptSegment.vaultId, vaultId), eq(schema.syncedTranscriptSegment.meetingId, meetingId)));
+      return Number(row?.count ?? 0);
+    },
+    async searchTextPage(vaultId, query, kind, offset, limit) {
+      if (query.tokens.length === 0) return [];
+      const search = ftsExpressions(query);
+      const common = and(readable(schema.searchDocument.vaultId), eq(schema.searchDocument.vaultId, vaultId),
+        eq(schema.searchDocument.kind, kind), search.filter);
+      const selection = { id: schema.searchDocument.documentId, meetingId: schema.searchDocument.meetingId,
+        snippet: sql<string>`substr(coalesce(${schema.searchDocument.embeddingText}, ''), 1, 180)` };
+      // The cursor tracks this Vault's revisions; corpus-wide BM25 changes cannot define stable pages.
+      const rows = kind === "meeting"
+        ? await db.select(selection).from(schema.searchDocument).innerJoin(schema.syncedMeeting, and(
+            eq(schema.syncedMeeting.vaultId, schema.searchDocument.vaultId),
+            eq(schema.syncedMeeting.meetingId, schema.searchDocument.documentId),
+          )).where(and(common, eq(schema.syncedMeeting.active, true), isNull(schema.syncedMeeting.deletingAt)))
+          .orderBy(asc(schema.searchDocument.documentId)).limit(limit).offset(offset)
+        : await db.select(selection).from(schema.searchDocument).innerJoin(schema.syncedScreenshot, and(
+            eq(schema.syncedScreenshot.vaultId, schema.searchDocument.vaultId),
+            eq(schema.syncedScreenshot.screenshotId, schema.searchDocument.documentId),
+          )).innerJoin(schema.syncedMeeting, and(eq(schema.syncedMeeting.vaultId, schema.syncedScreenshot.vaultId),
+            eq(schema.syncedMeeting.meetingId, schema.syncedScreenshot.meetingId)))
+          .where(and(common, eq(schema.syncedScreenshot.active, true), eq(schema.syncedMeeting.active, true), isNull(schema.syncedMeeting.deletingAt)))
+          .orderBy(asc(schema.searchDocument.documentId)).limit(limit).offset(offset);
+      return rows.map((row) => ({ ...row, meetingId: row.meetingId ?? row.id }));
+    },
     async listTranscript(vaultId, meetingId, limit, cursor) {
       const [meeting] = await db.select({ id: schema.syncedMeeting.meetingId })
         .from(schema.syncedMeeting).where(and(

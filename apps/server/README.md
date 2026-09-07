@@ -59,6 +59,18 @@ Desktop keeps immutable operations until the Server receipt is applied. File ope
 
 Vault and Project operations are committed through the domain transaction endpoint before meeting data. Projects are available for hierarchy browsing and meeting filtering but are not added to full-text or vector search. Transcript segments keep `audioSource` (`mic` or `system`) separate from nullable `speakerLabel`, which is reserved for future diarization.
 
+### Partial text reads
+
+Roll out `GET /api/v1/sync-content` (version 1) before updating Desktop. It uses existing authenticated sync capabilities and remains unavailable on stores without atomic sync. Older clients keep their default full representations and transaction schema version 2. New clients must fail closed with an update-required state when this capability or the `metadata-v1` response marker is missing.
+
+Add `content=metadata-v1` to snapshot, changes, meeting and file dependency reads to omit transcript bodies, summary documents (including meeting/search duplicates), OCR and caption. Canonical IDs, revisions, metadata, body presence and transcript counts remain available; snapshot/delta responses include `contentMode: "metadata-v1"`. Text hydration does not advance sync cursors.
+
+`GET /api/v1/vaults/{vaultId}/text/{summary|transcript|file}/{entityId}?revision=N&manifest=1` returns `{ version, entity, entityId, revision, present, count, byteCount, sha256 }`. Omit `manifest=1` to read a body page and pass `nextCursor` as `cursor`. Transcript pages contain at most 500 segments and target 6 MiB; summary/file pages contain `record`. Each page includes its own count/byteCount/hash. Every request holds the Vault lock in the identity transaction, rechecks the exact revision and rejects updates with 409 or missing targets with 404; missing transcripts are never silently returned as empty meetings.
+
+SHA-256 framing is UTF-8 `decimalByteLength:bytes` per field, with `-:` for null. Transcript input is lowercase segment UUID then text in startTime/UUID order; only text contributes to byteCount. Summary input is one nullable document; file input is nullable OCR then caption. [Shared fixtures](../../test-fixtures/text-content-v1.json) test Swift/Server agreement. Clients must validate both page and complete manifest before installing downloaded text.
+
+`GET /api/v1/vaults/{vaultId}/search?q=...&kind=meeting|screenshot&limit=200&cursor=...` provides exhaustive FTS pages, without the Hybrid candidate cap. Results are `{ version: 1, scope: "server", items: [{ id, meetingId, snippet }], nextCursor }`; limit is 1–200 and snippets are at most 180 characters. Cursor identity includes Vault, query, kind and current ledger revision. A 409 invalidates the search cursor. Clients apply local filters before concluding enumeration and report incomplete/offline coverage explicitly; search does not download full text for retention.
+
 ### Sync history retention and recovery
 
 The change ledger is sync-only and guarantees 90 days of delta recovery. `app.sync_vault_state` retains the latest sequence and the pruned boundary even when every change has been deleted. Every delta page checks that boundary and returns `410 sync_cursor_expired` for an expired cursor.
@@ -105,6 +117,8 @@ Files API storage currently requires the Databricks Volume backend. `POST /api/v
 Explicit Organization and Team sharing is disabled unless `DAHLIA_SYNC_SHARING_ENABLED=true`. Disabled deployments do not expose permission mutations or member reads; owner sync and owner reads remain available.
 
 In accounts mode, owners use Better Auth Organizations, invitations, and Teams. In header mode, every validated proxy user is projected into the visible `external` Organization; the first user is its immutable owner and belongs to the `External` default Team, while later users join only the Organization. Organization owners manage Team membership from the same Web page. Vault owners explicitly grant read-only access through `PUT|DELETE /api/v1/vaults/{vaultId}/permissions/organizations/{organizationId}` or `/permissions/teams/{teamId}`; direct user member rows remain schema-only. PostgreSQL/Lakebase always migrate the generated `auth` baseline before the application baseline. RLS receives only transaction-local `app.user_id` and resolves current membership from `auth.member` and `auth.team_member`.
+
+The exhaustive `/api/v1/vaults/{vaultId}/search` endpoint orders by document ID. This keeps its pages stable when writes to another Vault change corpus-wide relevance scores.
 
 ### Server hybrid search
 

@@ -7,7 +7,7 @@
 Server account の Vault / Project / meeting は Desktop と Web が共有する Server canonical record とし、Desktop の既存 SQLite 行を offline working copy にする。Local Account は独立して動作し、sync transaction を作らない。録音と確定文字起こしの保存はネットワークを待たない。
 
 - サインインだけでは Local Vault を移さない。明示移行時に同じ Vault ID の存在を確認し、新規なら初期同期、既存 owner Vault なら通常の revision conflict 解決、member Vault なら Server version の採用だけを許可する。Server-managed Vault は常時同期し、別の同期 toggle は持たない。
-- サインアウト前に local working copy を削除するか Local Account へ移す。どちらも Server record は残す。Local Account への移動では不足する画像原本を先に共通ファイルストアへ揃え、ファイル参照の保存と queue、confirmed revision、cursor、接続関連の解除を同じ SQLite transaction で確定する。取得失敗時は接続と未送信データを保持する。
+- サインアウト前に local working copy を削除するか Local Account へ移す。どちらも Server record は残す。Local Account への移動では metadata 同期を完了し、全本文と不足する画像原本を先に揃え、ファイル参照の保存と queue、confirmed revision、cursor、接続関連の解除を同じ SQLite transaction で確定する。取得失敗時は接続と未送信データを保持する。
 - export folder は任意の端末固有設定で、同期しない。未設定でも SQLite と同期データは利用でき、Markdown export / filesystem watch だけを無効にする。
 
 ## 同期対象とモデル
@@ -22,7 +22,7 @@ transcript の収録経路は `audio_source: mic | system`、人・diarization �
 
 - `POST /api/v1/transactions` は1 Vault の operation 群を atomic commit する。UUIDv7 transaction ID を冪等キーとし、commit response を保存する。同じ ID と異なる内容の再利用は拒否する。
 - Vault、Project、meeting metadata、summary は optimistic revision を使う。古い base revision は対象 entity と canonical record を含む `409` とし、暗黙の last-write-wins をしない。
-- Desktop は local record と retry 用 snapshot を同じ SQLite transaction に書く。追加 schema は `sync_transactions`（順序・lease・retry・block）、`sync_operations`（immutable JSON と独立した画像ファイル参照）、`sync_entity_state`（Server-confirmed revision のみ）、`sync_transcript_patch_items`（upsert / delete）に限定する。expected / optimistic revision や pending/running の派生状態を重複保存しない。
+- Desktop は local record と retry 用 snapshot を同じ SQLite transaction に書く。操作の追加 schema は `sync_transactions`（順序・lease・retry・block）、`sync_operations`（immutable JSON と独立した画像ファイル参照）、`sync_entity_state`（Server-confirmed revision のみ）、`sync_transcript_patch_items`（upsert / delete）で管理する。本文の保持状態は別の `sync_content_state` に保存し、expected / optimistic revision や pending/running の派生状態を重複保存しない。
 - transcript patch と画像は bounded staging endpoint へ送り、その後に元の domain transaction を commit する。staging だけでは read surface に公開しない。全段階で現在の Vault 権限、ID、親子関係、hash、payload limit を検証する。
 - local mutation は recorder を明示的に呼び、remote applier は呼ばない。receipt 反映時は新しい optimistic operation を上書きせず、confirmed revision と commit cursor の保存後に acknowledge 済み transaction を削除する。
 - validation、revision conflict、authorization、transport failure は別状態で永続化する。自動 retry は transport error、408、425、429、5xx のみ。blocked transaction は同じ Vault の後続も止める。
@@ -44,7 +44,7 @@ GET / HEAD の content と variant は Vault 認可、CSP sandbox、nosniff、Ra
 
 ## ローカル参照と画像の部分保持（2026-09-06）
 
-Local / Server の両アカウントで UI の読み書きは既存 `MeetingRepository` を通す。本文・要約・文字起こし・OCR は SQLite に保持し、
+Local / Server の両アカウントで UI の読み書きは既存 `MeetingRepository` を通す。保持済み本文・要約・文字起こし・OCR は SQLite から読み、
 同期済み revision の観測で開いている会議の projection を更新する。文字起こしは閲覧中の bounded window を再読込し、
 過去を読んでいる位置を末尾へ飛ばさない。ヘッダーでは端末への保存と Server 同期完了、保留・復旧・競合を区別する。
 
@@ -74,7 +74,7 @@ Local Account は原本だけを永続保存し、表示時の縮小デコード
 サムネイルは索引の原本 hash が現在の file と一致する場合だけ再利用し、旧索引の未記録項目や ID 再利用時は再取得する。会議や Vault の ID はパスに含めない。取得は最大4並行、不要な表示要求はキャンセルする。
 書き込みは atomic とし、読込時に長さと hash を検証する。キャッシュが書けなくても取得した画像を表示できる。
 
-MCP の画像参照は同じファイルストアを read-only で利用し、作成・削除は行わない。未取得の場合は起動中のアプリへ画像だけを要求する専用 IPC を使い、
+MCP の画像参照は同じファイルストアを read-only で利用し、作成・削除は行わない。未取得の場合は起動中のアプリへ画像や不足本文を要求する同梱 helper 用 IPC を使い、
 同じ OS ユーザーと同梱 helper executable を確認し、アプリ側でも Vault / 会議 / 画像の所属を検証する。token broker の権限は広げない。
 未取得・破損画像をリストから黙って省かず、取得不能として返す。
 
@@ -104,3 +104,26 @@ receipt 本文は90日後に縮約し、ID・owner・Vault・正規化 request h
 削除は初期無効の明示管理コマンドで日次実行し、通常リクエストには入れない。Server 時刻による90日超の履歴・本文だけを小分けに処理し、commit と同じ Vault ロックを使う。migration、全 Server、対応クライアント、復帰検証、削除有効化の順とし、本番適用と scheduler 設定は別の運用操作にする。旧クライアントへ縮約結果を通常成功として返さず更新を要求する。会議データの保存期間は変えず、軽量 receipt が増え続けることは許容する。
 
 会議の削除は、親だけでなく summary / transcript / screenshot の canonical key も同じ transaction で無効化する。同じ会議 ID の削除・再作成が delta で集約されても、snapshot に退避された旧子データを再適用しない。期限切れ後に owner Vault が存在しない場合は、残っている reset event と同じくローカル内容・録音を保持して confirmed sync state だけを解除する。member のローカルコピー削除は role を確認し、実際の行削除が成立した場合だけ退避音声の削除を確定する。
+
+
+## テキスト本文の部分保持（2026-09-07）
+
+metadata の全保持と本文の部分保持を分ける。`v46_textContent` で transcript 原文と summary document を NULL 可能にし、`sync_content_state` に保持 revision、完全性、本文の存在・件数、検証 hash、UTF-8 byte 数、最終利用日時を記録する。未保持を空文字に変換しない。移行時の本文は削除せず未検証として残す。Server 観測 revision は既存 `sync_entity_state` が所有する。
+
+`GET /api/v1/sync-content` の version 1 を確認してから `content=metadata-v1` の snapshot / delta / dependency read を使う。meeting の重複 summary と検索用本文、summary document、file の OCR / caption、transcript 本文を省く。非対応では `updateRequired` を表示し、既存本文を保持して部分同期・解放を止める。既存クライアントの既定レスポンスと transaction schema 2 は維持する。導入は Server capability を先に公開し、次に Desktop を更新する。本番 deploy は別の操作。
+
+`MeetingContentProvider` は SQLite を先に読み、古い完全な内容も stale として利用できる。明示操作・UI・AI・MCP は共通の保持 lease を使う。最大2取得を共有し、先読みは1枠まで、待機中の明示操作を優先する。文字起こしは一時 table に500件以下のページで取り込み、指定 revision、全体の件数・byte 数・hash を照合してから既存 remote applier の transaction で反映する。中断した一時行は掃除する。summary は会議単位、OCR / caption は共有 file 単位で取得する。本文 I/O は pull checkpoint と録音の永続保存を進めない・待たせない。
+
+manifest hash は各 nullable UTF-8 field の `byteLength:bytes`、NULL は `-:` を SHA-256 に入力する。文字起こしは startTime / UUID 順の lowercase segment UUID と原文、summary は document、file は OCR の後に caption。UUID は本文 byte 数へ含めない。Swift / Server は共通 fixture で一致を検証する。既存本文の hash が同じなら本文 download を省くが、文字起こしの保持 revision が変わる場合は時刻・話者・音声ソースも取得してから revision を進める。同じ revision で内容が違えば元データを残して自動解放しない。
+
+会話分析も共通 provider の lease で全文を確保し、Repository は未保持本文から空の分析を生成しない。本文の取得・revision 更新は表示中の分析を無効化し、計算結果の保存時にも完全性と保持 revision を確認する。録音後の分析は既存のバックグラウンド処理のまま実行する。
+
+端末が解析する画像に未完了の解析 job がある場合は、Server へのアップロード後も既存の待機・処理・失敗表示と完了までの更新を維持する。Server から受信しただけの画像は共通 provider で OCR / caption を取得し、ローカル解析の待機として扱わない。
+
+全 Server Account 合計128 MiBを超えると、再取得可能な検証済み本文を LRU で80%まで解放する。直近20会議は空き枠内だけ先読みする。閲覧済み本文を先読みのために追い出さず、解放した項目を次の先読みで取り直さない。Local Account、使用中、未送信・競合・復旧中の Vault、録音中は対象外。容量は本文だけを数え、metadata・翻訳・session・音声特徴量・ユーザーの Markdown・backup を含めない。解放は原文を NULL にし、summary header と export 参照、端末固有属性を保持する。対応する FTS・旧 vector を除去し metadata 索引を再構築する。既存の起動時 VACUUM と録音外 incremental vacuum で空きページを回収する。
+
+反映・解放 transaction は接続 ID / origin、Vault、mutation generation、対象の存在、revision、queue、復旧・録音状態を再検査する。権限・所属の変更は generation で進行中取得を失効させる。状態は missing / loading / failed / ready / stale / empty / deleted を区別し、失敗で完全な旧本文を消さない。
+
+本文編集は完全性を検査し、操作の base revision は編集した保持 revision を使う。明示的なローカル版再適用だけが最新 revision を使える。未保持会議への録音追加は既存の durable write を使い、不足する過去本文を完全にしたと判定しない。Local Account への移動は metadata 同期、全本文・画像原本取得、接続 generation と完全性の最終検査を終えてから確定する。失敗時は接続・queue・ローカル変更を保持する。
+
+Server 版の採用や確定済み Vault の無効操作破棄では、破棄対象の本文だけを同じ transaction で通常の未保持表現へ解放し、Server revision が変わらなくても正本を再取得する。本文値を NULL にし、対応する FTS と開いている表示 projection も更新する。行・metadata・翻訳・音声特徴量は保持する。未確定 Vault の初期アップロード再構築と、明示的なローカル版再適用ではローカル本文を保持する。

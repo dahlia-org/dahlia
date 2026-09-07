@@ -372,10 +372,11 @@ private enum MeetingPersistenceStarter {
     ) async throws -> AppendResult {
         try await dbQueue.write { db in
             let meeting = try MeetingRecord.fetchOne(db, key: request.meetingId)
-            let segments = try TranscriptSegmentRecord
-                .filter(Column("meetingId") == request.meetingId)
-                .order(Column("startTime").asc)
-                .fetchAll(db)
+            let segments = try Row.fetchAll(
+                db,
+                sql: "SELECT id, startTime, endTime FROM transcript_segments WHERE meetingId = ? ORDER BY startTime",
+                arguments: [request.meetingId]
+            )
             let previousSessions = try RecordingSessionRecord
                 .filter(Column("meetingId") == request.meetingId)
                 .order(Column("offsetSeconds").asc, Column("startedAt").asc)
@@ -390,8 +391,8 @@ private enum MeetingPersistenceStarter {
                 """,
                 arguments: [request.meetingId]
             )
-            let firstSegmentStartTime = segments.first?.startTime
-            let lastSegmentEndTime = segments.last.map { $0.endTime ?? $0.startTime }
+            let firstSegmentStartTime: Date? = segments.first?["startTime"]
+            let lastSegmentEndTime: Date? = segments.last.map { $0["endTime"] ?? $0["startTime"] }
             let resolvedRecordingStartTime = meeting?.recordingStartedAt
                 ?? existingRecordingStartTime
                 ?? firstSegmentStartTime
@@ -413,17 +414,17 @@ private enum MeetingPersistenceStarter {
                 id: request.recordingSessionId,
                 meetingId: request.meetingId,
                 startedAt: request.recordingStartDate,
-                offsetSeconds: nextOffsetSeconds(
+                offsetSeconds: max(meeting?.duration ?? 0, nextOffsetSeconds(
                     sessions: previousSessions,
                     firstSegmentStartTime: firstSegmentStartTime,
                     lastSegmentEndTime: lastSegmentEndTime
-                ),
+                )),
                 transcriptionMode: request.transcriptionMode
             )
             try recordingSession.insert(db)
             return AppendResult(
                 recordingSession: recordingSession,
-                existingSegmentIds: Set(segments.map(\.id)),
+                existingSegmentIds: Set(segments.map { $0["id"] as UUID }),
                 previousRecordingSessions: previousSessions,
                 resolvedRecordingStartTime: resolvedRecordingStartTime,
                 resetsRecordingStartOnCancel: resetsRecordingStartOnCancel

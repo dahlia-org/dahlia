@@ -247,12 +247,12 @@ public final class DahliaMCPServer {
         case "query_meetings":
             try validate(arguments, allowedKeys: [
                 "query", "project", "project_id", "organization_id", "include_descendants", "topic_id",
-                "ical_uid", "created_from", "created_before", "simple", "limit", "cursor",
+                "ical_uid", "created_from", "created_before", "simple", "limit", "cursor", "server_cursor",
             ])
             return try toolResult(queryMeetings(arguments))
         case "query_screenshots":
             try validate(arguments, allowedKeys: [
-                "query", "project_id", "created_from", "created_before", "limit", "cursor",
+                "query", "project_id", "created_from", "created_before", "limit", "cursor", "server_cursor",
             ])
             return try toolResult(queryScreenshots(arguments))
         case "get_meeting":
@@ -666,7 +666,7 @@ public final class DahliaMCPServer {
     private func queryMeetings(_ rawArguments: [String: Any]) throws -> MeetingQueryPage {
         let optionalStringKeys: Set = [
             "query", "project", "project_id", "organization_id", "topic_id", "ical_uid",
-            "created_from", "created_before", "cursor",
+            "created_from", "created_before", "cursor", "server_cursor",
         ]
         let arguments = rawArguments.filter { key, value in
             guard optionalStringKeys.contains(key), let string = value as? String else { return true }
@@ -685,7 +685,8 @@ public final class DahliaMCPServer {
             createdFrom: date(arguments, key: "created_from"),
             createdBefore: date(arguments, key: "created_before"),
             limit: limit,
-            cursor: string(arguments, key: "cursor")
+            cursor: string(arguments, key: "cursor"),
+            serverCursor: string(arguments, key: "server_cursor")
         ))
     }
 
@@ -696,7 +697,8 @@ public final class DahliaMCPServer {
             createdFrom: date(arguments, key: "created_from"),
             createdBefore: date(arguments, key: "created_before"),
             limit: integer(arguments, key: "limit") ?? 20,
-            cursor: string(arguments, key: "cursor")
+            cursor: string(arguments, key: "cursor"),
+            serverCursor: string(arguments, key: "server_cursor")
         ))
     }
 
@@ -1251,12 +1253,33 @@ private extension DahliaMCPServer {
         return objectSchema(properties: blockProperties, required: ["id", "type"] + required)
     }
 
+    private static var textContentSchema: [String: Any] {
+        objectSchema(properties: [
+            "state": ["type": "string", "enum": ["missing", "loading", "failed", "ready", "stale", "empty", "deleted"]],
+            "revision": ["type": "integer"], "latest_revision": ["type": "integer"],
+        ], required: ["state"])
+    }
+
+    private static var remoteTextSearchSchema: [String: Any] {
+        objectSchema(properties: [
+            "scope": ["type": "string"],
+            "items": ["type": "array", "items": objectSchema(properties: [
+                "id": ["type": "string", "format": "uuid"],
+                "meeting_id": ["type": "string", "format": "uuid"],
+                "snippet": ["type": "string"],
+            ], required: ["id", "meeting_id", "snippet"])],
+            "next_cursor": ["type": "string"], "complete": ["type": "boolean"], "error": ["type": "string"],
+        ], required: ["scope", "items", "complete"])
+    }
+
     private static var meetingQueryOutputSchema: [String: Any] {
         objectSchema(
             properties: [
                 "vault": vaultSchema,
                 "meetings": ["type": "array", "items": meetingMetadataSchema],
                 "next_cursor": ["type": "string"],
+                "search_scope": ["type": "string"],
+                "server": remoteTextSearchSchema,
             ],
             required: ["vault", "meetings"]
         )
@@ -1266,6 +1289,7 @@ private extension DahliaMCPServer {
         objectSchema(
             properties: [
                 "vault": vaultSchema,
+                "text_content": textContentSchema,
                 "meeting": meetingMetadataSchema,
                 "summary": ["type": "string"],
                 "summary_document": summaryDocumentSchema,
@@ -1295,6 +1319,8 @@ private extension DahliaMCPServer {
                     ),
                 ],
                 "next_cursor": ["type": "string"],
+                "search_scope": ["type": "string"],
+                "server": remoteTextSearchSchema,
             ],
             required: ["vault", "screenshots"]
         )
@@ -1304,6 +1330,7 @@ private extension DahliaMCPServer {
         objectSchema(
             properties: [
                 "vault": vaultSchema,
+                "text_content": textContentSchema,
                 "meeting_id": ["type": "string", "format": "uuid"],
                 "segments": ["type": "array", "items": transcriptEntrySchema],
                 "next_cursor": ["type": "string"],
@@ -2579,6 +2606,10 @@ private extension DahliaMCPServer {
                     "created_before": ["type": "string", "format": "date-time"],
                     "limit": ["type": "integer", "minimum": 1, "maximum": 100, "default": 25],
                     "cursor": ["type": "string"],
+                    "server_cursor": [
+                        "type": "string",
+                        "description": "Continue server results using server.next_cursor. Local cursor is independent.",
+                    ],
                 ],
                 "additionalProperties": false,
             ],
@@ -2599,6 +2630,10 @@ private extension DahliaMCPServer {
                     "created_before": ["type": "string", "format": "date-time"],
                     "limit": ["type": "integer", "minimum": 1, "maximum": 100, "default": 20],
                     "cursor": ["type": "string"],
+                    "server_cursor": [
+                        "type": "string",
+                        "description": "Continue server results using server.next_cursor. Local cursor is independent.",
+                    ],
                 ],
                 "required": ["query"],
                 "additionalProperties": false,

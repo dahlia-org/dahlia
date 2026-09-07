@@ -1,3 +1,5 @@
+import DahliaMeetingAccess
+import DahliaRuntimeSupport
 import Foundation
 import GRDB
 
@@ -7,6 +9,7 @@ extension MeetingRepository {
         let sessions: [RecordingSessionRecord]
         let metrics: MeetingConversationMetricsRecord?
         let sources: [MeetingConversationSourceMetricsRecord]
+        let residentRevision: Int?
     }
 
     private nonisolated static let transcriptPageSize = 500
@@ -20,6 +23,7 @@ extension MeetingRepository {
             guard let meeting = try MeetingRecord.fetchOne(db, key: meetingId) else {
                 throw CocoaError(.fileNoSuchFile)
             }
+            try TextContentAccess.requireComplete(entity: .transcript, id: meetingId, in: db)
             let sessions = try RecordingSessionRecord
                 .filter(Column("meetingId") == meetingId)
                 .order(Column("offsetSeconds").asc, Column("startedAt").asc, Column("id").asc)
@@ -29,11 +33,12 @@ extension MeetingRepository {
                 .filter(Column("meetingId") == meetingId)
                 .order(Column("source").asc)
                 .fetchAll(db)
-            return StoredConversationMetricsInput(
+            return try StoredConversationMetricsInput(
                 meetingDuration: meeting.duration,
                 sessions: sessions,
                 metrics: metrics,
-                sources: sources
+                sources: sources,
+                residentRevision: TextContentAccess.availability(entity: .transcript, id: meetingId, in: db).revision
             )
         }
         let segmentRecords = try loadConversationMetricSegmentRecords(meetingId: meetingId)
@@ -80,6 +85,9 @@ extension MeetingRepository {
             guard try MeetingRecord.fetchOne(db, key: meetingId) != nil else {
                 throw CocoaError(.fileNoSuchFile)
             }
+            try TextContentAccess.requireComplete(entity: .transcript, id: meetingId, in: db)
+            guard try TextContentAccess.availability(entity: .transcript, id: meetingId, in: db).revision == stored.residentRevision
+            else { throw TextContentError.changed }
             try MeetingConversationMetricsRecord(
                 meetingId: meetingId,
                 calculationVersion: MeetingConversationMetrics.calculationVersion,
@@ -118,6 +126,7 @@ extension MeetingRepository {
         while true {
             try Task.checkCancellation()
             let page = try dbQueue.read { db in
+                try TextContentAccess.requireComplete(entity: .transcript, id: meetingId, in: db)
                 var request = TranscriptSegmentRecord
                     .filter(Column("meetingId") == meetingId)
                     .filter(Column("isConfirmed") == true)

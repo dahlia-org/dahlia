@@ -99,10 +99,12 @@ struct ScreenshotOverlayView: View {
     let onNext: () -> Void
     var onDownload: () -> Void = {}
     let onDismiss: () -> Void
-    var ocrStateProvider: @Sendable (UUID) async -> ScreenshotOCRState = { _ in .pending }
+    var ocrStateProvider: @Sendable (UUID, Bool) async -> ScreenshotOCRState = { _, _ in .pending }
 
     @State private var imageLoader = ScreenshotImageLoadModel()
     @State private var ocrState: ScreenshotOCRState = .pending
+    @State private var textRetry = 0
+    @State private var textRetryID: UUID?
     @State private var isShowingInformation = false
     @State private var zoom: CGFloat = 1
     @State private var loadedScreenshotID: UUID?
@@ -173,10 +175,14 @@ struct ScreenshotOverlayView: View {
             guard !Task.isCancelled else { return }
             loadedScreenshotID = screenshotID
         }
-        .task(id: screenshot.id) {
+        .task(id: "\(screenshot.id)-\(textRetry)") {
+            let refresh = textRetryID == screenshot.id
+            textRetryID = nil
             ocrState = .pending
             repeat {
-                ocrState = await ocrStateProvider(screenshot.id)
+                let loaded = await ocrStateProvider(screenshot.id, refresh)
+                guard !Task.isCancelled else { return }
+                ocrState = loaded
                 if !ocrState.isTerminal { try? await Task.sleep(for: .seconds(2)) }
             } while !ocrState.isTerminal && !Task.isCancelled
         }
@@ -220,7 +226,10 @@ struct ScreenshotOverlayView: View {
                 ScreenshotOverlayInformationView(
                     screenshot: screenshot,
                     image: displayedImage,
-                    ocrState: ocrState
+                    ocrState: ocrState,
+                    retry: { textRetryID = screenshot.id
+                        textRetry &+= 1
+                    }
                 )
                 .frame(
                     width: Self.informationPanelWidth,

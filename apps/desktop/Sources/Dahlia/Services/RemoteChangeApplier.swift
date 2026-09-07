@@ -397,38 +397,7 @@ enum RemoteChangeApplier {
             guard try !SyncTransactionQueue.hasPending(vaultId: vaultId, in: db),
                   try !hasActiveRecording(in: db)
             else { return false }
-            try db.execute(
-                sql: """
-                INSERT INTO transcript_segments(
-                    id, meetingId, startTime, endTime, text, isConfirmed, audioSource, speakerLabel
-                )
-                SELECT segmentId, meetingId, startTime, endTime, text,
-                    isConfirmed, audioSource, speakerLabel
-                FROM sync_remote_transcript_items
-                WHERE meetingId = ?
-                ON CONFLICT(id) DO UPDATE SET
-                    meetingId = excluded.meetingId,
-                    startTime = excluded.startTime,
-                    endTime = excluded.endTime,
-                    text = excluded.text,
-                    isConfirmed = excluded.isConfirmed,
-                    audioSource = excluded.audioSource,
-                    speakerLabel = excluded.speakerLabel
-                """,
-                arguments: [meetingId]
-            )
-            try db.execute(
-                sql: """
-                DELETE FROM transcript_segments
-                WHERE meetingId = ? AND isConfirmed = 1
-                  AND NOT EXISTS (
-                      SELECT 1 FROM sync_remote_transcript_items remote
-                      WHERE remote.meetingId = transcript_segments.meetingId
-                        AND remote.segmentId = transcript_segments.id
-                  )
-                """,
-                arguments: [meetingId]
-            )
+            try installStagedTranscript(meetingId: meetingId, in: db)
             try db.execute(
                 sql: """
                 INSERT INTO sync_entity_state(vaultId, entity, entityId, confirmedRevision)
@@ -447,6 +416,41 @@ enum RemoteChangeApplier {
             )
             return true
         }
+    }
+
+    static func installStagedTranscript(meetingId: UUID, in db: Database) throws {
+        try db.execute(
+            sql: """
+            INSERT INTO transcript_segments(
+                id, meetingId, startTime, endTime, text, isConfirmed, audioSource, speakerLabel
+            )
+            SELECT segmentId, meetingId, startTime, endTime, text,
+                isConfirmed, audioSource, speakerLabel
+            FROM sync_remote_transcript_items
+            WHERE meetingId = ?
+            ON CONFLICT(id) DO UPDATE SET
+                meetingId = excluded.meetingId,
+                startTime = excluded.startTime,
+                endTime = excluded.endTime,
+                text = excluded.text,
+                isConfirmed = excluded.isConfirmed,
+                audioSource = excluded.audioSource,
+                speakerLabel = excluded.speakerLabel
+            """,
+            arguments: [meetingId]
+        )
+        try db.execute(
+            sql: """
+            DELETE FROM transcript_segments
+            WHERE meetingId = ? AND isConfirmed = 1
+              AND NOT EXISTS (
+                  SELECT 1 FROM sync_remote_transcript_items remote
+                  WHERE remote.meetingId = transcript_segments.meetingId
+                    AND remote.segmentId = transcript_segments.id
+              )
+            """,
+            arguments: [meetingId]
+        )
     }
 
     private static func orderProjects(_ projects: [SyncProjectSnapshot]) -> [SyncProjectSnapshot] {
@@ -808,6 +812,7 @@ enum RemoteChangeApplier {
                 in: db
             )
         case .transcript:
+            if try TextContentStore.observe(entity: .transcript, id: change.entityId, vaultId: vaultId, value: record, in: db) { return }
             try applyTranscript(
                 meetingId: change.entityId,
                 segments: transcripts[change.entityId, default: []],

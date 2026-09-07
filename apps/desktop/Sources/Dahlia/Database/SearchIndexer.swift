@@ -532,6 +532,8 @@ private extension SearchIndexer {
                       let meeting = try MeetingRecord.fetchOne(db, key: screenshot.meetingId),
                       let vault = try VaultRecord.fetchOne(db, key: meeting.vaultId)
                 else { return nil }
+                guard screenshot.remoteReference == nil || screenshot.localReference != nil,
+                      (try? TextContentAccess.requireComplete(entity: .file, id: screenshot.originalFileId, in: db)) != nil else { return nil }
                 return (job.targetID, ScreenshotAnalysisInput(
                     id: screenshot.id,
                     imageData: screenshot.imageData,
@@ -611,7 +613,10 @@ private extension SearchIndexer {
     func storeScreenshotAnalyses(_ results: [ScreenshotAnalysis], generation: Int) async throws {
         try await dbQueue.write { db in
             for result in results {
-                guard try MeetingScreenshotRecord.fetchOne(db, key: result.screenshotID) != nil else { continue }
+                guard let existing = try MeetingScreenshotRecord.fetchOne(db, key: result.screenshotID),
+                      existing.remoteReference == nil || existing.localReference != nil,
+                      (try? TextContentAccess.requireComplete(entity: .file, id: existing.originalFileId, in: db)) != nil,
+                      try TextContentAccess.availability(entity: .file, id: existing.originalFileId, in: db).state != .stale else { continue }
                 try db.execute(
                     sql: "UPDATE files SET metadata = json_set(metadata, '$.ocr_text', ?, '$.caption', ?) WHERE id = (SELECT fileId FROM meeting_files WHERE id = ?)",
                     arguments: [result.ocrText, result.caption, result.screenshotID]
@@ -639,57 +644,7 @@ private extension SearchIndexer {
         projectPath knownProjectPath: String? = nil
     ) async throws {
         try await dbQueue.write { db in
-            guard let meeting = try MeetingRecord.fetchOne(db, key: id) else { return }
-            let calendar = try Row.fetchOne(
-                db,
-                sql: """
-                SELECT title, description FROM calendar_events
-                WHERE ical_uid = ? AND recurrence_id = ?
-                """,
-                arguments: [meeting.calendarEventIcalUid, meeting.calendarEventRecurrenceId]
-            )
-            let tags = try String.fetchAll(
-                db,
-                sql: """
-                SELECT tags.name FROM tags JOIN meeting_tags ON meeting_tags.tagId = tags.id
-                WHERE meeting_tags.meetingId = ? ORDER BY tags.id
-                """,
-                arguments: [id]
-            ).joined(separator: " ")
-            let projectPath: String = if let knownProjectPath {
-                knownProjectPath
-            } else if let projectID = meeting.projectId {
-                try ProjectRecord.fetchResolved(id: projectID, in: db)?.path ?? ""
-            } else {
-                ""
-            }
-            let calendarText = [calendar?["title"] as String?, calendar?["description"] as String?]
-                .compactMap(\.self).joined(separator: " ")
-            let summaryDocument = try SummaryRecord.fetchOne(db, key: id)
-                .flatMap { try? $0.loadDocument() }
-            let summaryText = summaryDocument?.searchableBodyText ?? ""
-            let fields = SearchDocumentFields(
-                title: meeting.name,
-                description: meeting.description,
-                summary: summaryText,
-                calendar: calendarText,
-                tags: tags,
-                projectPath: projectPath,
-                summaryDescription: summaryDocument?.description ?? ""
-            )
-            try db.execute(
-                sql: "UPDATE search_documents SET projectId = ? WHERE meetingId = ? AND projectId IS NOT ?",
-                arguments: [meeting.projectId, id, meeting.projectId]
-            )
-            let document = SearchDocumentProjection(
-                kind: "meeting",
-                sourceID: id,
-                vaultID: meeting.vaultId,
-                meetingID: id,
-                projectID: meeting.projectId,
-                fields: fields
-            )
-            try upsertDocument(document, generation: generation, in: db)
+            try indexMeetingDocument(id: id, generation: generation, projectPath: knownProjectPath, in: db)
         }
     }
 

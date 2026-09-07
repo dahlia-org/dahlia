@@ -12,6 +12,7 @@ struct SyncSnapshotPage: Decodable {
     let items: [Record]
     let startCursor: String
     let nextCursor: String?
+    var contentMode: String?
 }
 
 /// Rebuildable recovery data. Canonical content is never accumulated for an entire Vault in memory.

@@ -25,6 +25,7 @@ import type {
 import { decodeSyncCursor, encodeSyncCursor, SYNC_SNAPSHOT_ENTITIES, SyncTransactionError } from "./store";
 import { fileMetadataSchema, fileReservationSchema, fileResponse, fileStorageKey, fileVariantKey, imageContentTypes, type FileRecord } from "../files/model";
 import { SCREENSHOT_VARIANTS, screenshotVariantKey, type ScreenshotTransformer, type ScreenshotVariant } from "./screenshot-variants";
+import { fileTextMetadata, metadataRecord, parseContentMode, parseTextEntity, readTextContent, TEXT_CONTENT_VERSION } from "./text-content";
 
 const uuidSchema = z.uuid().transform((value) => value.toLowerCase());
 const dateSchema = z.iso.datetime().transform((value) => new Date(value));
@@ -320,7 +321,8 @@ export class MeetingSyncService {
     }
   }
 
-  async listChanges(identity: Identity, vaultId: string, cursor?: string, highWaterCursor?: string) {
+  async listChanges(identity: Identity, vaultId: string, cursor?: string, highWaterCursor?: string, content?: string) {
+    const contentMode = parseContentMode(content);
     const after = cursor ? decodeSyncCursor(cursor) : 0;
     const suppliedHighWater = highWaterCursor ? decodeSyncCursor(highWaterCursor) : undefined;
     if (suppliedHighWater !== undefined && suppliedHighWater < after) {
@@ -329,10 +331,13 @@ export class MeetingSyncService {
     const { rows, highWater } = await this.store.withIdentity(identity, async (scoped) => {
       await scoped.lockVault(vaultId);
       const highWater = suppliedHighWater ?? await scoped.latestChangeSequence(vaultId);
-      return {
-        rows: await scoped.listChanges(vaultId, after, highWater, SYNC_CHANGE_PAGE_SIZE + 1),
-        highWater,
-      };
+      const rows = await scoped.listChanges(vaultId, after, highWater, SYNC_CHANGE_PAGE_SIZE + 1);
+      if (contentMode) {
+        for (const row of rows) {
+          row.record = (await metadataRecord({ entity: row.entity, id: row.entityId, revision: row.revision, record: row.record }, scoped, vaultId)).record;
+        }
+      }
+      return { rows, highWater };
     });
     const items = rows.slice(0, SYNC_CHANGE_PAGE_SIZE);
     const last = items.at(-1);
@@ -341,10 +346,12 @@ export class MeetingSyncService {
       cursor: encodeSyncCursor(rows.length > SYNC_CHANGE_PAGE_SIZE ? last!.sequence : highWater),
       highWaterCursor: encodeSyncCursor(highWater),
       hasMore: rows.length > SYNC_CHANGE_PAGE_SIZE,
+      ...(contentMode ? { contentMode } : {}),
     };
   }
 
-  async listSnapshot(identity: Identity, vaultId: string, cursor?: string, startCursor?: string) {
+  async listSnapshot(identity: Identity, vaultId: string, cursor?: string, startCursor?: string, content?: string) {
+    const contentMode = parseContentMode(content);
     const position = cursor ? z.tuple([z.enum(SYNC_SNAPSHOT_ENTITIES), uuidSchema]).safeParse(cursor.split(",")) : undefined;
     if ((position && !position.success) || (cursor && !startCursor)) {
       throw new SyncTransactionError(400, "invalid_snapshot_cursor");
@@ -364,10 +371,50 @@ export class MeetingSyncService {
       );
       const last = items.at(-1);
       return {
-        items,
+        items: contentMode ? await Promise.all(items.map((item) => metadataRecord(item, scoped, vaultId))) : items,
         startCursor: encodeSyncCursor(start),
         nextCursor: hasMore && last ? `${last.entity},${last.id}` : null,
+        ...(contentMode ? { contentMode } : {}),
       };
+    });
+  }
+
+  async textContent(identity: Identity, vaultId: string, entityValue: string, entityId: string,
+    revisionValue?: string, manifestValue?: string, cursor?: string) {
+    const entity = parseTextEntity(entityValue);
+    if (!revisionValue || !/^\d+$/.test(revisionValue) || !Number.isSafeInteger(Number(revisionValue))
+      || (manifestValue !== undefined && manifestValue !== "1") || (cursor && (manifestValue || entity !== "transcript"))) {
+      throw new SyncTransactionError(400, "invalid_content_request");
+    }
+    const after = cursor ? this.parseTranscriptCursor(cursor) : undefined;
+    return this.store.withIdentity(identity, async (scoped) => {
+      await scoped.lockVault(vaultId);
+      return readTextContent(scoped, vaultId, entity, entityId, Number(revisionValue), manifestValue === "1", after);
+    });
+  }
+
+  async searchText(identity: Identity, vaultId: string, queryValue?: string, kindValue?: string, cursor?: string, limitValue?: string) {
+    const limit = limitValue === undefined ? 200 : Number(limitValue);
+    if (!Number.isInteger(limit) || limit < 1 || limit > 200) throw new SyncTransactionError(400, "invalid_search_limit");
+    const query = this.parseSearchQuery(queryValue);
+    if (!query || (kindValue !== "meeting" && kindValue !== "screenshot")) throw new SyncTransactionError(400, "invalid_search_request");
+    let parsedCursor: unknown;
+    try { parsedCursor = cursor ? JSON.parse(cursor) : undefined; }
+    catch { throw new SyncTransactionError(400, "invalid_search_cursor"); }
+    const position = cursor ? z.tuple([z.string(), z.string(), z.string(), z.number().int().nonnegative(), z.number().int().nonnegative()])
+      .safeParse(parsedCursor) : undefined;
+    if (position && (!position.success || position.data[0] !== vaultId || position.data[1] !== kindValue || position.data[2] !== queryValue)) {
+      throw new SyncTransactionError(400, "invalid_search_cursor");
+    }
+    return this.store.withIdentity(identity, async (scoped) => {
+      await scoped.lockVault(vaultId);
+      if (!await scoped.getVault(vaultId)) throw new SyncTransactionError(404, "vault_not_found");
+      const revision = await scoped.latestChangeSequence(vaultId);
+      if (position?.success && revision !== position.data[3]) throw new SyncTransactionError(409, "search_revision_changed");
+      const offset = position?.success ? position.data[4] : 0;
+      const rows = await scoped.searchTextPage(vaultId, query, kindValue, offset, limit + 1);
+      return { version: TEXT_CONTENT_VERSION, scope: "server", items: rows.slice(0, limit),
+        nextCursor: rows.length > limit ? JSON.stringify([vaultId, kindValue, queryValue, revision, offset + limit]) : null };
     });
   }
 
@@ -478,10 +525,11 @@ export class MeetingSyncService {
     }));
   }
 
-  async getFile(identity: Identity, fileId: string) {
+  async getFile(identity: Identity, fileId: string, content?: string) {
+    const mode = parseContentMode(content);
     const file = await this.store.withIdentity(identity, (scoped) => scoped.getFile(fileId, true));
     if (!file) throw new ArtifactRequestError(404, "file_not_found");
-    return { ...fileResponse(file), contentURL: `/api/v1/files/${fileId}/content`,
+    return { ...(mode ? fileTextMetadata(fileResponse(file)) : fileResponse(file)), contentURL: `/api/v1/files/${fileId}/content`,
       variants: this.screenshotTransformer && imageContentTypes.has(file.contentType)
         ? { thumbnail: `/api/v1/files/${fileId}/variants/thumbnail` } : {},
     };
@@ -691,8 +739,12 @@ export class MeetingSyncService {
     return { createdAt: parsed.data[0], meetingId: parsed.data[1] };
   }
 
-  getMeeting(identity: Identity, vaultId: string, meetingId: string) {
-    return this.store.withIdentity(identity, (scoped) => scoped.getMeeting(vaultId, meetingId));
+  getMeeting(identity: Identity, vaultId: string, meetingId: string, content?: string) {
+    const mode = parseContentMode(content);
+    return this.store.withIdentity(identity, async (scoped) => {
+      const meeting = await scoped.getMeeting(vaultId, meetingId);
+      return meeting && mode ? (await metadataRecord({ entity: "meeting", id: meetingId, revision: meeting.revision ?? 0, record: { ...meeting } }, scoped, vaultId)).record : meeting;
+    });
   }
 
   async listTranscript(identity: Identity, vaultId: string, meetingId: string, cursor?: string) {

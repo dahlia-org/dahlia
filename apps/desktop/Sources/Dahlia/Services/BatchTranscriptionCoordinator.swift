@@ -303,7 +303,9 @@ actor BatchTranscriptionCoordinator {
 
     private func performPostProcessing(for job: Job) async {
         do {
-            try exportTranscript(for: job)
+            try await MeetingContentProvider.shared.withContent(meetingId: job.meeting.id, entities: [.transcript], dbQueue: dbQueue) {
+                try await self.exportTranscript(for: job)
+            }
         } catch {
             ErrorReportingService.capture(error, context: ["source": "batchTranscriptExport"])
         }

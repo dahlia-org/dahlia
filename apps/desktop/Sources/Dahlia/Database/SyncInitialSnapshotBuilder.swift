@@ -1,3 +1,4 @@
+import DahliaMeetingAccess
 import DahliaRuntimeSupport
 import Foundation
 import GRDB
@@ -239,6 +240,8 @@ enum SyncInitialSnapshotBuilder {
                     )
                 }
                 guard let meeting else { return nil }
+                try TextContentAccess.requireComplete(entity: .summary, id: meeting.id, in: db)
+                try TextContentAccess.requireComplete(entity: .transcript, id: meeting.id, in: db)
                 var metadata = try [meetingOperation(meeting, action: .create)]
                 if let summary = try SummaryRecord.fetchOne(db, key: meeting.id) {
                     try metadata.append(summaryOperation(summary, action: .upsert))

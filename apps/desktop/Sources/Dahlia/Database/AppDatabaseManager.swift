@@ -315,6 +315,10 @@ final class AppDatabaseManager: Sendable {
             try ScreenshotContentMigration.migrate(in: db)
         }
 
+        migrator.registerMigration("v46_textContent", foreignKeyChecks: .deferred) { db in
+            try TextContentMigration.migrate(in: db)
+        }
+
         return migrator
     }()
 
