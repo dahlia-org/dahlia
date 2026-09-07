@@ -97,6 +97,7 @@ function Failure({ message, retry }: { message: string; retry: () => void }) {
 }
 
 const menuIconPaths = {
+  folder: "M3 5h7l2 3h9v12H3V5Z",
   account: "M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0ZM4 21v-2a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v2Z",
   vault: "M5 5h14l3 10v4H2v-4L5 5ZM2 15h20M10 17h4",
   organization: "M4 21V3h12v18M16 9h4v12M2 21h20M8 7h4M8 11h4M8 15h4M9 21v-3h2v3",
@@ -134,15 +135,16 @@ function SignOutButton() {
   </>;
 }
 
-export function Sidebar({ brand, session, children }: { brand: ReactNode; session: SessionInfo; children: ReactNode }) {
+export function Sidebar({ brand, session, children, routeVaultId: resolvedVaultId }: { brand: ReactNode; session: SessionInfo; children: ReactNode; routeVaultId?: string }) {
   const state = useSidebar();
   const identity = session.user.name || session.user.email || session.user.id;
   const current = state.organizationId
     ? state.organizations?.find(({ id }) => id === state.organizationId)?.name ?? "Organization"
     : uiText("Personal", "個人");
-  const routeVaultId = typeof window === "undefined" ? undefined : window.location.pathname.match(/^\/vaults\/([^/]+)/)?.[1];
+  const routeVaultId = resolvedVaultId ?? (typeof window === "undefined" ? undefined : window.location.pathname.match(/^\/vaults\/([^/]+)/)?.[1]);
   const selectionKey = `dahlia:sidebar:${session.user.id}:${state.organizationId || "personal"}:vault`;
-  const selectedVault = selectedSidebarVault(state.vaults, routeVaultId, readSelection(selectionKey));
+  const routedVault = useLiveJSON<SyncedVaultInfo>(resolvedVaultId ? `/api/v1/vaults/${resolvedVaultId}` : undefined);
+  const selectedVault = selectedSidebarVault(state.vaults, routeVaultId, readSelection(selectionKey)) ?? routedVault.data;
   const selectedVaultId = selectedVault?.vaultId;
   useEffect(() => {
     if (selectedVaultId) save(selectionKey, selectedVaultId);
@@ -227,8 +229,8 @@ function TreeNode({ id, name, href, initialOpen, children }: { id: string; name:
 function VaultChildren({ vaultId }: { vaultId: string }) {
   const base = `/vaults/${vaultId}`;
   const route = window.location.pathname;
-  const meetingId = route.startsWith(`${base}/meetings/`) ? route.split("/")[4] : undefined;
-  const projectId = route.startsWith(`${base}/projects/`) ? route.split("/")[4] : undefined;
+  const meetingId = route.match(/^\/meetings\/([^/]+)$/)?.[1];
+  const projectId = route.match(/^\/projects\/([^/]+)$/)?.[1];
   const projectsQuery = useLiveJSON<{ items: SyncedProjectInfo[] }>(`/api/v1/vaults/${vaultId}/projects`);
   const meetingQuery = useLiveJSON<SyncedMeetingInfo>(meetingId ? `/api/v1/vaults/${vaultId}/meetings/${meetingId}` : undefined);
   const projects = projectsQuery.data?.items;
@@ -245,7 +247,7 @@ function VaultChildren({ vaultId }: { vaultId: string }) {
     childrenByParent.set(parent, siblings);
   }
   const projectsUnder = (parentId?: string): ReactNode => (childrenByParent.get(parentId) ?? []).map((project) =>
-    <TreeNode key={project.projectId} id={`${vaultId}:${project.projectId}`} name={project.name} href={`${base}/projects/${project.projectId}`} initialOpen={ancestors.has(project.projectId)}>
+    <TreeNode key={project.projectId} id={`${vaultId}:${project.projectId}`} name={project.name} href={`/projects/${project.projectId}`} initialOpen={ancestors.has(project.projectId)}>
       <ul className="sidebar-tree">
         {projectsUnder(project.projectId)}
         <Meetings vaultId={vaultId} projectId={project.projectId} selectedMeeting={selectedMeeting} />
@@ -279,7 +281,7 @@ function Meetings({ vaultId, projectId, selectedMeeting }: { vaultId: string; pr
   }
   return <>
     {visibleMeetings.map((meeting) => {
-      const href = `/vaults/${vaultId}/meetings/${meeting.meetingId}`;
+      const href = `/meetings/${meeting.meetingId}`;
       const active = window.location.pathname === href;
       const meetingDate = meeting.recordingStartedAt ?? meeting.createdAt;
       return <li key={meeting.meetingId} className={`tree-row meeting-row${active ? " active" : ""}`}>

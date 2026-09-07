@@ -9,13 +9,16 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   canEmbedArtifact,
   ScreenshotFigure,
+  MeetingList,
   resolveDashboardExtensionRoute,
   type DashboardExtension,
 } from "../src/client/App";
 import { artifactViewerId, resolveDashboardRoute, shouldRedirectToSignIn } from "../src/client/routes";
 
+import { FileViewer } from "../src/client/FileViewer";
+import * as liveData from "../src/client/live-data";
 import { dashboardNavigationPath } from "../src/client/navigation";
-import { clientMutationEvent, json } from "../src/client/api";
+import { clientMutationEvent, json, type SyncedMeetingInfo } from "../src/client/api";
 
 const ExtensionPage = () => null;
 afterEach(() => vi.unstubAllGlobals());
@@ -142,14 +145,35 @@ describe("dashboard navigation", () => {
     const capturedAt = "2026-09-07T00:00:00Z";
     const html = renderToStaticMarkup(createElement(ScreenshotFigure, { file, capturedAt }));
     expect(html).toContain('src="/small"');
-    expect(html).toContain('href="/preview"');
+    expect(html).toContain('href="/files/file"');
+    expect(html).not.toContain('target="_blank"');
     expect(html).toContain('href="/api/v1/files/file/content"');
-    expect(html).toContain("Open original");
+    expect(html).toContain("Download original");
     expect(html).toContain(`dateTime="${capturedAt}"`);
     const portable = renderToStaticMarkup(createElement(ScreenshotFigure, { file: { ...file, variants: {} } }));
     expect(portable).toContain('src="/api/v1/files/file/content"');
     expect(portable).not.toContain("/large");
   });
+  it("previews images but never embeds active file content, and removes inaccessible previews", () => {
+    vi.stubGlobal("navigator", { language: "en" });
+    const query = vi.spyOn(liveData, "useLiveJSON");
+    try {
+      for (const contentType of ["image/png", "image/tiff", "text/html", "image/svg+xml"]) {
+        query.mockReturnValue({ data: { id: "f1", name: "Example", content_type: contentType, metadata: {}, variants: { thumb_1568: "/preview" } }, error: undefined, loading: false, reload: vi.fn() });
+        const html = renderToStaticMarkup(createElement(FileViewer, { fileId: "f1", separateTab: true }));
+        expect(html).toContain('href="/files/f1"');
+        expect(html).toContain('download="Example"');
+        expect(html.includes('<img')).toBe(contentType === "image/png" || contentType === "image/tiff");
+        expect(html).not.toMatch(/<(iframe|object|embed)/);
+      }
+      query.mockReturnValue({ data: undefined, error: new Error("file_not_found"), loading: false, reload: vi.fn() });
+      const inaccessible = renderToStaticMarkup(createElement(FileViewer, { fileId: "f1" }));
+      expect(inaccessible).toContain('role="alert"');
+      expect(inaccessible).not.toContain('<img');
+      expect(inaccessible).not.toContain('download=');
+    } finally { query.mockRestore(); }
+  });
+
   it("invalidates shared projections only after successful write responses", async () => {
     const browser = new EventTarget();
     const changed = vi.fn();
@@ -238,14 +262,32 @@ describe("dashboard navigation", () => {
     expect(artifactViewerId("/artifacts/id/content")).toBeUndefined();
   });
 
+  it("resolves canonical detail URLs and preserves capability gates", () => {
+    for (const [path, result] of [["/projects/p1", { page: "project", projectId: "p1" }], ["/meetings/m1", { page: "meeting", meetingId: "m1" }], ["/files/f1", { page: "file", fileId: "f1" }]] as const) {
+      expect(resolveDashboardRoute(path, { admin: false, sessions: true, sync: true })).toEqual(result);
+      expect(resolveDashboardRoute(path, { admin: false, sessions: true, sync: false })).toEqual({ redirect: "/dashboard" });
+      expect(dashboardNavigationPath(path, "https://dahlia.example/vaults/v1")).toBe(path);
+    }
+  });
+
+  it("renders localized collection rows without internal metadata", () => {
+    const meeting = { meetingId: "m1", name: "Planning", createdAt: "2026-09-07T00:00:00Z", status: "TRANSCRIPT_NOT_FOUND" } as SyncedMeetingInfo;
+    const html = renderToStaticMarkup(createElement(MeetingList, { meetings: [meeting], loading: false }));
+    expect(html).toContain('href="/meetings/m1"');
+    expect(html).toContain("Planning");
+    expect(html).not.toContain("TRANSCRIPT_NOT_FOUND");
+    vi.stubGlobal("navigator", { language: "ja-JP" });
+    expect(renderToStaticMarkup(createElement(MeetingList, { meetings: [], loading: false }))).toContain("ミーティングがありません");
+  });
+
   it("gates synchronized Vault routes with the sync capability", () => {
     const enabled = { admin: false, sessions: false, sync: true };
     expect(resolveDashboardRoute("/vaults", enabled)).toEqual({ page: "vaults" });
     expect(resolveDashboardRoute("/vaults/v1", enabled)).toEqual({ page: "vault", vaultId: "v1" });
     expect(resolveDashboardRoute("/vaults/v1/projects/p1", enabled))
-      .toEqual({ page: "project", vaultId: "v1", projectId: "p1" });
+      .toEqual({ redirect: "/projects/p1" });
     expect(resolveDashboardRoute("/vaults/v1/meetings/m1", enabled))
-      .toEqual({ page: "meeting", vaultId: "v1", meetingId: "m1" });
+      .toEqual({ redirect: "/meetings/m1" });
     expect(resolveDashboardRoute("/vaults", { admin: false, sessions: false, sync: false }))
       .toEqual({ redirect: "/dashboard" });
   });

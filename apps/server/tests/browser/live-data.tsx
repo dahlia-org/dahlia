@@ -9,7 +9,7 @@ Object.defineProperty(navigator, "language", { value: "en-US", configurable: tru
 sessionStorage.removeItem("dahlia:sidebar:browser-fixture:organization");
 
 const base = "/api/v1/vaults/v1";
-const route = "/vaults/v1/meetings/m1";
+const route = "/meetings/m1";
 const sources: EventTarget[] = [];
 const requests: string[] = [];
 const requestURLs: string[] = [];
@@ -22,10 +22,10 @@ let fileCount = 3;
 let sharingEnabled = false;
 let meetingName = "Recording meeting";
 const vault = { vaultId: "v1", name: "Test Vault", role: "owner", revision: 1, createdAt: "2026-09-07T00:00:00Z" };
-const projects = Array.from({ length: 40 }, (_, index) => ({ projectId: `p${index}`, name: `Project ${index}`, path: `Project ${index}`, revision: 1, directMeetingCount: 0, subtreeMeetingCount: 0 }));
+const projects = Array.from({ length: 40 }, (_, index) => ({ projectId: `p${index}`, vaultId: "v1", name: `Project ${index}`, path: `Project ${index}`, revision: 1, directMeetingCount: 0, subtreeMeetingCount: 0 }));
 const meeting = (id: string) => ({ meetingId: id, vaultId: "v1", projectId: "p0", name: id === "m1" ? meetingName : "Other meeting", description: "", status: "recording", revision: 1, summaryRevision: 1, createdAt: vault.createdAt, summaryDocument: JSON.stringify({ sections: [{ heading: summary, blocks: [] }] }) });
 const image = "data:image/svg+xml," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400"><rect width="600" height="400" fill="#aaa"/></svg>');
-const file = (index: number) => ({ id: `f${index}`, capturedAt: vault.createdAt, file: { id: `f${index}`, content_type: "image/png", variants: { thumb_480: image }, metadata: { source: "screenshot", caption: index === 0 ? caption : `Screenshot ${index}` } } });
+const file = (index: number) => ({ id: `f${index}`, capturedAt: vault.createdAt, file: { id: `f${index}`, vaultId: "v1", name: `Screenshot ${index}.png`, content_type: "image/png", variants: { thumb_480: image, thumb_1568: image }, metadata: { source: "screenshot", caption: index === 0 ? caption : `Screenshot ${index}` } } });
 window.prompt = () => answers.shift() ?? null;
 window.confirm = () => true;
 window.EventSource = class extends EventTarget {
@@ -48,6 +48,12 @@ window.fetch = (input, init) => Promise.resolve((() => {
     return new Response(null, { status: 204 });
   }
   if (url.pathname === base) return Response.json(vault);
+  if (url.pathname.startsWith("/api/v1/projects/")) {
+    const project = projects.find((p) => p.projectId === url.pathname.split("/").at(-1));
+    return project ? Response.json(project) : Response.json({ error: "project_not_found" }, { status: 404 });
+  }
+  if (url.pathname.startsWith("/api/v1/meetings/")) return Response.json(meeting(url.pathname.split("/").at(-1)!));
+  if (url.pathname.startsWith("/api/v1/files/")) return Response.json(file(Number(url.pathname.split("/").at(-1)!.slice(1))).file);
   if (url.pathname === `${base}/projects`) return Response.json({ items: projects });
   if (url.pathname.startsWith(`${base}/projects/`)) return Response.json(projects.find((p) => p.projectId === url.pathname.split("/").at(-1)));
   if (url.pathname === `${base}/meetings`) return Response.json({ items: (url.searchParams.get("projectId") === "p0" && projects.some((project) => project.projectId === "p0")) || (!url.searchParams.has("projectId") && !url.searchParams.has("projectScope")) ? [meeting("m1"), meeting("m2")] : [] });
@@ -88,9 +94,9 @@ function notify(type = "invalidation") { for (const source of sources) source.di
 function selectedTab() { return document.querySelector('[role="tab"][aria-selected="true"]')?.textContent; }
 
 async function run() {
-  history.replaceState(null, "", route);
+  history.replaceState(null, "", "/vaults/v1/meetings/m1");
   createRoot(document.getElementById("root")!).render(<StrictMode><App /></StrictMode>);
-  await until(() => document.querySelector('[role="tab"]') && document.querySelector('.meeting-row a[href="/vaults/v1/meetings/m2"]') && ![...document.querySelectorAll(".sidebar-status")].some((node) => node.textContent?.includes("Loading")));
+  await until(() => document.querySelector('[role="tab"]') && document.querySelector('.meeting-row a[href="/meetings/m2"]') && ![...document.querySelectorAll(".sidebar-status")].some((node) => node.textContent?.includes("Loading")));
   await document.fonts.ready;
   button("Screenshots").click();
   await until(() => document.querySelectorAll(".screenshot-grid figure").length === 3);
@@ -112,6 +118,27 @@ async function run() {
   assert(sidebar.scrollTop === sidebarScroll, `Sidebar scrolled from ${sidebarScroll} to ${sidebar.scrollTop}`);
   assert(documentNode === document.documentElement && main === document.querySelector(".workspace"), "Document/main replaced");
   assert(requests.filter((url) => url === "/api/session").length === sessionReads, "Sync notification refreshed session");
+  assert(location.pathname === route, "Legacy URL did not resolve to canonical meeting URL");
+  const fileLink = document.querySelector<HTMLAnchorElement>('a[href="/files/f0"]')!;
+  fileLink.click();
+  await until(() => document.querySelector<HTMLDialogElement>("dialog")?.matches(":modal") && document.querySelector<HTMLImageElement>(".file-preview-image")?.complete);
+  const dialog = document.querySelector<HTMLDialogElement>("dialog")!;
+  const preview = dialog.querySelector("img");
+  assert(location.pathname === route, "Opening modal changed the page URL");
+  caption = "Modal updated caption";
+  notify();
+  await until(() => preview?.getAttribute("alt") === caption);
+  assert(preview === dialog.querySelector("img") && dialog.matches(":modal"), "Live refresh replaced or closed modal");
+  failures.set("/api/v1/files/f0", 404); notify();
+  await until(() => dialog.querySelector('[role="alert"]') && !dialog.querySelector("img"));
+  assert(dialog.matches(":modal") && selectedTab() === "Screenshots", "File failure changed its background page");
+  failures.clear();
+  dialog.querySelector<HTMLButtonElement>('[role="alert"] button')!.click();
+  await until(() => dialog.querySelector<HTMLImageElement>("img")?.complete);
+  dialog.querySelector<HTMLButtonElement>(".file-close")!.click();
+  await until(() => !document.querySelector("dialog"));
+  assert(document.activeElement === fileLink, "Closing modal did not restore focus");
+  assert(document.body.style.overflow !== "hidden", "Closing modal left scrolling locked");
   const figure = document.querySelector(".screenshot-grid figure")!;
   const neighboringImage = document.querySelectorAll(".screenshot-grid img")[1];
   for (const retry of [() => button("Retry").click(), () => notify("open"), () => notify(), () => window.dispatchEvent(new Event("online"))]) {
@@ -200,7 +227,7 @@ async function run() {
   };
   notify();
   await until(() => heldSignals.length >= 2);
-  document.querySelector<HTMLAnchorElement>('a[href="/vaults/v1/meetings/m2"]')!.click();
+  document.querySelector<HTMLAnchorElement>('a[href="/meetings/m2"]')!.click();
   await until(() => document.querySelector(".meeting-header h1")?.textContent === "Other meeting");
   assert(selectedTab() === "Summary", "Different meeting did not reset tab");
   assert(heldSignals.every((signal) => signal.aborted), "Obsolete detail/sidebar reads were not aborted");
@@ -214,6 +241,7 @@ async function run() {
   await until(() => document.querySelector(".meeting-header h1")?.textContent === "Other meeting");
   document.querySelector<HTMLAnchorElement>('a[href="/vaults/v1"]')!.click();
   await until(() => document.querySelector('input[aria-label="Search meetings"]'));
+  button("Settings").click();
   await until(() => document.querySelector<HTMLInputElement>(".share-row input"));
   const shareCheckbox = document.querySelector<HTMLInputElement>(".share-row input")!;
   assert(!shareCheckbox.checked, "Sharing fixture started enabled");
@@ -223,6 +251,8 @@ async function run() {
   assert(shareCheckbox === document.querySelector(".share-row input"), "Sharing update replaced checkbox");
   shareCheckbox.click();
   await until(() => !shareCheckbox.checked && !sharingEnabled);
+  button("Meetings").click();
+  await until(() => document.querySelector('input[aria-label="Search meetings"]'));
   const search = document.querySelector<HTMLInputElement>('input[aria-label="Search meetings"]')!;
   Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(search, "recording");
   search.dispatchEvent(new Event("input", { bubbles: true }));
@@ -241,11 +271,13 @@ async function run() {
   assert(filter.value === "p0", "Refresh reset valid Project filter");
   const removedProjects = projects.splice(0);
   notify();
-  await until(() => !document.querySelector('[aria-label="Filter by Project"]') && document.querySelector('.workspace a[href="/vaults/v1/meetings/m1"]'));
+  await until(() => !document.querySelector('[aria-label="Filter by Project"]') && document.querySelector('.workspace a[href="/meetings/m1"]'));
   assert(search.value === "recording", "Deleted Project reset search text");
   projects.push(...removedProjects); notify();
   await until(() => document.querySelector('[aria-label="Filter by Project"]'));
   assert(document.querySelector("select")!.value === "", "Deleted Project filter was restored");
+  button("Projects").click();
+  await until(() => [...document.querySelectorAll("button")].some((b) => b.textContent === "New Project"));
   answers.push("New project"); button("New Project").click();
   await until(() => document.querySelector("h1")?.textContent === "New project");
   failures.set("/api/v1/transactions", 409);
@@ -261,9 +293,12 @@ async function run() {
   button("Test Organization").click();
   await until(() => location.pathname === "/vaults" && requests.some((url) => url === "/api/v1/vaults"));
   assert(documentNode === document.documentElement, "Organization switch reloaded document");
-  document.querySelector<HTMLAnchorElement>('a[href="/vaults/v1/meetings/m1"]')?.click();
+  document.querySelector<HTMLAnchorElement>('a[href="/meetings/m1"]')?.click();
   // Use the existing internal navigation helper when the newly scoped tree is still loading.
   const { navigateDashboard } = await import("../../src/client/navigation");
+  navigateDashboard("/files/f0");
+  await until(() => document.querySelector<HTMLImageElement>(".file-preview-image")?.complete);
+  assert(!document.querySelector("dialog"), "Standalone file URL opened a modal");
   navigateDashboard(route);
   await until(() => document.querySelector('[role="tab"]'));
   failures.set(`${base}/meetings/m1`, 403); notify();
@@ -276,7 +311,7 @@ async function run() {
   await until(() => !document.querySelector('[role="tab"]'));
   assert(document.querySelector('[role="alert"]')?.textContent?.includes("fixture_404"), "Deleted meeting remained visible");
   document.body.dataset.testResult = "passed";
-  console.log("PASS: live data, DOM identity, scroll, paging, retries, edits, history, create/delete, organization, access revocation");
+  console.log("PASS: live data, DOM identity, scroll, paging, retries, edits, canonical URLs, modal, standalone file, history, create/delete, organization, access revocation");
 }
 void run().catch((error: unknown) => {
   document.body.dataset.testResult = "failed";

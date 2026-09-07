@@ -1782,6 +1782,15 @@ function createIdentityStore(
     async listProjects(vaultId) {
       return projectViews(vaultId);
     },
+    async resolveEntityVault(entity, id) {
+      const table = entity === "meeting" ? schema.syncedMeeting : schema.syncedProject;
+      const key = entity === "meeting" ? schema.syncedMeeting.meetingId : schema.syncedProject.projectId;
+      const [row] = await db.select({ vaultId: table.vaultId }).from(table)
+        .innerJoin(schema.syncedVault, eq(schema.syncedVault.vaultId, table.vaultId))
+        .where(and(eq(key, id), readable(table.vaultId), isNull(schema.syncedVault.deletingAt),
+          ...(entity === "meeting" ? [eq(schema.syncedMeeting.active, true), isNull(schema.syncedMeeting.deletingAt)] : []))).limit(1);
+      return row?.vaultId ?? null;
+    },
     async getProject(vaultId, projectId) {
       return (await projectViews(vaultId)).find((project) => project.projectId === projectId) ?? null;
     },

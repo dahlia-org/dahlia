@@ -12,7 +12,8 @@ import { dashboardNavigationPath, navigateDashboard } from "./navigation";
 import { summaryDisplayText } from "../search/summary";
 import type { ScreenshotVariant } from "../sync/screenshot-variants";
 import { clientMutationEvent, json, RequestError, syncMessage, uiText, type SyncedVaultInfo, type OrganizationInfo, type SyncedMeetingInfo, type SyncedProjectInfo } from "./api";
-import { MeetingTabs, parseSummary, SummaryContent, SummaryTags, TranscriptTime } from "./MeetingContent";
+import { DetailTabs, MeetingTabs, parseSummary, SummaryContent, SummaryTags, TranscriptTime } from "./MeetingContent";
+import { FileLink, FileViewer } from "./FileViewer";
 import { MenuIcon, Sidebar, SidebarProvider, useSidebar } from "./Sidebar";
 
 export interface SessionInfo {
@@ -316,6 +317,7 @@ function Shell({
   session,
   path,
   navigate,
+  routeVaultId,
 }: {
   brand: DashboardBrand;
   children: ReactNode;
@@ -323,6 +325,7 @@ function Shell({
   session: SessionInfo;
   path: string;
   navigate: (path: string) => void;
+  routeVaultId?: string;
 }) {
   const main = useRef<HTMLElement>(null);
   useEffect(() => {
@@ -342,7 +345,7 @@ function Shell({
   return (
     <SidebarProvider key={session.user.id} session={session}>
       <div className="app-shell" onClick={followLink}>
-        <Sidebar brand={<Brand brand={brand} />} session={session}>
+        <Sidebar brand={<Brand brand={brand} />} session={session} routeVaultId={routeVaultId}>
           <nav aria-label="Account navigation">
             {extensions.flatMap((extension) => extension.navigation ?? []).map((item) => (
               (!item.capability || session.capabilities[item.capability])
@@ -438,7 +441,7 @@ function Vaults() {
   const [recovering, setRecovering] = useState(false);
 
   const createVault = async () => {
-    const name = window.prompt("Vault name")?.trim();
+    const name = window.prompt(uiText("Vault name", "保管庫名"))?.trim();
     if (!name) return;
     const id = uuidV7();
     setError(undefined);
@@ -509,7 +512,7 @@ function VaultSharing({ session, vault }: { session: SessionInfo; vault: SyncedV
         method: enabled ? "PUT" : "DELETE",
       });
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not update sharing");
+      setError(caught instanceof Error ? caught.message : uiText("Could not update sharing", "共有設定を更新できませんでした"));
     }
   }
 
@@ -519,33 +522,33 @@ function VaultSharing({ session, vault }: { session: SessionInfo; vault: SyncedV
       && permission.principalId === principalId) === true;
   const permissionLabel = (permission: VaultPermissionInfo) => {
     if (permission.principalType === "organization") {
-      return organizations.find(({ id }) => id === permission.principalId)?.name ?? "Organization";
+      return organizations.find(({ id }) => id === permission.principalId)?.name ?? uiText("Organization", "組織");
     }
     if (permission.principalType === "team") {
-      return teams.find(({ id }) => id === permission.principalId)?.name ?? "Team";
+      return teams.find(({ id }) => id === permission.principalId)?.name ?? uiText("Team", "チーム");
     }
-    return "Shared directly with you";
+    return uiText("Shared directly with you", "あなたに直接共有");
   };
   return (
     <section className="section-block">
-      <h2 className="section-label">Sharing</h2>
+      <h2 className="section-label">{uiText("Sharing", "共有")}</h2>
       <div className="panel share-list">
-        {!permissions && !error && !sharingQuery.error && <p className="muted">Loading sharing settings…</p>}
+        {!permissions && !error && !sharingQuery.error && <p className="muted">{uiText("Loading sharing settings…", "共有設定を読み込み中…")}</p>}
         {vault.role === "member" && permissions && (
           <>
-            <p className="muted">This Vault was shared with you. Only its owner can change access.</p>
+            <p className="muted">{uiText("This Vault was shared with you. Only its owner can change access.", "共有された保管庫です。アクセス権は所有者のみ変更できます。")}</p>
             {permissions.map((permission) => (
               <div className="share-row" key={`${permission.principalType}-${permission.principalId}`}>
                 <span>
                   <strong>{permissionLabel(permission)}</strong>
-                  <small>Read-only access</small>
+                  <small>{uiText("Read-only access", "閲覧のみ")}</small>
                 </span>
               </div>
             ))}
           </>
         )}
         {vault.role === "owner" && organizations.length === 0 && permissions && (
-          <div className="empty-state"><strong>No organizations</strong><span>Create one from Organizations first.</span></div>
+          <div className="empty-state"><strong>{uiText("No organizations", "組織がありません")}</strong><span>{uiText("Create one from Organizations first.", "アカウントメニューから組織を作成してください。")}</span></div>
         )}
         {vault.role === "owner" && organizations.map((organization) => (
           <label className="share-row" key={organization.id}>
@@ -559,7 +562,7 @@ function VaultSharing({ session, vault }: { session: SessionInfo; vault: SyncedV
         ))}
         {vault.role === "owner" && teams.map((team) => (
           <label className="share-row" key={team.id}>
-            <span><strong>{team.name}</strong><small>Team · read-only access</small></span>
+            <span><strong>{team.name}</strong><small>{uiText("Team · read-only access", "チーム・閲覧のみ")}</small></span>
             <input
               type="checkbox"
               checked={shared("team", team.id)}
@@ -572,6 +575,22 @@ function VaultSharing({ session, vault }: { session: SessionInfo; vault: SyncedV
       {error && <p className="error artifact-error">{error}</p>}
     </section>
   );
+}
+
+function meetingCount(count: number) { return uiText(`${count} meeting${count === 1 ? "" : "s"}`, `${count}件のミーティング`); }
+
+export function MeetingList({ meetings, loading }: { meetings?: SyncedMeetingInfo[]; loading: boolean }) {
+  return <div className="collection-list">
+    {!meetings && loading && <p className="content-empty">{uiText("Loading meetings…", "ミーティングを読み込み中…")}</p>}
+    {meetings?.length === 0 && <p className="content-empty">{uiText("No meetings found", "ミーティングがありません")}</p>}
+    {meetings?.map((meeting) => {
+      const date = meeting.recordingStartedAt ?? meeting.createdAt;
+      return <a className="collection-row" href={`/meetings/${meeting.meetingId}`} key={meeting.meetingId}>
+        <strong>{meeting.name || uiText("Untitled meeting", "無題のミーティング")}</strong>
+        <time dateTime={date}>{new Date(date).toLocaleString(undefined, { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</time>
+      </a>;
+    })}
+  </div>;
 }
 
 function VaultMeetings({ session, vaultId }: { session: SessionInfo; vaultId: string }) {
@@ -600,7 +619,7 @@ function VaultMeetings({ session, vaultId }: { session: SessionInfo; vaultId: st
   const loadingMore = meetingsQuery.loadingMore;
   const renameVault = async () => {
     if (!vault) return;
-    const name = window.prompt("Vault name", vault.name)?.trim();
+    const name = window.prompt(uiText("Vault name", "保管庫名"), vault.name)?.trim();
     if (!name || name === vault.name) return;
     setError(undefined);
     try {
@@ -609,11 +628,11 @@ function VaultMeetings({ session, vaultId }: { session: SessionInfo; vaultId: st
         baseRevision: vault.revision, data: { name },
       }], setRecovering);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not rename Vault");
+      setError(caught instanceof Error ? caught.message : uiText("Could not rename Vault", "保管庫名を変更できませんでした"));
     }
   };
   const createProject = async () => {
-    const name = window.prompt("Project name")?.trim();
+    const name = window.prompt(uiText("Project name", "プロジェクト名"))?.trim();
     if (!name) return;
     const id = uuidV7();
     setError(undefined);
@@ -628,75 +647,49 @@ function VaultMeetings({ session, vaultId }: { session: SessionInfo; vaultId: st
           createdAt: new Date().toISOString(),
         },
       }], setRecovering);
-      navigateDashboard(`/vaults/${vaultId}/projects/${id}`);
+      navigateDashboard(`/projects/${id}`);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not create Project");
+      setError(caught instanceof Error ? caught.message : uiText("Could not create Project", "プロジェクトを作成できませんでした"));
     }
   };
-  return (
-    <>
-      <PageHeader title={vault?.name ?? "Vault"} />
-      {recovering && <p role="status">{syncMessage("sync_recovering")}</p>}
-      <DataError error={vaultQuery.error} retry={vaultQuery.reload} />
-      <DataError error={meetingsQuery.error} retry={meetingsQuery.reload} />
-      <DataError error={projectsQuery.error} retry={projectsQuery.reload} />
-      <section className="section-block">
-        <a className="secondary viewer-back" href="/vaults">All Vaults</a>
-        {vault?.role === "owner" && <>
-          <button className="secondary" onClick={() => void renameVault()}>Rename Vault</button>
-          <button className="secondary" onClick={() => void createProject()}>New Project</button>
-        </>}
-        {projects.length > 0 && (
-          <select aria-label="Filter by Project" value={projectId} onChange={(event) => setProjectId(event.target.value)}>
-            <option value="">All Projects</option>
+  return <article className="meeting-detail collection-detail">
+    <header className="meeting-header">
+      <nav className="detail-breadcrumbs" aria-label={uiText("Breadcrumbs", "パンくず")}><a href="/vaults">{uiText("All Vaults", "保管庫一覧")}</a></nav>
+      <h1><MenuIcon name="vault" />{vault?.name ?? uiText("Vault", "保管庫")}</h1>
+      {vault && <div className="meeting-metadata"><span className="metadata-chip">{vault.role === "owner" ? uiText("Owner", "所有者") : uiText("Read-only", "閲覧のみ")}</span></div>}
+    </header>
+    {recovering && <p role="status">{syncMessage("sync_recovering")}</p>}
+    <DataError error={vaultQuery.error} retry={vaultQuery.reload} />
+    {error && <p className="error" role="alert">{error}</p>}
+    <DetailTabs label={uiText("Vault content", "保管庫の内容")} tabs={[
+      { id: "meetings", label: uiText("Meetings", "ミーティング"), content: <>
+        <div className="collection-filters">
+          <input type="search" className="model-search" aria-label={uiText("Search meetings", "ミーティングを検索")} placeholder={uiText("Search meetings", "ミーティングを検索")} value={query} onChange={(event) => setQuery(event.target.value)} />
+          {projects.length > 0 && <select aria-label={uiText("Filter by Project", "プロジェクトで絞り込み")} value={projectId} onChange={(event) => setProjectId(event.target.value)}>
+            <option value="">{uiText("All Projects", "すべてのプロジェクト")}</option>
             {projects.map((project) => <option key={project.projectId} value={project.projectId}>{project.path}</option>)}
-          </select>
-        )}
-        <input
-          className="model-search"
-          aria-label="Search meetings"
-          placeholder="Search meetings"
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-        />
-        <div className="panel artifact-list">
-          {!meetings && !error && <p className="muted">Loading meetings…</p>}
-          {meetings?.length === 0 && <div className="empty-state"><strong>No meetings found</strong></div>}
-          {meetings?.map((meeting) => (
-            <a
-              className="artifact-row"
-              href={`/vaults/${vaultId}/meetings/${meeting.meetingId}`}
-              key={meeting.meetingId}
-            >
-              <span className="artifact-copy">
-                <strong>{meeting.name}</strong>
-                <span>{new Date(meeting.createdAt).toLocaleString()} · {meeting.status}</span>
-              </span>
-            </a>
-          ))}
+          </select>}
         </div>
-        {error && <p className="error artifact-error">{error}</p>}
-        {nextCursor && (
-          <button className="secondary load-more" disabled={loadingMore} onClick={meetingsQuery.loadMore}>
-            {loadingMore ? "Loading…" : "Load more"}
-          </button>
-        )}
-      </section>
-      {projects.length > 0 && (
-        <section className="section-block">
-          <h2 className="section-label">Projects</h2>
-          <div className="panel artifact-list">
-            {projects.map((project) => (
-              <a className="artifact-row" href={`/vaults/${vaultId}/projects/${project.projectId}`} key={project.projectId}>
-                <span className="artifact-copy"><strong>{project.path}</strong><span>{project.subtreeMeetingCount} meetings</span></span>
-              </a>
-            ))}
-          </div>
-        </section>
-      )}
-      {session.capabilities.sharing && vault && <VaultSharing session={session} vault={vault} />}
-    </>
-  );
+        <DataError error={projectsQuery.error} retry={projectsQuery.reload} />
+        <DataError error={meetingsQuery.error} retry={meetingsQuery.reload} />
+        <MeetingList meetings={meetings} loading={meetingsQuery.loading} />
+        {nextCursor && <button className="secondary load-more" disabled={loadingMore} onClick={meetingsQuery.loadMore}>{loadingMore ? uiText("Loading…", "読み込み中…") : uiText("Load more", "さらに表示")}</button>}
+      </> },
+      { id: "projects", label: uiText("Projects", "プロジェクト"), content: <>
+        <div className="collection-heading"><h2>{uiText("Projects", "プロジェクト")}</h2>{vault?.role === "owner" && <button className="secondary" onClick={() => void createProject()}>{uiText("New Project", "プロジェクトを作成")}</button>}</div>
+        <DataError error={projectsQuery.error} retry={projectsQuery.reload} />
+        {projectsQuery.loading && !projectsQuery.data && <p className="content-empty">{uiText("Loading…", "読み込み中…")}</p>}
+        {projectsQuery.data && projects.length === 0 && <p className="content-empty">{uiText("No projects yet", "プロジェクトはまだありません")}</p>}
+        <div className="collection-list">{projects.map((project) => <a className="collection-row" href={`/projects/${project.projectId}`} key={project.projectId}>
+          <span><strong>{project.path}</strong>{project.description && <small>{project.description}</small>}</span><span className="muted">{meetingCount(project.subtreeMeetingCount)}</span>
+        </a>)}</div>
+      </> },
+      { id: "settings", label: uiText("Settings", "設定"), content: <>
+        <section className="vault-settings"><h2>{uiText("Vault details", "保管庫の詳細")}</h2><div className="collection-heading"><span>{vault?.name}</span>{vault?.role === "owner" && <button className="secondary" onClick={() => void renameVault()}>{uiText("Rename Vault", "保管庫名を変更")}</button>}</div></section>
+        {session.capabilities.sharing && vault && <VaultSharing session={session} vault={vault} />}
+      </> },
+    ]} />
+  </article>;
 }
 
 function SyncedProject({ vaultId, projectId }: { vaultId: string; projectId: string }) {
@@ -706,6 +699,7 @@ function SyncedProject({ vaultId, projectId }: { vaultId: string; projectId: str
   const [recovering, setRecovering] = useState(false);
   const projectQuery = useLiveJSON<SyncedProjectInfo>(`/api/v1/vaults/${vaultId}/projects/${projectId}`);
   const project = vault ? projectQuery.data : undefined;
+  const parentQuery = useLiveJSON<SyncedProjectInfo>(project?.parentProjectId ? `/api/v1/projects/${project.parentProjectId}` : undefined);
   const params = new URLSearchParams({ projectId });
   const meetingsQuery = useLivePage<SyncedMeetingInfo>(`/api/v1/vaults/${vaultId}/meetings?${params}`);
   const meetings = project ? meetingsQuery.data?.items : undefined;
@@ -713,9 +707,9 @@ function SyncedProject({ vaultId, projectId }: { vaultId: string; projectId: str
   const loadingMore = meetingsQuery.loadingMore;
   const editProject = async () => {
     if (!project) return;
-    const name = window.prompt("Project name", project.name)?.trim();
+    const name = window.prompt(uiText("Project name", "プロジェクト名"), project.name)?.trim();
     if (!name) return;
-    const description = window.prompt("Project description", project.description) ?? project.description;
+    const description = window.prompt(uiText("Project description", "プロジェクトの説明"), project.description) ?? project.description;
     setError(undefined);
     try {
       await commitSyncTransaction(vaultId, [{
@@ -728,11 +722,11 @@ function SyncedProject({ vaultId, projectId }: { vaultId: string; projectId: str
         },
       }], setRecovering);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not update Project");
+      setError(caught instanceof Error ? caught.message : uiText("Could not update Project", "プロジェクトを更新できませんでした"));
     }
   };
   const deleteProject = async () => {
-    if (!project || !window.confirm(`Delete empty Project ${project.path}?`)) return;
+    if (!project || !window.confirm(uiText(`Delete empty Project ${project.path}?`, `空のプロジェクト「${project.path}」を削除しますか？`))) return;
     setError(undefined);
     try {
       await commitSyncTransaction(vaultId, [{
@@ -741,37 +735,36 @@ function SyncedProject({ vaultId, projectId }: { vaultId: string; projectId: str
       }], setRecovering);
       navigateDashboard(`/vaults/${vaultId}`);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not delete Project");
+      setError(caught instanceof Error ? caught.message : uiText("Could not delete Project", "プロジェクトを削除できませんでした"));
     }
   };
-  return <>
-    <PageHeader title={project?.path ?? "Project"} />
-      {recovering && <p role="status">{syncMessage("sync_recovering")}</p>}
-      <DataError error={vaultQuery.error} retry={vaultQuery.reload} />
-      <DataError error={meetingsQuery.error} retry={meetingsQuery.reload} />
-      <DataError error={projectQuery.error} retry={projectQuery.reload} />
-    <a className="secondary viewer-back" href={`/vaults/${vaultId}`}>Back to Vault</a>
-    {project && vault?.role === "owner" && <>
-      <button className="secondary" onClick={() => void editProject()}>Edit Project</button>
-      <button className="secondary" onClick={() => void deleteProject()}>Delete Project</button>
-    </>}
-    {error && <p className="error">{error}</p>}
-    {project && <section className="section-block"><div className="panel meeting-content">
-      {project.description && <p>{project.description}</p>}
-      <p className="muted">{project.effectiveType} · revision {project.revision} · {project.subtreeMeetingCount} meetings</p>
-    </div></section>}
-    <section className="section-block"><h2 className="section-label">Meetings</h2><div className="panel artifact-list">
-      {meetings?.length === 0 && <div className="empty-state"><strong>No meetings</strong></div>}
-      {meetings?.map((meeting) => <a className="artifact-row" href={`/vaults/${vaultId}/meetings/${meeting.meetingId}`} key={meeting.meetingId}>
-        <span className="artifact-copy"><strong>{meeting.name}</strong><span>{new Date(meeting.createdAt).toLocaleString()}</span></span>
-      </a>)}
-    </div></section>
-    {nextCursor && (
-      <button className="secondary load-more" disabled={loadingMore} onClick={meetingsQuery.loadMore}>
-        {loadingMore ? "Loading…" : "Load more"}
-      </button>
-    )}
-  </>;
+  return <article className="meeting-detail collection-detail">
+    <header className="meeting-header">
+      <nav className="detail-breadcrumbs" aria-label={uiText("Breadcrumbs", "パンくず")}>
+        <a href={`/vaults/${vaultId}`}>{vault?.name ?? uiText("Vault", "保管庫")}</a>
+        {project?.parentProjectId && <><span aria-hidden="true">/</span><a href={`/projects/${project.parentProjectId}`}>{parentQuery.data?.name ?? uiText("Parent Project", "親プロジェクト")}</a></>}
+      </nav>
+      <h1><MenuIcon name="folder" />{project?.name ?? uiText("Project", "プロジェクト")}</h1>
+      {project?.description && <p className="project-description">{project.description}</p>}
+      {project && <div className="meeting-metadata"><span className="metadata-chip">{meetingCount(project.subtreeMeetingCount)}</span></div>}
+    </header>
+    {recovering && <p role="status">{syncMessage("sync_recovering")}</p>}
+    <DataError error={vaultQuery.error} retry={vaultQuery.reload} />
+    <DataError error={projectQuery.error} retry={projectQuery.reload} />
+    {error && <p className="error" role="alert">{error}</p>}
+    <div className="meeting-toolbar collection-heading"><h2>{uiText("Meetings", "ミーティング")}</h2>
+      {project && vault?.role === "owner" && <div className="meeting-actions">
+        <button className="action-trigger" popoverTarget="project-actions">{uiText("⋯ Actions", "⋯ 操作")}</button>
+        <div id="project-actions" popover="auto" className="action-menu">
+          <button onClick={() => void editProject()}>{uiText("Edit Project", "プロジェクトを編集")}</button>
+          <button className="danger-button" onClick={() => void deleteProject()}>{uiText("Delete Project", "プロジェクトを削除")}</button>
+        </div>
+      </div>}
+    </div>
+    <DataError error={meetingsQuery.error} retry={meetingsQuery.reload} />
+    <MeetingList meetings={meetings} loading={meetingsQuery.loading} />
+    {nextCursor && <button className="secondary load-more" disabled={loadingMore} onClick={meetingsQuery.loadMore}>{loadingMore ? uiText("Loading…", "読み込み中…") : uiText("Load more", "さらに表示")}</button>}
+  </article>;
 }
 
 function SyncedMeeting({ vaultId, meetingId }: { vaultId: string; meetingId: string }) {
@@ -852,7 +845,7 @@ function SyncedMeeting({ vaultId, meetingId }: { vaultId: string; meetingId: str
           <span className="metadata-chip"><time dateTime={meeting.recordingStartedAt ?? meeting.createdAt}>
             {new Date(meeting.recordingStartedAt ?? meeting.createdAt).toLocaleString(undefined, { year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" })}
           </time>{meeting.duration != null && <> · {Math.floor(meeting.duration / 60)}:{String(Math.floor(meeting.duration % 60)).padStart(2, "0")}</>}</span>
-          {meeting.projectId ? <a className="metadata-chip" href={`/vaults/${vaultId}/projects/${meeting.projectId}`}>
+          {meeting.projectId ? <a className="metadata-chip" href={`/projects/${meeting.projectId}`}>
             <span aria-hidden="true">▱</span>{project?.path ?? uiText("Project", "プロジェクト")}
           </a> : <span className="metadata-chip">{uiText("Unassigned", "未分類")}</span>}
           <SummaryTags document={document} />
@@ -912,18 +905,18 @@ export function ScreenshotFigure({ file, capturedAt }: { file: SyncedScreenshotI
   }, []);
   const original = `/api/v1/files/${file.id}/content`;
   return <figure className="panel">
-    <a href={file.variants.thumb_1568 ?? original} target="_blank" rel="noreferrer" aria-label={uiText("Open screenshot", "スクリーンショットを開く")}>
+    <FileLink fileId={file.id} label={uiText("Open screenshot", "スクリーンショットを開く")}>
       {failed ? <span role="alert">{uiText("Unable to load screenshot.", "スクリーンショットを読み込めませんでした。")}</span> : <img
         src={file.variants.thumb_480 ?? original}
         alt={file.metadata.caption || uiText("Screenshot", "スクリーンショット")}
         loading="lazy"
         onError={() => setFailed(true)}
       />}
-    </a>
+    </FileLink>
     {failed && <button onClick={() => setFailed(false)}>{uiText("Retry", "再試行")}</button>}
     {capturedAt && <time className="screenshot-time" dateTime={capturedAt}>{new Date(capturedAt).toLocaleTimeString()}</time>}
     {(file.metadata.caption || file.metadata.ocr_text) && <figcaption>{file.metadata.caption || file.metadata.ocr_text}</figcaption>}
-    <a href={original} target="_blank" rel="noreferrer">{uiText("Open original", "原本を開く")}</a>
+    <a href={original} download>{uiText("Download original", "原本をダウンロード")}</a>
   </figure>;
 }
 
@@ -1478,6 +1471,10 @@ export function App({ brand = defaultBrand, extensions = [] }: AppProps) {
     return subscribeLiveUpdates();
   }, [needsSession, unauthorized, userId, syncEnabled]);
 
+  const detailPath = /^\/(meetings|projects|files)\/[^/]+$/.test(path) ? path : undefined;
+  const detailQuery = useLiveJSON<{ vaultId: string }>(session?.capabilities.sync && detailPath ? `/api/v1${detailPath}` : undefined);
+  const detailVaultId = detailQuery.data?.vaultId;
+
   if (path === "/sign-in") return <SignIn brand={brand} />;
   if (path === "/oauth/consent") return <Consent brand={brand} />;
   if (unauthorized) return null;
@@ -1503,14 +1500,19 @@ export function App({ brand = defaultBrand, extensions = [] }: AppProps) {
   else if (route.page === "admin-members") page = <AdminMembers />;
   else if (route.page === "vaults") page = <Vaults />;
   else if (route.page === "vault") page = <VaultMeetings session={session} vaultId={route.vaultId!} />;
-  else if (route.page === "meeting") page = <SyncedMeeting vaultId={route.vaultId!} meetingId={route.meetingId!} />;
-  else if (route.page === "project") page = <SyncedProject vaultId={route.vaultId!} projectId={route.projectId!} />;
+  else if (route.page === "meeting") page = detailVaultId ? <SyncedMeeting vaultId={detailVaultId} meetingId={route.meetingId!} /> : null;
+  else if (route.page === "project") page = detailVaultId ? <SyncedProject vaultId={detailVaultId} projectId={route.projectId!} /> : null;
+  else if (route.page === "file") page = <FileViewer fileId={route.fileId!} />;
   else if (route.page === "organizations") page = <Organizations session={session} />;
   else if (route.page === "invitation") page = <Invitation invitationId={route.invitationId!} />;
   else if (route.page === "settings") page = <Settings />;
   else page = <Overview session={session} />;
-  return <Shell brand={brand} extensions={extensions} session={session} path={path} navigate={navigateDashboard}>
+  return <Shell brand={brand} extensions={extensions} session={session} path={path} navigate={navigateDashboard} routeVaultId={detailVaultId ?? route.vaultId}>
     <DataError error={sessionError ? new Error(sessionError) : undefined} retry={() => setSessionAttempt((attempt) => attempt + 1)} />
+    {detailPath && !detailVaultId && route.page !== "file" && <>
+      <DataError error={detailQuery.error} retry={detailQuery.reload} />
+      {!detailQuery.error && <p className="content-empty">{uiText("Loading…", "読み込み中…")}</p>}
+    </>}
     {page}
   </Shell>;
 }
