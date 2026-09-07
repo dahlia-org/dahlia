@@ -87,7 +87,7 @@
             let provider = ScreenshotContentProvider()
             let staged = try await provider.stage(
                 screenshot,
-                connectionId: #require(vault.accountConnectionId),
+                connectionId: vault.accountConnectionId,
                 dbQueue: database.dbQueue
             )
             let attachment = try SyncScreenshotAttachmentReference(staged)

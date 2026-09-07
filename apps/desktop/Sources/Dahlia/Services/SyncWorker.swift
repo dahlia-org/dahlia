@@ -1303,7 +1303,7 @@ actor SyncWorker {
                 guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
                     throw URLError(.badServerResponse)
                 }
-                await MainActor.run { ServerAccountSettingsModel.shared.refresh(connectionID: connectionId) }
+                _ = await MainActor.run { ServerAccountSettingsModel.shared.refresh(connectionID: connectionId) }
                 var event = ""
                 for try await line in bytes.lines {
                     guard !Task.isCancelled else { return }
@@ -1311,7 +1311,7 @@ actor SyncWorker {
                         event = String(line.dropFirst(6)).trimmingCharacters(in: .whitespaces)
                     } else if line.hasPrefix("data:") {
                         if event == "account_settings" {
-                            await MainActor.run { ServerAccountSettingsModel.shared.refresh(connectionID: connectionId) }
+                            _ = await MainActor.run { ServerAccountSettingsModel.shared.refresh(connectionID: connectionId) }
                         } else {
                             try await pullRemoteChanges()
                         }
