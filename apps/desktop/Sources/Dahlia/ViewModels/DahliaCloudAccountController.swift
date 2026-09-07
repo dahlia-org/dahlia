@@ -1,4 +1,5 @@
 import Foundation
+import GRDB
 import Observation
 
 struct DahliaAccountConnection: Identifiable, Equatable, Sendable {
@@ -48,6 +49,9 @@ final class DahliaCloudAccountController {
     typealias ServiceFactory = @Sendable (UUID, DahliaCloudConfiguration) -> DahliaCloudService
 
     static let shared = DahliaCloudAccountController()
+
+    private(set) var syncStates: [UUID: MeetingSyncState] = [:]
+    @ObservationIgnored private var syncObservation: AnyDatabaseCancellable?
 
     private(set) var connections: [DahliaAccountConnection] = []
     private(set) var errorMessage: String?
@@ -106,7 +110,22 @@ final class DahliaCloudAccountController {
 
     func configure(appDatabase: AppDatabaseManager?) async {
         guard self.appDatabase !== appDatabase else { return }
+        syncObservation?.cancel()
+        syncStates = [:]
         self.appDatabase = appDatabase
+        if let appDatabase {
+            syncObservation = ValueObservation.tracking { db in
+                try MeetingRepository.fetchAccountSyncStates(in: db)
+            }
+            .removeDuplicates()
+            .start(in: appDatabase.dbQueue, onError: { [weak self, weak appDatabase] _ in
+                guard let self, self.appDatabase === appDatabase else { return }
+                self.syncStates = [:]
+            }, onChange: { [weak self, weak appDatabase] states in
+                guard let self, self.appDatabase === appDatabase else { return }
+                self.syncStates = states
+            })
+        }
         repository = appDatabase.map { MeetingRepository(dbQueue: $0.dbQueue) }
         services.removeAll()
         await reload()

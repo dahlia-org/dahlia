@@ -47,7 +47,8 @@ File API の原本・variant は `private, no-cache` とし、クライアント
 
 Local / Server の両アカウントで UI の読み書きは既存 `MeetingRepository` を通す。保持済み本文・要約・文字起こし・OCR は SQLite から読み、
 同期済み revision の観測で開いている会議の projection を更新する。文字起こしは閲覧中の bounded window を再読込し、
-過去を読んでいる位置を末尾へ飛ばさない。ヘッダーでは端末への保存と Server 同期完了、保留・復旧・競合を区別する。
+過去を読んでいる位置を末尾へ飛ばさない。会議タイトル横のアイコンとホバーヘルプで端末への保存と Server 同期完了、保留・復旧・競合を区別する。
+アカウントメニューとフッターのアイコンは接続先に属する保管庫の同期状態を集約し、未完了・復旧・エラーがあれば同期済みより優先して表示する。右上のウィンドウヘッダーには同期状態を表示しない。
 
 画像一覧は metadata だけを保持する。`ScreenshotContentProvider` が 移行待ちの旧 BLOB、共通ファイル、認証済み Server read を解決する。
 delta / snapshot は画像ダウンロードを待たず metadata を適用する。Server Account の画像は未送信分と取得済み分を

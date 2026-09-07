@@ -11,9 +11,6 @@ struct MainWorkspaceHeader: View {
     let onSearch: () -> Void
     let onGoBack: () -> Void
     let onGoForward: () -> Void
-    var syncState: MeetingSyncState?
-    var textContentState: TextContentAvailability.State?
-    var retryTextContent: () -> Void = {}
 
     var body: some View {
         DahliaWindowHeader(
@@ -58,12 +55,6 @@ struct MainWorkspaceHeader: View {
                     .keyboardShortcut("]", modifiers: .command)
                 }
                 Spacer(minLength: 12)
-                if let textContentState {
-                    TextContentStatusView(state: textContentState, retry: retryTextContent)
-                }
-                if let syncState {
-                    MeetingSyncStatusView(state: syncState)
-                }
             }
         }
         .allowsHitTesting(isVisible)
