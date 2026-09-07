@@ -530,9 +530,9 @@ export class MeetingSyncService {
       screenshots: screenshots.slice(0, limit),
       projects: projects.slice(0, limit),
       limited: {
-        meeting: meetings.length >= limit,
-        screenshot: screenshots.length >= limit,
-        project: projects.length >= limit,
+        meeting: meetings.length > limit || meetings.length === 100,
+        screenshot: screenshots.length > limit || screenshots.length === 100,
+        project: projects.length > limit,
       },
     };
   }

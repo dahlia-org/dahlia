@@ -4,6 +4,7 @@ import { recordingCanonical, recordingStorageKey, type RecordingRecord, type Rec
 import {
   and,
   asc,
+  count,
   desc,
   eq,
   exists,
@@ -445,16 +446,14 @@ function createIdentityStore(
       readable(schema.syncedProject.vaultId),
       eq(schema.syncedProject.vaultId, vaultId),
     )).orderBy(asc(schema.syncedProject.parentProjectId), asc(schema.syncedProject.name), asc(schema.syncedProject.projectId));
-    const meetings = await db.select({ projectId: schema.syncedMeeting.projectId })
+    const counts = await db.select({ projectId: schema.syncedMeeting.projectId, meetingCount: count() })
       .from(schema.syncedMeeting).where(and(
         readableMeeting(vaultId),
         eq(schema.syncedMeeting.active, true),
         isNull(schema.syncedMeeting.deletingAt),
-      ));
-    const directCounts = new Map<string, number>();
-    for (const { projectId } of meetings) {
-      if (projectId) directCounts.set(projectId, (directCounts.get(projectId) ?? 0) + 1);
-    }
+        isNotNull(schema.syncedMeeting.projectId),
+      )).groupBy(schema.syncedMeeting.projectId);
+    const directCounts = new Map(counts.map(({ projectId, meetingCount }) => [projectId, meetingCount]));
     const byId = new Map(projects.map((project) => [project.projectId, project]));
     const childrenByParent = new Map<string, typeof projects>();
     for (const project of projects) {

@@ -67,6 +67,10 @@ describe("SQLite canonical sync", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toBe("no-store");
     expect(await response.json()).toMatchObject({ vaultId, meetings: [{ id: meetingId, title: "契約更新", projectId }], projects: [{ id: projectId, date: now.toISOString() }] });
+    expect(await (await send({ vaultId, query: "契約更新", projectId, limit: 1 })).json())
+      .toMatchObject({ limited: { meeting: false, screenshot: false, project: false } });
+    expect(await (await send({ vaultId, kind: "meeting", limit: 100 })).json())
+      .toMatchObject({ limited: { meeting: true } });
     const mcpParams = { name: "search", arguments: { vaultId, query: "契約更新", projectId, from: "2026-09-03T09:00:00+09:00", to: "2026-09-04T00:00:00Z" },
       _meta: { "io.modelcontextprotocol/clientCapabilities": {}, "io.modelcontextprotocol/clientInfo": { name: "Search test", version: "1" }, "io.modelcontextprotocol/protocolVersion": "2026-07-28" } };
     const mcpBody = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: mcpParams });
@@ -93,6 +97,17 @@ describe("SQLite canonical sync", () => {
     ]))));
     expect(await (await send({ vaultId, query: "子孫限定", projectId, kind: "meeting" })).json())
       .toMatchObject({ meetings: [{ id: childMeetingId, projectId: childProjectId }], screenshots: [], projects: [] });
+
+    expect(await (await send({ vaultId, projectId, limit: 1 })).json())
+      .toMatchObject({ limited: { meeting: true, project: true } });
+    const prepare = vi.spyOn(DatabaseSync.prototype, "prepare");
+    try {
+      const projects = await store.sync.withIdentity(owner, (scoped) => scoped.listProjects(vaultId));
+      expect(projects.find((project) => project.projectId === projectId)).toMatchObject({ directMeetingCount: 1, subtreeMeetingCount: 2 });
+      expect(projects.find((project) => project.projectId === childProjectId)).toMatchObject({ directMeetingCount: 1, subtreeMeetingCount: 1 });
+      const countQuery = prepare.mock.calls.map(([query]) => query).find((query) => query.includes('from "meetings"'));
+      expect(countQuery).toMatch(/count\(\*\).*group by .*project_id/s);
+    } finally { prepare.mockRestore(); }
 
     await store.close?.();
   });
@@ -1014,8 +1029,8 @@ describe("SQLite canonical sync", () => {
       expect.objectContaining({ entity: "file", entityId: file.id, revision: 2, record: expect.objectContaining({ metadata: expect.objectContaining({ caption: "Quarterly chart" }) as unknown }) as unknown }),
     ]));
     expect(await service.searchText(owner, vaultId, "QuarterlyRevenue", "screenshot")).toMatchObject({ items: [expect.anything()] });
-    expect(await service.searchAll(owner, { vaultId, query: "QuarterlyRevenue", kind: "screenshot" }))
-      .toMatchObject({ meetings: [], screenshots: [{ meetingId, fileId: file.id, snippet: expect.stringContaining("QuarterlyRevenue") as unknown }] });
+    expect(await service.searchAll(owner, { vaultId, query: "QuarterlyRevenue", kind: "screenshot", limit: 1 }))
+      .toMatchObject({ meetings: [], screenshots: [{ meetingId, fileId: file.id, snippet: expect.stringContaining("QuarterlyRevenue") as unknown }], limited: { screenshot: false } });
     expect(await service.searchAll(owner, { vaultId, query: "QuarterlyRevenue", kind: "screenshot", to: "2000-01-01T00:00:00Z" }))
       .toMatchObject({ screenshots: [] });
 
