@@ -22,11 +22,24 @@ import {
 } from "drizzle-orm/pg-core";
 
 import type { FileMetadata } from "../files/model";
+import type { AccountSettings } from "../account-settings";
 
 import { user as authUser } from "./generated/postgres-auth-schema";
 
 export const appSchema = pgSchema("app");
 const tsvector = customType<{ data: string }>({ dataType: () => "tsvector" });
+
+export const accountSettings = appSchema.table("account_settings", {
+  userId: text("user_id").primaryKey().references(() => authUser.id, { onDelete: "cascade" }),
+  outputLanguage: text("output_language").$type<AccountSettings["outputLanguage"]>().notNull(),
+  analysisLanguages: jsonb("analysis_languages").$type<AccountSettings["analysisLanguages"]>().notNull(),
+}, (table) => [
+  pgPolicy("account_settings_owner", {
+    for: "all",
+    using: sql`${table.userId} = nullif(current_setting('app.user_id', true), '')`,
+    withCheck: sql`${table.userId} = nullif(current_setting('app.user_id', true), '')`,
+  }),
+]).enableRLS();
 
 export const artifact = appSchema.table("artifact", {
   id: uuid("id").primaryKey(),
@@ -510,4 +523,21 @@ export const storageDeleteJob = appSchema.table("storage_delete_jobs", {
 }, (table) => [
   check("storage_delete_job_status_check", sql`${table.status} IN ('pending', 'processing', 'failed')`),
   index("storage_delete_job_claim_idx").on(table.status, table.availableAt, table.leaseExpiresAt),
+]);
+
+// Operational queue metadata only; canonical image/text access remains owner-scoped.
+export const imageAnalysisJob = appSchema.table("image_analysis_jobs", {
+  fileId: uuid("file_id").primaryKey().references(() => syncedFile.fileId, { onDelete: "cascade" }),
+  vaultId: uuid("vault_id").notNull().references(() => syncedVault.vaultId, { onDelete: "cascade" }),
+  ownerUserId: text("owner_user_id").notNull().references(() => authUser.id, { onDelete: "cascade" }),
+  model: text("model").notNull(),
+  status: text("status").default("pending").notNull(),
+  attempts: integer("attempts").default(0).notNull(),
+  availableAt: timestamp("available_at").defaultNow().notNull(),
+  claimedAt: timestamp("claimed_at"),
+  leaseExpiresAt: timestamp("lease_expires_at"),
+  lastErrorCode: text("last_error_code"),
+}, (table) => [
+  check("image_analysis_job_status_check", sql`${table.status} IN ('pending', 'processing', 'failed')`),
+  index("image_analysis_job_claim_idx").on(table.status, table.availableAt, table.leaseExpiresAt),
 ]);

@@ -1678,3 +1678,10 @@
 "text.content.searchFailed" = "Server search is incomplete. Showing device results only.";
 "text.content.searchMore" = "More server matches are available. Load more to continue searching.";
 "text.content.serverMatch" = "Server";
+
+// Server account language settings
+"account.settings.languages" = "Account analysis languages";
+"account.settings.imageLanguages" = "Image analysis languages";
+"account.settings.description" = "Shared across devices using this account. The output language applies to summaries and image captions. Recording and transcription language settings are unchanged.";
+"account.settings.notLoaded" = "Account settings have not been loaded.";
+"account.settings.unavailable" = "Settings cannot be changed while the server is unavailable. Recording remains available.";

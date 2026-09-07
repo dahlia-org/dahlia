@@ -7,6 +7,13 @@
     import Testing
     @testable import Dahlia
 
+    /// Socket reads must not occupy the cooperative executor needed by the server's async resolver.
+    func withBrokerClientThread<Value: Sendable>(_ operation: @escaping @Sendable () throws -> Value) async throws -> Value {
+        try await withCheckedThrowingContinuation { continuation in
+            Thread { continuation.resume(with: Result { try operation() }) }.start()
+        }
+    }
+
     @MainActor
     struct DahliaImageBrokerTests {
         @Test
@@ -18,9 +25,10 @@
             let bytes = Data(repeating: 0xAB, count: 128 * 1024)
             let broker = DahliaImageBrokerServer(helperURL: executableURL()) { _ in bytes }
             try broker.start(socketURL: socket)
-            let received = try await Task.detached {
+            defer { broker.stop() }
+            let received = try await withBrokerClientThread {
                 try DahliaImageBrokerProtocol.requestImage(request, socketURL: socket)
-            }.value
+            }
             #expect(received == bytes)
             broker.stop()
             #expect(!FileManager.default.fileExists(atPath: socket.path))
@@ -32,9 +40,9 @@
             try denied.start(socketURL: socket)
             defer { denied.stop() }
             await #expect(throws: (any Error).self) {
-                try await Task.detached {
+                try await withBrokerClientThread {
                     try DahliaImageBrokerProtocol.requestImage(request, socketURL: socket)
-                }.value
+                }
             }
             #expect(!called.withLock { $0 })
         }
@@ -63,10 +71,10 @@
             try broker.start(socketURL: socket)
             defer { broker.stop() }
             let valid = DahliaImageBrokerProtocol.Request(vaultId: vault.id, meetingId: meeting.id, screenshotId: imageId)
-            #expect(try await Task.detached { try DahliaImageBrokerProtocol.requestImage(valid, socketURL: socket) }.value == Data([1, 2, 3]))
+            #expect(try await withBrokerClientThread { try DahliaImageBrokerProtocol.requestImage(valid, socketURL: socket) } == Data([1, 2, 3]))
             let invalid = DahliaImageBrokerProtocol.Request(vaultId: .v7(), meetingId: meeting.id, screenshotId: imageId)
             await #expect(throws: (any Error).self) {
-                try await Task.detached { try DahliaImageBrokerProtocol.requestImage(invalid, socketURL: socket) }.value
+                try await withBrokerClientThread { try DahliaImageBrokerProtocol.requestImage(invalid, socketURL: socket) }
             }
         }
 
@@ -87,7 +95,7 @@
             try broker.start(socketURL: socket)
             defer { broker.stop() }
             let request = DahliaImageBrokerProtocol.Request(vaultId: .v7(), text: .init(operation: .transcript, meetingId: .v7()))
-            let data = try await Task.detached { try DahliaImageBrokerProtocol.requestImage(request, socketURL: socket) }.value
+            let data = try await withBrokerClientThread { try DahliaImageBrokerProtocol.requestImage(request, socketURL: socket) }
             #expect(data == Data("complete transcript".utf8))
             #expect(pages.withLock { $0 } == 3)
         }
@@ -113,7 +121,7 @@
             let request = text
                 ? DahliaImageBrokerProtocol.Request(vaultId: .v7(), text: .init(operation: .transcript, meetingId: .v7()))
                 : DahliaImageBrokerProtocol.Request(vaultId: .v7(), meetingId: .v7(), screenshotId: .v7())
-            let client = Task.detached { try DahliaImageBrokerProtocol.requestImage(request, socketURL: socket) }
+            let client = Task { try await withBrokerClientThread { try DahliaImageBrokerProtocol.requestImage(request, socketURL: socket) } }
             var iterator = events.makeAsyncIterator()
             #expect(await iterator.next() == "started")
             broker.stop()

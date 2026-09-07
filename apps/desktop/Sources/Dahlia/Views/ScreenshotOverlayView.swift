@@ -176,13 +176,15 @@ struct ScreenshotOverlayView: View {
             loadedScreenshotID = screenshotID
         }
         .task(id: "\(screenshot.id)-\(textRetry)") {
-            let refresh = textRetryID == screenshot.id
+            var refresh = textRetryID == screenshot.id
             textRetryID = nil
             ocrState = .pending
+            let started = ContinuousClock.now
             repeat {
                 let loaded = await ocrStateProvider(screenshot.id, refresh)
                 guard !Task.isCancelled else { return }
-                ocrState = loaded
+                ocrState = loaded.limitingRemoteWait(to: started.duration(to: .now))
+                if case .remote = loaded { refresh = true }
                 if !ocrState.isTerminal { try? await Task.sleep(for: .seconds(2)) }
             } while !ocrState.isTerminal && !Task.isCancelled
         }

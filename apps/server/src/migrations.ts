@@ -30,8 +30,8 @@ const postgresPath = join(packageDirectory, "drizzle/postgres");
 const sqlitePath = join(packageDirectory, "drizzle/sqlite");
 const postgresAuthBaseline = "20260903034253_melodic_scalphunter/migration.sql";
 const postgresBaseline = "20260903173551_bumpy_freak/migration.sql";
-const postgresHistory = ["20260905172527_ancient_bedlam/migration.sql", "20260905172627_sync_history_backfill/migration.sql", "20260906125708_colossal_stepford_cuckoos/migration.sql", "20260906142206_force_file_rls/migration.sql", "20260907070726_flimsy_banshee/migration.sql", "20260907071320_force_meeting_event_rls/migration.sql"];
-const sqliteHistory = ["20260905172528_unique_marvel_zombies/migration.sql", "20260905172654_sync_history_backfill/migration.sql", "20260906125718_dashing_roughhouse/migration.sql", "20260907070728_dashing_sinister_six/migration.sql"];
+const postgresHistory = ["20260905172527_ancient_bedlam/migration.sql", "20260905172627_sync_history_backfill/migration.sql", "20260906125708_colossal_stepford_cuckoos/migration.sql", "20260906142206_force_file_rls/migration.sql", "20260907070726_flimsy_banshee/migration.sql", "20260907071320_force_meeting_event_rls/migration.sql", "20260907091206_chunky_gideon/migration.sql", "20260907091230_force_account_settings_rls/migration.sql"];
+const sqliteHistory = ["20260905172528_unique_marvel_zombies/migration.sql", "20260905172654_sync_history_backfill/migration.sql", "20260906125718_dashing_roughhouse/migration.sql", "20260907070728_dashing_sinister_six/migration.sql", "20260907091207_funny_black_bird/migration.sql"];
 const sqliteBaseline = "20260903173555_lying_slipstream/migration.sql";
 
 export const serverMigrationManifest: MigrationManifest = {

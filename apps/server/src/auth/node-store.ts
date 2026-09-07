@@ -19,10 +19,12 @@ import {
   type ApplicationStore,
 } from "./store";
 import { createPostgresSearchIndexStore, createSqliteSearchIndexStore, type SearchIndexStore } from "../search/index-store";
+import { createImageAnalysisStore, type ImageAnalysisStore } from "../image-analysis/store";
 
 export interface NodeApplicationStore extends ApplicationStore {
   migrate(): Promise<void>;
   searchIndex?: SearchIndexStore;
+  imageAnalysis?: ImageAnalysisStore;
 }
 
 export function createNodeApplicationStore(
@@ -43,6 +45,7 @@ export function createNodeApplicationStore(
         postgresMigrations(migrations),
       ),
       searchIndex: config.searchEmbedding ? createPostgresSearchIndexStore(connection.db) : undefined,
+      imageAnalysis: config.captioningModel ? createImageAnalysisStore(connection.db, true) : undefined,
       close: connection.close,
     };
   }
@@ -140,6 +143,7 @@ export function createNodeApplicationStore(
   return {
     ...store,
     searchIndex: config.searchEmbedding ? createSqliteSearchIndexStore(transactionalSqlite) : undefined,
+    imageAnalysis: config.captioningModel ? createImageAnalysisStore(transactionalSqlite, false) : undefined,
     close: () => {
       database.close();
       return Promise.resolve();

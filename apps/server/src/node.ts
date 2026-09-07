@@ -15,6 +15,9 @@ import { createNodeSearchTokenizer } from "./search/node-tokenizer";
 import { createSearchEmbedder } from "./search/embedding";
 import { SearchIndexer } from "./search/node-indexer";
 import { transformScreenshot } from "./sync/node-screenshot-transformer";
+import { MeetingSyncService } from "./sync/service";
+import { createImageCaptioner } from "./image-analysis/captioner";
+import { ImageAnalysisWorker } from "./image-analysis/node-worker";
 
 const config = loadConfig(process.env);
 const searchEmbedder = createSearchEmbedder(config);
@@ -35,13 +38,23 @@ const artifactStorage = config.storageBackend === "databricks"
       ? new LocalObjectStorage(config.storageLocalPath!)
       : undefined;
 if (!artifactStorage) throw new Error("R2 storage requires a Worker binding");
+const searchTokenizer = createNodeSearchTokenizer();
+const syncService = new MeetingSyncService(applicationStore.sync, artifactStorage, searchTokenizer,
+  searchEmbedder, transformScreenshot,
+  config.storageBackend === "databricks" ? config.storageDatabricksVolumePath : undefined);
+const captioner = createImageCaptioner(config);
+const imageAnalysis = captioner && applicationStore.imageAnalysis
+  ? new ImageAnalysisWorker(applicationStore.imageAnalysis, captioner, applicationStore.sync, syncService, applicationStore.accountSettings)
+  : undefined;
 
 const app = createApp({
   config,
   auth,
   authStore: applicationStore,
+  syncService,
+  imageAnalysisEnabled: imageAnalysis !== undefined,
   artifactStorage,
-  searchTokenizer: createNodeSearchTokenizer(),
+  searchTokenizer,
   searchEmbedder,
   screenshotTransformer: transformScreenshot,
 });
@@ -58,6 +71,7 @@ const server = serve({
   console.info(`Dahlia Server is listening on ${info.address}:${info.port}`);
 });
 searchIndexer?.start();
+imageAnalysis?.start();
 const sockets = new Set<Socket>();
 server.on("connection", (socket: Socket) => {
   sockets.add(socket);
@@ -69,12 +83,13 @@ async function shutdown(): Promise<void> {
   if (shuttingDown) return;
   shuttingDown = true;
   const stoppedIndexer = searchIndexer?.stop();
+  const stoppedImageAnalysis = imageAnalysis?.stop();
   const closed = new Promise<void>((resolve) => server.close(() => resolve()));
   const deadline = setTimeout(() => {
     for (const socket of sockets) socket.destroy();
   }, 10_000);
   deadline.unref();
-  await Promise.all([closed, stoppedIndexer]);
+  await Promise.all([closed, stoppedIndexer, stoppedImageAnalysis]);
   clearTimeout(deadline);
   await applicationStore.close?.();
 }

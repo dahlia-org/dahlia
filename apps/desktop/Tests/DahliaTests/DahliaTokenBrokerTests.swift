@@ -32,33 +32,33 @@
             defer { server.stop() }
 
             await #expect(throws: (any Error).self) {
-                try await Task.detached {
+                try await withBrokerClientThread {
                     try DahliaTokenBrokerProtocol.requestToken(
                         connectionID: connectionID,
                         profile: .development,
                         applicationSupportDirectory: rootURL
                     )
-                }.value
+                }
             }
             client.withLock { $0 = .init(executableURL: URL(filePath: "/tmp/dahlia-mcp"), parentPID: 42) }
             #expect(!authorization.authorizesClient(0, profile: .development))
             client.withLock { $0 = .init(executableURL: helperURL, parentPID: 42) }
             await #expect(throws: (any Error).self) {
-                try await Task.detached {
+                try await withBrokerClientThread {
                     try DahliaTokenBrokerProtocol.requestToken(
                         connectionID: UUID(),
                         profile: .development,
                         applicationSupportDirectory: rootURL
                     )
-                }.value
+                }
             }
-            let token = try await Task.detached {
+            let token = try await withBrokerClientThread {
                 try DahliaTokenBrokerProtocol.requestToken(
                     connectionID: connectionID,
                     profile: .development,
                     applicationSupportDirectory: rootURL
                 )
-            }.value
+            }
 
             #expect(token == "short-lived-token")
             #expect(requestedIDs.withLock { $0 } == [connectionID])
@@ -104,13 +104,13 @@
 
             let clock = ContinuousClock()
             let start = clock.now
-            let token = try await Task.detached {
+            let token = try await withBrokerClientThread {
                 try DahliaTokenBrokerProtocol.requestToken(
                     connectionID: connectionID,
                     profile: .development,
                     applicationSupportDirectory: rootURL
                 )
-            }.value
+            }
 
             #expect(token == "token")
             #expect(start.duration(to: clock.now) < .seconds(3))

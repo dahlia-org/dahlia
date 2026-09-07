@@ -46,11 +46,11 @@ describe("configuration", () => {
       DATABRICKS_MODEL_SCHEMA: "dahlia.ai",
       DATABRICKS_CLIENT_ID: "app-client-id",
       DATABRICKS_CLIENT_SECRET: "app-client-secret",
-      DAHLIA_SEARCH_EMBEDDING_MODEL: "system.ai.qwen3-embedding-0-6b",
+      DAHLIA_EMBEDDING_MODEL: "system.ai.qwen3-embedding-0-6b",
     }).searchEmbedding).toEqual({ model: "system.ai.qwen3-embedding-0-6b", dimensions: 1024 });
     expect(() => loadConfig({
       ...accounts,
-      DAHLIA_SEARCH_EMBEDDING_MODEL: "model",
+      DAHLIA_EMBEDDING_MODEL: "model",
     })).toThrow("requires DAHLIA_AI_BACKEND=databricks");
     for (const dimensions of [31, 96, 2048]) {
       expect(() => loadConfig({
@@ -60,7 +60,7 @@ describe("configuration", () => {
       DATABRICKS_MODEL_SCHEMA: "dahlia.ai",
         DATABRICKS_CLIENT_ID: "app-client-id",
         DATABRICKS_CLIENT_SECRET: "app-client-secret",
-        DAHLIA_SEARCH_EMBEDDING_MODEL: "model",
+        DAHLIA_EMBEDDING_MODEL: "model",
         DAHLIA_SEARCH_EMBEDDING_DIMENSIONS: String(dimensions),
       })).toThrow();
     }

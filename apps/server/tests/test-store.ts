@@ -1,8 +1,19 @@
 import type { AuthStore } from "../src/auth/store";
+import { DEFAULT_ACCOUNT_SETTINGS, type AccountSettings } from "../src/account-settings";
 
 export function testStore(overrides: Partial<AuthStore> = {}): AuthStore {
+  const settings = new Map<string, AccountSettings>();
   return {
     database: {} as AuthStore["database"],
+    accountSettings: {
+      get: (userId) => Promise.resolve(settings.get(userId) ?? null),
+      update: (userId, patch, initialize) => {
+        const value = initialize && settings.has(userId) ? settings.get(userId)!
+          : { ...DEFAULT_ACCOUNT_SETTINGS, ...settings.get(userId), ...patch };
+        settings.set(userId, value);
+        return Promise.resolve(value);
+      },
+    },
     sync: {
       isAvailable: () => Promise.resolve(false),
       listHistoryTargets: () => Promise.resolve([]),

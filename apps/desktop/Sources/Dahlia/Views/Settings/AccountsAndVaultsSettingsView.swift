@@ -15,6 +15,9 @@ struct AccountsAndVaultsSettingsView: View {
                 currentVault: currentVault,
                 onShowSignIn: onShowSignIn
             )
+            if let connectionID = currentVault?.accountConnectionId {
+                ServerAccountLanguageSettingsSection(connectionID: connectionID)
+            }
             VaultSettingsView(
                 appDatabase: appDatabase,
                 model: vaultModel,

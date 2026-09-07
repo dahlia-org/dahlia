@@ -1,4 +1,5 @@
-import { fileResponse, fileStorageKey, type FileMetadata } from "../files/model";
+import { fileResponse, fileStorageKey, imageContentTypes, type FileMetadata } from "../files/model";
+import { needsImageAnalysis, type ImageAnalysisClaim, type ImageAnalysisInput } from "../image-analysis/model";
 import {
   and,
   asc,
@@ -314,6 +315,7 @@ async function roleSupportsRls(db: PostgresDatabase): Promise<boolean> {
       "app.meeting_files",
       "app.search_documents",
       "app.search_embeddings",
+      "app.account_settings",
     ];
     const secured = (await client.query<{ count: number }>(`
       select count(*)::integer as count
@@ -1498,6 +1500,48 @@ function createIdentityStore(
       : response;
   }
 
+  const imageClaimKey = (claim: ImageAnalysisClaim) => and(
+    eq(schema.imageAnalysisJob.fileId, claim.fileId),
+    eq(schema.imageAnalysisJob.vaultId, claim.vaultId),
+    eq(schema.imageAnalysisJob.ownerUserId, userPrincipalId),
+    eq(schema.imageAnalysisJob.model, claim.model),
+    eq(schema.imageAnalysisJob.claimedAt, claim.claimedAt),
+    eq(schema.imageAnalysisJob.status, "processing"),
+    gt(schema.imageAnalysisJob.leaseExpiresAt, new Date()),
+  );
+
+  async function loadImageAnalysis(claim: ImageAnalysisClaim): Promise<ImageAnalysisInput | null> {
+    if (claim.ownerUserId !== userPrincipalId) return null;
+    const [file] = await db.select({ file: schema.syncedFile }).from(schema.syncedFile)
+      .innerJoin(schema.imageAnalysisJob, eq(schema.imageAnalysisJob.fileId, schema.syncedFile.fileId))
+      .where(and(
+        imageClaimKey(claim), eq(schema.syncedFile.vaultId, claim.vaultId),
+        eq(schema.syncedFile.active, true), isNotNull(schema.syncedFile.uploadedAt),
+        ownerAccess(schema.syncedFile.vaultId),
+        exists(db.select({ id: schema.syncedVault.vaultId }).from(schema.syncedVault).where(ownedVault(claim.vaultId))),
+        exists(db.select({ id: schema.meetingFile.id }).from(schema.meetingFile)
+          .innerJoin(schema.syncedMeeting, and(
+            eq(schema.syncedMeeting.vaultId, schema.meetingFile.vaultId),
+            eq(schema.syncedMeeting.meetingId, schema.meetingFile.meetingId),
+          )).where(and(eq(schema.meetingFile.fileId, claim.fileId), isNull(schema.syncedMeeting.deletingAt)))),
+      )).limit(1);
+    return file && imageContentTypes.has(file.file.contentType) && needsImageAnalysis(file.file.metadata)
+      ? { ...claim, file: file.file } : null;
+  }
+
+  async function completeImageAnalysis(input: ImageAnalysisInput, transaction: SyncTransaction): Promise<boolean> {
+    await lockVault(input.vaultId);
+    const claimQuery = db.select({ id: schema.imageAnalysisJob.fileId }).from(schema.imageAnalysisJob)
+      .where(imageClaimKey(input));
+    const [claim] = searchBackend === "sqlite" ? await claimQuery : await claimQuery.for("update");
+    if (!claim) return false;
+    const current = await loadImageAnalysis(input);
+    if (!current || current.file.checksum !== input.file.checksum || current.file.revision !== input.file.revision) return false;
+    await commitTransaction(transaction);
+    await db.delete(schema.imageAnalysisJob).where(imageClaimKey(input));
+    return true;
+  }
+
   async function listChanges(
     vaultId: string,
     after: number,
@@ -1672,6 +1716,8 @@ function createIdentityStore(
 
   return {
     lockVault,
+    loadImageAnalysis,
+    completeImageAnalysis,
     commitTransaction,
     resolveTransaction,
     assertCursorAvailable,

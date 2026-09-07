@@ -25,25 +25,40 @@ actor CodexScreenshotAnalysisService: ScreenshotAnalyzing {
     static let maximumImageLongEdge = ImageEncoder.aiInputMaximumLongEdge
 
     private let appServer: CodexAppServerService
+    private let accountSettings: @Sendable (UUID) async throws -> ServerAccountSettings
 
-    init(appServer: CodexAppServerService = .shared) {
+    init(
+        appServer: CodexAppServerService = .shared,
+        accountSettings: @escaping @Sendable (UUID) async throws -> ServerAccountSettings = {
+            try await ServerAccountSettingsModel.shared.loadedSettings(connectionID: $0)
+        }
+    ) {
         self.appServer = appServer
+        self.accountSettings = accountSettings
     }
 
     func analyze(_ screenshots: [ScreenshotAnalysisInput]) async throws -> [ScreenshotAnalysis] {
         guard !screenshots.isEmpty, screenshots.count <= Self.maximumBatchSize else {
             throw ScreenshotAnalysisError.invalidBatchSize
         }
-        let promptContext = await MainActor.run {
+        var promptContext = await MainActor.run {
             let settings = AppSettings.shared
             let languages = settings.appLanguageScope == .all
                 ? "all languages"
                 : settings.enabledLanguageIdentifiers.sorted().joined(separator: ", ")
             return (settings.llmSummaryLanguage.displayName, languages)
         }
+        if let connectionID = screenshots[0].runtimeProvider.accountConnectionID,
+           let settings = try? await accountSettings(connectionID) {
+            promptContext = (
+                settings.outputLanguage.displayName,
+                settings.analysisLanguages.scope == .all ? "all languages" : settings.analysisLanguages.identifiers.sorted().joined(separator: ", ")
+            )
+        }
+        try Task.checkCancellation()
         let inputs = try await Self.codexInputs(for: screenshots)
         let response = try await appServer.generate(.init(
-            model: screenshots[0].runtimeProvider.accountConnectionID != nil ? "gpt-5-6-luna" : Self.model,
+            model: Self.model,
             requiresExactModel: true,
             requiresImageInput: true,
             reasoningEffort: Self.reasoningEffort,

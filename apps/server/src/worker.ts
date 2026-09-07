@@ -19,6 +19,9 @@ export interface RuntimeSecrets {
   BETTER_AUTH_SECRET?: string;
   CODEX_AUTO_REVIEW_MODEL?: string;
   DAHLIA_AI_BACKEND?: string;
+  DAHLIA_EMBEDDING_MODEL?: string;
+  DAHLIA_SEARCH_EMBEDDING_DIMENSIONS?: string;
+  DAHLIA_CAPTIONING_MODEL?: string;
   DAHLIA_AUTH_HEADER?: string;
   DAHLIA_AUTH_TYPE?: string;
   DAHLIA_APP_URL?: string;
@@ -83,6 +86,9 @@ export async function initializeWorkerApp(env: WorkerEnv): Promise<WorkerApp> {
     BETTER_AUTH_SECRET: env.BETTER_AUTH_SECRET,
     CODEX_AUTO_REVIEW_MODEL: env.CODEX_AUTO_REVIEW_MODEL,
     DAHLIA_AI_BACKEND: env.DAHLIA_AI_BACKEND,
+    DAHLIA_EMBEDDING_MODEL: env.DAHLIA_EMBEDDING_MODEL,
+    DAHLIA_SEARCH_EMBEDDING_DIMENSIONS: env.DAHLIA_SEARCH_EMBEDDING_DIMENSIONS,
+    DAHLIA_CAPTIONING_MODEL: env.DAHLIA_CAPTIONING_MODEL,
     DAHLIA_AUTH_HEADER: env.DAHLIA_AUTH_HEADER,
     DAHLIA_AUTH_TYPE: env.DAHLIA_AUTH_TYPE,
     DAHLIA_APP_URL: env.DAHLIA_APP_URL,
@@ -114,6 +120,9 @@ export async function initializeWorkerApp(env: WorkerEnv): Promise<WorkerApp> {
     OPENAI_API_KEY: env.OPENAI_API_KEY,
     OPENAI_BASE_URL: env.OPENAI_BASE_URL,
   });
+  if (config.searchEmbedding || config.captioningModel) {
+    throw new Error("Embedding and image analysis jobs require the Node runtime");
+  }
   const applicationStore = createWorkerApplicationStore(config, env);
   try {
     const auth = config.authProvider === "accounts"

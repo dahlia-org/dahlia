@@ -119,7 +119,7 @@ jobs:
           DATABRICKS_MODEL_SCHEMA: dahlia.ai
           DATABRICKS_CLIENT_ID: test-app-client-id
           DATABRICKS_CLIENT_SECRET: test-app-client-secret
-          DAHLIA_SEARCH_EMBEDDING_MODEL: test-embedding-model
+          DAHLIA_EMBEDDING_MODEL: test-embedding-model
           DAHLIA_SEARCH_EMBEDDING_DIMENSIONS: 32
 
       - name: Validate PostgreSQL retention upgrade

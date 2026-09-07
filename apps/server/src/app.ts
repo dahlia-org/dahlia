@@ -9,6 +9,7 @@ import {
   type AuthInfo,
 } from "@modelcontextprotocol/server";
 import { z } from "zod";
+import { accountSettingsPatchSchema } from "./account-settings";
 
 import {
   AuthenticationError,
@@ -63,6 +64,10 @@ const syncBodyLimit = bodyLimit({
   maxSize: SYNC_JSON_MAX_REQUEST_BYTES,
   onError: (context) => context.json({ error: "request_too_large" }, 413),
 });
+const accountSettingsBodyLimit = bodyLimit({
+  maxSize: 8 * 1024,
+  onError: (context) => context.json({ error: "request_too_large" }, 413),
+});
 
 export interface AppVariables {
   identity: Identity;
@@ -93,11 +98,13 @@ export interface AppDependencies {
   fetch?: typeof fetch;
   auth?: DahliaAuth;
   authStore?: AuthStore;
+  syncService?: MeetingSyncService;
   extensions?: readonly DahliaServerExtension[];
   artifactStorage?: ObjectStorage;
   searchTokenizer?: SearchTokenizer;
   searchEmbedder?: SearchEmbedder;
   screenshotTransformer?: ScreenshotTransformer;
+  imageAnalysisEnabled?: boolean;
 }
 
 export async function authenticateMcpRequest(
@@ -157,7 +164,7 @@ export function createApp(dependencies: AppDependencies) {
   const identities = new IdentityService(config, auth, (identity) => store.ensureIdentityUser(identity));
   const gateway = new GatewayService(config, dependencies.fetch);
   const artifacts = new ArtifactService(config, store, dependencies.artifactStorage);
-  const sync = new MeetingSyncService(
+  const sync = dependencies.syncService ?? new MeetingSyncService(
     store.sync,
     dependencies.artifactStorage,
     dependencies.searchTokenizer,
@@ -385,6 +392,26 @@ export function createApp(dependencies: AppDependencies) {
     return context.body(null, 204);
   });
 
+  app.get("/api/v1/account/settings", async (context) => {
+    const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
+    context.header("cache-control", "no-store");
+    return context.json({ settings: await store.accountSettings.get(identity.userId) });
+  });
+  app.patch("/api/v1/account/settings", accountSettingsBodyLimit, async (context) => {
+    const requiresBrowserOrigin = config.authProvider === "accounts" && !context.req.header("authorization");
+    if ((requiresBrowserOrigin || context.req.header("origin"))
+      && !mutationOriginAllowed(context.req.raw, config.baseUrl)) {
+      return context.json({ error: "invalid_origin" }, 403);
+    }
+    const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
+    if (identity.impersonated) return context.json({ error: "impersonation_read_only" }, 403);
+    const parsed = accountSettingsPatchSchema.safeParse(await context.req.json().catch(() => null));
+    if (!parsed.success) return context.json({ error: "invalid_account_settings" }, 400);
+    const { initialize, ...patch } = parsed.data;
+    context.header("cache-control", "no-store");
+    return context.json({ settings: await store.accountSettings.update(identity.userId, patch, initialize) });
+  });
+
   app.post("/api/v1/transactions", syncBodyLimit, async (context) => {
     const requiresBrowserOrigin = config.authProvider === "accounts" && !context.req.header("authorization");
     if ((requiresBrowserOrigin || context.req.header("origin"))
@@ -425,7 +452,8 @@ export function createApp(dependencies: AppDependencies) {
   });
   app.get("/api/v1/capabilities", async (context) => {
     await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
-    return context.json(await store.sync.isAvailable() ? { syncVersion: 1, meetingEventsVersion: 1 } : {});
+    return context.json(await store.sync.isAvailable()
+      ? { syncVersion: 1, meetingEventsVersion: 1, imageAnalysis: dependencies.imageAnalysisEnabled === true } : {});
   });
   app.get("/api/v1/vaults/:vaultId/text/:entity/:entityId", async (context) => {
     const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
@@ -443,12 +471,18 @@ export function createApp(dependencies: AppDependencies) {
     const suppliedCursor = context.req.query("cursor") ?? context.req.header("last-event-id");
     let sequence = suppliedCursor ? decodeSyncCursor(suppliedCursor) : 0;
     return streamSSE(context, async (stream) => {
+      let accountSettingsKey: string | undefined;
       while (!stream.aborted) {
         const cursor = await sync.latestCursor(identity);
         const latest = decodeSyncCursor(cursor);
         if (latest > sequence) {
           sequence = latest;
           await stream.writeSSE({ event: "invalidation", id: cursor, data: JSON.stringify({ cursor }) });
+        }
+        const settingsKey = JSON.stringify(await store.accountSettings.get(identity.userId));
+        if (settingsKey !== accountSettingsKey) {
+          accountSettingsKey = settingsKey;
+          await stream.writeSSE({ event: "account_settings", data: "{}" });
         }
         await stream.sleep(2_000);
       }

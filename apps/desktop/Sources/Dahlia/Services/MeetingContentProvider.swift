@@ -199,7 +199,7 @@ actor MeetingContentProvider {
         guard let source = try await dbQueue.read({ try TextContentStore.source(entity: entity, id: id, in: $0) }) else {
             throw TextContentError.unavailable
         }
-        guard try await dbQueue.read({ try TextContentStore.mayReplace(source, entity: entity, id: id, in: $0) })
+        guard try await dbQueue.read({ try TextContentStore.mayFetch(source, entity: entity, id: id, in: $0) })
         else { throw TextContentError.changed }
         let key = Key(database: ObjectIdentifier(dbQueue), entity: entity, id: id)
         await acquire(key: key, background: requests[key]?.background ?? (prefetchBudget != nil))
@@ -220,7 +220,7 @@ actor MeetingContentProvider {
             return
         }
         let verified = try await dbQueue.write { db in
-            guard try TextContentStore.mayReplace(source, entity: entity, id: id, in: db) else { throw TextContentError.changed }
+            guard try TextContentStore.mayFetch(source, entity: entity, id: id, in: db) else { throw TextContentError.changed }
             let state = try TextContentAccess.availability(entity: entity, id: id, in: db)
             // The text hash excludes transcript headers, which metadata-only deltas do not carry.
             if entity != .transcript || state.revision == source.revision,
@@ -241,7 +241,7 @@ actor MeetingContentProvider {
                 vaultId: source.vaultId,
                 expectedConnectionId: source.connectionId,
                 dbQueue: dbQueue,
-                expectedMutationGeneration: source.generation
+                incrementalContext: source.context
             ) else { throw TextContentError.changed }
         }
         defer {
@@ -253,7 +253,7 @@ actor MeetingContentProvider {
         try Task.checkCancellation()
         try await dbQueue.write { db in
             try Task.checkCancellation()
-            guard try TextContentStore.mayReplace(source, entity: entity, id: id, in: db) else { throw TextContentError.changed }
+            guard try TextContentStore.mayFetch(source, entity: entity, id: id, in: db) else { throw TextContentError.changed }
             switch entity {
             case .transcript:
                 try RemoteChangeApplier.installStagedTranscript(meetingId: id, in: db)
@@ -307,7 +307,7 @@ actor MeetingContentProvider {
                     vaultId: source.vaultId,
                     expectedConnectionId: source.connectionId,
                     dbQueue: dbQueue,
-                    expectedMutationGeneration: source.generation
+                    incrementalContext: source.context
                 ) else { throw TextContentError.changed }
             } else {
                 guard let record = page.record else { throw TextContentError.integrityFailure }

@@ -67,17 +67,22 @@ struct AISummarySettingsView: View {
                 }
                 .pickerStyle(.menu)
 
-                Picker(selection: $settings.llmSummaryLanguage) {
-                    ForEach(SummaryLanguage.allCases) { language in
-                        Text(language.displayName).tag(language)
+                if vaultSettings.isLocalAccount {
+                    Picker(selection: $settings.llmSummaryLanguage) {
+                        ForEach(SummaryLanguage.allCases) { language in
+                            Text(language.displayName).tag(language)
+                        }
+                    } label: {
+                        Text(L10n.summaryOutputLanguage)
+                        Text(L10n.summaryOutputLanguageDescription)
                     }
-                } label: {
-                    Text(L10n.summaryOutputLanguage)
-                    Text(L10n.summaryOutputLanguageDescription)
+                    .pickerStyle(.menu)
                 }
-                .pickerStyle(.menu)
             } header: {
                 Text(L10n.summaryOutput)
+            }
+            if let connectionID = vaultSettings.accountConnectionID {
+                ServerAccountLanguageSettingsSection(connectionID: connectionID)
             }
         }
         .formStyle(.grouped)

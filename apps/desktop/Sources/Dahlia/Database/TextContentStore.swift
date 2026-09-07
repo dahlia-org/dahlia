@@ -10,12 +10,18 @@ enum TextContentStore {
         let origin: String
         let generation: Int64
         let revision: Int
+        let checksum: String?
+
+        var context: RemoteChangePolicy.Context {
+            .init(vaultId: vaultId, connectionId: connectionId, generation: generation)
+        }
     }
 
     static func source(entity: TextContentEntity, id: UUID, in db: Database) throws -> Source? {
         let parent = entity == .file ? "files" : "meetings"
         guard let row = try Row.fetchOne(db, sql: """
-        SELECT v.id, v.accountConnectionId, c.origin, v.syncMutationGeneration, s.confirmedRevision
+        SELECT v.id, v.accountConnectionId, c.origin, v.syncMutationGeneration, s.confirmedRevision, \(entity == .file ? "p.checksum" :
+            "NULL") AS checksum
         FROM \(parent) p JOIN vaults v ON v.id = p.vaultId
         JOIN dahlia_account_connections c ON c.id = v.accountConnectionId
         LEFT JOIN sync_entity_state s ON s.vaultId = v.id AND s.entity = ? AND s.entityId = p.id
@@ -26,7 +32,8 @@ enum TextContentStore {
             connectionId: row["accountConnectionId"],
             origin: row["origin"],
             generation: row["syncMutationGeneration"],
-            revision: row["confirmedRevision"] ?? 0
+            revision: row["confirmedRevision"] ?? 0,
+            checksum: row["checksum"]
         )
     }
 
@@ -37,6 +44,14 @@ enum TextContentStore {
               try Bool.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 FROM recording_sessions WHERE endedAt IS NULL)") != true
         else { return false }
         return true
+    }
+
+    /// Fetching uses the sync policy; eviction retains the stricter mayReplace policy.
+    static func mayFetch(_ expected: Source, entity: TextContentEntity, id: UUID, in db: Database) throws -> Bool {
+        guard try source(entity: entity, id: id, in: db) == expected else { return false }
+        guard expected.revision > 0 else { return try mayReplace(expected, entity: entity, id: id, in: db) }
+        guard let syncEntity = SyncEntity(rawValue: entity.rawValue) else { return false }
+        return try RemoteChangePolicy.permits(syncEntity, id: id, vaultId: expected.vaultId, in: db)
     }
 
     static func registerLocal(entity: TextContentEntity, id: UUID, vaultId: UUID, in db: Database) throws {

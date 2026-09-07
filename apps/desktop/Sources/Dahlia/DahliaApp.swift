@@ -249,9 +249,11 @@ struct DahliaApp: App {
             }
             .onChange(of: scenePhase) { _, phase in
                 guard phase == .active, let meetingSyncWorker else { return }
+                ServerAccountSettingsModel.shared.refreshAll()
                 Task { await meetingSyncWorker.applicationBecameActive() }
             }
             .onChange(of: dahliaAccountController.connections) {
+                ServerAccountSettingsModel.shared.updateConnections(dahliaAccountController.connections)
                 Task { await reconcileVaultsAfterAccountChange() }
             }
             .modifier(MainWindowOpenWindowRegistrationModifier())
@@ -404,6 +406,8 @@ struct DahliaApp: App {
         }
         await DahliaCloudCredentialStorage.deleteLegacyCredential()
         await dahliaAccountController.configure(appDatabase: db)
+        ServerAccountSettingsModel.shared.startNetworkMonitoring()
+        ServerAccountSettingsModel.shared.updateConnections(dahliaAccountController.connections)
         let meetingSyncWorker = SyncWorker(dbQueue: db.dbQueue) {
             await reconcileVaultsAfterAccountChange()
         }

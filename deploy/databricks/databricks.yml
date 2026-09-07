@@ -19,9 +19,6 @@ variables:
     description: Databricks App name.
   database_project_id:
     description: Lakebase project ID.
-  search_embedding_model:
-    description: Databricks embedding model used by server-side Hybrid search. Empty disables embeddings.
-    default: system.ai.qwen3-embedding-0-6b
   search_embedding_dimensions:
     description: Power-of-two embedding dimensions from 32 through 1024.
     default: "1024"

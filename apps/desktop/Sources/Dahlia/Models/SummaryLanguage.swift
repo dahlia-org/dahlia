@@ -1,5 +1,5 @@
 /// AI 要約の出力言語。
-enum SummaryLanguage: String, CaseIterable, Identifiable {
+enum SummaryLanguage: String, CaseIterable, Identifiable, Codable, Sendable {
     case ja
     case en
     case zh

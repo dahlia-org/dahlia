@@ -12,7 +12,7 @@ describe("PostgreSQL migrations", () => {
   it("forces RLS on the new file tables before enabling canonical sync", () => {
     const sql = serverMigrationManifest.postgres.files
       .map((path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8")).join("\n");
-    for (const table of ["files", "meeting_files"]) {
+    for (const table of ["files", "meeting_files", "account_settings"]) {
       const created = sql.indexOf(`CREATE TABLE "app"."${table}"`);
       expect(created).toBeGreaterThan(-1);
       expect(sql.indexOf(`ALTER TABLE "app"."${table}" FORCE ROW LEVEL SECURITY`, created)).toBeGreaterThan(created);
@@ -96,7 +96,7 @@ describe("PostgreSQL migrations", () => {
     const authMigrations = readPostgresMigrations({ migrationsFolder: authDirectory!.path });
     const applicationMigrations = readPostgresMigrations({ migrationsFolder: applicationDirectory!.path });
     expect(authMigrations.map(({ name }) => name)).toEqual(["20260903034253_melodic_scalphunter"]);
-    expect(applicationMigrations.map(({ name }) => name)).toEqual(["20260903173551_bumpy_freak", "20260905172527_ancient_bedlam", "20260905172627_sync_history_backfill", "20260906125708_colossal_stepford_cuckoos", "20260906142206_force_file_rls", "20260907070726_flimsy_banshee", "20260907071320_force_meeting_event_rls"]);
+    expect(applicationMigrations.map(({ name }) => name)).toEqual(["20260903173551_bumpy_freak", "20260905172527_ancient_bedlam", "20260905172627_sync_history_backfill", "20260906125708_colossal_stepford_cuckoos", "20260906142206_force_file_rls", "20260907070726_flimsy_banshee", "20260907071320_force_meeting_event_rls", "20260907091206_chunky_gideon", "20260907091230_force_account_settings_rls"]);
     expect([...authMigrations, ...applicationMigrations].every(({ hash, sql }) => hash.length === 64 && sql.length > 0))
       .toBe(true);
     const authSql = authMigrations.flatMap((migration) => migration.sql).join("\n");
