@@ -718,6 +718,57 @@ describe("SQLite canonical sync", () => {
     await store.close?.();
   });
 
+  it("shares SQLite storage locks across connections without blocking canonical writes", async () => {
+    const { store, databasePath } = await setup();
+    const second = createNodeApplicationStore(testConfig(databasePath));
+    let entered!: () => void;
+    let release!: () => void;
+    const didEnter = new Promise<void>((resolve) => { entered = resolve; });
+    const canFinish = new Promise<void>((resolve) => { release = resolve; });
+    const first = store.sync.withStorageKeyLock("original", async () => {
+      entered();
+      await canFinish;
+      throw new Error("failed storage operation");
+    });
+    const rejected = expect(first).rejects.toThrow("failed storage operation");
+    await didEnter;
+    let secondEntered = false;
+    const next = second.sync.withStorageKeyLock("variant", async () => { secondEntered = true; });
+    try {
+      await createVault(store);
+      expect(secondEntered).toBe(false);
+    } finally {
+      release();
+      await rejected;
+      await next;
+      await second.close?.();
+      await store.close?.();
+    }
+    expect(secondEntered).toBe(true);
+  });
+
+  it.each([false, true])("preserves immutable uploads across SQLite instances (different bytes: %s)", async (different) => {
+    const { store, service, storage, file, bytes } = await fileSetup();
+    const second = new MeetingSyncService(store.sync, storage, undefined, undefined, undefined, "/Volumes/test/app/files");
+    const pending = { ...file, id: freshId() };
+    try {
+      const results = await Promise.allSettled([
+        service.postFile(owner, fileUploadRequest(pending, bytes)),
+        second.postFile(owner, fileUploadRequest(pending, different ? new Uint8Array(bytes.length) : bytes)),
+      ]);
+      const record = await store.sync.withIdentity(owner, (scoped) => scoped.getFile(pending.id));
+      expect(record?.uploadedAt).not.toBeNull();
+      const response = await storage.read(fileStorageKey(pending.id), "GET", new Request("http://localhost"));
+      expect(response.status).toBe(200);
+      expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(different ? 1 : 2);
+      if (different) expect(results.find((result) => result.status === "rejected")).toMatchObject({ reason: { status: 409 } });
+      const stored = await response.arrayBuffer();
+      expect(`SHA-256:${Buffer.from(await crypto.subtle.digest("SHA-256", stored)).toString("hex")}`).toBe(record?.checksum);
+    } finally {
+      await store.close?.();
+    }
+  });
+
   it.each(["node", "worker"].flatMap((runtime) => ["POST", "PUT", "PATCH"].map((method) => [runtime, method])))("uploads raw bytes and updates canonical metadata through %s %s", async (runtime, method) => {
     const { store, service, file, bytes, databasePath, storage, publish, attach } = await fileSetup();
     const app = createApp({ config: { ...testConfig(databasePath), storageBackend: "databricks", storageDatabricksVolumePath: "/Volumes/test/app/files" }, authStore: store, artifactStorage: storage });
