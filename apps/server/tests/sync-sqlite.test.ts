@@ -35,6 +35,98 @@ afterEach(() => {
 });
 
 describe("SQLite canonical sync", () => {
+  it.each(["node", "worker"])("projects recording events without heartbeats and handles out-of-order delivery through %s", async (runtime) => {
+    const { store, databasePath } = await setup();
+    await createVault(store);
+    await commit(store, owner, transaction(freshId(), [{ id: freshId(), entity: "meeting", action: "create", entityId: meetingId, baseRevision: null, data: { ...meetingData(), projectId: null } }]));
+    const app = createApp({ config: testConfig(databasePath), authStore: store });
+    const worker = createWorkerHandler(async () => app);
+    const workerFetch = worker.fetch!.bind(worker) as unknown as (request: Request, env: Cloudflare.Env, context: ExecutionContext) => Promise<Response>;
+    const send = (path: string, body?: unknown) => {
+      const request = new Request(`http://localhost:5173/api/v1/${path}`, { method: body ? "POST" : "GET", headers: headers(), body: body ? JSON.stringify(body, (key, value: unknown) => key === "requestHash" ? undefined : value) : undefined });
+      return runtime === "node" ? app.request(request) : workerFetch(request, {} as Cloudflare.Env, {} as ExecutionContext);
+    };
+    const event = (kind: string, sessionId: string, occurredAt: Date) => ({ id: freshId(), entity: "meeting_event" as const, action: "create" as const, entityId: freshId(), baseRevision: null, data: { meetingId, kind, sessionId, occurredAt } });
+    const write = (operation: SyncTransaction["operations"][number]) => send("transactions", transaction(freshId(), [operation]));
+    const detail = async () => (await send(`vaults/${vaultId}/meetings/${meetingId}`)).json();
+    expect(await (await send("sync-content")).json()).toMatchObject({ meetingEvents: 1 });
+    const session = freshId();
+    expect((await write(event("recording_ended", session, new Date(now.getTime() + 60000)))).status).toBe(200);
+    expect((await write(event("recording_started", session, now))).status).toBe(200);
+    expect(await detail()).toMatchObject({ isRecording: false });
+    const next = freshId();
+    const start = transaction(freshId(), [event("recording_started", next, now)]);
+    expect((await send("transactions", start)).status).toBe(200);
+    expect((await send("transactions", start)).status).toBe(200);
+    expect((await send("transactions", { ...start, id: freshId() })).status).toBe(200);
+    expect(await detail()).toMatchObject({ isRecording: true, revision: 1 });
+    expect(await (await send(`vaults/${vaultId}/meetings`)).json()).toMatchObject({ items: [expect.objectContaining({ isRecording: true })] });
+    const idleMeetingId = freshId();
+    expect((await write({ id: freshId(), entity: "meeting", action: "create", entityId: idleMeetingId, baseRevision: null, data: { ...meetingData(), projectId: null } })).status).toBe(200);
+    expect(await (await send(`vaults/${vaultId}/meetings/${idleMeetingId}`)).json()).toMatchObject({ isRecording: false });
+    expect(await (await send(`vaults/${vaultId}/meetings`)).json()).toMatchObject({ items: expect.arrayContaining([
+      expect.objectContaining({ meetingId, isRecording: true }),
+      expect.objectContaining({ meetingId: idleMeetingId, isRecording: false }),
+    ]) as unknown });
+    const db = new DatabaseSync(databasePath);
+    expect(db.prepare("SELECT count(*) AS count FROM meeting_events WHERE kind = 'recording_started'").get()).toMatchObject({ count: 2 });
+    expect(db.prepare("SELECT started_at, ended_at FROM recording_sessions WHERE session_id = ?").get(session)).toMatchObject({ started_at: now.getTime(), ended_at: now.getTime() + 60000 });
+    expect((await write(event("recording_ended", next, new Date(now.getTime() + 120000)))).status).toBe(200);
+    expect(await detail()).toMatchObject({ isRecording: false });
+    db.close();
+    await store.close?.();
+  });
+
+  it("keeps content-free history after meeting deletion and removes it with the Vault", async () => {
+    const { store, databasePath } = await setup();
+    await createVault(store);
+    await commit(store, owner, transaction(freshId(), [{ id: freshId(), entity: "meeting", action: "create", entityId: meetingId, baseRevision: null, data: { ...meetingData(), projectId: null } }]));
+    const data = { ...meetingData(), projectId: null, name: "Private renamed title" };
+    await commit(store, owner, transaction(freshId(), [{ id: freshId(), entity: "meeting", action: "update", entityId: meetingId, baseRevision: 1, data }]));
+    await commit(store, owner, transaction(freshId(), [{ id: freshId(), entity: "meeting", action: "update", entityId: meetingId, baseRevision: 2, data }]));
+    const db = new DatabaseSync(databasePath);
+    expect(db.prepare("SELECT changed_fields FROM meeting_events WHERE kind = 'meeting_updated'").all()).toEqual([{ changed_fields: '["name"]' }]);
+    await commit(store, owner, transaction(freshId(), [{ id: freshId(), entity: "meeting_event", action: "create", entityId: freshId(), baseRevision: null, data: { meetingId, kind: "tag_added", relatedId: "42", occurredAt: now } }]));
+    await commit(store, owner, transaction(freshId(), [{ id: freshId(), entity: "meeting_event", action: "create", entityId: freshId(), baseRevision: null, data: { meetingId, kind: "recording_started", sessionId: freshId(), occurredAt: now } }]));
+    await commit(store, owner, transaction(freshId(), [{ id: freshId(), entity: "meeting", action: "delete", entityId: meetingId, baseRevision: 3, data: {} }]));
+    const rows = db.prepare("SELECT * FROM meeting_events").all();
+    expect(rows.map((row) => row.kind).sort()).toEqual(["meeting_created", "meeting_deleted", "meeting_updated", "recording_started", "tag_added"]);
+    expect(JSON.stringify(rows)).not.toContain("Private renamed title");
+    for (const row of rows) expect(row).toMatchObject({ session_id: null, related_id: null, changed_fields: null, audio_source: null, segment_index: null });
+    const app = createApp({ config: testConfig(databasePath), authStore: store });
+    const lateEvent = transaction(freshId(), [{ id: freshId(), entity: "meeting_event", action: "create", entityId: freshId(), baseRevision: null, data: { meetingId, kind: "tag_added", relatedId: "42", occurredAt: now } }]);
+    const response = await app.request("/api/v1/transactions", { method: "POST", headers: headers(), body: JSON.stringify(lateEvent, (key, value: unknown) => key === "requestHash" ? undefined : value) });
+    expect(response.status).toBe(410);
+    expect(await response.json()).toMatchObject({ error: "meeting_event_parent_unavailable" });
+    expect(db.prepare("SELECT * FROM meeting_events").all()).toEqual(rows);
+    await commit(store, owner, transaction(freshId(), [{ id: freshId(), entity: "meeting", action: "create", entityId: meetingId, baseRevision: null, data: { ...meetingData(), projectId: null } }]));
+    expect(await store.sync.withIdentity(owner, (sync) => sync.getMeeting(vaultId, meetingId))).toMatchObject({ isRecording: false });
+    await commit(store, owner, transaction(freshId(), [{ id: freshId(), entity: "vault", action: "reset", entityId: vaultId, baseRevision: 1, data: {} }]));
+    expect(db.prepare("SELECT count(*) AS count FROM meeting_events").get()).toMatchObject({ count: 0 });
+    db.close();
+    await store.close?.();
+  });
+
+  it("validates event payloads, ownership, session relationships and immutable IDs", async () => {
+    const { store } = await setup();
+    await createVault(store);
+    const secondMeeting = freshId();
+    await commit(store, owner, transaction(freshId(), [meetingId, secondMeeting].map((id) => ({ id: freshId(), entity: "meeting", action: "create", entityId: id, baseRevision: null, data: { ...meetingData(), projectId: null } }))));
+    const service = new MeetingSyncService(store.sync);
+    const sessionId = freshId();
+    const operation = { id: freshId(), entity: "meeting_event" as const, action: "create" as const, entityId: freshId(), baseRevision: null, data: { meetingId, kind: "recording_started", sessionId, occurredAt: now } };
+    const send = (op: typeof operation, identity = owner) => service.commitTransaction(identity, JSON.parse(JSON.stringify(transaction(freshId(), [op]), (key, value: unknown) => key === "requestHash" ? undefined : value)));
+    await send(operation);
+    await expect(send({ ...operation, data: { ...operation.data, occurredAt: new Date(now.getTime() + 1) } })).rejects.toMatchObject({ code: "event_id_reused" });
+    await expect(send({ ...operation, entityId: freshId(), data: { ...operation.data, meetingId: secondMeeting } })).rejects.toMatchObject({ code: "recording_session_meeting_mismatch" });
+    await store.sync.withIdentity(owner, (sync) => sync.putMemberPermission(vaultId, "organization", "external"));
+    expect(await store.sync.withIdentity(other, (sync) => sync.getMeeting(vaultId, meetingId))).toMatchObject({ isRecording: true });
+    await expect(send({ ...operation, entityId: freshId() }, other)).rejects.toBeDefined();
+    await expect(send({ ...operation, data: { ...operation.data, kind: "meeting_deleted" } })).rejects.toBeDefined();
+    await expect(service.commitTransaction(owner, JSON.parse(JSON.stringify(transaction(freshId(), [{ ...operation, data: { ...operation.data, privateText: "must reject" } }]), (key, value: unknown) => key === "requestHash" ? undefined : value)))).rejects.toBeDefined();
+    await store.close?.();
+  });
+
   it.each(["node", "worker"])("resolves canonical detail IDs only for readable active records through %s", async (runtime) => {
     const { store, databasePath } = await setup();
     await createVault(store);

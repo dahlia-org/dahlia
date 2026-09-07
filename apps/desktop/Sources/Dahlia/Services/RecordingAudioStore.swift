@@ -297,6 +297,24 @@ actor RecordingAudioStore {
         return try SegmentCreation(record: record, partialURL: safeURL(relativePath: partialRelativePath))
     }
 
+    nonisolated func recordRotation(segmentId: UUID, at now: Date = .now) {
+        // Enqueue on GRDB's owned writer queue without suspending audio consumption.
+        dbQueue.asyncWrite { db in
+            guard let segment = try RecordingAudioSegmentRecord.fetchOne(db, key: segmentId),
+                  segment.segmentIndex > 0,
+                  let session = try RecordingSessionRecord.fetchOne(db, key: segment.recordingSessionId) else { return }
+            try MeetingEventRecorder.record(
+                .segmentRotated, meetingId: session.meetingId, at: now, sessionId: session.id,
+                relatedId: segment.id.uuidString.lowercased(), audioSource: segment.source,
+                segmentIndex: segment.segmentIndex, in: db
+            )
+        } completion: { _, result in
+            if case let .failure(error) = result {
+                ErrorReportingService.capture(error, context: ["source": "recordingEvent"])
+            }
+        }
+    }
+
     func nextSegmentIndex(sessionId: UUID, source: RecordingAudioSource) async throws -> Int {
         try await dbQueue.read { db in
             let maximum = try Int.fetchOne(

@@ -793,7 +793,7 @@ enum RemoteChangeApplier {
             try db.execute(sql: "DELETE FROM files WHERE id = ? AND vaultId = ?", arguments: [id, vaultId])
         case .meetingFile:
             try db.execute(sql: "DELETE FROM meeting_files WHERE id = ?", arguments: [id])
-        case .vault:
+        case .vault, .meetingEvent:
             break
         }
     }
@@ -807,6 +807,8 @@ enum RemoteChangeApplier {
         in db: Database
     ) throws {
         switch change.entity {
+        case .meetingEvent:
+            break
         case .vault, .project, .meeting, .summary, .file:
             try SyncTransactionQueue.applyCanonical(
                 change.entity,

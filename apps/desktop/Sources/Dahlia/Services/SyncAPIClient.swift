@@ -5,7 +5,7 @@ struct SyncHTTPError: Error {
     let body: Data
 
     var code: String? {
-        (try? JSONSerialization.jsonObject(with: body) as? [String: String])?["error"]
+        (try? JSONSerialization.jsonObject(with: body) as? [String: Any])?["error"] as? String
     }
 
     var blockedReason: SyncBlockedReason? {

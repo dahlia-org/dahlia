@@ -96,7 +96,7 @@ describe("PostgreSQL migrations", () => {
     const authMigrations = readPostgresMigrations({ migrationsFolder: authDirectory!.path });
     const applicationMigrations = readPostgresMigrations({ migrationsFolder: applicationDirectory!.path });
     expect(authMigrations.map(({ name }) => name)).toEqual(["20260903034253_melodic_scalphunter"]);
-    expect(applicationMigrations.map(({ name }) => name)).toEqual(["20260903173551_bumpy_freak", "20260905172527_ancient_bedlam", "20260905172627_sync_history_backfill", "20260906125708_colossal_stepford_cuckoos", "20260906142206_force_file_rls"]);
+    expect(applicationMigrations.map(({ name }) => name)).toEqual(["20260903173551_bumpy_freak", "20260905172527_ancient_bedlam", "20260905172627_sync_history_backfill", "20260906125708_colossal_stepford_cuckoos", "20260906142206_force_file_rls", "20260907070726_flimsy_banshee", "20260907071320_force_meeting_event_rls"]);
     expect([...authMigrations, ...applicationMigrations].every(({ hash, sql }) => hash.length === 64 && sql.length > 0))
       .toBe(true);
     const authSql = authMigrations.flatMap((migration) => migration.sql).join("\n");

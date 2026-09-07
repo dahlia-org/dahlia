@@ -47,7 +47,7 @@ export interface SyncProjectView extends SyncProjectRecord {
 
 export type VaultRole = "owner" | "member";
 export type VaultPrincipalType = "user" | "organization" | "team";
-export type SyncEntity = "vault" | "project" | "meeting" | "summary" | "transcript" | "file" | "meeting_file";
+export type SyncEntity = "vault" | "project" | "meeting" | "summary" | "transcript" | "file" | "meeting_file" | "meeting_event";
 export type SyncAction = "create" | "update" | "delete" | "upsert" | "patch" | "reset";
 
 export interface SyncTransactionOperation {
@@ -84,7 +84,7 @@ export interface SyncTransactionResponse {
 }
 
 export interface SyncSnapshotPosition {
-  entity: SyncEntity;
+  entity: Exclude<SyncEntity, "meeting_event">;
   id: string;
 }
 
@@ -134,6 +134,7 @@ export interface SyncMeetingRecord {
   status: string;
   duration: number | null;
   recordingStartedAt: Date | null;
+  isRecording?: boolean;
   createdAt: Date;
   updatedAt: Date;
   summaryTitle: string | null;

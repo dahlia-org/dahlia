@@ -1,3 +1,4 @@
+import { RecordingIndicator } from "./RecordingIndicator";
 import { liveDataEvent, refreshData, subscribeLiveUpdates, useLiveJSON, useLivePage, useLiveQuery } from "./live-data";
 import { createAuthClient } from "better-auth/react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type MouseEvent, type ReactNode } from "react";
@@ -586,7 +587,7 @@ export function MeetingList({ meetings, loading }: { meetings?: SyncedMeetingInf
     {meetings?.map((meeting) => {
       const date = meeting.recordingStartedAt ?? meeting.createdAt;
       return <a className="collection-row" href={`/meetings/${meeting.meetingId}`} key={meeting.meetingId}>
-        <strong>{meeting.name || uiText("Untitled meeting", "無題のミーティング")}</strong>
+        <strong>{meeting.name || uiText("Untitled meeting", "無題のミーティング")} <RecordingIndicator isRecording={meeting.isRecording} /></strong>
         <time dateTime={date}>{new Date(date).toLocaleString(undefined, { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</time>
       </a>;
     })}
@@ -842,6 +843,7 @@ function SyncedMeeting({ vaultId, meetingId }: { vaultId: string; meetingId: str
       <header className="meeting-header">
         <h1>{meeting?.name || uiText("Meeting", "ミーティング")}</h1>
         {meeting && <div className="meeting-metadata">
+          <RecordingIndicator isRecording={meeting.isRecording} />
           <span className="metadata-chip"><time dateTime={meeting.recordingStartedAt ?? meeting.createdAt}>
             {new Date(meeting.recordingStartedAt ?? meeting.createdAt).toLocaleString(undefined, { year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" })}
           </time>{meeting.duration != null && <> · {Math.floor(meeting.duration / 60)}:{String(Math.floor(meeting.duration % 60)).padStart(2, "0")}</>}</span>

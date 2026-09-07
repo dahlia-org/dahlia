@@ -1,0 +1,1 @@
+ALTER TABLE "app"."meeting_events" FORCE ROW LEVEL SECURITY;

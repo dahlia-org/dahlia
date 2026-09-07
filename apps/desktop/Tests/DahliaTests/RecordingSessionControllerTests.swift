@@ -624,6 +624,7 @@
             try await database.dbQueue.write { db in
                 try connection.insert(db)
                 try vault.insert(db)
+                try db.execute(sql: "UPDATE vaults SET syncMeetingEventsVersion = 1 WHERE id = ?", arguments: [vault.id])
             }
             let probe = RecordingRuntimeProbe()
             let controller = RecordingSessionController(
@@ -643,6 +644,9 @@
             viewModel.isSystemAudioEnabled = true
             viewModel.beginDraftMeeting(dbQueue: database.dbQueue, vaultURL: nil)
             await viewModel.startListening(dbQueue: database.dbQueue, projectURL: nil, vaultId: vault.id, projectId: nil, vaultURL: nil)
+            #expect(try await database.dbQueue.read { db in
+                try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_operations WHERE entity = 'meeting_event'")
+            } == (failsStart ? 0 : 1))
             if failsStart {
                 #expect(!viewModel.isListening)
                 #expect(viewModel.currentMeetingId == nil)

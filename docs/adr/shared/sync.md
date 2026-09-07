@@ -30,6 +30,16 @@ transcript の収録経路は `audio_source: mic | system`、人・diarization �
 worker は録音中も push / pull できるが、transcript patch は確定済み segment だけを queue に入れる。初期 snapshot は bounded SQLite write で録音へ実行機会を譲り、構築中に録音や別 mutation が始まれば未送信の部分 snapshot を捨てて最新 working copy から再構築する。
 初期 snapshot の原本取得が失敗した場合はその Vault のローカルデータを保持して失敗を報告し、他の Vault の snapshot 構築・送信・受信は続ける。明示的な競合解決では呼び出し元へ取得失敗を返す。
 
+## 会議イベントと録音セッションの表示
+
+2026-09-07: Server の調査用履歴は `meeting_events` に保持する。会議の作成・メタデータ変更・削除は Server の確定 transaction 内で記録し、変更した項目名だけを残す。Server Account の Desktop はタグ付与・解除、成功した録音開始、終了、音源ごとの物理セグメント切り替えを既存の永続 queue から送る。Local Account、タグ名、変更前後の本文、音声、ファイルパスは対象外。切り替えはファイル確定成功とは区別し、初回ファイル作成では発生させない。
+
+`sync-content` の `meetingEvents: 1` を確認した接続だけで送信を有効にする。イベントは ID で冪等化し、履歴は Server だけに残す。開始・終了イベントから `recording_sessions` SQL view を構成し、未終了セッションがある会議を Web の一覧・詳細・サイドバーで録音中と表示する。生存通知や有効期限、状態カラムは追加しない。終了情報が同期されるまで表示が残る。録音・保存はネットワークを待たず、他端末のセッションをローカルの録音テーブルへ適用しない。
+
+イベント履歴は同期差分の90日保持とは独立し、期間削除や過去操作の補完は行わない。会議削除時は追加情報を除去し、ID・種別・時刻だけを残す。Vault・owner account 削除時は履歴も消す。調査はDBから行い、閲覧APIや専用UIは追加しない。
+
+削除済み・無効・削除処理中の会議に届いた遅延イベントは `410 meeting_event_parent_unavailable` とし、Desktop はイベントだけの送信 transaction を破棄する。本文同期をブロックしたり、履歴送信のために会議を復元したりしない。会議読取の録音判定は対象会議の開始・終了イベントを索引で検索し、他 Vault の全履歴集計を避ける。
+
 ## Delta と削除
 
 Server は Vault ごとの durable change ledger と opaque cursor を持つ。delta は high-water cursor を固定し、その境界までの各 entity の最終 canonical state をページングする。一時的な delete / recreate を露出しない。pull checkpoint は対応ページの適用時だけ進め、commit receipt の cursor で代用しない。

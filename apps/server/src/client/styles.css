@@ -232,7 +232,7 @@ a { color: inherit; text-decoration: none; }
 .folder-icon { flex: 0 0 auto; }
 .tree-group { flex: 1; padding: 9px 7px; border: 0; background: transparent; color: var(--ink); text-align: left; font-size: 13px; cursor: pointer; }
 .sidebar nav .meeting-row a { padding: 8px 12px 8px 26px; }
-.meeting-row a > span { display: block; overflow: hidden; text-overflow: ellipsis; }
+.meeting-row a > span:first-child { display: block; overflow: hidden; text-overflow: ellipsis; }
 .meeting-row time { display: block; margin-top: 4px; color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
 .organization-switcher .identity-copy { flex: 1; }
 .sidebar-status { padding: 6px 9px; margin: 0; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
@@ -350,3 +350,6 @@ a.metadata-chip:hover { background: #e8e8e8; }
   .file-viewer.has-info { grid-template-columns: minmax(0, 1fr); }
   .file-viewer.has-info .file-info { grid-column: 1; width: min(320px, 85%); justify-self: end; z-index: 1; box-shadow: 0 4px 20px #0004; }
 }
+
+.recording-indicator { display: inline-flex; align-items: center; gap: 0.35em; flex: none; white-space: nowrap; font-size: 0.8em; font-weight: 500; }
+.recording-dot { width: 0.55em; height: 0.55em; flex: none; border-radius: 50%; background: #dc2626; }

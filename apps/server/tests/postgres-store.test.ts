@@ -8,7 +8,7 @@ import type { Identity } from "../src/auth/identity";
 import type { AppConfig } from "../src/config";
 import { connectAuthDatabase } from "../src/db/client";
 import * as schema from "../src/db/auth-schema";
-import { SyncTransactionError } from "../src/sync/store";
+import { createPostgresMeetingSyncStore, SyncTransactionError } from "../src/sync/store";
 import type { IdentitySyncStore, SyncTransactionOperation } from "../src/sync/types";
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
@@ -27,6 +27,41 @@ const connection = databaseUrl ? connectAuthDatabase(config) : undefined;
 afterAll(async () => connection?.close());
 
 integration("PostgreSQL application store", () => {
+  it("fails readiness when meeting event FORCE RLS is missing", async () => {
+    expect(await createPostgresMeetingSyncStore(connection!.db).isAvailable()).toBe(true);
+    try {
+      await connection!.db.execute(sql`ALTER TABLE app.meeting_events NO FORCE ROW LEVEL SECURITY`);
+      expect(await createPostgresMeetingSyncStore(connection!.db).isAvailable()).toBe(false);
+    } finally {
+      await connection!.db.execute(sql`ALTER TABLE app.meeting_events FORCE ROW LEVEL SECURITY`);
+    }
+    expect(await createPostgresMeetingSyncStore(connection!.db).isAvailable()).toBe(true);
+  });
+
+  it("projects recording history through an invoker view and enforces event RLS", async () => {
+    const store = createPostgresAuthStore(connection!.db, "postgres", undefined, true);
+    const userId = crypto.randomUUID();
+    const identity: Identity = { userId, workspaceId: `personal:${userId}`, source: "header" };
+    await store.ensureIdentityUser(identity);
+    const vaultId = crypto.randomUUID();
+    const meetingId = crypto.randomUUID();
+    const sessionId = crypto.randomUUID();
+    const now = new Date();
+    await store.sync.withIdentity(identity, async (sync) => {
+      await createVault(sync, vaultId, [{ id: crypto.randomUUID(), entity: "meeting", action: "create", entityId: meetingId, baseRevision: null, data: meetingData(null, now, "Meeting", "") }]);
+      await commit(sync, vaultId, [{ id: crypto.randomUUID(), entity: "meeting_event", action: "create", entityId: crypto.randomUUID(), baseRevision: null, data: { meetingId, kind: "recording_started", sessionId, occurredAt: now } }]);
+      expect(await sync.getMeeting(vaultId, meetingId)).toMatchObject({ isRecording: true });
+    });
+    // Even the table owner sees no history without a transaction-local identity.
+    expect((await connection!.db.select().from(schema.meetingEvent).where(eq(schema.meetingEvent.vaultId, vaultId)))).toEqual([]);
+    expect((await connection!.db.select().from(schema.recordingSession).where(eq(schema.recordingSession.vaultId, vaultId)))).toEqual([]);
+    await store.sync.withIdentity(identity, async (sync) => {
+      await commit(sync, vaultId, [{ id: crypto.randomUUID(), entity: "meeting_event", action: "create", entityId: crypto.randomUUID(), baseRevision: null, data: { meetingId, kind: "recording_ended", sessionId, occurredAt: new Date(now.getTime() + 60000) } }]);
+      expect(await sync.getMeeting(vaultId, meetingId)).toMatchObject({ isRecording: false });
+      await resetVault(sync, vaultId);
+    });
+  });
+
   it("runs the operator RLS probe against the application schema", async () => {
     const client = new Client({ connectionString: databaseUrl });
     await client.connect();
@@ -102,12 +137,13 @@ integration("PostgreSQL application store", () => {
         ('app', 'transcript_patch_chunks'),
         ('app', 'files'),
         ('app', 'meeting_files'),
+        ('app', 'meeting_events'),
         ('app', 'search_documents'),
         ('app', 'search_embeddings')
       )
       order by namespace.nspname, class.relname
     `);
-    expect(protectedTables.rows).toHaveLength(10);
+    expect(protectedTables.rows).toHaveLength(11);
     expect(protectedTables.rows.every(({ rls, force_rls }) => rls && force_rls)).toBe(true);
     const legacyOwnerColumns = await connection!.db.execute(sql`
       select 1 from information_schema.columns

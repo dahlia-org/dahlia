@@ -57,6 +57,10 @@ enum RecordingSessionCompletionWriter {
         guard let session = try RecordingSessionRecord.fetchOne(db, key: request.recordingSessionId) else {
             throw CompletionError.recordingSessionMissing
         }
+        try MeetingEventRecorder.record(
+            .recordingEnded, meetingId: request.meetingId, at: request.endedAt,
+            sessionId: request.recordingSessionId, in: db
+        )
         return session
     }
 }

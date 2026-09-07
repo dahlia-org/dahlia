@@ -293,11 +293,23 @@ actor SyncWorker {
                 }
                 do {
                     try await ScreenshotContentProvider.shared.migrateLegacyImages(vaultId: transaction.vaultId, dbQueue: dbQueue)
-                    let response = try await push(transaction)
-                    try await SyncTransactionQueue.complete(transaction, response: response, dbQueue: dbQueue)
+                    if let response = try await push(transaction) {
+                        try await SyncTransactionQueue.complete(transaction, response: response, dbQueue: dbQueue)
+                    }
                 } catch is CancellationError {
                     throw CancellationError()
                 } catch let error as SyncHTTPError {
+                    if error.status == 410, error.code == "meeting_event_parent_unavailable",
+                       transaction.operations.allSatisfy({ $0.entity == .meetingEvent }) {
+                        // A deleted meeting must not be recreated just to upload diagnostic history.
+                        try await dbQueue.write { db in
+                            guard try SyncTransactionQueue.matchesExpectedConnection(
+                                vaultId: transaction.vaultId, connectionId: transaction.connectionId, in: db
+                            ) else { return }
+                            try db.execute(sql: "DELETE FROM sync_transactions WHERE id = ?", arguments: [transaction.id])
+                        }
+                        continue
+                    }
                     if error.status == 426 {
                         try await dbQueue.write { db in
                             guard try SyncTransactionQueue.matchesExpectedConnection(
@@ -339,9 +351,26 @@ actor SyncWorker {
         }
     }
 
-    private func push(_ transaction: SyncQueuedTransaction) async throws -> SyncTransactionResponse {
+    private func push(_ transaction: SyncQueuedTransaction) async throws -> SyncTransactionResponse? {
         guard let target = try await connection(id: transaction.connectionId) else {
             throw SyncHTTPError(status: 403, body: Data("{\"error\":\"connection_missing\"}".utf8))
+        }
+        if transaction.operations.allSatisfy({ $0.entity == .meetingEvent }) {
+            let capabilities = try await sendData(
+                request(origin: target, path: "api/v1/sync-content", method: "GET"),
+                connectionId: transaction.connectionId
+            )
+            if try (JSONSerialization.jsonObject(with: capabilities) as? [String: Int])?["meetingEvents"] != 1 {
+                // A downgraded Server must not block unrelated durable content behind unsupported diagnostics.
+                try await dbQueue.write { db in
+                    guard try SyncTransactionQueue.matchesExpectedConnection(
+                        vaultId: transaction.vaultId, connectionId: transaction.connectionId, in: db
+                    ) else { return }
+                    try db.execute(sql: "UPDATE vaults SET syncMeetingEventsVersion = 0 WHERE id = ?", arguments: [transaction.vaultId])
+                    try db.execute(sql: "DELETE FROM sync_transactions WHERE id = ?", arguments: [transaction.id])
+                }
+                return nil
+            }
         }
         let body = try await transactionBody(transaction, origin: target, stageAttachments: false)
         let resolved = try await sendData(
@@ -611,8 +640,19 @@ actor SyncWorker {
                 request(origin: target.origin, path: "api/v1/sync-content", method: "GET"),
                 connectionId: target.connectionId
             )
-            guard try (JSONSerialization.jsonObject(with: data) as? [String: Int])?["version"] == 1 else {
+            let capabilities = try JSONSerialization.jsonObject(with: data) as? [String: Int]
+            guard capabilities?["version"] == 1 else {
                 throw SyncHTTPError(status: 426, body: Data())
+            }
+            let meetingEventsVersion = capabilities?["meetingEvents"] == 1 ? 1 : 0
+            try await dbQueue.write { db in
+                guard try SyncTransactionQueue.matchesExpectedConnection(
+                    vaultId: target.vaultId, connectionId: target.connectionId, in: db
+                ) else { return }
+                try db.execute(
+                    sql: "UPDATE vaults SET syncMeetingEventsVersion = ? WHERE id = ? AND syncMeetingEventsVersion != ?",
+                    arguments: [meetingEventsVersion, target.vaultId, meetingEventsVersion]
+                )
             }
         } catch let error as SyncHTTPError where error.status == 426 {
             try await setRecoveryState("updateRequired", target: target)
@@ -935,7 +975,7 @@ actor SyncWorker {
                 return change.entityId
             case .meetingFile:
                 return change.record?.meetingId
-            case .vault, .project, .meeting, .file:
+            case .vault, .project, .meeting, .file, .meetingEvent:
                 return nil
             }
         })
