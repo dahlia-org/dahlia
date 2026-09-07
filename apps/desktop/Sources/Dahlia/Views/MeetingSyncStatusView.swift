@@ -4,11 +4,17 @@ struct MeetingSyncStatusView: View {
     let state: MeetingSyncState
 
     var body: some View {
-        Label(title, systemImage: symbol)
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .help(title)
-            .accessibilityLabel(title)
+        Label {
+            Text(title)
+        } icon: {
+            Image(systemName: symbol)
+                .symbolRenderingMode(.palette)
+                .foregroundStyle(state == .synced ? Color.green : Color.secondary, Color.secondary)
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .help(title)
+        .accessibilityLabel(title)
     }
 
     private var title: String {

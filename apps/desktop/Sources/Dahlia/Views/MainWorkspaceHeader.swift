@@ -58,7 +58,7 @@ struct MainWorkspaceHeader: View {
                     .keyboardShortcut("]", modifiers: .command)
                 }
                 Spacer(minLength: 12)
-                if let textContentState {
+                if let textContentState, textContentState != .ready {
                     TextContentStatusView(state: textContentState, retry: retryTextContent)
                 }
                 if let syncState {

@@ -1656,7 +1656,7 @@
 // Meeting working copy and synchronization
 "meetingSync.local" = "この端末に保存済み";
 "meetingSync.pending" = "端末保存済み・保管庫の同期を待機中";
-"meetingSync.synced" = "保管庫の同期済み";
+"meetingSync.synced" = "同期済み";
 "meetingSync.authorization" = "端末保存済み・同期にはサインインが必要";
 "meetingSync.validation" = "端末保存済み・同期内容の確認が必要";
 

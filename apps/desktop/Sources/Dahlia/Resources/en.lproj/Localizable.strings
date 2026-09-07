@@ -1656,7 +1656,7 @@
 // Meeting working copy and synchronization
 "meetingSync.local" = "Saved on this device";
 "meetingSync.pending" = "Saved on device · Vault sync pending";
-"meetingSync.synced" = "Vault synced";
+"meetingSync.synced" = "Synced";
 "meetingSync.authorization" = "Saved on device · Sign in to sync";
 "meetingSync.validation" = "Saved on device · Sync needs attention";
 
