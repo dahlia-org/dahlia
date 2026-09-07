@@ -1,3 +1,4 @@
+import DahliaMeetingAccess
 import Foundation
 import GRDB
 
@@ -6,7 +7,7 @@ enum BatchTranscriptionPersistence {
     static func complete(
         sessionId: UUID,
         meetingId: UUID,
-        records: [TranscriptSegmentRecord],
+        records: [TranscriptContent],
         completedAt: Date,
         dbQueue: DatabaseQueue
     ) throws {

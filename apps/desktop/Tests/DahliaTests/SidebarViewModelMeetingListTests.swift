@@ -1,3 +1,4 @@
+import DahliaMeetingAccess
 import Foundation
 import GRDB
 @testable import Dahlia
@@ -141,7 +142,7 @@ import GRDB
                     createdAt: .now.addingTimeInterval(-1),
                     updatedAt: .now
                 ).insert(db)
-                try TranscriptSegmentRecord(
+                try TranscriptContent(
                     id: .v7(),
                     meetingId: transcriptOnlyMeetingID,
                     startTime: .now,

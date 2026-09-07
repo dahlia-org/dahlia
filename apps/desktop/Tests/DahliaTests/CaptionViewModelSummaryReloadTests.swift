@@ -1,3 +1,4 @@
+import DahliaMeetingAccess
 import Foundation
 import GRDB
 @testable import Dahlia
@@ -57,10 +58,10 @@ import GRDB
                     arguments: [vaultId, context.meetingID]
                 )
                 for index in 0 ..< 400 {
-                    try db.execute(
-                        sql: "INSERT INTO transcript_segments(id, meetingId, startTime, text, isConfirmed) VALUES (?, ?, ?, ?, 1)",
-                        arguments: [UUID.v7(), context.meetingID, Date(timeIntervalSince1970: Double(index)), "segment \(index)"]
-                    )
+                    try TranscriptContent(
+                        id: .v7(), meetingId: context.meetingID, startTime: Date(timeIntervalSince1970: Double(index)),
+                        text: "segment \(index)", isConfirmed: true
+                    ).insert(db)
                 }
             }
             let viewModel = CaptionViewModel()
@@ -101,10 +102,14 @@ import GRDB
                     sql: "UPDATE vaults SET accountConnectionId = ?, syncConfirmedConnectionId = ? WHERE id = ?",
                     arguments: [connection.id, connection.id, vaultId]
                 )
-                try db.execute(
-                    sql: "INSERT INTO transcript_segments(id, meetingId, startTime, text, audioSource, isConfirmed) VALUES (?, ?, ?, 'original', 'mic', 1)",
-                    arguments: [UUID.v7(), context.meetingID, Date()]
-                )
+                try TranscriptContent(
+                    id: .v7(),
+                    meetingId: context.meetingID,
+                    startTime: Date(),
+                    text: "original",
+                    isConfirmed: true,
+                    audioSource: "mic"
+                ).insert(db)
                 try db.execute(sql: "INSERT INTO sync_entity_state VALUES (?, 'transcript', ?, 1)", arguments: [vaultId, context.meetingID])
                 try db.execute(
                     sql: "INSERT INTO sync_content_state(vaultId, entity, entityId, residentRevision, complete) VALUES (?, 'transcript', ?, 1, 1)",
@@ -119,7 +124,16 @@ import GRDB
             #expect(viewModel.conversationMetricsStore.metrics?.source(.microphone).segmentCount == 1)
             let reloadToken = viewModel.conversationMetricsStore.reloadToken
             try await context.manager.dbQueue.write { db in
-                try db.execute(sql: "UPDATE transcript_segments SET text = 'canonical update'")
+                try db
+                    .execute(
+                        sql: """
+                        INSERT INTO transcript_segment_bodies(segmentId, text)
+                        SELECT id, 'canonical update'
+                        FROM transcript_segments
+                        WHERE true
+                        ON CONFLICT(segmentId) DO UPDATE SET text = excluded.text
+                        """
+                    )
                 try db.execute(sql: "UPDATE sync_entity_state SET confirmedRevision = 2 WHERE entity = 'transcript'")
                 try db.execute(sql: "UPDATE sync_content_state SET residentRevision = 2 WHERE entity = 'transcript'")
             }
@@ -141,10 +155,14 @@ import GRDB
                     sql: "UPDATE vaults SET accountConnectionId = ?, syncConfirmedConnectionId = ?, syncPullCursor = 'ready'",
                     arguments: [connection.id, connection.id]
                 )
-                try db.execute(
-                    sql: "INSERT INTO transcript_segments(id, meetingId, startTime, text, translatedText, isConfirmed) VALUES (?, ?, ?, 'discarded transcript', 'translation', 1)",
-                    arguments: [segmentId, context.meetingID, Date()]
-                )
+                try TranscriptContent(
+                    id: segmentId,
+                    meetingId: context.meetingID,
+                    startTime: Date(),
+                    text: "discarded transcript",
+                    translatedText: "translation",
+                    isConfirmed: true
+                ).insert(db)
                 try db.execute(sql: "INSERT INTO sync_entity_state VALUES (?, 'vault', ?, 1)", arguments: [vaultId, vaultId])
                 for entity in ["summary", "transcript"] {
                     try db.execute(sql: "INSERT INTO sync_entity_state VALUES (?, ?, ?, 1)", arguments: [vaultId, entity, context.meetingID])
@@ -160,7 +178,7 @@ import GRDB
             try MeetingRepository(dbQueue: queue).applyGeneratedSummary(toMeetingId: context.meetingID, document: rejected, tags: [])
             try await queue.write { db in
                 let patch = SyncOperationDraft(entity: .transcript, action: .patch, entityId: context.meetingID)
-                let segment = try #require(try TranscriptSegmentRecord.fetchOne(db, key: segmentId))
+                let segment = try #require(try fetchTranscriptContent(id: segmentId, in: db))
                 try SyncTransactionRecorder.record(
                     vaultId: vaultId,
                     operations: [patch],
@@ -194,8 +212,18 @@ import GRDB
             }
             let canonical = try SummaryDocument(title: "Canonical summary", sections: []).databaseJSONString()
             try await queue.write { db in
-                try db.execute(sql: "UPDATE summaries SET title = 'Canonical summary', document = ?", arguments: [canonical])
-                try db.execute(sql: "UPDATE transcript_segments SET text = 'canonical transcript' WHERE id = ?", arguments: [segmentId])
+                try db.execute(sql: "UPDATE summaries SET title = 'Canonical summary'")
+                try SummaryBodyRecord(meetingId: context.meetingID, document: canonical).save(db)
+                try db.execute(
+                    sql: """
+                    INSERT INTO transcript_segment_bodies(segmentId, text)
+                    SELECT id, 'canonical transcript'
+                    FROM transcript_segments
+                    WHERE id = ?
+                    ON CONFLICT(segmentId) DO UPDATE SET text = excluded.text
+                    """,
+                    arguments: [segmentId]
+                )
                 for entity in ["summary", "transcript"] {
                     try db.execute(sql: "INSERT INTO sync_entity_state VALUES (?, ?, ?, 2)", arguments: [vaultId, entity, context.meetingID])
                     try db.execute(sql: "UPDATE sync_content_state SET complete = 1, residentRevision = 2 WHERE entity = ?", arguments: [entity])
@@ -223,7 +251,7 @@ import GRDB
                 ).databaseJSONString()
                 try manager.dbQueue.write { db in
                     try db.execute(
-                        sql: "UPDATE summaries SET document = ? WHERE meetingId = ?",
+                        sql: "UPDATE summary_bodies SET document = ? WHERE meetingId = ?",
                         arguments: [document, meetingID]
                     )
                 }
@@ -260,7 +288,7 @@ import GRDB
             ).databaseJSONString()
             try manager.dbQueue.write { db in
                 try meeting.insert(db)
-                try SummaryRecord(
+                try SummaryContent(
                     meetingId: meeting.id,
                     title: "Original title",
                     document: document,

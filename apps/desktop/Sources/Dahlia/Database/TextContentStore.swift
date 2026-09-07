@@ -46,13 +46,13 @@ enum TextContentStore {
             arguments: [vaultId, entity.rawValue, id]
         ) != true else { return }
         let byteCountSQL = switch entity {
-        case .summary: "SELECT length(CAST(document AS BLOB)) FROM summaries WHERE meetingId = ?"
-        case .transcript: "SELECT sum(length(CAST(text AS BLOB))) FROM transcript_segments WHERE meetingId = ?"
+        case .summary: "SELECT length(CAST(document AS BLOB)) FROM summary_bodies WHERE meetingId = ?"
+        case .transcript: "SELECT sum(length(CAST(b.text AS BLOB))) FROM transcript_segments t JOIN transcript_segment_bodies b ON b.segmentId = t.id WHERE t.meetingId = ?"
         case .file:
             """
-            SELECT coalesce(length(CAST(json_extract(metadata, '$.ocr_text') AS BLOB)), 0)
-                 + coalesce(length(CAST(json_extract(metadata, '$.caption') AS BLOB)), 0)
-            FROM files WHERE id = ?
+            SELECT coalesce(length(CAST(ocrText AS BLOB)), 0)
+                 + coalesce(length(CAST(caption AS BLOB)), 0)
+            FROM file_text_bodies WHERE fileId = ?
             """
         }
         let bytes = try Int.fetchOne(db, sql: byteCountSQL, arguments: [id]) ?? 0
@@ -95,7 +95,7 @@ enum TextContentStore {
             if present {
                 guard let title = value.title, let date = value.createdAt else { throw TextContentError.integrityFailure }
                 try db.execute(sql: """
-                INSERT INTO summaries(meetingId, title, document, createdAt) VALUES (?, ?, NULL, ?)
+                INSERT INTO summaries(meetingId, title, createdAt) VALUES (?, ?, ?)
                 ON CONFLICT(meetingId) DO UPDATE SET title = excluded.title, createdAt = excluded.createdAt
                 """, arguments: [id, title, date])
             } else {
@@ -106,14 +106,7 @@ enum TextContentStore {
                 )
             }
         } else if contentEntity == .file {
-            var metadata = value.metadata
-            if let old = try FileRecord.fetchOne(db, key: id) {
-                metadata?.ocrText = old.metadata.ocrText
-                metadata?.caption = old.metadata.caption
-            }
-            var retained = value
-            retained.metadata = metadata
-            try FileRecord.applyCanonical(id: id, vaultId: vaultId, value: retained, in: db)
+            try FileRecord.applyCanonical(id: id, vaultId: vaultId, value: value, in: db)
         }
         return true
     }
@@ -126,7 +119,11 @@ enum TextContentStore {
         case .transcript:
             let rows = try Row.fetchCursor(
                 db,
-                sql: "SELECT id, text FROM transcript_segments WHERE meetingId = ? AND isConfirmed = 1 ORDER BY startTime, id",
+                sql: """
+                SELECT t.id, b.text
+                FROM transcript_segments t JOIN transcript_segment_bodies b ON b.segmentId = t.id
+                WHERE t.meetingId = ? AND t.isConfirmed = 1 ORDER BY t.startTime, t.id
+                """,
                 arguments: [id]
             )
             while let row = try rows.next() {
@@ -136,28 +133,31 @@ enum TextContentStore {
                 count += 1
             }
         case .summary:
-            let value = try String.fetchOne(db, sql: "SELECT document FROM summaries WHERE meetingId = ?", arguments: [id])
+            let value = try String.fetchOne(db, sql: "SELECT document FROM summary_bodies WHERE meetingId = ?", arguments: [id])
             digest.add(value)
             count = value == nil ? 0 : 1
         case .file:
-            guard let file = try FileRecord.fetchOne(db, key: id) else { return nil }
-            digest.add(file.metadata.ocrText)
-            digest.add(file.metadata.caption)
+            guard let text = try TextContentAccess.fileText(fileId: id, in: db) else { return nil }
+            digest.add(text.ocrText)
+            digest.add(text.caption)
             count = 2
         }
         return (digest.digestHex(), digest.byteCount, count)
     }
 
-    /// Both verified eviction and explicit Server adoption use the same nullable body and search representation.
+    /// Both verified eviction and explicit Server adoption use the same absent-body and search representation.
     static func releaseBody(entity: TextContentEntity, id: UUID, in db: Database) throws {
         let raw = entity.rawValue
         switch entity {
         case .transcript:
-            try db.execute(sql: "UPDATE transcript_segments SET text = NULL WHERE meetingId = ? AND isConfirmed = 1", arguments: [id])
+            try db.execute(
+                sql: "DELETE FROM transcript_segment_bodies WHERE segmentId IN (SELECT id FROM transcript_segments WHERE meetingId = ? AND isConfirmed = 1)",
+                arguments: [id]
+            )
         case .summary:
-            try db.execute(sql: "UPDATE summaries SET document = NULL WHERE meetingId = ?", arguments: [id])
+            try db.execute(sql: "DELETE FROM summary_bodies WHERE meetingId = ?", arguments: [id])
         case .file:
-            try db.execute(sql: "UPDATE files SET metadata = json_remove(metadata, '$.ocr_text', '$.caption') WHERE id = ?", arguments: [id])
+            try db.execute(sql: "DELETE FROM file_text_bodies WHERE fileId = ?", arguments: [id])
         }
         try db.execute(
             sql: """

@@ -59,9 +59,10 @@
             let fixture = try ScreenshotContentFixture()
             try await fixture.dbQueue.write { db in
                 try db.execute(
-                    sql: "UPDATE files SET metadata = json_remove(metadata, '$.ocr_text', '$.caption'), remoteReference = ?, localReference = ? WHERE id = ?",
+                    sql: "UPDATE files SET remoteReference = ?, localReference = ? WHERE id = ?",
                     arguments: [uploaded ? fixture.source.jsonString() : nil, uploaded ? fixture.source.jsonString() : nil, fixture.screenshotId]
                 )
+                try db.execute(sql: "UPDATE file_text_bodies SET ocrText = NULL, caption = NULL WHERE fileId = ?", arguments: [fixture.screenshotId])
                 try db.execute(
                     sql: "INSERT INTO search_index_jobs(indexKind, targetKind, targetKey, priority, availableAt, updatedAt) VALUES ('fts', 'screenshotAnalysis', ?, -10, ?, ?)",
                     arguments: [fixture.screenshotId, Date(), Date()]
@@ -92,7 +93,7 @@
             #expect(await viewModel.screenshotOCRState(id: fixture.screenshotId) == .pending)
             try await fixture.dbQueue.write { db in
                 try db.execute(
-                    sql: "UPDATE files SET metadata = json_set(metadata, '$.ocr_text', 'Recognized text', '$.caption', 'Image caption') WHERE id = ?",
+                    sql: "UPDATE file_text_bodies SET ocrText = 'Recognized text', caption = 'Image caption' WHERE fileId = ?",
                     arguments: [fixture.screenshotId]
                 )
             }

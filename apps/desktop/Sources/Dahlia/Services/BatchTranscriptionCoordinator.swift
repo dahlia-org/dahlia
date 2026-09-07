@@ -1,3 +1,4 @@
+import DahliaMeetingAccess
 import Foundation
 import GRDB
 import os
@@ -284,7 +285,7 @@ actor BatchTranscriptionCoordinator {
         defer { Self.signposter.endInterval("Batch transcription", state) }
         let job = try fetchJob(sessionId: sessionId)
         let segments = try await transcribe(job: job)
-        let records = segments.map { TranscriptSegmentRecord(from: $0, meetingId: job.meeting.id, defaultSessionId: job.session.id) }
+        let records = segments.map { TranscriptContent(from: $0, meetingId: job.meeting.id, defaultSessionId: job.session.id) }
         let completedAt = Date.now
         try BatchTranscriptionPersistence.complete(
             sessionId: job.session.id,
@@ -526,10 +527,7 @@ actor BatchTranscriptionCoordinator {
     private func exportTranscript(for job: Job) throws {
         guard let vaultURL = job.vault.url else { return }
         let detail = try dbQueue.read { db in
-            let segments = try TranscriptSegmentRecord
-                .filter(Column("meetingId") == job.meeting.id)
-                .order(Column("startTime").asc)
-                .fetchAll(db)
+            let segments = try TextContentAccess.transcript(meetingId: job.meeting.id, in: db)
             let sessions = try RecordingSessionRecord
                 .filter(Column("meetingId") == job.meeting.id)
                 .order(Column("offsetSeconds").asc, Column("startedAt").asc)

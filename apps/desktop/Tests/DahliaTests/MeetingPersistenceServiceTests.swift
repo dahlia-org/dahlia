@@ -1,3 +1,5 @@
+import DahliaMeetingAccess
+
 // Persistence lifecycle coverage is intentionally colocated for end-to-end readability.
 // swiftlint:disable file_length
 
@@ -530,7 +532,7 @@ import os
                     createdAt: createdAt,
                     updatedAt: createdAt
                 ).insert(db)
-                try TranscriptSegmentRecord(from: legacySegment, meetingId: meetingId).insert(db)
+                try TranscriptContent(from: legacySegment, meetingId: meetingId).insert(db)
             }
             let service = try await MeetingPersistenceService.createAppending(
                 store: TranscriptStore(),
@@ -551,8 +553,8 @@ import os
 
             let persisted = try await database.dbQueue.read { db in
                 try (
-                    TranscriptSegmentRecord.fetchOne(db, key: legacySegment.id),
-                    TranscriptSegmentRecord.fetchOne(db, key: appendedSegment.id),
+                    fetchTranscriptContent(id: legacySegment.id, in: db),
+                    fetchTranscriptContent(id: appendedSegment.id, in: db),
                     RecordingSessionRecord.fetchOne(db, key: service.recordingSessionId)
                 )
             }
@@ -857,7 +859,7 @@ import os
             await service.stop()
 
             let persisted = try await database.dbQueue.read { db in
-                let segmentRecord = try TranscriptSegmentRecord.fetchOne(db, key: segment.id)
+                let segmentRecord = try fetchTranscriptContent(id: segment.id, in: db)
                 return try #require(segmentRecord)
             }
 
@@ -896,7 +898,7 @@ import os
             )
 
             let persisted = try await database.dbQueue.read { db in
-                let record = try TranscriptSegmentRecord.fetchOne(db, key: segment.id)
+                let record = try fetchTranscriptContent(id: segment.id, in: db)
                 return try #require(record)
             }
             #expect(store.segments.isEmpty)
@@ -940,7 +942,7 @@ import os
             await service.stop()
 
             let persisted = try await database.dbQueue.read { db in
-                let segmentRecord = try TranscriptSegmentRecord.fetchOne(db, key: segment.id)
+                let segmentRecord = try fetchTranscriptContent(id: segment.id, in: db)
                 return try #require(segmentRecord)
             }
 
@@ -1011,7 +1013,7 @@ import os
             await service.stop()
 
             let persisted = try await database.dbQueue.read { db in
-                let record = try TranscriptSegmentRecord.fetchOne(db, key: segment.id)
+                let record = try fetchTranscriptContent(id: segment.id, in: db)
                 return try #require(record)
             }
             #expect(persisted.translatedText == nil)
@@ -1038,7 +1040,7 @@ private func makeDatabase() throws -> AppDatabaseManager {
 
 private struct PersistedAppendState {
     let sessions: [RecordingSessionRecord]
-    let segment: TranscriptSegmentRecord?
+    let segment: TranscriptContent?
     let meeting: MeetingRecord?
 }
 
@@ -1066,7 +1068,7 @@ private func fetchAppendPersistence(
             .filter(Column("meetingId") == meetingId)
             .order(Column("offsetSeconds").asc)
             .fetchAll(db)
-        let segment = try TranscriptSegmentRecord.fetchOne(db, key: segmentId)
+        let segment = try fetchTranscriptContent(id: segmentId, in: db)
         let meeting = try MeetingRecord.fetchOne(db, key: meetingId)
         return PersistedAppendState(sessions: sessions, segment: segment, meeting: meeting)
     }

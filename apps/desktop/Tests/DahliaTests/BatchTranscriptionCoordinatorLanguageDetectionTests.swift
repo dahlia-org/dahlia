@@ -1,4 +1,5 @@
 @preconcurrency import AVFoundation
+import DahliaMeetingAccess
 import Foundation
 import GRDB
 @testable import Dahlia
@@ -82,10 +83,7 @@ import GRDB
             }
 
             let transcripts = try await fixture.database.dbQueue.read { db in
-                try TranscriptSegmentRecord
-                    .filter(Column("sessionId") == fixture.session.id)
-                    .order(Column("startTime").asc)
-                    .fetchAll(db)
+                try fetchSessionTranscriptContent(sessionId: fixture.session.id, in: db)
             }
             #expect(transcripts.count == 1)
             #expect(transcripts[0].translatedText == nil)
@@ -357,10 +355,7 @@ import GRDB
         private func assertCompletedRetry(_ context: Context) async throws {
             let completed = try await context.fixture.database.dbQueue.read { db in
                 let session = try #require(try RecordingSessionRecord.fetchOne(db, key: context.fixture.session.id))
-                let transcripts = try TranscriptSegmentRecord
-                    .filter(Column("sessionId") == context.fixture.session.id)
-                    .order(Column("startTime").asc)
-                    .fetchAll(db)
+                let transcripts = try fetchSessionTranscriptContent(sessionId: context.fixture.session.id, in: db)
                 return (session, transcripts)
             }
             #expect(completed.0.batchCompletedAt != nil)

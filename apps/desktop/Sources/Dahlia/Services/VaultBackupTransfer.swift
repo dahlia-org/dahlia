@@ -1,3 +1,4 @@
+import DahliaMeetingAccess
 import DahliaRuntimeSupport
 import Foundation
 import GRDB
@@ -11,9 +12,11 @@ enum VaultBackupTransfer {
     static let meetingTables = [
         "recording_sessions", "transcript_segments", "notes", "meeting_files", "summaries", "action_items",
         "summary_exports", "meeting_conversation_metrics", "meeting_conversation_source_metrics", "meeting_tags",
-        "meeting_participants",
+        "meeting_participants", "summary_bodies",
     ]
     static let referenceTables = [
+        "transcript_segment_bodies": ("segmentId", "transcript_segments"),
+        "file_text_bodies": ("fileId", "files"),
         "organization_domains": ("organizationId", "organizations"),
         "organization_memberships": ("organizationId", "organizations"),
         "project_resource_references": ("projectId", "projects"),
@@ -21,6 +24,7 @@ enum VaultBackupTransfer {
         "conversation_topic_references": ("topicId", "conversation_topics"),
     ]
     private static let references = [
+        "segmentId": "transcript_segments",
         "fileId": "files", "vaultId": "vaults", "projectId": "projects", "parentProjectId": "projects",
         "meetingId": "meetings", "sessionId": "recording_sessions", "recordingSessionId": "recording_sessions",
         "organizationId": "organizations", "parentOrganizationId": "organizations", "contactId": "contacts",
@@ -40,7 +44,9 @@ enum VaultBackupTransfer {
         var mappings: [String: [DatabaseValue: DatabaseValue]] = [
             "vaults": [vaultId.databaseValue: destinationVault.id.databaseValue],
         ]
-        let tables = vaultTables + ["meetings"] + meetingTables + referenceTables.keys.sorted()
+        // meeting_files triggers inspect OCR to choose indexing or analysis, so restore file text first.
+        let tables = vaultTables + ["file_text_bodies", "meetings"] + meetingTables
+            + referenceTables.keys.sorted().filter { $0 != "file_text_bodies" }
         if remapIDs {
             for table in tables where try db.columns(in: table).contains(where: { $0.name == "id" && $0.type == "BLOB" }) {
                 let ids = try UUID.fetchAll(db, sql: "SELECT id FROM backup_source.\(table) WHERE \(predicate(table))", arguments: [vaultId])
@@ -83,7 +89,7 @@ enum VaultBackupTransfer {
                     }
                     let value: DatabaseValue = row[column]
                     if value.isNull { return value }
-                    if remapIDs, table == "summaries", column == "document" {
+                    if remapIDs, table == "summary_bodies", column == "document" {
                         return try remapSummary(row["document"], screenshots: mappings["meeting_files"] ?? [:]).databaseValue
                     }
                     let referencedTable: String? = if column == "id" {
@@ -112,6 +118,7 @@ enum VaultBackupTransfer {
                 guard expected == copiedCount else { throw BackupServiceError.invalidBackup }
             }
         }
+        try validateBodies(vaultId: destinationVault.id, in: db)
         // Relationship triggers update revisions; a restored snapshot retains the saved values.
         for table in ["projects", "organizations", "contacts", "insights", "conversation_topics"] {
             let timestampColumn = table == "projects" ? "" : ", updatedAt"
@@ -132,6 +139,19 @@ enum VaultBackupTransfer {
                 arguments += [id]
                 try db.execute(sql: "UPDATE \(table) SET \(assignment) WHERE id = ?", arguments: arguments)
             }
+        }
+    }
+
+    private static func validateBodies(vaultId: UUID, in db: Database) throws {
+        // Never publish a Local backup/restore whose headers outlive missing body rows.
+        let meetingIDs = try UUID.fetchCursor(db, sql: "SELECT id FROM meetings WHERE vaultId = ?", arguments: [vaultId])
+        while let id = try meetingIDs.next() {
+            try TextContentAccess.requireComplete(entity: .transcript, id: id, in: db)
+            try TextContentAccess.requireComplete(entity: .summary, id: id, in: db)
+        }
+        let fileIDs = try UUID.fetchCursor(db, sql: "SELECT id FROM files WHERE vaultId = ?", arguments: [vaultId])
+        while let id = try fileIDs.next() {
+            try TextContentAccess.requireComplete(entity: .file, id: id, in: db)
         }
     }
 
@@ -237,7 +257,10 @@ enum VaultBackupTransfer {
         if vaultTables.contains(table) || table == "meetings" { return "vaultId = ?" }
         if meetingTables.contains(table) { return "meetingId IN (SELECT id FROM backup_source.meetings WHERE vaultId = ?)" }
         let (column, parent) = referenceTables[table]!
-        return "\(column) IN (SELECT id FROM backup_source.\(parent) WHERE vaultId = ?)"
+        let parentPredicate = meetingTables.contains(parent)
+            ? "meetingId IN (SELECT id FROM backup_source.meetings WHERE vaultId = ?)"
+            : "vaultId = ?"
+        return "\(column) IN (SELECT id FROM backup_source.\(parent) WHERE \(parentPredicate))"
     }
 
     private static func copyTags(

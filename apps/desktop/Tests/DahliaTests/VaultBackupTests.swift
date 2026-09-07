@@ -102,7 +102,15 @@ import GRDB
                 #expect(try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM recording_audio_reconciliation_issues") == 1)
                 #expect(try RecordingAudioSegmentRecord.fetchAll(db) == retainedSegments)
                 let screenshot = try #require(try MeetingScreenshotRecord.filter(Column("meetingId") == meeting.id).fetchOne(db))
-                let summary = try #require(try SummaryRecord.fetchOne(db, key: meeting.id))
+                #expect(screenshot.ocrText == "saved")
+                #expect(screenshot.caption == "saved")
+                let analysisJobCount = try Int.fetchOne(
+                    db,
+                    sql: "SELECT COUNT(*) FROM search_index_jobs WHERE targetKind = 'screenshotAnalysis' AND targetKey = ?",
+                    arguments: [screenshot.id]
+                )
+                try #require(analysisJobCount == 0)
+                let summary = try #require(try SummaryContent.fetchOne(db, key: meeting.id))
                 #expect(try summary.loadDocument().referencedScreenshotIds == [screenshot.id])
                 #expect(try SummaryExportRecord.filter(Column("meetingId") == meeting.id).fetchCount(db) == (mode == .overwrite ? 1 : 0))
                 #expect(screenshot.imageData == nil)
@@ -318,6 +326,19 @@ import GRDB
                 try db.execute(sql: "INSERT INTO vaults SELECT * FROM current_backup.vaults")
                 try fixture.meeting.insert(db)
                 try fixture.session.insert(db)
+                try db.execute(
+                    sql: "INSERT INTO transcript_segments(id, meetingId, startTime, text, isConfirmed) VALUES (?, ?, ?, ?, 1)",
+                    arguments: [UUID.v7(), fixture.meeting.id, Date(), "old backup transcript"]
+                )
+                try db.execute(
+                    sql: "INSERT INTO summaries(meetingId, title, document, createdAt) VALUES (?, ?, ?, ?)",
+                    arguments: [
+                        fixture.meeting.id,
+                        "Old summary",
+                        SummaryDocument(title: "Old summary", sections: []).databaseJSONString(),
+                        Date(),
+                    ]
+                )
                 if format == 2 {
                     try db.execute(sql: """
                     CREATE TABLE dahlia_backup_metadata AS
@@ -337,9 +358,10 @@ import GRDB
             let imported = try await service.importGeneration(from: oldURL)
             #expect(imported.metadata?.formatVersion == format)
             #expect(imported.metadata?.vaults == [BackupVault(id: fixture.meeting.vaultId, name: "Test")])
+            let restoredVaultId = mode == .overwrite ? fixture.meeting.vaultId : UUID.v7()
             _ = try await service.prepareRestore(from: imported, requests: [VaultBackupRestoreRequest(
                 sourceVaultId: fixture.meeting.vaultId,
-                targetVaultId: mode == .overwrite ? fixture.meeting.vaultId : .v7(),
+                targetVaultId: restoredVaultId,
                 mode: mode, name: "Restored"
             )])
             let databaseURL = fixture.testRootURL.appending(path: "live.sqlite")
@@ -356,6 +378,11 @@ import GRDB
             try await result.dbQueue.read { db throws in
                 #expect(try MeetingRecord.fetchCount(db) == (mode == .overwrite ? 1 : 2))
                 #expect(try AppDatabaseManager.hasExpectedCurrentSchema(db))
+                let restoredMeetingId = try #require(try UUID.fetchOne(
+                    db, sql: "SELECT id FROM meetings WHERE vaultId = ?", arguments: [restoredVaultId]
+                ))
+                #expect(try TextContentAccess.transcript(meetingId: restoredMeetingId, in: db).map(\.text) == ["old backup transcript"])
+                #expect(try TextContentAccess.summary(meetingId: restoredMeetingId, in: db)?.loadDocument().title == "Old summary")
             }
             #expect(try BackupService.sha256(of: oldURL) == originalHash)
             #expect(try BackupService.sha256(of: imported.fileURL) == originalHash)
@@ -408,7 +435,7 @@ import GRDB
                 try child.insert(db)
                 try db.execute(sql: "UPDATE meetings SET projectId = ? WHERE id = ?", arguments: [child.id, fixture.meeting.id])
                 try screenshot.insertLegacyForTesting(db)
-                try SummaryRecord(meetingId: fixture.meeting.id, title: "Summary", document: document.databaseJSONString(), createdAt: fixture.now)
+                try SummaryContent(meetingId: fixture.meeting.id, title: "Summary", document: document.databaseJSONString(), createdAt: fixture.now)
                     .insert(db)
                 try SummaryExportRecord(
                     meetingId: fixture.meeting.id,

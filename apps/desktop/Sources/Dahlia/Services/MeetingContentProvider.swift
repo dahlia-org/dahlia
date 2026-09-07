@@ -262,15 +262,12 @@ actor MeetingContentProvider {
                 if manifest.present {
                     guard let title = downloaded?.title, let document = downloaded?.document,
                           let date = downloaded?.createdAt else { throw TextContentError.integrityFailure }
-                    try SummaryRecord(meetingId: id, title: title, document: document, createdAt: date).save(db)
+                    try SummaryContent(meetingId: id, title: title, document: document, createdAt: date).save(db)
                 } else {
                     try db.execute(sql: "DELETE FROM summaries WHERE meetingId = ?", arguments: [id])
                 }
             case .file:
-                try db.execute(
-                    sql: "UPDATE files SET metadata = json_set(metadata, '$.ocr_text', ?, '$.caption', ?) WHERE id = ? AND vaultId = ?",
-                    arguments: [downloaded?.ocrText, downloaded?.caption, id, source.vaultId]
-                )
+                try FileTextBodyRecord(fileId: id, ocrText: downloaded?.ocrText, caption: downloaded?.caption).save(db)
             }
             try TextContentStore.markVerified(manifest, source: source, accessed: prefetchBudget == nil, in: db)
         }

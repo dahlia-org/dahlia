@@ -422,9 +422,9 @@ enum RemoteChangeApplier {
         try db.execute(
             sql: """
             INSERT INTO transcript_segments(
-                id, meetingId, startTime, endTime, text, isConfirmed, audioSource, speakerLabel
+                id, meetingId, startTime, endTime, isConfirmed, audioSource, speakerLabel
             )
-            SELECT segmentId, meetingId, startTime, endTime, text,
+            SELECT segmentId, meetingId, startTime, endTime,
                 isConfirmed, audioSource, speakerLabel
             FROM sync_remote_transcript_items
             WHERE meetingId = ?
@@ -432,13 +432,17 @@ enum RemoteChangeApplier {
                 meetingId = excluded.meetingId,
                 startTime = excluded.startTime,
                 endTime = excluded.endTime,
-                text = excluded.text,
                 isConfirmed = excluded.isConfirmed,
                 audioSource = excluded.audioSource,
                 speakerLabel = excluded.speakerLabel
             """,
             arguments: [meetingId]
         )
+        try db.execute(sql: """
+        INSERT INTO transcript_segment_bodies(segmentId, text)
+        SELECT segmentId, text FROM sync_remote_transcript_items WHERE meetingId = ?
+        ON CONFLICT(segmentId) DO UPDATE SET text = excluded.text
+        """, arguments: [meetingId])
         try db.execute(
             sql: """
             DELETE FROM transcript_segments
@@ -864,20 +868,20 @@ enum RemoteChangeApplier {
         for segment in segments {
             try db.execute(sql: """
             INSERT INTO transcript_segments(
-                id, meetingId, startTime, endTime, text, isConfirmed, audioSource, speakerLabel
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                id, meetingId, startTime, endTime, isConfirmed, audioSource, speakerLabel
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 meetingId = excluded.meetingId,
                 startTime = excluded.startTime,
                 endTime = excluded.endTime,
-                text = excluded.text,
                 isConfirmed = excluded.isConfirmed,
                 audioSource = excluded.audioSource,
                 speakerLabel = excluded.speakerLabel
             """, arguments: [
                 segment.segmentId, meetingId, segment.startTime, segment.endTime,
-                segment.text, segment.isConfirmed, segment.audioSource, segment.speakerLabel,
+                segment.isConfirmed, segment.audioSource, segment.speakerLabel,
             ])
+            try TranscriptSegmentBodyRecord(segmentId: segment.segmentId, text: segment.text).save(db)
         }
     }
 }

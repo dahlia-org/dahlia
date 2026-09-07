@@ -618,7 +618,13 @@ private extension SearchIndexer {
                       (try? TextContentAccess.requireComplete(entity: .file, id: existing.originalFileId, in: db)) != nil,
                       try TextContentAccess.availability(entity: .file, id: existing.originalFileId, in: db).state != .stale else { continue }
                 try db.execute(
-                    sql: "UPDATE files SET metadata = json_set(metadata, '$.ocr_text', ?, '$.caption', ?) WHERE id = (SELECT fileId FROM meeting_files WHERE id = ?)",
+                    sql: """
+                    INSERT INTO file_text_bodies(ocrText, caption, fileId)
+                    VALUES (?, ?, (SELECT fileId
+                    FROM meeting_files
+                    WHERE id = ?))
+                    ON CONFLICT(fileId) DO UPDATE SET ocrText = excluded.ocrText, caption = excluded.caption
+                    """,
                     arguments: [result.ocrText, result.caption, result.screenshotID]
                 )
                 if let screenshot = try MeetingScreenshotRecord.fetchOne(db, key: result.screenshotID),

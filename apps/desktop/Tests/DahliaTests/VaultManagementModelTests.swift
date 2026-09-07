@@ -1,4 +1,5 @@
 #if canImport(Testing)
+    import DahliaMeetingAccess
     import Foundation
     import Testing
     @testable import Dahlia
@@ -63,7 +64,7 @@
             )
             try await database.dbQueue.write { db in
                 try meeting.insert(db)
-                try SummaryRecord(
+                try SummaryContent(
                     meetingId: meeting.id,
                     title: "Summary",
                     document: "{}",

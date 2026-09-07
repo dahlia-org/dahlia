@@ -1,4 +1,5 @@
 import CryptoKit
+import DahliaMeetingAccess
 import Foundation
 import GRDB
 
@@ -251,7 +252,7 @@ func indexMeetingDocument(id: UUID, generation: Int, projectPath knownProjectPat
     }
     let calendarText = [calendar?["title"] as String?, calendar?["description"] as String?]
         .compactMap(\.self).joined(separator: " ")
-    let summaryDocument = try SummaryRecord.filter(Column("meetingId") == id).filter(Column("document") != nil).fetchOne(db)
+    let summaryDocument = try TextContentAccess.cachedSummary(meetingId: id, in: db)
         .flatMap { try? $0.loadDocument() }
     let summaryText = summaryDocument?.searchableBodyText ?? ""
     let fields = SearchDocumentFields(

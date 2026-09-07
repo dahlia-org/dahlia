@@ -1,4 +1,5 @@
 @preconcurrency import AVFoundation
+import DahliaMeetingAccess
 import Foundation
 import GRDB
 @testable import Dahlia
@@ -12,8 +13,8 @@ import GRDB
         private struct Fixture {
             let batch: BatchAudioTestFixture
             let recordingMeeting: MeetingRecord
-            let recordingSegment: TranscriptSegmentRecord
-            let visibleSegment: TranscriptSegmentRecord
+            let recordingSegment: TranscriptContent
+            let visibleSegment: TranscriptContent
         }
 
         @Test
@@ -175,7 +176,7 @@ import GRDB
             var damagedBytes = try Data(contentsOf: finalURL)
             damagedBytes[damagedBytes.index(before: damagedBytes.endIndex)] ^= 0x01
             try damagedBytes.write(to: finalURL)
-            let existingSegment = TranscriptSegmentRecord(
+            let existingSegment = TranscriptContent(
                 id: .v7(),
                 meetingId: batch.meeting.id,
                 startTime: batch.now,
@@ -254,7 +255,7 @@ import GRDB
                 createdAt: batch.now.addingTimeInterval(-60),
                 updatedAt: batch.now.addingTimeInterval(-60)
             )
-            let recordingSegment = TranscriptSegmentRecord(
+            let recordingSegment = TranscriptContent(
                 id: .v7(),
                 meetingId: recordingMeeting.id,
                 startTime: recordingMeeting.createdAt,
@@ -264,7 +265,7 @@ import GRDB
                 isConfirmed: true,
                 audioSource: "mic"
             )
-            let visibleSegment = TranscriptSegmentRecord(
+            let visibleSegment = TranscriptContent(
                 id: .v7(),
                 meetingId: batch.meeting.id,
                 startTime: batch.now,
@@ -289,9 +290,9 @@ import GRDB
 
         private func completeBatchSessionAndInsertSegment(
             batch: BatchAudioTestFixture
-        ) throws -> TranscriptSegmentRecord {
+        ) throws -> TranscriptContent {
             let completedAt = batch.now.addingTimeInterval(2)
-            let segment = TranscriptSegmentRecord(
+            let segment = TranscriptContent(
                 id: .v7(),
                 meetingId: batch.meeting.id,
                 startTime: completedAt,

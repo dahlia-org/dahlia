@@ -523,8 +523,7 @@ public final class MeetingAccessStore: Sendable {
             guard let row = try meetingRow(id: id, in: db) else {
                 throw MeetingAccessError.meetingNotFound
             }
-            try TextContentAccess.requireComplete(entity: .summary, id: id, in: db)
-            let document: String? = row["summaryDocument"]
+            let document = try TextContentAccess.summary(meetingId: id, in: db)?.document
             let summary: String?
             let summaryDocument: JSONValue?
             do {
@@ -625,7 +624,6 @@ public final class MeetingAccessStore: Sendable {
             ) == true else {
                 throw MeetingAccessError.meetingNotFound
             }
-            try TextContentAccess.requireComplete(entity: .transcript, id: meetingID, in: db)
             let resident = try TextContentAccess.availability(entity: .transcript, id: meetingID, in: db).revision
             if let expected = decodedCursor?.contentRevision, expected != resident { throw TextContentError.changed }
             let rows = try transcriptRows(
@@ -669,97 +667,12 @@ public final class MeetingAccessStore: Sendable {
         cursor: TranscriptCursor?,
         limit: Int
     ) throws -> [Row] {
-        if fromElapsedSeconds == nil, toElapsedSeconds == nil {
-            return try transcriptRowsByStartTime(in: db, meetingID: meetingID, cursor: cursor, limit: limit)
-        }
-
-        var predicates: [String] = []
-        var arguments: StatementArguments = [meetingID, vaultID]
-        if let fromElapsedSeconds {
-            predicates.append("elapsedSeconds >= ?")
-            arguments += [fromElapsedSeconds]
-        }
-        if let toElapsedSeconds {
-            predicates.append("elapsedSeconds < ?")
-            arguments += [toElapsedSeconds]
-        }
-        if let cursor {
-            predicates.append("(elapsedSeconds > ? OR (elapsedSeconds = ? AND id > ?))")
-            arguments += [cursor.elapsedSeconds, cursor.elapsedSeconds, cursor.segmentID]
-        }
-        let filtering = predicates.isEmpty ? "" : "WHERE \(predicates.joined(separator: " AND "))"
-        arguments += [limit + 1]
-        return try Row.fetchAll(
-            db,
-            sql: """
-            WITH candidates AS (
-                SELECT
-                    segments.id,
-                    segments.text,
-                    segments.speakerLabel,
-                    segments.startTime,
-                    segments.endTime,
-                    meetings.createdAt AS meetingCreatedAt,
-                    sessions.startedAt AS sessionStartedAt,
-                    sessions.offsetSeconds AS sessionOffsetSeconds,
-                    \(Self.elapsedSecondsSQL(timestampColumn: "segments.startTime")) AS elapsedSeconds
-                FROM transcript_segments AS segments
-                JOIN meetings ON meetings.id = segments.meetingId
-                LEFT JOIN recording_sessions AS sessions
-                  ON sessions.id = segments.sessionId
-                 AND sessions.meetingId = segments.meetingId
-                WHERE segments.meetingId = ?
-                  AND meetings.vaultId = ?
-                  AND segments.isConfirmed = 1
-            )
-            SELECT * FROM candidates
-            \(filtering)
-            ORDER BY elapsedSeconds ASC, id ASC
-            LIMIT ?
-            """,
-            arguments: arguments
-        )
-    }
-
-    private func transcriptRowsByStartTime(
-        in db: Database,
-        meetingID: UUID,
-        cursor: TranscriptCursor?,
-        limit: Int
-    ) throws -> [Row] {
-        var cursorPredicate = ""
-        var arguments: StatementArguments = [meetingID, vaultID]
-        if let cursor {
-            cursorPredicate = "AND (segments.startTime > ? OR (segments.startTime = ? AND segments.id > ?))"
-            arguments += [cursor.startedAt, cursor.startedAt, cursor.segmentID]
-        }
-        arguments += [limit + 1]
-        return try Row.fetchAll(
-            db,
-            sql: """
-            SELECT
-                segments.id,
-                segments.text,
-                segments.speakerLabel,
-                segments.startTime,
-                segments.endTime,
-                meetings.createdAt AS meetingCreatedAt,
-                sessions.startedAt AS sessionStartedAt,
-                sessions.offsetSeconds AS sessionOffsetSeconds,
-                \(Self.elapsedSecondsSQL(timestampColumn: "segments.startTime")) AS elapsedSeconds
-            FROM transcript_segments AS segments
-            JOIN meetings ON meetings.id = segments.meetingId
-            LEFT JOIN recording_sessions AS sessions
-              ON sessions.id = segments.sessionId
-             AND sessions.meetingId = segments.meetingId
-            WHERE segments.meetingId = ?
-              AND meetings.vaultId = ?
-              AND segments.isConfirmed = 1
-              \(cursorPredicate)
-            ORDER BY segments.startTime ASC, segments.id ASC
-            LIMIT ?
-            """,
-            arguments: arguments
+        try TextContentAccess.transcriptRows(
+            meetingId: meetingID,
+            order: fromElapsedSeconds == nil && toElapsedSeconds == nil ? .chronological : .elapsed,
+            position: cursor.map { .init(id: $0.segmentID, startTime: $0.startedAt, elapsedSeconds: $0.elapsedSeconds) },
+            fromElapsedSeconds: fromElapsedSeconds, toElapsedSeconds: toElapsedSeconds,
+            confirmedOnly: true, limit: limit + 1, in: db
         )
     }
 
@@ -890,12 +803,12 @@ extension MeetingAccessStore {
             )
         }
 
+        let referencedIDs = try referencedScreenshotIDs(meetingID: meetingID)
         return try database.read { db in
             let vault = try fetchVault(in: db)
             guard try meetingExists(id: meetingID, in: db) else {
                 throw MeetingAccessError.meetingNotFound
             }
-            let referencedIDs = try referencedScreenshotIDs(meetingID: meetingID, in: db)
             let rows = try screenshotRows(
                 meetingID: meetingID,
                 query: query,
@@ -954,6 +867,7 @@ extension MeetingAccessStore {
         guard !screenshotIDs.isEmpty, screenshotIDs.count <= 10, Set(screenshotIDs).count == screenshotIDs.count else {
             throw MeetingAccessError.screenshotNotFound
         }
+        let referencedIDs = try referencedScreenshotIDs(meetingID: meetingID)
         let payloads: [ScreenshotPayload] = try database.read { db in
             _ = try fetchVault(in: db)
             guard try meetingExists(id: meetingID, in: db) else {
@@ -963,7 +877,6 @@ extension MeetingAccessStore {
             guard rows.count == screenshotIDs.count else {
                 throw MeetingAccessError.screenshotNotFound
             }
-            let referencedIDs = try referencedScreenshotIDs(meetingID: meetingID, in: db)
             let payloadsByID = Dictionary(uniqueKeysWithValues: rows.map { row in
                 let metadata = Self.screenshotMetadata(from: row, referencedIDs: referencedIDs)
                 return (
@@ -1121,15 +1034,19 @@ extension MeetingAccessStore {
         )
     }
 
-    private func referencedScreenshotIDs(meetingID: UUID, in db: Database) throws -> Set<UUID> {
-        guard let document = try String.fetchOne(
-            db,
-            sql: "SELECT document FROM summaries WHERE meetingId = ?",
-            arguments: [meetingID]
-        ), let data = document.data(using: .utf8),
-        let root = try? JSONSerialization.jsonObject(with: data) else {
-            return []
+    private func referencedScreenshotIDs(meetingID: UUID) throws -> Set<UUID> {
+        let data: Data?
+        do {
+            data = try database.read { db in
+                _ = try fetchVault(in: db)
+                guard try meetingExists(id: meetingID, in: db) else { throw MeetingAccessError.meetingNotFound }
+                return try TextContentAccess.summary(meetingId: meetingID, in: db)?.document.data(using: .utf8)
+            }
+        } catch TextContentError.incomplete {
+            // Reuse the existing meeting broker operation outside SQLite; image reads also need exact summary references.
+            data = try meeting(id: meetingID).summaryDocument.map { try JSONEncoder().encode($0) }
         }
+        guard let data, let root = try? JSONSerialization.jsonObject(with: data) else { return [] }
         var ids: Set<UUID> = []
         Self.collectScreenshotIDs(in: root, into: &ids)
         return ids
@@ -1157,7 +1074,10 @@ extension MeetingAccessStore {
         let projectColumns = try Set(String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('projects')"))
         let legacySummaryColumns: Set = ["summary", "googleFileId", "vaultRelativePath"]
         guard meetingColumns.contains("description"),
-              summaryColumns.contains("document"),
+              try db.tableExists("summary_bodies"),
+              try db.tableExists("transcript_segment_bodies"),
+              try db.tableExists("file_text_bodies"),
+              !summaryColumns.contains("document"),
               searchColumns.isSuperset(of: ["summary", "ocr", "caption"]),
               summaryColumns.isDisjoint(with: legacySummaryColumns),
               projectColumns.isSuperset(of: ["parentProjectId", "name", "nameKey", "projectType", "revision"]),
@@ -1209,7 +1129,6 @@ extension MeetingAccessStore {
                 meetings.duration,
                 meetings.createdAt,
                 summaries.meetingId IS NOT NULL AS hasSummary,
-                summaries.document AS summaryDocument,
                 \(transcriptCountSQL(in: db)) AS transcriptSegmentCount,
                 (SELECT GROUP_CONCAT(tags.name, char(31))
                  FROM meeting_tags JOIN tags ON tags.id = meeting_tags.tagId

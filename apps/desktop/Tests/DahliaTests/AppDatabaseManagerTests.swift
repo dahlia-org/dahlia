@@ -1,3 +1,4 @@
+import DahliaMeetingAccess
 import DahliaRuntimeSupport
 import Foundation
 import GRDB
@@ -838,15 +839,15 @@ import os
                 try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('summaries')")
             }
 
-            #expect(columns == ["meetingId", "title", "document", "createdAt"])
+            #expect(columns == ["meetingId", "title", "createdAt"])
         }
 
         @Test
-        func initializesInMemoryDatabaseWithSummaryDocumentColumn() throws {
+        func initializesInMemoryDatabaseWithSeparateSummaryBody() throws {
             let database = try AppDatabaseManager(path: ":memory:")
 
             let columns = try database.dbQueue.read { db in
-                try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('summaries')")
+                try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('summary_bodies')")
             }
 
             #expect(columns.contains("document"))
@@ -1124,7 +1125,7 @@ import os
             let migrated = try AppDatabaseManager(path: databaseURL.path)
             let result = try migrated.dbQueue.read { db in
                 let sessions = try RecordingSessionRecord.filter(Column("meetingId") == meetingID).fetchAll(db)
-                let segment = try TranscriptSegmentRecord.fetchOne(db, key: segmentID)
+                let segment = try Row.fetchOne(db, sql: "SELECT * FROM transcript_segments WHERE id = ?", arguments: [segmentID])
                 let screenshot = try MeetingScreenshotRecord.fetchOne(db, key: screenshotID)
                 return try (
                     sessions,
@@ -1139,8 +1140,8 @@ import os
             #expect(session.duration == 15)
             #expect(session.offsetSeconds == 0)
             #expect(session.transcriptionMode == .realtime)
-            #expect(result.1.sessionId == session.id)
-            #expect(result.1.text == "Hello world")
+            #expect(result.1["sessionId"] as UUID? == session.id)
+            #expect(result.1["text"] as String? == "Hello world")
             #expect(result.2.sessionId == session.id)
         }
 

@@ -1,4 +1,5 @@
 #if canImport(Testing)
+    import DahliaMeetingAccess
     import Foundation
     import GRDB
     import os
@@ -39,7 +40,7 @@
             }
             let result = await service.stop()
             let persisted = try await fixture.database.dbQueue.read { db in
-                try TranscriptSegmentRecord.fetchOne(db, key: segment.id)
+                try fetchTranscriptContent(id: segment.id, in: db)
             }
 
             #expect(result.succeeded)
@@ -126,11 +127,11 @@
 
             #expect(await waitUntil {
                 (try? fixture.database.dbQueue.read { db in
-                    try TranscriptSegmentRecord.fetchOne(db, key: segment.id) != nil
+                    try fetchTranscriptContent(id: segment.id, in: db) != nil
                 }) == true
             })
             let automaticallyPersisted = try await fixture.database.dbQueue.read { db in
-                try TranscriptSegmentRecord.fetchOne(db, key: segment.id) != nil
+                try fetchTranscriptContent(id: segment.id, in: db) != nil
             }
 
             #expect(automaticallyPersisted)

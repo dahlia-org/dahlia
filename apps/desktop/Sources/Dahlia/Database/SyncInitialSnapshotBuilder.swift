@@ -243,7 +243,7 @@ enum SyncInitialSnapshotBuilder {
                 try TextContentAccess.requireComplete(entity: .summary, id: meeting.id, in: db)
                 try TextContentAccess.requireComplete(entity: .transcript, id: meeting.id, in: db)
                 var metadata = try [meetingOperation(meeting, action: .create)]
-                if let summary = try SummaryRecord.fetchOne(db, key: meeting.id) {
+                if let summary = try SummaryContent.fetchOne(db, key: meeting.id) {
                     try metadata.append(summaryOperation(summary, action: .upsert))
                 }
                 try SyncTransactionRecorder.record(
@@ -288,29 +288,13 @@ enum SyncInitialSnapshotBuilder {
         var lastSegmentId: UUID?
         while true {
             let cursor = lastSegmentId
-            let segments = try await dbQueue.write { db -> [TranscriptSegmentRecord] in
+            let segments = try await dbQueue.write { db -> [TranscriptContent] in
                 guard try canContinue(markerId: markerId, vaultId: vaultId, in: db) else { return [] }
-                let segments = if let cursor {
-                    try TranscriptSegmentRecord.fetchAll(
-                        db,
-                        sql: """
-                        SELECT * FROM transcript_segments
-                        WHERE meetingId = ? AND isConfirmed = 1 AND id > ?
-                        ORDER BY id LIMIT \(transcriptBatchSize)
-                        """,
-                        arguments: [meetingId, cursor]
-                    )
-                } else {
-                    try TranscriptSegmentRecord.fetchAll(
-                        db,
-                        sql: """
-                        SELECT * FROM transcript_segments
-                        WHERE meetingId = ? AND isConfirmed = 1
-                        ORDER BY id LIMIT \(transcriptBatchSize)
-                        """,
-                        arguments: [meetingId]
-                    )
-                }
+                let segments = try TextContentAccess.transcript(
+                    meetingId: meetingId, order: .id,
+                    position: cursor.map { .init(id: $0, startTime: .distantPast) },
+                    confirmedOnly: true, limit: transcriptBatchSize, in: db
+                )
                 guard !segments.isEmpty else { return [] }
                 let patch = SyncOperationDraft(entity: .transcript, action: .patch, entityId: meetingId)
                 try SyncTransactionRecorder.record(
@@ -443,7 +427,7 @@ enum SyncInitialSnapshotBuilder {
         return try operation(entity: .meeting, action: action, id: meeting.id, payload: payload)
     }
 
-    static func summaryOperation(_ summary: SummaryRecord, action: SyncAction) throws -> SyncOperationDraft {
+    static func summaryOperation(_ summary: SummaryContent, action: SyncAction) throws -> SyncOperationDraft {
         try operation(
             entity: .summary,
             action: action,
@@ -481,15 +465,22 @@ enum SyncInitialSnapshotBuilder {
         )
     }
 
-    static func fileOperation(_ file: FileRecord) throws -> SyncOperationDraft {
-        try SyncOperationDraft(
+    static func fileOperation(_ file: FileRecord, in db: Database) throws -> SyncOperationDraft {
+        guard let text = try TextContentAccess.fileText(fileId: file.id, in: db) else { throw TextContentError.incomplete }
+        return try SyncOperationDraft(
             entity: .file,
             action: .upsert,
             entityId: file.id,
             payloadJSON: SyncJSON.encoder.encode(FileOperationPayload(
                 name: file.name,
                 checksum: file.checksum,
-                metadata: file.metadata
+                metadata: FileMetadata(
+                    source: file.metadata.source,
+                    width: file.metadata.width,
+                    height: file.metadata.height,
+                    ocrText: text.ocrText,
+                    caption: text.caption
+                )
             ))
         )
     }
@@ -525,7 +516,7 @@ enum SyncInitialSnapshotBuilder {
                 )
                 guard let file, let reference = file.localReference else { return nil }
                 let source = try JSONDecoder().decode(ScreenshotRemoteReference.self, from: Data(reference.utf8))
-                let operation = try fileOperation(file)
+                let operation = try fileOperation(file, in: db)
                 try SyncTransactionRecorder.record(
                     vaultId: vaultId,
                     operations: [operation],

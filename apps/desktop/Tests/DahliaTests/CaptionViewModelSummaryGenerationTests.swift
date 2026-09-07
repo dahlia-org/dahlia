@@ -1,3 +1,4 @@
+import DahliaMeetingAccess
 import Foundation
 import GRDB
 @testable import Dahlia
@@ -307,7 +308,7 @@ import GRDB
             let existingURL = fixture.vaultURL.appending(path: "Project/Existing.md")
             try Data("Old summary".utf8).write(to: existingURL)
             let repository = MeetingRepository(dbQueue: fixture.database.dbQueue)
-            try repository.upsertSummary(SummaryRecord(
+            try repository.upsertSummary(SummaryContent(
                 meetingId: fixture.first.id,
                 title: "Old summary",
                 document: SummaryDocument(title: "Old summary", sections: []).databaseJSONString(),
@@ -1307,8 +1308,8 @@ import GRDB
                 try vault.insert(db)
                 try first.insert(db)
                 try second.insert(db)
-                try TranscriptSegmentRecord(from: firstSegment, meetingId: first.id).insert(db)
-                try TranscriptSegmentRecord(from: secondSegment, meetingId: second.id).insert(db)
+                try TranscriptContent(from: firstSegment, meetingId: first.id).insert(db)
+                try TranscriptContent(from: secondSegment, meetingId: second.id).insert(db)
             }
         }
 
@@ -1332,9 +1333,9 @@ import GRDB
             viewModel.noteText = note
         }
 
-        func summary(for meetingID: UUID) throws -> SummaryRecord? {
+        func summary(for meetingID: UUID) throws -> SummaryContent? {
             try database.dbQueue.read { db in
-                try SummaryRecord.fetchOne(db, key: meetingID)
+                try SummaryContent.fetchOne(db, key: meetingID)
             }
         }
 
@@ -1416,7 +1417,7 @@ import GRDB
             )
             try database.dbQueue.write { db in
                 try meeting.insert(db)
-                try TranscriptSegmentRecord(from: segment, meetingId: id).insert(db)
+                try TranscriptContent(from: segment, meetingId: id).insert(db)
             }
         }
 

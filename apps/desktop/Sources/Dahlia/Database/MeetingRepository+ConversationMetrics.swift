@@ -119,43 +119,32 @@ extension MeetingRepository {
 
     private nonisolated func loadConversationMetricSegmentRecords(
         meetingId: UUID
-    ) throws -> [TranscriptSegmentRecord] {
-        var records: [TranscriptSegmentRecord] = []
-        var lastStartTime: Date?
-        var lastID: UUID?
+    ) throws -> [TranscriptContent] {
+        var records: [TranscriptContent] = []
+        var position: TextContentAccess.TranscriptPosition?
         while true {
             try Task.checkCancellation()
             let page = try dbQueue.read { db in
-                try TextContentAccess.requireComplete(entity: .transcript, id: meetingId, in: db)
-                var request = TranscriptSegmentRecord
-                    .filter(Column("meetingId") == meetingId)
-                    .filter(Column("isConfirmed") == true)
-                    .filter(
-                        Column("audioSource") == RecordingAudioSource.microphone.audioSource
-                            || Column("audioSource") == RecordingAudioSource.system.audioSource
-                    )
-                    .order(Column("startTime").asc, Column("id").asc)
-                    .limit(Self.transcriptPageSize)
-                if let lastStartTime, let lastID {
-                    request = request.filter(
-                        Column("startTime") > lastStartTime
-                            || (Column("startTime") == lastStartTime && Column("id") > lastID)
-                    )
-                }
-                return try request.fetchAll(db)
+                try TextContentAccess.transcript(
+                    meetingId: meetingId,
+                    position: position,
+                    confirmedOnly: true, limit: Self.transcriptPageSize, in: db
+                )
             }
-            records.append(contentsOf: page)
+            records.append(contentsOf: page.filter {
+                $0.audioSource == RecordingAudioSource.microphone.audioSource
+                    || $0.audioSource == RecordingAudioSource.system.audioSource
+            })
             guard page.count == Self.transcriptPageSize,
                   let lastRecord = page.last else {
                 return records
             }
-            lastStartTime = lastRecord.startTime
-            lastID = lastRecord.id
+            position = .init(id: lastRecord.id, startTime: lastRecord.startTime)
         }
     }
 
     private nonisolated static func conversationMetricSegment(
-        _ record: TranscriptSegmentRecord
+        _ record: TranscriptContent
     ) -> MeetingConversationMetricsInput.Segment? {
         guard let audioSource = record.audioSource else { return nil }
         return MeetingConversationMetricsInput.Segment(

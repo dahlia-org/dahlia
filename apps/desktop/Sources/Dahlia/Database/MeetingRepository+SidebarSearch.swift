@@ -560,7 +560,7 @@ extension MeetingRepository {
     }
 
     private nonisolated static func summaryBodyText(meetingID: UUID, in db: Database) throws -> String {
-        try SummaryRecord.filter(Column("meetingId") == meetingID && Column("document") != nil).fetchOne(db)
+        try TextContentAccess.cachedSummary(meetingId: meetingID, in: db)
             .flatMap { try? $0.loadDocument().searchableBodyText } ?? ""
     }
 

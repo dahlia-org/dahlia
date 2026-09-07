@@ -1,3 +1,4 @@
+import DahliaMeetingAccess
 import Foundation
 import GRDB
 @testable import Dahlia
@@ -8,6 +9,7 @@ import GRDB
 
     @MainActor
     struct SearchRankingPolicyTests {
+
         // MARK: - 重みの正規化と永続化
 
         @Test
@@ -199,7 +201,7 @@ import GRDB
                         sql: "INSERT INTO meeting_tags(meetingId, tagId) VALUES(?, ?)",
                         arguments: [tagID, db.lastInsertedRowID]
                     )
-                    try SummaryRecord(
+                    try SummaryContent(
                         meetingId: summaryID,
                         title: "Excluded title",
                         document: SummaryDocument(

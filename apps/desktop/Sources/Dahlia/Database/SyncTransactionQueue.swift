@@ -61,7 +61,7 @@ struct SyncTranscriptPatchSegment: Sendable {
     let audioSource: String?
     let speakerLabel: String?
 
-    init(_ record: TranscriptSegmentRecord) {
+    init(_ record: TranscriptContent) {
         segmentId = record.id
         startTime = record.startTime
         endTime = record.endTime
@@ -749,7 +749,7 @@ enum SyncTransactionQueue {
             }
         case .summary:
             if let title = value.title, let document = value.document, let createdAt = value.createdAt {
-                try SummaryRecord(meetingId: id, title: title, document: document, createdAt: createdAt).save(db)
+                try SummaryContent(meetingId: id, title: title, document: document, createdAt: createdAt).save(db)
             } else {
                 try db.execute(sql: "DELETE FROM summaries WHERE meetingId = ?", arguments: [id])
             }
@@ -1113,7 +1113,7 @@ enum SyncTransactionQueue {
                     if missing, entity == .file, action != .delete {
                         guard let file = try FileRecord.fetchOne(db, key: entityId), let reference = file.localReference else { continue }
                         let source = try JSONDecoder().decode(ScreenshotRemoteReference.self, from: Data(reference.utf8))
-                        payload = try SyncInitialSnapshotBuilder.fileOperation(file).payloadJSON
+                        payload = try SyncInitialSnapshotBuilder.fileOperation(file, in: db).payloadJSON
                         replacementAttachment = SyncScreenshotAttachmentReference(mimeType: file.contentType, source: source)
                     }
                     let operation = try SyncOperationDraft(

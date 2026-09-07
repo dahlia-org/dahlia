@@ -718,8 +718,7 @@ final class MeetingRepository {
         try dbQueue.write { db in
             guard var meeting = try MeetingRecord.fetchOne(db, key: meetingId) else { return }
 
-            try TextContentAccess.requireComplete(entity: .summary, id: meetingId, in: db)
-            let existingSummary = try SummaryRecord.fetchOne(db, key: meetingId)
+            let existingSummary = try SummaryContent.fetchOne(db, key: meetingId)
             let normalizedTitle = SummaryGeneratedMetadata.normalizedTitle(document.title)
             if let normalizedTitle {
                 meeting.name = normalizedTitle
@@ -730,7 +729,7 @@ final class MeetingRepository {
             meeting.updatedAt = Date()
             try meeting.update(db)
 
-            let record = try SummaryRecord(
+            let record = try SummaryContent(
                 meetingId: meetingId,
                 title: normalizedTitle ?? existingSummary?.title ?? "",
                 document: document.databaseJSONString(),
@@ -834,13 +833,9 @@ final class MeetingRepository {
 
     // MARK: - Segments
 
-    nonisolated func fetchSegments(forMeetingId meetingId: UUID) throws -> [TranscriptSegmentRecord] {
+    nonisolated func fetchSegments(forMeetingId meetingId: UUID) throws -> [TranscriptContent] {
         try dbQueue.read { db in
-            try TextContentAccess.requireComplete(entity: .transcript, id: meetingId, in: db)
-            return try TranscriptSegmentRecord
-                .filter(Column("meetingId") == meetingId)
-                .order(Column("startTime").asc, Column("id").asc)
-                .fetchAll(db)
+            try TextContentAccess.transcript(meetingId: meetingId, in: db)
         }
     }
 
@@ -856,38 +851,24 @@ final class MeetingRepository {
         let fetchLimit = pageLimit + 1
 
         return try dbQueue.read { db in
-            try TextContentAccess.requireComplete(entity: .transcript, id: meetingId, in: db)
-            let records: [TranscriptSegmentRecord]
+            let records: [TranscriptContent]
             let hasEarlier: Bool
             let hasLater: Bool
 
             switch direction {
             case .latest:
-                let fetched = try TranscriptSegmentRecord.fetchAll(
-                    db,
-                    sql: """
-                    SELECT * FROM transcript_segments
-                    WHERE meetingId = ? AND isConfirmed = 1
-                    ORDER BY startTime DESC, id DESC
-                    LIMIT ?
-                    """,
-                    arguments: [meetingId, fetchLimit]
+                let fetched = try TextContentAccess.transcript(
+                    meetingId: meetingId, order: .reverse, confirmedOnly: true, limit: fetchLimit, in: db
                 )
                 hasEarlier = fetched.count > pageLimit
                 hasLater = false
                 records = Array(fetched.prefix(pageLimit).reversed())
 
             case let .before(cursor):
-                let fetched = try TranscriptSegmentRecord.fetchAll(
-                    db,
-                    sql: """
-                    SELECT * FROM transcript_segments
-                    WHERE meetingId = ? AND isConfirmed = 1
-                      AND (startTime < ? OR (startTime = ? AND id < ?))
-                    ORDER BY startTime DESC, id DESC
-                    LIMIT ?
-                    """,
-                    arguments: [meetingId, cursor.startTime, cursor.startTime, cursor.id, fetchLimit]
+                let fetched = try TextContentAccess.transcript(
+                    meetingId: meetingId, order: .reverse,
+                    position: .init(id: cursor.id, startTime: cursor.startTime),
+                    confirmedOnly: true, limit: fetchLimit, in: db
                 )
                 hasEarlier = fetched.count > pageLimit
                 hasLater = true
@@ -895,16 +876,9 @@ final class MeetingRepository {
 
             case let .after(cursor), let .startingAt(cursor):
                 let inclusive = if case .startingAt = direction { true } else { false }
-                let fetched = try TranscriptSegmentRecord.fetchAll(
-                    db,
-                    sql: """
-                    SELECT * FROM transcript_segments
-                    WHERE meetingId = ? AND isConfirmed = 1
-                      AND (startTime > ? OR (startTime = ? AND id \(inclusive ? ">=" : ">") ?))
-                    ORDER BY startTime ASC, id ASC
-                    LIMIT ?
-                    """,
-                    arguments: [meetingId, cursor.startTime, cursor.startTime, cursor.id, fetchLimit]
+                let fetched = try TextContentAccess.transcript(
+                    meetingId: meetingId, position: .init(id: cursor.id, startTime: cursor.startTime),
+                    inclusive: inclusive, confirmedOnly: true, limit: fetchLimit, in: db
                 )
                 hasEarlier = try Bool.fetchOne(
                     db,
@@ -966,8 +940,7 @@ final class MeetingRepository {
     func deleteScreenshots(ids: Set<UUID>, meetingId: UUID) async throws -> [MeetingScreenshotRecord] {
         guard !ids.isEmpty else { return [] }
         return try await dbQueue.write { db in
-            try TextContentAccess.requireComplete(entity: .summary, id: meetingId, in: db)
-            let referencedScreenshotIds = try SummaryRecord.fetchOne(db, key: meetingId)?
+            let referencedScreenshotIds = try SummaryContent.fetchOne(db, key: meetingId)?
                 .loadDocument()
                 .referencedScreenshotIds ?? []
             let deletableIds = ids.subtracting(referencedScreenshotIds)
@@ -1001,10 +974,9 @@ final class MeetingRepository {
 
     // MARK: - Summaries
 
-    func fetchSummary(forMeetingId meetingId: UUID) throws -> SummaryRecord? {
+    func fetchSummary(forMeetingId meetingId: UUID) throws -> SummaryContent? {
         try dbQueue.read { db in
-            try TextContentAccess.requireComplete(entity: .summary, id: meetingId, in: db)
-            return try SummaryRecord.fetchOne(db, key: meetingId)
+            try SummaryContent.fetchOne(db, key: meetingId)
         }
     }
 
@@ -1014,8 +986,7 @@ final class MeetingRepository {
         expectedDocument: String
     ) throws -> Bool {
         try dbQueue.write { db in
-            try TextContentAccess.requireComplete(entity: .summary, id: meetingId, in: db)
-            guard let summary = try SummaryRecord.fetchOne(db, key: meetingId),
+            guard let summary = try SummaryContent.fetchOne(db, key: meetingId),
                   try summary.loadDocument().databaseJSONString() == expectedDocument else { return false }
             let googleDocsURL = googleFileId?.nilIfBlank.flatMap { fileId in
                 SummaryExportRecord.googleDocsURL(fileId: fileId)
@@ -1036,8 +1007,7 @@ final class MeetingRepository {
         expectedDocument: String
     ) async throws -> Bool {
         try await dbQueue.write { db in
-            try TextContentAccess.requireComplete(entity: .summary, id: meetingId, in: db)
-            guard let summary = try SummaryRecord.fetchOne(db, key: meetingId),
+            guard let summary = try SummaryContent.fetchOne(db, key: meetingId),
                   try summary.loadDocument().databaseJSONString() == expectedDocument else { return false }
             try SummaryExportRecord.setURL(url, meetingId: meetingId, type: .dahliaArtifact, in: db)
             return true
@@ -1089,7 +1059,7 @@ final class MeetingRepository {
     }
 
     /// サマリーを保存する（insert or update）。
-    nonisolated func upsertSummary(_ summary: SummaryRecord) throws {
+    nonisolated func upsertSummary(_ summary: SummaryContent) throws {
         try dbQueue.write { db in
             try TextContentAccess.requireComplete(entity: .summary, id: summary.meetingId, in: db)
             try summary.save(db)
@@ -1115,7 +1085,7 @@ final class MeetingRepository {
         let recordingSessions: [RecordingSessionRecord]
         let screenshots: [MeetingScreenshotRecord]
         let note: MeetingNoteRecord?
-        let summary: SummaryRecord?
+        let summary: SummaryContent?
         let summaryContent: TextContentAvailability
         let transcriptContent: TextContentAvailability
         let summaryExports: [SummaryExportRecord]
@@ -1137,7 +1107,7 @@ final class MeetingRepository {
             let note = try MeetingNoteRecord.fetchOne(db, key: meetingId)
             let summaryContent = try TextContentAccess.availability(entity: .summary, id: meetingId, in: db)
             let transcriptContent = try TextContentAccess.availability(entity: .transcript, id: meetingId, in: db)
-            let summary = try SummaryRecord.filter(Column("meetingId") == meetingId && Column("document") != nil).fetchOne(db)
+            let summary = try TextContentAccess.cachedSummary(meetingId: meetingId, in: db)
             let summaryExports = try SummaryExportRecord
                 .filter(Column("meetingId") == meetingId)
                 .fetchAll(db)

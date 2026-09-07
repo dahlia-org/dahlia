@@ -1,4 +1,5 @@
 @preconcurrency import AVFoundation
+import DahliaMeetingAccess
 import Foundation
 import GRDB
 @testable import DahliaRuntimeSupport
@@ -110,9 +111,9 @@ import GRDB
             let context = try makeContext()
             defer { try? FileManager.default.removeItem(at: context.rootURL) }
 
-            let roots = [
-                try context.service.createProject(name: "Project", parentProjectId: nil),
-                try context.service.createProject(name: "Project", parentProjectId: nil),
+            let roots = try [
+                context.service.createProject(name: "Project", parentProjectId: nil),
+                context.service.createProject(name: "Project", parentProjectId: nil),
             ].sorted { $0.id.uuidString < $1.id.uuidString }
             let retainedRoot = roots[0]
             let deletedRoot = roots[1]
@@ -1361,7 +1362,7 @@ import GRDB
             writeFile: Bool = false
         ) throws {
             try context.repository.upsertSummary(
-                SummaryRecord(
+                SummaryContent(
                     meetingId: meetingId,
                     title: "Summary",
                     document: SummaryDocument(
@@ -1390,7 +1391,7 @@ import GRDB
             context: ProjectWorkspaceTestContext
         ) throws {
             try context.database.dbQueue.write { db in
-                try TranscriptSegmentRecord(
+                try TranscriptContent(
                     id: .v7(),
                     meetingId: meetingId,
                     startTime: .now,

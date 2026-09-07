@@ -1,3 +1,4 @@
+import DahliaMeetingAccess
 import Foundation
 import GRDB
 @testable import Dahlia
@@ -8,7 +9,7 @@ import GRDB
     @MainActor
     struct BatchTranscriptionPersistenceTests {
         private typealias PersistenceState = (
-            records: [TranscriptSegmentRecord],
+            records: [TranscriptContent],
             session: RecordingSessionRecord,
             meeting: MeetingRecord
         )
@@ -87,9 +88,9 @@ import GRDB
         }
 
         private func record(
-            _ record: TranscriptSegmentRecord,
+            _ record: TranscriptContent,
             with audioFeatures: TranscriptAudioFeatures
-        ) -> TranscriptSegmentRecord {
+        ) -> TranscriptContent {
             var record = record
             record.audioFeatureVersion = audioFeatures.version
             record.audioActiveRmsDecibels = audioFeatures.activeRmsDecibels
@@ -101,9 +102,7 @@ import GRDB
 
         private func fetchState(_ fixture: BatchAudioTestFixture) throws -> PersistenceState {
             try fixture.database.dbQueue.read { db in
-                let records = try TranscriptSegmentRecord
-                    .filter(Column("sessionId") == fixture.session.id)
-                    .fetchAll(db)
+                let records = try fetchSessionTranscriptContent(sessionId: fixture.session.id, in: db)
                 let currentSession = try RecordingSessionRecord.fetchOne(db, key: fixture.session.id)
                 let currentMeeting = try MeetingRecord.fetchOne(db, key: fixture.meeting.id)
                 let session = try #require(currentSession)
@@ -118,8 +117,8 @@ import GRDB
             sessionId: UUID,
             text: String,
             now: Date
-        ) -> TranscriptSegmentRecord {
-            TranscriptSegmentRecord(
+        ) -> TranscriptContent {
+            TranscriptContent(
                 id: id,
                 meetingId: meetingId,
                 sessionId: sessionId,

@@ -18,12 +18,13 @@ import GRDB
                 contentType: mimeType,
                 checksum: "SHA-256:" + ScreenshotRemoteReference.digest(bytes),
                 name: "capture",
-                metadata: FileMetadata(source: .screenshot, ocrText: ocrText, caption: caption),
+                metadata: FileStorageMetadata(source: .screenshot),
                 createdAt: capturedAt,
                 updatedAt: capturedAt,
                 localReference: localReference,
                 remoteReference: remoteReference
             ).insert(db)
+            try FileTextBodyRecord(fileId: originalFileId, ocrText: ocrText, caption: caption).insert(db)
             try MeetingFileRecord(
                 id: id,
                 meetingId: meetingId,

@@ -64,12 +64,13 @@ struct MeetingScreenshotRecord: Codable, FetchableRecord, PersistableRecord, Sen
                 contentType: mimeType,
                 checksum: "SHA-256:" + contentHash,
                 name: "capture.\(mimeType.split(separator: "/").last ?? "bin")",
-                metadata: FileMetadata(source: .screenshot, width: pixelWidth, height: pixelHeight, ocrText: ocrText, caption: caption),
+                metadata: FileStorageMetadata(source: .screenshot, width: pixelWidth, height: pixelHeight),
                 createdAt: capturedAt,
                 updatedAt: capturedAt,
                 localReference: localReference,
                 remoteReference: remoteReference
             ).insert(db)
+            try FileTextBodyRecord(fileId: originalFileId, ocrText: ocrText, caption: caption).insert(db)
         }
         try MeetingFileRecord(
             id: id,
@@ -83,8 +84,7 @@ struct MeetingScreenshotRecord: Codable, FetchableRecord, PersistableRecord, Sen
 
     func update(_ db: Database) throws {
         guard var file = try FileRecord.fetchOne(db, key: originalFileId) else { throw ScreenshotContentError.deleted }
-        file.metadata.ocrText = ocrText
-        file.metadata.caption = caption
+        try FileTextBodyRecord(fileId: originalFileId, ocrText: ocrText, caption: caption).save(db)
         file.updatedAt = Date()
         try file.update(db)
     }

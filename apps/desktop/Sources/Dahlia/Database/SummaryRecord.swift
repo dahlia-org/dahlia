@@ -8,10 +8,6 @@ struct SummaryRecord: Codable, FetchableRecord, PersistableRecord {
 
     var meetingId: UUID
     var title: String
-    var document: String
     var createdAt: Date
 
-    func loadDocument() throws -> SummaryDocument {
-        try JSONDecoder().decode(SummaryDocument.self, from: Data(document.utf8))
-    }
 }

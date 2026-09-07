@@ -1,3 +1,4 @@
+import DahliaMeetingAccess
 import Foundation
 import GRDB
 @testable import Dahlia
@@ -529,7 +530,7 @@ import GRDB
                     calendarKey: calendarKey,
                     in: db
                 )
-                try SummaryRecord(
+                try SummaryContent(
                     meetingId: meetingID,
                     title: "Summary",
                     document: "{}",
@@ -706,7 +707,7 @@ import GRDB
 
         private func insertTranscriptOnlyMeeting(text: String, in db: Database) throws {
             let meetingID = try insertMeeting(name: "Transcript only", in: db)
-            try TranscriptSegmentRecord(
+            try TranscriptContent(
                 id: .v7(),
                 meetingId: meetingID,
                 startTime: .now,

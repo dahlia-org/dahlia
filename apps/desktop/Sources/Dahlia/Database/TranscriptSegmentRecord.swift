@@ -10,7 +10,6 @@ struct TranscriptSegmentRecord: Codable, FetchableRecord, PersistableRecord {
     var sessionId: UUID?
     var startTime: Date
     var endTime: Date?
-    var text: String
     var translatedText: String?
     var isConfirmed: Bool
     var audioSource: String?
@@ -30,7 +29,6 @@ extension TranscriptSegmentRecord {
         self.sessionId = segment.sessionId ?? defaultSessionId
         self.startTime = segment.startTime
         self.endTime = segment.endTime
-        self.text = segment.text
         self.translatedText = segment.translatedText
         self.isConfirmed = segment.isConfirmed
         self.audioSource = segment.audioSource

@@ -461,8 +461,8 @@ import GRDB
                 try db.execute(
                     sql: """
                     CREATE TEMP TRIGGER reject_screenshot_analysis
-                    BEFORE UPDATE OF metadata ON files
-                    WHEN (SELECT imageData FROM file_migration_content WHERE fileId = OLD.id) = X'FF'
+                    BEFORE UPDATE ON file_text_bodies
+                    WHEN (SELECT imageData FROM file_migration_content WHERE fileId = OLD.fileId) = X'FF'
                     BEGIN
                         SELECT RAISE(FAIL, 'forced screenshot persistence failure');
                     END

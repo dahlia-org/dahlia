@@ -333,16 +333,18 @@ final class CaptionViewModel: ObservableObject {
             do {
                 return try await contentProvider.withFileContent(id: fileId, dbQueue: dbQueue, refresh: refresh) {
                     try await dbQueue.read { db in
-                        guard let file = try FileRecord.fetchOne(db, key: fileId) else { return .remote(ocrText: nil, caption: nil, state: .deleted) }
+                        guard try FileRecord.fetchOne(db, key: fileId) != nil else { return .remote(ocrText: nil, caption: nil, state: .deleted) }
+                        let text = try TextContentAccess.cachedFileText(fileId: fileId, in: db)
                         let state = try TextContentAccess.availability(entity: .file, id: fileId, in: db).state
-                        return .remote(ocrText: file.metadata.ocrText, caption: file.metadata.caption, state: state)
+                        return .remote(ocrText: text?.ocrText, caption: text?.caption, state: state)
                     }
                 }
             } catch {
                 return await (try? dbQueue.read { db in
-                    guard let file = try FileRecord.fetchOne(db, key: fileId) else { return .remote(ocrText: nil, caption: nil, state: .deleted) }
+                    guard try FileRecord.fetchOne(db, key: fileId) != nil else { return .remote(ocrText: nil, caption: nil, state: .deleted) }
+                    let text = try TextContentAccess.cachedFileText(fileId: fileId, in: db)
                     let state = try TextContentAccess.availability(entity: .file, id: fileId, in: db).state
-                    return .remote(ocrText: file.metadata.ocrText, caption: file.metadata.caption, state: state == .stale ? .stale : .failed)
+                    return .remote(ocrText: text?.ocrText, caption: text?.caption, state: state == .stale ? .stale : .failed)
                 }) ?? .remote(ocrText: nil, caption: nil, state: .failed)
             }
         }
@@ -931,8 +933,7 @@ final class CaptionViewModel: ObservableObject {
         summaryDocumentLoader: @escaping SummaryDocumentLoader = { meetingId, dbQueue in
             try await MeetingContentProvider.shared.withContent(meetingId: meetingId, entities: [.summary], dbQueue: dbQueue) {
                 try await dbQueue.read { db in
-                    try TextContentAccess.requireComplete(entity: .summary, id: meetingId, in: db)
-                    return try SummaryRecord.fetchOne(db, key: meetingId)?.loadDocument()
+                    try SummaryContent.fetchOne(db, key: meetingId)?.loadDocument()
                 }
             }
         },

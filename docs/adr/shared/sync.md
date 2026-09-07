@@ -108,7 +108,9 @@ receipt 本文は90日後に縮約し、ID・owner・Vault・正規化 request h
 
 ## テキスト本文の部分保持（2026-09-07）
 
-metadata の全保持と本文の部分保持を分ける。`v46_textContent` で transcript 原文と summary document を NULL 可能にし、`sync_content_state` に保持 revision、完全性、本文の存在・件数、検証 hash、UTF-8 byte 数、最終利用日時を記録する。未保持を空文字に変換しない。移行時の本文は削除せず未検証として残す。Server 観測 revision は既存 `sync_entity_state` が所有する。
+metadata の全保持と本文の部分保持を分ける。`v46_textContent` で原文を `transcript_segment_bodies`、要約を `summary_bodies`、OCR / caption を `file_text_bodies` に分離し、`sync_content_state` に保持 revision、完全性、本文の存在・件数、検証 hash、UTF-8 byte 数、最終利用日時を記録する。本文テーブルは親 ID を主キー兼外部キーとし、原文と document は NOT NULL にする。未保持は本文行の不在で表し、空文字に変換しない。OCR / caption がともに NULL の本文行は取得済みの値として扱う。移行時の本文はすべて専用テーブルへ移し、Server の本文は未検証として残す。Server 観測 revision は既存 `sync_entity_state` が所有する。
+
+metadata の Record は本文を持たず、本文を含む読取結果とは型を分ける。アプリの Repository と MCP は共通 `TextContentAccess` で完全性検査と本文取得を同じ SQLite 読取内で行い、呼び出し元の事前検査に依存しない。ページ取得でも会議全体の欠損を検出し、JOIN が欠損行を黙って除外しない。一覧・検索用の cached projection は明示した別の読取口を使う。録音・バッチ結果・本文編集は metadata、本文、同期 operation を従来の同じ transaction で確定する。
 
 `GET /api/v1/sync-content` の version 1 を確認してから `content=metadata-v1` の snapshot / delta / dependency read を使う。meeting の重複 summary と検索用本文、summary document、file の OCR / caption、transcript 本文を省く。非対応では `updateRequired` を表示し、既存本文を保持して部分同期・解放を止める。既存クライアントの既定レスポンスと transaction schema 2 は維持する。導入は Server capability を先に公開し、次に Desktop を更新する。本番 deploy は別の操作。
 
@@ -120,10 +122,10 @@ manifest hash は各 nullable UTF-8 field の `byteLength:bytes`、NULL は `-:`
 
 端末が解析する画像に未完了の解析 job がある場合は、Server へのアップロード後も既存の待機・処理・失敗表示と完了までの更新を維持する。Server から受信しただけの画像は共通 provider で OCR / caption を取得し、ローカル解析の待機として扱わない。
 
-全 Server Account 合計128 MiBを超えると、再取得可能な検証済み本文を LRU で80%まで解放する。直近20会議は空き枠内だけ先読みする。閲覧済み本文を先読みのために追い出さず、解放した項目を次の先読みで取り直さない。Local Account、使用中、未送信・競合・復旧中の Vault、録音中は対象外。容量は本文だけを数え、metadata・翻訳・session・音声特徴量・ユーザーの Markdown・backup を含めない。解放は原文を NULL にし、summary header と export 参照、端末固有属性を保持する。対応する FTS・旧 vector を除去し metadata 索引を再構築する。既存の起動時 VACUUM と録音外 incremental vacuum で空きページを回収する。
+全 Server Account 合計128 MiBを超えると、再取得可能な検証済み本文を LRU で80%まで解放する。直近20会議は空き枠内だけ先読みする。閲覧済み本文を先読みのために追い出さず、解放した項目を次の先読みで取り直さない。Local Account、使用中、未送信・競合・復旧中の Vault、録音中は対象外。容量は本文だけを数え、metadata・翻訳・session・音声特徴量・ユーザーの Markdown・backup を含めない。解放は本文行だけを削除し、transcript metadata・summary header・file metadata と export 参照、端末固有属性を保持する。対応する FTS・旧 vector を除去し metadata 索引を再構築する。既存の起動時 VACUUM と録音外 incremental vacuum で空きページを回収する。
 
 反映・解放 transaction は接続 ID / origin、Vault、mutation generation、対象の存在、revision、queue、復旧・録音状態を再検査する。権限・所属の変更は generation で進行中取得を失効させる。状態は missing / loading / failed / ready / stale / empty / deleted を区別し、失敗で完全な旧本文を消さない。
 
 本文編集は完全性を検査し、操作の base revision は編集した保持 revision を使う。明示的なローカル版再適用だけが最新 revision を使える。未保持会議への録音追加は既存の durable write を使い、不足する過去本文を完全にしたと判定しない。Local Account への移動は metadata 同期、全本文・画像原本取得、接続 generation と完全性の最終検査を終えてから確定する。失敗時は接続・queue・ローカル変更を保持する。
 
-Server 版の採用や確定済み Vault の無効操作破棄では、破棄対象の本文だけを同じ transaction で通常の未保持表現へ解放し、Server revision が変わらなくても正本を再取得する。本文値を NULL にし、対応する FTS と開いている表示 projection も更新する。行・metadata・翻訳・音声特徴量は保持する。未確定 Vault の初期アップロード再構築と、明示的なローカル版再適用ではローカル本文を保持する。
+Server 版の採用や確定済み Vault の無効操作破棄では、破棄対象の本文だけを同じ transaction で通常の未保持表現へ解放し、Server revision が変わらなくても正本を再取得する。本文行を削除し、対応する FTS と開いている表示 projection も更新する。行・metadata・翻訳・音声特徴量は保持する。未確定 Vault の初期アップロード再構築と、明示的なローカル版再適用ではローカル本文を保持する。

@@ -9,34 +9,79 @@
 
     @MainActor
     struct TextContentTests {
-        @Test
-        func migrationPreservesBodiesExportsAndLocalAttributes() throws {
+        @Test(arguments: [false, true])
+        func migrationPreservesBodiesExportsAndLocalAttributes(serverAccount: Bool) throws {
             let queue = try DatabaseQueue()
             try AppDatabaseManager.migrator.migrate(queue, upTo: "v45_screenshotContent")
             let meetingId = UUID.v7()
             let segmentId = UUID.v7()
             let vaultId = UUID.v7()
+            let fileId = UUID.v7()
+            let transactionId = UUID.v7()
             try queue.write { db in
-                try VaultRecord(id: vaultId, path: nil, name: "Local", createdAt: .now, lastOpenedAt: .now).insert(db)
+                var vault = VaultRecord(id: vaultId, path: nil, name: "Existing", createdAt: .now, lastOpenedAt: .now)
+                if serverAccount {
+                    let connection = DahliaAccountConnectionRecord(id: .v7(), origin: "https://migration.invalid", clientID: "test", createdAt: .now)
+                    try connection.insert(db)
+                    vault.accountConnectionId = connection.id
+                    vault.syncConfirmedConnectionId = connection.id
+                    try db.execute(
+                        sql: "INSERT INTO sync_transactions(id, vaultId, connectionId, createdAt, availableAt) VALUES (?, ?, ?, ?, ?)",
+                        arguments: [transactionId, vaultId, connection.id, Date(), Date()]
+                    )
+                    try db.execute(
+                        sql: "INSERT INTO sync_operations(transactionId, position, id, entity, action, entityId, payloadJSON) VALUES (?, 0, ?, 'summary', 'upsert', ?, ?)",
+                        arguments: [transactionId, UUID.v7(), meetingId, "pending body"]
+                    )
+                }
+                try vault.insert(db)
                 try MeetingRecord(id: meetingId, vaultId: vaultId, projectId: nil, name: "Existing", createdAt: .now, updatedAt: .now).insert(db)
                 try db.execute(
-                    sql: "INSERT INTO transcript_segments(id, meetingId, startTime, text, translatedText, isConfirmed, audioFeatureVersion, audioVoicedFrameRatio) VALUES (?, ?, ?, ?, ?, 1, 1, 0.7)",
+                    sql: """
+                    INSERT INTO transcript_segments(id, meetingId, startTime, text, translatedText, isConfirmed, audioFeatureVersion, audioVoicedFrameRatio)
+                    VALUES (?, ?, ?, ?, ?, 1, 1, 0.7)
+                    """,
                     arguments: [segmentId, meetingId, Date(), "original 日本語", "translation"]
                 )
-                try SummaryRecord(meetingId: meetingId, title: "Saved", document: "{\"version\":1}", createdAt: .now).insert(db)
+                try db.execute(
+                    sql: "INSERT INTO summaries(meetingId, title, document, createdAt) VALUES (?, ?, ?, ?)",
+                    arguments: [meetingId, "Saved", "{\"version\":1}", Date()]
+                )
                 try SummaryExportRecord.setURL("vault:///saved.md", meetingId: meetingId, type: .vault, in: db)
+                try MeetingNoteRecord(meetingId: meetingId, text: "user note", createdAt: .now, updatedAt: .now).insert(db)
+                try ScreenshotContentMigration.FileRecord(
+                    id: fileId, vaultId: vaultId, size: 0, contentType: "image/png",
+                    checksum: "SHA-256:" + String(repeating: "0", count: 64), name: "image",
+                    metadata: .init(source: .screenshot, width: 10, height: 20, ocrText: "OCR", caption: "caption"),
+                    createdAt: .now, updatedAt: .now, localReference: "local original"
+                ).insert(db)
             }
             try AppDatabaseManager.migrator.migrate(queue)
             try queue.write { db in
-                let segment = try #require(try TranscriptSegmentRecord.fetchOne(db, key: segmentId))
+                let segment = try #require(try fetchTranscriptContent(id: segmentId, in: db))
                 #expect(segment.text == "original 日本語")
                 #expect(segment.translatedText == "translation")
                 #expect(segment.audioVoicedFrameRatio == 0.7)
-                #expect(try SummaryRecord.fetchOne(db, key: meetingId)?.document == "{\"version\":1}")
+                #expect(try SummaryContent.fetchOne(db, key: meetingId)?.document == "{\"version\":1}")
                 #expect(try SummaryExportRecord.fetchOne(meetingId: meetingId, type: .vault, in: db)?.url == "vault:///saved.md")
                 #expect(try Row.fetchAll(db, sql: "PRAGMA foreign_key_check").isEmpty)
-                try db.execute(sql: "UPDATE transcript_segments SET text = NULL WHERE id = ?", arguments: [segmentId])
-                try db.execute(sql: "UPDATE summaries SET document = NULL WHERE meetingId = ?", arguments: [meetingId])
+                #expect(try !db.columns(in: "transcript_segments").contains { $0.name == "text" })
+                #expect(try !db.columns(in: "summaries").contains { $0.name == "document" })
+                #expect(try FileRecord.fetchOne(db, key: fileId)?.metadata.width == 10)
+                #expect(try FileRecord.fetchOne(db, key: fileId)?.localReference == "local original")
+                #expect(try TextContentAccess.fileText(fileId: fileId, in: db)?.ocrText == "OCR")
+                #expect(try TextContentAccess.fileText(fileId: fileId, in: db)?.caption == "caption")
+                #expect(try MeetingNoteRecord.fetchOne(db, key: meetingId)?.text == "user note")
+                if serverAccount {
+                    #expect(try String.fetchOne(
+                        db,
+                        sql: "SELECT payloadJSON FROM sync_operations WHERE transactionId = ?",
+                        arguments: [transactionId]
+                    ) == "pending body")
+                    #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_content_state WHERE complete = 1 AND verifiedHash IS NULL") == 3)
+                }
+                try db.execute(sql: "DELETE FROM transcript_segment_bodies WHERE segmentId = ?", arguments: [segmentId])
+                try db.execute(sql: "DELETE FROM summary_bodies WHERE meetingId = ?", arguments: [meetingId])
                 #expect(throws: TextContentError.incomplete) { try TextContentAccess.requireComplete(entity: .transcript, id: meetingId, in: db) }
                 #expect(throws: TextContentError.incomplete) { try TextContentAccess.requireComplete(entity: .summary, id: meetingId, in: db) }
                 #expect(try SummaryExportRecord.fetchOne(meetingId: meetingId, type: .vault, in: db) != nil)
@@ -44,13 +89,141 @@
         }
 
         @Test
+        func checkedReadersRejectMissingBodiesWithoutCallerPreconditions() throws {
+            let (queue, vaultId, meetingId) = try database()
+            let segmentId = UUID.v7()
+            let fileId = UUID.v7()
+            try queue.write { db in
+                try TranscriptContent(
+                    id: segmentId, meetingId: meetingId, startTime: .now, text: "original",
+                    translatedText: "translation", isConfirmed: true, audioFeatureVersion: 1, audioVoicedFrameRatio: 0.7
+                ).insert(db)
+                try SummaryContent(meetingId: meetingId, title: "Header", document: "{}", createdAt: .now).insert(db)
+                try MeetingNoteRecord(meetingId: meetingId, text: "user note", createdAt: .now, updatedAt: .now).insert(db)
+                try SummaryExportRecord.setURL("vault:///saved.md", meetingId: meetingId, type: .vault, in: db)
+                try FileRecord(
+                    id: fileId, vaultId: vaultId, size: 0, contentType: "image/png",
+                    checksum: "SHA-256:" + String(repeating: "0", count: 64), name: "image",
+                    metadata: .init(source: .screenshot, width: 100, height: 200), createdAt: .now, updatedAt: .now,
+                    localReference: "retained local reference"
+                ).insert(db)
+                try FileTextBodyRecord(fileId: fileId, ocrText: nil, caption: nil).insert(db)
+                for (entity, id) in [(TextContentEntity.transcript, meetingId), (.summary, meetingId), (.file, fileId)] {
+                    try TextContentStore.registerLocal(entity: entity, id: id, vaultId: vaultId, in: db)
+                }
+                // A fetched file whose fields are both NULL is different from an absent body row.
+                #expect(try TextContentAccess.fileText(fileId: fileId, in: db) != nil)
+                #expect(try TextContentAccess.fileText(fileId: fileId, in: db)?.ocrText == nil)
+                #expect(try TextContentAccess.transcript(meetingId: meetingId, limit: 1, in: db).first?.text == "original")
+                #expect(try TextContentAccess.summary(meetingId: meetingId, in: db)?.document == "{}")
+                try db.execute(sql: "DELETE FROM transcript_segment_bodies")
+                try db.execute(sql: "DELETE FROM summary_bodies")
+                try db.execute(sql: "DELETE FROM file_text_bodies")
+                // Even an inconsistent state row must not let an INNER JOIN silently return an empty transcript.
+                try db.execute(sql: "UPDATE sync_content_state SET complete = 1")
+                #expect(throws: TextContentError.incomplete) { try TextContentAccess.transcript(meetingId: meetingId, in: db) }
+                #expect(throws: TextContentError.incomplete) { try TextContentAccess.transcript(meetingId: meetingId, limit: 1, in: db) }
+                #expect(throws: TextContentError.incomplete) { try TextContentAccess.summary(meetingId: meetingId, in: db) }
+                #expect(throws: TextContentError.incomplete) { try TextContentAccess.fileText(fileId: fileId, in: db) }
+                let segment = try #require(try TranscriptSegmentRecord.fetchOne(db, key: segmentId))
+                #expect(segment.translatedText == "translation")
+                #expect(segment.audioVoicedFrameRatio == 0.7)
+                #expect(try SummaryRecord.fetchOne(db, key: meetingId)?.title == "Header")
+                #expect(try FileRecord.fetchOne(db, key: fileId)?.localReference == "retained local reference")
+                #expect(try MeetingNoteRecord.fetchOne(db, key: meetingId)?.text == "user note")
+                #expect(try SummaryExportRecord.fetchOne(meetingId: meetingId, type: .vault, in: db)?.url == "vault:///saved.md")
+                #expect(try TextContentAccess.cachedSummary(meetingId: meetingId, in: db) == nil)
+            }
+        }
+
+        @Test
+        func screenshotReadsResolveNonresidentSummaryReferencesOutsideSQLite() throws {
+            let fixture = try Fixture()
+            let vaultId = fixture.primaryVaultID
+            let meetingId = fixture.firstMeetingID
+            let screenshotId = fixture.firstScreenshotID
+            let response = try JSONEncoder().encode(fixture.store(vaultID: vaultId).meeting(id: meetingId))
+            try fixture.manager.dbQueue.write { db in
+                let connection = DahliaAccountConnectionRecord(id: .v7(), origin: "https://references.invalid", clientID: "test", createdAt: .now)
+                try connection.insert(db)
+                try db.execute(
+                    sql: "UPDATE vaults SET accountConnectionId = ?, syncConfirmedConnectionId = ? WHERE id = ?",
+                    arguments: [connection.id, connection.id, vaultId]
+                )
+                try db.execute(
+                    sql: "INSERT INTO sync_content_state(vaultId, entity, entityId) VALUES (?, 'summary', ?)",
+                    arguments: [vaultId, meetingId]
+                )
+                try db.execute(sql: "DELETE FROM summary_bodies WHERE meetingId = ?", arguments: [meetingId])
+            }
+            let calls = Mutex(0)
+            let store = try MeetingAccessStore(databaseURL: fixture.databaseURL, vaultID: vaultId, textResolver: { requestedVault, request in
+                #expect(requestedVault == vaultId)
+                #expect(request.operation == .meeting)
+                #expect(request.meetingId == meetingId)
+                calls.withLock { $0 += 1 }
+                // Return the leased broker result without installing a local body, as if it were evicted immediately after IPC.
+                return response
+            })
+            let page = try store.screenshots(meetingID: meetingId)
+            #expect(page.screenshots.first(where: { $0.id == screenshotId })?.isReferencedInSummary == true)
+            let image = try store.screenshot(meetingID: meetingId, screenshotID: screenshotId)
+            #expect(image.metadata.isReferencedInSummary)
+            #expect(calls.withLock { $0 } == 2)
+            #expect(throws: MeetingAccessError.meetingNotFound) { try store.screenshots(meetingID: fixture.otherVaultMeetingID) }
+            #expect(calls.withLock { $0 } == 2)
+        }
+
+        @Test
+        func deletingTranscriptMetadataKeepsCompleteBodyAccounting() throws {
+            let (queue, vaultId, meetingId) = try database()
+            let segment = TranscriptContent(id: .v7(), meetingId: meetingId, startTime: .now, text: "日本語", isConfirmed: true)
+            try queue.write { db in
+                try segment.insert(db)
+                try TextContentStore.registerLocal(entity: .transcript, id: meetingId, vaultId: vaultId, in: db)
+                try db.execute(sql: "UPDATE sync_content_state SET verifiedHash = 'verified'")
+                try TranscriptSegmentRecord.updateTranslatedText("translation", id: segment.id, in: db)
+                #expect(try String.fetchOne(db, sql: "SELECT verifiedHash FROM sync_content_state") == "verified")
+                try db.execute(
+                    sql: "INSERT INTO transcript_segment_bodies(segmentId, text) VALUES (?, 'next') ON CONFLICT(segmentId) DO UPDATE SET text = excluded.text",
+                    arguments: [segment.id]
+                )
+                #expect(try Int.fetchOne(db, sql: "SELECT byteCount FROM sync_content_state") == 4)
+                _ = try TranscriptSegmentRecord.deleteOne(db, key: segment.id)
+                #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM transcript_segment_bodies") == 0)
+                #expect(try Int.fetchOne(db, sql: "SELECT byteCount FROM sync_content_state") == 0)
+                #expect(try TextContentAccess.transcript(meetingId: meetingId, in: db).isEmpty)
+            }
+        }
+
+        @Test
+        func newBodiesReplaceKnownEmptyAvailability() throws {
+            let (queue, vaultId, meetingId) = try database()
+            try queue.write { db in
+                for entity in ["summary", "transcript"] {
+                    try db.execute(sql: """
+                    INSERT INTO sync_content_state(vaultId, entity, entityId, complete, present, contentCount)
+                    VALUES (?, ?, ?, 1, 0, 0)
+                    """, arguments: [vaultId, entity, meetingId])
+                }
+                try SummaryContent(meetingId: meetingId, title: "New", document: "{}", createdAt: .now).save(db)
+                try TranscriptContent(id: .v7(), meetingId: meetingId, startTime: .now, text: "new", isConfirmed: true).insert(db)
+                #expect(try TextContentAccess.availability(entity: .summary, id: meetingId, in: db).state == .ready)
+                #expect(try TextContentAccess.availability(entity: .transcript, id: meetingId, in: db).state == .ready)
+                #expect(try TextContentAccess.summary(meetingId: meetingId, in: db)?.document == "{}")
+                #expect(try TextContentAccess.transcript(meetingId: meetingId, in: db).first?.text == "new")
+            }
+        }
+
+        @Test
         func completeCachedTextCanBeReadOfflineAndEvictionPreservesLocalData() async throws {
             let (queue, vaultId, meetingId) = try database()
             try await queue.write { db in
-                try db.execute(
-                    sql: "INSERT INTO transcript_segments(id, meetingId, startTime, text, translatedText, isConfirmed, audioFeatureVersion, audioVoicedFrameRatio) VALUES (?, ?, ?, ?, ?, 1, 1, 0.7)",
-                    arguments: [UUID.v7(), meetingId, Date(), String(repeating: "日本語", count: 100), "translation"]
-                )
+                try TranscriptContent(
+                    id: .v7(), meetingId: meetingId, startTime: Date(),
+                    text: String(repeating: "日本語", count: 100), translatedText: "translation",
+                    isConfirmed: true, audioFeatureVersion: 1, audioVoicedFrameRatio: 0.7
+                ).insert(db)
                 try db.execute(sql: "INSERT INTO sync_entity_state VALUES (?, 'transcript', ?, 3)", arguments: [vaultId, meetingId])
                 try db.execute(
                     sql: "INSERT INTO sync_content_state(vaultId, entity, entityId, residentRevision, complete) VALUES (?, 'transcript', ?, 3, 1)",
@@ -68,7 +241,10 @@
             try await provider.trim(dbQueue: queue, capacity: 1)
             try await queue.read { db in
                 let row = try #require(try Row.fetchOne(db, sql: "SELECT * FROM transcript_segments WHERE meetingId = ?", arguments: [meetingId]))
-                #expect(row["text"] as String? == nil)
+                #expect(try Int.fetchOne(db, sql: """
+                SELECT count(*) FROM transcript_segment_bodies b
+                JOIN transcript_segments t ON t.id = b.segmentId WHERE t.meetingId = ?
+                """, arguments: [meetingId]) == 0)
                 #expect(row["translatedText"] as String? == "translation")
                 #expect(row["audioVoicedFrameRatio"] as Double? == 0.7)
                 #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_transactions") == 0)
@@ -174,7 +350,7 @@
                 try await provider.ensure(entity: .transcript, id: fixture.meetingId, dbQueue: fixture.queue)
             }
             try await fixture.queue.read { db throws in
-                #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM transcript_segments WHERE text IS NOT NULL") == 0)
+                #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM transcript_segment_bodies") == 0)
                 #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_content_state WHERE entity = 'transcript' AND complete = 1") == 0)
                 #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_remote_transcript_items") == 0)
                 if change == "delete" { #expect(try MeetingRecord.fetchOne(db, key: fixture.meetingId) == nil) }
@@ -202,7 +378,7 @@
             try await SyncTransactionQueue.discardInvalidTransaction(vaultId: vaultId, dbQueue: queue)
             try await queue.read { db in
                 #expect(try String
-                    .fetchOne(db, sql: "SELECT document FROM summaries WHERE meetingId = ?", arguments: [meetingId]) ==
+                    .fetchOne(db, sql: "SELECT document FROM summary_bodies WHERE meetingId = ?", arguments: [meetingId]) ==
                     (hasConfirmedVault ? nil : document))
                 #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM summaries WHERE meetingId = ?", arguments: [meetingId]) == 1)
                 if hasConfirmedVault {
@@ -237,7 +413,7 @@
             defer { ImageURLProtocol.remove(origin: fixture.origin) }
             try await provider.ensure(entity: .transcript, id: fixture.meetingId, dbQueue: fixture.queue)
             try await fixture.queue.write { db in
-                try SummaryRecord(meetingId: fixture.meetingId, title: "Canonical", document: document, createdAt: .now).insert(db)
+                try SummaryContent(meetingId: fixture.meetingId, title: "Canonical", document: document, createdAt: .now).insert(db)
                 try db.execute(sql: "INSERT INTO sync_entity_state VALUES (?, 'summary', ?, 3)", arguments: [fixture.vaultId, fixture.meetingId])
                 try db.execute(sql: "INSERT INTO sync_entity_state VALUES (?, 'vault', ?, 2)", arguments: [fixture.vaultId, fixture.vaultId])
                 try db.execute(sql: "UPDATE vaults SET syncPullCursor = 'ready'")
@@ -250,8 +426,17 @@
                 )
             } else {
                 try await fixture.queue.write { db in
-                    try db.execute(sql: "UPDATE transcript_segments SET text = 'Discarded local' WHERE id = ?", arguments: [fixture.segmentId])
-                    let segment = try #require(try TranscriptSegmentRecord.fetchOne(db, key: fixture.segmentId))
+                    try db.execute(
+                        sql: """
+                        INSERT INTO transcript_segment_bodies(segmentId, text)
+                        SELECT id, 'Discarded local'
+                        FROM transcript_segments
+                        WHERE id = ?
+                        ON CONFLICT(segmentId) DO UPDATE SET text = excluded.text
+                        """,
+                        arguments: [fixture.segmentId]
+                    )
+                    let segment = try #require(try fetchTranscriptContent(id: fixture.segmentId, in: db))
                     let patch = SyncOperationDraft(entity: .transcript, action: .patch, entityId: fixture.meetingId)
                     try SyncTransactionRecorder.record(vaultId: fixture.vaultId, operations: [
                         SyncOperationDraft(entity: .meeting, action: .update, entityId: fixture.meetingId), patch,
@@ -341,7 +526,7 @@
             try await provider.ensure(entity: .transcript, id: fixture.meetingId, dbQueue: fixture.queue, refresh: true)
             #expect(calls.withLock { $0 } == 3)
             try await fixture.queue.read { db in
-                let segment = try #require(try TranscriptSegmentRecord.fetchOne(db, key: fixture.segmentId))
+                let segment = try #require(try fetchTranscriptContent(id: fixture.segmentId, in: db))
                 #expect(abs(segment.startTime.timeIntervalSince1970 - 1_767_225_600.1) < 0.001)
                 #expect(segment.endTime == Date(timeIntervalSince1970: 1_767_225_600.5))
                 #expect(segment.audioSource == "mic")
@@ -403,7 +588,16 @@
         func legacyMismatchIsKeptAndCannotBeEvicted() async throws {
             let fixture = try textFixture()
             try await fixture.queue.write { db in
-                try db.execute(sql: "UPDATE transcript_segments SET text = 'unverified local body'")
+                try db
+                    .execute(
+                        sql: """
+                        INSERT INTO transcript_segment_bodies(segmentId, text)
+                        SELECT id, 'unverified local body'
+                        FROM transcript_segments
+                        WHERE true
+                        ON CONFLICT(segmentId) DO UPDATE SET text = excluded.text
+                        """
+                    )
                 try db.execute(sql: "UPDATE sync_content_state SET complete = 1, residentRevision = 3")
             }
             let calls = Mutex(0)
@@ -460,10 +654,10 @@
                     try db.execute(sql: "DELETE FROM transcript_segments WHERE meetingId = ?", arguments: [meetingId])
                     try db.execute(sql: "UPDATE sync_content_state SET complete = 1")
                     for index in 0 ..< 256 {
-                        try db.execute(
-                            sql: "INSERT INTO transcript_segments(id, meetingId, startTime, text, isConfirmed) VALUES (?, ?, ?, ?, 1)",
-                            arguments: [UUID.v7(), meetingId, Date(timeIntervalSince1970: Double(index)), String(repeating: "日本語🙂", count: 1024)]
-                        )
+                        try TranscriptContent(
+                            id: .v7(), meetingId: meetingId, startTime: Date(timeIntervalSince1970: Double(index)),
+                            text: String(repeating: "日本語🙂", count: 1024), isConfirmed: true
+                        ).insert(db)
                     }
                     let fingerprint = try #require(try TextContentStore.fingerprint(entity: .transcript, id: meetingId, in: db))
                     try db.execute(
@@ -723,9 +917,18 @@
         func bodyEditsKeepResidentRevisionWhileExplicitReapplyUsesLatest() async throws {
             let fixture = try textFixture()
             try await fixture.queue.write { db in
-                try db.execute(sql: "UPDATE transcript_segments SET text = 'resident'")
+                try db
+                    .execute(
+                        sql: """
+                        INSERT INTO transcript_segment_bodies(segmentId, text)
+                        SELECT id, 'resident'
+                        FROM transcript_segments
+                        WHERE true
+                        ON CONFLICT(segmentId) DO UPDATE SET text = excluded.text
+                        """
+                    )
                 try db.execute(sql: "UPDATE sync_content_state SET complete = 1, residentRevision = 2")
-                let segment = try SyncTranscriptPatchSegment(#require(try TranscriptSegmentRecord.fetchOne(db, key: fixture.segmentId)))
+                let segment = try SyncTranscriptPatchSegment(#require(try fetchTranscriptContent(id: fixture.segmentId, in: db)))
                 let operation = SyncOperationDraft(entity: .transcript, action: .patch, entityId: fixture.meetingId)
                 try SyncTransactionRecorder.record(
                     vaultId: fixture.vaultId,
@@ -751,10 +954,19 @@
         func rebasedTranscriptReceiptRequiresCanonicalBodyRefresh() async throws {
             let fixture = try textFixture()
             try await fixture.queue.write { db in
-                try db.execute(sql: "UPDATE transcript_segments SET text = 'first 日本語'")
+                try db
+                    .execute(
+                        sql: """
+                        INSERT INTO transcript_segment_bodies(segmentId, text)
+                        SELECT id, 'first 日本語'
+                        FROM transcript_segments
+                        WHERE true
+                        ON CONFLICT(segmentId) DO UPDATE SET text = excluded.text
+                        """
+                    )
                 try db.execute(sql: "UPDATE sync_content_state SET complete = 1, residentRevision = 1")
                 try db.execute(sql: "UPDATE sync_entity_state SET confirmedRevision = 2")
-                let segment = try SyncTranscriptPatchSegment(#require(try TranscriptSegmentRecord.fetchOne(db, key: fixture.segmentId)))
+                let segment = try SyncTranscriptPatchSegment(#require(try fetchTranscriptContent(id: fixture.segmentId, in: db)))
                 let operation = SyncOperationDraft(entity: .transcript, action: .patch, entityId: fixture.meetingId)
                 try SyncTransactionRecorder.record(
                     vaultId: fixture.vaultId, operations: [operation], transcriptSegments: [operation.id: [segment]],
@@ -782,10 +994,19 @@
         func sequentialTranscriptReceiptsAdvanceTheCompleteLocalBase() async throws {
             let fixture = try textFixture()
             try await fixture.queue.write { db in
-                try db.execute(sql: "UPDATE transcript_segments SET text = 'first 日本語'")
+                try db
+                    .execute(
+                        sql: """
+                        INSERT INTO transcript_segment_bodies(segmentId, text)
+                        SELECT id, 'first 日本語'
+                        FROM transcript_segments
+                        WHERE true
+                        ON CONFLICT(segmentId) DO UPDATE SET text = excluded.text
+                        """
+                    )
                 try db.execute(sql: "UPDATE sync_content_state SET complete = 1, residentRevision = 1")
                 try db.execute(sql: "UPDATE sync_entity_state SET confirmedRevision = 1")
-                let segment = try SyncTranscriptPatchSegment(#require(try TranscriptSegmentRecord.fetchOne(db, key: fixture.segmentId)))
+                let segment = try SyncTranscriptPatchSegment(#require(try fetchTranscriptContent(id: fixture.segmentId, in: db)))
                 for _ in 0 ..< 2 {
                     let operation = SyncOperationDraft(entity: .transcript, action: .patch, entityId: fixture.meetingId)
                     try SyncTransactionRecorder.record(
@@ -926,7 +1147,7 @@
             }
             try await fixture.queue.read { db throws in
                 #expect(try UUID.fetchOne(db, sql: "SELECT accountConnectionId FROM vaults") == (fail ? connectionId : nil))
-                #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM transcript_segments WHERE text IS NOT NULL") == (fail ? 0 : 2))
+                #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM transcript_segment_bodies") == (fail ? 0 : 2))
                 if !fail { #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_content_state") == 0) }
             }
         }
@@ -936,7 +1157,16 @@
             let fixture = try textFixture()
             let connectionId = try await fixture.queue.write { db in
                 try db.execute(sql: "UPDATE vaults SET syncPullCursor = 'before'")
-                try db.execute(sql: "UPDATE transcript_segments SET text = 'local body'")
+                try db
+                    .execute(
+                        sql: """
+                        INSERT INTO transcript_segment_bodies(segmentId, text)
+                        SELECT id, 'local body'
+                        FROM transcript_segments
+                        WHERE true
+                        ON CONFLICT(segmentId) DO UPDATE SET text = excluded.text
+                        """
+                    )
                 try db.execute(sql: "UPDATE sync_content_state SET complete = 1, residentRevision = 3")
                 return try #require(try UUID.fetchOne(db, sql: "SELECT accountConnectionId FROM vaults"))
             }
@@ -954,7 +1184,7 @@
             try await fixture.queue.read { db throws in
                 #expect(try String.fetchOne(db, sql: "SELECT syncRecoveryState FROM vaults") == "updateRequired")
                 #expect(try String.fetchOne(db, sql: "SELECT syncPullCursor FROM vaults") == "before")
-                #expect(try String.fetchOne(db, sql: "SELECT text FROM transcript_segments") == "local body")
+                #expect(try String.fetchOne(db, sql: "SELECT text FROM transcript_segment_bodies") == "local body")
             }
         }
 
@@ -996,7 +1226,7 @@
                 #expect(try String.fetchOne(db, sql: "SELECT syncPullCursor FROM vaults") == "after")
                 #expect(try Int.fetchOne(db, sql: "SELECT contentCount FROM sync_content_state WHERE entity = 'transcript'") == 10000)
                 #expect(try Int.fetchOne(db, sql: "SELECT complete FROM sync_content_state WHERE entity = 'transcript'") == 0)
-                #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM transcript_segments WHERE text IS NOT NULL") == 0)
+                #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM transcript_segment_bodies") == 0)
             }
         }
 
@@ -1029,7 +1259,7 @@
             try await fixture.queue.write { db in
                 if entity == .summary {
                     try db.execute(
-                        sql: "INSERT INTO summaries(meetingId, title, document, createdAt) VALUES (?, 'Remote', NULL, ?)",
+                        sql: "INSERT INTO summaries(meetingId, title, createdAt) VALUES (?, 'Remote', ?)",
                         arguments: [id, Date()]
                     )
                     try SummaryExportRecord.setURL("vault:///saved.md", meetingId: id, type: .vault, in: db)
@@ -1079,9 +1309,18 @@
                 #expect(hits.screenshots.first?.detectedText.isEmpty == true)
                 // Cached stale OCR remains readable offline; the overlay's explicit retry must fetch a new revision.
                 try await fixture.queue.write { db in
-                    try db.execute(sql: "UPDATE files SET metadata = json_set(metadata, '$.caption', 'older') WHERE id = ?", arguments: [id])
+                    try db.execute(sql: "UPDATE file_text_bodies SET caption = 'older' WHERE fileId = ?", arguments: [id])
                     try db.execute(sql: "UPDATE sync_content_state SET residentRevision = 2 WHERE entity = 'file'")
-                    try db.execute(sql: "UPDATE transcript_segments SET text = 'cached'")
+                    try db
+                        .execute(
+                            sql: """
+                            INSERT INTO transcript_segment_bodies(segmentId, text)
+                            SELECT id, 'cached'
+                            FROM transcript_segments
+                            WHERE true
+                            ON CONFLICT(segmentId) DO UPDATE SET text = excluded.text
+                            """
+                        )
                     try db.execute(sql: "UPDATE sync_content_state SET complete = 1, residentRevision = 3 WHERE entity = 'transcript'")
                 }
                 let viewModel = CaptionViewModel()
@@ -1108,10 +1347,10 @@
             try await fixture.queue.read { db throws in
                 if entity == .summary {
                     #expect(try String.fetchOne(db, sql: "SELECT title FROM summaries WHERE meetingId = ?", arguments: [id]) == "Remote")
-                    #expect(try String.fetchOne(db, sql: "SELECT document FROM summaries WHERE meetingId = ?", arguments: [id]) == nil)
+                    #expect(try String.fetchOne(db, sql: "SELECT document FROM summary_bodies WHERE meetingId = ?", arguments: [id]) == nil)
                     #expect(try SummaryExportRecord.fetchOne(meetingId: id, type: .vault, in: db) != nil)
                 } else {
-                    #expect(try FileRecord.fetchOne(db, key: id)?.metadata.caption == nil)
+                    #expect(try TextContentAccess.cachedFileText(fileId: id, in: db)?.caption == nil)
                     #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM search_documents WHERE kind = 'screenshot'") == 0)
                 }
                 #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_transactions") == 0)
@@ -1212,8 +1451,8 @@
                 )
                 try db.execute(
                     sql: """
-                    INSERT INTO transcript_segments(id, meetingId, startTime, text, translatedText, isConfirmed, audioFeatureVersion, audioVoicedFrameRatio)
-                    VALUES (?, ?, ?, NULL, 'local translation', 1, 1, 0.75)
+                    INSERT INTO transcript_segments(id, meetingId, startTime, translatedText, isConfirmed, audioFeatureVersion, audioVoicedFrameRatio)
+                    VALUES (?, ?, ?, 'local translation', 1, 1, 0.75)
                     """,
                     arguments: [segmentId, meetingId, Date(timeIntervalSince1970: 1_767_225_600)]
                 )
