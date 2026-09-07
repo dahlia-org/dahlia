@@ -51,7 +51,12 @@
                 payloadJSON: SyncJSON.encoder.encode(payload)
             )
             let transactionId = try await fixture.dbQueue.write { db in
-                try #require(try SyncTransactionRecorder.record(vaultId: fixture.vaultId, operations: [operation], screenshotAttachments: [
+                // This is an established Vault, so an empty queue must not trigger initial snapshot recovery.
+                try db.execute(
+                    sql: "INSERT INTO sync_entity_state(vaultId, entity, entityId, confirmedRevision) VALUES (?, 'vault', ?, 1)",
+                    arguments: [fixture.vaultId, fixture.vaultId]
+                )
+                return try #require(try SyncTransactionRecorder.record(vaultId: fixture.vaultId, operations: [operation], screenshotAttachments: [
                     operation.id: SyncScreenshotAttachmentReference(mimeType: "image/png", source: fixture.source),
                 ], in: db))
             }
@@ -170,6 +175,10 @@
             let commits = all.filter { $0.url?.path == "/api/v1/transactions" }
             #expect(commits.count == (firstFailure == "retry" ? 2 : 1))
             #expect(commits.allSatisfy { $0.httpBody == resolvedBody })
+
+            // Exercise the next drain iteration even when stop wins the race with the worker.
+            try await SyncInitialSnapshotBuilder.enqueuePending(dbQueue: fixture.dbQueue)
+            #expect(try await fixture.dbQueue.read { try Int.fetchOne($0, sql: "SELECT count(*) FROM sync_transactions") } == 0)
         }
 
         @Test
