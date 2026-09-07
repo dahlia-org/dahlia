@@ -453,7 +453,7 @@ export function createApp(dependencies: AppDependencies) {
   app.get("/api/v1/capabilities", async (context) => {
     await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
     return context.json(await store.sync.isAvailable()
-      ? { syncVersion: 1, meetingEventsVersion: 1, imageAnalysis: dependencies.imageAnalysisEnabled === true } : {});
+      ? { syncVersion: 2, recordingAudioVersion: 1, meetingEventsVersion: 1, imageAnalysis: dependencies.imageAnalysisEnabled === true } : {});
   });
   app.get("/api/v1/vaults/:vaultId/text/:entity/:entityId", async (context) => {
     const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
@@ -526,6 +526,23 @@ export function createApp(dependencies: AppDependencies) {
       return context.body(null, 204);
     },
   );
+  app.post("/api/v1/meetings/:meetingId/recordings", async (context) => {
+    const requiresBrowserOrigin = config.authProvider === "accounts" && !context.req.header("authorization");
+    if ((requiresBrowserOrigin || context.req.header("origin")) && !mutationOriginAllowed(context.req.raw, config.baseUrl)) {
+      return context.json({ error: "invalid_origin" }, 403);
+    }
+    const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
+    const result = await sync.postRecording(identity, sync.parseId(context.req.param("meetingId")), context.req.raw);
+    return context.json(result.record, result.created ? 201 : 200);
+  });
+  app.get("/api/v1/meetings/:meetingId/recordings", async (context) => {
+    const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
+    return context.json(await sync.listRecordings(identity, sync.parseId(context.req.param("meetingId")), context.req.query("cursor")));
+  });
+  app.on(["GET", "HEAD"], "/api/v1/meetings/:meetingId/recordings/:recordingId/audio/:source", async (context) => {
+    const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
+    return sync.recordingContent(identity, sync.parseId(context.req.param("meetingId")), context.req.param("recordingId"), context.req.param("source"), context.req.raw);
+  });
   app.post("/api/v1/files", async (context) => {
     const requiresBrowserOrigin = config.authProvider === "accounts" && !context.req.header("authorization");
     if ((requiresBrowserOrigin || context.req.header("origin")) && !mutationOriginAllowed(context.req.raw, config.baseUrl)) {
@@ -902,7 +919,7 @@ export function createApp(dependencies: AppDependencies) {
     return artifact;
   }
 
-  return app;
+  return Object.assign(app, { runStorageMaintenance: () => sync.runStorageMaintenance() });
 }
 
 function requestRoute(path: string): string {

@@ -124,6 +124,7 @@ struct SyncResetSnapshot {
     let transcripts: Set<UUID>
     let screenshots: Set<UUID>
     let files: Set<UUID>
+    let recordings: Set<UUID>
 
     init(ids: [SyncEntity: Set<UUID>]) {
         projects = ids[.project, default: []]
@@ -132,6 +133,7 @@ struct SyncResetSnapshot {
         transcripts = ids[.transcript, default: []]
         screenshots = ids[.meetingFile, default: []]
         files = ids[.file, default: []]
+        recordings = ids[.recording, default: []]
     }
 
     init?(_ changes: [SyncChangePage.Change]) {
@@ -151,6 +153,7 @@ struct SyncResetSnapshot {
         transcripts = ids(.transcript)
         screenshots = ids(.meetingFile)
         files = ids(.file)
+        recordings = ids(.recording)
     }
 }
 
@@ -209,6 +212,7 @@ actor SyncWorker {
 
     private let dbQueue: DatabaseQueue
     private let session: URLSession
+    private let archiveService: RecordingArchiveService
     private let apiClient: SyncAPIClient
     private let vaultsDidChange: @MainActor @Sendable () async -> Void
     private var drainTask: Task<Void, Never>?
@@ -230,6 +234,7 @@ actor SyncWorker {
         self.dbQueue = dbQueue
         self.session = session
         self.apiClient = apiClient ?? SyncAPIClient(session: session)
+        archiveService = RecordingArchiveService(dbQueue: dbQueue, api: apiClient ?? SyncAPIClient(session: session))
         self.vaultsDidChange = vaultsDidChange
     }
 
@@ -308,6 +313,7 @@ actor SyncWorker {
                     ErrorReportingService.capture(error, context: ["source": "syncDrain"])
                 }
                 guard let transaction = try await SyncTransactionQueue.claim(dbQueue: dbQueue) else {
+                    try await archiveService.runNext()
                     try? await ScreenshotContentProvider.shared.trimFiles(dbQueue: dbQueue)
                     try? await ScreenshotStorageMaintenance.reclaimIncrementally(dbQueue: dbQueue)
                     try await Task.sleep(for: .seconds(5))
@@ -458,6 +464,13 @@ actor SyncWorker {
                       uploaded.size == attachment.bytes.count,
                       uploaded.checksum == "SHA-256:" + attachment.sha256,
                       uploaded.checksum == payload.checksum else { throw SyncTransactionQueueError.invalidReceipt }
+            } else if stageAttachments, operation.entity == .recording, operation.action == .upsert, let payload = operation.payloadJSON {
+                try await archiveService.stage(
+                    sessionId: operation.entityId,
+                    payload: payload,
+                    origin: target,
+                    connectionId: transaction.connectionId
+                )
             } else if operation.entity == .transcript, operation.action == .patch {
                 let payload = try await stageTranscriptPatch(operation, transaction: transaction, origin: target, sendUploads: stageAttachments)
                 operations[index] = SyncQueuedOperation(
@@ -672,7 +685,7 @@ actor SyncWorker {
                 connectionId: target.connectionId
             )
             let capabilities = try decode(ServerCapabilities.self, from: data)
-            guard capabilities.syncVersion == 1 else {
+            guard capabilities.syncVersion == 1 || capabilities.syncVersion == 2 else {
                 throw SyncHTTPError(status: 426, body: Data())
             }
             let meetingEventsVersion = capabilities.meetingEventsVersion == 1 ? 1 : 0
@@ -1022,7 +1035,7 @@ actor SyncWorker {
             switch change.entity {
             case .summary, .transcript:
                 return change.entityId
-            case .meetingFile:
+            case .meetingFile, .recording:
                 return change.record?.meetingId
             case .vault, .project, .meeting, .file, .meetingEvent:
                 return nil
@@ -1387,9 +1400,10 @@ actor SyncWorker {
     }
 }
 
-private struct ServerCapabilities: Decodable {
+struct ServerCapabilities: Decodable {
     let syncVersion: Int?
     let meetingEventsVersion: Int?
+    let recordingAudioVersion: Int?
 }
 
 private extension UUID {

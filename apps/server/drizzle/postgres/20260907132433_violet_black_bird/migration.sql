@@ -1,0 +1,1 @@
+ALTER TABLE "app"."sync_changes" DROP CONSTRAINT "sync_change_entity_check", ADD CONSTRAINT "sync_change_entity_check" CHECK ("entity" IN ('vault', 'project', 'meeting', 'summary', 'transcript', 'file', 'meeting_file', 'recording'));

@@ -62,6 +62,9 @@ enum RemoteChangePolicy {
         var projects: Set<UUID> = []
         switch entity {
         case .vault: break
+        case .recording:
+            if let session = try RecordingSessionRecord.fetchOne(db, key: id) { meetings.insert(session.meetingId) }
+            if let meeting = record?.meetingId { meetings.insert(meeting) }
         case .meetingEvent:
             if let meeting = record?.meetingId { meetings.insert(meeting) }
         case .project:

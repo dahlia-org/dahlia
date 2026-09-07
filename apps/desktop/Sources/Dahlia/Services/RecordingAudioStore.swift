@@ -543,6 +543,12 @@ actor RecordingAudioStore {
         }
     }
 
+    func withSessionReadLease<T: Sendable>(sessionId: UUID, operation: @Sendable () async throws -> T) async throws -> T {
+        let lease = try await acquireTemporarySessionLease(sessionId: sessionId)
+        defer { withExtendedLifetime(lease) {} }
+        return try await operation()
+    }
+
     func withVerifiedTranscribableSegments<T: Sendable>(
         sessionId: UUID,
         operation: @Sendable ([VerifiedSegment]) async throws -> T
@@ -896,6 +902,12 @@ actor RecordingAudioStore {
         let temporaryLease = try await acquireTemporarySessionLease(sessionId: sessionId)
         defer { withExtendedLifetime(temporaryLease) {} }
         let didRequestPurge = try await dbQueue.write { db in
+            if retentionCutoff != nil,
+               let archive = try RecordingArchiveRecord.fetchOne(db, key: sessionId),
+               archive.connectionId != nil || archive.state != "saved" {
+                // Server archives own retention: never expire the only re-transcribable audio.
+                return false
+            }
             if let retentionCutoff {
                 let isEligible = try Bool.fetchOne(
                     db,
@@ -943,6 +955,21 @@ actor RecordingAudioStore {
             return true
         }
         guard didRequestPurge else { return }
+        if retentionCutoff != nil {
+            let archive = try await dbQueue.read { try RecordingArchiveRecord.fetchOne($0, key: sessionId) }
+            if let archive, archive.connectionId == nil {
+                let files = try SyncJSON.decoder.decode([String: RecordingArchiveEncoder.Prepared].self, from: Data(archive.preparedJSON.utf8))
+                for file in files.values {
+                    try removeManagedFile(relativePath: file.relativePath)
+                }
+                try await dbQueue.write { db in
+                    try db.execute(
+                        sql: "UPDATE recording_archives SET state = 'expired', preparedJSON = '{}' WHERE sessionId = ? AND connectionId IS NULL",
+                        arguments: [sessionId]
+                    )
+                }
+            }
+        }
         try await purgePendingLocked(sessionId: sessionId, includeAmbiguousFailedFiles: includeFailed)
     }
 

@@ -39,6 +39,119 @@ afterEach(() => {
 });
 
 describe("SQLite canonical sync", () => {
+  it("runs storage maintenance on the timer without Vault requests", async () => {
+    const { store, directory } = await setup();
+    const targets = vi.spyOn(store.sync, "listHistoryTargets");
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const service = new MeetingSyncService(store.sync, new LocalObjectStorage(join(directory, "objects")));
+      await service.runStorageMaintenance();
+      targets.mockClear();
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(targets).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+      await store.close?.();
+    }
+  });
+
+  it.each(["node", "worker"])("stores raw recording uploads, hides staging and retains source identity through %s", async (runtime) => {
+    const { store, directory, databasePath } = await setup();
+    await createVault(store);
+    await commit(store, owner, transaction(freshId(), [{ id: freshId(), entity: "meeting", action: "create", entityId: meetingId, baseRevision: null, data: { ...meetingData(), projectId: null } }]));
+    const sessionId = freshId();
+    for (const kind of ["recording_started", "recording_ended"]) {
+      await commit(store, owner, transaction(freshId(), [{ id: freshId(), entity: "meeting_event", action: "create", entityId: freshId(), baseRevision: null, data: { meetingId, sessionId, kind, occurredAt: now } }]));
+    }
+    const storage = new LocalObjectStorage(join(directory, "objects"));
+    const app = createApp({ config: testConfig(databasePath), authStore: store, artifactStorage: storage });
+    const worker = createWorkerHandler(async () => app);
+    const workerFetch = worker.fetch!.bind(worker) as unknown as (request: Request, env: Cloudflare.Env, context: ExecutionContext) => Promise<Response>;
+    const send = (path: string, init: RequestInit = {}) => {
+      const request = new Request(`http://localhost:5173${path}`, { ...init, headers: { ...headers(), ...init.headers } });
+      return runtime === "node" ? app.request(request) : workerFetch(request, {} as Cloudflare.Env, {} as ExecutionContext);
+    };
+    const base = `/api/v1/meetings/${meetingId}/recordings`;
+    // Minimal ISO BMFF fixture: server validates the container; Desktop validates full audio decoding.
+    const bytes = new Uint8Array([0, 0, 0, 20, 102, 116, 121, 112, 77, 52, 65, 32, 0, 0, 0, 0, 77, 52, 65, 32]);
+    const post = (source: string, body = bytes) => send(`${base}?sessionId=${sessionId}&source=${source}`, {
+      method: "POST", headers: { "content-type": "audio/mp4", "content-length": String(body.length) }, body,
+    });
+    const [first, systemUpload] = await Promise.all([post("mic"), post("system")]);
+    expect(systemUpload.status).toBe(201);
+    expect(await systemUpload.json()).toMatchObject({ id: 1 });
+    expect(first.status).toBe(201);
+    const uploaded: { id: number; size: number; checksum: string; contentURL: string } = await first.json();
+    expect(uploaded).toMatchObject({ id: 1, size: bytes.length, content_type: "audio/mp4" });
+    expect(await (await send(base)).json()).toEqual({ items: [], nextCursor: null });
+    expect((await post("mic")).status).toBe(200);
+    const changed = bytes.slice(); changed[19] = 33;
+    expect((await post("mic", changed)).status).toBe(409);
+    expect((await post("video")).status).toBe(400);
+    expect((await send(`${base}?sessionId=${sessionId}&source=mic`, { method: "POST", body: bytes,
+      headers: { "content-type": "audio/mp4", "content-length": String(1024 ** 3 + 1) } })).status).toBe(413);
+    expect((await post("mic", new Uint8Array(20))).status).toBe(415);
+    expect((await send(`${base}?sessionId=${sessionId}&source=mic`, { method: "POST", body: bytes,
+      headers: { "content-type": "audio/mp4", "content-length": "21" } })).status).toBe(400);
+    expect((await send(uploaded.contentURL, { method: "HEAD" })).status).toBe(200);
+    expect(await (await post("system")).json()).toMatchObject({ id: 1 });
+    const manifest = { sampleRate: 16000, frameCount: 16000, ranges: [{ startFrame: 0, frameCount: 16000, sessionOffsetSeconds: 0, localeIdentifier: "ja-JP" }] };
+    const badConfirmation = await send("/api/v1/transactions", { method: "POST", body: JSON.stringify(wire([{
+      entity: "recording", action: "upsert", entityId: sessionId, baseRevision: null,
+      data: { source: "mic", checksum: "SHA-256:" + "0".repeat(64), manifest },
+    }])) });
+    expect(badConfirmation.status).toBe(409);
+    const confirmed = await send("/api/v1/transactions", { method: "POST", body: JSON.stringify(wire([{
+      entity: "recording", action: "upsert", entityId: sessionId, baseRevision: null, data: { source: "mic", checksum: uploaded.checksum, manifest },
+    }])) });
+    expect(confirmed.status).toBe(200);
+    const list = await (await send(base)).json();
+    expect(list).toMatchObject({ items: [{ id: 1, audio: { mic: { checksum: uploaded.checksum } } }] });
+    expect(JSON.stringify(list)).not.toContain(sessionId);
+    expect(JSON.stringify(list)).not.toContain("system");
+    const download = await send(uploaded.contentURL, { headers: { range: "bytes=0-3" } });
+    expect(download.status).toBe(206);
+    expect(new Uint8Array(await download.arrayBuffer())).toEqual(bytes.slice(0, 4));
+    expect(await storage.exists(`meetings/${meetingId}/recordings/audio_mic_01.m4a`)).toBe(true);
+    const denied = await send(uploaded.contentURL, { headers: { "x-forwarded-user": other.userId, "x-forwarded-email": "other@example.com" } });
+    expect(denied.status).toBe(404);
+    const snapshot = await store.sync.withIdentity(owner, (scoped) => scoped.listSnapshot(vaultId, undefined, 100));
+    expect(snapshot.items.find((record) => record.entity === "recording")?.record).toMatchObject({ sessionId, audio: { mic: { manifest } } });
+    const staged = await store.sync.withIdentity(owner, (scoped) => scoped.getRecording(meetingId, 1, true));
+    const oldGeneration = staged!.audio.system!.generation;
+    const database = new DatabaseSync(databasePath);
+    try {
+      database.prepare("UPDATE recordings SET audio = json_set(audio, '$.system.createdAt', ?, '$.mic.createdAt', ?) WHERE session_id = ?")
+        .run("2020-01-01T00:00:00.000Z", "2020-01-01T00:00:00.000Z", sessionId);
+    } finally { database.close(); }
+    // No further request to this Vault: Node maintenance or a cold Worker cron must find the upload.
+    const maintain = async () => {
+      if (runtime === "node") return app.runStorageMaintenance();
+      const coldWorker = createWorkerHandler(async () => app);
+      const pending: Promise<unknown>[] = [];
+      const scheduled = coldWorker.scheduled!.bind(coldWorker) as unknown as (
+        controller: ScheduledController, env: Cloudflare.Env, context: ExecutionContext,
+      ) => Promise<void>;
+      await scheduled({} as ScheduledController, {} as Cloudflare.Env, { waitUntil: (task: Promise<unknown>) => pending.push(task) } as unknown as ExecutionContext);
+      await Promise.all(pending);
+    };
+    await maintain();
+    expect(await storage.exists(`meetings/${meetingId}/recordings/audio_system_01.m4a`)).toBe(false);
+    expect(await storage.exists(`meetings/${meetingId}/recordings/audio_mic_01.m4a`)).toBe(true);
+    const cleaned = await store.sync.withIdentity(owner, (scoped) => scoped.getRecording(meetingId, 1, true));
+    expect(cleaned!.audio.system).toBeUndefined();
+    expect(cleaned!.audio.mic!.active).toBe(true);
+    expect((await post("system")).status).toBe(201);
+    await maintain();
+    expect(await store.sync.withIdentity(owner, (scoped) => scoped.markRecordingUploaded(sessionId, "system", oldGeneration, bytes.length, uploaded.checksum))).toBeNull();
+    expect(await storage.exists(`meetings/${meetingId}/recordings/audio_system_01.m4a`)).toBe(true);
+    await commit(store, owner, transaction(freshId(), [{ id: freshId(), entity: "meeting", action: "delete", entityId: meetingId, baseRevision: 1, data: {} }]));
+    expect(await store.sync.hasStorageDelete(`meetings/${meetingId}/recordings/audio_mic_01.m4a`)).toBe(true);
+    expect((await send(uploaded.contentURL)).status).toBe(404);
+    await store.close?.();
+  });
+
   it.each(["node", "worker"])("projects recording events without heartbeats and handles out-of-order delivery through %s", async (runtime) => {
     const { store, databasePath } = await setup();
     await createVault(store);
@@ -55,10 +168,10 @@ describe("SQLite canonical sync", () => {
     const detail = async () => (await send(`vaults/${vaultId}/meetings/${meetingId}`)).json();
     const capabilities = await send("capabilities");
     expect(capabilities.status).toBe(200);
-    expect(await capabilities.json()).toEqual({ syncVersion: 1, meetingEventsVersion: 1, imageAnalysis: false });
+    expect(await capabilities.json()).toEqual({ syncVersion: 2, recordingAudioVersion: 1, meetingEventsVersion: 1, imageAnalysis: false });
     const enabledApp = createApp({ config: testConfig(databasePath), authStore: store, imageAnalysisEnabled: true });
     expect(await (await enabledApp.request("http://localhost:5173/api/v1/capabilities", { headers: headers() })).json())
-      .toEqual({ syncVersion: 1, meetingEventsVersion: 1, imageAnalysis: true });
+      .toEqual({ syncVersion: 2, recordingAudioVersion: 1, meetingEventsVersion: 1, imageAnalysis: true });
     expect((await send("sync-content")).status).toBe(404);
     const availability = vi.spyOn(store.sync, "isAvailable").mockResolvedValueOnce(false);
     const unsupported = await send("capabilities");
@@ -895,6 +1008,39 @@ describe("SQLite canonical sync", () => {
     expect(await storage.exists(key)).toBe(false);
     const retried = await service.postFile(owner, fileUploadRequest(pending, bytes));
     expect(retried.file).toMatchObject({ id: pending.id, size: bytes.length, checksum: file.checksum });
+    await store.close?.();
+  });
+
+  it.each(["storage", "cleanup", "interrupted"])("keeps a failed recording upload retryable (%s)", async (failure) => {
+    const { store, service, storage } = await fileSetup();
+    const sessionId = freshId();
+    for (const kind of ["recording_started", "recording_ended"]) {
+      await commit(store, owner, transaction(freshId(), [{ id: freshId(), entity: "meeting_event", action: "create",
+        entityId: freshId(), baseRevision: null, data: { meetingId, sessionId, kind, occurredAt: now } }]));
+    }
+    const bytes = new Uint8Array([0, 0, 0, 20, 102, 116, 121, 112, 77, 52, 65, 32, 0, 0, 0, 0, 77, 52, 65, 32]);
+    const url = `http://localhost:5173/api/v1/meetings/${meetingId}/recordings?sessionId=${sessionId}&source=mic`;
+    const headers = { "content-type": "audio/mp4", "content-length": String(bytes.length) };
+    const cancelled = vi.fn();
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (failure === "interrupted") controller.error(new Error("interrupted upload"));
+        else controller.enqueue(bytes);
+      },
+      cancel: cancelled,
+    });
+    if (failure !== "interrupted") vi.spyOn(storage, "put").mockRejectedValueOnce(new Error("storage failed before consuming the stream"));
+    if (failure === "cleanup") vi.spyOn(storage, "delete").mockRejectedValueOnce(new Error("cleanup failed"));
+    await expect(service.postRecording(owner, meetingId,
+      new Request(url, { method: "POST", headers, body, duplex: "half" } as RequestInit))).rejects.toBeDefined();
+    const key = `meetings/${meetingId}/recordings/audio_mic_01.m4a`;
+    const record = await store.sync.withIdentity(owner, (scoped) => scoped.getRecording(meetingId, 1, true));
+    expect(record?.audio.mic?.uploadedAt).toBeNull();
+    if (failure !== "interrupted") await vi.waitFor(() => expect(cancelled).toHaveBeenCalled());
+    await vi.waitFor(async () => expect(await store.sync.hasStorageDelete(key)).toBe(false));
+    expect(await storage.exists(key)).toBe(false);
+    const retried = await service.postRecording(owner, meetingId, new Request(url, { method: "POST", headers, body: bytes }));
+    expect(retried).toMatchObject({ created: true, record: { id: 1, size: bytes.length } });
     await store.close?.();
   });
 

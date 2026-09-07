@@ -168,7 +168,11 @@
                 #expect(upload.url?.absoluteString.contains("%2B") == true)
             }
             #expect(!all.contains { $0.httpMethod == "PUT" })
-            let resolves = all.filter { $0.url?.path == "/api/v1/transactions/resolve" }
+            let resolves = try all.filter { request in
+                guard request.url?.path == "/api/v1/transactions/resolve", let body = request.httpBody else { return false }
+                let object = try JSONSerialization.jsonObject(with: body) as? [String: Any]
+                return (object?["id"] as? String).flatMap(UUID.init(uuidString:)) == transactionId
+            }
             #expect(resolves.count == 2)
             let resolvedBody = try #require(resolves.first?.httpBody)
             #expect(resolves.last?.httpBody == resolvedBody)

@@ -639,6 +639,7 @@ enum RemoteChangeApplier {
             let transcripts: Set<UUID>
             let screenshots: Set<UUID>
             let files: Set<UUID>
+            let recordings: Set<UUID>
         }
         let existing = try await dbQueue.read { db in
             try Existing(
@@ -675,7 +676,12 @@ enum RemoteChangeApplier {
                     """,
                     arguments: [vaultId]
                 )),
-                files: Set(UUID.fetchAll(db, sql: "SELECT id FROM files WHERE vaultId = ?", arguments: [vaultId]))
+                files: Set(UUID.fetchAll(db, sql: "SELECT id FROM files WHERE vaultId = ?", arguments: [vaultId])),
+                recordings: Set(UUID.fetchAll(
+                    db,
+                    sql: "SELECT sessionId FROM recording_archives WHERE vaultId = ? AND state = 'remote'",
+                    arguments: [vaultId]
+                ))
             )
         }
         let deletedProjects = existing.projects.filter { !snapshot.projects.contains($0.id) }
@@ -683,6 +689,7 @@ enum RemoteChangeApplier {
             .map(\.id)
         let deletedMeetings = existing.meetings.subtracting(snapshot.meetings)
         let deletions: [(sql: String, vaultScoped: Bool, ids: [UUID])] = [
+            ("DELETE FROM recording_archives WHERE sessionId = ? AND vaultId = ?", true, Array(existing.recordings.subtracting(snapshot.recordings))),
             (
                 "DELETE FROM meeting_files WHERE id = ?",
                 false,
@@ -867,6 +874,8 @@ enum RemoteChangeApplier {
             try db.execute(sql: "DELETE FROM transcript_segments WHERE meetingId = ?", arguments: [id])
         case .file:
             try db.execute(sql: "DELETE FROM files WHERE id = ? AND vaultId = ?", arguments: [id, vaultId])
+        case .recording:
+            try db.execute(sql: "DELETE FROM recording_archives WHERE sessionId = ? AND vaultId = ?", arguments: [id, vaultId])
         case .meetingFile:
             try db.execute(sql: "DELETE FROM meeting_files WHERE id = ?", arguments: [id])
         case .vault, .meetingEvent:
@@ -885,7 +894,7 @@ enum RemoteChangeApplier {
         switch change.entity {
         case .meetingEvent:
             break
-        case .vault, .project, .meeting, .summary, .file:
+        case .vault, .project, .meeting, .summary, .file, .recording:
             try SyncTransactionQueue.applyCanonical(
                 change.entity,
                 id: change.entityId,

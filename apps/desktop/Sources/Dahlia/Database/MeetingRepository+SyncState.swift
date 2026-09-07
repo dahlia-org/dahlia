@@ -22,6 +22,7 @@ struct MeetingSyncSnapshot: Equatable, Sendable {
     let state: MeetingSyncState
     let revisions: [Revision]
     var content: [Content] = []
+    var recordingArchiveState: String?
 
     struct Content: FetchableRecord, Decodable, Equatable, Sendable {
         let entity: String
@@ -42,8 +43,14 @@ extension MeetingRepository {
     ) throws -> MeetingSyncSnapshot? {
         guard let meeting = try MeetingRecord.fetchOne(db, key: meetingId),
               let vault = try VaultRecord.fetchOne(db, key: meeting.vaultId) else { return nil }
+        let archiveStates = try String.fetchAll(db, sql: """
+        SELECT a.state FROM recording_archives a JOIN recording_sessions s ON s.id = a.sessionId
+        WHERE a.meetingId = ? AND a.connectionId IS ? AND s.endedAt IS NOT NULL AND a.state <> 'expired'
+        """, arguments: [meetingId, vault.accountConnectionId])
+        let archiveState: String? = archiveStates.isEmpty ? nil : archiveStates.contains("failed") ? "failed"
+            : archiveStates.allSatisfy { ["saved", "remote"].contains($0) } ? "saved" : "pending"
         guard let connectionId = vault.accountConnectionId else {
-            return MeetingSyncSnapshot(connectionId: nil, state: .local, revisions: [])
+            return MeetingSyncSnapshot(connectionId: nil, state: .local, revisions: [], recordingArchiveState: archiveState)
         }
         let state = try fetchVaultSyncState(vault, in: db)
         let revisions = try MeetingSyncSnapshot.Revision.fetchAll(
@@ -64,7 +71,13 @@ extension MeetingRepository {
           OR entity = 'file' AND entityId IN (SELECT fileId FROM meeting_files WHERE meetingId = ?))
         ORDER BY entity, entityId
         """, arguments: [vault.id, meetingId, meetingId])
-        return MeetingSyncSnapshot(connectionId: connectionId, state: state, revisions: revisions, content: content)
+        return MeetingSyncSnapshot(
+            connectionId: connectionId,
+            state: state,
+            revisions: revisions,
+            content: content,
+            recordingArchiveState: archiveState
+        )
     }
 
     nonisolated static func fetchVaultSyncState(_ vault: VaultRecord, in db: Database) throws -> MeetingSyncState {
@@ -115,6 +128,20 @@ private extension MeetingSyncState {
         case .blocked(.validation): 5
         case .blocked(.conflict): 6
         case .blocked(.authorization): 7
+        }
+    }
+}
+
+extension MeetingRepository {
+    nonisolated func retryRecordingArchives(meetingId: UUID) async throws {
+        try await dbQueue.write { db in
+            try db.execute(sql: """
+            UPDATE recording_archives SET state = 'pending', retryAt = NULL, failureCode = NULL
+            WHERE meetingId = ? AND state = 'failed'
+              AND EXISTS (SELECT 1 FROM vaults v WHERE v.id = recording_archives.vaultId
+                AND v.accountConnectionId IS recording_archives.connectionId
+                AND COALESCE(v.syncRole, 'owner') = 'owner' AND v.syncRecoveryState IS NULL)
+            """, arguments: [meetingId])
         }
     }
 }

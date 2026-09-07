@@ -236,6 +236,7 @@ extension BatchTranscriptionConfirmationService {
     }
 
     private static func requireTranscribableAudio(sessionId: UUID, db: Database) throws {
+        if try RecordingArchiveRecord.isAvailable(sessionId: sessionId, in: db) { return }
         let segmentCount = try RecordingAudioSegmentRecord
             .filter(Column("recordingSessionId") == sessionId)
             .fetchCount(db)

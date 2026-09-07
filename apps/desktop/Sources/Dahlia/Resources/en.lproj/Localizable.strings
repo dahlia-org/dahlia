@@ -1685,3 +1685,6 @@
 "account.settings.description" = "Shared across devices using this account. The output language applies to summaries and image captions. Recording and transcription language settings are unchanged.";
 "account.settings.notLoaded" = "Account settings have not been loaded.";
 "account.settings.unavailable" = "Settings cannot be changed while the server is unavailable. Recording remains available.";
+"Recording Audio Saved" = "Recording audio saved";
+"Recording Audio Save Pending" = "Recording audio save pending";
+"Recording Audio Save Failed" = "Recording audio could not be saved";

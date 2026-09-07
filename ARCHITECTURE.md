@@ -529,3 +529,7 @@ lane を分離した。R5 は instrumentation のみ完了しており、backpre
 - [録音データを分割された不変セグメントとして保全する](docs/adr/desktop/recording-storage.md#確定手順)
 - [大量文字起こしを bounded projection と keyset pagination で表示する](docs/adr/desktop/concurrency-and-projection.md#transcript-projection)
 - [実行コンテキストと負荷縮退順序を定める](docs/adr/desktop/concurrency-and-projection.md#実行コンテキスト)
+
+## Recording audio archives
+
+New batch sessions enqueue a durable `recording_archives` job at session creation. The idle sync lane handles Server archives; batch post-processing and maintenance handle Local archives. Native streaming AAC encoding preserves source-specific time/language ranges. Capture and canonical transcript persistence never wait for archiving. `recording` sync metadata restores source audio for existing batch recognition. See [the archive ADR](docs/adr/shared/recording-audio-archive.md) for retention, protocol version, and the still-disabled source-deletion quality gate.

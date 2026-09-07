@@ -1685,3 +1685,6 @@
 "account.settings.description" = "このアカウントの端末間で共有します。出力言語は要約と画像の説明に適用されます。録音・文字起こしの言語設定は変更しません。";
 "account.settings.notLoaded" = "アカウント設定は未取得です。";
 "account.settings.unavailable" = "サーバに接続できないため、設定を変更できません。録音は引き続き利用できます。";
+"Recording Audio Saved" = "録音音声を保存済み";
+"Recording Audio Save Pending" = "録音音声の保存待ち";
+"Recording Audio Save Failed" = "録音音声の保存に失敗しました";

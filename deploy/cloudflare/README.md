@@ -95,3 +95,5 @@ Also smoke-test an HTML artifact through POST creation, private read, PUT replac
 - Artifact uploads have their independent 64 MiB limit and stream directly to the R2 binding.
 - Back up D1 for Better Auth, Model Alias, and administrator recovery. Provider credentials are recovered from the deployment secret store, not D1.
 - Rotate Google and provider credentials independently and redeploy after changing non-secret configuration.
+
+The templates configure a once-per-minute Cron Trigger for recording staging expiration and queued object deletion. Keep `triggers.crons` enabled when adapting the configuration: the scheduled handler performs maintenance without any HTTP traffic, including after a cold start.

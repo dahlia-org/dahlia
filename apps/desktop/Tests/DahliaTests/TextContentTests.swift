@@ -1393,7 +1393,7 @@
             }
         }
 
-        @Test(arguments: [nil, "{}", #"{"syncVersion":2}"#])
+        @Test(arguments: [nil, "{}", #"{"syncVersion":3}"#])
         func incompatibleServerStopsMetadataSyncWithoutDiscardingExistingText(capabilities: String?) async throws {
             let fixture = try textFixture()
             let connectionId = try await fixture.queue.write { db in

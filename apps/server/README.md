@@ -64,16 +64,16 @@ Vault and Project operations are committed through the domain transaction endpoi
 `GET /api/v1/capabilities` requires the existing browser authentication or `all-apis` scope and returns supported feature versions:
 
 ```json
-{ "syncVersion": 1, "meetingEventsVersion": 1 }
+{ "syncVersion": 2, "meetingEventsVersion": 1, "recordingAudioVersion": 1 }
 ```
 
-`syncVersion: 1` advertises the synchronization contract described here: atomic transactions (transaction schema version 2), snapshot/delta recovery and receipt resolution, metadata-only reads, and separately hydrated text bodies. `meetingEventsVersion: 1` advertises the meeting-event acceptance contract described below. Feature versions are independent of entity revisions and payload schema versions. Desktop currently accepts version 1 for each feature and ignores unknown fields.
+`syncVersion: 2` adds recording archive metadata to the synchronization contract described here: atomic transactions (transaction schema version 2), snapshot/delta recovery and receipt resolution, metadata-only reads, and separately hydrated text bodies. `meetingEventsVersion: 1` advertises the meeting-event acceptance contract described below. Feature versions are independent of entity revisions and payload schema versions. Desktop accepts syncVersion 1 and 2, meetingEventsVersion 1, and recordingAudioVersion 1; it ignores unknown fields.
 
 Unsupported features are omitted. Stores without atomic sync support neither of these features and return `200 {}`; lack of a feature does not make the capabilities endpoint unavailable. Authentication and operational errors still return errors. Roll out Server and Desktop together; the old response fields `version` / `meetingEvents` and the old `/api/v1/sync-content` route are not supported.
 
 ### Partial text reads
 
-Desktop requires `syncVersion: 1` before using partial text synchronization and must fail closed with an update-required state when this capability or the `metadata-v1` response marker is missing. Default full representations and transaction schema version 2 remain unchanged.
+Desktop requires supported `syncVersion: 1` or `2` before using partial text synchronization and must fail closed with an update-required state when this capability or the `metadata-v1` response marker is missing. Default full representations and transaction schema version 2 remain unchanged.
 
 Add `content=metadata-v1` to snapshot, changes, meeting and file dependency reads to omit transcript bodies, summary documents (including meeting/search duplicates), OCR and caption. Canonical IDs, revisions, metadata, body presence and transcript counts remain available; snapshot/delta responses include `contentMode: "metadata-v1"`. Text hydration does not advance sync cursors.
 
@@ -384,3 +384,20 @@ information panel overlays the image. Modified clicks and Open in new tab (insid
 use `/files/{file_id}`. The standalone page shares the preview controls. Supported images use the existing 1568px variant
 when available; other file types offer download without embedding active content.
 Live refreshes preserve current tabs, filters, loaded pages, scroll, and an open preview.
+
+### Recording audio
+
+New Desktop batch recordings use a dedicated API, separate from Files:
+
+- `POST /api/v1/meetings/{meetingId}/recordings?sessionId={uuidv7}&source=mic|system`: raw `audio/mp4` with Content-Length, at most 1 GiB. New bytes return 201; identical retry returns 200; different bytes return 409. The response includes `id`, `source`, `content_type`, `size`, `checksum` (`SHA-256:<hex>`), and `contentURL`.
+- `recording:upsert` in `/api/v1/transactions`: `entityId` is the internal session UUID, data contains `source`, `checksum`, and `manifest` (`sampleRate: 16000`, `frameCount`, and ranges with `startFrame`, `frameCount`, `sessionOffsetSeconds`, `localeIdentifier`). POST staging is private to the owner until this commit.
+- `GET /api/v1/meetings/{meetingId}/recordings`: committed recordings in number order, up to 200 items, `nextCursor`; each item has integer `id`, `startedAt`, `endedAt`, and `audio.mic` / `audio.system`. No internal session UUID.
+- `GET/HEAD /api/v1/meetings/{meetingId}/recordings/{number}/audio/{source}`: current Vault read access, byte ranges, private caching. No physical storage URL is exposed.
+
+Numbers are allocated atomically per meeting and shared across sources of one session. Keys are `meetings/{meetingId}/recordings/audio_mic_01.m4a` and `audio_system_01.m4a` beneath the configured storage root, including Databricks Volumes. Committed audio has no retention expiry. Meeting/Vault deletion queues physical deletion; staging expires after 24 hours. Node scans all Vaults every minute, and the Worker scheduled handler uses the templates’ once-per-minute Cron Trigger, so expiration does not require subsequent Vault traffic. The scan uses paginated operational metadata and owner-scoped transactions, then drains the existing durable deletion queue. Existing Files limits remain unchanged.
+
+Capabilities now advertise `syncVersion: 2`, `meetingEventsVersion: 1`, and `recordingAudioVersion: 1`. Upgrade Desktop before Server: old Desktop pauses sync and asks for an update. The new Desktop still supports syncVersion 1 servers without uploading recording audio.
+
+The 1 GiB application limit does not override upstream proxy or platform request limits/timeouts. Validate the selected Node/Databricks/Worker deployment with representative long recordings before enabling source deletion; some Worker plans/proxies may reject a request below this limit. Audio recognition remains on Desktop. See [the ADR](../../docs/adr/shared/recording-audio-archive.md) for quality/release gates.
+
+Cloudflare's [current request body limits](https://developers.cloudflare.com/workers/platform/limits/) depend on the account plan (Free/Pro: 100 MB; Business: 200 MB), so the application's 1 GiB cap is not a promise that these plans can upload 1 GiB in one POST. Staging becomes unreadable/uncommittable at 24 hours; upload and sync-change requests sweep expired metadata into the persistent deletion queue. Physical removal can wait until the next request if the deployment is idle.

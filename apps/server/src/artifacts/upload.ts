@@ -44,3 +44,20 @@ export function parseContentLength(request: Request, maximum: number): number {
   if (length > maximum) throw new ArtifactRequestError(413, "artifact_too_large");
   return length;
 }
+
+export function boundedUploadBody(body: ReadableStream<Uint8Array> | null, size: number, errorCode: string,
+  validateChunk?: (chunk: Uint8Array) => void): ReadableStream<Uint8Array> | null {
+  if (!body && size !== 0) throw new ArtifactRequestError(400, errorCode);
+  let received = 0;
+  return body?.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
+    transform(chunk, controller) {
+      received += chunk.byteLength;
+      if (received > size) throw new ArtifactRequestError(413, errorCode);
+      validateChunk?.(chunk);
+      controller.enqueue(chunk);
+    },
+    flush() {
+      if (received !== size) throw new ArtifactRequestError(400, errorCode);
+    },
+  })) ?? null;
+}
