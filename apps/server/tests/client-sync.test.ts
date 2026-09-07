@@ -1,13 +1,14 @@
+import { liveDataEvent } from "../src/client/live-data";
 import { afterEach, expect, it, vi } from "vitest";
 import { commitSyncTransaction } from "../src/client/App";
-import { clientMutationEvent, syncMessage } from "../src/client/api";
+import { syncMessage } from "../src/client/api";
 
 afterEach(() => vi.unstubAllGlobals());
 
 it("resolves a lost response as a compact receipt without another mutation", async () => {
   const browser = new EventTarget();
   const changed = vi.fn();
-  browser.addEventListener(clientMutationEvent, changed);
+  browser.addEventListener(liveDataEvent, changed);
   vi.stubGlobal("window", browser);
   const bodies: string[] = [];
   const fetch = vi.fn(async (_url: string, init: RequestInit) => {
@@ -30,7 +31,7 @@ it("resolves a lost response as a compact receipt without another mutation", asy
 it("retains the transaction ID when resolution reports an uncommitted request", async () => {
   const browser = new EventTarget();
   const changed = vi.fn();
-  browser.addEventListener(clientMutationEvent, changed);
+  browser.addEventListener(liveDataEvent, changed);
   vi.stubGlobal("window", browser);
   const bodies: string[] = [];
   vi.stubGlobal("fetch", vi.fn(async (_url: string, init: RequestInit) => {
@@ -49,7 +50,7 @@ it("retains the transaction ID when resolution reports an uncommitted request", 
 it("notifies only after a validated committed receipt on every commit path", async () => {
   const browser = new EventTarget();
   const changed = vi.fn();
-  browser.addEventListener(clientMutationEvent, changed);
+  browser.addEventListener(liveDataEvent, changed);
   vi.stubGlobal("window", browser);
   for (const recovery of [false, true]) {
     for (const outcome of ["committed", "wrong-id", "unknown", "invalid-receipt", "failed"]) {

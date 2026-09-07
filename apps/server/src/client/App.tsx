@@ -1,3 +1,4 @@
+import { refreshData, subscribeLiveUpdates, useLiveJSON, useLivePage, useLiveQuery } from "./live-data";
 import { createAuthClient } from "better-auth/react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type MouseEvent, type ReactNode } from "react";
 
@@ -7,9 +8,9 @@ import {
   shouldRedirectToSignIn,
   type DashboardCapabilities,
 } from "./routes";
-import { dashboardNavigationPath } from "./navigation";
+import { dashboardNavigationPath, navigateDashboard } from "./navigation";
 import { summaryDisplayText } from "../search/summary";
-import { clientMutationEvent, json, RequestError, syncMessage, uiText, type SyncedVaultInfo, type OrganizationInfo, type SyncedMeetingInfo, type SyncedMeetingPage, type SyncedProjectInfo } from "./api";
+import { clientMutationEvent, json, RequestError, syncMessage, uiText, type SyncedVaultInfo, type OrganizationInfo, type SyncedMeetingInfo, type SyncedProjectInfo } from "./api";
 import { MeetingTabs, parseSummary, SummaryContent, SummaryTags, TranscriptTime } from "./MeetingContent";
 import { MenuIcon, Sidebar, SidebarProvider, useSidebar } from "./Sidebar";
 
@@ -130,12 +131,6 @@ interface SyncedScreenshotInfo {
   file: { id: string; content_type: string; variants: Partial<Record<"thumb_360" | "thumb_1280", string>>; metadata: { source: string; ocr_text?: string; caption?: string } };
 }
 
-interface SyncedScreenshotPage {
-  items: SyncedScreenshotInfo[];
-  nextCursor?: string;
-}
-
-
 type SyncOperation = {
   entity: "vault" | "project" | "meeting" | "summary";
   action: "create" | "update" | "delete" | "upsert";
@@ -183,7 +178,7 @@ export async function commitSyncTransaction(vaultId: string, operations: SyncOpe
       throw new Error("Invalid transaction receipt");
     }
     // Both receipt forms acknowledge the write. Callers reload canonical data rather than applying old content.
-    if (typeof window !== "undefined") window.dispatchEvent(new Event(clientMutationEvent));
+    if (typeof window !== "undefined") refreshData();
     return result;
   } finally {
     onRecovery(false);
@@ -337,14 +332,14 @@ function Shell({
     if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     const link = event.target instanceof Element ? event.target.closest("a") : null;
     if (!link || !link.hasAttribute("href") || link.hasAttribute("download") || (link.target && link.target !== "_self")) return;
-    const next = dashboardNavigationPath(link.href, window.location.href);
+    const next = dashboardNavigationPath(link.href, window.location.href, extensions.flatMap((extension) => extension.routes?.map((route) => route.path) ?? []));
     if (!next) return;
     event.preventDefault();
     link.closest<HTMLElement>("[popover]")?.hidePopover();
     navigate(next);
   };
   return (
-    <SidebarProvider session={session}>
+    <SidebarProvider key={session.user.id} session={session}>
       <div className="app-shell" onClick={followLink}>
         <Sidebar brand={<Brand brand={brand} />} session={session}>
           <nav aria-label="Account navigation">
@@ -445,6 +440,7 @@ function Vaults() {
     const name = window.prompt("Vault name")?.trim();
     if (!name) return;
     const id = uuidV7();
+    setError(undefined);
     try {
       await commitSyncTransaction(id, [{
         entity: "vault",
@@ -453,7 +449,7 @@ function Vaults() {
         baseRevision: null,
         data: { name, createdAt: new Date().toISOString() },
       }], setRecovering);
-      window.location.assign(`/vaults/${id}`);
+      navigateDashboard(`/vaults/${id}`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not create Vault");
     }
@@ -485,32 +481,24 @@ function Vaults() {
 }
 
 function VaultSharing({ session, vault }: { session: SessionInfo; vault: SyncedVaultInfo }) {
-  const [permissions, setPermissions] = useState<VaultPermissionInfo[]>();
-  const [organizations, setOrganizations] = useState<OrganizationInfo[]>([]);
-  const [teams, setTeams] = useState<TeamInfo[]>([]);
   const [error, setError] = useState<string>();
-  const load = useCallback(async () => {
-    setError(undefined);
-    try {
-      const [{ items }, organizationItems] = await Promise.all([
-        json<{ items: VaultPermissionInfo[] }>(`/api/v1/vaults/${vault.vaultId}/permissions`),
-        session.capabilities.sessions
-          ? json<OrganizationInfo[]>("/api/auth/organization/list")
-          : json<OrganizationInfo[]>("/api/v1/organizations"),
-      ]);
-      const teamItems = (await Promise.all(organizationItems.map((organization) =>
-        session.capabilities.sessions
-          ? json<TeamInfo[]>(`/api/auth/organization/list-teams?organizationId=${encodeURIComponent(organization.id)}`)
-          : json<TeamInfo[]>(`/api/v1/organizations/${encodeURIComponent(organization.id)}/teams`)
-      ))).flat();
-      setPermissions(items);
-      setOrganizations(organizationItems);
-      setTeams(teamItems);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not load sharing settings");
-    }
-  }, [session.capabilities.sessions, vault.vaultId]);
-  useEffect(() => { void load(); }, [load]);
+  const sharingQuery = useLiveQuery(`sharing:${vault.vaultId}:${session.capabilities.sessions}`, async (signal) => {
+    const [{ items }, organizationItems] = await Promise.all([
+      json<{ items: VaultPermissionInfo[] }>(`/api/v1/vaults/${vault.vaultId}/permissions`, { signal }),
+      session.capabilities.sessions
+        ? json<OrganizationInfo[]>("/api/auth/organization/list", { signal })
+        : json<OrganizationInfo[]>("/api/v1/organizations", { signal }),
+    ]);
+    const teamItems = (await Promise.all(organizationItems.map((organization) =>
+      session.capabilities.sessions
+        ? json<TeamInfo[]>(`/api/auth/organization/list-teams?organizationId=${encodeURIComponent(organization.id)}`, { signal })
+        : json<TeamInfo[]>(`/api/v1/organizations/${encodeURIComponent(organization.id)}/teams`, { signal })
+    ))).flat();
+    return { permissions: items, organizations: organizationItems, teams: teamItems };
+  });
+  const permissions = sharingQuery.data?.permissions;
+  const organizations = sharingQuery.data?.organizations ?? [];
+  const teams = sharingQuery.data?.teams ?? [];
 
   async function toggle(principalType: "organization" | "team", principalId: string, enabled: boolean) {
     setError(undefined);
@@ -519,7 +507,6 @@ function VaultSharing({ session, vault }: { session: SessionInfo; vault: SyncedV
       await json(`/api/v1/vaults/${vault.vaultId}/permissions/${target}`, {
         method: enabled ? "PUT" : "DELETE",
       });
-      await load();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not update sharing");
     }
@@ -542,7 +529,7 @@ function VaultSharing({ session, vault }: { session: SessionInfo; vault: SyncedV
     <section className="section-block">
       <h2 className="section-label">Sharing</h2>
       <div className="panel share-list">
-        {!permissions && !error && <p className="muted">Loading sharing settings…</p>}
+        {!permissions && !error && !sharingQuery.error && <p className="muted">Loading sharing settings…</p>}
         {vault.role === "member" && permissions && (
           <>
             <p className="muted">This Vault was shared with you. Only its owner can change access.</p>
@@ -580,69 +567,46 @@ function VaultSharing({ session, vault }: { session: SessionInfo; vault: SyncedV
           </label>
         ))}
       </div>
+      <DataError error={sharingQuery.error} retry={sharingQuery.reload} />
       {error && <p className="error artifact-error">{error}</p>}
     </section>
   );
 }
 
 function VaultMeetings({ session, vaultId }: { session: SessionInfo; vaultId: string }) {
-  const [vault, setVault] = useState<SyncedVaultInfo>();
-  const [projects, setProjects] = useState<SyncedProjectInfo[]>([]);
-  const [meetings, setMeetings] = useState<SyncedMeetingInfo[]>();
-  const [query, setQuery] = useState("");
-  const [projectId, setProjectId] = useState("");
-  const [nextCursor, setNextCursor] = useState<string>();
-  const [loadingMore, setLoadingMore] = useState(false);
+  const vaultQuery = useLiveJSON<SyncedVaultInfo>(`/api/v1/vaults/${vaultId}`);
+  const vault = vaultQuery.data;
   const [error, setError] = useState<string>();
   const [recovering, setRecovering] = useState(false);
-  const loadMeetings = useCallback(async (cursor?: string, signal?: AbortSignal) => {
-    const params = new URLSearchParams();
-    if (query) params.set("q", query);
-    if (projectId) params.set("projectId", projectId);
-    if (cursor) params.set("cursor", cursor);
-    if (cursor) setLoadingMore(true);
-    try {
-      const page = await json<SyncedMeetingPage>(
-        `/api/v1/vaults/${vaultId}/meetings${params.size ? `?${params}` : ""}`,
-        { signal },
-      );
-      setError(undefined);
-      setMeetings((current) => cursor ? [...(current ?? []), ...page.items] : page.items);
-      setNextCursor(page.nextCursor);
-    } catch (caught) {
-      if (caught instanceof Error && caught.name !== "AbortError") setError(caught.message);
-    } finally {
-      setLoadingMore(false);
-    }
-  }, [projectId, query, vaultId]);
+  const projectsQuery = useLiveJSON<{ items: SyncedProjectInfo[] }>(`/api/v1/vaults/${vaultId}/projects`);
+  const projects = vault ? projectsQuery.data?.items ?? [] : [];
+  const [query, setQuery] = useState("");
+  const [projectId, setProjectId] = useState("");
   useEffect(() => {
-    const controller = new AbortController();
-    const timer = setTimeout(() => void loadMeetings(undefined, controller.signal), 250);
-    return () => {
-      clearTimeout(timer);
-      controller.abort();
-    };
-  }, [loadMeetings]);
+    if (projectsQuery.data && !projectsQuery.data.items.some((project) => project.projectId === projectId)) setProjectId("");
+  }, [projectId, projectsQuery.data]);
+  const [search, setSearch] = useState("");
   useEffect(() => {
-    void Promise.all([
-      json<SyncedVaultInfo>(`/api/v1/vaults/${vaultId}`),
-      json<{ items: SyncedProjectInfo[] }>(`/api/v1/vaults/${vaultId}/projects`),
-    ]).then(([vaultValue, projectPage]) => {
-      setVault(vaultValue);
-      setProjects(projectPage.items);
-    })
-      .catch((caught: Error) => setError(caught.message));
-  }, [vaultId]);
+    const timer = setTimeout(() => setSearch(query), 250);
+    return () => clearTimeout(timer);
+  }, [query]);
+  const params = new URLSearchParams();
+  if (search) params.set("q", search);
+  if (projectId) params.set("projectId", projectId);
+  const meetingsQuery = useLivePage<SyncedMeetingInfo>(`/api/v1/vaults/${vaultId}/meetings?${params}`);
+  const meetings = vault ? meetingsQuery.data?.items : undefined;
+  const nextCursor = meetingsQuery.data?.nextCursor;
+  const loadingMore = meetingsQuery.loadingMore;
   const renameVault = async () => {
     if (!vault) return;
     const name = window.prompt("Vault name", vault.name)?.trim();
     if (!name || name === vault.name) return;
+    setError(undefined);
     try {
       await commitSyncTransaction(vaultId, [{
         entity: "vault", action: "update", entityId: vaultId,
         baseRevision: vault.revision, data: { name },
       }], setRecovering);
-      setVault(await json<SyncedVaultInfo>(`/api/v1/vaults/${vaultId}`));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not rename Vault");
     }
@@ -651,6 +615,7 @@ function VaultMeetings({ session, vaultId }: { session: SessionInfo; vaultId: st
     const name = window.prompt("Project name")?.trim();
     if (!name) return;
     const id = uuidV7();
+    setError(undefined);
     try {
       await commitSyncTransaction(vaultId, [{
         entity: "project", action: "create", entityId: id, baseRevision: null,
@@ -662,7 +627,7 @@ function VaultMeetings({ session, vaultId }: { session: SessionInfo; vaultId: st
           createdAt: new Date().toISOString(),
         },
       }], setRecovering);
-      window.location.assign(`/vaults/${vaultId}/projects/${id}`);
+      navigateDashboard(`/vaults/${vaultId}/projects/${id}`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not create Project");
     }
@@ -671,6 +636,9 @@ function VaultMeetings({ session, vaultId }: { session: SessionInfo; vaultId: st
     <>
       <PageHeader title={vault?.name ?? "Vault"} />
       {recovering && <p role="status">{syncMessage("sync_recovering")}</p>}
+      <DataError error={vaultQuery.error} retry={vaultQuery.reload} />
+      <DataError error={meetingsQuery.error} retry={meetingsQuery.reload} />
+      <DataError error={projectsQuery.error} retry={projectsQuery.reload} />
       <section className="section-block">
         <a className="secondary viewer-back" href="/vaults">All Vaults</a>
         {vault?.role === "owner" && <>
@@ -708,7 +676,7 @@ function VaultMeetings({ session, vaultId }: { session: SessionInfo; vaultId: st
         </div>
         {error && <p className="error artifact-error">{error}</p>}
         {nextCursor && (
-          <button className="secondary load-more" disabled={loadingMore} onClick={() => void loadMeetings(nextCursor)}>
+          <button className="secondary load-more" disabled={loadingMore} onClick={meetingsQuery.loadMore}>
             {loadingMore ? "Loading…" : "Load more"}
           </button>
         )}
@@ -731,43 +699,23 @@ function VaultMeetings({ session, vaultId }: { session: SessionInfo; vaultId: st
 }
 
 function SyncedProject({ vaultId, projectId }: { vaultId: string; projectId: string }) {
-  const [project, setProject] = useState<SyncedProjectInfo>();
-  const [vault, setVault] = useState<SyncedVaultInfo>();
-  const [meetings, setMeetings] = useState<SyncedMeetingInfo[]>([]);
-  const [nextCursor, setNextCursor] = useState<string>();
-  const [loadingMore, setLoadingMore] = useState(false);
+  const vaultQuery = useLiveJSON<SyncedVaultInfo>(`/api/v1/vaults/${vaultId}`);
+  const vault = vaultQuery.data;
   const [error, setError] = useState<string>();
   const [recovering, setRecovering] = useState(false);
-  const loadMeetings = useCallback(async (cursor?: string, signal?: AbortSignal) => {
-    const params = new URLSearchParams({ projectId });
-    if (cursor) params.set("cursor", cursor);
-    if (cursor) setLoadingMore(true);
-    try {
-      const page = await json<SyncedMeetingPage>(`/api/v1/vaults/${vaultId}/meetings?${params}`, { signal });
-      setMeetings((current) => cursor ? [...current, ...page.items] : page.items);
-      setNextCursor(page.nextCursor);
-    } catch (caught) {
-      if (caught instanceof Error && caught.name !== "AbortError") setError(caught.message);
-    } finally {
-      setLoadingMore(false);
-    }
-  }, [projectId, vaultId]);
-  useEffect(() => {
-    const controller = new AbortController();
-    void Promise.all([
-      json<SyncedProjectInfo>(`/api/v1/vaults/${vaultId}/projects/${projectId}`, { signal: controller.signal }),
-      json<SyncedVaultInfo>(`/api/v1/vaults/${vaultId}`, { signal: controller.signal }),
-    ]).then(([projectValue, vaultValue]) => { setProject(projectValue); setVault(vaultValue); }).catch((caught: Error) => {
-      if (caught.name !== "AbortError") setError(caught.message);
-    });
-    void loadMeetings(undefined, controller.signal);
-    return () => controller.abort();
-  }, [loadMeetings, projectId, vaultId]);
+  const projectQuery = useLiveJSON<SyncedProjectInfo>(`/api/v1/vaults/${vaultId}/projects/${projectId}`);
+  const project = vault ? projectQuery.data : undefined;
+  const params = new URLSearchParams({ projectId });
+  const meetingsQuery = useLivePage<SyncedMeetingInfo>(`/api/v1/vaults/${vaultId}/meetings?${params}`);
+  const meetings = project ? meetingsQuery.data?.items : undefined;
+  const nextCursor = meetingsQuery.data?.nextCursor;
+  const loadingMore = meetingsQuery.loadingMore;
   const editProject = async () => {
     if (!project) return;
     const name = window.prompt("Project name", project.name)?.trim();
     if (!name) return;
     const description = window.prompt("Project description", project.description) ?? project.description;
+    setError(undefined);
     try {
       await commitSyncTransaction(vaultId, [{
         entity: "project", action: "update", entityId: projectId, baseRevision: project.revision,
@@ -778,19 +726,19 @@ function SyncedProject({ vaultId, projectId }: { vaultId: string; projectId: str
           projectType: project.parentProjectId ? null : project.projectType ?? "undefined",
         },
       }], setRecovering);
-      window.location.reload();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not update Project");
     }
   };
   const deleteProject = async () => {
     if (!project || !window.confirm(`Delete empty Project ${project.path}?`)) return;
+    setError(undefined);
     try {
       await commitSyncTransaction(vaultId, [{
         entity: "project", action: "delete", entityId: projectId,
         baseRevision: project.revision, data: {},
       }], setRecovering);
-      window.location.assign(`/vaults/${vaultId}`);
+      navigateDashboard(`/vaults/${vaultId}`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not delete Project");
     }
@@ -798,8 +746,11 @@ function SyncedProject({ vaultId, projectId }: { vaultId: string; projectId: str
   return <>
     <PageHeader title={project?.path ?? "Project"} />
       {recovering && <p role="status">{syncMessage("sync_recovering")}</p>}
+      <DataError error={vaultQuery.error} retry={vaultQuery.reload} />
+      <DataError error={meetingsQuery.error} retry={meetingsQuery.reload} />
+      <DataError error={projectQuery.error} retry={projectQuery.reload} />
     <a className="secondary viewer-back" href={`/vaults/${vaultId}`}>Back to Vault</a>
-    {vault?.role === "owner" && <>
+    {project && vault?.role === "owner" && <>
       <button className="secondary" onClick={() => void editProject()}>Edit Project</button>
       <button className="secondary" onClick={() => void deleteProject()}>Delete Project</button>
     </>}
@@ -809,13 +760,13 @@ function SyncedProject({ vaultId, projectId }: { vaultId: string; projectId: str
       <p className="muted">{project.effectiveType} · revision {project.revision} · {project.subtreeMeetingCount} meetings</p>
     </div></section>}
     <section className="section-block"><h2 className="section-label">Meetings</h2><div className="panel artifact-list">
-      {meetings.length === 0 && <div className="empty-state"><strong>No meetings</strong></div>}
-      {meetings.map((meeting) => <a className="artifact-row" href={`/vaults/${vaultId}/meetings/${meeting.meetingId}`} key={meeting.meetingId}>
+      {meetings?.length === 0 && <div className="empty-state"><strong>No meetings</strong></div>}
+      {meetings?.map((meeting) => <a className="artifact-row" href={`/vaults/${vaultId}/meetings/${meeting.meetingId}`} key={meeting.meetingId}>
         <span className="artifact-copy"><strong>{meeting.name}</strong><span>{new Date(meeting.createdAt).toLocaleString()}</span></span>
       </a>)}
     </div></section>
     {nextCursor && (
-      <button className="secondary load-more" disabled={loadingMore} onClick={() => void loadMeetings(nextCursor)}>
+      <button className="secondary load-more" disabled={loadingMore} onClick={meetingsQuery.loadMore}>
         {loadingMore ? "Loading…" : "Load more"}
       </button>
     )}
@@ -824,45 +775,28 @@ function SyncedProject({ vaultId, projectId }: { vaultId: string; projectId: str
 
 function SyncedMeeting({ vaultId, meetingId }: { vaultId: string; meetingId: string }) {
   const base = `/api/v1/vaults/${vaultId}/meetings/${meetingId}`;
-  const [meeting, setMeeting] = useState<SyncedMeetingInfo>();
-  const [projects, setProjects] = useState<SyncedProjectInfo[]>([]);
-  const [vault, setVault] = useState<SyncedVaultInfo>();
-  const [transcript, setTranscript] = useState<SyncedTranscriptSegmentInfo[]>();
-  const [screenshots, setScreenshots] = useState<SyncedScreenshotInfo[]>();
-  const [screenshotCursor, setScreenshotCursor] = useState<string>();
-  const [loadingScreenshots, setLoadingScreenshots] = useState(false);
+  const meetingQuery = useLiveJSON<SyncedMeetingInfo>(base);
+  const vaultQuery = useLiveJSON<SyncedVaultInfo>(`/api/v1/vaults/${vaultId}`);
+  const projectsQuery = useLiveJSON<{ items: SyncedProjectInfo[] }>(`/api/v1/vaults/${vaultId}/projects`);
+  const transcriptQuery = useLiveJSON<{ items: SyncedTranscriptSegmentInfo[] }>(`${base}/transcript`);
+  const screenshotsQuery = useLivePage<SyncedScreenshotInfo>(`${base}/files`);
+  const meeting = vaultQuery.data ? meetingQuery.data : undefined;
+  const vault = vaultQuery.data;
+  const transcript = transcriptQuery.data?.items;
+  const screenshots = screenshotsQuery.data?.items;
+  const screenshotCursor = screenshotsQuery.data?.nextCursor;
+  const loadingScreenshots = screenshotsQuery.loadingMore;
   const [error, setError] = useState<string>();
   const [recovering, setRecovering] = useState(false);
   const summaryText = summaryDisplayText(meeting?.summaryDocument ?? null);
   const document = useMemo(() => parseSummary(meeting?.summaryDocument), [meeting?.summaryDocument]);
-  const project = projects.find((item) => item.projectId === meeting?.projectId);
-  useEffect(() => {
-    const controller = new AbortController();
-    void Promise.all([
-      json<SyncedMeetingInfo>(base, { signal: controller.signal }),
-      json<SyncedVaultInfo>(`/api/v1/vaults/${vaultId}`, { signal: controller.signal }),
-      json<{ items: SyncedTranscriptSegmentInfo[] }>(`${base}/transcript`, { signal: controller.signal }),
-      json<SyncedScreenshotPage>(`${base}/files`, { signal: controller.signal }),
-    ]).then(([meetingValue, vaultValue, transcriptPage, screenshotPage]) => {
-      setMeeting(meetingValue);
-      setVault(vaultValue);
-      setTranscript(transcriptPage.items);
-      setScreenshots(screenshotPage.items);
-      setScreenshotCursor(screenshotPage.nextCursor);
-    }).catch((caught: Error) => {
-      if (caught.name !== "AbortError") setError(caught.message);
-    });
-    // Project names are supplementary metadata; their availability must not gate the meeting body.
-    void json<{ items: SyncedProjectInfo[] }>(`/api/v1/vaults/${vaultId}/projects`, { signal: controller.signal })
-      .then(({ items }) => { if (!controller.signal.aborted) setProjects(items); })
-      .catch((caught: Error) => { if (!controller.signal.aborted) setError(caught.message); });
-    return () => controller.abort();
-  }, [base, vaultId]);
+  const project = projectsQuery.data?.items.find((item) => item.projectId === meeting?.projectId);
   const editMeeting = async () => {
     if (!meeting) return;
     const name = window.prompt("Meeting name", meeting.name)?.trim();
     if (!name) return;
     const description = window.prompt("Meeting description", meeting.description) ?? meeting.description;
+    setError(undefined);
     try {
       await commitSyncTransaction(vaultId, [{
         entity: "meeting", action: "update", entityId: meetingId, baseRevision: meeting.revision,
@@ -876,7 +810,6 @@ function SyncedMeeting({ vaultId, meetingId }: { vaultId: string; meetingId: str
           updatedAt: new Date().toISOString(),
         },
       }], setRecovering);
-      window.location.reload();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not update Meeting");
     }
@@ -886,43 +819,27 @@ function SyncedMeeting({ vaultId, meetingId }: { vaultId: string; meetingId: str
     const title = window.prompt("Summary title", meeting.summaryTitle ?? meeting.name)?.trim();
     if (!title) return;
     const text = window.prompt("Summary", summaryText) ?? summaryText;
+    setError(undefined);
     try {
       await commitSyncTransaction(vaultId, [{
         entity: "summary", action: "upsert", entityId: meetingId,
         baseRevision: meeting.summaryRevision,
         data: { title, document: summaryDocument(title, text), createdAt: new Date().toISOString() },
       }], setRecovering);
-      window.location.reload();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not update Summary");
     }
   };
   const deleteSummary = async () => {
     if (!meeting?.summaryDocument || !window.confirm("Delete this Summary?")) return;
+    setError(undefined);
     try {
       await commitSyncTransaction(vaultId, [{
         entity: "summary", action: "delete", entityId: meetingId,
         baseRevision: meeting.summaryRevision, data: {},
       }], setRecovering);
-      window.location.reload();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not delete Summary");
-    }
-  };
-  const loadMoreScreenshots = async () => {
-    if (!screenshotCursor) return;
-    setLoadingScreenshots(true);
-    setError(undefined);
-    try {
-      const page = await json<SyncedScreenshotPage>(
-        `${base}/files?cursor=${encodeURIComponent(screenshotCursor)}`,
-      );
-      setScreenshots((current) => [...(current ?? []), ...page.items]);
-      setScreenshotCursor(page.nextCursor);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Unable to load screenshots");
-    } finally {
-      setLoadingScreenshots(false);
     }
   };
   const visibleScreenshots = screenshots?.filter((screenshot) => screenshot.file.metadata.source === "screenshot");
@@ -942,7 +859,10 @@ function SyncedMeeting({ vaultId, meetingId }: { vaultId: string; meetingId: str
       </header>
       {recovering && <p role="status">{syncMessage("sync_recovering")}</p>}
       {error && <p className="error" role="alert">{error}</p>}
-      {!meeting && !error && <p className="muted">{uiText("Loading meeting…", "ミーティングを読み込み中…")}</p>}
+      <DataError error={meetingQuery.error} retry={meetingQuery.reload} />
+      <DataError error={vaultQuery.error} retry={vaultQuery.reload} />
+      <DataError error={projectsQuery.error} retry={projectsQuery.reload} />
+      {!meeting && !error && !meetingQuery.error && !vaultQuery.error && <p className="muted">{uiText("Loading meeting…", "ミーティングを読み込み中…")}</p>}
       {meeting && <MeetingTabs
         actions={vault?.role === "owner" && <div className="meeting-actions">
           <button className="action-trigger" popoverTarget="meeting-actions">{uiText("⋯ Actions", "⋯ 操作")} <span aria-hidden="true">⌄</span></button>
@@ -956,17 +876,19 @@ function SyncedMeeting({ vaultId, meetingId }: { vaultId: string; meetingId: str
           ? <>{meeting.summaryTitle && meeting.summaryTitle !== meeting.name && <h2 className="summary-title">{meeting.summaryTitle}</h2>}<SummaryContent document={document} /></>
           : <p className="content-empty">{uiText("No summary yet", "要約はまだありません")}</p>}
         screenshots={<>
+          <DataError error={screenshotsQuery.error} retry={screenshotsQuery.reload} />
           {visibleScreenshots?.length === 0 && <p className="content-empty">{uiText("No screenshots", "スクリーンショットはありません")}</p>}
           <div className="screenshot-grid">
             {visibleScreenshots?.map((screenshot) => (
               <ScreenshotFigure key={screenshot.id} file={screenshot.file} capturedAt={screenshot.capturedAt} />
             ))}
           </div>
-          {screenshotCursor && <button className="secondary load-more" disabled={loadingScreenshots} onClick={() => void loadMoreScreenshots()}>
+          {screenshotCursor && <button className="secondary load-more" disabled={loadingScreenshots} onClick={screenshotsQuery.loadMore}>
             {loadingScreenshots ? uiText("Loading…", "読み込み中…") : uiText("Load more", "さらに表示")}
           </button>}
         </>}
         transcript={<div className="transcript-document">
+          <DataError error={transcriptQuery.error} retry={transcriptQuery.reload} />
           {transcript?.length === 0 && <p className="content-empty">{uiText("No transcript", "文字起こしはありません")}</p>}
           {transcript?.slice(0, 500).map((segment) => <div className="transcript-segment" key={segment.segmentId}>
             <TranscriptTime startTime={segment.startTime} timeBase={meeting.recordingStartedAt ?? transcript?.[0]?.startTime ?? meeting.createdAt} />
@@ -1389,7 +1311,7 @@ function Invitation({ invitationId }: { invitationId: string }) {
         method: "POST",
         body: JSON.stringify({ invitationId }),
       });
-      window.location.assign("/organizations");
+      navigateDashboard("/organizations");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not update invitation");
     }
@@ -1485,10 +1407,18 @@ function AdminMembers() {
   );
 }
 
+function DashboardRedirect({ path }: { path: string }) {
+  useEffect(() => navigateDashboard(path, true), [path]);
+  return null;
+}
+
+function DataError({ error, retry }: { error?: Error; retry: () => void }) {
+  return error ? <p className="error" role="alert">{error.message} <button onClick={retry}>{uiText("Retry", "再試行")}</button></p> : null;
+}
+
 export function App({ brand = defaultBrand, extensions = [] }: AppProps) {
   const [path, setPath] = useState(window.location.pathname);
   const needsSession = path !== "/sign-in" && path !== "/oauth/consent";
-  const showsVault = path.startsWith("/vaults");
   const [session, setSession] = useState<SessionInfo>();
   const [sessionError, setSessionError] = useState<string>();
   const [unauthorized, setUnauthorized] = useState(false);
@@ -1515,11 +1445,6 @@ export function App({ brand = defaultBrand, extensions = [] }: AppProps) {
     window.addEventListener("popstate", followHistory);
     return () => window.removeEventListener("popstate", followHistory);
   }, []);
-  const navigate = (next: string) => {
-    if (next === window.location.pathname) return;
-    window.history.pushState(null, "", next);
-    setPath(next);
-  };
 
   useEffect(() => {
     if (!needsSession) return;
@@ -1538,22 +1463,17 @@ export function App({ brand = defaultBrand, extensions = [] }: AppProps) {
     return () => controller.abort();
   }, [needsSession, sessionAttempt]);
 
+  const syncEnabled = session?.capabilities.sync;
+  const userId = session?.user.id;
   useEffect(() => {
-    if (!session || !showsVault) return;
-    const checkpoint = sessionStorage.getItem("dahlia-sync-cursor");
-    const source = new EventSource(`/api/v1/events${checkpoint ? `?cursor=${encodeURIComponent(checkpoint)}` : ""}`);
-    source.addEventListener("invalidation", (event) => {
-      const cursor = (JSON.parse((event as MessageEvent<string>).data) as { cursor: string }).cursor;
-      sessionStorage.setItem("dahlia-sync-cursor", cursor);
-      window.location.reload();
-    });
-    return () => source.close();
-  }, [showsVault, session]);
+    if (!needsSession || unauthorized || !userId || !syncEnabled) return;
+    return subscribeLiveUpdates();
+  }, [needsSession, unauthorized, userId, syncEnabled]);
 
   if (path === "/sign-in") return <SignIn brand={brand} />;
   if (path === "/oauth/consent") return <Consent brand={brand} />;
   if (unauthorized) return null;
-  if (sessionError) {
+  if (sessionError && !session) {
     return (
       <main className="loading">
         <Brand brand={brand} />
@@ -1564,19 +1484,11 @@ export function App({ brand = defaultBrand, extensions = [] }: AppProps) {
   }
   if (!session) return <main className="loading"><Brand brand={brand} /><span>Loading account…</span></main>;
   const extension = resolveDashboardExtensionRoute(path, session.capabilities, extensions);
-  if (!extension.allowed) {
-    window.location.replace("/dashboard");
-    return null;
-  }
   const extensionRoute = extension.route;
   const route = extensionRoute ? {} : resolveDashboardRoute(path, session.capabilities);
-  if (route.redirect) {
-    window.location.replace(route.redirect);
-    return null;
-  }
-
   let page: ReactNode;
-  if (extensionRoute) {
+  if (!extension.allowed || route.redirect) page = <DashboardRedirect path={route.redirect ?? "/dashboard"} />;
+  else if (extensionRoute) {
     const ExtensionPage = extensionRoute.component;
     page = <ExtensionPage session={session} />;
   }
@@ -1589,5 +1501,8 @@ export function App({ brand = defaultBrand, extensions = [] }: AppProps) {
   else if (route.page === "invitation") page = <Invitation invitationId={route.invitationId!} />;
   else if (route.page === "settings") page = <Settings />;
   else page = <Overview session={session} />;
-  return <Shell brand={brand} extensions={extensions} session={session} path={path} navigate={navigate}>{page}</Shell>;
+  return <Shell brand={brand} extensions={extensions} session={session} path={path} navigate={navigateDashboard}>
+    <DataError error={sessionError ? new Error(sessionError) : undefined} retry={() => setSessionAttempt((attempt) => attempt + 1)} />
+    {page}
+  </Shell>;
 }
