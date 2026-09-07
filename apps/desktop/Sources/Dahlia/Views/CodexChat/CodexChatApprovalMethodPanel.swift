@@ -18,7 +18,6 @@ struct CodexChatApprovalMethodPanel: View {
                 CodexChatApprovalMethodRow(
                     method: method,
                     isSelected: method == session.selectedApprovalMethod,
-                    isEnabled: method != .autoReview || session.canUseAutoReview,
                     action: { select(method) }
                 )
             }
@@ -45,10 +44,7 @@ enum CodexChatApprovalMethodPanelLayout {
                 textWidth(method.title, font: bodyFont),
                 textWidth(method.description, font: calloutFont)
             )
-            let availabilityWidth = method == .autoReview
-                ? textWidth(L10n.chatApprovalAutoReviewRequiresSubscription, font: calloutFont)
-                : 0
-            return max(width, max(methodWidth, availabilityWidth))
+            return max(width, methodWidth)
         }
         return ceil(widestTextWidth + 100)
     }

@@ -263,10 +263,6 @@ actor CodexAppServerService {
         }
     }
 
-    func configuredAccountProvider() async -> AIAccountProvider? {
-        await accountProviderResolver()
-    }
-
     func shutdown() async {
         isShuttingDown = true
         providerAuthenticationPreparationState?.task.cancel()

@@ -2,18 +2,16 @@ import Foundation
 @testable import Dahlia
 
 #if canImport(Testing)
-    import Observation
-    import Synchronization
     import Testing
 
     @MainActor
     struct CodexChatSessionModelTests {
         @Test
-        func approvalMethodDefaultsFollowTheConfiguredProvider() {
-            #expect(CodexChatApprovalMethod.defaultMethod(for: .chatGPTSubscription) == .autoReview)
-            #expect(CodexChatApprovalMethod.defaultMethod(for: .databricks) == .ask)
-            #expect(CodexChatApprovalMethod.defaultMethod(for: nil) == .ask)
-            #expect(CodexChatApprovalMethod.autoReview.availableMethod(for: .databricks) == .ask)
+        func newTasksDefaultToAutoReviewAndPreserveExplicitSelections() {
+            #expect(CodexChatSessionModel().selectedApprovalMethod == .autoReview)
+            for method in CodexChatApprovalMethod.allCases {
+                #expect(CodexChatSessionModel(approvalMethod: method).selectedApprovalMethod == method)
+            }
         }
 
         @Test
@@ -60,37 +58,16 @@ import Foundation
         }
 
         @Test
-        func providerChangeImmediatelyFallsBackAndPersistsAsk() async {
+        func autoReviewSelectionIsPersisted() async {
             let service = TestCodexChatService(mode: .complete)
             let session = CodexChatSessionModel(
                 backendThreadID: "thread-1",
-                approvalMethod: .autoReview,
+                approvalMethod: .ask,
                 service: service
             )
-
-            session.configuredAccountProviderDidChange(to: .chatGPTSubscription)
-            session.configuredAccountProviderDidChange(to: .databricks)
-            await waitUntilAsync { await service.completedApprovalMethodUpdates.last == .ask }
-
-            #expect(session.selectedApprovalMethod == .ask)
-        }
-
-        @Test
-        func providerChangePublishesAvailabilityWhenSelectionStaysAsk() {
-            let session = CodexChatSessionModel(approvalMethod: .ask)
-            session.configuredAccountProviderDidChange(to: .chatGPTSubscription)
-            let didObserveChange = Mutex(false)
-            withObservationTracking {
-                _ = session.canUseAutoReview
-            } onChange: {
-                didObserveChange.withLock { $0 = true }
-            }
-
-            session.configuredAccountProviderDidChange(to: .databricks)
-
-            #expect(didObserveChange.withLock { $0 })
-            #expect(!session.canUseAutoReview)
-            #expect(session.selectedApprovalMethod == .ask)
+            session.selectApprovalMethod(.autoReview)
+            await waitUntilAsync { await service.completedApprovalMethodUpdates.last == .autoReview }
+            #expect(session.selectedApprovalMethod == .autoReview)
         }
 
         @Test
@@ -253,12 +230,12 @@ import Foundation
             #expect(await service.sentTextBlocks.isEmpty)
         }
 
-        @Test
-        func providerFallbackDuringRestoreDoesNotReplaceStoredFullAccess() async {
+        @Test(arguments: CodexChatApprovalMethod.allCases)
+        func restorePreservesStoredApprovalMethod(method: CodexChatApprovalMethod) async {
             let service = TestCodexChatService(
                 mode: .complete,
                 delaysLoad: true,
-                restoredApprovalMethod: .fullAccess
+                restoredApprovalMethod: method
             )
             let settings = AppSettings()
             let vault = Self.testVault()
@@ -272,14 +249,12 @@ import Foundation
             let restoreTask = Task { await session.restore() }
             await waitUntilAsync { await service.isLoadWaiting }
 
-            session.configuredAccountProviderDidChange(to: .chatGPTSubscription)
-            session.configuredAccountProviderDidChange(to: .databricks)
-            #expect(session.selectedApprovalMethod == .ask)
+            #expect(session.selectedApprovalMethod == .autoReview)
 
             await service.resumeDelayedLoad()
             await restoreTask.value
 
-            #expect(session.selectedApprovalMethod == .fullAccess)
+            #expect(session.selectedApprovalMethod == method)
             #expect(await service.completedApprovalMethodUpdates.isEmpty)
         }
 

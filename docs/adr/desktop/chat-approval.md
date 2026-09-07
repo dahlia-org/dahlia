@@ -7,10 +7,10 @@
 | 選択 | Approval policy / reviewer / sandbox |
 | --- | --- |
 | 承認を求める | on-request / user / workspaceWrite |
-| 代わりに承認 | on-request / auto_review / workspaceWrite。ChatGPT Subscription のみ |
+| 代わりに承認 | on-request / auto_review / workspaceWrite |
 | フルアクセス | never / user / dangerFullAccess。警告付きの明示選択のみ |
 
-新規タスクは ChatGPT なら代理承認、それ以外はユーザー承認。フルアクセスを自動選択しない。Databricks / 未知 provider で代理承認を選んでも service 境界でユーザー承認へ戻す。
+新規タスクは全アカウントで代理承認を初期選択する。provider やモデル一覧による利用制限・事前確認は行わず、明示選択と復元した承認方式を保持する。非対応環境のエラーは既存のエラー処理で表示し、ユーザー承認へ自動フォールバックしない。フルアクセスを自動選択しない。
 
 変更は順序を保って `thread/settings/update` に保存し、次 turn から適用する。送信済み turn は設定を固定し、設定保存失敗は独立して再試行できる。不明設定と旧 never + readOnly はユーザー承認、never + dangerFullAccess の完全一致だけをフルアクセスとして復元する。明示選択に追加確認 dialog は重ねない。
 

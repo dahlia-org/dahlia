@@ -51,14 +51,6 @@ enum CodexChatApprovalMethod: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    static func defaultMethod(for provider: AIAccountProvider?) -> Self {
-        provider == .chatGPTSubscription ? .autoReview : .ask
-    }
-
-    func availableMethod(for provider: AIAccountProvider?) -> Self {
-        self == .autoReview && provider != .chatGPTSubscription ? .ask : self
-    }
-
     static func restored(
         approvalPolicy: JSONValue?,
         approvalsReviewer: JSONValue?,
