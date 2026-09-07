@@ -10,6 +10,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   canEmbedArtifact,
   ScreenshotFigure,
+  SyncedMeeting,
   MeetingList,
   resolveDashboardExtensionRoute,
   type DashboardExtension,
@@ -25,6 +26,38 @@ const ExtensionPage = () => null;
 afterEach(() => vi.unstubAllGlobals());
 
 describe("desktop-style meeting layout", () => {
+  it("waits for meeting and vault data without flashing a placeholder page, and keeps errors visible", () => {
+    vi.stubGlobal("navigator", { language: "ja-JP" });
+    const query = vi.spyOn(liveData, "useLiveJSON");
+    const page = vi.spyOn(liveData, "useLivePage");
+    const empty = { data: undefined, error: undefined, loading: true, reload: vi.fn() };
+    const meeting = { meetingId: "m1", name: "Planning", createdAt: "2026-09-07T00:00:00Z" };
+    const render = () => renderToStaticMarkup(createElement(SyncedMeeting, { vaultId: "v1", meetingId: "m1" }));
+    page.mockReturnValue({ ...empty, loadingMore: false, loadMore: vi.fn() });
+    try {
+      for (const ready of ["neither", "meeting", "vault", "both"]) {
+        query.mockImplementation((url) => {
+          if (url === "/api/v1/vaults/v1/meetings/m1" && ["meeting", "both"].includes(ready)) {
+            return { ...empty, data: meeting };
+          }
+          if (url === "/api/v1/vaults/v1" && ["vault", "both"].includes(ready)) {
+            return { ...empty, data: { role: "member" } };
+          }
+          return empty;
+        });
+        const html = render();
+        expect(html.includes("<h1>")).toBe(ready === "both");
+        expect(html.includes("Planning")).toBe(ready === "both");
+        expect(html).not.toContain("<h1>ミーティング</h1>");
+        expect(html).not.toContain("ミーティングを読み込み中");
+      }
+      query.mockReturnValue({ ...empty, loading: false, error: new Error("meeting_not_found") });
+      const html = render();
+      expect(html).toContain('role="alert"');
+      expect(html).not.toContain("<h1>");
+    } finally { query.mockRestore(); page.mockRestore(); }
+  });
+
   it("renders a text-labelled recording indicator only for active sessions in both languages", () => {
     for (const [language, label] of [["ja-JP", "録音中"], ["en-US", "Recording"]]) {
       vi.stubGlobal("navigator", { language });

@@ -768,7 +768,7 @@ function SyncedProject({ vaultId, projectId }: { vaultId: string; projectId: str
   </article>;
 }
 
-function SyncedMeeting({ vaultId, meetingId }: { vaultId: string; meetingId: string }) {
+export function SyncedMeeting({ vaultId, meetingId }: { vaultId: string; meetingId: string }) {
   const base = `/api/v1/vaults/${vaultId}/meetings/${meetingId}`;
   const meetingQuery = useLiveJSON<SyncedMeetingInfo>(base);
   const vaultQuery = useLiveJSON<SyncedVaultInfo>(`/api/v1/vaults/${vaultId}`);
@@ -839,10 +839,10 @@ function SyncedMeeting({ vaultId, meetingId }: { vaultId: string; meetingId: str
   };
   const visibleScreenshots = screenshots?.filter((screenshot) => screenshot.file.metadata.source === "screenshot");
   return (
-    <article className="meeting-detail">
-      <header className="meeting-header">
-        <h1>{meeting?.name || uiText("Meeting", "ミーティング")}</h1>
-        {meeting && <div className="meeting-metadata">
+    <article className="meeting-detail" aria-busy={!meeting && (meetingQuery.loading || vaultQuery.loading)}>
+      {meeting && <header className="meeting-header">
+        <h1>{meeting.name || uiText("Untitled meeting", "無題のミーティング")}</h1>
+        <div className="meeting-metadata">
           <RecordingIndicator isRecording={meeting.isRecording} />
           <span className="metadata-chip"><time dateTime={meeting.recordingStartedAt ?? meeting.createdAt}>
             {new Date(meeting.recordingStartedAt ?? meeting.createdAt).toLocaleString(undefined, { year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" })}
@@ -851,14 +851,13 @@ function SyncedMeeting({ vaultId, meetingId }: { vaultId: string; meetingId: str
             <span aria-hidden="true">▱</span>{project?.path ?? uiText("Project", "プロジェクト")}
           </a> : <span className="metadata-chip">{uiText("Unassigned", "未分類")}</span>}
           <SummaryTags document={document} />
-        </div>}
-      </header>
+        </div>
+      </header>}
       {recovering && <p role="status">{syncMessage("sync_recovering")}</p>}
       {error && <p className="error" role="alert">{error}</p>}
       <DataError error={meetingQuery.error} retry={meetingQuery.reload} />
       <DataError error={vaultQuery.error} retry={vaultQuery.reload} />
       <DataError error={projectsQuery.error} retry={projectsQuery.reload} />
-      {!meeting && !error && !meetingQuery.error && !vaultQuery.error && <p className="muted">{uiText("Loading meeting…", "ミーティングを読み込み中…")}</p>}
       {meeting && <MeetingTabs
         actions={vault?.role === "owner" && <div className="meeting-actions">
           <button className="action-trigger" popoverTarget="meeting-actions">{uiText("⋯ Actions", "⋯ 操作")} <span aria-hidden="true">⌄</span></button>
