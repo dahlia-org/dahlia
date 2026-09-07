@@ -297,18 +297,17 @@ actor SegmentedAudioSourceWriter {
 
         let nextOffset = current.record.sessionStartOffsetSeconds
             + Double(current.frameCount) / format.sampleRate
-        try await beginPhysicalSegment(sessionOffsetSeconds: nextOffset)
-        try await sealAndEnqueueFinalization(current)
+        try await beginPhysicalSegment(sessionOffsetSeconds: nextOffset, replacing: current)
     }
 
-    private func beginPhysicalSegment(sessionOffsetSeconds: TimeInterval) async throws {
+    private func beginPhysicalSegment(sessionOffsetSeconds: TimeInterval, replacing previous: PhysicalSegment? = nil) async throws {
         let next = try await createPhysicalSegment(sessionOffsetSeconds: sessionOffsetSeconds)
         current = next
-        do {
-            try await store.recordRotation(segmentId: next.record.id)
-        } catch {
-            ErrorReportingService.capture(error, context: ["source": "recordingEvent"])
+        if let previous {
+            try await sealAndEnqueueFinalization(previous)
         }
+        // Queue diagnostics after required metadata writes so they cannot gate the next chunk.
+        store.recordRotation(segmentId: next.record.id)
     }
 
     private func createPhysicalSegment(sessionOffsetSeconds: TimeInterval) async throws -> PhysicalSegment {

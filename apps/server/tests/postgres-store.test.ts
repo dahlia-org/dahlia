@@ -8,7 +8,7 @@ import type { Identity } from "../src/auth/identity";
 import type { AppConfig } from "../src/config";
 import { connectAuthDatabase } from "../src/db/client";
 import * as schema from "../src/db/auth-schema";
-import { SyncTransactionError } from "../src/sync/store";
+import { createPostgresMeetingSyncStore, SyncTransactionError } from "../src/sync/store";
 import type { IdentitySyncStore, SyncTransactionOperation } from "../src/sync/types";
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
@@ -27,6 +27,17 @@ const connection = databaseUrl ? connectAuthDatabase(config) : undefined;
 afterAll(async () => connection?.close());
 
 integration("PostgreSQL application store", () => {
+  it("fails readiness when meeting event FORCE RLS is missing", async () => {
+    expect(await createPostgresMeetingSyncStore(connection!.db).isAvailable()).toBe(true);
+    try {
+      await connection!.db.execute(sql`ALTER TABLE app.meeting_events NO FORCE ROW LEVEL SECURITY`);
+      expect(await createPostgresMeetingSyncStore(connection!.db).isAvailable()).toBe(false);
+    } finally {
+      await connection!.db.execute(sql`ALTER TABLE app.meeting_events FORCE ROW LEVEL SECURITY`);
+    }
+    expect(await createPostgresMeetingSyncStore(connection!.db).isAvailable()).toBe(true);
+  });
+
   it("projects recording history through an invoker view and enforces event RLS", async () => {
     const store = createPostgresAuthStore(connection!.db, "postgres", undefined, true);
     const userId = crypto.randomUUID();

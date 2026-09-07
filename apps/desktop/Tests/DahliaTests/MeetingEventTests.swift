@@ -176,6 +176,41 @@
         }
 
         @Test
+        func rotationEnqueueDoesNotWaitForBusyDatabaseWriter() async throws {
+            let fixture = try BatchAudioTestFixture(name: "MeetingEventsBusyWriter")
+            defer { fixture.removeFiles() }
+            try enableEvents(fixture)
+            let store = try RecordingAudioStore(dbQueue: fixture.database.dbQueue, managedRootURL: fixture.managedRootURL)
+            try await store.acquireSessionLease(meetingId: fixture.meeting.id, sessionId: fixture.session.id)
+            let segment = try await store.createSegment(
+                meetingId: fixture.meeting.id, sessionId: fixture.session.id, source: .microphone,
+                segmentIndex: 1, sessionStartOffsetSeconds: 60, localeIdentifier: "en-US",
+                sampleRate: 16000, channelCount: 1, isRequiredSource: true
+            )
+            let writerEntered = Mutex(false)
+            let enqueueReturned = Mutex(false)
+            let releaseWriter = DispatchSemaphore(value: 0)
+            let blocker = Task.detached {
+                try fixture.database.dbQueue.write { _ in
+                    writerEntered.withLock { $0 = true }
+                    releaseWriter.wait()
+                }
+            }
+            #expect(await pollUntil { writerEntered.withLock { $0 } })
+            let enqueue = Task.detached {
+                store.recordRotation(segmentId: segment.record.id)
+                enqueueReturned.withLock { $0 = true }
+            }
+            let returnedWhileBlocked = await pollUntil(timeout: .seconds(1)) { enqueueReturned.withLock { $0 } }
+            releaseWriter.signal()
+            try await blocker.value
+            await enqueue.value
+            #expect(returnedWhileBlocked)
+            #expect(try events(fixture).count == 1)
+            await store.releaseSessionLease(sessionId: fixture.session.id)
+        }
+
+        @Test
         func resumingAudioSourceRecordsPhysicalSegmentSwitch() async throws {
             let fixture = try BatchAudioTestFixture(name: "MeetingEventsResume")
             defer { fixture.removeFiles() }
@@ -216,7 +251,7 @@
                         isRequiredSource: true,
                         at: fixture.now
                     )
-                    try await store.recordRotation(segmentId: segment.record.id, at: fixture.now)
+                    store.recordRotation(segmentId: segment.record.id, at: fixture.now)
                 }
             }
             let payloads = try events(fixture)

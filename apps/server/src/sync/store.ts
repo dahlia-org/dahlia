@@ -307,6 +307,7 @@ async function roleSupportsRls(db: PostgresDatabase): Promise<boolean> {
       "app.projects",
       "app.transaction_receipts",
       "app.meetings",
+      "app.meeting_events",
       "app.transcript_segments",
       "app.transcript_patch_chunks",
       "app.files",
