@@ -83,14 +83,8 @@ export class DatabricksBackend implements AIGatewayBackend {
         if (!id.startsWith(`${provider.modelSchema}.`) || !SHORT_MODEL_PATTERN.test(shortId)) {
           throw databricksModelListError("provider_models_invalid", "invalid_model_name", { requestId });
         }
-        const apiTypes: unknown = "supported_api_types" in entry ? entry.supported_api_types : undefined;
-        if (apiTypes !== undefined && (!Array.isArray(apiTypes) || !apiTypes.every((value) => typeof value === "string"))) {
-          throw databricksModelListError("provider_models_invalid", "invalid_supported_api_types", { requestId });
-        }
         if (shortId.includes("embedding")) continue;
-        if (apiTypes === undefined || apiTypes.includes("mlflow/v1/responses")) {
-          models.push({ id: shortId });
-        }
+        models.push({ id: shortId });
       }
       const nextPageToken: unknown = "next_page_token" in body ? body.next_page_token : undefined;
       if (nextPageToken !== undefined && typeof nextPageToken !== "string") {

@@ -91,15 +91,12 @@ describe("AI Gateway", () => {
     expect(transport).toHaveBeenCalledTimes(2);
   });
 
-  it("filters unsupported models and continues after a fully excluded page", async () => {
+  it("filters embedding models and continues after a fully excluded page", async () => {
     const transport = vi.fn<GatewayFetch>(async (url) => Response.json(new URL(String(url)).searchParams.has("page_token")
       ? { model_services: [{ name: "model-services/dahlia.ai.codex-auto-review", supported_api_types: ["mlflow/v1/responses"] }] }
       : {
         model_services: [
           { name: "model-services/dahlia.ai.qwen3-embedding-0-6b", supported_api_types: ["mlflow/v1/embeddings", "openai/v1/embeddings"] },
-          { name: "model-services/dahlia.ai.chat", supported_api_types: ["mlflow/v1/chat/completions"] },
-          { name: "model-services/dahlia.ai.openai-only", supported_api_types: ["openai/v1/responses"] },
-          { name: "model-services/dahlia.ai.empty", supported_api_types: [] },
           { name: "model-services/dahlia.ai.embedding" },
         ],
         next_page_token: "next",
@@ -122,17 +119,14 @@ describe("AI Gateway", () => {
     expect(transport).toHaveBeenCalledTimes(1);
   });
 
-  it.each([null, "mlflow/v1/responses", 1, {}, ["mlflow/v1/responses", null]])("rejects invalid API capabilities: %j", async (supported_api_types) => {
-    const logs = vi.spyOn(console, "error").mockImplementation(() => {});
-    try {
-      for (const id of ["model", "embedding", "qwen3-embedding-0-6b"]) {
-        await expect(new GatewayService(databricksConfig, modelTransport(async () => Response.json({
-          model_services: [{ name: `model-services/dahlia.ai.${id}`, supported_api_types }],
-        }))).models()).rejects.toMatchObject({ status: 502, code: "provider_models_invalid" });
-      }
-    } finally {
-      logs.mockRestore();
-    }
+  it.each([null, [], "mlflow/v1/responses", ["mlflow/v1/embeddings"]])("ignores API capabilities: %j", async (supported_api_types) => {
+    const list = await new GatewayService(databricksConfig, modelTransport(async () => Response.json({
+      model_services: ["model", "embedding", "qwen3-embedding-0-6b"].map((id) => ({
+        name: `model-services/dahlia.ai.${id}`, supported_api_types,
+      })),
+    }))).models();
+    expect(list.data.map((model) => model.id)).toEqual(["model"]);
+    expect(list.models.filter((model) => model.visibility === "list").map((model) => model.slug)).toEqual(["model"]);
   });
 
   it("accepts an empty protobuf model list", async () => {

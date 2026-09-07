@@ -16,7 +16,7 @@ accounts は Google sign-in と public-client OAuth、header は値を除去・�
 
 `AIGatewayBackend` は `listModels(request)` と `responses(body, context)` を持つ。共通の `RequestBody` は Responses API 形式、`RequestContext` は認証済み userId、headers、signal と Server が解決した任意の upstreamModel を持つ。backend は利用者情報を保持せず、上流ヘッダーを明示的に構築する。型と backend 実装は Worker-safe な package root で公開する。
 
-モデル一覧の正本を backend へ移し、`/admin/models` と管理 API を廃止する。2026-09-06 の未リリース baseline 整理で、不要な Model Alias テーブル・CRUD・公開型と Gateway constructor の store 引数も削除した。Databricks は必須の `DATABRICKS_MODEL_SCHEMA` 配下を App service principal で取得し、`supported_api_types` に `mlflow/v1/responses` を含むモデルだけを短い名前で公開する。名前に `embedding` を含むサービスは常に除外する。一覧で対応情報が欠落した場合は追加 GET をせず、残りを公開する。embedding サービスの登録名は同規則に従う。対応情報が空配列なら除外し、不正型は一覧取得エラーとする。通常の Responses は backend 内でスキーマを補完し、利用者の OBO token で転送する。認証済み userId は Databricks request tags の user_id に設定する。OpenAI と Cloudflare の一覧は当面 gpt-5.6-luna の mock とする。
+モデル一覧の正本を backend へ移し、`/admin/models` と管理 API を廃止する。2026-09-06 の未リリース baseline 整理で、不要な Model Alias テーブル・CRUD・公開型と Gateway constructor の store 引数も削除した。Databricks は必須の `DATABRICKS_MODEL_SCHEMA` 配下を App service principal で取得し、名前に `embedding` を含むサービスを除外して残りを短い名前で公開する。`supported_api_types` の確認と個別 GET は行わない。embedding サービスの名前には `embedding` を含め、それ以外には Responses 対応モデルを登録する。通常の Responses は backend 内でスキーマを補完し、利用者の OBO token で転送する。認証済み userId は Databricks request tags の user_id に設定する。OpenAI と Cloudflare の一覧は当面 gpt-5.6-luna の mock とする。
 
 `CODEX_AUTO_REVIEW_MODEL` は backend の機能に依存しない Server 共通機能として維持する。設定時は予約 ID codex-auto-review の一覧と実行先を上書きし、環境変数の上流 ID を無加工で転送する。未設定・空の場合は backend の同名モデルを通常どおり一覧・推論に使用する。Databricks DAB は環境変数を注入せず、postdeploy で `system.ai.gpt-5-6-luna` を参照する `codex-auto-review` を登録する。
 
