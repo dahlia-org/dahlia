@@ -138,11 +138,11 @@ describe("desktop-style meeting layout", () => {
 describe("dashboard navigation", () => {
   it("uses advertised thumbnails for browsing and preserves the original link", () => {
     const file = { id: "file", content_type: "image/png", metadata: { source: "screenshot" },
-      variants: { thumb_360: "/small", thumb_1280: "/large" } };
+      variants: { thumb_480: "/small", thumb_1280: "/medium", thumb_1568: "/preview", thumb_1920: "/large" } };
     const capturedAt = "2026-09-07T00:00:00Z";
     const html = renderToStaticMarkup(createElement(ScreenshotFigure, { file, capturedAt }));
     expect(html).toContain('src="/small"');
-    expect(html).toContain('href="/large"');
+    expect(html).toContain('href="/preview"');
     expect(html).toContain('href="/api/v1/files/file/content"');
     expect(html).toContain("Open original");
     expect(html).toContain(`dateTime="${capturedAt}"`);

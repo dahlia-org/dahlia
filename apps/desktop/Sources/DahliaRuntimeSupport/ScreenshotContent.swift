@@ -10,7 +10,7 @@ public enum ScreenshotContentError: Error, Sendable {
 
 public enum ScreenshotVariant: String, Codable, Sendable {
     case original
-    case thumbnail = "thumb_360"
+    case thumbnail = "thumb_480"
 }
 
 /// A content reference, not a credential. Clients must match its origin to a configured account.
