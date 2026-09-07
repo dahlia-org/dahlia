@@ -25,7 +25,7 @@ const vault = { vaultId: "v1", name: "Test Vault", role: "owner", revision: 1, c
 const projects = Array.from({ length: 40 }, (_, index) => ({ projectId: `p${index}`, name: `Project ${index}`, path: `Project ${index}`, revision: 1, directMeetingCount: 0, subtreeMeetingCount: 0 }));
 const meeting = (id: string) => ({ meetingId: id, vaultId: "v1", projectId: "p0", name: id === "m1" ? meetingName : "Other meeting", description: "", status: "recording", revision: 1, summaryRevision: 1, createdAt: vault.createdAt, summaryDocument: JSON.stringify({ sections: [{ heading: summary, blocks: [] }] }) });
 const image = "data:image/svg+xml," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400"><rect width="600" height="400" fill="#aaa"/></svg>');
-const file = (index: number) => ({ id: `f${index}`, capturedAt: vault.createdAt, file: { id: `f${index}`, content_type: "image/png", variants: { thumb_360: image }, metadata: { source: "screenshot", caption: index === 0 ? caption : `Screenshot ${index}` } } });
+const file = (index: number) => ({ id: `f${index}`, capturedAt: vault.createdAt, file: { id: `f${index}`, content_type: "image/png", variants: { thumb_480: image }, metadata: { source: "screenshot", caption: index === 0 ? caption : `Screenshot ${index}` } } });
 window.prompt = () => answers.shift() ?? null;
 window.confirm = () => true;
 window.EventSource = class extends EventTarget {
@@ -112,6 +112,17 @@ async function run() {
   assert(sidebar.scrollTop === sidebarScroll, `Sidebar scrolled from ${sidebarScroll} to ${sidebar.scrollTop}`);
   assert(documentNode === document.documentElement && main === document.querySelector(".workspace"), "Document/main replaced");
   assert(requests.filter((url) => url === "/api/session").length === sessionReads, "Sync notification refreshed session");
+  const figure = document.querySelector(".screenshot-grid figure")!;
+  const neighboringImage = document.querySelectorAll(".screenshot-grid img")[1];
+  for (const retry of [() => button("Retry").click(), () => notify("open"), () => notify(), () => window.dispatchEvent(new Event("online"))]) {
+    figure.querySelector("img")!.dispatchEvent(new Event("error"));
+    await until(() => figure.querySelector('[role="alert"]') && !figure.querySelector("img"));
+    retry();
+    await until(() => { const image = figure.querySelector("img"); return image?.complete && image.naturalWidth > 0; });
+    assert(figure === document.querySelector(".screenshot-grid figure"), "Thumbnail retry replaced figure");
+    assert(neighboringImage === document.querySelectorAll(".screenshot-grid img")[1], "Thumbnail retry replaced healthy image");
+    assert(selectedTab() === "Screenshots", "Thumbnail retry reset tab");
+  }
   document.querySelector<HTMLButtonElement>('[aria-label="Expand Project 1"]')?.click();
   await until(() => [...document.querySelectorAll(".sidebar-status")].some((node) => node.textContent === "No meetings"));
   const emptyRow = [...document.querySelectorAll(".sidebar-status")].find((node) => node.textContent === "No meetings")!;

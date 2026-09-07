@@ -594,17 +594,27 @@ export class MeetingSyncService {
     return this.readFile(identity, image.fileId, method, request);
   }
 
+  private async readableFile(identity: Identity, fileId: string, variant?: ScreenshotVariant) {
+    const file = await this.store.withIdentity(identity, (scoped) => scoped.getFile(fileId, true));
+    if (!file) throw new ArtifactRequestError(404, "file_not_found");
+    if (variant !== undefined && (!Object.hasOwn(SCREENSHOT_VARIANTS, variant)
+      || !this.screenshotTransformer || !imageContentTypes.has(file.contentType))) {
+      throw new ArtifactRequestError(404, "file_variant_unavailable");
+    }
+    return file;
+  }
+
   // Shared by HTTP delivery and server-side consumers; authorization is checked on every read.
   async readFileContent(identity: Identity, fileId: string, variant?: ScreenshotVariant,
     method: ArtifactReadMethod = "GET", request: Request = new Request("https://dahlia.invalid/")) {
-    const file = await this.store.withIdentity(identity, (scoped) => scoped.getFile(fileId, true));
-    if (!file) throw new ArtifactRequestError(404, "file_not_found");
-    if (variant !== undefined) {
-      if (!Object.hasOwn(SCREENSHOT_VARIANTS, variant) || !this.screenshotTransformer || !imageContentTypes.has(file.contentType)) {
-        throw new ArtifactRequestError(404, "file_variant_unavailable");
-      }
-      await this.ensureFileVariant(identity, file, variant);
-    }
+    const file = await this.readableFile(identity, fileId, variant);
+    return this.readFileBytes(identity, file, variant, method, request);
+  }
+
+  private async readFileBytes(identity: Identity, file: FileRecord, variant: ScreenshotVariant | undefined,
+    method: ArtifactReadMethod, request: Request) {
+    const fileId = file.fileId;
+    if (variant !== undefined) await this.ensureFileVariant(identity, file, variant);
     const current = await this.store.withIdentity(identity, (scoped) => scoped.getFile(fileId, true));
     if (!current || current.checksum !== file.checksum) throw new ArtifactRequestError(404, "file_not_found");
     const upstream = await this.storageCall(() => this.requireStorage().read(
@@ -614,14 +624,32 @@ export class MeetingSyncService {
   }
 
   async readFile(identity: Identity, fileId: string, method: ArtifactReadMethod, request: Request, variant?: ScreenshotVariant): Promise<Response> {
-    const { file, upstream, contentType } = await this.readFileContent(identity, fileId, variant, method, request);
+    const file = await this.readableFile(identity, fileId, variant);
     const checksum = file.checksum.slice(8);
     const etag = variant ? `${checksum}-v1-${variant}` : checksum;
     const headers = new Headers({ "content-security-policy": "sandbox", "x-content-type-options": "nosniff",
-      "content-type": contentType, "cache-control": "private, no-cache",
+      "content-type": variant ? "image/webp" : file.contentType, "cache-control": "private, no-cache",
       "x-dahlia-original-sha256": checksum, "x-dahlia-image-variant": variant ?? "original",
+      vary: "Authorization, Cookie",
       etag: `"${etag}"`,
     });
+    const ifNoneMatch = request.headers.get("if-none-match");
+    const notModified = ifNoneMatch?.split(",").some((value) => {
+      const tag = value.trim();
+      return tag === "*" || tag.replace(/^W\//, "") === headers.get("etag");
+    });
+    if (notModified && !request.headers.has("if-unmodified-since")) {
+      return new Response(null, { status: 304, headers });
+    }
+    let readRequest = request;
+    if (notModified) {
+      // Date preconditions precede cache validation; ranges are evaluated only after both.
+      readRequest = new Request(request);
+      readRequest.headers.delete("range");
+    }
+    const { upstream } = await this.readFileBytes(identity, file, variant, notModified ? "HEAD" : method, readRequest);
+    if (notModified && upstream.ok) return new Response(null, { status: 304, headers });
+    if (!upstream.ok) headers.set("cache-control", "no-store");
     for (const name of ["accept-ranges", "content-length", "content-range", "last-modified"]) {
       const value = upstream.headers.get(name);
       if (value) headers.set(name, value);

@@ -1,4 +1,4 @@
-import { refreshData, subscribeLiveUpdates, useLiveJSON, useLivePage, useLiveQuery } from "./live-data";
+import { liveDataEvent, refreshData, subscribeLiveUpdates, useLiveJSON, useLivePage, useLiveQuery } from "./live-data";
 import { createAuthClient } from "better-auth/react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type MouseEvent, type ReactNode } from "react";
 
@@ -10,6 +10,7 @@ import {
 } from "./routes";
 import { dashboardNavigationPath, navigateDashboard } from "./navigation";
 import { summaryDisplayText } from "../search/summary";
+import type { ScreenshotVariant } from "../sync/screenshot-variants";
 import { clientMutationEvent, json, RequestError, syncMessage, uiText, type SyncedVaultInfo, type OrganizationInfo, type SyncedMeetingInfo, type SyncedProjectInfo } from "./api";
 import { MeetingTabs, parseSummary, SummaryContent, SummaryTags, TranscriptTime } from "./MeetingContent";
 import { MenuIcon, Sidebar, SidebarProvider, useSidebar } from "./Sidebar";
@@ -128,7 +129,7 @@ interface SyncedTranscriptSegmentInfo {
 interface SyncedScreenshotInfo {
   id: string;
   capturedAt: string | null;
-  file: { id: string; content_type: string; variants: Partial<Record<"thumb_360" | "thumb_1280", string>>; metadata: { source: string; ocr_text?: string; caption?: string } };
+  file: { id: string; content_type: string; variants: Partial<Record<ScreenshotVariant, string>>; metadata: { source: string; ocr_text?: string; caption?: string } };
 }
 
 type SyncOperation = {
@@ -903,16 +904,23 @@ function SyncedMeeting({ vaultId, meetingId }: { vaultId: string; meetingId: str
 
 export function ScreenshotFigure({ file, capturedAt }: { file: SyncedScreenshotInfo["file"]; capturedAt?: string | null }) {
   const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    const retry = () => setFailed(false);
+    const events = [liveDataEvent, clientMutationEvent, "online"];
+    for (const event of events) window.addEventListener(event, retry);
+    return () => { for (const event of events) window.removeEventListener(event, retry); };
+  }, []);
   const original = `/api/v1/files/${file.id}/content`;
   return <figure className="panel">
-    <a href={file.variants.thumb_1280 ?? original} target="_blank" rel="noreferrer" aria-label={uiText("Open screenshot", "スクリーンショットを開く")}>
+    <a href={file.variants.thumb_1568 ?? original} target="_blank" rel="noreferrer" aria-label={uiText("Open screenshot", "スクリーンショットを開く")}>
       {failed ? <span role="alert">{uiText("Unable to load screenshot.", "スクリーンショットを読み込めませんでした。")}</span> : <img
-        src={file.variants.thumb_360 ?? original}
+        src={file.variants.thumb_480 ?? original}
         alt={file.metadata.caption || uiText("Screenshot", "スクリーンショット")}
         loading="lazy"
         onError={() => setFailed(true)}
       />}
     </a>
+    {failed && <button onClick={() => setFailed(false)}>{uiText("Retry", "再試行")}</button>}
     {capturedAt && <time className="screenshot-time" dateTime={capturedAt}>{new Date(capturedAt).toLocaleTimeString()}</time>}
     {(file.metadata.caption || file.metadata.ocr_text) && <figcaption>{file.metadata.caption || file.metadata.ocr_text}</figcaption>}
     <a href={original} target="_blank" rel="noreferrer">{uiText("Open original", "原本を開く")}</a>

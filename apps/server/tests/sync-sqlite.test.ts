@@ -136,7 +136,8 @@ describe("SQLite canonical sync", () => {
     const metadataOnly = await service.getFile(owner, file.id, "metadata-v1");
     expect(metadataOnly).toMatchObject({ contentOmitted: true, contentPresent: true, revision: 2,
       contentURL: `/api/v1/files/${file.id}/content`, metadata: { source: "screenshot", width: 1800 },
-      variants: { thumb_360: `/api/v1/files/${file.id}/variants/thumb_360`, thumb_1280: `/api/v1/files/${file.id}/variants/thumb_1280` } });
+      variants: { thumb_480: `/api/v1/files/${file.id}/variants/thumb_480`, thumb_1280: `/api/v1/files/${file.id}/variants/thumb_1280`,
+        thumb_1568: `/api/v1/files/${file.id}/variants/thumb_1568`, thumb_1920: `/api/v1/files/${file.id}/variants/thumb_1920` } });
     expect(metadataOnly.metadata).not.toHaveProperty("ocr_text");
     expect((await service.listScreenshots(owner, vaultId, meetingId, "Searchable")).items).toHaveLength(1);
     await expect(service.commitTransaction(owner, wire([{ entity: "file", action: "upsert", entityId: file.id, baseRevision: 1,
@@ -162,7 +163,7 @@ describe("SQLite canonical sync", () => {
     }
   });
 
-  it("advertises, serves and deletes both variants with distinct caches", async () => {
+  it("advertises, serves and deletes all four variants with distinct caches", async () => {
     const { store, service, storage, file, publish, attach, transformer, databasePath } = await fileSetup();
     await publish();
     await attach();
@@ -190,9 +191,9 @@ describe("SQLite canonical sync", () => {
       await internal.upstream.arrayBuffer();
       await expect(service.readFileContent(other, file.id, variant)).rejects.toMatchObject({ status: 404 });
     }
-    expect(etags.size).toBe(2);
-    expect(transformer).toHaveBeenCalledTimes(2);
-    for (const name of ["thumbnail", "unknown", "toString"]) {
+    expect(etags.size).toBe(4);
+    expect(transformer).toHaveBeenCalledTimes(4);
+    for (const name of ["thumbnail", "thumb_360", "unknown", "toString"]) {
       expect((await app.request(`/api/v1/files/${file.id}/variants/${name}`, { headers: headers() })).status).toBe(404);
     }
     const portable = createApp({ config: testConfig(databasePath), authStore: store, artifactStorage: storage });
@@ -207,16 +208,112 @@ describe("SQLite canonical sync", () => {
     await store.close?.();
   });
 
+  it.each([undefined, ...Object.keys(SCREENSHOT_VARIANTS)] as Array<keyof typeof SCREENSHOT_VARIANTS | undefined>)(
+    "revalidates cached %s content without reading storage and checks current access first", async (variant) => {
+      const { store, service, storage, file, publish, transformer, databasePath } = await fileSetup();
+      await publish();
+      const app = createApp({ config: testConfig(databasePath), authStore: store, artifactStorage: storage, screenshotTransformer: transformer });
+      const url = `/api/v1/files/${file.id}/${variant ? `variants/${variant}` : "content"}`;
+      const metadata = await app.request(`/api/v1/files/${file.id}`, { headers: headers() });
+      expect(metadata.headers.get("cache-control")).toBe("no-store");
+      const original = await app.request(url, { headers: headers() });
+      expect(original.status).toBe(200);
+      expect(original.headers.get("cache-control")).toBe("private, no-cache");
+      expect(original.headers.get("vary")).toContain("Authorization");
+      expect(original.headers.get("vary")).toContain("Cookie");
+      const etag = original.headers.get("etag")!;
+      await original.arrayBuffer();
+      const read = vi.spyOn(storage, "read");
+      const exists = vi.spyOn(storage, "exists");
+      transformer.mockClear();
+      for (const method of ["GET", "HEAD"]) {
+        for (const condition of [etag, `W/${etag}`, `"other,tag", W/${etag}`, "*"]) {
+          const response = await app.request(url, { method, headers: { ...headers(), "if-none-match": condition, range: "bytes=1-3" } });
+          expect(response.status).toBe(304);
+          expect(await response.text()).toBe("");
+          expect(response.headers.get("etag")).toBe(etag);
+          expect(response.headers.get("cache-control")).toBe("private, no-cache");
+          expect(response.headers.has("content-length")).toBe(false);
+          expect(response.headers.has("content-range")).toBe(false);
+        }
+      }
+      expect(read).not.toHaveBeenCalled();
+      expect(exists).not.toHaveBeenCalled();
+      expect(transformer).not.toHaveBeenCalled();
+      const changed = await app.request(url, { headers: { ...headers(), "if-none-match": '"different-variant"' } });
+      expect(changed.status).toBe(200);
+      expect((await changed.arrayBuffer()).byteLength).toBeGreaterThan(0);
+      const invalidRange = await app.request(url, { headers: { ...headers(), range: "bytes=999999999-" } });
+      expect(invalidRange.status).toBe(416);
+      expect(invalidRange.headers.get("cache-control")).toBe("no-store");
+      const conditional = new Request("https://test.invalid", { headers: { "if-none-match": etag } });
+      await expect(service.readFile(other, file.id, "GET", conditional, variant)).rejects.toMatchObject({ status: 404 });
+      const database = new DatabaseSync(databasePath);
+      database.prepare("INSERT INTO vault_permissions(vault_id, principal_type, principal_id, role, granted_by_user_id) VALUES (?, 'user', ?, 'member', ?)")
+        .run(vaultId, other.userId, owner.userId);
+      const memberHeaders = { ...headers(), "x-forwarded-user": other.userId, "x-forwarded-email": "other@example.com", "if-none-match": etag };
+      expect((await app.request(url, { headers: memberHeaders })).status).toBe(304);
+      database.prepare("DELETE FROM vault_permissions WHERE principal_id = ?").run(other.userId);
+      database.close();
+      const revoked = await app.request(url, { headers: memberHeaders });
+      expect(revoked.status).toBe(404);
+      expect(revoked.headers.get("cache-control")).toBe("no-store");
+      if (variant) {
+        const portable = createApp({ config: testConfig(databasePath), authStore: store, artifactStorage: storage });
+        expect((await portable.request(url, { headers: { ...headers(), "if-none-match": etag } })).status).toBe(404);
+      }
+      await service.commitTransaction(owner, wire([{ entity: "file", action: "delete", entityId: file.id, baseRevision: 1, data: {} }]));
+      expect((await app.request(url, { headers: { ...headers(), "if-none-match": etag } })).status).toBe(404);
+      await store.close?.();
+    },
+  );
+
+  it("rejects a file replaced between cache metadata lookup and content read", async () => {
+    const { store, service, file, publish } = await fileSetup();
+    await publish();
+    const withIdentity = store.sync.withIdentity.bind(store.sync);
+    const lookup = vi.spyOn(store.sync, "withIdentity");
+    lookup.mockImplementationOnce(async (identity, body) => {
+      const result = await withIdentity(identity, body);
+      // The first lookup models a snapshot taken before deletion and recreation of this ID.
+      return { ...result as object, checksum: `SHA-256:${"0".repeat(64)}` };
+    });
+    await expect(service.readFile(owner, file.id, "GET", new Request("https://test.invalid")))
+      .rejects.toMatchObject({ status: 404, code: "file_not_found" });
+    lookup.mockRestore();
+    await store.close?.();
+  });
+
+  it.each([undefined, "thumb_480"] as const)("checks If-Unmodified-Since before cache validation for %s", async (variant) => {
+    const { store, service, file, publish } = await fileSetup();
+    await publish();
+    const original = await service.readFile(owner, file.id, "GET", new Request("https://test.invalid"), variant);
+    const etag = original.headers.get("etag")!;
+    const lastModified = original.headers.get("last-modified")!;
+    await original.arrayBuffer();
+    for (const method of ["GET", "HEAD"] as const) {
+      for (const [since, status] of [["Thu, 01 Jan 1970 00:00:00 GMT", 412], [lastModified, 304]] as const) {
+        const response = await service.readFile(owner, file.id, method, new Request("https://test.invalid", {
+          headers: { "if-none-match": etag, "if-unmodified-since": since, range: "bytes=999999999-" },
+        }), variant);
+        expect(response.status).toBe(status);
+        expect(await response.text()).toBe("");
+        expect(response.headers.get("cache-control")).toBe(status === 304 ? "private, no-cache" : "no-store");
+      }
+    }
+    await store.close?.();
+  });
+
   it("generates thumbnails only on request, coalesces requests and reuses persisted variants", async () => {
     const { store, service, storage, file, publish, transformer, bytes } = await fileSetup();
     await publish();
     expect(transformer).not.toHaveBeenCalled();
-    const read = (value = service) => value.readFile(owner, file.id, "GET", new Request("https://test.invalid"), "thumb_360");
+    const read = (value = service) => value.readFile(owner, file.id, "GET", new Request("https://test.invalid"), "thumb_480");
     const results = await Promise.all([read(), read()]);
-    expect(await sharp(await results[0].arrayBuffer()).metadata()).toMatchObject({ width: 360, height: 180, format: "webp" });
+    expect(await sharp(await results[0].arrayBuffer()).metadata()).toMatchObject({ width: 480, height: 240, format: "webp" });
     await results[1].arrayBuffer();
     expect(transformer).toHaveBeenCalledTimes(1);
-    expect(await storage.exists(fileVariantKey(file.id, "thumb_360"))).toBe(true);
+    expect(await storage.exists(fileVariantKey(file.id, "thumb_480"))).toBe(true);
     const restarted = new MeetingSyncService(store.sync, storage, undefined, undefined, transformer);
     await (await read(restarted)).arrayBuffer();
     expect(transformer).toHaveBeenCalledTimes(1);
@@ -224,7 +321,7 @@ describe("SQLite canonical sync", () => {
     const portable = new MeetingSyncService(store.sync, storage);
     expect(await portable.getFile(owner, file.id)).toMatchObject({ variants: {} });
     await expect(read(portable)).rejects.toMatchObject({ code: "file_variant_unavailable" });
-    await expect(service.readFile(other, file.id, "GET", new Request("https://test.invalid"), "thumb_360")).rejects.toMatchObject({ status: 404 });
+    await expect(service.readFile(other, file.id, "GET", new Request("https://test.invalid"), "thumb_480")).rejects.toMatchObject({ status: 404 });
     await store.close?.();
   });
 
@@ -232,9 +329,9 @@ describe("SQLite canonical sync", () => {
     const { store, service, storage, file, publish, transformer } = await fileSetup();
     await publish();
     const put = vi.spyOn(storage, "put").mockRejectedValueOnce(new Error("storage failure"));
-    const read = () => service.readFile(owner, file.id, "GET", new Request("https://test.invalid"), "thumb_360");
+    const read = () => service.readFile(owner, file.id, "GET", new Request("https://test.invalid"), "thumb_480");
     await expect(read()).rejects.toMatchObject({ status: 502 });
-    expect(await storage.exists(fileVariantKey(file.id, "thumb_360"))).toBe(false);
+    expect(await storage.exists(fileVariantKey(file.id, "thumb_480"))).toBe(false);
     put.mockRestore();
     await (await read()).arrayBuffer();
     expect(transformer).toHaveBeenCalledTimes(2);
@@ -253,14 +350,14 @@ describe("SQLite canonical sync", () => {
       await canFinish;
       return transformScreenshot(...args);
     });
-    const reading = service.readFile(owner, file.id, "GET", new Request("https://test.invalid"), "thumb_360");
+    const reading = service.readFile(owner, file.id, "GET", new Request("https://test.invalid"), "thumb_480");
     const rejected = expect(reading).rejects.toMatchObject({ code: "file_not_found" });
     await didStart;
     await service.commitTransaction(owner, wire([{ entity: "file", action: "delete", entityId: file.id, baseRevision: 1, data: {} }]));
     release();
     await rejected;
     await vi.waitFor(async () => expect(await storage.exists(fileStorageKey(file.id))).toBe(false));
-    expect(await storage.exists(fileVariantKey(file.id, "thumb_360"))).toBe(false);
+    expect(await storage.exists(fileVariantKey(file.id, "thumb_480"))).toBe(false);
     await store.close?.();
   });
 
