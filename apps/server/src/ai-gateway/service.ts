@@ -34,8 +34,8 @@ export class GatewayService {
     if (!this.backend) return modelList([]);
     const result = await this.backend.listModels({ signal: request?.signal ?? new AbortController().signal });
     const configured = this.config.codexAutoReviewModel?.trim();
-    // The reserved Server override is the only change to the backend's model list.
-    const override = modelList(configured ? [{ id: CODEX_AUTO_REVIEW_ALIAS, displayName: "Codex Auto Review" }] : []);
+    if (!configured) return result;
+    const override = modelList([{ id: CODEX_AUTO_REVIEW_ALIAS, displayName: "Codex Auto Review" }]);
     return {
       ...result,
       data: [...result.data.filter((entry) => entry.id !== CODEX_AUTO_REVIEW_ALIAS), ...override.data],
@@ -67,8 +67,7 @@ export class GatewayService {
     if (!this.backend) throw new GatewayRequestError("AI provider is not configured", 503, "provider_not_configured");
     let upstreamModel: string | undefined;
     if (body.model === CODEX_AUTO_REVIEW_ALIAS) {
-      upstreamModel = this.config.codexAutoReviewModel?.trim();
-      if (!upstreamModel) throw new GatewayRequestError("Model is not available", 404, "model_not_found");
+      upstreamModel = this.config.codexAutoReviewModel?.trim() || undefined;
     }
     return proxyUpstreamResponse(await this.backend.responses(body as RequestBody, {
       identity: { userId: identity.userId }, headers: request.headers, signal: request.signal, upstreamModel,
