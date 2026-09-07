@@ -125,9 +125,11 @@ describe("AI Gateway", () => {
   it.each([null, "mlflow/v1/responses", 1, {}, ["mlflow/v1/responses", null]])("rejects invalid API capabilities: %j", async (supported_api_types) => {
     const logs = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
-      await expect(new GatewayService(databricksConfig, modelTransport(async () => Response.json({
-        model_services: [{ name: "model-services/dahlia.ai.model", supported_api_types }],
-      }))).models()).rejects.toMatchObject({ status: 502, code: "provider_models_invalid" });
+      for (const id of ["model", "embedding", "qwen3-embedding-0-6b"]) {
+        await expect(new GatewayService(databricksConfig, modelTransport(async () => Response.json({
+          model_services: [{ name: `model-services/dahlia.ai.${id}`, supported_api_types }],
+        }))).models()).rejects.toMatchObject({ status: 502, code: "provider_models_invalid" });
+      }
     } finally {
       logs.mockRestore();
     }

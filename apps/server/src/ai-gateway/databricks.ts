@@ -83,16 +83,12 @@ export class DatabricksBackend implements AIGatewayBackend {
         if (!id.startsWith(`${provider.modelSchema}.`) || !SHORT_MODEL_PATTERN.test(shortId)) {
           throw databricksModelListError("provider_models_invalid", "invalid_model_name", { requestId });
         }
-        if (shortId.includes("embedding")) continue;
         const apiTypes: unknown = "supported_api_types" in entry ? entry.supported_api_types : undefined;
-        if (apiTypes === undefined) {
-          models.push({ id: shortId });
-          continue;
-        }
-        if (!Array.isArray(apiTypes) || !apiTypes.every((value) => typeof value === "string")) {
+        if (apiTypes !== undefined && (!Array.isArray(apiTypes) || !apiTypes.every((value) => typeof value === "string"))) {
           throw databricksModelListError("provider_models_invalid", "invalid_supported_api_types", { requestId });
         }
-        if (apiTypes.includes("mlflow/v1/responses")) {
+        if (shortId.includes("embedding")) continue;
+        if (apiTypes === undefined || apiTypes.includes("mlflow/v1/responses")) {
           models.push({ id: shortId });
         }
       }
