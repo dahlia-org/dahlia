@@ -16,7 +16,7 @@ export const transformScreenshot: ScreenshotTransformer = async (source, longEdg
   const output = await sharp(bytes, { limitInputPixels: 33_554_432, pages: 1 })
     .rotate()
     .resize(longEdge, longEdge, { fit: "inside", withoutEnlargement: true })
-    .webp({ quality: 75 })
+    .webp({ quality: 80 })
     .timeout({ seconds: 15 })
     .toBuffer();
   return new Uint8Array(output);

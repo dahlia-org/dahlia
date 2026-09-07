@@ -7,7 +7,7 @@ import UniformTypeIdentifiers
 
 package enum ImageEncoder {
     package static let preferredFileExtension = "webp"
-    package static let defaultQuality: CGFloat = 0.75
+    package static let defaultQuality: CGFloat = 0.80
     package static let aiInputMaximumLongEdge = 1280
 
     package static func mimeType(for data: Data) -> String? {
