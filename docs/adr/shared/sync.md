@@ -39,8 +39,9 @@ Server は Vault ごとの durable change ledger と opaque cursor を持つ。d
 原本は Vault 所有の `files`、会議との関係は独立 ID の `meeting_files` に保存する。`files` の基本項目は `uri`、`offset`（現在は0）、`size`、`content_type`、`checksum`（`SHA-256:` 接頭辞）とし、source / OCR / caption / 寸法は metadata に置く。source は作成時に固定し、metadata の部分更新は未指定キーを保持する。同じ Vault の複数会議で同じ file を共有でき、紐付けを解除しても原本を削除しない。参照が残る明示 file 削除は拒否する。
 
 `POST /api/v1/files` の予約、`PUT /api/v1/files/{id}/content` の最大64 MiBの immutable upload、`file` / `meeting_file` transaction の順に確定する。pending は通常の一覧から除外し、24時間後は再 upload を要求する。schemaVersion 2 へ Desktop / Web / Server を同時に切り替える。
-原本 key は `files/{fileId}/original`、派生画像は `files/{fileId}/variants/v1/{variant}.webp`（`thumb_360` / `thumb_1280`）。新 File API は Databricks Volume に保存し、canonical URI は `/Volumes/.../files/{fileId}/original` とする。既存 Artifact API は変更しない。既存 cloud file がないため旧 key migration は行わない。
+原本 key は `files/{fileId}/original`、派生画像は `files/{fileId}/variants/v1/{variant}.webp`（`thumb_480` / `thumb_1280` / `thumb_1568` / `thumb_1920`）。新 File API は Databricks Volume に保存し、canonical URI は `/Volumes/.../files/{fileId}/original` とする。既存 Artifact API は変更しない。既存 cloud file がないため旧 key migration は行わない。
 GET / HEAD の content と variant は Vault 認可、CSP sandbox、nosniff、Range を適用する。source は認可条件にしない。
+File API の原本・variant は `private, no-cache` とし、クライアントは保存した画像の再利用前に現在の認可を再確認する。ETag が一致すれば304を返し、画像生成・ストレージ読込・画像転送を省略する。ただし `If-Unmodified-Since` も指定された場合は Range を除いた HEAD で日時条件を先に検証する。削除・権限失効後の要求は404を返すが、すでに画面に表示中の画像を消す通知は行わない。`Vary: Authorization, Cookie` で認証状態ごとのキャッシュを分ける。
 
 ## ローカル参照と画像の部分保持（2026-09-06）
 
@@ -63,8 +64,8 @@ receipt は後続の会議削除で消えた子を復元せず ACK し、Server 
 取得済み画像の破損は再取得できるが、未送信画像の欠損・破損はエラーとして保持する。ファイルストアを開く処理や読み取りだけで画像を削除しない。
 cache の追加・削除・破損回復は domain transaction と pull cursor を変更しない。
 
-Server は一覧用の長辺最大360px（`thumb_360`）と内容確認・AI入力用の長辺最大1280px（`thumb_1280`）を、縦横比維持・拡大なし・WebP quality 75 で作る。Node は `sharp` を使用し、最初の参照時だけ生成して Volume に保存する。upload / commit では生成しない。変換は最大2並行で同じ画像・variant の処理を共有する。
-生成や保存の失敗はエラーとし再試行できる。変換器を持たない環境は variant を広告しない。variant endpoint が原本を返すことはない。Web は1280px版を開き、原寸へのリンクも残す。コピー・書き出し・明示的な原寸取得は原本を使う。Server 内の AI 処理は HTTP 応答生成から分離した認可付き画像取得を再利用する。Desktop の要約・OCR・キャプション・チャット・MCP通常画像入力も長辺最大1280pxに統一する。未公開の旧 `thumbnail` / 384px 経路は残さず、派生キャッシュの一括移行は行わない。
+Server は一覧用の長辺最大480px（`thumb_480`）、1280px（`thumb_1280`）、プレビュー用1568px（`thumb_1568`）、1920px（`thumb_1920`）を長辺上限として、縦横比維持・拡大なし・WebP quality 75 で作る。Node は `sharp` を使用し、最初の参照時だけ生成して Volume に保存する。upload / commit では生成しない。変換は最大2並行で同じ画像・variant の処理を共有する。
+生成や保存の失敗はエラーとし再試行できる。変換器を持たない環境は variant を広告しない。variant endpoint が原本を返すことはない。Web は1568px版を開き、原寸へのリンクも残す。コピー・書き出し・明示的な原寸取得は原本を使う。Server 内の AI 処理は HTTP 応答生成から分離した認可付き画像取得を再利用する。Desktop の要約・OCR・キャプション・チャット・MCP通常画像入力も長辺最大1280pxに統一する。未公開の旧 `thumbnail` / 384px 経路は残さず、派生キャッシュの一括移行は行わない。
 撮影原本、サムネイル、リサイズ・書き出し時の再エンコードは品質75に統一する。
 Local Account は原本だけを永続保存し、表示時の縮小デコードは既存メモリ cache / decode worker に任せる。
 

@@ -182,7 +182,10 @@ export function createApp(dependencies: AppDependencies) {
   app.use("*", secureHeaders());
   app.use("/api/*", async (context, next) => {
     await next();
-    context.header("Cache-Control", "no-store");
+    const fileRead = ["GET", "HEAD"].includes(context.req.method)
+      && /^\/api\/v1\/files\/[^/]+\/(?:content|variants\/[^/]+)$/.test(context.req.path)
+      && (context.res.ok || context.res.status === 304);
+    if (!fileRead) context.header("Cache-Control", "no-store");
   });
   app.use("/mcp", async (context, next) => {
     await next();
