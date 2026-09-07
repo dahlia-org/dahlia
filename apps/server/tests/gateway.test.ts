@@ -88,7 +88,7 @@ describe("AI Gateway", () => {
     expect(list.data.map((m) => m.display_name)).toEqual(["GPT 5.6 Luna", "custom"]);
     expect(list.models.find((m) => m.slug === "gpt-5-6-luna")).toMatchObject({ default_reasoning_level: "medium", visibility: "list", display_name: "GPT 5.6 Luna" });
     expect(list.models.find((m) => m.slug === "gpt-5-6-luna")).not.toHaveProperty("use_responses_lite");
-    expect(list.models.find((m) => m.slug === "custom")?.supported_reasoning_levels.map((l) => l.effort)).toEqual(["none", "low", "high", "max"]);
+    expect(list.models.find((m) => m.slug === "custom")).toBeUndefined();
     expect(transport).toHaveBeenCalledTimes(2);
   });
 
@@ -116,7 +116,7 @@ describe("AI Gateway", () => {
     const list = await new GatewayService(databricksConfig, modelTransport(transport)).models();
     const expected = ["gpt-5-6-luna", "custom", "codex-auto-review"];
     expect(list.data.map((model) => model.id)).toEqual(expected);
-    expect(list.models.filter((model) => model.visibility === "list").map((model) => model.slug).sort()).toEqual([...expected].sort());
+    expect(list.models.filter((model) => model.visibility === "list").map((model) => model.slug).sort()).toEqual(["codex-auto-review", "gpt-5-6-luna"]);
     expect(transport).toHaveBeenCalledTimes(1);
   });
 
@@ -127,7 +127,7 @@ describe("AI Gateway", () => {
       })),
     }))).models();
     expect(list.data.map((model) => model.id)).toEqual(["model"]);
-    expect(list.models.filter((model) => model.visibility === "list").map((model) => model.slug)).toEqual(["model"]);
+    expect(list.models.filter((model) => model.visibility === "list")).toEqual([]);
   });
 
   it("accepts an empty protobuf model list", async () => {

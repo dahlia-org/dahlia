@@ -14,7 +14,7 @@ struct CodexChatModelPickerPanel: View {
                     .padding(.horizontal, 8)
                     .padding(.bottom, 2)
 
-                ForEach(session.models) { model in
+                ForEach(session.models.sorted { $0.displayName.localizedStandardCompare($1.displayName) == .orderedAscending }) { model in
                     CodexChatConfigurationRow(
                         title: model.displayName,
                         isSelected: model.model == session.selectedModelID,

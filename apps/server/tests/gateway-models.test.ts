@@ -34,13 +34,32 @@ describe("model display names", () => {
   });
 });
 
+describe("Codex model availability", () => {
+  it("keeps all standard models but only exposes supported families and the review alias to Codex", () => {
+    const supported = ["gpt-5.6-luna", "gpt-future", "glm-5-3", "kimi-k3", "deepseek-v4-pro", "codex-auto-review"];
+    const excluded = ["gemini-3-8-flash", "claude-opus", "custom", "gpt", "not-gpt-5", "system.ai.gpt-5-4-mini"];
+    const list = modelList([...supported, ...excluded].map((id) => ({ id })));
+    expect(list.data.map((model) => model.id)).toEqual([...supported, ...excluded]);
+    expect(list.models.filter((model) => model.visibility === "list").map((model) => model.slug).sort()).toEqual([...supported].sort());
+    for (const id of excluded) expect(list.models.some((model) => model.slug === id)).toBe(false);
+  });
+
+  it.each(["glm-5-3", "kimi-k3", "deepseek-v4-pro"])("omits none from OSS reasoning efforts for %s", (id) => {
+    const model = modelList([{ id }]).models.find((model) => model.slug === id);
+    expect(model?.supported_reasoning_levels.map((level) => level.effort)).toEqual(["low", "high", "max"]);
+    expect(model?.default_reasoning_level).toBe("max");
+  });
+});
+
 function expectDisplayName(entry: ModelInfo, expected: string) {
   const list = modelList([entry]);
   expect(list.data).toEqual([{
     id: entry.id, object: "model", created: 0, owned_by: "dahlia", display_name: expected,
   }]);
-  expect(list.models.filter((model) => model.visibility === "list")).toHaveLength(1);
-  expect(list.models.find((model) => model.slug === entry.id)).toMatchObject({
-    slug: entry.id, display_name: expected, visibility: "list",
-  });
+  if (/^(gpt|glm|kimi|deepseek)-/.test(entry.id)) {
+    expect(list.models.filter((model) => model.visibility === "list")).toHaveLength(1);
+    expect(list.models.find((model) => model.slug === entry.id)).toMatchObject({
+      slug: entry.id, display_name: expected, visibility: "list",
+    });
+  }
 }
