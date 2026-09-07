@@ -12,8 +12,10 @@ import {
   isNull,
   isNotNull,
   gt,
+  gte,
   lt,
   lte,
+  max,
   or,
   sql,
 } from "drizzle-orm";
@@ -35,6 +37,7 @@ import type {
   SyncRevisionConflict,
   SyncScreenshotRecord,
   SyncSearchQuery,
+  SyncSearchFilters,
   SyncTranscriptSegment,
   SyncTransaction,
   SyncTransactionResponse,
@@ -587,6 +590,21 @@ function createIdentityStore(
     };
   }
 
+  function searchFilters(vaultId: string, kind: "meeting" | "screenshot", filters?: SyncSearchFilters) {
+    const meeting = schema.syncedMeeting;
+    const time = kind === "meeting" ? meeting.createdAt : schema.syncedScreenshot.capturedAt;
+    const meetingFilter = and(readableMeeting(vaultId), eq(meeting.active, true), isNull(meeting.deletingAt),
+      ...(filters?.projectIds ? [filters.projectIds.length ? inArray(meeting.projectId, filters.projectIds) : sql`false`] : []),
+      ...(filters?.meetingIds ? [filters.meetingIds.length ? inArray(meeting.meetingId, filters.meetingIds) : sql`false`] : []),
+      ...(filters?.unassigned ? [isNull(meeting.projectId)] : []));
+    return and(
+      kind === "meeting" ? meetingFilter : exists(db.select({ id: meeting.meetingId }).from(meeting)
+        .where(and(meetingFilter, eq(meeting.meetingId, schema.syncedScreenshot.meetingId)))),
+      ...(filters?.from ? [gte(time, filters.from)] : []),
+      ...(filters?.to ? [lt(time, filters.to)] : []),
+    );
+  }
+
   async function ftsDocumentIds(
     vaultId: string,
     meetingId: string | undefined,
@@ -608,7 +626,7 @@ function createIdentityStore(
           eq(schema.syncedMeeting.vaultId, schema.searchDocument.vaultId),
           eq(schema.syncedMeeting.meetingId, schema.searchDocument.documentId),
         ))
-        .where(and(common, eq(schema.syncedMeeting.active, true), isNull(schema.syncedMeeting.deletingAt)))
+        .where(and(common, searchFilters(vaultId, "meeting", query.filters)))
         .orderBy(asc(search.rank), desc(schema.syncedMeeting.createdAt), desc(schema.syncedMeeting.meetingId))
         .limit(SEARCH_CANDIDATE_LIMIT)).map(({ documentId }) => documentId);
     }
@@ -618,7 +636,7 @@ function createIdentityStore(
         eq(schema.syncedScreenshot.vaultId, schema.searchDocument.vaultId),
         eq(schema.syncedScreenshot.screenshotId, schema.searchDocument.documentId),
       ))
-      .where(and(common, eq(schema.syncedScreenshot.active, true)))
+      .where(and(common, eq(schema.syncedScreenshot.active, true), searchFilters(vaultId, "screenshot", query.filters)))
       .orderBy(asc(search.rank), asc(schema.syncedScreenshot.capturedAt), asc(schema.syncedScreenshot.screenshotId))
       .limit(SEARCH_CANDIDATE_LIMIT)).map(({ documentId }) => documentId);
   }
@@ -652,7 +670,7 @@ function createIdentityStore(
           )).innerJoin(schema.syncedMeeting, and(
             eq(schema.syncedMeeting.vaultId, schema.searchDocument.vaultId),
             eq(schema.syncedMeeting.meetingId, schema.searchDocument.documentId),
-          )).where(and(common, eq(schema.syncedMeeting.active, true), isNull(schema.syncedMeeting.deletingAt)))
+          )).where(and(common, searchFilters(vaultId, "meeting", query.filters)))
         : await db.select({
             documentId: schema.searchDocument.documentId,
             vector: schema.searchEmbedding.embedding,
@@ -663,7 +681,7 @@ function createIdentityStore(
           )).innerJoin(schema.syncedScreenshot, and(
             eq(schema.syncedScreenshot.vaultId, schema.searchDocument.vaultId),
             eq(schema.syncedScreenshot.screenshotId, schema.searchDocument.documentId),
-          )).where(and(common, eq(schema.syncedScreenshot.active, true)));
+          )).where(and(common, eq(schema.syncedScreenshot.active, true), searchFilters(vaultId, "screenshot", query.filters)));
       return rows.map(({ documentId, vector, sortTime }) => ({
         documentId,
         sortTime,
@@ -692,13 +710,13 @@ function createIdentityStore(
       ? await base.innerJoin(schema.syncedMeeting, and(
           eq(schema.syncedMeeting.vaultId, schema.searchDocument.vaultId),
           eq(schema.syncedMeeting.meetingId, schema.searchDocument.documentId),
-        )).where(and(common, eq(schema.syncedMeeting.active, true), isNull(schema.syncedMeeting.deletingAt)))
+        )).where(and(common, searchFilters(vaultId, "meeting", query.filters)))
         .orderBy(asc(distance), desc(schema.syncedMeeting.createdAt), desc(schema.syncedMeeting.meetingId))
         .limit(SEARCH_CANDIDATE_LIMIT)
       : await base.innerJoin(schema.syncedScreenshot, and(
           eq(schema.syncedScreenshot.vaultId, schema.searchDocument.vaultId),
           eq(schema.syncedScreenshot.screenshotId, schema.searchDocument.documentId),
-        )).where(and(common, eq(schema.syncedScreenshot.active, true)))
+        )).where(and(common, eq(schema.syncedScreenshot.active, true), searchFilters(vaultId, "screenshot", query.filters)))
         .orderBy(asc(distance), asc(schema.syncedScreenshot.capturedAt), asc(schema.syncedScreenshot.screenshotId))
         .limit(SEARCH_CANDIDATE_LIMIT);
     return rows.map(({ documentId }) => documentId);
@@ -2040,15 +2058,22 @@ function createIdentityStore(
     async getProject(vaultId, projectId) {
       return (await projectViews(vaultId)).find((project) => project.projectId === projectId) ?? null;
     },
-    async listMeetings(vaultId, query, limit, projectId, cursor, projectScope) {
+    async searchProjectActivity(vaultId, filters) {
+      const rows = await db.select({ projectId: schema.syncedMeeting.projectId,
+        updatedAt: max(schema.syncedMeeting.updatedAt) }).from(schema.syncedMeeting)
+        .where(searchFilters(vaultId, "meeting", filters)).groupBy(schema.syncedMeeting.projectId);
+      return rows.map((row) => ({ ...row, updatedAt: row.updatedAt!.toISOString() }));
+    },
+    async listMeetings(vaultId, query, limit, projectId, cursor, projectScope, filters) {
       if (query && query.tokens.length === 0) return [];
       const projectIds = projectId
         ? (await projectViews(vaultId)).filter((project) =>
             project.projectId === projectId || (projectScope !== "direct" && project.parentProjectId === projectId)).map((project) => project.projectId)
         : undefined;
       if (projectId && projectIds?.length === 0) return [];
+      filters = { ...filters, ...(projectIds ? { projectIds } : {}), ...(projectScope === "unassigned" ? { unassigned: true } : {}) };
       const filter = and(
-        readableMeeting(vaultId),
+        searchFilters(vaultId, "meeting", filters),
         ...(projectIds ? [inArray(schema.syncedMeeting.projectId, projectIds)] : []),
         ...(projectScope === "unassigned" ? [isNull(schema.syncedMeeting.projectId)] : []),
         ...(cursor ? [or(
@@ -2066,7 +2091,7 @@ function createIdentityStore(
           .where(filter).orderBy(desc(schema.syncedMeeting.createdAt), desc(schema.syncedMeeting.meetingId))
           .limit(limit);
       }
-      const ids = await rankedDocumentIds(vaultId, undefined, "meeting", query);
+      const ids = await rankedDocumentIds(vaultId, undefined, "meeting", { ...query, filters });
       if (ids.length === 0) return [];
       const rows = await db.select(meetingSelection(schema)).from(schema.syncedMeeting)
         .where(and(filter, inArray(schema.syncedMeeting.meetingId, ids)))
@@ -2141,7 +2166,7 @@ function createIdentityStore(
       )).orderBy(asc(schema.syncedTranscriptSegment.startTime), asc(schema.syncedTranscriptSegment.segmentId))
         .limit(limit);
     },
-    async listScreenshots(vaultId, meetingId, query, limit, cursor) {
+    async listScreenshots(vaultId, meetingId, query, limit, cursor, filters) {
       if (query && query.tokens.length === 0) return [];
       const [meeting] = await db.select({ id: schema.syncedMeeting.meetingId })
         .from(schema.syncedMeeting).where(and(
@@ -2153,7 +2178,8 @@ function createIdentityStore(
       const filter = and(
         readable(schema.syncedScreenshot.vaultId),
         eq(schema.syncedScreenshot.vaultId, vaultId),
-        eq(schema.syncedScreenshot.meetingId, meetingId),
+        ...(meetingId ? [eq(schema.syncedScreenshot.meetingId, meetingId)] : []),
+        searchFilters(vaultId, "screenshot", filters),
         eq(schema.syncedScreenshot.active, true),
         ...(cursor ? [or(
           gt(schema.syncedScreenshot.capturedAt, cursor.capturedAt),
@@ -2165,9 +2191,10 @@ function createIdentityStore(
       );
       if (!query) {
         return db.select(screenshotSelection(schema)).from(schema.syncedScreenshot).where(filter)
-          .orderBy(asc(schema.syncedScreenshot.capturedAt), asc(schema.syncedScreenshot.screenshotId)).limit(limit);
+          .orderBy(meetingId ? asc(schema.syncedScreenshot.capturedAt) : desc(schema.syncedScreenshot.capturedAt),
+            meetingId ? asc(schema.syncedScreenshot.screenshotId) : desc(schema.syncedScreenshot.screenshotId)).limit(limit);
       }
-      const ids = await rankedDocumentIds(vaultId, meetingId, "screenshot", query);
+      const ids = await rankedDocumentIds(vaultId, meetingId, "screenshot", { ...query, filters });
       if (ids.length === 0) return [];
       const rows = await db.select(screenshotSelection(schema)).from(schema.syncedScreenshot)
         .where(and(filter, inArray(schema.syncedScreenshot.screenshotId, ids)))

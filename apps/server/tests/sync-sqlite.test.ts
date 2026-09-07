@@ -39,6 +39,64 @@ afterEach(() => {
 });
 
 describe("SQLite canonical sync", () => {
+  it.each(["node", "worker"])("serves the common POST search with prefiltered candidates through %s", async (runtime) => {
+    const { store, databasePath } = await setup();
+    await createVault(store);
+    const app = createApp({ config: testConfig(databasePath), authStore: store });
+    const worker = createWorkerHandler(async () => app);
+    const fetchWorker = worker.fetch!.bind(worker) as unknown as (request: Request, env: Cloudflare.Env, context: ExecutionContext) => Promise<Response>;
+    const send = (body: unknown, user = owner.userId) => {
+      const request = new Request("http://localhost:5173/api/v1/search", { method: "POST",
+        headers: { ...headers(), "x-forwarded-user": user, "x-forwarded-email": `${user}@example.com` }, body: JSON.stringify(body) });
+      return runtime === "node" ? app.request(request) : fetchWorker(request, {} as Cloudflare.Env, {} as ExecutionContext);
+    };
+    // More than 100 higher-ranked documents outside the selected project must not consume its candidates.
+    await commit(store, owner, transaction(freshId(), [
+      { id: freshId(), entity: "project", action: "create", entityId: projectId, baseRevision: null, data: projectData("契約更新") },
+      ...Array.from({ length: 110 }, (_, index) => ({ id: freshId(), entity: "meeting" as const, action: "create" as const,
+        entityId: index === 0 ? meetingId : freshId(), baseRevision: null,
+        data: { ...meetingData(), projectId: index === 0 ? projectId : null, name: "契約更新", updatedAt: now } })),
+    ]));
+    // Commit through the service to generate the search projection, like canonical API writes.
+    const service = new MeetingSyncService(store.sync);
+    for (const meeting of await service.listMeetings(owner, vaultId).then((page) => page.items)) {
+      await service.commitTransaction(owner, JSON.parse(JSON.stringify(wire([{ entity: "meeting", action: "update", entityId: meeting.meetingId,
+        baseRevision: 1, data: { projectId: meeting.projectId, name: "契約更新", description: "", status: "READY", duration: 60, recordingStartedAt: now, updatedAt: now } }]))));
+    }
+    const response = await send({ vaultId, query: "契約更新", projectId, from: "2026-09-03T09:00:00+09:00", to: "2026-09-04T00:00:00Z" });
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(await response.json()).toMatchObject({ vaultId, meetings: [{ id: meetingId, title: "契約更新", projectId }], projects: [{ id: projectId, date: now.toISOString() }] });
+    const mcpParams = { name: "search", arguments: { vaultId, query: "契約更新", projectId, from: "2026-09-03T09:00:00+09:00", to: "2026-09-04T00:00:00Z" },
+      _meta: { "io.modelcontextprotocol/clientCapabilities": {}, "io.modelcontextprotocol/clientInfo": { name: "Search test", version: "1" }, "io.modelcontextprotocol/protocolVersion": "2026-07-28" } };
+    const mcpBody = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: mcpParams });
+    const mcp = await app.request("/mcp", { method: "POST", headers: { ...headers(), "content-length": String(new TextEncoder().encode(mcpBody).length),
+      "mcp-method": "tools/call", "mcp-name": "search", "mcp-protocol-version": "2026-07-28" }, body: mcpBody });
+    const mcpResult = z.object({ result: z.object({ content: z.array(z.object({ text: z.string() })) }) }).parse(await mcp.json());
+    expect(JSON.parse(mcpResult.result.content[0]!.text)).toEqual(await (await send(mcpParams.arguments)).json());
+    expect((await send({ vaultId, query: "契約更新" }, other.userId)).status).toBe(404);
+    const recent = await (await send({ vaultId, query: "", limit: 6 })).json();
+    expect(z.object({ meetings: z.array(z.unknown()) }).parse(recent).meetings).toHaveLength(6);
+    expect(recent).toMatchObject({ limited: { meeting: true } });
+    const cutoff = await (await send({ vaultId, to: now.toISOString(), kind: "meeting" })).json();
+    expect(cutoff).toMatchObject({ meetings: [] });
+    for (const invalid of [{ query: 1 }, { query: null }, { query: "a".repeat(501) }, { q: "x" }, { limit: 101 },
+      { from: "2026-09-03" }, { from: "2026-09-04T00:00:00Z", to: "2026-09-03T00:00:00Z" }]) {
+      expect((await send({ vaultId, ...invalid })).status).toBe(400);
+    }
+    expect((await send({ vaultId, query: "x".repeat(17000) })).status).toBe(413);
+    const childProjectId = freshId();
+    const childMeetingId = freshId();
+    await service.commitTransaction(owner, JSON.parse(JSON.stringify(wire([
+      { entity: "project", action: "create", entityId: childProjectId, baseRevision: null, data: { ...projectData("下位"), parentProjectId: projectId, projectType: null } },
+      { entity: "meeting", action: "create", entityId: childMeetingId, baseRevision: null, data: { ...meetingData(), name: "子孫限定", projectId: childProjectId } },
+    ]))));
+    expect(await (await send({ vaultId, query: "子孫限定", projectId, kind: "meeting" })).json())
+      .toMatchObject({ meetings: [{ id: childMeetingId, projectId: childProjectId }], screenshots: [], projects: [] });
+
+    await store.close?.();
+  });
+
   it("runs storage maintenance on the timer without Vault requests", async () => {
     const { store, directory } = await setup();
     const targets = vi.spyOn(store.sync, "listHistoryTargets");
@@ -168,10 +226,10 @@ describe("SQLite canonical sync", () => {
     const detail = async () => (await send(`vaults/${vaultId}/meetings/${meetingId}`)).json();
     const capabilities = await send("capabilities");
     expect(capabilities.status).toBe(200);
-    expect(await capabilities.json()).toEqual({ syncVersion: 2, recordingAudioVersion: 1, meetingEventsVersion: 1, imageAnalysis: false });
+    expect(await capabilities.json()).toEqual({ syncVersion: 2, recordingAudioVersion: 1, meetingEventsVersion: 1, searchVersion: 1, imageAnalysis: false });
     const enabledApp = createApp({ config: testConfig(databasePath), authStore: store, imageAnalysisEnabled: true });
     expect(await (await enabledApp.request("http://localhost:5173/api/v1/capabilities", { headers: headers() })).json())
-      .toEqual({ syncVersion: 2, recordingAudioVersion: 1, meetingEventsVersion: 1, imageAnalysis: true });
+      .toEqual({ syncVersion: 2, recordingAudioVersion: 1, meetingEventsVersion: 1, searchVersion: 1, imageAnalysis: true });
     expect((await send("sync-content")).status).toBe(404);
     const availability = vi.spyOn(store.sync, "isAvailable").mockResolvedValueOnce(false);
     const unsupported = await send("capabilities");
@@ -956,6 +1014,11 @@ describe("SQLite canonical sync", () => {
       expect.objectContaining({ entity: "file", entityId: file.id, revision: 2, record: expect.objectContaining({ metadata: expect.objectContaining({ caption: "Quarterly chart" }) as unknown }) as unknown }),
     ]));
     expect(await service.searchText(owner, vaultId, "QuarterlyRevenue", "screenshot")).toMatchObject({ items: [expect.anything()] });
+    expect(await service.searchAll(owner, { vaultId, query: "QuarterlyRevenue", kind: "screenshot" }))
+      .toMatchObject({ meetings: [], screenshots: [{ meetingId, fileId: file.id, snippet: expect.stringContaining("QuarterlyRevenue") as unknown }] });
+    expect(await service.searchAll(owner, { vaultId, query: "QuarterlyRevenue", kind: "screenshot", to: "2000-01-01T00:00:00Z" }))
+      .toMatchObject({ screenshots: [] });
+
     expect(await (await send(new Request(`${originalURL}/metadata`))).json()).toMatchObject({ revision: 2,
       metadata: { ocr_text: "QuarterlyRevenue", caption: "Quarterly chart" } });
     const stale = await patch({ baseRevision: 1, metadata: { caption: "stale" } });

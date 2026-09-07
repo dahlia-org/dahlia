@@ -7,10 +7,11 @@ import Observation
 final class MainSearchModel {
     private(set) var isPresented = false
     var inputText = ""
+    var resultKind = ""
     private(set) var tokens: [MeetingSearchToken] = []
     private(set) var localMeetings: [MeetingSidebarItem] = []
     private(set) var localScreenshots: [ScreenshotSearchResult] = []
-    private(set) var projects: [ProjectOverviewItem] = []
+    private(set) var localProjects: [ProjectOverviewItem] = []
     private(set) var isLoading = false
     private(set) var errorMessage: String?
     private(set) var isProjectCatalogLoading = false
@@ -36,39 +37,56 @@ final class MainSearchModel {
 
     private var remoteMeetings: [MeetingSidebarItem] = []
     private var remoteScreenshots: [ScreenshotSearchResult] = []
-    private var remoteCursors: [TextSearchKind: String] = [:]
-    private var remoteFailed: Set<TextSearchKind> = []
+    private var remoteProjects: [ProjectOverviewItem] = []
+    private var localPendingMeetings: [MeetingSidebarItem] = []
+    private var localPendingProjects: [ProjectOverviewItem] = []
+    private var localPendingScreenshots: [ScreenshotSearchResult] = []
     private var usesServerSearch = false
-    @ObservationIgnored private var remoteTasks: [TextSearchKind: Task<Void, Never>] = [:]
-    private var remoteLoading: Set<TextSearchKind> = []
+    private var serverSearchReady = false
+    private(set) var serverSearchFailed = false
+    private var serverSearchLoading = false
+    private var serverSearchLimited = false
+    private var pendingSearchUnavailable = false
+    private var serverMeetingVisible = 50
+    private var serverScreenshotVisible = 20
+    @ObservationIgnored private var remoteTask: Task<Void, Never>?
     @ObservationIgnored private var remoteGeneration = 0
 
     var meetings: [MeetingSidebarItem] {
-        let localIds = Set(localMeetings.map(\.id))
-        return localMeetings + remoteMeetings.filter { !localIds.contains($0.id) }
+        guard resultKind.isEmpty || resultKind == "meeting" else { return [] }
+        return serverSearchReady ? Array(remoteMeetings.prefix(serverMeetingVisible)) : localMeetings
     }
 
     var screenshots: [ScreenshotSearchResult] {
-        let localIds = Set(localScreenshots.map(\.id))
-        return localScreenshots + remoteScreenshots.filter { !localIds.contains($0.id) }
+        guard resultKind.isEmpty || resultKind == "screenshot" else { return [] }
+        return serverSearchReady ? Array(remoteScreenshots.prefix(serverScreenshotVisible)) : localScreenshots
     }
 
-    var hasMoreMeetings: Bool { hasMoreLocalMeetings || remoteCursors[.meeting] != nil }
-    var hasMoreScreenshots: Bool { hasMoreLocalScreenshots || remoteCursors[.screenshot] != nil }
-    var serverSearchFailed: Bool { !remoteFailed.isEmpty }
+    var projects: [ProjectOverviewItem] {
+        guard resultKind.isEmpty || resultKind == "project" else { return [] }
+        return serverSearchReady ? remoteProjects : localProjects
+    }
+
+    var pendingMeetings: [MeetingSidebarItem] { resultKind.isEmpty || resultKind == "meeting" ? localPendingMeetings : [] }
+    var pendingScreenshots: [ScreenshotSearchResult] { resultKind.isEmpty || resultKind == "screenshot" ? localPendingScreenshots : [] }
+    var pendingProjects: [ProjectOverviewItem] { resultKind.isEmpty || resultKind == "project" ? localPendingProjects : [] }
+    var hasMoreMeetings: Bool { serverSearchReady ? remoteMeetings.count > serverMeetingVisible : hasMoreLocalMeetings }
+    var hasMoreScreenshots: Bool { serverSearchReady ? remoteScreenshots.count > serverScreenshotVisible : hasMoreLocalScreenshots }
     var searchCoverage: String? {
-        guard !isRecent else { return nil }
-        if !usesServerSearch { return L10n.textContentSearchLocal }
-        if !remoteLoading.isEmpty { return L10n.textContentSearchLoading }
-        if serverSearchFailed { return L10n.textContentSearchFailed }
-        if !remoteCursors.isEmpty { return L10n.textContentSearchMore }
-        return L10n.textContentSearchComplete
+        if !usesServerSearch { return isRecent ? nil : L10n.textContentSearchLocal }
+        if serverSearchLoading { return L10n.textContentSearchLoading }
+        if serverSearchFailed { return L10n.serverSearchLocalFallback }
+        if pendingSearchUnavailable { return L10n.serverSearchPendingUnavailable }
+        return serverSearchLimited ? L10n.serverSearchTopResults : L10n.serverSearchRanked
     }
 
     var resultIDs: [MainSearchResultID] {
         meetings.map { .meeting($0.id) }
             + presentedScreenshots.map { .screenshot($0.id) }
             + projects.map { .project($0.id) }
+            + pendingProjects.map { .project($0.id) }
+            + pendingMeetings.map { .meeting($0.id) }
+            + pendingScreenshots.map { .screenshot($0.id) }
     }
 
     var presentedScreenshots: [ScreenshotSearchResult] {
@@ -76,7 +94,8 @@ final class MainSearchModel {
     }
 
     var hasResults: Bool {
-        !meetings.isEmpty || !presentedScreenshots.isEmpty || !projects.isEmpty
+        !meetings.isEmpty || !presentedScreenshots.isEmpty || !projects.isEmpty || !pendingMeetings.isEmpty || !pendingScreenshots
+            .isEmpty || !pendingProjects.isEmpty
     }
 
     func present(using sidebarViewModel: SidebarViewModel) {
@@ -133,15 +152,15 @@ final class MainSearchModel {
         let criteria = searchCriteria(using: sidebarViewModel)
         if criteria != activeMeetingCriteria {
             startSearch(using: sidebarViewModel, delay: nil, appending: false)
-        } else {
+        } else if !serverSearchReady {
             startProjectSearch(criteria: criteria, using: sidebarViewModel)
         }
     }
 
     func loadMore(using sidebarViewModel: SidebarViewModel) {
         guard hasMoreMeetings, !isLoading else { return }
-        if !hasMoreLocalMeetings {
-            startRemoteSearch(kind: .meeting, using: sidebarViewModel)
+        if serverSearchReady {
+            serverMeetingVisible += MainSearchDesign.meetingPageSize
             return
         }
         startSearch(using: sidebarViewModel, delay: nil, appending: true)
@@ -149,8 +168,8 @@ final class MainSearchModel {
 
     func loadMoreScreenshots(using sidebarViewModel: SidebarViewModel) {
         guard hasMoreScreenshots, !isLoadingScreenshots else { return }
-        if !hasMoreLocalScreenshots {
-            startRemoteSearch(kind: .screenshot, using: sidebarViewModel)
+        if serverSearchReady {
+            serverScreenshotVisible += MainSearchDesign.screenshotPageSize
             return
         }
         startScreenshotSearch(
@@ -192,10 +211,11 @@ final class MainSearchModel {
         screenshotGeneration &+= 1
         projectGeneration &+= 1
         inputText = ""
+        resultKind = ""
         tokens = []
         localMeetings = []
         localScreenshots = []
-        projects = []
+        localProjects = []
         isLoading = false
         errorMessage = nil
         isProjectCatalogLoading = false
@@ -234,8 +254,10 @@ final class MainSearchModel {
         preparePresentation(criteria: criteria, appending: appendsCurrentRanking)
         if !appendsCurrentRanking {
             resetRemoteSearch()
-            usesServerSearch = sidebarViewModel.currentVault?.accountConnectionId != nil && !criteria.text.isEmpty
-            if usesServerSearch { remoteLoading = [.meeting, .screenshot] }
+            usesServerSearch = sidebarViewModel.currentVault?.accountConnectionId != nil
+                && criteria.tagIDs.isEmpty && criteria.projectIDs.count <= 1
+            serverSearchLoading = usesServerSearch
+            serverMeetingVisible = criteria.isEmpty ? MainSearchDesign.recentResultLimit : MainSearchDesign.meetingPageSize
             startProjectSearch(criteria: criteria, using: sidebarViewModel)
             startScreenshotSearch(
                 criteria: criteria,
@@ -256,6 +278,9 @@ final class MainSearchModel {
                 if let delay {
                     try await Task.sleep(for: delay)
                 }
+                if !appendsCurrentRanking, let self, self.generation == requestGeneration, self.usesServerSearch {
+                    self.startRemoteSearch(using: sidebarViewModel)
+                }
                 let page = try await MeetingRepository.searchMeetingSidebarPage(
                     vaultId: vaultID,
                     criteria: criteria,
@@ -269,77 +294,87 @@ final class MainSearchModel {
                       self.generation == requestGeneration,
                       sidebarViewModel.currentVault?.id == vaultID else { return }
                 self.apply(page, appending: appendsCurrentRanking)
-                if !appendsCurrentRanking, self.usesServerSearch {
-                    self.startRemoteSearch(kind: .meeting, using: sidebarViewModel)
-                    self.startRemoteSearch(kind: .screenshot, using: sidebarViewModel)
-                }
+
             } catch is CancellationError {
                 return
             } catch {
                 guard let self, self.generation == requestGeneration else { return }
                 self.isLoading = false
-                self.errorMessage = error.localizedDescription
-                if !appendsCurrentRanking, self.usesServerSearch {
-                    self.hasCompletedInitialMeetingSearch = true
-                    self.startRemoteSearch(kind: .meeting, using: sidebarViewModel)
-                    self.startRemoteSearch(kind: .screenshot, using: sidebarViewModel)
-                }
+                if !self.serverSearchReady { self.errorMessage = error.localizedDescription }
+                if self.usesServerSearch { self.hasCompletedInitialMeetingSearch = true }
             }
         }
     }
 
     private func resetRemoteSearch() {
-        for task in remoteTasks.values {
-            task.cancel()
-        }
-        remoteTasks = [:]
+        remoteTask?.cancel()
+        remoteTask = nil
         remoteGeneration &+= 1
-        remoteLoading = []
-        remoteFailed = []
-        remoteCursors = [:]
         remoteMeetings = []
         remoteScreenshots = []
+        remoteProjects = []
+        localPendingProjects = []
+        localPendingMeetings = []
+        localPendingScreenshots = []
         usesServerSearch = false
+        serverSearchReady = false
+        serverSearchFailed = false
+        serverSearchLoading = false
+        serverSearchLimited = false
+        pendingSearchUnavailable = false
+        serverScreenshotVisible = MainSearchDesign.screenshotPageSize
     }
 
     func retryServerSearch(using sidebarViewModel: SidebarViewModel) {
-        for kind in remoteFailed {
-            remoteCursors[kind] = nil
-            startRemoteSearch(kind: kind, using: sidebarViewModel)
+        startRemoteSearch(using: sidebarViewModel)
+    }
+
+    private func startRemoteSearch(using sidebarViewModel: SidebarViewModel) {
+        guard usesServerSearch, remoteTask == nil,
+              let vaultId = sidebarViewModel.currentVault?.id, let queue = sidebarViewModel.searchDBQueue else { return }
+        let expectedGeneration = remoteGeneration
+        let connectionId = sidebarViewModel.currentVault?.accountConnectionId
+        let criteria = activeMeetingCriteria
+        serverSearchLoading = true
+        remoteTask = Task { [weak self] in
+            do {
+                let result = try await MeetingRepository.serverSearch(vaultId: vaultId, criteria: criteria, dbQueue: queue)
+                guard let self, !Task.isCancelled, self.remoteGeneration == expectedGeneration,
+                      sidebarViewModel.currentVault?.id == vaultId,
+                      sidebarViewModel.currentVault?.accountConnectionId == connectionId else { return }
+                self.applyServerSearch(result)
+            } catch {
+                guard let self, !Task.isCancelled, self.remoteGeneration == expectedGeneration else { return }
+                self.serverSearchReady = false
+                self.localPendingProjects = []
+                self.localPendingMeetings = []
+                self.localPendingScreenshots = []
+                self.serverSearchFailed = true
+            }
+            guard let self, self.remoteGeneration == expectedGeneration else { return }
+            self.serverSearchLoading = false
+            self.remoteTask = nil
         }
     }
 
-    private func startRemoteSearch(kind: TextSearchKind, using sidebarViewModel: SidebarViewModel) {
-        guard usesServerSearch, remoteTasks[kind] == nil,
-              let vaultId = sidebarViewModel.currentVault?.id, let queue = sidebarViewModel.searchDBQueue else { return }
-        let expectedGeneration = remoteGeneration
-        let criteria = activeMeetingCriteria
-        let cursor = remoteCursors[kind]
-        remoteLoading.insert(kind)
-        remoteTasks[kind] = Task { [weak self] in
-            do {
-                switch kind {
-                case .meeting:
-                    let page = try await MeetingRepository.remoteMeetingPage(vaultId: vaultId, criteria: criteria, cursor: cursor, dbQueue: queue)
-                    guard let self, !Task.isCancelled, self.remoteGeneration == expectedGeneration else { return }
-                    if cursor == nil { self.remoteMeetings = page.items } else { self.remoteMeetings += page.items }
-                    self.remoteCursors[kind] = page.cursor
-                case .screenshot:
-                    let page = try await MeetingRepository.remoteScreenshotPage(vaultId: vaultId, criteria: criteria, cursor: cursor, dbQueue: queue)
-                    guard let self, !Task.isCancelled, self.remoteGeneration == expectedGeneration else { return }
-                    if cursor == nil { self.remoteScreenshots = page.items } else { self.remoteScreenshots += page.items }
-                    self.remoteCursors[kind] = page.cursor
-                }
-                guard let self, self.remoteGeneration == expectedGeneration else { return }
-                self.remoteFailed.remove(kind)
-            } catch {
-                guard let self, !Task.isCancelled, self.remoteGeneration == expectedGeneration else { return }
-                self.remoteFailed.insert(kind)
-            }
-            guard let self, self.remoteGeneration == expectedGeneration else { return }
-            self.remoteLoading.remove(kind)
-            self.remoteTasks[kind] = nil
-        }
+    func applyServerSearch(_ result: ServerSearchProjection) {
+        remoteMeetings = result.meetings
+        remoteScreenshots = result.screenshots
+        remoteProjects = result.projects
+        localPendingProjects = result.pendingProjects
+        localPendingMeetings = result.pendingMeetings
+        localPendingScreenshots = result.pendingScreenshots
+        serverSearchLimited = result.limited
+        pendingSearchUnavailable = result.pendingUnavailable
+        serverSearchReady = true
+        serverSearchFailed = false
+        isLoading = false
+        isLoadingScreenshots = false
+        hasCompletedInitialMeetingSearch = true
+        isProjectCatalogLoading = false
+        projectCatalogLoadFailed = false
+        errorMessage = nil
+        clearInvalidSelection()
     }
 
     private func apply(_ page: MeetingSearchPage, appending: Bool) {
@@ -365,7 +400,7 @@ final class MainSearchModel {
         guard !appending else { return }
         localMeetings = []
         localScreenshots = []
-        projects = []
+        localProjects = []
         meetingCursor = nil
         screenshotCursor = nil
         hasMoreLocalMeetings = false
@@ -440,7 +475,7 @@ final class MainSearchModel {
         projectGeneration &+= 1
         let requestGeneration = projectGeneration
 
-        projects = []
+        localProjects = []
         clearInvalidSelection()
         isProjectCatalogLoading = false
         projectCatalogLoadFailed = sidebarViewModel.projectCatalogLoadFailed
@@ -475,8 +510,9 @@ final class MainSearchModel {
                 }
             }
             guard let self, self.projectGeneration == requestGeneration else { return }
-            self.projects = results
+            self.localProjects = results
             self.isProjectCatalogLoading = false
+            if self.serverSearchReady { self.projectCatalogLoadFailed = false }
             self.clearInvalidSelection()
         }
     }
@@ -594,6 +630,7 @@ extension MainSearchModel {
 
     func clearConditions(using sidebarViewModel: SidebarViewModel) {
         inputText = ""
+        resultKind = ""
         tokens = []
         pendingQualifierText = nil
         startSearch(using: sidebarViewModel, delay: nil, appending: false)

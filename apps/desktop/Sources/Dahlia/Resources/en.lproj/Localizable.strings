@@ -1688,3 +1688,14 @@
 "Recording Audio Saved" = "Recording audio saved";
 "Recording Audio Save Pending" = "Recording audio save pending";
 "Recording Audio Save Failed" = "Recording audio could not be saved";
+
+"search.server.ranked" = "Results ranked by the server";
+"search.server.top" = "Showing up to 100 results per type. Refine your search to find more.";
+"search.server.localFallback" = "Server search is unavailable. Showing results stored on this device.";
+"search.server.pending" = "Unsynced meetings on this device";
+"search.server.pendingImages" = "Unsynced screenshots on this device";
+"search.server.pendingUnavailable" = "Showing server results. Unsynced data on this device could not be searched.";
+
+"search.server.pendingProjects" = "Unsynced projects on this device";
+"search.server.kind" = "Result type";
+"search.server.allKinds" = "All types";

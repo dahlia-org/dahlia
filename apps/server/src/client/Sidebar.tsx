@@ -1,3 +1,4 @@
+import { Search } from "./Search";
 import { RecordingIndicator } from "./RecordingIndicator";
 import { useLiveJSON, useLivePage } from "./live-data";
 import { navigateDashboard } from "./navigation";
@@ -152,6 +153,7 @@ export function Sidebar({ brand, session, children, routeVaultId: resolvedVaultI
   }, [selectionKey, selectedVaultId]);
   return <aside className="sidebar">
     <div className="sidebar-brand">{brand}</div>
+    {session.capabilities.sync && selectedVaultId && <Search key={`${selectionKey}:${selectedVaultId}`} vaultId={selectedVaultId} />}
     <div className="sidebar-scroll">
       {session.capabilities.sync && <nav className="vault-navigation" aria-label={uiText("Project navigation", "プロジェクト")}>
         <h2 className="vault-heading">{uiText("Projects", "プロジェクト")}</h2>

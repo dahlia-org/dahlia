@@ -48,3 +48,47 @@ extension MeetingContentProvider {
         return page
     }
 }
+
+extension MeetingContentProvider {
+    func searchAll(vaultId: UUID, criteria: MeetingSearchCriteria, dbQueue: DatabaseQueue) async throws -> ServerSearchResults {
+        guard criteria.tagIDs.isEmpty, criteria.projectIDs.count <= 1, criteria.text.utf16.count <= 500,
+              let source = try await dbQueue.read({ try SearchSource.read(vaultId: vaultId, in: $0) }),
+              let origin = URL(string: source.origin),
+              let capabilitiesURL = URL(string: "/api/v1/capabilities", relativeTo: origin)?.absoluteURL,
+              let searchURL = URL(string: "/api/v1/search", relativeTo: origin)?.absoluteURL else { throw TextContentError.unavailable }
+        struct Capabilities: Decodable { let searchVersion: Int? }
+        let capabilities = try await client.data(
+            for: URLRequest(url: capabilitiesURL, cachePolicy: .reloadIgnoringLocalCacheData),
+            connectionId: source.connectionId, maximumBytes: 8192
+        )
+        guard try JSONDecoder().decode(Capabilities.self, from: capabilities).searchVersion == 1 else { throw TextContentError.unavailable }
+        struct Body: Encodable {
+            let vaultId: UUID
+            let query: String
+            let projectId: UUID?
+            let from: Date?
+            let to: Date?
+            let limit = 100
+        }
+        var request = URLRequest(url: searchURL, cachePolicy: .reloadIgnoringLocalCacheData)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try SyncJSON.encoder.encode(Body(
+            vaultId: vaultId, query: criteria.text, projectId: criteria.projectIDs.first,
+            from: criteria.startDate, to: criteria.endDate
+        ))
+        let bytes = try await client.data(for: request, connectionId: source.connectionId, maximumBytes: 1024 * 1024)
+        try Task.checkCancellation()
+        guard try await dbQueue.read({ try SearchSource.read(vaultId: vaultId, in: $0) }) == source else { throw TextContentError.changed }
+        let result = try SyncJSON.decoder.decode(ServerSearchResults.self, from: bytes)
+        guard result.vaultId == vaultId,
+              result.meetings.count <= 100, result.screenshots.count <= 100, result.projects.count <= 100,
+              result.meetings.allSatisfy({ $0.kind == "meeting" && $0.meetingId == $0.id }),
+              result.screenshots.allSatisfy({ $0.kind == "screenshot" && $0.meetingId != nil && $0.fileId != nil }),
+              result.projects.allSatisfy({ $0.kind == "project" && $0.projectId == $0.id }),
+              Set(result.meetings.map(\.id)).count == result.meetings.count,
+              Set(result.screenshots.map(\.id)).count == result.screenshots.count,
+              Set(result.projects.map(\.id)).count == result.projects.count else { throw TextContentError.integrityFailure }
+        return result
+    }
+}

@@ -45,6 +45,16 @@ struct MainSearchPanel: View {
                             .help(L10n.clearAllSearchConditions)
                     }
                     HStack(spacing: 2) {
+                        Picker(L10n.serverSearchKind, selection: $model.resultKind) {
+                            Text(L10n.serverSearchAllKinds).tag("")
+                            Text(L10n.meetings).tag("meeting")
+                            Text(L10n.screenshots).tag("screenshot")
+                            Text(L10n.projects).tag("project")
+                        }
+                        .labelsHidden()
+                        .fixedSize()
+                        .onChange(of: model.resultKind) { model.selectedResultID = nil }
+
                         MainSearchFilterButton(
                             title: L10n.projectFilter,
                             systemImage: "folder",
@@ -138,6 +148,9 @@ struct MainSearchPanel: View {
         .onAppear {
             isSearchFocused = true
             model.catalogDidChange(using: sidebarViewModel)
+        }
+        .onChange(of: sidebarViewModel.currentVault?.accountConnectionId) {
+            model.resetForVaultChange(using: sidebarViewModel)
         }
         .onChange(of: model.inputText) {
             model.queryDidChange(using: sidebarViewModel)
@@ -254,6 +267,37 @@ struct MainSearchPanel: View {
                 }
             }
 
+            if !model.pendingProjects.isEmpty {
+                sectionHeader(L10n.serverSearchPendingProjects)
+                ForEach(model.pendingProjects) { project in
+                    MainSearchResultRow(
+                        title: project.projectName,
+                        leadingProjectAppearance: appearanceForProject(project.id),
+                        isSelected: model.selectedResultID == .project(project.id),
+                        action: { onOpenProject(project.id) }
+                    )
+                    .id(MainSearchResultID.project(project.id))
+                }
+            }
+            if !model.pendingMeetings.isEmpty {
+                sectionHeader(L10n.serverSearchPending)
+                ForEach(model.pendingMeetings) { meeting in
+                    meetingRow(meeting, index: 9)
+                }
+            }
+            if !model.pendingScreenshots.isEmpty {
+                sectionHeader(L10n.serverSearchPendingImages)
+                ScreenshotSearchResultsGrid(
+                    results: model.pendingScreenshots,
+                    selectedResultID: model.selectedResultID,
+                    hasMore: false,
+                    isLoading: false,
+                    imageDataProvider: { id in await model.screenshotImageData(id: id, using: sidebarViewModel) },
+                    onOpen: onOpenScreenshot,
+                    onLoadMore: {}
+                )
+            }
+
             if model.isLoading {
                 ProgressView()
                     .frame(maxWidth: .infinity)
@@ -296,7 +340,7 @@ struct MainSearchPanel: View {
         switch model.selectedResultID {
         case let .meeting(id): onOpenMeeting(id)
         case let .screenshot(id):
-            if let screenshot = model.screenshots.first(where: { $0.id == id }) {
+            if let screenshot = (model.screenshots + model.pendingScreenshots).first(where: { $0.id == id }) {
                 onOpenScreenshot(screenshot)
             }
         case let .project(id): onOpenProject(id)

@@ -1688,3 +1688,14 @@
 "Recording Audio Saved" = "録音音声を保存済み";
 "Recording Audio Save Pending" = "録音音声の保存待ち";
 "Recording Audio Save Failed" = "録音音声の保存に失敗しました";
+
+"search.server.ranked" = "サーバーの関連度順で表示";
+"search.server.top" = "各種類の上位100件までを表示しています。検索条件を絞ってください。";
+"search.server.localFallback" = "サーバー検索を利用できません。端末内の結果を表示しています。";
+"search.server.pending" = "端末の未同期ミーティング";
+"search.server.pendingImages" = "端末の未同期スクリーンショット";
+"search.server.pendingUnavailable" = "サーバーの結果を表示しています。端末の未同期データは検索できませんでした。";
+
+"search.server.pendingProjects" = "この端末の未同期プロジェクト";
+"search.server.kind" = "結果の種類";
+"search.server.allKinds" = "すべての種類";
