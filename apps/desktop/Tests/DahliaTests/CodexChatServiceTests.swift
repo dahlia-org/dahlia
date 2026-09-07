@@ -58,7 +58,7 @@ import Foundation
                 $0.objectValue?["method"]?.stringValue == "turn/start"
             }?.objectValue?["params"]?.objectValue)
             #expect(turnParams["outputSchema"] == nil)
-            #expect(turnParams["approvalsReviewer"] == .string("user"))
+            #expect(turnParams["approvalsReviewer"] == .string("auto_review"))
             #expect(turnParams["effort"] == .string("high"))
             #expect(turnParams["summary"] == .string("auto"))
             #expect(turnParams["input"] == .array([
@@ -75,7 +75,7 @@ import Foundation
         }
 
         @Test(arguments: [AIAccountProvider.chatGPTSubscription, .databricks, nil])
-        func approvalReviewerFollowsProvider(provider: AIAccountProvider?) async throws {
+        func approvalReviewerIsAutomaticForEveryProvider(provider: AIAccountProvider?) async throws {
             let transport = TestCodexChatAppServerTransport()
             let appServer = makeTestCodexAppServerService(
                 transportFactory: { transport },
@@ -94,8 +94,7 @@ import Foundation
             let turnParams = try #require(await transport.messages().first {
                 $0.objectValue?["method"]?.stringValue == "turn/start"
             }?.objectValue?["params"]?.objectValue)
-            let expectedReviewer = provider == .chatGPTSubscription ? "auto_review" : "user"
-            #expect(turnParams["approvalsReviewer"] == .string(expectedReviewer))
+            #expect(turnParams["approvalsReviewer"] == .string("auto_review"))
             await appServer.shutdown()
         }
 
@@ -143,12 +142,12 @@ import Foundation
             await appServer.shutdown()
         }
 
-        @Test
-        func autoReviewFallsBackToUserApprovalOutsideChatGPTSubscription() async throws {
+        @Test(arguments: [AIAccountProvider.chatGPTSubscription, .databricks, nil])
+        func autoReviewIsPreservedForEveryProvider(provider: AIAccountProvider?) async throws {
             let transport = TestCodexChatAppServerTransport()
             let appServer = makeTestCodexAppServerService(
                 transportFactory: { transport },
-                accountProviderResolver: { .databricks }
+                accountProviderResolver: { provider }
             )
             let service = CodexChatService(appServer: appServer)
 
@@ -169,13 +168,17 @@ import Foundation
                 $0.objectValue?["method"]?.stringValue == "turn/start"
             }?.objectValue?["params"]?.objectValue)
             #expect(params["approvalPolicy"] == .string("on-request"))
-            #expect(params["approvalsReviewer"] == .string("user"))
+            #expect(params["approvalsReviewer"] == .string("auto_review"))
             #expect(params["sandboxPolicy"] == .object([
                 "networkAccess": .bool(false),
                 "type": .string("workspaceWrite"),
             ]))
-            #expect(turn.approvalMethod == .ask)
-            #expect(storedMethod == .ask)
+            let settingsParams = try #require(await transport.messages().first {
+                $0.objectValue?["method"]?.stringValue == "thread/settings/update"
+            }?.objectValue?["params"]?.objectValue)
+            #expect(settingsParams["approvalsReviewer"] == .string("auto_review"))
+            #expect(turn.approvalMethod == .autoReview)
+            #expect(storedMethod == .autoReview)
             await appServer.shutdown()
         }
 
@@ -195,58 +198,6 @@ import Foundation
             let thread = try await service.resumeThread(id: "thread-history", vaultID: UUID.v7())
 
             #expect(thread.approvalMethod == nil)
-            await appServer.shutdown()
-        }
-
-        @Test
-        func providerResolutionAndTurnStartDoNotCrossConfigurationReload() async throws {
-            let first = TestCodexChatAppServerTransport()
-            let second = TestCodexChatAppServerTransport()
-            let transports = Mutex([first, second])
-            let resolverStarted = AsyncStream.makeStream(of: Void.self)
-            let releaseResolver = AsyncStream.makeStream(of: Void.self)
-            let appServer = makeTestCodexAppServerService(
-                transportFactory: { transports.withLock { $0.removeFirst() } },
-                accountProviderResolver: {
-                    resolverStarted.continuation.yield()
-                    for await _ in releaseResolver.stream {
-                        break
-                    }
-                    return .chatGPTSubscription
-                }
-            )
-            let service = CodexChatService(appServer: appServer)
-
-            let send = Task {
-                try await service.send(
-                    threadID: "thread-1",
-                    inputs: [.text("Hi")],
-                    model: "default-model",
-                    effort: "medium"
-                )
-            }
-            for await _ in resolverStarted.stream {
-                break
-            }
-            let reload = Task { try await appServer.reloadConfiguration() }
-            #expect(await pollUntil(timeout: .seconds(10)) {
-                if await appServer.codexOperationDrainWaiterCountForTesting == 1 {
-                    return true
-                }
-                return await !(second.messages()).isEmpty
-            })
-            #expect(await appServer.codexOperationDrainWaiterCountForTesting == 1)
-            #expect(await second.messages().isEmpty)
-
-            releaseResolver.continuation.yield()
-            let stream = try await send.value
-            for try await _ in stream {}
-            try await reload.value
-
-            let turnParams = try #require(await first.messages().first {
-                $0.objectValue?["method"]?.stringValue == "turn/start"
-            }?.objectValue?["params"]?.objectValue)
-            #expect(turnParams["approvalsReviewer"] == .string("auto_review"))
             await appServer.shutdown()
         }
 

@@ -220,12 +220,9 @@ actor CodexChatService: CodexChatServicing {
         approvalMethod: CodexChatApprovalMethod,
         expectedProvider: CodexRuntimeProvider? = nil
     ) async throws -> CodexChatTurnHandle {
-        let (turn, effectiveApprovalMethod) = try await appServer.withChatOperation(
+        let turn = try await appServer.withChatOperation(
             expectedProvider: expectedProvider
         ) { appServer in
-            let provider = await appServer.configuredAccountProvider()
-            let approvalMethod = approvalMethod.availableMethod(for: provider)
-
             var params: [String: JSONValue] = [
                 "approvalPolicy": approvalMethod.approvalPolicy,
                 "approvalsReviewer": approvalMethod.approvalsReviewer,
@@ -239,12 +236,11 @@ actor CodexChatService: CodexChatServicing {
                 params["model"] = .string(model)
             }
 
-            let turn = try await appServer.beginChatTurn(
+            return try await appServer.beginChatTurn(
                 threadID: threadID,
                 params: .object(params),
                 bypassConfigurationReloadAdmission: true
             )
-            return (turn, approvalMethod)
         }
 
         let events = AsyncThrowingStream<CodexChatTurnEvent, any Error>(
@@ -308,7 +304,7 @@ actor CodexChatService: CodexChatServicing {
         return CodexChatTurnHandle(
             id: turn.id,
             events: events,
-            approvalMethod: effectiveApprovalMethod
+            approvalMethod: approvalMethod
         )
     }
 
@@ -317,8 +313,6 @@ actor CodexChatService: CodexChatServicing {
         approvalMethod: CodexChatApprovalMethod
     ) async throws -> CodexChatApprovalMethod {
         try await appServer.withChatOperation { appServer in
-            let provider = await appServer.configuredAccountProvider()
-            let approvalMethod = approvalMethod.availableMethod(for: provider)
             _ = try await appServer.chatRequest(
                 method: "thread/settings/update",
                 params: .object([

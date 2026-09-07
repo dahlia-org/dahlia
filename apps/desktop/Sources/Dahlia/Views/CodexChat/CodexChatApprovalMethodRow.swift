@@ -3,7 +3,6 @@ import SwiftUI
 struct CodexChatApprovalMethodRow: View {
     let method: CodexChatApprovalMethod
     let isSelected: Bool
-    let isEnabled: Bool
     let action: () -> Void
 
     @State private var isHovering = false
@@ -23,11 +22,6 @@ struct CodexChatApprovalMethodRow: View {
                         .font(.callout)
                         .foregroundStyle(method == .fullAccess ? Color.orange : DahliaDesign.optionalTextColor)
                         .lineLimit(1)
-                    if method == .autoReview, !isEnabled {
-                        Text(L10n.chatApprovalAutoReviewRequiresSubscription)
-                            .font(.callout)
-                            .foregroundStyle(DahliaDesign.optionalTextColor)
-                    }
                 }
 
                 Spacer(minLength: 8)
@@ -51,9 +45,7 @@ struct CodexChatApprovalMethodRow: View {
             ))
         )
         .onHover { isHovering = $0 }
-        .disabled(!isEnabled)
-        .opacity(isEnabled ? 1 : 0.5)
         .accessibilityValue(isSelected ? L10n.selected : "")
-        .accessibilityHint(isEnabled ? method.description : L10n.chatApprovalAutoReviewRequiresSubscription)
+        .accessibilityHint(method.description)
     }
 }

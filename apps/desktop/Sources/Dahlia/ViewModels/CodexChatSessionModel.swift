@@ -108,7 +108,6 @@ final class CodexChatSessionModel: Identifiable {
     @ObservationIgnored private var approvalMethodUpdateErrorMessage: String?
     @ObservationIgnored private var approvalMethodSelectionGeneration: UInt = 0
     @ObservationIgnored private var restoreSelectionGeneration: UInt?
-    private var configuredAccountProvider: AIAccountProvider?
     @ObservationIgnored private let vaultSettings: VaultAISettingsModel
     @ObservationIgnored private let runtimeProviderResolver: @Sendable () -> CodexRuntimeProvider
     @ObservationIgnored private var preparedRuntimeProvider: CodexRuntimeProvider?
@@ -152,13 +151,7 @@ final class CodexChatSessionModel: Identifiable {
         self.messages = messages
         self.selectedModelID = modelID ?? (usesVaultSettings ? vaultSettings.chatModelID : settings.codexChatModelID)
         self.selectedEffort = effort ?? (usesVaultSettings ? vaultSettings.chatReasoningEffort : settings.codexChatReasoningEffort)
-        let accountProvider: AIAccountProvider? = if usesVaultSettings {
-            vaultSettings.isLocalAccount ? vaultSettings.localProvider : nil
-        } else {
-            settings.configuredCodexAccountProvider
-        }
-        self.selectedApprovalMethod = approvalMethod
-            ?? CodexChatApprovalMethod.defaultMethod(for: accountProvider)
+        self.selectedApprovalMethod = approvalMethod ?? .autoReview
         self.needsRestore = backendThreadID != nil && messages.isEmpty && approvalMethod == nil
         self.service = service
         self.settings = settings
@@ -167,7 +160,6 @@ final class CodexChatSessionModel: Identifiable {
         self.contextProvider = contextProvider
         self.streamingUpdateInterval = streamingUpdateInterval
         self.usageTelemetryReporter = usageTelemetryReporter
-        self.configuredAccountProvider = accountProvider
     }
 
     func prepare(forceRefresh: Bool = false) async {
@@ -251,39 +243,12 @@ final class CodexChatSessionModel: Identifiable {
         persistChatReasoningEffort(effort)
     }
 
-    var canUseAutoReview: Bool {
-        configuredAccountProvider == .chatGPTSubscription
-    }
-
     var hasApprovalMethodUpdateFailure: Bool {
         approvalMethodUpdateErrorMessage != nil
     }
 
     func selectApprovalMethod(_ approvalMethod: CodexChatApprovalMethod) {
-        let approvalMethod = approvalMethod.availableMethod(for: currentAccountProvider)
-        updateSelectedApprovalMethod(approvalMethod, recordsSelectionIntent: true)
-    }
-
-    func refreshApprovalMethodAvailability() {
-        configuredAccountProviderDidChange(to: currentAccountProvider)
-        let approvalMethod = selectedApprovalMethod.availableMethod(for: configuredAccountProvider)
-        updateSelectedApprovalMethod(approvalMethod)
-    }
-
-    func configuredAccountProviderDidChange(to provider: AIAccountProvider?) {
-        guard configuredAccountProvider != provider else { return }
-        configuredAccountProvider = provider
-        let approvalMethod = selectedApprovalMethod.availableMethod(for: provider)
-        updateSelectedApprovalMethod(approvalMethod)
-    }
-
-    private func updateSelectedApprovalMethod(
-        _ approvalMethod: CodexChatApprovalMethod,
-        recordsSelectionIntent: Bool = false
-    ) {
-        if recordsSelectionIntent {
-            approvalMethodSelectionGeneration &+= 1
-        }
+        approvalMethodSelectionGeneration &+= 1
         guard selectedApprovalMethod != approvalMethod else { return }
         selectedApprovalMethod = approvalMethod
         if syncedApprovalMethod == approvalMethod {
@@ -295,7 +260,6 @@ final class CodexChatSessionModel: Identifiable {
     }
 
     func sendDraft() {
-        refreshApprovalMethodAvailability()
         guard canSend else { return }
         let draftSnapshot = draft
         let referenceIDsSnapshot = selectedMeetingReferenceIDs
@@ -1013,7 +977,7 @@ extension CodexChatSessionModel {
     ) {
         syncedApprovalMethod = approvalMethod
         if approvalMethodSelectionGeneration == selectionGeneration {
-            selectedApprovalMethod = (approvalMethod ?? .ask).availableMethod(for: configuredAccountProvider)
+            selectedApprovalMethod = approvalMethod ?? .ask
         }
         synchronizeApprovalMethodIfNeeded()
     }
@@ -1217,13 +1181,6 @@ extension CodexChatSessionModel {
                 ?? options[0].reasoningEffort
         }
         persistChatReasoningEffort(selectedEffort)
-    }
-
-    private var currentAccountProvider: AIAccountProvider? {
-        if usesVaultSettings {
-            return vaultSettings.isLocalAccount ? vaultSettings.localProvider : nil
-        }
-        return settings.configuredCodexAccountProvider
     }
 
     private func persistChatModelID(_ modelID: String) {

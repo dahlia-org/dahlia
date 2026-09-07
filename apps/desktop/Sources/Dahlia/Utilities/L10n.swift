@@ -3204,9 +3204,6 @@ enum L10n { // swiftlint:disable:this type_body_length
         localized: "Ask only when an operation is detected as potentially unsafe.",
         bundle: bundle
     ) }
-    static var chatApprovalAutoReviewRequiresSubscription: String {
-        String(localized: "Available with a ChatGPT subscription only.", bundle: bundle)
-    }
 
     static var chatApprovalFullAccess: String { String(localized: "Full access", bundle: bundle) }
     static var chatApprovalFullAccessDescription: String { String(

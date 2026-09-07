@@ -57,7 +57,6 @@ struct CodexChatApprovalMethodButton: View {
         if isPresented {
             dismissPanel()
         } else {
-            session.refreshApprovalMethodAvailability()
             isPresented = true
         }
     }
