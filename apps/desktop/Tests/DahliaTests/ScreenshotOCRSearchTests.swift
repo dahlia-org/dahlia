@@ -1,5 +1,6 @@
 import Foundation
 import GRDB
+import Synchronization
 @testable import Dahlia
 
 #if canImport(Testing)
@@ -8,6 +9,68 @@ import GRDB
     @MainActor
     // swiftlint:disable:next type_body_length
     struct ScreenshotOCRSearchTests {
+        @Test(arguments: ["enabled", "disabled", "legacy", "missing", "unavailable", "detached"])
+        func serverAnalysisCapabilityControlsDeviceFallback(capability: String) async throws {
+            let analyzer = StubScreenshotAnalyzer(text: "device OCR")
+            let database = try makeDatabase(screenshotAnalyzer: analyzer)
+            let connection = DahliaAccountConnectionRecord(
+                id: .v7(), origin: "https://capability-\(UUID().uuidString.lowercased()).invalid", clientID: "test", createdAt: .now
+            )
+            var vault = makeVault()
+            vault.accountConnectionId = connection.id
+            let meeting = makeMeeting(vaultID: vault.id)
+            let screenshot = MeetingScreenshotRecord(
+                id: .v7(), meetingId: meeting.id, sessionId: nil, capturedAt: .now, imageData: Data([1]), mimeType: "image/png"
+            )
+            try await database.dbQueue.write { [vault] db in
+                try connection.insert(db)
+                try vault.insert(db)
+                try meeting.insert(db)
+                try screenshot.insertLegacyForTesting(db)
+            }
+            let unavailable = Mutex(capability == "unavailable")
+            ImageURLProtocol.register(origin: connection.origin) { [queue = database.dbQueue, vaultID = vault.id] request in
+                #expect(request.url?.path == "/api/v1/capabilities")
+                if capability == "detached" {
+                    do {
+                        try queue.write { db in
+                            try db.execute(sql: "UPDATE vaults SET accountConnectionId = NULL WHERE id = ?", arguments: [vaultID])
+                        }
+                    } catch { Issue.record(error) }
+                }
+                let status = capability == "missing" ? 404 : unavailable.withLock { $0 } ? 503 : 200
+                let body = capability == "legacy" ? "{}" : "{\"imageAnalysis\":\(capability == "enabled" || capability == "detached")}"
+                return (status, [:], Data(body.utf8))
+            }
+            defer { ImageURLProtocol.remove(origin: connection.origin) }
+            let configuration = URLSessionConfiguration.ephemeral
+            configuration.protocolClasses = [ImageURLProtocol.self]
+            let indexer = SearchIndexer(
+                dbQueue: database.dbQueue, screenshotAnalyzer: analyzer,
+                apiClient: SyncAPIClient(session: URLSession(configuration: configuration), tokenProvider: { _, _ in "test" }),
+                runtimeProviderResolver: { .dahlia(connectionID: connection.id) }
+            )
+            await indexer.drain()
+            let fallsBack = capability != "enabled" && capability != "unavailable" && capability != "detached"
+            #expect(await analyzer.runtimeProviders[screenshot.id] == (fallsBack ? .dahlia(connectionID: connection.id) : nil))
+            try await database.dbQueue.read { db throws in
+                #expect(try MeetingScreenshotRecord.fetchOne(db, key: screenshot.id)?.ocrText == (fallsBack ? "device OCR" : nil))
+                let jobs = try Int.fetchOne(db, sql: "SELECT count(*) FROM search_index_jobs WHERE targetKind = 'screenshotAnalysis'")
+                #expect(jobs == (capability == "unavailable" || capability == "detached" ? 1 : 0))
+            }
+            if capability == "unavailable" {
+                unavailable.withLock { $0 = false }
+                try await database.dbQueue.write { db in
+                    try db.execute(sql: "UPDATE search_index_jobs SET availableAt = ?", arguments: [Date.distantPast])
+                }
+                await indexer.drain()
+                #expect(await analyzer.runtimeProviders[screenshot.id] == .dahlia(connectionID: connection.id))
+                #expect(try await database.dbQueue.read { db in
+                    try MeetingScreenshotRecord.fetchOne(db, key: screenshot.id)?.ocrText
+                } == "device OCR")
+            }
+        }
+
         @Test
         func discardsInFlightAnalysisAfterVaultMovesToServer() async throws {
             let analyzer = ConcurrentScreenshotAnalyzer()

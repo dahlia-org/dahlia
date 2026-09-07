@@ -1,4 +1,5 @@
 import DahliaMeetingAccess
+import DahliaRuntimeSupport
 import Dispatch
 import Foundation
 import GRDB
@@ -7,6 +8,7 @@ actor SearchIndexer {
     typealias RuntimeProviderResolver = @Sendable () -> CodexRuntimeProvider
     typealias LocalAccountSettingsResolver = @MainActor @Sendable () -> LocalAccountAISettings
 
+    private let apiClient: SyncAPIClient
     private let dbQueue: DatabaseQueue
     private let screenshotAnalyzer: any ScreenshotAnalyzing
     private let runtimeProviderResolver: RuntimeProviderResolver
@@ -28,11 +30,13 @@ actor SearchIndexer {
     init(
         dbQueue: DatabaseQueue,
         screenshotAnalyzer: any ScreenshotAnalyzing = CodexScreenshotAnalysisService(),
+        apiClient: SyncAPIClient = SyncAPIClient(session: .shared),
         runtimeProviderResolver: @escaping RuntimeProviderResolver = { CodexRuntimeContextStore.shared.provider },
         localAccountSettingsResolver: @escaping LocalAccountSettingsResolver = {
             VaultAISettingsModel.shared.localAccountSettings
         }
     ) {
+        self.apiClient = apiClient
         self.dbQueue = dbQueue
         self.screenshotAnalyzer = screenshotAnalyzer
         self.runtimeProviderResolver = runtimeProviderResolver
@@ -526,12 +530,11 @@ private extension SearchIndexer {
 
     func processScreenshotJobsConcurrently(_ jobs: [SearchIndexJob]) async throws -> Bool {
         let localSettings = await localAccountSettingsResolver()
-        let inputs = try await dbQueue.read { db in
+        var inputs = try await dbQueue.read { db in
             try Dictionary(uniqueKeysWithValues: jobs.compactMap { job -> (UUID, ScreenshotAnalysisInput)? in
                 guard let screenshot = try MeetingScreenshotRecord.fetchOne(db, key: job.targetID),
                       let meeting = try MeetingRecord.fetchOne(db, key: screenshot.meetingId),
-                      let vault = try VaultRecord.fetchOne(db, key: meeting.vaultId),
-                      vault.accountConnectionId == nil
+                      let vault = try VaultRecord.fetchOne(db, key: meeting.vaultId)
                 else { return nil }
                 guard screenshot.remoteReference == nil || screenshot.localReference != nil,
                       (try? TextContentAccess.requireComplete(entity: .file, id: screenshot.originalFileId, in: db)) != nil else { return nil }
@@ -547,10 +550,17 @@ private extension SearchIndexer {
                 ))
             })
         }
+        let runtimeProvider = runtimeProviderResolver()
+        var delegatedIDs: Set<UUID> = []
+        if let connectionId = runtimeProvider.accountConnectionID,
+           inputs.values.contains(where: { $0.runtimeProvider == runtimeProvider }),
+           try await serverAnalyzesImages(connectionId: connectionId) {
+            delegatedIDs = Set(inputs.values.filter { $0.runtimeProvider == runtimeProvider }.map(\.id))
+            inputs = inputs.filter { !delegatedIDs.contains($0.key) }
+        }
         var outcomes = jobs.compactMap { job in
             inputs[job.targetID] == nil ? ScreenshotJobOutcome.missing(job) : nil
         }
-        let runtimeProvider = runtimeProviderResolver()
         let deferredJobs = jobs.filter { job in
             guard let input = inputs[job.targetID] else { return false }
             return input.runtimeProvider != runtimeProvider
@@ -593,7 +603,10 @@ private extension SearchIndexer {
             switch outcome {
             case let .success(job, results):
                 do {
-                    try await storeScreenshotAnalyses(results, generation: generation)
+                    guard let input = inputs[job.targetID] else { continue }
+                    try await storeScreenshotAnalyses(
+                        results, generation: generation, expectedConnectionId: input.runtimeProvider.accountConnectionID
+                    )
                     try await complete([job])
                 } catch is CancellationError {
                     throw CancellationError()
@@ -603,7 +616,7 @@ private extension SearchIndexer {
             case let .failure(job, error):
                 try await fail(job, error: error)
             case let .missing(job):
-                try await complete([job])
+                try await complete([job], expectedConnectionId: delegatedIDs.contains(job.targetID) ? runtimeProvider.accountConnectionID : nil)
             case .cancelled:
                 throw CancellationError()
             }
@@ -611,13 +624,28 @@ private extension SearchIndexer {
         return false
     }
 
-    func storeScreenshotAnalyses(_ results: [ScreenshotAnalysis], generation: Int) async throws {
+    func serverAnalyzesImages(connectionId: UUID) async throws -> Bool {
+        guard let connection = try await dbQueue.read({ try DahliaAccountConnectionRecord.fetchOne($0, key: connectionId) }),
+              let origin = URL(string: connection.origin),
+              let url = URL(string: "/api/v1/capabilities", relativeTo: origin)?.absoluteURL else { throw URLError(.badURL) }
+        let request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 15)
+        let data: Data
+        do {
+            data = try await apiClient.data(for: request, connectionId: connectionId, maximumBytes: 8192)
+        } catch let error as SyncHTTPError where error.status == 404 {
+            return false // Older servers use device analysis.
+        }
+        struct Capabilities: Decodable { let imageAnalysis: Bool? }
+        return try JSONDecoder().decode(Capabilities.self, from: data).imageAnalysis == true
+    }
+
+    func storeScreenshotAnalyses(_ results: [ScreenshotAnalysis], generation: Int, expectedConnectionId: UUID?) async throws {
         try await dbQueue.write { db in
             for result in results {
                 guard let existing = try MeetingScreenshotRecord.fetchOne(db, key: result.screenshotID),
                       let meeting = try MeetingRecord.fetchOne(db, key: existing.meetingId),
                       let vault = try VaultRecord.fetchOne(db, key: meeting.vaultId),
-                      vault.accountConnectionId == nil,
+                      vault.accountConnectionId == expectedConnectionId,
                       existing.remoteReference == nil || existing.localReference != nil,
                       (try? TextContentAccess.requireComplete(entity: .file, id: existing.originalFileId, in: db)) != nil,
                       try TextContentAccess.availability(entity: .file, id: existing.originalFileId, in: db).state != .stale else { continue }
@@ -771,9 +799,17 @@ private extension SearchIndexer {
         }
     }
 
-    private func complete(_ jobs: [SearchIndexJob]) async throws {
+    private func complete(_ jobs: [SearchIndexJob], expectedConnectionId: UUID? = nil) async throws {
         try await dbQueue.write { db in
             for job in jobs {
+                if let expectedConnectionId {
+                    let connectionId = try UUID.fetchOne(db, sql: """
+                    SELECT v.accountConnectionId FROM meeting_files f
+                    JOIN meetings m ON m.id = f.meetingId JOIN vaults v ON v.id = m.vaultId
+                    WHERE f.id = ?
+                    """, arguments: [job.targetID])
+                    guard connectionId == expectedConnectionId else { throw TextContentError.changed }
+                }
                 try db.execute(
                     sql: """
                     DELETE FROM search_index_jobs

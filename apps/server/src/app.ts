@@ -104,6 +104,7 @@ export interface AppDependencies {
   searchTokenizer?: SearchTokenizer;
   searchEmbedder?: SearchEmbedder;
   screenshotTransformer?: ScreenshotTransformer;
+  imageAnalysisEnabled?: boolean;
 }
 
 export async function authenticateMcpRequest(
@@ -451,7 +452,8 @@ export function createApp(dependencies: AppDependencies) {
   });
   app.get("/api/v1/capabilities", async (context) => {
     await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
-    return context.json(await store.sync.isAvailable() ? { syncVersion: 1, meetingEventsVersion: 1 } : {});
+    return context.json(await store.sync.isAvailable()
+      ? { syncVersion: 1, meetingEventsVersion: 1, imageAnalysis: dependencies.imageAnalysisEnabled === true } : {});
   });
   app.get("/api/v1/vaults/:vaultId/text/:entity/:entityId", async (context) => {
     const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);

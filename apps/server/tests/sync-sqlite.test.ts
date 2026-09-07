@@ -55,7 +55,10 @@ describe("SQLite canonical sync", () => {
     const detail = async () => (await send(`vaults/${vaultId}/meetings/${meetingId}`)).json();
     const capabilities = await send("capabilities");
     expect(capabilities.status).toBe(200);
-    expect(await capabilities.json()).toEqual({ syncVersion: 1, meetingEventsVersion: 1 });
+    expect(await capabilities.json()).toEqual({ syncVersion: 1, meetingEventsVersion: 1, imageAnalysis: false });
+    const enabledApp = createApp({ config: testConfig(databasePath), authStore: store, imageAnalysisEnabled: true });
+    expect(await (await enabledApp.request("http://localhost:5173/api/v1/capabilities", { headers: headers() })).json())
+      .toEqual({ syncVersion: 1, meetingEventsVersion: 1, imageAnalysis: true });
     expect((await send("sync-content")).status).toBe(404);
     const availability = vi.spyOn(store.sync, "isAvailable").mockResolvedValueOnce(false);
     const unsupported = await send("capabilities");

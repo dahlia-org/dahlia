@@ -52,6 +52,7 @@ const app = createApp({
   auth,
   authStore: applicationStore,
   syncService,
+  imageAnalysisEnabled: imageAnalysis !== undefined,
   artifactStorage,
   searchTokenizer,
   searchEmbedder,
