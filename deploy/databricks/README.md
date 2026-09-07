@@ -79,7 +79,7 @@ The bundle creates `${catalog}.${ai_schema}` (default `dahlia.ai`) and sets `DAT
 | `gpt-5-6-terra` | `system.ai.gpt-5-6-terra` |
 | `kimi-k3` | `system.ai.kimi-k3` |
 | `deepseek-v4-pro` | `system.ai.deepseek-v4-pro-0813` |
-| `qwen3-embedding-0-6b` | `system.ai.qwen3-embedding-0-6b` |
+| `embedding` | `system.ai.qwen3-embedding-0-6b` |
 | `codex-auto-review` | `system.ai.gpt-5-6-luna` |
 
 This registration step lists existing model services across all pages and creates only missing names. Existing model configurations are preserved, so deployments can be repeated or resumed after a partial failure. Listing, source lookup, and creation failures stop postdeploy with CLI diagnostics; each creation logs the target and source model names. Concurrent creation conflicts are not retried; rerun deployment after resolving the error. Model creation uses `databricks ai-gateway create-model-service`; `get-model-service` and jq resolve and validate each source foundation-model destination. No inference payload logging is enabled by the script.
