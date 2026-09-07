@@ -60,10 +60,16 @@ if (command === "list-model-services") {
     const resumed = run();
     assert.equal(resumed.status, 0, resumed.stderr);
     assert.match(resumed.stdout, /Keeping existing model service: model-services\/test_catalog.ai.gpt-5-6-luna/);
-    assert.equal(JSON.parse(readFileSync(state, "utf8")).length, 6);
-    const created = readCalls().find(args => args[1] === "create-model-service" && args[3] === "deepseek-v4-pro");
-    const body = JSON.parse(created[created.indexOf("--json") + 1]);
-    assert.equal(body.config.routing.destinations[0].pay_per_token_config.model, "models/system.ai.deepseek-v4-pro-0813");
+    assert.equal(JSON.parse(readFileSync(state, "utf8")).length, 8);
+    for (const [name, source] of [
+      ["deepseek-v4-pro", "deepseek-v4-pro-0813"],
+      ["qwen3-embedding-0-6b", "qwen3-embedding-0-6b"],
+      ["codex-auto-review", "gpt-5-6-luna"],
+    ]) {
+      const call = readCalls().find(args => args[1] === "create-model-service" && args[3] === name);
+      const config = JSON.parse(call[call.indexOf("--json") + 1]);
+      assert.equal(config.config.routing.destinations[0].pay_per_token_config.model, `models/system.ai.${source}`);
+    }
     assert.ok(readCalls().every(args => args[args.indexOf("--profile") + 1] === "test-profile"));
 
     writeFileSync(calls, "");

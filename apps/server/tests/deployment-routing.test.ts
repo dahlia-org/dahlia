@@ -205,9 +205,8 @@ describe("deployment routing", () => {
     expect(bundle).toContain("app_name: dahlia-dev");
     expect(bundle).toContain("app_name: dahlia-prod");
     expect(bundle).toContain("database_project_id: dahlia-db-dev");
-    expect(bundle).toContain("default: system.ai.gpt-5-6-luna");
-    expect(resource).toContain("name: CODEX_AUTO_REVIEW_MODEL");
-    expect(resource).toContain("value: ${var.codex_auto_review_model}");
+    expect(bundle).not.toContain("codex_auto_review_model");
+    expect(resource).not.toContain("CODEX_AUTO_REVIEW_MODEL");
     expect(bundle).toContain("database_project_id: dahlia-db");
     expect(bundle).toContain("catalog:");
     expect(bundle).toContain("default: dahlia");

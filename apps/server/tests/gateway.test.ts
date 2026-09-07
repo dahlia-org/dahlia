@@ -35,7 +35,7 @@ const configs: AppConfig[] = [config, {
 describe("AI Gateway", () => {
   it.each(configs)("keeps auto review override independent of backend ($provider.backend)", async (backendConfig) => {
     const sent = vi.fn<GatewayFetch>(async (url) => String(url).includes("model-services")
-      ? Response.json({ model_services: [{ name: "model-services/dahlia.ai.codex-auto-review" }] })
+      ? Response.json({ model_services: [{ name: "model-services/dahlia.ai.codex-auto-review", supported_api_types: ["mlflow/v1/responses"] }] })
       : new Response("{}"));
     const service = new GatewayService({ ...backendConfig, codexAutoReviewModel: "other.schema.reviewer" }, modelTransport(sent));
     const models = await service.models();
@@ -48,12 +48,16 @@ describe("AI Gateway", () => {
     expect(JSON.parse(String(sent.mock.calls.at(-1)![1]?.body))).toMatchObject({ model: "other.schema.reviewer" });
 
     for (const value of [undefined, " "]) {
-      const disabled = new GatewayService({ ...backendConfig, codexAutoReviewModel: value }, modelTransport(sent));
-      const list = await disabled.models();
-      expect(list.data.some((m) => m.id === "codex-auto-review")).toBe(false);
-      expect(list.models.find((m) => m.slug === "codex-auto-review")?.visibility).toBe("hide");
-      await expect(disabled.responses(request({ model: "codex-auto-review", input: [] }), identity))
-        .rejects.toMatchObject({ status: 404, code: "model_not_found" });
+      const fallback = new GatewayService({ ...backendConfig, codexAutoReviewModel: value }, modelTransport(sent));
+      const list = await fallback.models();
+      const isDatabricks = backendConfig.provider?.backend === "databricks";
+      expect(list.data.some((m) => m.id === "codex-auto-review")).toBe(isDatabricks);
+      expect(list.models.find((m) => m.slug === "codex-auto-review")?.visibility).toBe(isDatabricks ? "list" : "hide");
+      await fallback.responses(request({ model: "codex-auto-review", input: [] }, {
+        "x-forwarded-access-token": "user-token",
+      }), identity);
+      expect(JSON.parse(String(sent.mock.calls.at(-1)![1]?.body)))
+        .toMatchObject({ model: isDatabricks ? "dahlia.ai.codex-auto-review" : "codex-auto-review" });
     }
   });
 
@@ -72,8 +76,8 @@ describe("AI Gateway", () => {
       expect(new Headers(init?.headers).get("authorization")).toBe("Bearer app-token");
       expect(init?.cache).toBe("no-store");
       return Response.json(endpoint.searchParams.has("page_token")
-        ? { model_services: [{ name: "model-services/dahlia.ai.custom" }] }
-        : { model_services: [{ name: "model-services/dahlia.ai.gpt-5-6-luna" }], next_page_token: "page-2" });
+        ? { model_services: [{ name: "model-services/dahlia.ai.custom", supported_api_types: ["mlflow/v1/responses"] }] }
+        : { model_services: [{ name: "model-services/dahlia.ai.gpt-5-6-luna", supported_api_types: ["mlflow/v1/responses"] }], next_page_token: "page-2" });
     });
     const list = await new GatewayService(databricksConfig, modelTransport(transport)).models(
       new Request(`https://dahlia.example/api/v1/models?client_version=${LATEST_CODEX_CLIENT_VERSION}`, {
@@ -85,6 +89,36 @@ describe("AI Gateway", () => {
     expect(list.models.find((m) => m.slug === "gpt-5-6-luna")).not.toHaveProperty("use_responses_lite");
     expect(list.models.find((m) => m.slug === "custom")?.supported_reasoning_levels.map((l) => l.effort)).toEqual(["none", "low", "high", "max"]);
     expect(transport).toHaveBeenCalledTimes(2);
+  });
+
+  it("filters unsupported models and continues after a fully excluded page", async () => {
+    const transport = vi.fn<GatewayFetch>(async (url) => Response.json(new URL(String(url)).searchParams.has("page_token")
+      ? { model_services: [{ name: "model-services/dahlia.ai.codex-auto-review", supported_api_types: ["mlflow/v1/responses"] }] }
+      : {
+        model_services: [
+          { name: "model-services/dahlia.ai.qwen3-embedding-0-6b", supported_api_types: ["mlflow/v1/embeddings", "openai/v1/embeddings"] },
+          { name: "model-services/dahlia.ai.chat", supported_api_types: ["mlflow/v1/chat/completions"] },
+          { name: "model-services/dahlia.ai.openai-only", supported_api_types: ["openai/v1/responses"] },
+          { name: "model-services/dahlia.ai.empty", supported_api_types: [] },
+          { name: "model-services/dahlia.ai.missing" },
+        ],
+        next_page_token: "next",
+      }));
+    const list = await new GatewayService(databricksConfig, modelTransport(transport)).models();
+    expect(list.data.map((model) => model.id)).toEqual(["codex-auto-review"]);
+    expect(list.models.filter((model) => model.visibility === "list").map((model) => model.slug)).toEqual(["codex-auto-review"]);
+    expect(transport).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([null, "mlflow/v1/responses", 1, {}, ["mlflow/v1/responses", null]])("rejects invalid API capabilities: %j", async (supported_api_types) => {
+    const logs = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      await expect(new GatewayService(databricksConfig, modelTransport(async () => Response.json({
+        model_services: [{ name: "model-services/dahlia.ai.model", supported_api_types }],
+      }))).models()).rejects.toMatchObject({ status: 502, code: "provider_models_invalid" });
+    } finally {
+      logs.mockRestore();
+    }
   });
 
   it("accepts an empty protobuf model list", async () => {

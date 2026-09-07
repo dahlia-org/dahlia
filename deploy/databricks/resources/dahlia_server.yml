@@ -45,8 +45,6 @@ resources:
             value: databricks
           - name: DATABRICKS_MODEL_SCHEMA
             value: ${var.catalog}.${var.ai_schema}
-          - name: CODEX_AUTO_REVIEW_MODEL
-            value: ${var.codex_auto_review_model}
           - name: DAHLIA_STORAGE_BACKEND
             value: databricks
           - name: DAHLIA_STORAGE_DATABRICKS_VOLUME_PATH
