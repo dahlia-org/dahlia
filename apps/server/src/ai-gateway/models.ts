@@ -18,6 +18,18 @@ export interface CodexModelWire {
 }
 
 const bundledCodexModels = (codexCatalog as { models: CodexModelWire[] }).models;
+const modelDisplayNames = new Map([
+  ["gpt-6-astra", "GPT 6 Astra"],
+  ["gpt-5-6-sol", "GPT 5.6 Sol"],
+  ["gpt-5.6-sol", "GPT 5.6 Sol"],
+  ["gpt-5-6-terra", "GPT 5.6 Terra"],
+  ["gpt-5.6-terra", "GPT 5.6 Terra"],
+  ["gpt-5-6-luna", "GPT 5.6 Luna"],
+  ["gpt-5.6-luna", "GPT 5.6 Luna"],
+  ["kimi-k3", "Kimi K3"],
+  ["deepseek-v4-pro", "DeepSeek V4 Pro"],
+  ["deepseek-v4-pro-0813", "DeepSeek V4 Pro"],
+]);
 const ossReasoningLevels = [
   { effort: "none", description: "Fast responses without reasoning" },
   { effort: "low", description: "Fast responses with lighter reasoning" },
@@ -35,10 +47,17 @@ export function modelList(entries: ModelInfo[]): GatewayModelList {
     object: "list",
     data: entries.map((entry) => ({
       id: entry.id, object: "model", created: 0, owned_by: "dahlia",
-      display_name: entry.displayName || entry.id,
+      display_name: modelDisplayName(entry),
     })),
     models: codexModels(entries),
   };
+}
+
+function modelDisplayName(entry: ModelInfo): string {
+  return entry.displayName?.trim()
+    || modelDisplayNames.get(entry.id)
+    || catalogModel(entry.id)?.display_name
+    || entry.id;
 }
 
 function codexModels(entries: ModelInfo[]): CodexModelWire[] {
@@ -52,7 +71,7 @@ function codexModels(entries: ModelInfo[]): CodexModelWire[] {
     models.set(entry.id, {
       ...model,
       slug: entry.id,
-      display_name: entry.displayName || entry.id,
+      display_name: modelDisplayName(entry),
       visibility: "list",
       supported_in_api: true,
       priority,
@@ -70,11 +89,15 @@ function hiddenCodexModel(slug: string): CodexModelWire {
   };
 }
 
-function knownCodexModel(value: string): CodexModelWire | undefined {
+function catalogModel(value: string): CodexModelWire | undefined {
   const normalized = value.trim().toLowerCase().replace(/^system\.ai\./, "");
-  const model = bundledCodexModels.find((model) =>
+  return bundledCodexModels.find((model) =>
     normalized === model.slug || normalized === model.slug.replaceAll(".", "-")
   );
+}
+
+function knownCodexModel(value: string): CodexModelWire | undefined {
+  const model = catalogModel(value);
   if (!model) return undefined;
   // Keep picker/runtime metadata without opting custom providers into OpenAI-internal transports.
   return {
