@@ -1,6 +1,7 @@
 import DahliaMeetingAccess
 import Foundation
 import GRDB
+import Synchronization
 @testable import Dahlia
 @testable import DahliaRuntimeSupport
 
@@ -272,11 +273,11 @@ import GRDB
                     updatedAt: .now
                 ).insert(db)
             }
-            var policy = MeetingSearchRankingPolicy.standard
-            let model = SearchRankingBenchmarkModel(database: database) { policy }
+            let policy = Mutex(MeetingSearchRankingPolicy.standard)
+            let model = SearchRankingBenchmarkModel(database: database) { policy.withLock { $0 } }
 
             model.regenerateAndRun(vaultID: vault.id)
-            policy = .standard.settingWeight(3, for: .summary)
+            policy.withLock { $0 = .standard.settingWeight(3, for: .summary) }
 
             #expect(await pollUntil { !model.isRunning })
             #expect(model.result == nil)

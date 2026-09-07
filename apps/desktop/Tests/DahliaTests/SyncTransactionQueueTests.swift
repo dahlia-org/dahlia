@@ -404,7 +404,7 @@
         func reconciliationRebasesDurableEditsBeforeTheyCanBeClaimed() async throws {
             let (database, vault) = try await syncedDatabase()
             let connectionId = try #require(vault.syncConfirmedConnectionId)
-            try await database.dbQueue.write { db in
+            _ = try await database.dbQueue.write { db in
                 try SyncTransactionRecorder.record(
                     vaultId: vault.id,
                     operations: [SyncInitialSnapshotBuilder.vaultOperation(vault, action: .update)], in: db

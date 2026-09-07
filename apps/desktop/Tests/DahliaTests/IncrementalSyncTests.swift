@@ -463,7 +463,7 @@
             }
 
             func queueFile() async throws {
-                try await queue.write { db in
+                _ = try await queue.write { db in
                     try SyncTransactionRecorder.record(
                         vaultId: vaultId,
                         operations: [.init(entity: .file, action: .upsert, entityId: fileId)],
