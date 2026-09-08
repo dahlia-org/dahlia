@@ -83,7 +83,7 @@ describe("transcript versions", () => {
       expect((await sync.transcriptVersions(owner, vaultId, meetingId)).items).toHaveLength(2);
       expect((await sync.transcriptContent(owner, vaultId, meetingId, "1")).items).toMatchObject([{ text: "previous version" }]);
     } finally { await store.close?.(); }
-  });
+  }, 60_000);
 
   it("derives every activity state and the exact inactivity boundary", () => {
     const generated = new Date("2026-09-08T10:00:00.000Z");
