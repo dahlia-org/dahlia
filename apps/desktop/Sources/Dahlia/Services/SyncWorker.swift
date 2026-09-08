@@ -922,7 +922,7 @@ actor SyncWorker {
             let data = try await sendData(
                 request(
                     origin: target.origin,
-                    path: "api/v1/vaults/\(target.vaultId.lowercase)/meetings/\(meetingId.lowercase)?content=metadata-v1",
+                    path: "api/v1/vaults/\(target.vaultId.lowercase)/meetings/\(meetingId.lowercase)",
                     method: "GET"
                 ),
                 connectionId: target.connectionId

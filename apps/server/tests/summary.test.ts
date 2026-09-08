@@ -1,3 +1,4 @@
+import { TextContentDigest } from "../src/sync/text-content";
 import { summaryMetadata } from "../src/summary/metadata";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdtempSync, rmSync, readFileSync } from "node:fs";
@@ -68,7 +69,8 @@ describe("server summary jobs", () => {
       expect((await sync.latestSummary(owner, vaultId, meetingId)).record?.document).toBe(second.document);
       const manifest = await sync.latestSummary(owner, vaultId, meetingId, "1");
       expect(manifest).not.toHaveProperty("record");
-      expect(manifest.sha256).toBe((await sync.textContent(owner, vaultId, "summary", meetingId, "2")).sha256);
+      const digest = new TextContentDigest(); digest.add(second.document);
+      expect(manifest).toMatchObject({ revision: 2, sha256: digest.digestHex(), byteCount: digest.byteCount });
       const transaction = { schemaVersion: 2, id: uuidV7(), vaultId, createdAt: new Date().toISOString(), operations: [{
         id: uuidV7(), entity: "summary", action: "upsert", entityId: meetingId, baseRevision: 2,
         data: { title: "Manual", document: JSON.stringify({ ...doc(), title: "Manual" }), createdAt: new Date().toISOString() },
@@ -98,32 +100,60 @@ describe("server summary jobs", () => {
 
   it("serves latest and history without metadata support and applies current shared permissions", async () => {
     const { store, sync, config, path, vaultId, meetingId } = await setup();
+    const savedDocument = JSON.stringify(doc());
     try {
       await sync.commitTransaction(owner, { schemaVersion: 2, id: uuidV7(), vaultId, createdAt: new Date().toISOString(), operations: [{
         id: uuidV7(), entity: "summary", action: "upsert", entityId: meetingId, baseRevision: 0,
-        data: { title: "Saved", document: JSON.stringify(doc()), createdAt: new Date().toISOString() },
+        data: { title: "Saved", document: savedDocument, createdAt: new Date().toISOString() },
       }] });
       const app = createApp({ config, authStore: store });
       const headers = { "x-forwarded-email": "reader@example.com", "x-forwarded-user": "reader" };
       const base = `/api/v1/vaults/${vaultId}/meetings/${meetingId}/summary`;
-      const routes = ["latest", "versions", "versions/1"];
+      const routes = ["/latest", "", "/1"];
       for (const route of routes) {
-        expect((await app.request(`${base}/${route}`)).status).toBe(401);
-        expect((await app.request(`${base}/${route}`, { headers })).status).toBe(404);
+        expect((await app.request(`${base}${route}`)).status).toBe(401);
+        expect((await app.request(`${base}${route}`, { headers })).status).toBe(404);
       }
       const db = new DatabaseSync(path);
       try {
         db.prepare("INSERT INTO vault_permissions(vault_id, principal_type, principal_id, role, granted_by_user_id, created_at) VALUES (?, 'user', 'reader', 'member', 'owner', ?)").run(vaultId, Date.now());
         for (const route of routes) {
-          const response = await app.request(`${base}/${route}`, { headers });
+          const response = await app.request(`${base}${route}`, { headers });
           expect(response.status).toBe(200);
           expect(response.headers.get("cache-control")).toBe("no-store");
         }
+        for (const meetingPath of [`/api/v1/vaults/${vaultId}/meetings/${meetingId}`, `/api/v1/meetings/${meetingId}`]) {
+          for (const query of ["", "?content=metadata-v1"]) {
+            const response = await app.request(`${meetingPath}${query}`, { headers });
+            expect(response.status).toBe(200);
+            const meeting = await response.json();
+            expect(meeting).toMatchObject({ meetingId, name: "Meeting", revision: 1, summaryRevision: 1,
+              transcriptRevision: 0, isRecording: false, contentOmitted: true, hasSummary: true });
+            for (const key of ["summaryTitle", "summaryDocument", "summaryCreatedAt"]) expect(meeting).not.toHaveProperty(key);
+          }
+        }
+        const page: { items: Record<string, unknown>[] } = await (await app.request(`${base}?limit=1`, { headers })).json();
+        expect(page).toMatchObject({ items: [{ revision: 1, title: "Saved" }], nextCursor: null });
+        expect(page.items[0]).not.toHaveProperty("document");
+        expect(await (await app.request(`${base}?cursor=1`, { headers })).json()).toMatchObject({ items: [] });
+        const latest: { sha256: string; byteCount: number; record: { document: string } } = await (await app.request(`${base}/latest`, { headers })).json();
+        expect(latest).toMatchObject({ revision: 1, present: true, record: { title: "Saved", document: savedDocument } });
+        const manifest = await (await app.request(`${base}/latest?manifest=1`, { headers })).json();
+        expect(manifest).toMatchObject({ revision: 1, sha256: latest.sha256, byteCount: latest.byteCount });
+        expect(manifest).not.toHaveProperty("record");
+        expect(await (await app.request(`${base}/1`, { headers })).json()).toMatchObject({ revision: 1, document: latest.record.document });
+        for (const suffix of ["versions", "versions/1", "invalid", "1.5", "-1"]) {
+          expect((await app.request(`${base}/${suffix}`, { headers })).status).toBe(404);
+        }
+        expect((await app.request(`${base}/2`, { headers })).status).toBe(404);
+        // The fixed job route must retain its existing unavailable-service behavior.
+        expect(await (await app.request(`${base}/job`, { headers })).json()).toEqual({ error: "summary_unavailable" });
+        expect((await app.request(`/api/v1/vaults/${vaultId}/text/summary/${meetingId}?revision=1`, { headers })).status).toBe(400);
         expect((await app.request(`${base}/latest?manifest=invalid`, { headers })).status).toBe(400);
-        expect((await app.request(`${base}/versions?limit=101`, { headers })).status).toBe(400);
-        expect((await app.request(`${base}/versions/999999999999`, { headers })).status).toBe(400);
+        expect((await app.request(`${base}?limit=101`, { headers })).status).toBe(400);
+        expect((await app.request(`${base}/999999999999`, { headers })).status).toBe(400);
         db.prepare("DELETE FROM vault_permissions WHERE principal_id = 'reader'").run();
-        for (const route of routes) expect((await app.request(`${base}/${route}`, { headers })).status).toBe(404);
+        for (const route of routes) expect((await app.request(`${base}${route}`, { headers })).status).toBe(404);
       } finally { db.close(); }
     } finally { await store.close?.(); }
   });

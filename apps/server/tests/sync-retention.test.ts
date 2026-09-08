@@ -410,7 +410,6 @@ describe("partial text content", () => {
     const metadata = await service.listChanges(owner, vaultId, undefined, undefined, "metadata-v1");
     expect(metadata.items.find((item) => item.entity === "summary")?.record).toMatchObject({ contentOmitted: true, contentPresent: true });
     expect(await service.getMeeting(owner, vaultId, meetingId)).toHaveProperty("summaryDocument", "{}");
-    expect(await service.getMeeting(owner, vaultId, meetingId, "metadata-v1")).not.toHaveProperty("summaryDocument");
     await expect(service.textContent(member, vaultId, "transcript", meetingId, "2")).rejects.toMatchObject({ status: 404 });
     raw.prepare("UPDATE meetings SET active = 0 WHERE meeting_id = ?").run(meetingId);
     await expect(service.textContent(owner, vaultId, "transcript", meetingId, "2")).rejects.toMatchObject({ status: 404 });

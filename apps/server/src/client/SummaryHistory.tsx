@@ -14,8 +14,8 @@ type Version = Omit<SummaryVersion, "createdAt" | "savedAt"> & { createdAt: stri
 export function SummaryHistory({ base, latest, selected, onSelect }: {
   base: string; latest?: LatestSummary; selected: number | null; onSelect: (revision: number | null) => void;
 }) {
-  const versions = useLivePage<Omit<Version, "document">>(`${base}/summary/versions`);
-  const history = useLiveJSON<Version>(selected === null ? undefined : `${base}/summary/versions/${selected}`);
+  const versions = useLivePage<Omit<Version, "document">>(`${base}/summary`);
+  const history = useLiveJSON<Version>(selected === null ? undefined : `${base}/summary/${selected}`);
   useEffect(() => {
     if (history.error instanceof RequestError && history.error.status === 404) onSelect(null);
   }, [history.error, onSelect]);

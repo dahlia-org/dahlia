@@ -55,4 +55,8 @@ Server は summary の全保存を `summary_versions` に本文・保存日時�
 
 `GET .../summary/latest` は現在の canonical 本文を既存の text envelope と hash、任意の manifest で返す。Desktop の Server 要約本文読取りは latest に統一し、同期 metadata と revision が異なるときは再同期して再取得する。未送信編集の保護と通常の remote applier を維持し、過去版を最新として採用しない。差分適用後に要約自身の読取り可否を再検証し、無関係な保留差分があっても安全な最新本文を取得する。Desktop が表示するのは最新だけであり、既存の現在本文キャッシュを利用する。
 
-`GET .../summary/versions` と `GET .../summary/versions/{revision}` を追加し、Web の要約タブで過去版を閲覧できる。現在の Vault 読取り権限を継承するため共有メンバーも閲覧できる。PostgreSQL は FORCE RLS、全 runtime は共通認可を適用する。要約削除は全履歴の削除も意味し、会議・Vault 削除でも履歴を削除する。Web の確認文に全版削除を明示する。横並び比較・復元・Gemini 生成の実装は今回の対象外とする。
+`GET .../summary` と `GET .../summary/{revision}` を追加し、Web の要約タブで過去版を閲覧できる。現在の Vault 読取り権限を継承するため共有メンバーも閲覧できる。PostgreSQL は FORCE RLS、全 runtime は共通認可を適用する。要約削除は全履歴の削除も意味し、会議・Vault 削除でも履歴を削除する。Web の確認文に全版削除を明示する。横並び比較・復元・Gemini 生成の実装は今回の対象外とする。
+
+HTTP の会議詳細（Vault 配下と ID 解決用の両経路）は会議情報と同期状態だけを返し、summaryTitle / summaryDocument / summaryCreatedAt を除く。summaryRevision、contentOmitted、hasSummary、録音状態は保持する。会議補完での content=metadata-v1 指定は不要となるが、snapshot / delta / file 補完では維持する。DB 正本と Server MCP の要約込み読取り契約は変更しない。
+
+要約一覧は GET summary、本文は GET summary/latest または数値 revision の GET summary/{revision} とする。旧 versions 経路と text/summary は互換 alias を残さず削除し、生成 POST と固定 job 経路は変更しない。公開 Desktop v0.21.0 に利用箇所はない。開発版 consumer は更新が必要であり、migration、Server と Web asset の同時更新、Desktop の順で適用する。既に開いている旧 Web は再読み込みが必要になる。

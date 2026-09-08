@@ -284,6 +284,38 @@
         }
 
         @Test
+        func summaryDependencyFetchUsesMeetingMetadataWithoutAContentQuery() async throws {
+            let fixture = try Fixture()
+            let meetingId = UUID.v7()
+            let timestamp = "2026-09-07T00:00:00Z"
+            let changes = try page([fixture.change(.summary, id: meetingId, revision: 1, fields: [
+                "title": "Summary", "createdAt": timestamp, "contentOmitted": true, "contentPresent": true,
+            ])], cursor: "after")
+            let parent = try JSONSerialization.data(withJSONObject: [
+                "meetingId": meetingId.uuidString.lowercased(), "vaultId": fixture.vaultId.uuidString.lowercased(),
+                "name": "Parent", "status": "READY", "createdAt": timestamp, "updatedAt": timestamp,
+                "revision": 1, "summaryRevision": 1, "transcriptRevision": 0, "contentOmitted": true, "hasSummary": true,
+            ])
+            let client = fixture.client { request in
+                if request.url!.path.hasSuffix("capabilities") { return (200, [:], Data("{\"syncVersion\":1,\"meetingEventsVersion\":1}".utf8)) }
+                if request.url!.path.hasSuffix("changes") { return (200, [:], changes) }
+                #expect(request.url!.path == "/api/v1/vaults/\(fixture.vaultId.uuidString.lowercased())/meetings/\(meetingId.uuidString.lowercased())")
+                #expect(request.url!.query == nil)
+                return (200, [:], parent)
+            }
+            defer { ImageURLProtocol.remove(origin: fixture.origin) }
+            try await SyncWorker(dbQueue: fixture.queue, apiClient: client).synchronizeForTransfer(
+                vaultId: fixture.vaultId, connectionId: fixture.connectionId
+            )
+            try await fixture.queue.read { db throws in
+                #expect(try MeetingRecord.fetchOne(db, key: meetingId)?.name == "Parent")
+                #expect(try Int.fetchOne(db, sql: "SELECT confirmedRevision FROM sync_entity_state WHERE entity = 'summary' AND entityId = ?", arguments: [meetingId]) == 1)
+                #expect(try Bool.fetchOne(db, sql: "SELECT present FROM sync_content_state WHERE entity = 'summary' AND entityId = ?", arguments: [meetingId]) == true)
+                #expect(try Bool.fetchOne(db, sql: "SELECT complete FROM sync_content_state WHERE entity = 'summary' AND entityId = ?", arguments: [meetingId]) == false)
+            }
+        }
+
+        @Test
         func pendingParentDeletionDoesNotResurrectThroughDependencyFetch() async throws {
             let fixture = try Fixture()
             try await fixture.queue.write { db in

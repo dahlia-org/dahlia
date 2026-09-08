@@ -1044,9 +1044,9 @@ export class MeetingSyncService {
     return vaultId ? this.getProject(identity, vaultId, projectId) : null;
   }
 
-  async getMeetingById(identity: Identity, meetingId: string, content?: string) {
+  async getMeetingById(identity: Identity, meetingId: string) {
     const vaultId = await this.store.withIdentity(identity, (scoped) => scoped.resolveEntityVault("meeting", meetingId));
-    return vaultId ? this.getMeeting(identity, vaultId, meetingId, content) : null;
+    return vaultId ? this.getMeeting(identity, vaultId, meetingId) : null;
   }
 
   getProject(identity: Identity, vaultId: string, projectId: string) {
@@ -1104,12 +1104,8 @@ export class MeetingSyncService {
     return { createdAt: parsed.data[0], meetingId: parsed.data[1] };
   }
 
-  getMeeting(identity: Identity, vaultId: string, meetingId: string, content?: string) {
-    const mode = parseContentMode(content);
-    return this.store.withIdentity(identity, async (scoped) => {
-      const meeting = await scoped.getMeeting(vaultId, meetingId);
-      return meeting && mode ? (await metadataRecord({ entity: "meeting", id: meetingId, revision: meeting.revision ?? 0, record: { ...meeting } }, scoped, vaultId)).record : meeting;
-    });
+  getMeeting(identity: Identity, vaultId: string, meetingId: string) {
+    return this.store.withIdentity(identity, (scoped) => scoped.getMeeting(vaultId, meetingId));
   }
 
   async listTranscript(identity: Identity, vaultId: string, meetingId: string, cursor?: string) {
