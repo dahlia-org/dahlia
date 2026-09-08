@@ -363,7 +363,7 @@ actor CodexAppServerService {
             }
             let result = try await request(method: "model/list", params: .object(params))
             let response: ModelListResponse = try decode(result)
-            models.append(contentsOf: response.data.filter { !$0.hidden })
+            models.append(contentsOf: response.data.filter { !$0.hidden && $0.model != "codex-auto-review" })
             cursor = response.nextCursor
         } while cursor != nil
 

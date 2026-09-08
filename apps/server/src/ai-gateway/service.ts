@@ -9,7 +9,7 @@ import { CODEX_AUTO_REVIEW_ALIAS } from "./model-alias";
 import { modelList } from "./models";
 
 export { GatewayRequestError } from "./errors";
-export const LATEST_CODEX_CLIENT_VERSION = "0.149.1";
+export const LATEST_CODEX_CLIENT_VERSION = "0.153.4";
 
 export class GatewayService {
   private readonly backend?: AIGatewayBackend;

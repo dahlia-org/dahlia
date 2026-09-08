@@ -5,6 +5,7 @@ import { uuidV7 } from "../id";
 import type { GatewayModelList } from "../ai-gateway/backend";
 import type { AccountSettings, AccountSettingsPatch } from "../account-settings";
 import type { summaryJobResponse } from "../summary/service";
+import { CODEX_AUTO_REVIEW_ALIAS } from "../ai-gateway/model-alias";
 
 type Job = ReturnType<typeof summaryJobResponse>;
 const details = ["concise", "standard", "detailed", "eventSession"] as const;
@@ -35,7 +36,8 @@ export function ServerSummarySettings() {
     save({ summary: { methodSettings: { transcript } } });
   if (!methods.includes("transcript")) return null;
   const transcript = settings?.summary.methodSettings.transcript ?? { model: "gpt-5.4", reasoningEffort: "medium" as const, detail: "detailed" as const };
-  const selected = catalog.data?.data.find((model) => model.id === transcript.model || transcript.model.endsWith(`.${model.id}`));
+  const models = catalog.data?.data.filter((model) => model.id !== CODEX_AUTO_REVIEW_ALIAS) ?? [];
+  const selected = models.find((model) => model.id === transcript.model || transcript.model.endsWith(`.${model.id}`));
   const metadata = catalog.data?.models.find((model) => model.slug === selected?.id);
   const efforts = metadata?.supported_reasoning_levels.map(({ effort }) => effort) ?? [];
   return <section className="section-block">
@@ -46,7 +48,7 @@ export function ServerSummarySettings() {
         onChange={() => void save({ summary: { method: "transcript" } })}>
         {methods.map((method) => <option key={method} value={method}>{uiText("Transcript and images", "文字起こしと画像")}</option>)}
       </select></label>
-      <label>{uiText("Model", "モデル")}<select value={selected?.id ?? ""} disabled={catalog.loading || !catalog.data?.data.length}
+      <label>{uiText("Model", "モデル")}<select value={selected?.id ?? ""} disabled={catalog.loading || !models.length}
         onChange={(event) => {
           const model = catalog.data?.models.find((model) => model.slug === event.target.value);
           const supported = model?.supported_reasoning_levels.map(({ effort }) => effort) ?? [];
@@ -55,10 +57,10 @@ export function ServerSummarySettings() {
               : model?.default_reasoning_level ?? supported[0] ?? "none") as typeof transcript.reasoningEffort });
         }}>
         {!selected && <option value="" disabled>{uiText("Select an available model", "利用可能なモデルを選択")}</option>}
-        {catalog.data?.data.map((model) => <option key={model.id} value={model.id}>{model.display_name}</option>)}
+        {models.map((model) => <option key={model.id} value={model.id}>{model.display_name}</option>)}
       </select></label>
       {catalog.error && <p role="alert" className="error">{catalog.error.message}</p>}
-      {!catalog.loading && !catalog.data?.data.length && <p>{uiText("No models available", "利用可能なモデルがありません")}</p>}
+      {!catalog.loading && !models.length && <p>{uiText("No models available", "利用可能なモデルがありません")}</p>}
       <button onClick={catalog.reload} disabled={catalog.loading}>{uiText("Reload models", "モデル一覧を再取得")}</button>
       <label>{uiText("Reasoning effort", "推論強度")}<select value={efforts.includes(transcript.reasoningEffort) ? transcript.reasoningEffort : ""} disabled={!efforts.length}
         onChange={(event) => void saveTranscript({ reasoningEffort: event.target.value as typeof transcript.reasoningEffort })}>
