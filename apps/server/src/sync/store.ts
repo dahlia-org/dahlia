@@ -1125,12 +1125,13 @@ function createIdentityStore(
           }).from(schema.syncedVault)
             .where(eq(schema.syncedVault.vaultId, transaction.vaultId)).limit(1);
           if (existing?.revision === 0) {
-            await db.update(schema.syncedVault).set({
+            const [restored] = await db.update(schema.syncedVault).set({
               name: String(data.name),
               revision: 1,
               createdAt: data.createdAt as Date,
               updatedAt: now,
-            }).where(ownedVault(transaction.vaultId));
+            }).where(ownedVault(transaction.vaultId)).returning({ id: schema.syncedVault.vaultId });
+            if (!restored) throw new SyncTransactionError(404, "vault_not_found", [], operation.id);
           } else {
             if (existing) throw new SyncTransactionError(409, "revision_conflict", [{
               entity: "vault",

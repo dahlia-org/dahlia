@@ -9,7 +9,7 @@ import type { AppConfig } from "../src/config";
 import { connectAuthDatabase } from "../src/db/client";
 import * as schema from "../src/db/auth-schema";
 import { createPostgresMeetingSyncStore, SyncTransactionError } from "../src/sync/store";
-import type { IdentitySyncStore, SyncTransactionOperation } from "../src/sync/types";
+import type { IdentitySyncStore, SyncTransaction, SyncTransactionOperation } from "../src/sync/types";
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 const integration = describe.runIf(databaseUrl);
@@ -428,6 +428,57 @@ integration("PostgreSQL application store", () => {
         await resetVault(sync, vaultId);
       }).catch(() => undefined);
       await connection!.db.delete(schema.team).where(eq(schema.team.id, teamId));
+    }
+  });
+
+  it("rejects non-owner restoration of a revision-zero Vault without side effects", async () => {
+    const store = createPostgresAuthStore(connection!.db, "postgres", undefined, true);
+    const suffix = crypto.randomUUID();
+    const owner: Identity = { userId: `restore-owner-${suffix}`, workspaceId: `personal:restore-owner-${suffix}`, source: "header" };
+    const member: Identity = { userId: `restore-member-${suffix}`, workspaceId: `personal:restore-member-${suffix}`, source: "header" };
+    const vaultId = crypto.randomUUID();
+    const projectId = crypto.randomUUID();
+    const meetingId = crypto.randomUUID();
+    const id = crypto.randomUUID();
+    const now = new Date();
+    const restore: SyncTransaction = { schemaVersion: 2, id, vaultId, createdAt: now, requestHash: id, operations: [
+      { id: crypto.randomUUID(), entity: "vault", action: "create", entityId: vaultId,
+        baseRevision: null, data: { name: "Restored", createdAt: now } },
+      { id: crypto.randomUUID(), entity: "project", action: "create", entityId: projectId,
+        baseRevision: null, data: { parentProjectId: null, name: "Project", description: "", projectType: "internal", createdAt: now } },
+      { id: crypto.randomUUID(), entity: "meeting", action: "create", entityId: meetingId,
+        baseRevision: null, data: meetingData(null, now, "Meeting", "Meeting") },
+    ] };
+    try {
+      await store.ensureIdentityUser(owner);
+      await store.ensureIdentityUser(member);
+      await store.sync.withIdentity(owner, async (sync) => {
+        await createVault(sync, vaultId);
+        await commit(sync, vaultId, [{ id: crypto.randomUUID(), entity: "vault", action: "reset", entityId: vaultId,
+          baseRevision: 1, data: { preservePermissions: true } }]);
+      });
+      const before = await store.sync.withIdentity(owner, async (sync) => ({
+        vault: await sync.getVault(vaultId), cursor: await sync.latestChangeSequence(vaultId),
+      }));
+      // Without sharing RLS hides the existing Vault and rejects the duplicate insert.
+      await expect(store.sync.withIdentity(member, (sync) => sync.commitTransaction(restore))).rejects.toThrow();
+      await store.sync.withIdentity(owner, (sync) => sync.putMemberPermission(vaultId, "organization", "external"));
+      await expect(store.sync.withIdentity(member, (sync) => sync.commitTransaction(restore)))
+        .rejects.toMatchObject({ status: 404, code: "vault_not_found", conflicts: [] });
+      await store.sync.withIdentity(owner, async (sync) => {
+        expect(await sync.getVault(vaultId)).toEqual(before.vault);
+        expect(await sync.latestChangeSequence(vaultId)).toBe(before.cursor);
+        expect(await sync.listProjects(vaultId)).toEqual([]);
+        expect(await sync.getMeeting(vaultId, meetingId)).toBeNull();
+      });
+      expect(await store.sync.withIdentity(member, (sync) => sync.resolveTransaction(restore))).toBeNull();
+      const receipt = await store.sync.withIdentity(owner, (sync) => sync.commitTransaction(restore));
+      expect(await store.sync.withIdentity(owner, (sync) => sync.commitTransaction(restore))).toEqual(JSON.parse(JSON.stringify(receipt)));
+      expect(await store.sync.withIdentity(member, (sync) => sync.getMeeting(vaultId, meetingId))).toMatchObject({ name: "Meeting" });
+      await store.sync.withIdentity(owner, (sync) => sync.deleteMemberPermission(vaultId, "organization", "external"));
+      expect(await store.sync.withIdentity(member, (sync) => sync.getMeeting(vaultId, meetingId))).toBeNull();
+    } finally {
+      await store.sync.withIdentity(owner, (sync) => resetVault(sync, vaultId));
     }
   });
 

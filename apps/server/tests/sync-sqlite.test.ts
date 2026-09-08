@@ -1393,6 +1393,58 @@ describe("SQLite canonical sync", () => {
     await store.close?.();
   });
 
+  it.each(["node", "worker"])("rejects non-owner Vault restoration atomically through %s", async (runtime) => {
+    const { store, databasePath } = await setup();
+    const database = new DatabaseSync(databasePath);
+    try {
+      await createVault(store);
+      await commit(store, owner, transaction(freshId(), [{ id: freshId(), entity: "vault", action: "reset",
+        entityId: vaultId, baseRevision: 1, data: { preservePermissions: true } }]));
+      const app = createApp({ config: testConfig(databasePath), authStore: store });
+      const worker = createWorkerHandler(async () => app);
+      const fetchWorker = worker.fetch!.bind(worker) as unknown as (request: Request, env: Cloudflare.Env, context: ExecutionContext) => Promise<Response>;
+      const send = (body: unknown, user: Identity) => {
+        const request = new Request("http://localhost:5173/api/v1/transactions", { method: "POST",
+          headers: { ...headers(), "x-forwarded-user": user.userId, "x-forwarded-email": `${user.userId}@example.com` },
+          body: JSON.stringify(body) });
+        return runtime === "node" ? app.request(request) : fetchWorker(request, {} as Cloudflare.Env, {} as ExecutionContext);
+      };
+      const restore = () => wire([
+        { entity: "vault", action: "create", entityId: vaultId, baseRevision: null, data: { name: "Restored", createdAt: now } },
+        { entity: "project", action: "create", entityId: projectId, baseRevision: null, data: projectData("Restored project") },
+        { entity: "meeting", action: "create", entityId: meetingId, baseRevision: null, data: { ...meetingData(), projectId: null } },
+      ]);
+      const snapshot = () => ["vaults", "vault_permissions", "projects", "meetings", "meeting_events",
+        "sync_changes", "sync_vault_state", "transaction_receipts", "search_documents", "search_index_jobs"]
+        .map((table) => database.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all());
+      for (const shared of [false, true]) {
+        if (shared) await store.sync.withIdentity(owner, (sync) => sync.putMemberPermission(vaultId, "organization", "external"));
+        const before = snapshot();
+        const rejected = restore();
+        const response = await send(rejected, other);
+        expect(response.status).toBe(404);
+        expect(await response.json()).toMatchObject({ error: "vault_not_found", conflicts: [] });
+        expect(snapshot()).toEqual(before);
+        expect(await new MeetingSyncService(store.sync).resolveTransaction(other, JSON.parse(JSON.stringify(rejected))))
+          .toEqual({ id: rejected.id, status: "unknown" });
+      }
+      const restored = restore();
+      const response = await send(restored, owner);
+      expect(response.status).toBe(200);
+      const receipt = await response.json();
+      const after = snapshot();
+      expect(await (await send(restored, owner)).json()).toEqual(receipt);
+      expect(snapshot()).toEqual(after);
+      expect(await store.sync.withIdentity(other, (sync) => sync.getMeeting(vaultId, meetingId))).toMatchObject({ name: "Meeting" });
+      await store.sync.withIdentity(owner, (sync) => sync.deleteMemberPermission(vaultId, "organization", "external"));
+      expect(await store.sync.withIdentity(other, (sync) => sync.getMeeting(vaultId, meetingId))).toBeNull();
+      expect(await store.sync.withIdentity(owner, (sync) => sync.getVault(vaultId))).toMatchObject({ revision: 1, name: "Restored" });
+    } finally {
+      database.close();
+      await store.close?.();
+    }
+  });
+
   it("rejects destructive Vault resets from shared members", async () => {
     const { store } = await setup();
     await createVault(store);
