@@ -838,20 +838,20 @@ export function createApp(dependencies: AppDependencies) {
   app.get("/api/v1/models", async (context) => context.json(await gateway.models(context.req.raw)));
   app.post("/api/v1/responses", async (context) => gateway.responses(context.req.raw, context.get("identity")));
 
-  const methods = new Map<string, Set<string>>();
-  for (const route of app.routes) {
-    if (route.method === "ALL" || route.path.startsWith("/api/auth/") || (!route.path.startsWith("/api/") && !route.path.startsWith("/mcp/resources/"))) continue;
-    const allowed = methods.get(route.path) ?? new Set<string>();
-    allowed.add(route.method);
-    if (route.method === "GET") allowed.add("HEAD");
-    methods.set(route.path, allowed);
-  }
-
   const extensionStart = app.routes.length;
   for (const extension of extensions) extension.registerRoutes?.(app, services);
-  for (const route of app.routes.slice(extensionStart)) fallbackRoutes.add(route.method, route.path, "extension");
+  for (const route of app.routes.slice(extensionStart)) fallbackRoutes.add("ALL", route.path, "extension");
 
-  for (const [path, allowed] of methods) {
+  const methodRoutes = new TrieRouter<string>();
+  const methodPaths = new Set<string>();
+  for (const route of app.routes) {
+    if (route.method === "ALL" || route.path.startsWith("/api/auth/") || (!route.path.startsWith("/api/") && !route.path.startsWith("/mcp/resources/"))) continue;
+    methodRoutes.add("ALL", route.path, route.method);
+    if (route.method === "GET") methodRoutes.add("ALL", route.path, "HEAD");
+    methodPaths.add(route.path);
+  }
+
+  for (const path of methodPaths) {
     app.all(path, async (context) => {
       if ((!config.syncSharingEnabled && (path.includes("/permissions") || path.startsWith("/api/v1/organizations/")))
         || (path.startsWith("/api/sessions") && !auth)
@@ -860,6 +860,7 @@ export function createApp(dependencies: AppDependencies) {
       }
       if (path.startsWith("/mcp/resources/")) await identities.fromMcpResource(context.req.raw, MCP_READ_SCOPE);
       else if (path.startsWith("/api/v1/")) await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
+      const allowed = new Set(methodRoutes.match("ALL", context.req.path)[0].map(([method]) => method));
       return context.json({ error: "method_not_allowed" }, 405, { Allow: [...allowed].join(", ") });
     });
   }

@@ -45,7 +45,7 @@ OAuth access from Dahlia Desktop uses the single `all-apis` capability scope for
 
 ### HTTP conventions
 
-Dahlia-owned known API paths return `405` with `Allow` for unsupported methods; unknown paths return `404` after applicable authentication. Disabled features retain their existing non-disclosure behavior. Better Auth and extension routes keep their own contracts. Errors retain the machine-readable `error` code and transaction conflict details; HTTP preconditions use `412`, domain revision conflicts use `409`.
+Dahlia-owned and registered extension API paths return `405` with `Allow` for unsupported methods; matching route patterns contribute all their allowed methods. Unknown paths return `404` after applicable authentication. Disabled features retain their existing non-disclosure behavior. Better Auth and explicit extension fallbacks keep their own contracts. Errors retain the machine-readable `error` code and transaction conflict details; HTTP preconditions use `412`, domain revision conflicts use `409`.
 
 | Operation | Authentication | Success | Pagination / retry |
 | --- | --- | --- | --- |
