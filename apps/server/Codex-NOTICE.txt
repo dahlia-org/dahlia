@@ -1,12 +1,15 @@
-Dahlia Server includes modified catalog material from Codex CLI 0.149.1.
+Dahlia Server includes modified catalog material from Codex CLI 0.153.4.
 
 Source: https://github.com/openai/codex
-Release: rust-v0.149.1
-Commit: ff29a44391deccde0aba0f8390337d7f3c319ea4
+Release: rust-v0.153.4
+Commit: 3d2ee51ca2d5db578f328aa75e20aa22c0197c9a
 Sources: codex-rs/models-manager/models.json and codex-rs/models-manager/prompt.md
 
-The catalog copy omits fields that Codex 0.149.1 does not consume. Dahlia Server
-maps enabled model aliases onto this metadata at runtime.
+Dahlia's databricks-models.json contains selected runtime metadata derived from
+the Codex catalog, with Dahlia display names and without OpenAI-internal
+transport and lifecycle fields. The catalog is maintained directly, includes
+Databricks public IDs, and adds non-OpenAI models. GPT reasoning levels and
+defaults follow the referenced Codex release. The fallback prompt is derived from models-manager/prompt.md.
 
 OpenAI Codex
 Copyright 2025 OpenAI

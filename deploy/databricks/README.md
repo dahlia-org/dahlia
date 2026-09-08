@@ -78,7 +78,7 @@ The bundle creates `${catalog}.${ai_schema}` (default `dahlia.ai`) and sets `DAT
 | `gpt-5-6-sol` | `system.ai.gpt-5-6-sol` |
 | `gpt-5-6-terra` | `system.ai.gpt-5-6-terra` |
 | `kimi-k3` | `system.ai.kimi-k3` |
-| `deepseek-v4-pro` | `system.ai.deepseek-v4-pro-0813` |
+| `deepseek-v4-pro-0813` | `system.ai.deepseek-v4-pro-0813` |
 | `glm-5-3-flash` | `system.ai.glm-5-3-flash` |
 | `glm-5-3` | `system.ai.glm-5-3` |
 | `gemini-3-8-flash` | `system.ai.gemini-3-8-flash` |

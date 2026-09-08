@@ -44,6 +44,15 @@ import Foundation
         }
 
         @Test
+        func modelCatalogOmitsAutomaticReviewAlias() async throws {
+            let transport = TestCodexAppServerTransport(mode: .models, modelName: "codex-auto-review")
+            let service = makeTestCodexAppServerService(transportFactory: { transport })
+            #expect(try await service.models().isEmpty)
+            #expect(try await service.models(forceRefresh: false).isEmpty)
+            await service.shutdown()
+        }
+
+        @Test
         func bootstrapUsesStableInitializationAndChecksAccountWithoutRefreshingToken() async throws {
             let transport = TestCodexAppServerTransport(mode: .models)
             let service = makeTestCodexAppServerService(transportFactory: { transport })

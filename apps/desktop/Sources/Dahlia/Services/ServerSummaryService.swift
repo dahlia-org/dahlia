@@ -107,7 +107,8 @@ actor ServerSummaryService {
             maximumBytes: 4 * 1024 * 1024
         )
         let list = try JSONDecoder().decode(ModelList.self, from: data)
-        return list.data.compactMap { entry in list.models.first { $0.id == entry.id } }
+        return list.data.filter { $0.id != "codex-auto-review" }
+            .compactMap { entry in list.models.first { $0.id == entry.id } }
     }
 
     func status(_ target: Target) async throws -> Job? {

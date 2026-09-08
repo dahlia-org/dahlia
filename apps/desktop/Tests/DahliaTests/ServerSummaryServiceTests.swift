@@ -146,9 +146,11 @@ import DahliaRuntimeSupport
                     [:],
                     Data(
                         """
-                        {"data":[{"id":"available"}],"models":[
+                        {"data":[{"id":"available"},{"id":"codex-auto-review"}],"models":[
                           {"slug":"available","display_name":"Available",
                            "supported_reasoning_levels":[{"effort":"max"}],"default_reasoning_level":"max"},
+                          {"slug":"codex-auto-review","display_name":"Codex Auto Review",
+                           "supported_reasoning_levels":[{"effort":"medium"}],"default_reasoning_level":"medium"},
                           {"slug":"hidden","display_name":"Hidden","supported_reasoning_levels":[],"default_reasoning_level":null}
                         ]}
                         """

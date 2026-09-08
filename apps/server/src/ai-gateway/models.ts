@@ -1,5 +1,5 @@
-import codexFallback from "./codex-0.149.1-fallback.json";
-import codexCatalog from "./codex-0.149.1-models.json";
+import codexFallback from "./codex-0.153.4-fallback.json";
+import catalog from "./databricks-models.json";
 
 import type { GatewayModelList } from "./backend";
 import { CODEX_AUTO_REVIEW_ALIAS } from "./model-alias";
@@ -18,23 +18,13 @@ export interface CodexModelWire {
   model_messages?: { instructions_template?: string | null; [key: string]: unknown };
 }
 
-const bundledCodexModels = (codexCatalog as { models: CodexModelWire[] }).models;
-const modelDisplayNames = new Map([
-  ["gpt-6-astra", "GPT 6 Astra"],
-  ["gpt-5-6-sol", "GPT 5.6 Sol"],
-  ["gpt-5.6-sol", "GPT 5.6 Sol"],
-  ["gpt-5-6-terra", "GPT 5.6 Terra"],
-  ["gpt-5.6-terra", "GPT 5.6 Terra"],
-  ["gpt-5-6-luna", "GPT 5.6 Luna"],
-  ["gpt-5.6-luna", "GPT 5.6 Luna"],
-  ["kimi-k3", "Kimi K3"],
-  ["deepseek-v4-pro", "DeepSeek V4 Pro"],
-  ["deepseek-v4-pro-0813", "DeepSeek V4 Pro"],
-  ["glm-5-3-flash", "GLM 5.3 Flash"],
-  ["glm-5-3", "GLM 5.3"],
-  ["gemini-3-8-flash", "Gemini 3.8 Flash"],
-  ["gemini-3-7-flash", "Gemini 3.7 Flash"],
-]);
+interface ModelDefinition extends Partial<CodexModelWire> {
+  slug: string;
+}
+
+const modelDefinitions = new Map<string, ModelDefinition>(catalog.models.map((model) => [model.slug, model]));
+// Suppress Codex 0.153.4 built-ins omitted from Dahlia's catalog when the client merges /models.
+const omittedBuiltinModelSlugs = ["gpt-daybreak-blue-latest", "gpt-daybreak-red-latest", "gpt-5.4", "gpt-5.4-mini", "gpt-5.2"];
 const ossReasoningLevels = [
   { effort: "low", description: "Fast responses with lighter reasoning" },
   { effort: "high", description: "Greater reasoning depth for complex problems" },
@@ -59,20 +49,20 @@ export function modelList(entries: ModelInfo[]): GatewayModelList {
 
 function modelDisplayName(entry: ModelInfo): string {
   return entry.displayName?.trim()
-    || modelDisplayNames.get(entry.id)
     || catalogModel(entry.id)?.display_name
     || entry.id;
 }
 
 function codexModels(entries: ModelInfo[]): CodexModelWire[] {
-  const models = new Map(bundledCodexModels.map((model) => [
-    model.slug,
-    hiddenCodexModel(model.slug),
-  ]));
+  const models = new Map([...omittedBuiltinModelSlugs, ...modelDefinitions.keys()]
+    .filter(isCodexModel)
+    .map((id) => [id, hiddenCodexModel(id)]));
   entries.forEach((entry, priority) => {
-    if (!/^(gpt|glm|kimi|deepseek)-/.test(entry.id) && entry.id !== CODEX_AUTO_REVIEW_ALIAS) return;
-    const model = knownCodexModel(entry.id)
-      ?? ossCodexModel(entry.id);
+    if (!isCodexModel(entry.id) && !modelDefinitions.has(entry.id)) return;
+    const metadata = catalogModel(entry.id);
+    const model = metadata
+      ? { ...fallbackCodexModel(entry.id), ...metadata }
+      : ossCodexModel(entry.id);
     models.set(entry.id, {
       ...model,
       slug: entry.id,
@@ -87,49 +77,24 @@ function codexModels(entries: ModelInfo[]): CodexModelWire[] {
 
 function hiddenCodexModel(slug: string): CodexModelWire {
   const model = fallbackCodexModel(slug);
+  const metadata = catalogModel(slug);
   return {
     ...model,
+    display_name: modelDisplayName({ id: slug }),
+    default_reasoning_level: metadata?.default_reasoning_level ?? model.default_reasoning_level,
+    supported_reasoning_levels: metadata?.supported_reasoning_levels ?? model.supported_reasoning_levels,
     visibility: "hide",
     model_messages: { ...model.model_messages, instructions_template: "" },
   };
 }
 
-function catalogModel(value: string): CodexModelWire | undefined {
-  const normalized = value.trim().toLowerCase().replace(/^system\.ai\./, "");
-  return bundledCodexModels.find((model) =>
-    normalized === model.slug || normalized === model.slug.replaceAll(".", "-")
-  );
+function isCodexModel(id: string): boolean {
+  return /^(gpt|glm|kimi|deepseek)-/.test(id) || id === CODEX_AUTO_REVIEW_ALIAS;
 }
 
-function knownCodexModel(value: string): CodexModelWire | undefined {
-  const model = catalogModel(value);
-  if (!model) return undefined;
-  // Keep picker/runtime metadata without opting custom providers into OpenAI-internal transports.
-  return {
-    ...fallbackCodexModel(model.slug),
-    description: model.description,
-    default_reasoning_level: model.default_reasoning_level,
-    supported_reasoning_levels: model.supported_reasoning_levels,
-    shell_type: model.shell_type,
-    model_messages: model.model_messages,
-    include_skills_usage_instructions: model.include_skills_usage_instructions,
-    include_plugin_usage_instructions: model.include_plugin_usage_instructions,
-    include_apps_usage_instructions: model.include_apps_usage_instructions,
-    default_reasoning_summary: model.default_reasoning_summary,
-    support_verbosity: model.support_verbosity,
-    default_verbosity: model.default_verbosity,
-    apply_patch_tool_type: model.apply_patch_tool_type,
-    truncation_policy: model.truncation_policy,
-    supports_image_detail_original: model.supports_image_detail_original,
-    context_window: model.context_window,
-    max_context_window: model.max_context_window,
-    auto_compact_token_limit: model.auto_compact_token_limit,
-    comp_hash: model.comp_hash,
-    effective_context_window_percent: model.effective_context_window_percent,
-    input_modalities: model.input_modalities,
-    model_specialty: model.model_specialty,
-    multi_agent_version: model.multi_agent_version,
-  };
+function catalogModel(value: string): ModelDefinition | undefined {
+  const normalized = value.trim().toLowerCase().replace(/^system\.ai\./, "");
+  return modelDefinitions.get(normalized);
 }
 
 function ossCodexModel(slug: string): CodexModelWire {

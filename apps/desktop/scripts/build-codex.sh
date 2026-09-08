@@ -1,14 +1,14 @@
 #!/bin/bash
 set -euo pipefail
 
-CODEX_VERSION="0.149.1"
+CODEX_VERSION="0.153.4"
 TARGET="aarch64-apple-darwin"
 ASSET_NAME="codex-${TARGET}.tar.gz"
-ASSET_SHA256="ed60f475c6dda6044c2c00fd7f33273cc3f3f98900ccd1204bfdf2fe935f3405"
+ASSET_SHA256="8cf911ea676523bfb2121ec561848d2aba564890ad536db4d8a3353f2b9850b1"
 ARCHIVE_BINARY="codex-${TARGET}"
 DOWNLOAD_URL="https://github.com/openai/codex/releases/download/rust-v${CODEX_VERSION}/${ASSET_NAME}"
 CODE_MODE_HOST_ASSET_NAME="codex-code-mode-host-${TARGET}.tar.gz"
-CODE_MODE_HOST_ASSET_SHA256="aae1c0c9459700a2e897adadd647351140ae7933ad73bd8d3af6505c69a4f3fd"
+CODE_MODE_HOST_ASSET_SHA256="45a9b0fdf53b98b85a6bb91e175dd90e961328a7a14fb50a40902205199df1df"
 CODE_MODE_HOST_ARCHIVE_BINARY="codex-code-mode-host-${TARGET}"
 CODE_MODE_HOST_DOWNLOAD_URL="https://github.com/openai/codex/releases/download/rust-v${CODEX_VERSION}/${CODE_MODE_HOST_ASSET_NAME}"
 
