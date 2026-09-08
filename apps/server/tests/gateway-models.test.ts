@@ -35,6 +35,35 @@ describe("model display names", () => {
 });
 
 describe("Codex model availability", () => {
+  it("exposes Astra's five reasoning levels and low default", () => {
+    const model = modelList([{ id: "gpt-6-astra" }]).models.find((model) => model.slug === "gpt-6-astra");
+    expect(model).toMatchObject({ display_name: "GPT 6 Astra", default_reasoning_level: "low", visibility: "list" });
+    expect(model?.supported_reasoning_levels.map(({ effort }) => effort)).toEqual(["low", "medium", "high", "xhigh", "max"]);
+  });
+
+  it.each([
+    ["gpt-5.6-sol", "GPT 5.6 Sol", "medium"],
+    ["gpt-5.6-terra", "GPT 5.6 Terra", "medium"],
+    ["gpt-5.6-luna", "GPT 5.6 Luna", "medium"],
+    ["gpt-5.5", "GPT-5.5", "medium"],
+    ["gpt-5.4", "GPT-5.4", "medium"],
+    ["gpt-5.4-mini", "GPT-5.4-Mini", "medium"],
+    ["gpt-5.2", "GPT-5.2", "medium"],
+    ["gpt-future", "gpt-future", "medium"],
+  ])("preserves metadata for visible and hidden %s", (slug, displayName, defaultLevel) => {
+    const alias = slug.replaceAll(".", "-");
+    const list = modelList([{ id: alias }]);
+    for (const id of new Set([slug, alias])) {
+      const model = list.models.find((model) => model.slug === id);
+      expect(model).toMatchObject({ display_name: displayName, default_reasoning_level: defaultLevel,
+        visibility: id === alias ? "list" : "hide" });
+      const efforts = model?.supported_reasoning_levels.map(({ effort }) => effort);
+      expect(efforts).toContain(defaultLevel);
+      expect(efforts).not.toContain("ultra");
+      if (id !== alias) expect(model?.model_messages?.instructions_template).toBe("");
+    }
+  });
+
   it("keeps all standard models but only exposes supported families and the review alias to Codex", () => {
     const supported = ["gpt-5.6-luna", "gpt-future", "glm-5-3", "kimi-k3", "deepseek-v4-pro", "codex-auto-review"];
     const excluded = ["gemini-3-8-flash", "claude-opus", "custom", "gpt", "not-gpt-5", "system.ai.gpt-5-4-mini"];

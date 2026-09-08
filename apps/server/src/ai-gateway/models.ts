@@ -82,13 +82,24 @@ function codexModels(entries: ModelInfo[]): CodexModelWire[] {
       priority,
     });
   });
-  return [...models.values()];
+  return [...models.values()].map((model) => {
+    if (!model.slug.startsWith("gpt-")) return model;
+    return {
+      ...model,
+      default_reasoning_level: model.slug === "gpt-6-astra" ? "low" : "medium",
+      supported_reasoning_levels: model.supported_reasoning_levels.filter(({ effort }) => effort !== "ultra"),
+    };
+  });
 }
 
 function hiddenCodexModel(slug: string): CodexModelWire {
   const model = fallbackCodexModel(slug);
+  const metadata = catalogModel(slug);
   return {
     ...model,
+    display_name: modelDisplayName({ id: slug }),
+    default_reasoning_level: metadata?.default_reasoning_level ?? model.default_reasoning_level,
+    supported_reasoning_levels: metadata?.supported_reasoning_levels ?? model.supported_reasoning_levels,
     visibility: "hide",
     model_messages: { ...model.model_messages, instructions_template: "" },
   };
@@ -102,6 +113,12 @@ function catalogModel(value: string): CodexModelWire | undefined {
 }
 
 function knownCodexModel(value: string): CodexModelWire | undefined {
+  if (value === "gpt-6-astra") {
+    return {
+      ...fallbackCodexModel(value),
+      supported_reasoning_levels: catalogModel("gpt-5.6-sol")!.supported_reasoning_levels,
+    };
+  }
   const model = catalogModel(value);
   if (!model) return undefined;
   // Keep picker/runtime metadata without opting custom providers into OpenAI-internal transports.
@@ -136,7 +153,13 @@ function ossCodexModel(slug: string): CodexModelWire {
   return {
     ...fallbackCodexModel(slug),
     default_reasoning_level: "max",
-    supported_reasoning_levels: ossReasoningLevels,
+    supported_reasoning_levels: slug.startsWith("gpt-")
+      ? [
+        ossReasoningLevels[0],
+        { effort: "medium", description: "Balances speed and reasoning depth for everyday tasks" },
+        ...ossReasoningLevels.slice(1),
+      ]
+      : ossReasoningLevels,
   };
 }
 

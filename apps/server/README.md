@@ -247,6 +247,8 @@ The AI backend uses the OpenAI Responses-compatible contract and is independent 
 
 Model display names in both `data[].display_name` and `models[].display_name` use the first available value: a non-blank provider display name, an exact ID match in the internal display-name dictionary, the bundled Codex catalog name, or the original model ID. Unknown IDs are not reformatted. Display-name completion does not change model IDs or inference settings.
 
+`gpt-6-astra` supports `low`, `medium`, `high`, `xhigh`, and `max`, with `low` as its default. All other GPT models default to `medium`; GPT models without pinned metadata also include `medium` in their fallback reasoning levels. GPT models omit `ultra` from their supported reasoning levels, including hidden entries and hyphenated provider IDs. Hidden bundled entries retain their display names; their visibility remains `hide` and their instruction templates remain empty.
+
 The first authenticated user becomes the initial administrator. Administrator roles are stored in Better Auth's `auth.user.role`; additional registered users can be promoted or demoted under `/admin/members`.
 
 OpenAI or another OpenAI-compatible provider:
