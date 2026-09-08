@@ -55,7 +55,9 @@ describe.runIf(databaseUrl)("PostgreSQL retention", () => {
       expect(second.cursor).toBe(recreated.cursor);
       const items = [...first.items, ...second.items];
       expect(items.filter(({ entity, action }) => entity === "meeting_file" && action === "delete")).toHaveLength(105);
-      expect(items.find(({ entity }) => entity === "summary")).toMatchObject({ record: { document: null } });
+      const summary = items.find(({ entity }) => entity === "summary");
+      expect(summary).toMatchObject({ record: { contentOmitted: true, contentPresent: false } });
+      expect(summary?.record).not.toHaveProperty("document");
       expect(items.find(({ entity }) => entity === "transcript")).toMatchObject({ revision: 0 });
     } finally {
       await raw.query("ROLLBACK");
