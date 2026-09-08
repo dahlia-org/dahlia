@@ -408,43 +408,6 @@ enum RemoteChangeApplier {
         }
     }
 
-    static func finishTranscript(
-        meetingId: UUID,
-        revision: Int,
-        cursor: String?,
-        vaultId: UUID,
-        expectedConnectionId: UUID,
-        dbQueue: DatabaseQueue,
-        expectedMutationGeneration: Int64? = nil
-    ) async throws -> Bool {
-        try await withCurrentAssociation(
-            vaultId: vaultId,
-            expectedConnectionId: expectedConnectionId,
-            dbQueue: dbQueue,
-            expectedMutationGeneration: expectedMutationGeneration
-        ) { db in
-            guard try !SyncTransactionQueue.hasPending(vaultId: vaultId, in: db), try !hasActiveRecording(in: db) else { return false }
-            try installStagedTranscript(meetingId: meetingId, in: db)
-            try db.execute(
-                sql: """
-                INSERT INTO sync_entity_state(vaultId, entity, entityId, confirmedRevision)
-                VALUES (?, 'transcript', ?, ?)
-                ON CONFLICT(vaultId, entity, entityId) DO UPDATE SET
-                    confirmedRevision = excluded.confirmedRevision
-                """,
-                arguments: [vaultId, meetingId, revision]
-            )
-            if let cursor {
-                try db.execute(sql: "UPDATE vaults SET syncPullCursor = ? WHERE id = ?", arguments: [cursor, vaultId])
-            }
-            try db.execute(
-                sql: "DELETE FROM sync_remote_transcript_items WHERE meetingId = ?",
-                arguments: [meetingId]
-            )
-            return true
-        }
-    }
-
     static func installStagedTranscript(meetingId: UUID, in db: Database) throws {
         try db.execute(
             sql: """

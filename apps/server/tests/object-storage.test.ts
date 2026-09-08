@@ -51,6 +51,8 @@ describe("R2 object storage", () => {
     expect(response.headers.get("location")).toBeNull();
     expect(response.headers.get("content-range")).toBe("bytes 1-3/5");
     expect(await response.text()).toBe("ell");
+    const getObject = vi.spyOn(bucket, "get");
+    const headObject = vi.spyOn(bucket, "head");
     const head = await storage.read(KEY, "HEAD", new Request("https://dahlia.example", {
       headers: { range: "bytes=1-3" },
     }));
@@ -58,6 +60,8 @@ describe("R2 object storage", () => {
     expect(head.headers.get("content-range")).toBeNull();
     expect(head.headers.get("content-length")).toBe("5");
     expect(await head.text()).toBe("");
+    expect(getObject).not.toHaveBeenCalled();
+    expect(headObject).toHaveBeenCalledExactlyOnceWith(KEY);
   });
 });
 
@@ -74,6 +78,11 @@ describe("local object storage", () => {
       expect(response.status).toBe(206);
       expect(response.headers.get("content-range")).toBe("bytes 1-3/5");
       expect(await response.text()).toBe("orl");
+      const head = await storage.read(KEY, "HEAD", new Request("https://dahlia.example", { headers: { range: "bytes=1-3" } }));
+      expect(head.status).toBe(200);
+      expect(head.headers.get("content-length")).toBe("5");
+      expect(head.headers.has("content-range")).toBe(false);
+      expect(head.body).toBeNull();
       const stale = await storage.read(KEY, "GET", new Request("https://dahlia.example", {
         headers: { "if-unmodified-since": "Thu, 01 Jan 1970 00:00:00 GMT" },
       }));
@@ -99,6 +108,7 @@ describe("S3-compatible object storage", () => {
       const request = input as Request;
       calls.push(request);
       if (request.method === "PUT") return new Response(null, { status: 200 });
+      if (request.method === "HEAD") return new Response(null, { headers: { "content-length": "5" } });
       return new Response("ell", {
         status: 206,
         headers: { "content-length": "3", "content-range": "bytes 1-3/5" },
@@ -125,6 +135,13 @@ describe("S3-compatible object storage", () => {
     expect(JSON.stringify([...response.headers])).not.toContain("never-return-this-secret");
     expect(await response.text()).toBe("ell");
 
+    calls.length = 0;
+    const head = await storage.read(KEY, "HEAD", new Request("https://dahlia.example", { headers: { range: "bytes=1-3" } }));
+    expect(await head.text()).toBe("");
+    expect(head.headers.get("content-length")).toBe("5");
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.method).toBe("HEAD");
+    expect(calls[0]!.headers.has("range")).toBe(false);
     const awsCalls: Request[] = [];
     const aws = new S3ObjectStorage({
       accessKeyId: "access-key",
@@ -150,6 +167,7 @@ describe("Databricks Volume object storage", () => {
       if (url.endsWith("/oidc/v1/token")) return Response.json({ access_token: "token", expires_in: 3600 });
       if (url.includes("/api/2.0/fs/directories")) return new Response(null, { status: 204 });
       if (init.method === "PUT") return new Response(null, { status: 204 });
+      if (init.method === "HEAD") return new Response(null, { headers: { "content-length": "7" } });
       return new Response("partial", {
         status: 206,
         headers: { "content-range": "bytes 0-6/7", "content-length": "7" },
@@ -176,6 +194,13 @@ describe("Databricks Volume object storage", () => {
     expect(calls[3]!.init.signal).toBe(request.signal);
     expect(response.status).toBe(206);
     expect(await response.text()).toBe("partial");
+    calls.length = 0;
+    const head = await storage.read(key, "HEAD", request);
+    expect(await head.text()).toBe("");
+    expect(head.headers.get("content-length")).toBe("7");
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.init.method).toBe("HEAD");
+    expect(new Headers(calls[0]!.init.headers).has("range")).toBe(false);
   });
 
   it("maps missing files and upstream failures without relaying error bodies", async () => {

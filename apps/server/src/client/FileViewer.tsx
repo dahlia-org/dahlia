@@ -4,11 +4,12 @@ import { useLiveJSON } from "./live-data";
 
 interface FileInfo {
   id: string;
+  revision: number;
   name: string;
   content_type: string;
   size?: number;
   variants: { thumb_1568?: string };
-  metadata: { caption?: string | null; ocr_text?: string | null; width?: number; height?: number };
+  metadata: { caption: string | null; ocr_text: string | null; width?: number; height?: number };
 }
 
 function ViewerIcon({ path }: { path: string }) {

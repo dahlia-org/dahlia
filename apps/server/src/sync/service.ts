@@ -33,7 +33,7 @@ import type {
 import { decodeSyncCursor, encodeSyncCursor, SYNC_SNAPSHOT_ENTITIES, SyncTransactionError } from "./store";
 import { fileMetadataSchema, fileUploadQuerySchema, filePatchSchema, fileResponse, fileStorageKey, fileVariantKey, imageContentTypes, type FileRecord } from "../files/model";
 import { SCREENSHOT_VARIANTS, screenshotVariantKey, type ScreenshotTransformer, type ScreenshotVariant } from "./screenshot-variants";
-import { fileTextMetadata, metadataRecord, parseContentMode, parseTextEntity, readTextContent, TEXT_CONTENT_VERSION } from "./text-content";
+import { metadataRecord, parseTextEntity, readTextContent, TEXT_CONTENT_VERSION } from "./text-content";
 
 const uuidSchema = z.uuid().transform((value) => value.toLowerCase());
 const dateSchema = z.iso.datetime().transform((value) => new Date(value));
@@ -417,8 +417,7 @@ export class MeetingSyncService {
     }
   }
 
-  async listChanges(identity: Identity, vaultId: string, cursor?: string, highWaterCursor?: string, content?: string) {
-    const contentMode = parseContentMode(content);
+  async listChanges(identity: Identity, vaultId: string, cursor?: string, highWaterCursor?: string) {
     const after = cursor ? decodeSyncCursor(cursor) : 0;
     const suppliedHighWater = highWaterCursor ? decodeSyncCursor(highWaterCursor) : undefined;
     if (suppliedHighWater !== undefined && suppliedHighWater < after) {
@@ -429,10 +428,8 @@ export class MeetingSyncService {
       await scoped.expireRecordingUploads(vaultId, new Date(Date.now() - 86_400_000));
       const highWater = suppliedHighWater ?? await scoped.latestChangeSequence(vaultId);
       const rows = await scoped.listChanges(vaultId, after, highWater, SYNC_CHANGE_PAGE_SIZE + 1);
-      if (contentMode) {
-        for (const row of rows) {
-          row.record = (await metadataRecord({ entity: row.entity, id: row.entityId, revision: row.revision, record: row.record }, scoped, vaultId)).record;
-        }
+      for (const row of rows) {
+        row.record = (await metadataRecord({ entity: row.entity, id: row.entityId, revision: row.revision, record: row.record }, scoped, vaultId)).record;
       }
       return { rows, highWater };
     });
@@ -444,12 +441,10 @@ export class MeetingSyncService {
       cursor: encodeSyncCursor(rows.length > SYNC_CHANGE_PAGE_SIZE ? last!.sequence : highWater),
       highWaterCursor: encodeSyncCursor(highWater),
       hasMore: rows.length > SYNC_CHANGE_PAGE_SIZE,
-      ...(contentMode ? { contentMode } : {}),
     };
   }
 
-  async listSnapshot(identity: Identity, vaultId: string, cursor?: string, startCursor?: string, content?: string) {
-    const contentMode = parseContentMode(content);
+  async listSnapshot(identity: Identity, vaultId: string, cursor?: string, startCursor?: string) {
     const position = cursor ? z.tuple([z.enum(SYNC_SNAPSHOT_ENTITIES), uuidSchema]).safeParse(cursor.split(",")) : undefined;
     if ((position && !position.success) || (cursor && !startCursor)) {
       throw new SyncTransactionError(400, "invalid_snapshot_cursor");
@@ -469,10 +464,9 @@ export class MeetingSyncService {
       );
       const last = items.at(-1);
       return {
-        items: contentMode ? await Promise.all(items.map((item) => metadataRecord(item, scoped, vaultId))) : items,
+        items: await Promise.all(items.map((item) => metadataRecord(item, scoped, vaultId))),
         startCursor: encodeSyncCursor(start),
         nextCursor: hasMore && last ? `${last.entity},${last.id}` : null,
-        ...(contentMode ? { contentMode } : {}),
       };
     });
   }
@@ -853,12 +847,11 @@ export class MeetingSyncService {
     return this.fileMetadata(record.record as ReturnType<typeof fileResponse>);
   }
 
-  async getFile(identity: Identity, fileId: string, content?: string) {
-    const mode = parseContentMode(content);
+  async getFile(identity: Identity, fileId: string) {
     const file = await this.store.withIdentity(identity, (scoped) => scoped.getFile(fileId, true));
     if (!file) throw new RequestError(404, "file_not_found");
     const record = this.fileMetadata(fileResponse(file));
-    return mode ? fileTextMetadata(record) : record;
+    return { ...record, metadata: { ...record.metadata, ocr_text: record.metadata.ocr_text ?? null, caption: record.metadata.caption ?? null } };
   }
 
   private fileMetadata(file: ReturnType<typeof fileResponse>) {

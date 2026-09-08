@@ -79,7 +79,6 @@ describe("desktop-style meeting layout", () => {
         });
         const html = render();
         expect(query).toHaveBeenCalledWith("/api/v1/vaults/v1/meetings/m1");
-        expect(query).not.toHaveBeenCalledWith("/api/v1/vaults/v1/meetings/m1?content=metadata-v1");
         expect(query).toHaveBeenCalledWith("/api/v1/vaults/v1/meetings/m1/summary/latest");
         expect(html.includes("<h1>")).toBe(ready === "both");
         expect(html.includes("Planning")).toBe(ready === "both");
@@ -237,8 +236,9 @@ describe("dashboard navigation", () => {
     const query = vi.spyOn(liveData, "useLiveJSON");
     try {
       for (const contentType of ["image/png", "image/tiff", "text/html", "image/svg+xml"]) {
-        query.mockReturnValue({ data: { id: "f1", name: "Example", content_type: contentType, metadata: {}, variants: { thumb_1568: "/preview" } }, error: undefined, loading: false, reload: vi.fn() });
+        query.mockReturnValue({ data: { id: "f1", revision: 2, name: "Example", content_type: contentType, metadata: { ocr_text: "Detected text", caption: "Image caption" }, variants: { thumb_1568: "/preview" } }, error: undefined, loading: false, reload: vi.fn() });
         const html = renderToStaticMarkup(createElement(FileViewer, { fileId: "f1", separateTab: true }));
+        expect(query).toHaveBeenCalledWith("/api/v1/files/f1/metadata");
         expect(html).toContain('aria-label="Image information" aria-expanded="false"');
         expect(html).toContain('aria-label="Copy image"');
         expect(html).toContain('aria-label="Zoom out"');

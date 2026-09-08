@@ -114,7 +114,6 @@ struct SyncChangePage: Decodable {
     let cursor: String
     let highWaterCursor: String
     let hasMore: Bool
-    var contentMode: String?
 }
 
 struct SyncResetSnapshot {
@@ -205,7 +204,6 @@ private struct SyncTarget: Sendable {
 
 actor SyncWorker {
     private static let transcriptChunkSize = 500
-    private static let remoteTranscriptWriteBatchSize = 500
     private static let transcriptChunkMaximumBytes = 6 * 1024 * 1024
     private static let transcriptPatchItemLimit = 50000
     private static let transcriptPatchMaximumChunks = 100
@@ -689,7 +687,7 @@ actor SyncWorker {
                 connectionId: target.connectionId
             )
             let capabilities = try decode(ServerCapabilities.self, from: data)
-            guard capabilities.syncVersion == 1 || capabilities.syncVersion == 2 else {
+            guard capabilities.syncVersion == 3 else {
                 throw SyncHTTPError(status: 426, body: Data())
             }
             let meetingEventsVersion = capabilities.meetingEventsVersion == 1 ? 1 : 0
@@ -812,7 +810,7 @@ actor SyncWorker {
             try Task.checkCancellation()
             var components = URLComponents()
             components.path = "/api/v1/vaults/\(target.vaultId.lowercase)/snapshot"
-            components.queryItems = [URLQueryItem(name: "content", value: "metadata-v1")]
+            components.queryItems = []
             if let position { components.queryItems?.append(URLQueryItem(name: "cursor", value: position)) }
             if let startCursor { components.queryItems?.append(URLQueryItem(name: "startCursor", value: startCursor)) }
             guard let path = components.string else { throw URLError(.badURL) }
@@ -820,7 +818,6 @@ actor SyncWorker {
                 SyncSnapshotPage.self,
                 from: sendData(request(origin: target.origin, path: path, method: "GET"), connectionId: target.connectionId)
             )
-            guard page.contentMode == "metadata-v1" else { throw SyncHTTPError(status: 426, body: Data()) }
             if let startCursor, startCursor != page.startCursor { throw SyncTransactionQueueError.invalidReceipt }
             try await staged.merge(page.items.map {
                 SyncChangePage.Change(sequence: 0, entity: $0.entity, entityId: $0.id, action: "upsert", revision: $0.revision, record: $0.record)
@@ -945,7 +942,7 @@ actor SyncWorker {
                 continue
             }
             let data = try await sendData(
-                request(origin: target.origin, path: "api/v1/files/\(fileId.lowercase)/metadata?content=metadata-v1", method: "GET"),
+                request(origin: target.origin, path: "api/v1/files/\(fileId.lowercase)/metadata", method: "GET"),
                 connectionId: target.connectionId
             )
             struct Header: Decodable { let id: UUID
@@ -954,13 +951,19 @@ actor SyncWorker {
             }
             let header = try SyncJSON.decoder.decode(Header.self, from: data)
             guard header.id == fileId, header.vaultId == target.vaultId else { throw SyncTransactionQueueError.invalidReceipt }
-            try parentFiles.append(.init(
+            var payload = try SyncJSON.decoder.decode(SyncCanonicalPayload.self, from: data)
+            // Dependency reconciliation observes metadata; the body provider owns text completion.
+            payload.contentOmitted = true
+            payload.contentPresent = true
+            payload.metadata?.ocrText = nil
+            payload.metadata?.caption = nil
+            parentFiles.append(.init(
                 sequence: 0,
                 entity: .file,
                 entityId: fileId,
                 action: "upsert",
                 revision: header.revision,
-                record: SyncJSON.decoder.decode(SyncCanonicalPayload.self, from: data)
+                record: payload
             ))
         }
         guard try await reconcilingProjects(in: parentMeetings + changes, target: target, incrementalContext: incrementalContext) != nil
@@ -1074,7 +1077,6 @@ actor SyncWorker {
         var components = URLComponents()
         components.path = "/api/v1/vaults/\(target.vaultId.lowercase)/changes"
         components.queryItems = [
-            URLQueryItem(name: "content", value: "metadata-v1"),
             cursor.map { URLQueryItem(name: "cursor", value: $0) },
             highWaterCursor.map { URLQueryItem(name: "highWaterCursor", value: $0) },
         ].compactMap(\.self)
@@ -1083,9 +1085,7 @@ actor SyncWorker {
             request(origin: target.origin, path: path, method: "GET"),
             connectionId: target.connectionId
         )
-        let page = try SyncJSON.decoder.decode(SyncChangePage.self, from: data)
-        guard page.contentMode == "metadata-v1" else { throw SyncHTTPError(status: 426, body: Data()) }
-        return page
+        return try SyncJSON.decoder.decode(SyncChangePage.self, from: data)
     }
 
     private func applyIncrementalPage(_ changes: [SyncChangePage.Change], target: SyncTarget) async throws -> RemoteChangePolicy.Result {
@@ -1160,17 +1160,6 @@ actor SyncWorker {
                    ) { return false }
                 continue
             }
-            if change.entity == .transcript, change.action == "upsert", change.record?.contentOmitted != true {
-                guard try await applyTranscriptChange(
-                    change,
-                    cursor: appliedCursor,
-                    target: target,
-                    expectedMutationGeneration: expectedMutationGeneration
-                ) else {
-                    return false
-                }
-                continue
-            }
             guard try await RemoteChangeApplier.apply(
                 [change],
                 screenshots: [:],
@@ -1183,60 +1172,6 @@ actor SyncWorker {
             ) else { return false }
         }
         return true
-    }
-
-    private func applyTranscriptChange(
-        _ change: SyncChangePage.Change,
-        cursor appliedCursor: String?,
-        target: SyncTarget,
-        expectedMutationGeneration: Int64? = nil
-    ) async throws -> Bool {
-        guard let revision = change.revision,
-              try await RemoteChangeApplier.beginTranscript(
-                  meetingId: change.entityId,
-                  vaultId: target.vaultId,
-                  expectedConnectionId: target.connectionId,
-                  dbQueue: dbQueue,
-                  expectedMutationGeneration: expectedMutationGeneration
-              )
-        else { return false }
-
-        var cursor: String?
-        repeat {
-            var components = URLComponents()
-            components.path = "/api/v1/vaults/\(target.vaultId.lowercase)/meetings/\(change.entityId.lowercase)/transcript"
-            if let cursor { components.queryItems = [URLQueryItem(name: "cursor", value: cursor)] }
-            guard let path = components.string else { throw URLError(.badURL) }
-            let page = try await SyncJSON.decoder.decode(
-                SyncTranscriptPage.self,
-                from: sendData(
-                    request(origin: target.origin, path: path, method: "GET"),
-                    connectionId: target.connectionId
-                )
-            )
-            for offset in stride(from: 0, to: page.items.count, by: Self.remoteTranscriptWriteBatchSize) {
-                let end = min(offset + Self.remoteTranscriptWriteBatchSize, page.items.count)
-                guard try await RemoteChangeApplier.applyTranscriptPage(
-                    Array(page.items[offset ..< end]),
-                    meetingId: change.entityId,
-                    vaultId: target.vaultId,
-                    expectedConnectionId: target.connectionId,
-                    dbQueue: dbQueue,
-                    expectedMutationGeneration: expectedMutationGeneration
-                ) else { return false }
-            }
-            cursor = page.nextCursor
-        } while cursor != nil
-
-        return try await RemoteChangeApplier.finishTranscript(
-            meetingId: change.entityId,
-            revision: revision,
-            cursor: appliedCursor,
-            vaultId: target.vaultId,
-            expectedConnectionId: target.connectionId,
-            dbQueue: dbQueue,
-            expectedMutationGeneration: expectedMutationGeneration
-        )
     }
 
     static func initialSnapshotChanges(_ changes: [SyncChangePage.Change]) -> [SyncChangePage.Change] {

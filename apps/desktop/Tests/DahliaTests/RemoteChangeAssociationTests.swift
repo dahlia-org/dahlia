@@ -215,10 +215,6 @@
                 [transcript], meetingId: meeting.id, vaultId: vault.id,
                 expectedConnectionId: oldConnectionId, dbQueue: database.dbQueue
             ))
-            #expect(try await !RemoteChangeApplier.finishTranscript(
-                meetingId: meeting.id, revision: 2, cursor: "late-transcript-cursor", vaultId: vault.id,
-                expectedConnectionId: oldConnectionId, dbQueue: database.dbQueue
-            ))
             #expect(try await !RemoteChangeApplier.finishReset(
                 SyncResetSnapshot(canonicalChanges: []), cursor: "late-reset-cursor", vaultId: vault.id,
                 expectedConnectionId: oldConnectionId, dbQueue: database.dbQueue
