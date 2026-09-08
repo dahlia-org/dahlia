@@ -8,8 +8,12 @@ export function testStore(overrides: Partial<AuthStore> = {}): AuthStore {
     accountSettings: {
       get: (userId) => Promise.resolve(settings.get(userId) ?? null),
       update: (userId, patch, initialize) => {
+        const current = settings.get(userId) ?? DEFAULT_ACCOUNT_SETTINGS;
         const value = initialize && settings.has(userId) ? settings.get(userId)!
-          : { ...DEFAULT_ACCOUNT_SETTINGS, ...settings.get(userId), ...patch };
+          : { ...current, ...patch, summary: {
+            method: patch.summary?.method ?? current.summary.method,
+            methodSettings: { transcript: { ...current.summary.methodSettings.transcript, ...patch.summary?.methodSettings?.transcript } },
+          } };
         settings.set(userId, value);
         return Promise.resolve(value);
       },

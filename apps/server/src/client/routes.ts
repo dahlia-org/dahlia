@@ -71,7 +71,7 @@ export function resolveDashboardRoute(
   const vault = path.match(/^\/vaults\/([^/]+)$/);
   if (vault) return capabilities.sync ? { page: "vault", vaultId: vault[1] } : { redirect: "/dashboard" };
   if (path === "/dashboard/settings") {
-    return capabilities.sessions ? { page: "settings" } : { redirect: "/dashboard" };
+    return { page: "settings" };
   }
   if (path === "/admin") return { redirect: capabilities.admin ? "/admin/members" : "/dashboard" };
   if (path === "/admin/models") {

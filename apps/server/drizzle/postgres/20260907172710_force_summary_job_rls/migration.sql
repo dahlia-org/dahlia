@@ -1,0 +1,1 @@
+ALTER TABLE "app"."summary_jobs" FORCE ROW LEVEL SECURITY;

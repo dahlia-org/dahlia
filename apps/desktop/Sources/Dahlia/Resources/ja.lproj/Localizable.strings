@@ -1699,3 +1699,22 @@
 "search.server.pendingProjects" = "この端末の未同期プロジェクト";
 "search.server.kind" = "結果の種類";
 "search.server.allKinds" = "すべての種類";
+"serverSummaryMethod" = "要約方法";
+
+"serverSummaryTranscript" = "文字起こしと画像";
+
+"serverSummaryDescription" = "サーバーで生成します。画面を閉じても処理は続きます。エクスポートは生成後に個別に行います。";
+
+"serverSummaryUnavailable" = "このサーバーでは要約生成を利用できません。";
+
+"serverSummarySyncPending" = "同期が完了していません。同期状態を確認して再試行してください。";
+
+"serverSummaryFailed" = "サーバーでの要約生成に失敗しました。既存の要約は保持されています。再試行できます。";
+
+"serverSummaryInputChanged" = "生成中に入力が更新されました。文字起こし・画像処理の完了後に再試行してください。";
+"serverSummaryModelListFailed" = "モデル一覧を取得できません。再試行してください。";
+"serverSummaryChooseModel" = "利用可能なモデルを選択";
+"serverSummaryNoModels" = "利用可能なモデルがありません";
+"serverSummaryReloadModels" = "モデル一覧を再取得";
+
+"serverSummaryAccountDefault" = "アカウント設定";

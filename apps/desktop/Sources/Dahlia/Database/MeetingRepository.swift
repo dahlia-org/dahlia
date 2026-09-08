@@ -749,36 +749,42 @@ final class MeetingRepository {
                 .filter(Column("meetingId") == meetingId)
                 .deleteAll(db)
 
-            let tagNames = tags.filter { !$0.isEmpty }
-            if !tagNames.isEmpty {
-                let existingTags = try TagRecord
-                    .filter(tagNames.contains(Column("name")))
-                    .fetchAll(db)
-                let existingByName = Dictionary(uniqueKeysWithValues: existingTags.compactMap { tag in
-                    tag.id.map { (tag.name, $0) }
-                })
+            try Self.mergeGeneratedSummaryTags(tags, meetingId: meetingId, recordEvents: true, in: db)
+        }
+    }
 
-                for name in tagNames {
-                    let tagId: Int64
-                    if let existingId = existingByName[name] {
-                        tagId = existingId
-                    } else {
-                        let newTag = TagRecord(
-                            name: name,
-                            colorHex: Self.generatedSummaryTagColorHex,
-                            createdAt: Date()
-                        )
-                        try newTag.insert(db)
-                        tagId = db.lastInsertedRowID
-                    }
+    nonisolated static func mergeGeneratedSummaryTags(
+        _ tags: [String], meetingId: UUID, recordEvents: Bool, in db: Database
+    ) throws {
+        let tagNames = Array(Set(tags.filter { !$0.isEmpty }))
+        if !tagNames.isEmpty {
+            let existingTags = try TagRecord
+                .filter(tagNames.contains(Column("name")))
+                .fetchAll(db)
+            let existingByName = Dictionary(uniqueKeysWithValues: existingTags.compactMap { tag in
+                tag.id.map { (tag.name, $0) }
+            })
 
-                    try db.execute(
-                        sql: "INSERT OR IGNORE INTO meeting_tags (meetingId, tagId) VALUES (?, ?)",
-                        arguments: [meetingId, tagId]
+            for name in tagNames {
+                let tagId: Int64
+                if let existingId = existingByName[name] {
+                    tagId = existingId
+                } else {
+                    let newTag = TagRecord(
+                        name: name,
+                        colorHex: Self.generatedSummaryTagColorHex,
+                        createdAt: Date()
                     )
-                    if db.changesCount > 0 {
-                        try MeetingEventRecorder.record(.tagAdded, meetingId: meetingId, relatedId: String(tagId), in: db)
-                    }
+                    try newTag.insert(db)
+                    tagId = db.lastInsertedRowID
+                }
+
+                try db.execute(
+                    sql: "INSERT OR IGNORE INTO meeting_tags (meetingId, tagId) VALUES (?, ?)",
+                    arguments: [meetingId, tagId]
+                )
+                if recordEvents, db.changesCount > 0 {
+                    try MeetingEventRecorder.record(.tagAdded, meetingId: meetingId, relatedId: String(tagId), in: db)
                 }
             }
         }

@@ -13,6 +13,9 @@ final class ServerAccountSettingsModel {
         var isSaving = false
         var isAvailable = false
         var errorMessage: String?
+        var summaryMethods: [String] = []
+        var summaryModels: [ServerSummaryService.Model] = []
+        var modelErrorMessage: String?
         var canEdit: Bool { settings != nil && isAvailable && !isLoading && !isSaving }
     }
 
@@ -120,7 +123,25 @@ final class ServerAccountSettingsModel {
                     )
                 }
                 guard let self, self.generations[connectionID] == generation, !Task.isCancelled else { return }
-                self.states[connectionID] = State(settings: settings, isAvailable: true)
+                let methods = await (try? ServerSummaryService(client: client).methods(connectionID: connectionID, origin: connection.origin)) ?? []
+                guard self.generations[connectionID] == generation, !Task.isCancelled else { return }
+                var models: [ServerSummaryService.Model] = []
+                var modelError: String?
+                if !methods.isEmpty {
+                    do {
+                        models = try await ServerSummaryService(client: client).models(connectionID: connectionID, origin: connection.origin)
+                    } catch {
+                        modelError = L10n.serverSummaryModelListFailed
+                    }
+                }
+                guard self.generations[connectionID] == generation, !Task.isCancelled else { return }
+                self.states[connectionID] = State(
+                    settings: settings,
+                    isAvailable: true,
+                    summaryMethods: methods,
+                    summaryModels: models,
+                    modelErrorMessage: modelError
+                )
                 self.tasks[connectionID] = nil
             } catch {
                 self?.failed(error, connectionID: connectionID, generation: generation)
@@ -142,7 +163,13 @@ final class ServerAccountSettingsModel {
             do {
                 let settings = try await Self.patch(patch, client: client, connectionID: connectionID, origin: connection.origin)
                 guard let self, self.generations[connectionID] == generation, !Task.isCancelled else { return }
-                self.states[connectionID] = State(settings: settings, isAvailable: true)
+                self.states[connectionID] = State(
+                    settings: settings,
+                    isAvailable: true,
+                    summaryMethods: self.states[connectionID]?.summaryMethods ?? [],
+                    summaryModels: self.states[connectionID]?.summaryModels ?? [],
+                    modelErrorMessage: self.states[connectionID]?.modelErrorMessage
+                )
                 self.tasks[connectionID] = nil
                 // Also recover another device's update that raced the PATCH response.
                 self.refresh(connectionID: connectionID)

@@ -23,4 +23,27 @@ describe("account settings API", () => {
     expect(await another.json()).toEqual({ settings: null });
     expect(result.headers.get("cache-control")).toBe("no-store");
   });
+
+  it("merges nested summary fields without defaults or legacy aliases", async () => {
+    const app = createApp({ config: loadConfig({ DAHLIA_AUTH_TYPE: "header" }), authStore: testStore() });
+    const headers = { "x-forwarded-email": "owner@example.com", "x-forwarded-user": "owner", "content-type": "application/json" };
+    const patch = (body: unknown) => app.request("/api/v1/account/settings", { method: "PATCH", headers, body: JSON.stringify(body) });
+    expect(await (await app.request("/api/v1/capabilities", { headers })).json()).toEqual({});
+    const summary = { method: "transcript", methodSettings: { transcript: { model: "saved-model", reasoningEffort: "high", detail: "detailed" } } };
+    expect((await patch({ initialize: true, outputLanguage: "en", analysisLanguages: { scope: "all", identifiers: [] }, summary })).status).toBe(200);
+    const response = await patch({ summary: { methodSettings: { transcript: { detail: "concise" } } } });
+    expect(await response.json()).toEqual({ settings: {
+      outputLanguage: "en", analysisLanguages: { scope: "all", identifiers: [] },
+      summary: { ...summary, methodSettings: { transcript: { ...summary.methodSettings.transcript, detail: "concise" } } },
+    } });
+    for (const body of [
+      { summaryMethod: "transcript" }, { transcriptSummary: summary.methodSettings.transcript }, { settings: { summary } },
+      { summary: { method: "gemini" } }, { summary: { unknown: true } },
+      { summary: { methodSettings: { gemini: {} } } },
+      { summary: { methodSettings: { transcript: { unknown: true } } } },
+      { summary: { methodSettings: { transcript: { detail: "invalid" } } } },
+      { summary: { methodSettings: { transcript: { model: "" } } } },
+      { summary: { methodSettings: { transcript: { reasoningEffort: "invalid" } } } },
+    ]) expect((await patch(body)).status).toBe(400);
+  });
 });

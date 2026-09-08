@@ -1,3 +1,6 @@
+import { createTranscriptSummaryMethod } from "./summary/transcript";
+import { SummaryService } from "./summary/service";
+import { SummaryWorker } from "./summary/node-worker";
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { cimd } from "@better-auth/cimd";
@@ -47,7 +50,11 @@ const imageAnalysis = captioner && applicationStore.imageAnalysis
   ? new ImageAnalysisWorker(applicationStore.imageAnalysis, captioner, applicationStore.sync, syncService, applicationStore.accountSettings)
   : undefined;
 
+const summaryMethod = createTranscriptSummaryMethod(config, applicationStore.sync, syncService);
+const summaryService = summaryMethod ? new SummaryService(applicationStore.sync, applicationStore.accountSettings, [summaryMethod]) : undefined;
+const summaryWorker = summaryMethod ? new SummaryWorker(applicationStore.summaryJobs, [summaryMethod], syncService) : undefined;
 const app = createApp({
+  summaryService,
   config,
   auth,
   authStore: applicationStore,
@@ -72,6 +79,7 @@ const server = serve({
 });
 searchIndexer?.start();
 imageAnalysis?.start();
+summaryWorker?.start();
 const sockets = new Set<Socket>();
 server.on("connection", (socket: Socket) => {
   sockets.add(socket);
@@ -82,6 +90,7 @@ let shuttingDown = false;
 async function shutdown(): Promise<void> {
   if (shuttingDown) return;
   shuttingDown = true;
+  const stoppedSummary = summaryWorker?.stop();
   const stoppedIndexer = searchIndexer?.stop();
   const stoppedImageAnalysis = imageAnalysis?.stop();
   const closed = new Promise<void>((resolve) => server.close(() => resolve()));
@@ -89,7 +98,7 @@ async function shutdown(): Promise<void> {
     for (const socket of sockets) socket.destroy();
   }, 10_000);
   deadline.unref();
-  await Promise.all([closed, stoppedIndexer, stoppedImageAnalysis]);
+  await Promise.all([closed, stoppedIndexer, stoppedImageAnalysis, stoppedSummary]);
   clearTimeout(deadline);
   await applicationStore.close?.();
 }

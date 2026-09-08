@@ -1478,7 +1478,7 @@
         func summaryAndFileBodiesHydrateAndEvictWithoutLosingHeaders(entity: TextContentEntity) async throws {
             let fixture = try textFixture()
             let id = entity == .summary ? fixture.meetingId : UUID.v7()
-            let document = try SummaryDocument(title: "Remote", sections: []).databaseJSONString()
+            let document = try SummaryDocument(title: "Remote", sections: [], tags: ["remote_tag"]).databaseJSONString()
             let values: [String?] = entity == .summary ? [document] : [nil, "cloudcaption"]
             var digest = TextContentDigest()
             for value in values {
@@ -1593,12 +1593,51 @@
                     #expect(try String.fetchOne(db, sql: "SELECT title FROM summaries WHERE meetingId = ?", arguments: [id]) == "Remote")
                     #expect(try String.fetchOne(db, sql: "SELECT document FROM summary_bodies WHERE meetingId = ?", arguments: [id]) == nil)
                     #expect(try SummaryExportRecord.fetchOne(meetingId: id, type: .vault, in: db) != nil)
+                    #expect(try String.fetchAll(db, sql: "SELECT name FROM tags") == ["remote_tag"])
+                    #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM meeting_tags") == 1)
                 } else {
                     #expect(try TextContentAccess.cachedFileText(fileId: id, in: db)?.caption == nil)
                     #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM search_documents WHERE kind = 'screenshot'") == 0)
                 }
                 #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_transactions") == 0)
             }
+            if entity == .summary {
+                try await fixture.queue.write { db in
+                    try db.execute(sql: "DELETE FROM meeting_tags WHERE meetingId = ?", arguments: [id])
+                }
+                try await provider.ensure(entity: entity, id: id, dbQueue: fixture.queue)
+                try await fixture.queue.read { db throws in
+                    #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM meeting_tags") == 0)
+                    #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_transactions") == 0)
+                    #expect(try SummaryExportRecord.fetchOne(meetingId: id, type: .vault, in: db) != nil)
+                }
+                try await provider.trim(dbQueue: fixture.queue, capacity: 1)
+                let replacement = try SummaryDocument(title: "Replacement", sections: []).databaseJSONString()
+                var replacementDigest = TextContentDigest()
+                replacementDigest.add(replacement)
+                var replacementManifest = manifest
+                replacementManifest["revision"] = 4
+                replacementManifest["sha256"] = replacementDigest.digestHex()
+                replacementManifest["byteCount"] = replacementDigest.byteCount
+                let newManifestData = try JSONSerialization.data(withJSONObject: replacementManifest)
+                var replacementBody = replacementManifest
+                replacementBody["record"] = [
+                    "title": "Replacement", "document": replacement, "createdAt": "2026-01-01T00:00:00.000Z",
+                ]
+                let newBodyData = try JSONSerialization.data(withJSONObject: replacementBody)
+                ImageURLProtocol.register(origin: fixture.origin) { request in
+                    (200, [:], request.url!.query!.contains("manifest") ? newManifestData : newBodyData)
+                }
+                try await fixture.queue.write { db in
+                    try db.execute(sql: "UPDATE sync_entity_state SET confirmedRevision = 4 WHERE entity = 'summary'")
+                }
+                try await provider.ensure(entity: entity, id: id, dbQueue: fixture.queue)
+                try await fixture.queue.read { db throws in
+                    #expect(try SummaryExportRecord.fetchOne(meetingId: id, type: .vault, in: db) == nil)
+                    #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_transactions") == 0)
+                }
+            }
+
         }
 
         private actor TextRequestGate {

@@ -49,6 +49,7 @@ import GRDB
             })
             try await context.manager.dbQueue.write { db in
                 try connection.insert(db)
+                try SummaryExportRecord.setURL("https://docs.google.com/document/d/old/edit", meetingId: context.meetingID, type: .googleDocs, in: db)
                 try db.execute(
                     sql: "UPDATE vaults SET accountConnectionId = ?, syncConfirmedConnectionId = ?, syncPullCursor = 'ready' WHERE id = ?",
                     arguments: [connection.id, connection.id, vaultId]
@@ -67,12 +68,14 @@ import GRDB
             let viewModel = CaptionViewModel()
             viewModel.loadMeeting(context.meetingID, dbQueue: context.manager.dbQueue, projectURL: nil, projectId: nil, vaultURL: context.vaultURL)
             #expect(await pollUntil { viewModel.currentSummaryDocument?.title == "Original title" && viewModel.meetingSyncState == .synced })
+            #expect(viewModel.currentSummaryGoogleFileId == "old")
             #expect(await viewModel.store.loadEarlier())
             viewModel.store.setFollowingLatest(false)
             let firstVisible = try #require(viewModel.store.segments.first?.id)
             viewModel.noteText = "Keep this local draft"
             try context.replaceSummary(title: "Canonical title", body: "Updated elsewhere")
             try await context.manager.dbQueue.write { db in
+                try SummaryExportRecord.filter(Column("meetingId") == context.meetingID).deleteAll(db)
                 try db.execute(
                     sql: "UPDATE sync_entity_state SET confirmedRevision = 2 WHERE vaultId = ? AND entity = 'summary'",
                     arguments: [vaultId]
@@ -83,6 +86,7 @@ import GRDB
                 )
             }
             #expect(await pollUntil { viewModel.currentSummaryDocument?.title == "Canonical title" && viewModel.meetingSyncState == .pending })
+            #expect(viewModel.currentSummaryGoogleFileId == nil)
             #expect(viewModel.noteText == "Keep this local draft")
             #expect(await pollUntil { !viewModel.store.isLoadingPage })
             #expect(viewModel.store.segments.first?.id == firstVisible)

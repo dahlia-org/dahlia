@@ -12,7 +12,7 @@ struct BatchTranscriptionConfirmationView: View {
 
     @State private var languageSelection: BatchTranscriptionLanguageSelection
     @State private var generateSummaryAfterBatchTranscription: Bool
-    @State private var summaryDetailLevel: SummaryDetailLevel
+    @State private var summaryDetailLevel: SummaryDetailLevel?
     @State private var exportBatchSummaryToVault: Bool
     @State private var exportBatchSummaryToGoogleDocs: Bool
     @State private var selectedProjectId: UUID?
@@ -43,7 +43,7 @@ struct BatchTranscriptionConfirmationView: View {
         self.allowsRecordedLanguageSelection = allowsRecordedLanguageSelection
         _languageSelection = State(initialValue: initialLanguageSelection)
         _generateSummaryAfterBatchTranscription = State(initialValue: initiallyGeneratesSummary)
-        _summaryDetailLevel = State(initialValue: summaryGenerationOptions.detailLevel ?? .defaultValue)
+        _summaryDetailLevel = State(initialValue: summaryGenerationOptions.detailLevel)
         _exportBatchSummaryToVault = State(initialValue: summaryGenerationOptions.exportOptions.exportsToVault)
         _exportBatchSummaryToGoogleDocs = State(initialValue: summaryGenerationOptions.exportOptions.exportsToGoogleDocs)
         _selectedProjectId = State(initialValue: initialProjectId)

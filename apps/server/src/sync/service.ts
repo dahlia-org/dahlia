@@ -1,3 +1,4 @@
+import { SummaryError, type SummaryJob, type SummaryDocument, type SummaryMethod } from "../summary/model";
 import { RECORDING_MAX_BYTES, recordingManifestSchema, recordingSourceSchema, recordingStorageKey, recordingContentURL, recordingResponse } from "../recordings/model";
 import { z } from "zod";
 import { searchRequestSchema, searchSnippet, type SearchHit, type SearchResults } from "../search/model";
@@ -193,6 +194,36 @@ export class MeetingSyncService {
     return this.store.withIdentity(identity, async (scoped) =>
       await scoped.resolveTransaction(transaction) ?? { id: transaction.id, status: "unknown" as const },
     );
+  }
+
+  async completeSummary(identity: Identity, job: SummaryJob, document: SummaryDocument, method: SummaryMethod): Promise<boolean> {
+    this.requireWritableIdentity(identity);
+    return this.store.withIdentity(identity, async (scoped) => {
+      await scoped.lockVault(job.vaultId);
+      if ((await scoped.getVault(job.vaultId))?.role !== "owner") throw new SummaryError("summary_meeting_unavailable");
+      const meeting = await scoped.getMeeting(job.vaultId, job.meetingId);
+      if (!meeting) throw new SummaryError("summary_meeting_unavailable");
+      if ((meeting.summaryRevision ?? 0) !== job.summaryRevision) throw new SummaryError("summary_conflict");
+      if (await method.version(scoped, job.vaultId, job.meetingId) !== job.inputVersion) throw new SummaryError("summary_input_changed");
+      const transaction = await normalizeTransaction({
+        schemaVersion: 2, id: job.id, vaultId: job.vaultId, createdAt: job.createdAt.toISOString(),
+        operations: [
+          { id: uuidV7(), entity: "meeting", action: "update", entityId: job.meetingId, baseRevision: meeting.revision,
+            data: { projectId: meeting.projectId, name: document.title, description: document.description,
+              status: meeting.status, duration: meeting.duration, recordingStartedAt: meeting.recordingStartedAt?.toISOString() ?? null,
+              updatedAt: new Date().toISOString() } },
+          { id: uuidV7(), entity: "summary", action: "upsert", entityId: job.meetingId,
+            baseRevision: job.summaryRevision, data: { title: document.title, document: JSON.stringify(document), createdAt: job.createdAt.toISOString() } },
+        ],
+      });
+      const summaryText = summarySearchableText(JSON.stringify(document));
+      const embeddingText = summaryText.trim() || null;
+      for (const operation of transaction.operations) Object.assign(operation.data!, {
+        searchText: createSearchText(this.tokenizer, [document.title, document.description, summaryText]),
+        embeddingText, embeddingContentHash: await embeddingContentHash(embeddingText),
+      });
+      return scoped.completeSummaryJob(job, transaction);
+    });
   }
 
   async completeImageAnalysis(identity: Identity, input: ImageAnalysisInput, output: ImageAnalysis): Promise<boolean> {

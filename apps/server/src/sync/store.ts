@@ -322,6 +322,7 @@ async function roleSupportsRls(db: PostgresDatabase): Promise<boolean> {
       "app.search_documents",
       "app.search_embeddings",
       "app.account_settings",
+      "app.summary_jobs",
     ];
     const secured = (await client.query<{ count: number }>(`
       select count(*)::integer as count
@@ -1785,6 +1786,30 @@ function createIdentityStore(
   }
 
   return {
+    async getSummaryJob(vaultId, meetingId, id) {
+      const [row] = await db.select().from(schema.summaryJob).where(and(
+        eq(schema.summaryJob.vaultId, vaultId), eq(schema.summaryJob.meetingId, meetingId),
+        eq(schema.summaryJob.ownerUserId, identity.userId),
+        id ? eq(schema.summaryJob.id, id) : undefined,
+        ownerAccess(schema.summaryJob.vaultId),
+      )).orderBy(desc(schema.summaryJob.createdAt), desc(schema.summaryJob.id)).limit(1);
+      return row ?? null;
+    },
+    async insertSummaryJob(job) {
+      const inserted = await db.insert(schema.summaryJob).values(job).onConflictDoNothing({ target: schema.summaryJob.id }).returning({ id: schema.summaryJob.id });
+      if (!inserted.length) throw new SyncTransactionError(409, "summary_id_reused");
+    },
+    async completeSummaryJob(job, transaction) {
+      const jobs = schema.summaryJob;
+      const filter = and(eq(jobs.id, job.id), eq(jobs.ownerUserId, identity.userId),
+        eq(jobs.status, "processing"), eq(jobs.claimedAt, job.claimedAt!), gt(jobs.leaseExpiresAt, new Date()));
+      const query = db.select().from(jobs).where(filter);
+      const [current] = searchBackend === "sqlite" ? await query : await query.for("update");
+      if (!current) return false;
+      await commitTransaction(transaction);
+      await db.update(jobs).set({ status: "succeeded", claimedAt: null, leaseExpiresAt: null, lastErrorCode: null }).where(filter);
+      return true;
+    },
     lockVault,
     loadImageAnalysis,
     completeImageAnalysis,

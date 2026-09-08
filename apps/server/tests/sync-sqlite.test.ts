@@ -21,7 +21,7 @@ import { SCREENSHOT_VARIANTS } from "../src/sync/screenshot-variants";
 import type { SyncTransaction } from "../src/sync/types";
 import { ImageAnalysisWorker } from "../src/image-analysis/node-worker";
 import type { ImageCaptioner } from "../src/image-analysis/captioner";
-import type { AccountSettings } from "../src/account-settings";
+import { DEFAULT_ACCOUNT_SETTINGS, type AccountSettings } from "../src/account-settings";
 import { ImageAnalysisError } from "../src/image-analysis/model";
 
 const directories: string[] = [];
@@ -241,10 +241,10 @@ describe("SQLite canonical sync", () => {
     const detail = async () => (await send(`vaults/${vaultId}/meetings/${meetingId}`)).json();
     const capabilities = await send("capabilities");
     expect(capabilities.status).toBe(200);
-    expect(await capabilities.json()).toEqual({ syncVersion: 2, recordingAudioVersion: 1, meetingEventsVersion: 1, searchVersion: 1, imageAnalysis: false });
+    expect(await capabilities.json()).toEqual({ syncVersion: 2, recordingAudioVersion: 1, meetingEventsVersion: 1, searchVersion: 1, imageAnalysis: false, summaryGeneration: { version: 0, methods: [] } });
     const enabledApp = createApp({ config: testConfig(databasePath), authStore: store, imageAnalysisEnabled: true });
     expect(await (await enabledApp.request("http://localhost:5173/api/v1/capabilities", { headers: headers() })).json())
-      .toEqual({ syncVersion: 2, recordingAudioVersion: 1, meetingEventsVersion: 1, searchVersion: 1, imageAnalysis: true });
+      .toEqual({ syncVersion: 2, recordingAudioVersion: 1, meetingEventsVersion: 1, searchVersion: 1, imageAnalysis: true, summaryGeneration: { version: 0, methods: [] } });
     expect((await send("sync-content")).status).toBe(404);
     const availability = vi.spyOn(store.sync, "isAvailable").mockResolvedValueOnce(false);
     const unsupported = await send("capabilities");
@@ -403,8 +403,8 @@ describe("SQLite canonical sync", () => {
     const original = await service.getFile(owner, file.id);
     await store.close?.();
     const database = new DatabaseSync(databasePath);
-    database.exec("DROP TABLE image_analysis_jobs; DROP TABLE account_settings");
-    database.prepare("DELETE FROM __drizzle_migrations WHERE name = ?").run("20260907091207_funny_black_bird");
+    database.exec("DROP TABLE summary_jobs; DROP TABLE image_analysis_jobs; DROP TABLE account_settings");
+    database.prepare("DELETE FROM __drizzle_migrations WHERE name IN (?, ?)").run("20260907091207_funny_black_bird", "20260907172550_nice_starhawk");
     database.close();
     const reopened = createNodeApplicationStore(testConfig(databasePath));
     await reopened.migrate();
@@ -417,14 +417,21 @@ describe("SQLite canonical sync", () => {
   it("initializes account settings once and merges only specified fields across clients", async () => {
     const { store } = await setup();
     expect(await store.accountSettings.get(owner.userId)).toBeNull();
-    const initial = { outputLanguage: "en" as const, analysisLanguages: { scope: "selected" as const, identifiers: ["en", "ja"] } };
+    const initial = { ...DEFAULT_ACCOUNT_SETTINGS, outputLanguage: "en" as const, analysisLanguages: { scope: "selected" as const, identifiers: ["en", "ja"] } };
     await store.accountSettings.update(owner.userId, initial, true);
     expect(await store.accountSettings.update(owner.userId, { ...initial, outputLanguage: "ja" }, true)).toEqual(initial);
     await Promise.all([
       store.accountSettings.update(owner.userId, { outputLanguage: "fr" }),
       store.accountSettings.update(owner.userId, { analysisLanguages: { scope: "all", identifiers: [] } }),
     ]);
-    expect(await store.accountSettings.get(owner.userId)).toEqual({ outputLanguage: "fr", analysisLanguages: { scope: "all", identifiers: [] } });
+    expect(await store.accountSettings.get(owner.userId)).toEqual({ ...DEFAULT_ACCOUNT_SETTINGS, outputLanguage: "fr", analysisLanguages: { scope: "all", identifiers: [] } });
+    await Promise.all([
+      store.accountSettings.update(owner.userId, { summary: { methodSettings: { transcript: { model: "saved-model" } } } }),
+      store.accountSettings.update(owner.userId, { summary: { methodSettings: { transcript: { detail: "concise" } } } }),
+    ]);
+    expect(await store.accountSettings.get(owner.userId)).toMatchObject({ summary: {
+      method: "transcript", methodSettings: { transcript: { model: "saved-model", detail: "concise", reasoningEffort: "medium" } },
+    } });
     expect(await store.accountSettings.get(other.userId)).toBeNull();
     await store.close?.();
   });

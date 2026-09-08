@@ -14,6 +14,18 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var serverSearchAllKinds: String { String(localized: "search.server.allKinds", bundle: bundle) }
     static var serverSearchPendingProjects: String { String(localized: "search.server.pendingProjects", bundle: bundle) }
     static var serverSearchPendingImages: String { String(localized: "search.server.pendingImages", bundle: bundle) }
+    static var serverSummaryMethod: String { String(localized: "serverSummaryMethod", bundle: bundle) }
+    static var serverSummaryTranscript: String { String(localized: "serverSummaryTranscript", bundle: bundle) }
+    static var serverSummaryDescription: String { String(localized: "serverSummaryDescription", bundle: bundle) }
+    static var serverSummaryAccountDefault: String { String(localized: "serverSummaryAccountDefault", bundle: bundle) }
+    static var serverSummaryUnavailable: String { String(localized: "serverSummaryUnavailable", bundle: bundle) }
+    static var serverSummarySyncPending: String { String(localized: "serverSummarySyncPending", bundle: bundle) }
+    static var serverSummaryInputChanged: String { String(localized: "serverSummaryInputChanged", bundle: bundle) }
+    static var serverSummaryModelListFailed: String { String(localized: "serverSummaryModelListFailed", bundle: bundle) }
+    static var serverSummaryChooseModel: String { String(localized: "serverSummaryChooseModel", bundle: bundle) }
+    static var serverSummaryNoModels: String { String(localized: "serverSummaryNoModels", bundle: bundle) }
+    static var serverSummaryReloadModels: String { String(localized: "serverSummaryReloadModels", bundle: bundle) }
+    static var serverSummaryFailed: String { String(localized: "serverSummaryFailed", bundle: bundle) }
     static var serverAccountLanguages: String { String(localized: "account.settings.languages", bundle: bundle) }
     static var imageAnalysisLanguages: String { String(localized: "account.settings.imageLanguages", bundle: bundle) }
     static var serverAccountSettingsDescription: String { String(localized: "account.settings.description", bundle: bundle) }

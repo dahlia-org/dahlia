@@ -1,3 +1,4 @@
+import type { SummaryJob } from "../summary/model";
 import type { RecordingRecord } from "../recordings/model";
 import { sql } from "drizzle-orm";
 import { blob, check, foreignKey, index, integer, primaryKey, real, sqliteTable, sqliteView, text, unique, uniqueIndex } from "drizzle-orm/sqlite-core";
@@ -11,6 +12,8 @@ const sqliteTimestamp = (name: string) => integer(name, { mode: "timestamp_ms" }
 
 export const accountSettings = sqliteTable("account_settings", {
   userId: text("user_id").primaryKey().references(() => authUser.id, { onDelete: "cascade" }),
+  summaryMethod: text("summary_method").$type<"transcript">().default("transcript").notNull(),
+  transcriptSummary: text("transcript_summary", { mode: "json" }).$type<AccountSettings["summary"]["methodSettings"]["transcript"]>().default({ model: "gpt-5.4", reasoningEffort: "medium", detail: "detailed" }).notNull(),
   outputLanguage: text("output_language").$type<AccountSettings["outputLanguage"]>().notNull(),
   analysisLanguages: text("analysis_languages", { mode: "json" }).$type<AccountSettings["analysisLanguages"]>().notNull(),
 });
@@ -415,4 +418,29 @@ export const imageAnalysisJob = sqliteTable("image_analysis_jobs", {
 }, (table) => [
   check("image_analysis_job_status_check", sql`${table.status} IN ('pending', 'processing', 'failed')`),
   index("image_analysis_job_claim_idx").on(table.status, table.availableAt, table.leaseExpiresAt),
+]);
+
+// Settings and input fingerprints are owner-private; no transcript or provider credentials are queued.
+export const summaryJob = sqliteTable("summary_jobs", {
+  id: text("id").primaryKey(),
+  vaultId: text("vault_id").notNull().references(() => syncedVault.vaultId, { onDelete: "cascade" }),
+  meetingId: text("meeting_id").notNull().references(() => syncedMeeting.meetingId, { onDelete: "cascade" }),
+  ownerUserId: text("owner_user_id").notNull().references(() => authUser.id, { onDelete: "cascade" }),
+  method: text("method").$type<"transcript">().notNull(),
+  settings: text("settings", { mode: "json" }).$type<SummaryJob["settings"]>().notNull(),
+  outputLanguage: text("output_language").notNull(),
+  status: text("status").default("pending").notNull(),
+  attempts: integer("attempts").default(0).notNull(),
+  createdAt: sqliteTimestamp("created_at").notNull(),
+  availableAt: sqliteTimestamp("available_at").notNull(),
+  claimedAt: sqliteTimestamp("claimed_at"),
+  leaseExpiresAt: sqliteTimestamp("lease_expires_at"),
+  lastErrorCode: text("last_error_code"),
+  summaryRevision: integer("summary_revision").notNull(),
+  inputVersion: text("input_version").notNull(),
+  requestHash: text("request_hash").notNull(),
+}, (table) => [
+  check("summary_job_status_check", sql`${table.status} IN ('pending', 'processing', 'succeeded', 'failed')`),
+  uniqueIndex("summary_job_active_meeting_idx").on(table.meetingId).where(sql`${table.status} IN ('pending', 'processing')`),
+  index("summary_job_owner_created_idx").on(table.ownerUserId, table.createdAt),
 ]);
