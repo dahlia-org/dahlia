@@ -59,6 +59,8 @@ Desktop keeps immutable operations until the Server receipt is applied. File ope
 
 Vault and Project operations are committed through the domain transaction endpoint before meeting data. Projects are available for hierarchy browsing and meeting filtering but are not added to full-text or vector search. Transcript segments keep `audioSource` (`mic` or `system`) separate from nullable `speakerLabel`, which is reserved for future diarization.
 
+Restoring a Vault after a reset with `preservePermissions: true` remains owner-only. A non-owner cannot restore a revision-0 Vault: an owner-scoped restoration update that affects no rows, or an ownership check for a Vault hidden by PostgreSQL/Lakebase RLS, returns `404 vault_not_found` without canonical content. The entire transaction is rolled back, including subsequent Project/Meeting operations, change history, and the receipt. Owners retain normal restoration and idempotent retry behavior.
+
 ### Server capabilities
 
 `GET /api/v1/capabilities` requires the existing browser authentication or `all-apis` scope and returns supported feature versions:
