@@ -56,6 +56,13 @@ for (const [slug, displayName, levels, defaultLevel] of [
 ]) {
   const reference = models.find((model) => model.slug === (slug.endsWith("-flash") ? "gpt-5.6-luna" : "gpt-5.6-sol"));
   if (!reference) throw new Error(`Missing Codex reference for ${slug}`);
+  let inputModalities = ["text", "image"];
+  if (slug === "glm-5-3" || slug.startsWith("deepseek-")) {
+    inputModalities = ["text"];
+  } else if (slug.startsWith("gemini-")) {
+    // Codex 0.153.4 accepts text, image, and audio; video is not a valid enum value.
+    inputModalities = ["text", "image", "audio"];
+  }
   models.push({
     ...reference,
     slug, display_name: displayName, description: descriptions[slug],
@@ -63,9 +70,7 @@ for (const [slug, displayName, levels, defaultLevel] of [
       ...reference.model_messages,
       instructions_template: reference.model_messages.instructions_template.replace("an agent based on GPT-5", "a coding agent"),
     },
-    input_modalities: slug === "glm-5-3" || slug.startsWith("deepseek-") ? ["text"] : ["text", "image"],
-    // Codex 0.153.4 accepts text, image, and audio; video is not a valid enum value.
-    ...(slug.startsWith("gemini-") ? { input_modalities: ["text", "image", "audio"] } : {}),
+    input_modalities: inputModalities,
     default_reasoning_level: defaultLevel,
     supported_reasoning_levels: levels.map((effort) => ({ effort, description: efforts[effort] })),
   });

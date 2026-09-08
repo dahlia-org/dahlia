@@ -87,11 +87,13 @@ describe("Codex model availability", () => {
   });
 
   it.each([
-    ["glm-5-3", "gpt-5.6-sol"], ["glm-5-3-flash", "gpt-5.6-luna"],
-    ["kimi-k3", "gpt-5.6-sol"],
-    ["deepseek-v4-pro-0813", "gpt-5.6-sol"],
-    ["gemini-3-8-flash", "gpt-5.6-luna"], ["gemini-3-7-flash", "gpt-5.6-luna"],
-  ])("expands runtime parameters and an independent description for %s", (slug, referenceSlug) => {
+    ["glm-5-3", "gpt-5.6-sol", ["text"]],
+    ["glm-5-3-flash", "gpt-5.6-luna", ["text", "image"]],
+    ["kimi-k3", "gpt-5.6-sol", ["text", "image"]],
+    ["deepseek-v4-pro-0813", "gpt-5.6-sol", ["text"]],
+    ["gemini-3-8-flash", "gpt-5.6-luna", ["text", "image", "audio"]],
+    ["gemini-3-7-flash", "gpt-5.6-luna", ["text", "image", "audio"]],
+  ] satisfies [string, string, string[]][])("expands runtime parameters and an independent description for %s", (slug, referenceSlug, inputModalities) => {
     const reference = catalog.models.find((model) => model.slug === referenceSlug)!;
     const model = modelList([{ id: slug }]).models.find((model) => model.slug === slug)!;
     expect(model).toMatchObject({
@@ -102,8 +104,7 @@ describe("Codex model availability", () => {
     expect(model.description).toBeTruthy();
     expect(model.description).not.toBe(reference.description);
     expect(model.model_messages?.instructions_template).toBe(reference.model_messages.instructions_template.replace("an agent based on GPT-5", "a coding agent"));
-    expect(model.input_modalities).toEqual(slug.startsWith("gemini-") ? ["text", "image", "audio"]
-      : slug === "glm-5-3" || slug.startsWith("deepseek-") ? ["text"] : ["text", "image"]);
+    expect(model.input_modalities).toEqual(inputModalities);
   });
 
   it.each(["gemini-3-8-flash", "gemini-3-7-flash"])("defines Gemini reasoning separately for %s", (slug) => {
