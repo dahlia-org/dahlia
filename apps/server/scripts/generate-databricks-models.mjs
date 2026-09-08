@@ -20,7 +20,10 @@ const displayNames = {
   "gpt-5.6-terra": "GPT 5.6 Terra",
   "gpt-5.6-luna": "GPT 5.6 Luna",
 };
-const models = source.models.flatMap((model) => {
+const includedModels = new Set([
+  "gpt-6-astra", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5", "codex-auto-review",
+]);
+const models = source.models.filter((model) => includedModels.has(model.slug)).flatMap((model) => {
   const metadata = Object.fromEntries(runtimeFields.filter((field) => field in model).map((field) => [field, model[field]]));
   const entry = { slug: model.slug, display_name: displayNames[model.slug] ?? model.display_name, ...metadata };
   const publicID = model.slug.replaceAll(".", "-");
@@ -28,6 +31,16 @@ const models = source.models.flatMap((model) => {
   return publicID === model.slug ? [entry] : [entry, { ...entry, slug: publicID }];
 });
 
+// Descriptions paraphrase the official model cards linked in README.md (checked 2026-09-08).
+const descriptions = {
+  "glm-5-3": "Open-weight model for complex coding and long-running agent tasks.",
+  "glm-5-3-flash": "Efficient multimodal model for coding, agents, and long-context tasks.",
+  "kimi-k3": "Multimodal flagship for long-running coding, knowledge work, and reasoning.",
+  "deepseek-v4-pro": "Flagship model with enhanced agent capabilities, Responses API support, and Codex integration.",
+  "deepseek-v4-pro-0813": "Flagship model with enhanced agent capabilities, Responses API support, and Codex integration.",
+  "gemini-3-8-flash": "Flash model for extended software engineering, autonomous agents, and complex enterprise tasks.",
+  "gemini-3-7-flash": "Workhorse model for coding and agents, with improved debugging and issue resolution.",
+};
 const efforts = {
   low: "Fast responses with lighter reasoning",
   medium: "Balances speed and reasoning depth for everyday tasks",
@@ -43,8 +56,16 @@ for (const [slug, displayName, levels, defaultLevel] of [
   ["gemini-3-8-flash", "Gemini 3.8 Flash", ["low", "medium", "high"], "medium"],
   ["gemini-3-7-flash", "Gemini 3.7 Flash", ["low", "medium", "high"], "medium"],
 ]) {
+  const reference = models.find((model) => model.slug === (slug.endsWith("-flash") ? "gpt-5.6-luna" : "gpt-5.6-sol"));
+  if (!reference) throw new Error(`Missing Codex reference for ${slug}`);
   models.push({
-    slug, display_name: displayName,
+    ...reference,
+    slug, display_name: displayName, description: descriptions[slug],
+    model_messages: {
+      ...reference.model_messages,
+      instructions_template: reference.model_messages.instructions_template.replace("an agent based on GPT-5", "a coding agent"),
+    },
+    input_modalities: slug === "glm-5-3" || slug.startsWith("deepseek-") ? ["text"] : ["text", "image"],
     default_reasoning_level: defaultLevel,
     supported_reasoning_levels: levels.map((effort) => ({ effort, description: efforts[effort] })),
   });

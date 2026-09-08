@@ -27,8 +27,8 @@ describe("model display names", () => {
   it.each([
     [{ id: "gpt-5.6-sol", displayName: "Provider Sol" }, "Provider Sol"],
     [{ id: "gpt-5.6-sol", displayName: " \t\n " }, "GPT 5.6 Sol"],
-    [{ id: "gpt-5.4-mini", displayName: "" }, "GPT-5.4-Mini"],
-    [{ id: "system.ai.gpt-5-4-mini", displayName: null }, "GPT-5.4-Mini"],
+    [{ id: "gpt-5.5", displayName: "" }, "GPT-5.5"],
+    [{ id: "system.ai.gpt-5-6-terra", displayName: null }, "GPT 5.6 Terra"],
     [{ id: "custom-v1-0813" }, "custom-v1-0813"],
     [{ id: "deepseek-v4-pro-9999" }, "deepseek-v4-pro-9999"],
     [{ id: "constructor" }, "constructor"],
@@ -75,6 +75,36 @@ describe("Codex model availability", () => {
     expect(empty.models.every(({ visibility }) => visibility === "hide")).toBe(true);
   });
 
+  it("limits GPT definitions to Astra, 5.6, and 5.5 while suppressing omitted built-ins", () => {
+    expect(catalog.models.filter(({ slug }) => slug.startsWith("gpt-")).map(({ slug }) => slug).sort()).toEqual([
+      "gpt-6-astra", "gpt-5.6-sol", "gpt-5-6-sol", "gpt-5.6-terra", "gpt-5-6-terra",
+      "gpt-5.6-luna", "gpt-5-6-luna", "gpt-5.5", "gpt-5-5",
+    ].sort());
+    const list = modelList([]);
+    for (const slug of ["gpt-daybreak-blue-latest", "gpt-daybreak-red-latest", "gpt-5.4", "gpt-5.4-mini", "gpt-5.2"]) {
+      expect(list.models.find((model) => model.slug === slug)).toMatchObject({ visibility: "hide" });
+    }
+  });
+
+  it.each([
+    ["glm-5-3", "gpt-5.6-sol"], ["glm-5-3-flash", "gpt-5.6-luna"],
+    ["kimi-k3", "gpt-5.6-sol"], ["deepseek-v4-pro", "gpt-5.6-sol"],
+    ["deepseek-v4-pro-0813", "gpt-5.6-sol"],
+    ["gemini-3-8-flash", "gpt-5.6-luna"], ["gemini-3-7-flash", "gpt-5.6-luna"],
+  ])("expands runtime parameters and an independent description for %s", (slug, referenceSlug) => {
+    const reference = catalog.models.find((model) => model.slug === referenceSlug)!;
+    const model = modelList([{ id: slug }]).models.find((model) => model.slug === slug)!;
+    expect(model).toMatchObject({
+      shell_type: reference.shell_type, multi_agent_version: reference.multi_agent_version,
+      apply_patch_tool_type: reference.apply_patch_tool_type, truncation_policy: reference.truncation_policy,
+      context_window: reference.context_window, max_context_window: reference.max_context_window,
+    });
+    expect(model.description).toBeTruthy();
+    expect(model.description).not.toBe(reference.description);
+    expect(model.model_messages?.instructions_template).toBe(reference.model_messages.instructions_template.replace("an agent based on GPT-5", "a coding agent"));
+    expect(model.input_modalities).toEqual(slug === "glm-5-3" || slug.startsWith("deepseek-") ? ["text"] : ["text", "image"]);
+  });
+
   it.each(["gemini-3-8-flash", "gemini-3-7-flash"])("defines Gemini reasoning separately for %s", (slug) => {
     const model = modelList([{ id: slug }]).models.find((model) => model.slug === slug);
     expect(model?.visibility).toBe("list");
@@ -87,9 +117,6 @@ describe("Codex model availability", () => {
     ["gpt-5.6-terra", "GPT 5.6 Terra", "medium"],
     ["gpt-5.6-luna", "GPT 5.6 Luna", "medium"],
     ["gpt-5.5", "GPT-5.5", "medium"],
-    ["gpt-5.4", "GPT-5.4", "medium"],
-    ["gpt-5.4-mini", "GPT-5.4-Mini", "medium"],
-    ["gpt-5.2", "GPT-5.2", "medium"],
     ["gpt-future", "gpt-future", "max"],
   ])("preserves metadata for visible and hidden %s", (slug, displayName, defaultLevel) => {
     const alias = slug.replaceAll(".", "-");

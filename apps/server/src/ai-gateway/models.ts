@@ -23,6 +23,8 @@ interface ModelDefinition extends Partial<CodexModelWire> {
 }
 
 const modelDefinitions = new Map<string, ModelDefinition>(catalog.models.map((model) => [model.slug, model]));
+// Suppress Codex 0.153.4 built-ins omitted from Dahlia's catalog when the client merges /models.
+const omittedBuiltinModelSlugs = ["gpt-daybreak-blue-latest", "gpt-daybreak-red-latest", "gpt-5.4", "gpt-5.4-mini", "gpt-5.2"];
 const ossReasoningLevels = [
   { effort: "low", description: "Fast responses with lighter reasoning" },
   { effort: "high", description: "Greater reasoning depth for complex problems" },
@@ -52,7 +54,7 @@ function modelDisplayName(entry: ModelInfo): string {
 }
 
 function codexModels(entries: ModelInfo[]): CodexModelWire[] {
-  const models = new Map([...modelDefinitions.keys()]
+  const models = new Map([...omittedBuiltinModelSlugs, ...modelDefinitions.keys()]
     .filter(isCodexModel)
     .map((id) => [id, hiddenCodexModel(id)]));
   entries.forEach((entry, priority) => {
