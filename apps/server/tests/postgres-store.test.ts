@@ -133,6 +133,7 @@ integration("PostgreSQL application store", () => {
         ('app', 'projects'),
         ('app', 'transaction_receipts'),
         ('app', 'meetings'),
+        ('app', 'transcripts'),
         ('app', 'transcript_segments'),
         ('app', 'transcript_patch_chunks'),
         ('app', 'files'),
@@ -143,7 +144,7 @@ integration("PostgreSQL application store", () => {
       )
       order by namespace.nspname, class.relname
     `);
-    expect(protectedTables.rows).toHaveLength(11);
+    expect(protectedTables.rows).toHaveLength(12);
     expect(protectedTables.rows.every(({ rls, force_rls }) => rls && force_rls)).toBe(true);
     const legacyOwnerColumns = await connection!.db.execute(sql`
       select 1 from information_schema.columns
@@ -305,10 +306,10 @@ integration("PostgreSQL application store", () => {
       await store.sync.withIdentity(owner, async (sync) => {
         expect(await sync.putTranscriptChunk(vaultId, meetingId, patchId, 0, chunkHash, [{
           segmentId,
-          startTime: now,
-          endTime: null,
+          startedAt: now,
+          endedAt: null,
           text: "original",
-          isConfirmed: true,
+          createdAt: null,
           audioSource: "system",
           speakerLabel: null,
         }], [])).toBe(true);
@@ -328,14 +329,14 @@ integration("PostgreSQL application store", () => {
           entityId: meetingId,
           baseRevision: 0,
           data: {
-            patchId,
+            transcript: { id: patchId, startedAt: null, endedAt: null, metadata: null }, mode: "replace", patchId,
             segmentCount: 1,
             deletionCount: 0,
             chunks: [{ index: 0, sha256: chunkHash, segmentCount: 1, deletionCount: 0 }],
           },
         }]);
       });
-      for (const table of ["meetings", "transcript_segments", "files", "meeting_files"] as const) {
+      for (const table of ["meetings", "transcripts", "transcript_segments", "files", "meeting_files"] as const) {
         const hidden = await connection!.db.execute<{ count: string }>(
           sql.raw(`select count(*)::text as count from app.${table}`),
         );
@@ -535,6 +536,42 @@ integration("PostgreSQL application store", () => {
         await resetVault(sync, vaultId);
       }).catch(() => undefined);
     }
+  });
+
+  it("copies full transcript versions under parent RLS and seals them immutably", async () => {
+    const store = createPostgresAuthStore(connection!.db, "postgres", undefined, true);
+    const suffix = crypto.randomUUID();
+    const owner: Identity = { userId: `transcript-${suffix}`, workspaceId: `personal:transcript-${suffix}`, source: "header" };
+    const vaultId = crypto.randomUUID(), meetingId = crypto.randomUUID(), firstId = crypto.randomUUID(), secondId = crypto.randomUUID();
+    const now = new Date();
+    await store.ensureIdentityUser(owner);
+    await store.sync.withIdentity(owner, (sync) => createVault(sync, vaultId, [{ id: crypto.randomUUID(),
+      entity: "meeting", action: "create", entityId: meetingId, baseRevision: null, data: meetingData(null, now, "Versions", "") }]));
+    const metadata = { provider: "apple", request: { model: "apple-speech-live" },
+      runs: [{ generatedBy: "desktop", inputTypes: ["audio"], startedAt: null, completedAt: null }] };
+    const write = (id: string, revision: number, status: string, text?: string) => store.sync.withIdentity(owner, async (sync) => {
+      const patchId = crypto.randomUUID(), sha256 = "d".repeat(64);
+      if (text) await sync.putTranscriptChunk(vaultId, meetingId, patchId, 0, sha256, [{ segmentId: crypto.randomUUID(),
+        startedAt: now, endedAt: null, text, createdAt: null, audioSource: "mic", speakerLabel: null }], []);
+      return commit(sync, vaultId, [{ id: patchId, entity: "transcript", action: "patch", entityId: meetingId, baseRevision: revision,
+        data: { patchId, mode: "append", transcript: { id, startedAt: now, endedAt: status === "completed" ? now : null, metadata },
+          segmentCount: text ? 1 : 0, deletionCount: 0,
+          chunks: text ? [{ index: 0, sha256, segmentCount: 1, deletionCount: 0 }] : [] } }]);
+    });
+    try {
+      await write(firstId, 0, "live", "first");
+      await write(firstId, 1, "completed");
+      await write(secondId, 2, "live", "second");
+      await write(secondId, 3, "completed");
+      await store.sync.withIdentity(owner, async (sync) => {
+        expect(await sync.listTranscript(vaultId, meetingId, 10, undefined, 1)).toHaveLength(1);
+        expect(await sync.listTranscript(vaultId, meetingId, 10, undefined, 2)).toHaveLength(2);
+        expect(await sync.listTranscriptVersions(vaultId, meetingId, 10)).toHaveLength(2);
+      });
+      await expect(write(secondId, 4, "live", "overwrite")).rejects.toMatchObject({ code: "transcript_version_immutable" });
+      expect((await connection!.db.execute(sql`SELECT * FROM app.transcripts WHERE meeting_id = ${meetingId}`)).rows).toEqual([]);
+      expect((await connection!.db.execute(sql`SELECT * FROM app.transcript_segments WHERE transcript_id = ${secondId}`)).rows).toEqual([]);
+    } finally { await store.sync.withIdentity(owner, (sync) => resetVault(sync, vaultId)); }
   });
 
 

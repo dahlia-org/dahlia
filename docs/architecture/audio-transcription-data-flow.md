@@ -343,3 +343,17 @@ sequenceDiagram
 
 実装規約や検証コマンドは `AGENTS.md` に置き、この文書へ複製しない。新しい設計判断と理由は ADR に記録し、
 この文書には採用後の現在フローだけを反映する。
+
+## Transcript versions
+
+Server は `transcripts` と `transcript_segments` に各版の全文を保持する。Desktop の `transcripts` は最新の生成情報だけを保持し、既存の segment/body table は最新本文だけを保持する。履歴番号 `version` と同期用 `syncRevision` は別の値とする。
+
+ライブ (`apple-speech-live`) は開始時に版を確保し、同じモデルの既存本文を引き継ぐ。確定 segment をその版へ追記し、生成終了を確認した日時だけを `endedAt` に記録する。明示キャンセルも終了確認に含む。異常終了からの復旧では終了日時を推測しない。バッチ (`apple-speech`) の同モデル追加録音は追加音声だけを認識し、既存本文と結合した全文を新しい版として保存する。モデル変更・明示的な再文字起こしは会議の全録音を処理し、全処理成功時だけ本文・生成情報・完了状態・送信 snapshot を同じ transaction で確定する。失敗・キャンセルでは旧本文を保持する。
+
+音声を保存しない旧ライブ録音や保持期限切れが含まれる場合、全文再生成は利用不可とし、部分結果で旧本文を置換しない。Gemini の実行は対象外。将来の Server 実行でも同じ metadata で provider、model、生成元、言語、応答情報を記録できる。
+
+Segment の `startedAt` / `endedAt` は発話の絶対日時であり、ライブ・バッチとも従来の時刻を維持する。バッチは元の録音開始日時に対象区間の offset と認識結果の相対秒数を加算する。`createdAt` は確定 segment を生成した絶対日時で、発話時刻や Server 受信時刻ではない。再送・別版へのコピーでは維持し、再文字起こしでは新しい日時を記録する。未確定 preview はメモリだけに置き、保存する segment に `isConfirmed` は持たせない。
+
+既存 Desktop segment の `createdAt` は合意したミーティング終了時刻で補完する。終了済み録音 session の最後の `endedAt` を優先し、なければ録音開始と duration から求める。未終了 session がある場合や終了時刻が不明な場合は NULL のままにする。元の発話時刻、session 対応、累積 offset、録音データ、本文、未送信操作を保全する前進 migration とする。
+
+Transcript の `status` は保存しない。`endedAt` があれば `ended`、それ以外は最新の既知の segment `createdAt` から5分以内（境界を含む）を `active`、それより後を `inactive`、作成日時がなければ `unknown` とする。5分は通常の発話間隔や送信遅延を許容する活動推定の窓で、[共通定義](../../apps/desktop/Sources/DahliaRuntimeSupport/Resources/TranscriptPolicy.json)を Server / Web / Desktop で使う。終了は成功を、活動推定は録音・接続の継続や異常終了を意味しない。Web は時刻境界でも表示を再計算し、Desktop / MCP は読み取り時に再計算する。

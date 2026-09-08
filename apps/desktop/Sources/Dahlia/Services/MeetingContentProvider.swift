@@ -22,7 +22,9 @@ actor MeetingContentProvider {
         }
 
         let version: Int
-        let revision: Int
+        let revision: Int?
+        let syncRevision: Int?
+        let formatVersion: Int?
         let sha256: String
         let byteCount: Int
         let count: Int
@@ -163,7 +165,7 @@ actor MeetingContentProvider {
         do {
             do {
                 try await fetch(entity: entity, id: id, dbQueue: dbQueue, prefetchBudget: prefetchBudget)
-            } catch TextContentError.changed where entity == .summary || entity == .file {
+            } catch TextContentError.changed {
                 guard let expected, try await dbQueue.read({ try TextContentStore.source(entity: entity, id: id, in: $0) }) == expected else {
                     throw TextContentError.changed
                 }
@@ -359,12 +361,12 @@ actor MeetingContentProvider {
         repeat {
             try Task.checkCancellation()
             let page = try await SyncJSON.decoder.decode(Page.self, from: get(source: source, entity: entity, id: id, cursor: cursor))
-            guard page.version == 1, page.revision == source.revision else { throw TextContentError.changed }
+            guard (page.formatVersion ?? page.version) == 1,
+                  (page.syncRevision ?? page.revision) == source.revision else { throw TextContentError.changed }
             var pageDigest = TextContentDigest()
             if entity == .transcript {
                 guard let items = page.items else { throw TextContentError.integrityFailure }
                 for item in items {
-                    guard item.isConfirmed else { throw TextContentError.integrityFailure }
                     let segmentId = item.segmentId.uuidString.lowercased()
                     pageDigest.add(segmentId, body: false)
                     digest.add(segmentId, body: false)
@@ -412,12 +414,9 @@ actor MeetingContentProvider {
         if entity == .file {
             url.path = "/api/v1/files/\(id.uuidString.lowercased())/metadata"
             url.queryItems = nil
-        } else if entity == .summary {
-            url.path = "/api/v1/vaults/\(source.vaultId.uuidString.lowercased())/meetings/\(id.uuidString.lowercased())/summary/latest"
-            url.queryItems = []
         } else {
-            url.path = "/api/v1/vaults/\(source.vaultId.uuidString.lowercased())/text/\(entity.rawValue)/\(id.uuidString.lowercased())"
-            url.queryItems = [URLQueryItem(name: "revision", value: String(source.revision))]
+            url.path = "/api/v1/vaults/\(source.vaultId.uuidString.lowercased())/meetings/\(id.uuidString.lowercased())/\(entity.rawValue)/latest"
+            url.queryItems = []
         }
         if manifest { url.queryItems?.append(URLQueryItem(name: "manifest", value: "1")) }
         if let cursor { url.queryItems?.append(URLQueryItem(name: "cursor", value: cursor)) }

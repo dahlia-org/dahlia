@@ -1,4 +1,5 @@
 import DahliaMeetingAccess
+import DahliaRuntimeSupport
 import Foundation
 import GRDB
 import os
@@ -160,7 +161,11 @@ actor TranscriptPersistenceWriter {
                     sql: "SELECT vaultId FROM meetings WHERE id = ?",
                     arguments: [meetingId]
                 ) {
-                    let patch = SyncOperationDraft(entity: .transcript, action: .patch, entityId: meetingId)
+                    guard let transcript = try TranscriptRecord.fetchOne(db, key: meetingId),
+                          transcript.sessionId == recordingSessionId else { throw TextContentError.changed }
+                    let info = try transcript.info
+                    guard info.endedAt == nil else { throw TextContentError.changed }
+                    let patch = try TranscriptRecord.mutation(meetingId: meetingId, info: info, mode: "append")
                     try SyncTransactionRecorder.record(
                         vaultId: vaultId,
                         operations: [patch],

@@ -10,6 +10,7 @@ enum RecordingSessionCompletionWriter {
         let duration: TimeInterval
         let updatedAt: Date
         let meetingStatus: MeetingStatus?
+        var interrupted = false
     }
 
     enum CompletionError: LocalizedError {
@@ -57,6 +58,12 @@ enum RecordingSessionCompletionWriter {
         guard let session = try RecordingSessionRecord.fetchOne(db, key: request.recordingSessionId) else {
             throw CompletionError.recordingSessionMissing
         }
+        try TranscriptRecord.finishLive(
+            meetingId: request.meetingId,
+            sessionId: request.recordingSessionId,
+            at: request.interrupted ? nil : .now,
+            in: db
+        )
         try MeetingEventRecorder.record(
             .recordingEnded, meetingId: request.meetingId, at: request.endedAt,
             sessionId: request.recordingSessionId, in: db

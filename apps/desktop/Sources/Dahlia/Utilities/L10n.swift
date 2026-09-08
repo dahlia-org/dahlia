@@ -5,6 +5,7 @@ import Foundation
 
 /// ローカライズ文字列への型安全なアクセスを提供する。
 enum L10n { // swiftlint:disable:this type_body_length
+    static var transcriptFullTranscriptionUnavailable: String { String(localized: "transcript.fullTranscriptionUnavailable", bundle: bundle) }
     static var serverSearchPendingUnavailable: String { String(localized: "search.server.pendingUnavailable", bundle: bundle) }
     static var serverSearchRanked: String { String(localized: "search.server.ranked", bundle: bundle) }
     static var serverSearchTopResults: String { String(localized: "search.server.top", bundle: bundle) }

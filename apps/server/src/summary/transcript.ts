@@ -26,7 +26,7 @@ export async function collectSummaryInput(store: IdentitySyncStore, vaultId: str
   let size = 0;
   while (includeTranscript) {
     const last = transcript.at(-1);
-    const page = await store.listTranscript(vaultId, meetingId, 200, last ? { startTime: last.startTime, segmentId: last.segmentId } : undefined);
+    const page = await store.listTranscript(vaultId, meetingId, 200, last ? { startedAt: last.startedAt, segmentId: last.segmentId } : undefined);
     size += JSON.stringify(page).length;
     if (size > 2_000_000 || transcript.length + page.length > 20000) throw new SummaryError("summary_input_too_large");
     transcript.push(...page);

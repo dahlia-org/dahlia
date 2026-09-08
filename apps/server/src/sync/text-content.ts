@@ -6,7 +6,7 @@ export const TEXT_CONTENT_VERSION = 1;
 export type TextEntity = "summary" | "transcript";
 
 /** Each nullable UTF-8 field is framed by its decimal byte length and ':'. Null is '-:'.
- * Transcript fields are segment UUID (lowercase), text, in (startTime, UUID) order.
+ * Transcript fields are segment UUID (lowercase), text, in (startedAt, UUID) order.
  * Summary has one document field; file text has OCR followed by caption. */
 export class TextContentDigest {
   private readonly hash = new IncrementalSha256();
@@ -21,13 +21,6 @@ export class TextContentDigest {
   }
 
   digestHex() { return this.hash.digestHex(); }
-}
-
-export function parseTextEntity(value: string): TextEntity {
-  if (value !== "transcript") {
-    throw new SyncTransactionError(400, "invalid_text_entity");
-  }
-  return value;
 }
 
 export function fileTextMetadata(record: Record<string, unknown>): Record<string, unknown> {
@@ -55,7 +48,7 @@ export async function metadataRecord(value: SyncCanonicalRecord, store: Identity
       contentOmitted: true, contentPresent: record.document !== null && record.document !== undefined };
   } else if (value.entity === "transcript") {
     record = { meetingId: record.meetingId, contentOmitted: true, contentPresent: true,
-      contentCount: await store.countTranscript(vaultId, value.id) };
+      contentCount: await store.countTranscript(vaultId, value.id), transcript: await store.getTranscript(vaultId, value.id) };
   } else if (value.entity === "file") {
     record = fileTextMetadata(record);
   }
@@ -65,27 +58,30 @@ export async function metadataRecord(value: SyncCanonicalRecord, store: Identity
 /** The caller holds the Vault lock within its identity transaction, including every revision check. */
 export async function readTextContent(
   store: IdentitySyncStore, vaultId: string, entity: TextEntity, entityId: string,
-  revision: number, manifestOnly: boolean, after?: SyncTranscriptCursor,
+  revision: number, manifestOnly: boolean, after?: SyncTranscriptCursor, transcriptVersion?: number,
 ) {
   const digest = new TextContentDigest();
   let count = 0;
-  let present = true;
+  let present: boolean;
   let record: Record<string, unknown> | undefined;
   let items: Awaited<ReturnType<IdentitySyncStore["listTranscript"]>> | undefined;
   let nextCursor: string | null = null;
   if (!await store.getVault(vaultId)) throw new SyncTransactionError(404, "vault_not_found");
   const meeting = await store.getMeeting(vaultId, entityId);
   if (!meeting) throw new SyncTransactionError(404, "meeting_not_found");
-  assertRevision((entity === "summary" ? meeting.summaryRevision : meeting.transcriptRevision) ?? 0, revision);
+  const transcript = entity === "transcript" ? await store.getTranscript(vaultId, entityId, transcriptVersion) : null;
+  if (transcriptVersion !== undefined && !transcript) throw new SyncTransactionError(404, "transcript_version_not_found");
+  if (transcriptVersion === undefined) assertRevision((entity === "summary" ? meeting.summaryRevision : meeting.transcriptRevision) ?? 0, revision);
   if (entity === "summary") {
     present = meeting.summaryDocument !== null;
     digest.add(meeting.summaryDocument);
     count = present ? 1 : 0;
     record = { title: meeting.summaryTitle, document: meeting.summaryDocument, createdAt: meeting.summaryCreatedAt };
   } else {
+    present = transcript !== null;
     let cursor = after;
     do {
-      const rows = await store.listTranscript(vaultId, entityId, 501, cursor);
+      const rows = await store.listTranscript(vaultId, entityId, 501, cursor, transcript?.version);
       const page = [] as typeof rows;
       let bytes = 0;
       for (const row of rows.slice(0, 500)) {
@@ -100,12 +96,14 @@ export async function readTextContent(
         count += 1;
       }
       const last = page.at(-1);
-      nextCursor = rows.length > page.length && last ? `${last.startTime.toISOString()},${last.segmentId}` : null;
-      cursor = nextCursor && last ? { startTime: last.startTime, segmentId: last.segmentId } : undefined;
+      nextCursor = rows.length > page.length && last ? `${last.startedAt.toISOString()},${last.segmentId}` : null;
+      cursor = nextCursor && last ? { startedAt: last.startedAt, segmentId: last.segmentId } : undefined;
       if (!manifestOnly) { items = page; break; }
     } while (cursor);
   }
-  return { version: TEXT_CONTENT_VERSION, entity, entityId, revision, present, count,
+  return { ...(entity === "transcript"
+    ? { formatVersion: TEXT_CONTENT_VERSION, version: transcript?.version ?? 0, syncRevision: transcript?.syncRevision ?? revision, transcript }
+    : { version: TEXT_CONTENT_VERSION, revision }), entity, entityId, present, count,
     byteCount: digest.byteCount, sha256: digest.digestHex(),
     ...(!manifestOnly ? { record, items, nextCursor } : {}) };
 }

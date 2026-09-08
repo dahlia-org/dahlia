@@ -451,7 +451,7 @@ public final class MeetingAccessStore: Sendable {
     }
 
     private func transcriptCountSQL(in db: Database) throws -> String {
-        let local = "(SELECT COUNT(*) FROM transcript_segments WHERE transcript_segments.meetingId = meetings.id AND transcript_segments.isConfirmed = 1)"
+        let local = "(SELECT COUNT(*) FROM transcript_segments WHERE transcript_segments.meetingId = meetings.id)"
         guard try db.tableExists("sync_content_state") else { return local }
         return "max(\(local), coalesce((SELECT contentCount FROM sync_content_state WHERE entity = 'transcript' AND entityId = meetings.id AND complete = 0), 0))"
     }
@@ -649,7 +649,17 @@ public final class MeetingAccessStore: Sendable {
                     contentRevision: resident
                 ).encoded()
             } : nil
+            let transcriptJSON = try String.fetchOne(db, sql: "SELECT infoJSON FROM transcripts WHERE meetingId = ?", arguments: [meetingID])
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            var transcript = try transcriptJSON.map { try decoder.decode(TranscriptInfo.self, from: Data($0.utf8)) }
+            transcript?.latestSegmentCreatedAt = try Date.fetchOne(
+                db,
+                sql: "SELECT MAX(createdAt) FROM transcript_segments WHERE meetingId = ?",
+                arguments: [meetingID]
+            )
             return try TranscriptPage(
+                transcript: transcript,
                 vault: vault,
                 meetingID: meetingID,
                 segments: segments,

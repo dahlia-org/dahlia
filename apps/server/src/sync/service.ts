@@ -1,3 +1,4 @@
+import { transcriptWriteSchema } from "./transcript";
 import { summaryMetadataSchema } from "../summary/metadata";
 import { conditionalRead } from "../storage/http-read";
 import { SummaryError, type SummaryJob, type SummaryDocument, type SummaryMethod } from "../summary/model";
@@ -33,7 +34,7 @@ import type {
 import { decodeSyncCursor, encodeSyncCursor, SYNC_SNAPSHOT_ENTITIES, SyncTransactionError } from "./store";
 import { fileMetadataSchema, fileUploadQuerySchema, filePatchSchema, fileResponse, fileStorageKey, fileVariantKey, imageContentTypes, type FileRecord } from "../files/model";
 import { SCREENSHOT_VARIANTS, screenshotVariantKey, type ScreenshotTransformer, type ScreenshotVariant } from "./screenshot-variants";
-import { metadataRecord, parseTextEntity, readTextContent, TEXT_CONTENT_VERSION } from "./text-content";
+import { metadataRecord, readTextContent, TEXT_CONTENT_VERSION } from "./text-content";
 
 const uuidSchema = z.uuid().transform((value) => value.toLowerCase());
 const dateSchema = z.iso.datetime().transform((value) => new Date(value));
@@ -53,10 +54,10 @@ const meetingStatusSchema = z.enum([
 ]).transform((status) => status === "RECORDING" ? "READY" : status);
 const transcriptSegmentSchema = z.object({
   segmentId: uuidSchema,
-  startTime: dateSchema,
-  endTime: nullableDateSchema,
+  startedAt: dateSchema,
+  endedAt: nullableDateSchema,
   text: z.string(),
-  isConfirmed: z.literal(true),
+  createdAt: nullableDateSchema,
   audioSource: z.enum(["mic", "system"]).nullable(),
   speakerLabel: z.string().nullable(),
 }).strict();
@@ -124,17 +125,21 @@ const transactionDataSchemas = {
   "summary:upsert": z.object({ title: z.string(), document: summaryDocumentSchema, createdAt: dateSchema }).strict(),
   "summary:delete": z.object({}).strict(),
   "transcript:patch": z.object({
+    transcript: transcriptWriteSchema,
+    mode: z.enum(["replace", "append"]),
     patchId: uuidV7Schema,
-    segmentCount: z.number().int().nonnegative().max(TRANSCRIPT_PATCH_ITEM_LIMIT),
+    segmentCount: z.number().int().nonnegative(),
     deletionCount: z.number().int().nonnegative().max(TRANSCRIPT_PATCH_ITEM_LIMIT),
     chunks: z.array(z.object({
       index: z.number().int().nonnegative(),
       sha256: z.string().regex(/^[0-9a-f]{64}$/),
       segmentCount: z.number().int().nonnegative().max(500),
       deletionCount: z.number().int().nonnegative().max(500),
-    }).strict()).min(1).max(TRANSCRIPT_PATCH_CHUNK_LIMIT),
+    }).strict()),
   }).strict().superRefine((patch, context) => {
-    if (patch.chunks.reduce((sum, chunk) => sum + chunk.segmentCount, 0) !== patch.segmentCount
+    // Full snapshots use bounded staged chunks; only incremental patches retain the patch-wide limits.
+    if ((patch.mode === "append" && (patch.segmentCount > TRANSCRIPT_PATCH_ITEM_LIMIT || patch.chunks.length > TRANSCRIPT_PATCH_CHUNK_LIMIT))
+      || patch.chunks.reduce((sum, chunk) => sum + chunk.segmentCount, 0) !== patch.segmentCount
       || patch.chunks.reduce((sum, chunk) => sum + chunk.deletionCount, 0) !== patch.deletionCount
       || patch.chunks.some((chunk, index) => chunk.index !== index)) {
       context.addIssue({ code: "custom", message: "Invalid transcript patch manifest" });
@@ -506,17 +511,32 @@ export class MeetingSyncService {
     });
   }
 
-  async textContent(identity: Identity, vaultId: string, entityValue: string, entityId: string,
-    revisionValue?: string, manifestValue?: string, cursor?: string) {
-    const entity = parseTextEntity(entityValue);
-    if (!revisionValue || !/^\d+$/.test(revisionValue) || !Number.isSafeInteger(Number(revisionValue))
-      || (manifestValue !== undefined && manifestValue !== "1") || (cursor && (manifestValue || entity !== "transcript"))) {
-      throw new SyncTransactionError(400, "invalid_content_request");
+  async transcriptVersions(identity: Identity, vaultId: string, meetingId: string, cursor?: string, limitValue?: string) {
+    const integer = z.string().regex(/^\d+$/).transform(Number).pipe(z.number().int().nonnegative().max(2147483647));
+    const parsed = z.object({ cursor: integer.optional(), limit: integer.pipe(z.number().min(1).max(100)).default(20) }).safeParse({ cursor, limit: limitValue });
+    if (!parsed.success) throw new SyncTransactionError(400, "invalid_transcript_versions_request");
+    return this.store.withIdentity(identity, async (scoped) => {
+      if (!await scoped.getMeeting(vaultId, meetingId)) throw new SyncTransactionError(404, "meeting_not_found");
+      const rows = await scoped.listTranscriptVersions(vaultId, meetingId, parsed.data.limit + 1, parsed.data.cursor);
+      const items = rows.slice(0, parsed.data.limit);
+      return { items, nextCursor: rows.length > parsed.data.limit ? String(items.at(-1)!.version) : null };
+    });
+  }
+
+  async transcriptContent(identity: Identity, vaultId: string, meetingId: string, version: string,
+    manifest?: string, cursor?: string) {
+    const number = Number(version);
+    if ((version !== "latest" && (!/^\d+$/.test(version) || !Number.isSafeInteger(number) || number < 1 || number > 2147483647))
+      || (manifest !== undefined && manifest !== "1") || (cursor && manifest)) {
+      throw new SyncTransactionError(400, "invalid_transcript_request");
     }
     const after = cursor ? this.parseTranscriptCursor(cursor) : undefined;
     return this.store.withIdentity(identity, async (scoped) => {
       await scoped.lockVault(vaultId);
-      return readTextContent(scoped, vaultId, entity, entityId, Number(revisionValue), manifestValue === "1", after);
+      const meeting = await scoped.getMeeting(vaultId, meetingId);
+      if (!meeting) throw new SyncTransactionError(404, "meeting_not_found");
+      return readTextContent(scoped, vaultId, "transcript", meetingId, meeting.transcriptRevision ?? 0,
+        manifest === "1", after, version === "latest" ? undefined : number);
     });
   }
 
@@ -1103,18 +1123,20 @@ export class MeetingSyncService {
 
   async listTranscript(identity: Identity, vaultId: string, meetingId: string, cursor?: string) {
     const parsedCursor = this.parseTranscriptCursor(cursor);
-    const records = await this.store.withIdentity(identity, (scoped) => scoped.listTranscript(
-      vaultId,
-      meetingId,
-      TRANSCRIPT_READ_PAGE_SIZE + 1,
-      parsedCursor,
-    ));
+    const { records, transcript } = await this.store.withIdentity(identity, async (scoped) => {
+      await scoped.lockVault(vaultId);
+      const transcript = await scoped.getTranscript(vaultId, meetingId);
+      const records = await scoped.listTranscript(vaultId, meetingId, TRANSCRIPT_READ_PAGE_SIZE + 1,
+        parsedCursor, transcript?.version);
+      return { records, transcript };
+    });
     const items = records.slice(0, TRANSCRIPT_READ_PAGE_SIZE);
     const last = items.at(-1);
     return {
+      transcript,
       items,
       ...(records.length > TRANSCRIPT_READ_PAGE_SIZE && last
-        ? { nextCursor: `${last.startTime.toISOString()},${last.segmentId}` }
+        ? { nextCursor: `${last.startedAt.toISOString()},${last.segmentId}` }
         : {}),
     };
   }
@@ -1123,7 +1145,7 @@ export class MeetingSyncService {
     if (cursor === undefined) return undefined;
     const parsed = transcriptCursorSchema.safeParse(cursor.split(","));
     if (!parsed.success) throw new RequestError(400, "invalid_sync_cursor");
-    return { startTime: parsed.data[0], segmentId: parsed.data[1] };
+    return { startedAt: parsed.data[0], segmentId: parsed.data[1] };
   }
 
   async listScreenshots(

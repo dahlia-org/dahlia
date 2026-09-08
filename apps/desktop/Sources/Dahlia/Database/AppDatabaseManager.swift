@@ -358,6 +358,14 @@ final class AppDatabaseManager: Sendable {
             """)
         }
 
+        migrator.registerMigration("v49_transcriptVersions", foreignKeyChecks: .deferred) { db in
+            try TranscriptVersionMigration.migrate(in: db)
+        }
+
+        migrator.registerMigration("v50_transcriptActivity", foreignKeyChecks: .deferred) { db in
+            try TranscriptActivityMigration.migrate(in: db)
+        }
+
         return migrator
     }()
 

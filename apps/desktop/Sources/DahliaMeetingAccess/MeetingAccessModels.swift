@@ -156,6 +156,7 @@ public struct SummaryMutationResult: Codable, Sendable, Equatable {
 }
 
 public struct TranscriptPage: Codable, Sendable, Equatable {
+    public var transcript: TranscriptInfo?
     public let vault: ScopedVault
     public let meetingID: UUID
     public let segments: [TranscriptEntry]

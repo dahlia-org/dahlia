@@ -202,7 +202,8 @@ import Foundation
                 text: segment.text,
                 translatedText: segment.translatedText,
                 isConfirmed: true,
-                audioSource: segment.audioSource
+                audioSource: segment.audioSource,
+                createdAt: segment.createdAt
             )
         }
     }

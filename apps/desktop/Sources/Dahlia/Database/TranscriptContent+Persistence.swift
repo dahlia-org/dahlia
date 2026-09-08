@@ -13,12 +13,14 @@ extension TranscriptContent {
             audioActiveRmsDecibels: segment.audioFeatures?.activeRmsDecibels,
             audioMedianPitchHertz: segment.audioFeatures?.medianPitchHertz,
             audioVoicedFrameRatio: segment.audioFeatures?.voicedFrameRatio,
-            audioPitchSpreadHertz: segment.audioFeatures?.pitchSpreadHertz
+            audioPitchSpreadHertz: segment.audioFeatures?.pitchSpreadHertz,
+            createdAt: segment.createdAt
         )
     }
 
     /// Called inside the durable writer's transaction, together with its sync operation.
     func insert(_ db: Database) throws {
+        guard isConfirmed else { return }
         try TranscriptSegmentRecord(from: TranscriptSegment(from: self), meetingId: meetingId).insert(db)
         try TranscriptSegmentBodyRecord(segmentId: id, text: text).insert(db)
     }

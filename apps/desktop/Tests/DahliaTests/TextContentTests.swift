@@ -709,11 +709,11 @@
             try await provider.ensure(entity: .transcript, id: fixture.meetingId, dbQueue: fixture.queue)
             let responses = try [fixture.manifest, fixture.firstPage, fixture.secondPage].enumerated().map { index, data in
                 var value = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
-                value["revision"] = 4
+                value["syncRevision"] = 4
                 if index == 1 {
                     var items = try #require(value["items"] as? [[String: Any]])
-                    items[0]["startTime"] = "2026-01-01T00:00:00.100Z"
-                    items[0]["endTime"] = "2026-01-01T00:00:00.500Z"
+                    items[0]["startedAt"] = "2026-01-01T00:00:00.100Z"
+                    items[0]["endedAt"] = "2026-01-01T00:00:00.500Z"
                     items[0]["audioSource"] = "mic"
                     items[0]["speakerLabel"] = "Updated speaker"
                     value["items"] = items
@@ -723,7 +723,7 @@
             let calls = Mutex(0)
             ImageURLProtocol.register(origin: fixture.origin) { request in
                 calls.withLock { $0 += 1 }
-                let query = request.url!.query!
+                let query = request.url!.query ?? ""
                 return (200, [:], responses[query.contains("manifest") ? 0 : query.contains("cursor") ? 2 : 1])
             }
             try await fixture.queue.write { db in
@@ -774,7 +774,7 @@
                 return try JSONSerialization.data(withJSONObject: page)
             }
             ImageURLProtocol.register(origin: fixture.origin) { request in
-                let query = request.url!.query!
+                let query = request.url!.query ?? ""
                 return (200, [:], query.contains("manifest") ? fixture.manifest : pages[query.contains("cursor") ? 1 : 0])
             }
             await store.load(meetingId: fixture.meetingId, dbQueue: fixture.queue)
@@ -946,15 +946,15 @@
             }
             let manifests = Mutex(Set<String>())
             ImageURLProtocol.register(origin: origin) { request in
-                let id = request.url!.lastPathComponent
+                let id = request.url!.deletingLastPathComponent().deletingLastPathComponent().lastPathComponent
                 var digest = TextContentDigest()
                 digest.add(id, body: false)
                 digest.add("recent body")
                 var payload: [String: Any] = [
-                    "version": 1,
+                    "formatVersion": 1, "version": 1,
                     "entity": "transcript",
                     "entityId": id,
-                    "revision": 1,
+                    "syncRevision": 1,
                     "present": true,
                     "count": 1,
                     "byteCount": digest.byteCount,
@@ -963,7 +963,7 @@
                 if (request.url!.query ?? "").contains("manifest") {
                     _ = manifests.withLock { $0.insert(id) }
                 } else {
-                    payload["items"] = [["segmentId": id, "startTime": "2026-01-01T00:00:00.000Z", "text": "recent body", "isConfirmed": true]]
+                    payload["items"] = [["segmentId": id, "startedAt": "2026-01-01T00:00:00.000Z", "text": "recent body", "createdAt": NSNull()]]
                 }
                 do {
                     return try (200, [:], JSONSerialization.data(withJSONObject: payload))
@@ -1238,9 +1238,9 @@
             let fixture = try textFixture()
             let maximumChunkBytes = 8 * 1024 * 1024
             var item: [String: Any] = [
-                "segmentId": fixture.segmentId.uuidString.lowercased(), "startTime": "2026-01-01T00:00:00.000Z",
-                "text": "", "isConfirmed": true,
-                "endTime": NSNull(), "audioSource": NSNull(), "speakerLabel": NSNull(),
+                "segmentId": fixture.segmentId.uuidString.lowercased(), "startedAt": "2026-01-01T00:00:00.000Z",
+                "text": "", "createdAt": NSNull(),
+                "endedAt": NSNull(), "audioSource": NSNull(), "speakerLabel": NSNull(),
             ]
             let overhead = try JSONSerialization.data(withJSONObject: ["segments": [item], "deletions": []]).count
             let text = String(repeating: "a", count: maximumChunkBytes - overhead)
@@ -1250,7 +1250,7 @@
             digest.add(fixture.segmentId.uuidString.lowercased(), body: false)
             digest.add(text)
             let manifest: [String: Any] = [
-                "version": 1, "entity": "transcript", "entityId": fixture.meetingId.uuidString, "revision": 3,
+                "formatVersion": 1, "version": 1, "entity": "transcript", "entityId": fixture.meetingId.uuidString, "syncRevision": 3,
                 "present": true, "count": 1, "byteCount": digest.byteCount, "sha256": digest.digestHex(),
             ]
             var page = manifest
@@ -1331,7 +1331,7 @@
             ])
             let provider = provider(fixture) { request in
                 let path = request.url!.path
-                if path.hasSuffix("/capabilities") { return (200, [:], Data("{\"sync\":{\"version\":3}}".utf8)) }
+                if path.hasSuffix("/capabilities") { return (200, [:], Data("{\"sync\":{\"version\":4}}".utf8)) }
                 if path.hasSuffix("/changes") {
                     let count = changeRequests.withLock { $0 += 1
                         return $0
@@ -1385,7 +1385,7 @@
             }
         }
 
-        @Test(arguments: [nil, "{}", #"{"sync":{"version":1}}"#, #"{"sync":{"version":2}}"#, #"{"sync":{"version":4}}"#])
+        @Test(arguments: [nil, "{}", #"{"sync":{"version":1}}"#, #"{"sync":{"version":2}}"#, #"{"sync":{"version":3}}"#])
         func incompatibleServerStopsMetadataSyncWithoutDiscardingExistingText(capabilities: String?) async throws {
             let fixture = try textFixture()
             let connectionId = try await fixture.queue.write { db in
@@ -1449,7 +1449,7 @@
             let provider = provider(fixture) { request in
                 calls.withLock { $0.append(request.url!.path) }
                 if request.url!.path.hasSuffix("/capabilities") {
-                    return (200, [:], Data(#"{"sync":{"version":3},"futureFeature":{"enabled":true}}"#.utf8))
+                    return (200, [:], Data(#"{"sync":{"version":4},"futureFeature":{"enabled":true}}"#.utf8))
                 }
                 return (200, [:], payload)
             }
@@ -1709,13 +1709,13 @@
                 }
                 let item: [String: Any] = [
                     "segmentId": ids[index].uuidString.lowercased(),
-                    "startTime": index == 0 ? "2026-01-01T00:00:00.000Z" : "2026-01-01T00:00:01.000Z",
+                    "startedAt": index == 0 ? "2026-01-01T00:00:00.000Z" : "2026-01-01T00:00:01.000Z",
                     "text": texts[index],
-                    "isConfirmed": true,
+                    "createdAt": NSNull(),
                 ]
                 pages.append([
-                    "version": 1,
-                    "revision": 3,
+                    "formatVersion": 1, "version": 1,
+                    "syncRevision": 3,
                     "sha256": pageDigest.digestHex(),
                     "byteCount": pageDigest.byteCount,
                     "count": 1,
@@ -1731,18 +1731,18 @@
                 )
                 try db.execute(
                     sql: """
-                    INSERT INTO transcript_segments(id, meetingId, startTime, translatedText, isConfirmed, audioFeatureVersion, audioVoicedFrameRatio)
-                    VALUES (?, ?, ?, 'local translation', 1, 1, 0.75)
+                    INSERT INTO transcript_segments(id, meetingId, startedAt, translatedText, audioFeatureVersion, audioVoicedFrameRatio)
+                    VALUES (?, ?, ?, 'local translation', 1, 0.75)
                     """,
                     arguments: [segmentId, meetingId, Date(timeIntervalSince1970: 1_767_225_600)]
                 )
                 return try #require(try String.fetchOne(db, sql: "SELECT origin FROM dahlia_account_connections"))
             }
             let manifest: [String: Any] = [
-                "version": 1,
+                "formatVersion": 1, "version": 1,
                 "entity": "transcript",
                 "entityId": meetingId.uuidString.lowercased(),
-                "revision": 3,
+                "syncRevision": 3,
                 "present": true,
                 "count": 2,
                 "byteCount": digest.byteCount,

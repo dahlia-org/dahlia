@@ -1,3 +1,4 @@
+import type { TranscriptVersion } from "./transcript";
 import type { SummaryVersion } from "../summary/metadata";
 import type { SummaryJob } from "../summary/model";
 import type { RecordingRecord, RecordingSource } from "../recordings/model";
@@ -7,16 +8,16 @@ import type { ImageAnalysisClaim, ImageAnalysisInput } from "../image-analysis/m
 
 export interface SyncTranscriptSegment {
   segmentId: string;
-  startTime: Date;
-  endTime: Date | null;
+  startedAt: Date;
+  endedAt: Date | null;
   text: string;
-  isConfirmed: boolean;
+  createdAt: Date | null;
   audioSource: string | null;
   speakerLabel: string | null;
 }
 
 export interface SyncTranscriptCursor {
-  startTime: Date;
+  startedAt: Date;
   segmentId: string;
 }
 
@@ -208,6 +209,8 @@ export interface IdentitySyncStore {
   listRecordings(meetingId: string, after: number, limit: number): Promise<RecordingRecord[]>;
   expireRecordingUploads(vaultId: string, before: Date): Promise<void>;
 
+  getTranscript(vaultId: string, meetingId: string, revision?: number): Promise<TranscriptVersion | null>;
+  listTranscriptVersions(vaultId: string, meetingId: string, limit: number, before?: number): Promise<TranscriptVersion[]>;
   countTranscript(vaultId: string, meetingId: string): Promise<number>;
   searchTextPage(vaultId: string, query: SyncSearchQuery, kind: "meeting" | "screenshot", offset: number, limit: number): Promise<{
     id: string; meetingId: string; snippet: string;
@@ -264,6 +267,7 @@ export interface IdentitySyncStore {
     meetingId: string,
     limit: number,
     cursor?: SyncTranscriptCursor,
+    version?: number,
   ): Promise<SyncTranscriptSegment[]>;
   listScreenshots(
     vaultId: string,

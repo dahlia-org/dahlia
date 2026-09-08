@@ -1713,3 +1713,5 @@
 "serverSummaryReloadModels" = "Reload models";
 
 "serverSummaryAccountDefault" = "Account default";
+
+"transcript.fullTranscriptionUnavailable" = "The transcript uses a different model. Full retranscription requires all original audio and a model that can process saved audio.";
