@@ -1675,7 +1675,6 @@
 "text.content.serverMatch" = "Server";
 
 // Server account language settings
-"account.settings.languages" = "アカウントの解析言語";
 "account.settings.imageLanguages" = "画像解析の対象言語";
 "account.settings.description" = "このアカウントの端末間で共有します。出力言語は要約と画像の説明に適用されます。録音・文字起こしの言語設定は変更しません。";
 "account.settings.notLoaded" = "アカウント設定は未取得です。";
@@ -1699,7 +1698,7 @@
 "serverSummaryAudio" = "音声と画像";
 "serverSummaryTranscript" = "文字起こしと画像";
 
-"serverSummaryDescription" = "サーバーで生成します。画面を閉じても処理は続きます。エクスポートは生成後に個別に行います。";
+"serverSummaryDescription" = "サーバーで生成します。画面を閉じても処理は続きます。詳細度は要約のソース間で共通です。エクスポートは生成後に個別に行います。";
 
 "serverSummaryUnavailable" = "このサーバーでは要約生成を利用できません。";
 

@@ -6,11 +6,13 @@ export function testStore(overrides: Partial<AuthStore> = {}): AuthStore {
   return {
     database: {} as AuthStore["database"],
     accountSettings: {
+      getChangeVersion: (userId) => Promise.resolve(settings.has(userId) ? 1 : null),
       get: (userId) => Promise.resolve(settings.get(userId) ?? null),
       update: (userId, patch, initialize) => {
         const current = settings.get(userId) ?? DEFAULT_ACCOUNT_SETTINGS;
         const value = initialize && settings.has(userId) ? settings.get(userId)!
           : { ...current, ...patch, summary: {
+            detail: patch.summary?.detail ?? current.summary.detail,
             method: patch.summary?.method ?? current.summary.method,
             methodSettings: { audio: { ...current.summary.methodSettings.audio, ...patch.summary?.methodSettings?.audio }, transcript: { ...current.summary.methodSettings.transcript, ...patch.summary?.methodSettings?.transcript } },
           } };

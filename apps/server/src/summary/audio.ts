@@ -88,7 +88,7 @@ export function createAudioSummaryMethod(config: AppConfig, store: MeetingSyncSt
   return {
     id: "audio",
     captureSettings: (settings, detail) => ({ ...settings.summary.methodSettings.audio,
-      detail: detail ?? settings.summary.methodSettings.audio.detail }),
+      detail: detail ?? settings.summary.detail }),
     async version(scoped, vaultId, meetingId) { return fingerprint(await collectAudio(scoped, vaultId, meetingId)); },
     async generate(job, signal) {
       let requestId: string | undefined;

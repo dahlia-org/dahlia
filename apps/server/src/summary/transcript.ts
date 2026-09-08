@@ -53,7 +53,7 @@ export function createTranscriptSummaryMethod(config: AppConfig, store: MeetingS
   const tokens = new DatabricksTokenProvider(config.databricksWorkspace, transport);
   return {
     id: "transcript",
-    captureSettings: (settings, detail) => ({ ...settings.summary.methodSettings.transcript, detail: detail ?? settings.summary.methodSettings.transcript.detail }),
+    captureSettings: (settings, detail) => ({ ...settings.summary.methodSettings.transcript, detail: detail ?? settings.summary.detail }),
     async version(scoped, vaultId, meetingId) { return fingerprint(await collectSummaryInput(scoped, vaultId, meetingId)); },
     async generate(job, signal) {
       let requestId: string | undefined;

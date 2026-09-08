@@ -11,14 +11,21 @@ struct ServerAccountLanguageSettingsSection: View {
 
     var body: some View {
         Section {
-            if let settings = state.settings {
+            if state.settings != nil {
                 Picker(L10n.summaryOutputLanguage, selection: outputLanguage) {
                     ForEach(SummaryLanguage.allCases) { language in
                         Text(language.displayName).tag(language)
                     }
                 }
                 .disabled(!state.canEdit)
-
+            }
+        } header: {
+            Text(L10n.summaryOutputLanguage)
+        } footer: {
+            Text(L10n.serverAccountSettingsDescription)
+        }
+        Section {
+            if let settings = state.settings {
                 DisclosureGroup {
                     Picker(L10n.languageRange, selection: languageScope) {
                         ForEach(AppLanguageScope.allCases) { scope in
@@ -63,9 +70,7 @@ struct ServerAccountLanguageSettingsSection: View {
                     .disabled(state.isLoading || state.isSaving)
             }
         } header: {
-            Text(L10n.serverAccountLanguages)
-        } footer: {
-            Text(L10n.serverAccountSettingsDescription)
+            Text(L10n.imageAnalysisLanguages)
         }
         .task(id: connectionID) {
             if let task = model.refresh(connectionID: connectionID) { await task.value }

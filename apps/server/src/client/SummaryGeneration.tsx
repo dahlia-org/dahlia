@@ -3,7 +3,7 @@ import { json, uiText } from "./api";
 import { refreshData, useLiveJSON } from "./live-data";
 import { uuidV7 } from "../id";
 import type { GatewayModelList } from "../ai-gateway/backend";
-import type { AccountSettings, AccountSettingsPatch } from "../account-settings";
+import { DEFAULT_ACCOUNT_SETTINGS, type AccountSettings, type AccountSettingsPatch } from "../account-settings-model";
 import type { summaryJobResponse } from "../summary/service";
 import { isAudioSummaryModel } from "../summary/audio-model";
 import { CODEX_AUTO_REVIEW_ALIAS } from "../ai-gateway/model-alias";
@@ -17,10 +17,6 @@ const summaryErrors: Record<string, string> = {
   summary_invalid_audio_model: uiText("Select an available audio-capable Gemini model in settings.", "設定で利用可能な音声対応Geminiモデルを選択してください。"),
 };
 type Job = ReturnType<typeof summaryJobResponse>;
-const DEFAULT_SUMMARY_SETTINGS = {
-  transcript: { model: "gpt-5.4", reasoningEffort: "medium", detail: "detailed" },
-  audio: { model: "gemini-3-8-flash", reasoningEffort: "medium", detail: "detailed" },
-} as const;
 const details = ["concise", "standard", "detailed", "eventSession"] as const;
 const detailLabel = (detail: typeof details[number]) => ({ concise: uiText("Concise", "簡潔"), standard: uiText("Standard", "標準"),
   detailed: uiText("Detailed", "詳細"), eventSession: uiText("Event session", "イベントセッション") })[detail];
@@ -33,36 +29,54 @@ function useSummaryMethods() {
 
 export function ServerSummarySettings() {
   const methods = useSummaryMethods();
-  const query = useLiveJSON<{ settings: AccountSettings | null }>("/api/v1/account/settings");
+  const query = useLiveJSON<{ settings: AccountSettings | null }>("/api/v1/account/settings", "account");
   const [error, setError] = useState<string>();
   const [saving, setSaving] = useState(false);
-  const catalog = useLiveJSON<GatewayModelList>("/api/v1/models");
+  const catalog = useLiveJSON<GatewayModelList>(methods.length ? "/api/v1/models" : undefined, "manual");
   const settings = query.data?.settings;
 
   const save = async (patch: AccountSettingsPatch) => {
     setSaving(true); setError(undefined);
-    try { await json("/api/v1/account/settings", { method: "PATCH", body: JSON.stringify(patch) }); query.reload(); }
+    try {
+      const result = await json<{ settings: AccountSettings }>("/api/v1/account/settings",
+        { method: "PATCH", body: JSON.stringify(patch) }, { notifyMutation: false });
+      query.replace(result); query.reload();
+    }
     catch (error) { setError(error instanceof Error ? error.message : uiText("Could not save settings", "設定を保存できません")); }
     finally { setSaving(false); }
   };
   const method = settings?.summary.method ?? "transcript";
   const saveSource = (value: Partial<AccountSettings["summary"]["methodSettings"]["transcript"]>) =>
     save({ summary: { methodSettings: { [method]: value } } });
-  if (!methods.length) return null;
-  const source = settings?.summary.methodSettings[method] ?? DEFAULT_SUMMARY_SETTINGS[method];
+  const source = settings?.summary.methodSettings[method] ?? DEFAULT_ACCOUNT_SETTINGS.summary.methodSettings[method];
   const models = catalog.data?.data.filter((model) => model.id !== CODEX_AUTO_REVIEW_ALIAS
     && (method !== "audio" || isAudioSummaryModel(model.id, catalog.data!))) ?? [];
   const selected = models.find((model) => model.id === source.model || source.model.endsWith(`.${model.id}`));
   const metadata = catalog.data?.models.find((model) => model.slug === selected?.id);
   const efforts = metadata?.supported_reasoning_levels.map(({ effort }) => effort) ?? [];
-  return <section className="section-block">
+  return <>
+    <section className="section-block">
+      <h2 className="section-label">{uiText("Output language", "出力言語")}</h2>
+      <p>{uiText("Shared by summaries and image analysis.", "要約と画像解析に共通で使用します。")}</p>
+      <fieldset className="account-settings" disabled={saving || query.loading}>
+        <label>{uiText("Output language", "出力言語")}<select value={settings?.outputLanguage ?? DEFAULT_ACCOUNT_SETTINGS.outputLanguage}
+          onChange={(event) => void save({ outputLanguage: event.target.value as AccountSettings["outputLanguage"] })}>
+          {Object.entries({ ja: "日本語", en: "English", zh: "中文", ko: "한국어", fr: "Français", de: "Deutsch", es: "Español" }).map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+        </select></label>
+      </fieldset>
+    </section>
+    {methods.length > 0 && <section className="section-block">
     <h2 className="section-label">{uiText("Server summary", "サーバー要約")}</h2>
     <p>{uiText("Settings apply to new jobs. Export summaries separately after generation.", "設定は次回の生成から適用されます。エクスポートは生成後に個別に行います。")}</p>
     {method === "audio" && <p>{uiText("Uses uploaded recordings and images. The combined mic/system audio limit is 9.5 hours. Oversized requests fail without truncation.", "アップロード済みの音声と画像を使用します。マイク・システム音声の合計上限は9.5時間です。送信上限を超える場合は切り捨てずに停止します。")}</p>}
-    <fieldset className="summary-settings" disabled={saving || query.loading}>
+    <fieldset className="account-settings" disabled={saving || query.loading}>
       <label>{uiText("Summary source", "要約のソース")}<select value={method}
         onChange={(event) => void save({ summary: { method: event.target.value as typeof method } })}>
         {methods.map((method) => <option key={method} value={method}>{method === "audio" ? uiText("Audio and images", "音声と画像") : uiText("Transcript and images", "文字起こしと画像")}</option>)}
+      </select></label>
+      <label>{uiText("Detail", "詳細度")}<select value={settings?.summary.detail ?? DEFAULT_ACCOUNT_SETTINGS.summary.detail}
+        onChange={(event) => void save({ summary: { detail: event.target.value as AccountSettings["summary"]["detail"] } })}>
+        {details.map((detail) => <option key={detail} value={detail}>{detailLabel(detail)}</option>)}
       </select></label>
       <label>{uiText("Model", "モデル")}<select value={selected?.id ?? ""} disabled={catalog.loading || !models.length}
         onChange={(event) => {
@@ -83,17 +97,10 @@ export function ServerSummarySettings() {
         {!efforts.includes(source.reasoningEffort) && <option value="" disabled>{uiText("Select reasoning effort", "推論強度を選択")}</option>}
         {efforts.map((effort) => <option key={effort}>{effort}</option>)}
       </select></label>
-      <label>{uiText("Detail", "詳細度")}<select value={source.detail}
-        onChange={(event) => void saveSource({ detail: event.target.value as typeof source.detail })}>
-        {details.map((detail) => <option key={detail} value={detail}>{detailLabel(detail)}</option>)}
-      </select></label>
-      <label>{uiText("Output language", "出力言語")}<select value={settings?.outputLanguage ?? "ja"}
-        onChange={(event) => void save({ outputLanguage: event.target.value as AccountSettings["outputLanguage"] })}>
-        {Object.entries({ ja: "日本語", en: "English", zh: "中文", ko: "한국어", fr: "Français", de: "Deutsch", es: "Español" }).map(([id, name]) => <option key={id} value={id}>{name}</option>)}
-      </select></label>
     </fieldset>
+    </section>}
     {(error || query.error) && <p role="alert" className="error">{error ?? query.error?.message}</p>}
-  </section>;
+  </>;
 }
 
 export function ServerSummaryGeneration({ base }: { base: string }) {

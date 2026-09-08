@@ -25,7 +25,7 @@ import {
 } from "drizzle-orm/pg-core";
 
 import type { FileMetadata } from "../files/model";
-import type { AccountSettings } from "../account-settings";
+import { DEFAULT_ACCOUNT_SETTINGS, type AccountSettings } from "../account-settings-model";
 
 import { user as authUser } from "./generated/postgres-auth-schema";
 
@@ -34,9 +34,8 @@ const tsvector = customType<{ data: string }>({ dataType: () => "tsvector" });
 
 export const accountSettings = appSchema.table("account_settings", {
   userId: text("user_id").primaryKey().references(() => authUser.id, { onDelete: "cascade" }),
-  summaryMethod: text("summary_method").$type<"transcript" | "audio">().default("transcript").notNull(),
-  transcriptSummary: jsonb("transcript_summary").$type<AccountSettings["summary"]["methodSettings"]["transcript"]>().default({ model: "gpt-5.4", reasoningEffort: "medium", detail: "detailed" }).notNull(),
-  audioSummary: jsonb("audio_summary").$type<AccountSettings["summary"]["methodSettings"]["audio"]>().default({ model: "gemini-3-8-flash", reasoningEffort: "medium", detail: "detailed" }).notNull(),
+  summary: jsonb("summary").$type<AccountSettings["summary"]>().default(DEFAULT_ACCOUNT_SETTINGS.summary).notNull(),
+  changeVersion: integer("change_version").default(1).notNull(),
   outputLanguage: text("output_language").$type<AccountSettings["outputLanguage"]>().notNull(),
   analysisLanguages: jsonb("analysis_languages").$type<AccountSettings["analysisLanguages"]>().notNull(),
 }, (table) => [

@@ -1,0 +1,2 @@
+ALTER TABLE "app"."account_settings" ADD COLUMN "summary" jsonb DEFAULT '{"method":"transcript","detail":"detailed","methodSettings":{"transcript":{"model":"gpt-5.4","reasoningEffort":"medium"},"audio":{"model":"gemini-3-8-flash","reasoningEffort":"medium"}}}' NOT NULL;--> statement-breakpoint
+ALTER TABLE "app"."account_settings" ADD COLUMN "change_version" integer DEFAULT 1 NOT NULL;

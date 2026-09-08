@@ -441,7 +441,7 @@ export function createApp(dependencies: AppDependencies) {
     const suppliedCursor = context.req.query("cursor") ?? context.req.header("last-event-id");
     let sequence = suppliedCursor ? decodeSyncCursor(suppliedCursor) : 0;
     return streamSSE(context, async (stream) => {
-      let accountSettingsKey: string | undefined;
+      let accountSettingsKey: number | null | undefined;
       while (!stream.aborted) {
         const cursor = await sync.latestCursor(identity);
         const latest = decodeSyncCursor(cursor);
@@ -449,7 +449,7 @@ export function createApp(dependencies: AppDependencies) {
           sequence = latest;
           await stream.writeSSE({ event: "invalidation", id: cursor, data: JSON.stringify({ cursor }) });
         }
-        const settingsKey = JSON.stringify(await store.accountSettings.get(identity.userId));
+        const settingsKey = await store.accountSettings.getChangeVersion(identity.userId);
         if (settingsKey !== accountSettingsKey) {
           accountSettingsKey = settingsKey;
           await stream.writeSSE({ event: "account_settings", data: "{}" });

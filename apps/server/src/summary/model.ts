@@ -4,12 +4,9 @@ import type { AccountSettings } from "../account-settings";
 import { uuidV7 } from "../id";
 import type { IdentitySyncStore } from "../sync/types";
 
-export const summaryDetailSchema = z.enum(["concise", "standard", "detailed", "eventSession"]);
-export const transcriptSettingsSchema = z.object({
-  model: z.string().trim().min(1).max(200),
-  reasoningEffort: z.enum(["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"]),
-  detail: summaryDetailSchema,
-}).strict();
+import { summaryDetailSchema, summaryModelSettingsSchema } from "../account-settings-model";
+export { summaryDetailSchema } from "../account-settings-model";
+export const transcriptSettingsSchema = summaryModelSettingsSchema.extend({ detail: summaryDetailSchema });
 export type TranscriptSettings = z.infer<typeof transcriptSettingsSchema>;
 export interface SummaryJob {
   id: string; vaultId: string; meetingId: string; ownerUserId: string;

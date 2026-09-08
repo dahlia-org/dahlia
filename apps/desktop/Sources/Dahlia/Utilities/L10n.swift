@@ -27,7 +27,6 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var serverSummaryNoModels: String { String(localized: "serverSummaryNoModels", bundle: bundle) }
     static var serverSummaryReloadModels: String { String(localized: "serverSummaryReloadModels", bundle: bundle) }
     static var serverSummaryFailed: String { String(localized: "serverSummaryFailed", bundle: bundle) }
-    static var serverAccountLanguages: String { String(localized: "account.settings.languages", bundle: bundle) }
     static var imageAnalysisLanguages: String { String(localized: "account.settings.imageLanguages", bundle: bundle) }
     static var serverAccountSettingsDescription: String { String(localized: "account.settings.description", bundle: bundle) }
     static var serverAccountSettingsNotLoaded: String { String(localized: "account.settings.notLoaded", bundle: bundle) }
