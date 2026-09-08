@@ -6,22 +6,22 @@ struct ServerAccountSettings: Codable, Equatable, Sendable {
         var identifiers: [String]
     }
 
-    struct TranscriptSummary: Codable, Equatable, Sendable {
+    struct SummaryModelSettings: Codable, Equatable, Sendable {
         var model = "gpt-5.4"
         var reasoningEffort = "medium"
-        var detail = "detailed"
     }
 
     struct Summary: Codable, Equatable, Sendable {
         struct MethodSettings: Codable, Equatable, Sendable {
-            var transcript: TranscriptSummary
-            var audio: TranscriptSummary?
+            var transcript: SummaryModelSettings
+            var audio: SummaryModelSettings?
         }
 
         var method: String
+        var detail: String
         var methodSettings: MethodSettings
 
-        var selectedSettings: TranscriptSummary? {
+        var selectedSettings: SummaryModelSettings? {
             switch method {
             case "transcript": methodSettings.transcript
             case "audio": methodSettings.audio
@@ -30,7 +30,7 @@ struct ServerAccountSettings: Codable, Equatable, Sendable {
         }
 
         var detailLevel: SummaryDetailLevel? {
-            selectedSettings.flatMap { SummaryDetailLevel(rawValue: $0.detail) }
+            SummaryDetailLevel(rawValue: detail)
         }
     }
 
@@ -55,18 +55,18 @@ struct ServerAccountSettings: Codable, Equatable, Sendable {
         var initialize: Bool?
         struct Summary: Encodable, Sendable {
             var method: String?
+            var detail: String?
             var methodSettings: MethodSettings?
         }
 
         struct MethodSettings: Encodable, Sendable {
-            var transcript: Transcript?
-            var audio: Transcript?
+            var transcript: ModelSettings?
+            var audio: ModelSettings?
         }
 
-        struct Transcript: Encodable, Sendable {
+        struct ModelSettings: Encodable, Sendable {
             var model: String?
             var reasoningEffort: String?
-            var detail: String?
         }
 
         var summary: Summary?

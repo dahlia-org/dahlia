@@ -1675,7 +1675,6 @@
 "text.content.serverMatch" = "Server";
 
 // Server account language settings
-"account.settings.languages" = "Account analysis languages";
 "account.settings.imageLanguages" = "Image analysis languages";
 "account.settings.description" = "Shared across devices using this account. The output language applies to summaries and image captions. Recording and transcription language settings are unchanged.";
 "account.settings.notLoaded" = "Account settings have not been loaded.";
@@ -1699,7 +1698,7 @@
 "serverSummaryAudio" = "Audio and images";
 "serverSummaryTranscript" = "Transcript and images";
 
-"serverSummaryDescription" = "Generate on the server, even after closing the app. Export separately after generation.";
+"serverSummaryDescription" = "Generate on the server, even after closing the app. Detail is shared across summary sources. Export separately after generation.";
 
 "serverSummaryUnavailable" = "Summary generation is unavailable on this server.";
 

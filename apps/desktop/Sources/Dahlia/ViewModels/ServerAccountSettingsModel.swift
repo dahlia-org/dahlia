@@ -30,6 +30,7 @@ final class ServerAccountSettingsModel {
     @ObservationIgnored private var connections: [UUID: Connection] = [:]
     @ObservationIgnored private var tasks: [UUID: Task<Void, Never>] = [:]
     @ObservationIgnored private var generations: [UUID: UUID] = [:]
+    @ObservationIgnored private var pendingModelReloads: Set<UUID> = []
     @ObservationIgnored private let client: SyncAPIClient
     @ObservationIgnored private let initialValues: @MainActor () -> ServerAccountSettings
 
@@ -48,6 +49,7 @@ final class ServerAccountSettingsModel {
         for id in connections.keys where connections[id] != next[id] {
             tasks.removeValue(forKey: id)?.cancel()
             generations.removeValue(forKey: id)
+            pendingModelReloads.remove(id)
             states.removeValue(forKey: id)
         }
         let added = next.keys.filter { connections[$0] != next[$0] }
@@ -101,10 +103,12 @@ final class ServerAccountSettingsModel {
     }
 
     @discardableResult
-    func refresh(connectionID: UUID) -> Task<Void, Never>? {
+    func refresh(connectionID: UUID, reloadModels: Bool = false) -> Task<Void, Never>? {
         guard isNetworkAvailable, let connection = connections[connectionID] else { return nil }
         // A notification may arrive while PATCH is in flight. Its response is the new state.
         if state(for: connectionID).isSaving { return tasks[connectionID] }
+        // Keep explicit reload intent when a notification replaces the in-flight refresh.
+        if reloadModels { pendingModelReloads.insert(connectionID) }
         tasks[connectionID]?.cancel()
         let generation = UUID()
         generations[connectionID] = generation
@@ -123,18 +127,25 @@ final class ServerAccountSettingsModel {
                     )
                 }
                 guard let self, self.generations[connectionID] == generation, !Task.isCancelled else { return }
-                let methods = await (try? ServerSummaryService(client: client).methods(connectionID: connectionID, origin: connection.origin)) ?? []
-                guard self.generations[connectionID] == generation, !Task.isCancelled else { return }
-                var models: [ServerSummaryService.Model] = []
-                var modelError: String?
-                if !methods.isEmpty {
-                    do {
-                        models = try await ServerSummaryService(client: client).models(connectionID: connectionID, origin: connection.origin)
-                    } catch {
-                        modelError = L10n.serverSummaryModelListFailed
+                let previous = self.state(for: connectionID)
+                var methods = previous.summaryMethods
+                var models = previous.summaryModels
+                var modelError = previous.modelErrorMessage
+                if self.pendingModelReloads.contains(connectionID) || previous.settings == nil {
+                    methods = await (try? ServerSummaryService(client: client).methods(connectionID: connectionID, origin: connection.origin)) ?? []
+                    guard self.generations[connectionID] == generation, !Task.isCancelled else { return }
+                    models = []
+                    modelError = nil
+                    if !methods.isEmpty {
+                        do {
+                            models = try await ServerSummaryService(client: client).models(connectionID: connectionID, origin: connection.origin)
+                        } catch {
+                            modelError = L10n.serverSummaryModelListFailed
+                        }
                     }
                 }
                 guard self.generations[connectionID] == generation, !Task.isCancelled else { return }
+                self.pendingModelReloads.remove(connectionID)
                 self.states[connectionID] = State(
                     settings: settings,
                     isAvailable: true,

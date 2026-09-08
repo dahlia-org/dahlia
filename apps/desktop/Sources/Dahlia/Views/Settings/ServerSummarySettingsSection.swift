@@ -6,7 +6,7 @@ struct ServerSummarySettingsSection: View {
     private var state: ServerAccountSettingsModel.State { model.state(for: connectionID) }
     private var method: String { state.settings?.summary?.method ?? "transcript" }
     private var methods: [String] { state.summaryMethods.filter { $0 == "transcript" || $0 == "audio" } }
-    private var settings: ServerAccountSettings.TranscriptSummary {
+    private var settings: ServerAccountSettings.SummaryModelSettings {
         state.settings?.summary?.selectedSettings ?? .init(model: method == "audio" ? "gemini-3-8-flash" : "gpt-5.4")
     }
 
@@ -31,6 +31,12 @@ struct ServerSummarySettingsSection: View {
                         Text(method == "audio" ? L10n.serverSummaryAudio : L10n.serverSummaryTranscript).tag(method)
                     }
                 }
+                Picker(L10n.summaryDetailLevel, selection: Binding(
+                    get: { state.settings?.summary?.detail ?? "detailed" },
+                    set: { model.save(.init(summary: .init(detail: $0)), connectionID: connectionID) }
+                )) {
+                    ForEach(SummaryDetailLevel.allCases) { Text($0.displayName).tag($0.rawValue) }
+                }
                 Picker(L10n.model, selection: Binding(
                     get: { selectedModel?.id ?? "" },
                     set: { value in
@@ -52,7 +58,6 @@ struct ServerSummarySettingsSection: View {
                 } else if models.isEmpty {
                     Text(L10n.serverSummaryNoModels).foregroundStyle(.secondary)
                 }
-                Button(L10n.serverSummaryReloadModels) { model.refresh(connectionID: connectionID) }
                 Picker(L10n.reasoningEffort, selection: Binding(
                     get: { efforts.contains(settings.reasoningEffort) ? settings.reasoningEffort : "" },
                     set: { save(.init(reasoningEffort: $0)) }
@@ -61,15 +66,10 @@ struct ServerSummarySettingsSection: View {
                     ForEach(efforts, id: \.self) { Text($0).tag($0) }
                 }
                 .disabled(efforts.isEmpty)
-                Picker(L10n.summaryDetailLevel, selection: Binding(
-                    get: { settings.detail },
-                    set: { save(.init(detail: $0)) }
-                )) {
-                    ForEach(SummaryDetailLevel.allCases) { Text($0.displayName).tag($0.rawValue) }
-                }
             } else {
                 Text(L10n.serverSummaryUnavailable).foregroundStyle(.secondary)
             }
+            Button(L10n.serverSummaryReloadModels) { model.refresh(connectionID: connectionID, reloadModels: true) }
         } header: {
             Text(L10n.summary)
         } footer: {
@@ -78,7 +78,7 @@ struct ServerSummarySettingsSection: View {
         .disabled(!state.canEdit)
     }
 
-    private func save(_ settings: ServerAccountSettings.Patch.Transcript) {
+    private func save(_ settings: ServerAccountSettings.Patch.ModelSettings) {
         let patch: ServerAccountSettings.Patch.MethodSettings
         switch method {
         case "transcript": patch = .init(transcript: settings)

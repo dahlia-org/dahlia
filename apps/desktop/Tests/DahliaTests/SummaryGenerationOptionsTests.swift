@@ -9,11 +9,11 @@
         func batchDefaultsUseServerDetailWithoutChangingExports(method: String) {
             let local = AppSettings.shared.batchSummaryGenerationOptions()
             var server = ServerAccountSettings.initialValues()
-            server.summary = .init(method: method, methodSettings: .init(
-                transcript: .init(detail: "concise"), audio: .init(model: "gemini-3-8-flash", detail: "standard")
+            server.summary = .init(method: method, detail: "standard", methodSettings: .init(
+                transcript: .init(), audio: .init(model: "gemini-3-8-flash")
             ))
             let options = AppSettings.shared.batchSummaryGenerationOptions(serverSettings: server)
-            #expect(options.detailLevel == (method == "audio" ? .standard : .concise))
+            #expect(options.detailLevel == .standard)
             #expect(options.exportOptions == local.exportOptions)
             #expect(local.detailLevel == AppSettings.shared.summaryDetailLevel)
             let unavailable = AppSettings.shared.batchSummaryGenerationOptions(serverSettings: nil)

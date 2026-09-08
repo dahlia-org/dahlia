@@ -33,7 +33,7 @@ describe("desktop-style meeting layout", () => {
       metadata: { generatedBy: "server", inputTypes: ["transcript"], detailLevel: "concise", outputLanguage: "ja",
         request: { model: "first-model", reasoning: { effort: "low" } }, response: { usage: { input_tokens: 10 } } } });
     const latest = JSON.stringify({ title: "New", sections: [{ heading: "", blocks: [{ type: "paragraph", content: { text: "Current result" } }] }] });
-    const ready = { error: undefined, loading: false, reload: vi.fn() };
+    const ready = { error: undefined, loading: false, reload: vi.fn(), replace: vi.fn() };
     query.mockReturnValue({ ...ready, data: { revision: 1, title: "Old", document: old } });
     page.mockReturnValue({ ...ready, data: { items: [{ revision: 1, savedAt: "2026-09-08T00:00:00Z" }] }, loadingMore: false, loadMore: vi.fn() });
     try {
@@ -62,7 +62,7 @@ describe("desktop-style meeting layout", () => {
     vi.stubGlobal("navigator", { language: "ja-JP" });
     const query = vi.spyOn(liveData, "useLiveJSON");
     const page = vi.spyOn(liveData, "useLivePage");
-    const empty = { data: undefined, error: undefined, loading: true, reload: vi.fn() };
+    const empty = { data: undefined, error: undefined, loading: true, reload: vi.fn(), replace: vi.fn() };
     const meeting = { meetingId: "m1", name: "Planning", createdAt: "2026-09-07T00:00:00Z" };
     const render = () => renderToStaticMarkup(createElement(SyncedMeeting, { vaultId: "v1", meetingId: "m1" }));
     page.mockReturnValue({ ...empty, loadingMore: false, loadMore: vi.fn() });
@@ -236,7 +236,7 @@ describe("dashboard navigation", () => {
     const query = vi.spyOn(liveData, "useLiveJSON");
     try {
       for (const contentType of ["image/png", "image/tiff", "text/html", "image/svg+xml"]) {
-        query.mockReturnValue({ data: { id: "f1", revision: 2, name: "Example", content_type: contentType, metadata: { ocr_text: "Detected text", caption: "Image caption" }, variants: { thumb_1568: "/preview" } }, error: undefined, loading: false, reload: vi.fn() });
+        query.mockReturnValue({ data: { id: "f1", revision: 2, name: "Example", content_type: contentType, metadata: { ocr_text: "Detected text", caption: "Image caption" }, variants: { thumb_1568: "/preview" } }, error: undefined, loading: false, reload: vi.fn(), replace: vi.fn() });
         const html = renderToStaticMarkup(createElement(FileViewer, { fileId: "f1", separateTab: true }));
         expect(query).toHaveBeenCalledWith("/api/v1/files/f1/metadata");
         expect(html).toContain('aria-label="Image information" aria-expanded="false"');
@@ -249,7 +249,7 @@ describe("dashboard navigation", () => {
         expect(html.includes('<img')).toBe(contentType === "image/png" || contentType === "image/tiff");
         expect(html).not.toMatch(/<(iframe|object|embed)/);
       }
-      query.mockReturnValue({ data: undefined, error: new Error("file_not_found"), loading: false, reload: vi.fn() });
+      query.mockReturnValue({ data: undefined, error: new Error("file_not_found"), loading: false, reload: vi.fn(), replace: vi.fn() });
       const inaccessible = renderToStaticMarkup(createElement(FileViewer, { fileId: "f1" }));
       expect(inaccessible).toContain('role="alert"');
       expect(inaccessible).not.toContain('<img');

@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { inaccessible, liveDataEvent, readVisiblePages, refreshQueue, retainEqual, subscribeLiveUpdates } from "../src/client/live-data";
+import { accountSettingsEvent, inaccessible, liveDataEvent, readVisiblePages, refreshQueue, retainEqual, subscribeLiveUpdates } from "../src/client/live-data";
 import { RequestError } from "../src/client/api";
 import { dashboardNavigationPath, navigateDashboard } from "../src/client/navigation";
 
@@ -74,6 +74,8 @@ it("invalidates on connection, reconnection and notifications without persisting
   const browser = new EventTarget();
   vi.stubGlobal("window", browser);
   const changed = vi.fn();
+  const settingsChanged = vi.fn();
+  browser.addEventListener(accountSettingsEvent, settingsChanged);
   browser.addEventListener(liveDataEvent, changed);
   const source = new EventTarget();
   const close = vi.fn();
@@ -82,6 +84,10 @@ it("invalidates on connection, reconnection and notifications without persisting
   source.dispatchEvent(new Event("open"));
   source.dispatchEvent(new Event("invalidation"));
   source.dispatchEvent(new Event("open"));
+  expect(changed).toHaveBeenCalledTimes(3);
+  expect(settingsChanged).toHaveBeenCalledTimes(2);
+  source.dispatchEvent(new Event("account_settings"));
+  expect(settingsChanged).toHaveBeenCalledTimes(3);
   expect(changed).toHaveBeenCalledTimes(3);
   dispose();
   expect(close).toHaveBeenCalledOnce();

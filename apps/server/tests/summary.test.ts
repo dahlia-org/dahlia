@@ -40,7 +40,7 @@ async function setup() {
     { id: uuidV7(), entity: "meeting", action: "create", entityId: meetingId, baseRevision: null,
       data: { name: "Meeting", description: "", status: "READY", projectId: null, duration: 60, recordingStartedAt: new Date().toISOString(), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() } },
   ] });
-  const method: SummaryMethod = { id: "transcript", captureSettings: (settings, detail) => ({ ...settings.summary.methodSettings.transcript, detail: detail ?? settings.summary.methodSettings.transcript.detail }), version: vi.fn(async () => "version1"), generate: vi.fn(async () => doc()) };
+  const method: SummaryMethod = { id: "transcript", captureSettings: (settings, detail) => ({ ...settings.summary.methodSettings.transcript, detail: detail ?? settings.summary.detail }), version: vi.fn(async () => "version1"), generate: vi.fn(async () => doc()) };
   const service = new SummaryService(store.sync, store.accountSettings, [method]);
   return { store, sync, method, service, vaultId, meetingId, config, path };
 }
@@ -205,16 +205,18 @@ describe("server summary jobs", () => {
     } finally { await store.close?.(); }
   });
 
-  it("reads persisted settings from unchanged database columns", async () => {
+  it("reads persisted settings from the consolidated summary column", async () => {
     const { store, path } = await setup();
     try {
       await store.accountSettings.update(owner.userId, { outputLanguage: "en" });
       const database = new DatabaseSync(path);
-      database.prepare("UPDATE account_settings SET summary_method = ?, transcript_summary = ? WHERE user_id = ?")
-        .run("transcript", JSON.stringify({ model: "existing-model", reasoningEffort: "high", detail: "concise" }), owner.userId);
+      database.prepare("UPDATE account_settings SET summary = ? WHERE user_id = ?")
+        .run(JSON.stringify({ ...DEFAULT_ACCOUNT_SETTINGS.summary, detail: "concise", methodSettings: {
+          ...DEFAULT_ACCOUNT_SETTINGS.summary.methodSettings, transcript: { model: "existing-model", reasoningEffort: "high" },
+        } }), owner.userId);
       database.close();
       expect(await store.accountSettings.get(owner.userId)).toMatchObject({ outputLanguage: "en", summary: {
-        method: "transcript", methodSettings: { transcript: { model: "existing-model", reasoningEffort: "high", detail: "concise" } },
+        method: "transcript", detail: "concise", methodSettings: { transcript: { model: "existing-model", reasoningEffort: "high" } },
       } });
     } finally { await store.close?.(); }
   });
@@ -222,9 +224,9 @@ describe("server summary jobs", () => {
   it("fixes settings at start, keeps starts idempotent and saves through canonical delta and search", async () => {
     const { store, sync, method, service, vaultId, meetingId } = await setup();
     try {
-      await store.accountSettings.update(owner.userId, { summary: { methodSettings: { transcript: { model: "model1", reasoningEffort: "high", detail: "standard" } } } });
+      await store.accountSettings.update(owner.userId, { summary: { detail: "standard", methodSettings: { transcript: { model: "model1", reasoningEffort: "high" } } } });
       const id = uuidV7(); const job = await service.start(owner, vaultId, meetingId, { id, detail: "concise" });
-      await store.accountSettings.update(owner.userId, { outputLanguage: "en", summary: { methodSettings: { transcript: { model: "model2", reasoningEffort: "low", detail: "detailed" } } } });
+      await store.accountSettings.update(owner.userId, { outputLanguage: "en", summary: { detail: "detailed", methodSettings: { transcript: { model: "model2", reasoningEffort: "low" } } } });
       expect(await service.start(owner, vaultId, meetingId, { id, detail: "concise" })).toEqual(job);
       expect(job.settings).toEqual({ model: "model1", reasoningEffort: "high", detail: "concise" });
       expect(job.outputLanguage).toBe("ja");
@@ -321,7 +323,7 @@ describe("server summary jobs", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     try {
       await store.accountSettings.update(owner.userId, { summary: { methodSettings: { transcript: {
-        model: withImages ? "catalog.ai.gpt-5-6-luna" : "gpt-5-6-luna", reasoningEffort: "medium", detail: "detailed",
+        model: withImages ? "catalog.ai.gpt-5-6-luna" : "gpt-5-6-luna", reasoningEffort: "medium",
       } } } });
       const patchId = uuidV7(); const hash = "a".repeat(64);
       await sync.putTranscriptChunk(owner, vaultId, meetingId, patchId, 0, hash, {
@@ -465,18 +467,18 @@ describe("audio summary jobs", () => {
           contentType: "image/webp", storageKey: "unused", contentLength: 1, contentHash: "a".repeat(64), ocrText: "slide evidence", caption: null }],
       }));
       vi.spyOn(sync, "readFileContent").mockResolvedValue({ file: {} as never, upstream: new Response(new Uint8Array([1])), contentType: "image/webp" });
-      await store.accountSettings.update(owner.userId, { summary: { method: "audio", methodSettings: {
-        audio: { model: "catalog.ai.gemini-3-8-flash", detail: "standard" }, transcript: { model: "saved-transcript-model" },
+      await store.accountSettings.update(owner.userId, { summary: { method: "audio", detail: "standard", methodSettings: {
+        audio: { model: "catalog.ai.gemini-3-8-flash" }, transcript: { model: "saved-transcript-model" },
       } } });
       const { method, calls } = audioMethod(value);
       const service = new SummaryService(store.sync, store.accountSettings, [method]);
       const id = uuidV7(); const job = await service.start(owner, vaultId, meetingId, { id, detail: "concise" });
       expect(await service.start(owner, vaultId, meetingId, { id, detail: "concise" })).toEqual(job);
       expect(job.settings.detail).toBe("concise");
-      await store.accountSettings.update(owner.userId, { summary: { method: "transcript", methodSettings: { audio: { detail: "detailed" } } } });
-      expect(await store.accountSettings.get(owner.userId)).toMatchObject({ summary: { method: "transcript", methodSettings: {
-        audio: { model: "catalog.ai.gemini-3-8-flash", detail: "detailed", reasoningEffort: "medium" },
-        transcript: { model: "saved-transcript-model", detail: "detailed", reasoningEffort: "medium" },
+      await store.accountSettings.update(owner.userId, { summary: { method: "transcript", detail: "detailed" } });
+      expect(await store.accountSettings.get(owner.userId)).toMatchObject({ summary: { method: "transcript", detail: "detailed", methodSettings: {
+        audio: { model: "catalog.ai.gemini-3-8-flash", reasoningEffort: "medium" },
+        transcript: { model: "saved-transcript-model", reasoningEffort: "medium" },
       } } });
       // Transcript changes after enqueue do not invalidate an audio job.
       const db = new DatabaseSync(value.path); db.exec("UPDATE meetings SET transcript_revision = 10, revision = revision + 1"); db.close();
@@ -576,7 +578,7 @@ describe("audio summary jobs", () => {
         db.exec("CREATE TABLE account_settings (user_id TEXT PRIMARY KEY, summary_method TEXT, transcript_summary TEXT); INSERT INTO account_settings VALUES ('owner', 'transcript', '{\"model\":\"saved\"}'); CREATE TABLE summary_jobs (id TEXT, settings TEXT); INSERT INTO summary_jobs VALUES ('running', 'unchanged');");
         db.exec(readFileSync(new URL(`../drizzle/${path}`, import.meta.url), "utf8"));
         expect(db.prepare("SELECT summary_method, transcript_summary, audio_summary FROM account_settings").get()).toEqual({
-          summary_method: "transcript", transcript_summary: '{"model":"saved"}', audio_summary: JSON.stringify(DEFAULT_ACCOUNT_SETTINGS.summary.methodSettings.audio),
+          summary_method: "transcript", transcript_summary: '{"model":"saved"}', audio_summary: JSON.stringify({ ...DEFAULT_ACCOUNT_SETTINGS.summary.methodSettings.audio, detail: "detailed" }),
         });
         expect(db.prepare("SELECT * FROM summary_jobs").get()).toEqual({ id: "running", settings: "unchanged" });
       } finally { db.close(); }

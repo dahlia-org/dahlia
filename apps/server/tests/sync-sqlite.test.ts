@@ -405,6 +405,7 @@ describe("SQLite canonical sync", () => {
     const database = new DatabaseSync(databasePath);
     database.exec("DROP TABLE summary_jobs; DROP TABLE image_analysis_jobs; DROP TABLE account_settings");
     database.prepare("DELETE FROM __drizzle_migrations WHERE name IN (?, ?, ?)").run("20260907091207_funny_black_bird", "20260907172550_nice_starhawk", "20260908080352_zippy_aaron_stack");
+    database.exec("DELETE FROM __drizzle_migrations WHERE name IN ('20260908092914_massive_luke_cage', '20260908093013_account_settings_backfill', '20260908093035_stale_sue_storm')");
     database.close();
     const reopened = createNodeApplicationStore(testConfig(databasePath));
     await reopened.migrate();
@@ -427,11 +428,23 @@ describe("SQLite canonical sync", () => {
     expect(await store.accountSettings.get(owner.userId)).toEqual({ ...DEFAULT_ACCOUNT_SETTINGS, outputLanguage: "fr", analysisLanguages: { scope: "all", identifiers: [] } });
     await Promise.all([
       store.accountSettings.update(owner.userId, { summary: { methodSettings: { transcript: { model: "saved-model" } } } }),
-      store.accountSettings.update(owner.userId, { summary: { methodSettings: { transcript: { detail: "concise" } } } }),
+      store.accountSettings.update(owner.userId, { summary: { detail: "concise" } }),
     ]);
     expect(await store.accountSettings.get(owner.userId)).toMatchObject({ summary: {
-      method: "transcript", methodSettings: { transcript: { model: "saved-model", detail: "concise", reasoningEffort: "medium" } },
+      method: "transcript", detail: "concise", methodSettings: { transcript: { model: "saved-model", reasoningEffort: "medium" } },
     } });
+    const version = await store.accountSettings.getChangeVersion(owner.userId);
+    await store.accountSettings.update(owner.userId, { summary: { detail: "concise" } });
+    expect(await store.accountSettings.getChangeVersion(owner.userId)).toBe(version);
+    await Promise.all([
+      store.accountSettings.update(owner.userId, { summary: { methodSettings: { audio: { model: "audio-model" } } } }),
+      store.accountSettings.update(owner.userId, { summary: { methodSettings: { audio: { reasoningEffort: "high" } } } }),
+    ]);
+    expect((await store.accountSettings.get(owner.userId))?.summary.methodSettings.audio).toEqual({ model: "audio-model", reasoningEffort: "high" });
+    expect(await store.accountSettings.getChangeVersion(owner.userId)).toBe(version! + 2);
+    await store.accountSettings.update(owner.userId, { summary: { detail: "standard" } });
+    await store.accountSettings.update(owner.userId, { summary: { detail: "detailed" } });
+    expect((await store.accountSettings.get(owner.userId))?.summary.detail).toBe("detailed");
     expect(await store.accountSettings.get(other.userId)).toBeNull();
     await store.close?.();
   });
@@ -534,6 +547,7 @@ describe("SQLite canonical sync", () => {
     expect(database.prepare("SELECT status, attempts, last_error_code FROM image_analysis_jobs").get())
       .toEqual({ status: "pending", attempts: 1, last_error_code: "captioning_http_429" });
     database.prepare("UPDATE image_analysis_jobs SET available_at = 0").run();
+    database.exec("DELETE FROM __drizzle_migrations WHERE name IN ('20260908092914_massive_luke_cage', '20260908093013_account_settings_backfill', '20260908093035_stale_sue_storm')");
     database.close();
     const reopened = createNodeApplicationStore({ ...testConfig(databasePath), captioningModel: "model" });
     expect(await reopened.imageAnalysis!.claim("model")).toMatchObject({ attempts: 1 });

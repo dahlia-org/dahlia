@@ -5,7 +5,7 @@ import { sql } from "drizzle-orm";
 import { blob, check, foreignKey, index, integer, primaryKey, real, sqliteTable, sqliteView, text, unique, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 import type { FileMetadata } from "../files/model";
-import type { AccountSettings } from "../account-settings";
+import { DEFAULT_ACCOUNT_SETTINGS, type AccountSettings } from "../account-settings-model";
 
 import { user as authUser } from "./generated/sqlite-auth-schema";
 
@@ -13,9 +13,8 @@ const sqliteTimestamp = (name: string) => integer(name, { mode: "timestamp_ms" }
 
 export const accountSettings = sqliteTable("account_settings", {
   userId: text("user_id").primaryKey().references(() => authUser.id, { onDelete: "cascade" }),
-  summaryMethod: text("summary_method").$type<"transcript" | "audio">().default("transcript").notNull(),
-  transcriptSummary: text("transcript_summary", { mode: "json" }).$type<AccountSettings["summary"]["methodSettings"]["transcript"]>().default({ model: "gpt-5.4", reasoningEffort: "medium", detail: "detailed" }).notNull(),
-  audioSummary: text("audio_summary", { mode: "json" }).$type<AccountSettings["summary"]["methodSettings"]["audio"]>().default({ model: "gemini-3-8-flash", reasoningEffort: "medium", detail: "detailed" }).notNull(),
+  summary: text("summary", { mode: "json" }).$type<AccountSettings["summary"]>().default(DEFAULT_ACCOUNT_SETTINGS.summary).notNull(),
+  changeVersion: integer("change_version").default(1).notNull(),
   outputLanguage: text("output_language").$type<AccountSettings["outputLanguage"]>().notNull(),
   analysisLanguages: text("analysis_languages", { mode: "json" }).$type<AccountSettings["analysisLanguages"]>().notNull(),
 });

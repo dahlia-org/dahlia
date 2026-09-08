@@ -368,9 +368,9 @@ a.metadata-chip:hover { background: #e8e8e8; }
 .search-preview { width: calc(100vw - 32px); height: calc(100dvh - 48px); }
 .search-preview .file-viewer { position: absolute; inset: 0; }
 @media (max-width: 600px) { .search-toolbar { flex-wrap: wrap; } .search-toolbar input { flex-basis: 100%; } .search-result time, .search-result kbd { display: none; } }
-.summary-settings { display: grid; gap: 14px; max-width: 560px; margin: 16px 0; padding: 20px; border: 1px solid var(--line); border-radius: 10px; }
-.summary-settings label { display: flex; flex-direction: column; gap: 6px; }
-.summary-settings select, .summary-generation select { min-height: 36px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 7px; color: var(--ink); background: var(--paper); }
+.account-settings { display: grid; gap: 14px; max-width: 560px; margin: 16px 0; padding: 20px; border: 1px solid var(--line); border-radius: 10px; }
+.account-settings label { display: flex; flex-direction: column; gap: 6px; }
+.account-settings select, .summary-generation select { min-height: 36px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 7px; color: var(--ink); background: var(--paper); }
 .summary-generation { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 16px; }
 .summary-generation [role="alert"] { flex-basis: 100%; color: var(--danger); }
 

@@ -177,7 +177,7 @@ import DahliaRuntimeSupport
             let body = Data(
                 """
                 {"settings":{"outputLanguage":"ja","analysisLanguages":{"scope":"all","identifiers":[]},
-                "summary":{"method":"transcript","methodSettings":{"transcript":{"model":"catalog.ai.model","reasoningEffort":"high","detail":"detailed"}}}}}
+                "summary":{"method":"transcript","detail":"detailed","methodSettings":{"transcript":{"model":"catalog.ai.model","reasoningEffort":"high"}}}}}
                 """.utf8
             )
             let response = try JSONDecoder().decode(ServerAccountSettings.Response.self, from: body)
@@ -189,12 +189,12 @@ import DahliaRuntimeSupport
         }
 
         @Test
-        func audioSettingsUseTheirOwnDetailAndUnknownMethodsDoNotUseTranscript() throws {
+        func summaryDetailIsIndependentOfMethod() throws {
             let body = Data(
                 """
-                {"method":"audio","methodSettings":{
-                  "transcript":{"model":"gpt-5.4","reasoningEffort":"high","detail":"concise"},
-                  "audio":{"model":"gemini-3-8-flash","reasoningEffort":"medium","detail":"standard"}
+                {"method":"audio","detail":"standard","methodSettings":{
+                  "transcript":{"model":"gpt-5.4","reasoningEffort":"high"},
+                  "audio":{"model":"gemini-3-8-flash","reasoningEffort":"medium"}
                 }}
                 """.utf8
             )
@@ -203,12 +203,12 @@ import DahliaRuntimeSupport
             #expect(summary.selectedSettings?.reasoningEffort == "medium")
             #expect(summary.detailLevel == .standard)
             summary.method = "transcript"
-            #expect(summary.detailLevel == .concise)
+            #expect(summary.detailLevel == .standard)
             summary.method = "future"
-            #expect(summary.detailLevel == nil)
+            #expect(summary.detailLevel == .standard)
             summary.method = "audio"
             summary.methodSettings.audio = nil
-            #expect(summary.detailLevel == nil)
+            #expect(summary.detailLevel == .standard)
         }
 
         @Test(arguments: [
@@ -241,14 +241,12 @@ import DahliaRuntimeSupport
             #expect(try await service.methods(connectionID: .v7(), origin: origin).isEmpty)
         }
 
-        @Test(arguments: ["transcript", "audio"])
-        func encodesOnlySpecifiedNestedSummaryFields(method: String) throws {
-            let fields: ServerAccountSettings.Patch.MethodSettings = method == "audio"
-                ? .init(audio: .init(detail: "concise")) : .init(transcript: .init(detail: "concise"))
-            let patch = ServerAccountSettings.Patch(summary: .init(methodSettings: fields))
+        @Test
+        func encodesCommonSummaryDetailPatch() throws {
+            let patch = ServerAccountSettings.Patch(summary: .init(detail: "concise"))
             let data = try JSONEncoder().encode(patch)
-            let json = try #require(JSONSerialization.jsonObject(with: data) as? [String: [String: [String: [String: String]]]])
-            #expect(json == ["summary": ["methodSettings": [method: ["detail": "concise"]]]])
+            let json = try #require(JSONSerialization.jsonObject(with: data) as? [String: [String: String]])
+            #expect(json == ["summary": ["detail": "concise"]])
             let response = try JSONDecoder().decode(ServerAccountSettings.Response.self, from: Data(#"{"settings":null}"#.utf8))
             #expect(response.settings == nil)
         }

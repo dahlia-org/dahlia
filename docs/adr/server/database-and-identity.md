@@ -49,6 +49,19 @@ forward migration は既存 receipt 本文を保持したまま結果 ID / revis
 
 ## アカウント設定と画像解析 job（2026-09-07）
 
-`app.account_settings` は `auth.user.id` を正本キーに出力言語と解析言語範囲・一覧を保持する。本人の GET/PATCH だけを公開し、PostgreSQL は transaction-local identity と FORCE RLS、SQLite は user ID predicate で分離する。PATCH は指定項目だけの upsert、初回初期化は conditional INSERT。設定用 revision は持たない。
+`app.account_settings` は `auth.user.id` を正本キーに出力言語と解析言語範囲・一覧を保持する。本人の GET/PATCH だけを公開し、PostgreSQL は transaction-local identity と FORCE RLS、SQLite は user ID predicate で分離する。PATCH は指定項目だけの upsert、初回初期化は conditional INSERT。設定の競合制御用 revision は持たない。
 
 `app.image_analysis_jobs` は file ID / Vault ID / owner user ID / model / lease / retry 状態だけの運用 metadata。既存の search job と同様に RLS の対象外とし、Node worker だけが利用する。画像・OCR・caption は queue に複製せず、identity-scoped store の認可と RLS を通して読取り・保存する。追加は forward migration で行い、既存の user / Vault / meeting / file を書き換えない。
+
+## アカウント設定の機能別集約（2026-09-08）
+
+個人ごとに1行を維持し、共通の `output_language`、画像解析の `analysis_languages`、要約の `summary` に分ける。
+要約 JSON は `method`・共通の `detail`・方式別の `methodSettings`（model / reasoningEffort）を保持する。
+汎用 key/value、組織ポリシー、秘密情報、端末設定はこの table に含めない。
+
+PATCH は指定された末端項目だけを DB の現在行に適用し、同じ項目は後勝ちとする。画像解析の scope / identifiers は一体で置換する。
+内部 `change_version` は値が変化した更新でだけ増やし、SSE の変更検知専用とする。競合チェックには使わず API に公開しない。
+
+移行は新列追加、選択中の方式の詳細度と両方式の model / reasoningEffort の移行、旧3列の削除を forward migration で行う。
+FORCE RLS は backfill transaction 内だけ解除し commit 前に復元する。旧 API 形式は維持せず Desktop / Web / Server を同時更新する。
+既存 summary job と履歴の設定は移行しない。
