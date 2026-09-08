@@ -114,7 +114,7 @@ actor RecordingArchiveService {
                 connectionId: connectionId,
                 maximumBytes: 64 * 1024
             )
-            guard try SyncJSON.decoder.decode(ServerCapabilities.self, from: data).recordingAudioVersion == 1 else {
+            guard try SyncJSON.decoder.decode(ServerCapabilities.self, from: data).recordingArchive?.version == 1 else {
                 throw SyncHTTPError(status: 426, body: Data())
             }
         }

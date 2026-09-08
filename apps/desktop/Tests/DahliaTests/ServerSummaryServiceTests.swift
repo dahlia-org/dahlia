@@ -30,7 +30,7 @@ import DahliaRuntimeSupport
             ImageURLProtocol.register(origin: target.origin) { request in
                 let path = request.url!.path
                 paths.withLock { $0.append(path) }
-                if path == "/api/v1/capabilities" { return (200, [:], Data(#"{"summaryGeneration":{"version":1,"methods":["transcript"]}}"#.utf8)) }
+                if path == "/api/v1/capabilities" { return (200, [:], Data(#"{"meetingSummaryGeneration":{"version":1,"sources":["transcript"]}}"#.utf8)) }
                 // Synchronization is unavailable; the unsynchronized meeting's job API must never be queried.
                 return (404, [:], Data(#"{"error":"summary_meeting_unavailable"}"#.utf8))
             }
@@ -73,7 +73,7 @@ import DahliaRuntimeSupport
                 if request.url!.path == "/api/v1/capabilities" { return (
                     200,
                     [:],
-                    Data(#"{"summaryGeneration":{"version":1,"methods":["transcript"]}}"#.utf8)
+                    Data(#"{"meetingSummaryGeneration":{"version":1,"sources":["transcript"]}}"#.utf8)
                 ) }
                 if request.httpMethod != "POST" { return (200, [:], Data(#"{"job":null}"#.utf8)) }
                 return (200, [:], Data("{\"job\":{\"id\":\"\(id.uuidString)\",\"status\":\"succeeded\"}}".utf8))
@@ -104,7 +104,7 @@ import DahliaRuntimeSupport
             ImageURLProtocol.register(origin: origin) { request in
                 #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer test-token")
                 if request.url?.path == "/api/v1/capabilities" {
-                    return (200, [:], Data(#"{"summaryGeneration":{"version":1,"methods":["transcript"]}}"#.utf8))
+                    return (200, [:], Data(#"{"meetingSummaryGeneration":{"version":1,"sources":["transcript"]}}"#.utf8))
                 }
                 #expect(request.url?
                     .path ==
@@ -225,7 +225,7 @@ import DahliaRuntimeSupport
             #expect(model.supportsAudioSummary == expected)
         }
 
-        @Test(arguments: ["{}", #"{"summaryGeneration":{"version":0,"methods":[]}}"#])
+        @Test(arguments: ["{}", #"{"meetingSummaryGeneration":{"version":2,"sources":["transcript","audio"]}}"#, #"{"meetingSummaryGeneration":{"version":2}}"#])
         func missingOrUnsupportedCapabilitiesHaveNoMethods(_ json: String) async throws {
             let origin = "https://capabilities-\(UUID.v7().uuidString.lowercased()).test"
             ImageURLProtocol.register(origin: origin) { request in

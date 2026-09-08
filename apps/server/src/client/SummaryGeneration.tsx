@@ -26,9 +26,9 @@ const detailLabel = (detail: typeof details[number]) => ({ concise: uiText("Conc
   detailed: uiText("Detailed", "詳細"), eventSession: uiText("Event session", "イベントセッション") })[detail];
 
 function useSummaryMethods() {
-  const capabilities = useLiveJSON<{ summaryGeneration?: { version: number; methods: string[] } }>("/api/v1/capabilities");
-  const summary = capabilities.data?.summaryGeneration;
-  return summary?.version === 1 ? summary.methods : [];
+  const capabilities = useLiveJSON<{ meetingSummaryGeneration?: { version: number; sources: string[] } }>("/api/v1/capabilities");
+  const summary = capabilities.data?.meetingSummaryGeneration;
+  return summary?.version === 1 ? summary.sources : [];
 }
 
 export function ServerSummarySettings() {

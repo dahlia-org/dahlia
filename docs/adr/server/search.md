@@ -40,7 +40,7 @@ Node / Worker は tokenizer と vector capability が異なり、同じ DB の r
 
 既存 FTS／vector／RRF を再利用し、全種類で1回の query embedding を共有する。認可・project・日付条件を候補上限の前に適用し、応答直前にも共有権限を再確認する。返すのは種類別の ID、タイトル、所属、日時、snippet、画像参照、件数制限情報。score、vector、全件用 cursor は返さない。`Cache-Control: no-store` とし query を log に残さない。既存一覧の query も同じ検索処理を維持する。
 
-`searchVersion: 1` capability がある Server の Desktop 主検索はこの順位を保持し、未保持本文を取得せず同期済み metadata に投影する。未同期項目は別枠とし順位へ混ぜない。Local account は従来の FTS。オフライン・旧 Server・metadata 同期待ち・タグ指定・複数 project 指定は端末内検索と明示する。Web は native dialog、300ms debounce、IME 抑制、AbortSignal、Vault 単位の mount、既存 live query を使う。上位100件は全件完了と表現せず、段階表示と絞り込みを提供する。
+`search: { version: 1 }` capability がある Server の Desktop 主検索はこの順位を保持し、未保持本文を取得せず同期済み metadata に投影する。未同期項目は別枠とし順位へ混ぜない。Local account は従来の FTS。オフライン・旧 Server・metadata 同期待ち・タグ指定・複数 project 指定は端末内検索と明示する。Web は native dialog、300ms debounce、IME 抑制、AbortSignal、Vault 単位の mount、既存 live query を使う。上位100件は全件完了と表現せず、段階表示と絞り込みを提供する。
 
 既存 GET 全件探索と local content broker の契約は以下のとおり維持する。今回 schema／依存／本番 migration／配備変更はない。Lakebase 実環境の BM25／ANN と実 embedding の検証は未実施で、既存設定の検証環境で同一 fixture・query・filter の REST／MCP 結果と embedding 障害時の FTS を比較する必要がある。
 
@@ -56,4 +56,4 @@ Node は `DAHLIA_CAPTIONING_MODEL` がある場合だけ、アップロードと
 
 job は5分 lease、失敗分類と指数 backoff、起動時と60秒ごとの不足分探索で復旧する。推論は正本保存と同期を待たせない。既存値は保持し、空 OCR も完了とする。結果確定時は現在の所有権、参照、画像 checksum と revision、lease を再確認し、正本・delta・FTS・embedding job と解析 job の削除を同じ transaction で確定する。共有参照の数だけ推論しない。設定変更による再解析は行わない。
 
-Node は解析 worker を構築した場合だけ capabilities API の `imageAnalysis: true` を返す。Desktop は解析前にこの値を確認して端末解析を省略し、未対応・未設定・旧 Server では端末解析を維持する。端末解析は取得できた Server 言語設定を使い、設定 API が利用できなければ従来の端末値を使う。capability 取得失敗時は job を保持して再試行し、実行中にアカウント接続が変わった結果は保存しない。Server の結果は通常の差分同期で受け取る。Local Account の画像解析と Desktop の会議要約生成は維持する。Workers のジョブ基盤は対象外。
+Node は解析 worker を構築した場合だけ capabilities API の `imageAnalysis: { version: 1 }` を返す。Desktop は解析前にこの値を確認して端末解析を省略し、未対応・未設定・旧 Server では端末解析を維持する。端末解析は取得できた Server 言語設定を使い、設定 API が利用できなければ従来の端末値を使う。capability 取得失敗時は job を保持して再試行し、実行中にアカウント接続が変わった結果は保存しない。Server の結果は通常の差分同期で受け取る。Local Account の画像解析と Desktop の会議要約生成は維持する。Workers のジョブ基盤は対象外。

@@ -1331,7 +1331,7 @@
             ])
             let provider = provider(fixture) { request in
                 let path = request.url!.path
-                if path.hasSuffix("/capabilities") { return (200, [:], Data("{\"syncVersion\":3}".utf8)) }
+                if path.hasSuffix("/capabilities") { return (200, [:], Data("{\"sync\":{\"version\":3}}".utf8)) }
                 if path.hasSuffix("/changes") {
                     let count = changeRequests.withLock { $0 += 1
                         return $0
@@ -1385,7 +1385,7 @@
             }
         }
 
-        @Test(arguments: [nil, "{}", #"{"syncVersion":1}"#, #"{"syncVersion":2}"#])
+        @Test(arguments: [nil, "{}", #"{"sync":{"version":1}}"#, #"{"sync":{"version":2}}"#, #"{"sync":{"version":4}}"#])
         func incompatibleServerStopsMetadataSyncWithoutDiscardingExistingText(capabilities: String?) async throws {
             let fixture = try textFixture()
             let connectionId = try await fixture.queue.write { db in
@@ -1449,7 +1449,7 @@
             let provider = provider(fixture) { request in
                 calls.withLock { $0.append(request.url!.path) }
                 if request.url!.path.hasSuffix("/capabilities") {
-                    return (200, [:], Data(#"{"syncVersion":3,"futureFeature":{"enabled":true}}"#.utf8))
+                    return (200, [:], Data(#"{"sync":{"version":3},"futureFeature":{"enabled":true}}"#.utf8))
                 }
                 return (200, [:], payload)
             }
