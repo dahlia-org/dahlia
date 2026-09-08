@@ -7,9 +7,9 @@ Sources: codex-rs/models-manager/models.json and codex-rs/models-manager/prompt.
 
 Dahlia's databricks-models.json contains selected runtime metadata derived from
 the Codex catalog, with Dahlia display names and without OpenAI-internal
-transport and lifecycle fields. Generation expands Databricks public IDs and
-adds non-OpenAI models. GPT reasoning levels and defaults follow the referenced
-Codex release. The fallback prompt is derived from models-manager/prompt.md.
+transport and lifecycle fields. The catalog is maintained directly, includes
+Databricks public IDs, and adds non-OpenAI models. GPT reasoning levels and
+defaults follow the referenced Codex release. The fallback prompt is derived from models-manager/prompt.md.
 
 OpenAI Codex
 Copyright 2025 OpenAI
