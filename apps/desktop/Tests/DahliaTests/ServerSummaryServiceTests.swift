@@ -225,7 +225,7 @@ import DahliaRuntimeSupport
             #expect(model.supportsAudioSummary == expected)
         }
 
-        @Test(arguments: ["{}", #"{"meetingSummaryGeneration":{"version":2,"sources":["transcript","audio"]}}"#])
+        @Test(arguments: ["{}", #"{"meetingSummaryGeneration":{"version":2,"sources":["transcript","audio"]}}"#, #"{"meetingSummaryGeneration":{"version":2}}"#])
         func missingOrUnsupportedCapabilitiesHaveNoMethods(_ json: String) async throws {
             let origin = "https://capabilities-\(UUID.v7().uuidString.lowercased()).test"
             ImageURLProtocol.register(origin: origin) { request in
