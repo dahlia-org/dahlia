@@ -1,3 +1,4 @@
+import type { SummaryMetadata } from "./metadata";
 import { z } from "zod";
 import type { AccountSettings } from "../account-settings";
 import { uuidV7 } from "../id";
@@ -57,7 +58,7 @@ export function summaryDocument(value: unknown, imageIds: ReadonlySet<string>) {
     })),
   };
 }
-export type SummaryDocument = ReturnType<typeof summaryDocument>;
+export type SummaryDocument = ReturnType<typeof summaryDocument> & { metadata?: SummaryMetadata };
 export interface SummaryMethod {
   readonly id: "transcript";
   captureSettings(settings: AccountSettings, detail?: z.infer<typeof summaryDetailSchema>): SummaryJob["settings"];

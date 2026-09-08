@@ -25,7 +25,7 @@ export class TextContentDigest {
 }
 
 export function parseTextEntity(value: string): TextEntity {
-  if (value !== "summary" && value !== "transcript" && value !== "file") {
+  if (value !== "transcript" && value !== "file") {
     throw new SyncTransactionError(400, "invalid_text_entity");
   }
   return value;
@@ -43,15 +43,19 @@ export function fileTextMetadata(record: Record<string, unknown>): Record<string
   return { ...record, metadata, contentOmitted: true, contentPresent: true };
 }
 
+export function meetingMetadata(record: Record<string, unknown>): Record<string, unknown> {
+  // Canonical meeting rows also contain search projections and the summary document.
+  const keys = ["meetingId", "vaultId", "projectId", "name", "description", "status", "duration",
+    "recordingStartedAt", "isRecording", "createdAt", "updatedAt", "revision", "summaryRevision", "transcriptRevision", "active", "deletingAt"];
+  const hasSummary = record.summaryDocument !== null && record.summaryDocument !== undefined;
+  return { ...Object.fromEntries(keys.filter((key) => key in record).map((key) => [key, record[key]])), contentOmitted: true, hasSummary };
+}
+
 export async function metadataRecord(value: SyncCanonicalRecord, store: IdentitySyncStore, vaultId: string): Promise<SyncCanonicalRecord> {
   if (!value.record) return value;
   let record: Record<string, unknown> = { ...value.record };
   if (value.entity === "meeting") {
-    // Canonical meeting rows also contain search projections and the summary document.
-    const keys = ["meetingId", "vaultId", "projectId", "name", "description", "status", "duration",
-      "recordingStartedAt", "createdAt", "updatedAt", "revision", "summaryRevision", "transcriptRevision", "active", "deletingAt"];
-    const hasSummary = record.summaryDocument !== null && record.summaryDocument !== undefined;
-    record = { ...Object.fromEntries(keys.filter((key) => key in record).map((key) => [key, record[key]])), contentOmitted: true, hasSummary };
+    record = meetingMetadata(record);
   } else if (value.entity === "summary") {
     record = { meetingId: record.meetingId, title: record.title, createdAt: record.createdAt,
       contentOmitted: true, contentPresent: record.document !== null && record.document !== undefined };

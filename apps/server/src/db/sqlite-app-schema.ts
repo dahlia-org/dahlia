@@ -1,3 +1,4 @@
+import type { SummaryMetadata } from "../summary/metadata";
 import type { SummaryJob } from "../summary/model";
 import type { RecordingRecord } from "../recordings/model";
 import { sql } from "drizzle-orm";
@@ -431,4 +432,18 @@ export const summaryJob = sqliteTable("summary_jobs", {
   check("summary_job_status_check", sql`${table.status} IN ('pending', 'processing', 'succeeded', 'failed')`),
   uniqueIndex("summary_job_active_meeting_idx").on(table.meetingId).where(sql`${table.status} IN ('pending', 'processing')`),
   index("summary_job_owner_created_idx").on(table.ownerUserId, table.createdAt),
+]);
+
+export const summaryVersion = sqliteTable("summary_versions", {
+  vaultId: text("vault_id").notNull(),
+  meetingId: text("meeting_id").notNull(),
+  revision: integer("revision").notNull(),
+  title: text("title").notNull(),
+  document: text("document").notNull(),
+  createdAt: sqliteTimestamp("created_at"),
+  savedAt: sqliteTimestamp("saved_at").notNull(),
+  metadata: text("metadata", { mode: "json" }).$type<SummaryMetadata>(),
+}, (table) => [
+  primaryKey({ columns: [table.meetingId, table.revision] }),
+  foreignKey({ columns: [table.vaultId, table.meetingId], foreignColumns: [syncedMeeting.vaultId, syncedMeeting.meetingId] }).onDelete("cascade"),
 ]);

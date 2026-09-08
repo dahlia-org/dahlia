@@ -25,8 +25,6 @@ export interface SyncedMeetingInfo {
   isRecording?: boolean;
   createdAt: string;
   updatedAt: string;
-  summaryTitle?: string;
-  summaryDocument?: string;
   revision: number;
   summaryRevision: number;
   transcriptRevision: number;

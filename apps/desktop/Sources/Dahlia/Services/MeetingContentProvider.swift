@@ -169,7 +169,17 @@ actor MeetingContentProvider {
             )
         }
         do {
-            try await fetch(entity: entity, id: id, dbQueue: dbQueue, prefetchBudget: prefetchBudget)
+            do {
+                try await fetch(entity: entity, id: id, dbQueue: dbQueue, prefetchBudget: prefetchBudget)
+            } catch TextContentError.changed where entity == .summary {
+                guard let expected, try await dbQueue.read({ try TextContentStore.source(entity: entity, id: id, in: $0) }) == expected else {
+                    throw TextContentError.changed
+                }
+                let worker = SyncWorker(dbQueue: dbQueue, session: client.session, apiClient: client)
+                // Unrelated protected changes may remain; fetch revalidates this summary before publishing.
+                _ = try await worker.pullRemoteChanges(vaultId: expected.vaultId, connectionId: expected.connectionId)
+                try await fetch(entity: entity, id: id, dbQueue: dbQueue, prefetchBudget: prefetchBudget)
+            }
         } catch {
             let failure = error is CancellationError ? nil : (error as? TextContentError)?.rawValue ?? "unavailable"
             try? await dbQueue.write { db in
@@ -207,8 +217,9 @@ actor MeetingContentProvider {
         try Task.checkCancellation()
         let manifest = try await SyncJSON.decoder.decode(TextContentManifest.self, from: get(source: source, entity: entity, id: id, manifest: true))
         let expectedCount = manifest.count
-        guard manifest.version == 1, manifest.entity == entity, manifest.entityId == id, manifest.revision == source.revision,
+        guard manifest.version == 1, manifest.entity == entity, manifest.entityId == id,
               manifest.byteCount >= 0, expectedCount >= 0 else { throw TextContentError.integrityFailure }
+        guard manifest.revision == source.revision else { throw TextContentError.changed }
         if let prefetchBudget, manifest.byteCount > prefetchBudget {
             try await dbQueue.write { db in
                 guard try TextContentStore.source(entity: entity, id: id, in: db) == source else { return }
@@ -350,10 +361,16 @@ actor MeetingContentProvider {
         cursor: String? = nil
     ) async throws -> Data {
         guard var url = URLComponents(string: source.origin) else { throw URLError(.badURL) }
-        url.path = "/api/v1/vaults/\(source.vaultId.uuidString.lowercased())/text/\(entity.rawValue)/\(id.uuidString.lowercased())"
-        url.queryItems = [URLQueryItem(name: "revision", value: String(source.revision))]
+        if entity == .summary {
+            url.path = "/api/v1/vaults/\(source.vaultId.uuidString.lowercased())/meetings/\(id.uuidString.lowercased())/summary/latest"
+            url.queryItems = []
+        } else {
+            url.path = "/api/v1/vaults/\(source.vaultId.uuidString.lowercased())/text/\(entity.rawValue)/\(id.uuidString.lowercased())"
+            url.queryItems = [URLQueryItem(name: "revision", value: String(source.revision))]
+        }
         if manifest { url.queryItems?.append(URLQueryItem(name: "manifest", value: "1")) }
         if let cursor { url.queryItems?.append(URLQueryItem(name: "cursor", value: cursor)) }
+        if url.queryItems?.isEmpty == true { url.queryItems = nil }
         guard let address = url.url else { throw URLError(.badURL) }
         do {
             // A single accepted 8 MiB transcript chunk needs room for the read response envelope.

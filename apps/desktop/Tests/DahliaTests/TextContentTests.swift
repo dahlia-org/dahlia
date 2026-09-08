@@ -217,7 +217,7 @@
                 calls.withLock { $0.append(request.url!.path) }
                 #expect(!request.url!.path.contains("/api/v1/files/"))
                 #expect(request.url!.query!.contains("revision=2"))
-                return (200, [:], request.url!.query!.contains("manifest") ? manifestData : bodyData)
+                return (200, [:], (request.url!.query ?? "").contains("manifest") ? manifestData : bodyData)
             }
             defer { ImageURLProtocol.remove(origin: fixture.origin) }
             let viewModel = CaptionViewModel()
@@ -620,7 +620,7 @@
             let bodyData = try JSONSerialization.data(withJSONObject: body)
             let provider = provider(fixture) { request in
                 if request.url!.path.contains("/summary/") {
-                    return (200, [:], request.url!.query!.contains("manifest") ? manifestData : bodyData)
+                    return (200, [:], (request.url!.query ?? "").contains("manifest") ? manifestData : bodyData)
                 }
                 return fixture.response(request)
             }
@@ -700,7 +700,7 @@
                 try await provider.ensure(entity: entity, id: fixture.meetingId, dbQueue: fixture.queue)
             }
             ImageURLProtocol.register(origin: fixture.origin) { request in
-                if entity == .summary { return (200, [:], request.url!.query!.contains("manifest") ? manifestData : bodyData) }
+                if entity == .summary { return (200, [:], (request.url!.query ?? "").contains("manifest") ? manifestData : bodyData) }
                 return fixture.response(request)
             }
             try await provider.ensure(entity: entity, id: fixture.meetingId, dbQueue: fixture.queue)
@@ -968,7 +968,7 @@
                     "byteCount": digest.byteCount,
                     "sha256": digest.digestHex(),
                 ]
-                if request.url!.query!.contains("manifest") {
+                if (request.url!.query ?? "").contains("manifest") {
                     _ = manifests.withLock { $0.insert(id) }
                 } else {
                     payload["items"] = [["segmentId": id, "startTime": "2026-01-01T00:00:00.000Z", "text": "recent body", "isConfirmed": true]]
@@ -1267,7 +1267,7 @@
             let pageData = try JSONSerialization.data(withJSONObject: page)
             #expect(pageData.count > maximumChunkBytes)
             let provider = provider(fixture) { request in
-                (200, [:], request.url!.query!.contains("manifest") ? manifestData : pageData)
+                (200, [:], (request.url!.query ?? "").contains("manifest") ? manifestData : pageData)
             }
             defer { ImageURLProtocol.remove(origin: fixture.origin) }
             try await provider.ensure(entity: .transcript, id: fixture.meetingId, dbQueue: fixture.queue)
@@ -1536,7 +1536,7 @@
             let calls = Mutex(0)
             let provider = provider(fixture) { request in
                 calls.withLock { $0 += 1 }
-                return (200, [:], request.url!.query!.contains("manifest") ? manifestData : bodyData)
+                return (200, [:], (request.url!.query ?? "").contains("manifest") ? manifestData : bodyData)
             }
             defer { ImageURLProtocol.remove(origin: fixture.origin) }
             try await provider.ensure(entity: entity, id: id, dbQueue: fixture.queue)
@@ -1626,7 +1626,7 @@
                 ]
                 let newBodyData = try JSONSerialization.data(withJSONObject: replacementBody)
                 ImageURLProtocol.register(origin: fixture.origin) { request in
-                    (200, [:], request.url!.query!.contains("manifest") ? newManifestData : newBodyData)
+                    (200, [:], (request.url!.query ?? "").contains("manifest") ? newManifestData : newBodyData)
                 }
                 try await fixture.queue.write { db in
                     try db.execute(sql: "UPDATE sync_entity_state SET confirmedRevision = 4 WHERE entity = 'summary'")
@@ -1674,7 +1674,7 @@
                 .reduce(0) { try $0 + ($1.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0) }
         }
 
-        private struct TextFixture: Sendable {
+        struct TextFixture: Sendable {
             let queue: DatabaseQueue
             let vaultId: UUID
             let meetingId: UUID
@@ -1696,7 +1696,7 @@
             }
         }
 
-        private func textFixture() throws -> TextFixture {
+        func textFixture() throws -> TextFixture {
             let (queue, vaultId, meetingId) = try database()
             let segmentId = UUID.v7()
             let secondId = UUID.v7()
@@ -1767,7 +1767,7 @@
             )
         }
 
-        private func provider(_ fixture: TextFixture, handler: @escaping ImageURLProtocol.Handler) -> MeetingContentProvider {
+        func provider(_ fixture: TextFixture, handler: @escaping ImageURLProtocol.Handler) -> MeetingContentProvider {
             ImageURLProtocol.register(origin: fixture.origin, handler: handler)
             let configuration = URLSessionConfiguration.ephemeral
             configuration.protocolClasses = [ImageURLProtocol.self]

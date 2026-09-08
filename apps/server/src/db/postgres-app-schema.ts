@@ -1,3 +1,4 @@
+import type { SummaryMetadata } from "../summary/metadata";
 import type { SummaryJob } from "../summary/model";
 import type { RecordingRecord } from "../recordings/model";
 import { sql } from "drizzle-orm";
@@ -582,4 +583,20 @@ export const summaryJob = appSchema.table("summary_jobs", {
     for: "all", using: sql`${table.ownerUserId} = nullif(current_setting('app.user_id', true), '')`,
     withCheck: sql`${table.ownerUserId} = nullif(current_setting('app.user_id', true), '')`,
   }),
+]).enableRLS();
+
+export const summaryVersion = appSchema.table("summary_versions", {
+  vaultId: uuid("vault_id").notNull(),
+  meetingId: uuid("meeting_id").notNull(),
+  revision: integer("revision").notNull(),
+  title: text("title").notNull(),
+  document: text("document").notNull(),
+  createdAt: timestamp("created_at"),
+  savedAt: timestamp("saved_at").notNull(),
+  metadata: jsonb("metadata").$type<SummaryMetadata>(),
+}, (table) => [
+  primaryKey({ columns: [table.meetingId, table.revision] }),
+  foreignKey({ columns: [table.vaultId, table.meetingId], foreignColumns: [syncedMeeting.vaultId, syncedMeeting.meetingId] }).onDelete("cascade"),
+  pgPolicy("summary_version_select", { for: "select", using: sql`"app"."current_identity_can_read_vault"(${table.vaultId})` }),
+  pgPolicy("summary_version_write", { for: "all", using: sql`"app"."current_identity_owns_vault"(${table.vaultId})`, withCheck: sql`"app"."current_identity_owns_vault"(${table.vaultId})` }),
 ]).enableRLS();

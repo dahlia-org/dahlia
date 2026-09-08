@@ -1,3 +1,4 @@
+import type { SummaryVersion } from "../summary/metadata";
 import type { SummaryJob } from "../summary/model";
 import type { RecordingRecord, RecordingSource } from "../recordings/model";
 import type { FileRecord, MeetingFileRecord } from "../files/model";
@@ -194,6 +195,8 @@ export interface SyncSearchQuery {
 }
 
 export interface IdentitySyncStore {
+  listSummaryVersions(vaultId: string, meetingId: string, limit: number, before?: number): Promise<Omit<SummaryVersion, "document">[]>;
+  getSummaryVersion(vaultId: string, meetingId: string, revision: number): Promise<SummaryVersion | null>;
   getSummaryJob(vaultId: string, meetingId: string, id?: string): Promise<SummaryJob | null>;
   insertSummaryJob(job: SummaryJob): Promise<void>;
   completeSummaryJob(job: SummaryJob, transaction: SyncTransaction): Promise<boolean>;

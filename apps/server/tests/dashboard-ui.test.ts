@@ -1,3 +1,4 @@
+import { SummaryHistory } from "../src/client/SummaryHistory";
 import { RecordingIndicator } from "../src/client/RecordingIndicator";
 import { projectAncestors, selectedSidebarVault, Sidebar, SidebarProvider, vaultListURL } from "../src/client/Sidebar";
 import { readFileSync } from "node:fs";
@@ -25,6 +26,38 @@ const ExtensionPage = () => null;
 afterEach(() => vi.unstubAllGlobals());
 
 describe("desktop-style meeting layout", () => {
+  it("renders current and historical summaries with metadata conditions in both languages", () => {
+    const query = vi.spyOn(liveData, "useLiveJSON");
+    const page = vi.spyOn(liveData, "useLivePage");
+    const old = JSON.stringify({ title: "Old", sections: [{ heading: "", blocks: [{ type: "paragraph", content: { text: "Previous result" } }] }],
+      metadata: { generatedBy: "server", inputTypes: ["transcript"], detailLevel: "concise", outputLanguage: "ja",
+        request: { model: "first-model", reasoning: { effort: "low" } }, response: { usage: { input_tokens: 10 } } } });
+    const latest = JSON.stringify({ title: "New", sections: [{ heading: "", blocks: [{ type: "paragraph", content: { text: "Current result" } }] }] });
+    const ready = { error: undefined, loading: false, reload: vi.fn() };
+    query.mockReturnValue({ ...ready, data: { revision: 1, title: "Old", document: old } });
+    page.mockReturnValue({ ...ready, data: { items: [{ revision: 1, savedAt: "2026-09-08T00:00:00Z" }] }, loadingMore: false, loadMore: vi.fn() });
+    try {
+      for (const [language, label] of [["ja-JP", "過去版（閲覧のみ）"], ["en-US", "Read-only version"]]) {
+        vi.stubGlobal("navigator", { language });
+        const render = (selected: number | null) => renderToStaticMarkup(createElement(SummaryHistory, {
+          base: "/api/v1/vaults/v/meetings/m", latest: { revision: 2, present: true, record: { title: "New", document: latest, createdAt: null } },
+          selected, onSelect: vi.fn(),
+        }));
+        expect(render(null)).toContain("Current result");
+        expect(render(null)).not.toContain("Previous result");
+        const historical = render(1);
+        expect(page).toHaveBeenCalledWith("/api/v1/vaults/v/meetings/m/summary");
+        expect(query).toHaveBeenCalledWith("/api/v1/vaults/v/meetings/m/summary/1");
+        expect(historical).toContain("Previous result");
+        expect(historical).not.toContain("Current result");
+        expect(historical).toContain(label);
+        expect(historical).toContain("first-model");
+        expect(historical).toContain("low");
+        expect(historical).toContain("—");
+      }
+    } finally { query.mockRestore(); page.mockRestore(); }
+  });
+
   it("waits for meeting and vault data without flashing a placeholder page, and keeps errors visible", () => {
     vi.stubGlobal("navigator", { language: "ja-JP" });
     const query = vi.spyOn(liveData, "useLiveJSON");
@@ -45,6 +78,9 @@ describe("desktop-style meeting layout", () => {
           return empty;
         });
         const html = render();
+        expect(query).toHaveBeenCalledWith("/api/v1/vaults/v1/meetings/m1");
+        expect(query).not.toHaveBeenCalledWith("/api/v1/vaults/v1/meetings/m1?content=metadata-v1");
+        expect(query).toHaveBeenCalledWith("/api/v1/vaults/v1/meetings/m1/summary/latest");
         expect(html.includes("<h1>")).toBe(ready === "both");
         expect(html.includes("Planning")).toBe(ready === "both");
         expect(html).not.toContain("<h1>ミーティング</h1>");
@@ -401,7 +437,7 @@ describe("dashboard navigation", () => {
     expect(source).toContain("/api/auth/organization/list-user-teams?");
     expect(source).not.toContain("/api/auth/organization/list-team-members?");
     expect(source).toContain('team.id !== "external-default"');
-    expect(source).toContain("summaryDisplayText(meeting?.summaryDocument ?? null)");
+    expect(source).toContain("summaryDisplayText(currentSummary?.document ?? null)");
     expect(source).not.toContain("<pre>{meeting.summaryDocument}</pre>");
   });
 

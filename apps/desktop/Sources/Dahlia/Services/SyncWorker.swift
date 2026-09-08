@@ -622,11 +622,15 @@ actor SyncWorker {
         return result
     }
 
-    func synchronizeForTransfer(vaultId: UUID, connectionId: UUID) async throws {
+    func pullRemoteChanges(vaultId: UUID, connectionId: UUID) async throws -> Bool {
         guard let target = try await pullTargets().first(where: { $0.vaultId == vaultId && $0.connectionId == connectionId }) else {
             throw TextContentError.changed
         }
-        guard try await pullRemoteChanges(for: target) else { throw TextContentError.changed }
+        return try await pullRemoteChanges(for: target)
+    }
+
+    func synchronizeForTransfer(vaultId: UUID, connectionId: UUID) async throws {
+        guard try await pullRemoteChanges(vaultId: vaultId, connectionId: connectionId) else { throw TextContentError.changed }
         guard try await dbQueue.read({ db in
             try SyncTransactionQueue.matchesExpectedConnection(vaultId: vaultId, connectionId: connectionId, in: db)
                 && !SyncTransactionQueue.hasPending(vaultId: vaultId, in: db)
@@ -918,7 +922,7 @@ actor SyncWorker {
             let data = try await sendData(
                 request(
                     origin: target.origin,
-                    path: "api/v1/vaults/\(target.vaultId.lowercase)/meetings/\(meetingId.lowercase)?content=metadata-v1",
+                    path: "api/v1/vaults/\(target.vaultId.lowercase)/meetings/\(meetingId.lowercase)",
                     method: "GET"
                 ),
                 connectionId: target.connectionId

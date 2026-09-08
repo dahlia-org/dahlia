@@ -1149,6 +1149,47 @@ private extension DahliaMCPServer {
         )
     }
 
+    private static var summaryMetadataSchema: [String: Any] {
+        let reasoning = objectSchema(
+            properties: ["effort": ["type": "string"], "summary": ["type": "string"]],
+            required: []
+        )
+        let tokens: [String: Any] = ["type": "integer", "minimum": 0]
+        let usage = objectSchema(
+            properties: [
+                "input_tokens": tokens,
+                "output_tokens": tokens,
+                "total_tokens": tokens,
+                "input_tokens_details": objectSchema(properties: ["cached_tokens": tokens], required: []),
+                "output_tokens_details": objectSchema(properties: ["reasoning_tokens": tokens], required: []),
+            ],
+            required: []
+        )
+        return objectSchema(
+            properties: [
+                "generatedBy": ["type": "string", "enum": ["server", "local_codex"]],
+                "inputTypes": ["type": "array", "items": ["type": "string"]],
+                "detailLevel": ["type": "string"],
+                "outputLanguage": ["type": "string"],
+                "request": objectSchema(
+                    properties: ["model": ["type": "string"], "reasoning": reasoning],
+                    required: []
+                ),
+                "response": objectSchema(
+                    properties: [
+                        "id": ["type": "string"],
+                        "model": ["type": "string"],
+                        "created_at": ["type": "number"],
+                        "reasoning": reasoning,
+                        "usage": usage,
+                    ],
+                    required: []
+                ),
+            ],
+            required: ["generatedBy", "inputTypes", "request"]
+        )
+    }
+
     private static var summaryDocumentSchema: [String: Any] {
         let summaryText = objectSchema(
             properties: [
@@ -1226,6 +1267,7 @@ private extension DahliaMCPServer {
                 "sections": ["type": "array", "items": section],
                 "tags": ["type": "array", "items": ["type": "string"]],
                 "action_items": ["type": "array", "items": actionItem],
+                "metadata": summaryMetadataSchema,
             ],
             required: ["schema_version", "title", "sections"]
         )

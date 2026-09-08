@@ -147,6 +147,9 @@ extension MeetingAccessStore {
             ))
         }
 
+        var document = document
+        document.metadata = nil
+        let editedDocument = try document.databaseJSONString()
         let createdAt = summary.createdAt
         let vaultFile = try makeVaultFileWrite(
             meetingID: meetingID,
@@ -159,7 +162,7 @@ extension MeetingAccessStore {
         return .apply(SummaryUpdate(
             meetingID: meetingID,
             expectedDocumentVersion: expectedDocumentVersion,
-            storedDocument: storedDocument,
+            storedDocument: editedDocument,
             summaryTitle: meetingName,
             meetingName: meetingName,
             meetingDescription: meetingDescription,

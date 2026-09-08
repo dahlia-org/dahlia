@@ -1,3 +1,4 @@
+import { SummaryHistory, type LatestSummary } from "./SummaryHistory";
 import { ServerSummaryGeneration, ServerSummarySettings } from "./SummaryGeneration";
 import { RecordingIndicator } from "./RecordingIndicator";
 import { liveDataEvent, refreshData, subscribeLiveUpdates, useLiveJSON, useLivePage, useLiveQuery } from "./live-data";
@@ -14,7 +15,7 @@ import { dashboardNavigationPath, navigateDashboard } from "./navigation";
 import { summaryDisplayText } from "../search/summary";
 import type { ScreenshotVariant } from "../sync/screenshot-variants";
 import { clientMutationEvent, json, RequestError, syncMessage, uiText, type SyncedVaultInfo, type OrganizationInfo, type SyncedMeetingInfo, type SyncedProjectInfo } from "./api";
-import { DetailTabs, MeetingTabs, parseSummary, SummaryContent, SummaryTags, TranscriptTime } from "./MeetingContent";
+import { DetailTabs, MeetingTabs, parseSummary, SummaryTags, TranscriptTime } from "./MeetingContent";
 import { FileLink, FileViewer } from "./FileViewer";
 import { MenuIcon, Sidebar, SidebarProvider, useSidebar } from "./Sidebar";
 
@@ -783,8 +784,12 @@ export function SyncedMeeting({ vaultId, meetingId }: { vaultId: string; meeting
   const loadingScreenshots = screenshotsQuery.loadingMore;
   const [error, setError] = useState<string>();
   const [recovering, setRecovering] = useState(false);
-  const summaryText = summaryDisplayText(meeting?.summaryDocument ?? null);
-  const document = useMemo(() => parseSummary(meeting?.summaryDocument), [meeting?.summaryDocument]);
+  const latestSummary = useLiveJSON<LatestSummary>(`${base}/summary/latest`);
+  const [selectedSummary, setSelectedSummary] = useState<number | null>(null);
+  useEffect(() => { setSelectedSummary(null); }, [base]);
+  const currentSummary = latestSummary.data?.record;
+  const summaryText = summaryDisplayText(currentSummary?.document ?? null);
+  const document = useMemo(() => parseSummary(currentSummary?.document ?? undefined), [currentSummary?.document]);
   const project = projectsQuery.data?.items.find((item) => item.projectId === meeting?.projectId);
   const editMeeting = async () => {
     if (!meeting) return;
@@ -810,15 +815,15 @@ export function SyncedMeeting({ vaultId, meetingId }: { vaultId: string; meeting
     }
   };
   const editSummary = async () => {
-    if (!meeting) return;
-    const title = window.prompt("Summary title", meeting.summaryTitle ?? meeting.name)?.trim();
+    if (!meeting || !latestSummary.data || selectedSummary !== null) return;
+    const title = window.prompt("Summary title", currentSummary?.title ?? meeting.name)?.trim();
     if (!title) return;
     const text = window.prompt("Summary", summaryText) ?? summaryText;
     setError(undefined);
     try {
       await commitSyncTransaction(vaultId, [{
         entity: "summary", action: "upsert", entityId: meetingId,
-        baseRevision: meeting.summaryRevision,
+        baseRevision: latestSummary.data.revision,
         data: { title, document: summaryDocument(title, text), createdAt: new Date().toISOString() },
       }], setRecovering);
     } catch (caught) {
@@ -826,12 +831,12 @@ export function SyncedMeeting({ vaultId, meetingId }: { vaultId: string; meeting
     }
   };
   const deleteSummary = async () => {
-    if (!meeting?.summaryDocument || !window.confirm("Delete this Summary?")) return;
+    if (!meeting || !currentSummary?.document || !window.confirm(uiText("Delete this summary and all its versions?", "要約とすべての過去バージョンを削除しますか？"))) return;
     setError(undefined);
     try {
       await commitSyncTransaction(vaultId, [{
         entity: "summary", action: "delete", entityId: meetingId,
-        baseRevision: meeting.summaryRevision, data: {},
+        baseRevision: latestSummary.data!.revision, data: {},
       }], setRecovering);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not delete Summary");
@@ -864,13 +869,14 @@ export function SyncedMeeting({ vaultId, meetingId }: { vaultId: string; meeting
           <button className="action-trigger" popoverTarget="meeting-actions">{uiText("⋯ Actions", "⋯ 操作")} <span aria-hidden="true">⌄</span></button>
           <div id="meeting-actions" popover="auto" className="action-menu">
             <button onClick={() => void editMeeting()}>{uiText("Edit Meeting", "ミーティングを編集")}</button>
-            <button onClick={() => void editSummary()}>{meeting.summaryDocument ? uiText("Edit Summary", "要約を編集") : uiText("New Summary", "要約を追加")}</button>
-            {meeting.summaryDocument && <button className="danger-button" onClick={() => void deleteSummary()}>{uiText("Delete Summary", "要約を削除")}</button>}
+            <button disabled={selectedSummary !== null || !latestSummary.data} onClick={() => void editSummary()}>{currentSummary?.document ? uiText("Edit Summary", "要約を編集") : uiText("New Summary", "要約を追加")}</button>
+            {currentSummary?.document && <button className="danger-button" onClick={() => void deleteSummary()}>{uiText("Delete Summary", "要約を削除")}</button>}
           </div>
         </div>}
-        summary={meeting.summaryDocument
-          ? <>{meeting.summaryTitle && meeting.summaryTitle !== meeting.name && <h2 className="summary-title">{meeting.summaryTitle}</h2>}<SummaryContent document={document} /></>
-          : <p className="content-empty">{uiText("No summary yet", "要約はまだありません")}</p>}
+        summary={<>
+          <DataError error={latestSummary.error} retry={latestSummary.reload} />
+          <SummaryHistory key={base} base={base} latest={latestSummary.data} selected={selectedSummary} onSelect={setSelectedSummary} />
+        </>}
         screenshots={<>
           <DataError error={screenshotsQuery.error} retry={screenshotsQuery.reload} />
           {visibleScreenshots?.length === 0 && <p className="content-empty">{uiText("No screenshots", "スクリーンショットはありません")}</p>}
