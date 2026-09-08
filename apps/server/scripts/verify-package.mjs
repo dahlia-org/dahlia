@@ -53,6 +53,7 @@ try {
     import * as server from "@dahlia-ai/server";
     import {
       createNodeAuthStore,
+      SummaryService, SummaryWorker, createTranscriptSummaryMethod,
       createPostgresApplicationStore,
       createPostgresAuthStore,
     } from "@dahlia-ai/server/node";
@@ -62,6 +63,7 @@ try {
     import { DatabaseSync } from "node:sqlite";
     import { fileURLToPath } from "node:url";
 
+    if ([SummaryService, SummaryWorker, createTranscriptSummaryMethod].some((value) => typeof value !== "function")) throw new Error("Missing Node summary API");
     if (typeof server.createApp !== "function" || typeof App !== "function") throw new Error("Package API is incomplete");
     for (const name of ["DatabricksBackend", "OpenAIBackend", "CloudflareBackend"]) {
       if (typeof server[name] !== "function") throw new Error("Missing AI backend export: " + name);
@@ -72,7 +74,7 @@ try {
     if (typeof createPostgresApplicationStore !== "function" || typeof createPostgresAuthStore !== "function") {
       throw new Error("PostgreSQL store factories are missing from the Node package export");
     }
-    if (serverMigrationManifest.sqlite.files.length !== 8) {
+    if (serverMigrationManifest.sqlite.files.length !== 9) {
       throw new Error("Migration manifest is incomplete");
     }
     const style = await readFile(new URL(import.meta.resolve("@dahlia-ai/server/client/styles.css")), "utf8");
@@ -130,7 +132,7 @@ try {
     const applied = database.prepare('SELECT "name" FROM "__drizzle_migrations"').all();
     database.close();
     await store.close?.();
-    if (applied.length !== 8 || applied.at(-1)?.name !== "20260907132433_stiff_slyde") {
+    if (applied.length !== 9 || applied.at(-1)?.name !== "20260907172550_nice_starhawk") {
       throw new Error("Installed package migrations did not run from the package directory");
     }
   `);

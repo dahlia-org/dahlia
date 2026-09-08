@@ -324,13 +324,20 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
         set { batchAudioRetentionPeriodRawValue = newValue.rawValue }
     }
 
-    var batchSummaryGenerationOptions: SummaryGenerationOptions {
+    func batchSummaryGenerationOptions() -> SummaryGenerationOptions {
         SummaryGenerationOptions(
             exportOptions: SummaryExportOptions(
                 exportsToVault: exportBatchSummaryToVault,
                 exportsToGoogleDocs: exportBatchSummaryToGoogleDocs
             ),
             detailLevel: summaryDetailLevel
+        )
+    }
+
+    func batchSummaryGenerationOptions(serverSettings: ServerAccountSettings?) -> SummaryGenerationOptions {
+        SummaryGenerationOptions(
+            exportOptions: batchSummaryGenerationOptions().exportOptions,
+            detailLevel: serverSettings?.summary.flatMap { SummaryDetailLevel(rawValue: $0.methodSettings.transcript.detail) }
         )
     }
 

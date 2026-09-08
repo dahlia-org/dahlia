@@ -358,9 +358,9 @@ describe("dashboard navigation", () => {
     expect(canEmbedArtifact("application/zip")).toBe(false);
   });
 
-  it("gates Settings with the session capability", () => {
+  it("opens account settings for both header and session authentication", () => {
     expect(resolveDashboardRoute("/dashboard/settings", { admin: false, sessions: false }))
-      .toEqual({ redirect: "/dashboard" });
+      .toEqual({ page: "settings" });
     expect(resolveDashboardRoute("/dashboard/settings", { admin: false, sessions: true }))
       .toEqual({ page: "settings" });
   });

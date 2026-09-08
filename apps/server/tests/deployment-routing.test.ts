@@ -50,7 +50,7 @@ describe("deployment routing", () => {
       migrations_dir: "drizzle/d1",
     }));
     const d1Migrations = readdirSync(new URL("../drizzle/d1", import.meta.url)).toSorted();
-    expect(d1Migrations).toEqual(["20260903173555_lying_slipstream.sql", "20260905172528_unique_marvel_zombies.sql", "20260905172654_sync_history_backfill.sql", "20260906125718_dashing_roughhouse.sql", "20260907070728_dashing_sinister_six.sql", "20260907091207_funny_black_bird.sql", "20260907131015_big_excalibur.sql", "20260907132433_stiff_slyde.sql"]);
+    expect(d1Migrations).toEqual(["20260903173555_lying_slipstream.sql", "20260905172528_unique_marvel_zombies.sql", "20260905172654_sync_history_backfill.sql", "20260906125718_dashing_roughhouse.sql", "20260907070728_dashing_sinister_six.sql", "20260907091207_funny_black_bird.sql", "20260907131015_big_excalibur.sql", "20260907132433_stiff_slyde.sql", "20260907172550_nice_starhawk.sql"]);
     for (const migration of d1Migrations) {
       expect(readText(`../drizzle/d1/${migration}`))
         .toBe(readText(`../drizzle/sqlite/${migration.replace(/\.sql$/, "")}/migration.sql`));

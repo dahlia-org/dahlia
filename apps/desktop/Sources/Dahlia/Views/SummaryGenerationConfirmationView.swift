@@ -4,7 +4,7 @@ struct SummaryGenerationConfirmationView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var exportsToVault = SummaryExportOptions.manual.exportsToVault
     @State private var exportsToGoogleDocs = SummaryExportOptions.manual.exportsToGoogleDocs
-    @State private var detailLevel: SummaryDetailLevel
+    @State private var detailLevel: SummaryDetailLevel?
     @State private var selectedProjectId: UUID?
     @State private var errorMessage: String?
 
@@ -28,7 +28,10 @@ struct SummaryGenerationConfirmationView: View {
         self.actionTitle = actionTitle
         self.projects = projects
         self.onGenerate = onGenerate
-        _detailLevel = State(initialValue: initialDetailLevel)
+        let serverDetail = AppSettings.shared.currentVault?.accountConnectionId.flatMap {
+            ServerAccountSettingsModel.shared.state(for: $0).settings?.summary?.methodSettings.transcript.detail
+        }.flatMap(SummaryDetailLevel.init(rawValue:))
+        _detailLevel = State(initialValue: AppSettings.shared.currentVault?.accountConnectionId != nil ? serverDetail : initialDetailLevel)
         _selectedProjectId = State(initialValue: initialProjectId)
         _errorMessage = State(initialValue: nil)
     }

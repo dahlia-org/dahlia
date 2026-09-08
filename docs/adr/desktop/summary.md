@@ -1,6 +1,6 @@
 # サマリーの構造と更新
 
-対象: Desktop・local MCP。採択: 2026-07-09〜08-02。
+対象: Desktop・local MCP。Server 生成は [Server アカウントの要約生成](../server/summary-generation.md) を参照。採択: 2026-07-09〜08-02。
 
 ## 正準表現
 

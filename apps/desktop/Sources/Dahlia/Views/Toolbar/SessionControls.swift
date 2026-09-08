@@ -59,9 +59,10 @@ struct GenerateSummaryHeaderButton: View {
     @ObservedObject var viewModel: CaptionViewModel
     var sidebarViewModel: SidebarViewModel
     @State private var isConfirmationPresented = false
+    @State private var serverJob: ServerSummaryService.Job?
 
     private var isGeneratingCurrentMeeting: Bool {
-        viewModel.isSummaryGenerating
+        viewModel.isSummaryGenerating || serverJob?.isActive == true
     }
 
     private var isGenerateSummaryEnabled: Bool {
@@ -71,7 +72,7 @@ struct GenerateSummaryHeaderButton: View {
     var body: some View {
         Button(action: presentConfirmation) {
             Label {
-                Text(isGeneratingCurrentMeeting ? L10n.generatingSummary : L10n.generateSummary)
+                Text(isGeneratingCurrentMeeting ? L10n.generatingSummary : serverJob?.status == "failed" ? L10n.retry : L10n.generateSummary)
             } icon: {
                 if isGeneratingCurrentMeeting {
                     ProgressView()
@@ -86,6 +87,23 @@ struct GenerateSummaryHeaderButton: View {
         .modifier(SummaryHeaderButtonModifier(isEnabled: isGenerateSummaryEnabled))
         .disabled(!isGenerateSummaryEnabled)
         .help(isGeneratingCurrentMeeting ? L10n.generatingSummary : L10n.generateSummary)
+        .task(id: viewModel.currentMeetingId) {
+            serverJob = nil
+            guard AppSettings.shared.currentVault?.accountConnectionId != nil else { return }
+            while !Task.isCancelled {
+                do {
+                    let job = try await viewModel.currentServerSummaryStatus()
+                    try Task.checkCancellation()
+                    serverJob = job
+                    try await Task.sleep(for: .seconds(5))
+                } catch is CancellationError {
+                    return
+                } catch {
+                    do { try await Task.sleep(for: .seconds(5)) } catch { return }
+                }
+            }
+        }
+        .help(serverJob?.status == "failed" ? L10n.serverSummaryFailed : L10n.generateSummary)
         .sheet(isPresented: $isConfirmationPresented) {
             SummaryGenerationConfirmationView(
                 projects: sidebarViewModel.flatProjects,

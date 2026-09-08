@@ -900,6 +900,7 @@ enum RemoteChangeApplier {
                 id: change.entityId,
                 vaultId: vaultId,
                 value: record,
+                remoteRevision: change.revision,
                 in: db
             )
         case .transcript:

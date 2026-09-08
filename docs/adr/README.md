@@ -32,6 +32,7 @@ Server / Private Web、配置、API、認可、storage。
 - [Database schema と認可 identity](server/database-and-identity.md)
 - [Vault 共有と管理者](server/sharing-and-administration.md)
 - [Server 全文・Hybrid 検索](server/search.md)
+- [Server アカウントの要約生成](server/summary-generation.md)
 
 ## Shared
 

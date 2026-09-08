@@ -1699,3 +1699,22 @@
 "search.server.pendingProjects" = "Unsynced projects on this device";
 "search.server.kind" = "Result type";
 "search.server.allKinds" = "All types";
+"serverSummaryMethod" = "Summary method";
+
+"serverSummaryTranscript" = "Transcript and images";
+
+"serverSummaryDescription" = "Generate on the server, even after closing the app. Export separately after generation.";
+
+"serverSummaryUnavailable" = "Summary generation is unavailable on this server.";
+
+"serverSummarySyncPending" = "Sync has not finished. Check sync status and retry.";
+
+"serverSummaryFailed" = "Server summary generation failed. Your existing summary was preserved. You can retry.";
+
+"serverSummaryInputChanged" = "Inputs changed during generation. Retry after transcript and image processing finishes.";
+"serverSummaryModelListFailed" = "Could not load models. Try again.";
+"serverSummaryChooseModel" = "Select an available model";
+"serverSummaryNoModels" = "No models available";
+"serverSummaryReloadModels" = "Reload models";
+
+"serverSummaryAccountDefault" = "Account default";

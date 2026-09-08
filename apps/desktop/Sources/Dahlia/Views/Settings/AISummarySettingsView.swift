@@ -10,84 +10,87 @@ struct AISummarySettingsView: View {
 
     var body: some View {
         Form {
-            Section {
-                if catalog.isLoading {
-                    LabeledContent(L10n.model) {
-                        ProgressView()
-                            .controlSize(.small)
+            if vaultSettings.isLocalAccount {
+                Section {
+                    if catalog.isLoading {
+                        LabeledContent(L10n.model) {
+                            ProgressView()
+                                .controlSize(.small)
+                        }
+                    } else if !catalog.models.isEmpty {
+                        Picker(selection: modelSelection) {
+                            ForEach(catalog.models) { model in
+                                Text(model.displayName).tag(model.model)
+                            }
+                        } label: {
+                            Text(L10n.model)
+                            Text(L10n.codexModelDescription)
+                        }
+                        .pickerStyle(.menu)
+
+                        Picker(selection: $vaultSettings.summaryReasoningEffort) {
+                            ForEach(catalog.effortOptions(modelID: vaultSettings.summaryModelID)) { effort in
+                                Text(effort.displayName).tag(effort.reasoningEffort)
+                            }
+                        } label: {
+                            Text(L10n.reasoningEffort)
+                            Text(L10n.reasoningEffortDescription)
+                        }
+                        .pickerStyle(.menu)
                     }
-                } else if !catalog.models.isEmpty {
-                    Picker(selection: modelSelection) {
-                        ForEach(catalog.models) { model in
-                            Text(model.displayName).tag(model.model)
+
+                    if let errorMessage = catalog.errorMessage {
+                        SettingsStatusMessage(
+                            text: errorMessage,
+                            systemImage: "exclamationmark.triangle.fill",
+                            tint: .red
+                        )
+                    }
+
+                    if catalog.canRetry {
+                        Button(L10n.retry, action: reload)
+                            .disabled(catalog.isLoading)
+                    }
+                } header: {
+                    Text(L10n.summary)
+                } footer: {
+                    Text(L10n.codexSummaryModelFooter)
+                }
+
+                Section {
+                    Picker(selection: $settings.summaryDetailLevel) {
+                        ForEach(SummaryDetailLevel.allCases) { level in
+                            Text(level.displayName).tag(level)
                         }
                     } label: {
-                        Text(L10n.model)
-                        Text(L10n.codexModelDescription)
+                        Text(L10n.summaryDetailLevel)
+                        Text(L10n.summaryDetailLevelDescription)
                     }
                     .pickerStyle(.menu)
 
-                    Picker(selection: $vaultSettings.summaryReasoningEffort) {
-                        ForEach(catalog.effortOptions(modelID: vaultSettings.summaryModelID)) { effort in
-                            Text(effort.displayName).tag(effort.reasoningEffort)
+                    if vaultSettings.isLocalAccount {
+                        Picker(selection: $settings.llmSummaryLanguage) {
+                            ForEach(SummaryLanguage.allCases) { language in
+                                Text(language.displayName).tag(language)
+                            }
+                        } label: {
+                            Text(L10n.summaryOutputLanguage)
+                            Text(L10n.summaryOutputLanguageDescription)
                         }
-                    } label: {
-                        Text(L10n.reasoningEffort)
-                        Text(L10n.reasoningEffortDescription)
+                        .pickerStyle(.menu)
                     }
-                    .pickerStyle(.menu)
+                } header: {
+                    Text(L10n.summaryOutput)
                 }
-
-                if let errorMessage = catalog.errorMessage {
-                    SettingsStatusMessage(
-                        text: errorMessage,
-                        systemImage: "exclamationmark.triangle.fill",
-                        tint: .red
-                    )
-                }
-
-                if catalog.canRetry {
-                    Button(L10n.retry, action: reload)
-                        .disabled(catalog.isLoading)
-                }
-            } header: {
-                Text(L10n.summary)
-            } footer: {
-                Text(L10n.codexSummaryModelFooter)
-            }
-
-            Section {
-                Picker(selection: $settings.summaryDetailLevel) {
-                    ForEach(SummaryDetailLevel.allCases) { level in
-                        Text(level.displayName).tag(level)
-                    }
-                } label: {
-                    Text(L10n.summaryDetailLevel)
-                    Text(L10n.summaryDetailLevelDescription)
-                }
-                .pickerStyle(.menu)
-
-                if vaultSettings.isLocalAccount {
-                    Picker(selection: $settings.llmSummaryLanguage) {
-                        ForEach(SummaryLanguage.allCases) { language in
-                            Text(language.displayName).tag(language)
-                        }
-                    } label: {
-                        Text(L10n.summaryOutputLanguage)
-                        Text(L10n.summaryOutputLanguageDescription)
-                    }
-                    .pickerStyle(.menu)
-                }
-            } header: {
-                Text(L10n.summaryOutput)
             }
             if let connectionID = vaultSettings.accountConnectionID {
+                ServerSummarySettingsSection(connectionID: connectionID)
                 ServerAccountLanguageSettingsSection(connectionID: connectionID)
             }
         }
         .formStyle(.grouped)
         .task(id: modelCatalogContext) {
-            await loadModels(forceRefresh: true, context: modelCatalogContext)
+            if vaultSettings.isLocalAccount { await loadModels(forceRefresh: true, context: modelCatalogContext) }
         }
         .onChange(of: vaultSettings.summaryModelID) {
             if preservesEffortForNextModelChange {

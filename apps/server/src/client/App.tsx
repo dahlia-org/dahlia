@@ -1,3 +1,4 @@
+import { ServerSummaryGeneration, ServerSummarySettings } from "./SummaryGeneration";
 import { RecordingIndicator } from "./RecordingIndicator";
 import { liveDataEvent, refreshData, subscribeLiveUpdates, useLiveJSON, useLivePage, useLiveQuery } from "./live-data";
 import { createAuthClient } from "better-auth/react";
@@ -353,11 +354,9 @@ function Shell({
                 ? <a className={path === item.path ? "active" : ""} href={item.path} key={item.path}><MenuIcon name="artifact" />{item.label}</a>
                 : null
             ))}
-            {session.capabilities.sessions && (
-              <a className={path === "/dashboard/settings" ? "active" : ""} href="/dashboard/settings">
-                <MenuIcon name="settings" />{uiText("Settings", "設定")}
-              </a>
-            )}
+            <a className={path === "/dashboard/settings" ? "active" : ""} href="/dashboard/settings">
+              <MenuIcon name="settings" />{uiText("Settings", "設定")}
+            </a>
           </nav>
         </Sidebar>
         <main className="workspace" key={path} ref={main} tabIndex={-1}>{children}</main>
@@ -388,14 +387,14 @@ function Overview({ session }: { session: SessionInfo }) {
   );
 }
 
-function Settings() {
+function Settings({ sessionsEnabled }: { sessionsEnabled: boolean }) {
   const [sessions, setSessions] = useState<DeviceSession[]>();
   const [error, setError] = useState<string>();
   const load = useCallback(() => {
     setError(undefined);
     void json<DeviceSession[]>("/api/sessions").then(setSessions).catch((caught: Error) => setError(caught.message));
   }, []);
-  useEffect(load, [load]);
+  useEffect(() => { if (sessionsEnabled) load(); }, [load, sessionsEnabled]);
 
   async function revoke(id: string) {
     try {
@@ -408,8 +407,9 @@ function Settings() {
 
   return (
     <>
-      <PageHeader title="Settings" />
-      <section className="section-block">
+      <PageHeader title={uiText("Settings", "設定")} />
+      <ServerSummarySettings />
+      {sessionsEnabled && <section className="section-block">
         <h2 className="section-label">Active Sessions</h2>
         <div className="panel sessions-panel">
           {error && <p className="error">{error}</p>}
@@ -431,7 +431,7 @@ function Settings() {
           ))}
         </div>
         <p className="section-note">Revoked access can remain valid for up to 15 minutes.</p>
-      </section>
+      </section>}
     </>
   );
 }
@@ -858,6 +858,7 @@ export function SyncedMeeting({ vaultId, meetingId }: { vaultId: string; meeting
       <DataError error={meetingQuery.error} retry={meetingQuery.reload} />
       <DataError error={vaultQuery.error} retry={vaultQuery.reload} />
       <DataError error={projectsQuery.error} retry={projectsQuery.reload} />
+      {meeting && vault?.role === "owner" && <ServerSummaryGeneration key={base} base={base} />}
       {meeting && <MeetingTabs
         actions={vault?.role === "owner" && <div className="meeting-actions">
           <button className="action-trigger" popoverTarget="meeting-actions">{uiText("⋯ Actions", "⋯ 操作")} <span aria-hidden="true">⌄</span></button>
@@ -1506,7 +1507,7 @@ export function App({ brand = defaultBrand, extensions = [] }: AppProps) {
   else if (route.page === "file") page = <FileViewer fileId={route.fileId!} />;
   else if (route.page === "organizations") page = <Organizations session={session} />;
   else if (route.page === "invitation") page = <Invitation invitationId={route.invitationId!} />;
-  else if (route.page === "settings") page = <Settings />;
+  else if (route.page === "settings") page = <Settings sessionsEnabled={session.capabilities.sessions} />;
   else page = <Overview session={session} />;
   return <Shell brand={brand} extensions={extensions} session={session} path={path} navigate={navigateDashboard} routeVaultId={detailVaultId ?? route.vaultId}>
     <DataError error={sessionError ? new Error(sessionError) : undefined} retry={() => setSessionAttempt((attempt) => attempt + 1)} />

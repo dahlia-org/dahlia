@@ -7,7 +7,7 @@ struct BatchTranscriptionOptionsForm: View {
     let allowsRecordedLanguageSelection: Bool
     @Binding var languageSelection: BatchTranscriptionLanguageSelection
     @Binding var generateSummaryAfterBatchTranscription: Bool
-    @Binding var summaryDetailLevel: SummaryDetailLevel
+    @Binding var summaryDetailLevel: SummaryDetailLevel?
     @Binding var exportBatchSummaryToVault: Bool
     @Binding var exportBatchSummaryToGoogleDocs: Bool
     let projects: [FlatProjectRow]

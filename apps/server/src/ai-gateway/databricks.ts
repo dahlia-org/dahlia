@@ -20,11 +20,9 @@ export class DatabricksBackend implements AIGatewayBackend {
   }
 
   responses(body: RequestBody, context: RequestContext): Promise<Response> {
-    if (!context.upstreamModel && !SHORT_MODEL_PATTERN.test(body.model)) {
-      throw new GatewayRequestError("A short model name is required", 400, "invalid_model");
-    }
+    const model = resolveDatabricksModel(this.provider, body.model, context.upstreamModel);
     return sendOpenAIResponses(this.provider, forwardedDatabricksAuthorization(context.headers), {
-      body: JSON.stringify({ ...body, model: context.upstreamModel ?? `${this.provider.modelSchema}.${body.model}` }),
+      body: JSON.stringify({ ...body, model }),
       requestHeaders: context.headers,
       signal: context.signal,
       upstreamHeaders: { "Databricks-Ai-Gateway-Request-Tags": JSON.stringify({ user_id: context.identity.userId }) },
@@ -98,6 +96,12 @@ export class DatabricksBackend implements AIGatewayBackend {
     } while (pageToken);
     return modelList(models);
   }
+}
+
+export function resolveDatabricksModel(provider: { modelSchema: string }, model: string, upstreamModel?: string): string {
+  if (upstreamModel) return upstreamModel;
+  if (!SHORT_MODEL_PATTERN.test(model)) throw new GatewayRequestError("A short model name is required", 400, "invalid_model");
+  return `${provider.modelSchema}.${model}`;
 }
 
 function databricksModelListError(

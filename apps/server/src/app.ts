@@ -1,3 +1,4 @@
+import { summaryJobResponse, type SummaryService } from "./summary/service";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { secureHeaders } from "hono/secure-headers";
@@ -105,6 +106,7 @@ export interface AppDependencies {
   searchEmbedder?: SearchEmbedder;
   screenshotTransformer?: ScreenshotTransformer;
   imageAnalysisEnabled?: boolean;
+  summaryService?: SummaryService;
 }
 
 export async function authenticateMcpRequest(
@@ -392,6 +394,27 @@ export function createApp(dependencies: AppDependencies) {
     return context.body(null, 204);
   });
 
+  app.get("/api/v1/vaults/:vaultId/meetings/:meetingId/summary/job", async (context) => {
+    const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
+    if (!dependencies.summaryService) return context.json({ error: "summary_unavailable" }, 503);
+    context.header("cache-control", "no-store");
+    return context.json({ job: summaryJobResponse(await dependencies.summaryService.status(identity,
+      sync.parseId(context.req.param("vaultId")), sync.parseId(context.req.param("meetingId")))) });
+  });
+  app.post("/api/v1/vaults/:vaultId/meetings/:meetingId/summary", accountSettingsBodyLimit, async (context) => {
+    const requiresBrowserOrigin = config.authProvider === "accounts" && !context.req.header("authorization");
+    if ((requiresBrowserOrigin || context.req.header("origin")) && !mutationOriginAllowed(context.req.raw, config.baseUrl)) {
+      return context.json({ error: "invalid_origin" }, 403);
+    }
+    const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
+    if (!dependencies.summaryService) return context.json({ error: "summary_unavailable" }, 503);
+    const vaultId = sync.parseId(context.req.param("vaultId"));
+    const meetingId = sync.parseId(context.req.param("meetingId"));
+    const job = await dependencies.summaryService.start(identity, vaultId, meetingId, await context.req.json().catch(() => null));
+    context.header("Location", `/api/v1/vaults/${vaultId}/meetings/${meetingId}/summary/job`);
+    return context.json({ job: summaryJobResponse(job) }, 202);
+  });
+
   app.get("/api/v1/account/settings", async (context) => {
     const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
     context.header("cache-control", "no-store");
@@ -453,7 +476,7 @@ export function createApp(dependencies: AppDependencies) {
   app.get("/api/v1/capabilities", async (context) => {
     await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
     return context.json(await store.sync.isAvailable()
-      ? { syncVersion: 2, recordingAudioVersion: 1, meetingEventsVersion: 1, searchVersion: 1, imageAnalysis: dependencies.imageAnalysisEnabled === true } : {});
+      ? { syncVersion: 2, recordingAudioVersion: 1, meetingEventsVersion: 1, searchVersion: 1, imageAnalysis: dependencies.imageAnalysisEnabled === true, summaryGeneration: { version: dependencies.summaryService?.methods.length ? 1 : 0, methods: dependencies.summaryService?.methods.map((method) => method.id) ?? [] } } : {});
   });
   app.get("/api/v1/vaults/:vaultId/text/:entity/:entityId", async (context) => {
     const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);

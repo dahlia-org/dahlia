@@ -10,6 +10,35 @@ import GRDB
     @MainActor
     struct MeetingRepositorySummaryTests {
         @Test
+        func canonicalSummaryMergesTagsWithoutEchoAcrossReplay() throws {
+            let context = try makeRepositoryContext()
+            try context.repo.addTag(name: "manual", toMeetingId: context.meeting.id, colorHex: "#123456")
+            let document = try SummaryDocument(title: "Remote", sections: [], tags: ["team", "team", "manual"]).databaseJSONString()
+            let data = try JSONSerialization.data(withJSONObject: [
+                "title": "Remote", "document": document, "createdAt": "2026-01-01T00:00:00Z",
+            ])
+            let payload = try SyncJSON.decoder.decode(SyncCanonicalPayload.self, from: data)
+            try context.manager.dbQueue.write { db in
+                let transactions = try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_transactions")
+                for _ in 0 ..< 2 {
+                    try SyncTransactionQueue.applyCanonical(
+                        .summary,
+                        id: context.meeting.id,
+                        vaultId: context.meeting.vaultId,
+                        value: payload,
+                        in: db
+                    )
+                }
+                #expect(try String.fetchAll(db, sql: "SELECT name FROM tags ORDER BY name") == ["manual", "team"])
+                #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM meeting_tags") == 2)
+                #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_transactions") == transactions)
+                try db.execute(sql: "DELETE FROM meeting_tags WHERE tagId IN (SELECT id FROM tags WHERE name = 'team')")
+                try SyncTransactionQueue.applyCanonical(.summary, id: context.meeting.id, vaultId: context.meeting.vaultId, value: payload, in: db)
+                #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM meeting_tags") == 1)
+            }
+        }
+
+        @Test
         func generatedSummaryDoesNotManageLegacyActionItems() throws {
             let context = try makeRepositoryContext()
             let legacyActionItemId = UUID.v7()
@@ -70,6 +99,45 @@ import GRDB
 
             #expect(throws: DecodingError.self) {
                 try record.loadDocument()
+            }
+        }
+
+        @Test(arguments: [false, true], [Int?.none, 1, 2])
+        func canonicalRevisionInvalidatesOnlyOlderExports(omitsBody: Bool, revision: Int?) throws {
+            let context = try makeRepositoryContext()
+            let old = try SummaryDocument(title: "Old", sections: []).databaseJSONString()
+            let document = try SummaryDocument(title: revision == 2 ? "New" : "Old", sections: []).databaseJSONString()
+            try context.manager.dbQueue.write { db in
+                try SummaryContent(meetingId: context.meeting.id, title: "Old", document: old, createdAt: .now).save(db)
+                try SummaryExportRecord.setURL(
+                    "https://docs.google.com/document/d/old/edit",
+                    meetingId: context.meeting.id,
+                    type: .googleDocs,
+                    in: db
+                )
+                try db.execute(
+                    sql: "INSERT INTO sync_entity_state(vaultId, entity, entityId, confirmedRevision) VALUES (?, 'summary', ?, 1)",
+                    arguments: [context.vault.id, context.meeting.id]
+                )
+                var payload: [String: Any] = ["title": "Remote", "createdAt": "2026-01-01T00:00:00Z"]
+                if omitsBody {
+                    payload["contentOmitted"] = true
+                    payload["contentPresent"] = true
+                } else {
+                    payload["document"] = document
+                }
+                let value = try SyncJSON.decoder.decode(SyncCanonicalPayload.self, from: JSONSerialization.data(withJSONObject: payload))
+                try SyncTransactionQueue.applyCanonical(
+                    .summary,
+                    id: context.meeting.id,
+                    vaultId: context.vault.id,
+                    value: value,
+                    remoteRevision: revision,
+                    in: db
+                )
+                let export = try SummaryExportRecord.fetchOne(meetingId: context.meeting.id, type: .googleDocs, in: db)
+                #expect((export == nil) == (revision == 2))
+                #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_transactions") == 0)
             }
         }
 

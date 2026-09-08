@@ -721,8 +721,19 @@ enum SyncTransactionQueue {
         id: UUID,
         vaultId: UUID,
         value: SyncCanonicalPayload,
+        remoteRevision: Int? = nil,
         in db: Database
     ) throws {
+        // Header-only remote updates must invalidate exports before the new body is fetched.
+        // Local receipts omit remoteRevision: they acknowledge content already installed locally.
+        if entity == .summary, let remoteRevision,
+           let previousRevision = try Int.fetchOne(
+               db,
+               sql: "SELECT confirmedRevision FROM sync_entity_state WHERE vaultId = ? AND entity = 'summary' AND entityId = ?",
+               arguments: [vaultId, id]
+           ), remoteRevision > previousRevision {
+            try SummaryExportRecord.filter(Column("meetingId") == id).deleteAll(db)
+        }
         if try TextContentStore.observe(entity: entity, id: id, vaultId: vaultId, value: value, in: db) { return }
         switch entity {
         case .vault:
@@ -770,7 +781,7 @@ enum SyncTransactionQueue {
             }
         case .summary:
             if let title = value.title, let document = value.document, let createdAt = value.createdAt {
-                try SummaryContent(meetingId: id, title: title, document: document, createdAt: createdAt).save(db)
+                try SummaryContent(meetingId: id, title: title, document: document, createdAt: createdAt).saveCanonical(db)
             } else {
                 try db.execute(sql: "DELETE FROM summaries WHERE meetingId = ?", arguments: [id])
             }

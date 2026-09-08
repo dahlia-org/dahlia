@@ -1278,7 +1278,7 @@ final class CaptionViewModel: ObservableObject {
             purpose: .retranscription(sessionIds: sessionIds),
             initiallyGeneratesSummary: hasCurrentMeetingSummary
                 || AppSettings.shared.generateSummaryAfterBatchTranscription,
-            summaryGenerationOptions: AppSettings.shared.batchSummaryGenerationOptions,
+            summaryGenerationOptions: details.summaryGenerationOptions,
             projectSelection: details.projectSelection
         )
     }
@@ -1311,6 +1311,7 @@ final class CaptionViewModel: ObservableObject {
     }
 
     private struct BatchTranscriptionConfirmationDetails {
+        let summaryGenerationOptions: SummaryGenerationOptions
         let projectSelection: BatchTranscriptionProjectSelection
         let meetingName: String
     }
@@ -1321,20 +1322,24 @@ final class CaptionViewModel: ObservableObject {
     ) -> BatchTranscriptionConfirmationDetails {
         guard let dbQueue else {
             return BatchTranscriptionConfirmationDetails(
+                summaryGenerationOptions: AppSettings.shared.batchSummaryGenerationOptions(),
                 projectSelection: .unavailable,
                 meetingName: L10n.newMeeting
             )
         }
 
         do {
-            let snapshot = try dbQueue.read { db -> (MeetingRecord, [ProjectRecord]) in
+            let snapshot = try dbQueue.read { db -> (MeetingRecord, [ProjectRecord], UUID?) in
                 guard let meeting = try MeetingRecord.fetchOne(db, key: meetingId) else {
                     throw SummaryGenerationPreparationError.meetingUnavailable
                 }
                 let projects = try ProjectRecord.fetchResolvedAll(vaultId: meeting.vaultId, in: db)
-                return (meeting, projects)
+                return try (meeting, projects, VaultRecord.fetchOne(db, key: meeting.vaultId)?.accountConnectionId)
             }
             return BatchTranscriptionConfirmationDetails(
+                summaryGenerationOptions: snapshot.2.map {
+                    AppSettings.shared.batchSummaryGenerationOptions(serverSettings: ServerAccountSettingsModel.shared.state(for: $0).settings)
+                } ?? AppSettings.shared.batchSummaryGenerationOptions(),
                 projectSelection: BatchTranscriptionProjectSelection(
                     projects: FlatProjectRow.buildRows(fromRecords: snapshot.1),
                     selectedProjectId: snapshot.0.projectId,
@@ -1344,6 +1349,7 @@ final class CaptionViewModel: ObservableObject {
             )
         } catch {
             return BatchTranscriptionConfirmationDetails(
+                summaryGenerationOptions: AppSettings.shared.batchSummaryGenerationOptions(),
                 projectSelection: BatchTranscriptionProjectSelection(
                     projects: [],
                     selectedProjectId: nil,
@@ -2605,6 +2611,14 @@ final class CaptionViewModel: ObservableObject {
         }
     }
 
+    private func applyLoadedSummary(_ loaded: LoadedMeetingData, expectedProjectionGeneration: UInt64) {
+        guard summaryProjectionGeneration == expectedProjectionGeneration else { return }
+        currentSummaryDocument = loaded.summaryDocument
+        currentSummaryGoogleFileId = loaded.googleFileId
+        currentSummaryArtifactURL = loaded.artifactURL
+        lastSummaryURL = loaded.lastSummaryURL
+    }
+
     /// 読み込み済みデータのノート・スクリーンショット・サマリーを UI 状態に反映する。
     private func applyLoadedDetail(
         _ loaded: LoadedMeetingData,
@@ -2612,12 +2626,7 @@ final class CaptionViewModel: ObservableObject {
     ) {
         currentMeetingHasTranscriptSegments = loaded.hasTranscriptSegments
         replaceVisibleScreenshots(meetingID: currentMeetingId, records: loaded.screenshots)
-        if summaryProjectionGeneration == expectedProjectionGeneration {
-            currentSummaryDocument = loaded.summaryDocument
-            currentSummaryGoogleFileId = loaded.googleFileId
-            currentSummaryArtifactURL = loaded.artifactURL
-            lastSummaryURL = loaded.lastSummaryURL
-        }
+        applyLoadedSummary(loaded, expectedProjectionGeneration: expectedProjectionGeneration)
         noteText = loaded.note?.text ?? ""
         hasNote = loaded.note != nil
         currentNoteCreatedAt = loaded.note?.createdAt
@@ -2844,9 +2853,7 @@ final class CaptionViewModel: ObservableObject {
                       !(self.isListening && self.recordingMeetingId == meetingId),
                       !self.isFinalizingRecording else { return }
                 self.replaceVisibleScreenshots(meetingID: meetingId, records: loaded.screenshots)
-                if self.summaryProjectionGeneration == projectionGeneration {
-                    self.currentSummaryDocument = loaded.summaryDocument
-                }
+                self.applyLoadedSummary(loaded, expectedProjectionGeneration: projectionGeneration)
                 self.currentMeetingHasTranscriptSegments = loaded.hasTranscriptSegments
                 self.currentProjectId = loaded.projectId
                 self.currentProjectURL = loaded.projectContext?.url
@@ -3963,7 +3970,7 @@ final class CaptionViewModel: ObservableObject {
             initialLanguageSelection: preferences.languageSelection,
             automaticLanguageCandidateSnapshot: preferences.automaticLanguageCandidateSnapshot,
             initiallyGeneratesSummary: AppSettings.shared.generateSummaryAfterBatchTranscription,
-            summaryGenerationOptions: AppSettings.shared.batchSummaryGenerationOptions,
+            summaryGenerationOptions: details.summaryGenerationOptions,
             projectSelection: details.projectSelection
         )
         MainWindowOpener.shared.openMainWindow()
@@ -4235,6 +4242,12 @@ final class CaptionViewModel: ObservableObject {
               !isSummaryGenerating(meetingId: currentMeetingId),
               batchTranscriptionState?.blocksSummaryGeneration != true else { return false }
         return currentMeetingHasTranscriptSegments
+    }
+
+    func currentServerSummaryStatus() async throws -> ServerSummaryService.Job? {
+        guard let currentMeetingId, let currentDbQueue,
+              let target = try await ServerSummaryService.shared.target(meetingID: currentMeetingId, dbQueue: currentDbQueue) else { return nil }
+        return try await ServerSummaryService.shared.status(target)
     }
 
     func canRegenerateSummaries(meetingIds: Set<UUID>) -> Bool {
@@ -4573,6 +4586,19 @@ final class CaptionViewModel: ObservableObject {
         }
 
         do {
+            if let target = try await ServerSummaryService.shared.target(meetingID: request.meetingId, dbQueue: request.dbQueue) {
+                job.progress.summaryGeneration = .running
+                job.progress.vaultExport = .skipped
+                job.progress.googleDocsExport = .skipped
+                try await ServerSummaryService.shared.generate(
+                    target,
+                    id: job.id,
+                    detail: request.options.detailLevel?.rawValue,
+                    dbQueue: request.dbQueue
+                )
+                job.progress.summaryGeneration = .completed
+                return
+            }
             let summaryInput = try await MeetingContentProvider.shared.withContent(meetingId: request.meetingId, dbQueue: request.dbQueue) {
                 try await Task.detached(priority: .userInitiated) {
                     try FullTranscriptLoader.summaryInput(

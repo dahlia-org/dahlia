@@ -1,3 +1,4 @@
+import type { SummaryJob } from "../summary/model";
 import type { RecordingRecord } from "../recordings/model";
 import { sql } from "drizzle-orm";
 import {
@@ -32,6 +33,8 @@ const tsvector = customType<{ data: string }>({ dataType: () => "tsvector" });
 
 export const accountSettings = appSchema.table("account_settings", {
   userId: text("user_id").primaryKey().references(() => authUser.id, { onDelete: "cascade" }),
+  summaryMethod: text("summary_method").$type<"transcript">().default("transcript").notNull(),
+  transcriptSummary: jsonb("transcript_summary").$type<AccountSettings["summary"]["methodSettings"]["transcript"]>().default({ model: "gpt-5.4", reasoningEffort: "medium", detail: "detailed" }).notNull(),
   outputLanguage: text("output_language").$type<AccountSettings["outputLanguage"]>().notNull(),
   analysisLanguages: jsonb("analysis_languages").$type<AccountSettings["analysisLanguages"]>().notNull(),
 }, (table) => [
@@ -563,3 +566,32 @@ export const imageAnalysisJob = appSchema.table("image_analysis_jobs", {
   check("image_analysis_job_status_check", sql`${table.status} IN ('pending', 'processing', 'failed')`),
   index("image_analysis_job_claim_idx").on(table.status, table.availableAt, table.leaseExpiresAt),
 ]);
+
+// Settings and input fingerprints are owner-private; no transcript or provider credentials are queued.
+export const summaryJob = appSchema.table("summary_jobs", {
+  id: uuid("id").primaryKey(),
+  vaultId: uuid("vault_id").notNull().references(() => syncedVault.vaultId, { onDelete: "cascade" }),
+  meetingId: uuid("meeting_id").notNull().references(() => syncedMeeting.meetingId, { onDelete: "cascade" }),
+  ownerUserId: text("owner_user_id").notNull().references(() => authUser.id, { onDelete: "cascade" }),
+  method: text("method").$type<"transcript">().notNull(),
+  settings: jsonb("settings").$type<SummaryJob["settings"]>().notNull(),
+  outputLanguage: text("output_language").notNull(),
+  status: text("status").default("pending").notNull(),
+  attempts: integer("attempts").default(0).notNull(),
+  createdAt: timestamp("created_at").notNull(),
+  availableAt: timestamp("available_at").notNull(),
+  claimedAt: timestamp("claimed_at"),
+  leaseExpiresAt: timestamp("lease_expires_at"),
+  lastErrorCode: text("last_error_code"),
+  summaryRevision: integer("summary_revision").notNull(),
+  inputVersion: text("input_version").notNull(),
+  requestHash: text("request_hash").notNull(),
+}, (table) => [
+  check("summary_job_status_check", sql`${table.status} IN ('pending', 'processing', 'succeeded', 'failed')`),
+  uniqueIndex("summary_job_active_meeting_idx").on(table.meetingId).where(sql`${table.status} IN ('pending', 'processing')`),
+  index("summary_job_owner_created_idx").on(table.ownerUserId, table.createdAt),
+  pgPolicy("summary_job_owner", {
+    for: "all", using: sql`${table.ownerUserId} = nullif(current_setting('app.user_id', true), '')`,
+    withCheck: sql`${table.ownerUserId} = nullif(current_setting('app.user_id', true), '')`,
+  }),
+]).enableRLS();

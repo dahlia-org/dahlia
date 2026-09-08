@@ -262,7 +262,17 @@ actor MeetingContentProvider {
                 if manifest.present {
                     guard let title = downloaded?.title, let document = downloaded?.document,
                           let date = downloaded?.createdAt else { throw TextContentError.integrityFailure }
-                    try SummaryContent(meetingId: id, title: title, document: document, createdAt: date).save(db)
+                    let previousRevision = try Int.fetchOne(
+                        db,
+                        sql: "SELECT residentRevision FROM sync_content_state WHERE entity = 'summary' AND entityId = ?",
+                        arguments: [id]
+                    )
+                    try SummaryContent(meetingId: id, title: title, document: document, createdAt: date)
+                        .saveCanonical(
+                            db,
+                            applyTags: previousRevision != manifest.revision,
+                            invalidateExports: previousRevision != nil && previousRevision != manifest.revision
+                        )
                 } else {
                     try db.execute(sql: "DELETE FROM summaries WHERE meetingId = ?", arguments: [id])
                 }

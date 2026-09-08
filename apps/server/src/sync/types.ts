@@ -1,3 +1,4 @@
+import type { SummaryJob } from "../summary/model";
 import type { RecordingRecord, RecordingSource } from "../recordings/model";
 import type { FileRecord, MeetingFileRecord } from "../files/model";
 import type { Identity } from "../auth/identity";
@@ -193,6 +194,9 @@ export interface SyncSearchQuery {
 }
 
 export interface IdentitySyncStore {
+  getSummaryJob(vaultId: string, meetingId: string, id?: string): Promise<SummaryJob | null>;
+  insertSummaryJob(job: SummaryJob): Promise<void>;
+  completeSummaryJob(job: SummaryJob, transaction: SyncTransaction): Promise<boolean>;
   loadImageAnalysis(claim: ImageAnalysisClaim): Promise<ImageAnalysisInput | null>;
   completeImageAnalysis(input: ImageAnalysisInput, transaction: SyncTransaction): Promise<boolean>;
   reserveRecording(vaultId: string, meetingId: string, sessionId: string, source: RecordingSource): Promise<RecordingRecord>;

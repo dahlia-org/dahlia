@@ -6,6 +6,22 @@ struct ServerAccountSettings: Codable, Equatable, Sendable {
         var identifiers: [String]
     }
 
+    struct TranscriptSummary: Codable, Equatable, Sendable {
+        var model = "gpt-5.4"
+        var reasoningEffort = "medium"
+        var detail = "detailed"
+    }
+
+    struct Summary: Codable, Equatable, Sendable {
+        struct MethodSettings: Codable, Equatable, Sendable {
+            var transcript: TranscriptSummary
+        }
+
+        var method: String
+        var methodSettings: MethodSettings
+    }
+
+    var summary: Summary?
     var outputLanguage: SummaryLanguage
     var analysisLanguages: AnalysisLanguages
 
@@ -24,6 +40,22 @@ struct ServerAccountSettings: Codable, Equatable, Sendable {
         var outputLanguage: SummaryLanguage?
         var analysisLanguages: AnalysisLanguages?
         var initialize: Bool?
+        struct Summary: Encodable, Sendable {
+            var method: String?
+            var methodSettings: MethodSettings?
+        }
+
+        struct MethodSettings: Encodable, Sendable {
+            var transcript: Transcript?
+        }
+
+        struct Transcript: Encodable, Sendable {
+            var model: String?
+            var reasoningEffort: String?
+            var detail: String?
+        }
+
+        var summary: Summary?
     }
 
     struct Response: Decodable, Sendable {
