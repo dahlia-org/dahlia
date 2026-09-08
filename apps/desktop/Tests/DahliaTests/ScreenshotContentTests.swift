@@ -429,7 +429,7 @@
                 let path = request.url!.path
                 if path.hasSuffix("/changes"), path.contains(first.vaultId.uuidString.lowercased()), serverChanged.withLock({ $0 }) {
                     return (200, [:], Data("""
-                    {"items":[],"cursor":"new-server-update","highWaterCursor":"new-server-update","hasMore":false,"contentMode":"metadata-v1"}
+                    {"items":[],"cursor":"new-server-update","highWaterCursor":"new-server-update","hasMore":false}
                     """.utf8))
                 }
                 if let text = cachedTextResponse(request, queue: first.dbQueue) { return text }
@@ -939,13 +939,32 @@
     /// Canonical text responses for cached bodies and the fixtures' empty transcripts.
     private func cachedTextResponse(_ request: URLRequest, queue: DatabaseQueue) -> (Int, [String: String], Data)? {
         guard let url = request.url else { return nil }
-        if url.path.hasSuffix("/capabilities") { return (200, [:], Data("{\"syncVersion\":1}".utf8)) }
+        if url.path.hasSuffix("/capabilities") { return (200, [:], Data("{\"syncVersion\":3}".utf8)) }
         if url.path.hasSuffix("/changes") {
             return (
                 200,
                 [:],
-                Data("{\"items\":[],\"cursor\":\"after\",\"highWaterCursor\":\"after\",\"hasMore\":false,\"contentMode\":\"metadata-v1\"}".utf8)
+                Data("{\"items\":[],\"cursor\":\"after\",\"highWaterCursor\":\"after\",\"hasMore\":false}".utf8)
             )
+        }
+        if url.path.hasSuffix("/metadata") {
+            do {
+                let id = try #require(UUID(uuidString: url.deletingLastPathComponent().lastPathComponent))
+                let data = try queue.read { db in
+                    let file = try #require(try FileRecord.fetchOne(db, key: id))
+                    let source = try #require(try TextContentStore.source(entity: .file, id: id, in: db))
+                    let body = try TextContentAccess.cachedFileText(fileId: id, in: db)
+                    return try JSONSerialization.data(withJSONObject: [
+                        "id": id.uuidString, "vaultId": source.vaultId.uuidString, "revision": source.revision,
+                        "checksum": file.checksum, "metadata": [
+                            "source": "screenshot",
+                            "ocr_text": body?.ocrText as Any? ?? NSNull(),
+                            "caption": body?.caption as Any? ?? NSNull(),
+                        ],
+                    ])
+                }
+                return (200, [:], data)
+            } catch { return (500, [:], Data()) }
         }
         let isLatestSummary = url.path.hasSuffix("/summary/latest")
         guard isLatestSummary || url.path.contains("/text/") else { return nil }

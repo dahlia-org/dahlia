@@ -20,7 +20,7 @@
             let second = try page([fixture.fileChange(revision: 2)], cursor: "after")
             let cursors = Mutex<[String]>([])
             let client = fixture.client { request in
-                if request.url!.path.hasSuffix("capabilities") { return (200, [:], Data("{\"syncVersion\":1,\"meetingEventsVersion\":1}".utf8)) }
+                if request.url!.path.hasSuffix("capabilities") { return (200, [:], Data("{\"syncVersion\":3,\"meetingEventsVersion\":1}".utf8)) }
                 let cursor = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!.queryItems!.first { $0.name == "cursor" }!.value!
                 cursors.withLock { $0.append(cursor) }
                 return (200, [:], cursor == "before" ? first : second)
@@ -77,7 +77,7 @@
                 ]),
             ], cursor: "after")
             let client = fixture.client { request in
-                (200, [:], request.url!.path.hasSuffix("capabilities") ? Data("{\"syncVersion\":1,\"meetingEventsVersion\":1}".utf8) : changes)
+                (200, [:], request.url!.path.hasSuffix("capabilities") ? Data("{\"syncVersion\":3,\"meetingEventsVersion\":1}".utf8) : changes)
             }
             defer { ImageURLProtocol.remove(origin: fixture.origin) }
             await #expect(throws: TextContentError.changed) {
@@ -100,7 +100,7 @@
             let gate = Gate()
             let changes = try page([fixture.fileChange(revision: 2, action: "delete")], cursor: "after")
             var client = fixture.client { request in
-                (200, [:], request.url!.path.hasSuffix("capabilities") ? Data("{\"syncVersion\":1,\"meetingEventsVersion\":1}".utf8) : changes)
+                (200, [:], request.url!.path.hasSuffix("capabilities") ? Data("{\"syncVersion\":3,\"meetingEventsVersion\":1}".utf8) : changes)
             }
             client.tokenProvider = { _, _ in await gate.wait()
                 return "test"
@@ -219,11 +219,11 @@
                     value["id"] = value.removeValue(forKey: "entityId")
                     return value
                 },
-                "startCursor": "after", "nextCursor": NSNull(), "contentMode": "metadata-v1",
+                "startCursor": "after", "nextCursor": NSNull(),
             ])
             let snapshots = Mutex(0)
             let client = fixture.client { request in
-                if request.url!.path.hasSuffix("capabilities") { return (200, [:], Data("{\"syncVersion\":1,\"meetingEventsVersion\":1}".utf8)) }
+                if request.url!.path.hasSuffix("capabilities") { return (200, [:], Data("{\"syncVersion\":3,\"meetingEventsVersion\":1}".utf8)) }
                 if request.url!.path.hasSuffix("snapshot") {
                     snapshots.withLock { $0 += 1 }
                     return (200, [:], snapshot)
@@ -264,7 +264,7 @@
             let projects = try JSONSerialization.data(withJSONObject: ["items": [fields]])
             let snapshots = Mutex(0)
             let client = fixture.client { request in
-                if request.url!.path.hasSuffix("capabilities") { return (200, [:], Data("{\"syncVersion\":1,\"meetingEventsVersion\":1}".utf8)) }
+                if request.url!.path.hasSuffix("capabilities") { return (200, [:], Data("{\"syncVersion\":3,\"meetingEventsVersion\":1}".utf8)) }
                 if request.url!.path.hasSuffix("projects") {
                     snapshots.withLock { $0 += 1 }
                     return (200, [:], projects)
@@ -297,9 +297,10 @@
                 "revision": 1, "summaryRevision": 1, "transcriptRevision": 0, "contentOmitted": true, "hasSummary": true,
             ])
             let client = fixture.client { request in
-                if request.url!.path.hasSuffix("capabilities") { return (200, [:], Data("{\"syncVersion\":1,\"meetingEventsVersion\":1}".utf8)) }
+                if request.url!.path.hasSuffix("capabilities") { return (200, [:], Data("{\"syncVersion\":3,\"meetingEventsVersion\":1}".utf8)) }
                 if request.url!.path.hasSuffix("changes") { return (200, [:], changes) }
-                #expect(request.url!.path == "/api/v1/vaults/\(fixture.vaultId.uuidString.lowercased())/meetings/\(meetingId.uuidString.lowercased())")
+                #expect(request.url!
+                    .path == "/api/v1/vaults/\(fixture.vaultId.uuidString.lowercased())/meetings/\(meetingId.uuidString.lowercased())")
                 #expect(request.url!.query == nil)
                 return (200, [:], parent)
             }
@@ -309,10 +310,65 @@
             )
             try await fixture.queue.read { db throws in
                 #expect(try MeetingRecord.fetchOne(db, key: meetingId)?.name == "Parent")
-                #expect(try Int.fetchOne(db, sql: "SELECT confirmedRevision FROM sync_entity_state WHERE entity = 'summary' AND entityId = ?", arguments: [meetingId]) == 1)
-                #expect(try Bool.fetchOne(db, sql: "SELECT present FROM sync_content_state WHERE entity = 'summary' AND entityId = ?", arguments: [meetingId]) == true)
-                #expect(try Bool.fetchOne(db, sql: "SELECT complete FROM sync_content_state WHERE entity = 'summary' AND entityId = ?", arguments: [meetingId]) == false)
+                #expect(try Int.fetchOne(
+                    db,
+                    sql: "SELECT confirmedRevision FROM sync_entity_state WHERE entity = 'summary' AND entityId = ?",
+                    arguments: [meetingId]
+                ) == 1)
+                #expect(try Bool.fetchOne(
+                    db,
+                    sql: "SELECT present FROM sync_content_state WHERE entity = 'summary' AND entityId = ?",
+                    arguments: [meetingId]
+                ) == true)
+                #expect(try Bool.fetchOne(
+                    db,
+                    sql: "SELECT complete FROM sync_content_state WHERE entity = 'summary' AND entityId = ?",
+                    arguments: [meetingId]
+                ) == false)
             }
+        }
+
+        @Test
+        func fileDependencyUsesMetadataWithoutCompletingTheBody() async throws {
+            let fixture = try Fixture()
+            let fileId = UUID.v7()
+            let timestamp = "2026-09-07T00:00:00Z"
+            let changes = try page([fixture.change(.meetingFile, id: .v7(), revision: 1, fields: [
+                "fileId": fileId.uuidString, "meetingId": fixture.meetingId.uuidString,
+                "capturedAt": timestamp, "createdAt": timestamp,
+            ])], cursor: "after")
+            let parent = try JSONSerialization.data(withJSONObject: [
+                "id": fileId.uuidString, "vaultId": fixture.vaultId.uuidString, "revision": 2,
+                "uri": "/Volumes/test/app/file", "offset": 0, "size": 1, "content_type": "image/png",
+                "checksum": fixture.checksum, "name": "Image", "createdAt": timestamp, "updatedAt": timestamp,
+                "metadata": ["source": "screenshot", "ocr_text": "OCR", "caption": "Caption"],
+            ])
+            let calls = Mutex(0)
+            let client = fixture.client { request in
+                if request.url!.path.hasSuffix("capabilities") { return (200, [:], Data(#"{"syncVersion":3}"#.utf8)) }
+                if request.url!.path.hasSuffix("changes") { return (200, [:], changes) }
+                calls.withLock { $0 += 1 }
+                #expect(request.url!.path == "/api/v1/files/\(fileId.uuidString.lowercased())/metadata")
+                #expect(request.url!.query == nil)
+                return (200, [:], parent)
+            }
+            defer { ImageURLProtocol.remove(origin: fixture.origin) }
+            try await SyncWorker(dbQueue: fixture.queue, apiClient: client).synchronizeForTransfer(
+                vaultId: fixture.vaultId, connectionId: fixture.connectionId
+            )
+            try await fixture.queue.read { db throws in
+                #expect(try TextContentStore.source(entity: .file, id: fileId, in: db)?.revision == 2)
+                #expect(try TextContentAccess.cachedFileText(fileId: fileId, in: db) == nil)
+                #expect(try Bool.fetchOne(
+                    db,
+                    sql: "SELECT complete FROM sync_content_state WHERE entity = 'file' AND entityId = ?",
+                    arguments: [fileId]
+                ) == false)
+                #expect(try String.fetchOne(db, sql: "SELECT syncPullCursor FROM vaults") == "after")
+            }
+            try await MeetingContentProvider(client: client).ensure(entity: .file, id: fileId, dbQueue: fixture.queue)
+            #expect(calls.withLock { $0 } == 2)
+            #expect(try await fixture.queue.read { try TextContentAccess.fileText(fileId: fileId, in: $0)?.ocrText } == "OCR")
         }
 
         @Test
@@ -334,7 +390,7 @@
             )
             let changes = try page([summary, fixture.fileChange(revision: 2)], cursor: "after")
             let client = fixture.client { request in
-                if request.url!.path.hasSuffix("capabilities") { return (200, [:], Data("{\"syncVersion\":1,\"meetingEventsVersion\":1}".utf8)) }
+                if request.url!.path.hasSuffix("capabilities") { return (200, [:], Data("{\"syncVersion\":3,\"meetingEventsVersion\":1}".utf8)) }
                 #expect(request.url!.path.hasSuffix("changes"))
                 return (200, [:], changes)
             }
@@ -384,7 +440,7 @@
             let second = try page([fixture.fileChange(revision: 2)], cursor: "after")
             let fail = Mutex(true)
             let client = fixture.client { request in
-                if request.url!.path.hasSuffix("capabilities") { return (200, [:], Data("{\"syncVersion\":1,\"meetingEventsVersion\":1}".utf8)) }
+                if request.url!.path.hasSuffix("capabilities") { return (200, [:], Data("{\"syncVersion\":3,\"meetingEventsVersion\":1}".utf8)) }
                 if request.url!.query!.contains("cursor=before") { return (200, [:], first) }
                 return fail.withLock { $0 } ? (503, [:], Data()) : (200, [:], second)
             }
@@ -411,7 +467,7 @@
         private func page(_ changes: [SyncChangePage.Change], cursor: String, more: Bool = false) throws -> Data {
             try JSONSerialization.data(withJSONObject: [
                 "items": JSONSerialization.jsonObject(with: SyncJSON.encoder.encode(changes)),
-                "cursor": cursor, "highWaterCursor": "after", "hasMore": more, "contentMode": "metadata-v1",
+                "cursor": cursor, "highWaterCursor": "after", "hasMore": more,
             ])
         }
 

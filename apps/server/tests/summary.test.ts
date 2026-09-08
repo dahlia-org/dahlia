@@ -123,14 +123,12 @@ describe("server summary jobs", () => {
           expect(response.headers.get("cache-control")).toBe("no-store");
         }
         for (const meetingPath of [`/api/v1/vaults/${vaultId}/meetings/${meetingId}`, `/api/v1/meetings/${meetingId}`]) {
-          for (const query of ["", "?content=metadata-v1"]) {
-            const response = await app.request(`${meetingPath}${query}`, { headers });
-            expect(response.status).toBe(200);
-            const meeting = await response.json();
-            expect(meeting).toMatchObject({ meetingId, name: "Meeting", revision: 1, summaryRevision: 1,
-              transcriptRevision: 0, isRecording: false, contentOmitted: true, hasSummary: true });
-            for (const key of ["summaryTitle", "summaryDocument", "summaryCreatedAt"]) expect(meeting).not.toHaveProperty(key);
-          }
+          const response = await app.request(meetingPath, { headers });
+          expect(response.status).toBe(200);
+          const meeting = await response.json();
+          expect(meeting).toMatchObject({ meetingId, name: "Meeting", revision: 1, summaryRevision: 1,
+            transcriptRevision: 0, isRecording: false, contentOmitted: true, hasSummary: true });
+          for (const key of ["summaryTitle", "summaryDocument", "summaryCreatedAt"]) expect(meeting).not.toHaveProperty(key);
         }
         const page: { items: Record<string, unknown>[] } = await (await app.request(`${base}?limit=1`, { headers })).json();
         expect(page).toMatchObject({ items: [{ revision: 1, title: "Saved" }], nextCursor: null });

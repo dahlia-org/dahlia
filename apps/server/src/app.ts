@@ -394,7 +394,6 @@ export function createApp(dependencies: AppDependencies) {
       sync.parseId(context.req.param("vaultId")),
       context.req.query("cursor"),
       context.req.query("highWaterCursor"),
-      context.req.query("content"),
     ));
   });
   app.post("/api/v1/transactions/resolve", syncBodyLimit, async (context) => {
@@ -413,13 +412,12 @@ export function createApp(dependencies: AppDependencies) {
       sync.parseId(context.req.param("vaultId")),
       context.req.query("cursor"),
       context.req.query("startCursor"),
-      context.req.query("content"),
     ));
   });
   app.get("/api/v1/capabilities", async (context) => {
     await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
     return context.json(await store.sync.isAvailable()
-      ? { syncVersion: 2, recordingAudioVersion: 1, meetingEventsVersion: 1, searchVersion: 1, imageAnalysis: dependencies.imageAnalysisEnabled === true, summaryGeneration: { version: dependencies.summaryService?.methods.length ? 1 : 0, methods: dependencies.summaryService?.methods.map((method) => method.id) ?? [] } } : {});
+      ? { syncVersion: 3, recordingAudioVersion: 1, meetingEventsVersion: 1, searchVersion: 1, imageAnalysis: dependencies.imageAnalysisEnabled === true, summaryGeneration: { version: dependencies.summaryService?.methods.length ? 1 : 0, methods: dependencies.summaryService?.methods.map((method) => method.id) ?? [] } } : {});
   });
   app.get("/api/v1/vaults/:vaultId/text/:entity/:entityId", async (context) => {
     const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
@@ -535,7 +533,7 @@ export function createApp(dependencies: AppDependencies) {
   });
   app.get("/api/v1/files/:fileId/metadata", async (context) => {
     const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
-    return context.json(await sync.getFile(identity, sync.parseId(context.req.param("fileId")), context.req.query("content")));
+    return context.json(await sync.getFile(identity, sync.parseId(context.req.param("fileId"))));
   });
   app.get("/api/v1/vaults/:vaultId/files", async (context) => {
     const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);

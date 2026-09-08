@@ -241,10 +241,10 @@ describe("SQLite canonical sync", () => {
     const detail = async () => (await send(`vaults/${vaultId}/meetings/${meetingId}`)).json();
     const capabilities = await send("capabilities");
     expect(capabilities.status).toBe(200);
-    expect(await capabilities.json()).toEqual({ syncVersion: 2, recordingAudioVersion: 1, meetingEventsVersion: 1, searchVersion: 1, imageAnalysis: false, summaryGeneration: { version: 0, methods: [] } });
+    expect(await capabilities.json()).toEqual({ syncVersion: 3, recordingAudioVersion: 1, meetingEventsVersion: 1, searchVersion: 1, imageAnalysis: false, summaryGeneration: { version: 0, methods: [] } });
     const enabledApp = createApp({ config: testConfig(databasePath), authStore: store, imageAnalysisEnabled: true });
     expect(await (await enabledApp.request("http://localhost:5173/api/v1/capabilities", { headers: headers() })).json())
-      .toEqual({ syncVersion: 2, recordingAudioVersion: 1, meetingEventsVersion: 1, searchVersion: 1, imageAnalysis: true, summaryGeneration: { version: 0, methods: [] } });
+      .toEqual({ syncVersion: 3, recordingAudioVersion: 1, meetingEventsVersion: 1, searchVersion: 1, imageAnalysis: true, summaryGeneration: { version: 0, methods: [] } });
     expect((await send("sync-content")).status).toBe(404);
     const availability = vi.spyOn(store.sync, "isAvailable").mockResolvedValueOnce(false);
     const unsupported = await send("capabilities");
@@ -638,12 +638,12 @@ describe("SQLite canonical sync", () => {
     await service.commitTransaction(owner, wire([{ entity: "file", action: "upsert", entityId: file.id, baseRevision: 1,
       data: { checksum: file.checksum, metadata: { ocr_text: "Searchable text" } } }]));
     expect(await service.getFile(owner, file.id)).toMatchObject({ metadata: { source: "screenshot", width: 1800, ocr_text: "Searchable text" }, revision: 2 });
-    const metadataOnly = await service.getFile(owner, file.id, "metadata-v1");
-    expect(metadataOnly).toMatchObject({ contentOmitted: true, contentPresent: true, revision: 2,
+    const fileMetadata = await service.getFile(owner, file.id);
+    expect(fileMetadata).toMatchObject({ revision: 2,
       contentURL: `/api/v1/files/${file.id}`, metadata: { source: "screenshot", width: 1800 },
       variants: { thumb_480: `/api/v1/files/${file.id}/variants/thumb_480`, thumb_1280: `/api/v1/files/${file.id}/variants/thumb_1280`,
         thumb_1568: `/api/v1/files/${file.id}/variants/thumb_1568`, thumb_1920: `/api/v1/files/${file.id}/variants/thumb_1920` } });
-    expect(metadataOnly.metadata).not.toHaveProperty("ocr_text");
+    expect(fileMetadata.metadata).toHaveProperty("ocr_text", "Searchable text");
     expect((await service.listScreenshots(owner, vaultId, meetingId, "Searchable")).items).toHaveLength(1);
     await expect(service.commitTransaction(owner, wire([{ entity: "file", action: "upsert", entityId: file.id, baseRevision: 1,
       data: { checksum: file.checksum, metadata: { caption: "stale" } } }]))).rejects.toMatchObject({ status: 409 });
@@ -1068,25 +1068,49 @@ describe("SQLite canonical sync", () => {
     const original = await send(new Request(originalURL));
     expect(original.status).toBe(200);
     expect(new Uint8Array(await original.arrayBuffer())).toEqual(bytes);
-    const head = await send(new Request(originalURL, { method: "HEAD" }));
+    const readOriginal = vi.spyOn(storage, "read");
+    const head = await send(new Request(originalURL, { method: "HEAD", headers: { range: "bytes=1-3" } }));
     expect(head.status).toBe(200);
     expect(head.headers.get("content-length")).toBe(String(bytes.length));
     expect(head.headers.get("content-type")).toBe("image/png");
     expect(head.headers.get("etag")).toBe(original.headers.get("etag"));
     expect(await head.text()).toBe("");
+    expect(head.headers.has("content-range")).toBe(false);
+    expect(readOriginal).toHaveBeenCalledTimes(1);
+    expect(readOriginal.mock.calls[0]![1]).toBe("HEAD");
+    readOriginal.mockClear();
+    const deniedHead = new Request(originalURL, { method: "HEAD", headers: { "x-forwarded-user": other.userId, "x-forwarded-email": "other@example.com" } });
+    const denied = await send(deniedHead);
+    expect(denied.status).toBe(404);
+    expect(await denied.text()).toBe("");
+    expect(readOriginal).not.toHaveBeenCalled();
+    readOriginal.mockRestore();
     expect((await send(new Request(`${originalURL}/content`))).status).toBe(404);
     expect((await send(new Request(originalURL, { method: "PATCH", body: "{}" }))).status).toBe(405);
     const metadata = await send(new Request(`${originalURL}/metadata`));
     expect(metadata.status).toBe(200);
-    expect(await metadata.json()).toMatchObject({ id: file.id, revision: 1, metadata: { source: "screenshot" } });
+    expect(await metadata.json()).toMatchObject({ id: file.id, revision: 1, metadata: { source: "screenshot", ocr_text: null, caption: null } });
     const cursor = await service.latestCursor(owner);
     const updated = await patch({ baseRevision: 1, metadata: { ocr_text: "QuarterlyRevenue", caption: "Quarterly chart" } });
     expect(updated.status).toBe(200);
     expect(await updated.json()).toMatchObject({ id: file.id, size: bytes.length, checksum: file.checksum, revision: 2,
       contentURL: `/api/v1/files/${file.id}`, metadata: { source: "screenshot", width: 1800, height: 900, ocr_text: "QuarterlyRevenue", caption: "Quarterly chart" } });
     expect((await service.listChanges(owner, vaultId, cursor)).items).toEqual(expect.arrayContaining([
-      expect.objectContaining({ entity: "file", entityId: file.id, revision: 2, record: expect.objectContaining({ metadata: expect.objectContaining({ caption: "Quarterly chart" }) as unknown }) as unknown }),
+      expect.objectContaining({ entity: "file", entityId: file.id, revision: 2, record: expect.objectContaining({ contentOmitted: true, metadata: { source: "screenshot", width: 1800, height: 900 } }) as unknown }),
     ]));
+    for (const route of ["snapshot", "changes"]) {
+      const response = await send(new Request(`http://localhost:5173/api/v1/vaults/${vaultId}/${route}`));
+      expect(response.status).toBe(200);
+      const page: { items: Array<{ entity: string; record: Record<string, unknown> }> } = await response.json();
+      expect(page).not.toHaveProperty("contentMode");
+      expect(page.items.find((item) => item.entity === "file")?.record).toMatchObject({
+        revision: 2, contentOmitted: true, contentPresent: true,
+        metadata: { source: "screenshot", width: 1800, height: 900 },
+      });
+      expect(JSON.stringify(page)).not.toContain("QuarterlyRevenue");
+      expect(JSON.stringify(page)).not.toContain("Quarterly chart");
+    }
+    expect((await send(new Request(`http://localhost:5173/api/v1/vaults/${vaultId}/text/file/${file.id}?revision=2`))).status).toBe(400);
     expect(await service.searchText(owner, vaultId, "QuarterlyRevenue", "screenshot")).toMatchObject({ items: [expect.anything()] });
     expect(await service.searchAll(owner, { vaultId, query: "QuarterlyRevenue", kind: "screenshot", limit: 1 }))
       .toMatchObject({ meetings: [], screenshots: [{ meetingId, fileId: file.id, snippet: expect.stringContaining("QuarterlyRevenue") as unknown }], limited: { screenshot: false } });

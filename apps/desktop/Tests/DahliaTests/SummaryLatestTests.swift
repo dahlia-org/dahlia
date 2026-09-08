@@ -63,12 +63,12 @@ import Synchronization
                 "record": ["title": "Latest", "createdAt": "2026-01-01T00:00:00.000Z", "contentOmitted": true, "contentPresent": true, "contentCount": 1],
             ])
             let changeData = try JSONSerialization.data(withJSONObject: [
-                "items": changes, "cursor": "after", "highWaterCursor": "after", "hasMore": false, "contentMode": "metadata-v1",
+                "items": changes, "cursor": "after", "highWaterCursor": "after", "hasMore": false,
             ])
             let calls = Mutex(0)
             let syncs = Mutex(0)
             let provider = provider(fixture) { request in
-                if request.url!.path.hasSuffix("/capabilities") { return (200, [:], Data(#"{"syncVersion":1}"#.utf8)) }
+                if request.url!.path.hasSuffix("/capabilities") { return (200, [:], Data(#"{"syncVersion":3}"#.utf8)) }
                 if request.url!.path.hasSuffix("/changes") {
                     syncs.withLock { $0 += 1 }
                     return (200, [:], changeData)

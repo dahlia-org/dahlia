@@ -120,7 +120,7 @@ describe("sync history retention", () => {
       } else if (scenario === "deleted") {
         expect(summary).toMatchObject({ action: "delete", record: null });
       } else {
-        expect(summary).toMatchObject({ action: "upsert", record: { document: null } });
+        expect(summary).toMatchObject({ action: "upsert", record: { contentOmitted: true, contentPresent: false } });
       }
       expect(delta.items).toHaveLength(4);
     },
@@ -366,9 +366,9 @@ describe("partial text content", () => {
     let meetings = 0;
     let transcripts = 0;
     do {
-      const page = await service.listSnapshot(owner, vaultId, cursor, start, "metadata-v1");
+      const page = await service.listSnapshot(owner, vaultId, cursor, start);
       start = page.startCursor;
-      expect(page.contentMode).toBe("metadata-v1");
+      expect(page).not.toHaveProperty("contentMode");
       expect(JSON.stringify(page)).not.toContain("large_text_marker");
       meetings += page.items.filter((item) => item.entity === "meeting").length;
       for (const item of page.items.filter((item) => item.entity === "transcript")) {
@@ -407,7 +407,7 @@ describe("partial text content", () => {
     expect((await service.textContent(owner, vaultId, "transcript", meetingId, "1", undefined, first.nextCursor!)).items).toHaveLength(1);
     raw.prepare("UPDATE meetings SET transcript_revision = 2 WHERE meeting_id = ?").run(meetingId);
     await expect(service.textContent(owner, vaultId, "transcript", meetingId, "1", undefined, first.nextCursor!)).rejects.toMatchObject({ status: 409 });
-    const metadata = await service.listChanges(owner, vaultId, undefined, undefined, "metadata-v1");
+    const metadata = await service.listChanges(owner, vaultId, undefined, undefined);
     expect(metadata.items.find((item) => item.entity === "summary")?.record).toMatchObject({ contentOmitted: true, contentPresent: true });
     expect(await service.getMeeting(owner, vaultId, meetingId)).toHaveProperty("summaryDocument", "{}");
     await expect(service.textContent(member, vaultId, "transcript", meetingId, "2")).rejects.toMatchObject({ status: 404 });

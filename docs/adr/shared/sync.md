@@ -127,9 +127,13 @@ metadata の全保持と本文の部分保持を分ける。`v46_textContent` �
 
 metadata の Record は本文を持たず、本文を含む読取結果とは型を分ける。アプリの Repository と MCP は共通 `TextContentAccess` で完全性検査と本文取得を同じ SQLite 読取内で行い、呼び出し元の事前検査に依存しない。ページ取得でも会議全体の欠損を検出し、JOIN が欠損行を黙って除外しない。一覧・検索用の cached projection は明示した別の読取口を使う。録音・バッチ結果・本文編集は metadata、本文、同期 operation を従来の同じ transaction で確定する。
 
-capabilities は `{ "syncVersion": 1, "meetingEventsVersion": 1 }` のように機能別の対応 version を返す。`syncVersion: 1` は transaction schema 2、snapshot / delta 復旧、receipt 解決、metadata 同期と本文の個別取得を含む同期契約を表す。`meetingEventsVersion: 1` は会議イベントの受付契約を表す。entity revision や payload schema の version とは区別する。非対応の機能はフィールドを省略し、atomic sync 非対応の store は両機能を省いた `200 {}` を返す。認証・運用エラーは通常のエラーとして返す。クライアントは未知のフィールドを無視する。旧フィールドと旧ルートは維持しない。
+capabilities は `{ "syncVersion": 3, "meetingEventsVersion": 1 }` のように機能別の対応 version を返す。`syncVersion: 3` は transaction schema 2、snapshot / delta 復旧、receipt 解決、metadata 同期と本文の個別取得を含む同期契約を表す。`meetingEventsVersion: 1` は会議イベントの受付契約を表す。entity revision や payload schema の version とは区別する。非対応の機能はフィールドを省略し、atomic sync 非対応の store は両機能を省いた `200 {}` を返す。認証・運用エラーは通常のエラーとして返す。クライアントは未知のフィールドを無視する。旧フィールドと旧ルートは維持しない。
 
-`GET /api/v1/capabilities` の `syncVersion: 1` を確認してから `content=metadata-v1` の snapshot / delta / file dependency read を使う。meeting の重複 summary と検索用本文、summary document、file の OCR / caption、transcript 本文を省く。非対応では `updateRequired` を表示し、既存本文を保持して部分同期・解放を止める。snapshot / delta の既定レスポンスと transaction schema 2 は維持する。会議詳細 HTTP は常に会議情報と同期状態だけを返すため content 指定を不要とし、要約本文は meeting 配下の summary/latest で取得する。導入は Server capability を先に公開し、次に Desktop を更新する。本番 deploy は別の操作。
+`GET /api/v1/capabilities` の `syncVersion: 3` を確認する。snapshot / changes は常に meeting の重複 summary と検索用本文、summary document、file の OCR / caption、transcript 本文を省く。content query と contentMode response は廃止する。非対応では `updateRequired` を表示し、既存本文を保持して同期・解放を止める。transaction schema 2 は維持する。要約本文は既存の meeting 配下の summary/latest、文字起こしは revision 指定の text/transcript を使う。file は個別 metadata JSON から OCR / caption（nullable）と revision を1回で取得し、ID・Vault・checksum・同期済み revision と保存直前の編集保護を照合する。版が違えば通常同期後に1回再取得し、不一致や失敗では旧本文と未取得状態を保持する。依存取得は metadata のみ反映し、本文補完から confirmed revision を更新しない。不要となった text/file は削除する。
+
+GET /files/{fileId} は原本、HEAD は同じ認可で原本の存在・HTTP header を確認する。HEAD は本文を送らず、各 storage の HEAD / stat を再利用する。アプリの metadata を独自 HTTP header に移さない。
+
+対象 API はリリース前で後方互換性は不要。互換経路・fallback を残さず、Server / Web、次に Desktop の順で同じリリースとして切り替える。契約が異なる開発版同士は更新要求になる。DB migration と履歴保持方針の変更は不要。
 
 `MeetingContentProvider` は SQLite を先に読み、古い完全な内容も stale として利用できる。明示操作・UI・AI・MCP は共通の保持 lease を使う。最大2取得を共有し、先読みは1枠まで、待機中の明示操作を優先する。文字起こしは一時 table に500件以下のページで取り込み、指定 revision、全体の件数・byte 数・hash を照合してから既存 remote applier の transaction で反映する。中断した一時行は掃除する。summary は会議単位、OCR / caption は共有 file 単位で取得する。本文 I/O は pull checkpoint と録音の永続保存を進めない・待たせない。
 
@@ -163,4 +167,4 @@ Server 版の採用や確定済み Vault の無効操作破棄では、破棄対
 
 Server の差分は現在の正本を返し、削除は null revision を持つ。小さい数値 revision はそのまま上書きせず、削除・再作成が集約された可能性を既存の snapshot 復旧で確認する。復旧・reset は未送信操作や録音を保護する従来の一貫した適用単位を維持し、部分適用しない。参照が残る file の削除も保留して後続の参照削除を待つ。
 
-`MeetingContentProvider` は同期済み revision の manifest・件数・hash を検証して本文を反映し、metadata や confirmed revision は更新しない。表示中の OCR / caption は未完了または stale なら既存2秒間隔で確認する。完了条件は Server の解析判定と揃え、空の OCR は有効、caption は空白除去後に非空であることを要求する。Server の解析 job 状態は本文 API に含まれないため、5分で自動取得を停止し、取得済み本文を残して再取得操作を表示する。画像を開き直すか再取得すると待機を再開する。ネットワーク待機を録音・確定文字起こしの保存経路へ持ち込まず、本文の破棄・eviction は引き続き Vault 全体の未送信・復旧状態と録音状態で保護する。
+`MeetingContentProvider` は要約・文字起こしの同期済み revision と manifest・件数・hash、file は個別 metadata の同期済み revision を検証して本文を反映し、metadata や confirmed revision は更新しない。表示中の OCR / caption は未完了または stale なら既存2秒間隔で確認する。完了条件は Server の解析判定と揃え、空の OCR は有効、caption は空白除去後に非空であることを要求する。Server の解析 job 状態は本文 API に含まれないため、5分で自動取得を停止し、取得済み本文を残して再取得操作を表示する。画像を開き直すか再取得すると待機を再開する。ネットワーク待機を録音・確定文字起こしの保存経路へ持ち込まず、本文の破棄・eviction は引き続き Vault 全体の未送信・復旧状態と録音状態で保護する。

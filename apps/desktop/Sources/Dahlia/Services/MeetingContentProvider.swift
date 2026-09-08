@@ -19,14 +19,6 @@ actor MeetingContentProvider {
             let title: String?
             let document: String?
             let createdAt: Date?
-            let ocrText: String?
-
-            enum CodingKeys: String, CodingKey {
-                case title, document, createdAt, caption
-                case ocrText = "ocr_text"
-            }
-
-            let caption: String?
         }
 
         let version: Int
@@ -171,12 +163,12 @@ actor MeetingContentProvider {
         do {
             do {
                 try await fetch(entity: entity, id: id, dbQueue: dbQueue, prefetchBudget: prefetchBudget)
-            } catch TextContentError.changed where entity == .summary {
+            } catch TextContentError.changed where entity == .summary || entity == .file {
                 guard let expected, try await dbQueue.read({ try TextContentStore.source(entity: entity, id: id, in: $0) }) == expected else {
                     throw TextContentError.changed
                 }
                 let worker = SyncWorker(dbQueue: dbQueue, session: client.session, apiClient: client)
-                // Unrelated protected changes may remain; fetch revalidates this summary before publishing.
+                // Unrelated protected changes may remain; fetch revalidates the body before publishing.
                 _ = try await worker.pullRemoteChanges(vaultId: expected.vaultId, connectionId: expected.connectionId)
                 try await fetch(entity: entity, id: id, dbQueue: dbQueue, prefetchBudget: prefetchBudget)
             }
@@ -215,6 +207,10 @@ actor MeetingContentProvider {
         await acquire(key: key, background: requests[key]?.background ?? (prefetchBudget != nil))
         defer { releaseRead() }
         try Task.checkCancellation()
+        if entity == .file {
+            try await fetchFile(source: source, id: id, dbQueue: dbQueue, prefetchBudget: prefetchBudget)
+            return
+        }
         let manifest = try await SyncJSON.decoder.decode(TextContentManifest.self, from: get(source: source, entity: entity, id: id, manifest: true))
         let expectedCount = manifest.count
         guard manifest.version == 1, manifest.entity == entity, manifest.entityId == id,
@@ -288,8 +284,63 @@ actor MeetingContentProvider {
                     try db.execute(sql: "DELETE FROM summaries WHERE meetingId = ?", arguments: [id])
                 }
             case .file:
-                try FileTextBodyRecord(fileId: id, ocrText: downloaded?.ocrText, caption: downloaded?.caption).save(db)
+                throw TextContentError.integrityFailure
             }
+            try TextContentStore.markVerified(manifest, source: source, accessed: prefetchBudget == nil, in: db)
+        }
+    }
+
+    private func fetchFile(source: TextContentStore.Source, id: UUID, dbQueue: DatabaseQueue, prefetchBudget: Int?) async throws {
+        struct FileContent: Decodable {
+            let id: UUID
+            let vaultId: UUID
+            let revision: Int
+            let checksum: String
+            struct Body: Decodable {
+                let ocrText: String?
+                let caption: String?
+
+                enum CodingKeys: String, CodingKey { case ocrText = "ocr_text", caption }
+
+                init(from decoder: Decoder) throws {
+                    let values = try decoder.container(keyedBy: CodingKeys.self)
+                    // Null is an empty value; a missing key is an invalid body response.
+                    ocrText = try values.decode(String?.self, forKey: .ocrText)
+                    caption = try values.decode(String?.self, forKey: .caption)
+                }
+            }
+
+            let metadata: Body
+        }
+        let file = try await SyncJSON.decoder.decode(FileContent.self, from: get(source: source, entity: .file, id: id))
+        guard file.id == id, file.vaultId == source.vaultId else { throw TextContentError.integrityFailure }
+        guard file.revision == source.revision, file.checksum == source.checksum else { throw TextContentError.changed }
+        var digest = TextContentDigest()
+        digest.add(file.metadata.ocrText)
+        digest.add(file.metadata.caption)
+        let manifest = TextContentManifest(
+            version: 1,
+            entity: .file,
+            entityId: id,
+            revision: file.revision,
+            present: true,
+            count: 2,
+            byteCount: digest.byteCount,
+            sha256: digest.digestHex()
+        )
+        try await dbQueue.write { db in
+            try Task.checkCancellation()
+            guard try TextContentStore.mayFetch(source, entity: .file, id: id, in: db) else { throw TextContentError.changed }
+            if let prefetchBudget, manifest.byteCount > prefetchBudget {
+                try db.execute(sql: "UPDATE sync_content_state SET fetchError = NULL WHERE entity = 'file' AND entityId = ?", arguments: [id])
+                return
+            }
+            let state = try TextContentAccess.availability(entity: .file, id: id, in: db)
+            if state.revision == source.revision, [.ready, .stale].contains(state.state) {
+                guard let local = try TextContentStore.fingerprint(entity: .file, id: id, in: db),
+                      local.hash == manifest.sha256, local.bytes == manifest.byteCount else { throw TextContentError.integrityFailure }
+            }
+            try FileTextBodyRecord(fileId: id, ocrText: file.metadata.ocrText, caption: file.metadata.caption).save(db)
             try TextContentStore.markVerified(manifest, source: source, accessed: prefetchBudget == nil, in: db)
         }
     }
@@ -333,11 +384,8 @@ actor MeetingContentProvider {
             } else {
                 guard let record = page.record else { throw TextContentError.integrityFailure }
                 body = record
-                let fields: [String?] = entity == .summary ? [record.document] : [record.ocrText, record.caption]
-                for value in fields {
-                    pageDigest.add(value)
-                    digest.add(value)
-                }
+                pageDigest.add(record.document)
+                digest.add(record.document)
                 count = page.count
             }
             let pageCount = page.count
@@ -361,7 +409,10 @@ actor MeetingContentProvider {
         cursor: String? = nil
     ) async throws -> Data {
         guard var url = URLComponents(string: source.origin) else { throw URLError(.badURL) }
-        if entity == .summary {
+        if entity == .file {
+            url.path = "/api/v1/files/\(id.uuidString.lowercased())/metadata"
+            url.queryItems = nil
+        } else if entity == .summary {
             url.path = "/api/v1/vaults/\(source.vaultId.uuidString.lowercased())/meetings/\(id.uuidString.lowercased())/summary/latest"
             url.queryItems = []
         } else {

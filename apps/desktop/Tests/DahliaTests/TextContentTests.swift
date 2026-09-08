@@ -147,16 +147,8 @@
                 "createdAt": "2026-01-01T00:00:00.000Z", "updatedAt": "2026-01-01T00:00:01.000Z",
             ]
             let headerData = try JSONSerialization.data(withJSONObject: header)
-            var digest = TextContentDigest()
-            digest.add("")
-            digest.add("Server caption during recording")
-            let manifest: [String: Any] = [
-                "version": 1, "entity": "file", "entityId": fileId.uuidString, "revision": 2,
-                "present": true, "count": 2, "byteCount": digest.byteCount, "sha256": digest.digestHex(),
-            ]
-            let manifestData = try JSONSerialization.data(withJSONObject: manifest)
-            let bodyData = try JSONSerialization.data(withJSONObject: manifest.merging([
-                "record": ["ocr_text": "", "caption": "Server caption during recording"],
+            let bodyData = try JSONSerialization.data(withJSONObject: header.merging([
+                "metadata": ["source": "screenshot", "ocr_text": "", "caption": "Server caption during recording"],
             ]) { _, new in new })
             let connectionId = try await fixture.queue.write { db -> UUID in
                 let connectionId = try #require(try VaultRecord.fetchOne(db, key: fixture.vaultId)?.accountConnectionId)
@@ -215,9 +207,9 @@
             let calls = Mutex<[String]>([])
             let provider = provider(fixture) { request in
                 calls.withLock { $0.append(request.url!.path) }
-                #expect(!request.url!.path.contains("/api/v1/files/"))
-                #expect(request.url!.query!.contains("revision=2"))
-                return (200, [:], (request.url!.query ?? "").contains("manifest") ? manifestData : bodyData)
+                #expect(request.url!.path == "/api/v1/files/\(fileId.uuidString.lowercased())/metadata")
+                #expect(request.url!.query == nil)
+                return (200, [:], bodyData)
             }
             defer { ImageURLProtocol.remove(origin: fixture.origin) }
             let viewModel = CaptionViewModel()
@@ -241,7 +233,7 @@
             let completed = await viewModel.screenshotOCRState(id: fileId, refresh: true, contentProvider: provider)
             #expect(completed == .remote(ocrText: "", caption: "Server caption during recording", state: .ready))
             #expect(completed.isTerminal)
-            #expect(calls.withLock { $0.count } == 2)
+            #expect(calls.withLock { $0.count } == 1)
             try await provider.trim(dbQueue: fixture.queue, capacity: 1)
             try await fixture.queue.read { db throws in
                 #expect(try String.fetchOne(db, sql: "SELECT syncPullCursor FROM vaults") == "before")
@@ -1339,7 +1331,7 @@
             ])
             let provider = provider(fixture) { request in
                 let path = request.url!.path
-                if path.hasSuffix("/capabilities") { return (200, [:], Data("{\"syncVersion\":1}".utf8)) }
+                if path.hasSuffix("/capabilities") { return (200, [:], Data("{\"syncVersion\":3}".utf8)) }
                 if path.hasSuffix("/changes") {
                     let count = changeRequests.withLock { $0 += 1
                         return $0
@@ -1359,7 +1351,7 @@
                     }
                     let cursor = count >= 2 && scenario == "serverChanged" ? "new-server-update" : "after"
                     return (200, [:], Data("""
-                    {"items":[],"cursor":"\(cursor)","highWaterCursor":"\(cursor)","hasMore":false,"contentMode":"metadata-v1"}
+                    {"items":[],"cursor":"\(cursor)","highWaterCursor":"\(cursor)","hasMore":false}
                     """.utf8))
                 }
                 if path.contains("/summary/") { return (200, [:], summaryManifest) }
@@ -1393,7 +1385,7 @@
             }
         }
 
-        @Test(arguments: [nil, "{}", #"{"syncVersion":3}"#])
+        @Test(arguments: [nil, "{}", #"{"syncVersion":1}"#, #"{"syncVersion":2}"#])
         func incompatibleServerStopsMetadataSyncWithoutDiscardingExistingText(capabilities: String?) async throws {
             let fixture = try textFixture()
             let connectionId = try await fixture.queue.write { db in
@@ -1451,13 +1443,13 @@
                         "contentCount": 10000,
                     ],
                 ]],
-                "cursor": "after", "highWaterCursor": "after", "hasMore": false, "contentMode": "metadata-v1",
+                "cursor": "after", "highWaterCursor": "after", "hasMore": false,
             ])
             let calls = Mutex([String]())
             let provider = provider(fixture) { request in
                 calls.withLock { $0.append(request.url!.path) }
                 if request.url!.path.hasSuffix("/capabilities") {
-                    return (200, [:], Data(#"{"syncVersion":1,"futureFeature":{"enabled":true}}"#.utf8))
+                    return (200, [:], Data(#"{"syncVersion":3,"futureFeature":{"enabled":true}}"#.utf8))
                 }
                 return (200, [:], payload)
             }
@@ -1494,11 +1486,16 @@
                 "byteCount": digest.byteCount,
                 "sha256": digest.digestHex(),
             ]
-            var body = manifest
-            body["record"] = entity == .summary
-                ? ["title": "Remote", "document": document, "createdAt": "2026-01-01T00:00:00.000Z"]
-                : ["ocr_text": NSNull(), "caption": "cloudcaption"]
             let manifestData = try JSONSerialization.data(withJSONObject: manifest)
+            let body: [String: Any] = entity == .summary
+                ? manifest.merging(["record": ["title": "Remote", "document": document, "createdAt": "2026-01-01T00:00:00.000Z"]]) { _, new in new }
+                : [
+                    "id": id.uuidString,
+                    "vaultId": fixture.vaultId.uuidString,
+                    "revision": 3,
+                    "checksum": "SHA-256:" + String(repeating: "0", count: 64),
+                    "metadata": ["source": "screenshot", "ocr_text": NSNull(), "caption": "cloudcaption"],
+                ]
             let bodyData = try JSONSerialization.data(withJSONObject: body)
             try await fixture.queue.write { db in
                 if entity == .summary {
@@ -1576,7 +1573,7 @@
                 #expect(calls.withLock { $0 } == before)
                 let refreshed = await viewModel.screenshotOCRState(id: id, refresh: true, contentProvider: provider)
                 #expect(refreshed == .remote(ocrText: nil, caption: "cloudcaption", state: .ready))
-                #expect(calls.withLock { $0 } == before + 2)
+                #expect(calls.withLock { $0 } == before + 1)
                 try await fixture.queue.write { db in
                     try db.execute(sql: "UPDATE sync_entity_state SET confirmedRevision = 4 WHERE entity = 'file'")
                 }
@@ -1696,8 +1693,8 @@
             }
         }
 
-        func textFixture() throws -> TextFixture {
-            let (queue, vaultId, meetingId) = try database()
+        func textFixture(path: String = ":memory:") throws -> TextFixture {
+            let (queue, vaultId, meetingId) = try database(path: path)
             let segmentId = UUID.v7()
             let secondId = UUID.v7()
             let texts = ["first 日本語", "second 🙂"]

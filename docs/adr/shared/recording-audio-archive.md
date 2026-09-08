@@ -39,9 +39,9 @@ POST 後は owner だけが読める staging とし、クライアントの照�
 `GET/HEAD /api/v1/meetings/{meetingId}/recordings/{number}/audio/{source}` は Range に対応する。
 物理キーや認証情報は公開しない。Files API の既存64 MiB制限は維持する。
 
-新しい sync entity を旧 Desktop が誤読しないよう、Server は `syncVersion: 2` と
-`recordingAudioVersion: 1` を広告する。新 Desktop は syncVersion 1/2 を読み、音声送信は
-recordingAudioVersion 1 の Server に限定する。旧 Desktop は更新要求状態になるため Desktop を先に更新する。
+新しい sync entity を旧 Desktop が誤読しないよう、Server は `syncVersion: 3` と
+`recordingAudioVersion: 1` を広告する。Desktop は常に本文なしの同期契約（syncVersion 3）を要求し、音声送信は
+recordingAudioVersion 1 の Server に限定する。更新順序は Server / Web、Desktop とする（[同期契約](sync.md)）。
 
 未確定 staging は24時間で失効する。Node の1分間隔の保守処理と Worker の毎分 Cron が全 Vault の運用 metadata をページングし、owner identity の transaction 内で期限切れ音源を削除キューへ入れる。Vault への後続リクエストは不要。削除キュー・キー排他・世代照合で再送／明示削除と競合しないようにする。
 CAF の削除開始は `purgeRequestedAt` で判定し、削除時の整合性異常で行が `failed` になっても、その CAF を再文字起こしの入力に戻さない。

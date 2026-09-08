@@ -682,7 +682,7 @@
         }
 
         @Test
-        func remoteTranscriptPagesAdvanceOnlyAfterBoundedReconciliationFinishes() async throws {
+        func remoteTranscriptPagesInstallWithoutAdvancingMetadataCheckpoint() async throws {
             let (database, vault) = try await syncedDatabase()
             let meeting = MeetingRecord(
                 id: .v7(), vaultId: vault.id, projectId: nil, name: "Meeting",
@@ -745,14 +745,10 @@
                     arguments: [meeting.id]
                 ))
             } == [removedId])
-            #expect(try await RemoteChangeApplier.finishTranscript(
-                meetingId: meeting.id,
-                revision: 4,
-                cursor: "cursor-4",
-                vaultId: vault.id,
-                expectedConnectionId: #require(vault.syncConfirmedConnectionId),
-                dbQueue: database.dbQueue
-            ))
+            try await database.dbQueue.write { db in
+                try RemoteChangeApplier.installStagedTranscript(meetingId: meeting.id, in: db)
+                try db.execute(sql: "DELETE FROM sync_remote_transcript_items WHERE meetingId = ?", arguments: [meeting.id])
+            }
 
             let state = try await database.dbQueue.read { db in
                 try (
@@ -770,8 +766,8 @@
                 )
             }
             #expect(state.0 == [first.segmentId, second.segmentId])
-            #expect(state.1 == "cursor-4")
-            #expect(state.2 == 4)
+            #expect(state.1 == nil)
+            #expect(state.2 == nil)
         }
 
         @Test

@@ -48,6 +48,17 @@ public struct TextContentManifest: Codable, Equatable, Sendable {
     public let count: Int
     public let byteCount: Int
     public let sha256: String
+
+    public init(version: Int, entity: TextContentEntity, entityId: UUID, revision: Int, present: Bool, count: Int, byteCount: Int, sha256: String) {
+        self.version = version
+        self.entity = entity
+        self.entityId = entityId
+        self.revision = revision
+        self.present = present
+        self.count = count
+        self.byteCount = byteCount
+        self.sha256 = sha256
+    }
 }
 
 public struct TextContentAvailability: Codable, Equatable, Sendable {
