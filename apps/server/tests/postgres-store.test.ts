@@ -38,6 +38,54 @@ integration("PostgreSQL application store", () => {
     expect(await createPostgresMeetingSyncStore(connection!.db).isAvailable()).toBe(true);
   });
 
+  it("authorizes summaries through meetings and separates generation from sync revision", async () => {
+    const store = createPostgresAuthStore(connection!.db, "postgres", undefined, true);
+    const userId = crypto.randomUUID();
+    const owner: Identity = { userId, workspaceId: `personal:${userId}`, source: "header" };
+    const reader: Identity = { userId: `reader-${userId}`, workspaceId: `personal:reader-${userId}`, source: "header" };
+    const outsider: Identity = { userId: `other-${userId}`, workspaceId: `personal:other-${userId}`, source: "header" };
+    for (const identity of [owner, reader, outsider]) await store.ensureIdentityUser(identity);
+    const vaultId = crypto.randomUUID(); const meetingId = crypto.randomUUID(); const now = new Date();
+    await store.sync.withIdentity(owner, (sync) => createVault(sync, vaultId, [{ id: crypto.randomUUID(), entity: "meeting",
+      action: "create", entityId: meetingId, baseRevision: null, data: meetingData(null, now, "Meeting", "") }]));
+    const save = (sync: IdentitySyncStore, baseRevision: number) => commit(sync, vaultId, [{ id: crypto.randomUUID(), entity: "summary",
+      action: "upsert", entityId: meetingId, baseRevision, data: { title: "Summary", document: "{}", createdAt: now } }]);
+    try {
+      await store.sync.withIdentity(owner, (sync) => save(sync, 0));
+      const first = await store.sync.withIdentity(owner, (sync) => sync.getSummaryVersion(vaultId, meetingId));
+      expect(first).toMatchObject({ meetingId, version: 1, createdAt: now });
+      expect(first).not.toHaveProperty("vaultId");
+      expect(await connection!.db.select().from(schema.summary)).toEqual([]);
+      await connection!.db.insert(schema.syncedVaultPermission).values({ vaultId, principalType: "user", principalId: reader.userId,
+        role: "member", grantedByUserId: owner.userId });
+      expect(await store.sync.withIdentity(reader, (sync) => sync.getSummaryVersion(vaultId, meetingId))).toEqual(first);
+      expect(await store.sync.withIdentity(outsider, (sync) => sync.getSummaryVersion(vaultId, meetingId))).toBeNull();
+      expect(await store.sync.withIdentity(owner, (sync) => sync.getSummaryVersion(crypto.randomUUID(), meetingId))).toBeNull();
+      await expect(store.sync.withIdentity(reader, (sync) => save(sync, 1))).rejects.toMatchObject({ status: 409 });
+      // Exercise SQL RLS directly as a shared member, bypassing the store's write checks.
+      await expect(connection!.db.transaction(async (tx) => {
+        await tx.execute(sql`select set_config('app.user_id', ${reader.userId}, true)`);
+        await tx.execute(sql`select set_config('app.sharing_enabled', 'true', true)`);
+        await tx.insert(schema.summary).values({ id: crypto.randomUUID(), meetingId, version: 2, title: "Denied", document: "{}", savedAt: now });
+      })).rejects.toThrow();
+      await connection!.db.delete(schema.syncedVaultPermission).where(eq(schema.syncedVaultPermission.principalId, reader.userId));
+      expect(await store.sync.withIdentity(reader, (sync) => sync.getSummaryVersion(vaultId, meetingId))).toBeNull();
+      const concurrent = await Promise.allSettled([1, 2].map(() => store.sync.withIdentity(owner, (sync) => save(sync, 1))));
+      expect(concurrent.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+      await store.sync.withIdentity(owner, async (sync) => {
+        expect((await sync.listSummaryVersions(vaultId, meetingId, 20)).map((row) => row.version)).toEqual([2, 1]);
+        await commit(sync, vaultId, [{ id: crypto.randomUUID(), entity: "summary", action: "delete", entityId: meetingId, baseRevision: 2, data: {} }]);
+        await save(sync, 3);
+        expect(await sync.getSummaryVersion(vaultId, meetingId)).toMatchObject({ version: 1 });
+        expect(await sync.getMeeting(vaultId, meetingId)).toMatchObject({ summaryRevision: 4, summaryTitle: "Summary", summaryCreatedAt: now });
+        await commit(sync, vaultId, [{ id: crypto.randomUUID(), entity: "meeting", action: "delete", entityId: meetingId, baseRevision: 1, data: {} }]);
+        expect(await sync.getSummaryVersion(vaultId, meetingId)).toBeNull();
+      });
+    } finally {
+      await store.sync.withIdentity(owner, (sync) => resetVault(sync, vaultId));
+    }
+  });
+
   it("projects recording history through an invoker view and enforces event RLS", async () => {
     const store = createPostgresAuthStore(connection!.db, "postgres", undefined, true);
     const userId = crypto.randomUUID();

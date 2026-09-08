@@ -361,8 +361,8 @@ actor MeetingContentProvider {
         repeat {
             try Task.checkCancellation()
             let page = try await SyncJSON.decoder.decode(Page.self, from: get(source: source, entity: entity, id: id, cursor: cursor))
-            guard (page.formatVersion ?? page.version) == 1,
-                  (page.syncRevision ?? page.revision) == source.revision else { throw TextContentError.changed }
+            guard page.formatVersion == 1,
+                  (entity == .transcript ? page.syncRevision : page.revision) == source.revision else { throw TextContentError.changed }
             var pageDigest = TextContentDigest()
             if entity == .transcript {
                 guard let items = page.items else { throw TextContentError.integrityFailure }

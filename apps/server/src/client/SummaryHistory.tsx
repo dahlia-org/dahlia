@@ -5,6 +5,7 @@ import { parseSummary, SummaryContent } from "./MeetingContent";
 import { summaryMetadata, type SummaryVersion } from "../summary/metadata";
 
 export interface LatestSummary {
+  version: number;
   revision: number;
   present: boolean;
   record?: { title: string | null; document: string | null; createdAt: string | null };
@@ -12,7 +13,7 @@ export interface LatestSummary {
 type Version = Omit<SummaryVersion, "createdAt" | "savedAt"> & { createdAt: string | null; savedAt: string };
 
 export function SummaryHistory({ base, latest, selected, onSelect }: {
-  base: string; latest?: LatestSummary; selected: number | null; onSelect: (revision: number | null) => void;
+  base: string; latest?: LatestSummary; selected: number | null; onSelect: (version: number | null) => void;
 }) {
   const versions = useLivePage<Omit<Version, "document">>(`${base}/summary`);
   const history = useLiveJSON<Version>(selected === null ? undefined : `${base}/summary/${selected}`);
@@ -32,12 +33,12 @@ export function SummaryHistory({ base, latest, selected, onSelect }: {
     <div className="summary-generation">
       <label>{uiText("Version", "バージョン")} <select value={selected ?? "latest"}
         onChange={(event) => onSelect(event.target.value === "latest" ? null : Number(event.target.value))}>
-        <option value="latest">{uiText("Current", "現在")}{latest && ` (v${latest.revision})`}</option>
-        {selected !== null && !versions.data?.items.some((version) => version.revision === selected) && <option value={selected}>v{selected}</option>}
+        <option value="latest">{uiText("Current", "現在")}{latest && ` (v${latest.version})`}</option>
+        {selected !== null && !versions.data?.items.some((version) => version.version === selected) && <option value={selected}>v{selected}</option>}
         {versions.data?.items.map((version) => {
           const model = version.metadata?.response?.model ?? version.metadata?.request.model;
-          return <option key={version.revision} value={version.revision}>
-            v{version.revision} · {new Date(version.savedAt).toLocaleString()}{model && ` · ${model}`}
+          return <option key={version.version} value={version.version}>
+            v{version.version} · {new Date(version.savedAt).toLocaleString()}{model && ` · ${model}`}
           </option>;
         })}
       </select></label>

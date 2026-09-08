@@ -12,7 +12,7 @@ describe("PostgreSQL migrations", () => {
   it("forces RLS on the new file tables before enabling canonical sync", () => {
     const sql = serverMigrationManifest.postgres.files
       .map((path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8")).join("\n");
-    for (const table of ["files", "meeting_files", "account_settings", "summary_versions"]) {
+    for (const table of ["files", "meeting_files", "account_settings", "summaries"]) {
       const created = sql.indexOf(`CREATE TABLE "app"."${table}"`);
       expect(created).toBeGreaterThan(-1);
       expect(sql.indexOf(`ALTER TABLE "app"."${table}" FORCE ROW LEVEL SECURITY`, created)).toBeGreaterThan(created);
@@ -96,7 +96,7 @@ describe("PostgreSQL migrations", () => {
     const authMigrations = readPostgresMigrations({ migrationsFolder: authDirectory!.path });
     const applicationMigrations = readPostgresMigrations({ migrationsFolder: applicationDirectory!.path });
     expect(authMigrations.map(({ name }) => name)).toEqual(["20260903034253_melodic_scalphunter"]);
-    expect(applicationMigrations.map(({ name }) => name)).toEqual(["20260903173551_bumpy_freak", "20260905172527_ancient_bedlam", "20260905172627_sync_history_backfill", "20260906125708_colossal_stepford_cuckoos", "20260906142206_force_file_rls", "20260907070726_flimsy_banshee", "20260907071320_force_meeting_event_rls", "20260907091206_chunky_gideon", "20260907091230_force_account_settings_rls", "20260907131014_colorful_the_leader", "20260907131333_force_recording_rls", "20260907132433_violet_black_bird", "20260907172548_rainy_maddog", "20260907172710_force_summary_job_rls", "20260908013210_reflective_morg", "20260908040348_slim_nebula", "20260908040458_summary_version_backfill", "20260908080351_burly_lady_vermin", "20260908092913_fancy_cerise", "20260908093012_account_settings_backfill", "20260908093034_stormy_peter_quill", "20260908144655_wild_energizer", "20260908144925_force_transcript_rls", "20260908155654_transcript_activity"]);
+    expect(applicationMigrations.map(({ name }) => name)).toEqual(["20260903173551_bumpy_freak", "20260905172527_ancient_bedlam", "20260905172627_sync_history_backfill", "20260906125708_colossal_stepford_cuckoos", "20260906142206_force_file_rls", "20260907070726_flimsy_banshee", "20260907071320_force_meeting_event_rls", "20260907091206_chunky_gideon", "20260907091230_force_account_settings_rls", "20260907131014_colorful_the_leader", "20260907131333_force_recording_rls", "20260907132433_violet_black_bird", "20260907172548_rainy_maddog", "20260907172710_force_summary_job_rls", "20260908013210_reflective_morg", "20260908040348_slim_nebula", "20260908040458_summary_version_backfill", "20260908080351_burly_lady_vermin", "20260908092913_fancy_cerise", "20260908093012_account_settings_backfill", "20260908093034_stormy_peter_quill", "20260908144655_wild_energizer", "20260908144925_force_transcript_rls", "20260908155654_transcript_activity", "20260908164224_brave_marvel_zombies", "20260908164318_force_summary_rls"]);
     expect([...authMigrations, ...applicationMigrations].every(({ hash, sql }) => hash.length === 64 && sql.length > 0))
       .toBe(true);
     const authSql = authMigrations.flatMap((migration) => migration.sql).join("\n");

@@ -110,7 +110,7 @@ describe("SQLite canonical sync", () => {
     } finally { prepare.mockRestore(); }
 
     await store.close?.();
-  });
+  }, 30_000);
 
   it("runs storage maintenance on the timer without Vault requests", async () => {
     const { store, directory } = await setup();

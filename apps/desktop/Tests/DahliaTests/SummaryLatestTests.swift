@@ -16,7 +16,7 @@ import Synchronization
             var digest = TextContentDigest()
             digest.add(document)
             let manifest: [String: Any] = [
-                "version": 1, "entity": "summary", "entityId": fixture.meetingId.uuidString,
+                "formatVersion": 1, "version": 2, "entity": "summary", "entityId": fixture.meetingId.uuidString,
                 "revision": 4, "present": true, "count": 1,
                 "sha256": digest.digestHex(), "byteCount": digest.byteCount,
             ]

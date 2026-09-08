@@ -1,0 +1,1 @@
+ALTER TABLE "app"."summaries" FORCE ROW LEVEL SECURITY;

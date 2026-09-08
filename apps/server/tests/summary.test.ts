@@ -135,10 +135,10 @@ describe("server summary jobs", () => {
       expect((await sync.summaryVersion(owner, vaultId, meetingId, "3")).metadata).toBeNull();
       expect(await sync.summaryVersion(owner, vaultId, meetingId, "1")).toEqual(first);
       const page = await sync.summaryVersions(owner, vaultId, meetingId, undefined, "2");
-      expect(page.items.map((row) => row.revision)).toEqual([3, 2]);
+      expect(page.items.map((row) => row.version)).toEqual([3, 2]);
       expect(page.items[0]).not.toHaveProperty("document");
       expect(page.items[0]).not.toHaveProperty("kind");
-      expect((await sync.summaryVersions(owner, vaultId, meetingId, page.nextCursor!, "2")).items.map((row) => row.revision)).toEqual([1]);
+      expect((await sync.summaryVersions(owner, vaultId, meetingId, page.nextCursor!, "2")).items.map((row) => row.version)).toEqual([1]);
       await expect(sync.commitTransaction(owner, { ...transaction, id: uuidV7() })).rejects.toMatchObject({ status: 409 });
       expect((await sync.summaryVersions(owner, vaultId, meetingId)).items).toHaveLength(3);
       await sync.commitTransaction(owner, { schemaVersion: 2, id: uuidV7(), vaultId, createdAt: new Date().toISOString(), operations: [
@@ -147,6 +147,13 @@ describe("server summary jobs", () => {
       expect(await sync.latestSummary(owner, vaultId, meetingId)).toMatchObject({ revision: 4, present: false });
       expect((await sync.summaryVersions(owner, vaultId, meetingId)).items).toEqual([]);
       await expect(sync.summaryVersion(owner, vaultId, meetingId, "1")).rejects.toMatchObject({ status: 404 });
+      await sync.commitTransaction(owner, { ...transaction, id: uuidV7(), operations: [{ ...transaction.operations[0], id: uuidV7(), baseRevision: 4 }] });
+      expect(await sync.latestSummary(owner, vaultId, meetingId)).toMatchObject({ formatVersion: 1, version: 1, revision: 5, present: true });
+      const recreated = await sync.summaryVersion(owner, vaultId, meetingId, "1");
+      expect(recreated.id).not.toBe(first.id);
+      expect(recreated.version).toBe(1);
+      await expect(sync.commitTransaction(owner, { ...transaction, id: uuidV7(), operations: [{ ...transaction.operations[0], id: uuidV7(), baseRevision: 1 }] }))
+        .rejects.toMatchObject({ status: 409 });
     } finally { await store.close?.(); }
   });
 
@@ -183,7 +190,7 @@ describe("server summary jobs", () => {
           for (const key of ["summaryTitle", "summaryDocument", "summaryCreatedAt"]) expect(meeting).not.toHaveProperty(key);
         }
         const page: { items: Record<string, unknown>[] } = await (await app.request(`${base}?limit=1`, { headers })).json();
-        expect(page).toMatchObject({ items: [{ revision: 1, title: "Saved" }], nextCursor: null });
+        expect(page).toMatchObject({ items: [{ version: 1, title: "Saved" }], nextCursor: null });
         expect(page.items[0]).not.toHaveProperty("document");
         expect(await (await app.request(`${base}?cursor=1`, { headers })).json()).toMatchObject({ items: [] });
         const latest: { sha256: string; byteCount: number; record: { document: string } } = await (await app.request(`${base}/latest`, { headers })).json();
@@ -191,7 +198,7 @@ describe("server summary jobs", () => {
         const manifest = await (await app.request(`${base}/latest?manifest=1`, { headers })).json();
         expect(manifest).toMatchObject({ revision: 1, sha256: latest.sha256, byteCount: latest.byteCount });
         expect(manifest).not.toHaveProperty("record");
-        expect(await (await app.request(`${base}/1`, { headers })).json()).toMatchObject({ revision: 1, document: latest.record.document });
+        expect(await (await app.request(`${base}/1`, { headers })).json()).toMatchObject({ version: 1, document: latest.record.document });
         for (const suffix of ["versions", "versions/1", "invalid", "1.5", "-1"]) {
           expect((await app.request(`${base}/${suffix}`, { headers })).status).toBe(404);
         }
@@ -208,19 +215,24 @@ describe("server summary jobs", () => {
     } finally { await store.close?.(); }
   });
 
-  it("backfills existing summaries without inventing metadata metadata", async () => {
-    const { store, path, vaultId, meetingId } = await setup();
+  it("stores independent summary IDs and cascades meeting deletion", async () => {
+    const { store, sync, path, vaultId, meetingId } = await setup();
     try {
+      await sync.commitTransaction(owner, { schemaVersion: 2, id: uuidV7(), vaultId, createdAt: new Date().toISOString(), operations: [
+        { id: uuidV7(), entity: "summary", action: "upsert", entityId: meetingId, baseRevision: 0,
+          data: { title: "Summary", document: JSON.stringify(doc()), createdAt: new Date().toISOString() } },
+      ] });
       const db = new DatabaseSync(path);
       try {
-        const document = JSON.stringify(doc());
-        db.prepare("UPDATE meetings SET summary_title = 'Old', summary_document = ?, summary_created_at = 1234, summary_revision = 7 WHERE meeting_id = ?").run(document, meetingId);
-        db.exec(readFileSync(new URL("../drizzle/sqlite/20260908040515_summary_version_backfill/migration.sql", import.meta.url), "utf8"));
-        expect(db.prepare("SELECT vault_id, meeting_id, revision, title, document, created_at, metadata FROM summary_versions").get()).toEqual({
-          vault_id: vaultId, meeting_id: meetingId, revision: 7, title: "Old", document, created_at: 1234, metadata: null,
-        });
+        const row = db.prepare("SELECT * FROM summaries").get();
+        expect(row).toMatchObject({ meeting_id: meetingId, version: 1 });
+        expect(row).not.toHaveProperty("vault_id");
+        expect(row?.id).toMatch(/^[0-9a-f-]{36}$/);
+        const columns = db.prepare("PRAGMA table_info(meetings)").all().map((column) => column.name);
+        for (const removed of ["summary_document", "summary_title", "summary_created_at"]) expect(columns).not.toContain(removed);
+        db.exec("PRAGMA foreign_keys = ON");
         db.prepare("DELETE FROM meetings WHERE meeting_id = ?").run(meetingId);
-        expect(db.prepare("SELECT * FROM summary_versions").all()).toEqual([]);
+        expect(db.prepare("SELECT * FROM summaries").all()).toEqual([]);
       } finally { db.close(); }
     } finally { await store.close?.(); }
   });

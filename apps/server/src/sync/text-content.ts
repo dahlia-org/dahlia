@@ -31,10 +31,10 @@ export function fileTextMetadata(record: Record<string, unknown>): Record<string
 }
 
 export function meetingMetadata(record: Record<string, unknown>): Record<string, unknown> {
-  // Canonical meeting rows also contain search projections and the summary document.
+  // Only meeting metadata crosses the sync feed.
   const keys = ["meetingId", "vaultId", "projectId", "name", "description", "status", "duration",
     "recordingStartedAt", "isRecording", "createdAt", "updatedAt", "revision", "summaryRevision", "transcriptRevision", "active", "deletingAt"];
-  const hasSummary = record.summaryDocument !== null && record.summaryDocument !== undefined;
+  const hasSummary = record.hasSummary ?? (record.summaryDocument !== null && record.summaryDocument !== undefined);
   return { ...Object.fromEntries(keys.filter((key) => key in record).map((key) => [key, record[key]])), contentOmitted: true, hasSummary };
 }
 
@@ -44,7 +44,7 @@ export async function metadataRecord(value: SyncCanonicalRecord, store: Identity
   if (value.entity === "meeting") {
     record = meetingMetadata(record);
   } else if (value.entity === "summary") {
-    record = { meetingId: record.meetingId, title: record.title, createdAt: record.createdAt,
+    record = { id: record.id, version: record.version, meetingId: record.meetingId, title: record.title, createdAt: record.createdAt,
       contentOmitted: true, contentPresent: record.document !== null && record.document !== undefined };
   } else if (value.entity === "transcript") {
     record = { meetingId: record.meetingId, contentOmitted: true, contentPresent: true,
@@ -72,11 +72,12 @@ export async function readTextContent(
   const transcript = entity === "transcript" ? await store.getTranscript(vaultId, entityId, transcriptVersion) : null;
   if (transcriptVersion !== undefined && !transcript) throw new SyncTransactionError(404, "transcript_version_not_found");
   if (transcriptVersion === undefined) assertRevision((entity === "summary" ? meeting.summaryRevision : meeting.transcriptRevision) ?? 0, revision);
+  const summary = entity === "summary" ? await store.getSummaryVersion(vaultId, entityId) : null;
   if (entity === "summary") {
-    present = meeting.summaryDocument !== null;
-    digest.add(meeting.summaryDocument);
+    present = summary !== null;
+    digest.add(summary?.document ?? null);
     count = present ? 1 : 0;
-    record = { title: meeting.summaryTitle, document: meeting.summaryDocument, createdAt: meeting.summaryCreatedAt };
+    record = summary ? { ...summary } : { title: null, document: null, createdAt: null };
   } else {
     present = transcript !== null;
     let cursor = after;
@@ -103,7 +104,7 @@ export async function readTextContent(
   }
   return { ...(entity === "transcript"
     ? { formatVersion: TEXT_CONTENT_VERSION, version: transcript?.version ?? 0, syncRevision: transcript?.syncRevision ?? revision, transcript }
-    : { version: TEXT_CONTENT_VERSION, revision }), entity, entityId, present, count,
+    : { formatVersion: TEXT_CONTENT_VERSION, version: summary?.version ?? 0, revision }), entity, entityId, present, count,
     byteCount: digest.byteCount, sha256: digest.digestHex(),
     ...(!manifestOnly ? { record, items, nextCursor } : {}) };
 }

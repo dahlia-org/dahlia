@@ -987,6 +987,10 @@
                 "byteCount": body.bytes,
                 "sha256": body.hash,
             ]
+            if isLatestSummary {
+                json["formatVersion"] = 1
+                json["version"] = itemCount > 0 ? 1 : 0
+            }
             if query.first(where: { $0.name == "manifest" })?.value != "1", entity == .transcript {
                 try #require(itemCount == 0)
                 json["items"] = [] as [String]

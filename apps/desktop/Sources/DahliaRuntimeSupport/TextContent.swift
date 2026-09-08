@@ -58,7 +58,7 @@ public struct TextContentManifest: Codable, Equatable, Sendable {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         entity = try values.decode(TextContentEntity.self, forKey: .entity)
         entityId = try values.decode(UUID.self, forKey: .entityId)
-        version = try values.decode(Int.self, forKey: entity == .transcript ? .formatVersion : .version)
+        version = try values.decode(Int.self, forKey: entity == .file ? .version : .formatVersion)
         revision = try values.decode(Int.self, forKey: entity == .transcript ? .syncRevision : .revision)
         present = try values.decode(Bool.self, forKey: .present)
         count = try values.decode(Int.self, forKey: .count)
@@ -71,7 +71,7 @@ public struct TextContentManifest: Codable, Equatable, Sendable {
         var values = encoder.container(keyedBy: CodingKeys.self)
         try values.encode(entity, forKey: .entity)
         try values.encode(entityId, forKey: .entityId)
-        try values.encode(version, forKey: entity == .transcript ? .formatVersion : .version)
+        try values.encode(version, forKey: entity == .file ? .version : .formatVersion)
         try values.encode(revision, forKey: entity == .transcript ? .syncRevision : .revision)
         if entity == .transcript { try values.encode(transcript?.version ?? 0, forKey: .version) }
         try values.encode(present, forKey: .present)

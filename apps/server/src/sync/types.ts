@@ -197,7 +197,7 @@ export interface SyncSearchQuery {
 
 export interface IdentitySyncStore {
   listSummaryVersions(vaultId: string, meetingId: string, limit: number, before?: number): Promise<Omit<SummaryVersion, "document">[]>;
-  getSummaryVersion(vaultId: string, meetingId: string, revision: number): Promise<SummaryVersion | null>;
+  getSummaryVersion(vaultId: string, meetingId: string, version?: number): Promise<SummaryVersion | null>;
   getSummaryJob(vaultId: string, meetingId: string, id?: string): Promise<SummaryJob | null>;
   insertSummaryJob(job: SummaryJob): Promise<void>;
   completeSummaryJob(job: SummaryJob, transaction: SyncTransaction): Promise<boolean>;

@@ -603,7 +603,7 @@
             var digest = TextContentDigest()
             digest.add(document)
             let manifest: [String: Any] = [
-                "version": 1, "entity": "summary", "entityId": fixture.meetingId.uuidString,
+                "formatVersion": 1, "version": 2, "entity": "summary", "entityId": fixture.meetingId.uuidString,
                 "revision": 3, "present": true, "count": 1, "byteCount": digest.byteCount, "sha256": digest.digestHex(),
             ]
             var body = manifest
@@ -1320,7 +1320,8 @@
             var emptyDigest = TextContentDigest()
             emptyDigest.add(nil)
             let summaryManifest = try JSONSerialization.data(withJSONObject: [
-                "version": 1,
+                "formatVersion": 1,
+                "version": 0,
                 "entity": "summary",
                 "entityId": fixture.meetingId.uuidString,
                 "revision": 0,
@@ -1385,7 +1386,7 @@
             }
         }
 
-        @Test(arguments: [nil, "{}", #"{"sync":{"version":1}}"#, #"{"sync":{"version":2}}"#, #"{"sync":{"version":3}}"#])
+        @Test(arguments: [nil, "{}", #"{"sync":{"version":1}}"#, #"{"sync":{"version":2}}"#, #"{"sync":{"version":3}}"#, #"{"sync":{"version":5}}"#])
         func incompatibleServerStopsMetadataSyncWithoutDiscardingExistingText(capabilities: String?) async throws {
             let fixture = try textFixture()
             let connectionId = try await fixture.queue.write { db in
@@ -1477,7 +1478,7 @@
                 digest.add(value)
             }
             let manifest: [String: Any] = [
-                "version": 1,
+                "formatVersion": 1, "version": 2,
                 "entity": entity.rawValue,
                 "entityId": id.uuidString,
                 "revision": 3,

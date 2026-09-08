@@ -174,3 +174,7 @@ Server の差分は現在の正本を返し、削除は null revision を持つ�
 Transcript UUID は生成元で確保して再送でも維持する。Server は `meeting_id` で meeting を参照し `(meeting_id, version)` を一意とする。`vault_id` は重複保持せず、子 segment の権限も meeting 経由で判定する。生成開始・終了確認は親の `started_at` / `ended_at`、初回 Server 保存は親の `created_at` とする。子の `started_at` / `ended_at` は従来どおり発話の絶対日時、`created_at` は確定テキストを生成した日時とする。子は確定テキストだけを保存する。
 
 `status` は親の終了確認と子の作成日時から読み取り時に導出し、同期状態や録音状態と区別する。時刻だけでも変化するため同期 revision を増やさず、Web の期限タイマーと読み取り側の再計算で更新する。定義・既存 Desktop データの補完方針は [Audio and Transcription Data Flow](../../architecture/audio-transcription-data-flow.md#transcript-versions) に従う。
+
+## Summary 世代と同期番号（2026-09-09）
+
+Server の要約正本は `summaries` の最大 `version` とし、meeting に本文や最新ポインタを重複保存しない。世代は Vault lock 下で発番し、同期の `summary_revision` / `baseRevision` とは独立する。この変更を含む同期契約は capability `sync.version = 4` として判定する。latest の通信形式は `formatVersion`、世代は `version`、同期番号は `revision`。同期 entity ID は meeting ID のまま維持する。全履歴削除後は version を1から再開するが、同期 revision は継続する。receipt、競合応答、削除通知、Desktop の未送信編集保護と本文 hash 検証は維持する。
