@@ -1696,6 +1696,7 @@
 "search.server.allKinds" = "All types";
 "serverSummaryMethod" = "Summary method";
 
+"serverSummaryAudio" = "Audio and images";
 "serverSummaryTranscript" = "Transcript and images";
 
 "serverSummaryDescription" = "Generate on the server, even after closing the app. Export separately after generation.";

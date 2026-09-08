@@ -27,12 +27,15 @@ actor ServerSummaryService {
         let displayName: String
         let supportedReasoningLevels: [Effort]
         let defaultReasoningLevel: String?
+        let inputModalities: [String]?
+        var supportsAudioSummary: Bool { slug.hasPrefix("gemini-") && inputModalities?.contains("audio") == true }
         var id: String { slug }
         private enum CodingKeys: String, CodingKey {
             case slug
             case displayName = "display_name"
             case supportedReasoningLevels = "supported_reasoning_levels"
             case defaultReasoningLevel = "default_reasoning_level"
+            case inputModalities = "input_modalities"
         }
     }
 

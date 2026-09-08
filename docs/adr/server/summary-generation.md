@@ -60,3 +60,34 @@ Server は summary の全保存を `summary_versions` に本文・保存日時�
 HTTP の会議詳細（Vault 配下と ID 解決用の両経路）は会議情報と同期状態だけを返し、summaryTitle / summaryDocument / summaryCreatedAt を除く。summaryRevision、contentOmitted、hasSummary、録音状態は保持する。snapshot / delta は常に本文なしとし、content query は使わない。file 補完は OCR / caption と revision を含む個別 metadata を使う。DB 正本と Server MCP の要約込み読取り契約は変更しない。
 
 要約一覧は GET summary、本文は GET summary/latest または数値 revision の GET summary/{revision} とする。旧 versions 経路と text/summary は互換 alias を残さず削除し、生成 POST と固定 job 経路は変更しない。公開 Desktop v0.21.0 に利用箇所はない。開発版 consumer は更新が必要であり、migration、Server と Web asset の同時更新、Desktop の順で適用する。既に開いている旧 Web は再読み込みが必要になる。
+
+## 音声と画像による要約（2026-09-08）
+
+Node / Databricks に `audio` 方法を追加する。Private Web の「要約のソース」で文字起こしと画像／音声と画像を選び、
+`summary.methodSettings.audio` にモデル・推論強度・詳細度を独立して保存する。既存設定の既定は `transcript` を維持し、
+音声設定の初期値は `gemini-3-8-flash` / `medium` / `detailed` とする。両設定は葉ごとの PATCH で更新し、
+モデル候補は既存の一覧に存在し、カタログで audio 入力を持つ Gemini に限定する。worker でも同条件を再検証する。
+
+確定済み録音の全セッションから、存在する mic / system の両音声を取得する。保存済みの audio/mp4 を再エンコードせず、
+録音開始時刻と manifest の範囲を添え、Databricks Chat Completions の `audio_url` に Base64 inline で送る。
+音声本体はストリームで読み取り・変換・送信し、長さと checksum を検証する。公開 URL、追加 SDK、中間文字起こしは作らない。
+会議・Project と既存方式でサンプルする最大24枚の画像を併用する。文字起こし本文は収集・送信しない。
+
+音声時間は全ファイル（mic と system は合算）の manifest frameCount / sampleRate で計算し、合計9.5時間までとする。
+独自の短い時間制限や分割要約は追加しない。音声なし、時間上限、上流の413、取得失敗は明示し、音声の切り捨てや
+文字起こし方式への自動切替をしない。Google直結や別のServing endpointのバイト上限をUnity Gatewayの上限として流用しない。
+既存の4分生成timeout・5分lease・最大3回試行を維持するため、時間上限内でも上流の処理時間や制限で失敗する場合がある。
+
+入力 fingerprint は使用する会議・Project・画像情報と録音の checksum / manifest を含める。文字起こし revision と
+それだけで更新され得る会議 revision は音声方式の fingerprint に含めない。既存の owner 認可・要約 revision の競合検出・
+canonical 保存と履歴を共用する。応答は strict schema で検証し、Chat Completions の token usage と created を既存の
+metadata.response の入力・出力tokens / created_atへ対応付ける。取得できない情報は推測しない。
+GeminiのHTTP 400を避けるため、共通summaryResponseSchemaから配列のmaxItemsを除去する。
+sections / blocks / items / tags / action_itemsの件数上限は送信・受信検証ともに持たず、モデル別のschema分岐は追加しない。
+文字列長、数値範囲、sectionsの最小1件、型・必須項目、画像参照検証、応答2 MiB制限は維持する。`store`はChat Completionsでは送らない。
+本文がcontent parts配列の場合はtextだけを使い、reasoning partsやthoughtSignatureを保存しない。
+
+PostgreSQL / SQLite / D1 に audio_summary 列を forward migration で追加する。Desktopを先に更新し、migration適用後にServerとWebを更新する。
+Desktopも方式別設定を読み取り、文字起こしと画像／音声と画像を区別して表示・編集する。音声モデルは利用可能な音声対応Geminiに限定する。
+単発生成の確認画面と一括生成は選択方式の詳細度を使い、未対応方式・未取得設定では上書きを送らずServer既定に従う。
+Workersの生成capabilityは従来どおり無効とする。

@@ -53,7 +53,7 @@ try {
     import * as server from "@dahlia-ai/server";
     import {
       createNodeAuthStore,
-      SummaryService, SummaryWorker, createTranscriptSummaryMethod,
+      SummaryService, SummaryWorker, createTranscriptSummaryMethod, createAudioSummaryMethod,
       createPostgresApplicationStore,
       createPostgresAuthStore,
     } from "@dahlia-ai/server/node";
@@ -63,7 +63,7 @@ try {
     import { DatabaseSync } from "node:sqlite";
     import { fileURLToPath } from "node:url";
 
-    if ([SummaryService, SummaryWorker, createTranscriptSummaryMethod].some((value) => typeof value !== "function")) throw new Error("Missing Node summary API");
+    if ([SummaryService, SummaryWorker, createTranscriptSummaryMethod, createAudioSummaryMethod].some((value) => typeof value !== "function")) throw new Error("Missing Node summary API");
     if (typeof server.createApp !== "function" || typeof App !== "function") throw new Error("Package API is incomplete");
     for (const name of ["DatabricksBackend", "OpenAIBackend", "CloudflareBackend"]) {
       if (typeof server[name] !== "function") throw new Error("Missing AI backend export: " + name);
@@ -74,7 +74,7 @@ try {
     if (typeof createPostgresApplicationStore !== "function" || typeof createPostgresAuthStore !== "function") {
       throw new Error("PostgreSQL store factories are missing from the Node package export");
     }
-    if (serverMigrationManifest.sqlite.files.length !== 12) {
+    if (serverMigrationManifest.sqlite.files.length !== 13) {
       throw new Error("Migration manifest is incomplete");
     }
     const style = await readFile(new URL(import.meta.resolve("@dahlia-ai/server/client/styles.css")), "utf8");
@@ -134,7 +134,7 @@ try {
     if (database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'artifact'").get()) throw new Error("Retired Artifact table remains");
     database.close();
     await store.close?.();
-    if (applied.length !== serverMigrationManifest.sqlite.files.length || applied.at(-1)?.name !== "20260908040515_summary_version_backfill") {
+    if (applied.length !== serverMigrationManifest.sqlite.files.length || applied.at(-1)?.name !== "20260908080352_zippy_aaron_stack") {
       throw new Error("Installed package migrations did not run from the package directory");
     }
   `);

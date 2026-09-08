@@ -1,3 +1,4 @@
+import { createAudioSummaryMethod } from "./summary/audio";
 import { createTranscriptSummaryMethod } from "./summary/transcript";
 import { SummaryService } from "./summary/service";
 import { SummaryWorker } from "./summary/node-worker";
@@ -50,9 +51,10 @@ const imageAnalysis = captioner && applicationStore.imageAnalysis
   ? new ImageAnalysisWorker(applicationStore.imageAnalysis, captioner, applicationStore.sync, syncService, applicationStore.accountSettings)
   : undefined;
 
-const summaryMethod = createTranscriptSummaryMethod(config, applicationStore.sync, syncService);
-const summaryService = summaryMethod ? new SummaryService(applicationStore.sync, applicationStore.accountSettings, [summaryMethod]) : undefined;
-const summaryWorker = summaryMethod ? new SummaryWorker(applicationStore.summaryJobs, [summaryMethod], syncService) : undefined;
+const summaryMethods = [createTranscriptSummaryMethod(config, applicationStore.sync, syncService),
+  createAudioSummaryMethod(config, applicationStore.sync, syncService)].filter((method) => method !== undefined);
+const summaryService = summaryMethods.length ? new SummaryService(applicationStore.sync, applicationStore.accountSettings, summaryMethods) : undefined;
+const summaryWorker = summaryMethods.length ? new SummaryWorker(applicationStore.summaryJobs, summaryMethods, syncService) : undefined;
 const app = createApp({
   summaryService,
   config,

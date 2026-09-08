@@ -13,8 +13,9 @@ const sqliteTimestamp = (name: string) => integer(name, { mode: "timestamp_ms" }
 
 export const accountSettings = sqliteTable("account_settings", {
   userId: text("user_id").primaryKey().references(() => authUser.id, { onDelete: "cascade" }),
-  summaryMethod: text("summary_method").$type<"transcript">().default("transcript").notNull(),
+  summaryMethod: text("summary_method").$type<"transcript" | "audio">().default("transcript").notNull(),
   transcriptSummary: text("transcript_summary", { mode: "json" }).$type<AccountSettings["summary"]["methodSettings"]["transcript"]>().default({ model: "gpt-5.4", reasoningEffort: "medium", detail: "detailed" }).notNull(),
+  audioSummary: text("audio_summary", { mode: "json" }).$type<AccountSettings["summary"]["methodSettings"]["audio"]>().default({ model: "gemini-3-8-flash", reasoningEffort: "medium", detail: "detailed" }).notNull(),
   outputLanguage: text("output_language").$type<AccountSettings["outputLanguage"]>().notNull(),
   analysisLanguages: text("analysis_languages", { mode: "json" }).$type<AccountSettings["analysisLanguages"]>().notNull(),
 });
@@ -415,7 +416,7 @@ export const summaryJob = sqliteTable("summary_jobs", {
   vaultId: text("vault_id").notNull().references(() => syncedVault.vaultId, { onDelete: "cascade" }),
   meetingId: text("meeting_id").notNull().references(() => syncedMeeting.meetingId, { onDelete: "cascade" }),
   ownerUserId: text("owner_user_id").notNull().references(() => authUser.id, { onDelete: "cascade" }),
-  method: text("method").$type<"transcript">().notNull(),
+  method: text("method").$type<"transcript" | "audio">().notNull(),
   settings: text("settings", { mode: "json" }).$type<SummaryJob["settings"]>().notNull(),
   outputLanguage: text("output_language").notNull(),
   status: text("status").default("pending").notNull(),

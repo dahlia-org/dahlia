@@ -12,7 +12,7 @@ export function testStore(overrides: Partial<AuthStore> = {}): AuthStore {
         const value = initialize && settings.has(userId) ? settings.get(userId)!
           : { ...current, ...patch, summary: {
             method: patch.summary?.method ?? current.summary.method,
-            methodSettings: { transcript: { ...current.summary.methodSettings.transcript, ...patch.summary?.methodSettings?.transcript } },
+            methodSettings: { audio: { ...current.summary.methodSettings.audio, ...patch.summary?.methodSettings?.audio }, transcript: { ...current.summary.methodSettings.transcript, ...patch.summary?.methodSettings?.transcript } },
           } };
         settings.set(userId, value);
         return Promise.resolve(value);

@@ -404,7 +404,7 @@ describe("SQLite canonical sync", () => {
     await store.close?.();
     const database = new DatabaseSync(databasePath);
     database.exec("DROP TABLE summary_jobs; DROP TABLE image_analysis_jobs; DROP TABLE account_settings");
-    database.prepare("DELETE FROM __drizzle_migrations WHERE name IN (?, ?)").run("20260907091207_funny_black_bird", "20260907172550_nice_starhawk");
+    database.prepare("DELETE FROM __drizzle_migrations WHERE name IN (?, ?, ?)").run("20260907091207_funny_black_bird", "20260907172550_nice_starhawk", "20260908080352_zippy_aaron_stack");
     database.close();
     const reopened = createNodeApplicationStore(testConfig(databasePath));
     await reopened.migrate();

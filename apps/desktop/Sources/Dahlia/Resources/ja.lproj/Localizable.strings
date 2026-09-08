@@ -1696,6 +1696,7 @@
 "search.server.allKinds" = "すべての種類";
 "serverSummaryMethod" = "要約方法";
 
+"serverSummaryAudio" = "音声と画像";
 "serverSummaryTranscript" = "文字起こしと画像";
 
 "serverSummaryDescription" = "サーバーで生成します。画面を閉じても処理は続きます。エクスポートは生成後に個別に行います。";

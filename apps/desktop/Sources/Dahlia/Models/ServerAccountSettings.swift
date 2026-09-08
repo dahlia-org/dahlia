@@ -15,10 +15,23 @@ struct ServerAccountSettings: Codable, Equatable, Sendable {
     struct Summary: Codable, Equatable, Sendable {
         struct MethodSettings: Codable, Equatable, Sendable {
             var transcript: TranscriptSummary
+            var audio: TranscriptSummary?
         }
 
         var method: String
         var methodSettings: MethodSettings
+
+        var selectedSettings: TranscriptSummary? {
+            switch method {
+            case "transcript": methodSettings.transcript
+            case "audio": methodSettings.audio
+            default: nil
+            }
+        }
+
+        var detailLevel: SummaryDetailLevel? {
+            selectedSettings.flatMap { SummaryDetailLevel(rawValue: $0.detail) }
+        }
     }
 
     var summary: Summary?
@@ -47,6 +60,7 @@ struct ServerAccountSettings: Codable, Equatable, Sendable {
 
         struct MethodSettings: Encodable, Sendable {
             var transcript: Transcript?
+            var audio: Transcript?
         }
 
         struct Transcript: Encodable, Sendable {

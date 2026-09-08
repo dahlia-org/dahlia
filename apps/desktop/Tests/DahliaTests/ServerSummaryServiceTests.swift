@@ -188,6 +188,43 @@ import DahliaRuntimeSupport
             #expect(json == ["outputLanguage": "en"])
         }
 
+        @Test
+        func audioSettingsUseTheirOwnDetailAndUnknownMethodsDoNotUseTranscript() throws {
+            let body = Data(
+                """
+                {"method":"audio","methodSettings":{
+                  "transcript":{"model":"gpt-5.4","reasoningEffort":"high","detail":"concise"},
+                  "audio":{"model":"gemini-3-8-flash","reasoningEffort":"medium","detail":"standard"}
+                }}
+                """.utf8
+            )
+            var summary = try JSONDecoder().decode(ServerAccountSettings.Summary.self, from: body)
+            #expect(summary.selectedSettings?.model == "gemini-3-8-flash")
+            #expect(summary.selectedSettings?.reasoningEffort == "medium")
+            #expect(summary.detailLevel == .standard)
+            summary.method = "transcript"
+            #expect(summary.detailLevel == .concise)
+            summary.method = "future"
+            #expect(summary.detailLevel == nil)
+            summary.method = "audio"
+            summary.methodSettings.audio = nil
+            #expect(summary.detailLevel == nil)
+        }
+
+        @Test(arguments: [
+            ("gemini-3-8-flash", ["text", "image", "audio"], true),
+            ("gemini-3-7-flash", ["audio"], true),
+            ("gemini-text-only", ["text"], false),
+            ("other-audio", ["audio"], false),
+        ])
+        func audioModelChoicesRequireGeminiAndAudioInput(id: String, inputs: [String], expected: Bool) throws {
+            let data = try JSONSerialization.data(withJSONObject: [
+                "slug": id, "display_name": id, "supported_reasoning_levels": [], "input_modalities": inputs,
+            ])
+            let model = try JSONDecoder().decode(ServerSummaryService.Model.self, from: data)
+            #expect(model.supportsAudioSummary == expected)
+        }
+
         @Test(arguments: ["{}", #"{"summaryGeneration":{"version":0,"methods":[]}}"#])
         func missingOrUnsupportedCapabilitiesHaveNoMethods(_ json: String) async throws {
             let origin = "https://capabilities-\(UUID.v7().uuidString.lowercased()).test"
@@ -204,12 +241,14 @@ import DahliaRuntimeSupport
             #expect(try await service.methods(connectionID: .v7(), origin: origin).isEmpty)
         }
 
-        @Test
-        func encodesOnlySpecifiedNestedSummaryFields() throws {
-            let patch = ServerAccountSettings.Patch(summary: .init(methodSettings: .init(transcript: .init(detail: "concise"))))
+        @Test(arguments: ["transcript", "audio"])
+        func encodesOnlySpecifiedNestedSummaryFields(method: String) throws {
+            let fields: ServerAccountSettings.Patch.MethodSettings = method == "audio"
+                ? .init(audio: .init(detail: "concise")) : .init(transcript: .init(detail: "concise"))
+            let patch = ServerAccountSettings.Patch(summary: .init(methodSettings: fields))
             let data = try JSONEncoder().encode(patch)
             let json = try #require(JSONSerialization.jsonObject(with: data) as? [String: [String: [String: [String: String]]]])
-            #expect(json == ["summary": ["methodSettings": ["transcript": ["detail": "concise"]]]])
+            #expect(json == ["summary": ["methodSettings": [method: ["detail": "concise"]]]])
             let response = try JSONDecoder().decode(ServerAccountSettings.Response.self, from: Data(#"{"settings":null}"#.utf8))
             #expect(response.settings == nil)
         }

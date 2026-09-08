@@ -3,7 +3,7 @@ import { DEFAULT_ACCOUNT_SETTINGS, type AccountSettingsStore } from "../account-
 import type { Identity } from "../auth/identity";
 import { RequestError } from "../storage/upload";
 import type { MeetingSyncStore } from "../sync/types";
-import { summaryDetailSchema, type SummaryJob, type SummaryMethod } from "./model";
+import { SummaryError, summaryDetailSchema, type SummaryJob, type SummaryMethod } from "./model";
 
 export const summaryStartSchema = z.object({ id: z.uuidv7(), detail: summaryDetailSchema.optional() }).strict();
 export class SummaryService {
@@ -38,12 +38,18 @@ export class SummaryService {
       }
       const current = await scoped.getSummaryJob(vaultId, meetingId);
       if (current && ["pending", "processing"].includes(current.status)) throw new RequestError(409, "summary_already_running");
+      let inputVersion: string;
+      try { inputVersion = await method.version(scoped, vaultId, meetingId); }
+      catch (error) {
+        if (error instanceof SummaryError) throw new RequestError(error.retryable ? 503 : 400, error.code);
+        throw error;
+      }
       const now = new Date();
       const job: SummaryJob = {
         id: parsed.data.id, vaultId, meetingId, ownerUserId: identity.userId,
         method: settings.summary.method, settings: method.captureSettings(settings, parsed.data.detail),
         outputLanguage: settings.outputLanguage, requestHash, summaryRevision: meeting.summaryRevision ?? 0,
-        inputVersion: await method.version(scoped, vaultId, meetingId),
+        inputVersion,
         status: "pending", attempts: 0, createdAt: now, availableAt: now, claimedAt: null, leaseExpiresAt: null, lastErrorCode: null,
       };
       await scoped.insertSummaryJob(job);
