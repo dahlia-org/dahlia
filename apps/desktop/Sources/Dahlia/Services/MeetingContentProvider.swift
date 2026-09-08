@@ -22,6 +22,7 @@ actor MeetingContentProvider {
         }
 
         let version: Int
+        let formatVersion: Int?
         let revision: Int
         let sha256: String
         let byteCount: Int
@@ -359,7 +360,8 @@ actor MeetingContentProvider {
         repeat {
             try Task.checkCancellation()
             let page = try await SyncJSON.decoder.decode(Page.self, from: get(source: source, entity: entity, id: id, cursor: cursor))
-            guard page.version == 1, page.revision == source.revision else { throw TextContentError.changed }
+            guard (entity == .summary ? page.formatVersion : page.version) == 1,
+                  page.revision == source.revision else { throw TextContentError.changed }
             var pageDigest = TextContentDigest()
             if entity == .transcript {
                 guard let items = page.items else { throw TextContentError.integrityFailure }

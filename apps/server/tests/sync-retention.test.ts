@@ -221,7 +221,8 @@ describe("sync history retention", () => {
     // Multibyte text and escaped quotes exercise serialized bytes rather than string length.
     const document = JSON.stringify({ text: 'あ"'.repeat(700_000) });
     for (const meetingId of meetings) {
-      raw.prepare("UPDATE meetings SET summary_document = ?, summary_revision = 1 WHERE meeting_id = ?").run(document, meetingId);
+      raw.prepare("UPDATE meetings SET summary_revision = 1 WHERE meeting_id = ?").run(meetingId);
+      raw.prepare("INSERT INTO summaries(id, meeting_id, version, title, document, saved_at) VALUES (?, ?, 1, 'Summary', ?, 0)").run(id(), meetingId, document);
     }
     const seen: string[] = [];
     let page = await service.listSnapshot(owner, vaultId);
@@ -350,14 +351,16 @@ describe("partial text content", () => {
   it("synchronizes 10000 historical meetings without transferring any text body", async () => {
     const { raw, service, vaultId } = await setup();
     const insert = raw.prepare(`INSERT INTO meetings(meeting_id, vault_id, name, status, created_at, updated_at,
-      summary_title, summary_document, summary_created_at, summary_revision, transcript_revision, active)
-      VALUES (?, ?, 'History', 'READY', ?, ?, 'Summary', ?, ?, 1, 1, 1)`);
+      summary_revision, transcript_revision, active)
+      VALUES (?, ?, 'History', 'READY', ?, ?, 1, 1, 1)`);
     const transcript = raw.prepare("INSERT INTO transcript_segments(vault_id, meeting_id, segment_id, start_time, text, is_confirmed) VALUES (?, ?, ?, ?, ?, 1)");
+    const summary = raw.prepare("INSERT INTO summaries(id, meeting_id, version, title, document, created_at, saved_at) VALUES (?, ?, 1, 'Summary', ?, ?, ?)");
     const text = "large_text_marker".repeat(64);
     raw.exec("BEGIN");
     for (let index = 0; index < 10000; index += 1) {
       const meeting = id();
-      insert.run(meeting, vaultId, index, index, text, index);
+      insert.run(meeting, vaultId, index, index);
+      summary.run(id(), meeting, text, index, index);
       transcript.run(vaultId, meeting, id(), index, text);
     }
     raw.exec("COMMIT");

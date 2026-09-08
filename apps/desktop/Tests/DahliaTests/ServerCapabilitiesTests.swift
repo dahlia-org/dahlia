@@ -9,7 +9,7 @@ import Foundation
         func decodesSupportedFeaturesAndIgnoresUnknownFields() throws {
             let data = Data(#"""
             {
-              "sync": { "version": 3 },
+              "sync": { "version": 4 },
               "recordingArchive": { "version": 1 },
               "meetingEvents": { "version": 1 },
               "search": { "version": 1 },
@@ -19,7 +19,7 @@ import Foundation
             }
             """#.utf8)
             let capabilities = try JSONDecoder().decode(ServerCapabilities.self, from: data)
-            #expect(capabilities.sync?.version == 3)
+            #expect(capabilities.sync?.version == 4)
             #expect(capabilities.recordingArchive?.version == 1)
             #expect(capabilities.meetingEvents?.version == 1)
             #expect(capabilities.search?.version == 1)
@@ -31,11 +31,11 @@ import Foundation
         @Test(arguments: [#"{"version":2}"#, #"{"version":2,"sources":{"future":true}}"#])
         func unsupportedSummaryPayloadPreservesOtherCapabilities(_ summary: String) throws {
             let data = Data("""
-            {"sync":{"version":3},"recordingArchive":{"version":1},"meetingEvents":{"version":1},
+            {"sync":{"version":4},"recordingArchive":{"version":1},"meetingEvents":{"version":1},
              "search":{"version":1},"imageAnalysis":{"version":1},"meetingSummaryGeneration":\(summary)}
             """.utf8)
             let capabilities = try JSONDecoder().decode(ServerCapabilities.self, from: data)
-            #expect(capabilities.sync?.version == 3)
+            #expect(capabilities.sync?.version == 4)
             #expect(capabilities.recordingArchive?.version == 1)
             #expect(capabilities.meetingEvents?.version == 1)
             #expect(capabilities.search?.version == 1)

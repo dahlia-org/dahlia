@@ -52,17 +52,19 @@ Desktop の設定キャッシュが未取得のときは詳細度 override を�
 
 ## 要約履歴と生成情報（2026-09-08）
 
-Server は summary の全保存を `summary_versions` に本文・保存日時・作成日時と共に保持する。版番号は既存の `summaryRevision` と一致し、canonical 更新・履歴追加・生成ジョブ成功を同じ transaction で確定する。再送・失敗・競合で余分な版を作らない。既存の現在要約は forward migration で取り込み、失われた履歴や生成情報は推測しない。履歴は sync ledger と異なり自動期限削除しない。
+Server は summary の全保存を `summaries` に保持する。UUID 主キー `id`、meeting 外部キー `meeting_id`、会議内の `version` と本文・タイトル・作成日時・保存日時・metadata を持ち、`UNIQUE(meeting_id, version)` を設定する。Vault 所属と認可は meeting 経由で解決する。meetings の重複本文と最新ポインタは持たず、最大 version が latest となる。
+
+Vault lock 下で `MAX(version) + 1` を発番し、初回と全履歴削除後は1から開始する。`meetings.summary_revision`、同期 `baseRevision`、`summary_jobs.summary_revision` は更新・競合検出用として維持し、世代番号と分離する。canonical 更新・版追加・生成ジョブ成功を同じ transaction で確定し、再送・失敗・競合で余分な版を作らない。履歴は sync ledger と異なり自動期限削除しない。Server はリリース前で既存データ保護を不要とするため、新規 migration で旧構造を置き換え、backfill は行わない。登録済み migration は変更しない。
 
 `SummaryDocument.metadata` は Server API と Local Codex の共通 optional metadata とする。生成したシステム `generatedBy`（`server` / `local_codex`）・入力種別 `inputTypes`・詳細度 `detailLevel`・言語 `outputLanguage` と送信した `request.model` / `request.reasoning` を保持し、provider が返した `response.id` / `model` / `created_at` / `reasoning` / `usage` は OpenAI Responses API の構造で保存する。生成ジョブの方式 `method` は metadata には重複保存しない。取得できない値は欠測にし、独自計測、prompt version、入力本文・provider 応答全体の複製は追加しない。Local Codex は既存の生成経路で取得できる設定のみを埋める。編集では生成情報を外し、通常の同期・再取得では維持する。Desktop MCP の `get_meeting` と `update_meeting_summary` は同じ optional metadata schema を公開し、無変更の往復では metadata も維持する。
 
 `GET .../summary/latest` は現在の canonical 本文を既存の text envelope と hash、任意の manifest で返す。Desktop の Server 要約本文読取りは latest に統一し、同期 metadata と revision が異なるときは再同期して再取得する。未送信編集の保護と通常の remote applier を維持し、過去版を最新として採用しない。差分適用後に要約自身の読取り可否を再検証し、無関係な保留差分があっても安全な最新本文を取得する。Desktop が表示するのは最新だけであり、既存の現在本文キャッシュを利用する。
 
-`GET .../summary` と `GET .../summary/{revision}` を追加し、Web の要約タブで過去版を閲覧できる。現在の Vault 読取り権限を継承するため共有メンバーも閲覧できる。PostgreSQL は FORCE RLS、全 runtime は共通認可を適用する。要約削除は全履歴の削除も意味し、会議・Vault 削除でも履歴を削除する。Web の確認文に全版削除を明示する。横並び比較・復元・Gemini 生成の実装は今回の対象外とする。
+`GET .../summary` と `GET .../summary/{version}` を追加し、Web の要約タブで過去版を閲覧できる。現在の Vault 読取り権限を継承するため共有メンバーも閲覧できる。PostgreSQL は FORCE RLS、全 runtime は共通認可を適用する。要約削除は全履歴の削除も意味し、会議・Vault 削除でも履歴を削除する。Web の確認文に全版削除を明示する。横並び比較・復元・Gemini 生成の実装は今回の対象外とする。
 
 HTTP の会議詳細（Vault 配下と ID 解決用の両経路）は会議情報と同期状態だけを返し、summaryTitle / summaryDocument / summaryCreatedAt を除く。summaryRevision、contentOmitted、hasSummary、録音状態は保持する。snapshot / delta は常に本文なしとし、content query は使わない。file 補完は OCR / caption と revision を含む個別 metadata を使う。DB 正本と Server MCP の要約込み読取り契約は変更しない。
 
-要約一覧は GET summary、本文は GET summary/latest または数値 revision の GET summary/{revision} とする。旧 versions 経路と text/summary は互換 alias を残さず削除し、生成 POST と固定 job 経路は変更しない。公開 Desktop v0.21.0 に利用箇所はない。開発版 consumer は更新が必要であり、migration、Server と Web asset の同時更新、Desktop の順で適用する。既に開いている旧 Web は再読み込みが必要になる。
+要約一覧は GET summary、本文は GET summary/latest または数値 version の GET summary/{version} とする。旧 versions 経路と text/summary は互換 alias を残さず削除し、生成 POST と固定 job 経路は変更しない。公開 Desktop v0.21.0 に利用箇所はない。開発版 consumer は更新が必要であり、migration、Server と Web asset の同時更新、Desktop の順で適用する。既に開いている旧 Web は再読み込みが必要になる。
 
 ## 音声と画像による要約（2026-09-08）
 
@@ -109,3 +111,5 @@ PATCH は現在行の指定葉だけを更新し、異なる葉の並行更新�
 
 旧API形式の互換アダプターは設けない。移行とDesktop / Server / Webの更新を一体で適用し、開いている旧Webは再読み込みする。
 旧列削除後はアプリだけを旧版へ戻せないため、復旧は修正の前進適用、または移行前バックアップと対応バージョンの組み合わせで行う。
+
+latest の応答は `formatVersion`（通信形式）、`version`（要約世代）、`revision`（同期番号）を区別する。Desktop の最新本文・header の物理保存と本文解放用途は維持し、履歴テーブルは追加しない。

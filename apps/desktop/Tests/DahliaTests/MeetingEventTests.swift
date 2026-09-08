@@ -131,7 +131,7 @@
                 let path = request.url!.path
                 paths.withLock { $0.append(path) }
                 if path == "/api/v1/capabilities" {
-                    return (200, [:], Data((meetingDeleted ? "{\"sync\":{\"version\":3},\"meetingEvents\":{\"version\":1}}" : "{\"sync\":{\"version\":3}}").utf8))
+                    return (200, [:], Data((meetingDeleted ? "{\"sync\":{\"version\":4},\"meetingEvents\":{\"version\":1}}" : "{\"sync\":{\"version\":4}}").utf8))
                 }
                 if path == "/api/v1/transactions/resolve" {
                     let isFirstResolve = paths.withLock { $0.filter { $0 == path }.count } == 1

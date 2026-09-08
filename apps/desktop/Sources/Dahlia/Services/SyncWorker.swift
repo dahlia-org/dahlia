@@ -687,7 +687,7 @@ actor SyncWorker {
                 connectionId: target.connectionId
             )
             let capabilities = try decode(ServerCapabilities.self, from: data)
-            guard capabilities.sync?.version == 3 else {
+            guard capabilities.sync?.version == 4 else {
                 throw SyncHTTPError(status: 426, body: Data())
             }
             let meetingEventsVersion = capabilities.meetingEvents?.version == 1 ? 1 : 0

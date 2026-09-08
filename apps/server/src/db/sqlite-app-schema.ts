@@ -90,9 +90,6 @@ export const syncedMeeting = sqliteTable("meetings", {
   recordingStartedAt: sqliteTimestamp("recording_started_at"),
   createdAt: sqliteTimestamp("created_at").notNull(),
   updatedAt: sqliteTimestamp("updated_at").notNull(),
-  summaryTitle: text("summary_title"),
-  summaryDocument: text("summary_document"),
-  summaryCreatedAt: sqliteTimestamp("summary_created_at"),
   revision: integer("revision").default(1).notNull(),
   summaryRevision: integer("summary_revision").default(0).notNull(),
   transcriptRevision: integer("transcript_revision").default(0).notNull(),
@@ -434,16 +431,16 @@ export const summaryJob = sqliteTable("summary_jobs", {
   index("summary_job_owner_created_idx").on(table.ownerUserId, table.createdAt),
 ]);
 
-export const summaryVersion = sqliteTable("summary_versions", {
-  vaultId: text("vault_id").notNull(),
+export const summary = sqliteTable("summaries", {
+  id: text("id").primaryKey(),
   meetingId: text("meeting_id").notNull(),
-  revision: integer("revision").notNull(),
+  version: integer("version").notNull(),
   title: text("title").notNull(),
   document: text("document").notNull(),
   createdAt: sqliteTimestamp("created_at"),
   savedAt: sqliteTimestamp("saved_at").notNull(),
   metadata: text("metadata", { mode: "json" }).$type<SummaryMetadata>(),
 }, (table) => [
-  primaryKey({ columns: [table.meetingId, table.revision] }),
-  foreignKey({ columns: [table.vaultId, table.meetingId], foreignColumns: [syncedMeeting.vaultId, syncedMeeting.meetingId] }).onDelete("cascade"),
+  unique("summary_meeting_version_unique").on(table.meetingId, table.version),
+  foreignKey({ columns: [table.meetingId], foreignColumns: [syncedMeeting.meetingId] }).onDelete("cascade"),
 ]);

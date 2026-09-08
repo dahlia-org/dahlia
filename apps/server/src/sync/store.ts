@@ -1,3 +1,4 @@
+import { uuidV7 } from "../id";
 import { summaryMetadata } from "../summary/metadata";
 import { fileResponse, fileStorageKey, imageContentTypes, type FileMetadata } from "../files/model";
 import { needsImageAnalysis, type ImageAnalysisClaim, type ImageAnalysisInput } from "../image-analysis/model";
@@ -324,6 +325,7 @@ async function roleSupportsRls(db: PostgresDatabase): Promise<boolean> {
       "app.search_embeddings",
       "app.account_settings",
       "app.summary_jobs",
+      "app.summaries",
     ];
     const secured = (await client.query<{ count: number }>(`
       select count(*)::integer as count
@@ -757,6 +759,21 @@ function createIdentityStore(
     return records;
   }
 
+  function readableSummary(vaultId: string, meetingId: string) {
+    return and(eq(schema.summary.meetingId, meetingId), exists(db.select({ id: schema.syncedMeeting.meetingId }).from(schema.syncedMeeting).where(and(
+      eq(schema.syncedMeeting.meetingId, schema.summary.meetingId),
+      eq(schema.syncedMeeting.vaultId, vaultId), readable(schema.syncedMeeting.vaultId),
+    ))));
+  }
+
+  async function getSummaryVersion(vaultId: string, meetingId: string, version?: number) {
+    const [row] = await db.select().from(schema.summary).where(and(
+      readableSummary(vaultId, meetingId),
+      version === undefined ? undefined : eq(schema.summary.version, version),
+    )).orderBy(desc(schema.summary.version)).limit(1);
+    return row ?? null;
+  }
+
   async function canonicalRecord(
     entity: SyncCanonicalRecord["entity"],
     vaultId: string,
@@ -785,22 +802,24 @@ function createIdentityStore(
         eq(schema.syncedMeeting.meetingId, entityId),
         canAccess(schema.syncedMeeting.vaultId),
       )).limit(1);
-      const revision = entity === "summary"
-        ? record?.summaryRevision
-        : entity === "transcript"
-          ? record?.transcriptRevision
-          : record?.revision;
-      const value = entity === "summary" && record
-        ? {
-            meetingId: record.meetingId,
-            title: record.summaryTitle,
-            document: record.summaryDocument,
-            createdAt: record.summaryCreatedAt,
-          }
-        : entity === "transcript" && record
-          ? { meetingId: record.meetingId }
-          : record;
-      return { entity, id: entityId, revision: revision ?? null, record: value ?? null };
+      if (!record) return { entity, id: entityId, revision: null, record: null };
+      if (entity === "transcript") {
+        return { entity, id: entityId, revision: record.transcriptRevision ?? null,
+          record: { meetingId: record.meetingId } };
+      }
+      const summary = await getSummaryVersion(vaultId, entityId);
+      if (entity === "summary") {
+        return { entity, id: entityId, revision: record.summaryRevision ?? null, record: {
+          meetingId: record.meetingId,
+          id: summary?.id ?? null,
+          version: summary?.version ?? null,
+          title: summary?.title ?? null,
+          document: summary?.document ?? null,
+          createdAt: summary?.createdAt ?? null,
+        } };
+      }
+      return { entity, id: entityId, revision: record.revision ?? null,
+        record: { ...record, hasSummary: summary !== null } };
     }
     if (entity === "recording") {
       const [record] = await db.select().from(schema.syncedRecording).where(and(
@@ -1326,22 +1345,15 @@ function createIdentityStore(
       } else if (operation.entity === "summary") {
         await assertRevision(transaction, "summary", operation.entityId, operation.baseRevision);
         if (operation.action === "delete") {
-          await db.delete(schema.summaryVersion).where(and(eq(schema.summaryVersion.vaultId, transaction.vaultId), eq(schema.summaryVersion.meetingId, operation.entityId)));
+          await db.delete(schema.summary).where(readableSummary(transaction.vaultId, operation.entityId));
         } else {
+          const latest = await getSummaryVersion(transaction.vaultId, operation.entityId);
           const metadata = summaryMetadata(String(data.document));
-          await db.insert(schema.summaryVersion).values({ vaultId: transaction.vaultId, meetingId: operation.entityId,
-            revision: Number(operation.baseRevision) + 1, title: String(data.title), document: String(data.document),
+          await db.insert(schema.summary).values({ id: uuidV7(), meetingId: operation.entityId,
+            version: (latest?.version ?? 0) + 1, title: String(data.title), document: String(data.document),
             createdAt: data.createdAt as Date, savedAt: now, metadata });
         }
-        await db.update(schema.syncedMeeting).set(operation.action === "delete" ? {
-          summaryTitle: null,
-          summaryDocument: null,
-          summaryCreatedAt: null,
-          summaryRevision: sql`${schema.syncedMeeting.summaryRevision} + 1`,
-        } : {
-          summaryTitle: String(data.title),
-          summaryDocument: String(data.document),
-          summaryCreatedAt: data.createdAt as Date,
+        await db.update(schema.syncedMeeting).set({
           summaryRevision: sql`${schema.syncedMeeting.summaryRevision} + 1`,
         }).where(ownedMeeting(transaction.vaultId, operation.entityId));
       } else if (operation.entity === "transcript") {
@@ -1789,7 +1801,7 @@ function createIdentityStore(
         : entity === "meeting_file" ? { table: schema.meetingFile, id: schema.meetingFile.id, active: undefined }
           : { table: schema.syncedMeeting, id: schema.syncedMeeting.meetingId, active: and(
               eq(schema.syncedMeeting.active, true), isNull(schema.syncedMeeting.deletingAt),
-              entity === "summary" ? isNotNull(schema.syncedMeeting.summaryDocument) : undefined,
+              entity === "summary" ? exists(db.select({ id: schema.summary.id }).from(schema.summary).where(eq(schema.summary.meetingId, schema.syncedMeeting.meetingId))) : undefined,
               entity === "transcript" ? gt(schema.syncedMeeting.transcriptRevision, 0) : undefined,
             ) };
       const rows = await db.select({ id: source.id }).from(source.table).where(and(
@@ -1806,19 +1818,13 @@ function createIdentityStore(
   }
 
   return {
+    getSummaryVersion,
     async listSummaryVersions(vaultId, meetingId, limit, before) {
-      const columns = schema.summaryVersion;
-      return db.select({ vaultId: columns.vaultId, meetingId: columns.meetingId, revision: columns.revision,
-        title: columns.title, createdAt: columns.createdAt, savedAt: columns.savedAt, metadata: columns.metadata }).from(schema.summaryVersion).where(and(
-        readable(schema.summaryVersion.vaultId), eq(schema.summaryVersion.vaultId, vaultId), eq(schema.summaryVersion.meetingId, meetingId),
-        before === undefined ? undefined : lt(schema.summaryVersion.revision, before),
-      )).orderBy(desc(schema.summaryVersion.revision)).limit(limit);
-    },
-    async getSummaryVersion(vaultId, meetingId, revision) {
-      const [row] = await db.select().from(schema.summaryVersion).where(and(
-        readable(schema.summaryVersion.vaultId), eq(schema.summaryVersion.vaultId, vaultId), eq(schema.summaryVersion.meetingId, meetingId), eq(schema.summaryVersion.revision, revision),
-      ));
-      return row ?? null;
+      const columns = schema.summary;
+      return db.select({ id: columns.id, meetingId: columns.meetingId, version: columns.version,
+        title: columns.title, createdAt: columns.createdAt, savedAt: columns.savedAt, metadata: columns.metadata }).from(schema.summary).where(and(
+        readableSummary(vaultId, meetingId), before === undefined ? undefined : lt(columns.version, before),
+      )).orderBy(desc(columns.version)).limit(limit);
     },
     async getSummaryJob(vaultId, meetingId, id) {
       const [row] = await db.select().from(schema.summaryJob).where(and(
@@ -2387,9 +2393,9 @@ function meetingSelection(schema: SyncSchema) {
     )`.mapWith(Boolean),
     createdAt: schema.syncedMeeting.createdAt,
     updatedAt: schema.syncedMeeting.updatedAt,
-    summaryTitle: schema.syncedMeeting.summaryTitle,
-    summaryDocument: schema.syncedMeeting.summaryDocument,
-    summaryCreatedAt: schema.syncedMeeting.summaryCreatedAt,
+    summaryTitle: sql<string | null>`(select ${schema.summary.title} from ${schema.summary} where ${schema.summary.meetingId} = ${schema.syncedMeeting.meetingId} order by ${schema.summary.version} desc limit 1)`,
+    summaryDocument: sql<string | null>`(select ${schema.summary.document} from ${schema.summary} where ${schema.summary.meetingId} = ${schema.syncedMeeting.meetingId} order by ${schema.summary.version} desc limit 1)`,
+    summaryCreatedAt: sql<Date | null>`(select ${schema.summary.createdAt} from ${schema.summary} where ${schema.summary.meetingId} = ${schema.syncedMeeting.meetingId} order by ${schema.summary.version} desc limit 1)`.mapWith(schema.summary.createdAt),
     revision: schema.syncedMeeting.revision,
     summaryRevision: schema.syncedMeeting.summaryRevision,
     transcriptRevision: schema.syncedMeeting.transcriptRevision,

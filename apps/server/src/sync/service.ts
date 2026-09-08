@@ -489,18 +489,18 @@ export class MeetingSyncService {
       if (!await scoped.getMeeting(vaultId, meetingId)) throw new SyncTransactionError(404, "meeting_not_found");
       const rows = await scoped.listSummaryVersions(vaultId, meetingId, parsed.data.limit + 1, parsed.data.cursor);
       const items = rows.slice(0, parsed.data.limit);
-      return { items, nextCursor: rows.length > parsed.data.limit ? String(items.at(-1)!.revision) : null };
+      return { items, nextCursor: rows.length > parsed.data.limit ? String(items.at(-1)!.version) : null };
     });
   }
 
-  async summaryVersion(identity: Identity, vaultId: string, meetingId: string, revision: string) {
-    const revisionNumber = Number(revision);
-    if (!/^\d+$/.test(revision) || !Number.isSafeInteger(revisionNumber) || revisionNumber > 2147483647) {
-      throw new SyncTransactionError(400, "invalid_summary_revision");
+  async summaryVersion(identity: Identity, vaultId: string, meetingId: string, version: string) {
+    const versionNumber = Number(version);
+    if (!/^\d+$/.test(version) || !Number.isSafeInteger(versionNumber) || versionNumber > 2147483647) {
+      throw new SyncTransactionError(400, "invalid_summary_version");
     }
     return this.store.withIdentity(identity, async (scoped) => {
       if (!await scoped.getMeeting(vaultId, meetingId)) throw new SyncTransactionError(404, "meeting_not_found");
-      const version = await scoped.getSummaryVersion(vaultId, meetingId, revisionNumber);
+      const version = await scoped.getSummaryVersion(vaultId, meetingId, versionNumber);
       if (!version) throw new SyncTransactionError(404, "summary_version_not_found");
       return version;
     });

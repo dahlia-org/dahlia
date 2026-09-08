@@ -20,7 +20,7 @@
             let second = try page([fixture.fileChange(revision: 2)], cursor: "after")
             let cursors = Mutex<[String]>([])
             let client = fixture.client { request in
-                if request.url!.path.hasSuffix("capabilities") { return (200, [:], Data("{\"sync\":{\"version\":3},\"meetingEvents\":{\"version\":1}}".utf8)) }
+                if request.url!.path.hasSuffix("capabilities") { return (200, [:], Data("{\"sync\":{\"version\":4},\"meetingEvents\":{\"version\":1}}".utf8)) }
                 let cursor = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!.queryItems!.first { $0.name == "cursor" }!.value!
                 cursors.withLock { $0.append(cursor) }
                 return (200, [:], cursor == "before" ? first : second)
@@ -77,7 +77,7 @@
                 ]),
             ], cursor: "after")
             let client = fixture.client { request in
-                (200, [:], request.url!.path.hasSuffix("capabilities") ? Data("{\"sync\":{\"version\":3},\"meetingEvents\":{\"version\":1}}".utf8) : changes)
+                (200, [:], request.url!.path.hasSuffix("capabilities") ? Data("{\"sync\":{\"version\":4},\"meetingEvents\":{\"version\":1}}".utf8) : changes)
             }
             defer { ImageURLProtocol.remove(origin: fixture.origin) }
             await #expect(throws: TextContentError.changed) {
@@ -100,7 +100,7 @@
             let gate = Gate()
             let changes = try page([fixture.fileChange(revision: 2, action: "delete")], cursor: "after")
             var client = fixture.client { request in
-                (200, [:], request.url!.path.hasSuffix("capabilities") ? Data("{\"sync\":{\"version\":3},\"meetingEvents\":{\"version\":1}}".utf8) : changes)
+                (200, [:], request.url!.path.hasSuffix("capabilities") ? Data("{\"sync\":{\"version\":4},\"meetingEvents\":{\"version\":1}}".utf8) : changes)
             }
             client.tokenProvider = { _, _ in await gate.wait()
                 return "test"
@@ -223,7 +223,7 @@
             ])
             let snapshots = Mutex(0)
             let client = fixture.client { request in
-                if request.url!.path.hasSuffix("capabilities") { return (200, [:], Data("{\"sync\":{\"version\":3},\"meetingEvents\":{\"version\":1}}".utf8)) }
+                if request.url!.path.hasSuffix("capabilities") { return (200, [:], Data("{\"sync\":{\"version\":4},\"meetingEvents\":{\"version\":1}}".utf8)) }
                 if request.url!.path.hasSuffix("snapshot") {
                     snapshots.withLock { $0 += 1 }
                     return (200, [:], snapshot)
@@ -264,7 +264,7 @@
             let projects = try JSONSerialization.data(withJSONObject: ["items": [fields]])
             let snapshots = Mutex(0)
             let client = fixture.client { request in
-                if request.url!.path.hasSuffix("capabilities") { return (200, [:], Data("{\"sync\":{\"version\":3},\"meetingEvents\":{\"version\":1}}".utf8)) }
+                if request.url!.path.hasSuffix("capabilities") { return (200, [:], Data("{\"sync\":{\"version\":4},\"meetingEvents\":{\"version\":1}}".utf8)) }
                 if request.url!.path.hasSuffix("projects") {
                     snapshots.withLock { $0 += 1 }
                     return (200, [:], projects)
@@ -297,7 +297,7 @@
                 "revision": 1, "summaryRevision": 1, "transcriptRevision": 0, "contentOmitted": true, "hasSummary": true,
             ])
             let client = fixture.client { request in
-                if request.url!.path.hasSuffix("capabilities") { return (200, [:], Data("{\"sync\":{\"version\":3},\"meetingEvents\":{\"version\":1}}".utf8)) }
+                if request.url!.path.hasSuffix("capabilities") { return (200, [:], Data("{\"sync\":{\"version\":4},\"meetingEvents\":{\"version\":1}}".utf8)) }
                 if request.url!.path.hasSuffix("changes") { return (200, [:], changes) }
                 #expect(request.url!
                     .path == "/api/v1/vaults/\(fixture.vaultId.uuidString.lowercased())/meetings/\(meetingId.uuidString.lowercased())")
@@ -345,7 +345,7 @@
             ])
             let calls = Mutex(0)
             let client = fixture.client { request in
-                if request.url!.path.hasSuffix("capabilities") { return (200, [:], Data(#"{"sync":{"version":3}}"#.utf8)) }
+                if request.url!.path.hasSuffix("capabilities") { return (200, [:], Data(#"{"sync":{"version":4}}"#.utf8)) }
                 if request.url!.path.hasSuffix("changes") { return (200, [:], changes) }
                 calls.withLock { $0 += 1 }
                 #expect(request.url!.path == "/api/v1/files/\(fileId.uuidString.lowercased())/metadata")
@@ -390,7 +390,7 @@
             )
             let changes = try page([summary, fixture.fileChange(revision: 2)], cursor: "after")
             let client = fixture.client { request in
-                if request.url!.path.hasSuffix("capabilities") { return (200, [:], Data("{\"sync\":{\"version\":3},\"meetingEvents\":{\"version\":1}}".utf8)) }
+                if request.url!.path.hasSuffix("capabilities") { return (200, [:], Data("{\"sync\":{\"version\":4},\"meetingEvents\":{\"version\":1}}".utf8)) }
                 #expect(request.url!.path.hasSuffix("changes"))
                 return (200, [:], changes)
             }
@@ -440,7 +440,7 @@
             let second = try page([fixture.fileChange(revision: 2)], cursor: "after")
             let fail = Mutex(true)
             let client = fixture.client { request in
-                if request.url!.path.hasSuffix("capabilities") { return (200, [:], Data("{\"sync\":{\"version\":3},\"meetingEvents\":{\"version\":1}}".utf8)) }
+                if request.url!.path.hasSuffix("capabilities") { return (200, [:], Data("{\"sync\":{\"version\":4},\"meetingEvents\":{\"version\":1}}".utf8)) }
                 if request.url!.query!.contains("cursor=before") { return (200, [:], first) }
                 return fail.withLock { $0 } ? (503, [:], Data()) : (200, [:], second)
             }

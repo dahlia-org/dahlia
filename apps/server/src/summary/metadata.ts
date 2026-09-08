@@ -34,9 +34,9 @@ export function summaryMetadata(document: string): SummaryMetadata | null {
 }
 
 export interface SummaryVersion {
-  vaultId: string;
+  id: string;
   meetingId: string;
-  revision: number;
+  version: number;
   title: string;
   document: string;
   createdAt: Date | null;

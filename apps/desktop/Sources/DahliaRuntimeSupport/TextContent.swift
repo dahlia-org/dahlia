@@ -49,6 +49,34 @@ public struct TextContentManifest: Codable, Equatable, Sendable {
     public let byteCount: Int
     public let sha256: String
 
+    private enum CodingKeys: String, CodingKey {
+        case version, formatVersion, entity, entityId, revision, present, count, byteCount, sha256
+    }
+
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        entity = try values.decode(TextContentEntity.self, forKey: .entity)
+        entityId = try values.decode(UUID.self, forKey: .entityId)
+        version = try values.decode(Int.self, forKey: entity == .summary ? .formatVersion : .version)
+        revision = try values.decode(Int.self, forKey: .revision)
+        present = try values.decode(Bool.self, forKey: .present)
+        count = try values.decode(Int.self, forKey: .count)
+        byteCount = try values.decode(Int.self, forKey: .byteCount)
+        sha256 = try values.decode(String.self, forKey: .sha256)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var values = encoder.container(keyedBy: CodingKeys.self)
+        try values.encode(entity, forKey: .entity)
+        try values.encode(entityId, forKey: .entityId)
+        try values.encode(version, forKey: entity == .summary ? .formatVersion : .version)
+        try values.encode(revision, forKey: .revision)
+        try values.encode(present, forKey: .present)
+        try values.encode(count, forKey: .count)
+        try values.encode(byteCount, forKey: .byteCount)
+        try values.encode(sha256, forKey: .sha256)
+    }
+
     public init(version: Int, entity: TextContentEntity, entityId: UUID, revision: Int, present: Bool, count: Int, byteCount: Int, sha256: String) {
         self.version = version
         self.entity = entity

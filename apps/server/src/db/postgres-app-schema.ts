@@ -162,9 +162,6 @@ export const syncedMeeting = appSchema.table("meetings", {
   recordingStartedAt: timestamp("recording_started_at"),
   createdAt: timestamp("created_at").notNull(),
   updatedAt: timestamp("updated_at").notNull(),
-  summaryTitle: text("summary_title"),
-  summaryDocument: text("summary_document"),
-  summaryCreatedAt: timestamp("summary_created_at"),
   revision: integer("revision").default(1).notNull(),
   summaryRevision: integer("summary_revision").default(0).notNull(),
   transcriptRevision: integer("transcript_revision").default(0).notNull(),
@@ -585,18 +582,18 @@ export const summaryJob = appSchema.table("summary_jobs", {
   }),
 ]).enableRLS();
 
-export const summaryVersion = appSchema.table("summary_versions", {
-  vaultId: uuid("vault_id").notNull(),
+export const summary = appSchema.table("summaries", {
+  id: uuid("id").primaryKey(),
   meetingId: uuid("meeting_id").notNull(),
-  revision: integer("revision").notNull(),
+  version: integer("version").notNull(),
   title: text("title").notNull(),
   document: text("document").notNull(),
   createdAt: timestamp("created_at"),
   savedAt: timestamp("saved_at").notNull(),
   metadata: jsonb("metadata").$type<SummaryMetadata>(),
 }, (table) => [
-  primaryKey({ columns: [table.meetingId, table.revision] }),
-  foreignKey({ columns: [table.vaultId, table.meetingId], foreignColumns: [syncedMeeting.vaultId, syncedMeeting.meetingId] }).onDelete("cascade"),
-  pgPolicy("summary_version_select", { for: "select", using: sql`"app"."current_identity_can_read_vault"(${table.vaultId})` }),
-  pgPolicy("summary_version_write", { for: "all", using: sql`"app"."current_identity_owns_vault"(${table.vaultId})`, withCheck: sql`"app"."current_identity_owns_vault"(${table.vaultId})` }),
+  unique("summary_meeting_version_unique").on(table.meetingId, table.version),
+  foreignKey({ columns: [table.meetingId], foreignColumns: [syncedMeeting.meetingId] }).onDelete("cascade"),
+  pgPolicy("summary_select", { for: "select", using: sql`EXISTS (SELECT 1 FROM "app"."meetings" m WHERE m.meeting_id = ${table.meetingId} AND "app"."current_identity_can_read_vault"(m.vault_id))` }),
+  pgPolicy("summary_write", { for: "all", using: sql`EXISTS (SELECT 1 FROM "app"."meetings" m WHERE m.meeting_id = ${table.meetingId} AND "app"."current_identity_owns_vault"(m.vault_id))`, withCheck: sql`EXISTS (SELECT 1 FROM "app"."meetings" m WHERE m.meeting_id = ${table.meetingId} AND "app"."current_identity_owns_vault"(m.vault_id))` }),
 ]).enableRLS();

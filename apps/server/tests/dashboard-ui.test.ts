@@ -34,16 +34,17 @@ describe("desktop-style meeting layout", () => {
         request: { model: "first-model", reasoning: { effort: "low" } }, response: { usage: { input_tokens: 10 } } } });
     const latest = JSON.stringify({ title: "New", sections: [{ heading: "", blocks: [{ type: "paragraph", content: { text: "Current result" } }] }] });
     const ready = { error: undefined, loading: false, reload: vi.fn(), replace: vi.fn() };
-    query.mockReturnValue({ ...ready, data: { revision: 1, title: "Old", document: old } });
-    page.mockReturnValue({ ...ready, data: { items: [{ revision: 1, savedAt: "2026-09-08T00:00:00Z" }] }, loadingMore: false, loadMore: vi.fn() });
+    query.mockReturnValue({ ...ready, data: { version: 1, title: "Old", document: old } });
+    page.mockReturnValue({ ...ready, data: { items: [{ version: 1, savedAt: "2026-09-08T00:00:00Z" }] }, loadingMore: false, loadMore: vi.fn() });
     try {
       for (const [language, label] of [["ja-JP", "過去版（閲覧のみ）"], ["en-US", "Read-only version"]]) {
         vi.stubGlobal("navigator", { language });
         const render = (selected: number | null) => renderToStaticMarkup(createElement(SummaryHistory, {
-          base: "/api/v1/vaults/v/meetings/m", latest: { revision: 2, present: true, record: { title: "New", document: latest, createdAt: null } },
+          base: "/api/v1/vaults/v/meetings/m", latest: { version: 7, revision: 2, present: true, record: { title: "New", document: latest, createdAt: null } },
           selected, onSelect: vi.fn(),
         }));
         expect(render(null)).toContain("Current result");
+        expect(render(null)).toContain("v7");
         expect(render(null)).not.toContain("Previous result");
         const historical = render(1);
         expect(page).toHaveBeenCalledWith("/api/v1/vaults/v/meetings/m/summary");
