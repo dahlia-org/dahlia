@@ -46,15 +46,6 @@ actor ServerSummaryService {
     }
 
     private struct Response: Decodable { let job: Job? }
-    private struct Capabilities: Decodable {
-        struct SummaryGeneration: Decodable {
-            let version: Int
-            let methods: [String]
-        }
-
-        let summaryGeneration: SummaryGeneration?
-    }
-
     private struct Start: Encodable { let id: String
         let detail: String?
     }
@@ -99,8 +90,9 @@ actor ServerSummaryService {
     func methods(connectionID: UUID, origin: String) async throws -> [String] {
         let request = try request(origin: origin, path: "/api/v1/capabilities")
         let data = try await client.data(for: request, connectionId: connectionID, maximumBytes: 8192)
-        let summary = try JSONDecoder().decode(Capabilities.self, from: data).summaryGeneration
-        return summary?.version == 1 ? summary?.methods ?? [] : []
+        let summary = try JSONDecoder().decode(ServerCapabilities.self, from: data).meetingSummaryGeneration
+        guard let summary, summary.version == 1 else { return [] }
+        return summary.sources
     }
 
     func models(connectionID: UUID, origin: String) async throws -> [Model] {

@@ -35,7 +35,7 @@
             let paths = Mutex<[String]>([])
             let provider = fixture.provider { request in
                 paths.withLock { $0.append(request.url!.path) }
-                if request.url!.path == "/api/v1/capabilities" { return (200, [:], Data(#"{"searchVersion":1}"#.utf8)) }
+                if request.url!.path == "/api/v1/capabilities" { return (200, [:], Data(#"{"search":{"version":1}}"#.utf8)) }
                 #expect(request.httpMethod == "POST")
                 return (200, [:], response)
             }
@@ -88,7 +88,7 @@
             }
             let response = try fixture.response(meetings: [])
             let provider = fixture.provider { request in
-                if request.url!.path == "/api/v1/capabilities" { return (200, [:], Data(#"{"searchVersion":1}"#.utf8)) }
+                if request.url!.path == "/api/v1/capabilities" { return (200, [:], Data(#"{"search":{"version":1}}"#.utf8)) }
                 return (200, [:], response)
             }
             defer { ImageURLProtocol.remove(origin: fixture.origin) }
@@ -168,7 +168,7 @@
                 ]]
             )
             let provider = fixture.provider { request in
-                if request.url!.path == "/api/v1/capabilities" { return (200, [:], Data(#"{"searchVersion":1}"#.utf8)) }
+                if request.url!.path == "/api/v1/capabilities" { return (200, [:], Data(#"{"search":{"version":1}}"#.utf8)) }
                 return (200, [:], response)
             }
             defer { ImageURLProtocol.remove(origin: fixture.origin) }
@@ -217,7 +217,7 @@
                 "date": "2026-09-03T00:00:00Z", "snippet": "",
             ]])
             let provider = fixture.provider { request in
-                if request.url!.path == "/api/v1/capabilities" { return (200, [:], Data(#"{"searchVersion":1}"#.utf8)) }
+                if request.url!.path == "/api/v1/capabilities" { return (200, [:], Data(#"{"search":{"version":1}}"#.utf8)) }
                 return (200, [:], response)
             }
             defer { ImageURLProtocol.remove(origin: fixture.origin) }
@@ -251,7 +251,7 @@
             let provider = fixture.provider { request in
                 if offline.withLock({ $0 }) { return (503, [:], Data()) }
                 if request.url!.path == "/api/v1/capabilities" {
-                    return (200, [:], Data((supported.withLock { $0 } ? #"{"searchVersion":1}"# : #"{}"#).utf8))
+                    return (200, [:], Data((supported.withLock { $0 } ? #"{"search":{"version":1}}"# : #"{}"#).utf8))
                 }
                 do {
                     try fixture.queue.write { db in
@@ -288,7 +288,7 @@
                 "title": "Server", "date": "2026-09-03T00:00:00Z", "snippet": "",
             ]])
             let provider = fixture.provider { request in
-                if request.url!.path == "/api/v1/capabilities" { return (200, [:], Data(#"{"searchVersion":1}"#.utf8)) }
+                if request.url!.path == "/api/v1/capabilities" { return (200, [:], Data(#"{"search":{"version":1}}"#.utf8)) }
                 return (200, [:], response)
             }
             defer { ImageURLProtocol.remove(origin: fixture.origin) }
@@ -352,7 +352,7 @@
             }
             let response = try fixture.response(meetings: [])
             let provider = fixture.provider { request in
-                if request.url!.path == "/api/v1/capabilities" { return (200, [:], Data(#"{"searchVersion":1}"#.utf8)) }
+                if request.url!.path == "/api/v1/capabilities" { return (200, [:], Data(#"{"search":{"version":1}}"#.utf8)) }
                 return (200, [:], response)
             }
             defer { ImageURLProtocol.remove(origin: fixture.origin) }

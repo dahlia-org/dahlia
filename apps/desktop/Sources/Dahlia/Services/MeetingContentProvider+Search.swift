@@ -56,12 +56,11 @@ extension MeetingContentProvider {
               let origin = URL(string: source.origin),
               let capabilitiesURL = URL(string: "/api/v1/capabilities", relativeTo: origin)?.absoluteURL,
               let searchURL = URL(string: "/api/v1/search", relativeTo: origin)?.absoluteURL else { throw TextContentError.unavailable }
-        struct Capabilities: Decodable { let searchVersion: Int? }
         let capabilities = try await client.data(
             for: URLRequest(url: capabilitiesURL, cachePolicy: .reloadIgnoringLocalCacheData),
             connectionId: source.connectionId, maximumBytes: 8192
         )
-        guard try JSONDecoder().decode(Capabilities.self, from: capabilities).searchVersion == 1 else { throw TextContentError.unavailable }
+        guard try JSONDecoder().decode(ServerCapabilities.self, from: capabilities).search?.version == 1 else { throw TextContentError.unavailable }
         struct Body: Encodable {
             let vaultId: UUID
             let query: String

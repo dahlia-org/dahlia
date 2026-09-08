@@ -387,7 +387,7 @@ actor SyncWorker {
                 connectionId: transaction.connectionId
             )
             let capabilities = try decode(ServerCapabilities.self, from: data)
-            if capabilities.meetingEventsVersion != 1 {
+            if capabilities.meetingEvents?.version != 1 {
                 // A downgraded Server must not block unrelated durable content behind unsupported diagnostics.
                 try await dbQueue.write { db in
                     guard try SyncTransactionQueue.matchesExpectedConnection(
@@ -687,10 +687,10 @@ actor SyncWorker {
                 connectionId: target.connectionId
             )
             let capabilities = try decode(ServerCapabilities.self, from: data)
-            guard capabilities.syncVersion == 3 else {
+            guard capabilities.sync?.version == 3 else {
                 throw SyncHTTPError(status: 426, body: Data())
             }
-            let meetingEventsVersion = capabilities.meetingEventsVersion == 1 ? 1 : 0
+            let meetingEventsVersion = capabilities.meetingEvents?.version == 1 ? 1 : 0
             try await dbQueue.write { db in
                 guard try SyncTransactionQueue.matchesExpectedConnection(
                     vaultId: target.vaultId, connectionId: target.connectionId, in: db
@@ -1340,9 +1340,21 @@ actor SyncWorker {
 }
 
 struct ServerCapabilities: Decodable {
-    let syncVersion: Int?
-    let meetingEventsVersion: Int?
-    let recordingAudioVersion: Int?
+    struct Feature: Decodable {
+        let version: Int
+    }
+
+    struct MeetingSummaryGeneration: Decodable {
+        let version: Int
+        let sources: [String]
+    }
+
+    let sync: Feature?
+    let recordingArchive: Feature?
+    let meetingEvents: Feature?
+    let search: Feature?
+    let imageAnalysis: Feature?
+    let meetingSummaryGeneration: MeetingSummaryGeneration?
 }
 
 private extension UUID {

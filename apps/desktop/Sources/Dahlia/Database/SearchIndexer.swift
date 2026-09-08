@@ -635,8 +635,7 @@ private extension SearchIndexer {
         } catch let error as SyncHTTPError where error.status == 404 {
             return false // Older servers use device analysis.
         }
-        struct Capabilities: Decodable { let imageAnalysis: Bool? }
-        return try JSONDecoder().decode(Capabilities.self, from: data).imageAnalysis == true
+        return try JSONDecoder().decode(ServerCapabilities.self, from: data).imageAnalysis?.version == 1
     }
 
     func storeScreenshotAnalyses(_ results: [ScreenshotAnalysis], generation: Int, expectedConnectionId: UUID?) async throws {
