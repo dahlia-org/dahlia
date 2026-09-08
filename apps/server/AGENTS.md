@@ -4,7 +4,7 @@
 
 This file applies to `apps/server`. The repository-root `AGENTS.md` still applies; this file adds only Server-specific guidance.
 
-Dahlia Server is the SaaS backend and canonical data service for Server accounts, with a Private Web client, authentication, Vault sharing, search, an AI Gateway, and artifact storage. Desktop and Web update the same Server records; Desktop SQLite is an offline working copy, as in Notion. Preserve tenant isolation, durable data, public APIs, and runtime portability. Local accounts remain standalone, and recording and finalized-transcript persistence must never wait for network access.
+Dahlia Server is the SaaS backend and canonical data service for Server accounts, with a Private Web client, authentication, Vault sharing, search, an AI Gateway, and object storage. Desktop and Web update the same Server records; Desktop SQLite is an offline working copy, as in Notion. Preserve tenant isolation, durable data, public APIs, and runtime portability. Local accounts remain standalone, and recording and finalized-transcript persistence must never wait for network access.
 
 ## Reference Routing
 
@@ -23,7 +23,7 @@ Use progressive disclosure. Read the closest implementation first, then only the
 | Databricks deployment or Lakebase setup | [`deploy/databricks/README.md`](../../deploy/databricks/README.md) |
 | Databricks forwarded user token | [Upstream identity](../../docs/adr/server/databricks.md#upstream-identity) |
 | Databricks model discovery | [Upstream identity](../../docs/adr/server/databricks.md#upstream-identity) |
-| Artifact authorization, storage, IDs, or public URLs | [Ownership と storage](../../docs/adr/server/artifacts.md#ownership-と-storage), [API と ID](../../docs/adr/server/artifacts.md#api-と-id) |
+| Files and recording storage or HTTP reads | [Shared sync](../../docs/adr/shared/sync.md), then the affected `src/storage` adapter |
 | Dependencies, lockfiles, packaging, or deployment source layout | [アプリ単位の依存管理](../../docs/adr/monorepo/dependencies.md) |
 
 Use the [ADR index](../../docs/adr/README.md) only when historical rationale or a contract change requires it. Do not read unrelated ADRs by default.
@@ -34,7 +34,7 @@ Use the [ADR index](../../docs/adr/README.md) only when historical rationale or 
 - `src/node.ts` owns Node startup, static serving, Node storage adapters, and graceful shutdown. Keep it on HTTP/1.1; deployment edge proxies terminate HTTP/2 or HTTP/3.
 - `src/worker.ts` owns Worker bindings and workerd initialization. Do not import Node-only modules into the Worker graph.
 - The package root export must remain Worker-safe. Export Node-only APIs through `@dahlia-ai/server/node`. Treat package exports and extension hooks as versioned public contracts.
-- Keep database, authentication, AI provider, and artifact storage selection independent. Add deployment-specific behavior behind the existing adapter boundary.
+- Keep database, authentication, AI provider, and object storage selection independent. Add deployment-specific behavior behind the existing adapter boundary.
 - Keep authenticated application routes under `/api/**` and the Codex-compatible contract under `/api/v1/**`.
 
 ## Canonical Data and Client Synchronization
@@ -50,13 +50,13 @@ Use the [ADR index](../../docs/adr/README.md) only when historical rationale or 
 ## Security and Data Contracts
 
 - Never put user content, tool input/output, bearer tokens, provider/storage credentials, or local paths in diagnostic logs. Logs may include bounded event names, status codes, and upstream request IDs.
-- Relay Gateway Responses request and response bodies without persisting their content. This relay restriction does not prohibit authorized canonical content or artifact storage. Better Auth may persist the session, token, and signing material its authentication contract requires; protect it as credential data.
+- Relay Gateway Responses request and response bodies without persisting their content. This relay restriction does not prohibit authorized canonical content or recording storage. Better Auth may persist the session, token, and signing material its authentication contract requires; protect it as credential data.
 - Read provider and infrastructure credentials from runtime secrets. Keep them separate from application content and application configuration.
-- Enforce request byte limits before parsing or buffering. Stream Responses and artifact bodies without buffering the complete payload.
+- Enforce request byte limits before parsing or buffering. Stream Responses and file/audio bodies without buffering the complete payload.
 - Header authentication is safe only behind a proxy that strips client-supplied identity headers, writes verified values, and prevents direct Server access. Do not weaken that deployment requirement with trust-by-header fallback logic.
 - With the Databricks backend, use `X-Forwarded-Access-Token` only for the current Responses request. Do not store, log, cache, return, or forward that header by name. Model discovery uses the App service principal and must not use the forwarded token.
 - Personal workspaces are deterministic identity claims. Organization and Team sharing must preserve personal Vault ownership and read-only member access; do not add per-organization providers or shared write access without an approved product and architecture decision.
-- Artifact IDs remain server-generated UUIDv7 values, owner-scoped, and default-private. Preserve authorization-before-storage access, streamed reads, the CSP sandbox, and non-disclosure of storage URLs and credentials.
+- Files and recording reads require current Vault access before storage access or conditional responses. Preserve streaming, the file CSP sandbox, and non-disclosure of storage credentials. Artifact publishing is retired.
 
 ## Database and Migrations
 
@@ -67,7 +67,6 @@ Use the [ADR index](../../docs/adr/README.md) only when historical rationale or 
 - Better Auth tables live in the PostgreSQL `auth` schema and are outside the application RLS policy. SQLite and D1 have no schema namespaces, so their Better Auth tables remain top-level. Do not add RLS or hand-written DDL to generated Better Auth declarations.
 - PostgreSQL tables containing Dahlia-owned user content require declaratively defined RLS policies in addition to application authorization. RLS receives only transaction-local `app.user_id`, resolves organization and Team membership from `auth.member` and `auth.team_member`, and must account for table-owner and privileged-role RLS bypass.
 - SQLite and D1 do not provide PostgreSQL RLS. Keep equivalent owner checks in the shared application/store layer; never remove them because PostgreSQL has RLS.
-- `app.artifact` is exempt from RLS while it contains only authorization/storage metadata and is reachable only through owner-scoped Server operations. Revisit the exemption before storing user content or exposing another database access path.
 - Drizzle Kit owns `drizzle/postgres-auth`, `drizzle/postgres`, and `drizzle/sqlite`. Run `pnpm db:generate` after declarative schema changes, preserve generated snapshots after release, and register each generated `migration.sql` package-relative path in `src/migrations.ts`; add a directory only for an independent migration ledger root.
 - Migration execution is explicit. Do not run production migrations or destructive cleanup as an incidental validation step.
 

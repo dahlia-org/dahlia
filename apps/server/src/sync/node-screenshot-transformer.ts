@@ -1,5 +1,5 @@
 import sharp from "sharp";
-import { DEFAULT_ARTIFACT_MAX_BYTES } from "../config";
+import { MAX_FILE_BYTES } from "../config";
 import type { ScreenshotTransformer } from "./screenshot-variants";
 
 // Native decoding and image buffers stay out of the Worker graph and off the event loop.
@@ -8,7 +8,7 @@ export const transformScreenshot: ScreenshotTransformer = async (source, longEdg
   const bounded = source.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
     transform(chunk, controller) {
       length += chunk.byteLength;
-      if (length > DEFAULT_ARTIFACT_MAX_BYTES) throw new Error("screenshot_too_large");
+      if (length > MAX_FILE_BYTES) throw new Error("screenshot_too_large");
       controller.enqueue(chunk);
     },
   }));

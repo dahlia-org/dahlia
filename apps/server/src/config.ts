@@ -62,7 +62,6 @@ export interface AppConfig {
   storageLocalPath?: string;
   storageS3?: S3StorageConfig;
   storageDatabricksVolumePath?: string;
-  artifactMaxBytes?: number;
   databricksWorkspace?: DatabricksWorkspaceConfig;
   searchEmbedding?: {
     model: string;
@@ -75,10 +74,11 @@ export interface AppConfig {
 const authProviderSchema = z.enum(["accounts", "header"]);
 const databaseTypeSchema = z.enum(["sqlite", "postgres", "lakebase", "hyperdrive", "d1"]);
 const aiBackendSchema = z.enum(["databricks", "cloudflare", "openai"]);
+export const MAX_FILE_BYTES = 64 * 1024 * 1024;
+
 const storageBackendSchema = z.enum(["databricks", "local", "r2", "s3"]);
 const LOCAL_BASE_URL = "http://localhost:5173";
 const LOCAL_DATABASE_URL = "file:.data/dahlia-auth.sqlite";
-export const DEFAULT_ARTIFACT_MAX_BYTES = 64 * 1024 * 1024;
 export const DEFAULT_SEARCH_EMBEDDING_DIMENSIONS = 1024;
 
 function csv(value: string | undefined): string[] {
@@ -198,9 +198,6 @@ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
   if (env.DAHLIA_ADMIN_EMAIL?.trim()) {
     throw new Error("DAHLIA_ADMIN_EMAIL is no longer supported; the first user becomes administrator");
   }
-  if (env.DAHLIA_ARTIFACT_BACKEND?.trim()) {
-    throw new Error("DAHLIA_ARTIFACT_BACKEND was replaced by DAHLIA_STORAGE_BACKEND");
-  }
   const authProvider = authProviderSchema.parse(env.DAHLIA_AUTH_TYPE?.trim() || "accounts");
   const databaseType = databaseTypeSchema.parse(env.DAHLIA_DATABASE_TYPE?.trim() || "sqlite");
   const configuredAppUrl = env.DAHLIA_APP_URL?.trim();
@@ -229,8 +226,6 @@ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
     env,
     storageBackend === "databricks" || aiBackend === "databricks",
   );
-  const artifactMaxBytes = z.coerce.number().int().positive().max(DEFAULT_ARTIFACT_MAX_BYTES)
-    .parse(env.DAHLIA_ARTIFACT_MAX_BYTES ?? String(DEFAULT_ARTIFACT_MAX_BYTES));
   const storageDatabricksVolumePath = storageBackend === "databricks"
     ? required(env, "DAHLIA_STORAGE_DATABRICKS_VOLUME_PATH").replace(/\/$/, "")
     : undefined;
@@ -268,7 +263,6 @@ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
     storageLocalPath: env.DAHLIA_STORAGE_LOCAL_PATH?.trim() || ".data/storage",
     storageS3,
     storageDatabricksVolumePath,
-    artifactMaxBytes,
     databricksWorkspace,
     searchEmbedding,
     captioningModel: env.DAHLIA_CAPTIONING_MODEL?.trim()

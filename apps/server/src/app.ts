@@ -1,5 +1,6 @@
 import { summaryJobResponse, type SummaryService } from "./summary/service";
 import { Hono } from "hono";
+import { TrieRouter } from "hono/router/trie-router";
 import { bodyLimit } from "hono/body-limit";
 import { secureHeaders } from "hono/secure-headers";
 import { streamSSE } from "hono/streaming";
@@ -28,14 +29,9 @@ import {
 } from "./auth/scopes";
 import { EXTERNAL_ORGANIZATION_ID, type AuthStore } from "./auth/store";
 import { mcpResource, type AppConfig } from "./config";
-import {
-  ARTIFACT_METADATA_MEDIA_TYPE,
-  ArtifactRequestError,
-  ArtifactService,
-  artifactResponse,
-} from "./artifacts/service";
-import type { ObjectStorage } from "./artifacts/storage";
-import { createArtifactMcpHandler, MCP_MAX_REQUEST_BYTES } from "./mcp";
+import { RequestError } from "./storage/upload";
+import type { ObjectStorage } from "./storage/storage";
+import { createServerMcpHandler, MCP_MAX_REQUEST_BYTES } from "./mcp";
 import { MeetingSyncService } from "./sync/service";
 import { SCREENSHOT_VARIANTS, type ScreenshotVariant, type ScreenshotTransformer } from "./sync/screenshot-variants";
 import { decodeSyncCursor, SyncStoreUnavailableError, SyncTransactionError } from "./sync/store";
@@ -45,16 +41,11 @@ import type { SearchEmbedder } from "./search/embedding";
 import { gatewayError, GatewayRequestError, GatewayService } from "./ai-gateway/service";
 
 export const AUTH_MAX_REQUEST_BYTES = 64 * 1024;
-const ARTIFACT_PATCH_MAX_REQUEST_BYTES = 1024;
 const SYNC_JSON_MAX_REQUEST_BYTES = 8 * 1024 * 1024;
 const teamInputSchema = z.object({ name: z.string().trim().min(1).max(100) });
 
 export const authBodyLimit = bodyLimit({
   maxSize: AUTH_MAX_REQUEST_BYTES,
-  onError: (context) => context.json({ error: "request_too_large" }, 413),
-});
-const artifactPatchBodyLimit = bodyLimit({
-  maxSize: ARTIFACT_PATCH_MAX_REQUEST_BYTES,
   onError: (context) => context.json({ error: "request_too_large" }, 413),
 });
 const mcpBodyLimit = bodyLimit({
@@ -101,7 +92,7 @@ export interface AppDependencies {
   authStore?: AuthStore;
   syncService?: MeetingSyncService;
   extensions?: readonly DahliaServerExtension[];
-  artifactStorage?: ObjectStorage;
+  objectStorage?: ObjectStorage;
   searchTokenizer?: SearchTokenizer;
   searchEmbedder?: SearchEmbedder;
   screenshotTransformer?: ScreenshotTransformer;
@@ -140,18 +131,6 @@ export function mutationOriginAllowed(request: Request, baseUrl: string): boolea
   return request.headers.get("origin") === new URL(baseUrl).origin;
 }
 
-function acceptsArtifactMetadata(accept: string | undefined): boolean {
-  return accept?.split(",").some((representation) => {
-    const [mediaType, ...parameters] = representation.split(";").map((value) => value.trim());
-    if (mediaType?.toLowerCase() !== ARTIFACT_METADATA_MEDIA_TYPE) return false;
-    const quality = parameters.find((parameter) => /^q\s*=/i.test(parameter));
-    if (!quality) return true;
-    const match = /^q\s*=\s*(\d(?:\.\d+)?)$/i.exec(quality);
-    const value = match ? Number(match[1]) : 0;
-    return value > 0 && value <= 1;
-  }) ?? false;
-}
-
 export function createApp(dependencies: AppDependencies) {
   const { config } = dependencies;
   const app = new Hono<{ Variables: AppVariables }>();
@@ -165,16 +144,15 @@ export function createApp(dependencies: AppDependencies) {
   const extensions = dependencies.extensions ?? [];
   const identities = new IdentityService(config, auth, (identity) => store.ensureIdentityUser(identity));
   const gateway = new GatewayService(config, dependencies.fetch);
-  const artifacts = new ArtifactService(config, store, dependencies.artifactStorage);
   const sync = dependencies.syncService ?? new MeetingSyncService(
     store.sync,
-    dependencies.artifactStorage,
+    dependencies.objectStorage,
     dependencies.searchTokenizer,
     dependencies.searchEmbedder,
     dependencies.screenshotTransformer,
     config.storageBackend === "databricks" ? config.storageDatabricksVolumePath : undefined,
   );
-  const mcp = createArtifactMcpHandler(config, artifacts, sync);
+  const mcp = createServerMcpHandler(config, sync);
   const mcpMetadataUrl = `${config.baseUrl}/.well-known/oauth-protected-resource/mcp`;
   const mcpRequestAuth = auth
     ? (request: Request) => authenticateMcpRequest(
@@ -340,60 +318,6 @@ export function createApp(dependencies: AppDependencies) {
     return revoked ? context.body(null, 204) : context.json({ error: "session_not_found" }, 404);
   });
 
-  app.get("/api/v1/artifacts", async (context) => {
-    const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
-    const page = await artifacts.list(identity.workspaceId, context.req.query("cursor"));
-    return context.json({
-      items: page.items.map(artifactResponse),
-      ...(page.nextCursor ? { nextCursor: page.nextCursor } : {}),
-    });
-  });
-  app.post("/api/v1/artifacts", async (context) => {
-    const identity = await identities.fromGateway(context.req.raw, ALL_APIS_SCOPE);
-    const artifact = await artifacts.create(identity, context.req.raw);
-    return context.json({
-      ...artifactResponse(artifact),
-      viewerUrl: `${config.baseUrl}/artifacts/${artifact.id}`,
-    }, 201, {
-      Location: `${config.baseUrl}/api/v1/artifacts/${artifact.id}`,
-    });
-  });
-  app.on(["GET", "HEAD"], "/api/v1/artifacts/:artifactId", async (context) => {
-    const artifact = await getReadableArtifact(context.req.raw, context.req.param("artifactId"));
-    if (!artifact) return context.json({ error: "artifact_not_found" }, 404);
-    if (context.req.method === "GET" && acceptsArtifactMetadata(context.req.header("accept"))) {
-      return context.json(artifactResponse(artifact), 200, {
-        "Content-Type": ARTIFACT_METADATA_MEDIA_TYPE,
-        Vary: "Accept",
-      });
-    }
-    const response = await artifacts.read(artifact, context.req.method as "GET" | "HEAD", context.req.raw);
-    if (context.req.method === "GET") response.headers.set("Vary", "Accept");
-    return response;
-  });
-  app.on(["GET", "HEAD"], "/api/v1/artifacts/:artifactId/content", async (context) => {
-    const artifact = await getReadableArtifact(context.req.raw, context.req.param("artifactId"));
-    if (!artifact) return context.json({ error: "artifact_not_found" }, 404);
-    return artifacts.read(artifact, context.req.method as "GET" | "HEAD", context.req.raw);
-  });
-  app.put("/api/v1/artifacts/:artifactId", async (context) => {
-    const id = artifacts.parseId(context.req.param("artifactId"));
-    const identity = await identities.fromGateway(context.req.raw, ALL_APIS_SCOPE);
-    return context.json(artifactResponse(await artifacts.put(id, identity, context.req.raw)));
-  });
-  app.patch("/api/v1/artifacts/:artifactId", artifactPatchBodyLimit, async (context) => {
-    const id = artifacts.parseId(context.req.param("artifactId"));
-    const identity = await identities.fromGateway(context.req.raw, ALL_APIS_SCOPE);
-    const body = await context.req.json<unknown>().catch((): unknown => undefined);
-    return context.json(artifactResponse(await artifacts.setVisibility(id, identity, body, context.req.raw.signal)));
-  });
-  app.delete("/api/v1/artifacts/:artifactId", async (context) => {
-    const id = artifacts.parseId(context.req.param("artifactId"));
-    const identity = await identities.fromGateway(context.req.raw, ALL_APIS_SCOPE);
-    await artifacts.delete(id, identity, context.req.raw.signal);
-    return context.body(null, 204);
-  });
-
   app.get("/api/v1/vaults/:vaultId/meetings/:meetingId/summary/job", async (context) => {
     const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
     if (!dependencies.summaryService) return context.json({ error: "summary_unavailable" }, 503);
@@ -527,21 +451,21 @@ export function createApp(dependencies: AppDependencies) {
       const meetingId = sync.parseId(context.req.param("meetingId"));
       const patchId = sync.parseId(context.req.param("patchId"));
       if (!/^\d+$/.test(context.req.param("chunkIndex"))) {
-        throw new ArtifactRequestError(400, "invalid_transcript_chunk_index");
+        throw new RequestError(400, "invalid_transcript_chunk_index");
       }
       const contentHash = context.req.header("x-dahlia-content-sha256")?.toLowerCase();
       if (!contentHash || !/^[0-9a-f]{64}$/.test(contentHash)) {
-        throw new ArtifactRequestError(400, "invalid_transcript_chunk_hash");
+        throw new RequestError(400, "invalid_transcript_chunk_hash");
       }
       const bytes = await context.req.raw.arrayBuffer();
       const actualHash = [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))]
         .map((byte) => byte.toString(16).padStart(2, "0")).join("");
-      if (actualHash !== contentHash) throw new ArtifactRequestError(409, "transcript_chunk_hash_mismatch");
+      if (actualHash !== contentHash) throw new RequestError(409, "transcript_chunk_hash_mismatch");
       let body: unknown;
       try {
         body = JSON.parse(new TextDecoder().decode(bytes));
       } catch {
-        throw new ArtifactRequestError(400, "invalid_transcript_chunk");
+        throw new RequestError(400, "invalid_transcript_chunk");
       }
       await sync.putTranscriptChunk(
         identity,
@@ -581,7 +505,7 @@ export function createApp(dependencies: AppDependencies) {
     const result = await sync.postFile(identity, context.req.raw);
     return context.json(result.file, result.created ? 201 : 200);
   });
-  app.on(["POST", "PUT", "PATCH"], "/api/v1/files/:fileId/metadata", bodyLimit({ maxSize: 128 * 1024,
+  app.patch("/api/v1/files/:fileId/metadata", bodyLimit({ maxSize: 128 * 1024,
     onError: (context) => context.json({ error: "file_patch_too_large" }, 413) }), async (context) => {
     const requiresBrowserOrigin = config.authProvider === "accounts" && !context.req.header("authorization");
     if ((requiresBrowserOrigin || context.req.header("origin")) && !mutationOriginAllowed(context.req.raw, config.baseUrl)) {
@@ -883,9 +807,20 @@ export function createApp(dependencies: AppDependencies) {
     }
     return mcp.fetch(context.req.raw, { authInfo });
   });
-  app.all("/mcp", (context) => context.json({ error: "method_not_allowed" }, 405));
+  app.all("/mcp", (context) => context.json({ error: "method_not_allowed" }, 405, { Allow: "POST" }));
 
+  const fallbackRoutes = new TrieRouter<"domain" | "extension">();
+  for (const route of app.routes) {
+    if (route.method !== "ALL" && route.path.startsWith("/api/v1/")) fallbackRoutes.add("ALL", route.path, "domain");
+  }
   app.use("/api/v1/*", async (context, next) => {
+    const matches = fallbackRoutes.match(context.req.method === "HEAD" ? "GET" : context.req.method, context.req.path)[0]
+      .map(([kind]) => kind);
+    // Domain 405s accept browser sessions; extension handlers retain gateway authentication.
+    if (matches.includes("domain") && !matches.includes("extension")) {
+      await next();
+      return;
+    }
     context.set("identity", await identities.fromGateway(
       context.req.raw,
       ALL_APIS_SCOPE,
@@ -903,7 +838,31 @@ export function createApp(dependencies: AppDependencies) {
   app.get("/api/v1/models", async (context) => context.json(await gateway.models(context.req.raw)));
   app.post("/api/v1/responses", async (context) => gateway.responses(context.req.raw, context.get("identity")));
 
+  const methods = new Map<string, Set<string>>();
+  for (const route of app.routes) {
+    if (route.method === "ALL" || route.path.startsWith("/api/auth/") || (!route.path.startsWith("/api/") && !route.path.startsWith("/mcp/resources/"))) continue;
+    const allowed = methods.get(route.path) ?? new Set<string>();
+    allowed.add(route.method);
+    if (route.method === "GET") allowed.add("HEAD");
+    methods.set(route.path, allowed);
+  }
+
+  const extensionStart = app.routes.length;
   for (const extension of extensions) extension.registerRoutes?.(app, services);
+  for (const route of app.routes.slice(extensionStart)) fallbackRoutes.add(route.method, route.path, "extension");
+
+  for (const [path, allowed] of methods) {
+    app.all(path, async (context) => {
+      if ((!config.syncSharingEnabled && (path.includes("/permissions") || path.startsWith("/api/v1/organizations/")))
+        || (path.startsWith("/api/sessions") && !auth)
+        || (path.startsWith("/api/v1/organizations/") && config.authProvider !== "header")) {
+        return context.json({ error: "not_found" }, 404);
+      }
+      if (path.startsWith("/mcp/resources/")) await identities.fromMcpResource(context.req.raw, MCP_READ_SCOPE);
+      else if (path.startsWith("/api/v1/")) await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
+      return context.json({ error: "method_not_allowed" }, 405, { Allow: [...allowed].join(", ") });
+    });
+  }
 
   app.all("/api/*", (context) => context.json({ error: "not_found" }, 404));
 
@@ -920,7 +879,7 @@ export function createApp(dependencies: AppDependencies) {
       return context.json({ error: error.message }, 409);
     }
     if (error instanceof GatewayRequestError) return gatewayError(error);
-    if (error instanceof ArtifactRequestError) {
+    if (error instanceof RequestError) {
       return Response.json({ error: error.code }, { status: error.status });
     }
     if (error instanceof SyncTransactionError) {
@@ -937,24 +896,11 @@ export function createApp(dependencies: AppDependencies) {
     return context.json({ error: "internal_server_error" }, 500);
   });
 
-  async function getReadableArtifact(request: Request, value: string) {
-    const artifact = await artifacts.get(artifacts.parseId(value));
-    if (!artifact) return null;
-    if (artifact.visibility === "public" && !request.headers.has("authorization")) return artifact;
-    const identity = await identities.fromBrowserOrGateway(request, ALL_APIS_SCOPE);
-    if (artifact.visibility !== "public" && identity.workspaceId !== artifact.ownerWorkspaceId) {
-      throw new ArtifactRequestError(404, "artifact_not_found");
-    }
-    return artifact;
-  }
-
   return Object.assign(app, { runStorageMaintenance: () => sync.runStorageMaintenance() });
 }
 
 function requestRoute(path: string): string {
   if (path === "/mcp") return path;
-  if (path === "/api/v1/artifacts") return path;
-  if (path.startsWith("/api/v1/artifacts/")) return "/api/v1/artifacts/:artifactId";
   if (path.startsWith("/api/v1/")) return "/api/v1/*";
   if (path.startsWith("/api/")) return "/api/*";
   if (path.startsWith("/.well-known/")) return "/.well-known/*";

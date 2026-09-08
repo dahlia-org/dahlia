@@ -18,18 +18,6 @@ export const accountSettings = sqliteTable("account_settings", {
   analysisLanguages: text("analysis_languages", { mode: "json" }).$type<AccountSettings["analysisLanguages"]>().notNull(),
 });
 
-export const artifact = sqliteTable("artifact", {
-  id: text("id").primaryKey(),
-  ownerWorkspaceId: text("owner_workspace_id").notNull(),
-  contentType: text("content_type").notNull(),
-  storageKey: text("storage_key"),
-  visibility: text("visibility").default("private").notNull(),
-  createdAt: sqliteTimestamp("created_at").default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`).notNull(),
-  updatedAt: sqliteTimestamp("updated_at").default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`).notNull(),
-}, (table) => [
-  check("artifact_visibility_check", sql`${table.visibility} IN ('private', 'public')`),
-]);
-
 export const syncedVault = sqliteTable("vaults", {
   vaultId: text("vault_id").primaryKey(),
   name: text("name").notNull(),

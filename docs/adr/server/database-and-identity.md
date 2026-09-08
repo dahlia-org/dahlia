@@ -6,7 +6,7 @@
 
 認証・管理・同期で DB を分けず、Drizzle の単一 application database に統一する。認証方式、DB、AI provider、storage の選択は独立させる。
 
-- PostgreSQL / Lakebase は `auth`（生成 Better Auth）、`app`（Vault / Project、permission、artifact metadata、job、meeting、transcript、screenshot、検索 projection、同期履歴）。参照方向は `app → auth`。
+- PostgreSQL / Lakebase は `auth`（生成 Better Auth）、`app`（Vault / Project、permission、job、meeting、transcript、screenshot、検索 projection、同期履歴）。参照方向は `app → auth`。
 - SQLite / D1 は Better Auth を top-level、Dahlia table は prefix なしにする。PostgreSQL の content ID は native UUID、非 UUID の user / workspace ID や hash は text。SQLite / D1 も境界で canonical UUID を検証する。
 - Better Auth schema は生成物として手編集しない。全認証方式で Auth → application の順に migration を適用する。PostgreSQL の ledger は `drizzle.__dahlia_auth_migrations` と `drizzle.__dahlia_server_migrations` に分離し、SQLite / D1 は単一 baseline を使う。
 - Node は SQLite / PostgreSQL / Lakebase、Workers は D1 / Hyperdrive / direct PostgreSQL を対象とする。DB 接続可能性と個別 capability の有効性は別であり、D1 sync の制限を解除したとは扱わない。
@@ -26,7 +26,7 @@ Header mode でも `auth.user` を作り、検証済み `X-Forwarded-User`、未
 
 ## Vault permission
 
-`app.vault_permissions` を ownership と read sharing の唯一の正本とする。principal は `user | organization | team`、role は `owner | member`。user principal は生の user ID を使い、Artifact / OAuth の `personal:<userId>` workspace claim と混ぜない。
+`app.vault_permissions` を ownership と read sharing の唯一の正本とする。principal は `user | organization | team`、role は `owner | member`。user principal は生の user ID を使い、OAuth の `personal:<userId>` workspace claim と混ぜない。
 
 - Vault ごとに変更不能な user owner を1件だけ持ち、constraint と partial unique index で保証する。Vault と owner permission は同じ transaction で作る。
 - content に owner を重複保存せず、親子関係は Vault ID で制約する。非 owner の write / delete / permission mutation は存在を開示しない404。owner 移譲、member write、直接 user member の作成 API は追加しない。
@@ -39,7 +39,7 @@ Header mode でも `auth.user` を作り、検証済み `X-Forwarded-User`、未
 
 owner column と share table の重複を Vault permission に集約した。header mode で Auth schema を省く案は user 外部キーと migration 集合を分岐させたため撤回し、共通 user directory と生の user ID を採用した。organization ID 一覧を transaction context に渡す方式と `header_deployment` principal も廃止し、DB の現在 membership を参照する。
 
-認証方式を同じ DB 上で切り替える identity 移行は対象外。permission table に新しい access path を足す場合は同等の認可境界が必要。`app.artifact` の RLS 免除は認可/storage metadata だけを owner-scoped API から扱う条件に限る。
+認証方式を同じ DB 上で切り替える identity 移行は対象外。permission table に新しい access path を足す場合は同等の認可境界が必要。
 
 ## Sync retention metadata（2026-09-06）
 

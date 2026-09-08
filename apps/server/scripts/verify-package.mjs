@@ -74,7 +74,7 @@ try {
     if (typeof createPostgresApplicationStore !== "function" || typeof createPostgresAuthStore !== "function") {
       throw new Error("PostgreSQL store factories are missing from the Node package export");
     }
-    if (serverMigrationManifest.sqlite.files.length !== 9) {
+    if (serverMigrationManifest.sqlite.files.length !== 10) {
       throw new Error("Migration manifest is incomplete");
     }
     const style = await readFile(new URL(import.meta.resolve("@dahlia-ai/server/client/styles.css")), "utf8");
@@ -104,9 +104,7 @@ try {
       || !codexNotice.includes("OpenAI Codex\\nCopyright 2025 OpenAI")
       || !codexNotice.includes("codex-rs/models-manager/models.json")
       || migration.includes("model_alias")
-      || !migration.includes("artifact")
-      || migration.includes("artifact_reservation")
-      || !migration.includes("storage_key")
+      || !migration.includes("vaults")
       || !authMigration.includes('CREATE TABLE "auth"."user"')
       || applicationMigration.includes('CREATE TABLE "auth".')
       || !applicationMigration.includes('REFERENCES "auth"."user"("id")')
@@ -130,9 +128,10 @@ try {
     await store.migrate();
     const database = new DatabaseSync(databasePath);
     const applied = database.prepare('SELECT "name" FROM "__drizzle_migrations"').all();
+    if (database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'artifact'").get()) throw new Error("Retired Artifact table remains");
     database.close();
     await store.close?.();
-    if (applied.length !== 9 || applied.at(-1)?.name !== "20260907172550_nice_starhawk") {
+    if (applied.length !== serverMigrationManifest.sqlite.files.length || applied.at(-1)?.name !== "20260908013212_chief_enchantress") {
       throw new Error("Installed package migrations did not run from the package directory");
     }
   `);

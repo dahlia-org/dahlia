@@ -1,6 +1,6 @@
 import type { DatabricksWorkspaceConfig } from "../config";
 import { DatabricksTokenError, DatabricksTokenProvider } from "../databricks/token";
-import { ObjectStorageError, type ArtifactReadMethod, type ObjectStorage } from "./storage";
+import { ObjectStorageError, type StorageReadMethod, type ObjectStorage } from "./storage";
 
 export class DatabricksVolumeObjectStorage implements ObjectStorage {
   private readonly tokens: DatabricksTokenProvider;
@@ -46,11 +46,11 @@ export class DatabricksVolumeObjectStorage implements ObjectStorage {
     return true;
   }
 
-  async read(key: string, method: ArtifactReadMethod, request: Request): Promise<Response> {
+  async read(key: string, method: StorageReadMethod, request: Request): Promise<Response> {
     const headers = new Headers();
     for (const name of ["range", "if-unmodified-since"]) {
       const value = request.headers.get(name);
-      if (value) headers.set(name, value);
+      if (value && (name !== "range" || (method === "GET" && value.startsWith("bytes=")))) headers.set(name, value);
     }
     const upstream = await this.send(key, { method, headers, signal: request.signal });
     if (upstream.status === 404) return new Response(null, { status: 404 });
@@ -91,7 +91,7 @@ export class DatabricksVolumeObjectStorage implements ObjectStorage {
       const operation = resource === "directories" ? "create_directory" : String(init.method ?? "GET").toLowerCase();
       if (error instanceof DatabricksTokenError) {
         logDatabricksStorageFailure("authentication_failed", operation);
-        throw new ObjectStorageError("artifact_storage_authentication_failed");
+        throw new ObjectStorageError("object_storage_authentication_failed");
       }
       if (error instanceof ObjectStorageError) throw error;
       logDatabricksStorageFailure("transport_error", operation);
@@ -117,7 +117,7 @@ function logDatabricksStorageFailure(
 ): void {
   console.error(JSON.stringify({
     level: "error",
-    event: "databricks_artifact_storage_failed",
+    event: "databricks_object_storage_failed",
     reason,
     operation,
     ...(status === undefined ? {} : { status }),

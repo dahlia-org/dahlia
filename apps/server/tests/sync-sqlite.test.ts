@@ -9,7 +9,7 @@ import { DatabaseSync } from "node:sqlite";
 import type { Identity } from "../src/auth/identity";
 import { initializeDahliaAuth } from "../src/auth/better-auth";
 import { createNodeApplicationStore } from "../src/auth/node-store";
-import { LocalObjectStorage } from "../src/artifacts/local";
+import { LocalObjectStorage } from "../src/storage/local";
 import { createApp } from "../src/app";
 import { createWorkerHandler } from "../src/worker";
 import type { AppConfig } from "../src/config";
@@ -138,7 +138,7 @@ describe("SQLite canonical sync", () => {
       await commit(store, owner, transaction(freshId(), [{ id: freshId(), entity: "meeting_event", action: "create", entityId: freshId(), baseRevision: null, data: { meetingId, sessionId, kind, occurredAt: now } }]));
     }
     const storage = new LocalObjectStorage(join(directory, "objects"));
-    const app = createApp({ config: testConfig(databasePath), authStore: store, artifactStorage: storage });
+    const app = createApp({ config: testConfig(databasePath), authStore: store, objectStorage: storage });
     const worker = createWorkerHandler(async () => app);
     const workerFetch = worker.fetch!.bind(worker) as unknown as (request: Request, env: Cloudflare.Env, context: ExecutionContext) => Promise<Response>;
     const send = (path: string, init: RequestInit = {}) => {
@@ -675,7 +675,7 @@ describe("SQLite canonical sync", () => {
     const variants = Object.fromEntries(Object.keys(SCREENSHOT_VARIANTS).map((variant) => [variant, `/api/v1/files/${file.id}/variants/${variant}`]));
     expect((await service.getFile(owner, file.id)).variants).toEqual(variants);
     expect((await service.listFiles(owner, vaultId, undefined, meetingId)).items[0]).toMatchObject({ file: { variants } });
-    const app = createApp({ config: testConfig(databasePath), authStore: store, artifactStorage: storage, screenshotTransformer: transformer });
+    const app = createApp({ config: testConfig(databasePath), authStore: store, objectStorage: storage, screenshotTransformer: transformer });
     const etags = new Set<string | null>();
     for (const variant of Object.keys(SCREENSHOT_VARIANTS) as Array<keyof typeof SCREENSHOT_VARIANTS>) {
       const url = variants[variant]!;
@@ -701,7 +701,7 @@ describe("SQLite canonical sync", () => {
     for (const name of ["thumbnail", "thumb_360", "unknown", "toString"]) {
       expect((await app.request(`/api/v1/files/${file.id}/variants/${name}`, { headers: headers() })).status).toBe(404);
     }
-    const portable = createApp({ config: testConfig(databasePath), authStore: store, artifactStorage: storage });
+    const portable = createApp({ config: testConfig(databasePath), authStore: store, objectStorage: storage });
     expect((await portable.request(variants.thumb_1280!, { headers: headers() })).status).toBe(404);
     await service.commitTransaction(owner, wire([{ entity: "meeting_file", action: "delete", entityId: file.id, baseRevision: 1, data: {} }]));
     await service.commitTransaction(owner, wire([{ entity: "file", action: "delete", entityId: file.id, baseRevision: 1, data: {} }]));
@@ -717,7 +717,7 @@ describe("SQLite canonical sync", () => {
     "revalidates cached %s content without reading storage and checks current access first", async (variant) => {
       const { store, service, storage, file, publish, transformer, databasePath } = await fileSetup();
       await publish();
-      const app = createApp({ config: testConfig(databasePath), authStore: store, artifactStorage: storage, screenshotTransformer: transformer });
+      const app = createApp({ config: testConfig(databasePath), authStore: store, objectStorage: storage, screenshotTransformer: transformer });
       const url = `/api/v1/files/${file.id}${variant ? `/variants/${variant}` : ""}`;
       const metadata = await app.request(`/api/v1/files/${file.id}/metadata`, { headers: headers() });
       expect(metadata.headers.get("cache-control")).toBe("no-store");
@@ -764,7 +764,7 @@ describe("SQLite canonical sync", () => {
       expect(revoked.status).toBe(404);
       expect(revoked.headers.get("cache-control")).toBe("no-store");
       if (variant) {
-        const portable = createApp({ config: testConfig(databasePath), authStore: store, artifactStorage: storage });
+        const portable = createApp({ config: testConfig(databasePath), authStore: store, objectStorage: storage });
         expect((await portable.request(url, { headers: { ...headers(), "if-none-match": etag } })).status).toBe(404);
       }
       await service.commitTransaction(owner, wire([{ entity: "file", action: "delete", entityId: file.id, baseRevision: 1, data: {} }]));
@@ -772,6 +772,57 @@ describe("SQLite canonical sync", () => {
       await store.close?.();
     },
   );
+
+  it.each(["node", "worker"])("honors public validators for files and recording audio through %s", async (runtime) => {
+    const { store, service, storage, file, publish, databasePath } = await fileSetup();
+    try {
+      await publish();
+      const sessionId = freshId();
+      for (const kind of ["recording_started", "recording_ended"]) {
+        await commit(store, owner, transaction(freshId(), [{ id: freshId(), entity: "meeting_event", action: "create",
+          entityId: freshId(), baseRevision: null, data: { meetingId, sessionId, kind, occurredAt: now } }]));
+      }
+      const audio = new Uint8Array([0, 0, 0, 20, 102, 116, 121, 112, 77, 52, 65, 32, 0, 0, 0, 0, 77, 52, 65, 32]);
+      const uploaded = await service.postRecording(owner, meetingId, new Request(
+        `http://localhost:5173/api/v1/meetings/${meetingId}/recordings?sessionId=${sessionId}&source=mic`, {
+          method: "POST", headers: { "content-type": "audio/mp4", "content-length": String(audio.length) }, body: audio,
+        }));
+      const app = createApp({ config: testConfig(databasePath), authStore: store, objectStorage: storage });
+      const worker = createWorkerHandler(async () => app);
+      const workerFetch = worker.fetch!.bind(worker) as unknown as (request: Request, env: Cloudflare.Env, context: ExecutionContext) => Promise<Response>;
+      const send = (path: string, extra: Record<string, string> = {}, method = "GET") => {
+        const request = new Request(`http://localhost:5173${path}`, { method, headers: { ...headers(), ...extra } });
+        return runtime === "node" ? app.request(request) : workerFetch(request, {} as Cloudflare.Env, {} as ExecutionContext);
+      };
+      for (const url of [`/api/v1/files/${file.id}`, uploaded.record.contentURL]) {
+        const original = await send(url);
+        expect(original.status).toBe(200);
+        const bytes = new Uint8Array(await original.arrayBuffer());
+        const etag = original.headers.get("etag")!;
+        expect((await send(url, { "if-match": '"wrong"', "if-none-match": etag })).status).toBe(412);
+        const cached = await send(url, { "if-none-match": etag });
+        expect(cached.status).toBe(304);
+        expect(await cached.text()).toBe("");
+        const resumed = await send(url, { range: "bytes=1-3", "if-range": etag });
+        expect(resumed.status).toBe(206);
+        expect(new Uint8Array(await resumed.arrayBuffer())).toEqual(bytes.slice(1, 4));
+        const replaced = await send(url, { range: "bytes=999999-", "if-range": '"wrong"' });
+        expect(replaced.status).toBe(200);
+        expect(new Uint8Array(await replaced.arrayBuffer())).toEqual(bytes);
+        const head = await send(url, { range: "bytes=999999-" }, "HEAD");
+        expect(head.status).toBe(200);
+        expect(head.headers.get("content-length")).toBe(String(bytes.length));
+        expect(await head.text()).toBe("");
+        expect((await send(url, { "if-none-match": etag, "x-forwarded-user": other.userId,
+          "x-forwarded-email": "other@example.com" })).status).toBe(404);
+      }
+      for (const method of ["POST", "PUT"]) {
+        const response = await send(`/api/v1/files/${file.id}/metadata`, {}, method);
+        expect(response.status).toBe(405);
+        expect(response.headers.get("allow")?.split(", ").sort()).toEqual(["GET", "HEAD", "PATCH"]);
+      }
+    } finally { await store.close?.(); }
+  });
 
   it("rejects a file replaced between cache metadata lookup and content read", async () => {
     const { store, service, file, publish } = await fileSetup();
@@ -886,9 +937,10 @@ describe("SQLite canonical sync", () => {
     expect(range.status).toBe(206);
     expect(new Uint8Array(await range.arrayBuffer())).toEqual(bytes.slice(1, 4));
     const head = await service.readFile(owner, file.id, "HEAD", request);
-    expect(head.status).toBe(206);
+    expect(head.status).toBe(200);
     expect(await head.text()).toBe("");
-    expect(head.headers.get("content-range")).toBe(`bytes 1-3/${bytes.length}`);
+    expect(head.headers.get("content-range")).toBeNull();
+    expect(head.headers.get("content-length")).toBe(String(bytes.length));
     await store.close?.();
   });
 
@@ -962,9 +1014,9 @@ describe("SQLite canonical sync", () => {
     }
   });
 
-  it.each(["node", "worker"].flatMap((runtime) => ["POST", "PUT", "PATCH"].map((method) => [runtime, method])))("uploads raw bytes and updates canonical metadata through %s %s", async (runtime, method) => {
+  it.each(["node", "worker"].flatMap((runtime) => ["PATCH"].map((method) => [runtime, method])))("uploads raw bytes and updates canonical metadata through %s %s", async (runtime, method) => {
     const { store, service, file, bytes, databasePath, storage, publish, attach } = await fileSetup();
-    const app = createApp({ config: { ...testConfig(databasePath), storageBackend: "databricks", storageDatabricksVolumePath: "/Volumes/test/app/files" }, authStore: store, artifactStorage: storage });
+    const app = createApp({ config: { ...testConfig(databasePath), storageBackend: "databricks", storageDatabricksVolumePath: "/Volumes/test/app/files" }, authStore: store, objectStorage: storage });
     const worker = createWorkerHandler(async () => app);
     const workerFetch = worker.fetch!.bind(worker) as unknown as (request: Request, env: Cloudflare.Env, context: ExecutionContext) => Promise<Response>;
     const send = (request: Request) => {
@@ -1023,7 +1075,7 @@ describe("SQLite canonical sync", () => {
     expect(head.headers.get("etag")).toBe(original.headers.get("etag"));
     expect(await head.text()).toBe("");
     expect((await send(new Request(`${originalURL}/content`))).status).toBe(404);
-    expect((await send(new Request(originalURL, { method: "PATCH", body: "{}" }))).status).toBe(404);
+    expect((await send(new Request(originalURL, { method: "PATCH", body: "{}" }))).status).toBe(405);
     const metadata = await send(new Request(`${originalURL}/metadata`));
     expect(metadata.status).toBe(200);
     expect(await metadata.json()).toMatchObject({ id: file.id, revision: 1, metadata: { source: "screenshot" } });
@@ -2011,7 +2063,7 @@ describe("SQLite canonical sync", () => {
     const app = createApp({
       config: testConfig(join(directory, "server.sqlite")),
       authStore: store,
-      artifactStorage: new LocalObjectStorage(join(directory, "objects")),
+      objectStorage: new LocalObjectStorage(join(directory, "objects")),
     });
     const operationId = "019d4a01-3000-7000-8000-000000000002";
     const response = await app.request("/api/v1/transactions", {
@@ -2048,7 +2100,7 @@ describe("SQLite canonical sync", () => {
     const app = createApp({
       config: testConfig(join(directory, "server.sqlite")),
       authStore: store,
-      artifactStorage: new LocalObjectStorage(join(directory, "objects")),
+      objectStorage: new LocalObjectStorage(join(directory, "objects")),
     });
     const requestHeaders: Record<string, string> = headers();
     delete requestHeaders.origin;
@@ -2088,7 +2140,7 @@ describe("SQLite canonical sync", () => {
       config: accountsConfig,
       auth: await initializeDahliaAuth(accountsConfig, store),
       authStore: store,
-      artifactStorage: new LocalObjectStorage(join(directory, "objects")),
+      objectStorage: new LocalObjectStorage(join(directory, "objects")),
     });
     expect((await accountsApp.request("/api/v1/transactions", {
       method: "POST",

@@ -1,7 +1,7 @@
 import { createAccountSettingsStore, type AccountSettingsStore } from "../account-settings";
 import type { DBAdapterInstance } from "better-auth";
 import { drizzleAdapter } from "@better-auth/drizzle-adapter/relations-v2";
-import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNull, or, sql } from "drizzle-orm";
 import { drizzle as drizzleD1 } from "drizzle-orm/d1";
 
 import { gatewayResource, type AppConfig } from "../config";
@@ -97,24 +97,6 @@ export interface TeamMemberRecord {
   email: string;
 }
 
-export type ArtifactVisibility = "private" | "public";
-
-export interface ArtifactRecord {
-  id: string;
-  ownerWorkspaceId: string;
-  contentType: string;
-  storageKey: string | null;
-  visibility: ArtifactVisibility;
-  createdAt: Date;
-  updatedAt: Date;
-}
-
-export interface ArtifactInput {
-  id: string;
-  ownerWorkspaceId: string;
-  contentType: string;
-}
-
 /** The subset of Cloudflare D1 referenced by the package's public Worker types. */
 export interface D1PreparedStatementLike {
   bind(...values: unknown[]): D1PreparedStatementLike;
@@ -149,21 +131,6 @@ export interface ApplicationStore {
   listExternalTeamMembers(userId: string, teamId: string): Promise<TeamMemberRecord[] | null>;
   addExternalTeamMember(userId: string, teamId: string, memberUserId: string): Promise<boolean>;
   removeExternalTeamMember(userId: string, teamId: string, memberUserId: string): Promise<boolean>;
-  listArtifacts(ownerWorkspaceId: string, cursor: string | undefined, limit: number): Promise<ArtifactRecord[]>;
-  getArtifact(id: string): Promise<ArtifactRecord | null>;
-  createArtifact(input: ArtifactInput): Promise<ArtifactRecord | null>;
-  commitArtifactStorage(
-    id: string,
-    ownerWorkspaceId: string,
-    expectedStorageKey: string | null,
-    storageKey: string,
-  ): Promise<ArtifactRecord | null>;
-  updateArtifactVisibility(
-    id: string,
-    ownerWorkspaceId: string,
-    visibility: ArtifactVisibility,
-  ): Promise<ArtifactRecord | null>;
-  deleteArtifact(id: string, ownerWorkspaceId: string, expectedStorageKey: string | null): Promise<boolean>;
   deleteVaultPermissionsForPrincipal(
     principalType: "organization" | "team",
     principalId: string,
@@ -583,55 +550,6 @@ export function createPostgresApplicationStore(
         eq(postgresAuthSchema.team.organizationId, EXTERNAL_ORGANIZATION_ID),
       ));
       return true;
-    },
-    async getArtifact(id) {
-      const [row] = await db.select().from(postgresSchema.artifact)
-        .where(eq(postgresSchema.artifact.id, id)).limit(1);
-      return (row as ArtifactRecord | undefined) ?? null;
-    },
-    async listArtifacts(ownerWorkspaceId, cursor, limit) {
-      const ownedAndStored = and(
-        eq(postgresSchema.artifact.ownerWorkspaceId, ownerWorkspaceId),
-        isNotNull(postgresSchema.artifact.storageKey),
-      );
-      return db.select().from(postgresSchema.artifact)
-        .where(cursor ? and(ownedAndStored, lt(postgresSchema.artifact.id, cursor)) : ownedAndStored)
-        .orderBy(desc(postgresSchema.artifact.id)).limit(limit) as Promise<ArtifactRecord[]>;
-    },
-    async createArtifact(input) {
-      const [created] = await db.insert(postgresSchema.artifact).values(input).onConflictDoNothing()
-        .returning();
-      return (created as ArtifactRecord | undefined) ?? null;
-    },
-    async commitArtifactStorage(id, ownerWorkspaceId, expectedStorageKey, storageKey) {
-      const expected = expectedStorageKey === null
-        ? isNull(postgresSchema.artifact.storageKey)
-        : eq(postgresSchema.artifact.storageKey, expectedStorageKey);
-      const [updated] = await db.update(postgresSchema.artifact).set({ storageKey, updatedAt: new Date() }).where(and(
-        eq(postgresSchema.artifact.id, id),
-        eq(postgresSchema.artifact.ownerWorkspaceId, ownerWorkspaceId),
-        expected,
-      )).returning();
-      return (updated as ArtifactRecord | undefined) ?? null;
-    },
-    async updateArtifactVisibility(id, ownerWorkspaceId, visibility) {
-      const [updated] = await db.update(postgresSchema.artifact).set({ visibility, updatedAt: new Date() })
-        .where(and(
-          eq(postgresSchema.artifact.id, id),
-          eq(postgresSchema.artifact.ownerWorkspaceId, ownerWorkspaceId),
-        )).returning();
-      return (updated as ArtifactRecord | undefined) ?? null;
-    },
-    async deleteArtifact(id, ownerWorkspaceId, expectedStorageKey) {
-      const expected = expectedStorageKey === null
-        ? isNull(postgresSchema.artifact.storageKey)
-        : eq(postgresSchema.artifact.storageKey, expectedStorageKey);
-      const [deleted] = await db.delete(postgresSchema.artifact).where(and(
-        eq(postgresSchema.artifact.id, id),
-        eq(postgresSchema.artifact.ownerWorkspaceId, ownerWorkspaceId),
-        expected,
-      )).returning({ id: postgresSchema.artifact.id });
-      return deleted !== undefined;
     },
     async deleteVaultPermissionsForPrincipal(principalType, principalId) {
       await db.delete(postgresSchema.syncedVaultPermission).where(and(
@@ -1064,56 +982,6 @@ export function createSqliteApplicationStore(
         eq(sqliteAuthSchema.team.organizationId, EXTERNAL_ORGANIZATION_ID),
       ));
       return true;
-    },
-    async getArtifact(id) {
-      const [row] = await db.select().from(sqliteSchema.artifact)
-        .where(eq(sqliteSchema.artifact.id, id)).limit(1);
-      return (row as ArtifactRecord | undefined) ?? null;
-    },
-    async listArtifacts(ownerWorkspaceId, cursor, limit) {
-      const ownedAndStored = and(
-        eq(sqliteSchema.artifact.ownerWorkspaceId, ownerWorkspaceId),
-        isNotNull(sqliteSchema.artifact.storageKey),
-      );
-      return db.select().from(sqliteSchema.artifact)
-        .where(cursor ? and(ownedAndStored, lt(sqliteSchema.artifact.id, cursor)) : ownedAndStored)
-        .orderBy(desc(sqliteSchema.artifact.id)).limit(limit) as Promise<ArtifactRecord[]>;
-    },
-    async createArtifact(input) {
-      const now = new Date();
-      const [created] = await db.insert(sqliteSchema.artifact).values({ ...input, createdAt: now, updatedAt: now })
-        .onConflictDoNothing().returning();
-      return (created as ArtifactRecord | undefined) ?? null;
-    },
-    async commitArtifactStorage(id, ownerWorkspaceId, expectedStorageKey, storageKey) {
-      const expected = expectedStorageKey === null
-        ? isNull(sqliteSchema.artifact.storageKey)
-        : eq(sqliteSchema.artifact.storageKey, expectedStorageKey);
-      const [updated] = await db.update(sqliteSchema.artifact).set({ storageKey, updatedAt: new Date() }).where(and(
-        eq(sqliteSchema.artifact.id, id),
-        eq(sqliteSchema.artifact.ownerWorkspaceId, ownerWorkspaceId),
-        expected,
-      )).returning();
-      return (updated as ArtifactRecord | undefined) ?? null;
-    },
-    async updateArtifactVisibility(id, ownerWorkspaceId, visibility) {
-      const [updated] = await db.update(sqliteSchema.artifact).set({ visibility, updatedAt: new Date() })
-        .where(and(
-          eq(sqliteSchema.artifact.id, id),
-          eq(sqliteSchema.artifact.ownerWorkspaceId, ownerWorkspaceId),
-        )).returning();
-      return (updated as ArtifactRecord | undefined) ?? null;
-    },
-    async deleteArtifact(id, ownerWorkspaceId, expectedStorageKey) {
-      const expected = expectedStorageKey === null
-        ? isNull(sqliteSchema.artifact.storageKey)
-        : eq(sqliteSchema.artifact.storageKey, expectedStorageKey);
-      const [deleted] = await db.delete(sqliteSchema.artifact).where(and(
-        eq(sqliteSchema.artifact.id, id),
-        eq(sqliteSchema.artifact.ownerWorkspaceId, ownerWorkspaceId),
-        expected,
-      )).returning({ id: sqliteSchema.artifact.id });
-      return deleted !== undefined;
     },
     async deleteVaultPermissionsForPrincipal(principalType, principalId) {
       await db.delete(sqliteSchema.syncedVaultPermission).where(and(

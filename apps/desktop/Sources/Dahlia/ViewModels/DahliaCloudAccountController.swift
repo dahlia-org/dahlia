@@ -26,10 +26,6 @@ struct DahliaAccountConnection: Identifiable, Equatable, Sendable {
     var id: UUID { record.id }
     var origin: String { record.origin }
     var isSignedIn: Bool { account != nil }
-    var supportsArtifactExport: Bool {
-        grantedScopes.contains(DahliaArtifactExportService.requiredScope)
-    }
-
     var displayName: String { account?.displayName ?? origin }
     var supportsVaultSync: Bool {
         grantedScopes.contains("all-apis")

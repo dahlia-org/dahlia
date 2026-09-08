@@ -6,92 +6,21 @@ import {
 } from "@modelcontextprotocol/server";
 import { z } from "zod";
 
-import { ArtifactRequestError, ArtifactService } from "./artifacts/service";
-import type { ArtifactRecord } from "./auth/store";
+import { RequestError } from "./storage/upload";
 import type { Identity } from "./auth/identity";
-import { hasApiScope, MCP_READ_SCOPE, MCP_SCOPE } from "./auth/scopes";
+import { hasApiScope, MCP_READ_SCOPE } from "./auth/scopes";
 import type { AppConfig } from "./config";
 import { searchRequestSchema } from "./search/model";
 import { MeetingSyncService } from "./sync/service";
 
 export const MCP_MAX_REQUEST_BYTES = 12 * 1024 * 1024;
-export const MCP_ARTIFACT_MAX_BYTES = 8 * 1024 * 1024;
-
-const encodingSchema = z.enum(["utf8", "base64"]).default("utf8");
-const contentTypeSchema = z.string().trim().min(1).max(255).refine(
-  (value) => Array.from(value).every((character) => {
-    const code = character.charCodeAt(0);
-    return code >= 32 && code <= 255 && code !== 127;
-  }),
-  "invalid_content_type",
-);
-const artifactContentSchema = z.object({
-  content: z.string(),
-  content_type: contentTypeSchema,
-  encoding: encodingSchema,
-}).strict();
-const artifactIdSchema = z.object({ artifact_id: z.string() }).strict();
-const artifactOutputSchema = z.object({
-  artifact_id: z.string(),
-  url: z.string(),
-  content_type: z.string(),
-  visibility: z.enum(["private", "public"]),
-});
-
-export function createArtifactMcpHandler(
+export function createServerMcpHandler(
   config: AppConfig,
-  artifacts: ArtifactService,
   sync?: MeetingSyncService,
 ) {
   return createMcpHandler(({ authInfo }) => {
     const identity = mcpIdentity(authInfo);
     const server = new McpServer({ name: "Dahlia Server", version: "0.1.0" });
-
-    if (hasApiScope(authInfo?.scopes ?? [], MCP_SCOPE)) {
-    server.registerTool("create_artifact", {
-      description: "Create a private artifact from UTF-8 text or canonical RFC 4648 base64 content.",
-      inputSchema: artifactContentSchema,
-      outputSchema: artifactOutputSchema,
-      annotations: { destructiveHint: false, idempotentHint: false },
-    }, async ({ content, content_type, encoding }) => toolResult(async () => {
-      const bytes = decodeContent(content, encoding);
-      const artifact = await artifacts.create(identity, uploadRequest(config, bytes, content_type));
-      return artifactResult(config, artifact);
-    }));
-
-    server.registerTool("update_artifact_content", {
-      description: "Replace the content of an owned artifact without changing its content type.",
-      inputSchema: artifactContentSchema.extend({ artifact_id: z.string() }),
-      outputSchema: artifactOutputSchema,
-      annotations: { destructiveHint: true, idempotentHint: true },
-    }, async ({ artifact_id, content, content_type, encoding }) => toolResult(async () => {
-      const id = artifacts.parseId(artifact_id);
-      const bytes = decodeContent(content, encoding);
-      const artifact = await artifacts.put(id, identity, uploadRequest(config, bytes, content_type));
-      return artifactResult(config, artifact);
-    }));
-
-    server.registerTool("update_artifact_visibility", {
-      description: "Set an owned artifact to private or public visibility.",
-      inputSchema: artifactIdSchema.extend({ visibility: z.enum(["private", "public"]) }),
-      outputSchema: artifactOutputSchema,
-      annotations: { destructiveHint: true, idempotentHint: true },
-    }, async ({ artifact_id, visibility }) => toolResult(async () => {
-      const id = artifacts.parseId(artifact_id);
-      const artifact = await artifacts.setVisibility(id, identity, { visibility });
-      return artifactResult(config, artifact);
-    }));
-
-    server.registerTool("delete_artifact", {
-      description: "Permanently delete an owned artifact.",
-      inputSchema: artifactIdSchema,
-      outputSchema: artifactOutputSchema,
-      annotations: { destructiveHint: true, idempotentHint: true },
-    }, async ({ artifact_id }) => toolResult(async () => {
-      const id = artifacts.parseId(artifact_id);
-      return artifactResult(config, await artifacts.delete(id, identity));
-    }));
-    }
 
     if (sync && hasApiScope(authInfo?.scopes ?? [], MCP_READ_SCOPE)) {
       server.registerTool("search", {
@@ -135,7 +64,7 @@ export function createArtifactMcpHandler(
         annotations: { readOnlyHint: true },
       }, async ({ vault_id, project_id }) => jsonToolResult(async () => {
         const project = await sync.getProject(identity, sync.parseId(vault_id), sync.parseId(project_id));
-        if (!project) throw new ArtifactRequestError(404, "project_not_found");
+        if (!project) throw new RequestError(404, "project_not_found");
         return project;
       }));
       server.registerTool("get_meeting", {
@@ -144,7 +73,7 @@ export function createArtifactMcpHandler(
         annotations: { readOnlyHint: true },
       }, async ({ vault_id, meeting_id }) => jsonToolResult(async () => {
         const meeting = await sync.getMeeting(identity, sync.parseId(vault_id), sync.parseId(meeting_id));
-        if (!meeting) throw new ArtifactRequestError(404, "meeting_not_found");
+        if (!meeting) throw new RequestError(404, "meeting_not_found");
         return meeting;
       }));
       server.registerTool("get_meeting_transcript", {
@@ -192,7 +121,7 @@ async function jsonToolResult(operation: () => Promise<unknown>): Promise<CallTo
   try {
     return { content: [{ type: "text", text: JSON.stringify(await operation()) }] };
   } catch (error) {
-    if (error instanceof ArtifactRequestError) {
+    if (error instanceof RequestError) {
       return { isError: true, content: [{ type: "text", text: error.code }] };
     }
     throw error;
@@ -240,64 +169,4 @@ function mcpIdentity(authInfo: AuthInfo | undefined): Identity {
     || (identity.source !== "accounts" && identity.source !== "header")
   ) throw new Error("MCP identity is unavailable");
   return identity as Identity;
-}
-
-function decodeContent(content: string, encoding: "utf8" | "base64"): Uint8Array {
-  if (encoding === "utf8") {
-    const bytes = new TextEncoder().encode(content);
-    if (bytes.byteLength > MCP_ARTIFACT_MAX_BYTES) throw new ArtifactRequestError(413, "artifact_too_large");
-    return bytes;
-  }
-  if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(content)) {
-    throw new ArtifactRequestError(400, "invalid_base64");
-  }
-  const padding = content.endsWith("==") ? 2 : content.endsWith("=") ? 1 : 0;
-  if ((content.length / 4) * 3 - padding > MCP_ARTIFACT_MAX_BYTES) {
-    throw new ArtifactRequestError(413, "artifact_too_large");
-  }
-  const decoded = atob(content);
-  if (btoa(decoded) !== content) throw new ArtifactRequestError(400, "invalid_base64");
-  return Uint8Array.from(decoded, (character) => character.charCodeAt(0));
-}
-
-function uploadRequest(config: AppConfig, bytes: Uint8Array, contentType: string): Request {
-  return new Request(`${config.baseUrl}/api/v1/artifacts`, {
-    method: "POST",
-    headers: {
-      "content-length": String(bytes.byteLength),
-      "content-type": contentType,
-    },
-    body: new Uint8Array(bytes).buffer,
-  });
-}
-
-function artifactResult(config: AppConfig, artifact: ArtifactRecord) {
-  const url = `${config.baseUrl}/artifacts/${artifact.id}`;
-  return {
-    artifact_id: artifact.id,
-    url,
-    content_type: artifact.contentType,
-    visibility: artifact.visibility,
-    resource: {
-      type: "resource_link" as const,
-      name: `Artifact ${artifact.id}`,
-      uri: `${config.baseUrl}/api/v1/artifacts/${artifact.id}/content`,
-      mimeType: artifact.contentType,
-    },
-  };
-}
-
-async function toolResult(operation: () => Promise<ReturnType<typeof artifactResult>>): Promise<CallToolResult> {
-  try {
-    const { resource, ...structuredContent } = await operation();
-    return {
-      content: [resource],
-      structuredContent,
-    };
-  } catch (error) {
-    if (error instanceof ArtifactRequestError) {
-      return { isError: true, content: [{ type: "text", text: error.code }] };
-    }
-    throw error;
-  }
 }

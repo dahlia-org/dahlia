@@ -4,13 +4,13 @@ import { join } from "node:path";
 
 import { describe, expect, it, vi } from "vitest";
 
-import { DatabricksVolumeObjectStorage } from "../src/artifacts/databricks-volume";
-import { LocalObjectStorage } from "../src/artifacts/local";
-import { R2ObjectStorage, type R2BucketLike } from "../src/artifacts/r2";
-import { S3ObjectStorage } from "../src/artifacts/s3";
-import type { ObjectStorage } from "../src/artifacts/storage";
+import { DatabricksVolumeObjectStorage } from "../src/storage/databricks-volume";
+import { LocalObjectStorage } from "../src/storage/local";
+import { R2ObjectStorage, type R2BucketLike } from "../src/storage/r2";
+import { S3ObjectStorage } from "../src/storage/s3";
+import type { ObjectStorage } from "../src/storage/storage";
 
-const KEY = "artifacts/019cc4dd-e5c5-7bd4-94e0-98df9cc40db9";
+const KEY = "files/019cc4dd-e5c5-7bd4-94e0-98df9cc40db9";
 const UPLOADED = new Date("2026-08-28T00:00:00Z");
 
 describe("R2 object storage", () => {
@@ -54,8 +54,9 @@ describe("R2 object storage", () => {
     const head = await storage.read(KEY, "HEAD", new Request("https://dahlia.example", {
       headers: { range: "bytes=1-3" },
     }));
-    expect(head.status).toBe(206);
-    expect(head.headers.get("content-range")).toBe("bytes 1-3/5");
+    expect(head.status).toBe(200);
+    expect(head.headers.get("content-range")).toBeNull();
+    expect(head.headers.get("content-length")).toBe("5");
     expect(await head.text()).toBe("");
   });
 });
@@ -191,7 +192,7 @@ describe("Databricks Volume object storage", () => {
       clientId: "client",
       clientSecret: "secret",
       tokenUrl: "https://workspace.example/oidc/v1/token",
-    }, "/Volumes/main/default/artifacts", transport);
+    }, "/Volumes/main/default/files", transport);
 
     const missing = await storage.read(KEY, "GET", new Request("https://dahlia.example"));
     expect(missing.status).toBe(404);
@@ -201,7 +202,7 @@ describe("Databricks Volume object storage", () => {
     const loggedError = String(consoleError.mock.calls.at(-1)?.[0]);
     expect(JSON.parse(loggedError)).toEqual({
       level: "error",
-      event: "databricks_artifact_storage_failed",
+      event: "databricks_object_storage_failed",
       reason: "upstream_http_error",
       operation: "get",
       status: 403,
@@ -221,13 +222,13 @@ describe("Databricks Volume object storage", () => {
       clientId: "client",
       clientSecret: "secret",
       tokenUrl: "https://workspace.example/oidc/v1/token",
-    }, "/Volumes/main/default/artifacts", vi.fn(async () => new Response("private", { status: 401 })));
+    }, "/Volumes/main/default/files", vi.fn(async () => new Response("private", { status: 401 })));
 
     await expect(storage.put(KEY, new TextEncoder().encode("hello"), 5, "text/html")).rejects.toThrow();
     const loggedError = String(consoleError.mock.calls.at(-1)?.[0]);
     expect(JSON.parse(loggedError)).toEqual({
       level: "error",
-      event: "databricks_artifact_storage_failed",
+      event: "databricks_object_storage_failed",
       reason: "authentication_failed",
       operation: "create_directory",
     });

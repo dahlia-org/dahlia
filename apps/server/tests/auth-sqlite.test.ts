@@ -8,7 +8,7 @@ import { cimd } from "@better-auth/cimd";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { createApp } from "../src/app";
-import { LocalObjectStorage } from "../src/artifacts/local";
+import { LocalObjectStorage } from "../src/storage/local";
 import { initializeDahliaAuth } from "../src/auth/better-auth";
 import { createNodeAuthStore } from "../src/auth/node-store";
 import type { AppConfig } from "../src/config";
@@ -43,7 +43,7 @@ describe("SQLite Better Auth store", () => {
     const config = { ...testConfig(path), authProvider: "header" as const };
     const store = createNodeAuthStore(config);
     await store.migrate();
-    const app = createApp({ config, authStore: store, artifactStorage: new LocalObjectStorage(join(directory, "storage")) });
+    const app = createApp({ config, authStore: store, objectStorage: new LocalObjectStorage(join(directory, "storage")) });
     const responses = await Promise.all(["first", "second"].map((user) => Promise.resolve().then(() =>
       app.request("/api/session", { headers: {
         "X-Forwarded-Email": `${user}@example.com`,
@@ -71,7 +71,7 @@ describe("SQLite Better Auth store", () => {
     const app = createApp({
       config,
       authStore: store,
-      artifactStorage: new LocalObjectStorage(join(directory, "storage")),
+      objectStorage: new LocalObjectStorage(join(directory, "storage")),
     });
     expect((await app.request("/api/auth/admin/list-users")).status).toBe(404);
 
@@ -203,7 +203,7 @@ describe("SQLite Better Auth store", () => {
 
     expect(database.prepare('SELECT "name" FROM "__drizzle_migrations" ORDER BY "created_at" DESC LIMIT 1').get())
       .toEqual({
-      name: "20260907172550_nice_starhawk",
+      name: "20260908013212_chief_enchantress",
     });
     expect(database.prepare('SELECT "client_id" FROM "oauth_client" WHERE "client_id" = ?').get("databricks-cli"))
       .toEqual({ client_id: "databricks-cli" });
@@ -221,7 +221,7 @@ describe("SQLite Better Auth store", () => {
       config,
       auth,
       authStore: store,
-      artifactStorage: new LocalObjectStorage(join(directory, "storage")),
+      objectStorage: new LocalObjectStorage(join(directory, "storage")),
     });
     const apiMetadata = await app.request("/.well-known/oauth-protected-resource");
     expect(await apiMetadata.json()).toMatchObject({
@@ -312,61 +312,6 @@ describe("SQLite Better Auth store", () => {
       expect.objectContaining({ id: "second-admin" }),
     ]));
     expect(await store.removeAdminUser("second-admin@example.com")).toBe("removed");
-    expect(await store.createArtifact({
-      id: "019cc4dd-e5c5-7bd4-94e0-98df9cc40db9",
-      ownerWorkspaceId: "personal:user-1",
-      contentType: "text/html",
-    })).toMatchObject({ id: "019cc4dd-e5c5-7bd4-94e0-98df9cc40db9", visibility: "private" });
-    expect(await store.getArtifact("019cc4dd-e5c5-7bd4-94e0-98df9cc40db9")).toMatchObject({
-      visibility: "private",
-      contentType: "text/html",
-    });
-    expect(await store.createArtifact({
-      id: "019cc4dd-e5c6-7bd4-94e0-98df9cc40dba",
-      ownerWorkspaceId: "personal:user-1",
-      contentType: "text/plain",
-    })).not.toBeNull();
-    expect(await store.listArtifacts("personal:user-1", undefined, 2)).toEqual([]);
-    expect(await store.commitArtifactStorage(
-      "019cc4dd-e5c5-7bd4-94e0-98df9cc40db9",
-      "personal:user-1",
-      null,
-      "artifacts/version-1",
-    )).toMatchObject({ storageKey: "artifacts/version-1" });
-    expect(await store.commitArtifactStorage(
-      "019cc4dd-e5c6-7bd4-94e0-98df9cc40dba",
-      "personal:user-1",
-      null,
-      "artifacts/version-2",
-    )).toMatchObject({ storageKey: "artifacts/version-2" });
-    expect((await store.listArtifacts("personal:user-1", undefined, 1)).map(({ id }) => id))
-      .toEqual(["019cc4dd-e5c6-7bd4-94e0-98df9cc40dba"]);
-    expect((await store.listArtifacts(
-      "personal:user-1",
-      "019cc4dd-e5c6-7bd4-94e0-98df9cc40dba",
-      2,
-    )).map(({ id }) => id)).toEqual(["019cc4dd-e5c5-7bd4-94e0-98df9cc40db9"]);
-    expect(await store.updateArtifactVisibility(
-      "019cc4dd-e5c5-7bd4-94e0-98df9cc40db9",
-      "personal:user-1",
-      "public",
-    )).toMatchObject({ visibility: "public" });
-    expect(await store.deleteArtifact(
-      "019cc4dd-e5c5-7bd4-94e0-98df9cc40db9",
-      "personal:other",
-      "artifacts/version-1",
-    )).toBe(false);
-    expect(await store.deleteArtifact(
-      "019cc4dd-e5c5-7bd4-94e0-98df9cc40db9",
-      "personal:user-1",
-      "artifacts/version-1",
-    )).toBe(true);
-    expect(await store.createArtifact({
-      id: "019cc4dd-e5c5-7bd4-94e0-98df9cc40db9",
-      ownerWorkspaceId: "personal:other",
-      contentType: "text/html",
-    })).toMatchObject({ id: "019cc4dd-e5c5-7bd4-94e0-98df9cc40db9", visibility: "private" });
-    expect(database.prepare('PRAGMA foreign_key_list("artifact")').all()).toEqual([]);
 
     database.prepare(
       'INSERT INTO "user" ("id", "name", "email", "email_verified", "created_at", "updated_at") VALUES (?, ?, ?, ?, ?, ?)',

@@ -45,18 +45,6 @@ export const accountSettings = appSchema.table("account_settings", {
   }),
 ]).enableRLS();
 
-export const artifact = appSchema.table("artifact", {
-  id: uuid("id").primaryKey(),
-  ownerWorkspaceId: text("owner_workspace_id").notNull(),
-  contentType: text("content_type").notNull(),
-  storageKey: text("storage_key"),
-  visibility: text("visibility").default("private").notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull(),
-}, (table) => [
-  check("artifact_visibility_check", sql`${table.visibility} IN ('private', 'public')`),
-]);
-
 export const syncedVault = appSchema.table("vaults", {
   vaultId: uuid("vault_id").primaryKey(),
   name: text("name").notNull(),

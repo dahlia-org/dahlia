@@ -5,7 +5,7 @@ import { randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 
-import { ObjectStorageError, parseByteRange, type ArtifactReadMethod, type ObjectStorage } from "./storage";
+import { ObjectStorageError, parseByteRange, type StorageReadMethod, type ObjectStorage } from "./storage";
 
 export class LocalObjectStorage implements ObjectStorage {
   private readonly root: string;
@@ -53,7 +53,7 @@ export class LocalObjectStorage implements ObjectStorage {
     }
   }
 
-  async read(key: string, method: ArtifactReadMethod, request: Request): Promise<Response> {
+  async read(key: string, method: StorageReadMethod, request: Request): Promise<Response> {
     let info;
     const path = this.path(key);
     try {
@@ -68,7 +68,7 @@ export class LocalObjectStorage implements ObjectStorage {
     });
     const since = request.headers.get("if-unmodified-since");
     if (since && info.mtimeMs >= Date.parse(since) + 1000) return new Response(null, { status: 412, headers });
-    const range = parseByteRange(request.headers.get("range"), info.size);
+    const range = parseByteRange(method === "HEAD" ? null : request.headers.get("range"), info.size);
     if (range === null) {
       headers.set("content-range", `bytes */${info.size}`);
       return new Response(null, { status: 416, headers });

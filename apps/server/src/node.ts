@@ -10,9 +10,9 @@ import type { Socket } from "node:net";
 import { createApp } from "./app";
 import { initializeDahliaAuth } from "./auth/better-auth";
 import { createNodeApplicationStore } from "./auth/node-store";
-import { DatabricksVolumeObjectStorage } from "./artifacts/databricks-volume";
-import { LocalObjectStorage } from "./artifacts/local";
-import { S3ObjectStorage } from "./artifacts/s3";
+import { DatabricksVolumeObjectStorage } from "./storage/databricks-volume";
+import { LocalObjectStorage } from "./storage/local";
+import { S3ObjectStorage } from "./storage/s3";
 import { loadConfig } from "./config";
 import { createNodeSearchTokenizer } from "./search/node-tokenizer";
 import { createSearchEmbedder } from "./search/embedding";
@@ -33,16 +33,16 @@ const auth = config.authProvider === "accounts"
       plugins: [cimd({ fetchClientMetadataResource, metadataProfile: "mcp-2026-07-28" })],
     }])
   : undefined;
-const artifactStorage = config.storageBackend === "databricks"
+const objectStorage = config.storageBackend === "databricks"
   ? new DatabricksVolumeObjectStorage(config.databricksWorkspace!, config.storageDatabricksVolumePath!)
   : config.storageBackend === "s3"
     ? new S3ObjectStorage(config.storageS3!)
     : config.storageBackend === "local"
       ? new LocalObjectStorage(config.storageLocalPath!)
       : undefined;
-if (!artifactStorage) throw new Error("R2 storage requires a Worker binding");
+if (!objectStorage) throw new Error("R2 storage requires a Worker binding");
 const searchTokenizer = createNodeSearchTokenizer();
-const syncService = new MeetingSyncService(applicationStore.sync, artifactStorage, searchTokenizer,
+const syncService = new MeetingSyncService(applicationStore.sync, objectStorage, searchTokenizer,
   searchEmbedder, transformScreenshot,
   config.storageBackend === "databricks" ? config.storageDatabricksVolumePath : undefined);
 const captioner = createImageCaptioner(config);
@@ -60,7 +60,7 @@ const app = createApp({
   authStore: applicationStore,
   syncService,
   imageAnalysisEnabled: imageAnalysis !== undefined,
-  artifactStorage,
+  objectStorage,
   searchTokenizer,
   searchEmbedder,
   screenshotTransformer: transformScreenshot,

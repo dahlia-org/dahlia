@@ -163,14 +163,14 @@ describe("fixed OAuth client policy", () => {
       source: "accounts",
     });
 
-    await expect(identities.fromBrowserOrGateway(new Request("https://new.dahlia.example/api/v1/artifacts", {
+    await expect(identities.fromBrowserOrGateway(new Request("https://new.dahlia.example/api/v1/capabilities", {
       headers: { authorization: "Bearer invalid" },
     }), ALL_APIS_SCOPE)).rejects.toThrow("invalid token");
     expect(gateway).toHaveBeenCalledOnce();
     expect(browser).not.toHaveBeenCalled();
 
     await expect(identities.fromBrowserOrGateway(
-      new Request("https://new.dahlia.example/api/v1/artifacts"),
+      new Request("https://new.dahlia.example/api/v1/capabilities"),
       ALL_APIS_SCOPE,
     )).resolves.toMatchObject({ userId: "browser-user" });
     expect(browser).toHaveBeenCalledOnce();

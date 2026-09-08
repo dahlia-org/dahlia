@@ -13,7 +13,6 @@ const coreDashboardPaths = new Set([
   "/sessions",
   "/dashboard",
   "/dashboard/settings",
-  "/artifacts",
   "/vaults",
   "/organizations",
   "/admin",
@@ -23,14 +22,13 @@ const coreDashboardPaths = new Set([
 
 export function isCoreDashboardPath(path: string): boolean {
   return coreDashboardPaths.has(path)
-    || Boolean(artifactViewerId(path))
     || /^\/(?:meetings|projects|files)\/[^/]+$/.test(path)
     || /^\/vaults\/[^/]+(?:\/(?:meetings|projects)\/[^/]+)?$/.test(path)
     || /^\/accept-invitation\/[^/]+$/.test(path);
 }
 
 export type DashboardRoute = {
-  page?: "file" | "overview" | "settings" | "artifacts" | "vaults" | "vault" | "meeting" | "project" | "organizations" | "invitation" | "admin-members";
+  page?: "file" | "overview" | "settings" | "vaults" | "vault" | "meeting" | "project" | "organizations" | "invitation" | "admin-members";
   redirect?: string;
   fileId?: string;
   vaultId?: string;
@@ -46,7 +44,6 @@ export function resolveDashboardRoute(
   if (path === "/") return { redirect: "/dashboard" };
   if (path === "/sessions") return { redirect: "/dashboard/settings" };
   if (path === "/dashboard") return { page: "overview" };
-  if (path === "/artifacts" || artifactViewerId(path)) return { redirect: "/dashboard" };
   if (path === "/organizations") {
     return capabilities.sharing
       ? { page: "organizations" }
@@ -81,8 +78,4 @@ export function resolveDashboardRoute(
     return capabilities.admin ? { page: "admin-members" } : { redirect: "/dashboard" };
   }
   return { redirect: "/dashboard" };
-}
-
-export function artifactViewerId(path: string): string | undefined {
-  return path.match(/^\/artifacts\/([^/]+)$/)?.[1];
 }

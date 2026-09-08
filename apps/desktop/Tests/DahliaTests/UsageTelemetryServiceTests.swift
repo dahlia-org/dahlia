@@ -110,7 +110,6 @@ import Foundation
             #expect(UsageTelemetryEvent.ExportDestination.allCases.map(\.rawValue) == [
                 "vault",
                 "googleDocs",
-                "dahliaArtifacts",
                 "localFiles",
             ])
         }

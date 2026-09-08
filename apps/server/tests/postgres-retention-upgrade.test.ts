@@ -6,7 +6,7 @@ import { expect, it } from "vitest";
 import { createNodeApplicationStore } from "../src/auth/node-store";
 import { serverMigrationManifest } from "../src/migrations";
 
-it.runIf(process.env.TEST_MIGRATION_DATABASE_URL)("preserves PostgreSQL receipt data while upgrading the predecessor schema", async () => {
+it.runIf(process.env.TEST_MIGRATION_DATABASE_URL)("preserves PostgreSQL receipts and drops Artifact data while upgrading the predecessor schema", async () => {
   const directory = mkdtempSync(join(tmpdir(), "dahlia-pg-upgrade-"));
   const baseline = serverMigrationManifest.postgres.directories[1]!.files![0]!;
   const original = serverMigrationManifest.postgres.directories[1]!;
@@ -31,9 +31,11 @@ it.runIf(process.env.TEST_MIGRATION_DATABASE_URL)("preserves PostgreSQL receipt 
     await raw.query("BEGIN");
     await raw.query("SELECT set_config('app.user_id', $1, true)", [userId]);
     await raw.query("INSERT INTO app.transaction_receipts(transaction_id, owner_user_id, vault_id, request_hash, response_json, cursor) VALUES ($1, $2, $3, 'hash', $4, 42)", [id, userId, vaultId, receipt]);
+    await raw.query("INSERT INTO app.artifact(id, owner_workspace_id, content_type, storage_key) VALUES ($1, $2, 'text/html', 'artifacts/retired/version.html')", [id, `personal:${userId}`]);
     await raw.query("COMMIT");
     const upgraded = createNodeApplicationStore(config);
     try { await upgraded.migrate(); } finally { await upgraded.close?.(); }
+    expect((await raw.query("SELECT to_regclass('app.artifact') AS name")).rows).toEqual([{ name: null }]);
     await raw.query("BEGIN");
     await raw.query("SELECT set_config('app.user_id', $1, true)", [userId]);
     expect((await raw.query("SELECT response_json, results_json FROM app.transaction_receipts WHERE transaction_id = $1", [id])).rows)
