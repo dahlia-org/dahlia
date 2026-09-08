@@ -74,11 +74,14 @@ try {
     if (typeof createPostgresApplicationStore !== "function" || typeof createPostgresAuthStore !== "function") {
       throw new Error("PostgreSQL store factories are missing from the Node package export");
     }
-    if (serverMigrationManifest.sqlite.files.length !== 10) {
+    if (serverMigrationManifest.sqlite.files.length !== 12) {
       throw new Error("Migration manifest is incomplete");
     }
     const style = await readFile(new URL(import.meta.resolve("@dahlia-ai/server/client/styles.css")), "utf8");
     const packageUrl = new URL(import.meta.resolve("@dahlia-ai/server/package.json"));
+    for (const path of [...serverMigrationManifest.sqlite.files, ...serverMigrationManifest.postgres.files]) {
+      await readFile(new URL(path, packageUrl), "utf8");
+    }
     await readFile(new URL("./dist/server/db/prune-sync-history.js", packageUrl), "utf8");
     const codexLicense = await readFile(new URL("./Codex-LICENSE", packageUrl), "utf8");
     const codexNotice = await readFile(new URL("./Codex-NOTICE.txt", packageUrl), "utf8");
@@ -131,7 +134,7 @@ try {
     if (database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'artifact'").get()) throw new Error("Retired Artifact table remains");
     database.close();
     await store.close?.();
-    if (applied.length !== serverMigrationManifest.sqlite.files.length || applied.at(-1)?.name !== "20260908013212_chief_enchantress") {
+    if (applied.length !== serverMigrationManifest.sqlite.files.length || applied.at(-1)?.name !== "20260908040515_summary_version_backfill") {
       throw new Error("Installed package migrations did not run from the package directory");
     }
   `);

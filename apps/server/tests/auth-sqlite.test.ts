@@ -203,7 +203,7 @@ describe("SQLite Better Auth store", () => {
 
     expect(database.prepare('SELECT "name" FROM "__drizzle_migrations" ORDER BY "created_at" DESC LIMIT 1').get())
       .toEqual({
-      name: "20260908013212_chief_enchantress",
+      name: "20260908040515_summary_version_backfill",
     });
     expect(database.prepare('SELECT "client_id" FROM "oauth_client" WHERE "client_id" = ?').get("databricks-cli"))
       .toEqual({ client_id: "databricks-cli" });

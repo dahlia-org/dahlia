@@ -947,12 +947,16 @@
                 Data("{\"items\":[],\"cursor\":\"after\",\"highWaterCursor\":\"after\",\"hasMore\":false,\"contentMode\":\"metadata-v1\"}".utf8)
             )
         }
-        guard url.path.contains("/text/") else { return nil }
+        let isLatestSummary = url.path.hasSuffix("/summary/latest")
+        guard isLatestSummary || url.path.contains("/text/") else { return nil }
         do {
-            let id = try #require(UUID(uuidString: url.lastPathComponent))
-            let entity = try #require(TextContentEntity(rawValue: url.deletingLastPathComponent().lastPathComponent))
+            let resourceURL = isLatestSummary ? url.deletingLastPathComponent().deletingLastPathComponent() : url
+            let id = try #require(UUID(uuidString: resourceURL.lastPathComponent))
+            let entity = try isLatestSummary ? .summary : #require(TextContentEntity(rawValue: url.deletingLastPathComponent().lastPathComponent))
             let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
-            let revision = Int(query.first { $0.name == "revision" }?.value ?? "0") ?? 0
+            let revision = try isLatestSummary
+                ? queue.read { try #require(try TextContentStore.source(entity: entity, id: id, in: $0)).revision }
+                : Int(query.first { $0.name == "revision" }?.value ?? "0") ?? 0
             let body = try queue.read { db in try #require(try TextContentStore.fingerprint(entity: entity, id: id, in: db)) }
             let itemCount = body.count
             var json: [String: Any] = [

@@ -318,6 +318,24 @@ export function createApp(dependencies: AppDependencies) {
     return revoked ? context.body(null, 204) : context.json({ error: "session_not_found" }, 404);
   });
 
+  app.get("/api/v1/vaults/:vaultId/meetings/:meetingId/summary/latest", async (context) => {
+    const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
+    context.header("Cache-Control", "no-store");
+    return context.json(await sync.latestSummary(identity, sync.parseId(context.req.param("vaultId")),
+      sync.parseId(context.req.param("meetingId")), context.req.query("manifest")));
+  });
+  app.get("/api/v1/vaults/:vaultId/meetings/:meetingId/summary/versions", async (context) => {
+    const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
+    context.header("Cache-Control", "no-store");
+    return context.json(await sync.summaryVersions(identity, sync.parseId(context.req.param("vaultId")),
+      sync.parseId(context.req.param("meetingId")), context.req.query("cursor"), context.req.query("limit")));
+  });
+  app.get("/api/v1/vaults/:vaultId/meetings/:meetingId/summary/versions/:revision", async (context) => {
+    const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
+    context.header("Cache-Control", "no-store");
+    return context.json(await sync.summaryVersion(identity, sync.parseId(context.req.param("vaultId")),
+      sync.parseId(context.req.param("meetingId")), context.req.param("revision")));
+  });
   app.get("/api/v1/vaults/:vaultId/meetings/:meetingId/summary/job", async (context) => {
     const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
     if (!dependencies.summaryService) return context.json({ error: "summary_unavailable" }, 503);

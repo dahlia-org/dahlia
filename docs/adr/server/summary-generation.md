@@ -46,3 +46,13 @@ Server transcript には Desktop の session ID / 累積 offset がないため�
 機能検出は `GET /api/v1/capabilities` の `summaryGeneration: { version, methods }` に統合する。登録済み方式から一覧を導出し、未対応は version 0 / 空一覧、capabilities 自体が空の場合も未対応とする。要約設定は `summary.method` と `summary.methodSettings.transcript` にまとめ、PATCH は指定した葉だけ更新する。DB列と開始済みジョブの設定スナップショットは変更しない。`outputLanguage` はアカウント設定直下に維持する。
 
 Desktop の設定キャッシュが未取得のときは詳細度 override を送らず、Server のアカウント既定値を使う。確認画面で明示選択した詳細度は維持する。canonical 要約の新しい版を受け取ったら古いエクスポート参照を無効化するが、同じ版の再取得・キャッシュ解放では保持する。出力先のファイル自体は削除しない。
+
+## 要約履歴と生成情報（2026-09-08）
+
+Server は summary の全保存を `summary_versions` に本文・保存日時・作成日時と共に保持する。版番号は既存の `summaryRevision` と一致し、canonical 更新・履歴追加・生成ジョブ成功を同じ transaction で確定する。再送・失敗・競合で余分な版を作らない。既存の現在要約は forward migration で取り込み、失われた履歴や生成情報は推測しない。履歴は sync ledger と異なり自動期限削除しない。
+
+`SummaryDocument.metadata` は Server API と Local Codex の共通 optional metadata とする。生成したシステム `generatedBy`（`server` / `local_codex`）・入力種別 `inputTypes`・詳細度 `detailLevel`・言語 `outputLanguage` と送信した `request.model` / `request.reasoning` を保持し、provider が返した `response.id` / `model` / `created_at` / `reasoning` / `usage` は OpenAI Responses API の構造で保存する。生成ジョブの方式 `method` は metadata には重複保存しない。取得できない値は欠測にし、独自計測、prompt version、入力本文・provider 応答全体の複製は追加しない。Local Codex は既存の生成経路で取得できる設定のみを埋める。編集では生成情報を外し、通常の同期・再取得では維持する。Desktop MCP の `get_meeting` と `update_meeting_summary` は同じ optional metadata schema を公開し、無変更の往復では metadata も維持する。
+
+`GET .../summary/latest` は現在の canonical 本文を既存の text envelope と hash、任意の manifest で返す。Desktop の Server 要約本文読取りは latest に統一し、同期 metadata と revision が異なるときは再同期して再取得する。未送信編集の保護と通常の remote applier を維持し、過去版を最新として採用しない。差分適用後に要約自身の読取り可否を再検証し、無関係な保留差分があっても安全な最新本文を取得する。Desktop が表示するのは最新だけであり、既存の現在本文キャッシュを利用する。
+
+`GET .../summary/versions` と `GET .../summary/versions/{revision}` を追加し、Web の要約タブで過去版を閲覧できる。現在の Vault 読取り権限を継承するため共有メンバーも閲覧できる。PostgreSQL は FORCE RLS、全 runtime は共通認可を適用する。要約削除は全履歴の削除も意味し、会議・Vault 削除でも履歴を削除する。Web の確認文に全版削除を明示する。横並び比較・復元・Gemini 生成の実装は今回の対象外とする。

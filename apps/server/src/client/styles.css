@@ -373,3 +373,9 @@ a.metadata-chip:hover { background: #e8e8e8; }
 .summary-settings select, .summary-generation select { min-height: 36px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 7px; color: var(--ink); background: var(--paper); }
 .summary-generation { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 16px; }
 .summary-generation [role="alert"] { flex-basis: 100%; color: var(--danger); }
+
+.summary-generation-metadata { margin-block: 1rem; }
+.summary-generation-metadata summary { cursor: pointer; }
+.summary-generation-metadata summary:hover { text-decoration: underline; }
+.summary-generation-metadata dl { display: grid; grid-template-columns: minmax(0, 16rem) minmax(0, 1fr); gap: .35rem 1rem; }
+.summary-generation-metadata dd { margin: 0; overflow-wrap: anywhere; }

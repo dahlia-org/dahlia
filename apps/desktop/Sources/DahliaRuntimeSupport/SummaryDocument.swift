@@ -8,6 +8,7 @@ public struct SummaryDocument: Codable, Equatable, Sendable {
     public var sections: [SummarySection]
     public var tags: [String]
     public var actionItems: [SummaryActionItem]
+    public var metadata: SummaryMetadata?
 
     public init(
         schemaVersion: Int = 3,
@@ -15,7 +16,8 @@ public struct SummaryDocument: Codable, Equatable, Sendable {
         description: String = "",
         sections: [SummarySection],
         tags: [String] = [],
-        actionItems: [SummaryActionItem] = []
+        actionItems: [SummaryActionItem] = [],
+        metadata: SummaryMetadata? = nil
     ) {
         self.schemaVersion = schemaVersion
         self.title = title
@@ -23,6 +25,7 @@ public struct SummaryDocument: Codable, Equatable, Sendable {
         self.sections = sections
         self.tags = tags
         self.actionItems = actionItems
+        self.metadata = metadata
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -32,6 +35,7 @@ public struct SummaryDocument: Codable, Equatable, Sendable {
         case sections
         case tags
         case actionItems
+        case metadata
     }
 
     public init(from decoder: Decoder) throws {
@@ -42,6 +46,7 @@ public struct SummaryDocument: Codable, Equatable, Sendable {
         sections = try container.decode([SummarySection].self, forKey: .sections)
         tags = try container.decodeIfPresent([String].self, forKey: .tags) ?? []
         actionItems = try container.decodeIfPresent([SummaryActionItem].self, forKey: .actionItems) ?? []
+        metadata = try container.decodeIfPresent(SummaryMetadata.self, forKey: .metadata)
     }
 
     /// データベースに保存する正準 JSON。アプリと MCP ヘルパーで同一のバイト列になる。

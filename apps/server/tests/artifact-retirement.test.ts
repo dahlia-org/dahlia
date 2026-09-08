@@ -8,7 +8,9 @@ const sql = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url
 it("drops only Artifact data when upgrading a populated SQLite/D1 database", () => {
   const database = new DatabaseSync(":memory:");
   try {
-    for (const path of serverMigrationManifest.sqlite.files.slice(0, -1)) database.exec(sql(path));
+    const retirementIndex = serverMigrationManifest.sqlite.files.findIndex((path) => path.includes("20260908013212_chief_enchantress"));
+    expect(retirementIndex).toBeGreaterThan(0);
+    for (const path of serverMigrationManifest.sqlite.files.slice(0, retirementIndex)) database.exec(sql(path));
     database.exec(`
       INSERT INTO user(id, name, email, updated_at) VALUES ('owner', 'Owner', 'owner@example.com', 1);
       INSERT INTO vaults(vault_id, name) VALUES ('vault', 'Vault');
@@ -26,12 +28,12 @@ it("drops only Artifact data when upgrading a populated SQLite/D1 database", () 
     `);
     const tables = ["user", "vaults", "vault_permissions", "meetings", "files", "meeting_files", "recordings"];
     const before = tables.map((table) => database.prepare(`SELECT * FROM "${table}"`).all());
-    const retirement = serverMigrationManifest.sqlite.files.at(-1)!;
+    const retirement = serverMigrationManifest.sqlite.files[retirementIndex]!;
     expect(sql(retirement).trim()).toBe('DROP TABLE `artifact`;');
     database.exec(sql(retirement));
     expect(database.prepare("SELECT name FROM sqlite_master WHERE name = 'artifact'").get()).toBeUndefined();
     expect(tables.map((table) => database.prepare(`SELECT * FROM "${table}"`).all())).toEqual(before);
     expect(database.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
-    expect(sql(serverMigrationManifest.postgres.files.at(-1)!).trim()).toBe('DROP TABLE "app"."artifact";');
+    expect(sql(serverMigrationManifest.postgres.files.find((path) => path.includes("20260908013210_reflective_morg"))!).trim()).toBe('DROP TABLE "app"."artifact";');
   } finally { database.close(); }
 });

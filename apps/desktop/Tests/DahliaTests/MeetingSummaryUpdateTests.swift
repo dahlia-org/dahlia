@@ -11,6 +11,31 @@ import GRDB
     // swiftlint:disable:next type_body_length
     struct MeetingSummaryUpdateTests {
         @Test
+        func editingSummaryClearsGenerationButUnchangedSavePreservesIt() throws {
+            let fixture = try Fixture()
+            let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+            var original = Self.document(title: "Generated", body: "Original")
+            original.metadata = .init(
+                generatedBy: "server",
+                inputTypes: ["transcript"],
+                detailLevel: "standard",
+                outputLanguage: "ja",
+                request: .init(model: "model", reasoning: .init(effort: "high"))
+            )
+            let json = try original.databaseJSONString()
+            try fixture.manager.dbQueue.write { db in
+                try db.execute(sql: "UPDATE summary_bodies SET document = ? WHERE meetingId = ?", arguments: [json, fixture.firstMeetingID])
+            }
+            let version = try #require(store.meeting(id: fixture.firstMeetingID).summaryDocumentVersion)
+            let unchanged = try store.updateMeetingSummary(meetingID: fixture.firstMeetingID, expectedDocumentVersion: version, document: original)
+            #expect(!unchanged.changed)
+            #expect(try SummaryDocument.decode(databaseJSON: fixture.storedDocument(meetingID: fixture.firstMeetingID)).metadata != nil)
+            original.title = "Edited"
+            _ = try store.updateMeetingSummary(meetingID: fixture.firstMeetingID, expectedDocumentVersion: version, document: original)
+            #expect(try SummaryDocument.decode(databaseJSON: fixture.storedDocument(meetingID: fixture.firstMeetingID)).metadata == nil)
+        }
+
+        @Test
         func updatesSummaryWithoutALocalExportFolder() throws {
             let fixture = try Fixture()
             try fixture.manager.dbQueue.write { db in
@@ -545,10 +570,20 @@ import GRDB
         }
 
         /// `get_meeting` が返した `summary_document` をそのまま返送すると、保存内容がバイト単位で一致する。
-        @Test
-        func summaryDocumentRoundTripsThroughTheToolSurface() throws {
+        @Test(arguments: [false, true])
+        func summaryDocumentRoundTripsThroughTheToolSurface(withMetadata: Bool) throws {
             let fixture = try Fixture()
-            let rich = Self.richDocument(screenshotID: fixture.firstScreenshotID)
+            var rich = Self.richDocument(screenshotID: fixture.firstScreenshotID)
+            if withMetadata {
+                rich.metadata = try JSONDecoder().decode(SummaryMetadata.self, from: Data(#"""
+                {"generatedBy":"server","inputTypes":["context","transcript"],"detailLevel":"detailed","outputLanguage":"ja",
+                 "request":{"model":"requested","reasoning":{"effort":"medium","summary":"auto"}},
+                 "response":{"id":"resp-test","model":"returned","created_at":123.5,
+                   "reasoning":{"effort":"medium","summary":"auto"},
+                   "usage":{"input_tokens":10,"output_tokens":5,"total_tokens":15,
+                     "input_tokens_details":{"cached_tokens":2},"output_tokens_details":{"reasoning_tokens":3}}}}
+                """#.utf8))
+            }
             try fixture.replaceSummaryDocument(meetingID: fixture.firstMeetingID, document: rich)
 
             let server = try Self.initializedServer(
@@ -562,6 +597,51 @@ import GRDB
             #expect(result["changed"] as? Bool == false)
             let stored = try fixture.storedDocument(meetingID: fixture.firstMeetingID)
             #expect(try stored == (rich.databaseJSONString()))
+            if withMetadata {
+                let tools = try Self.json(server.handleLine(#"{"jsonrpc":"2.0","id":3,"method":"tools/list"}"#))
+                let definitions = try #require((tools["result"] as? [String: Any])?["tools"] as? [[String: Any]])
+                var current = try Self.summaryDocumentFromMeeting(server: server, meetingID: fixture.firstMeetingID)
+                let metadata = try #require(current.document["metadata"] as? [String: Any])
+                for (name, schemaKey) in [("get_meeting", "outputSchema"), ("update_meeting_summary", "inputSchema")] {
+                    let tool = try #require(definitions.first { $0["name"] as? String == name })
+                    let schema = try #require(tool[schemaKey] as? [String: Any])
+                    let documentSchema = try #require((schema["properties"] as? [String: Any])?["summary_document"] as? [String: Any])
+                    #expect(!(documentSchema["required"] as? [String] ?? []).contains("metadata"))
+                    let metadataSchema = try #require((documentSchema["properties"] as? [String: Any])?["metadata"] as? [String: Any])
+                    try Self.assertMetadataMatchesSchema(metadata, schema: metadataSchema)
+                }
+                current.document["title"] = "Edited"
+                let edit = try Self.summaryUpdateRequest(
+                    id: 4, meetingID: fixture.firstMeetingID, version: current.version, document: current.document
+                )
+                let response = try Self.json(server.handleLine(edit))
+                #expect(response["error"] == nil)
+                let edited = try SummaryDocument.decode(databaseJSON: fixture.storedDocument(meetingID: fixture.firstMeetingID))
+                #expect(edited.title == "Edited")
+                #expect(edited.metadata == nil)
+            }
+        }
+
+        private static func assertMetadataMatchesSchema(_ value: [String: Any], schema: [String: Any]) throws {
+            #expect(schema["type"] as? String == "object")
+            #expect(schema["additionalProperties"] as? Bool == false)
+            let properties = try #require(schema["properties"] as? [String: [String: Any]])
+            let required = try #require(schema["required"] as? [String])
+            #expect(Set(required).isSubset(of: value.keys))
+            for (key, field) in value {
+                let property = try #require(properties[key])
+                switch property["type"] as? String {
+                case "object":
+                    try assertMetadataMatchesSchema(#require(field as? [String: Any]), schema: property)
+                case "array":
+                    #expect(field is [String])
+                    #expect((property["items"] as? [String: Any])?["type"] as? String == "string")
+                case "string": #expect(field is String)
+                case "integer": #expect(field is Int)
+                case "number": #expect(field is NSNumber)
+                default: Issue.record("Unexpected metadata property type: \(key)")
+                }
+            }
         }
 
         @Test

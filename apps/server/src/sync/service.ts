@@ -1,3 +1,4 @@
+import { summaryMetadataSchema } from "../summary/metadata";
 import { conditionalRead } from "../storage/http-read";
 import { SummaryError, type SummaryJob, type SummaryDocument, type SummaryMethod } from "../summary/model";
 import { RECORDING_MAX_BYTES, recordingManifestSchema, recordingSourceSchema, recordingStorageKey, recordingContentURL, recordingResponse } from "../recordings/model";
@@ -77,7 +78,13 @@ const SUMMARY_DOCUMENT_MAX_SERIALIZED_BYTES = 6 * 1024 * 1024;
 const summaryDocumentSchema = z.string().refine(
   (value) => new TextEncoder().encode(JSON.stringify(value)).byteLength <= SUMMARY_DOCUMENT_MAX_SERIALIZED_BYTES,
   "Summary document is too large",
-);
+).refine((document) => {
+  try {
+    const value: unknown = JSON.parse(document);
+    return !value || typeof value !== "object" || !("metadata" in value) || value.metadata === null
+      || summaryMetadataSchema.safeParse(value.metadata).success;
+  } catch { return true; } // Preserve the existing document contract for legacy non-JSON summaries.
+}, "Invalid summary metadata");
 const meetingCursorSchema = z.tuple([dateSchema, uuidSchema]);
 const screenshotCursorSchema = z.tuple([dateSchema, uuidSchema]);
 const transcriptCursorSchema = z.tuple([dateSchema, uuidSchema]);
@@ -467,6 +474,41 @@ export class MeetingSyncService {
         nextCursor: hasMore && last ? `${last.entity},${last.id}` : null,
         ...(contentMode ? { contentMode } : {}),
       };
+    });
+  }
+
+  async latestSummary(identity: Identity, vaultId: string, meetingId: string, manifest?: string) {
+    if (manifest !== undefined && manifest !== "1") throw new SyncTransactionError(400, "invalid_content_request");
+    return this.store.withIdentity(identity, async (scoped) => {
+      await scoped.lockVault(vaultId);
+      const meeting = await scoped.getMeeting(vaultId, meetingId);
+      if (!meeting) throw new SyncTransactionError(404, "meeting_not_found");
+      return readTextContent(scoped, vaultId, "summary", meetingId, meeting.summaryRevision ?? 0, manifest === "1");
+    });
+  }
+
+  async summaryVersions(identity: Identity, vaultId: string, meetingId: string, cursor?: string, limitValue?: string) {
+    const integer = z.string().regex(/^\d+$/).transform(Number).pipe(z.number().int().nonnegative().max(2147483647));
+    const parsed = z.object({ cursor: integer.optional(), limit: integer.pipe(z.number().min(1).max(100)).default(20) }).safeParse({ cursor, limit: limitValue });
+    if (!parsed.success) throw new SyncTransactionError(400, "invalid_summary_versions_request");
+    return this.store.withIdentity(identity, async (scoped) => {
+      if (!await scoped.getMeeting(vaultId, meetingId)) throw new SyncTransactionError(404, "meeting_not_found");
+      const rows = await scoped.listSummaryVersions(vaultId, meetingId, parsed.data.limit + 1, parsed.data.cursor);
+      const items = rows.slice(0, parsed.data.limit);
+      return { items, nextCursor: rows.length > parsed.data.limit ? String(items.at(-1)!.revision) : null };
+    });
+  }
+
+  async summaryVersion(identity: Identity, vaultId: string, meetingId: string, revision: string) {
+    const revisionNumber = Number(revision);
+    if (!/^\d+$/.test(revision) || !Number.isSafeInteger(revisionNumber) || revisionNumber > 2147483647) {
+      throw new SyncTransactionError(400, "invalid_summary_revision");
+    }
+    return this.store.withIdentity(identity, async (scoped) => {
+      if (!await scoped.getMeeting(vaultId, meetingId)) throw new SyncTransactionError(404, "meeting_not_found");
+      const version = await scoped.getSummaryVersion(vaultId, meetingId, revisionNumber);
+      if (!version) throw new SyncTransactionError(404, "summary_version_not_found");
+      return version;
     });
   }
 

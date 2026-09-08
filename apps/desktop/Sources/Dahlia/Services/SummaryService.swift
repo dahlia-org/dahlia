@@ -49,6 +49,13 @@ enum SummaryService {
         )
         var document = decodeSummaryDocument(from: responseText, context: context)
         document.tags = resolvedTags(document.tags)
+        document.metadata = SummaryMetadata(
+            generatedBy: "local_codex",
+            inputTypes: ["context", "transcript"] + (screenshots.isEmpty ? [] : ["image"]) + (noteText?.isEmpty == false ? ["note"] : []),
+            detailLevel: SummaryDetailLevel.allCases.first { $0.instruction == generationSettings.detailLevelInstruction }?.rawValue,
+            outputLanguage: SummaryLanguage.allCases.first { $0.displayName == generationSettings.languageDisplayName }?.rawValue,
+            request: .init(model: generationSettings.modelID, reasoning: .init(effort: generationSettings.reasoningEffort))
+        )
         let rendered = ObsidianMarkdownSummaryRenderer.render(document: document, context: context)
 
         return GeneratedSummary(

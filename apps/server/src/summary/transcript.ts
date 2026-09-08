@@ -1,3 +1,4 @@
+import { summaryResponseMetadataSchema } from "./metadata";
 import { Buffer } from "node:buffer";
 import { z } from "zod";
 import type { AppConfig } from "../config";
@@ -102,12 +103,18 @@ Unused block fields must be empty arrays/strings, level 3. Never generate identi
       const upstreamRequestId = response.headers.get("x-databricks-request-id") ?? response.headers.get("x-request-id") ?? response.headers.get("request-id");
       requestId = upstreamRequestId && /^[a-zA-Z0-9._:-]{1,128}$/.test(upstreamRequestId) ? upstreamRequestId : undefined;
       if (!response.ok) { await response.body?.cancel(); throw new SummaryError(`summary_http_${response.status}`, response.status === 429 || response.status >= 500, requestId); }
-      const parsed = z.object({ status: z.literal("completed"), output: z.array(z.object({ type: z.string(),
+      const parsed = summaryResponseMetadataSchema.extend({ status: z.literal("completed"), output: z.array(z.object({ type: z.string(),
         content: z.array(z.object({ type: z.string(), text: z.string().optional() })).optional() })) })
         .parse(JSON.parse(new TextDecoder().decode(await boundedBytes(response, 2 * 1024 * 1024))));
       const text = parsed.output.filter((item) => item.type === "message").flatMap((item) => item.content ?? [])
         .filter((item) => item.type === "output_text").map((item) => item.text ?? "").join("");
-      return summaryDocument(JSON.parse(text), imageIds);
+      return { ...summaryDocument(JSON.parse(text), imageIds), metadata: {
+        generatedBy: "server",
+        inputTypes: ["context", "transcript", ...(images.length ? ["image" as const] : [])],
+        detailLevel: job.settings.detail, outputLanguage: job.outputLanguage,
+        request: { model, reasoning: { effort: job.settings.reasoningEffort } },
+        response: summaryResponseMetadataSchema.parse(parsed),
+      } };
       } catch (error) {
         if (error instanceof SummaryError) throw error;
         if (error instanceof GatewayRequestError) throw new SummaryError("summary_invalid_model");

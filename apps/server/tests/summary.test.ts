@@ -1,5 +1,6 @@
+import { summaryMetadata } from "../src/summary/metadata";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -40,6 +41,110 @@ async function setup() {
 }
 
 describe("server summary jobs", () => {
+  it("keeps immutable versions, pages without bodies, and deletes all versions atomically", async () => {
+    const { store, sync, method, service, vaultId, meetingId } = await setup();
+    try {
+      expect(await sync.latestSummary(owner, vaultId, meetingId)).toMatchObject({ revision: 0, present: false });
+      method.generate = async (job) => ({ ...doc(), metadata: {
+        generatedBy: "server", inputTypes: ["transcript"], detailLevel: job.settings.detail, outputLanguage: job.outputLanguage,
+        request: { model: job.settings.model, reasoning: { effort: job.settings.reasoningEffort } },
+        response: { model: "returned-model", usage: { input_tokens: 10, output_tokens_details: { reasoning_tokens: 2 } } },
+      } });
+      for (const [model, reasoningEffort] of [["first-model", "low"], ["second-model", "high"]] as const) {
+        await store.accountSettings.update(owner.userId, { summary: { methodSettings: { transcript: { model, reasoningEffort } } } });
+        await service.start(owner, vaultId, meetingId, { id: uuidV7() });
+        await new SummaryWorker(store.summaryJobs, [method], sync).processOne();
+      }
+      const first = await sync.summaryVersion(owner, vaultId, meetingId, "1");
+      expect(first).not.toHaveProperty("kind");
+      expect(first).not.toHaveProperty("generation");
+      expect(first.metadata).toMatchObject({ generatedBy: "server", inputTypes: ["transcript"], detailLevel: "detailed" });
+      expect(first.metadata).not.toHaveProperty("source");
+      expect(first.metadata).not.toHaveProperty("method");
+      expect(first.metadata?.request).toEqual({ model: "first-model", reasoning: { effort: "low" } });
+      expect(first.metadata?.response?.usage?.total_tokens).toBeUndefined();
+      const second = await sync.summaryVersion(owner, vaultId, meetingId, "2");
+      expect(second.metadata?.request.reasoning?.effort).toBe("high");
+      expect((await sync.latestSummary(owner, vaultId, meetingId)).record?.document).toBe(second.document);
+      const manifest = await sync.latestSummary(owner, vaultId, meetingId, "1");
+      expect(manifest).not.toHaveProperty("record");
+      expect(manifest.sha256).toBe((await sync.textContent(owner, vaultId, "summary", meetingId, "2")).sha256);
+      const transaction = { schemaVersion: 2, id: uuidV7(), vaultId, createdAt: new Date().toISOString(), operations: [{
+        id: uuidV7(), entity: "summary", action: "upsert", entityId: meetingId, baseRevision: 2,
+        data: { title: "Manual", document: JSON.stringify({ ...doc(), title: "Manual" }), createdAt: new Date().toISOString() },
+      }] };
+      await expect(sync.commitTransaction(owner, { ...transaction, id: uuidV7(), operations: [{ ...transaction.operations[0],
+        data: { ...transaction.operations[0]!.data, document: JSON.stringify({ ...doc(), metadata: { generatedBy: "server", response: { usage: { input_tokens: -1 } } } }) },
+      }] })).rejects.toMatchObject({ status: 400 });
+      await sync.commitTransaction(owner, transaction);
+      await sync.commitTransaction(owner, transaction);
+      expect((await sync.summaryVersion(owner, vaultId, meetingId, "3")).metadata).toBeNull();
+      expect(await sync.summaryVersion(owner, vaultId, meetingId, "1")).toEqual(first);
+      const page = await sync.summaryVersions(owner, vaultId, meetingId, undefined, "2");
+      expect(page.items.map((row) => row.revision)).toEqual([3, 2]);
+      expect(page.items[0]).not.toHaveProperty("document");
+      expect(page.items[0]).not.toHaveProperty("kind");
+      expect((await sync.summaryVersions(owner, vaultId, meetingId, page.nextCursor!, "2")).items.map((row) => row.revision)).toEqual([1]);
+      await expect(sync.commitTransaction(owner, { ...transaction, id: uuidV7() })).rejects.toMatchObject({ status: 409 });
+      expect((await sync.summaryVersions(owner, vaultId, meetingId)).items).toHaveLength(3);
+      await sync.commitTransaction(owner, { schemaVersion: 2, id: uuidV7(), vaultId, createdAt: new Date().toISOString(), operations: [
+        { id: uuidV7(), entity: "summary", action: "delete", entityId: meetingId, baseRevision: 3, data: {} },
+      ] });
+      expect(await sync.latestSummary(owner, vaultId, meetingId)).toMatchObject({ revision: 4, present: false });
+      expect((await sync.summaryVersions(owner, vaultId, meetingId)).items).toEqual([]);
+      await expect(sync.summaryVersion(owner, vaultId, meetingId, "1")).rejects.toMatchObject({ status: 404 });
+    } finally { await store.close?.(); }
+  });
+
+  it("serves latest and history without metadata support and applies current shared permissions", async () => {
+    const { store, sync, config, path, vaultId, meetingId } = await setup();
+    try {
+      await sync.commitTransaction(owner, { schemaVersion: 2, id: uuidV7(), vaultId, createdAt: new Date().toISOString(), operations: [{
+        id: uuidV7(), entity: "summary", action: "upsert", entityId: meetingId, baseRevision: 0,
+        data: { title: "Saved", document: JSON.stringify(doc()), createdAt: new Date().toISOString() },
+      }] });
+      const app = createApp({ config, authStore: store });
+      const headers = { "x-forwarded-email": "reader@example.com", "x-forwarded-user": "reader" };
+      const base = `/api/v1/vaults/${vaultId}/meetings/${meetingId}/summary`;
+      const routes = ["latest", "versions", "versions/1"];
+      for (const route of routes) {
+        expect((await app.request(`${base}/${route}`)).status).toBe(401);
+        expect((await app.request(`${base}/${route}`, { headers })).status).toBe(404);
+      }
+      const db = new DatabaseSync(path);
+      try {
+        db.prepare("INSERT INTO vault_permissions(vault_id, principal_type, principal_id, role, granted_by_user_id, created_at) VALUES (?, 'user', 'reader', 'member', 'owner', ?)").run(vaultId, Date.now());
+        for (const route of routes) {
+          const response = await app.request(`${base}/${route}`, { headers });
+          expect(response.status).toBe(200);
+          expect(response.headers.get("cache-control")).toBe("no-store");
+        }
+        expect((await app.request(`${base}/latest?manifest=invalid`, { headers })).status).toBe(400);
+        expect((await app.request(`${base}/versions?limit=101`, { headers })).status).toBe(400);
+        expect((await app.request(`${base}/versions/999999999999`, { headers })).status).toBe(400);
+        db.prepare("DELETE FROM vault_permissions WHERE principal_id = 'reader'").run();
+        for (const route of routes) expect((await app.request(`${base}/${route}`, { headers })).status).toBe(404);
+      } finally { db.close(); }
+    } finally { await store.close?.(); }
+  });
+
+  it("backfills existing summaries without inventing metadata metadata", async () => {
+    const { store, path, vaultId, meetingId } = await setup();
+    try {
+      const db = new DatabaseSync(path);
+      try {
+        const document = JSON.stringify(doc());
+        db.prepare("UPDATE meetings SET summary_title = 'Old', summary_document = ?, summary_created_at = 1234, summary_revision = 7 WHERE meeting_id = ?").run(document, meetingId);
+        db.exec(readFileSync(new URL("../drizzle/sqlite/20260908040515_summary_version_backfill/migration.sql", import.meta.url), "utf8"));
+        expect(db.prepare("SELECT vault_id, meeting_id, revision, title, document, created_at, metadata FROM summary_versions").get()).toEqual({
+          vault_id: vaultId, meeting_id: meetingId, revision: 7, title: "Old", document, created_at: 1234, metadata: null,
+        });
+        db.prepare("DELETE FROM meetings WHERE meeting_id = ?").run(meetingId);
+        expect(db.prepare("SELECT * FROM summary_versions").all()).toEqual([]);
+      } finally { db.close(); }
+    } finally { await store.close?.(); }
+  });
+
   it("reads persisted settings from unchanged database columns", async () => {
     const { store, path } = await setup();
     try {
@@ -193,7 +298,9 @@ describe("server summary jobs", () => {
           expect(JSON.stringify(body)).not.toContain(screenshots[1]!.screenshotId);
         }
         if (scenario === "failure") return Response.json({ error: "sensitive upstream response" }, { status: 400, headers: { "x-databricks-request-id": "req-123" } });
-        return Response.json({ status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify(output) }] }] });
+        return Response.json({ ...(withImages ? { id: "resp-example", model: "actual-model", created_at: 123,
+          reasoning: { effort: "medium" }, usage: { input_tokens: 100, output_tokens: 20, total_tokens: 120,
+            input_tokens_details: { cached_tokens: 10 }, output_tokens_details: { reasoning_tokens: 5 } } } : {}), status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify(output) }] }] });
       });
       const method = createTranscriptSummaryMethod(loadConfig({ DAHLIA_AUTH_TYPE: "header", DAHLIA_AI_BACKEND: "databricks",
         DATABRICKS_HOST: "https://workspace.example", DATABRICKS_CLIENT_ID: "client", DATABRICKS_CLIENT_SECRET: "secret", DATABRICKS_MODEL_SCHEMA: "catalog.ai" }), store.sync, sync, transport)!;
@@ -212,6 +319,10 @@ describe("server summary jobs", () => {
       expect(transport).toHaveBeenCalledTimes(2);
       const meeting = await store.sync.withIdentity(owner, (scoped) => scoped.getMeeting(vaultId, meetingId));
       expect(meeting).toMatchObject({ name: "Decisions", description: "Launch discussion" });
+      const metadata = summaryMetadata(meeting!.summaryDocument!);
+      expect(metadata).toMatchObject({ generatedBy: "server", request: { model: "catalog.ai.gpt-5-6-luna", reasoning: { effort: "medium" } } });
+      if (withImages) expect(metadata?.response).toMatchObject({ id: "resp-example", model: "actual-model", usage: { total_tokens: 120, output_tokens_details: { reasoning_tokens: 5 } } });
+      else expect(metadata?.response).toEqual({});
     } finally { await store.close?.(); }
   });
 

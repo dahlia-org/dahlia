@@ -1,3 +1,4 @@
+import { summaryMetadata } from "../summary/metadata";
 import { fileResponse, fileStorageKey, imageContentTypes, type FileMetadata } from "../files/model";
 import { needsImageAnalysis, type ImageAnalysisClaim, type ImageAnalysisInput } from "../image-analysis/model";
 import { recordingCanonical, recordingStorageKey, type RecordingRecord, type RecordingSource, type RecordingManifest } from "../recordings/model";
@@ -1324,6 +1325,14 @@ function createIdentityStore(
         }
       } else if (operation.entity === "summary") {
         await assertRevision(transaction, "summary", operation.entityId, operation.baseRevision);
+        if (operation.action === "delete") {
+          await db.delete(schema.summaryVersion).where(and(eq(schema.summaryVersion.vaultId, transaction.vaultId), eq(schema.summaryVersion.meetingId, operation.entityId)));
+        } else {
+          const metadata = summaryMetadata(String(data.document));
+          await db.insert(schema.summaryVersion).values({ vaultId: transaction.vaultId, meetingId: operation.entityId,
+            revision: Number(operation.baseRevision) + 1, title: String(data.title), document: String(data.document),
+            createdAt: data.createdAt as Date, savedAt: now, metadata });
+        }
         await db.update(schema.syncedMeeting).set(operation.action === "delete" ? {
           summaryTitle: null,
           summaryDocument: null,
@@ -1797,6 +1806,20 @@ function createIdentityStore(
   }
 
   return {
+    async listSummaryVersions(vaultId, meetingId, limit, before) {
+      const columns = schema.summaryVersion;
+      return db.select({ vaultId: columns.vaultId, meetingId: columns.meetingId, revision: columns.revision,
+        title: columns.title, createdAt: columns.createdAt, savedAt: columns.savedAt, metadata: columns.metadata }).from(schema.summaryVersion).where(and(
+        readable(schema.summaryVersion.vaultId), eq(schema.summaryVersion.vaultId, vaultId), eq(schema.summaryVersion.meetingId, meetingId),
+        before === undefined ? undefined : lt(schema.summaryVersion.revision, before),
+      )).orderBy(desc(schema.summaryVersion.revision)).limit(limit);
+    },
+    async getSummaryVersion(vaultId, meetingId, revision) {
+      const [row] = await db.select().from(schema.summaryVersion).where(and(
+        readable(schema.summaryVersion.vaultId), eq(schema.summaryVersion.vaultId, vaultId), eq(schema.summaryVersion.meetingId, meetingId), eq(schema.summaryVersion.revision, revision),
+      ));
+      return row ?? null;
+    },
     async getSummaryJob(vaultId, meetingId, id) {
       const [row] = await db.select().from(schema.summaryJob).where(and(
         eq(schema.summaryJob.vaultId, vaultId), eq(schema.summaryJob.meetingId, meetingId),
