@@ -8,6 +8,7 @@ include:
 sync:
   paths:
     - ../../apps/server
+    - notebooks
 
 experimental:
   skip_name_prefix_for_schema: true
@@ -34,6 +35,9 @@ variables:
   ai_schema:
     description: Unity Catalog schema containing AI model services.
     default: ai
+  ops_schema:
+    description: Unity Catalog schema containing OTel tables.
+    default: ops
   volume_name:
     description: Managed Volume used for stored content.
     default: storage
@@ -60,6 +64,9 @@ targets:
           lifecycle:
             prevent_destroy: true
       schemas:
+        ops_schema:
+          lifecycle:
+            prevent_destroy: true
         ai_schema:
           lifecycle:
             prevent_destroy: true

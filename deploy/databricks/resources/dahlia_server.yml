@@ -1,5 +1,9 @@
 resources:
   schemas:
+    ops_schema:
+      catalog_name: ${var.catalog}
+      name: ${var.ops_schema}
+      comment: OTel tables for Dahlia Server ${bundle.target}
     ai_schema:
       catalog_name: ${var.catalog}
       name: ${var.ai_schema}

@@ -1,0 +1,13 @@
+resources:
+  jobs:
+    create_otel_tables:
+      name: dahlia-create-otel-tables-${bundle.target}
+      description: Create missing Zerobus OTel tables on demand.
+      max_concurrent_runs: 1
+      tasks:
+        - task_key: create_otel_tables
+          notebook_task:
+            notebook_path: ../notebooks/create_otel_tables.sql
+            base_parameters:
+              catalog: ${resources.schemas.ops_schema.catalog_name}
+              ops_schema: ${resources.schemas.ops_schema.name}
