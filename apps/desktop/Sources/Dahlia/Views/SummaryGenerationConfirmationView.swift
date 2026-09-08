@@ -29,8 +29,8 @@ struct SummaryGenerationConfirmationView: View {
         self.projects = projects
         self.onGenerate = onGenerate
         let serverDetail = AppSettings.shared.currentVault?.accountConnectionId.flatMap {
-            ServerAccountSettingsModel.shared.state(for: $0).settings?.summary?.methodSettings.transcript.detail
-        }.flatMap(SummaryDetailLevel.init(rawValue:))
+            ServerAccountSettingsModel.shared.state(for: $0).settings?.summary?.detailLevel
+        }
         _detailLevel = State(initialValue: AppSettings.shared.currentVault?.accountConnectionId != nil ? serverDetail : initialDetailLevel)
         _selectedProjectId = State(initialValue: initialProjectId)
         _errorMessage = State(initialValue: nil)

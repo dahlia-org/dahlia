@@ -87,6 +87,7 @@ sections / blocks / items / tags / action_itemsの件数上限は送信・受信
 文字列長、数値範囲、sectionsの最小1件、型・必須項目、画像参照検証、応答2 MiB制限は維持する。`store`はChat Completionsでは送らない。
 本文がcontent parts配列の場合はtextだけを使い、reasoning partsやthoughtSignatureを保存しない。
 
-PostgreSQL / SQLite / D1 に audio_summary 列を forward migration で追加する。先にmigration、次にServerとWebを更新する。
-Desktopは変更しない。共有アカウント設定に従い既存Desktopの開始要求で音声方式が実行されることは許容するが、Desktopの
-設定UIでは音声方式を追加しない。Workersの生成capabilityは従来どおり無効とする。
+PostgreSQL / SQLite / D1 に audio_summary 列を forward migration で追加する。Desktopを先に更新し、migration適用後にServerとWebを更新する。
+Desktopも方式別設定を読み取り、文字起こしと画像／音声と画像を区別して表示・編集する。音声モデルは利用可能な音声対応Geminiに限定する。
+単発生成の確認画面と一括生成は選択方式の詳細度を使い、未対応方式・未取得設定では上書きを送らずServer既定に従う。
+Workersの生成capabilityは従来どおり無効とする。

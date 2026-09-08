@@ -4,29 +4,37 @@ struct ServerSummarySettingsSection: View {
     let connectionID: UUID
     @Bindable private var model = ServerAccountSettingsModel.shared
     private var state: ServerAccountSettingsModel.State { model.state(for: connectionID) }
-    private var settings: ServerAccountSettings.TranscriptSummary { state.settings?.summary?.methodSettings.transcript ?? .init() }
+    private var method: String { state.settings?.summary?.method ?? "transcript" }
+    private var methods: [String] { state.summaryMethods.filter { $0 == "transcript" || $0 == "audio" } }
+    private var settings: ServerAccountSettings.TranscriptSummary {
+        state.settings?.summary?.selectedSettings ?? .init(model: method == "audio" ? "gemini-3-8-flash" : "gpt-5.4")
+    }
+
+    private var models: [ServerSummaryService.Model] {
+        state.summaryModels.filter { method != "audio" || $0.supportsAudioSummary }
+    }
 
     private var selectedModel: ServerSummaryService.Model? {
-        state.summaryModels.first { $0.id == settings.model || settings.model.hasSuffix("." + $0.id) }
+        models.first { $0.id == settings.model || settings.model.hasSuffix("." + $0.id) }
     }
 
     private var efforts: [String] { selectedModel?.supportedReasoningLevels.map(\.effort) ?? [] }
 
     var body: some View {
         Section {
-            if state.summaryMethods.contains("transcript") {
+            if !methods.isEmpty {
                 Picker(L10n.serverSummaryMethod, selection: Binding(
-                    get: { state.settings?.summary?.method ?? "transcript" },
+                    get: { method },
                     set: { model.save(.init(summary: .init(method: $0)), connectionID: connectionID) }
                 )) {
-                    ForEach(state.summaryMethods, id: \.self) { method in
-                        Text(L10n.serverSummaryTranscript).tag(method)
+                    ForEach(methods, id: \.self) { method in
+                        Text(method == "audio" ? L10n.serverSummaryAudio : L10n.serverSummaryTranscript).tag(method)
                     }
                 }
                 Picker(L10n.model, selection: Binding(
                     get: { selectedModel?.id ?? "" },
                     set: { value in
-                        guard let selected = state.summaryModels.first(where: { $0.id == value }) else { return }
+                        guard let selected = models.first(where: { $0.id == value }) else { return }
                         var next = settings
                         next.model = selected.id
                         if !selected.supportedReasoningLevels.contains(where: { $0.effort == next.reasoningEffort }) {
@@ -36,12 +44,12 @@ struct ServerSummarySettingsSection: View {
                     }
                 )) {
                     if selectedModel == nil { Text(L10n.serverSummaryChooseModel).tag("") }
-                    ForEach(state.summaryModels) { Text($0.displayName).tag($0.id) }
+                    ForEach(models) { Text($0.displayName).tag($0.id) }
                 }
-                .disabled(state.summaryModels.isEmpty)
+                .disabled(models.isEmpty)
                 if let error = state.modelErrorMessage {
                     Text(error).foregroundStyle(.red)
-                } else if state.summaryModels.isEmpty {
+                } else if models.isEmpty {
                     Text(L10n.serverSummaryNoModels).foregroundStyle(.secondary)
                 }
                 Button(L10n.serverSummaryReloadModels) { model.refresh(connectionID: connectionID) }
@@ -71,6 +79,12 @@ struct ServerSummarySettingsSection: View {
     }
 
     private func save(_ settings: ServerAccountSettings.Patch.Transcript) {
-        model.save(.init(summary: .init(methodSettings: .init(transcript: settings))), connectionID: connectionID)
+        let patch: ServerAccountSettings.Patch.MethodSettings
+        switch method {
+        case "transcript": patch = .init(transcript: settings)
+        case "audio": patch = .init(audio: settings)
+        default: return
+        }
+        model.save(.init(summary: .init(methodSettings: patch)), connectionID: connectionID)
     }
 }

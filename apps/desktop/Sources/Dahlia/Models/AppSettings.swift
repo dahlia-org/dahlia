@@ -337,7 +337,7 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
     func batchSummaryGenerationOptions(serverSettings: ServerAccountSettings?) -> SummaryGenerationOptions {
         SummaryGenerationOptions(
             exportOptions: batchSummaryGenerationOptions().exportOptions,
-            detailLevel: serverSettings?.summary.flatMap { SummaryDetailLevel(rawValue: $0.methodSettings.transcript.detail) }
+            detailLevel: serverSettings?.summary?.detailLevel
         )
     }
 

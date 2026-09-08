@@ -15,6 +15,7 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var serverSearchPendingProjects: String { String(localized: "search.server.pendingProjects", bundle: bundle) }
     static var serverSearchPendingImages: String { String(localized: "search.server.pendingImages", bundle: bundle) }
     static var serverSummaryMethod: String { String(localized: "serverSummaryMethod", bundle: bundle) }
+    static var serverSummaryAudio: String { String(localized: "serverSummaryAudio", bundle: bundle) }
     static var serverSummaryTranscript: String { String(localized: "serverSummaryTranscript", bundle: bundle) }
     static var serverSummaryDescription: String { String(localized: "serverSummaryDescription", bundle: bundle) }
     static var serverSummaryAccountDefault: String { String(localized: "serverSummaryAccountDefault", bundle: bundle) }
