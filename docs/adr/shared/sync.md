@@ -34,7 +34,7 @@ worker は録音中も push / pull できるが、transcript patch は確定済�
 
 2026-09-07: Server の調査用履歴は `meeting_events` に保持する。会議の作成・メタデータ変更・削除は Server の確定 transaction 内で記録し、変更した項目名だけを残す。Server Account の Desktop はタグ付与・解除、成功した録音開始、終了、音源ごとの物理セグメント切り替えを既存の永続 queue から送る。Local Account、タグ名、変更前後の本文、音声、ファイルパスは対象外。切り替えはファイル確定成功とは区別し、初回ファイル作成では発生させない。
 
-`capabilities` の `meetingEventsVersion: 1` を確認した接続だけで送信を有効にする。イベントは ID で冪等化し、履歴は Server だけに残す。開始・終了イベントから `recording_sessions` SQL view を構成し、未終了セッションがある会議を Web の一覧・詳細・サイドバーで録音中と表示する。生存通知や有効期限、状態カラムは追加しない。終了情報が同期されるまで表示が残る。録音・保存はネットワークを待たず、他端末のセッションをローカルの録音テーブルへ適用しない。
+`capabilities` の `meetingEvents: { version: 1 }` を確認した接続だけで送信を有効にする。イベントは ID で冪等化し、履歴は Server だけに残す。開始・終了イベントから `recording_sessions` SQL view を構成し、未終了セッションがある会議を Web の一覧・詳細・サイドバーで録音中と表示する。生存通知や有効期限、状態カラムは追加しない。終了情報が同期されるまで表示が残る。録音・保存はネットワークを待たず、他端末のセッションをローカルの録音テーブルへ適用しない。
 
 イベント履歴は同期差分の90日保持とは独立し、期間削除や過去操作の補完は行わない。会議削除時は追加情報を除去し、ID・種別・時刻だけを残す。Vault・owner account 削除時は履歴も消す。調査はDBから行い、閲覧APIや専用UIは追加しない。
 
@@ -127,9 +127,9 @@ metadata の全保持と本文の部分保持を分ける。`v46_textContent` �
 
 metadata の Record は本文を持たず、本文を含む読取結果とは型を分ける。アプリの Repository と MCP は共通 `TextContentAccess` で完全性検査と本文取得を同じ SQLite 読取内で行い、呼び出し元の事前検査に依存しない。ページ取得でも会議全体の欠損を検出し、JOIN が欠損行を黙って除外しない。一覧・検索用の cached projection は明示した別の読取口を使う。録音・バッチ結果・本文編集は metadata、本文、同期 operation を従来の同じ transaction で確定する。
 
-capabilities は `{ "syncVersion": 3, "meetingEventsVersion": 1 }` のように機能別の対応 version を返す。`syncVersion: 3` は transaction schema 2、snapshot / delta 復旧、receipt 解決、metadata 同期と本文の個別取得を含む同期契約を表す。`meetingEventsVersion: 1` は会議イベントの受付契約を表す。entity revision や payload schema の version とは区別する。非対応の機能はフィールドを省略し、atomic sync 非対応の store は両機能を省いた `200 {}` を返す。認証・運用エラーは通常のエラーとして返す。クライアントは未知のフィールドを無視する。旧フィールドと旧ルートは維持しない。
+capabilities は `{ "sync": { "version": 3 }, "meetingEvents": { "version": 1 } }` のように機能別の対応 version を返す。`sync: { version: 3 }` は transaction schema 2、snapshot / delta 復旧、receipt 解決、metadata 同期と本文の個別取得を含む同期契約を表す。`meetingEvents: { version: 1 }` は会議イベントの受付契約を表す。entity revision や payload schema の version とは区別する。非対応の機能はフィールドを省略し、atomic sync 非対応の store は全機能を省いた `200 {}` を返す。認証・運用エラーは通常のエラーとして返す。クライアントは未知のフィールドを無視する。旧フィールドと旧ルートは維持しない。
 
-`GET /api/v1/capabilities` の `syncVersion: 3` を確認する。snapshot / changes は常に meeting の重複 summary と検索用本文、summary document、file の OCR / caption、transcript 本文を省く。content query と contentMode response は廃止する。非対応では `updateRequired` を表示し、既存本文を保持して同期・解放を止める。transaction schema 2 は維持する。要約本文は既存の meeting 配下の summary/latest、文字起こしは revision 指定の text/transcript を使う。file は個別 metadata JSON から OCR / caption（nullable）と revision を1回で取得し、ID・Vault・checksum・同期済み revision と保存直前の編集保護を照合する。版が違えば通常同期後に1回再取得し、不一致や失敗では旧本文と未取得状態を保持する。依存取得は metadata のみ反映し、本文補完から confirmed revision を更新しない。不要となった text/file は削除する。
+`GET /api/v1/capabilities` の `sync: { version: 3 }` を確認する。snapshot / changes は常に meeting の重複 summary と検索用本文、summary document、file の OCR / caption、transcript 本文を省く。content query と contentMode response は廃止する。非対応では `updateRequired` を表示し、既存本文を保持して同期・解放を止める。transaction schema 2 は維持する。要約本文は既存の meeting 配下の summary/latest、文字起こしは revision 指定の text/transcript を使う。file は個別 metadata JSON から OCR / caption（nullable）と revision を1回で取得し、ID・Vault・checksum・同期済み revision と保存直前の編集保護を照合する。版が違えば通常同期後に1回再取得し、不一致や失敗では旧本文と未取得状態を保持する。依存取得は metadata のみ反映し、本文補完から confirmed revision を更新しない。不要となった text/file は削除する。
 
 GET /files/{fileId} は原本、HEAD は同じ認可で原本の存在・HTTP header を確認する。HEAD は本文を送らず、各 storage の HEAD / stat を再利用する。アプリの metadata を独自 HTTP header に移さない。
 
@@ -141,7 +141,7 @@ manifest hash は各 nullable UTF-8 field の `byteLength:bytes`、NULL は `-:`
 
 会話分析も共通 provider の lease で全文を確保し、Repository は未保持本文から空の分析を生成しない。本文の取得・revision 更新は表示中の分析を無効化し、計算結果の保存時にも完全性と保持 revision を確認する。録音後の分析は既存のバックグラウンド処理のまま実行する。
 
-Local Account と未同期画像は端末解析 job の待機・処理・失敗表示を維持する。Server Account は capabilities API で `imageAnalysis: true` を確認した場合だけ端末解析を省略する。未対応・未設定の Server では端末解析を使い、同期済み画像の OCR / caption は端末 job の有無によらず共通 provider で取得する。
+Local Account と未同期画像は端末解析 job の待機・処理・失敗表示を維持する。Server Account は capabilities API で `imageAnalysis: { version: 1 }` を確認した場合だけ端末解析を省略する。未対応・未設定の Server では端末解析を使い、同期済み画像の OCR / caption は端末 job の有無によらず共通 provider で取得する。
 
 全 Server Account 合計128 MiBを超えると、再取得可能な検証済み本文を LRU で80%まで解放する。直近20会議は空き枠内だけ先読みする。閲覧済み本文を先読みのために追い出さず、解放した項目を次の先読みで取り直さない。Local Account、使用中、未送信・競合・復旧中の Vault、録音中は対象外。容量は本文だけを数え、metadata・翻訳・session・音声特徴量・ユーザーの Markdown・backup を含めない。解放は本文行だけを削除し、transcript metadata・summary header・file metadata と export 参照、端末固有属性を保持する。対応する FTS・旧 vector を除去し metadata 索引を再構築する。既存の起動時 VACUUM と録音外 incremental vacuum で空きページを回収する。
 

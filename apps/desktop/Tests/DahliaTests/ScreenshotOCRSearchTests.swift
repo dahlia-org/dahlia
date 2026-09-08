@@ -9,7 +9,7 @@ import Synchronization
     @MainActor
     // swiftlint:disable:next type_body_length
     struct ScreenshotOCRSearchTests {
-        @Test(arguments: ["enabled", "disabled", "legacy", "missing", "unavailable", "detached"])
+        @Test(arguments: ["enabled", "disabled", "future", "legacy", "missing", "unavailable", "detached"])
         func serverAnalysisCapabilityControlsDeviceFallback(capability: String) async throws {
             let analyzer = StubScreenshotAnalyzer(text: "device OCR")
             let database = try makeDatabase(screenshotAnalyzer: analyzer)
@@ -39,7 +39,11 @@ import Synchronization
                     } catch { Issue.record(error) }
                 }
                 let status = capability == "missing" ? 404 : unavailable.withLock { $0 } ? 503 : 200
-                let body = capability == "legacy" ? "{}" : "{\"imageAnalysis\":\(capability == "enabled" || capability == "detached")}"
+                let body = switch capability {
+                case "enabled", "detached": #"{"imageAnalysis":{"version":1}}"#
+                case "future": #"{"imageAnalysis":{"version":2}}"#
+                default: "{}"
+                }
                 return (status, [:], Data(body.utf8))
             }
             defer { ImageURLProtocol.remove(origin: connection.origin) }

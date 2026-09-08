@@ -132,7 +132,7 @@
                 let body: String
                 switch path {
                 case "/api/v1/capabilities":
-                    body = #"{"summaryGeneration":{"version":1,"methods":["transcript","audio"]}}"#
+                    body = #"{"meetingSummaryGeneration":{"version":1,"sources":["transcript","audio"]}}"#
                 case "/api/v1/models":
                     body = #"{"data":[],"models":[]}"#
                 default:
@@ -170,7 +170,7 @@
                 let body: String
                 switch request.url!.path {
                 case "/api/v1/capabilities":
-                    body = #"{"summaryGeneration":{"version":1,"methods":["transcript"]}}"#
+                    body = #"{"meetingSummaryGeneration":{"version":1,"sources":["transcript"]}}"#
                 case "/api/v1/models":
                     let id: String
                     if request.value(forHTTPHeaderField: "Authorization") == "Bearer old-token" {

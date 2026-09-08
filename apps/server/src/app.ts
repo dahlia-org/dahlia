@@ -416,8 +416,16 @@ export function createApp(dependencies: AppDependencies) {
   });
   app.get("/api/v1/capabilities", async (context) => {
     await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
-    return context.json(await store.sync.isAvailable()
-      ? { syncVersion: 3, recordingAudioVersion: 1, meetingEventsVersion: 1, searchVersion: 1, imageAnalysis: dependencies.imageAnalysisEnabled === true, summaryGeneration: { version: dependencies.summaryService?.methods.length ? 1 : 0, methods: dependencies.summaryService?.methods.map((method) => method.id) ?? [] } } : {});
+    if (!await store.sync.isAvailable()) return context.json({});
+    const sources = dependencies.summaryService?.methods.map((method) => method.id) ?? [];
+    return context.json({
+      sync: { version: 3 },
+      recordingArchive: { version: 1 },
+      meetingEvents: { version: 1 },
+      search: { version: 1 },
+      ...(dependencies.imageAnalysisEnabled === true ? { imageAnalysis: { version: 1 } } : {}),
+      ...(sources.length ? { meetingSummaryGeneration: { version: 1, sources } } : {}),
+    });
   });
   app.get("/api/v1/vaults/:vaultId/text/:entity/:entityId", async (context) => {
     const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);

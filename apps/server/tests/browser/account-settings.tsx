@@ -20,7 +20,7 @@ function gate() {
 }
 window.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
   const path = new URL(input instanceof Request ? input.url : input, location.origin).pathname;
-  if (path === "/api/v1/capabilities") return Response.json({ summaryGeneration: { version: 1, methods: ["transcript", "audio"] } });
+  if (path === "/api/v1/capabilities") return Response.json({ meetingSummaryGeneration: { version: 1, sources: ["transcript", "audio"] } });
   if (path === "/api/v1/models") {
     modelReads++;
     return Response.json(modelList([{ id: "gpt-5.4" }, { id: "gemini-3-8-flash" }]));

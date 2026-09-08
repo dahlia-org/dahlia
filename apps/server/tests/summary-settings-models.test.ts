@@ -9,6 +9,19 @@ import { modelList } from "../src/ai-gateway/models";
 vi.mock("../src/client/live-data", () => ({ useLiveJSON: vi.fn(), refreshData: vi.fn() }));
 vi.mock("../src/client/api", () => ({ json: vi.fn(), uiText: (en: string) => en }));
 
+it.each([{}, { meetingSummaryGeneration: { version: 2, sources: ["transcript", "audio"] } }])(
+  "keeps common settings and hides generation for unsupported capabilities: %j", (capabilities) => {
+    vi.mocked(useLiveJSON).mockImplementation((url) => ({
+      data: url === "/api/v1/capabilities" ? capabilities : undefined,
+      loading: false, error: undefined, reload: vi.fn(), replace: vi.fn(),
+    }));
+    const settings = renderToStaticMarkup(createElement(ServerSummarySettings));
+    expect(settings).toContain("Output language");
+    expect(settings).not.toContain("Summary source");
+    expect(renderToStaticMarkup(createElement(ServerSummaryGeneration, { base: "/test" }))).toBe("");
+  },
+);
+
 it.each([false, true])("hides the automatic review alias from summary model choices (alias only: %s)", (aliasOnly) => {
   const catalog = modelList([
     { id: "codex-auto-review" },
@@ -16,7 +29,7 @@ it.each([false, true])("hides the automatic review alias from summary model choi
   ]);
   vi.mocked(useLiveJSON).mockImplementation((url) => ({
     data: url === "/api/v1/models" ? catalog
-      : url === "/api/v1/capabilities" ? { summaryGeneration: { version: 1, methods: ["transcript"] } }
+      : url === "/api/v1/capabilities" ? { meetingSummaryGeneration: { version: 1, sources: ["transcript"] } }
       : { settings: null },
     loading: false, error: undefined, reload: vi.fn(), replace: vi.fn(),
   }));
@@ -32,7 +45,7 @@ it.each([true, false])("filters audio choices to available audio-capable Gemini 
     ...(available ? [{ id: "gemini-3-8-flash" }, { id: "gemini-3-7-flash" }] : [])]);
   vi.mocked(useLiveJSON).mockImplementation((url) => ({
     data: url === "/api/v1/models" ? catalog
-      : url === "/api/v1/capabilities" ? { summaryGeneration: { version: 1, methods: ["transcript", "audio"] } }
+      : url === "/api/v1/capabilities" ? { meetingSummaryGeneration: { version: 1, sources: ["transcript", "audio"] } }
       : { settings: { summary: { method: "audio", detail: "standard", methodSettings: { audio: { model: "gemini-3-8-flash", reasoningEffort: "medium" } } } } },
     loading: false, error: undefined, reload: vi.fn(), replace: vi.fn(),
   }));
@@ -51,7 +64,7 @@ it.each([
   ["summary_http_400", "Summary failed; the existing summary was preserved."],
 ])("shows the existing failure message for %s", (error, message) => {
   vi.mocked(useLiveJSON).mockImplementation((url) => ({
-    data: url === "/api/v1/capabilities" ? { summaryGeneration: { version: 1, methods: ["audio"] } }
+    data: url === "/api/v1/capabilities" ? { meetingSummaryGeneration: { version: 1, sources: ["audio"] } }
       : { job: { id: "test", status: "failed", error } },
     loading: false, error: undefined, reload: vi.fn(), replace: vi.fn(),
   }));

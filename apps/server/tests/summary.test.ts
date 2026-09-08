@@ -17,6 +17,7 @@ import { createTranscriptSummaryMethod } from "../src/summary/transcript";
 import { accountSettingsPatchSchema } from "../src/account-settings";
 import { loadConfig } from "../src/config";
 import { createApp } from "../src/app";
+import { createWorkerHandler } from "../src/worker";
 import { uuidV7 } from "../src/id";
 import type { AppConfig } from "../src/config";
 import type { Identity } from "../src/auth/identity";
@@ -45,6 +46,34 @@ async function setup() {
 }
 
 describe("server summary jobs", () => {
+  it.each(["node", "worker"])("advertises only registered capabilities through %s", async (runtime) => {
+    const { store, method, config } = await setup();
+    try {
+      const methods: SummaryMethod[] = [method, { ...method, id: "audio" }];
+      const app = createApp({ config, authStore: store, imageAnalysisEnabled: true,
+        summaryService: new SummaryService(store.sync, store.accountSettings, methods) });
+      const worker = createWorkerHandler(async () => app);
+      const fetch = worker.fetch!.bind(worker) as unknown as
+        (request: Request, env: Cloudflare.Env, context: ExecutionContext) => Promise<Response>;
+      const send = (authenticated: boolean) => {
+        const request = new Request("http://localhost:5173/api/v1/capabilities", {
+          headers: authenticated ? { "X-Forwarded-Email": "owner@example.com" } : {},
+        });
+        return runtime === "node" ? app.request(request) : fetch(request, {} as Cloudflare.Env, {} as ExecutionContext);
+      };
+      expect((await send(false)).status).toBe(401);
+      expect(await (await send(true)).json()).toEqual({
+        sync: { version: 3 }, recordingArchive: { version: 1 }, meetingEvents: { version: 1 },
+        search: { version: 1 }, imageAnalysis: { version: 1 },
+        meetingSummaryGeneration: { version: 1, sources: ["transcript", "audio"] },
+      });
+      methods.length = 0;
+      expect(await (await send(true)).json()).not.toHaveProperty("meetingSummaryGeneration");
+      vi.spyOn(store.sync, "isAvailable").mockResolvedValueOnce(false);
+      expect(await (await send(true)).json()).toEqual({});
+    } finally { await store.close?.(); }
+  });
+
   it("keeps immutable versions, pages without bodies, and deletes all versions atomically", async () => {
     const { store, sync, method, service, vaultId, meetingId } = await setup();
     try {
@@ -281,9 +310,9 @@ describe("server summary jobs", () => {
         expect((await app.request(`${path}-job`, { method, headers })).status).toBe(404);
       }
       const portable = createApp({ config, authStore: store });
-      expect(await (await portable.request("/api/v1/capabilities", { headers })).json()).toMatchObject({ summaryGeneration: { version: 0, methods: [] } });
+      expect(await (await portable.request("/api/v1/capabilities", { headers })).json()).not.toHaveProperty("meetingSummaryGeneration");
       expect((await app.request("/api/v1/summary/methods", { headers })).status).toBe(404);
-      expect(await (await app.request("/api/v1/capabilities", { headers })).json()).toMatchObject({ summaryGeneration: { version: 1, methods: ["transcript"] } });
+      expect(await (await app.request("/api/v1/capabilities", { headers })).json()).toMatchObject({ meetingSummaryGeneration: { version: 1, sources: ["transcript"] } });
       expect((await portable.request(path, { method: "POST", headers, body: "{}" })).status).toBe(503);
     } finally { await store.close?.(); }
   });

@@ -43,7 +43,7 @@ Server transcript には Desktop の session ID / 累積 offset がないため�
 
 モデル候補は Desktop/Web とも `/api/v1/models` の同じ一覧を使う。要約のSP呼び出しもGatewayと同じ短名→schema付き名の解決を使い、既存設定に保存された当該schema付き名は短名へ正規化してから解決する。失敗はworkerで内容・認証情報を含めず記録し、`summary_input_changed` は画面で入力更新による失敗として示す。
 
-機能検出は `GET /api/v1/capabilities` の `summaryGeneration: { version, methods }` に統合する。登録済み方式から一覧を導出し、未対応は version 0 / 空一覧、capabilities 自体が空の場合も未対応とする。要約設定は `summary.method` と `summary.methodSettings.transcript` にまとめ、PATCH は指定した葉だけ更新する。DB列と開始済みジョブの設定スナップショットは変更しない。`outputLanguage` はアカウント設定直下に維持する。
+機能検出は `GET /api/v1/capabilities` の `meetingSummaryGeneration: { version, sources }` に統合する。登録済み方式から sources を導出する。sources は要約の主素材（transcript / audio）の選択肢であり、どちらも画像を併用できる。未対応はキーを省略し、capabilities 自体が空の場合も未対応とする。要約設定は `summary.method`・共通の `summary.detail`・方式別の `summary.methodSettings` にまとめ、PATCH は指定した葉だけ更新する。DBは下記の機能別集約により `summary` 列へ移行する。開始済みジョブの設定スナップショットは変更しない。`outputLanguage` はアカウント設定直下に維持する。
 
 Desktop の設定キャッシュが未取得のときは詳細度 override を送らず、Server のアカウント既定値を使う。確認画面で明示選択した詳細度は維持する。canonical 要約の新しい版を受け取ったら古いエクスポート参照を無効化するが、同じ版の再取得・キャッシュ解放では保持する。出力先のファイル自体は削除しない。
 
@@ -64,8 +64,8 @@ HTTP の会議詳細（Vault 配下と ID 解決用の両経路）は会議情�
 ## 音声と画像による要約（2026-09-08）
 
 Node / Databricks に `audio` 方法を追加する。Private Web の「要約のソース」で文字起こしと画像／音声と画像を選び、
-`summary.methodSettings.audio` にモデル・推論強度・詳細度を独立して保存する。既存設定の既定は `transcript` を維持し、
-音声設定の初期値は `gemini-3-8-flash` / `medium` / `detailed` とする。両設定は葉ごとの PATCH で更新し、
+`summary.methodSettings.audio` にモデル・推論強度を保存し、詳細度は方式共通の `summary.detail` を使う。既存設定の既定は `transcript` を維持し、
+音声モデル・推論強度の初期値は `gemini-3-8-flash` / `medium`、共通詳細度の初期値は `detailed` とする。設定は葉ごとの PATCH で更新し、
 モデル候補は既存の一覧に存在し、カタログで audio 入力を持つ Gemini に限定する。worker でも同条件を再検証する。
 
 確定済み録音の全セッションから、存在する mic / system の両音声を取得する。保存済みの audio/mp4 を再エンコードせず、
@@ -87,7 +87,22 @@ sections / blocks / items / tags / action_itemsの件数上限は送信・受信
 文字列長、数値範囲、sectionsの最小1件、型・必須項目、画像参照検証、応答2 MiB制限は維持する。`store`はChat Completionsでは送らない。
 本文がcontent parts配列の場合はtextだけを使い、reasoning partsやthoughtSignatureを保存しない。
 
-PostgreSQL / SQLite / D1 に audio_summary 列を forward migration で追加する。Desktopを先に更新し、migration適用後にServerとWebを更新する。
+音声方式の追加時には PostgreSQL / SQLite / D1 に `audio_summary` 列を forward migration で追加した。現在の保存形式と適用手順は下記の機能別集約に従う。
 Desktopも方式別設定を読み取り、文字起こしと画像／音声と画像を区別して表示・編集する。音声モデルは利用可能な音声対応Geminiに限定する。
-単発生成の確認画面と一括生成は選択方式の詳細度を使い、未対応方式・未取得設定では上書きを送らずServer既定に従う。
+単発生成の確認画面と一括生成は方式共通の詳細度を使い、未取得設定では上書きを送らずServer既定に従う。
 Workersの生成capabilityは従来どおり無効とする。
+
+## 要約設定の機能別集約（2026-09-08）
+
+方式切り替えでユーザーが選んだ詳細度を変えないため、詳細度を方式共通にする。モデル・推論強度だけを方式別に保持し、
+要約設定の追加・更新境界を一つにするため、`summary_method` / `transcript_summary` / `audio_summary` を `summary` 列へ集約する。
+この決定は従来の「DB列を維持」「詳細度を方式別に保存」の方針を置き換える。
+
+[アカウント設定の機能別集約](database-and-identity.md#アカウント設定の機能別集約2026-09-08)に従い、
+新列追加、選択中の方式の詳細度と両方式のモデル・推論強度の移行、旧列削除を forward migration で行う。
+既存ジョブ・履歴は変更せず、新規ジョブの開始時だけ共通詳細度を取り込む。要求ごとの明示的な詳細度 override は優先する。
+PATCH は現在行の指定葉だけを更新し、異なる葉の並行更新を保持する。同じ葉はDBで後勝ちとする。
+内部 `change_version` は実際に値が変わったときだけ増やし、SSEの変更検知専用とする。
+
+旧API形式の互換アダプターは設けない。移行とDesktop / Server / Webの更新を一体で適用し、開いている旧Webは再読み込みする。
+旧列削除後はアプリだけを旧版へ戻せないため、復旧は修正の前進適用、または移行前バックアップと対応バージョンの組み合わせで行う。
