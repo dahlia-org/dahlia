@@ -16,8 +16,8 @@ const analysisLanguages = z.object({
 }).strict().refine((value) => value.scope === "all" || value.identifiers.length > 0);
 
 const summarySchema = z.object({
-  method: z.literal("transcript"),
-  methodSettings: z.object({ transcript: transcriptSettingsSchema }).strict(),
+  method: z.enum(["transcript", "audio"]),
+  methodSettings: z.object({ transcript: transcriptSettingsSchema, audio: transcriptSettingsSchema }).strict(),
 }).strict();
 export const accountSettingsSchema = z.object({ outputLanguage, analysisLanguages, summary: summarySchema }).strict();
 export type AccountSettings = z.infer<typeof accountSettingsSchema>;
@@ -25,14 +25,15 @@ export const DEFAULT_ACCOUNT_SETTINGS: AccountSettings = {
   outputLanguage: "ja",
   summary: { method: "transcript", methodSettings: {
     transcript: { model: "gpt-5.4", reasoningEffort: "medium", detail: "detailed" },
+    audio: { model: "gemini-3-8-flash", reasoningEffort: "medium", detail: "detailed" },
   } },
   analysisLanguages: { scope: "all", identifiers: [] },
 };
 export const accountSettingsPatchSchema = z.object({
   outputLanguage: outputLanguage.optional(), analysisLanguages: analysisLanguages.optional(),
   summary: z.object({
-    method: z.literal("transcript").optional(),
-    methodSettings: z.object({ transcript: transcriptSettingsSchema.partial().optional() }).strict().optional(),
+    method: z.enum(["transcript", "audio"]).optional(),
+    methodSettings: z.object({ transcript: transcriptSettingsSchema.partial().optional(), audio: transcriptSettingsSchema.partial().optional() }).strict().optional(),
   }).strict().optional(),
   initialize: z.boolean().optional(),
 }).strict().refine((value) => value.initialize
@@ -62,25 +63,31 @@ export function createAccountSettingsStore(
       outputLanguage: table.outputLanguage,
       summaryMethod: table.summaryMethod,
       transcriptSummary: table.transcriptSummary,
+      audioSummary: table.audioSummary,
       analysisLanguages: table.analysisLanguages,
     }).from(table).where(eq(table.userId, userId));
     return row ? accountSettingsSchema.parse({ outputLanguage: row.outputLanguage, analysisLanguages: row.analysisLanguages,
-      summary: { method: row.summaryMethod, methodSettings: { transcript: row.transcriptSummary } } }) : null;
+      summary: { method: row.summaryMethod, methodSettings: { transcript: row.transcriptSummary, audio: row.audioSummary } } }) : null;
   };
   return {
     get: (userId) => withUser(userId, (connection) => read(connection, userId)),
     update: (userId, patch, initialize = false) => withUser(userId, async (connection) => {
       const transcript = patch.summary?.methodSettings?.transcript;
+      const audio = patch.summary?.methodSettings?.audio;
       const values = {
         userId, outputLanguage: patch.outputLanguage ?? DEFAULT_ACCOUNT_SETTINGS.outputLanguage,
         analysisLanguages: patch.analysisLanguages ?? DEFAULT_ACCOUNT_SETTINGS.analysisLanguages,
         summaryMethod: patch.summary?.method ?? DEFAULT_ACCOUNT_SETTINGS.summary.method,
         transcriptSummary: { ...DEFAULT_ACCOUNT_SETTINGS.summary.methodSettings.transcript, ...transcript },
+        audioSummary: { ...DEFAULT_ACCOUNT_SETTINGS.summary.methodSettings.audio, ...audio },
       };
       const changes = {
         ...(patch.outputLanguage !== undefined ? { outputLanguage: patch.outputLanguage } : {}),
         ...(patch.analysisLanguages !== undefined ? { analysisLanguages: patch.analysisLanguages } : {}),
         ...(patch.summary?.method !== undefined ? { summaryMethod: patch.summary.method } : {}),
+        ...(audio ? { audioSummary: isPostgres
+          ? sql`${table.audioSummary} || ${JSON.stringify(audio)}::jsonb`
+          : sql`json_patch(${table.audioSummary}, ${JSON.stringify(audio)})` } : {}),
         ...(transcript ? { transcriptSummary: isPostgres
           ? sql`${table.transcriptSummary} || ${JSON.stringify(transcript)}::jsonb`
           : sql`json_patch(${table.transcriptSummary}, ${JSON.stringify(transcript)})` } : {}),

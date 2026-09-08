@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createApp } from "../src/app";
 import { loadConfig } from "../src/config";
+import { DEFAULT_ACCOUNT_SETTINGS } from "../src/account-settings";
 import { testStore } from "./test-store";
 
 describe("account settings API", () => {
@@ -34,7 +35,7 @@ describe("account settings API", () => {
     const response = await patch({ summary: { methodSettings: { transcript: { detail: "concise" } } } });
     expect(await response.json()).toEqual({ settings: {
       outputLanguage: "en", analysisLanguages: { scope: "all", identifiers: [] },
-      summary: { ...summary, methodSettings: { transcript: { ...summary.methodSettings.transcript, detail: "concise" } } },
+      summary: { ...summary, methodSettings: { audio: DEFAULT_ACCOUNT_SETTINGS.summary.methodSettings.audio, transcript: { ...summary.methodSettings.transcript, detail: "concise" } } },
     } });
     for (const body of [
       { summaryMethod: "transcript" }, { transcriptSummary: summary.methodSettings.transcript }, { settings: { summary } },

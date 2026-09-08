@@ -1,3 +1,6 @@
+import { LocalObjectStorage } from "../src/storage/local";
+import { createAudioSummaryMethod } from "../src/summary/audio";
+import { DEFAULT_ACCOUNT_SETTINGS } from "../src/account-settings";
 import { TextContentDigest } from "../src/sync/text-content";
 import { summaryMetadata } from "../src/summary/metadata";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -30,7 +33,7 @@ async function setup() {
   const config: AppConfig = { authProvider: "header", authHeader: "X-Forwarded-Email", databaseType: "sqlite", databaseUrl: `file:${path}`,
     baseUrl: "http://localhost:5173", oauthRedirectUris: [], maxRequestBytes: 1_048_576, syncSharingEnabled: true };
   const store = createNodeApplicationStore(config); await store.migrate(); await store.ensureIdentityUser(owner);
-  const sync = new MeetingSyncService(store.sync); const vaultId = uuidV7(); const meetingId = uuidV7();
+  const sync = new MeetingSyncService(store.sync, new LocalObjectStorage(join(dir, "recordings"))); const vaultId = uuidV7(); const meetingId = uuidV7();
   await sync.commitTransaction(owner, { schemaVersion: 2, id: uuidV7(), vaultId, createdAt: new Date().toISOString(), operations: [
     { id: uuidV7(), entity: "vault", action: "create", entityId: vaultId, baseRevision: null, data: { name: "Vault", createdAt: new Date().toISOString() } },
     { id: uuidV7(), entity: "meeting", action: "create", entityId: meetingId, baseRevision: null,
@@ -372,5 +375,184 @@ describe("server summary jobs", () => {
     const image = { ...output, sections: [{ heading: "Slide", blocks: [{ ...output.sections[0]!.blocks[0]!, type: "image", image_id: uuidV7() }] }] };
     expect(() => summaryDocument(image, new Set())).toThrow("summary_invalid_image_reference");
     expect(createTranscriptSummaryMethod({} as AppConfig, {} as never, {} as never)).toBeUndefined();
+  });
+});
+
+async function addRecording(value: Awaited<ReturnType<typeof setup>>, sources: Array<"mic" | "system"> = ["mic", "system"], seconds = 60) {
+  const { sync, vaultId, meetingId } = value;
+  const sessionId = uuidV7(); const now = new Date().toISOString();
+  await sync.commitTransaction(owner, { schemaVersion: 2, id: uuidV7(), vaultId, createdAt: now,
+    operations: ["recording_started", "recording_ended"].map((kind) => ({ id: uuidV7(), entity: "meeting_event", action: "create",
+      entityId: uuidV7(), baseRevision: null, data: { meetingId, sessionId, kind, occurredAt: now } })) });
+  const audio = new Uint8Array([0, 0, 0, 20, 102, 116, 121, 112, 77, 52, 65, 32, 0, 0, 0, 0, 77, 52, 65, 32]);
+  for (const source of sources) {
+    const uploaded = await sync.postRecording(owner, meetingId, new Request(
+      `http://localhost:5173/api/v1/meetings/${meetingId}/recordings?sessionId=${sessionId}&source=${source}`, {
+        method: "POST", headers: { "content-type": "audio/mp4", "content-length": String(audio.length) }, body: audio,
+      }));
+    await sync.commitTransaction(owner, { schemaVersion: 2, id: uuidV7(), vaultId, createdAt: now, operations: [{
+      id: uuidV7(), entity: "recording", action: "upsert", entityId: sessionId, baseRevision: uploaded.record.revision,
+      data: { source, checksum: uploaded.record.checksum, manifest: { sampleRate: 16000, frameCount: seconds * 16000,
+        ranges: [{ startFrame: 0, frameCount: seconds * 16000, sessionOffsetSeconds: 3, localeIdentifier: "ja-JP" }] } },
+    }] });
+  }
+  return audio;
+}
+
+function audioMethod(value: Awaited<ReturnType<typeof setup>>, result?: () => Response, models = ["gemini-3-8-flash"]) {
+  const calls: Record<string, unknown>[] = [];
+  const transport = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+    if (String(url).endsWith("/token")) return Response.json({ access_token: "app-token", expires_in: 3600 });
+    if (String(url).includes("model-services?")) return Response.json({ model_services: models.map((id) => ({ name: `model-services/catalog.ai.${id}` })) });
+    expect(String(url)).toBe("https://workspace.example/ai-gateway/mlflow/v1/chat/completions");
+    const headers = new Headers(init?.headers);
+    expect(headers.get("authorization")).toBe("Bearer app-token");
+    expect(JSON.parse(headers.get("Databricks-Ai-Gateway-Request-Tags")!)).toEqual({ user_id: "owner" });
+    expect(headers.has("X-Forwarded-Access-Token")).toBe(false);
+    expect(init?.body).toBeInstanceOf(ReadableStream);
+    const body = JSON.parse(await new Response(init?.body).text()) as Record<string, unknown>;
+    calls.push(body);
+    return result?.() ?? Response.json({ id: null, model: "actual-gemini", created: 123,
+      usage: { prompt_tokens: 100, completion_tokens: 20, total_tokens: 125, reasoning_tokens: 5 },
+      choices: [{ finish_reason: "stop", message: { content: [
+        { type: "reasoning", summary: [{ type: "summary_text", text: "Do not persist this" }] },
+        { type: "text", text: JSON.stringify(output), thoughtSignature: "do-not-persist" },
+      ] } }] });
+  });
+  const config = loadConfig({ DAHLIA_AUTH_TYPE: "header", DAHLIA_AI_BACKEND: "databricks", DATABRICKS_HOST: "https://workspace.example",
+    DATABRICKS_CLIENT_ID: "client", DATABRICKS_CLIENT_SECRET: "secret", DATABRICKS_MODEL_SCHEMA: "catalog.ai" });
+  return { method: createAudioSummaryMethod(config, value.store.sync, value.sync, transport)!, calls, transport };
+}
+
+describe("audio summary jobs", () => {
+  it.each([["mic"], ["system"], ["mic", "system"]] as Array<Array<"mic" | "system">>)("summarizes committed %j tracks with images and keeps source settings independent", async (...sources) => {
+    const value = await setup(); const { store, sync, vaultId, meetingId } = value;
+    try {
+      const audio = await addRecording(value, sources);
+      await addRecording(value, ["mic"]);
+      const screenshotId = uuidV7(); const imageId = uuidV7();
+      const original = store.sync.withIdentity.bind(store.sync);
+      store.sync.withIdentity = (identity, action) => original(identity, (scoped) => action({ ...scoped,
+        listTranscript: async () => { throw new Error("Audio summaries must not read transcript"); },
+        listScreenshots: async () => [{ screenshotId, fileId: imageId, vaultId, meetingId, capturedAt: new Date(0),
+          contentType: "image/webp", storageKey: "unused", contentLength: 1, contentHash: "a".repeat(64), ocrText: "slide evidence", caption: null }],
+      }));
+      vi.spyOn(sync, "readFileContent").mockResolvedValue({ file: {} as never, upstream: new Response(new Uint8Array([1])), contentType: "image/webp" });
+      await store.accountSettings.update(owner.userId, { summary: { method: "audio", methodSettings: {
+        audio: { model: "catalog.ai.gemini-3-8-flash", detail: "standard" }, transcript: { model: "saved-transcript-model" },
+      } } });
+      const { method, calls } = audioMethod(value);
+      const service = new SummaryService(store.sync, store.accountSettings, [method]);
+      const id = uuidV7(); const job = await service.start(owner, vaultId, meetingId, { id, detail: "concise" });
+      expect(await service.start(owner, vaultId, meetingId, { id, detail: "concise" })).toEqual(job);
+      expect(job.settings.detail).toBe("concise");
+      await store.accountSettings.update(owner.userId, { summary: { method: "transcript", methodSettings: { audio: { detail: "detailed" } } } });
+      expect(await store.accountSettings.get(owner.userId)).toMatchObject({ summary: { method: "transcript", methodSettings: {
+        audio: { model: "catalog.ai.gemini-3-8-flash", detail: "detailed", reasoningEffort: "medium" },
+        transcript: { model: "saved-transcript-model", detail: "detailed", reasoningEffort: "medium" },
+      } } });
+      // Transcript changes after enqueue do not invalidate an audio job.
+      const db = new DatabaseSync(value.path); db.exec("UPDATE meetings SET transcript_revision = 10, revision = revision + 1"); db.close();
+      await new SummaryWorker(store.summaryJobs, [method], sync).processOne();
+      expect(await service.status(owner, vaultId, meetingId)).toMatchObject({ method: "audio", status: "succeeded" });
+      expect(calls).toHaveLength(1);
+      expect(calls[0]).not.toHaveProperty("store");
+      expect(JSON.stringify(calls[0]!.response_format)).not.toContain("maxItems");
+      const body = calls[0] as { messages: { content: string | { type: string; text?: string; audio_url?: { url: string } }[] }[] };
+      expect(calls[0]).toMatchObject({ model: "catalog.ai.gemini-3-8-flash", reasoning_effort: "medium", response_format: { json_schema: { strict: true } } });
+      const content = body.messages[1]!.content as { type: string; text?: string; audio_url?: { url: string } }[];
+      const sentAudio = content.filter((part) => part.type === "audio_url");
+      expect(sentAudio).toHaveLength(sources.length + 1);
+      for (const part of sentAudio) expect(part.audio_url?.url).toBe(`data:audio/mp4;base64,${Buffer.from(audio).toString("base64")}`);
+      expect(content.some((part) => part.type === "image_url")).toBe(true);
+      expect(JSON.parse(content[0]!.text!)).not.toHaveProperty("transcript");
+      expect(content[0]!.text).toContain('"sessionOffsetSeconds":3');
+      const saved = await sync.summaryVersion(owner, vaultId, meetingId, "1");
+      expect(saved.document).not.toContain("Do not persist this");
+      expect(saved.document).not.toContain("thoughtSignature");
+      expect(saved.metadata).toMatchObject({ inputTypes: ["context", "audio", "image"], detailLevel: "concise",
+        request: { model: "catalog.ai.gemini-3-8-flash" }, response: { id: null, model: "actual-gemini", created_at: 123,
+          usage: { input_tokens: 100, output_tokens: 25, total_tokens: 125, output_tokens_details: { reasoning_tokens: 5 } } } });
+    } finally { await store.close?.(); }
+  });
+
+  it("rejects missing audio, sums both tracks for 9.5 hours, and preserves owner authorization", async () => {
+    const value = await setup(); const { store, vaultId, meetingId } = value;
+    try {
+      const { method, transport } = audioMethod(value);
+      const service = new SummaryService(store.sync, store.accountSettings, [method]);
+      await store.accountSettings.update(owner.userId, { summary: { method: "audio" } });
+      await expect(service.start(owner, vaultId, meetingId, { id: uuidV7() })).rejects.toMatchObject({ status: 400, code: "summary_audio_empty" });
+      await addRecording(value, ["mic"], 9.5 * 3600);
+      expect(await service.start(owner, vaultId, meetingId, { id: uuidV7() })).toMatchObject({ method: "audio" });
+      await addRecording(value, ["system"], 1);
+      await expect(store.sync.withIdentity(owner, (scoped) => method.version(scoped, vaultId, meetingId))).rejects.toThrow("summary_audio_too_long");
+      const other = { ...owner, userId: "other" };
+      await store.ensureIdentityUser(other);
+      await store.accountSettings.update(other.userId, { summary: { method: "audio" } });
+      await expect(service.start(other, vaultId, meetingId, { id: uuidV7() })).rejects.toMatchObject({ status: 404 });
+      await expect(store.sync.withIdentity({ ...owner, userId: "other" }, (scoped) => method.version(scoped, vaultId, meetingId))).rejects.toThrow("summary_meeting_unavailable");
+      expect(transport).not.toHaveBeenCalled();
+    } finally { await store.close?.(); }
+  });
+
+  it.each(["gpt-5-6-terra", "gemini-unavailable", "codex-auto-review"])("rejects unavailable/non-audio model %s without reading audio bytes", async (model) => {
+    const value = await setup(); const { store, sync, vaultId, meetingId } = value;
+    try {
+      await addRecording(value, ["mic"]);
+      const read = vi.spyOn(sync, "recordingContent");
+      await store.accountSettings.update(owner.userId, { summary: { method: "audio", methodSettings: { audio: { model } } } });
+      const { method, calls } = audioMethod(value, undefined, ["gemini-3-8-flash", "gpt-5-6-terra", "codex-auto-review"]);
+      const service = new SummaryService(store.sync, store.accountSettings, [method]);
+      await service.start(owner, vaultId, meetingId, { id: uuidV7() });
+      await new SummaryWorker(store.summaryJobs, [method], sync).processOne();
+      expect(await service.status(owner, vaultId, meetingId)).toMatchObject({ status: "failed", lastErrorCode: "summary_invalid_audio_model" });
+      expect(read).not.toHaveBeenCalled(); expect(calls).toHaveLength(0);
+    } finally { await store.close?.(); }
+  });
+
+  it.each(["size", "invalid", "truncated", "input_changed", "conflict"])("keeps the current summary on %s failure", async (scenario) => {
+    const value = await setup(); const { store, sync, vaultId, meetingId } = value;
+    try {
+      await addRecording(value, ["mic"]);
+      await sync.commitTransaction(owner, { schemaVersion: 2, id: uuidV7(), vaultId, createdAt: new Date().toISOString(), operations: [{
+        id: uuidV7(), entity: "summary", action: "upsert", entityId: meetingId, baseRevision: 0,
+        data: { title: "Manual", document: JSON.stringify({ ...doc(), title: "Manual" }), createdAt: new Date().toISOString() },
+      }] });
+      await store.accountSettings.update(owner.userId, { summary: { method: "audio" } });
+      const { method } = audioMethod(value, () => {
+        if (scenario === "size") return new Response(null, { status: 413 });
+        if (scenario === "invalid") return Response.json({ choices: [{ finish_reason: "stop", message: { content: "not-json" } }] });
+        if (scenario === "conflict") {
+          const db = new DatabaseSync(value.path); db.exec("UPDATE meetings SET summary_revision = 2"); db.close();
+        }
+        return Response.json({ choices: [{ finish_reason: scenario === "truncated" ? "length" : "stop", message: { content: JSON.stringify(output) } }] });
+      });
+      const service = new SummaryService(store.sync, store.accountSettings, [method]);
+      await service.start(owner, vaultId, meetingId, { id: uuidV7() });
+      if (scenario === "input_changed") await addRecording(value, ["system"]);
+      await new SummaryWorker(store.summaryJobs, [method], sync).processOne();
+      expect(await service.status(owner, vaultId, meetingId)).toMatchObject({ status: "failed", lastErrorCode: {
+        size: "summary_audio_request_too_large", invalid: "summary_invalid_response", truncated: "summary_invalid_response",
+        input_changed: "summary_input_changed", conflict: "summary_conflict",
+      }[scenario] });
+      const versions = await sync.summaryVersions(owner, vaultId, meetingId);
+      expect(versions.items).toHaveLength(1);
+      expect((await sync.latestSummary(owner, vaultId, meetingId)).record?.title).toBe("Manual");
+    } finally { await store.close?.(); }
+  });
+
+  it("migrates existing settings without changing transcript settings or jobs", async () => {
+    for (const path of ["sqlite/20260908080352_zippy_aaron_stack/migration.sql", "d1/20260908080352_zippy_aaron_stack.sql"]) {
+      const db = new DatabaseSync(":memory:");
+      try {
+        db.exec("CREATE TABLE account_settings (user_id TEXT PRIMARY KEY, summary_method TEXT, transcript_summary TEXT); INSERT INTO account_settings VALUES ('owner', 'transcript', '{\"model\":\"saved\"}'); CREATE TABLE summary_jobs (id TEXT, settings TEXT); INSERT INTO summary_jobs VALUES ('running', 'unchanged');");
+        db.exec(readFileSync(new URL(`../drizzle/${path}`, import.meta.url), "utf8"));
+        expect(db.prepare("SELECT summary_method, transcript_summary, audio_summary FROM account_settings").get()).toEqual({
+          summary_method: "transcript", transcript_summary: '{"model":"saved"}', audio_summary: JSON.stringify(DEFAULT_ACCOUNT_SETTINGS.summary.methodSettings.audio),
+        });
+        expect(db.prepare("SELECT * FROM summary_jobs").get()).toEqual({ id: "running", settings: "unchanged" });
+      } finally { db.close(); }
+    }
   });
 });

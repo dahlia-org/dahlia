@@ -13,7 +13,7 @@ export const transcriptSettingsSchema = z.object({
 export type TranscriptSettings = z.infer<typeof transcriptSettingsSchema>;
 export interface SummaryJob {
   id: string; vaultId: string; meetingId: string; ownerUserId: string;
-  method: "transcript"; settings: TranscriptSettings; outputLanguage: string;
+  method: "transcript" | "audio"; settings: TranscriptSettings; outputLanguage: string;
   status: string; attempts: number; createdAt: Date; availableAt: Date;
   claimedAt: Date | null; leaseExpiresAt: Date | null; lastErrorCode: string | null;
   summaryRevision: number; inputVersion: string; requestHash: string;
@@ -26,14 +26,14 @@ const text = z.object({ text: z.string().max(20000), transcript_ref: z.null() })
 const block = z.object({
   type: z.enum(["paragraph", "bulleted_list", "numbered_list", "checklist", "quote", "code", "image", "heading"]),
   level: z.number().int().min(1).max(6), content: text,
-  items: z.array(text.extend({ checked: z.boolean() })).max(500),
+  items: z.array(text.extend({ checked: z.boolean() })),
   language: z.string().max(100), image_id: z.string().max(36),
 }).strict();
 export const summaryResponseSchema = z.object({
   title: z.string().trim().min(1).max(120), description: z.string().trim().min(1).max(240),
-  sections: z.array(z.object({ heading: z.string().max(500), blocks: z.array(block).max(500) }).strict()).min(1).max(100),
-  tags: z.array(z.string().regex(/^[a-z0-9_]*[a-z][a-z0-9_]*$/)).max(100),
-  action_items: z.array(z.object({ title: z.string().min(1).max(2000), assignee: z.string().max(500) }).strict()).max(500),
+  sections: z.array(z.object({ heading: z.string().max(500), blocks: z.array(block) }).strict()).min(1),
+  tags: z.array(z.string().regex(/^[a-z0-9_]*[a-z][a-z0-9_]*$/)),
+  action_items: z.array(z.object({ title: z.string().min(1).max(2000), assignee: z.string().max(500) }).strict()),
 }).strict();
 export function summaryDocument(value: unknown, imageIds: ReadonlySet<string>) {
   const response = summaryResponseSchema.parse(value);
@@ -60,7 +60,7 @@ export function summaryDocument(value: unknown, imageIds: ReadonlySet<string>) {
 }
 export type SummaryDocument = ReturnType<typeof summaryDocument> & { metadata?: SummaryMetadata };
 export interface SummaryMethod {
-  readonly id: "transcript";
+  readonly id: SummaryJob["method"];
   captureSettings(settings: AccountSettings, detail?: z.infer<typeof summaryDetailSchema>): SummaryJob["settings"];
   version(store: IdentitySyncStore, vaultId: string, meetingId: string): Promise<string>;
   generate(job: SummaryJob, signal: AbortSignal): Promise<SummaryDocument>;

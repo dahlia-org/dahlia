@@ -1,7 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { expect, it, vi } from "vitest";
-import { ServerSummarySettings } from "../src/client/SummaryGeneration";
+import { ServerSummaryGeneration, ServerSummarySettings } from "../src/client/SummaryGeneration";
 import { useLiveJSON } from "../src/client/live-data";
 import { modelList } from "../src/ai-gateway/models";
 
@@ -24,4 +24,37 @@ it.each([false, true])("hides the automatic review alias from summary model choi
   expect(html).not.toContain('value="codex-auto-review"');
   if (aliasOnly) expect(html).toContain("No models available");
   else expect(html).toContain('value="gpt-5.6-terra"');
+});
+
+it.each([true, false])("filters audio choices to available audio-capable Gemini (available: %s)", (available) => {
+  const catalog = modelList([{ id: "gpt-5.6-terra" }, { id: "gemini-unknown" }, { id: "codex-auto-review" },
+    ...(available ? [{ id: "gemini-3-8-flash" }, { id: "gemini-3-7-flash" }] : [])]);
+  vi.mocked(useLiveJSON).mockImplementation((url) => ({
+    data: url === "/api/v1/models" ? catalog
+      : url === "/api/v1/capabilities" ? { summaryGeneration: { version: 1, methods: ["transcript", "audio"] } }
+      : { settings: { summary: { method: "audio", methodSettings: { audio: { model: "gemini-3-8-flash", reasoningEffort: "medium", detail: "standard" } } } } },
+    loading: false, error: undefined, reload: vi.fn(),
+  }));
+  const html = renderToStaticMarkup(createElement(ServerSummarySettings));
+  expect(html).toContain("Summary source"); expect(html).toContain("Audio and images");
+  expect(html).not.toContain('value="gpt-5.6-terra"'); expect(html).not.toContain('value="codex-auto-review"');
+  expect(html).not.toContain('value="gemini-unknown"');
+  if (available) { expect(html).toContain('value="gemini-3-8-flash" selected'); expect(html).toContain('value="gemini-3-7-flash"'); }
+  else expect(html).toContain("No models available");
+});
+
+
+it.each([
+  ["summary_audio_empty", "No committed audio is available. Finish uploading recordings first."],
+  ["summary_input_changed", "Inputs changed during generation. Retry after processing and uploads finish."],
+  ["summary_http_400", "Summary failed; the existing summary was preserved."],
+])("shows the existing failure message for %s", (error, message) => {
+  vi.mocked(useLiveJSON).mockImplementation((url) => ({
+    data: url === "/api/v1/capabilities" ? { summaryGeneration: { version: 1, methods: ["audio"] } }
+      : { job: { id: "test", status: "failed", error } },
+    loading: false, error: undefined, reload: vi.fn(),
+  }));
+  const html = renderToStaticMarkup(createElement(ServerSummaryGeneration, { base: "/test" }));
+  expect(html).toContain(message);
+  expect(html).toContain(`(${error})`);
 });

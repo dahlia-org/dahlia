@@ -5,9 +5,22 @@ import { uuidV7 } from "../id";
 import type { GatewayModelList } from "../ai-gateway/backend";
 import type { AccountSettings, AccountSettingsPatch } from "../account-settings";
 import type { summaryJobResponse } from "../summary/service";
+import { isAudioSummaryModel } from "../summary/audio-model";
 import { CODEX_AUTO_REVIEW_ALIAS } from "../ai-gateway/model-alias";
 
+const summaryErrors: Record<string, string> = {
+  summary_audio_empty: uiText("No committed audio is available. Finish uploading recordings first.", "確定済みの音声がありません。録音のアップロード完了後に再試行してください。"),
+  summary_audio_too_long: uiText("Combined mic/system audio exceeds 9.5 hours.", "マイク・システム音声の合計が9.5時間を超えています。"),
+  summary_audio_request_too_large: uiText("The provider rejected the request size. No audio was truncated.", "モデルの送信サイズ上限を超えました。音声は切り捨てていません。"),
+  summary_audio_changed: uiText("Recording bytes changed. Retry after uploads finish.", "録音データが変化しました。アップロード完了後に再試行してください。"),
+  summary_audio_unavailable: uiText("Recording audio could not be read.", "録音音声を読み取れませんでした。"),
+  summary_invalid_audio_model: uiText("Select an available audio-capable Gemini model in settings.", "設定で利用可能な音声対応Geminiモデルを選択してください。"),
+};
 type Job = ReturnType<typeof summaryJobResponse>;
+const DEFAULT_SUMMARY_SETTINGS = {
+  transcript: { model: "gpt-5.4", reasoningEffort: "medium", detail: "detailed" },
+  audio: { model: "gemini-3-8-flash", reasoningEffort: "medium", detail: "detailed" },
+} as const;
 const details = ["concise", "standard", "detailed", "eventSession"] as const;
 const detailLabel = (detail: typeof details[number]) => ({ concise: uiText("Concise", "簡潔"), standard: uiText("Standard", "標準"),
   detailed: uiText("Detailed", "詳細"), eventSession: uiText("Event session", "イベントセッション") })[detail];
@@ -32,29 +45,32 @@ export function ServerSummarySettings() {
     catch (error) { setError(error instanceof Error ? error.message : uiText("Could not save settings", "設定を保存できません")); }
     finally { setSaving(false); }
   };
-  const saveTranscript = (transcript: Partial<AccountSettings["summary"]["methodSettings"]["transcript"]>) =>
-    save({ summary: { methodSettings: { transcript } } });
-  if (!methods.includes("transcript")) return null;
-  const transcript = settings?.summary.methodSettings.transcript ?? { model: "gpt-5.4", reasoningEffort: "medium" as const, detail: "detailed" as const };
-  const models = catalog.data?.data.filter((model) => model.id !== CODEX_AUTO_REVIEW_ALIAS) ?? [];
-  const selected = models.find((model) => model.id === transcript.model || transcript.model.endsWith(`.${model.id}`));
+  const method = settings?.summary.method ?? "transcript";
+  const saveSource = (value: Partial<AccountSettings["summary"]["methodSettings"]["transcript"]>) =>
+    save({ summary: { methodSettings: { [method]: value } } });
+  if (!methods.length) return null;
+  const source = settings?.summary.methodSettings[method] ?? DEFAULT_SUMMARY_SETTINGS[method];
+  const models = catalog.data?.data.filter((model) => model.id !== CODEX_AUTO_REVIEW_ALIAS
+    && (method !== "audio" || isAudioSummaryModel(model.id, catalog.data!))) ?? [];
+  const selected = models.find((model) => model.id === source.model || source.model.endsWith(`.${model.id}`));
   const metadata = catalog.data?.models.find((model) => model.slug === selected?.id);
   const efforts = metadata?.supported_reasoning_levels.map(({ effort }) => effort) ?? [];
   return <section className="section-block">
     <h2 className="section-label">{uiText("Server summary", "サーバー要約")}</h2>
     <p>{uiText("Settings apply to new jobs. Export summaries separately after generation.", "設定は次回の生成から適用されます。エクスポートは生成後に個別に行います。")}</p>
+    {method === "audio" && <p>{uiText("Uses uploaded recordings and images. The combined mic/system audio limit is 9.5 hours. Oversized requests fail without truncation.", "アップロード済みの音声と画像を使用します。マイク・システム音声の合計上限は9.5時間です。送信上限を超える場合は切り捨てずに停止します。")}</p>}
     <fieldset className="summary-settings" disabled={saving || query.loading}>
-      <label>{uiText("Method", "要約方法")}<select value={settings?.summary.method ?? "transcript"}
-        onChange={() => void save({ summary: { method: "transcript" } })}>
-        {methods.map((method) => <option key={method} value={method}>{uiText("Transcript and images", "文字起こしと画像")}</option>)}
+      <label>{uiText("Summary source", "要約のソース")}<select value={method}
+        onChange={(event) => void save({ summary: { method: event.target.value as typeof method } })}>
+        {methods.map((method) => <option key={method} value={method}>{method === "audio" ? uiText("Audio and images", "音声と画像") : uiText("Transcript and images", "文字起こしと画像")}</option>)}
       </select></label>
       <label>{uiText("Model", "モデル")}<select value={selected?.id ?? ""} disabled={catalog.loading || !models.length}
         onChange={(event) => {
           const model = catalog.data?.models.find((model) => model.slug === event.target.value);
           const supported = model?.supported_reasoning_levels.map(({ effort }) => effort) ?? [];
-          void saveTranscript({ model: event.target.value,
-            reasoningEffort: (supported.includes(transcript.reasoningEffort) ? transcript.reasoningEffort
-              : model?.default_reasoning_level ?? supported[0] ?? "none") as typeof transcript.reasoningEffort });
+          void saveSource({ model: event.target.value,
+            reasoningEffort: (supported.includes(source.reasoningEffort) ? source.reasoningEffort
+              : model?.default_reasoning_level ?? supported[0] ?? "none") as typeof source.reasoningEffort });
         }}>
         {!selected && <option value="" disabled>{uiText("Select an available model", "利用可能なモデルを選択")}</option>}
         {models.map((model) => <option key={model.id} value={model.id}>{model.display_name}</option>)}
@@ -62,13 +78,13 @@ export function ServerSummarySettings() {
       {catalog.error && <p role="alert" className="error">{catalog.error.message}</p>}
       {!catalog.loading && !models.length && <p>{uiText("No models available", "利用可能なモデルがありません")}</p>}
       <button onClick={catalog.reload} disabled={catalog.loading}>{uiText("Reload models", "モデル一覧を再取得")}</button>
-      <label>{uiText("Reasoning effort", "推論強度")}<select value={efforts.includes(transcript.reasoningEffort) ? transcript.reasoningEffort : ""} disabled={!efforts.length}
-        onChange={(event) => void saveTranscript({ reasoningEffort: event.target.value as typeof transcript.reasoningEffort })}>
-        {!efforts.includes(transcript.reasoningEffort) && <option value="" disabled>{uiText("Select reasoning effort", "推論強度を選択")}</option>}
+      <label>{uiText("Reasoning effort", "推論強度")}<select value={efforts.includes(source.reasoningEffort) ? source.reasoningEffort : ""} disabled={!efforts.length}
+        onChange={(event) => void saveSource({ reasoningEffort: event.target.value as typeof source.reasoningEffort })}>
+        {!efforts.includes(source.reasoningEffort) && <option value="" disabled>{uiText("Select reasoning effort", "推論強度を選択")}</option>}
         {efforts.map((effort) => <option key={effort}>{effort}</option>)}
       </select></label>
-      <label>{uiText("Detail", "詳細度")}<select value={transcript.detail}
-        onChange={(event) => void saveTranscript({ detail: event.target.value as typeof transcript.detail })}>
+      <label>{uiText("Detail", "詳細度")}<select value={source.detail}
+        onChange={(event) => void saveSource({ detail: event.target.value as typeof source.detail })}>
         {details.map((detail) => <option key={detail} value={detail}>{detailLabel(detail)}</option>)}
       </select></label>
       <label>{uiText("Output language", "出力言語")}<select value={settings?.outputLanguage ?? "ja"}
@@ -109,12 +125,22 @@ export function ServerSummaryGeneration({ base }: { base: string }) {
     try {
       await json(`${base}/summary`, { method: "POST", body: JSON.stringify({ id: requestID.current, ...(detail ? { detail } : {}) }) });
       requestID.current = undefined; query.reload();
-    } catch (error) { setError(error instanceof Error ? error.message : uiText("Could not start summary", "要約を開始できません")); query.reload(); }
+    } catch (error) { setError(error instanceof Error ? summaryErrors[error.message] ?? error.message : uiText("Could not start summary", "要約を開始できません")); query.reload(); }
     finally { setStarting(false); }
   };
   let buttonLabel = uiText("Generate summary", "要約を生成");
   if (active) buttonLabel = uiText("Generating on server…", "サーバーで生成中…");
   else if (job?.status === "failed") buttonLabel = uiText("Retry summary", "要約を再試行");
+
+  let failureMessage: string | undefined;
+  if (job?.status === "failed") {
+    if (job.error && summaryErrors[job.error]) failureMessage = summaryErrors[job.error];
+    else if (job.error === "summary_input_changed") {
+      failureMessage = uiText("Inputs changed during generation. Retry after processing and uploads finish.", "生成中に入力が更新されました。処理・アップロードの完了後に再試行してください。");
+    } else {
+      failureMessage = uiText("Summary failed; the existing summary was preserved.", "要約の生成に失敗しました。既存の要約は保持されています。");
+    }
+  }
 
   return <div className="summary-generation">
     <select aria-label={uiText("Summary detail", "要約の詳細度")} value={detail} disabled={active || starting}
@@ -126,9 +152,7 @@ export function ServerSummaryGeneration({ base }: { base: string }) {
       {buttonLabel}
     </button>
     {active && <span role="status">{uiText("You can close this window.", "画面を閉じても処理は続きます。")}</span>}
-    {job?.status === "failed" && <span role="alert">{job.error === "summary_input_changed"
-      ? uiText("Inputs changed during generation. Retry after transcript and image processing finishes.", "生成中に入力が更新されました。文字起こし・画像処理の完了後に再試行してください。")
-      : uiText("Summary failed; the existing summary was preserved.", "要約の生成に失敗しました。既存の要約は保持されています。")}
+    {job?.status === "failed" && <span role="alert">{failureMessage}
       {job.error && <> ({job.error})</>}</span>}
     {(error || query.error) && <span role="alert">{error ?? query.error?.message}</span>}
   </div>;
