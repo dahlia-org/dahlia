@@ -3,7 +3,7 @@
   "dialect": "sqlite",
   "id": "2a3123ce-7701-4efc-8298-bbd7240500c6",
   "prevIds": [
-    "f3b22d2f-4172-410d-be7f-82529254996c"
+    "86925f05-e9d6-41e9-8dd7-6524bcc99d30"
   ],
   "ddl": [
     {
@@ -3614,47 +3614,7 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "vault_id",
-      "entityType": "columns",
-      "table": "transcript_segments"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "meeting_id",
-      "entityType": "columns",
-      "table": "transcript_segments"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
       "name": "segment_id",
-      "entityType": "columns",
-      "table": "transcript_segments"
-    },
-    {
-      "type": "integer",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "start_time",
-      "entityType": "columns",
-      "table": "transcript_segments"
-    },
-    {
-      "type": "integer",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "end_time",
       "entityType": "columns",
       "table": "transcript_segments"
     },
@@ -3665,16 +3625,6 @@
       "default": null,
       "generated": null,
       "name": "text",
-      "entityType": "columns",
-      "table": "transcript_segments"
-    },
-    {
-      "type": "integer",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "is_confirmed",
       "entityType": "columns",
       "table": "transcript_segments"
     },
@@ -4579,23 +4529,6 @@
     },
     {
       "columns": [
-        "vault_id",
-        "meeting_id"
-      ],
-      "tableTo": "meetings",
-      "columnsTo": [
-        "vault_id",
-        "meeting_id"
-      ],
-      "onUpdate": "NO ACTION",
-      "onDelete": "CASCADE",
-      "nameExplicit": false,
-      "name": "fk_transcript_segments_vault_id_meeting_id_meetings_vault_id_meeting_id_fk",
-      "entityType": "fks",
-      "table": "transcript_segments"
-    },
-    {
-      "columns": [
         "vault_id"
       ],
       "tableTo": "vaults",
@@ -4683,8 +4616,7 @@
     },
     {
       "columns": [
-        "vault_id",
-        "meeting_id",
+        "transcript_id",
         "segment_id"
       ],
       "nameExplicit": false,
@@ -5713,32 +5645,6 @@
         {
           "value": "vault_id",
           "isExpression": false
-        },
-        {
-          "value": "meeting_id",
-          "isExpression": false
-        },
-        {
-          "value": "start_time",
-          "isExpression": false
-        },
-        {
-          "value": "segment_id",
-          "isExpression": false
-        }
-      ],
-      "isUnique": false,
-      "where": null,
-      "origin": "manual",
-      "name": "synced_transcript_vault_meeting_start_id_idx",
-      "entityType": "indexes",
-      "table": "transcript_segments"
-    },
-    {
-      "columns": [
-        {
-          "value": "vault_id",
-          "isExpression": false
         }
       ],
       "isUnique": true,
@@ -6036,6 +5942,225 @@
       "error": null,
       "name": "meeting_images",
       "entityType": "views"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "transcript_id",
+      "entityType": "columns",
+      "table": "transcript_segments"
+    },
+    {
+      "name": "transcripts",
+      "entityType": "tables"
+    },
+    {
+      "columns": [
+        "transcript_id"
+      ],
+      "tableTo": "transcripts",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "name": "fk_transcript_segments_transcript_id_transcripts_id_fk",
+      "entityType": "fks",
+      "table": "transcript_segments"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "transcripts"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "metadata",
+      "entityType": "columns",
+      "table": "transcripts"
+    },
+    {
+      "columns": [
+        "meeting_id",
+        "version"
+      ],
+      "nameExplicit": true,
+      "name": "transcript_meeting_version_unique",
+      "entityType": "uniques",
+      "table": "transcripts"
+    },
+    {
+      "columns": [
+        "meeting_id"
+      ],
+      "tableTo": "meetings",
+      "columnsTo": [
+        "meeting_id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "name": "fk_transcripts_meeting_id_meetings_meeting_id_fk",
+      "entityType": "fks",
+      "table": "transcripts"
+    },
+    {
+      "columns": [
+        {
+          "value": "transcript_id",
+          "isExpression": false
+        },
+        {
+          "value": "started_at",
+          "isExpression": false
+        },
+        {
+          "value": "segment_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "transcript_segment_start_id_idx",
+      "entityType": "indexes",
+      "table": "transcript_segments"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "started_at",
+      "entityType": "columns",
+      "table": "transcripts"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "started_at",
+      "entityType": "columns",
+      "table": "transcript_segments"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "meeting_id",
+      "entityType": "columns",
+      "table": "transcripts"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "transcript_segments"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "ended_at",
+      "entityType": "columns",
+      "table": "transcript_segments"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "sync_revision",
+      "entityType": "columns",
+      "table": "transcripts"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "transcripts_pk",
+      "table": "transcripts",
+      "entityType": "pks"
+    },
+    {
+      "value": "\"version\" >= 1",
+      "name": "transcript_version_check",
+      "entityType": "checks",
+      "table": "transcripts"
+    },
+    {
+      "columns": [
+        {
+          "value": "transcript_id",
+          "isExpression": false
+        },
+        {
+          "value": "created_at",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "transcript_segment_created_idx",
+      "entityType": "indexes",
+      "table": "transcript_segments"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "transcripts"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "version",
+      "entityType": "columns",
+      "table": "transcripts"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "ended_at",
+      "entityType": "columns",
+      "table": "transcripts"
     }
   ],
   "renames": []

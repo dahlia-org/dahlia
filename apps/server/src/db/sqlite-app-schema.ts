@@ -1,3 +1,4 @@
+import type { TranscriptMetadata } from "../sync/transcript";
 import type { SummaryMetadata } from "../summary/metadata";
 import type { SummaryJob } from "../summary/model";
 import type { RecordingRecord } from "../recordings/model";
@@ -144,26 +145,41 @@ export const recordingSession = sqliteView("recording_sessions", {
   GROUP BY vault_id, meeting_id, session_id
 `);
 
-export const syncedTranscriptSegment = sqliteTable("transcript_segments", {
-  vaultId: text("vault_id").notNull(),
+export const transcript = sqliteTable("transcripts", {
+  id: text("id").primaryKey(),
   meetingId: text("meeting_id").notNull(),
+  version: integer("version").notNull(),
+  syncRevision: integer("sync_revision").notNull(),
+  startedAt: sqliteTimestamp("started_at"),
+  endedAt: sqliteTimestamp("ended_at"),
+  createdAt: sqliteTimestamp("created_at").notNull(),
+  metadata: text("metadata", { mode: "json" }).$type<TranscriptMetadata>(),
+}, (table) => [
+  unique("transcript_meeting_version_unique").on(table.meetingId, table.version),
+  foreignKey({ columns: [table.meetingId], foreignColumns: [syncedMeeting.meetingId] }).onDelete("cascade"),
+  check("transcript_version_check", sql`${table.version} >= 1`),
+]);
+
+export const syncedTranscriptSegment = sqliteTable("transcript_segments", {
+  transcriptId: text("transcript_id").notNull(),
   segmentId: text("segment_id").notNull(),
-  startTime: sqliteTimestamp("start_time").notNull(),
-  endTime: sqliteTimestamp("end_time"),
+  startedAt: sqliteTimestamp("started_at").notNull(),
+  endedAt: sqliteTimestamp("ended_at"),
   text: text("text").notNull(),
-  isConfirmed: integer("is_confirmed", { mode: "boolean" }).notNull(),
+  createdAt: sqliteTimestamp("created_at"),
   audioSource: text("audio_source"),
   speakerLabel: text("speaker_label"),
 }, (table) => [
   primaryKey({
-    columns: [table.vaultId, table.meetingId, table.segmentId],
+    columns: [table.transcriptId, table.segmentId],
   }),
   foreignKey({
-    columns: [table.vaultId, table.meetingId],
-    foreignColumns: [syncedMeeting.vaultId, syncedMeeting.meetingId],
+    columns: [table.transcriptId],
+    foreignColumns: [transcript.id],
   }).onDelete("cascade"),
-  index("synced_transcript_vault_meeting_start_id_idx")
-    .on(table.vaultId, table.meetingId, table.startTime, table.segmentId),
+  index("transcript_segment_created_idx").on(table.transcriptId, table.createdAt),
+  index("transcript_segment_start_id_idx")
+    .on(table.transcriptId, table.startedAt, table.segmentId),
 ]);
 
 export const transcriptPatchChunk = sqliteTable("transcript_patch_chunks", {

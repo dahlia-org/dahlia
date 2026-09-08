@@ -2305,59 +2305,7 @@
       "default": null,
       "generated": null,
       "identity": null,
-      "name": "vault_id",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "transcript_segments"
-    },
-    {
-      "type": "uuid",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "meeting_id",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "transcript_segments"
-    },
-    {
-      "type": "uuid",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
       "name": "segment_id",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "transcript_segments"
-    },
-    {
-      "type": "timestamp",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "start_time",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "transcript_segments"
-    },
-    {
-      "type": "timestamp",
-      "typeSchema": null,
-      "notNull": false,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "end_time",
       "entityType": "columns",
       "schema": "app",
       "table": "transcript_segments"
@@ -2371,19 +2319,6 @@
       "generated": null,
       "identity": null,
       "name": "text",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "transcript_segments"
-    },
-    {
-      "type": "boolean",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "is_confirmed",
       "entityType": "columns",
       "schema": "app",
       "table": "transcript_segments"
@@ -3188,48 +3123,6 @@
           "asc": true,
           "nullsFirst": false,
           "opclass": null
-        },
-        {
-          "value": "meeting_id",
-          "isExpression": false,
-          "asc": true,
-          "nullsFirst": false,
-          "opclass": null
-        },
-        {
-          "value": "start_time",
-          "isExpression": false,
-          "asc": true,
-          "nullsFirst": false,
-          "opclass": null
-        },
-        {
-          "value": "segment_id",
-          "isExpression": false,
-          "asc": true,
-          "nullsFirst": false,
-          "opclass": null
-        }
-      ],
-      "isUnique": false,
-      "where": null,
-      "with": "",
-      "method": "btree",
-      "concurrently": false,
-      "name": "synced_transcript_vault_meeting_start_id_idx",
-      "entityType": "indexes",
-      "schema": "app",
-      "table": "transcript_segments"
-    },
-    {
-      "nameExplicit": true,
-      "columns": [
-        {
-          "value": "vault_id",
-          "isExpression": false,
-          "asc": true,
-          "nullsFirst": false,
-          "opclass": null
         }
       ],
       "isUnique": true,
@@ -3709,25 +3602,6 @@
     {
       "nameExplicit": true,
       "columns": [
-        "vault_id",
-        "meeting_id"
-      ],
-      "schemaTo": "app",
-      "tableTo": "meetings",
-      "columnsTo": [
-        "vault_id",
-        "meeting_id"
-      ],
-      "onUpdate": "NO ACTION",
-      "onDelete": "CASCADE",
-      "name": "synced_transcript_segment_meeting_fk",
-      "entityType": "fks",
-      "schema": "app",
-      "table": "transcript_segments"
-    },
-    {
-      "nameExplicit": true,
-      "columns": [
         "vault_id"
       ],
       "schemaTo": "app",
@@ -3824,8 +3698,7 @@
     },
     {
       "columns": [
-        "vault_id",
-        "meeting_id",
+        "transcript_id",
         "segment_id"
       ],
       "nameExplicit": true,
@@ -4523,7 +4396,7 @@
       "roles": [
         "public"
       ],
-      "using": "\"app\".\"current_identity_can_read_vault\"(\"app\".\"transcript_segments\".\"vault_id\")",
+      "using": "exists (select 1 from \"app\".\"transcripts\" t join \"app\".\"meetings\" m on m.meeting_id = t.meeting_id where t.id = \"app\".\"transcript_segments\".\"transcript_id\" and \"app\".\"current_identity_can_read_vault\"(m.vault_id))",
       "withCheck": null,
       "name": "transcript_select",
       "entityType": "policies",
@@ -4536,8 +4409,8 @@
       "roles": [
         "public"
       ],
-      "using": "\"app\".\"current_identity_owns_vault\"(\"app\".\"transcript_segments\".\"vault_id\")",
-      "withCheck": "\"app\".\"current_identity_owns_vault\"(\"app\".\"transcript_segments\".\"vault_id\")",
+      "using": "exists (select 1 from \"app\".\"transcripts\" t join \"app\".\"meetings\" m on m.meeting_id = t.meeting_id where t.id = \"app\".\"transcript_segments\".\"transcript_id\" and \"app\".\"current_identity_owns_vault\"(m.vault_id))",
+      "withCheck": "exists (select 1 from \"app\".\"transcripts\" t join \"app\".\"meetings\" m on m.meeting_id = t.meeting_id where t.id = \"app\".\"transcript_segments\".\"transcript_id\" and \"app\".\"current_identity_owns_vault\"(m.vault_id))",
       "name": "transcript_write",
       "entityType": "policies",
       "schema": "app",
@@ -4686,6 +4559,320 @@
       "name": "meeting_images",
       "entityType": "views",
       "schema": "app"
+    },
+    {
+      "type": "timestamp",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "started_at",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "transcripts"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        "transcript_id"
+      ],
+      "schemaTo": "app",
+      "tableTo": "transcripts",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "name": "transcript_segment_transcript_fk",
+      "entityType": "fks",
+      "schema": "app",
+      "table": "transcript_segments"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "sync_revision",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "transcripts"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        {
+          "value": "transcript_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "created_at",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "transcript_segment_created_idx",
+      "entityType": "indexes",
+      "schema": "app",
+      "table": "transcript_segments"
+    },
+    {
+      "value": "\"version\" >= 1",
+      "name": "transcript_version_check",
+      "entityType": "checks",
+      "schema": "app",
+      "table": "transcripts"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "transcripts_pkey",
+      "schema": "app",
+      "table": "transcripts",
+      "entityType": "pks"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "meeting_id",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "transcripts"
+    },
+    {
+      "nameExplicit": false,
+      "columns": [
+        "meeting_id"
+      ],
+      "schemaTo": "app",
+      "tableTo": "meetings",
+      "columnsTo": [
+        "meeting_id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "name": "transcripts_meeting_id_meetings_meeting_id_fkey",
+      "entityType": "fks",
+      "schema": "app",
+      "table": "transcripts"
+    },
+    {
+      "type": "timestamp",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "ended_at",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "transcript_segments"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        "meeting_id",
+        "version"
+      ],
+      "nullsNotDistinct": false,
+      "name": "transcript_meeting_version_unique",
+      "entityType": "uniques",
+      "schema": "app",
+      "table": "transcripts"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "SELECT",
+      "roles": [
+        "public"
+      ],
+      "using": "exists (select 1 from \"app\".\"meetings\" m where m.meeting_id = \"app\".\"transcripts\".\"meeting_id\" and \"app\".\"current_identity_can_read_vault\"(m.vault_id))",
+      "withCheck": null,
+      "name": "transcript_version_select",
+      "entityType": "policies",
+      "schema": "app",
+      "table": "transcripts"
+    },
+    {
+      "type": "timestamp",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "transcripts"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "version",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "transcripts"
+    },
+    {
+      "type": "timestamp",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "ended_at",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "transcripts"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "ALL",
+      "roles": [
+        "public"
+      ],
+      "using": "exists (select 1 from \"app\".\"meetings\" m where m.meeting_id = \"app\".\"transcripts\".\"meeting_id\" and \"app\".\"current_identity_owns_vault\"(m.vault_id))",
+      "withCheck": "exists (select 1 from \"app\".\"meetings\" m where m.meeting_id = \"app\".\"transcripts\".\"meeting_id\" and \"app\".\"current_identity_owns_vault\"(m.vault_id))",
+      "name": "transcript_version_write",
+      "entityType": "policies",
+      "schema": "app",
+      "table": "transcripts"
+    },
+    {
+      "isRlsEnabled": true,
+      "name": "transcripts",
+      "entityType": "tables",
+      "schema": "app"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "transcript_id",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "transcript_segments"
+    },
+    {
+      "type": "timestamp",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "started_at",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "transcript_segments"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        {
+          "value": "transcript_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "started_at",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "segment_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "transcript_segment_start_id_idx",
+      "entityType": "indexes",
+      "schema": "app",
+      "table": "transcript_segments"
+    },
+    {
+      "type": "timestamp",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "transcript_segments"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "id",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "transcripts"
+    },
+    {
+      "type": "jsonb",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "metadata",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "transcripts"
     }
   ],
   "renames": []

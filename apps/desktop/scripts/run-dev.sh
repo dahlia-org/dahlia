@@ -91,6 +91,7 @@ RESOURCE_BUNDLE="${BUILD_DIR}/Dahlia_Dahlia.bundle"
 if [ -d "$RESOURCE_BUNDLE" ]; then
     cp -R "$RESOURCE_BUNDLE" "${CONTENTS}/Resources/"
 fi
+cp -R "${BUILD_DIR}/Dahlia_DahliaRuntimeSupport.bundle" "${CONTENTS}/Resources/"
 embed_sparkle_framework "$PROJECT_DIR" "$CONTENTS"
 embed_whisperkit_licenses "$PROJECT_DIR" "$CONTENTS"
 embed_lindera_licenses "$PROJECT_DIR" "$CONTENTS"
@@ -103,6 +104,7 @@ SIGNED_RESOURCE_BUNDLE="${CONTENTS}/Resources/Dahlia_Dahlia.bundle"
 if [ -d "$SIGNED_RESOURCE_BUNDLE" ]; then
     codesign_path "$SIGNED_RESOURCE_BUNDLE"
 fi
+codesign_path "${CONTENTS}/Resources/Dahlia_DahliaRuntimeSupport.bundle"
 codesign_sparkle_framework "${CONTENTS}/Frameworks/Sparkle.framework"
 
 codesign --remove-signature "${HELPERS}/codex"

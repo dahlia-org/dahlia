@@ -345,10 +345,10 @@ enum RemoteChangeApplier {
             CREATE TEMP TABLE IF NOT EXISTS sync_remote_transcript_items (
                 meetingId BLOB NOT NULL,
                 segmentId BLOB NOT NULL,
-                startTime DATETIME NOT NULL,
-                endTime DATETIME,
+                startedAt DATETIME NOT NULL,
+                endedAt DATETIME,
                 text TEXT NOT NULL,
-                isConfirmed INTEGER NOT NULL,
+                createdAt DATETIME,
                 audioSource TEXT,
                 speakerLabel TEXT,
                 PRIMARY KEY (meetingId, segmentId)
@@ -387,20 +387,20 @@ enum RemoteChangeApplier {
                 try db.execute(
                     sql: """
                     INSERT INTO sync_remote_transcript_items(
-                        meetingId, segmentId, startTime, endTime, text,
-                        isConfirmed, audioSource, speakerLabel
+                        meetingId, segmentId, startedAt, endedAt, text,
+                        createdAt, audioSource, speakerLabel
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(meetingId, segmentId) DO UPDATE SET
-                        startTime = excluded.startTime,
-                        endTime = excluded.endTime,
+                        startedAt = excluded.startedAt,
+                        endedAt = excluded.endedAt,
                         text = excluded.text,
-                        isConfirmed = excluded.isConfirmed,
+                        createdAt = excluded.createdAt,
                         audioSource = excluded.audioSource,
                         speakerLabel = excluded.speakerLabel
                     """,
                     arguments: [
-                        meetingId, segment.segmentId, segment.startTime, segment.endTime,
-                        segment.text, segment.isConfirmed, segment.audioSource, segment.speakerLabel,
+                        meetingId, segment.segmentId, segment.startedAt, segment.endedAt,
+                        segment.text, segment.createdAt, segment.audioSource, segment.speakerLabel,
                     ]
                 )
             }
@@ -412,17 +412,17 @@ enum RemoteChangeApplier {
         try db.execute(
             sql: """
             INSERT INTO transcript_segments(
-                id, meetingId, startTime, endTime, isConfirmed, audioSource, speakerLabel
+                id, meetingId, startedAt, endedAt, createdAt, audioSource, speakerLabel
             )
-            SELECT segmentId, meetingId, startTime, endTime,
-                isConfirmed, audioSource, speakerLabel
+            SELECT segmentId, meetingId, startedAt, endedAt,
+                createdAt, audioSource, speakerLabel
             FROM sync_remote_transcript_items
             WHERE meetingId = ?
             ON CONFLICT(id) DO UPDATE SET
                 meetingId = excluded.meetingId,
-                startTime = excluded.startTime,
-                endTime = excluded.endTime,
-                isConfirmed = excluded.isConfirmed,
+                startedAt = excluded.startedAt,
+                endedAt = excluded.endedAt,
+                createdAt = excluded.createdAt,
                 audioSource = excluded.audioSource,
                 speakerLabel = excluded.speakerLabel
             """,
@@ -436,7 +436,7 @@ enum RemoteChangeApplier {
         try db.execute(
             sql: """
             DELETE FROM transcript_segments
-            WHERE meetingId = ? AND isConfirmed = 1
+            WHERE meetingId = ?
               AND NOT EXISTS (
                   SELECT 1 FROM sync_remote_transcript_items remote
                   WHERE remote.meetingId = transcript_segments.meetingId
@@ -626,7 +626,7 @@ enum RemoteChangeApplier {
                     sql: """
                     SELECT DISTINCT transcript_segments.meetingId FROM transcript_segments
                     JOIN meetings ON meetings.id = transcript_segments.meetingId
-                    WHERE meetings.vaultId = ? AND transcript_segments.isConfirmed = 1
+                    WHERE meetings.vaultId = ?
                     """,
                     arguments: [vaultId]
                 )),
@@ -660,7 +660,7 @@ enum RemoteChangeApplier {
             ),
             ("DELETE FROM files WHERE id = ? AND vaultId = ?", true, Array(existing.files.subtracting(snapshot.files))),
             (
-                "DELETE FROM transcript_segments WHERE meetingId = ? AND isConfirmed = 1",
+                "DELETE FROM transcript_segments WHERE meetingId = ?",
                 false,
                 Array(existing.transcripts.subtracting(snapshot.transcripts))
             ),
@@ -835,6 +835,7 @@ enum RemoteChangeApplier {
             try db.execute(sql: "DELETE FROM summaries WHERE meetingId = ?", arguments: [id])
         case .transcript:
             try db.execute(sql: "DELETE FROM transcript_segments WHERE meetingId = ?", arguments: [id])
+            try db.execute(sql: "DELETE FROM transcripts WHERE meetingId = ?", arguments: [id])
         case .file:
             try db.execute(sql: "DELETE FROM files WHERE id = ? AND vaultId = ?", arguments: [id, vaultId])
         case .recording:
@@ -895,14 +896,14 @@ enum RemoteChangeApplier {
         let canonicalIDs = segments.map(\.segmentId)
         if canonicalIDs.isEmpty {
             try db.execute(
-                sql: "DELETE FROM transcript_segments WHERE meetingId = ? AND isConfirmed = 1",
+                sql: "DELETE FROM transcript_segments WHERE meetingId = ?",
                 arguments: [meetingId]
             )
         } else {
             try db.execute(
                 sql: """
                 DELETE FROM transcript_segments
-                WHERE meetingId = ? AND isConfirmed = 1
+                WHERE meetingId = ?
                   AND id NOT IN (\(canonicalIDs.map { _ in "?" }.joined(separator: ",")))
                 """,
                 arguments: StatementArguments([meetingId]) + StatementArguments(canonicalIDs)
@@ -919,18 +920,18 @@ enum RemoteChangeApplier {
         for segment in segments {
             try db.execute(sql: """
             INSERT INTO transcript_segments(
-                id, meetingId, startTime, endTime, isConfirmed, audioSource, speakerLabel
+                id, meetingId, startedAt, endedAt, createdAt, audioSource, speakerLabel
             ) VALUES (?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 meetingId = excluded.meetingId,
-                startTime = excluded.startTime,
-                endTime = excluded.endTime,
-                isConfirmed = excluded.isConfirmed,
+                startedAt = excluded.startedAt,
+                endedAt = excluded.endedAt,
+                createdAt = excluded.createdAt,
                 audioSource = excluded.audioSource,
                 speakerLabel = excluded.speakerLabel
             """, arguments: [
-                segment.segmentId, meetingId, segment.startTime, segment.endTime,
-                segment.isConfirmed, segment.audioSource, segment.speakerLabel,
+                segment.segmentId, meetingId, segment.startedAt, segment.endedAt,
+                segment.createdAt, segment.audioSource, segment.speakerLabel,
             ])
             try TranscriptSegmentBodyRecord(segmentId: segment.segmentId, text: segment.text).save(db)
         }

@@ -63,20 +63,20 @@ private struct SyncTransactionBody: Encodable {
 struct TranscriptChunkBody: Codable {
     struct Segment: Codable {
         let segmentId: UUID
-        let startTime: Date
-        let endTime: Date?
+        let startedAt: Date
+        let endedAt: Date?
         let text: String
-        let isConfirmed: Bool
+        let createdAt: Date?
         let audioSource: String?
         let speakerLabel: String?
 
         func encode(to encoder: Encoder) throws {
             var container = encoder.container(keyedBy: CodingKeys.self)
             try container.encode(segmentId, forKey: .segmentId)
-            try container.encode(startTime, forKey: .startTime)
-            try container.encode(endTime, forKey: .endTime)
+            try container.encode(startedAt, forKey: .startedAt)
+            try container.encode(endedAt, forKey: .endedAt)
             try container.encode(text, forKey: .text)
-            try container.encode(isConfirmed, forKey: .isConfirmed)
+            try container.encode(createdAt, forKey: .createdAt)
             try container.encode(audioSource, forKey: .audioSource)
             try container.encode(speakerLabel, forKey: .speakerLabel)
         }
@@ -94,6 +94,8 @@ private struct TranscriptPatchData: Codable {
         let deletionCount: Int
     }
 
+    let transcript: TranscriptMutation.Descriptor
+    let mode: String
     let patchId: UUID
     let segmentCount: Int
     let deletionCount: Int
@@ -178,10 +180,10 @@ private struct SyncMeetingSnapshotHeader: Decodable {
 struct SyncTranscriptPage: Decodable {
     struct Segment: Decodable {
         let segmentId: UUID
-        let startTime: Date
-        let endTime: Date?
+        let startedAt: Date
+        let endedAt: Date?
         let text: String
-        let isConfirmed: Bool
+        let createdAt: Date?
         let audioSource: String?
         let speakerLabel: String?
     }
@@ -505,15 +507,46 @@ actor SyncWorker {
         origin: URL,
         sendUploads: Bool
     ) async throws -> Data {
-        let snapshot = try await SyncTransactionQueue.transcriptPatch(operationId: operation.id, dbQueue: dbQueue)
-        let transcriptChunks = try Self.transcriptChunks(snapshot)
-        guard snapshot.segments.count <= Self.transcriptPatchItemLimit,
-              snapshot.deletions.count <= Self.transcriptPatchItemLimit,
-              transcriptChunks.count <= Self.transcriptPatchMaximumChunks else {
+        guard let payload = operation.payloadJSON else { throw TextContentError.updateRequired }
+        let mutation = try SyncJSON.decoder.decode(TranscriptMutation.self, from: payload)
+        let snapshot = mutation.mode == "replace" ? nil
+            : try await SyncTransactionQueue.transcriptPatch(operationId: operation.id, dbQueue: dbQueue)
+        let preparedChunks = try snapshot.map(Self.transcriptChunks)
+        let segmentCount = if let snapshot {
+            snapshot.segments.count
+        } else {
+            try await dbQueue.read { db in
+                try Int.fetchOne(
+                    db,
+                    sql: "SELECT count(*) FROM sync_transcript_patch_items WHERE operationId = ?",
+                    arguments: [operation.id]
+                ) ?? 0
+            }
+        }
+        let deletionCount = snapshot?.deletions.count ?? 0
+        guard mutation.mode == "replace" || (segmentCount <= Self.transcriptPatchItemLimit
+            && deletionCount <= Self.transcriptPatchItemLimit
+            && (preparedChunks?.count ?? 0) <= Self.transcriptPatchMaximumChunks) else {
             throw SyncHTTPError(status: 422, body: Data("{\"error\":\"transcript_patch_too_large\"}".utf8))
         }
         var chunks: [TranscriptPatchData.Chunk] = []
-        for (index, chunk) in transcriptChunks.enumerated() {
+        var position = 0
+        repeat {
+            let index = chunks.count
+            let chunk: (body: TranscriptChunkBody, data: Data)
+            if let preparedChunks {
+                chunk = preparedChunks[index]
+            } else {
+                // Snapshot positions are contiguous upserts. Refill after byte splitting to keep retry hashes stable.
+                let page = try await SyncTransactionQueue.transcriptPatch(
+                    operationId: operation.id, fromPosition: position, limit: Self.transcriptChunkSize, dbQueue: dbQueue
+                )
+                guard page.deletions.isEmpty, page.segments.count == min(Self.transcriptChunkSize, segmentCount - position) else {
+                    throw SyncTransactionQueueError.invalidReceipt
+                }
+                chunk = try Self.transcriptChunks(page)[0]
+                position += chunk.body.segments.count
+            }
             let body = chunk.body
             let data = chunk.data
             let hash = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
@@ -534,11 +567,13 @@ actor SyncWorker {
                 segmentCount: body.segments.count,
                 deletionCount: body.deletions.count
             ))
-        }
+        } while preparedChunks.map({ chunks.count < $0.count }) ?? (position < segmentCount)
         return try SyncJSON.encoder.encode(TranscriptPatchData(
+            transcript: mutation.transcript,
+            mode: mutation.mode,
             patchId: operation.id,
-            segmentCount: snapshot.segments.count,
-            deletionCount: snapshot.deletions.count,
+            segmentCount: segmentCount,
+            deletionCount: deletionCount,
             chunks: chunks
         ))
     }
@@ -549,10 +584,10 @@ actor SyncWorker {
         let segments = snapshot.segments.map {
             TranscriptChunkBody.Segment(
                 segmentId: $0.segmentId,
-                startTime: $0.startTime,
-                endTime: $0.endTime,
+                startedAt: $0.startTime,
+                endedAt: $0.endTime,
                 text: $0.text,
-                isConfirmed: $0.isConfirmed,
+                createdAt: $0.createdAt,
                 audioSource: $0.audioSource,
                 speakerLabel: $0.speakerLabel
             )

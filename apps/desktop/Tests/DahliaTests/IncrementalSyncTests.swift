@@ -1,4 +1,5 @@
 #if canImport(Testing)
+    import CryptoKit
     import DahliaMeetingAccess
     import DahliaRuntimeSupport
     import Foundation
@@ -10,6 +11,97 @@
     @MainActor
     struct IncrementalSyncTests {
         @Test
+        // swiftlint:disable:next function_body_length
+        func largeTranscriptSnapshotUploadsWithStableChunkHashes() async throws {
+            let fixture = try Fixture()
+            let info = TranscriptInfo(id: .v7(), startedAt: nil, endedAt: .now, metadata: nil)
+            let transactionId = try await fixture.queue.write { db in
+                try db.execute(sql: "INSERT INTO sync_entity_state VALUES (?, 'vault', ?, 1)", arguments: [fixture.vaultId, fixture.vaultId])
+                try db.execute(sql: """
+                WITH RECURSIVE numbers(n) AS (VALUES(1) UNION ALL SELECT n + 1 FROM numbers WHERE n < 50001)
+                INSERT INTO transcript_segments(id, meetingId, startedAt, createdAt)
+                SELECT printf('019d0000-0000-7000-8000-%012x', n), ?, ?, ? FROM numbers;
+                INSERT INTO transcript_segment_bodies(segmentId, text)
+                SELECT id, CASE WHEN id <= '019d0000-0000-7000-8000-0000000001f5' THEN ? ELSE 'snapshot text' END
+                FROM transcript_segments WHERE meetingId = ?;
+                """, arguments: [fixture.meetingId, Date.now, Date.now, String(repeating: "x", count: 13000), fixture.meetingId])
+                try TranscriptRecord(meetingId: fixture.meetingId, info: info).save(db)
+                try TranscriptRecord.enqueueSnapshot(meetingId: fixture.meetingId, info: info, in: db)
+                return try #require(try UUID.fetchOne(db, sql: "SELECT id FROM sync_transactions"))
+            }
+            let operationId = try await fixture.queue.read { try #require(try UUID.fetchOne($0, sql: "SELECT id FROM sync_operations")) }
+            let expected = try await SyncWorker.transcriptChunks(
+                SyncTransactionQueue.transcriptPatch(operationId: operationId, dbQueue: fixture.queue)
+            )
+            let expectedManifest = expected.map { chunk in
+                SHA256.hash(data: chunk.data).map { String(format: "%02x", $0) }.joined()
+            }
+            let manifests = Mutex<[Data]>([])
+            let uploadedHashes = Mutex<[String]>([])
+            let receipt = try JSONSerialization.data(withJSONObject: [
+                "id": transactionId.uuidString, "status": "committed", "cursor": "after",
+                "records": [["entity": "transcript", "id": fixture.meetingId.uuidString, "revision": 1, "record": NSNull()]],
+            ])
+            let client = fixture.client { request in
+                let body = Self.requestBody(request)
+                if request.url?.path == "/api/v1/transactions/resolve" {
+                    manifests.withLock { $0.append(body) }
+                    return (200, [:], Data("{\"id\":\"\(transactionId)\",\"status\":\"unknown\"}".utf8))
+                }
+                if request.httpMethod == "PUT" {
+                    #expect(body.count <= 6 * 1024 * 1024)
+                    let hash = SHA256.hash(data: body).map { String(format: "%02x", $0) }.joined()
+                    #expect(request.value(forHTTPHeaderField: "X-Dahlia-Content-SHA256") == hash)
+                    uploadedHashes.withLock { $0.append(hash) }
+                    return (204, [:], Data())
+                }
+                if request.url?.path == "/api/v1/transactions" {
+                    manifests.withLock { $0.append(body) }
+                    return (200, [:], receipt)
+                }
+                return (503, [:], Data())
+            }
+            defer { ImageURLProtocol.remove(origin: fixture.origin) }
+            let worker = SyncWorker(dbQueue: fixture.queue, apiClient: client)
+            let outcomes = ValueObservation.tracking { db in
+                try String.fetchOne(db, sql: """
+                SELECT coalesce(blockedReason, serverResponseJSON, 'pending') FROM sync_transactions WHERE id = ?
+                """, arguments: [transactionId])
+            }.values(in: fixture.queue)
+            await worker.drain()
+            for try await outcome in outcomes where outcome != "pending" {
+                break
+            }
+            await worker.stop()
+            #expect(try await fixture.queue.read { try Int.fetchOne($0, sql: "SELECT count(*) FROM sync_transactions") } == 0)
+            #expect(uploadedHashes.withLock { $0 } == expectedManifest)
+            let bodies = manifests.withLock { $0 }
+            #expect(bodies.count == 2)
+            let resolved = try #require(bodies.first)
+            #expect(bodies.last == resolved)
+            let request = try #require(JSONSerialization.jsonObject(with: resolved) as? [String: Any])
+            let operations = try #require(request["operations"] as? [[String: Any]])
+            let data = try #require(operations.first?["data"] as? [String: Any])
+            #expect(data["segmentCount"] as? Int == 50001)
+            #expect((data["chunks"] as? [Any])?.count == expected.count)
+        }
+
+        private nonisolated static func requestBody(_ request: URLRequest) -> Data {
+            if let body = request.httpBody { return body }
+            guard let stream = request.httpBodyStream else { return Data() }
+            stream.open()
+            defer { stream.close() }
+            var body = Data()
+            var buffer = [UInt8](repeating: 0, count: 4096)
+            while stream.hasBytesAvailable {
+                let count = stream.read(&buffer, maxLength: buffer.count)
+                if count <= 0 { break }
+                body.append(contentsOf: buffer.prefix(count))
+            }
+            return body
+        }
+
+        @Test
         func protectedTranscriptDoesNotBlockLaterPagesAndRestartReplaysTheGap() async throws {
             let fixture = try Fixture()
             try await fixture.queueTranscript(recording: true)
@@ -20,7 +112,11 @@
             let second = try page([fixture.fileChange(revision: 2)], cursor: "after")
             let cursors = Mutex<[String]>([])
             let client = fixture.client { request in
-                if request.url!.path.hasSuffix("capabilities") { return (200, [:], Data("{\"sync\":{\"version\":4},\"meetingEvents\":{\"version\":1}}".utf8)) }
+                if request.url!.path.hasSuffix("capabilities") { return (
+                    200,
+                    [:],
+                    Data("{\"sync\":{\"version\":4},\"meetingEvents\":{\"version\":1}}".utf8)
+                ) }
                 let cursor = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!.queryItems!.first { $0.name == "cursor" }!.value!
                 cursors.withLock { $0.append(cursor) }
                 return (200, [:], cursor == "before" ? first : second)
@@ -77,7 +173,11 @@
                 ]),
             ], cursor: "after")
             let client = fixture.client { request in
-                (200, [:], request.url!.path.hasSuffix("capabilities") ? Data("{\"sync\":{\"version\":4},\"meetingEvents\":{\"version\":1}}".utf8) : changes)
+                (
+                    200,
+                    [:],
+                    request.url!.path.hasSuffix("capabilities") ? Data("{\"sync\":{\"version\":4},\"meetingEvents\":{\"version\":1}}".utf8) : changes
+                )
             }
             defer { ImageURLProtocol.remove(origin: fixture.origin) }
             await #expect(throws: TextContentError.changed) {
@@ -100,7 +200,11 @@
             let gate = Gate()
             let changes = try page([fixture.fileChange(revision: 2, action: "delete")], cursor: "after")
             var client = fixture.client { request in
-                (200, [:], request.url!.path.hasSuffix("capabilities") ? Data("{\"sync\":{\"version\":4},\"meetingEvents\":{\"version\":1}}".utf8) : changes)
+                (
+                    200,
+                    [:],
+                    request.url!.path.hasSuffix("capabilities") ? Data("{\"sync\":{\"version\":4},\"meetingEvents\":{\"version\":1}}".utf8) : changes
+                )
             }
             client.tokenProvider = { _, _ in await gate.wait()
                 return "test"
@@ -223,7 +327,11 @@
             ])
             let snapshots = Mutex(0)
             let client = fixture.client { request in
-                if request.url!.path.hasSuffix("capabilities") { return (200, [:], Data("{\"sync\":{\"version\":4},\"meetingEvents\":{\"version\":1}}".utf8)) }
+                if request.url!.path.hasSuffix("capabilities") { return (
+                    200,
+                    [:],
+                    Data("{\"sync\":{\"version\":4},\"meetingEvents\":{\"version\":1}}".utf8)
+                ) }
                 if request.url!.path.hasSuffix("snapshot") {
                     snapshots.withLock { $0 += 1 }
                     return (200, [:], snapshot)
@@ -264,7 +372,11 @@
             let projects = try JSONSerialization.data(withJSONObject: ["items": [fields]])
             let snapshots = Mutex(0)
             let client = fixture.client { request in
-                if request.url!.path.hasSuffix("capabilities") { return (200, [:], Data("{\"sync\":{\"version\":4},\"meetingEvents\":{\"version\":1}}".utf8)) }
+                if request.url!.path.hasSuffix("capabilities") { return (
+                    200,
+                    [:],
+                    Data("{\"sync\":{\"version\":4},\"meetingEvents\":{\"version\":1}}".utf8)
+                ) }
                 if request.url!.path.hasSuffix("projects") {
                     snapshots.withLock { $0 += 1 }
                     return (200, [:], projects)
@@ -297,7 +409,11 @@
                 "revision": 1, "summaryRevision": 1, "transcriptRevision": 0, "contentOmitted": true, "hasSummary": true,
             ])
             let client = fixture.client { request in
-                if request.url!.path.hasSuffix("capabilities") { return (200, [:], Data("{\"sync\":{\"version\":4},\"meetingEvents\":{\"version\":1}}".utf8)) }
+                if request.url!.path.hasSuffix("capabilities") { return (
+                    200,
+                    [:],
+                    Data("{\"sync\":{\"version\":4},\"meetingEvents\":{\"version\":1}}".utf8)
+                ) }
                 if request.url!.path.hasSuffix("changes") { return (200, [:], changes) }
                 #expect(request.url!
                     .path == "/api/v1/vaults/\(fixture.vaultId.uuidString.lowercased())/meetings/\(meetingId.uuidString.lowercased())")
@@ -390,7 +506,11 @@
             )
             let changes = try page([summary, fixture.fileChange(revision: 2)], cursor: "after")
             let client = fixture.client { request in
-                if request.url!.path.hasSuffix("capabilities") { return (200, [:], Data("{\"sync\":{\"version\":4},\"meetingEvents\":{\"version\":1}}".utf8)) }
+                if request.url!.path.hasSuffix("capabilities") { return (
+                    200,
+                    [:],
+                    Data("{\"sync\":{\"version\":4},\"meetingEvents\":{\"version\":1}}".utf8)
+                ) }
                 #expect(request.url!.path.hasSuffix("changes"))
                 return (200, [:], changes)
             }
@@ -440,7 +560,11 @@
             let second = try page([fixture.fileChange(revision: 2)], cursor: "after")
             let fail = Mutex(true)
             let client = fixture.client { request in
-                if request.url!.path.hasSuffix("capabilities") { return (200, [:], Data("{\"sync\":{\"version\":4},\"meetingEvents\":{\"version\":1}}".utf8)) }
+                if request.url!.path.hasSuffix("capabilities") { return (
+                    200,
+                    [:],
+                    Data("{\"sync\":{\"version\":4},\"meetingEvents\":{\"version\":1}}".utf8)
+                ) }
                 if request.url!.query!.contains("cursor=before") { return (200, [:], first) }
                 return fail.withLock { $0 } ? (503, [:], Data()) : (200, [:], second)
             }

@@ -48,33 +48,37 @@ public struct TextContentManifest: Codable, Equatable, Sendable {
     public let count: Int
     public let byteCount: Int
     public let sha256: String
+    public var transcript: TranscriptInfo?
 
     private enum CodingKeys: String, CodingKey {
-        case version, formatVersion, entity, entityId, revision, present, count, byteCount, sha256
+        case version, formatVersion, entity, entityId, revision, syncRevision, present, count, byteCount, sha256, transcript
     }
 
     public init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         entity = try values.decode(TextContentEntity.self, forKey: .entity)
         entityId = try values.decode(UUID.self, forKey: .entityId)
-        version = try values.decode(Int.self, forKey: entity == .summary ? .formatVersion : .version)
-        revision = try values.decode(Int.self, forKey: .revision)
+        version = try values.decode(Int.self, forKey: entity == .file ? .version : .formatVersion)
+        revision = try values.decode(Int.self, forKey: entity == .transcript ? .syncRevision : .revision)
         present = try values.decode(Bool.self, forKey: .present)
         count = try values.decode(Int.self, forKey: .count)
         byteCount = try values.decode(Int.self, forKey: .byteCount)
         sha256 = try values.decode(String.self, forKey: .sha256)
+        transcript = try values.decodeIfPresent(TranscriptInfo.self, forKey: .transcript)
     }
 
     public func encode(to encoder: Encoder) throws {
         var values = encoder.container(keyedBy: CodingKeys.self)
         try values.encode(entity, forKey: .entity)
         try values.encode(entityId, forKey: .entityId)
-        try values.encode(version, forKey: entity == .summary ? .formatVersion : .version)
-        try values.encode(revision, forKey: .revision)
+        try values.encode(version, forKey: entity == .file ? .version : .formatVersion)
+        try values.encode(revision, forKey: entity == .transcript ? .syncRevision : .revision)
+        if entity == .transcript { try values.encode(transcript?.version ?? 0, forKey: .version) }
         try values.encode(present, forKey: .present)
         try values.encode(count, forKey: .count)
         try values.encode(byteCount, forKey: .byteCount)
         try values.encode(sha256, forKey: .sha256)
+        try values.encodeIfPresent(transcript, forKey: .transcript)
     }
 
     public init(version: Int, entity: TextContentEntity, entityId: UUID, revision: Int, present: Bool, count: Int, byteCount: Int, sha256: String) {

@@ -900,8 +900,8 @@ final class MeetingRepository {
                     db,
                     sql: """
                     SELECT EXISTS(SELECT 1 FROM transcript_segments
-                    WHERE meetingId = ? AND isConfirmed = 1
-                      AND (startTime < ? OR (startTime = ? AND id \(inclusive ? "<" : "<=") ?)))
+                    WHERE meetingId = ?
+                      AND (startedAt < ? OR (startedAt = ? AND id \(inclusive ? "<" : "<=") ?)))
                     """,
                     arguments: [meetingId, cursor.startTime, cursor.startTime, cursor.id]
                 ) ?? false
@@ -924,7 +924,7 @@ final class MeetingRepository {
                 sql: """
                 SELECT EXISTS(
                     SELECT 1 FROM transcript_segments
-                    WHERE meetingId = ? AND isConfirmed = 1
+                    WHERE meetingId = ?
                 )
                 """,
                 arguments: [meetingId]

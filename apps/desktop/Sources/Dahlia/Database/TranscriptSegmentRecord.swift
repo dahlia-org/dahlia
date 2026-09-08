@@ -11,7 +11,8 @@ struct TranscriptSegmentRecord: Codable, FetchableRecord, PersistableRecord {
     var startTime: Date
     var endTime: Date?
     var translatedText: String?
-    var isConfirmed: Bool
+    var isConfirmed = true
+    var createdAt: Date?
     var audioSource: String?
     var speakerLabel: String?
     var audioFeatureVersion: Int?
@@ -19,6 +20,13 @@ struct TranscriptSegmentRecord: Codable, FetchableRecord, PersistableRecord {
     var audioMedianPitchHertz: Double?
     var audioVoicedFrameRatio: Double?
     var audioPitchSpreadHertz: Double?
+    enum CodingKeys: String, CodingKey {
+        case id, meetingId, sessionId, translatedText, createdAt, audioSource, speakerLabel
+        case startTime = "startedAt"
+        case endTime = "endedAt"
+        case audioFeatureVersion, audioActiveRmsDecibels, audioMedianPitchHertz, audioVoicedFrameRatio, audioPitchSpreadHertz
+    }
+
 }
 
 extension TranscriptSegmentRecord {
@@ -31,6 +39,7 @@ extension TranscriptSegmentRecord {
         self.endTime = segment.endTime
         self.translatedText = segment.translatedText
         self.isConfirmed = segment.isConfirmed
+        self.createdAt = segment.createdAt
         self.audioSource = segment.audioSource
         self.speakerLabel = segment.speakerLabel
         self.audioFeatureVersion = segment.audioFeatures?.version

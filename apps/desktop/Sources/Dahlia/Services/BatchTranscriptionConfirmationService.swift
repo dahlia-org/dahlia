@@ -77,11 +77,15 @@ extension BatchTranscriptionConfirmationService {
         return try await dbQueue.write { db in
             let uniqueSessionIds = Array(Set(sessionIds))
             guard !uniqueSessionIds.isEmpty else { throw CocoaError(.fileNoSuchFile) }
+            guard let first = try RecordingSessionRecord.fetchOne(db, key: uniqueSessionIds[0]) else {
+                throw CocoaError(.fileNoSuchFile)
+            }
             let sessions = try RecordingSessionRecord
-                .filter(uniqueSessionIds.contains(Column("id")))
+                .filter(Column("meetingId") == first.meetingId)
+                .filter(Column("batchDiscardedAt") == nil)
                 .order(Column("startedAt").asc)
                 .fetchAll(db)
-            guard sessions.count == uniqueSessionIds.count,
+            guard Set(uniqueSessionIds).isSubset(of: Set(sessions.map(\.id))),
                   let meetingId = sessions.first?.meetingId,
                   sessions.allSatisfy({ session in
                       session.meetingId == meetingId
@@ -123,7 +127,7 @@ extension BatchTranscriptionConfirmationService {
     /// Stops a failed retranscription and restores the last successful transcript as the active result.
     static func cancelRetranscription(sessionIds: [UUID], dbQueue: DatabaseQueue) async throws -> UUID {
         try await dbQueue.write { db in
-            let uniqueSessionIds = Array(Set(sessionIds))
+            var uniqueSessionIds = Array(Set(sessionIds))
             guard !uniqueSessionIds.isEmpty else { throw CocoaError(.fileNoSuchFile) }
             let sessions = try RecordingSessionRecord
                 .filter(uniqueSessionIds.contains(Column("id")))
@@ -134,6 +138,8 @@ extension BatchTranscriptionConfirmationService {
                 throw CocoaError(.fileNoSuchFile)
             }
 
+            uniqueSessionIds = try RecordingSessionRecord.filter(Column("meetingId") == meetingId)
+                .fetchAll(db).filter(\.isBatchRetranscriptionPending).map(\.id)
             let cancelledAt = Date.now
             var arguments: StatementArguments = [cancelledAt]
             arguments += StatementArguments(uniqueSessionIds)

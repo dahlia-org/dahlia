@@ -31,7 +31,14 @@ import Synchronization
             try await fixture.queue.write { db in
                 try db.execute(sql: "UPDATE vaults SET syncPullCursor = 'before' WHERE id = ?", arguments: [fixture.vaultId])
                 if pending != "none" {
-                    try MeetingRecord(id: otherMeetingId, vaultId: fixture.vaultId, projectId: nil, name: "Recording", createdAt: .now, updatedAt: .now).insert(db)
+                    try MeetingRecord(
+                        id: otherMeetingId,
+                        vaultId: fixture.vaultId,
+                        projectId: nil,
+                        name: "Recording",
+                        createdAt: .now,
+                        updatedAt: .now
+                    ).insert(db)
                     let transactionId = UUID.v7()
                     try db.execute(sql: """
                     INSERT INTO sync_transactions(id, vaultId, connectionId, createdAt, availableAt)
@@ -60,7 +67,13 @@ import Synchronization
             changes.append([
                 "sequence": 4, "entity": "summary", "entityId": fixture.meetingId.uuidString,
                 "action": "upsert", "revision": 4,
-                "record": ["title": "Latest", "createdAt": "2026-01-01T00:00:00.000Z", "contentOmitted": true, "contentPresent": true, "contentCount": 1],
+                "record": [
+                    "title": "Latest",
+                    "createdAt": "2026-01-01T00:00:00.000Z",
+                    "contentOmitted": true,
+                    "contentPresent": true,
+                    "contentCount": 1,
+                ],
             ])
             let changeData = try JSONSerialization.data(withJSONObject: [
                 "items": changes, "cursor": "after", "highWaterCursor": "after", "hasMore": false,
@@ -91,7 +104,9 @@ import Synchronization
                 .read { try TextContentAccess.availability(entity: .summary, id: fixture.meetingId, in: $0).revision } == 4)
             try await fixture.queue.read { db throws in
                 #expect(try SyncTransactionQueue.hasPending(vaultId: fixture.vaultId, in: db) == (pending != "none"))
-                #expect(try String.fetchOne(db, sql: "SELECT syncPullCursor FROM vaults WHERE id = ?", arguments: [fixture.vaultId]) == (pending == "deferred" ? "before" : "after"))
+                #expect(try String
+                    .fetchOne(db, sql: "SELECT syncPullCursor FROM vaults WHERE id = ?", arguments: [fixture.vaultId]) ==
+                    (pending == "deferred" ? "before" : "after"))
             }
         }
 

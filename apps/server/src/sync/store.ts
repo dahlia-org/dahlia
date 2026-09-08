@@ -1,4 +1,5 @@
 import { uuidV7 } from "../id";
+import { transcriptStatus, sameTranscriptModel, type TranscriptVersion } from "./transcript";
 import { summaryMetadata } from "../summary/metadata";
 import { fileResponse, fileStorageKey, imageContentTypes, type FileMetadata } from "../files/model";
 import { needsImageAnalysis, type ImageAnalysisClaim, type ImageAnalysisInput } from "../image-analysis/model";
@@ -316,6 +317,7 @@ async function roleSupportsRls(db: PostgresDatabase): Promise<boolean> {
       "app.transaction_receipts",
       "app.meetings",
       "app.meeting_events",
+      "app.transcripts",
       "app.transcript_segments",
       "app.transcript_patch_chunks",
       "app.files",
@@ -774,6 +776,23 @@ function createIdentityStore(
     return row ?? null;
   }
 
+  const transcriptSelection = {
+    id: schema.transcript.id, meetingId: schema.transcript.meetingId,
+    version: schema.transcript.version, syncRevision: schema.transcript.syncRevision,
+    startedAt: schema.transcript.startedAt, endedAt: schema.transcript.endedAt,
+    createdAt: schema.transcript.createdAt, metadata: schema.transcript.metadata,
+    latestSegmentCreatedAt: sql`(select max(s.created_at) from ${schema.syncedTranscriptSegment} s where s.transcript_id = ${schema.transcript.id})`
+      .mapWith(schema.syncedTranscriptSegment.createdAt),
+  };
+  async function getTranscript(vaultId: string, meetingId: string, version?: number): Promise<TranscriptVersion | null> {
+    const [row] = await db.select(transcriptSelection).from(schema.transcript)
+      .innerJoin(schema.syncedMeeting, eq(schema.transcript.meetingId, schema.syncedMeeting.meetingId)).where(and(
+        readable(schema.syncedMeeting.vaultId), eq(schema.syncedMeeting.vaultId, vaultId), eq(schema.transcript.meetingId, meetingId),
+        version === undefined ? undefined : eq(schema.transcript.version, version),
+      )).orderBy(desc(schema.transcript.version)).limit(1);
+    return row ? { ...row, status: transcriptStatus(row.endedAt, row.latestSegmentCreatedAt) } : null;
+  }
+
   async function canonicalRecord(
     entity: SyncCanonicalRecord["entity"],
     vaultId: string,
@@ -805,7 +824,7 @@ function createIdentityStore(
       if (!record) return { entity, id: entityId, revision: null, record: null };
       if (entity === "transcript") {
         return { entity, id: entityId, revision: record.transcriptRevision ?? null,
-          record: { meetingId: record.meetingId } };
+          record: { meetingId: record.meetingId, transcript: await getTranscript(vaultId, entityId) } };
       }
       const summary = await getSummaryVersion(vaultId, entityId);
       if (entity === "summary") {
@@ -1368,78 +1387,110 @@ function createIdentityStore(
           segmentCount: number;
           deletionCount: number;
         }>;
-        const storedChunks = await db.select().from(schema.transcriptPatchChunk).where(and(
+        const patchScope = and(
           eq(schema.transcriptPatchChunk.vaultId, transaction.vaultId),
           eq(schema.transcriptPatchChunk.meetingId, operation.entityId),
           eq(schema.transcriptPatchChunk.patchId, patchId),
-        )).orderBy(asc(schema.transcriptPatchChunk.chunkIndex));
+        );
+        const storedChunks = await db.select({
+          chunkIndex: schema.transcriptPatchChunk.chunkIndex,
+          contentHash: schema.transcriptPatchChunk.contentHash,
+        }).from(schema.transcriptPatchChunk).where(patchScope).orderBy(asc(schema.transcriptPatchChunk.chunkIndex));
         if (storedChunks.length !== expectedChunks.length) {
           throw new SyncTransactionError(422, "transcript_patch_incomplete", [], operation.id);
         }
-        const segments: SyncTranscriptSegment[] = [];
-        const deletions: string[] = [];
         for (const [index, chunk] of storedChunks.entries()) {
           const expected = expectedChunks[index];
           if (!expected || chunk.chunkIndex !== expected.index || chunk.contentHash !== expected.sha256) {
             throw new SyncTransactionError(422, "transcript_patch_hash_mismatch", [], operation.id);
           }
+        }
+        const incoming = data.transcript as Pick<TranscriptVersion, "id" | "startedAt" | "endedAt" | "metadata">;
+        const latest = await getTranscript(transaction.vaultId, operation.entityId);
+        const sameVersion = latest?.id === incoming.id;
+        const mode = data.mode as "replace" | "append";
+        if (sameVersion) {
+          if (latest.endedAt !== null || mode !== "append" || !sameTranscriptModel(latest.metadata, incoming.metadata)) {
+            throw new SyncTransactionError(409, "transcript_version_immutable", [], operation.id);
+          }
+        } else {
+          const [existing] = await db.select({ id: schema.transcript.id }).from(schema.transcript)
+            .where(eq(schema.transcript.id, incoming.id)).limit(1);
+          if (existing) throw new SyncTransactionError(409, "transcript_version_immutable", [], operation.id);
+          if (mode === "append" && (incoming.endedAt !== null || (latest && !sameTranscriptModel(latest.metadata, incoming.metadata)))) {
+            throw new SyncTransactionError(409, "transcript_model_changed", [], operation.id);
+          }
+          await db.insert(schema.transcript).values({ ...incoming, meetingId: operation.entityId,
+            version: (latest?.version ?? 0) + 1, syncRevision: Number(operation.baseRevision) + 1, createdAt: now });
+          if (mode === "append" && latest) {
+            // Copy once at live-version start. Each version is independently readable.
+            await db.insert(schema.syncedTranscriptSegment).select(db.select({
+              transcriptId: sql<string>`${incoming.id}`.as("transcript_id"),
+              segmentId: schema.syncedTranscriptSegment.segmentId,
+              startedAt: schema.syncedTranscriptSegment.startedAt,
+              endedAt: schema.syncedTranscriptSegment.endedAt,
+              text: schema.syncedTranscriptSegment.text,
+              createdAt: schema.syncedTranscriptSegment.createdAt,
+              audioSource: schema.syncedTranscriptSegment.audioSource,
+              speakerLabel: schema.syncedTranscriptSegment.speakerLabel,
+            }).from(schema.syncedTranscriptSegment).where(eq(schema.syncedTranscriptSegment.transcriptId, latest.id)));
+          }
+        }
+        if (mode === "replace" && data.deletionCount) throw new SyncTransactionError(422, "invalid_transcript_replacement", [], operation.id);
+        const segmentIds = new Set<string>();
+        let segmentCount = 0;
+        let deletionCount = 0;
+        // Keep one chunk's text in memory. Every chunk still publishes in this single transaction.
+        for (const expected of expectedChunks) {
+          const [chunk] = await db.select().from(schema.transcriptPatchChunk).where(and(
+            patchScope, eq(schema.transcriptPatchChunk.chunkIndex, expected.index),
+          )).limit(1);
+          if (!chunk || chunk.contentHash !== expected.sha256) {
+            throw new SyncTransactionError(422, "transcript_patch_hash_mismatch", [], operation.id);
+          }
           const payload = (typeof chunk.payload === "string" ? JSON.parse(chunk.payload) : chunk.payload) as {
-            segments: Array<Omit<SyncTranscriptSegment, "startTime" | "endTime"> & {
-              startTime: Date | string;
-              endTime: Date | string | null;
-            }>;
+            segments: Array<Omit<SyncTranscriptSegment, "createdAt" | "startedAt" | "endedAt"> & { createdAt: Date | string | null; startedAt: Date | string; endedAt: Date | string | null }>;
             deletions: string[];
           };
           if (payload.segments.length !== expected.segmentCount || payload.deletions.length !== expected.deletionCount) {
             throw new SyncTransactionError(422, "transcript_patch_count_mismatch", [], operation.id);
           }
-          segments.push(...payload.segments.map((segment) => ({
-            ...segment,
-            startTime: new Date(segment.startTime),
-            endTime: segment.endTime ? new Date(segment.endTime) : null,
-          })));
-          deletions.push(...payload.deletions);
+          segmentCount += payload.segments.length;
+          deletionCount += payload.deletions.length;
+          for (const id of [...payload.segments.map(({ segmentId }) => segmentId), ...payload.deletions]) {
+            if (segmentIds.has(id)) throw new SyncTransactionError(422, "invalid_transcript_patch", [], operation.id);
+            segmentIds.add(id);
+          }
+          if (payload.deletions.length) await db.delete(schema.syncedTranscriptSegment).where(and(
+            eq(schema.syncedTranscriptSegment.transcriptId, incoming.id),
+            inArray(schema.syncedTranscriptSegment.segmentId, payload.deletions),
+          ));
+          for (const batch of batches(payload.segments, 250)) {
+            await db.insert(schema.syncedTranscriptSegment).values(batch.map((segment) => ({
+              ...segment, transcriptId: incoming.id,
+              startedAt: new Date(segment.startedAt),
+              endedAt: segment.endedAt ? new Date(segment.endedAt) : null,
+              createdAt: segment.createdAt ? new Date(segment.createdAt) : null,
+            }))).onConflictDoUpdate({
+              target: [schema.syncedTranscriptSegment.transcriptId, schema.syncedTranscriptSegment.segmentId],
+              set: {
+                startedAt: sql`excluded.started_at`, endedAt: sql`excluded.ended_at`, text: sql`excluded.text`,
+                audioSource: sql`excluded.audio_source`, speakerLabel: sql`excluded.speaker_label`,
+              },
+            });
+          }
         }
-        if (segments.length !== data.segmentCount || deletions.length !== data.deletionCount
-          || new Set([...segments.map(({ segmentId }) => segmentId), ...deletions]).size !== segments.length + deletions.length) {
+        if (segmentCount !== data.segmentCount || deletionCount !== data.deletionCount) {
           throw new SyncTransactionError(422, "invalid_transcript_patch", [], operation.id);
         }
-        for (const batch of batches(deletions, 500)) {
-          await db.delete(schema.syncedTranscriptSegment).where(and(
-            eq(schema.syncedTranscriptSegment.vaultId, transaction.vaultId),
-            eq(schema.syncedTranscriptSegment.meetingId, operation.entityId),
-            inArray(schema.syncedTranscriptSegment.segmentId, batch),
-          ));
-        }
-        for (const batch of batches(segments, 250)) {
-          await db.insert(schema.syncedTranscriptSegment).values(batch.map((segment) => ({
-            ...segment,
-            vaultId: transaction.vaultId,
-            meetingId: operation.entityId,
-          }))).onConflictDoUpdate({
-            target: [
-              schema.syncedTranscriptSegment.vaultId,
-              schema.syncedTranscriptSegment.meetingId,
-              schema.syncedTranscriptSegment.segmentId,
-            ],
-            set: {
-              startTime: sql`excluded.start_time`,
-              endTime: sql`excluded.end_time`,
-              text: sql`excluded.text`,
-              isConfirmed: sql`excluded.is_confirmed`,
-              audioSource: sql`excluded.audio_source`,
-              speakerLabel: sql`excluded.speaker_label`,
-            },
-          });
+        if (sameVersion) {
+          await db.update(schema.transcript).set({ ...incoming, syncRevision: Number(operation.baseRevision) + 1 })
+            .where(eq(schema.transcript.id, incoming.id));
         }
         await db.update(schema.syncedMeeting).set({
           transcriptRevision: sql`${schema.syncedMeeting.transcriptRevision} + 1`,
         }).where(ownedMeeting(transaction.vaultId, operation.entityId));
-        await db.delete(schema.transcriptPatchChunk).where(and(
-          eq(schema.transcriptPatchChunk.vaultId, transaction.vaultId),
-          eq(schema.transcriptPatchChunk.meetingId, operation.entityId),
-          eq(schema.transcriptPatchChunk.patchId, patchId),
-        ));
+        await db.delete(schema.transcriptPatchChunk).where(patchScope);
       } else if (operation.entity === "recording") {
         const [record] = await db.select().from(schema.syncedRecording).where(and(
           eq(schema.syncedRecording.vaultId, transaction.vaultId), eq(schema.syncedRecording.sessionId, operation.entityId),
@@ -2171,10 +2222,21 @@ function createIdentityStore(
       )).limit(1);
       return row ?? null;
     },
+    getTranscript,
+    async listTranscriptVersions(vaultId, meetingId, limit, before) {
+      const rows = await db.select(transcriptSelection).from(schema.transcript)
+        .innerJoin(schema.syncedMeeting, eq(schema.transcript.meetingId, schema.syncedMeeting.meetingId)).where(and(
+          readable(schema.syncedMeeting.vaultId), eq(schema.syncedMeeting.vaultId, vaultId), eq(schema.transcript.meetingId, meetingId),
+          before === undefined ? undefined : lt(schema.transcript.version, before),
+        )).orderBy(desc(schema.transcript.version)).limit(limit);
+      const now = new Date();
+      return rows.map((row: Omit<TranscriptVersion, "status">) => ({ ...row, status: transcriptStatus(row.endedAt, row.latestSegmentCreatedAt, now) }));
+    },
     async countTranscript(vaultId, meetingId) {
+      const latest = await getTranscript(vaultId, meetingId);
+      if (!latest) return 0;
       const [row] = await db.select({ count: sql<number>`count(*)` }).from(schema.syncedTranscriptSegment)
-        .where(and(readable(schema.syncedTranscriptSegment.vaultId),
-          eq(schema.syncedTranscriptSegment.vaultId, vaultId), eq(schema.syncedTranscriptSegment.meetingId, meetingId)));
+        .where(eq(schema.syncedTranscriptSegment.transcriptId, latest.id));
       return Number(row?.count ?? 0);
     },
     async searchTextPage(vaultId, query, kind, offset, limit) {
@@ -2200,7 +2262,7 @@ function createIdentityStore(
           .orderBy(asc(schema.searchDocument.documentId)).limit(limit).offset(offset);
       return rows.map((row) => ({ ...row, meetingId: row.meetingId ?? row.id }));
     },
-    async listTranscript(vaultId, meetingId, limit, cursor) {
+    async listTranscript(vaultId, meetingId, limit, cursor, version) {
       const [meeting] = await db.select({ id: schema.syncedMeeting.meetingId })
         .from(schema.syncedMeeting).where(and(
           readableMeeting(vaultId, meetingId),
@@ -2208,26 +2270,26 @@ function createIdentityStore(
           isNull(schema.syncedMeeting.deletingAt),
         )).limit(1);
       if (!meeting) return [];
+      const transcript = await getTranscript(vaultId, meetingId, version);
+      if (!transcript) return [];
       return db.select({
         segmentId: schema.syncedTranscriptSegment.segmentId,
-        startTime: schema.syncedTranscriptSegment.startTime,
-        endTime: schema.syncedTranscriptSegment.endTime,
+        startedAt: schema.syncedTranscriptSegment.startedAt,
+        endedAt: schema.syncedTranscriptSegment.endedAt,
         text: schema.syncedTranscriptSegment.text,
-        isConfirmed: schema.syncedTranscriptSegment.isConfirmed,
+        createdAt: schema.syncedTranscriptSegment.createdAt,
         audioSource: schema.syncedTranscriptSegment.audioSource,
         speakerLabel: schema.syncedTranscriptSegment.speakerLabel,
       }).from(schema.syncedTranscriptSegment).where(and(
-        readable(schema.syncedTranscriptSegment.vaultId),
-        eq(schema.syncedTranscriptSegment.vaultId, vaultId),
-        eq(schema.syncedTranscriptSegment.meetingId, meetingId),
+        eq(schema.syncedTranscriptSegment.transcriptId, transcript.id),
         ...(cursor ? [or(
-          gt(schema.syncedTranscriptSegment.startTime, cursor.startTime),
+          gt(schema.syncedTranscriptSegment.startedAt, cursor.startedAt),
           and(
-            eq(schema.syncedTranscriptSegment.startTime, cursor.startTime),
+            eq(schema.syncedTranscriptSegment.startedAt, cursor.startedAt),
             gt(schema.syncedTranscriptSegment.segmentId, cursor.segmentId),
           ),
         )] : []),
-      )).orderBy(asc(schema.syncedTranscriptSegment.startTime), asc(schema.syncedTranscriptSegment.segmentId))
+      )).orderBy(asc(schema.syncedTranscriptSegment.startedAt), asc(schema.syncedTranscriptSegment.segmentId))
         .limit(limit);
     },
     async listScreenshots(vaultId, meetingId, query, limit, cursor, filters) {

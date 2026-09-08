@@ -487,9 +487,9 @@
         func transcriptChunkEncodesRequiredNullableFields() throws {
             for hasValues in [false, true] {
                 let segment = TranscriptChunkBody.Segment(
-                    segmentId: .v7(), startTime: Date(timeIntervalSince1970: 0),
-                    endTime: hasValues ? Date(timeIntervalSince1970: 1) : nil,
-                    text: "Confirmed", isConfirmed: true,
+                    segmentId: .v7(), startedAt: Date(timeIntervalSince1970: 0),
+                    endedAt: hasValues ? Date(timeIntervalSince1970: 1) : nil,
+                    text: "Confirmed", createdAt: nil,
                     audioSource: hasValues ? "mic" : nil,
                     speakerLabel: hasValues ? "Speaker" : nil
                 )
@@ -497,14 +497,14 @@
                 let object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
                 let segments = try #require(object["segments"] as? [[String: Any]])
                 let encoded = try #require(segments.first)
-                for key in ["endTime", "audioSource", "speakerLabel"] {
+                for key in ["endedAt", "audioSource", "speakerLabel"] {
                     let value = try #require(encoded[key])
                     #expect((value is NSNull) == !hasValues)
                 }
                 let decoded = try SyncJSON.decoder.decode(TranscriptChunkBody.self, from: data)
                 #expect(decoded.segments.first?.speakerLabel == segment.speakerLabel)
                 #expect(decoded.segments.first?.audioSource == segment.audioSource)
-                #expect(decoded.segments.first?.endTime == segment.endTime)
+                #expect(decoded.segments.first?.endedAt == segment.endedAt)
             }
         }
 

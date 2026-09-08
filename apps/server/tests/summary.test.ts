@@ -205,7 +205,7 @@ describe("server summary jobs", () => {
         expect((await app.request(`${base}/2`, { headers })).status).toBe(404);
         // The fixed job route must retain its existing unavailable-service behavior.
         expect(await (await app.request(`${base}/job`, { headers })).json()).toEqual({ error: "summary_unavailable" });
-        expect((await app.request(`/api/v1/vaults/${vaultId}/text/summary/${meetingId}?revision=1`, { headers })).status).toBe(400);
+        expect((await app.request(`/api/v1/vaults/${vaultId}/text/summary/${meetingId}?revision=1`, { headers })).status).toBe(404);
         expect((await app.request(`${base}/latest?manifest=invalid`, { headers })).status).toBe(400);
         expect((await app.request(`${base}?limit=101`, { headers })).status).toBe(400);
         expect((await app.request(`${base}/999999999999`, { headers })).status).toBe(400);
@@ -359,12 +359,12 @@ describe("server summary jobs", () => {
       } } } });
       const patchId = uuidV7(); const hash = "a".repeat(64);
       await sync.putTranscriptChunk(owner, vaultId, meetingId, patchId, 0, hash, {
-        segments: [{ segmentId: uuidV7(), startTime: new Date().toISOString(), endTime: null,
-          text: "Ship next week < & > \" '", isConfirmed: true, audioSource: "mic", speakerLabel: "A&B" }], deletions: [],
+        segments: [{ segmentId: uuidV7(), startedAt: new Date().toISOString(), endedAt: null,
+          text: "Ship next week < & > \" '", createdAt: null, audioSource: "mic", speakerLabel: "A&B" }], deletions: [],
       });
       await sync.commitTransaction(owner, { schemaVersion: 2, id: uuidV7(), vaultId, createdAt: new Date().toISOString(), operations: [{
         id: patchId, entity: "transcript", action: "patch", entityId: meetingId, baseRevision: 0,
-        data: { patchId, segmentCount: 1, deletionCount: 0, chunks: [{ index: 0, sha256: hash, segmentCount: 1, deletionCount: 0 }] },
+        data: { transcript: { id: patchId, startedAt: null, endedAt: null, metadata: null }, mode: "replace", patchId, segmentCount: 1, deletionCount: 0, chunks: [{ index: 0, sha256: hash, segmentCount: 1, deletionCount: 0 }] },
       }] });
       const screenshots = Array.from({ length: withImages ? 25 : 0 }, () => ({ fileId: uuidV7(), screenshotId: uuidV7(), vaultId, meetingId,
         capturedAt: new Date(), contentType: "image/webp", storageKey: "unused", contentLength: 1, contentHash: "a".repeat(64),

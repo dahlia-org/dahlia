@@ -16,7 +16,7 @@ public enum TextContentAccess {
         let emptyTranscript = if entity == .transcript, row["complete"] as Bool {
             try Bool.fetchOne(
                 db,
-                sql: "SELECT NOT EXISTS(SELECT 1 FROM transcript_segments WHERE meetingId = ? AND isConfirmed = 1)",
+                sql: "SELECT NOT EXISTS(SELECT 1 FROM transcript_segments WHERE meetingId = ?)",
                 arguments: [id]
             ) == true
         } else { false }
@@ -119,7 +119,7 @@ public enum TextContentAccess {
         inclusive: Bool = false,
         fromElapsedSeconds: Double? = nil,
         toElapsedSeconds: Double? = nil,
-        confirmedOnly: Bool = false,
+        confirmedOnly _: Bool = false,
         limit: Int? = nil,
         in db: Database
     ) throws -> [Row] {
@@ -157,15 +157,15 @@ public enum TextContentAccess {
         if let limit { arguments += [max(0, limit)] }
         return try Row.fetchAll(db, sql: """
         WITH candidates AS (
-            SELECT t.*, b.text, m.createdAt AS meetingCreatedAt,
+            SELECT t.*, t.startedAt AS startTime, t.endedAt AS endTime, b.text, m.createdAt AS meetingCreatedAt,
                 s.startedAt AS sessionStartedAt, s.offsetSeconds AS sessionOffsetSeconds,
                 max(0, round(CASE WHEN s.startedAt IS NOT NULL AND s.offsetSeconds IS NOT NULL
-                    THEN s.offsetSeconds + (julianday(t.startTime) - julianday(s.startedAt)) * 86400.0
-                    ELSE (julianday(t.startTime) - julianday(m.createdAt)) * 86400.0 END, 3)) AS elapsedSeconds
+                    THEN s.offsetSeconds + (julianday(t.startedAt) - julianday(s.startedAt)) * 86400.0
+                    ELSE (julianday(t.startedAt) - julianday(m.createdAt)) * 86400.0 END, 3)) AS elapsedSeconds
             FROM transcript_segments t JOIN transcript_segment_bodies b ON b.segmentId = t.id
             JOIN meetings m ON m.id = t.meetingId
             LEFT JOIN recording_sessions s ON s.id = t.sessionId AND s.meetingId = t.meetingId
-            WHERE t.meetingId = ? \(confirmedOnly ? "AND t.isConfirmed = 1" : "")
+            WHERE t.meetingId = ?
         )
         SELECT * FROM candidates \(filter) ORDER BY \(sort) \(limit == nil ? "" : "LIMIT ?")
         """, arguments: arguments)
@@ -174,7 +174,7 @@ public enum TextContentAccess {
     public static func transcriptCount(meetingId: UUID, in db: Database) throws -> Int {
         let local = try Int.fetchOne(
             db,
-            sql: "SELECT count(*) FROM transcript_segments WHERE meetingId = ? AND isConfirmed = 1",
+            sql: "SELECT count(*) FROM transcript_segments WHERE meetingId = ?",
             arguments: [meetingId]
         ) ?? 0
         guard try db.tableExists("sync_content_state") else { return local }

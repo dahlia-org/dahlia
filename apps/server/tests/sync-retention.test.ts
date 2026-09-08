@@ -353,7 +353,7 @@ describe("partial text content", () => {
     const insert = raw.prepare(`INSERT INTO meetings(meeting_id, vault_id, name, status, created_at, updated_at,
       summary_revision, transcript_revision, active)
       VALUES (?, ?, 'History', 'READY', ?, ?, 1, 1, 1)`);
-    const transcript = raw.prepare("INSERT INTO transcript_segments(vault_id, meeting_id, segment_id, start_time, text, is_confirmed) VALUES (?, ?, ?, ?, ?, 1)");
+    const transcript = raw.prepare("INSERT INTO transcript_segments(transcript_id, segment_id, started_at, text) VALUES (?, ?, ?, ?)");
     const summary = raw.prepare("INSERT INTO summaries(id, meeting_id, version, title, document, created_at, saved_at) VALUES (?, ?, 1, 'Summary', ?, ?, ?)");
     const text = "large_text_marker".repeat(64);
     raw.exec("BEGIN");
@@ -361,7 +361,8 @@ describe("partial text content", () => {
       const meeting = id();
       insert.run(meeting, vaultId, index, index);
       summary.run(id(), meeting, text, index, index);
-      transcript.run(vaultId, meeting, id(), index, text);
+      raw.prepare("INSERT INTO transcripts(id, meeting_id, version, sync_revision, created_at) VALUES (?, ?, 1, 1, ?)").run(meeting, meeting, index);
+      transcript.run(meeting, id(), index, text);
     }
     raw.exec("COMMIT");
     let cursor: string | undefined;
@@ -392,30 +393,31 @@ describe("partial text content", () => {
       data: { name: "Metadata", projectId: null, description: "", status: "READY", duration: null, recordingStartedAt: null, createdAt: time, updatedAt: time } },
     { entity: "summary", action: "upsert", entityId: meetingId, baseRevision: 0, data: { title: "Summary", document: "{}", createdAt: time } }]));
     raw.prepare("UPDATE meetings SET transcript_revision = 1 WHERE meeting_id = ?").run(meetingId);
-    const insert = raw.prepare("INSERT INTO transcript_segments(vault_id, meeting_id, segment_id, start_time, text, is_confirmed) VALUES (?, ?, ?, ?, ?, 1)");
+    const insert = raw.prepare("INSERT INTO transcript_segments(transcript_id, segment_id, started_at, text) VALUES (?, ?, ?, ?)");
+    raw.prepare("INSERT INTO transcripts(id, meeting_id, version, sync_revision, created_at) VALUES (?, ?, 1, 1, ?)").run(meetingId, meetingId, Date.now());
     const digest = new TextContentDigest();
     const segments = Array.from({ length: 501 }, (_, index) => ({ id: id(), text: `原文${index}`, index }));
     raw.exec("BEGIN");
     for (const segment of segments) {
-      insert.run(vaultId, meetingId, segment.id, segment.index, segment.text);
+      insert.run(meetingId, segment.id, segment.index, segment.text);
       digest.add(segment.id, false); digest.add(segment.text);
     }
     raw.exec("COMMIT");
-    const manifest = await service.textContent(owner, vaultId, "transcript", meetingId, "1", "1");
+    const manifest = await service.transcriptContent(owner, vaultId, meetingId, "1", "1");
     expect(manifest).toMatchObject({ count: 501, sha256: digest.digestHex(), byteCount: digest.byteCount });
     expect(manifest).not.toHaveProperty("items");
-    const first = await service.textContent(owner, vaultId, "transcript", meetingId, "1");
+    const first = await service.transcriptContent(owner, vaultId, meetingId, "1");
     expect(first.items).toHaveLength(500);
     expect(first.nextCursor).toBeTruthy();
-    expect((await service.textContent(owner, vaultId, "transcript", meetingId, "1", undefined, first.nextCursor!)).items).toHaveLength(1);
+    expect((await service.transcriptContent(owner, vaultId, meetingId, "1", undefined, first.nextCursor!)).items).toHaveLength(1);
     raw.prepare("UPDATE meetings SET transcript_revision = 2 WHERE meeting_id = ?").run(meetingId);
-    await expect(service.textContent(owner, vaultId, "transcript", meetingId, "1", undefined, first.nextCursor!)).rejects.toMatchObject({ status: 409 });
+    expect((await service.transcriptContent(owner, vaultId, meetingId, "1", undefined, first.nextCursor!)).items).toHaveLength(1);
     const metadata = await service.listChanges(owner, vaultId, undefined, undefined);
     expect(metadata.items.find((item) => item.entity === "summary")?.record).toMatchObject({ contentOmitted: true, contentPresent: true });
     expect(await service.getMeeting(owner, vaultId, meetingId)).toHaveProperty("summaryDocument", "{}");
-    await expect(service.textContent(member, vaultId, "transcript", meetingId, "2")).rejects.toMatchObject({ status: 404 });
+    await expect(service.transcriptContent(member, vaultId, meetingId, "2")).rejects.toMatchObject({ status: 404 });
     raw.prepare("UPDATE meetings SET active = 0 WHERE meeting_id = ?").run(meetingId);
-    await expect(service.textContent(owner, vaultId, "transcript", meetingId, "2")).rejects.toMatchObject({ status: 404 });
+    await expect(service.transcriptContent(owner, vaultId, meetingId, "2")).rejects.toMatchObject({ status: 404 });
   });
 
   it("keeps search pages stable when another Vault changes corpus-wide FTS statistics", async () => {

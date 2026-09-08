@@ -1,3 +1,4 @@
+import type { TranscriptMetadata } from "../sync/transcript";
 import type { SummaryMetadata } from "../summary/metadata";
 import type { SummaryJob } from "../summary/model";
 import type { RecordingRecord } from "../recordings/model";
@@ -229,36 +230,53 @@ export const recordingSession = appSchema.view("recording_sessions", {
   GROUP BY vault_id, meeting_id, session_id
 `);
 
-export const syncedTranscriptSegment = appSchema.table("transcript_segments", {
-  vaultId: uuid("vault_id").notNull(),
+export const transcript = appSchema.table("transcripts", {
+  id: uuid("id").primaryKey(),
   meetingId: uuid("meeting_id").notNull(),
+  version: integer("version").notNull(),
+  syncRevision: integer("sync_revision").notNull(),
+  startedAt: timestamp("started_at"),
+  endedAt: timestamp("ended_at"),
+  createdAt: timestamp("created_at").notNull(),
+  metadata: jsonb("metadata").$type<TranscriptMetadata>(),
+}, (table) => [
+  unique("transcript_meeting_version_unique").on(table.meetingId, table.version),
+  foreignKey({ columns: [table.meetingId], foreignColumns: [syncedMeeting.meetingId] }).onDelete("cascade"),
+  check("transcript_version_check", sql`${table.version} >= 1`),
+  pgPolicy("transcript_version_select", { for: "select", using: sql`exists (select 1 from "app"."meetings" m where m.meeting_id = ${table.meetingId} and "app"."current_identity_can_read_vault"(m.vault_id))` }),
+  pgPolicy("transcript_version_write", { for: "all", using: sql`exists (select 1 from "app"."meetings" m where m.meeting_id = ${table.meetingId} and "app"."current_identity_owns_vault"(m.vault_id))`, withCheck: sql`exists (select 1 from "app"."meetings" m where m.meeting_id = ${table.meetingId} and "app"."current_identity_owns_vault"(m.vault_id))` }),
+]).enableRLS();
+
+export const syncedTranscriptSegment = appSchema.table("transcript_segments", {
+  transcriptId: uuid("transcript_id").notNull(),
   segmentId: uuid("segment_id").notNull(),
-  startTime: timestamp("start_time").notNull(),
-  endTime: timestamp("end_time"),
+  startedAt: timestamp("started_at").notNull(),
+  endedAt: timestamp("ended_at"),
   text: text("text").notNull(),
-  isConfirmed: boolean("is_confirmed").notNull(),
+  createdAt: timestamp("created_at"),
   audioSource: text("audio_source"),
   speakerLabel: text("speaker_label"),
 }, (table) => [
   primaryKey({
     name: "synced_transcript_segment_pk",
-    columns: [table.vaultId, table.meetingId, table.segmentId],
+    columns: [table.transcriptId, table.segmentId],
   }),
   foreignKey({
-    name: "synced_transcript_segment_meeting_fk",
-    columns: [table.vaultId, table.meetingId],
-    foreignColumns: [syncedMeeting.vaultId, syncedMeeting.meetingId],
+    name: "transcript_segment_transcript_fk",
+    columns: [table.transcriptId],
+    foreignColumns: [transcript.id],
   }).onDelete("cascade"),
-  index("synced_transcript_vault_meeting_start_id_idx")
-    .on(table.vaultId, table.meetingId, table.startTime, table.segmentId),
+  index("transcript_segment_created_idx").on(table.transcriptId, table.createdAt),
+  index("transcript_segment_start_id_idx")
+    .on(table.transcriptId, table.startedAt, table.segmentId),
   pgPolicy("transcript_select", {
     for: "select",
-    using: sql`"app"."current_identity_can_read_vault"(${table.vaultId})`,
+    using: sql`exists (select 1 from "app"."transcripts" t join "app"."meetings" m on m.meeting_id = t.meeting_id where t.id = ${table.transcriptId} and "app"."current_identity_can_read_vault"(m.vault_id))`,
   }),
   pgPolicy("transcript_write", {
     for: "all",
-    using: sql`"app"."current_identity_owns_vault"(${table.vaultId})`,
-    withCheck: sql`"app"."current_identity_owns_vault"(${table.vaultId})`,
+    using: sql`exists (select 1 from "app"."transcripts" t join "app"."meetings" m on m.meeting_id = t.meeting_id where t.id = ${table.transcriptId} and "app"."current_identity_owns_vault"(m.vault_id))`,
+    withCheck: sql`exists (select 1 from "app"."transcripts" t join "app"."meetings" m on m.meeting_id = t.meeting_id where t.id = ${table.transcriptId} and "app"."current_identity_owns_vault"(m.vault_id))`,
   }),
 ]).enableRLS();
 
