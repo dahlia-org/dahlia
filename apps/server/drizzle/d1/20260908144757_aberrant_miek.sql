@@ -15,7 +15,13 @@ CREATE TABLE `transcripts` (
 	CONSTRAINT "transcript_status_check" CHECK("status" IN ('live', 'completed', 'interrupted'))
 );
 --> statement-breakpoint
-ALTER TABLE `transcript_segments` ADD `transcript_id` text NOT NULL REFERENCES transcripts(id) ON DELETE CASCADE;--> statement-breakpoint
+-- Existing bodies become version 1. Reuse the globally unique meeting UUID for this initial parent.
+-- A positive revision also preserves a previously published empty transcript; generation details are unknown.
+INSERT INTO `transcripts` (`id`, `vault_id`, `meeting_id`, `version`, `sync_revision`, `status`, `saved_at`)
+SELECT m.meeting_id, m.vault_id, m.meeting_id, 1, m.transcript_revision, 'interrupted', unixepoch() * 1000
+FROM meetings m WHERE m.transcript_revision > 0 OR EXISTS (
+  SELECT 1 FROM transcript_segments s WHERE s.vault_id = m.vault_id AND s.meeting_id = m.meeting_id
+);--> statement-breakpoint
 PRAGMA foreign_keys=OFF;--> statement-breakpoint
 CREATE TABLE `__new_transcript_segments` (
 	`transcript_id` text NOT NULL,
@@ -30,7 +36,9 @@ CREATE TABLE `__new_transcript_segments` (
 	CONSTRAINT `fk_transcript_segments_transcript_id_transcripts_id_fk` FOREIGN KEY (`transcript_id`) REFERENCES `transcripts`(`id`) ON DELETE CASCADE
 );
 --> statement-breakpoint
-INSERT INTO `__new_transcript_segments`(`segment_id`, `start_time`, `end_time`, `text`, `is_confirmed`, `audio_source`, `speaker_label`) SELECT `segment_id`, `start_time`, `end_time`, `text`, `is_confirmed`, `audio_source`, `speaker_label` FROM `transcript_segments`;--> statement-breakpoint
+INSERT INTO `__new_transcript_segments`(`transcript_id`, `segment_id`, `start_time`, `end_time`, `text`, `is_confirmed`, `audio_source`, `speaker_label`)
+SELECT t.id, s.segment_id, s.start_time, s.end_time, s.text, s.is_confirmed, s.audio_source, s.speaker_label
+FROM transcript_segments s JOIN transcripts t ON t.vault_id = s.vault_id AND t.meeting_id = s.meeting_id;--> statement-breakpoint
 DROP TABLE `transcript_segments`;--> statement-breakpoint
 ALTER TABLE `__new_transcript_segments` RENAME TO `transcript_segments`;--> statement-breakpoint
 PRAGMA foreign_keys=ON;--> statement-breakpoint
