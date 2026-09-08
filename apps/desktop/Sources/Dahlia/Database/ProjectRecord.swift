@@ -19,6 +19,9 @@ struct ProjectRecord: Codable, FetchableRecord, PersistableRecord, Identifiable,
     var createdAt: Date
     var description = ""
     var projectType: ProjectType?
+    var icon: String?
+    var color: String?
+    var legacyAppearanceMigrated = false
     var revision = 1
 
     /// Populated by hierarchy-aware repository reads. It is never persisted.
@@ -37,6 +40,7 @@ struct ProjectRecord: Codable, FetchableRecord, PersistableRecord, Identifiable,
         case createdAt
         case description
         case projectType
+        case icon, color, legacyAppearanceMigrated
         case revision
     }
 
@@ -48,6 +52,8 @@ struct ProjectRecord: Codable, FetchableRecord, PersistableRecord, Identifiable,
         createdAt: Date,
         description: String = "",
         projectType: ProjectType?,
+        icon: String? = nil,
+        color: String? = nil,
         revision: Int = 1,
         resolvedPath: String? = nil
     ) {
@@ -59,6 +65,8 @@ struct ProjectRecord: Codable, FetchableRecord, PersistableRecord, Identifiable,
         self.createdAt = createdAt
         self.description = description
         self.projectType = projectType
+        self.icon = icon
+        self.color = color
         self.revision = revision
         self.resolvedPath = resolvedPath
     }
@@ -197,6 +205,8 @@ struct ProjectRecord: Codable, FetchableRecord, PersistableRecord, Identifiable,
         createdAt: Date,
         description: String,
         projectType: ProjectType?,
+        icon: String? = nil,
+        color: String? = nil,
         in db: Database
     ) throws {
         guard var project = try fetchOne(db, key: id) else {
@@ -207,7 +217,8 @@ struct ProjectRecord: Codable, FetchableRecord, PersistableRecord, Identifiable,
                 name: name,
                 createdAt: createdAt,
                 description: description,
-                projectType: projectType
+                projectType: projectType,
+                icon: icon, color: color
             ).insert(db)
             return
         }
@@ -220,12 +231,15 @@ struct ProjectRecord: Codable, FetchableRecord, PersistableRecord, Identifiable,
             || project.projectType != projectType
         guard hierarchyChanged
             || project.createdAt != createdAt
-            || project.description != description else { return }
+            || project.description != description
+            || project.icon != icon || project.color != color else { return }
         let descendantIDs = try Set(hierarchy(projectId: id, vaultId: vaultId, in: db).dropFirst().map(\.id))
         project.parentProjectId = parentProjectId
         project.name = name
         project.createdAt = createdAt
         project.description = description
+        project.icon = icon
+        project.color = color
         project.projectType = projectType
         project.revision += 1
         try project.update(db)

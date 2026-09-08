@@ -6,7 +6,7 @@ export function testStore(overrides: Partial<AuthStore> = {}): AuthStore {
   return {
     database: {} as AuthStore["database"],
     accountSettings: {
-      getChangeVersion: (userId) => Promise.resolve(settings.has(userId) ? 1 : null),
+      getRevision: (userId) => Promise.resolve(settings.has(userId) ? 1 : null),
       get: (userId) => Promise.resolve(settings.get(userId) ?? null),
       update: (userId, patch, initialize) => {
         const current = settings.get(userId) ?? DEFAULT_ACCOUNT_SETTINGS;

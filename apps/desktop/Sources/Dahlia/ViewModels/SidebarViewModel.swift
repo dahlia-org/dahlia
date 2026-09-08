@@ -533,6 +533,7 @@ final class SidebarViewModel {
                     explicitProjectType: project.projectType,
                     effectiveProjectType: effectiveType?.type ?? .undefined,
                     typeOwnerProjectId: effectiveType?.ownerProjectId,
+                    icon: project.icon, color: project.color,
                     revision: project.revision,
                     createdAt: project.createdAt,
                     meetingCount: aggregates[project.id]?.0 ?? 0,
@@ -558,9 +559,15 @@ final class SidebarViewModel {
                     guard let self,
                           self.currentVault?.id == vaultId,
                           self.projectCatalogObservationTracker.isCurrent(observationGeneration) else { return }
+                    MainWindowNavigation.shared.updateProjectAppearances(projects, vaultId: vaultId)
                     self.allProjectItems = projects
                     self.isProjectCatalogLoaded = true
                     self.projectCatalogLoadFailed = false
+                    do {
+                        try await MainWindowNavigation.shared.migrateProjectAppearances(vaultId: vaultId, dbQueue: dbQueue)
+                    } catch {
+                        sidebarViewModelLogger.error("Project appearance migration failed; retained legacy settings")
+                    }
                 }
             }
         )
@@ -690,7 +697,8 @@ final class SidebarViewModel {
         name: String,
         parentProjectId: UUID?,
         projectType: ProjectType? = nil,
-        description: String = ""
+        description: String = "",
+        appearance: ProjectAppearance? = nil
     ) -> ProjectRecord? {
         guard canEditCurrentVault, let projectWorkspaceService else { return nil }
         do {
@@ -698,7 +706,8 @@ final class SidebarViewModel {
                 name: name,
                 parentProjectId: parentProjectId,
                 projectType: projectType,
-                description: description
+                description: description,
+                appearance: appearance
             )
             lastError = nil
             return project
@@ -774,7 +783,8 @@ final class SidebarViewModel {
         parentProjectId: UUID?,
         projectType: ProjectType,
         description: String,
-        expectedRevision: Int
+        expectedRevision: Int,
+        appearance: ProjectAppearance? = nil
     ) async -> ProjectRecord? {
         guard canEditCurrentVault, let projectWorkspaceService else { return nil }
         do {
@@ -785,7 +795,8 @@ final class SidebarViewModel {
                     parentProjectId: parentProjectId,
                     projectType: projectType,
                     description: description,
-                    expectedRevision: expectedRevision
+                    expectedRevision: expectedRevision,
+                    appearance: appearance
                 )
             }.value
             lastError = nil

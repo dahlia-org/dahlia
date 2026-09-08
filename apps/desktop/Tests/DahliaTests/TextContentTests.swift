@@ -34,7 +34,10 @@
                         arguments: [transactionId, UUID.v7(), meetingId, "pending body"]
                     )
                 }
-                try vault.insert(db)
+                try db.execute(
+                    sql: "INSERT INTO vaults(id, name, createdAt, lastOpenedAt, accountConnectionId, syncConfirmedConnectionId) VALUES (?, ?, ?, ?, ?, ?)",
+                    arguments: [vault.id, vault.name, vault.createdAt, vault.lastOpenedAt, vault.accountConnectionId, vault.syncConfirmedConnectionId]
+                )
                 try MeetingRecord(id: meetingId, vaultId: vaultId, projectId: nil, name: "Existing", createdAt: .now, updatedAt: .now).insert(db)
                 try db.execute(
                     sql: """

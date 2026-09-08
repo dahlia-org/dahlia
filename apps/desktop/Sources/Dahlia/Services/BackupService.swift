@@ -337,7 +337,7 @@ actor BackupService {
     }
 
     private nonisolated static func clearSearchIndex(in db: Database) throws {
-        try db.execute(sql: "DELETE FROM search_documents_fts; DELETE FROM search_documents; DELETE FROM search_index_jobs")
+        try db.execute(sql: "DELETE FROM search_documents_fts; DELETE FROM search_documents; DELETE FROM jobs_search_index")
         try db.execute(sql: "UPDATE search_index_state SET phase = 'pending', totalCount = 0, completedCount = 0")
     }
 

@@ -36,8 +36,8 @@ import GRDB
                 #expect(try Bool.fetchOne(db, sql: "SELECT isEnabled FROM search_index_state WHERE indexKind = 'vector'") == false)
                 #expect(try Data.fetchOne(db, sql: "SELECT embedding FROM search_documents_vec") == Data(repeating: 7, count: 1024))
                 #expect(try String.fetchOne(db, sql: "SELECT sourceContentHash FROM search_documents_vec") == "original")
-                #expect(try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM search_index_jobs WHERE indexKind = 'vector'") == 1)
-                #expect(try Int.fetchOne(db, sql: "SELECT generation FROM search_index_jobs WHERE indexKind = 'vector'") == 1)
+                #expect(try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM jobs_search_index WHERE indexKind = 'vector'") == 1)
+                #expect(try Int.fetchOne(db, sql: "SELECT generation FROM jobs_search_index WHERE indexKind = 'vector'") == 1)
                 #expect(try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM sqlite_master WHERE type = 'trigger' AND name LIKE '%vector%'") == 0)
                 try db.execute(sql: "UPDATE search_documents SET sourceContentHash = 'changed' WHERE id = ?", arguments: [documentID])
                 try db.execute(
@@ -47,8 +47,8 @@ import GRDB
                     """,
                     arguments: [UUID.v7(), UUID.v7(), UUID.v7(), Date()]
                 )
-                #expect(try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM search_index_jobs WHERE indexKind = 'vector'") == 1)
-                #expect(try Int.fetchOne(db, sql: "SELECT generation FROM search_index_jobs WHERE indexKind = 'vector'") == 1)
+                #expect(try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM jobs_search_index WHERE indexKind = 'vector'") == 1)
+                #expect(try Int.fetchOne(db, sql: "SELECT generation FROM jobs_search_index WHERE indexKind = 'vector'") == 1)
                 #expect(try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM search_documents") == 2)
             }
         }

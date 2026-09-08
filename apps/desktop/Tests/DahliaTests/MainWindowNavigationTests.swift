@@ -89,7 +89,7 @@
         }
 
         @Test
-        func persistsVaultScopedProjectAppearancesAndDefaultsInvalidValues() throws {
+        func readsLegacyVaultScopedProjectAppearancesAndDefaultsInvalidValues() throws {
             let suiteName = "MainWindowNavigationTests-\(UUID.v7())"
             let defaults = try #require(UserDefaults(suiteName: suiteName))
             defer { defaults.removePersistentDomain(forName: suiteName) }
@@ -101,7 +101,7 @@
             let navigation = MainWindowNavigation(openMainWindow: {}, settingsDefaults: defaults)
 
             #expect(navigation.projectAppearance(projectId: project, vaultId: firstVault) == .default)
-            navigation.setProjectAppearance(appearance, projectId: project, vaultId: firstVault)
+            try defaults.set(JSONEncoder().encode([firstVault.uuidString: [project.uuidString: appearance]]), forKey: "projectAppearances")
 
             let restored = MainWindowNavigation(openMainWindow: {}, settingsDefaults: defaults)
             #expect(restored.projectAppearance(projectId: project, vaultId: firstVault) == appearance)

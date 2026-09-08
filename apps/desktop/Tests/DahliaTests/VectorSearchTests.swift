@@ -32,7 +32,7 @@ import GRDB
                 let documentCount = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM search_documents")
                 let jobCount = try Int.fetchOne(
                     db,
-                    sql: "SELECT COUNT(*) FROM search_index_jobs WHERE indexKind = 'vector'"
+                    sql: "SELECT COUNT(*) FROM jobs_search_index WHERE indexKind = 'vector'"
                 )
                 let isEnabled = try Bool.fetchOne(
                     db,

@@ -22,6 +22,8 @@ export interface SyncTranscriptCursor {
 }
 
 export interface SyncVaultRecord {
+  icon?: string | null;
+  color?: string | null;
   vaultId: string;
   name: string;
   revision?: number;
@@ -31,6 +33,8 @@ export interface SyncVaultRecord {
 }
 
 export interface SyncProjectRecord {
+  icon?: string | null;
+  color?: string | null;
   projectId: string;
   vaultId: string;
   parentProjectId: string | null;

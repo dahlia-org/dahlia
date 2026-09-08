@@ -51,7 +51,7 @@ actor SearchIndexer {
                 db,
                 sql: """
                 SELECT COUNT(*) + COALESCE(SUM(generation), 0)
-                FROM search_index_jobs WHERE indexKind = 'fts'
+                FROM jobs_search_index WHERE indexKind = 'fts'
                 """
             ) ?? 0
         }.removeDuplicates()
@@ -100,7 +100,7 @@ actor SearchIndexer {
         try await dbQueue.write { db in
             try db.execute(
                 sql: """
-                UPDATE search_index_jobs
+                UPDATE jobs_search_index
                 SET status = 'pending', attempts = 0, availableAt = ?, claimedAt = NULL,
                     leaseExpiresAt = NULL, lastErrorCode = NULL, updatedAt = ?
                 WHERE indexKind = 'fts' AND targetKind = 'screenshotAnalysis' AND attempts >= 5
@@ -394,7 +394,7 @@ actor SearchIndexer {
                 db,
                 sql: """
                 SELECT targetKind, targetKey, generation, attempts
-                FROM search_index_jobs
+                FROM jobs_search_index
                 WHERE indexKind = 'fts'
                   AND availableAt <= ?
                   AND attempts < 5
@@ -411,7 +411,7 @@ actor SearchIndexer {
                     db,
                     sql: """
                     SELECT targetKind, targetKey, generation, attempts
-                    FROM search_index_jobs
+                    FROM jobs_search_index
                     WHERE indexKind = 'fts' AND targetKind = 'screenshotAnalysis'
                       AND availableAt <= ? AND attempts < 5
                       AND (status = 'pending' OR leaseExpiresAt < ?)
@@ -436,7 +436,7 @@ actor SearchIndexer {
             for job in jobs {
                 try db.execute(
                     sql: """
-                    UPDATE search_index_jobs
+                    UPDATE jobs_search_index
                     SET status = 'processing', attempts = attempts + 1,
                         claimedAt = ?, leaseExpiresAt = ?, updatedAt = ?
                     WHERE indexKind = 'fts' AND targetKind = ? AND targetKey = ? AND generation = ?
@@ -811,7 +811,7 @@ private extension SearchIndexer {
                 }
                 try db.execute(
                     sql: """
-                    DELETE FROM search_index_jobs
+                    DELETE FROM jobs_search_index
                     WHERE indexKind = 'fts' AND targetKind = ? AND targetKey = ? AND generation = ?
                     """,
                     arguments: [job.targetKind, job.targetID, job.generation]
@@ -833,7 +833,7 @@ private extension SearchIndexer {
                 for job in jobs {
                     try db.execute(
                         sql: """
-                        UPDATE search_index_jobs
+                        UPDATE jobs_search_index
                         SET status = 'pending', attempts = max(0, attempts - 1), availableAt = ?,
                             claimedAt = NULL, leaseExpiresAt = NULL, updatedAt = ?
                         WHERE indexKind = 'fts' AND targetKind = ? AND targetKey = ? AND generation = ?
@@ -850,7 +850,7 @@ private extension SearchIndexer {
         try await dbQueue.write { db in
             try db.execute(
                 sql: """
-                UPDATE search_index_jobs
+                UPDATE jobs_search_index
                 SET status = 'pending',
                     attempts = CASE WHEN status = 'processing' THEN MAX(0, attempts - 1) ELSE attempts END,
                     availableAt = MAX(availableAt, ?),
@@ -870,7 +870,7 @@ private extension SearchIndexer {
             for job in jobs {
                 try db.execute(
                     sql: """
-                    UPDATE search_index_jobs
+                    UPDATE jobs_search_index
                     SET status = 'pending', attempts = max(0, attempts - 1), availableAt = ?,
                         claimedAt = NULL, leaseExpiresAt = NULL, lastErrorCode = ?, updatedAt = ?
                     WHERE indexKind = 'fts' AND targetKind = ? AND targetKey = ? AND generation = ?
@@ -890,7 +890,7 @@ private extension SearchIndexer {
                 try await dbQueue.write { db in
                     try db.execute(
                         sql: """
-                        UPDATE search_index_jobs
+                        UPDATE jobs_search_index
                         SET status = 'pending', claimedAt = NULL, leaseExpiresAt = NULL,
                             lastErrorCode = ?, updatedAt = ?
                         WHERE indexKind = 'fts' AND targetKind = ? AND targetKey = ? AND generation = ?
@@ -906,7 +906,7 @@ private extension SearchIndexer {
             try await dbQueue.write { db in
                 try db.execute(
                     sql: """
-                    DELETE FROM search_index_jobs
+                    DELETE FROM jobs_search_index
                     WHERE indexKind = 'fts' AND targetKind = ? AND targetKey = ? AND generation = ?
                     """,
                     arguments: [
@@ -921,7 +921,7 @@ private extension SearchIndexer {
         try await dbQueue.write { db in
             try db.execute(
                 sql: """
-                UPDATE search_index_jobs
+                UPDATE jobs_search_index
                 SET status = 'pending', availableAt = ?, claimedAt = NULL, leaseExpiresAt = NULL,
                     lastErrorCode = ?, updatedAt = ?
                 WHERE indexKind = 'fts' AND targetKind = ? AND targetKey = ? AND generation = ?

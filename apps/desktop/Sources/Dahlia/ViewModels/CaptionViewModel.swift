@@ -316,7 +316,7 @@ final class CaptionViewModel: ObservableObject {
                 LEFT JOIN sync_entity_state s ON s.vaultId = v.id AND s.entity = 'file' AND s.entityId = f.id
                 WHERE a.id = ? AND (v.accountConnectionId IS NULL OR s.confirmedRevision > 0) AND NOT (
                     v.accountConnectionId IS NULL AND c.complete = 1 AND (f.remoteReference IS NULL OR f.localReference IS NOT NULL)
-                    AND EXISTS(SELECT 1 FROM search_index_jobs j WHERE j.indexKind = 'fts'
+                    AND EXISTS(SELECT 1 FROM jobs_search_index j WHERE j.indexKind = 'fts'
                         AND j.targetKind = 'screenshotAnalysis' AND j.targetKey = a.id)
                 )
                 """,
@@ -356,7 +356,7 @@ final class CaptionViewModel: ObservableObject {
             guard let row = try Row.fetchOne(
                 db,
                 sql: """
-                SELECT status, attempts FROM search_index_jobs
+                SELECT status, attempts FROM jobs_search_index
                 WHERE indexKind = 'fts' AND targetKind = 'screenshotAnalysis' AND targetKey = ?
                 """,
                 arguments: [id]

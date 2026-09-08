@@ -65,3 +65,11 @@ PATCH は指定された末端項目だけを DB の現在行に適用し、同�
 移行は新列追加、選択中の方式の詳細度と両方式の model / reasoningEffort の移行、旧3列の削除を forward migration で行う。
 FORCE RLS は backfill transaction 内だけ解除し commit 前に復元する。旧 API 形式は維持せず Desktop / Web / Server を同時更新する。
 既存 summary job と履歴の設定は移行しない。
+
+## 運用テーブルと番号の整理（2026-09-09）
+
+ジョブテーブルは `jobs_search_index`、`jobs_storage_delete`、`jobs_image_analysis`、`jobs_summary` に統一する。Desktop の検索ジョブも `jobs_search_index` とする。既存ジョブの状態を保持する追加 migration を使う。
+
+`recordings` は `meeting_id` を外部キーとし、Vault は親会議から導出する。PostgreSQL RLS と共通 store の認可をともに親会議経由にし、API の `vaultId` は維持する。`meeting_events.vault_id` は会議削除後の履歴認可のため、`meeting_files.vault_id` は同一 Vault の複合外部キー制約のため維持する。
+
+コンテンツ世代は `version`、同期・更新検出は `revision` とする。`account_settings.change_version` は `revision` に改名するが、項目単位の更新方法は維持し、CAS 必須にはしない。処理世代の generation、録音 UUID、解析方式・通信形式のバージョンは別概念として扱う。

@@ -36,18 +36,18 @@ final class SearchSettingsModel {
                     pendingJobCount: Int.fetchOne(
                         db,
                         sql: """
-                        SELECT COUNT(*) FROM search_index_jobs WHERE indexKind = 'fts'
+                        SELECT COUNT(*) FROM jobs_search_index WHERE indexKind = 'fts'
                           AND status = 'pending' AND attempts < 5
                         """
                     ) ?? 0,
                     processingJobCount: Int.fetchOne(
                         db,
-                        sql: "SELECT COUNT(*) FROM search_index_jobs WHERE indexKind = 'fts' AND status = 'processing'"
+                        sql: "SELECT COUNT(*) FROM jobs_search_index WHERE indexKind = 'fts' AND status = 'processing'"
                     ) ?? 0,
                     lastErrorCode: state?["lastErrorCode"] ?? (String.fetchOne(
                         db,
                         sql: """
-                        SELECT lastErrorCode FROM search_index_jobs
+                        SELECT lastErrorCode FROM jobs_search_index
                         WHERE indexKind = 'fts' AND lastErrorCode IS NOT NULL
                         ORDER BY updatedAt DESC LIMIT 1
                         """

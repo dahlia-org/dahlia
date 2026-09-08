@@ -36,7 +36,7 @@ const tsvector = customType<{ data: string }>({ dataType: () => "tsvector" });
 export const accountSettings = appSchema.table("account_settings", {
   userId: text("user_id").primaryKey().references(() => authUser.id, { onDelete: "cascade" }),
   summary: jsonb("summary").$type<AccountSettings["summary"]>().default(DEFAULT_ACCOUNT_SETTINGS.summary).notNull(),
-  changeVersion: integer("change_version").default(1).notNull(),
+  revision: integer("revision").default(1).notNull(),
   outputLanguage: text("output_language").$type<AccountSettings["outputLanguage"]>().notNull(),
   analysisLanguages: jsonb("analysis_languages").$type<AccountSettings["analysisLanguages"]>().notNull(),
 }, (table) => [
@@ -50,6 +50,8 @@ export const accountSettings = appSchema.table("account_settings", {
 export const syncedVault = appSchema.table("vaults", {
   vaultId: uuid("vault_id").primaryKey(),
   name: text("name").notNull(),
+  icon: text("icon"),
+  color: text("color"),
   revision: integer("revision").default(1).notNull(),
   deletingAt: timestamp("deleting_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -79,6 +81,8 @@ export const syncedProject = appSchema.table("projects", {
   vaultId: uuid("vault_id").notNull(),
   parentProjectId: uuid("parent_project_id"),
   name: text("name").notNull(),
+  icon: text("icon"),
+  color: text("color"),
   description: text("description").default("").notNull(),
   projectType: text("project_type"),
   revision: integer("revision").notNull(),
@@ -336,7 +340,6 @@ export const syncedFile = appSchema.table("files", {
 
 export const syncedRecording = appSchema.table("recordings", {
   sessionId: uuid("session_id").primaryKey(),
-  vaultId: uuid("vault_id").notNull(),
   meetingId: uuid("meeting_id").notNull(),
   number: integer("number").notNull(),
   startedAt: timestamp("started_at").notNull(),
@@ -346,12 +349,12 @@ export const syncedRecording = appSchema.table("recordings", {
   createdAt: timestamp("created_at").notNull(),
   updatedAt: timestamp("updated_at").notNull(),
 }, (table) => [
-  foreignKey({ columns: [table.vaultId, table.meetingId], foreignColumns: [syncedMeeting.vaultId, syncedMeeting.meetingId] }).onDelete("cascade"),
+  foreignKey({ columns: [table.meetingId], foreignColumns: [syncedMeeting.meetingId] }).onDelete("cascade"),
   unique("recordings_meeting_number_unique").on(table.meetingId, table.number),
-  index("recordings_vault_session_idx").on(table.vaultId, table.sessionId),
+  index("recordings_meeting_session_idx").on(table.meetingId, table.sessionId),
   check("recordings_number_check", sql`${table.number} > 0`),
-  pgPolicy("recording_select", { for: "select", using: sql`"app"."current_identity_can_read_vault"(${table.vaultId})` }),
-  pgPolicy("recording_write", { for: "all", using: sql`"app"."current_identity_owns_vault"(${table.vaultId})`, withCheck: sql`"app"."current_identity_owns_vault"(${table.vaultId})` }),
+  pgPolicy("recording_select", { for: "select", using: sql`EXISTS (SELECT 1 FROM "app"."meetings" WHERE "meeting_id" = ${table.meetingId} AND "app"."current_identity_can_read_vault"("vault_id"))` }),
+  pgPolicy("recording_write", { for: "all", using: sql`EXISTS (SELECT 1 FROM "app"."meetings" WHERE "meeting_id" = ${table.meetingId} AND "app"."current_identity_owns_vault"("vault_id"))`, withCheck: sql`EXISTS (SELECT 1 FROM "app"."meetings" WHERE "meeting_id" = ${table.meetingId} AND "app"."current_identity_owns_vault"("vault_id"))` }),
 ]).enableRLS();
 
 export const meetingFile = appSchema.table("meeting_files", {
@@ -458,7 +461,7 @@ export const searchEmbedding = appSchema.table("search_embeddings", {
   }),
 ]).enableRLS();
 
-export const searchIndexJob = appSchema.table("search_index_jobs", {
+export const searchIndexJob = appSchema.table("jobs_search_index", {
   vaultId: uuid("vault_id").notNull(),
   documentId: uuid("document_id").notNull(),
   ownerUserId: text("owner_user_id").notNull(),
@@ -540,7 +543,7 @@ export const syncVaultState = appSchema.table("sync_vault_state", {
   check("sync_vault_state_boundary_check", sql`${table.prunedThrough} >= 0 AND ${table.latestSequence} >= ${table.prunedThrough}`),
 ]);
 
-export const storageDeleteJob = appSchema.table("storage_delete_jobs", {
+export const storageDeleteJob = appSchema.table("jobs_storage_delete", {
   storageKey: text("storage_key").primaryKey(),
   attempts: integer("attempts").default(0).notNull(),
   status: text("status").default("pending").notNull(),
@@ -555,7 +558,7 @@ export const storageDeleteJob = appSchema.table("storage_delete_jobs", {
 ]);
 
 // Operational queue metadata only; canonical image/text access remains owner-scoped.
-export const imageAnalysisJob = appSchema.table("image_analysis_jobs", {
+export const imageAnalysisJob = appSchema.table("jobs_image_analysis", {
   fileId: uuid("file_id").primaryKey().references(() => syncedFile.fileId, { onDelete: "cascade" }),
   vaultId: uuid("vault_id").notNull().references(() => syncedVault.vaultId, { onDelete: "cascade" }),
   ownerUserId: text("owner_user_id").notNull().references(() => authUser.id, { onDelete: "cascade" }),
@@ -572,7 +575,7 @@ export const imageAnalysisJob = appSchema.table("image_analysis_jobs", {
 ]);
 
 // Settings and input fingerprints are owner-private; no transcript or provider credentials are queued.
-export const summaryJob = appSchema.table("summary_jobs", {
+export const summaryJob = appSchema.table("jobs_summary", {
   id: uuid("id").primaryKey(),
   vaultId: uuid("vault_id").notNull().references(() => syncedVault.vaultId, { onDelete: "cascade" }),
   meetingId: uuid("meeting_id").notNull().references(() => syncedMeeting.meetingId, { onDelete: "cascade" }),

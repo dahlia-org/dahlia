@@ -105,7 +105,7 @@ import os
 
             #expect(columns == [
                 "id", "vaultId", "parentProjectId", "name", "nameKey",
-                "createdAt", "description", "projectType", "revision",
+                "createdAt", "description", "projectType", "revision", "legacyAppearanceMigrated", "icon", "color",
             ])
         }
 
@@ -324,6 +324,8 @@ import os
                 )
 
                 try ProjectHierarchyMigration.migrate(in: db)
+                // Decode this historical migration's result with the current record model.
+                try db.execute(sql: "ALTER TABLE projects ADD COLUMN legacyAppearanceMigrated BOOLEAN NOT NULL DEFAULT 0")
             }
 
             let result = try queue.read { db in
@@ -425,6 +427,8 @@ import os
                 ).insert(db)
 
                 try ProjectHierarchyMigration.migrate(in: db)
+                // Decode this historical migration's result with the current record model.
+                try db.execute(sql: "ALTER TABLE projects ADD COLUMN legacyAppearanceMigrated BOOLEAN NOT NULL DEFAULT 0")
             }
 
             let result = try queue.read { db in
@@ -739,6 +743,8 @@ import os
                 )
 
                 try ProjectHierarchyMigration.migrate(in: db)
+                // Decode this historical migration's result with the current record model.
+                try db.execute(sql: "ALTER TABLE projects ADD COLUMN legacyAppearanceMigrated BOOLEAN NOT NULL DEFAULT 0")
             }
 
             let membership = try queue.read { db in

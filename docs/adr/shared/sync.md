@@ -12,7 +12,7 @@ Server account の Vault / Project / meeting は Desktop と Web が共有する
 
 ## 同期対象とモデル
 
-Vault 名、2段階 Project 階層と名前・説明、meeting metadata、summary document、transcript 原文、screenshot bytes / MIME / OCR / AI caption を同期する。翻訳文、SQLite ファイル、端末の export path は対象外。2026-09-07: 新規バッチ録音の結合音声は [専用の音声保管契約](recording-audio-archive.md) で追加した。note、tag、calendar metadata、音声特徴量をこの同期契約へ追加しない。
+Vault 名・アイコン・色、2段階 Project 階層と名前・説明・アイコン・色、meeting metadata、summary document、transcript 原文、screenshot bytes / MIME / OCR / AI caption を同期する。翻訳文、SQLite ファイル、端末の export path は対象外。2026-09-07: 新規バッチ録音の結合音声は [専用の音声保管契約](recording-audio-archive.md) で追加した。note、tag、calendar metadata、音声特徴量をこの同期契約へ追加しない。
 
 Project は `app.projects` に置き Vault 権限を継承する。空 Vault と Project 単独変更も扱い、同じ Vault の meeting だけが参照できる。Project 削除前に依存 meeting を明示的に移動・解除し、依存が残る削除を Server が拒否する。Project は階層閲覧・明示 filter に使い、検索本文や vector へ混ぜない。
 
@@ -153,7 +153,7 @@ Server 版の採用や確定済み Vault の無効操作破棄では、破棄対
 
 ## Server アカウント言語設定（2026-09-07）
 
-出力言語と画像解析言語は Server DB を正本とし、Desktop は接続・認証 user ID に束縛したメモリだけで保持する。設定用ローカル table、競合制御用 revision、永続再送 queue は追加しない。Server の内部 change_version は SSE 変更検知専用とする。初回 GET が未作成なら端末の現在値で conditional INSERT し、他端末の初期化を上書きしない。
+出力言語と画像解析言語は Server DB を正本とし、Desktop は接続・認証 user ID に束縛したメモリだけで保持する。設定用ローカル table、競合制御用 revision、永続再送 queue は追加しない。Server の内部 revision は SSE 変更検知専用とする。初回 GET が未作成なら端末の現在値で conditional INSERT し、他端末の初期化を上書きしない。
 
 起動・接続・再接続・画面表示と `account_settings` SSE invalidation で再取得する。取得をキャンセルし要求世代を照合して古い応答を捨てる。オフライン中は取得済み値か未取得状態を表示し、編集しない。再接続時の正本取得で通知欠落を回復する。Server Account の出力言語は要約と画像解析で共有する。要約の詳細度は方式共通とし、モデル・推論強度だけを方式別に保持する。設定の再取得ではモデル一覧を再取得せず、初回・接続変更・明示的な再読込み時だけ取得する。Web も account_settings 通知を購読して設定だけを再取得する。
 
@@ -178,3 +178,9 @@ Transcript UUID は生成元で確保して再送でも維持する。Server は
 ## Summary 世代と同期番号（2026-09-09）
 
 Server の要約正本は `summaries` の最大 `version` とし、meeting に本文や最新ポインタを重複保存しない。世代は Vault lock 下で発番し、同期の `summary_revision` / `baseRevision` とは独立する。この変更を含む同期契約は capability `sync.version = 4` として判定する。latest の通信形式は `formatVersion`、世代は `version`、同期番号は `revision`。同期 entity ID は meeting ID のまま維持する。全履歴削除後は version を1から再開するが、同期 revision は継続する。receipt、競合応答、削除通知、Desktop の未送信編集保護と本文 hash 検証は維持する。
+
+## 外観と運用スキーマの整理（2026-09-09）
+
+Project / Vault の `icon`・`color` は nullable な正準フィールドとし、既存の ProjectIcon / ProjectThemeColor の保存値を使う。transaction で未指定の項目は保持し、null は設定解除。外観変更も通常の revision・競合検出・snapshot / delta の対象にする。新しい設定 UI は追加しない。
+
+Desktop の旧 `projectAppearances` UserDefaults は Vault を開いたときに DB へ移行する。Server 接続では確認済み owner の未設定 Project にだけ通常の transaction を記録し、未送信操作や競合を上書きしない。旧設定はローカル保存または送信確認まで保持する。Desktop 専用の `legacyAppearanceMigrated` は再移行を防ぐ印であり同期しない。競合解決で正本の未設定値を選んだ場合にも、旧設定を再適用しない。
