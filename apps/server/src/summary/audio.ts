@@ -14,7 +14,7 @@ import type { RecordingManifest, RecordingSource } from "../recordings/model";
 import { SummaryError, summaryDocument, summaryResponseSchema, type SummaryMethod } from "./model";
 import { summaryResponseMetadataSchema } from "./metadata";
 import { isAudioSummaryModel } from "./audio-model";
-import { boundedBytes, collectSummaryInput, fingerprint, summaryImageContent, summaryInstructions } from "./transcript";
+import { boundedBytes, collectSummaryInput, fingerprint, summaryImageContent, summaryInstructions, summaryXMLText } from "./transcript";
 
 interface AudioInput {
   number: number; source: RecordingSource; startedAt: Date; endedAt: Date;
@@ -127,7 +127,19 @@ export function createAudioSummaryMethod(config: AppConfig, store: MeetingSyncSt
                 await response.body?.cancel();
                 throw new SummaryError("summary_audio_unavailable", response.status >= 500);
               }
-              yield ',' + JSON.stringify({ type: "text", text: `Recording ${audio.number}, source ${audio.source}` })
+              yield ',' + JSON.stringify({ type: "text", text: `<audio>
+  <recording_number>${audio.number}</recording_number>
+  <source>${audio.source}</source>
+  <start>${audio.startedAt.toISOString()}</start>
+  <end>${audio.endedAt.toISOString()}</end>
+  <manifest>
+    <sample_rate>${audio.manifest.sampleRate}</sample_rate>
+    <frame_count>${audio.manifest.frameCount}</frame_count>
+    <ranges>${audio.manifest.ranges.map((range) => `
+      <range><start_frame>${range.startFrame}</start_frame><frame_count>${range.frameCount}</frame_count><session_offset_seconds>${range.sessionOffsetSeconds}</session_offset_seconds><locale_identifier>${summaryXMLText(range.localeIdentifier)}</locale_identifier></range>`).join("")}
+    </ranges>
+  </manifest>
+</audio>` })
                 + ',{"type":"audio_url","audio_url":{"url":"data:audio/mp4;base64,';
               yield* audioBase64(response, audio.size, audio.checksum, uploadSignal);
               yield '"}}';
