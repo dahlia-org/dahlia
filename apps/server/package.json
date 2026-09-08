@@ -2,7 +2,7 @@
   "name": "@dahlia-ai/server",
   "version": "0.1.0",
   "type": "module",
-  "description": "Self-hostable authenticated Responses gateway for Dahlia",
+  "description": "Self-hostable canonical data service and Responses gateway for Dahlia",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/dahlia-org/dahlia.git",

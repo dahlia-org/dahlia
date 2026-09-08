@@ -2744,27 +2744,6 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var share: String { String(localized: "Share", bundle: bundle) }
     static var shareSummary: String { String(localized: "Share Summary", bundle: bundle) }
     static var exportToGoogleDocs: String { String(localized: "Export to Google Docs", bundle: bundle) }
-    static var exportToDahliaArtifacts: String { String(localized: "Export to Dahlia Artifacts", bundle: bundle) }
-
-    static var dahliaArtifactExportCompleted: String {
-        String(localized: "Exported privately to Dahlia Artifacts.", bundle: bundle)
-    }
-
-    static var dahliaArtifactExportFailed: String {
-        String(localized: "Could not export to Dahlia Artifacts.", bundle: bundle)
-    }
-
-    static var dahliaArtifactUnexpectedResponse: String {
-        String(localized: "Dahlia Server returned an unexpected response.", bundle: bundle)
-    }
-
-    static func dahliaArtifactHTTPError(_ statusCode: Int) -> String {
-        String(
-            format: String(localized: "Dahlia Artifacts export failed (HTTP %lld).", bundle: bundle),
-            Int64(statusCode)
-        )
-    }
-
     static var googleDocsExportFailed: String { String(localized: "Could not export the summary to Google Docs.", bundle: bundle) }
     static var copySummaryForGoogleDocs: String { String(localized: "Copy for Google Docs", bundle: bundle) }
     static var copySummaryForSlack: String { String(localized: "Copy for Slack", bundle: bundle) }

@@ -1,3 +1,4 @@
+import { conditionalRead } from "../storage/http-read";
 import { SummaryError, type SummaryJob, type SummaryDocument, type SummaryMethod } from "../summary/model";
 import { RECORDING_MAX_BYTES, recordingManifestSchema, recordingSourceSchema, recordingStorageKey, recordingContentURL, recordingResponse } from "../recordings/model";
 import { z } from "zod";
@@ -6,10 +7,10 @@ import { uuidV7 } from "../id";
 import { imageAnalysisSchema, type ImageAnalysisInput, type ImageAnalysis } from "../image-analysis/model";
 
 import type { Identity } from "../auth/identity";
-import { DEFAULT_ARTIFACT_MAX_BYTES } from "../config";
-import { ObjectStorageError, type ArtifactReadMethod, type ObjectStorage } from "../artifacts/storage";
-import { ArtifactRequestError, boundedUploadBody, parseUpload, type ParsedUpload } from "../artifacts/upload";
-import { sha256Passthrough, sha256Stream } from "../artifacts/sha256";
+import { MAX_FILE_BYTES } from "../config";
+import { ObjectStorageError, type StorageReadMethod, type ObjectStorage } from "../storage/storage";
+import { RequestError, boundedUploadBody, parseUpload, type ParsedUpload } from "../storage/upload";
+import { sha256Passthrough, sha256Stream } from "../storage/sha256";
 import {
   createSearchText,
   createIntlSearchTokenizer,
@@ -176,15 +177,15 @@ export class MeetingSyncService {
   }
 
   parseId(value: string): string {
-    if (value !== value.toLowerCase()) throw new ArtifactRequestError(400, "invalid_sync_id");
+    if (value !== value.toLowerCase()) throw new RequestError(400, "invalid_sync_id");
     const parsed = uuidSchema.safeParse(value);
-    if (!parsed.success) throw new ArtifactRequestError(400, "invalid_sync_id");
+    if (!parsed.success) throw new RequestError(400, "invalid_sync_id");
     return parsed.data;
   }
 
   parsePermissionPrincipal(value: string): string {
     const parsed = permissionPrincipalSchema.safeParse(value);
-    if (!parsed.success) throw new ArtifactRequestError(400, "invalid_sync_share_target");
+    if (!parsed.success) throw new RequestError(400, "invalid_sync_share_target");
     return parsed.data;
   }
 
@@ -401,7 +402,7 @@ export class MeetingSyncService {
         } catch (error) {
           await this.store.failStorageDelete(
             claim,
-            error instanceof ObjectStorageError ? error.code : "artifact_storage_unavailable",
+            error instanceof ObjectStorageError ? error.code : "object_storage_unavailable",
           );
           this.scheduleStorageDeleteRetry();
         }
@@ -485,16 +486,16 @@ export class MeetingSyncService {
 
   async searchAll(identity: Identity, body: unknown, signal?: AbortSignal): Promise<SearchResults> {
     const parsed = searchRequestSchema.safeParse(body);
-    if (!parsed.success) throw new ArtifactRequestError(400, "invalid_search_request");
+    if (!parsed.success) throw new RequestError(400, "invalid_search_request");
     const { vaultId, query, kind, limit, from, to, projectId } = parsed.data;
     const allowed = await this.store.withIdentity(identity, (scoped) => scoped.getVault(vaultId));
-    if (!allowed) throw new ArtifactRequestError(404, "vault_not_found");
+    if (!allowed) throw new RequestError(404, "vault_not_found");
     const hits = await this.search(identity, this.parseSearchQuery(query), async (scoped, prepared) => {
-      if (!await scoped.getVault(vaultId)) throw new ArtifactRequestError(404, "vault_not_found");
+      if (!await scoped.getVault(vaultId)) throw new RequestError(404, "vault_not_found");
       const projects = await scoped.listProjects(vaultId);
       const included = projectId ? new Set([projectId]) : undefined;
       if (included) {
-        if (!projects.some((project) => project.projectId === projectId)) throw new ArtifactRequestError(404, "project_not_found");
+        if (!projects.some((project) => project.projectId === projectId)) throw new RequestError(404, "project_not_found");
         for (let previous = -1; previous !== included.size;) {
           previous = included.size;
           for (const project of projects) if (project.parentProjectId && included.has(project.parentProjectId)) included.add(project.projectId);
@@ -551,7 +552,7 @@ export class MeetingSyncService {
       }
       return result;
     }, (hit) => hit.id, signal);
-    if (!await this.store.withIdentity(identity, (scoped) => scoped.getVault(vaultId))) throw new ArtifactRequestError(404, "vault_not_found");
+    if (!await this.store.withIdentity(identity, (scoped) => scoped.getVault(vaultId))) throw new RequestError(404, "vault_not_found");
     const meetings = hits.filter((hit) => hit.kind === "meeting");
     const screenshots = hits.filter((hit) => hit.kind === "screenshot");
     const projects = hits.filter((hit) => hit.kind === "project");
@@ -607,7 +608,7 @@ export class MeetingSyncService {
     body: unknown,
   ): Promise<void> {
     const parsed = transcriptChunkSchema.safeParse(body);
-    if (!parsed.success) throw new ArtifactRequestError(400, "invalid_transcript_chunk");
+    if (!parsed.success) throw new RequestError(400, "invalid_transcript_chunk");
     const accepted = await this.store.withIdentity(identity, (scoped) => scoped.putTranscriptChunk(
       vaultId,
       meetingId,
@@ -625,16 +626,16 @@ export class MeetingSyncService {
     const url = new URL(request.url);
     const sessionId = uuidV7Schema.safeParse(url.searchParams.get("sessionId"));
     const parsedSource = recordingSourceSchema.safeParse(url.searchParams.get("source"));
-    if (!sessionId.success || !parsedSource.success) throw new ArtifactRequestError(400, "invalid_recording_target");
+    if (!sessionId.success || !parsedSource.success) throw new RequestError(400, "invalid_recording_target");
     const source = parsedSource.data;
     const upload = parseUpload(request, RECORDING_MAX_BYTES);
     if (upload.contentType !== "audio/mp4" || upload.contentLength < 16 || !request.body) {
-      throw new ArtifactRequestError(415, "invalid_recording_format");
+      throw new RequestError(415, "invalid_recording_format");
     }
     this.requireStorage();
     const vaultId = await this.store.withIdentity(identity, async (scoped) => {
       const vaultId = await scoped.resolveEntityVault("meeting", meetingId);
-      if (!vaultId || !await scoped.ensureUploadTarget(vaultId, meetingId)) throw new ArtifactRequestError(404, "meeting_not_found");
+      if (!vaultId || !await scoped.ensureUploadTarget(vaultId, meetingId)) throw new RequestError(404, "meeting_not_found");
       await scoped.expireRecordingUploads(vaultId, new Date(Date.now() - 86_400_000));
       return vaultId;
     });
@@ -647,8 +648,8 @@ export class MeetingSyncService {
     return this.withStorageOperation(key, () => this.store.withStorageKeyLock(key, async () => {
       const record = await this.store.withIdentity(identity, (scoped) => scoped.getRecording(meetingId, reservation.number, true));
       const previous = record?.audio[source];
-      if (!record || previous?.generation !== generation) throw new ArtifactRequestError(409, "recording_upload_expired");
-      if (await this.store.hasStorageDelete(key)) throw new ArtifactRequestError(503, "recording_storage_delete_pending");
+      if (!record || previous?.generation !== generation) throw new RequestError(409, "recording_upload_expired");
+      if (await this.store.hasStorageDelete(key)) throw new RequestError(503, "recording_storage_delete_pending");
       let prefixLength = 0;
       const prefix = new Uint8Array(12);
       const bounded = boundedUploadBody(request.body, upload.contentLength, "recording_size_mismatch", (chunk) => {
@@ -656,18 +657,18 @@ export class MeetingSyncService {
         prefix.set(part, prefixLength);
         prefixLength += part.length;
         if (prefixLength === 12 && (String.fromCharCode(...prefix.subarray(4, 8)) !== "ftyp"
-          || new DataView(prefix.buffer).getUint32(0) < 16)) throw new ArtifactRequestError(415, "invalid_recording_format");
+          || new DataView(prefix.buffer).getUint32(0) < 16)) throw new RequestError(415, "invalid_recording_format");
       });
       if (previous.uploadedAt) {
         const checksum = `SHA-256:${await sha256Stream(bounded)}`;
-        if (previous.size !== upload.contentLength || previous.checksum !== checksum) throw new ArtifactRequestError(409, "recording_content_conflict");
+        if (previous.size !== upload.contentLength || previous.checksum !== checksum) throw new RequestError(409, "recording_content_conflict");
         return { created: false, record: { id: record.number, source, content_type: previous.content_type,
           size: previous.size, checksum, revision: record.revision || null, contentURL: recordingContentURL(record, source) } };
       }
       return this.storeUpload(key, bounded, upload, request.signal, async (checksum) => {
         const completed = await this.store.withIdentity(identity, (scoped) =>
           scoped.markRecordingUploaded(record.sessionId, source, generation, upload.contentLength, checksum));
-        if (!completed) throw new ArtifactRequestError(409, "recording_upload_expired");
+        if (!completed) throw new RequestError(409, "recording_upload_expired");
         return { created: true, record: { id: completed.number, source, content_type: upload.contentType,
           size: upload.contentLength, checksum, revision: completed.revision || null, contentURL: recordingContentURL(completed, source) } };
       });
@@ -676,9 +677,9 @@ export class MeetingSyncService {
 
   async listRecordings(identity: Identity, meetingId: string, cursor?: string) {
     const after = cursor === undefined ? 0 : Number(cursor);
-    if (!Number.isSafeInteger(after) || after < 0) throw new ArtifactRequestError(400, "invalid_recording_cursor");
+    if (!Number.isSafeInteger(after) || after < 0) throw new RequestError(400, "invalid_recording_cursor");
     const records = await this.store.withIdentity(identity, async (scoped) => {
-      if (!await scoped.resolveEntityVault("meeting", meetingId)) throw new ArtifactRequestError(404, "meeting_not_found");
+      if (!await scoped.resolveEntityVault("meeting", meetingId)) throw new RequestError(404, "meeting_not_found");
       return scoped.listRecordings(meetingId, after, SYNC_READ_PAGE_SIZE + 1);
     });
     const items = records.slice(0, SYNC_READ_PAGE_SIZE);
@@ -689,13 +690,13 @@ export class MeetingSyncService {
   async recordingContent(identity: Identity, meetingId: string, numberValue: string, sourceValue: string, request: Request) {
     const number = Number(numberValue);
     const parsedSource = recordingSourceSchema.safeParse(sourceValue);
-    if (!Number.isSafeInteger(number) || number < 1 || !parsedSource.success) throw new ArtifactRequestError(400, "invalid_recording_target");
+    if (!Number.isSafeInteger(number) || number < 1 || !parsedSource.success) throw new RequestError(400, "invalid_recording_target");
     const source = parsedSource.data;
     const authorize = () => this.store.withIdentity(identity, async (scoped) => {
-      if (!await scoped.resolveEntityVault("meeting", meetingId)) throw new ArtifactRequestError(404, "meeting_not_found");
+      if (!await scoped.resolveEntityVault("meeting", meetingId)) throw new RequestError(404, "meeting_not_found");
       const record = await scoped.getRecording(meetingId, number);
       if (!record?.audio[source]?.uploadedAt || (!record.audio[source].active && new Date(record.audio[source].createdAt).getTime() <= Date.now() - 86_400_000) || (!record.audio[source].active && !await scoped.getRecording(meetingId, number, true))) {
-        throw new ArtifactRequestError(404, "recording_not_found");
+        throw new RequestError(404, "recording_not_found");
       }
       return record;
     });
@@ -703,31 +704,31 @@ export class MeetingSyncService {
     const key = recordingStorageKey(initial, source);
     return this.withStorageOperation(key, () => this.store.withStorageKeyLock(key, async () => {
       const record = await authorize();
-      if (await this.store.hasStorageDelete(key)) throw new ArtifactRequestError(404, "recording_not_found");
-      const response = await this.storageCall(() => this.requireStorage().read(key, request.method as ArtifactReadMethod, request));
-      const headers = new Headers(response.headers);
-      headers.set("content-type", "audio/mp4");
-      headers.set("cache-control", "private, no-store");
-      headers.set("vary", "Authorization, Cookie");
-      headers.set("x-content-type-options", "nosniff");
-      headers.set("etag", `"${record.audio[source]!.checksum}"`);
-      return new Response(response.body, { status: response.status, headers });
+      if (await this.store.hasStorageDelete(key)) throw new RequestError(404, "recording_not_found");
+      const headers = new Headers({
+        "content-type": "audio/mp4", "cache-control": "private, no-store",
+        vary: "Authorization, Cookie", "x-content-type-options": "nosniff",
+        etag: `"${record.audio[source]!.checksum}"`,
+      });
+      return conditionalRead(request, request.method as StorageReadMethod, headers, (method, readRequest) =>
+        this.storageCall(() => this.requireStorage().read(key, method, readRequest)));
+
     }));
   }
 
   async postFile(identity: Identity, request: Request) {
     this.requireWritableIdentity(identity);
     this.requireStorage();
-    if (!this.fileStorageRoot) throw new ArtifactRequestError(503, "file_storage_not_configured");
+    if (!this.fileStorageRoot) throw new RequestError(503, "file_storage_not_configured");
     const query = new URL(request.url).searchParams;
     const parsed = fileUploadQuerySchema.safeParse(Object.fromEntries(query));
     if (!parsed.success || [...query.keys()].some((key) => query.getAll(key).length !== 1)) {
-      throw new ArtifactRequestError(400, "invalid_file_upload");
+      throw new RequestError(400, "invalid_file_upload");
     }
     const { id: fileId, vaultId, name, ...metadata } = parsed.data;
-    const upload = parseUpload(request, DEFAULT_ARTIFACT_MAX_BYTES);
+    const upload = parseUpload(request, MAX_FILE_BYTES);
     if (!/^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/.test(upload.contentType)) {
-      throw new ArtifactRequestError(400, "invalid_content_type");
+      throw new RequestError(400, "invalid_content_type");
     }
     const key = fileStorageKey(fileId);
     return this.withStorageOperation(key, () => this.store.withStorageKeyLock(key, async () => {
@@ -741,16 +742,16 @@ export class MeetingSyncService {
         });
       });
       this.scheduleStorageDeletes();
-      if (!file) throw new ArtifactRequestError(404, "file_or_vault_not_found");
+      if (!file) throw new RequestError(404, "file_or_vault_not_found");
       if (file.contentType !== upload.contentType || file.metadata.source !== metadata.source
         || (file.uploadedAt && file.size !== upload.contentLength)) {
-        throw new ArtifactRequestError(409, "file_id_conflict");
+        throw new RequestError(409, "file_id_conflict");
       }
-      if (await this.store.hasStorageDelete(key)) throw new ArtifactRequestError(503, "file_storage_delete_pending");
+      if (await this.store.hasStorageDelete(key)) throw new RequestError(503, "file_storage_delete_pending");
       const bounded = boundedUploadBody(request.body, upload.contentLength, "file_size_mismatch");
       if (file.uploadedAt) {
         if (`SHA-256:${await sha256Stream(bounded)}` !== file.checksum) {
-          throw new ArtifactRequestError(409, "file_checksum_mismatch");
+          throw new RequestError(409, "file_checksum_mismatch");
         }
         return { file: this.fileMetadata(fileResponse(file)), created: false };
       }
@@ -759,9 +760,9 @@ export class MeetingSyncService {
         if (!uploaded) {
           const current = await this.store.withIdentity(identity, (scoped) => scoped.getFile(fileId));
           if (current?.vaultId === file.vaultId && await this.store.hasStorageDelete(key)) {
-            throw new ArtifactRequestError(503, "file_storage_delete_pending");
+            throw new RequestError(503, "file_storage_delete_pending");
           }
-          throw new ArtifactRequestError(404, "file_not_found");
+          throw new RequestError(404, "file_not_found");
         }
         return { file: this.fileMetadata(fileResponse(uploaded)), created: true };
       });
@@ -798,9 +799,9 @@ export class MeetingSyncService {
   async patchFile(identity: Identity, fileId: string, body: unknown) {
     this.requireWritableIdentity(identity);
     const parsed = filePatchSchema.safeParse(body);
-    if (!parsed.success) throw new ArtifactRequestError(400, "invalid_file_patch");
+    if (!parsed.success) throw new RequestError(400, "invalid_file_patch");
     const file = await this.store.withIdentity(identity, (scoped) => scoped.getFile(fileId));
-    if (!file?.active) throw new ArtifactRequestError(404, "file_not_found");
+    if (!file?.active) throw new RequestError(404, "file_not_found");
     const response = await this.commitTransaction(identity, {
       schemaVersion: 2, id: uuidV7(), vaultId: file.vaultId, createdAt: new Date().toISOString(),
       operations: [{ id: uuidV7(), entity: "file", action: "upsert", entityId: fileId,
@@ -813,7 +814,7 @@ export class MeetingSyncService {
   async getFile(identity: Identity, fileId: string, content?: string) {
     const mode = parseContentMode(content);
     const file = await this.store.withIdentity(identity, (scoped) => scoped.getFile(fileId, true));
-    if (!file) throw new ArtifactRequestError(404, "file_not_found");
+    if (!file) throw new RequestError(404, "file_not_found");
     const record = this.fileMetadata(fileResponse(file));
     return mode ? fileTextMetadata(record) : record;
   }
@@ -873,42 +874,42 @@ export class MeetingSyncService {
   }
 
   async readScreenshot(identity: Identity, vaultId: string, meetingId: string, screenshotId: string,
-    method: ArtifactReadMethod, request: Request): Promise<Response> {
+    method: StorageReadMethod, request: Request): Promise<Response> {
     const image = await this.store.withIdentity(identity, (scoped) => scoped.getScreenshot(vaultId, meetingId, screenshotId, true));
-    if (!image) throw new ArtifactRequestError(404, "screenshot_not_found");
+    if (!image) throw new RequestError(404, "screenshot_not_found");
     return this.readFile(identity, image.fileId, method, request);
   }
 
   private async readableFile(identity: Identity, fileId: string, variant?: ScreenshotVariant) {
     const file = await this.store.withIdentity(identity, (scoped) => scoped.getFile(fileId, true));
-    if (!file) throw new ArtifactRequestError(404, "file_not_found");
+    if (!file) throw new RequestError(404, "file_not_found");
     if (variant !== undefined && (!Object.hasOwn(SCREENSHOT_VARIANTS, variant)
       || !this.screenshotTransformer || !imageContentTypes.has(file.contentType))) {
-      throw new ArtifactRequestError(404, "file_variant_unavailable");
+      throw new RequestError(404, "file_variant_unavailable");
     }
     return file;
   }
 
   // Shared by HTTP delivery and server-side consumers; authorization is checked on every read.
   async readFileContent(identity: Identity, fileId: string, variant?: ScreenshotVariant,
-    method: ArtifactReadMethod = "GET", request: Request = new Request("https://dahlia.invalid/")) {
+    method: StorageReadMethod = "GET", request: Request = new Request("https://dahlia.invalid/")) {
     const file = await this.readableFile(identity, fileId, variant);
     return this.readFileBytes(identity, file, variant, method, request);
   }
 
   private async readFileBytes(identity: Identity, file: FileRecord, variant: ScreenshotVariant | undefined,
-    method: ArtifactReadMethod, request: Request) {
+    method: StorageReadMethod, request: Request) {
     const fileId = file.fileId;
     if (variant !== undefined) await this.ensureFileVariant(identity, file, variant);
     const current = await this.store.withIdentity(identity, (scoped) => scoped.getFile(fileId, true));
-    if (!current || current.checksum !== file.checksum) throw new ArtifactRequestError(404, "file_not_found");
+    if (!current || current.checksum !== file.checksum) throw new RequestError(404, "file_not_found");
     const upstream = await this.storageCall(() => this.requireStorage().read(
       variant ? fileVariantKey(fileId, variant) : fileStorageKey(fileId), method, request,
     ));
     return { file, upstream, contentType: variant ? "image/webp" : file.contentType };
   }
 
-  async readFile(identity: Identity, fileId: string, method: ArtifactReadMethod, request: Request, variant?: ScreenshotVariant): Promise<Response> {
+  async readFile(identity: Identity, fileId: string, method: StorageReadMethod, request: Request, variant?: ScreenshotVariant): Promise<Response> {
     const file = await this.readableFile(identity, fileId, variant);
     const checksum = file.checksum.slice(8);
     const etag = variant ? `${checksum}-v1-${variant}` : checksum;
@@ -918,35 +919,17 @@ export class MeetingSyncService {
       vary: "Authorization, Cookie",
       etag: `"${etag}"`,
     });
-    const ifNoneMatch = request.headers.get("if-none-match");
-    const notModified = ifNoneMatch?.split(",").some((value) => {
-      const tag = value.trim();
-      return tag === "*" || tag.replace(/^W\//, "") === headers.get("etag");
+    return conditionalRead(request, method, headers, async (readMethod, readRequest) => {
+      const { upstream } = await this.readFileBytes(identity, file, variant, readMethod, readRequest);
+      return upstream;
     });
-    if (notModified && !request.headers.has("if-unmodified-since")) {
-      return new Response(null, { status: 304, headers });
-    }
-    let readRequest = request;
-    if (notModified) {
-      // Date preconditions precede cache validation; ranges are evaluated only after both.
-      readRequest = new Request(request);
-      readRequest.headers.delete("range");
-    }
-    const { upstream } = await this.readFileBytes(identity, file, variant, notModified ? "HEAD" : method, readRequest);
-    if (notModified && upstream.ok) return new Response(null, { status: 304, headers });
-    if (!upstream.ok) headers.set("cache-control", "no-store");
-    for (const name of ["accept-ranges", "content-length", "content-range", "last-modified"]) {
-      const value = upstream.headers.get(name);
-      if (value) headers.set(name, value);
-    }
-    return new Response(method === "HEAD" ? null : upstream.body, { status: upstream.status, headers });
   }
 
   private ensureFileVariant(identity: Identity, file: FileRecord, variant: ScreenshotVariant): Promise<void> {
     const key = fileVariantKey(file.fileId, variant);
     const existing = this.variantJobs.get(key);
     if (existing) return existing;
-    if (this.variantJobs.size >= 32) throw new ArtifactRequestError(503, "file_transform_busy");
+    if (this.variantJobs.size >= 32) throw new RequestError(503, "file_transform_busy");
     const job = this.generateFileVariant(identity, file, variant).finally(() => this.variantJobs.delete(key));
     this.variantJobs.set(key, job);
     return job;
@@ -963,16 +946,16 @@ export class MeetingSyncService {
         const request = new Request("https://dahlia.invalid/", { signal: AbortSignal.timeout(20_000) });
         const isCurrent = async () => !await this.store.hasStorageDelete(originalKey)
           && (await this.store.withIdentity(identity, (scoped) => scoped.getFile(file.fileId, true)))?.checksum === file.checksum;
-        if (!await isCurrent()) throw new ArtifactRequestError(404, "file_not_found");
-        if (await this.store.hasStorageDelete(key)) throw new ArtifactRequestError(503, "file_cache_delete_pending");
+        if (!await isCurrent()) throw new RequestError(404, "file_not_found");
+        if (await this.store.hasStorageDelete(key)) throw new RequestError(503, "file_cache_delete_pending");
         if (await this.storageCall(() => storage.exists(key, request.signal))) return;
         const original = await this.storageCall(() => storage.read(originalKey, "GET", request));
-        if (!original.ok || !original.body) throw new ArtifactRequestError(502, "file_original_unavailable");
+        if (!original.ok || !original.body) throw new RequestError(502, "file_original_unavailable");
         const bytes = await this.screenshotTransformer!(original.body, SCREENSHOT_VARIANTS[variant]);
-        if (!await isCurrent()) throw new ArtifactRequestError(404, "file_not_found");
+        if (!await isCurrent()) throw new RequestError(404, "file_not_found");
         try {
           await this.storageCall(() => storage.put(key, bytes, bytes.byteLength, "image/webp", request.signal));
-          if (!await isCurrent()) throw new ArtifactRequestError(404, "file_not_found");
+          if (!await isCurrent()) throw new RequestError(404, "file_not_found");
         } catch (error) {
           try { await storage.delete(key); } catch {
             await this.store.enqueueStorageDelete(key);
@@ -998,10 +981,10 @@ export class MeetingSyncService {
     if ((userId !== undefined && organizationId !== undefined)
       || (userId !== undefined && !valid(userId))
       || (organizationId !== undefined && !valid(organizationId))) {
-      throw new ArtifactRequestError(400, "invalid_vault_scope");
+      throw new RequestError(400, "invalid_vault_scope");
     }
     if (userId !== undefined && userId !== identity.userId) {
-      throw new ArtifactRequestError(403, "user_forbidden");
+      throw new RequestError(403, "user_forbidden");
     }
     return this.store.withIdentity(identity, (scoped) => scoped.listVaults(organizationId));
   }
@@ -1041,7 +1024,7 @@ export class MeetingSyncService {
       !["direct", "unassigned"].includes(projectScope)
       || (projectScope === "direct" && !projectId)
       || (projectScope === "unassigned" && projectId !== undefined)
-    )) throw new ArtifactRequestError(400, "invalid_project_scope");
+    )) throw new RequestError(400, "invalid_project_scope");
     const scope = projectScope as "direct" | "unassigned" | undefined;
     const search = this.parseSearchQuery(query);
     if (search?.tokens.length && this.embedder
@@ -1075,7 +1058,7 @@ export class MeetingSyncService {
   private parseMeetingCursor(cursor?: string) {
     if (cursor === undefined) return undefined;
     const parsed = meetingCursorSchema.safeParse(cursor.split(","));
-    if (!parsed.success) throw new ArtifactRequestError(400, "invalid_sync_cursor");
+    if (!parsed.success) throw new RequestError(400, "invalid_sync_cursor");
     return { createdAt: parsed.data[0], meetingId: parsed.data[1] };
   }
 
@@ -1108,7 +1091,7 @@ export class MeetingSyncService {
   private parseTranscriptCursor(cursor?: string) {
     if (cursor === undefined) return undefined;
     const parsed = transcriptCursorSchema.safeParse(cursor.split(","));
-    if (!parsed.success) throw new ArtifactRequestError(400, "invalid_sync_cursor");
+    if (!parsed.success) throw new RequestError(400, "invalid_sync_cursor");
     return { startTime: parsed.data[0], segmentId: parsed.data[1] };
   }
 
@@ -1151,13 +1134,13 @@ export class MeetingSyncService {
   private parseScreenshotCursor(cursor?: string) {
     if (cursor === undefined) return undefined;
     const parsed = screenshotCursorSchema.safeParse(cursor.split(","));
-    if (!parsed.success) throw new ArtifactRequestError(400, "invalid_sync_cursor");
+    if (!parsed.success) throw new RequestError(400, "invalid_sync_cursor");
     return { capturedAt: parsed.data[0], screenshotId: parsed.data[1] };
   }
 
   async listPermissions(identity: Identity, vaultId: string) {
     const permissions = await this.store.withIdentity(identity, (scoped) => scoped.listPermissions(vaultId));
-    if (!permissions) throw new ArtifactRequestError(404, "vault_not_found");
+    if (!permissions) throw new RequestError(404, "vault_not_found");
     return permissions;
   }
 
@@ -1172,7 +1155,7 @@ export class MeetingSyncService {
       identity,
       (scoped) => scoped.putMemberPermission(vaultId, principalType, principalId),
     )) {
-      throw new ArtifactRequestError(404, "vault_or_permission_target_not_found");
+      throw new RequestError(404, "vault_or_permission_target_not_found");
     }
   }
 
@@ -1187,16 +1170,16 @@ export class MeetingSyncService {
       identity,
       (scoped) => scoped.deleteMemberPermission(vaultId, principalType, principalId),
     )) {
-      throw new ArtifactRequestError(404, "vault_permission_not_found");
+      throw new RequestError(404, "vault_permission_not_found");
     }
   }
 
   private requireWritableIdentity(identity: Identity): void {
-    if (identity.impersonated) throw new ArtifactRequestError(403, "impersonated_session_read_only");
+    if (identity.impersonated) throw new RequestError(403, "impersonated_session_read_only");
   }
 
   private requireStorage(): ObjectStorage {
-    if (!this.storage) throw new ArtifactRequestError(503, "artifact_storage_not_configured");
+    if (!this.storage) throw new RequestError(503, "object_storage_not_configured");
     return this.storage;
   }
 
@@ -1204,7 +1187,7 @@ export class MeetingSyncService {
     try {
       return parseSearchQuery(this.tokenizer, query);
     } catch (error) {
-      if (error instanceof SearchQueryError) throw new ArtifactRequestError(400, error.message);
+      if (error instanceof SearchQueryError) throw new RequestError(400, error.message);
       throw error;
     }
   }
@@ -1273,9 +1256,9 @@ export class MeetingSyncService {
     try {
       return await operation();
     } catch (error) {
-      if (error instanceof ArtifactRequestError) throw error;
-      const code = error instanceof ObjectStorageError ? error.code : "artifact_storage_unavailable";
-      throw new ArtifactRequestError(502, code);
+      if (error instanceof RequestError) throw error;
+      const code = error instanceof ObjectStorageError ? error.code : "object_storage_unavailable";
+      throw new RequestError(502, code);
     }
   }
 }
@@ -1306,7 +1289,7 @@ async function normalizeTransaction(body: unknown): Promise<SyncTransaction> {
   if (!parsed.success
     || new Set(parsed.data.operations.map(({ id }) => id)).size !== parsed.data.operations.length
     || new Set(parsed.data.operations.map(({ entity, entityId }) => `${entity}:${entityId}`)).size !== parsed.data.operations.length) {
-    throw new ArtifactRequestError(400, "invalid_sync_transaction");
+    throw new RequestError(400, "invalid_sync_transaction");
   }
   const operations: SyncTransaction["operations"] = [];
   for (const operation of parsed.data.operations) {

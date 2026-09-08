@@ -6,8 +6,8 @@ This target uses Hono only for the API Worker. React, JavaScript, CSS, and SPA n
 browser ─────────────── Workers Static Assets ── React SPA / JS / CSS
    │ API, discovery, health
    ▼
-Hono API Worker ─┬──── D1 ── Better Auth and artifact metadata
-                 ├──── R2 ── artifact bytes
+Hono API Worker ─┬──── D1 ── Better Auth and application metadata
+                 ├──── R2 ── object storage
                  └──── HTTPS ── Cloudflare AI Gateway
 ```
 
@@ -83,7 +83,6 @@ curl -fsS https://<host>/.well-known/oauth-authorization-server
 ```
 
 Then sign in with Google, create a Model Alias, and complete a streaming Responses request through `/api/v1/responses` using that alias.
-Also smoke-test an HTML artifact through POST creation, private read, PUT replacement, public read, Range read, private transition, and deletion. R2 responses stream through the returned Dahlia API URL and must not contain a storage URL.
 
 ## Operational notes
 
@@ -92,7 +91,6 @@ Also smoke-test an HTML artifact through POST creation, private read, PUT replac
 - Matching static files and `/dashboard/**` navigations are handled by Workers Static Assets. The Worker has no `ASSETS` binding and does not fetch assets programmatically.
 - Use `pnpm dev:cloudflare` for workerd, local D1, and production-equivalent asset routing. Local Worker secrets belong in the ignored `apps/server/.dev.vars`; regular `pnpm dev` uses `apps/server/.env.local` and Node.
 - Responses requests are capped at 4 MiB on Workers to remain within the isolate memory budget.
-- Artifact uploads have their independent 64 MiB limit and stream directly to the R2 binding.
 - Back up D1 for Better Auth, Model Alias, and administrator recovery. Provider credentials are recovered from the deployment secret store, not D1.
 - Rotate Google and provider credentials independently and redeploy after changing non-secret configuration.
 

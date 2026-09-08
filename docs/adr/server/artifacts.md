@@ -1,4 +1,13 @@
-# Artifact storage / API / MCP / Web
+# Artifact storage / API / MCP / Web（廃止）
+
+## 廃止（2026-09-08）
+
+リリース前のv1整理としてArtifact機能を廃止する。REST API、Web導線、DesktopのArtifact書き出し、MCP書き込みツールと公開型を削除し、PostgreSQL / SQLite / D1のArtifactテーブルを追加migrationで削除する。旧migrationは保持する。既存オブジェクトの実体削除は行わない。Desktopの既存書き出し履歴は読み取り可能なまま保持し、Google Docs・ローカル書き出しは維持する。
+
+Files・録音音声・read-only MCPは維持する。共有ストレージ実装は `apps/server/src/storage/` に移し、`createApp` の `artifactStorage` 引数は `objectStorage` に変更する。互換エイリアスは残さない。
+
+以下は廃止前の設計履歴であり、現行のAPI契約ではない。
+
 
 対象: Server。採択: 2026-08-29〜09-01。API の詳細は [Server README](../../../apps/server/README.md)。
 

@@ -104,7 +104,7 @@ const menuIconPaths = {
   vault: "M5 5h14l3 10v4H2v-4L5 5ZM2 15h20M10 17h4",
   organization: "M4 21V3h12v18M16 9h4v12M2 21h20M8 7h4M8 11h4M8 15h4M9 21v-3h2v3",
   settings: "m10 2 4 0 1 3 3 1 3-1 2 4-2 2v3l2 2-2 4-3-1-3 1-1 3h-4l-1-3-3-1-3 1-2-4 2-2v-3L1 9l2-4 3 1 3-1 1-3ZM16 12a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z",
-  artifact: "M5 3h9l5 5v13H5V3ZM14 3v6h5M8 13h8M8 17h6",
+  document: "M5 3h9l5 5v13H5V3ZM14 3v6h5M8 13h8M8 17h6",
   members: "M14 7a3 3 0 1 1-6 0 3 3 0 0 1 6 0ZM3 20v-3a5 5 0 0 1 5-5h6a5 5 0 0 1 5 5v3ZM18 4a3 3 0 0 1 0 6M20 13a4 4 0 0 1 3 4v3",
   signOut: "M9 4H3v16h6M8 12h14m-5-5 5 5-5 5",
   check: "m5 12 4 4L19 6",

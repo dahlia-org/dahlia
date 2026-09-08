@@ -8,14 +8,13 @@ import { MeetingTabs, parseSummary, SummaryContent, SummaryTags, TranscriptTime 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
-  canEmbedArtifact,
   ScreenshotFigure,
   SyncedMeeting,
   MeetingList,
   resolveDashboardExtensionRoute,
   type DashboardExtension,
 } from "../src/client/App";
-import { artifactViewerId, resolveDashboardRoute, shouldRedirectToSignIn } from "../src/client/routes";
+import { resolveDashboardRoute, shouldRedirectToSignIn } from "../src/client/routes";
 
 import { FileViewer } from "../src/client/FileViewer";
 import * as liveData from "../src/client/live-data";
@@ -267,7 +266,7 @@ describe("dashboard navigation", () => {
 
   it("navigates dashboard links in place and leaves other URLs to the browser", () => {
     const current = "https://dahlia.example/vaults/v1/meetings/m1";
-    for (const path of ["/dashboard", "/vaults/v1", "/vaults/v1/meetings/m2", "/vaults/v1/projects/p1", "/dashboard/settings", "/artifacts", "/artifacts/a1"]) {
+    for (const path of ["/dashboard", "/vaults/v1", "/vaults/v1/meetings/m2", "/vaults/v1/projects/p1", "/dashboard/settings"]) {
       expect(dashboardNavigationPath(path, current)).toBe(path);
       expect(dashboardNavigationPath(`https://dahlia.example${path}`, current)).toBe(path);
     }
@@ -297,17 +296,6 @@ describe("dashboard navigation", () => {
   it("routes the authenticated home to Overview", () => {
     expect(resolveDashboardRoute("/", { admin: false, sessions: false })).toEqual({ redirect: "/dashboard" });
     expect(resolveDashboardRoute("/dashboard", { admin: false, sessions: false })).toEqual({ page: "overview" });
-  });
-
-  it("hides the artifact list and viewer without changing artifact ID parsing", () => {
-    for (const path of ["/artifacts", "/artifacts/a1"]) {
-      expect(resolveDashboardRoute(path, { admin: false, sessions: false })).toEqual({ redirect: "/dashboard" });
-      expect(resolveDashboardExtensionRoute(path, { admin: false, sessions: false }, [{ routes: [{ path, component: ExtensionPage }] }])).toEqual({ allowed: true });
-    }
-    expect(artifactViewerId("/artifacts/019cc4dd-e5c5-7bd4-94e0-98df9cc40db9"))
-      .toBe("019cc4dd-e5c5-7bd4-94e0-98df9cc40db9");
-    expect(artifactViewerId("/artifacts")).toBeUndefined();
-    expect(artifactViewerId("/artifacts/id/content")).toBeUndefined();
   });
 
   it("resolves canonical detail URLs and preserves capability gates", () => {
@@ -349,13 +337,6 @@ describe("dashboard navigation", () => {
       .toEqual({ redirect: "/dashboard" });
     expect(resolveDashboardRoute("/organizations", { ...enabled, sessions: false }))
       .toEqual({ page: "organizations" });
-  });
-
-  it("embeds browser-native artifact types and downloads other bytes", () => {
-    expect(canEmbedArtifact("text/html; charset=utf-8")).toBe(true);
-    expect(canEmbedArtifact("image/png")).toBe(true);
-    expect(canEmbedArtifact("application/pdf")).toBe(true);
-    expect(canEmbedArtifact("application/zip")).toBe(false);
   });
 
   it("opens account settings for both header and session authentication", () => {

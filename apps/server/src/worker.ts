@@ -2,8 +2,8 @@ import { Hono } from "hono";
 import { secureHeaders } from "hono/secure-headers";
 
 import { createApp } from "./app";
-import { R2ObjectStorage, type R2BucketLike } from "./artifacts/r2";
-import { S3ObjectStorage } from "./artifacts/s3";
+import { R2ObjectStorage, type R2BucketLike } from "./storage/r2";
+import { S3ObjectStorage } from "./storage/s3";
 import { initializeDahliaAuth } from "./auth/better-auth";
 import {
   createD1ApplicationStore,
@@ -30,11 +30,9 @@ export interface RuntimeSecrets {
   DAHLIA_MAX_REQUEST_BYTES?: string;
   DAHLIA_SYNC_SHARING_ENABLED?: string;
   DAHLIA_STORAGE_BACKEND?: string;
-  DAHLIA_ARTIFACT_BACKEND?: string;
   DAHLIA_STORAGE_LOCAL_PATH?: string;
   DAHLIA_STORAGE_S3_BUCKET?: string;
   DAHLIA_STORAGE_S3_ENDPOINT?: string;
-  DAHLIA_ARTIFACT_MAX_BYTES?: string;
   AWS_ACCESS_KEY_ID?: string;
   AWS_REGION?: string;
   AWS_SECRET_ACCESS_KEY?: string;
@@ -100,11 +98,9 @@ export async function initializeWorkerApp(env: WorkerEnv): Promise<WorkerApp> {
     )),
     DAHLIA_SYNC_SHARING_ENABLED: env.DAHLIA_SYNC_SHARING_ENABLED,
     DAHLIA_STORAGE_BACKEND: env.DAHLIA_STORAGE_BACKEND,
-    DAHLIA_ARTIFACT_BACKEND: env.DAHLIA_ARTIFACT_BACKEND,
     DAHLIA_STORAGE_LOCAL_PATH: env.DAHLIA_STORAGE_LOCAL_PATH,
     DAHLIA_STORAGE_S3_BUCKET: env.DAHLIA_STORAGE_S3_BUCKET,
     DAHLIA_STORAGE_S3_ENDPOINT: env.DAHLIA_STORAGE_S3_ENDPOINT,
-    DAHLIA_ARTIFACT_MAX_BYTES: env.DAHLIA_ARTIFACT_MAX_BYTES,
     AWS_ACCESS_KEY_ID: env.AWS_ACCESS_KEY_ID,
     AWS_REGION: env.AWS_REGION,
     AWS_SECRET_ACCESS_KEY: env.AWS_SECRET_ACCESS_KEY,
@@ -131,14 +127,14 @@ export async function initializeWorkerApp(env: WorkerEnv): Promise<WorkerApp> {
     if (config.storageBackend === "local" || config.storageBackend === "databricks") {
       throw new Error(`Storage backend ${config.storageBackend} requires the Node runtime`);
     }
-    const artifactStorage = config.storageBackend === "r2"
+    const objectStorage = config.storageBackend === "r2"
       ? new R2ObjectStorage(requiredR2Binding(env))
       : new S3ObjectStorage(config.storageS3!);
     return createApp({
       config,
       auth,
       authStore: applicationStore,
-      artifactStorage,
+      objectStorage,
       searchTokenizer: createIntlSearchTokenizer(),
     });
   } catch (error) {

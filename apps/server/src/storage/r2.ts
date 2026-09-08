@@ -1,4 +1,4 @@
-import { ObjectStorageError, parseByteRange, type ArtifactReadMethod, type ObjectStorage } from "./storage";
+import { ObjectStorageError, parseByteRange, type StorageReadMethod, type ObjectStorage } from "./storage";
 
 interface R2ObjectLike {
   body?: ReadableStream;
@@ -45,7 +45,7 @@ export class R2ObjectStorage implements ObjectStorage {
     }
   }
 
-  async read(key: string, method: ArtifactReadMethod, request: Request): Promise<Response> {
+  async read(key: string, method: StorageReadMethod, request: Request): Promise<Response> {
     try {
       if (method === "HEAD") {
         const object = await this.bucket.head(key);
@@ -54,22 +54,14 @@ export class R2ObjectStorage implements ObjectStorage {
         if (since && object.uploaded.getTime() >= Date.parse(since) + 1000) {
           return new Response(null, { status: 412 });
         }
-        const range = parseByteRange(request.headers.get("range"), object.size);
-        if (range === null) {
-          return new Response(null, { status: 416, headers: { "content-range": `bytes */${object.size}` } });
-        }
-        return objectResponse(
-          range ? { ...object, range: { offset: range.start, length: range.end - range.start + 1 } } : object,
-          null,
-          range ? 206 : 200,
-        );
+        return objectResponse(object, null, 200);
       }
       const options = new Headers();
       for (const name of ["range", "if-unmodified-since"]) {
         const value = request.headers.get(name);
-        if (value) options.set(name, value);
+        if (value && (name !== "range" || value.startsWith("bytes="))) options.set(name, value);
       }
-      const rangeHeader = request.headers.get("range");
+      const rangeHeader = options.get("range");
       if (rangeHeader) {
         const metadata = await this.bucket.head(key);
         if (!metadata) return new Response(null, { status: 404 });

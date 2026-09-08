@@ -2,7 +2,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { DEFAULT_ACCOUNT_SETTINGS, type AccountSettingsStore } from "../account-settings";
 import type { Identity } from "../auth/identity";
 import { personalWorkspaceId } from "../auth/workspace";
-import { ArtifactRequestError } from "../artifacts/service";
+import { RequestError } from "../storage/upload";
 import type { MeetingSyncService } from "../sync/service";
 import type { MeetingSyncStore } from "../sync/types";
 import type { ImageCaptioner } from "./captioner";
@@ -70,7 +70,7 @@ export class ImageAnalysisWorker {
       }
     } catch (error) {
       const failure = error instanceof ImageAnalysisError ? error
-        : error instanceof ArtifactRequestError
+        : error instanceof RequestError
           ? new ImageAnalysisError(`captioning_image_http_${error.status}`, error.status === 429 || error.status >= 500)
           : new ImageAnalysisError("captioning_processing_failed", true);
       await this.jobs.finish(job, {

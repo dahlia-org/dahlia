@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { sha256Passthrough, sha256Stream } from "../src/artifacts/sha256";
+import { sha256Passthrough, sha256Stream } from "../src/storage/sha256";
 
 describe("streaming SHA-256", () => {
   it("hashes incrementally without combining the input chunks", async () => {

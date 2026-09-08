@@ -1,7 +1,7 @@
-export type ArtifactReadMethod = "GET" | "HEAD";
+export type StorageReadMethod = "GET" | "HEAD";
 
 export class ObjectStorageError extends Error {
-  constructor(readonly code = "artifact_storage_unavailable") {
+  constructor(readonly code = "object_storage_unavailable") {
     super(code);
   }
 }
@@ -15,7 +15,7 @@ export interface ObjectStorage {
     signal?: AbortSignal,
   ): Promise<void>;
   exists(key: string, signal?: AbortSignal): Promise<boolean>;
-  read(key: string, method: ArtifactReadMethod, request: Request): Promise<Response>;
+  read(key: string, method: StorageReadMethod, request: Request): Promise<Response>;
   delete(key: string, signal?: AbortSignal): Promise<void>;
 }
 
@@ -23,7 +23,7 @@ export function parseByteRange(
   value: string | null,
   size: number,
 ): { start: number; end: number } | undefined | null {
-  if (!value) return undefined;
+  if (!value || !value.startsWith("bytes=")) return undefined;
   const match = /^bytes=(\d*)-(\d*)$/.exec(value);
   if (!match || size === 0) return null;
   const [, first, last] = match;

@@ -133,7 +133,6 @@ describe("configuration", () => {
       DATABRICKS_CLIENT_SECRET: "app-client-secret",
     })).toMatchObject({
       storageBackend: "databricks",
-      artifactMaxBytes: 64 * 1024 * 1024,
       storageDatabricksVolumePath: "/Volumes/dahlia/server/storage",
       databricksWorkspace: { host: "https://workspace.cloud.databricks.com" },
     });
@@ -164,11 +163,7 @@ describe("configuration", () => {
     });
   });
 
-  it("rejects invalid artifact limits and Volume paths", () => {
-    expect(() => loadConfig({
-      DAHLIA_AUTH_TYPE: "header",
-      DAHLIA_ARTIFACT_MAX_BYTES: String(64 * 1024 * 1024 + 1),
-    })).toThrow();
+  it("rejects invalid Volume paths", () => {
     expect(() => loadConfig({
       DAHLIA_AUTH_TYPE: "header",
       DAHLIA_STORAGE_BACKEND: "databricks",
@@ -178,13 +173,6 @@ describe("configuration", () => {
       DATABRICKS_CLIENT_ID: "app-client-id",
       DATABRICKS_CLIENT_SECRET: "app-client-secret",
     })).toThrow("must identify a Unity Catalog Volume");
-  });
-
-  it("rejects the replaced artifact backend variable", () => {
-    expect(() => loadConfig({
-      DAHLIA_AUTH_TYPE: "header",
-      DAHLIA_ARTIFACT_BACKEND: "r2",
-    })).toThrow("DAHLIA_ARTIFACT_BACKEND was replaced by DAHLIA_STORAGE_BACKEND");
   });
 
   it("requires the Cloudflare account endpoint when its backend is configured", () => {

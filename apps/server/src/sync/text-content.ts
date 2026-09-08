@@ -1,4 +1,4 @@
-import { IncrementalSha256 } from "../artifacts/sha256";
+import { IncrementalSha256 } from "../storage/sha256";
 import type { IdentitySyncStore, SyncCanonicalRecord, SyncTranscriptCursor } from "./types";
 import { SyncTransactionError } from "./store";
 

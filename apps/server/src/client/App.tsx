@@ -351,7 +351,7 @@ function Shell({
           <nav aria-label="Account navigation">
             {extensions.flatMap((extension) => extension.navigation ?? []).map((item) => (
               (!item.capability || session.capabilities[item.capability])
-                ? <a className={path === item.path ? "active" : ""} href={item.path} key={item.path}><MenuIcon name="artifact" />{item.label}</a>
+                ? <a className={path === item.path ? "active" : ""} href={item.path} key={item.path}><MenuIcon name="document" />{item.label}</a>
                 : null
             ))}
             <a className={path === "/dashboard/settings" ? "active" : ""} href="/dashboard/settings">
@@ -466,20 +466,20 @@ function Vaults() {
       <section className="section-block">
         <h2 className="section-label">Synchronized Vaults</h2>
         {!organizationId && <button className="secondary" onClick={() => void createVault()}>New Vault</button>}
-        <div className="panel artifact-list">
+        <div className="panel resource-list">
           {!vaults && !loadError && <p className="muted">Loading Vaults…</p>}
           {loadError && <p role="alert">{loadError} <button onClick={reload}>Retry</button></p>}
           {vaults?.length === 0 && <div className="empty-state"><strong>No synchronized Vaults</strong></div>}
           {vaults?.map((vault) => (
-            <a className="artifact-row" href={`/vaults/${vault.vaultId}`} key={vault.vaultId}>
-              <span className="artifact-copy">
+            <a className="resource-row" href={`/vaults/${vault.vaultId}`} key={vault.vaultId}>
+              <span className="resource-copy">
                 <strong>{vault.name}</strong>
                 <span>{vault.role === "owner" ? "Owned by you" : "Shared with you"} · Updated {new Date(vault.updatedAt).toLocaleString()}</span>
               </span>
             </a>
           ))}
         </div>
-        {error && <p className="error artifact-error">{error}</p>}
+        {error && <p className="error resource-error">{error}</p>}
       </section>
     </>
   );
@@ -573,7 +573,7 @@ function VaultSharing({ session, vault }: { session: SessionInfo; vault: SyncedV
         ))}
       </div>
       <DataError error={sharingQuery.error} retry={sharingQuery.reload} />
-      {error && <p className="error artifact-error">{error}</p>}
+      {error && <p className="error resource-error">{error}</p>}
     </section>
   );
 }
@@ -1339,15 +1339,6 @@ function Invitation({ invitationId }: { invitationId: string }) {
       </section>
     </>
   );
-}
-
-export function canEmbedArtifact(contentType: string): boolean {
-  const type = contentType.split(";", 1)[0]!.trim().toLowerCase();
-  return type.startsWith("text/")
-    || type.startsWith("image/")
-    || type.startsWith("audio/")
-    || type.startsWith("video/")
-    || ["application/json", "application/pdf", "application/xml", "application/xhtml+xml"].includes(type);
 }
 
 function AdminMembers() {
