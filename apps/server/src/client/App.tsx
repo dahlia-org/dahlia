@@ -771,7 +771,7 @@ function SyncedProject({ vaultId, projectId }: { vaultId: string; projectId: str
 
 export function SyncedMeeting({ vaultId, meetingId }: { vaultId: string; meetingId: string }) {
   const base = `/api/v1/vaults/${vaultId}/meetings/${meetingId}`;
-  const meetingQuery = useLiveJSON<SyncedMeetingInfo>(base);
+  const meetingQuery = useLiveJSON<SyncedMeetingInfo>(`${base}?content=metadata-v1`);
   const vaultQuery = useLiveJSON<SyncedVaultInfo>(`/api/v1/vaults/${vaultId}`);
   const projectsQuery = useLiveJSON<{ items: SyncedProjectInfo[] }>(`/api/v1/vaults/${vaultId}/projects`);
   const transcriptQuery = useLiveJSON<{ items: SyncedTranscriptSegmentInfo[] }>(`${base}/transcript`);

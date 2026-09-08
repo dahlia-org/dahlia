@@ -67,7 +67,7 @@ describe("desktop-style meeting layout", () => {
     try {
       for (const ready of ["neither", "meeting", "vault", "both"]) {
         query.mockImplementation((url) => {
-          if (url === "/api/v1/vaults/v1/meetings/m1" && ["meeting", "both"].includes(ready)) {
+          if (url === "/api/v1/vaults/v1/meetings/m1?content=metadata-v1" && ["meeting", "both"].includes(ready)) {
             return { ...empty, data: meeting };
           }
           if (url === "/api/v1/vaults/v1" && ["vault", "both"].includes(ready)) {
@@ -76,6 +76,9 @@ describe("desktop-style meeting layout", () => {
           return empty;
         });
         const html = render();
+        expect(query).toHaveBeenCalledWith("/api/v1/vaults/v1/meetings/m1?content=metadata-v1");
+        expect(query).not.toHaveBeenCalledWith("/api/v1/vaults/v1/meetings/m1");
+        expect(query).toHaveBeenCalledWith("/api/v1/vaults/v1/meetings/m1/summary/latest");
         expect(html.includes("<h1>")).toBe(ready === "both");
         expect(html.includes("Planning")).toBe(ready === "both");
         expect(html).not.toContain("<h1>ミーティング</h1>");
