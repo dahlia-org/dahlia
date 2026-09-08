@@ -13,7 +13,7 @@ import { MeetingSyncService } from "../src/sync/service";
 import { SummaryService } from "../src/summary/service";
 import { SummaryWorker } from "../src/summary/node-worker";
 import { SummaryError, summaryDocument, type SummaryMethod } from "../src/summary/model";
-import { createTranscriptSummaryMethod } from "../src/summary/transcript";
+import { createTranscriptSummaryMethod, summaryImageContent } from "../src/summary/transcript";
 import { accountSettingsPatchSchema } from "../src/account-settings";
 import { loadConfig } from "../src/config";
 import { createApp } from "../src/app";
@@ -46,6 +46,26 @@ async function setup() {
 }
 
 describe("server summary jobs", () => {
+  it("escapes meeting and project XML without serializing internal input fields", async () => {
+    const date = new Date(0);
+    const { content } = await summaryImageContent({
+      meeting: { name: '<Meeting & "team">', description: "</context>'", createdAt: date, recordingStartedAt: null },
+      project: { name: "<Project>", description: "A&B", path: "parent/<child>", revision: 42 }, images: [],
+    }, {} as MeetingSyncService, owner, new AbortController().signal);
+    expect(content).toEqual([{ type: "input_text", text: `<context>
+  <meeting>
+    <name>&lt;Meeting &amp; &quot;team&quot;&gt;</name>
+    <description>&lt;/context&gt;&apos;</description>
+    <recorded_at>1970-01-01T00:00:00.000Z</recorded_at>
+  </meeting>
+  <project>
+    <name>&lt;Project&gt;</name>
+    <description>A&amp;B</description>
+    <path>parent/&lt;child&gt;</path>
+  </project>
+</context>` }]);
+  });
+
   it.each(["node", "worker"])("advertises only registered capabilities through %s", async (runtime) => {
     const { store, method, config } = await setup();
     try {
@@ -328,7 +348,7 @@ describe("server summary jobs", () => {
       const patchId = uuidV7(); const hash = "a".repeat(64);
       await sync.putTranscriptChunk(owner, vaultId, meetingId, patchId, 0, hash, {
         segments: [{ segmentId: uuidV7(), startTime: new Date().toISOString(), endTime: null,
-          text: "Ship next week", isConfirmed: true, audioSource: "mic", speakerLabel: null }], deletions: [],
+          text: "Ship next week < & > \" '", isConfirmed: true, audioSource: "mic", speakerLabel: "A&B" }], deletions: [],
       });
       await sync.commitTransaction(owner, { schemaVersion: 2, id: uuidV7(), vaultId, createdAt: new Date().toISOString(), operations: [{
         id: patchId, entity: "transcript", action: "patch", entityId: meetingId, baseRevision: 0,
@@ -336,7 +356,7 @@ describe("server summary jobs", () => {
       }] });
       const screenshots = Array.from({ length: withImages ? 25 : 0 }, () => ({ fileId: uuidV7(), screenshotId: uuidV7(), vaultId, meetingId,
         capturedAt: new Date(), contentType: "image/webp", storageKey: "unused", contentLength: 1, contentHash: "a".repeat(64),
-        ocrText: "Important unsampled evidence", caption: null }));
+        ocrText: "Important unsampled evidence", caption: "Excluded image description" }));
       const originalWithIdentity = store.sync.withIdentity.bind(store.sync);
       store.sync.withIdentity = (identity, action) => originalWithIdentity(identity, (scoped) => action({
         ...scoped, listScreenshots: async () => screenshots,
@@ -350,15 +370,24 @@ describe("server summary jobs", () => {
         expect(headers.get("authorization")).toBe("Bearer app-token");
         expect(JSON.parse(headers.get("Databricks-Ai-Gateway-Request-Tags")!)).toEqual({ user_id: "owner" });
         expect(headers.has("X-Forwarded-Access-Token")).toBe(false);
-        const body = JSON.parse(String(init?.body)) as { input: { content: { text: string }[] }[] };
+        const body = JSON.parse(String(init?.body)) as { input: { content: { type: string; text?: string; image_url?: string }[] }[] };
         expect(body).toMatchObject({ model: "catalog.ai.gpt-5-6-luna", stream: false, store: false, text: { format: { strict: true, name: "meeting_summary" } } });
-        expect(body.input[0]!.content[0]!.text).toContain("Ship next week");
+        const content = body.input[0]!.content;
+        expect(content[0]!.text).toMatch(/^<context>[\s\S]*<\/context>$/);
+        expect(content[1]!.text).toMatch(/^<transcript>[\s\S]*<\/transcript>$/);
+        expect(content[1]!.text).toContain("Ship next week &lt; &amp; &gt; &quot; &apos;");
+        expect(content[1]!.text).toContain("<speaker>A&amp;B</speaker>");
         if (withImages) {
-          const evidence = JSON.parse(body.input[0]!.content[0]!.text) as { images: { image_id: string | null; ocrText: string }[] };
-          expect(evidence.images[0]!.image_id).toBe(screenshots[0]!.screenshotId);
-          expect(evidence.images[1]).toMatchObject({ image_id: null, ocrText: "Important unsampled evidence" });
+          const selected = screenshots.filter((_, index) => index % 2 === 0);
+          expect(content.filter((part) => part.type === "input_image")).toHaveLength(selected.length);
+          selected.forEach((screenshot, index) => {
+            expect(content[2 + index * 2]!.text).toBe(`<image><image_id>${screenshot.screenshotId}</image_id><captured_at>${screenshot.capturedAt.toISOString()}</captured_at></image>`);
+            expect(content[3 + index * 2]).toEqual({ type: "input_image", image_url: "data:image/webp;base64,AQ==" });
+          });
           expect(JSON.stringify(body)).not.toContain(screenshots[1]!.screenshotId);
-        }
+        } else expect(content).toHaveLength(2);
+        for (const excluded of ["ocr_text", "ocrText", "caption", "Important unsampled evidence", "Excluded image description"])
+          expect(JSON.stringify(body)).not.toContain(excluded);
         if (scenario === "failure") return Response.json({ error: "sensitive upstream response" }, { status: 400, headers: { "x-databricks-request-id": "req-123" } });
         return Response.json({ ...(withImages ? { id: "resp-example", model: "actual-model", created_at: 123,
           reasoning: { effort: "medium" }, usage: { input_tokens: 100, output_tokens: 20, total_tokens: 120,
@@ -464,7 +493,7 @@ describe("audio summary jobs", () => {
       store.sync.withIdentity = (identity, action) => original(identity, (scoped) => action({ ...scoped,
         listTranscript: async () => { throw new Error("Audio summaries must not read transcript"); },
         listScreenshots: async () => [{ screenshotId, fileId: imageId, vaultId, meetingId, capturedAt: new Date(0),
-          contentType: "image/webp", storageKey: "unused", contentLength: 1, contentHash: "a".repeat(64), ocrText: "slide evidence", caption: null }],
+          contentType: "image/webp", storageKey: "unused", contentLength: 1, contentHash: "a".repeat(64), ocrText: "slide evidence", caption: "Excluded audio image description" }],
       }));
       vi.spyOn(sync, "readFileContent").mockResolvedValue({ file: {} as never, upstream: new Response(new Uint8Array([1])), contentType: "image/webp" });
       await store.accountSettings.update(owner.userId, { summary: { method: "audio", detail: "standard", methodSettings: {
@@ -494,8 +523,26 @@ describe("audio summary jobs", () => {
       expect(sentAudio).toHaveLength(sources.length + 1);
       for (const part of sentAudio) expect(part.audio_url?.url).toBe(`data:audio/mp4;base64,${Buffer.from(audio).toString("base64")}`);
       expect(content.some((part) => part.type === "image_url")).toBe(true);
-      expect(JSON.parse(content[0]!.text!)).not.toHaveProperty("transcript");
-      expect(content[0]!.text).toContain('"sessionOffsetSeconds":3');
+      expect(content[0]!.text).toMatch(/^<context>[\s\S]*<\/context>$/);
+      expect(content[1]!.text).toBe(`<image><image_id>${screenshotId}</image_id><captured_at>1970-01-01T00:00:00.000Z</captured_at></image>`);
+      expect(JSON.stringify(content)).not.toContain("<transcript>");
+      for (const excluded of ["ocr_text", "ocrText", "caption", "slide evidence", "Excluded audio image description"])
+        expect(JSON.stringify(body)).not.toContain(excluded);
+      const audioMetadata = content.filter((part) => part.text?.startsWith("<audio>"));
+      expect(audioMetadata).toHaveLength(sentAudio.length);
+      const recordings = await store.sync.withIdentity(owner, (scoped) => scoped.listRecordings(meetingId, 0, 200));
+      audioMetadata.forEach((part, index) => {
+        const recording = recordings[index < sources.length ? 0 : 1]!;
+        expect(part.text).toContain(`<start>${recording.startedAt.toISOString()}</start>`);
+        expect(part.text).toContain(`<end>${recording.endedAt.toISOString()}</end>`);
+        expect(part.text).toContain("<start_frame>0</start_frame><frame_count>960000</frame_count>");
+        expect(part.text).toContain("<locale_identifier>ja-JP</locale_identifier>");
+        expect(part.text).toContain(`<recording_number>${index < sources.length ? 1 : 2}</recording_number>`);
+        expect(part.text).toContain(`<source>${sources[index] ?? "mic"}</source>`);
+        expect(part.text).toContain("<sample_rate>16000</sample_rate>");
+        expect(part.text).toContain("<session_offset_seconds>3</session_offset_seconds>");
+        expect(content[content.indexOf(part) + 1]!.type).toBe("audio_url");
+      });
       const saved = await sync.summaryVersion(owner, vaultId, meetingId, "1");
       expect(saved.document).not.toContain("Do not persist this");
       expect(saved.document).not.toContain("thoughtSignature");
