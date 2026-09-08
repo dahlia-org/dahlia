@@ -1,4 +1,5 @@
 import DahliaMeetingAccess
+import DahliaRuntimeSupport
 import Foundation
 import GRDB
 import os
@@ -63,6 +64,7 @@ actor BatchTranscriptionCoordinator {
     private var audioRetentionPeriod: BatchAudioRetentionPeriod
     private var audioRetentionTask: Task<Void, Never>?
     private var audioArchiveTask: Task<Void, Never>?
+    private let startupDate = Date.now
     private var isShuttingDown = false
     private var shutdownInterruptionSessionIds: Set<UUID> = []
     private var activeConfirmationCount = 0
@@ -102,6 +104,33 @@ actor BatchTranscriptionCoordinator {
     }
 
     func recoverAndEnqueue() async throws {
+        let cutoff = startupDate
+        try await dbQueue.write { db in
+            for record in try TranscriptRecord.filter(sql: "sessionId IS NOT NULL AND json_extract(infoJSON, '$.endedAt') IS NULL").fetchAll(db) {
+                let info = try record.info
+                guard info.endedAt == nil, let sessionId = record.sessionId,
+                      let session = try RecordingSessionRecord.fetchOne(db, key: sessionId),
+                      session.startedAt < cutoff else { continue }
+                let lastTranscriptDate = try Date.fetchOne(
+                    db,
+                    sql: "SELECT MAX(COALESCE(endedAt, startedAt)) FROM transcript_segments WHERE sessionId = ?",
+                    arguments: [sessionId]
+                )
+                let endedAt = session.endedAt ?? min(cutoff, max(session.startedAt, lastTranscriptDate ?? session.updatedAt))
+                _ = try RecordingSessionCompletionWriter.finish(.init(
+                    recordingSessionId: sessionId,
+                    meetingId: record.meetingId,
+                    endedAt: endedAt,
+                    duration: session.duration ?? max(
+                        0,
+                        endedAt.timeIntervalSince(session.startedAt)
+                    ),
+                    updatedAt: cutoff,
+                    meetingStatus: nil,
+                    interrupted: true
+                ), in: db)
+            }
+        }
         _ = await recordingAudioStore?.reconcileStartup()
         startAudioArchiving()
         await purgeExpiredAudio()
@@ -291,16 +320,53 @@ actor BatchTranscriptionCoordinator {
         let state = Self.signposter.beginInterval("Batch transcription")
         defer { Self.signposter.endInterval("Batch transcription", state) }
         let job = try fetchJob(sessionId: sessionId)
-        let segments = try await transcribe(job: job)
-        let records = segments.map { TranscriptContent(from: $0, meetingId: job.meeting.id, defaultSessionId: job.session.id) }
-        let completedAt = Date.now
+        try await MeetingContentProvider.shared.ensure(entity: .transcript, id: job.meeting.id, dbQueue: dbQueue)
+        let input = try await dbQueue.read { db in
+            let current = try TranscriptRecord.current(job.meeting.id, in: db)
+            let hasText = try TranscriptSegmentRecord.filter(Column("meetingId") == job.meeting.id).fetchCount(db) > 0
+            let replaceAll = job.session.isBatchRetranscriptionPending
+                || (hasText && current?.metadata?.usesAppleModel("apple-speech") != true)
+            let sessions = replaceAll ? try RecordingSessionRecord.filter(Column("meetingId") == job.meeting.id)
+                .filter(Column("batchDiscardedAt") == nil).order(Column("startedAt"), Column("id")).fetchAll(db) : [job.session]
+            guard !replaceAll || sessions.allSatisfy({ $0.transcriptionMode == .batch && $0.endedAt != nil }) else {
+                throw TranscriptVersionError.fullTranscriptionUnavailable
+            }
+            if replaceAll {
+                let known = sessions.map(\.id)
+                let uncovered = try TranscriptSegmentRecord.filter(Column("meetingId") == job.meeting.id)
+                    .filter(Column("sessionId") == nil || !known.contains(Column("sessionId"))).fetchCount(db)
+                guard uncovered == 0 else { throw TranscriptVersionError.fullTranscriptionUnavailable }
+            }
+            return (id: current?.id, replaceAll: replaceAll, sessions: sessions)
+        }
+        let jobs = try input.sessions.map { try fetchJob(sessionId: $0.id) }
+        var records: [TranscriptContent] = []
+        var runs: [TranscriptMetadata.Run] = []
+        for item in jobs {
+            try Task.checkCancellation()
+            let startedAt = Date.now
+            let result = try await transcribe(job: item)
+            records
+                .append(contentsOf: result.segments.map { TranscriptContent(from: $0, meetingId: job.meeting.id, defaultSessionId: item.session.id) })
+            let locale = item.session.batchSelectedLocaleIdentifier
+            runs.append(.init(
+                startedAt: startedAt,
+                completedAt: .now,
+                language: .init(
+                    mode: item.session.batchLanguageDetectionMode == .automatic ? "auto" : "fixed",
+                    locales: locale.map { [$0] } ?? []
+                ),
+                recognitionLocales: result.locales
+            ))
+        }
+        try Task.checkCancellation()
         try BatchTranscriptionPersistence.complete(
-            sessionId: job.session.id,
-            meetingId: job.meeting.id,
-            records: records,
-            completedAt: completedAt,
-            dbQueue: dbQueue
+            sessionId: job.session.id, meetingId: job.meeting.id, records: records, completedAt: .now, dbQueue: dbQueue,
+            replacingMeeting: input.replaceAll, expectedTranscriptId: input.id, expectedSessions: input.sessions, runs: runs
         )
+        for session in input.sessions where session.id != job.session.id {
+            await notify(meetingId: job.meeting.id, state: .completed(sessionId: session.id))
+        }
         MeetingConversationMetricsRefreshService.schedule(
             meetingId: job.meeting.id,
             dbQueue: dbQueue
@@ -362,7 +428,12 @@ actor BatchTranscriptionCoordinator {
         }
     }
 
-    private func transcribe(job: Job) async throws -> [TranscriptSegment] {
+    private struct TranscriptionResult: Sendable {
+        let segments: [TranscriptSegment]
+        let locales: [String]
+    }
+
+    private func transcribe(job: Job) async throws -> TranscriptionResult {
         guard let recordingAudioStore else {
             throw RecordingAudioStoreError.storageUnavailable
         }
@@ -388,7 +459,7 @@ actor BatchTranscriptionCoordinator {
     private func transcribe(
         verifiedSegments: [RecordingAudioStore.VerifiedSegment],
         job: Job
-    ) async throws -> [TranscriptSegment] {
+    ) async throws -> TranscriptionResult {
         let supportedLocales: [Locale] = if job.session.batchLanguageDetectionMode == .automatic {
             await supportedLocalesProvider()
         } else {
@@ -438,7 +509,10 @@ actor BatchTranscriptionCoordinator {
             fallbackCollector.snapshot(),
             candidates: automaticLanguageCandidates
         )
-        return sortedTranscriptSegments(workResults.flatMap(\.segments))
+        return TranscriptionResult(
+            segments: sortedTranscriptSegments(workResults.flatMap(\.segments)),
+            locales: Array(Set(workResults.map(\.localeIdentifier))).sorted()
+        )
     }
 
     private func prepareTranscriptionWorkItems(
@@ -588,7 +662,15 @@ actor BatchTranscriptionCoordinator {
                 .transcription
             }
         }
-        await persistFailureIfPossible(sessionId: sessionId, message: message, kind: kind)
+        let failedIds = await (try? dbQueue.read { db -> [UUID] in
+            guard let session = try RecordingSessionRecord.fetchOne(db, key: sessionId),
+                  session.isBatchRetranscriptionPending else { return [sessionId] }
+            return try RecordingSessionRecord.filter(Column("meetingId") == session.meetingId)
+                .fetchAll(db).filter(\.isBatchRetranscriptionPending).map(\.id)
+        }) ?? [sessionId]
+        for id in failedIds {
+            await persistFailureIfPossible(sessionId: id, message: message, kind: kind)
+        }
         var context = [
             "source": "batchTranscription",
             "failureKind": kind.rawValue,
@@ -898,8 +980,9 @@ extension BatchTranscriptionCoordinator {
         await onConfirmed(result)
         for sessionId in result.sessionIds {
             await notify(meetingId: result.meetingId, state: .queued(sessionId: sessionId))
-            await enqueue(sessionId: sessionId)
         }
+        // A retranscription publishes the whole meeting once, after every recording succeeds.
+        if let sessionId = result.sessionIds.first { await enqueue(sessionId: sessionId) }
     }
 
     private func failureNotificationContext(for sessionId: UUID) throws -> (meetingId: UUID, isRetranscription: Bool) {

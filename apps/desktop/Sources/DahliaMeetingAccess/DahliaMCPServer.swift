@@ -1373,6 +1373,7 @@ private extension DahliaMCPServer {
             properties: [
                 "vault": vaultSchema,
                 "text_content": textContentSchema,
+                "transcript": ["type": "object", "description": "Latest version, status, and provider/model generation metadata."],
                 "meeting_id": ["type": "string", "format": "uuid"],
                 "segments": ["type": "array", "items": transcriptEntrySchema],
                 "next_cursor": ["type": "string"],

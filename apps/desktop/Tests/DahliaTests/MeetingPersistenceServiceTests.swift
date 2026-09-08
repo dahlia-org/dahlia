@@ -533,6 +533,20 @@ import os
                     updatedAt: createdAt
                 ).insert(db)
                 try TranscriptContent(from: legacySegment, meetingId: meetingId).insert(db)
+                try TranscriptRecord(
+                    meetingId: meetingId,
+                    info: .init(
+                        id: .v7(),
+                        status: "completed",
+                        startedAt: nil,
+                        completedAt: nil,
+                        metadata: .init(
+                            provider: "apple",
+                            model: "apple-speech-live",
+                            runs: []
+                        )
+                    )
+                ).insert(db)
             }
             let service = try await MeetingPersistenceService.createAppending(
                 store: TranscriptStore(),

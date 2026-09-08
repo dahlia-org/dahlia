@@ -32,7 +32,8 @@ let package = Package(
         .target(
             name: "DahliaRuntimeSupport",
             dependencies: [.product(name: "libwebp", package: "libwebp-Xcode")],
-            path: "apps/desktop/Sources/DahliaRuntimeSupport"
+            path: "apps/desktop/Sources/DahliaRuntimeSupport",
+            resources: [.process("Resources")]
         ),
         .target(
             name: "DahliaMeetingAccess",

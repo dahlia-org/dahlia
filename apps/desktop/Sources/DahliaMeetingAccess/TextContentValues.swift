@@ -11,6 +11,7 @@ public struct TranscriptContent: Decodable, Sendable {
     public var text: String
     public var translatedText: String?
     public var isConfirmed: Bool
+    public var createdAt: Date?
     public var audioSource: String?
     public var speakerLabel: String?
     public var audioFeatureVersion: Int?
@@ -34,7 +35,8 @@ public struct TranscriptContent: Decodable, Sendable {
         audioActiveRmsDecibels: Double? = nil,
         audioMedianPitchHertz: Double? = nil,
         audioVoicedFrameRatio: Double? = nil,
-        audioPitchSpreadHertz: Double? = nil
+        audioPitchSpreadHertz: Double? = nil,
+        createdAt: Date? = nil
     ) {
         self.id = id
         self.meetingId = meetingId
@@ -44,6 +46,7 @@ public struct TranscriptContent: Decodable, Sendable {
         self.text = text
         self.translatedText = translatedText
         self.isConfirmed = isConfirmed
+        self.createdAt = createdAt
         self.audioSource = audioSource
         self.speakerLabel = speakerLabel
         self.audioFeatureVersion = audioFeatureVersion
@@ -61,7 +64,8 @@ public struct TranscriptContent: Decodable, Sendable {
         endTime = try row.decode(forColumn: "endTime")
         text = try row.decode(forColumn: "text")
         translatedText = try row.decode(forColumn: "translatedText")
-        isConfirmed = try row.decode(forColumn: "isConfirmed")
+        isConfirmed = true
+        createdAt = row["createdAt"]
         audioSource = try row.decode(forColumn: "audioSource")
         speakerLabel = try row.decode(forColumn: "speakerLabel")
         audioFeatureVersion = try row.decode(forColumn: "audioFeatureVersion")

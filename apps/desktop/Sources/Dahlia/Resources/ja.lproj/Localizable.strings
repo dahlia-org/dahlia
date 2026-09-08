@@ -1713,3 +1713,5 @@
 "serverSummaryReloadModels" = "モデル一覧を再取得";
 
 "serverSummaryAccountDefault" = "アカウント設定";
+
+"transcript.fullTranscriptionUnavailable" = "前の文字起こしとモデルが異なります。全文の再文字起こしには、すべての元音声と保存音声を処理できるモデルが必要です。";

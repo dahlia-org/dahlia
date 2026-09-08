@@ -5,7 +5,6 @@ import GRDB
 
 enum SyncInitialSnapshotBuilder {
     private static let projectBatchSize = 100
-    private static let transcriptBatchSize = 500
 
     static func enqueuePending(
         dbQueue: DatabaseQueue,
@@ -285,30 +284,23 @@ enum SyncInitialSnapshotBuilder {
         restoring: Bool,
         dbQueue: DatabaseQueue
     ) async throws {
-        var lastSegmentId: UUID?
-        while true {
-            let cursor = lastSegmentId
-            let segments = try await dbQueue.write { db -> [TranscriptContent] in
-                guard try canContinue(markerId: markerId, vaultId: vaultId, in: db) else { return [] }
-                let segments = try TextContentAccess.transcript(
-                    meetingId: meetingId, order: .id,
-                    position: cursor.map { .init(id: $0, startTime: .distantPast) },
-                    confirmedOnly: true, limit: transcriptBatchSize, in: db
-                )
-                guard !segments.isEmpty else { return [] }
-                let patch = SyncOperationDraft(entity: .transcript, action: .patch, entityId: meetingId)
-                try SyncTransactionRecorder.record(
-                    vaultId: vaultId,
-                    operations: [patch],
-                    transcriptSegments: [patch.id: segments.map(SyncTranscriptPatchSegment.init)],
-                    allowAfterReset: restoring,
-                    connectionIdOverride: connectionId,
-                    in: db
-                )
-                return segments
-            }
-            guard let nextId = segments.last?.id else { break }
-            lastSegmentId = nextId
+        try await dbQueue.write { db in
+            guard try canContinue(markerId: markerId, vaultId: vaultId, in: db) else { return }
+            let previous = try TranscriptRecord.current(meetingId, in: db)
+            let count = try TranscriptSegmentRecord.filter(Column("meetingId") == meetingId).fetchCount(db)
+            guard previous != nil || count > 0 else { return }
+            var info = previous ?? TranscriptInfo(id: .v7(), status: "completed", startedAt: nil, completedAt: nil, metadata: nil)
+            info.id = .v7()
+            info.version = nil
+            info.syncRevision = nil
+            try TranscriptRecord(meetingId: meetingId, info: info).save(db)
+            try TranscriptRecord.enqueueSnapshot(
+                meetingId: meetingId,
+                info: info,
+                allowAfterReset: restoring,
+                connectionId: connectionId,
+                in: db
+            )
         }
     }
 

@@ -636,7 +636,7 @@
         }
 
         @Test
-        func remoteTranscriptKeepsLocalOnlyAndUnconfirmedRows() async throws {
+        func remoteTranscriptKeepsLocalAnnotationsAndExcludesUnconfirmedRows() async throws {
             let (database, vault) = try await syncedDatabase()
             let meeting = MeetingRecord(
                 id: .v7(), vaultId: vault.id, projectId: nil, name: "Meeting",
@@ -663,8 +663,8 @@
                 try RemoteChangeApplier.applyTranscript(
                     meetingId: meeting.id,
                     segments: [.init(
-                        segmentId: confirmedId, startTime: .now, endTime: nil, text: "canonical",
-                        isConfirmed: true, audioSource: "mic", speakerLabel: "Speaker"
+                        segmentId: confirmedId, startedAt: .now, endedAt: nil, text: "canonical",
+                        createdAt: nil, audioSource: "mic", speakerLabel: "Speaker"
                     )],
                     in: db
                 )
@@ -678,7 +678,7 @@
             #expect(confirmed.translatedText == "translation")
             #expect(confirmed.audioFeatureVersion == 1)
             #expect(confirmed.speakerLabel == "Speaker")
-            #expect(segments.contains { $0.id == previewId && !$0.isConfirmed })
+            #expect(!segments.contains { $0.id == previewId })
         }
 
         @Test
@@ -690,12 +690,12 @@
             )
             let removedId = UUID.v7()
             let first = SyncTranscriptPage.Segment(
-                segmentId: .v7(), startTime: .now, endTime: nil, text: "first",
-                isConfirmed: true, audioSource: "mic", speakerLabel: nil
+                segmentId: .v7(), startedAt: .now, endedAt: nil, text: "first",
+                createdAt: nil, audioSource: "mic", speakerLabel: nil
             )
             let second = SyncTranscriptPage.Segment(
-                segmentId: .v7(), startTime: .now, endTime: nil, text: "second",
-                isConfirmed: true, audioSource: "system", speakerLabel: nil
+                segmentId: .v7(), startedAt: .now, endedAt: nil, text: "second",
+                createdAt: nil, audioSource: "system", speakerLabel: nil
             )
             try await database.dbQueue.write { db in
                 try meeting.insert(db)
@@ -724,7 +724,7 @@
             #expect(try await database.dbQueue.read { db in
                 try Set(UUID.fetchAll(
                     db,
-                    sql: "SELECT id FROM transcript_segments WHERE meetingId = ? AND isConfirmed = 1",
+                    sql: "SELECT id FROM transcript_segments WHERE meetingId = ?",
                     arguments: [meeting.id]
                 ))
             } == [removedId])
@@ -741,7 +741,7 @@
             #expect(try await database.dbQueue.read { db in
                 try Set(UUID.fetchAll(
                     db,
-                    sql: "SELECT id FROM transcript_segments WHERE meetingId = ? AND isConfirmed = 1",
+                    sql: "SELECT id FROM transcript_segments WHERE meetingId = ?",
                     arguments: [meeting.id]
                 ))
             } == [removedId])
@@ -754,7 +754,7 @@
                 try (
                     Set(UUID.fetchAll(
                         db,
-                        sql: "SELECT id FROM transcript_segments WHERE meetingId = ? AND isConfirmed = 1",
+                        sql: "SELECT id FROM transcript_segments WHERE meetingId = ?",
                         arguments: [meeting.id]
                     )),
                     String.fetchOne(db, sql: "SELECT syncPullCursor FROM vaults WHERE id = ?", arguments: [vault.id]),
@@ -782,8 +782,8 @@
                 duration: nil, offsetSeconds: 0, createdAt: .now, updatedAt: .now
             )
             let segment = SyncTranscriptPage.Segment(
-                segmentId: .v7(), startTime: .now, endTime: nil, text: "canonical",
-                isConfirmed: true, audioSource: "mic", speakerLabel: nil
+                segmentId: .v7(), startedAt: .now, endedAt: nil, text: "canonical",
+                createdAt: nil, audioSource: "mic", speakerLabel: nil
             )
             let record = try SyncJSON.decoder.decode(
                 SyncCanonicalPayload.self,

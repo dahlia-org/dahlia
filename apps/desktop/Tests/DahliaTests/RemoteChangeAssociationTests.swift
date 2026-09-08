@@ -199,8 +199,8 @@
             )]
                 + canonicalImageChanges(fileId: screenshotId, meetingId: meeting.id)
             let transcript = SyncTranscriptPage.Segment(
-                segmentId: .v7(), startTime: .now, endTime: nil, text: "Late transcript",
-                isConfirmed: true, audioSource: "mic", speakerLabel: nil
+                segmentId: .v7(), startedAt: .now, endedAt: nil, text: "Late transcript",
+                createdAt: nil, audioSource: "mic", speakerLabel: nil
             )
 
             #expect(try await !RemoteChangeApplier.reconcileProjectSnapshot(

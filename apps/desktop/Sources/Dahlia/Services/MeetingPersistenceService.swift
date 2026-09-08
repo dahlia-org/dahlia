@@ -258,19 +258,19 @@ final class MeetingPersistenceService {
                 }
                 guard let meeting = try MeetingRecord.fetchOne(db, key: meetingId) else { return }
                 var operations: [SyncOperationDraft] = []
-                var deletions: [UUID: [UUID]] = [:]
-                if !deletedSegmentIds.isEmpty {
-                    let patch = SyncOperationDraft(entity: .transcript, action: .patch, entityId: meetingId)
-                    operations.append(patch)
-                    deletions[patch.id] = deletedSegmentIds
-                }
+                try TranscriptRecord.finishLive(
+                    meetingId: meetingId,
+                    sessionId: sessionId,
+                    at: Date(),
+                    deletions: deletedSegmentIds,
+                    in: db
+                )
                 if resetsRecordingStartOnCancel {
                     try operations.append(SyncInitialSnapshotBuilder.meetingOperation(meeting, action: .update))
                 }
                 try SyncTransactionRecorder.record(
                     vaultId: meeting.vaultId,
                     operations: operations,
-                    transcriptDeletions: deletions,
                     in: db
                 )
             }
@@ -356,6 +356,7 @@ private enum MeetingPersistenceStarter {
                 transcriptionMode: request.transcriptionMode
             )
             try recordingSession.insert(db)
+            try TranscriptRecord.beginLive(recordingSession, in: db)
             try RecordingArchiveRecord.enqueue(recordingSession, in: db)
             let projectName = try projectId.flatMap { id in
                 try ProjectRecord.fetchResolved(id: id, in: db)?.path
@@ -376,7 +377,7 @@ private enum MeetingPersistenceStarter {
             let meeting = try MeetingRecord.fetchOne(db, key: request.meetingId)
             let segments = try Row.fetchAll(
                 db,
-                sql: "SELECT id, startTime, endTime FROM transcript_segments WHERE meetingId = ? ORDER BY startTime",
+                sql: "SELECT id, startedAt AS startTime, endedAt AS endTime FROM transcript_segments WHERE meetingId = ? ORDER BY startedAt",
                 arguments: [request.meetingId]
             )
             let previousSessions = try RecordingSessionRecord
@@ -424,6 +425,7 @@ private enum MeetingPersistenceStarter {
                 transcriptionMode: request.transcriptionMode
             )
             try recordingSession.insert(db)
+            try TranscriptRecord.beginLive(recordingSession, in: db)
             try RecordingArchiveRecord.enqueue(recordingSession, in: db)
             return AppendResult(
                 recordingSession: recordingSession,

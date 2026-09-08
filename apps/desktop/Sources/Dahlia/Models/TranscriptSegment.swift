@@ -67,6 +67,7 @@ struct TranscriptSegment: Identifiable, Equatable {
     let startTime: Date
     var endTime: Date?
     var text: String
+    var createdAt: Date?
     var translatedText: String?
     var isConfirmed: Bool
     var audioSource: String?
@@ -101,13 +102,15 @@ struct TranscriptSegment: Identifiable, Equatable {
         isConfirmed: Bool = false,
         audioSource: String? = nil,
         speakerLabel: String? = nil,
-        audioFeatures: TranscriptAudioFeatures? = nil
+        audioFeatures: TranscriptAudioFeatures? = nil,
+        createdAt: Date? = .now
     ) {
         self.id = id
         self.sessionId = sessionId
         self.startTime = startTime
         self.endTime = endTime
         self.text = text
+        self.createdAt = isConfirmed ? createdAt : nil
         self.translatedText = translatedText
         self.isConfirmed = isConfirmed
         self.audioSource = audioSource
@@ -122,6 +125,7 @@ struct TranscriptSegment: Identifiable, Equatable {
         self.startTime = record.startTime
         self.endTime = record.endTime
         self.text = record.text
+        self.createdAt = record.createdAt
         self.translatedText = record.translatedText
         self.isConfirmed = record.isConfirmed
         self.audioSource = record.audioSource

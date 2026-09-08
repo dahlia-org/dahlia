@@ -1,3 +1,4 @@
+import { TranscriptHistory } from "./TranscriptHistory";
 import { SummaryHistory, type LatestSummary } from "./SummaryHistory";
 import { ServerSummaryGeneration, ServerSummarySettings } from "./SummaryGeneration";
 import { RecordingIndicator } from "./RecordingIndicator";
@@ -15,7 +16,7 @@ import { dashboardNavigationPath, navigateDashboard } from "./navigation";
 import { summaryDisplayText } from "../search/summary";
 import type { ScreenshotVariant } from "../sync/screenshot-variants";
 import { clientMutationEvent, json, RequestError, syncMessage, uiText, type SyncedVaultInfo, type OrganizationInfo, type SyncedMeetingInfo, type SyncedProjectInfo } from "./api";
-import { DetailTabs, MeetingTabs, parseSummary, SummaryTags, TranscriptTime } from "./MeetingContent";
+import { DetailTabs, MeetingTabs, parseSummary, SummaryTags } from "./MeetingContent";
 import { FileLink, FileViewer } from "./FileViewer";
 import { MenuIcon, Sidebar, SidebarProvider, useSidebar } from "./Sidebar";
 
@@ -120,15 +121,7 @@ interface VaultPermissionInfo {
   role: "owner" | "member";
 }
 
-interface SyncedTranscriptSegmentInfo {
-  segmentId: string;
-  startTime: string;
-  endTime?: string;
-  text: string;
-  isConfirmed: boolean;
-  audioSource?: string;
-  speakerLabel?: string;
-}
+
 
 interface SyncedScreenshotInfo {
   id: string;
@@ -774,11 +767,9 @@ export function SyncedMeeting({ vaultId, meetingId }: { vaultId: string; meeting
   const meetingQuery = useLiveJSON<SyncedMeetingInfo>(base);
   const vaultQuery = useLiveJSON<SyncedVaultInfo>(`/api/v1/vaults/${vaultId}`);
   const projectsQuery = useLiveJSON<{ items: SyncedProjectInfo[] }>(`/api/v1/vaults/${vaultId}/projects`);
-  const transcriptQuery = useLiveJSON<{ items: SyncedTranscriptSegmentInfo[] }>(`${base}/transcript`);
   const screenshotsQuery = useLivePage<SyncedScreenshotInfo>(`${base}/files`);
   const meeting = vaultQuery.data ? meetingQuery.data : undefined;
   const vault = vaultQuery.data;
-  const transcript = transcriptQuery.data?.items;
   const screenshots = screenshotsQuery.data?.items;
   const screenshotCursor = screenshotsQuery.data?.nextCursor;
   const loadingScreenshots = screenshotsQuery.loadingMore;
@@ -889,15 +880,7 @@ export function SyncedMeeting({ vaultId, meetingId }: { vaultId: string; meeting
             {loadingScreenshots ? uiText("Loading…", "読み込み中…") : uiText("Load more", "さらに表示")}
           </button>}
         </>}
-        transcript={<div className="transcript-document">
-          <DataError error={transcriptQuery.error} retry={transcriptQuery.reload} />
-          {transcript?.length === 0 && <p className="content-empty">{uiText("No transcript", "文字起こしはありません")}</p>}
-          {transcript?.slice(0, 500).map((segment) => <div className="transcript-segment" key={segment.segmentId}>
-            <TranscriptTime startTime={segment.startTime} timeBase={meeting.recordingStartedAt ?? transcript?.[0]?.startTime ?? meeting.createdAt} />
-            <p>{segment.speakerLabel && <strong>{segment.speakerLabel}: </strong>}{segment.text}</p>
-          </div>)}
-          {transcript && transcript.length > 500 && <p className="muted">{uiText("Showing the first 500 transcript segments.", "文字起こしの最初の500件を表示しています。")}</p>}
-        </div>}
+        transcript={<TranscriptHistory key={base} base={base} timeBase={meeting.recordingStartedAt ?? meeting.createdAt} />}
       />}
     </article>
   );

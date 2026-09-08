@@ -419,19 +419,13 @@ export function createApp(dependencies: AppDependencies) {
     if (!await store.sync.isAvailable()) return context.json({});
     const sources = dependencies.summaryService?.methods.map((method) => method.id) ?? [];
     return context.json({
-      sync: { version: 3 },
+      sync: { version: 4 },
       recordingArchive: { version: 1 },
       meetingEvents: { version: 1 },
       search: { version: 1 },
       ...(dependencies.imageAnalysisEnabled === true ? { imageAnalysis: { version: 1 } } : {}),
       ...(sources.length ? { meetingSummaryGeneration: { version: 1, sources } } : {}),
     });
-  });
-  app.get("/api/v1/vaults/:vaultId/text/:entity/:entityId", async (context) => {
-    const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
-    return context.json(await sync.textContent(identity, sync.parseId(context.req.param("vaultId")),
-      context.req.param("entity"), sync.parseId(context.req.param("entityId")),
-      context.req.query("revision"), context.req.query("manifest"), context.req.query("cursor")));
   });
   app.post("/api/v1/search", bodyLimit({ maxSize: 16 * 1024,
     onError: (context) => context.json({ error: "search_request_too_large" }, 413) }), async (context) => {
@@ -602,10 +596,17 @@ export function createApp(dependencies: AppDependencies) {
     return meeting ? context.json(meetingMetadata({ ...meeting })) : context.json({ error: "meeting_not_found" }, 404);
   });
   app.get("/api/v1/vaults/:vaultId/meetings/:meetingId/transcript", async (context) => {
+    context.header("cache-control", "no-store");
     const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
     const vaultId = sync.parseId(context.req.param("vaultId"));
     const meetingId = sync.parseId(context.req.param("meetingId"));
-    return context.json(await sync.listTranscript(identity, vaultId, meetingId, context.req.query("cursor")));
+    return context.json(await sync.transcriptVersions(identity, vaultId, meetingId, context.req.query("cursor"), context.req.query("limit")));
+  });
+  app.get("/api/v1/vaults/:vaultId/meetings/:meetingId/transcript/:version", async (context) => {
+    context.header("cache-control", "no-store");
+    const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
+    return context.json(await sync.transcriptContent(identity, sync.parseId(context.req.param("vaultId")),
+      sync.parseId(context.req.param("meetingId")), context.req.param("version"), context.req.query("manifest"), context.req.query("cursor")));
   });
   app.get("/api/v1/vaults/:vaultId/meetings/:meetingId/files", async (context) => {
     const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);

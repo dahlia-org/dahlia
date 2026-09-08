@@ -939,7 +939,7 @@
     /// Canonical text responses for cached bodies and the fixtures' empty transcripts.
     private func cachedTextResponse(_ request: URLRequest, queue: DatabaseQueue) -> (Int, [String: String], Data)? {
         guard let url = request.url else { return nil }
-        if url.path.hasSuffix("/capabilities") { return (200, [:], Data("{\"sync\":{\"version\":3}}".utf8)) }
+        if url.path.hasSuffix("/capabilities") { return (200, [:], Data("{\"sync\":{\"version\":4}}".utf8)) }
         if url.path.hasSuffix("/changes") {
             return (
                 200,
@@ -967,22 +967,21 @@
             } catch { return (500, [:], Data()) }
         }
         let isLatestSummary = url.path.hasSuffix("/summary/latest")
-        guard isLatestSummary || url.path.contains("/text/") else { return nil }
+        guard isLatestSummary || url.path.hasSuffix("/transcript/latest") else { return nil }
         do {
-            let resourceURL = isLatestSummary ? url.deletingLastPathComponent().deletingLastPathComponent() : url
+            let resourceURL = url.deletingLastPathComponent().deletingLastPathComponent()
             let id = try #require(UUID(uuidString: resourceURL.lastPathComponent))
-            let entity = try isLatestSummary ? .summary : #require(TextContentEntity(rawValue: url.deletingLastPathComponent().lastPathComponent))
+            let entity: TextContentEntity = isLatestSummary ? .summary : .transcript
             let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
-            let revision = try isLatestSummary
-                ? queue.read { try #require(try TextContentStore.source(entity: entity, id: id, in: $0)).revision }
-                : Int(query.first { $0.name == "revision" }?.value ?? "0") ?? 0
+            let revision = try queue.read { try #require(try TextContentStore.source(entity: entity, id: id, in: $0)).revision }
             let body = try queue.read { db in try #require(try TextContentStore.fingerprint(entity: entity, id: id, in: db)) }
             let itemCount = body.count
             var json: [String: Any] = [
                 "version": 1,
                 "entity": entity.rawValue,
                 "entityId": id.uuidString,
-                "revision": revision,
+                entity == .transcript ? "syncRevision" : "revision": revision,
+                "formatVersion": 1,
                 "present": entity != .summary || itemCount > 0,
                 "count": body.count,
                 "byteCount": body.bytes,

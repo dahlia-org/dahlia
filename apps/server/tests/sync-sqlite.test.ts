@@ -241,10 +241,10 @@ describe("SQLite canonical sync", () => {
     const detail = async () => (await send(`vaults/${vaultId}/meetings/${meetingId}`)).json();
     const capabilities = await send("capabilities");
     expect(capabilities.status).toBe(200);
-    expect(await capabilities.json()).toEqual({ sync: { version: 3 }, recordingArchive: { version: 1 }, meetingEvents: { version: 1 }, search: { version: 1 } });
+    expect(await capabilities.json()).toEqual({ sync: { version: 4 }, recordingArchive: { version: 1 }, meetingEvents: { version: 1 }, search: { version: 1 } });
     const enabledApp = createApp({ config: testConfig(databasePath), authStore: store, imageAnalysisEnabled: true });
     expect(await (await enabledApp.request("http://localhost:5173/api/v1/capabilities", { headers: headers() })).json())
-      .toEqual({ sync: { version: 3 }, recordingArchive: { version: 1 }, meetingEvents: { version: 1 }, search: { version: 1 }, imageAnalysis: { version: 1 } });
+      .toEqual({ sync: { version: 4 }, recordingArchive: { version: 1 }, meetingEvents: { version: 1 }, search: { version: 1 }, imageAnalysis: { version: 1 } });
     expect((await send("sync-content")).status).toBe(404);
     const availability = vi.spyOn(store.sync, "isAvailable").mockResolvedValueOnce(false);
     const unsupported = await send("capabilities");
@@ -1124,7 +1124,7 @@ describe("SQLite canonical sync", () => {
       expect(JSON.stringify(page)).not.toContain("QuarterlyRevenue");
       expect(JSON.stringify(page)).not.toContain("Quarterly chart");
     }
-    expect((await send(new Request(`http://localhost:5173/api/v1/vaults/${vaultId}/text/file/${file.id}?revision=2`))).status).toBe(400);
+    expect((await send(new Request(`http://localhost:5173/api/v1/vaults/${vaultId}/text/file/${file.id}?revision=2`))).status).toBe(404);
     expect(await service.searchText(owner, vaultId, "QuarterlyRevenue", "screenshot")).toMatchObject({ items: [expect.anything()] });
     expect(await service.searchAll(owner, { vaultId, query: "QuarterlyRevenue", kind: "screenshot", limit: 1 }))
       .toMatchObject({ meetings: [], screenshots: [{ meetingId, fileId: file.id, snippet: expect.stringContaining("QuarterlyRevenue") as unknown }], limited: { screenshot: false } });
@@ -1818,8 +1818,8 @@ describe("SQLite canonical sync", () => {
       {
         segments: [{
           segmentId,
-          startTime: now,
-          endTime: null,
+          startedAt: now,
+          endedAt: null,
           text: "preview",
           isConfirmed: false,
           audioSource: "system",
@@ -1836,10 +1836,10 @@ describe("SQLite canonical sync", () => {
       chunkHash,
       [{
         segmentId,
-        startTime: now,
-        endTime: null,
+        startedAt: now,
+        endedAt: null,
         text: "original",
-        isConfirmed: true,
+        createdAt: null,
         audioSource: "system",
         speakerLabel: null,
       }],
@@ -1852,7 +1852,7 @@ describe("SQLite canonical sync", () => {
       entityId: meetingId,
       baseRevision: 0,
       data: {
-        patchId,
+        transcript: { id: patchId, startedAt: null, endedAt: null, metadata: null }, mode: "replace", patchId,
         segmentCount: 1,
         deletionCount: 0,
         chunks: [{ index: 0, sha256: chunkHash, segmentCount: 1, deletionCount: 0 }],
@@ -1902,10 +1902,10 @@ describe("SQLite canonical sync", () => {
     await service.putTranscriptChunk(owner, vaultId, meetingId, patchId, 0, chunkHash, {
       segments: [{
         segmentId,
-        startTime: now.toISOString(),
-        endTime: null,
+        startedAt: now.toISOString(),
+        endedAt: null,
         text: "staged",
-        isConfirmed: true,
+        createdAt: null,
         audioSource: "mic",
         speakerLabel: null,
       }],
@@ -1924,7 +1924,7 @@ describe("SQLite canonical sync", () => {
         entityId: meetingId,
         baseRevision: 99,
         data: {
-          patchId,
+          transcript: { id: patchId, startedAt: null, endedAt: null, metadata: null }, mode: "replace", patchId,
           segmentCount: 1,
           deletionCount: 0,
           chunks: [{ index: 0, sha256: chunkHash, segmentCount: 1, deletionCount: 0 }],

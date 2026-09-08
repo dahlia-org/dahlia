@@ -120,6 +120,16 @@ enum TextContentStore {
                     arguments: [id]
                 )
             }
+        } else if contentEntity == .transcript {
+            if let info = value.transcript {
+                let resident = try Row.fetchOne(db, sql: """
+                SELECT complete, residentRevision FROM sync_content_state WHERE entity = 'transcript' AND entityId = ?
+                """, arguments: [id])
+                // A stale body remains readable and editable with its own generation until hydration publishes both.
+                if resident?["complete"] as Bool? != true || resident?["residentRevision"] as Int? == info.syncRevision {
+                    try TranscriptRecord.applyCanonical(meetingId: id, info: info, in: db)
+                }
+            }
         } else if contentEntity == .file {
             try FileRecord.applyCanonical(id: id, vaultId: vaultId, value: value, in: db)
         }
@@ -137,7 +147,7 @@ enum TextContentStore {
                 sql: """
                 SELECT t.id, b.text
                 FROM transcript_segments t JOIN transcript_segment_bodies b ON b.segmentId = t.id
-                WHERE t.meetingId = ? AND t.isConfirmed = 1 ORDER BY t.startTime, t.id
+                WHERE t.meetingId = ? ORDER BY t.startedAt, t.id
                 """,
                 arguments: [id]
             )
@@ -166,7 +176,7 @@ enum TextContentStore {
         switch entity {
         case .transcript:
             try db.execute(
-                sql: "DELETE FROM transcript_segment_bodies WHERE segmentId IN (SELECT id FROM transcript_segments WHERE meetingId = ? AND isConfirmed = 1)",
+                sql: "DELETE FROM transcript_segment_bodies WHERE segmentId IN (SELECT id FROM transcript_segments WHERE meetingId = ?)",
                 arguments: [id]
             )
         case .summary:
@@ -199,6 +209,9 @@ enum TextContentStore {
     }
 
     static func markVerified(_ manifest: TextContentManifest, source: Source, accessed: Bool, in db: Database) throws {
+        if manifest.entity == .transcript, let info = manifest.transcript {
+            try TranscriptRecord.applyCanonical(meetingId: manifest.entityId, info: info, in: db)
+        }
         try db.execute(sql: """
         INSERT INTO sync_content_state(vaultId, entity, entityId, residentRevision, complete, present, contentCount, verifiedHash, byteCount, lastAccessedAt)
         VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?)

@@ -60,6 +60,7 @@ struct SyncTranscriptPatchSegment: Sendable {
     let endTime: Date?
     let text: String
     let isConfirmed: Bool
+    let createdAt: Date?
     let audioSource: String?
     let speakerLabel: String?
 
@@ -69,6 +70,7 @@ struct SyncTranscriptPatchSegment: Sendable {
         endTime = record.endTime
         text = record.text
         isConfirmed = record.isConfirmed
+        createdAt = record.createdAt
         audioSource = record.audioSource
         speakerLabel = record.speakerLabel
     }
@@ -153,6 +155,7 @@ struct SyncCanonicalPayload: Codable, Sendable {
     var contentCount: Int?
     var hasSummary: Bool?
     var transcriptRevision: Int?
+    var transcript: TranscriptInfo?
     let parentProjectId: UUID?
     let projectId: UUID?
     let meetingId: UUID?
@@ -181,7 +184,7 @@ struct SyncCanonicalPayload: Codable, Sendable {
     var audio: [String: RecordingArchivedAudio]?
 
     enum CodingKeys: String, CodingKey {
-        case contentOmitted, contentPresent, contentCount, hasSummary, transcriptRevision
+        case contentOmitted, contentPresent, contentCount, hasSummary, transcriptRevision, transcript
         case parentProjectId, projectId, meetingId, name, description, projectType, status, duration, recordingStartedAt
         case createdAt, updatedAt, title, document, capturedAt, fileId, sessionId, uri, offset, size, checksum, metadata
         case recordingNumber
@@ -298,6 +301,7 @@ enum SyncTransactionRecorder {
             operation.entity != .transcript || operation.action != .patch
                 || !confirmedSegments[operation.id, default: []].isEmpty
                 || !transcriptDeletions[operation.id, default: []].isEmpty
+                || operation.payloadJSON != nil
         }
         guard !operations.isEmpty else { return nil }
         guard Set(operations.map { "\($0.entity.rawValue):\($0.entityId.uuidString)" }).count == operations.count else {
@@ -430,12 +434,12 @@ enum SyncTransactionRecorder {
                     sql: """
                     INSERT INTO sync_transcript_patch_items(
                         operationId, position, action, segmentId, startTime, endTime, text,
-                        isConfirmed, audioSource, speakerLabel
-                    ) VALUES (?, ?, 'upsert', ?, ?, ?, ?, ?, ?, ?)
+                        isConfirmed, audioSource, speakerLabel, createdAt
+                    ) VALUES (?, ?, 'upsert', ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     arguments: [
                         operation.id, patchPosition, segment.segmentId, segment.startTime, segment.endTime,
-                        segment.text, segment.isConfirmed, segment.audioSource, segment.speakerLabel,
+                        segment.text, segment.isConfirmed, segment.audioSource, segment.speakerLabel, segment.createdAt,
                     ]
                 )
                 patchPosition += 1
@@ -791,7 +795,11 @@ enum SyncTransactionQueue {
             try FileRecord.applyCanonical(id: id, vaultId: vaultId, value: value, in: db)
         case .meetingFile:
             try MeetingFileRecord.applyCanonical(id: id, vaultId: vaultId, value: value, in: db)
-        case .transcript, .meetingEvent:
+        case .transcript:
+            if let info = value.transcript {
+                try TranscriptRecord.applyCanonical(meetingId: id, info: info, in: db)
+            }
+        case .meetingEvent:
             break
         }
     }
@@ -920,9 +928,11 @@ enum SyncTransactionQueue {
         }
     }
 
-    static func transcriptPatch(operationId: UUID, dbQueue: DatabaseQueue) async throws -> SyncTranscriptPatchSnapshot {
+    static func transcriptPatch(
+        operationId: UUID, fromPosition: Int = 0, limit: Int? = nil, dbQueue: DatabaseQueue
+    ) async throws -> SyncTranscriptPatchSnapshot {
         try await dbQueue.read { db in
-            try loadPatch(operationId: operationId, in: db)
+            try loadPatch(operationId: operationId, fromPosition: fromPosition, limit: limit, in: db)
         }
     }
 
@@ -1100,6 +1110,11 @@ enum SyncTransactionQueue {
                 arguments: [vaultId, sequence]
             )
             var queued: [RequeuedTransaction] = []
+            let transcriptMeetings = try UUID.fetchAll(db, sql: """
+            SELECT DISTINCT o.entityId FROM sync_operations o
+            JOIN sync_transactions t ON t.id = o.transactionId JOIN meetings m ON m.id = o.entityId
+            WHERE t.vaultId = ? AND t.sequence >= ? AND o.entity = 'transcript' ORDER BY o.entityId
+            """, arguments: [vaultId, sequence])
             let projectOperations = try missingProjectOperations(missingProjects, in: db)
             if !projectOperations.isEmpty {
                 queued.append(.init(operations: projectOperations, segments: [:], deletions: [:], attachments: [:]))
@@ -1119,7 +1134,7 @@ enum SyncTransactionQueue {
                     sql: """
                     SELECT id, entity, action, entityId, payloadJSON,
                         attachmentMimeType, attachmentSHA256, attachmentReference
-                    FROM sync_operations WHERE transactionId = ? ORDER BY position
+                    FROM sync_operations WHERE transactionId = ? AND entity <> 'transcript' ORDER BY position
                     """,
                     arguments: [transactionId]
                 )
@@ -1194,6 +1209,7 @@ enum SyncTransactionQueue {
                     in: db
                 )
             }
+            try TranscriptRecord.reapplySnapshots(meetingIds: transcriptMeetings, in: db)
             return false
         }
         if rebuildVault {
@@ -1231,11 +1247,13 @@ enum SyncTransactionQueue {
         }.map(\.1)
     }
 
-    private static func loadPatch(operationId: UUID, in db: Database) throws -> SyncTranscriptPatchSnapshot {
+    private static func loadPatch(
+        operationId: UUID, fromPosition: Int = 0, limit: Int? = nil, in db: Database
+    ) throws -> SyncTranscriptPatchSnapshot {
         let rows = try Row.fetchAll(
             db,
-            sql: "SELECT * FROM sync_transcript_patch_items WHERE operationId = ? ORDER BY position",
-            arguments: [operationId]
+            sql: "SELECT * FROM sync_transcript_patch_items WHERE operationId = ? AND position >= ? ORDER BY position LIMIT ?",
+            arguments: [operationId, fromPosition, limit ?? -1]
         )
         var segments: [SyncTranscriptPatchSegment] = []
         var deletions: [UUID] = []
@@ -1250,7 +1268,8 @@ enum SyncTransactionQueue {
                     text: row["text"],
                     isConfirmed: row["isConfirmed"],
                     audioSource: row["audioSource"],
-                    speakerLabel: row["speakerLabel"]
+                    speakerLabel: row["speakerLabel"],
+                    createdAt: row["createdAt"]
                 ))
             }
         }
@@ -1361,8 +1380,10 @@ private extension SyncTranscriptPatchSegment {
         text: String,
         isConfirmed: Bool,
         audioSource: String?,
-        speakerLabel: String?
+        speakerLabel: String?,
+        createdAt: Date?
     ) {
+        self.createdAt = createdAt
         self.segmentId = segmentId
         self.startTime = startTime
         self.endTime = endTime
