@@ -1140,6 +1140,16 @@ function createIdentityStore(
               serverRevision: (await canonicalRecord("vault", transaction.vaultId, operation.entityId)).revision,
               record: (await canonicalRecord("vault", transaction.vaultId, operation.entityId)).record,
             }], operation.id);
+            // Permission metadata remains visible when PostgreSQL RLS hides the Vault.
+            const [owner] = await db.select({ id: schema.syncedVaultPermission.principalId })
+              .from(schema.syncedVaultPermission).where(and(
+                eq(schema.syncedVaultPermission.vaultId, transaction.vaultId),
+                eq(schema.syncedVaultPermission.role, "owner"),
+                eq(schema.syncedVaultPermission.principalType, "user"),
+              )).limit(1);
+            if (owner && owner.id !== userPrincipalId) {
+              throw new SyncTransactionError(404, "vault_not_found", [], operation.id);
+            }
             await db.insert(schema.syncedVault).values({
               vaultId: transaction.vaultId,
               name: String(data.name),

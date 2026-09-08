@@ -460,8 +460,9 @@ integration("PostgreSQL application store", () => {
       const before = await store.sync.withIdentity(owner, async (sync) => ({
         vault: await sync.getVault(vaultId), cursor: await sync.latestChangeSequence(vaultId),
       }));
-      // Without sharing RLS hides the existing Vault and rejects the duplicate insert.
-      await expect(store.sync.withIdentity(member, (sync) => sync.commitTransaction(restore))).rejects.toThrow();
+      // RLS-hidden Vaults must fail with a non-retryable authorization error, not a raw constraint error.
+      await expect(store.sync.withIdentity(member, (sync) => sync.commitTransaction(restore)))
+        .rejects.toMatchObject({ status: 404, code: "vault_not_found", conflicts: [], operationId: restore.operations[0]!.id });
       await store.sync.withIdentity(owner, (sync) => sync.putMemberPermission(vaultId, "organization", "external"));
       await expect(store.sync.withIdentity(member, (sync) => sync.commitTransaction(restore)))
         .rejects.toMatchObject({ status: 404, code: "vault_not_found", conflicts: [] });
