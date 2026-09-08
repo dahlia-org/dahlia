@@ -14,7 +14,6 @@ describe("model display names", () => {
     ["gpt-5-6-luna", "GPT 5.6 Luna"],
     ["gpt-5.6-luna", "GPT 5.6 Luna"],
     ["kimi-k3", "Kimi K3"],
-    ["deepseek-v4-pro", "DeepSeek V4 Pro"],
     ["deepseek-v4-pro-0813", "DeepSeek V4 Pro"],
     ["glm-5-3-flash", "GLM 5.3 Flash"],
     ["glm-5-3", "GLM 5.3"],
@@ -69,6 +68,7 @@ describe("Codex model availability", () => {
 
   it("validates the provider catalog and keeps unavailable models hidden", () => {
     const slugs = catalog.models.map(({ slug }) => slug);
+    expect(slugs).not.toContain("deepseek-v4-pro");
     expect(new Set(slugs).size).toBe(slugs.length);
     const empty = modelList([]);
     expect(empty.data).toEqual([]);
@@ -88,7 +88,7 @@ describe("Codex model availability", () => {
 
   it.each([
     ["glm-5-3", "gpt-5.6-sol"], ["glm-5-3-flash", "gpt-5.6-luna"],
-    ["kimi-k3", "gpt-5.6-sol"], ["deepseek-v4-pro", "gpt-5.6-sol"],
+    ["kimi-k3", "gpt-5.6-sol"],
     ["deepseek-v4-pro-0813", "gpt-5.6-sol"],
     ["gemini-3-8-flash", "gpt-5.6-luna"], ["gemini-3-7-flash", "gpt-5.6-luna"],
   ])("expands runtime parameters and an independent description for %s", (slug, referenceSlug) => {
@@ -102,7 +102,8 @@ describe("Codex model availability", () => {
     expect(model.description).toBeTruthy();
     expect(model.description).not.toBe(reference.description);
     expect(model.model_messages?.instructions_template).toBe(reference.model_messages.instructions_template.replace("an agent based on GPT-5", "a coding agent"));
-    expect(model.input_modalities).toEqual(slug === "glm-5-3" || slug.startsWith("deepseek-") ? ["text"] : ["text", "image"]);
+    expect(model.input_modalities).toEqual(slug.startsWith("gemini-") ? ["text", "image", "audio"]
+      : slug === "glm-5-3" || slug.startsWith("deepseek-") ? ["text"] : ["text", "image"]);
   });
 
   it.each(["gemini-3-8-flash", "gemini-3-7-flash"])("defines Gemini reasoning separately for %s", (slug) => {
@@ -132,7 +133,7 @@ describe("Codex model availability", () => {
   });
 
   it("exposes catalog entries, supported fallback families, and the review alias to Codex", () => {
-    const supported = ["gpt-5.6-luna", "gpt-future", "glm-5-3", "kimi-k3", "deepseek-v4-pro", "gemini-3-8-flash", "gemini-3-7-flash", "codex-auto-review"];
+    const supported = ["gpt-5.6-luna", "gpt-future", "glm-5-3", "kimi-k3", "deepseek-v4-pro-0813", "gemini-3-8-flash", "gemini-3-7-flash", "codex-auto-review"];
     const excluded = ["gemini-unknown", "claude-opus", "custom", "gpt", "not-gpt-5", "system.ai.gpt-5-4-mini"];
     const list = modelList([...supported, ...excluded].map((id) => ({ id })));
     expect(list.data.map((model) => model.id)).toEqual([...supported, ...excluded]);
@@ -140,7 +141,7 @@ describe("Codex model availability", () => {
     for (const id of excluded) expect(list.models.some((model) => model.slug === id)).toBe(false);
   });
 
-  it.each(["glm-5-3", "kimi-k3", "deepseek-v4-pro"])("omits none from OSS reasoning efforts for %s", (id) => {
+  it.each(["glm-5-3", "kimi-k3", "deepseek-v4-pro-0813"])("omits none from OSS reasoning efforts for %s", (id) => {
     const model = modelList([{ id }]).models.find((model) => model.slug === id);
     expect(model?.supported_reasoning_levels.map((level) => level.effort)).toEqual(["low", "high", "max"]);
     expect(model?.default_reasoning_level).toBe("max");

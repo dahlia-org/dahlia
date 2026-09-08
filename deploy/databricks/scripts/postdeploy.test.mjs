@@ -62,7 +62,7 @@ if (command === "list-model-services") {
     assert.match(resumed.stdout, /Keeping existing model service: model-services\/test_catalog.ai.gpt-5-6-luna/);
     assert.equal(JSON.parse(readFileSync(state, "utf8")).length, 12);
     for (const [name, source] of [
-      ["deepseek-v4-pro", "deepseek-v4-pro-0813"],
+      ["deepseek-v4-pro-0813", "deepseek-v4-pro-0813"],
       ["glm-5-3-flash", "glm-5-3-flash"],
       ["glm-5-3", "glm-5-3"],
       ["gemini-3-8-flash", "gemini-3-8-flash"],
@@ -74,6 +74,7 @@ if (command === "list-model-services") {
       const config = JSON.parse(call[call.indexOf("--json") + 1]);
       assert.equal(config.config.routing.destinations[0].pay_per_token_config.model, `models/system.ai.${source}`);
     }
+    assert.equal(readCalls().some(args => args[1] === "create-model-service" && args[3] === "deepseek-v4-pro"), false);
     assert.ok(readCalls().every(args => args[args.indexOf("--profile") + 1] === "test-profile"));
 
     writeFileSync(calls, "");

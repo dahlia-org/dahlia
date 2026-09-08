@@ -36,7 +36,6 @@ const descriptions = {
   "glm-5-3": "Open-weight model for complex coding and long-running agent tasks.",
   "glm-5-3-flash": "Efficient multimodal model for coding, agents, and long-context tasks.",
   "kimi-k3": "Multimodal flagship for long-running coding, knowledge work, and reasoning.",
-  "deepseek-v4-pro": "Flagship model with enhanced agent capabilities, Responses API support, and Codex integration.",
   "deepseek-v4-pro-0813": "Flagship model with enhanced agent capabilities, Responses API support, and Codex integration.",
   "gemini-3-8-flash": "Flash model for extended software engineering, autonomous agents, and complex enterprise tasks.",
   "gemini-3-7-flash": "Workhorse model for coding and agents, with improved debugging and issue resolution.",
@@ -51,7 +50,6 @@ for (const [slug, displayName, levels, defaultLevel] of [
   ["glm-5-3", "GLM 5.3", ["low", "high", "max"], "max"],
   ["glm-5-3-flash", "GLM 5.3 Flash", ["low", "high", "max"], "max"],
   ["kimi-k3", "Kimi K3", ["low", "high", "max"], "max"],
-  ["deepseek-v4-pro", "DeepSeek V4 Pro", ["low", "high", "max"], "max"],
   ["deepseek-v4-pro-0813", "DeepSeek V4 Pro", ["low", "high", "max"], "max"],
   ["gemini-3-8-flash", "Gemini 3.8 Flash", ["low", "medium", "high"], "medium"],
   ["gemini-3-7-flash", "Gemini 3.7 Flash", ["low", "medium", "high"], "medium"],
@@ -66,6 +64,8 @@ for (const [slug, displayName, levels, defaultLevel] of [
       instructions_template: reference.model_messages.instructions_template.replace("an agent based on GPT-5", "a coding agent"),
     },
     input_modalities: slug === "glm-5-3" || slug.startsWith("deepseek-") ? ["text"] : ["text", "image"],
+    // Codex 0.153.4 accepts text, image, and audio; video is not a valid enum value.
+    ...(slug.startsWith("gemini-") ? { input_modalities: ["text", "image", "audio"] } : {}),
     default_reasoning_level: defaultLevel,
     supported_reasoning_levels: levels.map((effort) => ({ effort, description: efforts[effort] })),
   });
