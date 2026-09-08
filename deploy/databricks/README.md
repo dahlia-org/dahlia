@@ -31,7 +31,7 @@ Dahlia Desktop requests `all-apis` when authorizing against a deployed Databrick
 
 The default App names are `dahlia-dev` for `dev` and `dahlia-prod` for `prod`. The corresponding Lakebase project IDs are `dahlia-db-dev` and `dahlia-db`. By default, both targets use the managed Volume `dahlia.app.storage`. Choose the deployment environment by overriding `catalog`; override `app_schema` only when a catalog needs more than one Dahlia Server installation. Explicit Vault sharing is enabled for the private `dev` target and remains disabled by default elsewhere. The postdeploy script registers `codex-auto-review` backed by `system.ai.gpt-5-6-luna`; manage its destination in Databricks. The bundle sets `DAHLIA_EMBEDDING_MODEL` to `${var.catalog}.${var.ai_schema}.embedding` at 1024 dimensions and `DAHLIA_CAPTIONING_MODEL` to `${var.catalog}.${var.ai_schema}.gpt-5-6-luna`. Postdeploy registers `embedding` backed by `qwen3-embedding-0-6b` only when absent and reuses the existing `gpt-5-6-luna` registration for captions. Existing model registrations are never overwritten. To disable a worker, remove its model environment value from the App resource.
 
-The bundle syncs only the self-contained `apps/server` package. Its package manifest, pnpm lockfile, runtime configuration, and source are deployed without repository-root pnpm files.
+The bundle syncs the self-contained `apps/server` package and the setup notebooks in `deploy/databricks/notebooks`. The Server package manifest, pnpm lockfile, runtime configuration, and source are deployed without repository-root pnpm files.
 
 ## Validate and deploy
 
@@ -66,6 +66,54 @@ The postdeploy regression check uses a fake CLI and does not access a workspace:
 ```bash
 node --test scripts/postdeploy.test.mjs
 ```
+
+## OTel tables
+
+The bundle creates `${catalog}.${ops_schema}` (default `dahlia.ops`). Production
+protects this schema with `lifecycle.prevent_destroy: true`. If the schema already
+exists outside this bundle, bind the `ops_schema` resource before deployment.
+Deployments sharing a catalog must use a single schema owner/bundle arrangement.
+
+After deployment, manually run the unscheduled `create_otel_tables` job. It uses
+one SQL notebook on serverless Jobs compute; no SQL warehouse or additional
+libraries are required. The workspace must support serverless notebooks. The
+deployment principal needs `USE CATALOG` and `CREATE SCHEMA` on the catalog; the
+job's run-as principal needs `USE CATALOG`, `USE SCHEMA`, and `CREATE TABLE` on the
+destination schema (or equivalent ownership).
+
+Run these commands from `deploy/databricks`, using the same profile, target and
+variable overrides for deployment and execution:
+
+```bash
+databricks bundle validate --strict -t dev -p <profile> --var catalog=dahlia_dev,ops_schema=ops
+node scripts/check-notebook-sync.mjs -t dev -p <profile>
+databricks bundle deploy -t dev -p <profile> --var catalog=dahlia_dev,ops_schema=ops
+databricks bundle run create_otel_tables -t dev -p <profile> --var catalog=dahlia_dev,ops_schema=ops
+```
+
+The sync check uses an authenticated CLI dry-run to confirm the SQL notebook is
+included in uploads; it does not modify workspace files.
+
+Use `-t prod` and the production catalog for production. Deployment only creates
+the schema and job; postdeploy does not run this job. The job creates managed
+Delta tables `dahlia_otel_spans`, `dahlia_otel_logs`, and `dahlia_otel_metrics` using
+the [official Zerobus OTLP v2 definitions](https://docs.databricks.com/aws/en/ingestion/opentelemetry/configure),
+including clustering, `otel.schemaVersion=v2` and `delta.checkpointPolicy=classic`.
+Optional Variant shredding is not enabled.
+
+Each statement uses `CREATE TABLE IF NOT EXISTS`: reruns preserve existing tables
+and data, including after partial failure. Existing table definitions are not
+validated or migrated by the job. SQL errors fail the run. Verify the first run
+with `DESCRIBE TABLE EXTENDED` and `SHOW TBLPROPERTIES` for all three tables,
+comparing columns/types and clustering with the linked definitions. In a test
+catalog, insert a synthetic row, rerun the job and confirm that row remains;
+repeat with a different `ops_schema` override to verify destination selection.
+
+Before sending OTLP, separately grant the sending service principal `USE CATALOG`,
+`USE SCHEMA`, and explicit `SELECT` and `MODIFY` on each table. Configure each
+signal's `x-databricks-zerobus-table-name` header with its fully qualified table
+name. This setup does not create credentials, grant sender access, configure a
+Collector, or enable telemetry emission.
 
 ## Initial AI models
 
