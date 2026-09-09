@@ -1315,9 +1315,7 @@ function OrganizationDetails({ organization, session }: { organization: Organiza
                 {canManage && (
                   <div className="row-actions">
                     <button className="secondary" onClick={() => renameTeam(team)}>{uiText("Rename", "名前を変更")}</button>
-                    {teams.length > 1 && (session.capabilities.sessions || team.id !== "external-default") && (
-                      <button className="secondary danger-button" onClick={() => deleteTeam(team)}>{uiText("Delete", "削除")}</button>
-                    )}
+                    <button className="secondary danger-button" onClick={() => deleteTeam(team)}>{uiText("Delete", "削除")}</button>
                   </div>
                 )}
               </div>
@@ -1326,8 +1324,7 @@ function OrganizationDetails({ organization, session }: { organization: Organiza
                   <span><strong>{member.user.name || member.user.email}</strong><small>{member.user.email}</small></span>
                   <input
                     type="checkbox"
-                    disabled={!canManage || (!session.capabilities.sessions
-                      && team.id === "external-default" && member.userId === session.user.id)}
+                    disabled={!canManage}
                     checked={teamMemberIds[team.id]?.has(member.userId) === true}
                     onChange={(event) => void setTeamMember(team, member.userId, event.target.checked)}
                   />

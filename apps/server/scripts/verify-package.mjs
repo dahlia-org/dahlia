@@ -144,7 +144,7 @@ try {
     if (database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'artifact'").get()) throw new Error("Retired Artifact table remains");
     database.close();
     await store.close?.();
-    if (applied.length !== serverMigrationManifest.sqlite.files.length || applied.at(-1)?.name !== "20260909134100_runtime_support") {
+    if (applied.length !== serverMigrationManifest.sqlite.files.length || applied.at(-1)?.name !== serverMigrationManifest.sqlite.files.at(-1).split("/").at(-2)) {
       throw new Error("Installed package migrations did not run from the package directory");
     }
   `);

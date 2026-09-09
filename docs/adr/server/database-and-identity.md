@@ -81,3 +81,9 @@ FORCE RLS は backfill transaction 内だけ解除し commit 前に復元する�
 `recordings` は `meeting_id` を外部キーとし、Vault は親会議から導出する。PostgreSQL RLS と共通 store の認可をともに親会議経由にし、API の `vaultId` は維持する。`meeting_events.vault_id` は会議削除後の履歴認可のため、`meeting_files.vault_id` は同一 Vault の複合外部キー制約のため維持する。
 
 コンテンツ世代は `version`、同期・更新検出は `revision` とする。`account_settings.change_version` は `revision` に改名するが、項目単位の更新方法は維持し、CAS 必須にはしない。処理世代の generation、録音 UUID、解析方式・通信形式のバージョンは別概念として扱う。
+
+## 既定組織の初期化記録（2026-09-10）
+
+accounts mode の既定組織は、組織・ユーザーに外部キーを持たない `server_initializations` の `default_organization` 行で一度だけ初期化する。記録、組織、初期 owner を同じ PostgreSQL / SQLite transaction または D1 batch で保存し、明示的な組織削除後も記録を残す。forward migration は既存の `external` 組織を記録し、名前・所有権・membership を変更しない。
+
+この table は処理名と初期化日時だけの運用 metadata として RLS 対象外とし、認証 store 以外へ公開しない。header mode の JIT projection は従来どおり維持する。
