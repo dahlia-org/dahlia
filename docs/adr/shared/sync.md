@@ -27,7 +27,8 @@ transcript の収録経路は `audio_source: mic | system`、人・diarization �
 - local mutation は recorder を明示的に呼び、remote applier は呼ばない。receipt 反映時は新しい optimistic operation を上書きせず、confirmed revision と commit cursor の保存後に acknowledge 済み transaction を削除する。
 - validation、revision conflict、authorization、transport failure は別状態で永続化する。自動 retry は transport error、408、425、429、5xx のみ。blocked transaction は同じ Vault の後続も止める。
 
-worker は録音中も push / pull できるが、transcript patch は確定済み segment だけを queue に入れる。初期 snapshot は bounded SQLite write で録音へ実行機会を譲り、構築中に録音や別 mutation が始まれば未送信の部分 snapshot を捨てて最新 working copy から再構築する。
+worker は録音中も push / pull できるが、transcript patch は確定済み segment だけを queue に入れる。初期 snapshot は bounded SQLite write で録音へ実行機会を譲り、構築中に対象 Vault の録音や別 mutation が始まれば未送信の部分 snapshot を捨てて最新 working copy から再構築する。
+録音による初期同期・復旧・本文置換の待機は対象 Vault 内だけで判定する。移動の反映では移動元と移動先を確認する。別の Local / Server Vault の録音には依存せず、録音待ちの Vault があっても他の Vault の初期 snapshot 構築を続ける。
 初期 snapshot の原本取得が失敗した場合はその Vault のローカルデータを保持して失敗を報告し、他の Vault の snapshot 構築・送信・受信は続ける。明示的な競合解決では呼び出し元へ取得失敗を返す。
 
 ## 会議イベントと録音セッションの表示

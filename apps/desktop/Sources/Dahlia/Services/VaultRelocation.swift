@@ -56,9 +56,9 @@ struct VaultRelocation: Decodable, Sendable {
             if let existing = try VaultRecord.fetchOne(db, key: id), existing.accountConnectionId != connectionId {
                 throw SyncTransactionQueueError.invalidReceipt
             }
-        }
-        if try Bool.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 FROM recording_sessions WHERE endedAt IS NULL)") == true {
-            throw SyncHTTPError(status: 409, body: Data("{\"error\":\"transfer_recording_active\"}".utf8))
+            if try RecordingSessionRecord.hasActiveRecording(vaultId: id, in: db) {
+                throw SyncHTTPError(status: 409, body: Data("{\"error\":\"transfer_recording_active\"}".utf8))
+            }
         }
         for vault in vaults where affected.contains(vault.vaultId) {
             if try VaultRecord.fetchOne(db, key: vault.vaultId) == nil {
