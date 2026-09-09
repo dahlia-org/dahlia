@@ -1986,6 +1986,23 @@ enum L10n { // swiftlint:disable:this type_body_length
     }
 
     static var comingSoon: String { String(localized: "Coming Soon", bundle: bundle) }
+    static var startupPreparing: String { String(localized: "Preparing to Open…", bundle: bundle) }
+    static var startupRestoring: String { String(localized: "Restoring Backup…", bundle: bundle) }
+    static var startupUpdating: String { String(localized: "Updating Data…", bundle: bundle) }
+    static var startupWait: String { String(localized: "Dahlia will open when preparation is complete.", bundle: bundle) }
+    static var startupDataWait: String { String(
+        localized: "This may take some time depending on the amount of data. Please keep Dahlia open until it finishes.",
+        bundle: bundle
+    ) }
+    static var startupFailed: String { String(localized: "Dahlia Could Not Open", bundle: bundle) }
+    static var startupRestoreFailed: String { String(localized: "Backup Restore Needs Attention", bundle: bundle) }
+    static var startupFailureHelp: String { String(localized: "Quit Dahlia and check the details below before opening it again.", bundle: bundle) }
+    static var startupRestoreFailureHelp: String { String(
+        localized: "Some data could not be restored. You can continue with the available data and review the result in Backup settings.",
+        bundle: bundle
+    ) }
+    static var startupQuit: String { String(localized: "Quit Dahlia", bundle: bundle) }
+
     static var loadingVaults: String { String(localized: "Loading Vaults…", bundle: bundle) }
     static var removingVault: String { String(localized: "Removing Vault…", bundle: bundle) }
     static var vaultSyncConflict: String { String(localized: "Sync conflict", bundle: bundle) }

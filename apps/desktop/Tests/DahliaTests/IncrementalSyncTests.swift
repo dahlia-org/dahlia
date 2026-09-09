@@ -33,7 +33,7 @@
                 revision: 2,
                 fields: ["name": "Server", "createdAt": "2026-09-09T00:00:00Z"]
             )
-            let first = try page([.init(
+            let first = try page(vaultId: fixture.vaultId, [.init(
                 sequence: 2,
                 entity: .vault,
                 entityId: fixture.vaultId,
@@ -41,7 +41,7 @@
                 revision: 2,
                 record: vault.record
             )], cursor: "middle", more: true)
-            let last = try page([.init(
+            let last = try page(vaultId: fixture.vaultId, [.init(
                 sequence: 3,
                 entity: .meeting,
                 entityId: fixture.meetingId,
@@ -50,7 +50,14 @@
                 record: nil
             )], cursor: "after")
             let relocation = try JSONSerialization.data(withJSONObject: [
-                "vaults": [["vaultId": destination.uuidString, "name": "Moved", "createdAt": "2026-09-09T00:00:00Z", "role": "owner"]],
+                "vaults": [[
+                    "vaultId": destination.uuidString,
+                    "name": "Moved",
+                    "createdAt": "2026-09-09T00:00:00Z",
+                    "updatedAt": "2026-09-09T00:00:00Z",
+                    "revision": 1,
+                    "role": "owner",
+                ]],
                 "items": [
                     ["entity": "meeting", "id": fixture.meetingId.uuidString, "vaultId": destination.uuidString],
                     ["entity": "file", "id": fixture.fileId.uuidString, "vaultId": destination.uuidString],
@@ -175,7 +182,14 @@
             let transactionId = try await fixture.queue.read { try #require(try UUID.fetchOne($0, sql: "SELECT id FROM sync_transactions")) }
             let destination = UUID.v7()
             let relocation = try JSONSerialization.data(withJSONObject: [
-                "vaults": [["vaultId": destination.uuidString, "name": "Moved", "createdAt": "2026-09-09T00:00:00Z", "role": "owner"]],
+                "vaults": [[
+                    "vaultId": destination.uuidString,
+                    "name": "Moved",
+                    "createdAt": "2026-09-09T00:00:00Z",
+                    "updatedAt": "2026-09-09T00:00:00Z",
+                    "revision": 1,
+                    "role": "owner",
+                ]],
                 "items": [["entity": "meeting", "id": fixture.meetingId.uuidString, "vaultId": destination.uuidString]],
             ])
             let receipt = try JSONSerialization.data(withJSONObject: [
@@ -183,7 +197,7 @@
                 "records": [["entity": "file", "id": fixture.fileId.uuidString, "revision": 2, "record": NSNull()]],
             ])
             let requests = Mutex<[String]>([])
-            let changes = try page([], cursor: "before")
+            let changes = try page(vaultId: fixture.vaultId, [], cursor: "before")
             let client = fixture.client { request in
                 let path = request.url!.path
                 requests.withLock { $0.append(path) }
@@ -243,7 +257,7 @@
                 "id": transactionId.uuidString, "status": "committed", "cursor": "after",
                 "records": [["entity": "vault", "id": healthy.uuidString, "revision": 2, "record": NSNull()]],
             ])
-            let changes = try page([], cursor: "before")
+            let changes = try page(vaultId: fixture.vaultId, [], cursor: "before")
             let healthyPulls = Mutex(0)
             let paths = Mutex<[String]>([])
             let client = fixture.client { request in
@@ -253,8 +267,8 @@
                     return (200, [:], Data("{\"sync\":{\"version\":4},\"vaultTransfers\":{\"version\":1}}".utf8))
                 }
                 if path.contains(fixture.vaultId.uuidString.lowercased()) {
-                    if path.hasSuffix("/relocations") { return (403, [:], Data("{\"error\":\"transfer_access_required\"}".utf8)) }
-                    return (404, [:], Data("{\"error\":\"vault_not_found\"}".utf8))
+                    if path.hasSuffix("/relocations") { return (403, [:], Data("{\"code\":\"transfer_access_required\"}".utf8)) }
+                    return (404, [:], Data("{\"code\":\"vault_not_found\"}".utf8))
                 }
                 if path.hasSuffix("/changes") {
                     healthyPulls.withLock { $0 += 1 }
@@ -291,7 +305,7 @@
             defer { stream.close() }
             var body = Data()
             var buffer = [UInt8](repeating: 0, count: 4096)
-            while stream.hasBytesAvailable {
+            while true {
                 let count = stream.read(&buffer, maxLength: buffer.count)
                 if count <= 0 { break }
                 body.append(contentsOf: buffer.prefix(count))
@@ -306,8 +320,8 @@
             let transcript = try fixture.change(.transcript, id: fixture.meetingId, revision: 2, fields: [
                 "contentOmitted": true, "contentPresent": true, "contentCount": 1,
             ])
-            let first = try page([transcript], cursor: "middle", more: true)
-            let second = try page([fixture.fileChange(revision: 2)], cursor: "after")
+            let first = try page(vaultId: fixture.vaultId, [transcript], cursor: "middle", more: true)
+            let second = try page(vaultId: fixture.vaultId, [fixture.fileChange(revision: 2)], cursor: "after")
             let cursors = Mutex<[String]>([])
             let client = fixture.client { request in
                 if request.url!.path.hasSuffix("capabilities") { return (
@@ -364,7 +378,7 @@
                 }
             }
             let other = UUID.v7()
-            let changes = try page([
+            let changes = try page(vaultId: fixture.vaultId, [
                 fixture.fileChange(revision: 2),
                 fixture.change(.meeting, id: other, revision: 1, fields: [
                     "name": "Other meeting", "status": "READY", "createdAt": "2026-09-07T00:00:00Z", "updatedAt": "2026-09-07T00:00:00Z",
@@ -396,7 +410,7 @@
             let fixture = try Fixture()
             if boundary == "ack" { try await fixture.queueFile() }
             let gate = Gate()
-            let changes = try page([fixture.fileChange(revision: 2, action: "delete")], cursor: "after")
+            let changes = try page(vaultId: fixture.vaultId, [fixture.fileChange(revision: 2, action: "delete")], cursor: "after")
             var client = fixture.client { request in
                 (
                     200,
@@ -506,8 +520,8 @@
             try await fixture.queue.write { db in try db.execute(sql: "UPDATE sync_entity_state SET confirmedRevision = 3 WHERE entity = 'file'") }
             if recording { try await fixture.queueTranscript(recording: true) }
             let file = try fixture.fileChange(revision: 1)
-            let lower = try page([file], cursor: "after")
-            let empty = try page([], cursor: "after")
+            let lower = try page(vaultId: fixture.vaultId, [file], cursor: "after")
+            let empty = try page(vaultId: fixture.vaultId, [], cursor: "after")
             let meeting = try fixture.change(.meeting, id: fixture.meetingId, revision: 1, fields: [
                 "name": "Restored", "status": "READY", "createdAt": "2026-09-07T00:00:00Z", "updatedAt": "2026-09-07T00:00:00Z",
                 "contentOmitted": true, "hasSummary": false, "contentCount": 0,
@@ -515,7 +529,7 @@
             let link = try fixture.change(.meetingFile, id: fixture.fileId, revision: 1, fields: [
                 "meetingId": fixture.meetingId.uuidString, "fileId": fixture.fileId.uuidString, "createdAt": "2026-09-07T00:00:00Z",
             ])
-            let records = try #require(JSONSerialization.jsonObject(with: SyncJSON.encoder.encode([meeting, file, link])) as? [[String: Any]])
+            let records = try [meeting, file, link].map { try wireChange($0, vaultId: fixture.vaultId) }
             let snapshot = try JSONSerialization.data(withJSONObject: [
                 "items": records.map { row in var value = row
                     value["id"] = value.removeValue(forKey: "entityId")
@@ -563,10 +577,10 @@
                 try db.execute(sql: "INSERT INTO sync_entity_state VALUES (?, 'project', ?, 1)", arguments: [fixture.vaultId, projectId])
             }
             let fields: [String: Any] = [
-                "projectId": projectId.uuidString, "name": "Recreated", "description": "",
+                "projectId": projectId.uuidString, "vaultId": fixture.vaultId.uuidString, "name": "Recreated", "description": "",
                 "projectType": "undefined", "revision": 1, "createdAt": "2026-09-07T00:00:00Z",
             ]
-            let changes = try page([fixture.change(.project, id: projectId, revision: 1, fields: fields)], cursor: "after")
+            let changes = try page(vaultId: fixture.vaultId, [fixture.change(.project, id: projectId, revision: 1, fields: fields)], cursor: "after")
             let projects = try JSONSerialization.data(withJSONObject: ["items": [fields]])
             let snapshots = Mutex(0)
             let client = fixture.client { request in
@@ -598,12 +612,12 @@
             let fixture = try Fixture()
             let meetingId = UUID.v7()
             let timestamp = "2026-09-07T00:00:00Z"
-            let changes = try page([fixture.change(.summary, id: meetingId, revision: 1, fields: [
+            let changes = try page(vaultId: fixture.vaultId, [fixture.change(.summary, id: meetingId, revision: 1, fields: [
                 "title": "Summary", "createdAt": timestamp, "contentOmitted": true, "contentPresent": true,
             ])], cursor: "after")
             let parent = try JSONSerialization.data(withJSONObject: [
                 "meetingId": meetingId.uuidString.lowercased(), "vaultId": fixture.vaultId.uuidString.lowercased(),
-                "name": "Parent", "status": "READY", "createdAt": timestamp, "updatedAt": timestamp,
+                "name": "Parent", "description": "", "status": "READY", "createdAt": timestamp, "updatedAt": timestamp,
                 "revision": 1, "summaryRevision": 1, "transcriptRevision": 0, "contentOmitted": true, "hasSummary": true,
             ])
             let client = fixture.client { request in
@@ -614,7 +628,7 @@
                 ) }
                 if request.url!.path.hasSuffix("changes") { return (200, [:], changes) }
                 #expect(request.url!
-                    .path == "/api/v1/vaults/\(fixture.vaultId.uuidString.lowercased())/meetings/\(meetingId.uuidString.lowercased())")
+                    .path == "/api/v1/meetings/\(meetingId.uuidString.lowercased())")
                 #expect(request.url!.query == nil)
                 return (200, [:], parent)
             }
@@ -647,22 +661,22 @@
             let fixture = try Fixture()
             let fileId = UUID.v7()
             let timestamp = "2026-09-07T00:00:00Z"
-            let changes = try page([fixture.change(.meetingFile, id: .v7(), revision: 1, fields: [
+            let changes = try page(vaultId: fixture.vaultId, [fixture.change(.meetingFile, id: .v7(), revision: 1, fields: [
                 "fileId": fileId.uuidString, "meetingId": fixture.meetingId.uuidString,
                 "capturedAt": timestamp, "createdAt": timestamp,
             ])], cursor: "after")
             let parent = try JSONSerialization.data(withJSONObject: [
                 "id": fileId.uuidString, "vaultId": fixture.vaultId.uuidString, "revision": 2,
-                "uri": "/Volumes/test/app/file", "offset": 0, "size": 1, "content_type": "image/png",
+                "uri": "/Volumes/test/app/file", "offset": 0, "size": 1, "contentType": "image/png",
                 "checksum": fixture.checksum, "name": "Image", "createdAt": timestamp, "updatedAt": timestamp,
-                "metadata": ["source": "screenshot", "ocr_text": "OCR", "caption": "Caption"],
+                "metadata": ["source": "screenshot", "ocrText": "OCR", "caption": "Caption"],
             ])
             let calls = Mutex(0)
             let client = fixture.client { request in
                 if request.url!.path.hasSuffix("capabilities") { return (200, [:], Data(#"{"sync":{"version":4}}"#.utf8)) }
                 if request.url!.path.hasSuffix("changes") { return (200, [:], changes) }
                 calls.withLock { $0 += 1 }
-                #expect(request.url!.path == "/api/v1/files/\(fileId.uuidString.lowercased())/metadata")
+                #expect(request.url!.path == "/api/v1/files/\(fileId.uuidString.lowercased())")
                 #expect(request.url!.query == nil)
                 return (200, [:], parent)
             }
@@ -702,7 +716,7 @@
                 revision: 2,
                 fields: ["contentOmitted": true, "contentPresent": true, "contentCount": 1]
             )
-            let changes = try page([summary, fixture.fileChange(revision: 2)], cursor: "after")
+            let changes = try page(vaultId: fixture.vaultId, [summary, fixture.fileChange(revision: 2)], cursor: "after")
             let client = fixture.client { request in
                 if request.url!.path.hasSuffix("capabilities") { return (
                     200,
@@ -754,8 +768,8 @@
                 revision: 2,
                 fields: ["contentOmitted": true, "contentPresent": true, "contentCount": 1]
             )
-            let first = try page([transcript], cursor: "middle", more: true)
-            let second = try page([fixture.fileChange(revision: 2)], cursor: "after")
+            let first = try page(vaultId: fixture.vaultId, [transcript], cursor: "middle", more: true)
+            let second = try page(vaultId: fixture.vaultId, [fixture.fileChange(revision: 2)], cursor: "after")
             let fail = Mutex(true)
             let client = fixture.client { request in
                 if request.url!.path.hasSuffix("capabilities") { return (
@@ -786,9 +800,32 @@
             #expect(try await fixture.queue.read { try String.fetchOne($0, sql: "SELECT syncPullCursor FROM vaults") } == "before")
         }
 
-        private func page(_ changes: [SyncChangePage.Change], cursor: String, more: Bool = false) throws -> Data {
+        private func wireChange(_ change: SyncChangePage.Change, vaultId: UUID) throws -> [String: Any] {
+            var row = try #require(JSONSerialization.jsonObject(with: SyncJSON.encoder.encode(change)) as? [String: Any])
+            row["vaultId"] = vaultId.uuidString
+            row["transactionId"] = "019f0d36-0520-7000-8000-000000000001"
+            row["record"] = NSNull()
+            if let payload = change.record {
+                var record = try #require(JSONSerialization.jsonObject(with: SyncJSON.encoder.encode(payload)) as? [String: Any])
+                record["vaultId"] = vaultId.uuidString
+                record["revision"] = change.revision ?? 0
+                switch change.entity {
+                case .vault: record["vaultId"] = change.entityId.uuidString
+                case .project: record["projectId"] = change.entityId.uuidString
+                case .meeting: record["meetingId"] = change.entityId.uuidString
+                case .summary, .transcript: record["meetingId"] = change.entityId.uuidString
+                default: record["id"] = change.entityId.uuidString
+                }
+                if [.meeting, .project].contains(change.entity), record["description"] == nil { record["description"] = "" }
+                if [.vault, .meeting, .file].contains(change.entity), record["updatedAt"] == nil { record["updatedAt"] = record["createdAt"] }
+                row["record"] = record
+            }
+            return row
+        }
+
+        private func page(vaultId: UUID, _ changes: [SyncChangePage.Change], cursor: String, more: Bool = false) throws -> Data {
             try JSONSerialization.data(withJSONObject: [
-                "items": JSONSerialization.jsonObject(with: SyncJSON.encoder.encode(changes)),
+                "items": changes.map { try wireChange($0, vaultId: vaultId) },
                 "cursor": cursor, "highWaterCursor": "after", "hasMore": more,
             ])
         }
@@ -876,7 +913,16 @@
                 _ = try await queue.write { db in
                     try SyncTransactionRecorder.record(
                         vaultId: vaultId,
-                        operations: [.init(entity: .file, action: .upsert, entityId: fileId)],
+                        operations: [.init(
+                            entity: .file,
+                            action: .upsert,
+                            entityId: fileId,
+                            payloadJSON: SyncJSON.encoder.encode(FileOperationPayload(
+                                name: "Image",
+                                checksum: checksum,
+                                metadata: .init(source: .screenshot)
+                            ))
+                        )],
                         in: db
                     )
                 }
@@ -924,7 +970,7 @@
                 if action == "delete" { return .init(sequence: 2, entity: .file, entityId: fileId, action: action, revision: revision, record: nil) }
                 return try change(.file, id: fileId, revision: revision, fields: [
                     "contentOmitted": true, "contentPresent": true, "contentCount": 2,
-                    "uri": "/Volumes/test/app/file", "offset": 0, "size": 1, "content_type": "image/png", "checksum": checksum ?? self.checksum,
+                    "uri": "/Volumes/test/app/file", "offset": 0, "size": 1, "contentType": "image/png", "checksum": checksum ?? self.checksum,
                     "name": "Image", "metadata": ["source": "screenshot"], "createdAt": "2026-09-07T00:00:00Z", "updatedAt": "2026-09-07T00:00:01Z",
                 ])
             }

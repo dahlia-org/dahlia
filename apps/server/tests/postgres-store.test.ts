@@ -488,7 +488,7 @@ integration("PostgreSQL application store", () => {
     expect(await store.ensureIdentityUser(identity)).toBe(true);
     expect(await store.addAdminUser(email)).toMatchObject({ id: suffix });
     expect(await store.isAdminUser(suffix)).toBe(true);
-    expect(await store.removeAdminUser(email)).toBe("removed");
+    expect(await store.removeAdminUser(suffix)).toBe("removed");
   });
 
   it("grants read-only Vault access through an explicit organization share", async () => {

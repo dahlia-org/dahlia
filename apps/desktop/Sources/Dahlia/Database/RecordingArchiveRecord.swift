@@ -1,3 +1,4 @@
+import DahliaServerAPI
 import Foundation
 import GRDB
 
@@ -57,7 +58,20 @@ struct RecordingArchiveRecord: Codable, FetchableRecord, PersistableRecord, Send
                 batchCompletedAt: endedAt
             ).insert(db)
         }
-        let json = try String(decoding: SyncJSON.encoder.encode(audio), as: UTF8.self)
+        let archived = try audio.mapValues { value -> RecordingArchivedAudio in
+            guard let checksum = value.checksum, let manifest = value.manifest else { throw RecordingAudioStoreError.integrityMismatch }
+            return try RecordingArchivedAudio(
+                contentType: value.contentType.rawValue,
+                size: Int64(value.size),
+                checksum: checksum,
+                contentURL: value.contentUrl,
+                manifest: SyncJSON.decoder.decode(
+                    RecordingArchiveManifest.self,
+                    from: SyncJSON.encoder.encode(manifest)
+                )
+            )
+        }
+        let json = try String(decoding: SyncJSON.encoder.encode(archived), as: UTF8.self)
         try db.execute(sql: """
         INSERT INTO recording_archives(sessionId, meetingId, vaultId, connectionId, number, audioJSON, state)
         VALUES (?, ?, ?, ?, ?, ?, 'remote')

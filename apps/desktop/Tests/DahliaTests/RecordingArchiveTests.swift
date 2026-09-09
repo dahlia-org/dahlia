@@ -327,10 +327,10 @@ import GRDB
                 "id": 12, "recordingNumber": 12, "meetingId": fixture.meeting.id.uuidString, "sessionId": sessionId.uuidString,
                 "startedAt": "2026-09-07T00:00:00Z", "endedAt": "2026-09-07T00:00:01Z",
                 "audio": ["mic": [
-                    "content_type": "audio/mp4",
+                    "contentType": "audio/mp4",
                     "size": 128,
                     "checksum": "SHA-256:" + String(repeating: "0", count: 64),
-                    "contentURL": "/api/v1/meetings/example/recordings/12/audio/mic",
+                    "contentUrl": "/api/v1/meetings/example/recordings/12/audio/mic",
                     "manifest": [
                         "sampleRate": 16000,
                         "frameCount": 16000,

@@ -1739,3 +1739,15 @@
 "保存した録音から文字起こしと要約を作成します。" = "保存した録音から文字起こしと要約を作成します。";
 
 "処理を開始" = "処理を開始";
+
+// Launch preparation
+"Preparing to Open…" = "起動の準備中…";
+"Restoring Backup…" = "バックアップを復元中…";
+"Updating Data…" = "データを更新中…";
+"Dahlia will open when preparation is complete." = "準備ができると、自動的に画面が切り替わります。";
+"This may take some time depending on the amount of data. Please keep Dahlia open until it finishes." = "データ量によって時間がかかる場合があります。\n完了までDahliaを終了せずにお待ちください。";
+"Dahlia Could Not Open" = "Dahliaを起動できませんでした";
+"Backup Restore Needs Attention" = "バックアップの復元を確認してください";
+"Quit Dahlia and check the details below before opening it again." = "以下の詳細を確認し、Dahliaを終了してから再度起動してください。";
+"Some data could not be restored. You can continue with the available data and review the result in Backup settings." = "復元できなかったデータがあります。利用可能なデータで続け、設定のバックアップで結果を確認できます。";
+"Quit Dahlia" = "Dahliaを終了";

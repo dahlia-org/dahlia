@@ -27,7 +27,8 @@ transcript の収録経路は `audio_source: mic | system`、人・diarization �
 - local mutation は recorder を明示的に呼び、remote applier は呼ばない。receipt 反映時は新しい optimistic operation を上書きせず、confirmed revision と commit cursor の保存後に acknowledge 済み transaction を削除する。
 - validation、revision conflict、authorization、transport failure は別状態で永続化する。自動 retry は transport error、408、425、429、5xx のみ。blocked transaction は同じ Vault の後続も止める。
 
-worker は録音中も push / pull できるが、transcript patch は確定済み segment だけを queue に入れる。初期 snapshot は bounded SQLite write で録音へ実行機会を譲り、構築中に録音や別 mutation が始まれば未送信の部分 snapshot を捨てて最新 working copy から再構築する。
+worker は録音中も push / pull できるが、transcript patch は確定済み segment だけを queue に入れる。初期 snapshot は bounded SQLite write で録音へ実行機会を譲り、構築中に対象 Vault の録音や別 mutation が始まれば未送信の部分 snapshot を捨てて最新 working copy から再構築する。
+録音による初期同期・復旧・本文置換の待機は対象 Vault 内だけで判定する。移動の反映では移動元と移動先を確認する。別の Local / Server Vault の録音には依存せず、録音待ちの Vault があっても他の Vault の初期 snapshot 構築を続ける。
 初期 snapshot の原本取得が失敗した場合はその Vault のローカルデータを保持して失敗を報告し、他の Vault の snapshot 構築・送信・受信は続ける。明示的な競合解決では呼び出し元へ取得失敗を返す。
 
 ## 会議イベントと録音セッションの表示
@@ -48,11 +49,11 @@ Server は Vault ごとの durable change ledger と opaque cursor を持つ。d
 
 原本は Vault 所有の `files`、会議との関係は独立 ID の `meeting_files` に保存する。`files` の基本項目は `uri`、`offset`（現在は0）、`size`、`content_type`、`checksum`（`SHA-256:` 接頭辞）とし、source / OCR / caption / 寸法は metadata に置く。source は作成時に固定し、metadata の部分更新は未指定キーを保持する。同じ Vault の複数会議で同じ file を共有でき、紐付けを解除しても原本を削除しない。参照が残る明示 file 削除は拒否する。
 
-2026-09-07: `POST /api/v1/files` の body を最大64 MiBの immutable file bytes とし、予約 POST と upload PUT を統合する。id / vaultId / name / source と任意の width / height は query、MIME は Content-Type で渡す。Content-Length は転送の長さ検証に使い、size と SHA-256 checksum は Server が streaming 受信から算出する。同じ ID の同一内容の再送は既存 bytes / metadata を変更せず成功する。異内容は409で拒否する。
+2026-09-09: [OpenAPI ADR](../server/openapi.md) により、JSON の `POST /api/v1/file-uploads` で ID・Vault・属性・MIME を予約し、`PUT /api/v1/file-uploads/{id}/content` へ octet-stream を送る。従前の単一 POST と query 属性形式は廃止する。最大64 MiB、Content-Length 検証、Server 側の streaming SHA-256、同一再送の成功・異内容409、Transaction 確定まで private staging という制約は保持する。
 その後に `file` / `meeting_file` transaction で確定する。pending は通常の一覧から除外し、24時間後は再 upload を要求する。旧 upload API は残さず Desktop / Server を同時に切り替え、transaction schemaVersion 2 は維持する。
-確定済み file の OCR / caption / 寸法は `PATCH /api/v1/files/{id}/metadata` でも更新できる。baseRevision と metadata の JSON 部分更新を受け付け、未指定キーを保持し、OCR / caption の null はクリアを表す。source と bytes は不変。metadata 更新は認可後に Server 内部で単一の `file:upsert` transaction を生成し、既存の競合検出・検索更新・durable delta を通す。Desktop は既存の永続 transaction queue を維持する。
+確定済み file の OCR / caption / 寸法は `PATCH /api/v1/files/{id}` でも更新できる。baseRevision と metadata の JSON 部分更新を受け付け、未指定キーを保持し、OCR / caption の null はクリアを表す。source と bytes は不変。metadata 更新は認可後に Server 内部で単一の `file:upsert` transaction を生成し、既存の競合検出・検索更新・durable delta を通す。Desktop は既存の永続 transaction queue を維持する。
 原本 key は `files/{fileId}/original`、派生画像は `files/{fileId}/variants/v1/{variant}.webp`（`thumb_480` / `thumb_1280` / `thumb_1568` / `thumb_1920`）。新 File API は Databricks Volume に保存し、canonical URI は `/Volumes/.../files/{fileId}/original` とする。Artifact APIは2026-09-08に廃止した。既存 cloud file がないため旧 key migration は行わない。
-原本は `GET /api/v1/files/{id}`、原本のサイズ・MIME・ETag は `HEAD /api/v1/files/{id}`、OCR・caption・revision を含む JSON は `GET /api/v1/files/{id}/metadata` で取得する。旧 `/content` と file ID 直下の metadata PATCH は廃止する。metadata 更新はPATCHだけを受け付ける。POST / PUTは405とし、baseRevision付き部分更新を維持する。
+原本とその HEAD は `/api/v1/files/{id}/content`、JSON metadata と metadata PATCH は `/api/v1/files/{id}` に分離する。公開 DTO は `contentType`、`contentUrl`、`ocrText` を使い、内部 URI / offset を返さない。DB の `uri` / `offset` / `content_type` / `ocr_text` は保存形式として維持し、境界で変換する。
 GET / HEAD の原本と variant は Vault 認可、CSP sandbox、nosniff、Range を適用する。source は認可条件にしない。
 File API の原本・variant は `private, no-cache` とし、クライアントは保存した画像の再利用前に現在の認可を再確認する。ETag が一致すれば304を返し、画像生成・ストレージ読込・画像転送を省略する。ただし `If-Unmodified-Since` も指定された場合は Range を除いた HEAD で日時条件を先に検証する。削除・権限失効後の要求は404を返すが、すでに画面に表示中の画像を消す通知は行わない。`Vary: Authorization, Cookie` で認証状態ごとのキャッシュを分ける。
 

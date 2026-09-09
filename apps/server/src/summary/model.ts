@@ -5,9 +5,13 @@ import type { AccountSettings } from "../account-settings";
 import { uuidV7 } from "../id";
 import type { IdentitySyncStore } from "../sync/types";
 
-import { summaryDetailSchema, summaryModelSettingsSchema } from "../account-settings-model";
+import { normalizeSummaryDetail, summaryDetailSchema, summaryModelSettingsSchema } from "../account-settings-model";
 export { summaryDetailSchema } from "../account-settings-model";
 export const transcriptSettingsSchema = summaryModelSettingsSchema.extend({ detail: summaryDetailSchema, transcriptionReasoningEffort: summaryModelSettingsSchema.shape.reasoningEffort.optional() });
+// Accepted jobs retain their captured settings across API contract changes.
+export const storedTranscriptSettingsSchema = transcriptSettingsSchema.extend({
+  detail: z.string().transform(normalizeSummaryDetail).pipe(summaryDetailSchema),
+});
 export type TranscriptSettings = z.infer<typeof transcriptSettingsSchema>;
 const contentVersion = z.string().min(1).max(200);
 export const summaryInputSchema = z.discriminatedUnion("type", [

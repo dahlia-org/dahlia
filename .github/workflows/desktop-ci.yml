@@ -5,12 +5,18 @@ on:
     paths:
       - ".github/workflows/desktop-ci.yml"
       - "apps/desktop/**"
+      - "Package.swift"
+      - "Package.resolved"
+      - "apps/server/**"
   push:
     branches:
       - main
     paths:
       - ".github/workflows/desktop-ci.yml"
       - "apps/desktop/**"
+      - "Package.swift"
+      - "Package.resolved"
+      - "apps/server/**"
 
 concurrency:
   group: desktop-ci-${{ github.ref }}
@@ -80,13 +86,53 @@ jobs:
           restore-keys: |
             spm-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.hash }}-${{ hashFiles('Package.resolved') }}-
 
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          package_json_file: apps/server/package.json
+          run_install: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: apps/server/pnpm-lock.yaml
+
+      - name: Install Server dependencies
+        run: pnpm --dir apps/server install --frozen-lockfile
+
+      - name: Verify generated API contract
+        run: pnpm --dir apps/server openapi:check
+
       - name: Build package and tests
-        run: swift build --build-tests
+        run: |
+          set -o pipefail
+          swift build --build-tests 2>&1 | tee build-output.log
+          if grep -Ei 'warning:.*(unsupported|not supported|skipping)' build-output.log; then
+            exit 1
+          fi
 
       - name: Run unit tests
         run: |
           set -o pipefail
           swift test --skip-build --experimental-maximum-parallelization-width 4 -q 2>&1 | tee test-output.log
+
+      - name: Run Swift and Server integration test
+        run: |
+          endpoint_file="$(mktemp)"
+          (cd apps/server && exec node --import tsx tests/openapi-fixture.ts "$endpoint_file") > /tmp/openapi-fixture.log 2>&1 &
+          fixture_pid=$!
+          trap 'kill "$fixture_pid"; rm -f "$endpoint_file"' EXIT
+          for attempt in {1..100}; do
+            test -s "$endpoint_file" && break
+            kill -0 "$fixture_pid" || { cat /tmp/openapi-fixture.log; exit 1; }
+            sleep 0.1
+          done
+          test -s "$endpoint_file"
+          set -o pipefail
+          DAHLIA_OPENAPI_TEST_URL="$(cat "$endpoint_file")" swift test --skip-build --filter OpenAPIIntegrationTests 2>&1 | tee integration-output.log
+          grep -Eq "Test run with 1 test in 1 suite passed" integration-output.log
 
       - name: Verify tests executed
         run: grep -Eq "Test run with [1-9][0-9]* tests" test-output.log

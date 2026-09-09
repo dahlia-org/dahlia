@@ -1,10 +1,8 @@
-import { appearanceSchema } from "../appearance-model";
+import { uuidSchema, transcriptChunkSchema, SCREENSHOT_DELETE_BATCH_SIZE, STORAGE_OPERATION_CONCURRENCY, QUERY_EMBEDDING_DEADLINE_MS, QUERY_EMBEDDING_CONCURRENCY, permissionPrincipalSchema, SYNC_READ_PAGE_SIZE, TRANSCRIPT_READ_PAGE_SIZE, meetingCursorSchema, screenshotCursorSchema, transcriptCursorSchema, uuidV7Schema, transactionSchema, transactionDataSchemas, SYNC_CHANGE_PAGE_SIZE } from "./schemas";
 import type { GeneratedTranscript } from "../summary/transcription";
-import { transcriptWriteSchema } from "./transcript";
-import { summaryMetadataSchema } from "../summary/metadata";
 import { conditionalRead } from "../storage/http-read";
 import { SummaryError, type SummaryJob, type SummaryGenerationResult, type SummaryMethod } from "../summary/model";
-import { RECORDING_MAX_BYTES, recordingManifestSchema, recordingSourceSchema, recordingStorageKey, recordingContentURL, recordingResponse } from "../recordings/model";
+import { RECORDING_MAX_BYTES, recordingSourceSchema, recordingStorageKey, recordingContentURL, recordingResponse } from "../recordings/model";
 import { z } from "zod";
 import { searchRequestSchema, searchSnippet, type SearchHit, type SearchResults } from "../search/model";
 import { uuidV7 } from "../id";
@@ -34,130 +32,9 @@ import type {
   VaultPrincipalType,
 } from "./types";
 import { decodeSyncCursor, encodeSyncCursor, SYNC_SNAPSHOT_ENTITIES, SyncTransactionError } from "./store";
-import { fileMetadataSchema, fileUploadQuerySchema, filePatchSchema, fileResponse, fileStorageKey, fileVariantKey, imageContentTypes, type FileRecord } from "../files/model";
+import { fileUploadSchema, filePatchSchema, fileResponse, fileStorageKey, fileVariantKey, imageContentTypes, type FileRecord } from "../files/model";
 import { SCREENSHOT_VARIANTS, screenshotVariantKey, type ScreenshotTransformer, type ScreenshotVariant } from "./screenshot-variants";
 import { metadataRecord, readTextContent, TEXT_CONTENT_VERSION } from "./text-content";
-
-const uuidSchema = z.uuid().transform((value) => value.toLowerCase());
-const dateSchema = z.iso.datetime().transform((value) => new Date(value));
-const nullableDateSchema = dateSchema.nullable();
-const projectNameSchema = z.string().trim().min(1).refine((value) =>
-  ![".", ".."].includes(value)
-  && ![".", "_"].includes(value[0] ?? "")
-  && ![...value].some((character) => "/:".includes(character) || character.charCodeAt(0) <= 31 || character.charCodeAt(0) === 127)
-  && new TextEncoder().encode(value).byteLength <= 255,
-);
-const projectTypeSchema = z.enum(["customer", "internal", "personal", "undefined"]);
-const meetingStatusSchema = z.enum([
-  "TRANSCRIPT_NOT_FOUND",
-  "PROCESSING_TRANSCRIPT",
-  "READY",
-  "RECORDING",
-]).transform((status) => status === "RECORDING" ? "READY" : status);
-const transcriptSegmentSchema = z.object({
-  segmentId: uuidSchema,
-  startedAt: dateSchema,
-  endedAt: nullableDateSchema,
-  text: z.string(),
-  createdAt: nullableDateSchema,
-  audioSource: z.enum(["mic", "system"]).nullable(),
-  speakerLabel: z.string().nullable(),
-}).strict();
-const transcriptChunkSchema = z.object({
-  segments: z.array(transcriptSegmentSchema).max(500),
-  deletions: z.array(uuidSchema).max(500),
-}).strict();
-
-const SCREENSHOT_DELETE_BATCH_SIZE = 25;
-const STORAGE_OPERATION_CONCURRENCY = 4;
-const QUERY_EMBEDDING_DEADLINE_MS = 2_000;
-const QUERY_EMBEDDING_CONCURRENCY = 8;
-const permissionPrincipalSchema = z.string().trim().min(1).max(200);
-export const SYNC_READ_PAGE_SIZE = 200;
-const TRANSCRIPT_READ_PAGE_SIZE = 10_000;
-const TRANSCRIPT_PATCH_ITEM_LIMIT = 50_000;
-const TRANSCRIPT_PATCH_CHUNK_LIMIT = 100;
-const SUMMARY_DOCUMENT_MAX_SERIALIZED_BYTES = 6 * 1024 * 1024;
-const summaryDocumentSchema = z.string().refine(
-  (value) => new TextEncoder().encode(JSON.stringify(value)).byteLength <= SUMMARY_DOCUMENT_MAX_SERIALIZED_BYTES,
-  "Summary document is too large",
-).refine((document) => {
-  try {
-    const value: unknown = JSON.parse(document);
-    return !value || typeof value !== "object" || !("metadata" in value) || value.metadata === null
-      || summaryMetadataSchema.safeParse(value.metadata).success;
-  } catch { return true; } // Preserve the existing document contract for legacy non-JSON summaries.
-}, "Invalid summary metadata");
-const meetingCursorSchema = z.tuple([dateSchema, uuidSchema]);
-const screenshotCursorSchema = z.tuple([dateSchema, uuidSchema]);
-const transcriptCursorSchema = z.tuple([dateSchema, uuidSchema]);
-const uuidV7Schema = z.string()
-  .regex(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)
-  .transform((value) => value.toLowerCase());
-const transactionOperationSchema = z.object({
-  id: uuidV7Schema,
-  entity: z.enum(["vault", "project", "meeting", "summary", "transcript", "file", "meeting_file", "meeting_event", "recording"]),
-  action: z.enum(["create", "update", "delete", "upsert", "patch", "reset"]),
-  entityId: uuidSchema,
-  baseRevision: z.number().int().nonnegative().nullable(),
-  data: z.record(z.string(), z.unknown()).nullable(),
-}).strict();
-const transactionSchema = z.object({
-  schemaVersion: z.literal(2),
-  id: uuidV7Schema,
-  vaultId: uuidSchema,
-  createdAt: dateSchema,
-  operations: z.array(transactionOperationSchema).min(1).max(10_000),
-}).strict();
-const appearanceFields = {
-  icon: appearanceSchema.shape.icon.nullable().optional(),
-  color: appearanceSchema.shape.color.nullable().optional(),
-};
-const transactionDataSchemas = {
-  "meeting_event:create": z.discriminatedUnion("kind", [
-    z.object({ meetingId: uuidSchema, kind: z.enum(["tag_added", "tag_removed"]), occurredAt: dateSchema, relatedId: z.string().regex(/^[0-9]{1,19}$/) }).strict(),
-    z.object({ meetingId: uuidSchema, kind: z.enum(["recording_started", "recording_ended"]), occurredAt: dateSchema, sessionId: uuidSchema }).strict(),
-    z.object({ meetingId: uuidSchema, kind: z.literal("segment_rotated"), occurredAt: dateSchema, sessionId: uuidSchema, relatedId: uuidSchema, audioSource: z.enum(["mic", "system"]), segmentIndex: z.number().int().positive().max(2147483647) }).strict(),
-  ]),
-  "vault:create": z.object({ ...appearanceFields, name: z.string().trim().min(1), createdAt: dateSchema }).strict(),
-  "vault:update": z.object({ ...appearanceFields, name: z.string().trim().min(1) }).strict(),
-  "vault:reset": z.object({ preservePermissions: z.boolean().optional() }).strict(),
-  "project:create": z.object({ ...appearanceFields, parentProjectId: uuidSchema.nullable(), name: projectNameSchema, description: z.string().max(20_000).default(""), projectType: projectTypeSchema.nullable(), createdAt: dateSchema }).strict().refine((data) => data.parentProjectId === null || (data.icon == null && data.color == null), { message: "Child projects inherit their parent appearance", path: ["icon"] }),
-  "project:update": z.object({ ...appearanceFields, parentProjectId: uuidSchema.nullable(), name: projectNameSchema, description: z.string().max(20_000).default(""), projectType: projectTypeSchema.nullable() }).strict().refine((data) => data.parentProjectId === null || (data.icon == null && data.color == null), { message: "Child projects inherit their parent appearance", path: ["icon"] }),
-  "project:delete": z.object({}).strict(),
-  "meeting:create": z.object({ projectId: uuidSchema.nullable(), name: z.string(), description: z.string().default(""), status: meetingStatusSchema, duration: z.number().finite().nonnegative().nullable(), recordingStartedAt: nullableDateSchema, createdAt: dateSchema, updatedAt: dateSchema }).strict(),
-  "meeting:update": z.object({ projectId: uuidSchema.nullable(), name: z.string(), description: z.string().default(""), status: meetingStatusSchema, duration: z.number().finite().nonnegative().nullable(), recordingStartedAt: nullableDateSchema, updatedAt: dateSchema }).strict(),
-  "meeting:delete": z.object({}).strict(),
-  "summary:upsert": z.object({ title: z.string(), document: summaryDocumentSchema, createdAt: dateSchema }).strict(),
-  "summary:delete": z.object({}).strict(),
-  "transcript:patch": z.object({
-    transcript: transcriptWriteSchema,
-    mode: z.enum(["replace", "append"]),
-    patchId: uuidV7Schema,
-    segmentCount: z.number().int().nonnegative(),
-    deletionCount: z.number().int().nonnegative().max(TRANSCRIPT_PATCH_ITEM_LIMIT),
-    chunks: z.array(z.object({
-      index: z.number().int().nonnegative(),
-      sha256: z.string().regex(/^[0-9a-f]{64}$/),
-      segmentCount: z.number().int().nonnegative().max(500),
-      deletionCount: z.number().int().nonnegative().max(500),
-    }).strict()),
-  }).strict().superRefine((patch, context) => {
-    // Full snapshots use bounded staged chunks; only incremental patches retain the patch-wide limits.
-    if ((patch.mode === "append" && (patch.segmentCount > TRANSCRIPT_PATCH_ITEM_LIMIT || patch.chunks.length > TRANSCRIPT_PATCH_CHUNK_LIMIT))
-      || patch.chunks.reduce((sum, chunk) => sum + chunk.segmentCount, 0) !== patch.segmentCount
-      || patch.chunks.reduce((sum, chunk) => sum + chunk.deletionCount, 0) !== patch.deletionCount
-      || patch.chunks.some((chunk, index) => chunk.index !== index)) {
-      context.addIssue({ code: "custom", message: "Invalid transcript patch manifest" });
-    }
-  }),
-  "recording:upsert": z.object({ source: recordingSourceSchema, checksum: z.string().regex(/^SHA-256:[0-9a-f]{64}$/), manifest: recordingManifestSchema }).strict(),
-  "file:upsert": z.object({ name: z.string().min(1).max(255).optional(), checksum: z.string().regex(/^SHA-256:[0-9a-f]{64}$/), metadata: fileMetadataSchema.partial() }).strict(),
-  "file:delete": z.object({}).strict(),
-  "meeting_file:upsert": z.object({ meetingId: uuidSchema, fileId: uuidSchema, capturedAt: nullableDateSchema, sessionId: uuidSchema.nullable(), createdAt: dateSchema }).strict(),
-  "meeting_file:delete": z.object({}).strict(),
-} as const;
-const SYNC_CHANGE_PAGE_SIZE = 100;
 
 function missingMeetingConflict(meetingId: string): SyncTransactionError {
   return new SyncTransactionError(409, "revision_conflict", [{
@@ -319,7 +196,7 @@ export class MeetingSyncService {
       schemaVersion: 2, id: uuidV7(), vaultId: input.vaultId, createdAt: new Date().toISOString(),
       operations: [{
         id: uuidV7(), entity: "file", action: "upsert", entityId: input.fileId,
-        baseRevision: input.file.revision, data: { checksum: input.file.checksum, metadata },
+        baseRevision: input.file.revision, data: { checksum: input.file.checksum, metadata: { ocrText: metadata.ocr_text, caption: metadata.caption } },
       }],
     });
     Object.assign(transaction.operations[0]!.data!, await this.fileSearchData(metadata));
@@ -727,7 +604,6 @@ export class MeetingSyncService {
 
   async putTranscriptChunk(
     identity: Identity,
-    vaultId: string,
     meetingId: string,
     patchId: string,
     chunkIndex: number,
@@ -736,23 +612,18 @@ export class MeetingSyncService {
   ): Promise<void> {
     const parsed = transcriptChunkSchema.safeParse(body);
     if (!parsed.success) throw new RequestError(400, "invalid_transcript_chunk");
-    const accepted = await this.store.withIdentity(identity, (scoped) => scoped.putTranscriptChunk(
-      vaultId,
-      meetingId,
-      patchId,
-      chunkIndex,
-      contentHash,
-      parsed.data.segments,
-      parsed.data.deletions,
-    ));
+    const accepted = await this.store.withIdentity(identity, async (scoped) => {
+      const vaultId = await scoped.resolveEntityVault("meeting", meetingId);
+      return vaultId ? scoped.putTranscriptChunk(vaultId, meetingId, patchId, chunkIndex,
+        contentHash, parsed.data.segments, parsed.data.deletions) : false;
+    });
     if (!accepted) throw missingMeetingConflict(meetingId);
   }
 
-  async postRecording(identity: Identity, meetingId: string, request: Request) {
+  async putRecordingContent(identity: Identity, meetingId: string, sessionIdValue: string, sourceValue: string, request: Request) {
     this.requireWritableIdentity(identity);
-    const url = new URL(request.url);
-    const sessionId = uuidV7Schema.safeParse(url.searchParams.get("sessionId"));
-    const parsedSource = recordingSourceSchema.safeParse(url.searchParams.get("source"));
+    const sessionId = uuidV7Schema.safeParse(sessionIdValue);
+    const parsedSource = recordingSourceSchema.safeParse(sourceValue);
     if (!sessionId.success || !parsedSource.success) throw new RequestError(400, "invalid_recording_target");
     const source = parsedSource.data;
     const upload = parseUpload(request, RECORDING_MAX_BYTES);
@@ -789,15 +660,15 @@ export class MeetingSyncService {
       if (previous.uploadedAt) {
         const checksum = `SHA-256:${await sha256Stream(bounded)}`;
         if (previous.size !== upload.contentLength || previous.checksum !== checksum) throw new RequestError(409, "recording_content_conflict");
-        return { created: false, record: { id: record.number, source, content_type: previous.content_type,
-          size: previous.size, checksum, revision: record.revision || null, contentURL: recordingContentURL(record, source) } };
+        return { created: false, record: { id: record.number, source, contentType: previous.content_type,
+          size: previous.size, checksum, revision: record.revision || null, contentUrl: recordingContentURL(record, source) } };
       }
       return this.storeUpload(key, bounded, upload, request.signal, async (checksum) => {
         const completed = await this.store.withIdentity(identity, (scoped) =>
           scoped.markRecordingUploaded(record.sessionId, source, generation, upload.contentLength, checksum));
         if (!completed) throw new RequestError(409, "recording_upload_expired");
-        return { created: true, record: { id: completed.number, source, content_type: upload.contentType,
-          size: upload.contentLength, checksum, revision: completed.revision || null, contentURL: recordingContentURL(completed, source) } };
+        return { created: true, record: { id: completed.number, source, contentType: upload.contentType,
+          size: upload.contentLength, checksum, revision: completed.revision || null, contentUrl: recordingContentURL(completed, source) } };
       });
     }));
   }
@@ -843,52 +714,61 @@ export class MeetingSyncService {
     }));
   }
 
-  async postFile(identity: Identity, request: Request) {
+  async reserveFileUpload(identity: Identity, body: unknown) {
     this.requireWritableIdentity(identity);
     this.requireStorage();
     if (!this.fileStorageRoot) throw new RequestError(503, "file_storage_not_configured");
-    const query = new URL(request.url).searchParams;
-    const parsed = fileUploadQuerySchema.safeParse(Object.fromEntries(query));
-    if (!parsed.success || [...query.keys()].some((key) => query.getAll(key).length !== 1)) {
-      throw new RequestError(400, "invalid_file_upload");
-    }
-    const { id: fileId, vaultId, name, ...metadata } = parsed.data;
-    const upload = parseUpload(request, MAX_FILE_BYTES);
-    if (!/^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/.test(upload.contentType)) {
-      throw new RequestError(400, "invalid_content_type");
-    }
+    const parsed = fileUploadSchema.safeParse(body);
+    if (!parsed.success) throw new RequestError(400, "invalid_file_upload");
+    const { id: fileId, vaultId, name, contentType, metadata } = parsed.data;
     const key = fileStorageKey(fileId);
     return this.withStorageOperation(key, () => this.store.withStorageKeyLock(key, async () => {
       const now = new Date();
-      const file = await this.store.withIdentity(identity, async (scoped) => {
+      const result = await this.store.withIdentity(identity, async (scoped) => {
         await scoped.expireFileUploads(vaultId, new Date(now.getTime() - 86_400_000));
-        return scoped.reserveFile({ fileId, vaultId,
+        const previous = await scoped.getFile(fileId);
+        const file = await scoped.reserveFile({ fileId, vaultId, name, contentType, metadata,
           uri: `${this.fileStorageRoot}/${key}`, offset: 0, size: 0, checksum: "",
-          contentType: upload.contentType, name, metadata,
-          active: false, uploadedAt: null, revision: 0, createdAt: now, updatedAt: now,
-        });
+          active: false, uploadedAt: null, revision: 0, createdAt: now, updatedAt: now });
+        if (!file) throw new RequestError(404, "file_or_vault_not_found");
+        if (file.contentType !== contentType || file.name !== name || file.metadata.source !== metadata.source
+          || file.metadata.width !== metadata.width || file.metadata.height !== metadata.height) {
+          throw new RequestError(409, "file_id_conflict");
+        }
+        return { file: this.fileMetadata(fileResponse(file)), created: previous === null };
       });
       this.scheduleStorageDeletes();
-      if (!file) throw new RequestError(404, "file_or_vault_not_found");
-      if (file.contentType !== upload.contentType || file.metadata.source !== metadata.source
-        || (file.uploadedAt && file.size !== upload.contentLength)) {
+      return result;
+    }));
+  }
+
+  async putFileContent(identity: Identity, fileId: string, request: Request) {
+    this.requireWritableIdentity(identity);
+    this.requireStorage();
+    const upload = parseUpload(request, MAX_FILE_BYTES);
+    if (upload.contentType !== "application/octet-stream") throw new RequestError(415, "unsupported_media_type");
+    const key = fileStorageKey(fileId);
+    return this.withStorageOperation(key, () => this.store.withStorageKeyLock(key, async () => {
+      const file = await this.store.withIdentity(identity, async (scoped) => {
+        const pending = await scoped.getFile(fileId);
+        if (!pending || (await scoped.getVault(pending.vaultId))?.role !== "owner") {
+          throw new RequestError(404, "file_not_found");
+        }
+        return pending;
+      });
+      if (file.uploadedAt && file.size !== upload.contentLength) {
         throw new RequestError(409, "file_id_conflict");
       }
       if (await this.store.hasStorageDelete(key)) throw new RequestError(503, "file_storage_delete_pending");
       const bounded = boundedUploadBody(request.body, upload.contentLength, "file_size_mismatch");
       if (file.uploadedAt) {
-        if (`SHA-256:${await sha256Stream(bounded)}` !== file.checksum) {
-          throw new RequestError(409, "file_checksum_mismatch");
-        }
+        if (`SHA-256:${await sha256Stream(bounded)}` !== file.checksum) throw new RequestError(409, "file_checksum_mismatch");
         return { file: this.fileMetadata(fileResponse(file)), created: false };
       }
-      return this.storeUpload(key, bounded, upload, request.signal, async (checksum) => {
+      return this.storeUpload(key, bounded, { ...upload, contentType: file.contentType }, request.signal, async (checksum) => {
         const uploaded = await this.store.withIdentity(identity, (scoped) => scoped.markFileUploaded(file, upload.contentLength, checksum));
         if (!uploaded) {
-          const current = await this.store.withIdentity(identity, (scoped) => scoped.getFile(fileId));
-          if (current?.vaultId === file.vaultId && await this.store.hasStorageDelete(key)) {
-            throw new RequestError(503, "file_storage_delete_pending");
-          }
+          if (await this.store.hasStorageDelete(key)) throw new RequestError(503, "file_storage_delete_pending");
           throw new RequestError(404, "file_not_found");
         }
         return { file: this.fileMetadata(fileResponse(uploaded)), created: true };
@@ -942,17 +822,17 @@ export class MeetingSyncService {
     const file = await this.store.withIdentity(identity, (scoped) => scoped.getFile(fileId, true));
     if (!file) throw new RequestError(404, "file_not_found");
     const record = this.fileMetadata(fileResponse(file));
-    return { ...record, metadata: { ...record.metadata, ocr_text: record.metadata.ocr_text ?? null, caption: record.metadata.caption ?? null } };
+    return { ...record, metadata: { ...record.metadata, ocrText: record.metadata.ocrText ?? null, caption: record.metadata.caption ?? null } };
   }
 
   private fileMetadata(file: ReturnType<typeof fileResponse>) {
     const variants: Record<string, string> = {};
-    if (this.screenshotTransformer && imageContentTypes.has(file.content_type)) {
+    if (this.screenshotTransformer && imageContentTypes.has(file.contentType)) {
       for (const variant of Object.keys(SCREENSHOT_VARIANTS)) {
         variants[variant] = `/api/v1/files/${file.id}/variants/${variant}`;
       }
     }
-    return { ...file, contentURL: `/api/v1/files/${file.id}`, variants };
+    return { ...file, contentUrl: `/api/v1/files/${file.id}/content`, variants };
   }
 
   async listFiles(identity: Identity, vaultId: string, cursor?: string, meetingId?: string) {
@@ -1126,6 +1006,12 @@ export class MeetingSyncService {
   async getProjectById(identity: Identity, projectId: string) {
     const vaultId = await this.store.withIdentity(identity, (scoped) => scoped.resolveEntityVault("project", projectId));
     return vaultId ? this.getProject(identity, vaultId, projectId) : null;
+  }
+
+  async meetingVault(identity: Identity, meetingId: string): Promise<string> {
+    const vaultId = await this.store.withIdentity(identity, (scoped) => scoped.resolveEntityVault("meeting", meetingId));
+    if (!vaultId) throw new RequestError(404, "meeting_not_found");
+    return vaultId;
   }
 
   async getMeetingById(identity: Identity, meetingId: string) {

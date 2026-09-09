@@ -51,7 +51,7 @@ async function setup() {
     for (let offset = 0; offset < segments.length; offset += 500) {
       const chunk = { segments: segments.slice(offset, offset + 500), deletions: [] };
       const sha256 = createHash("sha256").update(JSON.stringify(chunk)).digest("hex");
-      await sync.putTranscriptChunk(owner, vaultId, meetingId, patchId, chunks.length, sha256, chunk);
+      await sync.putTranscriptChunk(owner, meetingId, patchId, chunks.length, sha256, chunk);
       chunks.push({ index: chunks.length, sha256, segmentCount: chunk.segments.length, deletionCount: 0 });
     }
     const transaction = body([{ id: patchId, entity: "transcript", action: "patch", entityId: meetingId, baseRevision,
@@ -205,7 +205,7 @@ describe("transcript versions", () => {
       const fetch = worker.fetch!.bind(worker) as unknown as
         (request: Request, env: Cloudflare.Env, context: ExecutionContext) => Promise<Response>;
       const send = (suffix: string, user = "reader") => {
-        const request = new Request(`http://localhost:5173/api/v1/vaults/${vaultId}/meetings/${meetingId}/transcript${suffix}`, {
+        const request = new Request(`http://localhost:5173/api/v1/meetings/${meetingId}/transcripts${suffix}`, {
           headers: { "x-forwarded-user": user, "x-forwarded-email": `${user}@example.com` },
         });
         return runtime === "node" ? app.request(request) : fetch(request, {} as Cloudflare.Env, {} as ExecutionContext);

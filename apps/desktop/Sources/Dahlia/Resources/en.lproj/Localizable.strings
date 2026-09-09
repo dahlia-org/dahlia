@@ -1739,3 +1739,15 @@
 "保存した録音から文字起こしと要約を作成します。" = "Create a transcript and summary from the saved recording.";
 
 "処理を開始" = "Start Processing";
+
+// Launch preparation
+"Preparing to Open…" = "Preparing to Open…";
+"Restoring Backup…" = "Restoring Backup…";
+"Updating Data…" = "Updating Data…";
+"Dahlia will open when preparation is complete." = "Dahlia will open when preparation is complete.";
+"This may take some time depending on the amount of data. Please keep Dahlia open until it finishes." = "This may take some time depending on the amount of data.\nPlease keep Dahlia open until it finishes.";
+"Dahlia Could Not Open" = "Dahlia Could Not Open";
+"Backup Restore Needs Attention" = "Backup Restore Needs Attention";
+"Quit Dahlia and check the details below before opening it again." = "Quit Dahlia and check the details below before opening it again.";
+"Some data could not be restored. You can continue with the available data and review the result in Backup settings." = "Some data could not be restored. You can continue with the available data and review the result in Backup settings.";
+"Quit Dahlia" = "Quit Dahlia";

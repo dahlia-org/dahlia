@@ -1,9 +1,11 @@
+import { apiQuery, type ApiQuery } from "./live-data";
+import type { components } from "./generated-api";
 import { Select } from "./Select";
 import { useEffect, useRef, useState } from "react";
-import { json, uiText } from "./api";
+import { uiText } from "./api";
 import { useLivePage, useLiveQuery } from "./live-data";
 import { TranscriptTime } from "./MeetingContent";
-import { transcriptStatus, TRANSCRIPT_ACTIVITY_WINDOW_MS, type TranscriptMetadata } from "../sync/transcript";
+import { transcriptStatus, TRANSCRIPT_ACTIVITY_WINDOW_MS } from "../sync/transcript";
 
 function transcriptStatusLabel(status: ReturnType<typeof transcriptStatus>): string {
   switch (status) {
@@ -14,32 +16,19 @@ function transcriptStatusLabel(status: ReturnType<typeof transcriptStatus>): str
   }
 }
 
-interface Version {
-  id: string;
-  version: number;
-  endedAt: string | null;
-  latestSegmentCreatedAt: string | null;
-  createdAt: string;
-  metadata: TranscriptMetadata | null;
-}
-interface Body {
-  version: number;
-  syncRevision: number;
-  transcript: Version | null;
-  items: { segmentId: string; startedAt: string; text: string; speakerLabel: string | null }[];
-  nextCursor: string | null;
-}
+type Version = components["schemas"]["Transcript"];
+type Body = components["schemas"]["TranscriptContent"];
 
-export async function readTranscriptPages(url: string, minimum: number, signal: AbortSignal): Promise<Body> {
-  const first = await json<Body>(url, { signal });
-  const result = { ...first, items: [...first.items] };
+export async function readTranscriptPages(query: ApiQuery<Body>, minimum: number, signal: AbortSignal): Promise<Body> {
+  const first = await query.load(signal);
+  const result = { ...first, items: [...first.items ?? []] };
   while (result.nextCursor && result.items.length < minimum) {
-    const page = await json<Body>(`${url}?cursor=${encodeURIComponent(result.nextCursor)}`, { signal });
+    const page = await query.load(signal, result.nextCursor);
     if (page.version !== first.version || page.syncRevision !== first.syncRevision) {
       throw new Error(uiText("The transcript changed. Retry to load the current version.", "文字起こしが更新されました。再試行してください。"));
     }
-    if (page.nextCursor === result.nextCursor || !page.items.length) throw new Error("Invalid transcript page");
-    result.items.push(...page.items);
+    if (page.nextCursor === result.nextCursor || !page.items?.length) throw new Error("Invalid transcript page");
+    result.items.push(...page.items ?? []);
     result.nextCursor = page.nextCursor;
   }
   return result;
@@ -63,13 +52,14 @@ export function useTranscriptStatus(version: Version | null | undefined) {
   return transcriptStatus(version?.endedAt ? new Date(version.endedAt) : null, latest === null ? null : new Date(latest), new Date(now));
 }
 
-export function TranscriptHistory({ base, timeBase }: { base: string; timeBase: string }) {
+export function TranscriptHistory({ meetingId, timeBase }: { meetingId: string; timeBase: string }) {
   const [selected, setSelected] = useState<number | null>(null);
   const demand = useRef(1);
-  const versions = useLivePage<Version>(`${base}/transcript`);
-  const url = `${base}/transcript/${selected ?? "latest"}`;
-  const body = useLiveQuery<Body>(url, (signal, previous) =>
-    readTranscriptPages(url, Math.max(demand.current, previous?.items.length ?? 1), signal));
+  const versions = useLivePage<Version>(apiQuery("listTranscripts", { params: { path: { meetingId } } }));
+  const contentQuery = selected === null ? apiQuery("getLatestTranscript", { params: { path: { meetingId } } })
+    : apiQuery("getTranscript", { params: { path: { meetingId, version: String(selected) } } });
+  const body = useLiveQuery<Body>(contentQuery.key, (signal, previous) =>
+    readTranscriptPages(contentQuery, Math.max(demand.current, previous?.items?.length ?? 1), signal));
   const metadata = body.data?.transcript?.metadata;
   const status = useTranscriptStatus(body.data?.transcript);
   const error = versions.error ?? body.error;
@@ -106,13 +96,13 @@ export function TranscriptHistory({ base, timeBase }: { base: string; timeBase: 
         </>}
       </dl>)}
     </details>}
-    {body.data?.items.length === 0 && <p className="content-empty">{uiText("No transcript", "文字起こしはありません")}</p>}
-    {body.data?.items.map((segment) => <div className="transcript-segment" key={segment.segmentId}>
+    {body.data?.items?.length === 0 && <p className="content-empty">{uiText("No transcript", "文字起こしはありません")}</p>}
+    {body.data?.items?.map((segment) => <div className="transcript-segment" key={segment.segmentId}>
       <TranscriptTime startTime={segment.startedAt} timeBase={timeBase} />
       <p>{segment.speakerLabel && <strong>{segment.speakerLabel}: </strong>}{segment.text}</p>
     </div>)}
     {body.data?.nextCursor && <button className="secondary" disabled={body.loading} onClick={() => {
-      demand.current = (body.data?.items.length ?? 0) + 1;
+      demand.current = (body.data?.items?.length ?? 0) + 1;
       body.reload();
     }}>{uiText("Load more", "さらに表示")}</button>}
   </div>;

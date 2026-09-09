@@ -1,4 +1,5 @@
 import DahliaRuntimeSupport
+import DahliaServerAPI
 import Foundation
 import GRDB
 
@@ -60,10 +61,6 @@ actor ServerSummaryService {
     }
 
     private struct Response: Decodable { let job: Job? }
-    private struct Start: Encodable { let id: String
-        let detail: String?
-        let outputLanguage: String?
-    }
 
     struct RecordingPair: Codable, Sendable {
         let micFileId: String?
@@ -129,8 +126,10 @@ actor ServerSummaryService {
     }
 
     func methods(connectionID: UUID, origin: String) async throws -> [String] {
-        let request = try request(origin: origin, path: "/api/v1/capabilities")
-        let data = try await client.data(for: request, connectionId: connectionID, maximumBytes: 8192)
+        guard let origin = URL(string: origin) else { throw URLError(.badURL) }
+        let data = try await client.data(origin: origin, connectionId: connectionID, maximumBytes: 8192) {
+            try await $0.getCapabilities().ok.body.json
+        }
         let summary = try JSONDecoder().decode(ServerCapabilities.self, from: data).meetingSummaryGeneration
         guard let summary, summary.version == 1 else { return [] }
         return summary.sources
@@ -148,47 +147,70 @@ actor ServerSummaryService {
     }
 
     func status(_ target: Target, id: UUID? = nil) async throws -> Job? {
-        let path = "summary/job" + (id.map { "?id=\($0.uuidString.lowercased())" } ?? "")
-        let data = try await client.data(for: request(target, path: path), connectionId: target.connectionID, maximumBytes: 65536)
-        return try JSONDecoder().decode(Response.self, from: data).job
+        guard let origin = URL(string: target.origin) else { throw URLError(.badURL) }
+        do {
+            let data: Data = if let id {
+                try await client.data(origin: origin, connectionId: target.connectionID, maximumBytes: 65536) {
+                    try await $0.getSummaryJob(path: .init(meetingId: target.meetingID.uuidString.lowercased(), jobId: id.uuidString.lowercased())).ok
+                        .body.json
+                }
+            } else {
+                try await client.data(origin: origin, connectionId: target.connectionID, maximumBytes: 65536) {
+                    try await $0.getLatestSummaryJob(path: .init(meetingId: target.meetingID.uuidString.lowercased())).ok.body.json
+                }
+            }
+            return try JSONDecoder().decode(Response.self, from: data).job
+        } catch let error as SyncHTTPError where error.status == 404 && error.code == "summary_job_not_found" {
+            return nil
+        }
     }
 
     func start(_ target: Target, id: UUID, detail: String?, outputLanguage: SummaryLanguage? = nil) async throws -> Job? {
-        var request = try request(target, path: "summary")
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONEncoder().encode(Start(
+        typealias Body = Operations.StartSummaryJob.Input.Body.JsonPayload.Value2Payload
+        let body = Body(
             id: id.uuidString.lowercased(),
-            detail: detail.map { SummaryDetailLevel.fromPersistedValue($0).rawValue },
-            outputLanguage: outputLanguage?.rawValue
-        ))
-        let data = try await client.data(for: request, connectionId: target.connectionID, maximumBytes: 8192)
-        return try JSONDecoder().decode(Response.self, from: data).job
+            detail: detail.flatMap { Body.DetailPayload(rawValue: SummaryDetailLevel.fromPersistedValue($0).rawValue) },
+            outputLanguage: outputLanguage.flatMap { Body.OutputLanguagePayload(rawValue: $0.rawValue) }
+        )
+        return try await start(target, body: .init(value2: body))
     }
 
     func start(_ target: Target, request body: Request) async throws -> Job? {
-        var request = try request(target, path: "summary")
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONEncoder().encode(body)
-        let data = try await client.data(for: request, connectionId: target.connectionID, maximumBytes: 65536)
+        typealias Body = Operations.StartSummaryJob.Input.Body.JsonPayload.Value1Payload
+        guard let detail = Body.DetailPayload(rawValue: SummaryDetailLevel.fromPersistedValue(body.detailLevel).rawValue),
+              let language = Body.OutputLanguagePayload(rawValue: body.summaryLanguage) else { throw Failure.unavailable }
+        let input = try JSONDecoder().decode(Body.InputPayload.self, from: JSONEncoder().encode(body.input))
+        return try await start(
+            target,
+            body: .init(value1: Body(id: body.id, input: input, model: body.model, detail: detail, outputLanguage: language))
+        )
+    }
+
+    private func start(_ target: Target, body: Operations.StartSummaryJob.Input.Body.JsonPayload) async throws -> Job? {
+        guard let origin = URL(string: target.origin) else { throw URLError(.badURL) }
+        let data = try await client.data(origin: origin, connectionId: target.connectionID, maximumBytes: 65536) {
+            try await $0.startSummaryJob(path: .init(meetingId: target.meetingID.uuidString.lowercased()), body: .json(body)).accepted.body.json
+        }
         return try JSONDecoder().decode(Response.self, from: data).job
     }
 
     func cancel(_ target: Target, id: UUID) async throws -> Job? {
-        var request = try request(target, path: "summary/job/\(id.uuidString.lowercased())/cancel")
-        request.httpMethod = "POST"
-        let data = try await client.data(for: request, connectionId: target.connectionID, maximumBytes: 65536)
+        guard let origin = URL(string: target.origin) else { throw URLError(.badURL) }
+        let data = try await client.data(origin: origin, connectionId: target.connectionID, maximumBytes: 65536) {
+            try await $0.cancelSummaryJob(path: .init(meetingId: target.meetingID.uuidString.lowercased(), jobId: id.uuidString.lowercased())).ok.body
+                .json
+        }
         return try JSONDecoder().decode(Response.self, from: data).job
     }
 
     func retry(_ target: Target, previousID: String, id: UUID) async throws -> Job? {
-        guard UUID(uuidString: previousID) != nil else { throw Failure.unavailable }
-        var request = try request(target, path: "summary/job/\(previousID)/retry")
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONEncoder().encode(["id": id.uuidString.lowercased()])
-        let data = try await client.data(for: request, connectionId: target.connectionID, maximumBytes: 65536)
+        guard UUID(uuidString: previousID) != nil, let origin = URL(string: target.origin) else { throw Failure.unavailable }
+        let data = try await client.data(origin: origin, connectionId: target.connectionID, maximumBytes: 65536) {
+            try await $0.retrySummaryJob(
+                path: .init(meetingId: target.meetingID.uuidString.lowercased(), jobId: previousID),
+                body: .json(.init(id: id.uuidString.lowercased()))
+            ).accepted.body.json
+        }
         return try JSONDecoder().decode(Response.self, from: data).job
     }
 
@@ -226,11 +248,10 @@ actor ServerSummaryService {
                 if let captured = processing?.serverSettings {
                     settings = captured
                 } else {
-                    let data = try await client.data(
-                        for: request(origin: target.origin, path: "/api/v1/account/settings"),
-                        connectionId: target.connectionID,
-                        maximumBytes: 8192
-                    )
+                    guard let origin = URL(string: target.origin) else { throw URLError(.badURL) }
+                    let data = try await client.data(origin: origin, connectionId: target.connectionID, maximumBytes: 8192) {
+                        try await $0.getSettings().ok.body.json
+                    }
                     guard let saved = try JSONDecoder().decode(ServerAccountSettings.Response.self, from: data).settings
                     else { throw Failure.unavailable }
                     settings = saved
@@ -329,12 +350,12 @@ actor ServerSummaryService {
         var result: [Int: RecordingPair] = [:]
         var cursor: String?
         repeat {
-            let path = "/api/v1/meetings/\(target.meetingID.uuidString.lowercased())/recordings" + (cursor.map { "?cursor=\($0)" } ?? "")
-            let data = try await client.data(
-                for: request(origin: target.origin, path: path),
-                connectionId: target.connectionID,
-                maximumBytes: 2 * 1024 * 1024
-            )
+            guard let origin = URL(string: target.origin) else { throw URLError(.badURL) }
+            let pageCursor = cursor
+            let data = try await client.data(origin: origin, connectionId: target.connectionID, maximumBytes: 2 * 1024 * 1024) {
+                try await $0.listRecordings(path: .init(meetingId: target.meetingID.uuidString.lowercased()), query: .init(cursor: pageCursor)).ok
+                    .body.json
+            }
             let page = try JSONDecoder().decode(Page.self, from: data)
             for item in page.items where numbers.contains(item.id) {
                 result[item.id] = RecordingPair(micFileId: item.audio["mic"]?.fileId, systemFileId: item.audio["system"]?.fileId)
@@ -371,13 +392,6 @@ actor ServerSummaryService {
             try await Task.sleep(for: .seconds(1))
         }
         throw Failure.syncPending
-    }
-
-    private func request(_ target: Target, path: String) throws -> URLRequest {
-        try request(
-            origin: target.origin,
-            path: "/api/v1/vaults/\(target.vaultID.uuidString.lowercased())/meetings/\(target.meetingID.uuidString.lowercased())/\(path)"
-        )
     }
 
     private func request(origin: String, path: String) throws -> URLRequest {

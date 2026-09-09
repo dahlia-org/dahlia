@@ -4,6 +4,7 @@ import GRDB
 /// メインウィンドウ、メニューバー、ツールバーから共通利用する録音開始ロジック。
 @MainActor
 final class RecordingCoordinator {
+    private let isAppReady: @MainActor () -> Bool
     private let viewModel: CaptionViewModel
     private let sidebarViewModel: SidebarViewModel
     private let mainWindowNavigation: MainWindowNavigation
@@ -17,8 +18,10 @@ final class RecordingCoordinator {
         mainWindowNavigation: MainWindowNavigation,
         onRecordingDidStart: @escaping @MainActor () -> Void,
         onRecordingDidStop: @escaping @MainActor () -> Void,
-        meetingLinkOpener: MeetingLinkOpener = MeetingLinkOpener()
+        meetingLinkOpener: MeetingLinkOpener = MeetingLinkOpener(),
+        isAppReady: @escaping @MainActor () -> Bool = { true }
     ) {
+        self.isAppReady = isAppReady
         self.viewModel = viewModel
         self.sidebarViewModel = sidebarViewModel
         self.mainWindowNavigation = mainWindowNavigation
@@ -28,7 +31,7 @@ final class RecordingCoordinator {
     }
 
     var canStartNewMeeting: Bool {
-        viewModel.canBeginRecording
+        isAppReady() && viewModel.canBeginRecording
             && sidebarViewModel.dbQueue != nil
             && sidebarViewModel.currentVault.map { $0.syncRole != "member" } == true
     }
@@ -100,7 +103,7 @@ final class RecordingCoordinator {
     }
 
     private func createDraftMeeting(project: ProjectOverviewItem?) {
-        guard sidebarViewModel.canEditCurrentVault,
+        guard isAppReady(), sidebarViewModel.canEditCurrentVault,
               !viewModel.isRecordingStartPending,
               !viewModel.isFinalizingRecording else { return }
         mainWindowNavigation.showMeetings()
@@ -125,7 +128,7 @@ final class RecordingCoordinator {
 
     func createEmptyMeeting() {
         mainWindowNavigation.showMeetings()
-        guard sidebarViewModel.canEditCurrentVault else { return }
+        guard isAppReady(), sidebarViewModel.canEditCurrentVault else { return }
         guard let dbQueue = sidebarViewModel.dbQueue,
               let vault = sidebarViewModel.currentVault else {
             MainWindowOpener.shared.openMainWindow()
@@ -146,7 +149,7 @@ final class RecordingCoordinator {
 
     func openCalendarEvent(_ event: CalendarEvent) {
         mainWindowNavigation.openMeetings()
-        guard let dbQueue = sidebarViewModel.dbQueue,
+        guard isAppReady(), let dbQueue = sidebarViewModel.dbQueue,
               let vault = sidebarViewModel.currentVault else { return }
 
         let repository = MeetingRepository(dbQueue: dbQueue)

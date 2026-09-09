@@ -12,6 +12,11 @@ import { user as authUser } from "./generated/sqlite-auth-schema";
 
 const sqliteTimestamp = (name: string) => integer(name, { mode: "timestamp_ms" });
 
+export const serverInitializations = sqliteTable("server_initializations", {
+  name: text("name").primaryKey(),
+  initializedAt: sqliteTimestamp("initialized_at").notNull(),
+});
+
 export const accountSettings = sqliteTable("account_settings", {
   userId: text("user_id").primaryKey().references(() => authUser.id, { onDelete: "cascade" }),
   summary: text("summary", { mode: "json" }).$type<AccountSettings["summary"]>().default(DEFAULT_ACCOUNT_SETTINGS.summary).notNull(),

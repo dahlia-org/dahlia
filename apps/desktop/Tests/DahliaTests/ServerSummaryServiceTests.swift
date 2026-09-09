@@ -1,5 +1,6 @@
 import DahliaRuntimeSupport
 #if canImport(Testing)
+    import DahliaServerAPI
     import Foundation
     import GRDB
     import Synchronization
@@ -24,6 +25,10 @@ import DahliaRuntimeSupport
             let encoded = try JSONEncoder().encode(body)
             #expect(encoded.count <= 8192)
             var job = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+            job["method"] = "audio"
+            job["outputLanguage"] = "ja"
+            job["attempts"] = 1
+            job["error"] = NSNull()
             job["status"] = "processing"
             job["stage"] = "transcribing"
             job["createdAt"] = "2026-09-09T00:00:00.000Z"
@@ -31,7 +36,13 @@ import DahliaRuntimeSupport
             job["settings"] = ["model": "gemini-3-8-flash", "detail": "high", "reasoningEffort": "medium"]
             let response = try JSONSerialization.data(withJSONObject: ["job": job])
             #expect(response.count > 8192)
-            ImageURLProtocol.register(origin: target.origin) { _ in (200, [:], response) }
+            ImageURLProtocol.register(origin: target.origin) { request in
+                (
+                    request.httpMethod == "POST" && !request.url!.path.hasSuffix("/cancel") ? 202 : 200,
+                    ["Content-Type": "application/json"],
+                    response
+                )
+            }
             defer { ImageURLProtocol.remove(origin: target.origin) }
             let configuration = URLSessionConfiguration.ephemeral
             configuration.protocolClasses = [ImageURLProtocol.self]
@@ -72,7 +83,8 @@ import DahliaRuntimeSupport
                     200,
                     [:],
                     Data(#"{"meetingSummaryGeneration":{"version":1,"sources":["transcript"]}}"#.utf8)
-                ) }
+                )
+                }
                 // Synchronization is unavailable; the unsynchronized meeting's job API must never be queried.
                 return (404, [:], Data(#"{"error":"summary_meeting_unavailable"}"#.utf8))
             }
@@ -87,7 +99,7 @@ import DahliaRuntimeSupport
                 try await service.generate(target, id: .v7(), detail: nil, dbQueue: queue)
             }
             let requested = paths.withLock { $0 }
-            #expect(!requested.contains { $0.hasSuffix("/summary") || $0.hasSuffix("/summary/job") })
+            #expect(!requested.contains { $0.hasSuffix("/summaries") || $0.hasSuffix("/summary-jobs/latest") })
             #expect(requested.count == (detached ? 1 : 2))
         }
 
@@ -120,16 +132,29 @@ import DahliaRuntimeSupport
                     200,
                     [:],
                     Data(#"{"meetingSummaryGeneration":{"version":1,"sources":["transcript"]}}"#.utf8)
-                ) }
+                )
+                }
                 if request.url!.path == "/api/v1/account/settings" {
                     return (200, [:], Data("""
                     {"settings":{"summary":{"method":"transcript","detail":"high",
-                    "methodSettings":{"transcript":{"model":"gpt-5.4","reasoningEffort":"medium"}}},
+                    "methodSettings":{"transcript":{"model":"gpt-5.4","reasoningEffort":"medium"},"audio":{"model":"gemini-3-8-flash","reasoningEffort":"medium"}}},
                     "outputLanguage":"ja","analysisLanguages":{"scope":"all","identifiers":[]}}}
                     """.utf8))
                 }
-                if request.httpMethod == "POST" { posts.withLock { $0 += 1 } } else if posts.withLock({ $0 }) == 0 { return (200, [:], Data(#"{"job":null}"#.utf8)) }
-                return (200, [:], Data("{\"job\":{\"id\":\"\(id.uuidString)\",\"status\":\"succeeded\"}}".utf8))
+                if request.httpMethod == "POST" { posts.withLock { $0 += 1 } } else if posts.withLock({ $0 }) == 0 { return (
+                    404,
+                    ["Content-Type": "application/problem+json"],
+                    Data(#"{"type":"about:blank","title":"Not found","status":404,"code":"summary_job_not_found"}"#.utf8)
+                )
+                }
+                return (
+                    request.httpMethod == "POST" ? 202 : 200,
+                    ["Content-Type": "application/json"],
+                    Data(
+                        "{\"job\":{\"method\":\"transcript\",\"settings\":{\"model\":\"gpt-5.4\",\"detail\":\"high\",\"reasoningEffort\":\"medium\"},\"outputLanguage\":\"ja\",\"attempts\":1,\"createdAt\":\"2026-09-09T00:00:00.000Z\",\"error\":null,\"id\":\"\(id.uuidString)\",\"status\":\"succeeded\"}}"
+                            .utf8
+                    )
+                )
             }
             defer { ImageURLProtocol.remove(origin: target.origin) }
             let configuration = URLSessionConfiguration.ephemeral
@@ -170,12 +195,19 @@ import DahliaRuntimeSupport
                 }
                 #expect(request.url?
                     .path ==
-                    "/api/v1/vaults/\(target.vaultID.uuidString.lowercased())/meetings/\(target.meetingID.uuidString.lowercased())/summary" +
-                    (request.httpMethod == "POST" ? "" : "/job"))
+                    "/api/v1/meetings/\(target.meetingID.uuidString.lowercased())/summary-jobs" +
+                    (request.httpMethod == "POST" ? "" : "/latest"))
                 if request.httpMethod == "POST", let body = request.httpBody ?? request.httpBodyStream.map(Self.read) {
                     posts.withLock { $0.append(body) }
                 }
-                return (200, [:], Data("{\"job\":{\"id\":\"\(id.uuidString.lowercased())\",\"status\":\"processing\",\"error\":null}}".utf8))
+                return (
+                    request.httpMethod == "POST" ? 202 : 200,
+                    ["Content-Type": "application/json"],
+                    Data(
+                        "{\"job\":{\"method\":\"transcript\",\"settings\":{\"model\":\"gpt-5.4\",\"detail\":\"high\",\"reasoningEffort\":\"medium\"},\"outputLanguage\":\"ja\",\"attempts\":1,\"createdAt\":\"2026-09-09T00:00:00.000Z\",\"error\":null,\"id\":\"\(id.uuidString.lowercased())\",\"status\":\"processing\",\"error\":null}}"
+                            .utf8
+                    )
+                )
             }
             defer { ImageURLProtocol.remove(origin: origin) }
             let configuration = URLSessionConfiguration.ephemeral
@@ -312,7 +344,7 @@ import DahliaRuntimeSupport
         @Test(arguments: [
             "{}",
             #"{"meetingSummaryGeneration":{"version":2,"sources":["transcript","audio"]}}"#,
-            #"{"meetingSummaryGeneration":{"version":2}}"#,
+            #"{"meetingSummaryGeneration":{"version":2,"sources":[]}}"#,
         ])
         func missingOrUnsupportedCapabilitiesHaveNoMethods(_ json: String) async throws {
             let origin = "https://capabilities-\(UUID.v7().uuidString.lowercased()).test"
@@ -416,15 +448,28 @@ import DahliaRuntimeSupport
                 }
                 if request.url!.path.hasSuffix("/recordings") {
                     return (200, [:], Data("""
-                    {"items":[{"id":2,"audio":{"system":{"fileId":"excluded"}}},
-                    {"id":1,"audio":{"mic":{"fileId":"\(fileID.uuidString.lowercased())"}}}],"nextCursor":null}
+                    {"items":[{"id":2,"startedAt":"2026-09-09T00:00:00Z","endedAt":"2026-09-09T00:00:01Z","audio":{"system":{
+                    "fileId":"019f0d36-0520-7000-8000-000000000001","contentType":"audio/mp4","size":1,"checksum":null,"contentUrl":"/audio"}}},
+                    {"id":1,"startedAt":"2026-09-09T00:00:00Z","endedAt":"2026-09-09T00:00:01Z","audio":{"mic":{"fileId":"\(fileID.uuidString
+                        .lowercased())","contentType":"audio/mp4","size":1,"checksum":null,"contentUrl":"/audio"}}}],"nextCursor":null}
                     """.utf8))
                 }
                 if request.httpMethod == "POST" {
                     if let data = request.httpBody ?? request.httpBodyStream.map(Self.read) { bodies.withLock { $0.append(data) } }
-                    return (200, [:], Data("{\"job\":{\"id\":\"\(jobID.uuidString)\",\"status\":\"\(status)\",\"stage\":\"saving\"}}".utf8))
+                    return (
+                        request.httpMethod == "POST" ? 202 : 200,
+                        ["Content-Type": "application/json"],
+                        Data(
+                            "{\"job\":{\"method\":\"transcript\",\"settings\":{\"model\":\"gpt-5.4\",\"detail\":\"high\",\"reasoningEffort\":\"medium\"},\"outputLanguage\":\"ja\",\"attempts\":1,\"createdAt\":\"2026-09-09T00:00:00.000Z\",\"error\":null,\"id\":\"\(jobID.uuidString)\",\"status\":\"\(status)\",\"stage\":\"saving\"}}"
+                                .utf8
+                        )
+                    )
                 }
-                return (200, [:], Data(#"{"job":null}"#.utf8))
+                return (
+                    404,
+                    ["Content-Type": "application/problem+json"],
+                    Data(#"{"type":"about:blank","title":"Not found","status":404,"code":"summary_job_not_found"}"#.utf8)
+                )
             }
             defer { ImageURLProtocol.remove(origin: target.origin) }
             let configuration = URLSessionConfiguration.ephemeral
@@ -451,12 +496,15 @@ import DahliaRuntimeSupport
             }
             #expect(stages.withLock { $0.last } == "saving")
             let data = try #require(bodies.withLock { $0.first })
-            let body = try JSONDecoder().decode(ServerSummaryService.Request.self, from: data)
-            #expect(body.input.recordings?.count == 1)
-            #expect(body.input.recordings?.first?.micFileId == fileID.uuidString.lowercased())
-            #expect(body.input.transcriptionModel == "gemini-audio")
+            let body = try JSONDecoder().decode(Operations.StartSummaryJob.Input.Body.JsonPayload.Value1Payload.self, from: data)
+            guard case let .case2(input) = body.input else { Issue.record("Expected recording input")
+                return
+            }
+            #expect(input.recordings.count == 1)
+            #expect(input.recordings.first?.micFileId == fileID.uuidString.lowercased())
+            #expect(input.transcriptionModel == "gemini-audio")
             #expect(body.model == "summary-model")
-            #expect(body.summaryLanguage == "en")
+            #expect(body.outputLanguage.rawValue == "en")
             let sessions = try await queue.read { db in try RecordingSessionRecord.fetchAll(db) }
             #expect((sessions.first { $0.id == first }?.batchCompletedAt != nil) == (status == "succeeded"))
             #expect(sessions.first { $0.id == later }?.batchCompletedAt == nil)
@@ -467,7 +515,7 @@ import DahliaRuntimeSupport
             defer { stream.close() }
             var data = Data()
             var buffer = [UInt8](repeating: 0, count: 1024)
-            while stream.hasBytesAvailable {
+            while true {
                 let count = stream.read(&buffer, maxLength: buffer.count)
                 guard count > 0 else { break }
                 data.append(contentsOf: buffer.prefix(count))

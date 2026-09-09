@@ -1,30 +1,24 @@
+import { apiUrls } from "./generated-operations";
+import { apiQuery } from "./live-data";
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import { uiText } from "./api";
 import { useLiveJSON } from "./live-data";
 
-interface FileInfo {
-  id: string;
-  revision: number;
-  name: string;
-  content_type: string;
-  size?: number;
-  variants: { thumb_1568?: string };
-  metadata: { caption: string | null; ocr_text: string | null; width?: number; height?: number };
-}
+type FileInfo = import("./generated-api").components["schemas"]["File"];
 
 function ViewerIcon({ path }: { path: string }) {
   return <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={path} /></svg>;
 }
 
 export function FileViewer({ fileId, separateTab = false, capturedAt, onClose }: { fileId: string; separateTab?: boolean; capturedAt?: string | null; onClose?: () => void }) {
-  const query = useLiveJSON<FileInfo>(`/api/v1/files/${fileId}/metadata`);
+  const query = useLiveJSON<FileInfo>(apiQuery("getFile", { params: { path: { fileId: fileId } } }));
   const file = query.data;
   const [failed, setFailed] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
   const [zoom, setZoom] = useState(100);
   const [copyStatus, setCopyStatus] = useState("");
   const previewImage = useRef<HTMLImageElement>(null);
-  const content = `/api/v1/files/${fileId}`;
+  const content = apiUrls.getFileContent({ params: { path: { fileId } } });
   useEffect(() => setFailed(false), [file]);
   useEffect(() => { setZoom(100); setInfoOpen(false); setCopyStatus(""); }, [fileId]);
 
@@ -66,8 +60,8 @@ export function FileViewer({ fileId, separateTab = false, capturedAt, onClose }:
     }
   }
 
-  const supportedImage = !!file && (["image/png", "image/jpeg", "image/webp", "image/gif", "image/avif"].includes(file.content_type)
-    || (file.content_type === "image/tiff" && !!file.variants.thumb_1568));
+  const supportedImage = !!file && (["image/png", "image/jpeg", "image/webp", "image/gif", "image/avif"].includes(file.contentType)
+    || (file.contentType === "image/tiff" && !!file.variants?.thumb_1568));
   let preview: ReactNode = null;
   if (file) {
     if (!supportedImage) {
@@ -77,7 +71,7 @@ export function FileViewer({ fileId, separateTab = false, capturedAt, onClose }:
         {uiText("Unable to load preview.", "プレビューを読み込めません。")} <button className="secondary" onClick={() => { setFailed(false); query.reload(); }}>{uiText("Retry", "再試行")}</button>
       </p>;
     } else {
-      preview = <img ref={previewImage} className="file-preview-image" src={file.variants.thumb_1568 ?? content} alt={file.metadata.caption || file.name} onError={() => setFailed(true)} onClick={closeOnBackdropClick} />;
+      preview = <img ref={previewImage} className="file-preview-image" src={file.variants?.thumb_1568 ?? content} alt={file.metadata.caption || file.name} onError={() => setFailed(true)} onClick={closeOnBackdropClick} />;
     }
   }
 
@@ -101,12 +95,12 @@ export function FileViewer({ fileId, separateTab = false, capturedAt, onClose }:
       <h2>{infoLabel}</h2>
       <dl>
         {capturedAt && <><dt>{uiText("Captured", "撮影日時")}</dt><dd>{new Date(capturedAt).toLocaleString()}</dd></>}
-        <dt>{uiText("File format", "ファイル形式")}</dt><dd>{file.content_type}</dd>
+        <dt>{uiText("File format", "ファイル形式")}</dt><dd>{file.contentType}</dd>
         {file.size !== undefined && <><dt>{uiText("File size", "ファイルサイズ")}</dt><dd>{new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(file.size / 1024)} kB</dd></>}
         {file.metadata.width && file.metadata.height && <><dt>{uiText("Image size", "画像サイズ")}</dt><dd>{file.metadata.width} × {file.metadata.height}</dd></>}
       </dl>
       <h2>{uiText("Image description", "画像の説明")}</h2><p>{file.metadata.caption || uiText("No description", "説明はありません")}</p>
-      <h2>{uiText("Detected text", "検出したテキスト")}</h2><p>{file.metadata.ocr_text || uiText("No detected text", "検出したテキストはありません")}</p>
+      <h2>{uiText("Detected text", "検出したテキスト")}</h2><p>{file.metadata.ocrText || uiText("No detected text", "検出したテキストはありません")}</p>
       <p className="file-info-name">{file.name}</p>
       {separateTab && <a href={`/files/${fileId}`} target="_blank" rel="noreferrer">{uiText("Open in new tab", "別タブで開く")}</a>}
     </aside>}

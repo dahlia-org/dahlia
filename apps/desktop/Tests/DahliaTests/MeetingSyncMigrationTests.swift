@@ -1701,12 +1701,15 @@
             #expect(queued.map { $0["itemCount"] as Int } == [101, 0])
         }
 
-        @Test
-        func initialSnapshotDefersOnlyConstructionWhileRecordingIsActive() async throws {
+        @Test(arguments: ["target", "local", "server"])
+        func initialSnapshotDefersOnlyConstructionWhileRecordingIsActive(recordingVault: String) async throws {
             let (database, vault) = try await syncedDatabase()
+            var otherVault = VaultRecord(id: .v7(), path: nil, name: "Other", createdAt: .distantPast, lastOpenedAt: .now)
+            if recordingVault == "server" { otherVault.accountConnectionId = vault.accountConnectionId }
+            let recordingVaultRecord = otherVault
             let meeting = MeetingRecord(
                 id: .v7(),
-                vaultId: vault.id,
+                vaultId: recordingVault == "target" ? vault.id : otherVault.id,
                 projectId: nil,
                 name: "Recording",
                 createdAt: .now,
@@ -1727,13 +1730,14 @@
                     sql: "UPDATE vaults SET syncConfirmedConnectionId = NULL WHERE id = ?",
                     arguments: [vault.id]
                 )
+                if recordingVault != "target" { try recordingVaultRecord.insert(db) }
                 try meeting.insert(db)
                 try session.insert(db)
             }
             try await SyncInitialSnapshotBuilder.enqueuePending(dbQueue: database.dbQueue)
             #expect(try await database.dbQueue.read { db in
-                try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_transactions")
-            } == 0)
+                try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_transactions WHERE vaultId = ?", arguments: [vault.id])
+            } == (recordingVault == "target" ? 0 : 1))
 
             try await database.dbQueue.write { db in
                 try db.execute(

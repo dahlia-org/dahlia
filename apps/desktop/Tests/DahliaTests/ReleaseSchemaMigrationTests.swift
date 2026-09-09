@@ -14,6 +14,7 @@
             try AppDatabaseManager.migrator.migrate(queue, upTo: "v41_vaultAISettingsBackfill")
             let vaultID = UUID.v7(), meetingID = UUID.v7(), segmentID = UUID.v7(), screenshotID = UUID.v7()
             let previewID = UUID.v7()
+            let sessionID = UUID.v7(), emptySessionID = UUID.v7(), completedSessionID = UUID.v7()
             let date = Date(timeIntervalSince1970: 1_780_000_000)
             let bytes = Data([1, 2, 3, 4])
             try queue.write { db in
@@ -23,11 +24,21 @@
                 """, arguments: [vaultID, date, date])
                 try MeetingRecord(id: meetingID, vaultId: vaultID, projectId: nil, name: "Released meeting", createdAt: date, updatedAt: date)
                     .insert(db)
+                for (id, start, end, duration) in [
+                    (sessionID, date, nil as Date?, nil as Double?),
+                    (emptySessionID, date.addingTimeInterval(10), nil, 2),
+                    (completedSessionID, date.addingTimeInterval(20), date.addingTimeInterval(25), 5),
+                ] {
+                    try db.execute(sql: """
+                    INSERT INTO recording_sessions(id, meetingId, startedAt, endedAt, duration, createdAt, updatedAt)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """, arguments: [id, meetingID, start, end, duration, start, end ?? start])
+                }
                 try db.execute(sql: """
-                INSERT INTO transcript_segments(id, meetingId, startTime, endTime, text, translatedText, isConfirmed, speakerLabel,
+                INSERT INTO transcript_segments(id, meetingId, sessionId, startTime, endTime, text, translatedText, isConfirmed, speakerLabel,
                     audioFeatureVersion, audioVoicedFrameRatio)
-                VALUES (?, ?, ?, ?, '原文', 'translation', 1, 'mic', 1, 0.7)
-                """, arguments: [segmentID, meetingID, date, date.addingTimeInterval(1)])
+                VALUES (?, ?, ?, ?, ?, '原文', 'translation', 1, 'mic', 1, 0.7)
+                """, arguments: [segmentID, meetingID, sessionID, date, date.addingTimeInterval(1)])
                 try db.execute(sql: """
                 INSERT INTO transcript_segments(id, meetingId, startTime, text, isConfirmed)
                 VALUES (?, ?, ?, 'unfinished preview', 0)
@@ -54,6 +65,7 @@
                     #expect(try !db.tableExists("files"))
                     #expect(try String.fetchOne(db, sql: "SELECT text FROM transcript_segments") == "原文")
                     #expect(try Data.fetchOne(db, sql: "SELECT imageData FROM screenshots") == bytes)
+                    #expect(try Date.fetchOne(db, sql: "SELECT endedAt FROM recording_sessions WHERE id = ?", arguments: [sessionID]) == nil)
                     try db.execute(sql: "DROP TABLE vault_relocation_scope")
                 }
             }
@@ -67,6 +79,16 @@
                 #expect(segment.text == "原文" && segment.translatedText == "translation")
                 #expect(segment.audioSource == "mic" && segment.audioVoicedFrameRatio == 0.7)
                 #expect(segment.startTime == date && segment.endTime == date.addingTimeInterval(1))
+                #expect(segment.sessionId == sessionID)
+                #expect(segment.createdAt == date.addingTimeInterval(25))
+                let recovered = try #require(try RecordingSessionRecord.fetchOne(db, key: sessionID))
+                #expect(recovered.endedAt == date.addingTimeInterval(1) && recovered.duration == 1)
+                let empty = try #require(try RecordingSessionRecord.fetchOne(db, key: emptySessionID))
+                #expect(empty.endedAt == date.addingTimeInterval(12) && empty.duration == 2)
+                let completed = try #require(try RecordingSessionRecord.fetchOne(db, key: completedSessionID))
+                #expect(completed.endedAt == date.addingTimeInterval(25) && completed.duration == 5)
+                #expect(try RecordingSessionRecord.fetchCount(db) == 3)
+                #expect(try MeetingRecord.fetchOne(db, key: meetingID)?.duration == 8)
                 #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM transcript_segment_bodies WHERE segmentId = ?", arguments: [previewID]) == 0)
                 #expect(try SummaryContent.fetchOne(db, key: meetingID)?.document == "{\"version\":1}")
                 #expect(try SummaryExportRecord.fetchOne(meetingId: meetingID, type: .vault, in: db)?.url == "vault:///saved.md")

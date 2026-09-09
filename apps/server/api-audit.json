@@ -1,0 +1,1754 @@
+{
+  "owned": [
+    {
+      "operationId": "getHealth",
+      "method": "GET",
+      "path": "/healthz",
+      "classification": "maintained",
+      "previous": "/healthz",
+      "reason": "Process health",
+      "consumers": [
+        "public API; no bundled caller"
+      ]
+    },
+    {
+      "operationId": "getOpenAPI",
+      "method": "GET",
+      "path": "/openapi.json",
+      "classification": "modified",
+      "previous": "new public contract",
+      "reason": "Public OpenAPI 3.1 contract",
+      "consumers": [
+        "public API; no bundled caller"
+      ]
+    },
+    {
+      "operationId": "getSession",
+      "method": "GET",
+      "path": "/api/v1/session",
+      "classification": "modified",
+      "previous": "/api/session",
+      "reason": "Current browser identity",
+      "consumers": [
+        "apps/server/src/client/App.tsx",
+        "apps/desktop/Sources/Dahlia/Services/DahliaCloudService.swift"
+      ]
+    },
+    {
+      "operationId": "listSessions",
+      "method": "GET",
+      "path": "/api/v1/sessions",
+      "classification": "modified",
+      "previous": "/api/sessions",
+      "reason": "OAuth sessions (accounts mode only)",
+      "consumers": [
+        "apps/server/src/client/App.tsx"
+      ]
+    },
+    {
+      "operationId": "revokeSession",
+      "method": "DELETE",
+      "path": "/api/v1/sessions/{id}",
+      "classification": "modified",
+      "previous": "/api/sessions/{id}",
+      "reason": "Revoke an OAuth session",
+      "consumers": [
+        "apps/server/src/client/App.tsx"
+      ]
+    },
+    {
+      "operationId": "listAdministrators",
+      "method": "GET",
+      "path": "/api/v1/admin/members",
+      "classification": "modified",
+      "previous": "/api/admin/members",
+      "reason": "List platform administrators; administrator only",
+      "consumers": [
+        "apps/server/src/client/App.tsx"
+      ]
+    },
+    {
+      "operationId": "addAdministrator",
+      "method": "POST",
+      "path": "/api/v1/admin/members",
+      "classification": "modified",
+      "previous": "/api/admin/members",
+      "reason": "Grant administrator access to an existing user",
+      "consumers": [
+        "apps/server/src/client/App.tsx"
+      ]
+    },
+    {
+      "operationId": "removeAdministrator",
+      "method": "DELETE",
+      "path": "/api/v1/admin/members/{userId}",
+      "classification": "modified",
+      "previous": "/api/admin/members/{email}",
+      "reason": "Revoke administrator access; retain the last administrator",
+      "consumers": [
+        "apps/server/src/client/App.tsx"
+      ]
+    },
+    {
+      "operationId": "listServerUsers",
+      "method": "GET",
+      "path": "/api/v1/admin/users",
+      "classification": "modified",
+      "previous": "/api/admin/users",
+      "reason": "Administrator directory; ordered by name and ID",
+      "consumers": [
+        "apps/server/src/client/App.tsx"
+      ]
+    },
+    {
+      "operationId": "listServerOrganizations",
+      "method": "GET",
+      "path": "/api/v1/admin/organizations",
+      "classification": "modified",
+      "previous": "/api/admin/organizations",
+      "reason": "Administrator organization directory",
+      "consumers": [
+        "apps/server/src/client/App.tsx"
+      ]
+    },
+    {
+      "operationId": "getSettings",
+      "method": "GET",
+      "path": "/api/v1/account/settings",
+      "classification": "maintained",
+      "previous": "/api/v1/account/settings",
+      "reason": "Read current account settings",
+      "consumers": [
+        "apps/server/src/client/SummaryGeneration.tsx",
+        "apps/desktop/Sources/Dahlia/ViewModels/ServerAccountSettingsModel.swift",
+        "apps/desktop/Sources/Dahlia/Services/ServerSummaryService.swift"
+      ]
+    },
+    {
+      "operationId": "updateSettings",
+      "method": "PATCH",
+      "path": "/api/v1/account/settings",
+      "classification": "maintained",
+      "previous": "/api/v1/account/settings",
+      "reason": "Merge supplied fields, including nested summary settings; maximum 8 KiB",
+      "consumers": [
+        "apps/server/src/client/SummaryGeneration.tsx",
+        "apps/desktop/Sources/Dahlia/ViewModels/CaptionViewModel.swift",
+        "apps/desktop/Sources/Dahlia/ViewModels/ServerAccountSettingsModel.swift",
+        "apps/desktop/Sources/Dahlia/Services/AutomaticScreenshotCaptureService.swift"
+      ]
+    },
+    {
+      "operationId": "getCapabilities",
+      "method": "GET",
+      "path": "/api/v1/capabilities",
+      "classification": "maintained",
+      "previous": "/api/v1/capabilities",
+      "reason": "Discover feature versions; unsupported features are omitted",
+      "consumers": [
+        "apps/server/src/client/SummaryGeneration.tsx",
+        "apps/desktop/Sources/Dahlia/Database/SearchIndexer.swift",
+        "apps/desktop/Sources/Dahlia/Services/RecordingArchiveService.swift",
+        "apps/desktop/Sources/Dahlia/Services/SyncWorker.swift",
+        "apps/desktop/Sources/Dahlia/Services/ServerSummaryService.swift",
+        "apps/desktop/Sources/Dahlia/Services/MeetingContentProvider+Search.swift"
+      ]
+    },
+    {
+      "operationId": "listVaults",
+      "method": "GET",
+      "path": "/api/v1/vaults",
+      "classification": "modified",
+      "previous": "/api/v1/vaults",
+      "reason": "Accessible Vaults",
+      "consumers": [
+        "apps/server/src/client/App.tsx",
+        "apps/server/src/client/Sidebar.tsx",
+        "apps/desktop/Sources/Dahlia/ViewModels/BackupSettingsViewModel.swift",
+        "apps/desktop/Sources/Dahlia/Services/BackupService.swift",
+        "apps/desktop/Sources/Dahlia/Services/CloudVaultDiscovery.swift"
+      ]
+    },
+    {
+      "operationId": "getVault",
+      "method": "GET",
+      "path": "/api/v1/vaults/{vaultId}",
+      "classification": "maintained",
+      "previous": "/api/v1/vaults/{vaultId}",
+      "reason": "Get Vault",
+      "consumers": [
+        "apps/server/src/client/App.tsx",
+        "apps/server/src/client/Sidebar.tsx"
+      ]
+    },
+    {
+      "operationId": "listProjects",
+      "method": "GET",
+      "path": "/api/v1/vaults/{vaultId}/projects",
+      "classification": "modified",
+      "previous": "/api/v1/vaults/{vaultId}/projects",
+      "reason": "Vault project tree",
+      "consumers": [
+        "apps/server/src/client/App.tsx",
+        "apps/server/src/client/Search.tsx",
+        "apps/server/src/client/Sidebar.tsx",
+        "apps/desktop/Sources/Dahlia/Services/SyncWorker.swift",
+        "apps/server/src/mcp.ts (shared service; native MCP protocol)"
+      ]
+    },
+    {
+      "operationId": "getProject",
+      "method": "GET",
+      "path": "/api/v1/projects/{projectId}",
+      "classification": "modified",
+      "previous": "/api/v1/vaults/{vaultId}/projects/{projectId} (duplicate scoped route removed; unscoped route retained)",
+      "reason": "Resolve and get an accessible Project",
+      "consumers": [
+        "apps/server/src/client/App.tsx",
+        "apps/server/src/mcp.ts (shared service; native MCP protocol)"
+      ]
+    },
+    {
+      "operationId": "listMeetings",
+      "method": "GET",
+      "path": "/api/v1/vaults/{vaultId}/meetings",
+      "classification": "modified",
+      "previous": "/api/v1/vaults/{vaultId}/meetings",
+      "reason": "Meetings by creation time and ID; 200 per page",
+      "consumers": [
+        "apps/server/src/client/App.tsx",
+        "apps/server/src/client/Sidebar.tsx",
+        "apps/server/src/mcp.ts (shared service; native MCP protocol)"
+      ]
+    },
+    {
+      "operationId": "getMeeting",
+      "method": "GET",
+      "path": "/api/v1/meetings/{meetingId}",
+      "classification": "modified",
+      "previous": "/api/v1/vaults/{vaultId}/meetings/{meetingId} (duplicate scoped route removed; unscoped route retained)",
+      "reason": "Resolve and get meeting metadata",
+      "consumers": [
+        "apps/server/src/client/App.tsx",
+        "apps/server/src/client/Sidebar.tsx",
+        "apps/desktop/Sources/Dahlia/Services/SyncWorker.swift",
+        "apps/server/src/mcp.ts (shared service; native MCP protocol)"
+      ]
+    },
+    {
+      "operationId": "listSummaries",
+      "method": "GET",
+      "path": "/api/v1/meetings/{meetingId}/summaries",
+      "classification": "modified",
+      "previous": "/api/v1/vaults/{vaultId}/meetings/{meetingId}/summary",
+      "reason": "Summary versions, newest first; bodies omitted",
+      "consumers": [
+        "apps/server/src/client/SummaryHistory.tsx"
+      ]
+    },
+    {
+      "operationId": "getSummary",
+      "method": "GET",
+      "path": "/api/v1/meetings/{meetingId}/summaries/{version}",
+      "classification": "modified",
+      "previous": "/api/v1/vaults/{vaultId}/meetings/{meetingId}/summary/{version}",
+      "reason": "Read a saved summary version",
+      "consumers": [
+        "apps/server/src/client/SummaryHistory.tsx"
+      ]
+    },
+    {
+      "operationId": "getLatestSummary",
+      "method": "GET",
+      "path": "/api/v1/meetings/{meetingId}/summaries/latest",
+      "classification": "modified",
+      "previous": "/api/v1/vaults/{vaultId}/meetings/{meetingId}/summary/latest",
+      "reason": "Current summary; present=false when absent",
+      "consumers": [
+        "apps/server/src/client/App.tsx",
+        "apps/desktop/Sources/Dahlia/Services/MeetingContentProvider.swift"
+      ]
+    },
+    {
+      "operationId": "listTranscripts",
+      "method": "GET",
+      "path": "/api/v1/meetings/{meetingId}/transcripts",
+      "classification": "modified",
+      "previous": "/api/v1/vaults/{vaultId}/meetings/{meetingId}/transcript",
+      "reason": "Transcript versions, newest first",
+      "consumers": [
+        "apps/server/src/client/SummaryGeneration.tsx",
+        "apps/server/src/client/TranscriptHistory.tsx"
+      ]
+    },
+    {
+      "operationId": "getTranscript",
+      "method": "GET",
+      "path": "/api/v1/meetings/{meetingId}/transcripts/{version}",
+      "classification": "modified",
+      "previous": "/api/v1/vaults/{vaultId}/meetings/{meetingId}/transcript/{version}",
+      "reason": "Read a transcript version in bounded pages",
+      "consumers": [
+        "apps/server/src/client/TranscriptHistory.tsx"
+      ]
+    },
+    {
+      "operationId": "getLatestTranscript",
+      "method": "GET",
+      "path": "/api/v1/meetings/{meetingId}/transcripts/latest",
+      "classification": "modified",
+      "previous": "/api/v1/vaults/{vaultId}/meetings/{meetingId}/transcript/latest",
+      "reason": "Read current transcript; match version and syncRevision across pages",
+      "consumers": [
+        "apps/server/src/client/TranscriptHistory.tsx",
+        "apps/desktop/Sources/Dahlia/Services/MeetingContentProvider.swift",
+        "apps/server/src/mcp.ts (shared service; native MCP protocol)"
+      ]
+    },
+    {
+      "operationId": "startSummaryJob",
+      "method": "POST",
+      "path": "/api/v1/meetings/{meetingId}/summary-jobs",
+      "classification": "modified",
+      "previous": "/api/v1/vaults/{vaultId}/meetings/{meetingId}/summary",
+      "reason": "Queue an owner-only summary job; ID is the replay key; maximum 8 KiB",
+      "consumers": [
+        "apps/server/src/client/SummaryGeneration.tsx",
+        "apps/desktop/Sources/Dahlia/Services/ServerSummaryService.swift"
+      ]
+    },
+    {
+      "operationId": "getLatestSummaryJob",
+      "method": "GET",
+      "path": "/api/v1/meetings/{meetingId}/summary-jobs/latest",
+      "classification": "modified",
+      "previous": "/api/v1/vaults/{vaultId}/meetings/{meetingId}/summary/job",
+      "reason": "Most recent owner-visible job, or null",
+      "consumers": [
+        "apps/server/src/client/SummaryGeneration.tsx",
+        "apps/desktop/Sources/Dahlia/Services/ServerSummaryService.swift"
+      ]
+    },
+    {
+      "operationId": "getSummaryJob",
+      "method": "GET",
+      "path": "/api/v1/meetings/{meetingId}/summary-jobs/{jobId}",
+      "classification": "modified",
+      "previous": "/api/v1/vaults/{vaultId}/meetings/{meetingId}/summary/job?id={jobId}",
+      "reason": "Get an individual owner-visible job",
+      "consumers": [
+        "apps/desktop/Sources/Dahlia/Services/ServerSummaryService.swift"
+      ]
+    },
+    {
+      "operationId": "cancelSummaryJob",
+      "method": "POST",
+      "path": "/api/v1/meetings/{meetingId}/summary-jobs/{jobId}/cancel",
+      "classification": "modified",
+      "previous": "/api/v1/vaults/{vaultId}/meetings/{meetingId}/summary/job/{jobId}/cancel",
+      "reason": "Cancel a job; repeated cancellation is safe",
+      "consumers": [
+        "apps/server/src/client/SummaryGeneration.tsx",
+        "apps/desktop/Sources/Dahlia/Services/ServerSummaryService.swift"
+      ]
+    },
+    {
+      "operationId": "retrySummaryJob",
+      "method": "POST",
+      "path": "/api/v1/meetings/{meetingId}/summary-jobs/{jobId}/retry",
+      "classification": "modified",
+      "previous": "/api/v1/vaults/{vaultId}/meetings/{meetingId}/summary/job/{jobId}/retry",
+      "reason": "Retry a failed or cancelled job using a new ID",
+      "consumers": [
+        "apps/server/src/client/SummaryGeneration.tsx",
+        "apps/desktop/Sources/Dahlia/Services/ServerSummaryService.swift"
+      ]
+    },
+    {
+      "operationId": "commitTransaction",
+      "method": "POST",
+      "path": "/api/v1/transactions",
+      "classification": "maintained",
+      "previous": "/api/v1/transactions",
+      "reason": "Commit one atomic Vault transaction; maximum 8 MiB",
+      "consumers": [
+        "apps/server/src/client/App.tsx",
+        "apps/desktop/Sources/Dahlia/Services/SyncWorker.swift"
+      ]
+    },
+    {
+      "operationId": "resolveTransaction",
+      "method": "POST",
+      "path": "/api/v1/transactions/resolve",
+      "classification": "maintained",
+      "previous": "/api/v1/transactions/resolve",
+      "reason": "Resolve the exact original request without mutating; never advance the pull cursor from receipts",
+      "consumers": [
+        "apps/server/src/client/App.tsx",
+        "apps/desktop/Sources/Dahlia/Services/SyncWorker.swift"
+      ]
+    },
+    {
+      "operationId": "getChanges",
+      "method": "GET",
+      "path": "/api/v1/vaults/{vaultId}/changes",
+      "classification": "maintained",
+      "previous": "/api/v1/vaults/{vaultId}/changes",
+      "reason": "Durable delta feed; retain highWaterCursor across a catch-up",
+      "consumers": [
+        "apps/desktop/Sources/Dahlia/Services/SyncWorker.swift"
+      ]
+    },
+    {
+      "operationId": "getSnapshot",
+      "method": "GET",
+      "path": "/api/v1/vaults/{vaultId}/snapshot",
+      "classification": "maintained",
+      "previous": "/api/v1/vaults/{vaultId}/snapshot",
+      "reason": "Bounded snapshot; retain startCursor and catch up before reconciliation",
+      "consumers": [
+        "apps/desktop/Sources/Dahlia/Services/SyncWorker.swift"
+      ]
+    },
+    {
+      "operationId": "search",
+      "method": "POST",
+      "path": "/api/v1/vaults/{vaultId}/search",
+      "classification": "modified",
+      "previous": "/api/v1/search (POST body with vaultId)",
+      "reason": "Ranked search with explicit truncation indicators; maximum 16 KiB",
+      "consumers": [
+        "apps/server/src/client/App.tsx",
+        "apps/server/src/client/navigation.ts",
+        "apps/server/src/client/Search.tsx",
+        "apps/server/src/client/live-data.ts",
+        "apps/server/src/client/Sidebar.tsx",
+        "apps/desktop/Sources/Dahlia/Database/TextContentMigration.swift",
+        "apps/desktop/Sources/Dahlia/Database/EmbeddingGemmaDescriptor.swift",
+        "apps/desktop/Sources/Dahlia/Database/MeetingRepository+SidebarSearch.swift",
+        "apps/desktop/Sources/Dahlia/Database/ScreenshotStorageMaintenance.swift",
+        "apps/desktop/Sources/Dahlia/Database/MeetingRepository+ServerSearch.swift",
+        "apps/desktop/Sources/Dahlia/Database/MeetingRepository+ScreenshotSearch.swift",
+        "apps/desktop/Sources/Dahlia/Database/SearchIndexer.swift",
+        "apps/desktop/Sources/Dahlia/Database/TextContentStore.swift",
+        "apps/desktop/Sources/Dahlia/ViewModels/SidebarViewModel+Meetings.swift",
+        "apps/desktop/Sources/Dahlia/Models/MeetingDateGrouping.swift",
+        "apps/desktop/Sources/Dahlia/Models/MeetingSearch.swift",
+        "apps/desktop/Sources/Dahlia/Utilities/L10n.swift",
+        "apps/desktop/Sources/Dahlia/Views/CustomerIntelligenceContactsView.swift",
+        "apps/desktop/Sources/Dahlia/Views/CustomerIntelligenceTopicsView.swift",
+        "apps/desktop/Sources/Dahlia/Views/MainWorkspaceHeader.swift",
+        "apps/desktop/Sources/Dahlia/Views/MainSearchPanel.swift",
+        "apps/desktop/Sources/Dahlia/Views/CustomerIntelligenceProjectsView.swift",
+        "apps/desktop/Sources/Dahlia/Views/CustomerIntelligenceInsightsView.swift",
+        "apps/desktop/Sources/Dahlia/Services/MeetingContentProvider+Broker.swift",
+        "apps/desktop/Sources/Dahlia/Services/CodexChatService.swift",
+        "apps/desktop/Sources/Dahlia/Services/SyncWorker.swift",
+        "apps/desktop/Sources/Dahlia/Services/MeetingContentProvider+Search.swift",
+        "apps/desktop/Sources/Dahlia/Views/Settings/SettingsCategory.swift",
+        "apps/desktop/Sources/Dahlia/Views/Settings/SettingsDetailView.swift",
+        "apps/desktop/Sources/Dahlia/Views/Settings/SettingsGroup.swift",
+        "apps/desktop/Sources/Dahlia/Views/Debug/ApplicationLogView.swift",
+        "apps/server/src/mcp.ts (shared service; native MCP protocol)"
+      ]
+    },
+    {
+      "operationId": "textSearch",
+      "method": "POST",
+      "path": "/api/v1/vaults/{vaultId}/text-search",
+      "classification": "modified",
+      "previous": "/api/v1/vaults/{vaultId}/search?q={query} (GET)",
+      "reason": "Exhaustive full-text search pages; cursor invalidates when the ledger changes",
+      "consumers": [
+        "apps/desktop/Sources/Dahlia/Services/MeetingContentProvider+Search.swift"
+      ]
+    },
+    {
+      "operationId": "getEvents",
+      "method": "GET",
+      "path": "/api/v1/events",
+      "classification": "maintained",
+      "previous": "/api/v1/events",
+      "reason": "SSE invalidation and account_settings events; recover through canonical reads",
+      "consumers": [
+        "apps/server/src/client/live-data.ts",
+        "apps/desktop/Sources/Dahlia/Services/SyncWorker.swift"
+      ]
+    },
+    {
+      "operationId": "putTranscriptChunk",
+      "method": "PUT",
+      "path": "/api/v1/meetings/{meetingId}/transcript-uploads/{patchId}/chunks/{chunkIndex}",
+      "classification": "modified",
+      "previous": "/api/v1/vaults/{vaultId}/meetings/{meetingId}/transcript/{patchId}/chunks/{chunkIndex}",
+      "reason": "Stage an owner-only transcript patch chunk; SHA-256 of exact request bytes",
+      "consumers": [
+        "apps/desktop/Sources/Dahlia/Services/SyncWorker.swift"
+      ]
+    },
+    {
+      "operationId": "reserveFileUpload",
+      "method": "POST",
+      "path": "/api/v1/file-uploads",
+      "classification": "modified",
+      "previous": "/api/v1/files (POST bytes with query attributes)",
+      "reason": "Reserve private file staging with a client-generated UUIDv7; maximum 8 KiB",
+      "consumers": [
+        "apps/desktop/Sources/Dahlia/Services/SyncWorker.swift"
+      ]
+    },
+    {
+      "operationId": "putFileContent",
+      "method": "PUT",
+      "path": "/api/v1/file-uploads/{fileId}/content",
+      "classification": "modified",
+      "previous": "/api/v1/files (POST bytes with query attributes)",
+      "reason": "Stream reserved file bytes; identical replay succeeds, different content conflicts",
+      "consumers": [
+        "apps/desktop/Sources/Dahlia/Services/SyncWorker.swift"
+      ]
+    },
+    {
+      "operationId": "getFile",
+      "method": "GET",
+      "path": "/api/v1/files/{fileId}",
+      "classification": "modified",
+      "previous": "/api/v1/files/{fileId}/metadata",
+      "reason": "File JSON metadata; staged files are owner-only",
+      "consumers": [
+        "apps/server/src/client/App.tsx",
+        "apps/server/src/client/FileViewer.tsx",
+        "apps/desktop/Sources/Dahlia/Services/MeetingContentProvider.swift",
+        "apps/desktop/Sources/Dahlia/Services/SyncWorker.swift"
+      ]
+    },
+    {
+      "operationId": "updateFile",
+      "method": "PATCH",
+      "path": "/api/v1/files/{fileId}",
+      "classification": "modified",
+      "previous": "/api/v1/files/{fileId}/metadata",
+      "reason": "Owner metadata patch with baseRevision; maximum 128 KiB",
+      "consumers": [
+        "public API; no bundled caller"
+      ]
+    },
+    {
+      "operationId": "listFiles",
+      "method": "GET",
+      "path": "/api/v1/vaults/{vaultId}/files",
+      "classification": "modified",
+      "previous": "/api/v1/vaults/{vaultId}/files",
+      "reason": "Committed files by ID; 200 per page",
+      "consumers": [
+        "apps/desktop/Sources/Dahlia/Services/GoogleDriveAPIClient.swift"
+      ]
+    },
+    {
+      "operationId": "listMeetingFiles",
+      "method": "GET",
+      "path": "/api/v1/meetings/{meetingId}/files",
+      "classification": "modified",
+      "previous": "/api/v1/vaults/{vaultId}/meetings/{meetingId}/files",
+      "reason": "Meeting file links by ID; 200 per page",
+      "consumers": [
+        "apps/server/src/client/App.tsx",
+        "apps/server/src/mcp.ts (shared service; native MCP protocol)"
+      ]
+    },
+    {
+      "operationId": "getFileContent",
+      "method": "GET",
+      "path": "/api/v1/files/{fileId}/content",
+      "classification": "modified",
+      "previous": "/api/v1/files/{fileId}",
+      "reason": "Stream original file",
+      "consumers": [
+        "apps/server/src/client/App.tsx",
+        "apps/server/src/client/Search.tsx",
+        "apps/server/src/client/FileViewer.tsx",
+        "apps/desktop/Sources/Dahlia/Services/ScreenshotContentProvider.swift"
+      ]
+    },
+    {
+      "operationId": "headFileContent",
+      "method": "HEAD",
+      "path": "/api/v1/files/{fileId}/content",
+      "classification": "modified",
+      "previous": "/api/v1/files/{fileId}",
+      "reason": "File headers; Range ignored; no body",
+      "consumers": [
+        "public API; no bundled caller"
+      ]
+    },
+    {
+      "operationId": "getFileVariant",
+      "method": "GET",
+      "path": "/api/v1/files/{fileId}/variants/{variant}",
+      "classification": "maintained",
+      "previous": "/api/v1/files/{fileId}/variants/{variant}",
+      "reason": "Stream image variant",
+      "consumers": [
+        "apps/server/src/client/Search.tsx",
+        "apps/desktop/Sources/Dahlia/Services/ScreenshotContentProvider.swift"
+      ]
+    },
+    {
+      "operationId": "headFileVariant",
+      "method": "HEAD",
+      "path": "/api/v1/files/{fileId}/variants/{variant}",
+      "classification": "maintained",
+      "previous": "/api/v1/files/{fileId}/variants/{variant}",
+      "reason": "Variant headers; Range ignored; no body",
+      "consumers": [
+        "public API; no bundled caller"
+      ]
+    },
+    {
+      "operationId": "putRecordingContent",
+      "method": "PUT",
+      "path": "/api/v1/meetings/{meetingId}/recording-uploads/{sessionId}/audio/{source}",
+      "classification": "modified",
+      "previous": "/api/v1/meetings/{meetingId}/recordings?sessionId={sessionId}&source={source} (POST)",
+      "reason": "Stage audio/mp4; maximum 1 GiB; Transaction activates the recording",
+      "consumers": [
+        "apps/desktop/Sources/Dahlia/Services/RecordingArchiveService.swift"
+      ]
+    },
+    {
+      "operationId": "listRecordings",
+      "method": "GET",
+      "path": "/api/v1/meetings/{meetingId}/recordings",
+      "classification": "modified",
+      "previous": "/api/v1/meetings/{meetingId}/recordings",
+      "reason": "Committed recordings by meeting-local number; 200 per page",
+      "consumers": [
+        "apps/server/src/client/SummaryGeneration.tsx",
+        "apps/desktop/Sources/Dahlia/Services/ServerSummaryService.swift"
+      ]
+    },
+    {
+      "operationId": "getRecordingContent",
+      "method": "GET",
+      "path": "/api/v1/meetings/{meetingId}/recordings/{recordingId}/audio/{source}",
+      "classification": "maintained",
+      "previous": "/api/v1/meetings/{meetingId}/recordings/{recordingId}/audio/{source}",
+      "reason": "Stream recording audio",
+      "consumers": [
+        "apps/desktop/Sources/Dahlia/Services/RecordingArchiveService.swift"
+      ]
+    },
+    {
+      "operationId": "headRecordingContent",
+      "method": "HEAD",
+      "path": "/api/v1/meetings/{meetingId}/recordings/{recordingId}/audio/{source}",
+      "classification": "maintained",
+      "previous": "/api/v1/meetings/{meetingId}/recordings/{recordingId}/audio/{source}",
+      "reason": "Recording headers; Range ignored; no body",
+      "consumers": [
+        "public API; no bundled caller"
+      ]
+    },
+    {
+      "operationId": "getTransferAudience",
+      "method": "GET",
+      "path": "/api/v1/vaults/{vaultId}/transfer-audience",
+      "classification": "maintained",
+      "previous": "/api/v1/vaults/{vaultId}/transfer-audience",
+      "reason": "Preview readers gaining or losing access; owner only",
+      "consumers": [
+        "apps/server/src/client/App.tsx"
+      ]
+    },
+    {
+      "operationId": "transferVault",
+      "method": "POST",
+      "path": "/api/v1/vaults/{vaultId}/transfer",
+      "classification": "maintained",
+      "previous": "/api/v1/vaults/{vaultId}/transfer",
+      "reason": "Move all content after revision and audience checks; owner only",
+      "consumers": [
+        "apps/server/src/client/App.tsx"
+      ]
+    },
+    {
+      "operationId": "getRelocations",
+      "method": "GET",
+      "path": "/api/v1/vaults/{vaultId}/relocations",
+      "classification": "maintained",
+      "previous": "/api/v1/vaults/{vaultId}/relocations",
+      "reason": "Resolve moved resources to currently accessible Vaults",
+      "consumers": [
+        "apps/desktop/Sources/Dahlia/Services/SyncWorker.swift"
+      ]
+    },
+    {
+      "operationId": "listPermissions",
+      "method": "GET",
+      "path": "/api/v1/vaults/{vaultId}/permissions",
+      "classification": "modified",
+      "previous": "/api/v1/vaults/{vaultId}/permissions",
+      "reason": "Read Vault sharing permissions",
+      "consumers": [
+        "apps/server/src/client/App.tsx"
+      ]
+    },
+    {
+      "operationId": "putOrganizationPermission",
+      "method": "PUT",
+      "path": "/api/v1/vaults/{vaultId}/permissions/organizations/{organizationId}",
+      "classification": "maintained",
+      "previous": "/api/v1/vaults/{vaultId}/permissions/organizations/{organizationId}",
+      "reason": "Grant read-only organization access; owner only",
+      "consumers": [
+        "apps/server/src/client/App.tsx"
+      ]
+    },
+    {
+      "operationId": "deleteOrganizationPermission",
+      "method": "DELETE",
+      "path": "/api/v1/vaults/{vaultId}/permissions/organizations/{organizationId}",
+      "classification": "maintained",
+      "previous": "/api/v1/vaults/{vaultId}/permissions/organizations/{organizationId}",
+      "reason": "Revoke organization access; owner only",
+      "consumers": [
+        "apps/server/src/client/App.tsx"
+      ]
+    },
+    {
+      "operationId": "putTeamPermission",
+      "method": "PUT",
+      "path": "/api/v1/vaults/{vaultId}/permissions/teams/{teamId}",
+      "classification": "maintained",
+      "previous": "/api/v1/vaults/{vaultId}/permissions/teams/{teamId}",
+      "reason": "Grant read-only team access; owner only",
+      "consumers": [
+        "apps/server/src/client/App.tsx"
+      ]
+    },
+    {
+      "operationId": "deleteTeamPermission",
+      "method": "DELETE",
+      "path": "/api/v1/vaults/{vaultId}/permissions/teams/{teamId}",
+      "classification": "maintained",
+      "previous": "/api/v1/vaults/{vaultId}/permissions/teams/{teamId}",
+      "reason": "Revoke team access; owner only",
+      "consumers": [
+        "apps/server/src/client/App.tsx"
+      ]
+    },
+    {
+      "operationId": "listOrganizations",
+      "method": "GET",
+      "path": "/api/v1/organizations",
+      "classification": "modified",
+      "previous": "/api/v1/organizations",
+      "reason": "Current organization memberships",
+      "consumers": [
+        "apps/server/src/client/App.tsx",
+        "apps/server/src/client/Sidebar.tsx",
+        "apps/desktop/Sources/Dahlia/Services/CloudVaultDiscovery.swift"
+      ]
+    },
+    {
+      "operationId": "getOrganization",
+      "method": "GET",
+      "path": "/api/v1/organizations/{organizationId}",
+      "classification": "maintained",
+      "previous": "/api/v1/organizations/{organizationId}",
+      "reason": "External organization (header mode only)",
+      "consumers": [
+        "public API; no bundled caller"
+      ]
+    },
+    {
+      "operationId": "listOrganizationMembers",
+      "method": "GET",
+      "path": "/api/v1/organizations/{organizationId}/members",
+      "classification": "modified",
+      "previous": "/api/v1/organizations/{organizationId}/members",
+      "reason": "External organization members (header mode only)",
+      "consumers": [
+        "apps/server/src/client/App.tsx"
+      ]
+    },
+    {
+      "operationId": "listTeams",
+      "method": "GET",
+      "path": "/api/v1/organizations/{organizationId}/teams",
+      "classification": "modified",
+      "previous": "/api/v1/organizations/{organizationId}/teams",
+      "reason": "External teams (header mode only)",
+      "consumers": [
+        "apps/server/src/client/App.tsx"
+      ]
+    },
+    {
+      "operationId": "createTeam",
+      "method": "POST",
+      "path": "/api/v1/organizations/{organizationId}/teams",
+      "classification": "maintained",
+      "previous": "/api/v1/organizations/{organizationId}/teams",
+      "reason": "Create external team (header mode only)",
+      "consumers": [
+        "apps/server/src/client/App.tsx"
+      ]
+    },
+    {
+      "operationId": "updateTeam",
+      "method": "PATCH",
+      "path": "/api/v1/organizations/{organizationId}/teams/{teamId}",
+      "classification": "maintained",
+      "previous": "/api/v1/organizations/{organizationId}/teams/{teamId}",
+      "reason": "Rename external team (header mode only)",
+      "consumers": [
+        "apps/server/src/client/App.tsx"
+      ]
+    },
+    {
+      "operationId": "deleteTeam",
+      "method": "DELETE",
+      "path": "/api/v1/organizations/{organizationId}/teams/{teamId}",
+      "classification": "maintained",
+      "previous": "/api/v1/organizations/{organizationId}/teams/{teamId}",
+      "reason": "Delete external team (header mode only)",
+      "consumers": [
+        "apps/server/src/client/App.tsx"
+      ]
+    },
+    {
+      "operationId": "listTeamMembers",
+      "method": "GET",
+      "path": "/api/v1/organizations/{organizationId}/teams/{teamId}/members",
+      "classification": "modified",
+      "previous": "/api/v1/organizations/{organizationId}/teams/{teamId}/members",
+      "reason": "External team members (header mode only)",
+      "consumers": [
+        "apps/server/src/client/App.tsx"
+      ]
+    },
+    {
+      "operationId": "putTeamMember",
+      "method": "PUT",
+      "path": "/api/v1/organizations/{organizationId}/teams/{teamId}/members/{userId}",
+      "classification": "maintained",
+      "previous": "/api/v1/organizations/{organizationId}/teams/{teamId}/members/{userId}",
+      "reason": "Add an organization member to an external team",
+      "consumers": [
+        "apps/server/src/client/App.tsx"
+      ]
+    },
+    {
+      "operationId": "deleteTeamMember",
+      "method": "DELETE",
+      "path": "/api/v1/organizations/{organizationId}/teams/{teamId}/members/{userId}",
+      "classification": "maintained",
+      "previous": "/api/v1/organizations/{organizationId}/teams/{teamId}/members/{userId}",
+      "reason": "Remove an external team member",
+      "consumers": [
+        "apps/server/src/client/App.tsx"
+      ]
+    }
+  ],
+  "delegated": [
+    {
+      "operation": "getOAuthServerConfig",
+      "method": "GET",
+      "path": "/api/auth/.well-known/oauth-authorization-server",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "getOpenIdConfig",
+      "method": "GET",
+      "path": "/api/auth/.well-known/openid-configuration",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "accountInfo",
+      "method": "GET",
+      "path": "/api/auth/account-info",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "banUser",
+      "method": "POST",
+      "path": "/api/auth/admin/ban-user",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "createUser",
+      "method": "POST",
+      "path": "/api/auth/admin/create-user",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "getUser",
+      "method": "GET",
+      "path": "/api/auth/admin/get-user",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "userHasPermission",
+      "method": "POST",
+      "path": "/api/auth/admin/has-permission",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "impersonateUser",
+      "method": "POST",
+      "path": "/api/auth/admin/impersonate-user",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "listUserSessions",
+      "method": "POST",
+      "path": "/api/auth/admin/list-user-sessions",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "listUsers",
+      "method": "GET",
+      "path": "/api/auth/admin/list-users",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "adminCreateOAuthClient",
+      "method": "POST",
+      "path": "/api/auth/admin/oauth2/create-client",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "adminListOAuthResources",
+      "method": "GET",
+      "path": "/api/auth/admin/oauth2/resources",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "adminCreateOAuthResource",
+      "method": "POST",
+      "path": "/api/auth/admin/oauth2/resources",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "adminDeleteOAuthResource",
+      "method": "DELETE",
+      "path": "/api/auth/admin/oauth2/resources/:identifier",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "adminGetOAuthResource",
+      "method": "GET",
+      "path": "/api/auth/admin/oauth2/resources/:identifier",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "adminUpdateOAuthResource",
+      "method": "PATCH",
+      "path": "/api/auth/admin/oauth2/resources/:identifier",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "adminUnlinkClientResource",
+      "method": "DELETE",
+      "path": "/api/auth/admin/oauth2/resources/:identifier/clients/:client_id",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "adminLinkClientResource",
+      "method": "POST",
+      "path": "/api/auth/admin/oauth2/resources/:identifier/clients/:client_id",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "adminUpdateOAuthClient",
+      "method": "PATCH",
+      "path": "/api/auth/admin/oauth2/update-client",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "removeUser",
+      "method": "POST",
+      "path": "/api/auth/admin/remove-user",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "revokeUserSession",
+      "method": "POST",
+      "path": "/api/auth/admin/revoke-user-session",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "revokeUserSessions",
+      "method": "POST",
+      "path": "/api/auth/admin/revoke-user-sessions",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "setRole",
+      "method": "POST",
+      "path": "/api/auth/admin/set-role",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "setUserPassword",
+      "method": "POST",
+      "path": "/api/auth/admin/set-user-password",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "stopImpersonating",
+      "method": "POST",
+      "path": "/api/auth/admin/stop-impersonating",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "unbanUser",
+      "method": "POST",
+      "path": "/api/auth/admin/unban-user",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "adminUpdateUser",
+      "method": "POST",
+      "path": "/api/auth/admin/update-user",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "callbackOAuth",
+      "method": "GET",
+      "path": "/api/auth/callback/:id",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "callbackOAuth",
+      "method": "POST",
+      "path": "/api/auth/callback/:id",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "changeEmail",
+      "method": "POST",
+      "path": "/api/auth/change-email",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "changePassword",
+      "method": "POST",
+      "path": "/api/auth/change-password",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "deleteUser",
+      "method": "POST",
+      "path": "/api/auth/delete-user",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "deleteUserCallback",
+      "method": "GET",
+      "path": "/api/auth/delete-user/callback",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "error",
+      "method": "GET",
+      "path": "/api/auth/error",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "getAccessToken",
+      "method": "POST",
+      "path": "/api/auth/get-access-token",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "getSession",
+      "method": "GET",
+      "path": "/api/auth/get-session",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "getSession",
+      "method": "POST",
+      "path": "/api/auth/get-session",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "getJwks",
+      "method": "GET",
+      "path": "/api/auth/jwks",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "linkSocialAccount",
+      "method": "POST",
+      "path": "/api/auth/link-social",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "listUserAccounts",
+      "method": "GET",
+      "path": "/api/auth/list-accounts",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "listSessions",
+      "method": "GET",
+      "path": "/api/auth/list-sessions",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "oauth2Authorize",
+      "method": "GET",
+      "path": "/api/auth/oauth2/authorize",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "oauth2Authorize",
+      "method": "POST",
+      "path": "/api/auth/oauth2/authorize",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "rotateClientSecret",
+      "method": "POST",
+      "path": "/api/auth/oauth2/client/rotate-secret",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "oauth2Consent",
+      "method": "POST",
+      "path": "/api/auth/oauth2/consent",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "oauth2Continue",
+      "method": "POST",
+      "path": "/api/auth/oauth2/continue",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "createOAuthClient",
+      "method": "POST",
+      "path": "/api/auth/oauth2/create-client",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "deleteOAuthClient",
+      "method": "POST",
+      "path": "/api/auth/oauth2/delete-client",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "deleteOAuthConsent",
+      "method": "POST",
+      "path": "/api/auth/oauth2/delete-consent",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "oauth2EndSession",
+      "method": "GET",
+      "path": "/api/auth/oauth2/end-session",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "oauth2EndSession",
+      "method": "POST",
+      "path": "/api/auth/oauth2/end-session",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "oauth2EndSessionConfirmation",
+      "method": "POST",
+      "path": "/api/auth/oauth2/end-session/confirm",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "getOAuthClient",
+      "method": "GET",
+      "path": "/api/auth/oauth2/get-client",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "getOAuthClients",
+      "method": "GET",
+      "path": "/api/auth/oauth2/get-clients",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "getOAuthConsent",
+      "method": "GET",
+      "path": "/api/auth/oauth2/get-consent",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "getOAuthConsents",
+      "method": "GET",
+      "path": "/api/auth/oauth2/get-consents",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "oauth2Introspect",
+      "method": "POST",
+      "path": "/api/auth/oauth2/introspect",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "getOAuthClientPublic",
+      "method": "GET",
+      "path": "/api/auth/oauth2/public-client",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "getOAuthClientPublicPrelogin",
+      "method": "POST",
+      "path": "/api/auth/oauth2/public-client-prelogin",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "registerOAuthClient",
+      "method": "POST",
+      "path": "/api/auth/oauth2/register",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "oauth2Revoke",
+      "method": "POST",
+      "path": "/api/auth/oauth2/revoke",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "oauth2Token",
+      "method": "POST",
+      "path": "/api/auth/oauth2/token",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "updateOAuthClient",
+      "method": "POST",
+      "path": "/api/auth/oauth2/update-client",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "updateOAuthConsent",
+      "method": "POST",
+      "path": "/api/auth/oauth2/update-consent",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "oauth2UserInfo",
+      "method": "GET",
+      "path": "/api/auth/oauth2/userinfo",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "oauth2UserInfo",
+      "method": "POST",
+      "path": "/api/auth/oauth2/userinfo",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "ok",
+      "method": "GET",
+      "path": "/api/auth/ok",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "acceptInvitation",
+      "method": "POST",
+      "path": "/api/auth/organization/accept-invitation",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "addTeamMember",
+      "method": "POST",
+      "path": "/api/auth/organization/add-team-member",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "cancelInvitation",
+      "method": "POST",
+      "path": "/api/auth/organization/cancel-invitation",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "checkOrganizationSlug",
+      "method": "POST",
+      "path": "/api/auth/organization/check-slug",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "createOrganization",
+      "method": "POST",
+      "path": "/api/auth/organization/create",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "createTeam",
+      "method": "POST",
+      "path": "/api/auth/organization/create-team",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "deleteOrganization",
+      "method": "POST",
+      "path": "/api/auth/organization/delete",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "getActiveMember",
+      "method": "GET",
+      "path": "/api/auth/organization/get-active-member",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "getActiveMemberRole",
+      "method": "GET",
+      "path": "/api/auth/organization/get-active-member-role",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "getFullOrganization",
+      "method": "GET",
+      "path": "/api/auth/organization/get-full-organization",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "getInvitation",
+      "method": "GET",
+      "path": "/api/auth/organization/get-invitation",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "getOrganization",
+      "method": "GET",
+      "path": "/api/auth/organization/get-organization",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "hasPermission",
+      "method": "POST",
+      "path": "/api/auth/organization/has-permission",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "createInvitation",
+      "method": "POST",
+      "path": "/api/auth/organization/invite-member",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "leaveOrganization",
+      "method": "POST",
+      "path": "/api/auth/organization/leave",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "listOrganizations",
+      "method": "GET",
+      "path": "/api/auth/organization/list",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "listInvitations",
+      "method": "GET",
+      "path": "/api/auth/organization/list-invitations",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "listMembers",
+      "method": "GET",
+      "path": "/api/auth/organization/list-members",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "listTeamMembers",
+      "method": "GET",
+      "path": "/api/auth/organization/list-team-members",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "listOrganizationTeams",
+      "method": "GET",
+      "path": "/api/auth/organization/list-teams",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "listUserInvitations",
+      "method": "GET",
+      "path": "/api/auth/organization/list-user-invitations",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "listUserTeams",
+      "method": "GET",
+      "path": "/api/auth/organization/list-user-teams",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "rejectInvitation",
+      "method": "POST",
+      "path": "/api/auth/organization/reject-invitation",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "removeMember",
+      "method": "POST",
+      "path": "/api/auth/organization/remove-member",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "removeTeam",
+      "method": "POST",
+      "path": "/api/auth/organization/remove-team",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "removeTeamMember",
+      "method": "POST",
+      "path": "/api/auth/organization/remove-team-member",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "setActiveOrganization",
+      "method": "POST",
+      "path": "/api/auth/organization/set-active",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "setActiveTeam",
+      "method": "POST",
+      "path": "/api/auth/organization/set-active-team",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "updateOrganization",
+      "method": "POST",
+      "path": "/api/auth/organization/update",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "updateMemberRole",
+      "method": "POST",
+      "path": "/api/auth/organization/update-member-role",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "updateTeam",
+      "method": "POST",
+      "path": "/api/auth/organization/update-team",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "refreshToken",
+      "method": "POST",
+      "path": "/api/auth/refresh-token",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "requestPasswordReset",
+      "method": "POST",
+      "path": "/api/auth/request-password-reset",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "resetPassword",
+      "method": "POST",
+      "path": "/api/auth/reset-password",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "requestPasswordResetCallback",
+      "method": "GET",
+      "path": "/api/auth/reset-password/:token",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "revokeOtherSessions",
+      "method": "POST",
+      "path": "/api/auth/revoke-other-sessions",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "revokeSession",
+      "method": "POST",
+      "path": "/api/auth/revoke-session",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "revokeSessions",
+      "method": "POST",
+      "path": "/api/auth/revoke-sessions",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "sendVerificationEmail",
+      "method": "POST",
+      "path": "/api/auth/send-verification-email",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "signInEmail",
+      "method": "POST",
+      "path": "/api/auth/sign-in/email",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "signInSocial",
+      "method": "POST",
+      "path": "/api/auth/sign-in/social",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "signOut",
+      "method": "POST",
+      "path": "/api/auth/sign-out",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "signUpEmail",
+      "method": "POST",
+      "path": "/api/auth/sign-up/email",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "getToken",
+      "method": "GET",
+      "path": "/api/auth/token",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "unlinkAccount",
+      "method": "POST",
+      "path": "/api/auth/unlink-account",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "updateSession",
+      "method": "POST",
+      "path": "/api/auth/update-session",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "updateUser",
+      "method": "POST",
+      "path": "/api/auth/update-user",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "verifyEmail",
+      "method": "GET",
+      "path": "/api/auth/verify-email",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "verifyPassword",
+      "method": "POST",
+      "path": "/api/auth/verify-password",
+      "protocol": "Better Auth / OAuth / OIDC",
+      "availability": "accounts; plugin privileges and session roles still apply"
+    },
+    {
+      "operation": "oauthServerMetadata",
+      "method": "GET",
+      "path": "/.well-known/oauth-authorization-server",
+      "protocol": "RFC 8414",
+      "availability": "accounts"
+    },
+    {
+      "operation": "openidMetadata",
+      "method": "GET",
+      "path": "/.well-known/openid-configuration",
+      "protocol": "OIDC discovery",
+      "availability": "accounts"
+    },
+    {
+      "operation": "gatewayResourceMetadata",
+      "method": "GET",
+      "path": "/.well-known/oauth-protected-resource",
+      "protocol": "RFC 9728",
+      "availability": "accounts"
+    },
+    {
+      "operation": "mcpResourceMetadata",
+      "method": "GET",
+      "path": "/.well-known/oauth-protected-resource/mcp",
+      "protocol": "RFC 9728",
+      "availability": "accounts"
+    },
+    {
+      "operation": "listModels",
+      "method": "GET",
+      "path": "/api/v1/models",
+      "protocol": "OpenAI / Codex model catalog",
+      "availability": "configured AI backend; all-apis or trusted proxy"
+    },
+    {
+      "operation": "createResponse",
+      "method": "POST",
+      "path": "/api/v1/responses",
+      "protocol": "OpenAI Responses / SSE",
+      "availability": "configured AI backend; all-apis or trusted proxy"
+    },
+    {
+      "operation": "mcp",
+      "method": "POST",
+      "path": "/mcp",
+      "protocol": "MCP 2026-07-28 stateless JSON-RPC",
+      "availability": "MCP OAuth scopes/DPoP or trusted proxy"
+    },
+    {
+      "operation": "mcpScreenshot",
+      "method": "GET",
+      "path": "/mcp/resources/vaults/{vaultId}/meetings/{meetingId}/screenshots/{screenshotId}/content",
+      "protocol": "MCP resource HTTP bytes",
+      "availability": "current Vault read permission and MCP read scope"
+    },
+    {
+      "operation": "headMcpScreenshot",
+      "method": "HEAD",
+      "path": "/mcp/resources/vaults/{vaultId}/meetings/{meetingId}/screenshots/{screenshotId}/content",
+      "protocol": "MCP resource HTTP bytes",
+      "availability": "current Vault read permission and MCP read scope"
+    }
+  ],
+  "mcp": {
+    "methods": [
+      "tools/list",
+      "tools/call"
+    ],
+    "tools": [
+      "search",
+      "query_meetings",
+      "query_projects",
+      "get_project",
+      "get_meeting",
+      "get_meeting_transcript",
+      "query_screenshots",
+      "get_meeting_screenshots"
+    ],
+    "authorization": "Read-only. Each call checks its capability scope and current Vault access."
+  },
+  "fallbacks": [
+    "/.well-known/*: unknown metadata -> native 404",
+    "/api/auth/*: dispatch only the concrete Better Auth endpoints listed here",
+    "/mcp: unsupported methods -> 405 Allow: POST",
+    "/api/*: unknown API -> Dahlia 404 inside v1; native 404 outside v1",
+    "extension routes: deployment-owned, audited by the registering extension"
+  ]
+}

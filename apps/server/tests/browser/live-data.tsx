@@ -45,18 +45,19 @@ const previewSummary = {
 };
 const meeting = (id: string) => ({ meetingId: id, vaultId: "v1", projectId: "p0", name: id === "m1" ? meetingName : previewMode ? (ja ? "9月のリリース計画と優先順位" : "September release planning & priorities") : "Other meeting", description: previewMode ? (ja ? "プロダクト・デザインチームの週次レビュー" : "Weekly product and design team review") : "", duration: previewMode ? 2540 : undefined, status: "recording", revision: 1, summaryRevision: 1, createdAt: vault.createdAt, summaryDocument: JSON.stringify(previewMode ? previewSummary : { sections: [{ heading: summary, blocks: [] }] }) });
 const image = "data:image/svg+xml," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400"><rect width="600" height="400" fill="#aaa"/></svg>');
-const file = (index: number) => ({ id: `f${index}`, capturedAt: vault.createdAt, file: { id: `f${index}`, vaultId: "v1", name: `Screenshot ${index}.png`, content_type: "image/png", variants: { thumb_480: image, thumb_1568: image }, metadata: { source: "screenshot", caption: index === 0 ? caption : `Screenshot ${index}` } } });
+const file = (index: number) => ({ id: `f${index}`, capturedAt: vault.createdAt, file: { id: `f${index}`, vaultId: "v1", name: `Screenshot ${index}.png`, contentType: "image/png", variants: { thumb_480: image, thumb_1568: image }, metadata: { source: "screenshot", caption: index === 0 ? caption : `Screenshot ${index}` } } });
 window.EventSource = class extends EventTarget {
   constructor() { super(); sources.push(this); queueMicrotask(() => this.dispatchEvent(new Event("open"))); }
   close() { sources.splice(sources.indexOf(this), 1); }
 } as unknown as typeof EventSource;
-window.fetch = (input, init) => Promise.resolve((() => {
+window.fetch = async (input, init) => {
+  const request = input instanceof Request ? input : new Request(new URL(input, location.origin), init);
   const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url, location.origin);
   requests.push(url.pathname);
   requestURLs.push(url.pathname + url.search);
   const failure = failures.get(url.pathname);
-  if (failure) return Response.json({ error: `fixture_${failure}` }, { status: failure });
-  if (url.pathname === "/api/v1/search") return Response.json({
+  if (failure) return Response.json({ code: `fixture_${failure}` }, { status: failure });
+  if (url.pathname === `${base}/search`) return Response.json({
     meetings: [{ id: "m1", kind: "meeting", title: meeting("m1").name, projectPath: "", date: meeting("m1").createdAt, snippet: "" }],
     projects: [{ id: "p0", kind: "project", title: projects[0]!.name, projectPath: projects[0]!.path, date: vault.createdAt, snippet: "" }],
     screenshots: [], limited: { meetings: false, projects: false, screenshots: false },
@@ -64,14 +65,14 @@ window.fetch = (input, init) => Promise.resolve((() => {
   if (url.pathname === "/api/v1/account/settings") return Response.json({ settings: null });
   if (url.pathname === "/api/v1/models") return Response.json({ data: [{ id: "gpt-5.4", display_name: "GPT-5.4" }], models: [{ slug: "gpt-5.4", supported_reasoning_levels: [{ effort: "medium" }], default_reasoning_level: "medium" }] });
   if (url.pathname === "/api/v1/capabilities") return Response.json(previewMode ? { meetingSummaryGeneration: { version: 1, sources: ["transcript"] } } : {});
-  if (url.pathname === "/api/session") return Response.json({ user: { id: "browser-fixture", name: previewMode ? "Yuki Tanaka" : "Tester", email: "yuki@example.com" }, workspace: { id: "w1", type: "personal" }, capabilities: { sync: true, sharing: true, sessions: false, admin: false } });
-  if (url.pathname === "/api/v1/organizations") return Response.json([{ id: "o1", name: "Test Organization" }]);
+  if (url.pathname === "/api/v1/session") return Response.json({ user: { id: "browser-fixture", name: previewMode ? "Yuki Tanaka" : "Tester", email: "yuki@example.com" }, workspace: { id: "w1", type: "personal" }, capabilities: { sync: true, sharing: true, sessions: false, admin: false } });
+  if (url.pathname === "/api/v1/organizations") return Response.json({ items: [{ id: "o1", name: "Test Organization" }], nextCursor: null });
   if (url.pathname === "/api/v1/vaults") return Response.json({ items: vaults });
   if (url.pathname === "/api/v1/vaults/v2/meetings") return Response.json({ items: [] });
-  if (url.pathname === "/api/v1/organizations/o1/teams") return Response.json([]);
+  if (url.pathname === "/api/v1/organizations/o1/teams") return Response.json({ items: [], nextCursor: null });
   if (url.pathname === `${base}/permissions`) return Response.json({ items: sharingEnabled ? [{ principalType: "organization", principalId: "o1", role: "member" }] : [] });
   if (url.pathname === `${base}/permissions/organizations/o1`) {
-    sharingEnabled = init?.method === "PUT";
+    sharingEnabled = request.method === "PUT";
     return new Response(null, { status: 204 });
   }
   if (url.pathname === base) return Response.json(vault);
@@ -79,16 +80,16 @@ window.fetch = (input, init) => Promise.resolve((() => {
     const project = projects.find((p) => p.projectId === url.pathname.split("/").at(-1));
     return project ? Response.json(project) : Response.json({ error: "project_not_found" }, { status: 404 });
   }
-  if (url.pathname.startsWith("/api/v1/meetings/")) return Response.json(meeting(url.pathname.split("/").at(-1)!));
-  if (url.pathname.startsWith("/api/v1/files/")) return Response.json(file(Number(url.pathname.split("/").at(-2)!.slice(1))).file);
+  if (/^\/api\/v1\/meetings\/[^/]+$/.test(url.pathname)) return Response.json(meeting(url.pathname.split("/").at(-1)!));
+  if (url.pathname.startsWith("/api/v1/files/")) return Response.json(file(Number(url.pathname.split("/").at(-1)!.slice(1))).file);
   if (url.pathname === `${base}/projects`) return Response.json({ items: projects });
   if (url.pathname.startsWith(`${base}/projects/`)) return Response.json(projects.find((p) => p.projectId === url.pathname.split("/").at(-1)));
   if (url.pathname === `${base}/meetings`) return Response.json({ items: (url.searchParams.get("projectId") === "p0" && projects.some((project) => project.projectId === "p0")) || (!url.searchParams.has("projectId") && !url.searchParams.has("projectScope")) ? [meeting("m1"), meeting("m2")] : [] });
-  if (url.pathname.endsWith("/transcript/latest")) return Response.json({ version: 1, syncRevision: 1, transcript: null, items: [{ segmentId: "s1", startedAt: vault.createdAt, text: transcript }], nextCursor: null });
-  if (url.pathname.endsWith("/transcript")) return Response.json({ items: [] });
-  if (url.pathname.endsWith("/summary/job")) return Response.json({ job: null });
-  if (url.pathname.endsWith("/summary/latest")) return Response.json({ version: 1, revision: 1, present: true, record: { title: previewMode ? previewSummary.title : "Summary", document: meeting("m1").summaryDocument } });
-  if (url.pathname.endsWith("/summary")) return Response.json({ items: [] });
+  if (url.pathname.endsWith("/transcripts/latest")) return Response.json({ version: 1, syncRevision: 1, transcript: null, items: [{ segmentId: "s1", startedAt: vault.createdAt, text: transcript }], nextCursor: null });
+  if (url.pathname.endsWith("/transcripts")) return Response.json({ items: [] });
+  if (url.pathname.endsWith("/summary-jobs/latest")) return Response.json({ job: null });
+  if (url.pathname.endsWith("/summaries/latest")) return Response.json({ version: 1, revision: 1, present: true, record: { title: previewMode ? previewSummary.title : "Summary", document: meeting("m1").summaryDocument } });
+  if (url.pathname.endsWith("/summaries")) return Response.json({ items: [] });
   if (url.pathname.endsWith("/files")) {
     const offset = Number(url.searchParams.get("cursor") ?? 0);
     const end = Math.min(offset + 12, fileCount);
@@ -96,7 +97,7 @@ window.fetch = (input, init) => Promise.resolve((() => {
   }
   if (url.pathname.startsWith(`${base}/meetings/`)) return Response.json(meeting(url.pathname.split("/").at(-1)!));
   if (url.pathname === "/api/v1/transactions") {
-    const body = JSON.parse(init?.body as string) as { id: string; operations: { entity: string; action: string; entityId: string; baseRevision?: number; data: { name?: string; preservePermissions?: boolean; icon?: string; color?: string } }[] };
+    const body: { id: string; operations: { entity: string; action: string; entityId: string; baseRevision?: number; data: { name?: string; preservePermissions?: boolean; icon?: string; color?: string } }[] } = await request.json();
     for (const op of body.operations) {
       if (op.entity === "vault" && op.action === "update") Object.assign(vault, op.data);
       if (op.entity === "vault" && op.action === "reset") {
@@ -112,7 +113,7 @@ window.fetch = (input, init) => Promise.resolve((() => {
     return Response.json({ id: body.id, status: "committed" });
   }
   throw new Error(`Unexpected fixture request: ${url.pathname}`);
-})());
+};
 
 function assert(value: unknown, message: string): asserts value { if (!value) throw new Error(message); }
 async function until(predicate: () => unknown) {
@@ -263,7 +264,7 @@ async function run() {
   sidebar.scrollTop = 180;
   const sidebarScroll = sidebar.scrollTop;
   const documentNode = document.documentElement;
-  const sessionReads = requests.filter((url) => url === "/api/session").length;
+  const sessionReads = requests.filter((url) => url === "/api/v1/session").length;
   caption = "Updated caption"; summary = "Updated summary"; transcript = "Updated transcript"; fileCount = 4;
   for (let index = 0; index < 20; index++) notify();
   await until(() => document.querySelectorAll(".screenshot-grid figure").length === 4 && document.querySelector("figcaption")?.textContent === caption);
@@ -272,7 +273,7 @@ async function run() {
   assert(row === document.querySelector('.meeting-row a'), "Sidebar row remounted");
   assert(sidebar.scrollTop === sidebarScroll, `Sidebar scrolled from ${sidebarScroll} to ${sidebar.scrollTop}`);
   assert(documentNode === document.documentElement && main === document.querySelector(".workspace"), "Document/main replaced");
-  assert(requests.filter((url) => url === "/api/session").length === sessionReads, "Sync notification refreshed session");
+  assert(requests.filter((url) => url === "/api/v1/session").length === sessionReads, "Sync notification refreshed session");
   assert(location.pathname === route, "Legacy URL did not resolve to canonical meeting URL");
   const fileLink = document.querySelector<HTMLAnchorElement>('a[href="/files/f0"]')!;
   fileLink.click();
@@ -284,7 +285,7 @@ async function run() {
   notify();
   await until(() => preview?.getAttribute("alt") === caption);
   assert(preview === dialog.querySelector("img") && dialog.matches(":modal"), "Live refresh replaced or closed modal");
-  failures.set("/api/v1/files/f0/metadata", 404); notify();
+  failures.set("/api/v1/files/f0", 404); notify();
   await until(() => dialog.querySelector('[role="alert"]') && !dialog.querySelector("img"));
   assert(dialog.matches(":modal") && selectedTab() === "Screenshots", "File failure changed its background page");
   failures.clear();
@@ -314,7 +315,7 @@ async function run() {
   const fetchBeforeEmpty = window.fetch.bind(window);
   window.fetch = async (input, init) => {
     const response = await fetchBeforeEmpty(input, init);
-    if (typeof input === "string" && input.includes("projectId=p1&")) {
+    if (new URL(input instanceof Request ? input.url : input, location.origin).searchParams.get("projectId") === "p1") {
       emptyReadStarted = true;
       await emptyRead;
     }
@@ -350,7 +351,7 @@ async function run() {
   await until(() => document.querySelectorAll(".screenshot-grid figure").length === 13);
   assert(![...document.querySelectorAll("button")].some((b) => b.textContent === "Load more"), "Deleted tail left a stale cursor");
   failures.set("/api/v1/vaults", 503);
-  failures.set(`${base}/meetings/m1`, 503); notify();
+  failures.set("/api/v1/meetings/m1", 503); notify();
   await until(() => document.querySelector('[role="alert"]')?.textContent?.includes("fixture_503"));
   assert(selectedTab() === "Screenshots", "Transient failure unmounted tabs");
   assert(row === document.querySelector('.meeting-row a'), "Sidebar refresh failure replaced the tree");
@@ -367,15 +368,16 @@ async function run() {
   await until(() => document.querySelector(".meeting-header h1")?.textContent === "Edited meeting");
   await until(() => !document.querySelector('.action-dialog'));
   assert(selectedTab() === "Screenshots", "Editing reset tab");
-  assert(requests.filter((url) => url === "/api/session").length === sessionReads, "Transaction refreshed session");
+  assert(requests.filter((url) => url === "/api/v1/session").length === sessionReads, "Transaction refreshed session");
   let release!: () => void;
   const held = new Promise<void>((resolve) => { release = resolve; });
   const heldSignals: AbortSignal[] = [];
   const normalFetch = window.fetch.bind(window);
   window.fetch = async (input, init) => {
     const response = await normalFetch(input, init);
-    if (input === `${base}/meetings/m1`) {
-      if (init?.signal) heldSignals.push(init.signal);
+    const request = input instanceof Request ? input : new Request(new URL(input, location.origin), init);
+    if (new URL(request.url).pathname === "/api/v1/meetings/m1") {
+      heldSignals.push(request.signal);
       await held; // Deliberately ignore abort to exercise stale completion guards.
     }
     return response;
@@ -411,13 +413,13 @@ async function run() {
   const search = document.querySelector<HTMLInputElement>('input[aria-label="Search meetings"]')!;
   Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(search, "recording");
   search.dispatchEvent(new Event("input", { bubbles: true }));
-  await until(() => requestURLs.some((url) => url.includes("q=recording")));
+  await until(() => requestURLs.some((url) => url.includes("query=recording")));
   notify();
   await new Promise(requestAnimationFrame);
   assert(search.value === "recording", "Live refresh reset search input");
   const filter = document.querySelector<HTMLButtonElement>('[role="combobox"][aria-label="Filter by Project"]')!;
   choose(filter, "p0");
-  await until(() => requestURLs.some((url) => url.includes("q=recording&projectId=p0")));
+  await until(() => requestURLs.some((url) => url.includes("query=recording&projectId=p0")));
   failures.set(`${base}/projects`, 503); notify();
   await until(() => document.querySelector(".workspace .error")?.textContent?.includes("fixture_503"));
   assert(filter.value === "p0", "Transient Project failure reset filter");
@@ -461,13 +463,13 @@ async function run() {
   assert(!document.querySelector(".file-dialog"), "Standalone file URL opened a modal");
   navigateDashboard(route);
   await until(() => document.querySelector('[role="tab"]'));
-  failures.set(`${base}/meetings/m1`, 403); notify();
+  failures.set("/api/v1/meetings/m1", 403); notify();
   await until(() => !document.querySelector('[role="tab"]'));
   assert(document.querySelector('[role="alert"]')?.textContent?.includes("fixture_403"), "Missing access-denied feedback");
   failures.clear();
   for (const retry of [...document.querySelectorAll<HTMLButtonElement>("button")].filter((b) => b.textContent === "Retry")) retry.click();
   await until(() => document.querySelector('[role="tab"]'));
-  failures.set(`${base}/meetings/m1`, 404); notify();
+  failures.set("/api/v1/meetings/m1", 404); notify();
   await until(() => !document.querySelector('[role="tab"]'));
   assert(document.querySelector('[role="alert"]')?.textContent?.includes("fixture_404"), "Deleted meeting remained visible");
   failures.clear();

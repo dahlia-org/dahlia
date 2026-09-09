@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createApp } from "../src/app";
+import { createContractApp as createApp } from "./api-test-client";
 import { loadConfig } from "../src/config";
 import { DEFAULT_ACCOUNT_SETTINGS } from "../src/account-settings";
 import { testStore } from "./test-store";

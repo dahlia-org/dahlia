@@ -16,7 +16,7 @@ import { SummaryError, summaryDocument, type SummaryMethod } from "../src/summar
 import { collectSummaryInput, createTranscriptSummaryMethod, fingerprint, summaryImageContent } from "../src/summary/transcript";
 import { accountSettingsPatchSchema } from "../src/account-settings";
 import { loadConfig } from "../src/config";
-import { createApp } from "../src/app";
+import { createContractApp as createApp } from "./api-test-client";
 import { createWorkerHandler } from "../src/worker";
 import { uuidV7 } from "../src/id";
 import type { AppConfig } from "../src/config";
@@ -46,6 +46,28 @@ async function setup() {
 }
 
 describe("server summary jobs", () => {
+  it.each([["concise", "low"], ["standard", "medium"], ["detailed", "high"], ["eventSession", "xhigh"]] as const)(
+    "reads, resumes and cancels accepted jobs with stored detail %s", async (legacy, current) => {
+      const { store, service, vaultId, meetingId, path } = await setup();
+      const raw = new DatabaseSync(path);
+      try {
+        const request = { id: uuidV7(), detail: current };
+        const job = await service.start(owner, vaultId, meetingId, request);
+        const historical = JSON.stringify({ ...job.settings, detail: legacy });
+        raw.prepare("UPDATE jobs_summary SET settings = ? WHERE id = ?").run(historical, job.id);
+        expect((await service.status(owner, vaultId, meetingId))?.settings.detail).toBe(current);
+        expect((await service.status(owner, vaultId, meetingId, job.id))?.settings.detail).toBe(current);
+        expect((await service.start(owner, vaultId, meetingId, request)).id).toBe(job.id);
+        expect((await store.summaryJobs.claim())?.settings.detail).toBe(current);
+        raw.prepare("UPDATE jobs_summary SET settings = ?, lease_expires_at = 0 WHERE id = ?").run(historical, job.id);
+        expect(await store.summaryJobs.claim()).toMatchObject({ id: job.id, attempts: 2, settings: { detail: current } });
+        raw.prepare("UPDATE jobs_summary SET settings = ? WHERE id = ?").run(historical, job.id);
+        expect(await service.cancel(owner, vaultId, meetingId, job.id)).toMatchObject({ status: "cancelled", settings: { detail: current } });
+        expect(await store.summaryJobs.claim()).toBeNull();
+        expect(accountSettingsPatchSchema.safeParse({ summary: { detail: legacy } }).success).toBe(false);
+      } finally { raw.close(); await store.close?.(); }
+    });
+
   it("validates provider settings outside the transaction and rechecks a concurrently accepted job", async () => {
     const { store, method, service, vaultId, meetingId } = await setup();
     const withIdentity = store.sync.withIdentity.bind(store.sync);
@@ -55,7 +77,7 @@ describe("server summary jobs", () => {
       try { return await withIdentity(identity, action); }
       finally { transactions--; }
     });
-    const body = { id: uuidV7(), input: { type: "transcript", version: "1" }, model: "gpt-5.4", detailLevel: "high", summaryLanguage: "en" };
+    const body = { id: uuidV7(), input: { type: "transcript", version: "1" }, model: "gpt-5.4", detail: "high", outputLanguage: "en" };
     let onEntered!: () => void; let release!: () => void;
     const entered = new Promise<void>((resolve) => { onEntered = resolve; });
     const released = new Promise<void>((resolve) => { release = resolve; });
@@ -202,7 +224,7 @@ describe("server summary jobs", () => {
       }] });
       const app = createApp({ config, authStore: store });
       const headers = { "x-forwarded-email": "reader@example.com", "x-forwarded-user": "reader" };
-      const base = `/api/v1/vaults/${vaultId}/meetings/${meetingId}/summary`;
+      const base = `/api/v1/meetings/${meetingId}/summaries`;
       const routes = ["/latest", "", "/1"];
       for (const route of routes) {
         expect((await app.request(`${base}${route}`)).status).toBe(401);
@@ -216,7 +238,7 @@ describe("server summary jobs", () => {
           expect(response.status).toBe(200);
           expect(response.headers.get("cache-control")).toBe("no-store");
         }
-        for (const meetingPath of [`/api/v1/vaults/${vaultId}/meetings/${meetingId}`, `/api/v1/meetings/${meetingId}`]) {
+        for (const meetingPath of [`/api/v1/meetings/${meetingId}`, `/api/v1/meetings/${meetingId}`]) {
           const response = await app.request(meetingPath, { headers });
           expect(response.status).toBe(200);
           const meeting = await response.json();
@@ -235,12 +257,12 @@ describe("server summary jobs", () => {
         expect(manifest).not.toHaveProperty("record");
         expect(await (await app.request(`${base}/1`, { headers })).json()).toMatchObject({ version: 1, document: latest.record.document });
         for (const suffix of ["versions", "versions/1", "invalid", "1.5", "-1"]) {
-          expect((await app.request(`${base}/${suffix}`, { headers })).status).toBe(404);
+          expect((await app.request(`${base}/${suffix}`, { headers })).status).toBe(suffix.includes("/") ? 404 : 400);
         }
         expect((await app.request(`${base}/2`, { headers })).status).toBe(404);
         // The fixed job route must retain its existing unavailable-service behavior.
-        expect(await (await app.request(`${base}/job`, { headers })).json()).toEqual({ error: "summary_unavailable" });
-        expect((await app.request(`/api/v1/vaults/${vaultId}/text/summary/${meetingId}?revision=1`, { headers })).status).toBe(404);
+        expect(await (await app.request(`/api/v1/meetings/${meetingId}/summary-jobs/latest`, { headers })).json()).toMatchObject({ code: "summary_unavailable" });
+        expect((await app.request(`/api/v1/vaults/${vaultId}/text/summaries/${meetingId}?revision=1`, { headers })).status).toBe(404);
         expect((await app.request(`${base}/latest?manifest=invalid`, { headers })).status).toBe(400);
         expect((await app.request(`${base}?limit=101`, { headers })).status).toBe(400);
         expect((await app.request(`${base}/999999999999`, { headers })).status).toBe(400);
@@ -364,13 +386,13 @@ describe("server summary jobs", () => {
   });
 
   it("authorizes API owners, rejects unknown methods and disables unsupported runtime capability", async () => {
-    const { store, service, config, vaultId, meetingId } = await setup();
+    const { store, service, config, meetingId } = await setup();
     try {
       const app = createApp({ config, authStore: store, summaryService: service });
       const headers = { "x-forwarded-email": "owner@example.com", "x-forwarded-user": "owner", "content-type": "application/json" };
-      const path = `/api/v1/vaults/${vaultId}/meetings/${meetingId}/summary`;
-      expect((await app.request(`${path}/job`)).status).toBe(401);
-      expect((await app.request(`${path}/job`, { headers: { ...headers, "x-forwarded-user": "other", "x-forwarded-email": "other@example.com" } })).status).toBe(404);
+      const path = `/api/v1/meetings/${meetingId}/summary-jobs`;
+      expect((await app.request(`${path}/latest`)).status).toBe(401);
+      expect((await app.request(`${path}/latest`, { headers: { ...headers, "x-forwarded-user": "other", "x-forwarded-email": "other@example.com" } })).status).toBe(404);
       expect((await app.request(path, { method: "POST", headers: { ...headers, origin: "https://evil.example" }, body: JSON.stringify({ id: uuidV7() }) })).status).toBe(403);
       expect((await app.request(path, { method: "POST", headers, body: JSON.stringify({ id: uuidV7(), method: "gemini" }) })).status).toBe(400);
       expect(accountSettingsPatchSchema.safeParse({ summaryMethod: "gemini" }).success).toBe(false);
@@ -378,7 +400,7 @@ describe("server summary jobs", () => {
       const body = JSON.stringify({ id: uuidV7() });
       const response = await app.request(path, { method: "POST", headers, body });
       expect(response.status).toBe(202);
-      expect(response.headers.get("Location")).toBe(`${path}/job`);
+      expect(response.headers.get("Location")).toMatch(new RegExp(`^${path}/[0-9a-f-]+$`));
       const result = await response.json();
       expect(result).toMatchObject({ job: { status: "pending" } });
       const status = await app.request(response.headers.get("Location")!, { headers });
@@ -386,16 +408,16 @@ describe("server summary jobs", () => {
       expect(await status.json()).toEqual(result);
       const replay = await app.request(path, { method: "POST", headers, body });
       expect(replay.status).toBe(202);
-      expect(replay.headers.get("Location")).toBe(`${path}/job`);
+      expect(replay.headers.get("Location")).toBe(response.headers.get("Location"));
       expect(await replay.json()).toEqual(result);
       for (const method of ["GET", "POST"]) {
         expect((await app.request(`${path}-job`, { method, headers })).status).toBe(404);
       }
       const portable = createApp({ config, authStore: store });
       expect(await (await portable.request("/api/v1/capabilities", { headers })).json()).not.toHaveProperty("meetingSummaryGeneration");
-      expect((await app.request("/api/v1/summary/methods", { headers })).status).toBe(404);
+      expect((await app.request("/api/v1/summaries/methods", { headers })).status).toBe(404);
       expect(await (await app.request("/api/v1/capabilities", { headers })).json()).toMatchObject({ meetingSummaryGeneration: { version: 1, sources: ["transcript"] } });
-      expect((await portable.request(path, { method: "POST", headers, body: "{}" })).status).toBe(503);
+      expect((await portable.request(path, { method: "POST", headers, body: JSON.stringify({ id: uuidV7() }) })).status).toBe(503);
     } finally { await store.close?.(); }
   });
 
@@ -414,11 +436,11 @@ describe("server summary jobs", () => {
     const waitUntil: Promise<unknown>[] = [];
     const execution = { waitUntil: (task: Promise<unknown>) => { waitUntil.push(task); } } as unknown as ExecutionContext;
     const headers = { "x-forwarded-email": "owner@example.com", "x-forwarded-user": "owner", "content-type": "application/json" };
-    const path = `/api/v1/vaults/${vaultId}/meetings/${meetingId}/summary`;
+    const path = `/api/v1/meetings/${meetingId}/summary-jobs`;
     try {
       const original = await service.start(owner, vaultId, meetingId, { id: uuidV7() });
       await service.cancel(owner, vaultId, meetingId, original.id);
-      const response = fetch(new Request(`http://localhost:5173${path}/job/${original.id}/retry`, {
+      const response = fetch(new Request(`http://localhost:5173${path}/${original.id}/retry`, {
         method: "POST", headers, body: JSON.stringify({ id: uuidV7() }),
       }), {} as Cloudflare.Env, execution);
       await notificationStarted;
@@ -446,7 +468,7 @@ describe("server summary jobs", () => {
         model: cloudflare ? "gpt-4.1" : withImages ? "catalog.ai.gpt-5-6-luna" : "gpt-5-6-luna", reasoningEffort: cloudflare ? "none" : "medium",
       } } } });
       const patchId = uuidV7(); const hash = "a".repeat(64);
-      await sync.putTranscriptChunk(owner, vaultId, meetingId, patchId, 0, hash, {
+      await sync.putTranscriptChunk(owner, meetingId, patchId, 0, hash, {
         segments: [{ segmentId: uuidV7(), startedAt: new Date().toISOString(), endedAt: null,
           text: "Ship next week < & > \" '", createdAt: null, audioSource: "mic", speakerLabel: "A&B" }], deletions: [],
       });
@@ -545,7 +567,7 @@ async function addRecording(value: Awaited<ReturnType<typeof setup>>, sources: A
       entityId: uuidV7(), baseRevision: null, data: { meetingId, sessionId, kind, occurredAt: now } })) });
   const audio = new Uint8Array([0, 0, 0, 20, 102, 116, 121, 112, 77, 52, 65, 32, 0, 0, 0, 0, 77, 52, 65, 32]);
   for (const source of sources) {
-    const uploaded = await sync.postRecording(owner, meetingId, new Request(
+    const uploaded = await sync.putRecordingContent(owner, meetingId, sessionId, source, new Request(
       `http://localhost:5173/api/v1/meetings/${meetingId}/recordings?sessionId=${sessionId}&source=${source}`, {
         method: "POST", headers: { "content-type": "audio/mp4", "content-length": String(audio.length) }, body: audio,
       }));
@@ -601,7 +623,7 @@ describe("audio summary jobs", () => {
       });
       const service = new SummaryService(store.sync, store.accountSettings, [method]);
       let job = await service.start(owner, vaultId, meetingId, { id: uuidV7(), input: await recordingInput(value),
-        model: "gemini-3-8-flash", detailLevel: "high", summaryLanguage: "en" });
+        model: "gemini-3-8-flash", detail: "high", outputLanguage: "en" });
       const captured = { input: job.input, settings: job.settings, outputLanguage: job.outputLanguage };
       for (let attempt = 0; attempt < 2; attempt++) {
         await new SummaryWorker(store.summaryJobs, [method], sync).processOne();
@@ -817,7 +839,7 @@ describe("staged summary generation", () => {
 
   it("validates the exclusive input and treats only omitted transcriptionModel as direct generation", async () => {
     const { summaryStartSchema } = await import("../src/summary/service");
-    const request = { id: uuidV7(), input: { type: "recording", recordings: [{ micFileId: uuidV7(), systemFileId: uuidV7() }] }, model: "gemini-3-8-flash", detailLevel: "high", summaryLanguage: "ja" };
+    const request = { id: uuidV7(), input: { type: "recording", recordings: [{ micFileId: uuidV7(), systemFileId: uuidV7() }] }, model: "gemini-3-8-flash", detail: "high", outputLanguage: "ja" };
     expect(summaryStartSchema.safeParse(request).success).toBe(true);
     for (const transcriptionModel of [null, "", "  "]) {
       expect(summaryStartSchema.safeParse({ ...request, input: { ...request.input, transcriptionModel } }).success).toBe(false);
@@ -835,7 +857,7 @@ describe("staged summary generation", () => {
       const { method, calls } = audioMethod(value, () => combinedResponse());
       const service = new SummaryService(store.sync, store.accountSettings, [method]);
       const input = await recordingInput(value);
-      const job = await service.start(owner, vaultId, meetingId, { id: uuidV7(), input, model: "gemini-3-8-flash", detailLevel: "max", summaryLanguage: "en" });
+      const job = await service.start(owner, vaultId, meetingId, { id: uuidV7(), input, model: "gemini-3-8-flash", detail: "max", outputLanguage: "en" });
       expect(job.stage).toBe("generating");
       await new SummaryWorker(store.summaryJobs, [method], sync).processOne();
       expect(calls).toHaveLength(1);
@@ -867,7 +889,7 @@ describe("staged summary generation", () => {
       const { method } = audioMethod(value, () => combinedResponse(failure === "transcript" ? { segments: [{ ...cloudTranscript.segments[0], end_seconds: 1000 }] } : cloudTranscript,
         failure === "summary" ? { ...output, title: "" } : output));
       const service = new SummaryService(store.sync, store.accountSettings, [method]);
-      await service.start(owner, vaultId, meetingId, { id: uuidV7(), input: await recordingInput(value), model: "gemini-3-8-flash", detailLevel: "high", summaryLanguage: "ja" });
+      await service.start(owner, vaultId, meetingId, { id: uuidV7(), input: await recordingInput(value), model: "gemini-3-8-flash", detail: "high", outputLanguage: "ja" });
       if (failure === "save") {
         const original = store.sync.withIdentity.bind(store.sync);
         store.sync.withIdentity = (identity, action) => original(identity, (scoped) => action({ ...scoped,
@@ -901,7 +923,7 @@ describe("staged summary generation", () => {
       });
       const transcriptMethod: SummaryMethod = { ...value.method, generate };
       const service = new SummaryService(store.sync, store.accountSettings, [method, transcriptMethod]);
-      await service.start(owner, vaultId, meetingId, { id: uuidV7(), input: await recordingInput(value, "gemini-3-8-flash"), model: "gemini-3-8-flash", detailLevel: "high", summaryLanguage: "ja" });
+      await service.start(owner, vaultId, meetingId, { id: uuidV7(), input: await recordingInput(value, "gemini-3-8-flash"), model: "gemini-3-8-flash", detail: "high", outputLanguage: "ja" });
       await new SummaryWorker(store.summaryJobs, [method, transcriptMethod], sync).processOne();
       const failed = await service.status(owner, vaultId, meetingId);
       expect(failed).toMatchObject({ status: "pending", stage: "summarizing", transcriptResult: { version: "1" } });
@@ -952,7 +974,7 @@ it("preserves audio-pair order and rejects foreign, partial, or duplicated pairs
       { ...cloudTranscript.segments[0], recording_index: 1 },
     ] }));
     const service = new SummaryService(store.sync, store.accountSettings, [method]);
-    const request = { id: uuidV7(), input, model: "gemini-3-8-flash", detailLevel: "high", summaryLanguage: "ja" };
+    const request = { id: uuidV7(), input, model: "gemini-3-8-flash", detail: "high", outputLanguage: "ja" };
     await expect(service.start(owner, vaultId, meetingId, { ...request, meetingId })).rejects.toMatchObject({ code: "invalid_summary_request" });
     for (const recordings of [
       [{ micFileId: uuidV7(), systemFileId: null }],
@@ -979,7 +1001,7 @@ it("reads the exact transcript ID and historical version instead of silently sub
       const payload = { segments: [{ segmentId: uuidV7(), startedAt: now, endedAt: now, text: index === 0 ? "original evidence" : "newer evidence",
         createdAt: now, audioSource: "mic", speakerLabel: null }], deletions: [] };
       const hash = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify(payload)))), (byte) => byte.toString(16).padStart(2, "0")).join("");
-      await sync.putTranscriptChunk(owner, vaultId, meetingId, patchId, 0, hash, payload);
+      await sync.putTranscriptChunk(owner, meetingId, patchId, 0, hash, payload);
       await sync.commitTransaction(owner, { schemaVersion: 2, id: uuidV7(), vaultId, createdAt: now, operations: [{
         id: patchId, entity: "transcript", action: "patch", entityId: meetingId, baseRevision: index,
         data: { mode: "replace", patchId, segmentCount: 1, deletionCount: 0,
@@ -1024,7 +1046,7 @@ describe("Cloudflare native audio summary", () => {
       };
       const method = createAudioSummaryMethod(config, store.sync, sync, transport)!;
       const service = new SummaryService(store.sync, store.accountSettings, [method]);
-      await service.start(owner, vaultId, meetingId, { id: uuidV7(), input: await recordingInput(value), model: "gemini-3-flash", detailLevel: "high", summaryLanguage: "ja" });
+      await service.start(owner, vaultId, meetingId, { id: uuidV7(), input: await recordingInput(value), model: "gemini-3-flash", detail: "high", outputLanguage: "ja" });
       await new SummaryWorker(store.summaryJobs, [method], sync).processOne();
       expect(calls).toBe(1);
       expect((await service.status(owner, vaultId, meetingId))?.status).toBe(scenario === "success" ? "succeeded" : scenario === "invalid" ? "failed" : "pending");

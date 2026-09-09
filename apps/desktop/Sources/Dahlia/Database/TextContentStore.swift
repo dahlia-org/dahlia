@@ -41,7 +41,7 @@ enum TextContentStore {
         guard try source(entity: entity, id: id, in: db) == expected,
               try !SyncTransactionQueue.hasPending(vaultId: expected.vaultId, in: db),
               try String.fetchOne(db, sql: "SELECT syncRecoveryState FROM vaults WHERE id = ?", arguments: [expected.vaultId]) == nil,
-              try Bool.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 FROM recording_sessions WHERE endedAt IS NULL)") != true
+              try !RecordingSessionRecord.hasActiveRecording(vaultId: expected.vaultId, in: db)
         else { return false }
         return true
     }
@@ -79,7 +79,7 @@ enum TextContentStore {
 
     static func requireVaultComplete(vaultId: UUID, in db: Database) throws {
         guard try !SyncTransactionQueue.hasPending(vaultId: vaultId, in: db),
-              try Bool.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 FROM recording_sessions WHERE endedAt IS NULL)") != true,
+              try !RecordingSessionRecord.hasActiveRecording(vaultId: vaultId, in: db),
               try String.fetchOne(db, sql: "SELECT syncRecoveryState FROM vaults WHERE id = ?", arguments: [vaultId]) == nil,
               try Bool.fetchOne(db, sql: """
               SELECT EXISTS(SELECT 1 FROM sync_content_state c LEFT JOIN sync_entity_state s

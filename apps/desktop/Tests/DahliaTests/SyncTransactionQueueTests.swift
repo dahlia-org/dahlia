@@ -1,5 +1,6 @@
 #if canImport(Testing)
     import DahliaMeetingAccess
+    import DahliaRuntimeSupport
     import Foundation
     import GRDB
     import Testing
@@ -739,8 +740,8 @@
             #expect(try await store.page().isEmpty)
         }
 
-        @Test
-        func recordingDefersRecoveryApplicationAndCheckpoint() async throws {
+        @Test(arguments: ["target", "local", "server"])
+        func recordingDefersRecoveryApplicationAndCheckpoint(recordingVault: String) async throws {
             let (database, vault) = try await syncedDatabase()
             let connection = try #require(vault.syncConfirmedConnectionId)
             let generation = try #require(try await RemoteChangeApplier.recoveryGeneration(
@@ -749,10 +750,20 @@
                 dbQueue: database.dbQueue
             ))
             let meetingId = UUID.v7()
+            let contentMeetingId = UUID.v7()
             try await database.dbQueue.write { db in
+                var otherVault = VaultRecord(id: .v7(), path: nil, name: "Other", createdAt: .now, lastOpenedAt: .now)
+                if recordingVault == "server" {
+                    otherVault.accountConnectionId = connection
+                    otherVault.syncConfirmedConnectionId = connection
+                }
+                if recordingVault != "target" { try otherVault.insert(db) }
+                try MeetingRecord(
+                    id: contentMeetingId, vaultId: vault.id, projectId: nil, name: "Content", createdAt: .now, updatedAt: .now
+                ).insert(db)
                 try db.execute(
                     sql: "INSERT INTO meetings(id, vaultId, name, createdAt, updatedAt) VALUES (?, ?, 'Recording', ?, ?)",
-                    arguments: [meetingId, vault.id, Date.now, Date.now]
+                    arguments: [meetingId, recordingVault == "target" ? vault.id : otherVault.id, Date.now, Date.now]
                 )
                 try RecordingSessionRecord(
                     id: .v7(),
@@ -765,16 +776,26 @@
                     updatedAt: .now
                 ).insert(db)
             }
-            #expect(try await RemoteChangeApplier
-                .recoveryGeneration(vaultId: vault.id, expectedConnectionId: connection, dbQueue: database.dbQueue) == nil)
-            #expect(try await !RemoteChangeApplier.finishReset(
+            let currentGeneration = try await RemoteChangeApplier
+                .recoveryGeneration(vaultId: vault.id, expectedConnectionId: connection, dbQueue: database.dbQueue)
+            #expect((currentGeneration == nil) == (recordingVault == "target"))
+            try await database.dbQueue.read { db in
+                let source = try #require(try TextContentStore.source(entity: .summary, id: contentMeetingId, in: db))
+                #expect(try TextContentStore.mayReplace(source, entity: .summary, id: contentMeetingId, in: db) == (recordingVault != "target"))
+                if recordingVault == "target" {
+                    #expect(throws: TextContentError.self) { try TextContentStore.requireVaultComplete(vaultId: vault.id, in: db) }
+                } else {
+                    try TextContentStore.requireVaultComplete(vaultId: vault.id, in: db)
+                }
+            }
+            #expect(try await RemoteChangeApplier.finishReset(
                 SyncResetSnapshot(ids: [.vault: [vault.id]]),
                 cursor: "stale",
                 vaultId: vault.id,
                 expectedConnectionId: connection,
                 dbQueue: database.dbQueue,
                 expectedMutationGeneration: generation
-            ))
+            ) == (recordingVault != "target"))
             let count = try await database.dbQueue.read { db in
                 try Int.fetchOne(db, sql: "SELECT count(*) FROM meetings WHERE id = ?", arguments: [meetingId])
             }

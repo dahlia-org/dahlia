@@ -51,8 +51,8 @@ export const recordingContentURL = (record: Pick<RecordingRecord, "meetingId" | 
 export function recordingResponse(record: RecordingRecord, includeStaging = false) {
   const audio = Object.fromEntries(Object.entries(record.audio).filter(([, value]) => value.uploadedAt && (value.active || includeStaging))
     .map(([source, value]) => [source, {
-      fileId: value.generation, content_type: value.content_type, size: value.size, checksum: value.checksum,
-      contentURL: recordingContentURL(record, source as RecordingSource),
+      fileId: value.generation, contentType: value.content_type, size: value.size, checksum: value.checksum,
+      contentUrl: recordingContentURL(record, source as RecordingSource),
     }]));
   return { id: record.number, startedAt: record.startedAt, endedAt: record.endedAt, audio };
 }
@@ -60,8 +60,8 @@ export function recordingCanonical(record: RecordingRecord) {
   return { ...recordingResponse(record), recordingNumber: record.number, sessionId: record.sessionId, meetingId: record.meetingId,
     vaultId: record.vaultId, revision: record.revision,
     audio: Object.fromEntries(Object.entries(record.audio).filter(([, value]) => value.active).map(([source, value]) => [source, {
-      content_type: value.content_type, size: value.size, checksum: value.checksum, manifest: value.manifest,
-      contentURL: recordingContentURL(record, source as RecordingSource),
+      contentType: value.content_type, size: value.size, checksum: value.checksum, manifest: value.manifest,
+      contentUrl: recordingContentURL(record, source as RecordingSource),
     }])),
   };
 }

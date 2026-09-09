@@ -19,19 +19,19 @@ it("preserves structured output support for available fallback models including 
 // These tests inspect available choices; real picker interactions run in tests/browser/select.html.
 vi.mock("../src/client/Select", () => ({ Select: ({ value, disabled, children }: ComponentProps<typeof import("../src/client/Select").Select>) =>
   createElement("select", { value, disabled, onChange: () => {} }, children) }));
-vi.mock("../src/client/live-data", () => ({ useLiveJSON: vi.fn(), refreshData: vi.fn() }));
-vi.mock("../src/client/api", () => ({ json: vi.fn(), uiText: (en: string) => en }));
+vi.mock("../src/client/live-data", async (original) => ({ ...await original<typeof import("../src/client/live-data")>(), useLiveJSON: vi.fn(), refreshData: vi.fn() }));
+vi.mock("../src/client/api", async (original) => ({ ...await original<typeof import("../src/client/api")>(), json: vi.fn(), uiText: (en: string) => en }));
 
 it.each([{}, { meetingSummaryGeneration: { version: 2, sources: ["transcript", "audio"] } }])(
   "keeps common settings and hides generation for unsupported capabilities: %j", (capabilities) => {
     vi.mocked(useLiveJSON).mockImplementation((url) => ({
-      data: url === "/api/v1/capabilities" ? capabilities : undefined,
+      data: typeof url === "object" && url.key.startsWith('["getCapabilities"') ? capabilities : undefined,
       loading: false, error: undefined, reload: vi.fn(), replace: vi.fn(),
     }));
     const settings = renderToStaticMarkup(createElement(ServerSummarySettings));
     expect(settings).toContain("Output language");
     expect(settings).not.toContain("Summary source");
-    expect(renderToStaticMarkup(createElement(ServerSummaryGeneration, { base: "/test" }))).toBe("");
+    expect(renderToStaticMarkup(createElement(ServerSummaryGeneration, { meetingId: "test" }))).toBe("");
   },
 );
 
@@ -42,7 +42,7 @@ it.each([false, true])("hides the automatic review alias from summary model choi
   ]);
   vi.mocked(useLiveJSON).mockImplementation((url) => ({
     data: url === "/api/v1/models" ? catalog
-      : url === "/api/v1/capabilities" ? { meetingSummaryGeneration: { version: 1, sources: ["transcript"] } }
+      : typeof url === "object" && url.key.startsWith('["getCapabilities"') ? { meetingSummaryGeneration: { version: 1, sources: ["transcript"] } }
       : { settings: null },
     loading: false, error: undefined, reload: vi.fn(), replace: vi.fn(),
   }));
@@ -58,7 +58,7 @@ it.each([true, false])("filters audio choices to available audio-capable Gemini 
     ...(available ? [{ id: "gemini-3-8-flash" }, { id: "gemini-3-7-flash" }] : [])]);
   vi.mocked(useLiveJSON).mockImplementation((url) => ({
     data: url === "/api/v1/models" ? catalog
-      : url === "/api/v1/capabilities" ? { meetingSummaryGeneration: { version: 1, sources: ["transcript", "audio"] } }
+      : typeof url === "object" && url.key.startsWith('["getCapabilities"') ? { meetingSummaryGeneration: { version: 1, sources: ["transcript", "audio"] } }
       : { settings: { summary: { method: "audio", detail: "medium", methodSettings: { audio: { model: "gemini-3-8-flash", reasoningEffort: "medium" } } } } },
     loading: false, error: undefined, reload: vi.fn(), replace: vi.fn(),
   }));
@@ -77,18 +77,18 @@ it.each([
   ["summary_http_400", "Summary failed; the existing summary was preserved."],
 ])("shows the existing failure message for %s", (error, message) => {
   vi.mocked(useLiveJSON).mockImplementation((url) => ({
-    data: url === "/api/v1/capabilities" ? { meetingSummaryGeneration: { version: 1, sources: ["audio"] } }
+    data: typeof url === "object" && url.key.startsWith('["getCapabilities"') ? { meetingSummaryGeneration: { version: 1, sources: ["audio"] } }
       : { job: { id: "test", status: "failed", error } },
     loading: false, error: undefined, reload: vi.fn(), replace: vi.fn(),
   }));
-  const html = renderToStaticMarkup(createElement(ServerSummaryGeneration, { base: "/test" }));
+  const html = renderToStaticMarkup(createElement(ServerSummaryGeneration, { meetingId: "test" }));
   expect(html).toContain(message);
   expect(html).toContain(`(${error})`);
 });
 
 it("keeps the shared output language editable without summary capability", () => {
   vi.mocked(useLiveJSON).mockImplementation((url) => ({
-    data: url === "/api/v1/account/settings" ? { settings: { ...DEFAULT_ACCOUNT_SETTINGS, outputLanguage: "fr" } } : url ? {} : undefined,
+    data: typeof url === "object" && url.key.startsWith('["getSettings"') ? { settings: { ...DEFAULT_ACCOUNT_SETTINGS, outputLanguage: "fr" } } : url ? {} : undefined,
     loading: false, error: undefined, reload: vi.fn(), replace: vi.fn(),
   }));
   const html = renderToStaticMarkup(createElement(ServerSummarySettings));

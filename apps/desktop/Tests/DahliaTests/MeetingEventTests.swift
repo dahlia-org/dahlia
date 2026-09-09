@@ -102,7 +102,7 @@
                 }
                 if path == "/api/v1/transactions" {
                     if meetingDeleted, paths.withLock({ $0.filter { $0 == path }.count }) == 1 {
-                        return (410, [:], Data("{\"error\":\"meeting_event_parent_unavailable\",\"conflicts\":[]}".utf8))
+                        return (410, [:], Data("{\"code\":\"meeting_event_parent_unavailable\",\"conflicts\":[]}".utf8))
                     }
                     return (
                         200,

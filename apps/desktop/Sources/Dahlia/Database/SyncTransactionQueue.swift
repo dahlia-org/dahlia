@@ -1,6 +1,7 @@
 import CryptoKit
 import DahliaMeetingAccess
 import DahliaRuntimeSupport
+import DahliaServerAPI
 import Foundation
 import GRDB
 
@@ -179,11 +180,11 @@ struct SyncCanonicalPayload: Codable, Sendable {
     var size: Int64?
     var contentType: String?
     var checksum: String?
-    var metadata: FileMetadata?
+    var metadata: Components.Schemas.File.MetadataPayload?
     var recordingNumber: Int?
     var startedAt: Date?
     var endedAt: Date?
-    var audio: [String: RecordingArchivedAudio]?
+    var audio: [String: Components.Schemas.RecordingAudio]?
 
     enum CodingKeys: String, CodingKey {
         case icon, color
@@ -192,7 +193,7 @@ struct SyncCanonicalPayload: Codable, Sendable {
         case createdAt, updatedAt, title, document, capturedAt, fileId, sessionId, uri, offset, size, checksum, metadata
         case recordingNumber
         case startedAt, endedAt, audio
-        case contentType = "content_type"
+        case contentType
     }
 }
 

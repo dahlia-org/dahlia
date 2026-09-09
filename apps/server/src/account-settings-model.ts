@@ -18,7 +18,7 @@ export function normalizeSummaryDetail(value: string): string {
     default: return value;
   }
 }
-export const summaryDetailSchema = z.string().transform(normalizeSummaryDetail).pipe(z.enum(summaryDetails));
+export const summaryDetailSchema = z.enum(summaryDetails);
 export const summaryModelSettingsSchema = z.object({
   model: z.string().trim().min(1).max(200),
   reasoningEffort: z.enum(["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"]),

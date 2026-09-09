@@ -15,7 +15,7 @@ const organizations = [{ id: "organization-id", name: "Alpha", slug: "alpha-team
 const member = { id: "member-id", userId: "owner", role: "owner", user: { name: "Owner", email: "owner@example.com" } };
 window.fetch = (input, init) => Promise.resolve((() => {
   const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url, location.origin);
-  if (url.pathname === "/api/session") return Response.json({ user: { id: "owner", name: "Owner" }, workspace: { id: "personal", type: "personal" },
+  if (url.pathname === "/api/v1/session") return Response.json({ user: { id: "owner", name: "Owner" }, workspace: { id: "personal", type: "personal" },
     capabilities: { sessions: accounts, sharing: true, sync: false, admin: false } });
   if (url.pathname.endsWith("/invite-member")) {
     invites++;
@@ -31,9 +31,12 @@ window.fetch = (input, init) => Promise.resolve((() => {
     organizations.push(organization);
     return Response.json(organization);
   }
-  if (url.pathname.endsWith("/list") || url.pathname === "/api/v1/organizations") return Response.json(organizations);
+  if (url.pathname === "/api/v1/organizations") return Response.json({ items: organizations, nextCursor: null });
+  if (url.pathname.endsWith("/list")) return Response.json(organizations);
+  if (url.pathname === "/api/v1/organizations/organization-id/members") return Response.json({ items: [member], nextCursor: null });
+  if (url.pathname === "/api/v1/organizations/organization-id/teams") return Response.json({ items: [{ id: "team-id", organizationId: "organization-id", name: "Design" }], nextCursor: null });
   if (url.pathname.endsWith("/list-members") || url.pathname.endsWith("/members")) {
-    if (url.pathname.includes("/teams/")) return Response.json([{ id: "tm", teamId: "team-id", userId: "owner" }]);
+    if (url.pathname.includes("/teams/")) return Response.json({ items: [{ id: "tm", teamId: "team-id", userId: "owner" }], nextCursor: null });
     return Response.json({ members: [member] });
   }
   if (url.pathname.endsWith("/list-teams") || url.pathname.endsWith("/list-user-teams") || url.pathname.endsWith("/teams")) {
@@ -66,6 +69,8 @@ async function run() {
   assert(!main().querySelector("input"), "Organization creation form leaked into list");
   assert(!main().textContent?.includes("Design"), "Team details leaked into list");
   (document.querySelector('a[href="/organizations/alpha-team"]') as HTMLElement).click();
+  await until(() => button("Members"));
+  button("Members").click();
   await until(() => panel()?.textContent?.includes("owner@example.com"));
   assert(location.pathname === "/organizations/alpha-team", "Detail did not use slug");
   assert([...document.querySelectorAll('[role="tab"]')].map((el) => el.textContent).join() === "Members 1,Teams 1,Settings", "Missing organization tabs");
@@ -120,10 +125,12 @@ async function run() {
   navigateDashboard("/organizations");
   await until(() => document.querySelector('a[href="/organizations/alpha-team"]') && !button("Create organization", main()));
   (document.querySelector('a[href="/organizations/alpha-team"]') as HTMLElement).click();
+  await until(() => button("Members"));
+  button("Members").click();
   await until(() => panel()?.textContent?.includes("owner@example.com"));
   button("Settings").click();
   await until(() => panel()?.textContent?.includes("alpha-team"));
   assert(!button("Delete organization", panel()), "Proxy organization exposed deletion");
   document.body.dataset.testResult = "passed";
 }
-void run().catch((error: unknown) => { document.body.dataset.testResult = "failed"; document.body.dataset.testError = String(error); });
+void run().catch((error: unknown) => { document.body.dataset.testResult = "failed"; document.body.dataset.testError = error instanceof Error ? error.stack : String(error); });

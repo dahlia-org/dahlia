@@ -13,6 +13,7 @@ import { TextContentDigest } from "../src/sync/text-content";
 import { MeetingSyncService } from "../src/sync/service";
 import { decodeSyncCursor, SYNC_HISTORY_RETENTION_MS, SYNC_SNAPSHOT_PAGE_BYTES } from "../src/sync/store";
 import type { SyncTransactionOperation } from "../src/sync/types";
+import { receipt as receiptSchema } from "../src/api/schemas";
 
 const owner: Identity = { userId: "retention-owner", workspaceId: "personal:retention-owner", source: "header" };
 const member: Identity = { userId: "retention-member", workspaceId: "personal:retention-member", source: "header" };
@@ -170,6 +171,38 @@ describe("sync history retention", () => {
     }]));
     expect(decodeSyncCursor(next.cursor)).toBeGreaterThan(decodeSyncCursor(receipt.cursor));
     expect(await service.listChanges(owner, vaultId, snapshot.startCursor)).toMatchObject({ items: [{ record: { name: "New name" } }] });
+  });
+
+  it("projects historical full receipts on resolve and commit replay without rewriting stored results", async () => {
+    const { service, raw, vaultId, create, receipt } = await setup();
+    const date = new Date().toISOString();
+    const fileId = id(), meetingId = id(), sessionId = id();
+    const historical = { ...receipt, records: [...receipt.records,
+      { entity: "file", id: fileId, revision: 1, record: { id: fileId, vaultId, revision: 1,
+        uri: "private-storage-key", offset: 0, content_type: "image/png", size: 3, checksum: "old-checksum", name: "capture.png",
+        metadata: { source: "screenshot", ocr_text: "committed text", caption: null }, createdAt: date, updatedAt: date } },
+      { entity: "recording", id: id(), revision: 1, record: { id: 0, recordingNumber: 0, vaultId, meetingId, sessionId,
+        startedAt: date, endedAt: date, revision: 1,
+        audio: { mic: { content_type: "audio/mp4", size: 7, checksum: null, contentURL: `/api/v1/meetings/${meetingId}/recordings/0/audio/mic` } } } },
+      { entity: "file", id: id(), revision: null, record: null },
+    ] };
+    const stored = JSON.stringify(historical);
+    raw.prepare("UPDATE transaction_receipts SET response_json = ? WHERE transaction_id = ?").run(stored, create.id);
+    await service.commitTransaction(owner, body(vaultId, [{ entity: "vault", action: "update", entityId: vaultId,
+      baseRevision: 1, data: { name: "Newer name" } }]));
+    const resolved = await service.resolveTransaction(owner, create);
+    expect(receiptSchema.safeParse(resolved).success).toBe(true);
+    expect(resolved).toMatchObject({ cursor: receipt.cursor, records: [
+      receipt.records[0],
+      { record: { contentType: "image/png", checksum: "old-checksum", metadata: { ocrText: "committed text", caption: null } } },
+      { record: { audio: { mic: { contentType: "audio/mp4", contentUrl: `/api/v1/meetings/${meetingId}/recordings/0/audio/mic` } } } },
+      { record: null },
+    ] });
+    expect(JSON.stringify(resolved)).not.toMatch(/content_type|contentURL|ocr_text|private-storage-key/);
+    expect(await service.commitTransaction(owner, create)).toEqual(resolved);
+    expect(await service.resolveTransaction(owner, create)).toEqual(resolved);
+    expect(raw.prepare("SELECT response_json FROM transaction_receipts WHERE transaction_id = ?").get(create.id)?.response_json).toBe(stored);
+    await expect(service.resolveTransaction(member, create)).rejects.toMatchObject({ status: 404 });
   });
 
   it("resolves compact receipts without replay or stale content, and rejects altered requests", async () => {

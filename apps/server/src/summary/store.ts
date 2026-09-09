@@ -3,7 +3,7 @@ import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import type { PostgresDatabase, SQLiteDatabase } from "../db/client";
 import * as postgresSchema from "../db/auth-schema";
 import * as sqliteSchema from "../db/sqlite-schema";
-import { transcriptSettingsSchema, type SummaryJob, type SummaryStage } from "./model";
+import { storedTranscriptSettingsSchema, type SummaryJob, type SummaryStage } from "./model";
 
 export type SummaryJobReference = Pick<SummaryJob, "id" | "ownerUserId">;
 
@@ -48,7 +48,7 @@ export function createSummaryJobStore(database: PostgresDatabase | SQLiteDatabas
               .where(eq(jobs.id, row.id));
             return null;
           }
-          const claimed = { ...row, settings: transcriptSettingsSchema.parse(row.settings), status: "processing", attempts: row.attempts + 1, claimedAt: now, leaseExpiresAt: new Date(now.getTime() + 300_000) };
+          const claimed = { ...row, settings: storedTranscriptSettingsSchema.parse(row.settings), status: "processing", attempts: row.attempts + 1, claimedAt: now, leaseExpiresAt: new Date(now.getTime() + 300_000) };
           await connection.update(jobs).set(claimed).where(eq(jobs.id, row.id));
           return claimed;
         });

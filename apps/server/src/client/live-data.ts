@@ -1,3 +1,4 @@
+import { apiOperations, apiUrls, type GetOperation } from "./generated-operations";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { clientMutationEvent, json, RequestError } from "./api";
 
@@ -103,19 +104,36 @@ export function useLiveQuery<T>(key: string | undefined, load: (signal: AbortSig
   };
 }
 
-export function useLiveJSON<T>(url?: string, scope: "all" | "account" | "manual" = "all") {
-  return useLiveQuery<T>(url, (signal) => json<T>(url!, { signal }), scope);
+export interface ApiQuery<T> { key: string; load: (signal: AbortSignal, cursor?: string) => Promise<T> }
+export function apiQuery<K extends GetOperation>(operation: K, init: Parameters<typeof apiOperations[K]>[0]): ApiQuery<Awaited<ReturnType<typeof apiOperations[K]>>> {
+  type Result = Awaited<ReturnType<typeof apiOperations[K]>>;
+  const call = apiOperations[operation] as (input: typeof init) => Promise<Result>;
+  return { key: JSON.stringify([operation, init]), load: (signal, cursor) => call({ ...init, signal,
+    ...(cursor ? { params: { ...init.params, query: { ...init.params?.query, cursor } } } : {}),
+  }) };
+}
+export function mapQuery<T, U>(query: ApiQuery<T>, select: (value: T) => U): ApiQuery<U> {
+  return { ...query, load: async (signal, cursor) => select(await query.load(signal, cursor)) };
+}
+export function useLiveJSON<T>(input?: string | ApiQuery<T>, scope: "all" | "account" | "manual" = "all") {
+  return useLiveQuery<T>(typeof input === "string" ? input : input?.key,
+    (signal) => typeof input === "string" ? json<T>(input, { signal }) : input!.load(signal), scope);
 }
 
 export interface Page<T> { items: T[]; nextCursor?: string | null }
 
-export async function readVisiblePages<T>(url: string, minimum: number, signal: AbortSignal): Promise<Page<T>> {
+export async function readVisiblePages<T>(input: string | ApiQuery<Page<T>>, minimum: number, signal: AbortSignal): Promise<Page<T>> {
   const items: T[] = [];
   let cursor: string | null | undefined;
   do {
-    const next = new URL(url, "http://localhost");
-    if (cursor) next.searchParams.set("cursor", cursor);
-    const page = await json<Page<T>>(`${next.pathname}${next.search}`, { signal });
+    let page: Page<T>;
+    if (typeof input === "string") {
+      const next = new URL(input, "http://localhost");
+      if (cursor) next.searchParams.set("cursor", cursor);
+      page = await json<Page<T>>(`${next.pathname}${next.search}`, { signal });
+    } else {
+      page = await input.load(signal, cursor ?? undefined);
+    }
     signal.throwIfAborted();
     items.push(...page.items);
     cursor = page.nextCursor;
@@ -123,13 +141,14 @@ export async function readVisiblePages<T>(url: string, minimum: number, signal: 
   return { items, nextCursor: cursor };
 }
 
-export function useLivePage<T>(url: string) {
+export function useLivePage<T>(input: string | ApiQuery<Page<T>>) {
+  const url = typeof input === "string" ? input : input.key;
   const demand = useRef({ url, count: 1 });
   useEffect(() => { demand.current = { url, count: 1 }; }, [url]);
   const query = useLiveQuery<Page<T>>(url, (signal, previous) => {
     const requestedCount = demand.current.url === url ? demand.current.count : 1;
     const visibleCount = Math.max(previous?.items.length ?? 1, requestedCount);
-    return readVisiblePages<T>(url, visibleCount, signal);
+    return readVisiblePages<T>(input, visibleCount, signal);
   });
   const loadingMore = query.loading && demand.current.url === url && demand.current.count > (query.data?.items.length ?? 0);
   const loadMore = () => {
@@ -142,7 +161,7 @@ export function useLivePage<T>(url: string) {
 
 export function subscribeLiveUpdates() {
   // EventSource owns reconnect cursors. A notification is never a completed data checkpoint.
-  const source = new EventSource("/api/v1/events");
+  const source = new EventSource(apiUrls.getEvents({}));
   const refreshSettings = () => window.dispatchEvent(new Event(accountSettingsEvent));
   source.addEventListener("open", refreshData);
   source.addEventListener("open", refreshSettings);
