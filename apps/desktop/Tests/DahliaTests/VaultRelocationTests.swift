@@ -161,7 +161,10 @@
                 try project.insert(db)
                 try meeting.insert(db)
                 try ContactRecord(id: contact, vaultId: source.id, email: "test@example.com", displayName: "Contact", revision: 1, createdAt: .now, updatedAt: .now).insert(db)
-                try OrganizationRecord(id: organization, vaultId: source.id, parentOrganizationId: nil, nodeKind: .organization, name: "Organization", revision: 1, createdAt: .now, updatedAt: .now).insert(db)
+                try OrganizationRecord(
+                    id: organization, vaultId: source.id, parentOrganizationId: nil, nodeKind: .organization,
+                    name: "Organization", revision: 1, createdAt: .now, updatedAt: .now
+                ).insert(db)
                 try InsightRecord(id: insight, vaultId: source.id, content: "Insight", isAccepted: false, metadataJSON: "{}", revision: 1, createdAt: .now, updatedAt: .now).insert(db)
                 try ConversationTopicRecord(id: topic, vaultId: source.id, title: "Topic", currentState: "Open", revision: 1, createdAt: .now, updatedAt: .now).insert(db)
                 switch reference {
