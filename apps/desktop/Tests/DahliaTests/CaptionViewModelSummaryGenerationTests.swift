@@ -49,8 +49,8 @@ import GRDB
             #expect(try await fixture.database.dbQueue.read { try RecordingProcessing.load(sessionID: sessionID, in: $0)?.stage } == .succeeded)
         }
 
-        @Test(arguments: [false, true])
-        func recordingExportRetryReusesPublishedSummaryAndRejectsLaterEdits(edited: Bool) async throws {
+        @Test(arguments: [false, true], [false, true])
+        func recordingExportRetryReusesPublishedSummaryAndRejectsLaterEdits(edited: Bool, restarting: Bool) async throws {
             let fixture = try SummaryGenerationFixture()
             defer { fixture.removeFiles() }
             let runner = BlockingSummaryRunner()
@@ -84,21 +84,64 @@ import GRDB
             #expect(job.hasFailure)
             #expect(exportCalls == 1)
             #expect(try await fixture.database.dbQueue.read { try RecordingProcessing.load(sessionID: sessionID, in: $0)?.summaryApplied } == true)
+            #expect(try await fixture.database.dbQueue.read { try RecordingProcessing.load(sessionID: sessionID, in: $0)?.stage } == .failed)
             if edited {
                 try MeetingRepository(dbQueue: fixture.database.dbQueue).applyGeneratedSummary(
                     toMeetingId: fixture.first.id, document: SummaryDocument(title: "Edited", sections: []), tags: []
                 )
             }
             let before = try await fixture.database.dbQueue.read { try MeetingRecord.fetchOne($0, key: fixture.first.id)?.updatedAt }
-            job.retry?()
+            let retryModel = restarting ? CaptionViewModel(summaryGenerationRunner: runner.run, googleDocsSummaryExporter: { _, _, _ in
+                exportCalls += 1
+                return "exported-file"
+            }) : viewModel
+            if restarting { try await retryModel.restoreRecordingProcessingForTesting(dbQueue: fixture.database.dbQueue) }
+            let retryJob = try #require(retryModel.summaryGenerationJobs.first)
+            retryJob.retry?()
             try #require(await waitUntil {
-                viewModel.summaryGenerationJobs.contains { $0.id != job.id && $0.isFinished }
-                    && !viewModel.isSummaryGenerating(meetingId: fixture.first.id)
+                retryModel.summaryGenerationJobs.contains { $0.id != job.id && $0.isFinished }
+                    && !retryModel.isSummaryGenerating(meetingId: fixture.first.id)
             })
             #expect(runner.calls.count == 1)
             #expect(exportCalls == (edited ? 1 : 2))
             #expect(try fixture.summary(for: fixture.first.id)?.title == (edited ? "Edited" : "Published"))
             #expect(try await fixture.database.dbQueue.read { try MeetingRecord.fetchOne($0, key: fixture.first.id)?.updatedAt } == before)
+        }
+
+        @Test
+        func restoresExportsAfterSummaryWasAppliedBeforeShutdown() async throws {
+            let fixture = try SummaryGenerationFixture()
+            defer { fixture.removeFiles() }
+            let sessionID = try fixture.insertRecordingSession(for: fixture.first, offset: 0)
+            let id = UUID.v7()
+            let expected = try await fixture.database.dbQueue.read { db in
+                try SummaryGenerationExpectation(
+                    summaryDocument: SummaryBodyRecord.fetchOne(db, key: fixture.first.id)?.document,
+                    transcriptID: TranscriptRecord.current(fixture.first.id, in: db)?.id,
+                    recordingSessionID: sessionID, jobID: id
+                )
+            }
+            let saved = SummaryService.GeneratedSummary(document: SummaryDocument(title: "Saved", sections: []), fileName: "summary.md", markdown: "Saved")
+            let processing = RecordingProcessing(
+                id: id, automatic: true, liveDraft: false, localeIdentifier: "en_US", method: .transcript,
+                options: .init(exportOptions: .init(exportsToVault: false, exportsToGoogleDocs: true)),
+                generationSettings: .current(), serverSettings: nil, sessionIDs: [sessionID], stage: .saving,
+                summaryExpectation: expected, generatedSummary: saved
+            )
+            try await fixture.database.dbQueue.write { db in try processing.save(sessionID: sessionID, in: db) }
+            try MeetingRepository(dbQueue: fixture.database.dbQueue).applyGeneratedSummary(
+                toMeetingId: fixture.first.id, document: saved.document, tags: [], expectation: expected
+            )
+            var generationCalls = 0
+            var exportCalls = 0
+            let restored = CaptionViewModel(summaryGenerationRunner: { _ in generationCalls += 1; return saved }, googleDocsSummaryExporter: { _, _, _ in
+                exportCalls += 1
+                return "restored-file"
+            })
+            try await restored.restoreRecordingProcessingForTesting(dbQueue: fixture.database.dbQueue)
+            try #require(await waitUntil { exportCalls == 1 && !restored.isSummaryGenerating(meetingId: fixture.first.id) })
+            #expect(generationCalls == 0)
+            #expect(try await fixture.database.dbQueue.read { try RecordingProcessing.load(sessionID: sessionID, in: $0)?.stage } == .succeeded)
         }
 
         @Test

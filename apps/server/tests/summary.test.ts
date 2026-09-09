@@ -545,6 +545,44 @@ function audioMethod(value: Awaited<ReturnType<typeof setup>>, result?: () => Re
 }
 
 describe("audio summary jobs", () => {
+  it.each(["summary", "transcript", "input"])("rebases %s guards on explicit retry and still rejects later changes", async (changed) => {
+    const value = await setup(); const { store, sync, vaultId, meetingId } = value;
+    try {
+      await addRecording(value);
+      let changeDuringGeneration = true;
+      const { method, calls } = audioMethod(value, () => {
+        if (changeDuringGeneration) {
+          const db = new DatabaseSync(value.path);
+          db.exec(changed === "summary" ? "UPDATE meetings SET summary_revision = summary_revision + 1"
+            : changed === "transcript" ? "UPDATE meetings SET transcript_revision = transcript_revision + 1"
+            : "UPDATE meetings SET name = name || ' changed'");
+          db.close();
+        }
+        return combinedResponse();
+      });
+      const service = new SummaryService(store.sync, store.accountSettings, [method]);
+      let job = await service.start(owner, vaultId, meetingId, { id: uuidV7(), input: await recordingInput(value),
+        model: "gemini-3-8-flash", detailLevel: "high", summaryLanguage: "en" });
+      const captured = { input: job.input, settings: job.settings, outputLanguage: job.outputLanguage };
+      for (let attempt = 0; attempt < 2; attempt++) {
+        await new SummaryWorker(store.summaryJobs, [method], sync).processOne();
+        expect(await service.status(owner, vaultId, meetingId, job.id)).toMatchObject({ status: "failed", lastErrorCode:
+          changed === "summary" ? "summary_conflict" : changed === "transcript" ? "summary_transcript_conflict" : "summary_input_changed" });
+        job = await service.retry(owner, vaultId, meetingId, job.id, { id: uuidV7() });
+        expect(job).toMatchObject(captured);
+        const current = await store.sync.withIdentity(owner, async (scoped) => ({
+          meeting: await scoped.getMeeting(vaultId, meetingId), inputVersion: await method.version(scoped, vaultId, meetingId, job.input),
+        }));
+        expect(job).toMatchObject({ summaryRevision: current.meeting!.summaryRevision,
+          transcriptRevision: current.meeting!.transcriptRevision, inputVersion: current.inputVersion });
+      }
+      changeDuringGeneration = false;
+      await new SummaryWorker(store.summaryJobs, [method], sync).processOne();
+      expect((await service.status(owner, vaultId, meetingId, job.id))?.status).toBe("succeeded");
+      expect(calls).toHaveLength(3);
+    } finally { await store.close?.(); }
+  });
+
   it.each([false, true])("resumes pre-upgrade audio fingerprints without changing recordings (retry: %s)", async (retry) => {
     const value = await setup(); const { store, sync, vaultId, meetingId } = value;
     try {

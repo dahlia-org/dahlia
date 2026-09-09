@@ -258,6 +258,8 @@ The table keeps `user_id`, `output_language`, `analysis_languages`, `summary`, a
 Upgrade Server, Web, and Desktop together: the new wire format accepts only common `summary.detail`. Forward migrations preserve language settings and both methods' model/reasoning values, choose the previously selected method's detail, then remove the three old summary columns. PostgreSQL backfill temporarily relaxes FORCE RLS only inside the migration transaction and restores it before commit. Existing summary jobs and history are not rewritten. This migration does not add legacy API translation or execute a production deployment.
 
 
+Explicit job retries retain the captured input references and settings, but recapture summary/transcript revisions and the input fingerprint under the Vault lock. Changes after retry acceptance still reject the result.
+
 Model capability validation runs before taking the Vault transaction lock; authorization, input state, and duplicate requests are checked again before acceptance. Web retries refresh settings and recordings after a rejected input (HTTP 400), while uncertain transport outcomes keep the same request body and ID.
 
 Owners start `POST /api/v1/vaults/{vaultId}/meetings/{meetingId}/summary` with the following body (8 KiB maximum):

@@ -166,7 +166,7 @@
             )
             #expect(try fixture.database.dbQueue.read { db in
                 try RecordingProcessing.load(sessionID: fixture.session.id, in: db)?.stage
-            } == .succeeded)
+            } == .saving)
             #expect(throws: TextContentError.changed) {
                 try repository.applyGeneratedSummary(
                     toMeetingId: fixture.meeting.id,

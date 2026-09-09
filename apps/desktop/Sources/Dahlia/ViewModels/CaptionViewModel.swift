@@ -4817,7 +4817,10 @@ final class CaptionViewModel: ObservableObject {
                 expectation: expectation,
                 savedResult: processing?.generatedSummary
             )
-            try await updateRecordingProcessing(job: job, dbQueue: request.dbQueue, stage: .succeeded)
+            try await updateRecordingProcessing(
+                job: job, dbQueue: request.dbQueue, stage: job.hasFailure ? .failed : .succeeded,
+                error: job.progress.vaultExport.failureMessage ?? job.progress.googleDocsExport.failureMessage
+            )
         } catch {
             try? await updateRecordingProcessing(
                 job: job,

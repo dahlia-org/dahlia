@@ -768,7 +768,7 @@ final class MeetingRepository {
                     summaryDocument: document.databaseJSONString(), transcriptID: expectation?.transcriptID,
                     recordingSessionID: sessionID, jobID: processing.id
                 )
-                processing.stage = .succeeded
+                processing.stage = .saving
                 processing.error = nil
                 try processing.save(sessionID: sessionID, in: db)
             }
