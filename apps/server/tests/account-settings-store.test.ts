@@ -62,6 +62,7 @@ it.runIf(url)("migrates PostgreSQL under FORCE RLS and atomically merges concurr
     const rename = readFileSync(new URL("../drizzle/postgres/20260908180425_schema_organization/migration.sql", import.meta.url), "utf8")
       .split("--> statement-breakpoint").find((statement) => statement.includes('RENAME COLUMN "change_version"'))!;
     await client.query(rename);
+    await client.query(readFileSync(new URL("../drizzle/postgres/20260909104431_summary_detail_keys/migration.sql", import.meta.url), "utf8"));
     await client.query("COMMIT");
   } catch (error) { await client.query("ROLLBACK"); throw error; }
   finally { client.release(); }
@@ -69,9 +70,9 @@ it.runIf(url)("migrates PostgreSQL under FORCE RLS and atomically merges concurr
   expect((await pool!.query("SELECT * FROM app.account_settings")).rows).toEqual([]);
   expect((await pool!.query("SELECT * FROM app.summary_jobs")).rows).toEqual([{ settings: "immutable-job-settings" }]);
   expect(await store.get("other")).toBeNull();
-  expect(await store.getRevision("audio")).toBe(1);
+  expect(await store.getRevision("audio")).toBe(2);
   await store.update("audio", { summary: { detail: "medium" } });
-  expect(await store.getRevision("audio")).toBe(1);
+  expect(await store.getRevision("audio")).toBe(2);
   await Promise.all([
     store.update("audio", { summary: { methodSettings: { audio: { model: "changed" } } } }),
     store.update("audio", { summary: { methodSettings: { audio: { reasoningEffort: "high" } } } }),
@@ -80,7 +81,7 @@ it.runIf(url)("migrates PostgreSQL under FORCE RLS and atomically merges concurr
   expect((await store.get("audio"))?.summary).toEqual({ ...expectedSummary("audio"), detail: "high", methodSettings: {
     ...expectedSummary("audio").methodSettings, audio: { model: "changed", reasoningEffort: "high" },
   } });
-  expect(await store.getRevision("audio")).toBe(4);
+  expect(await store.getRevision("audio")).toBe(5);
   await store.update("audio", { summary: { detail: "low" } });
   await store.update("audio", { summary: { detail: "medium" } });
   expect((await store.get("audio"))?.summary.detail).toBe("medium");
