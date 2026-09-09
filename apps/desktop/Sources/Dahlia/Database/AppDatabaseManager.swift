@@ -366,6 +366,10 @@ final class AppDatabaseManager: Sendable {
             try TranscriptActivityMigration.migrate(in: db)
         }
 
+        migrator.registerMigration("v51_schemaOrganization") { db in
+            try SchemaOrganizationMigration.migrate(in: db)
+        }
+
         return migrator
     }()
 

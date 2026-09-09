@@ -7,6 +7,8 @@ struct VaultRecord: Codable, FetchableRecord, PersistableRecord, Identifiable, E
 
     var id: UUID
     var path: String?
+    var icon: String?
+    var color: String?
     var name: String
     var createdAt: Date
     var lastOpenedAt: Date
@@ -48,6 +50,8 @@ extension VaultRecord {
 struct CloudVaultRecord: Identifiable, Equatable, Sendable {
     var vaultId: UUID
     var connectionId: UUID
+    var icon: String?
+    var color: String?
     var name: String
     var createdAt: Date
     var revision: Int

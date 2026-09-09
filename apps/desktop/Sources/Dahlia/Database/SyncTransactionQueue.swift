@@ -150,6 +150,8 @@ struct SyncTransactionResponse: Decodable, Sendable {
 }
 
 struct SyncCanonicalPayload: Codable, Sendable {
+    var icon: String?
+    var color: String?
     var contentOmitted: Bool?
     var contentPresent: Bool?
     var contentCount: Int?
@@ -184,6 +186,7 @@ struct SyncCanonicalPayload: Codable, Sendable {
     var audio: [String: RecordingArchivedAudio]?
 
     enum CodingKeys: String, CodingKey {
+        case icon, color
         case contentOmitted, contentPresent, contentCount, hasSummary, transcriptRevision, transcript
         case parentProjectId, projectId, meetingId, name, description, projectType, status, duration, recordingStartedAt
         case createdAt, updatedAt, title, document, capturedAt, fileId, sessionId, uri, offset, size, checksum, metadata
@@ -742,7 +745,10 @@ enum SyncTransactionQueue {
         switch entity {
         case .vault:
             if let name = value.name {
-                try db.execute(sql: "UPDATE vaults SET name = ? WHERE id = ?", arguments: [name, vaultId])
+                try db.execute(
+                    sql: "UPDATE vaults SET name = ?, icon = ?, color = ? WHERE id = ?",
+                    arguments: [name, value.icon, value.color, vaultId]
+                )
             }
         case .project:
             guard let name = value.name, let createdAt = value.createdAt else { return }
@@ -754,6 +760,7 @@ enum SyncTransactionQueue {
                 createdAt: createdAt,
                 description: value.description ?? "",
                 projectType: value.projectType.flatMap(ProjectType.init(rawValue:)),
+                icon: value.icon, color: value.color,
                 in: db
             )
         case .meeting:

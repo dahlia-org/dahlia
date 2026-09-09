@@ -10,6 +10,8 @@ enum CloudVaultDiscovery {
         struct Response: Decodable { let items: [Item] }
         struct Organization: Decodable { let id: String }
         struct Item: Decodable {
+            let icon: String?
+            let color: String?
             let vaultId: UUID
             let name: String
             let revision: Int
@@ -51,6 +53,7 @@ enum CloudVaultDiscovery {
             CloudVaultRecord(
                 vaultId: $0.vaultId,
                 connectionId: connection.id,
+                icon: $0.icon, color: $0.color,
                 name: $0.name,
                 createdAt: $0.createdAt,
                 revision: $0.revision,

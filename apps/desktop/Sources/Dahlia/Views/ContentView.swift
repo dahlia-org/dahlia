@@ -656,16 +656,16 @@ private extension ContentView {
         projectType: ProjectType,
         appearance: ProjectAppearance
     ) -> String? {
-        guard let project = sidebarViewModel.createProject(
+        guard sidebarViewModel.createProject(
             name: name,
             parentProjectId: parentProjectId,
             projectType: parentProjectId == nil ? projectType : nil,
-            description: description
-        ) else {
+            description: description,
+            appearance: parentProjectId == nil ? appearance : nil
+        ) != nil else {
             return sidebarViewModel.lastError ?? L10n.projectCreationFailedDescription
         }
 
-        setRootProjectAppearance(appearance, projectId: project.id, parentProjectId: parentProjectId)
         dismissProjectEditor()
         showProjectCatalog()
         return nil
@@ -681,6 +681,7 @@ private extension ContentView {
         expectedRevision: Int
     ) async -> String? {
         let projectDataChanged = name != projectDisplayName(project)
+            || (parentProjectId == nil && appearance != projectAppearance(project))
             || description != project.projectDescription
             || parentProjectId != project.parentProjectId
             || (parentProjectId == nil && projectType != project.effectiveProjectType)
@@ -691,13 +692,13 @@ private extension ContentView {
                 parentProjectId: parentProjectId,
                 projectType: projectType,
                 description: description,
-                expectedRevision: expectedRevision
+                expectedRevision: expectedRevision,
+                appearance: parentProjectId == nil ? appearance : nil
             ) != nil else {
                 return sidebarViewModel.lastError ?? L10n.projectOperationFailedDescription
             }
         }
 
-        setRootProjectAppearance(appearance, projectId: project.projectId, parentProjectId: parentProjectId)
         dismissProjectEditor()
         return nil
     }
@@ -713,15 +714,6 @@ private extension ContentView {
         mainWindowNavigation.projectAppearance(
             for: projectId,
             in: sidebarViewModel.projectItemsByID,
-            vaultId: sidebarViewModel.currentVault?.id
-        )
-    }
-
-    private func setRootProjectAppearance(_ appearance: ProjectAppearance, projectId: UUID, parentProjectId: UUID?) {
-        guard parentProjectId == nil else { return }
-        mainWindowNavigation.setProjectAppearance(
-            appearance,
-            projectId: projectId,
             vaultId: sidebarViewModel.currentVault?.id
         )
     }

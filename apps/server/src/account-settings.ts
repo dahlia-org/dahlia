@@ -9,7 +9,7 @@ import { accountSettingsSchema, DEFAULT_ACCOUNT_SETTINGS, type AccountSettings, 
 export { accountSettingsPatchSchema, DEFAULT_ACCOUNT_SETTINGS, type AccountSettings, type AccountSettingsPatch } from "./account-settings-model";
 
 export interface AccountSettingsStore {
-  getChangeVersion(userId: string): Promise<number | null>;
+  getRevision(userId: string): Promise<number | null>;
   get(userId: string): Promise<AccountSettings | null>;
   update(userId: string, patch: AccountSettingsPatch, initialize?: boolean): Promise<AccountSettings>;
 }
@@ -35,9 +35,9 @@ export function createAccountSettingsStore(
     return row ? accountSettingsSchema.parse(row) : null;
   };
   return {
-    getChangeVersion: (userId) => withUser(userId, async (connection) => {
-      const [row] = await connection.select({ version: table.changeVersion }).from(table).where(eq(table.userId, userId));
-      return row?.version ?? null;
+    getRevision: (userId) => withUser(userId, async (connection) => {
+      const [row] = await connection.select({ revision: table.revision }).from(table).where(eq(table.userId, userId));
+      return row?.revision ?? null;
     }),
     get: (userId) => withUser(userId, (connection) => read(connection, userId)),
     update: (userId, patch, initialize = false) => withUser(userId, async (connection) => {
@@ -78,7 +78,7 @@ export function createAccountSettingsStore(
         ...(patch.outputLanguage !== undefined ? { outputLanguage: patch.outputLanguage } : {}),
         ...(patch.analysisLanguages !== undefined ? { analysisLanguages: patch.analysisLanguages } : {}),
         ...(patch.summary !== undefined ? { summary } : {}),
-        changeVersion: sql`${table.changeVersion} + 1`,
+        revision: sql`${table.revision} + 1`,
       };
       const insert = connection.insert(table).values(values);
       if (initialize || !differences.length) await insert.onConflictDoNothing();

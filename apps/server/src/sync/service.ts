@@ -107,17 +107,21 @@ const transactionSchema = z.object({
   createdAt: dateSchema,
   operations: z.array(transactionOperationSchema).min(1).max(10_000),
 }).strict();
+const appearanceFields = {
+  icon: z.enum(["folder", "dollarsign.circle", "book.closed", "graduationcap", "pencil", "tag", "curlybraces", "terminal", "music.note", "popcorn", "paintbrush", "paintpalette", "stethoscope", "asterisk", "camera.macro", "briefcase", "chart.bar", "medal", "dumbbell", "notebook", "scales", "globe.desk", "airplane", "globe", "wrench", "pawprint", "flask", "brain", "heart", "pottedplant", "film", "cross.case", "puzzlepiece", "leaf"]).nullable().optional(),
+  color: z.enum(["neutral", "red", "orange", "yellow", "green", "blue", "purple", "pink"]).nullable().optional(),
+};
 const transactionDataSchemas = {
   "meeting_event:create": z.discriminatedUnion("kind", [
     z.object({ meetingId: uuidSchema, kind: z.enum(["tag_added", "tag_removed"]), occurredAt: dateSchema, relatedId: z.string().regex(/^[0-9]{1,19}$/) }).strict(),
     z.object({ meetingId: uuidSchema, kind: z.enum(["recording_started", "recording_ended"]), occurredAt: dateSchema, sessionId: uuidSchema }).strict(),
     z.object({ meetingId: uuidSchema, kind: z.literal("segment_rotated"), occurredAt: dateSchema, sessionId: uuidSchema, relatedId: uuidSchema, audioSource: z.enum(["mic", "system"]), segmentIndex: z.number().int().positive().max(2147483647) }).strict(),
   ]),
-  "vault:create": z.object({ name: z.string().trim().min(1), createdAt: dateSchema }).strict(),
-  "vault:update": z.object({ name: z.string().trim().min(1) }).strict(),
+  "vault:create": z.object({ ...appearanceFields, name: z.string().trim().min(1), createdAt: dateSchema }).strict(),
+  "vault:update": z.object({ ...appearanceFields, name: z.string().trim().min(1) }).strict(),
   "vault:reset": z.object({ preservePermissions: z.boolean().optional() }).strict(),
-  "project:create": z.object({ parentProjectId: uuidSchema.nullable(), name: projectNameSchema, description: z.string().max(20_000).default(""), projectType: projectTypeSchema.nullable(), createdAt: dateSchema }).strict(),
-  "project:update": z.object({ parentProjectId: uuidSchema.nullable(), name: projectNameSchema, description: z.string().max(20_000).default(""), projectType: projectTypeSchema.nullable() }).strict(),
+  "project:create": z.object({ ...appearanceFields, parentProjectId: uuidSchema.nullable(), name: projectNameSchema, description: z.string().max(20_000).default(""), projectType: projectTypeSchema.nullable(), createdAt: dateSchema }).strict(),
+  "project:update": z.object({ ...appearanceFields, parentProjectId: uuidSchema.nullable(), name: projectNameSchema, description: z.string().max(20_000).default(""), projectType: projectTypeSchema.nullable() }).strict(),
   "project:delete": z.object({}).strict(),
   "meeting:create": z.object({ projectId: uuidSchema.nullable(), name: z.string(), description: z.string().default(""), status: meetingStatusSchema, duration: z.number().finite().nonnegative().nullable(), recordingStartedAt: nullableDateSchema, createdAt: dateSchema, updatedAt: dateSchema }).strict(),
   "meeting:update": z.object({ projectId: uuidSchema.nullable(), name: z.string(), description: z.string().default(""), status: meetingStatusSchema, duration: z.number().finite().nonnegative().nullable(), recordingStartedAt: nullableDateSchema, updatedAt: dateSchema }).strict(),

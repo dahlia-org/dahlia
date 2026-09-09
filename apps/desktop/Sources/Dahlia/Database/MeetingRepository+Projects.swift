@@ -35,7 +35,8 @@ extension MeetingRepository {
         parentProjectId: UUID?,
         name: String,
         description: String,
-        projectType: ProjectType?
+        projectType: ProjectType?,
+        appearance: ProjectAppearance? = nil
     ) throws -> ProjectRecord {
         try dbQueue.write { db in
             guard DahliaProjectName.normalizedName(name) == name else {
@@ -60,7 +61,8 @@ extension MeetingRepository {
                 name: name,
                 createdAt: .now,
                 description: description,
-                projectType: parentProjectId == nil ? (projectType ?? .undefined) : nil
+                projectType: parentProjectId == nil ? (projectType ?? .undefined) : nil,
+                icon: appearance?.icon.rawValue, color: appearance?.color.rawValue
             )
             try record.insert(db)
             try SyncTransactionRecorder.record(
@@ -137,7 +139,8 @@ extension MeetingRepository {
         description: String,
         projectType: ProjectType,
         vaultExportUpdates: [MeetingVaultExportUpdate],
-        expectedRevision: Int
+        expectedRevision: Int,
+        appearance: ProjectAppearance? = nil
     ) throws -> ProjectRecord {
         try dbQueue.write { db in
             let records = try ProjectRecord.fetchResolvedAll(vaultId: vaultId, in: db)
@@ -166,13 +169,18 @@ extension MeetingRepository {
             }
             let locationChanged = project.parentProjectId != parentProjectId || project.name != name
             let typeChanged = parentProjectId == nil && project.projectType != projectType
-            let changed = locationChanged || typeChanged || project.description != description
+            let appearanceChanged = appearance.map { project.icon != $0.icon.rawValue || project.color != $0.color.rawValue } ?? false
+            let changed = locationChanged || typeChanged || project.description != description || appearanceChanged
             guard changed else { return project }
 
             project.parentProjectId = parentProjectId
             project.name = name
             project.description = description
             project.projectType = parentProjectId == nil ? projectType : nil
+            if let appearance {
+                project.icon = appearance.icon.rawValue
+                project.color = appearance.color.rawValue
+            }
             project.revision += 1
             try project.update(db)
             if locationChanged || typeChanged {

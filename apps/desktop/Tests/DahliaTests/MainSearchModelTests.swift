@@ -559,7 +559,7 @@ import GRDB
                     generation: 1,
                     in: db
                 )
-                try db.execute(sql: "DELETE FROM search_index_jobs")
+                try db.execute(sql: "DELETE FROM jobs_search_index")
                 try db.execute(sql: "UPDATE search_index_state SET phase = 'ready' WHERE indexKind = 'fts'")
             }
             return (screenshotID, meetingID)

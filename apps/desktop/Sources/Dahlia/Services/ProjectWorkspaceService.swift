@@ -59,14 +59,16 @@ final class ProjectWorkspaceService {
         name: String,
         parentProjectId: UUID?,
         projectType: ProjectType? = nil,
-        description: String = ""
+        description: String = "",
+        appearance: ProjectAppearance? = nil
     ) throws -> ProjectRecord {
         try withNotifyingMutation {
             try createProjectUnlocked(
                 name: name,
                 parentProjectId: parentProjectId,
                 projectType: projectType,
-                description: description
+                description: description,
+                appearance: appearance
             )
         }
     }
@@ -95,7 +97,8 @@ final class ProjectWorkspaceService {
         name: String,
         parentProjectId: UUID?,
         projectType: ProjectType? = nil,
-        description: String = ""
+        description: String = "",
+        appearance: ProjectAppearance? = nil
     ) throws -> ProjectRecord {
         let name = try Self.validatedName(name)
         let parent = try parentProjectId.map { id in
@@ -115,7 +118,8 @@ final class ProjectWorkspaceService {
             parentProjectId: parentProjectId,
             name: name,
             description: description,
-            projectType: projectType
+            projectType: projectType,
+            appearance: appearance
         )
     }
 
@@ -261,7 +265,8 @@ final class ProjectWorkspaceService {
         parentProjectId: UUID?,
         projectType: ProjectType,
         description: String,
-        expectedRevision: Int
+        expectedRevision: Int,
+        appearance: ProjectAppearance? = nil
     ) throws -> ProjectRecord {
         try withNotifyingMutation {
             guard let project = try repository.fetchProject(id: id), project.vaultId == vault.id else {
@@ -306,7 +311,8 @@ final class ProjectWorkspaceService {
                     description: description,
                     projectType: projectType,
                     vaultExportUpdates: summaryPlan.vaultExportUpdates,
-                    expectedRevision: expectedRevision
+                    expectedRevision: expectedRevision,
+                    appearance: appearance
                 )
             }
         }

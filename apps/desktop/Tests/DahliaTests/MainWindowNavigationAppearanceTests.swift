@@ -10,14 +10,14 @@
             let defaults = try #require(UserDefaults(suiteName: suiteName))
             defer { defaults.removePersistentDomain(forName: suiteName) }
             let vault = UUID.v7()
-            let parent = ProjectOverviewItem(
+            var parent = ProjectOverviewItem(
                 projectId: .v7(),
                 projectName: "Parent",
                 parentProjectId: nil,
                 createdAt: .distantPast,
                 meetingCount: 0
             )
-            let child = ProjectOverviewItem(
+            var child = ProjectOverviewItem(
                 projectId: .v7(),
                 projectName: "Parent / Child",
                 parentProjectId: parent.projectId,
@@ -28,18 +28,19 @@
             let navigation = MainWindowNavigation(openMainWindow: {}, settingsDefaults: defaults)
             let parentAppearance = ProjectAppearance(icon: .music, color: .purple)
 
-            navigation.setProjectAppearance(parentAppearance, projectId: parent.projectId, vaultId: vault)
-            navigation.setProjectAppearance(
-                ProjectAppearance(icon: .code, color: .blue),
-                projectId: child.projectId,
-                vaultId: vault
-            )
+            parent.icon = parentAppearance.icon.rawValue
+            parent.color = parentAppearance.color.rawValue
+            child.icon = ProjectIcon.code.rawValue
+            child.color = ProjectThemeColor.blue.rawValue
+            navigation.updateProjectAppearances([parent, child], vaultId: vault)
             #expect(
                 navigation.projectAppearance(for: child.projectId, in: projectsByID, vaultId: vault) == parentAppearance
             )
 
             let updatedAppearance = ProjectAppearance(icon: .work, color: .orange)
-            navigation.setProjectAppearance(updatedAppearance, projectId: parent.projectId, vaultId: vault)
+            parent.icon = updatedAppearance.icon.rawValue
+            parent.color = updatedAppearance.color.rawValue
+            navigation.updateProjectAppearances([parent, child], vaultId: vault)
             #expect(
                 navigation.projectAppearance(for: child.projectId, in: projectsByID, vaultId: vault) == updatedAppearance
             )
