@@ -177,7 +177,8 @@ export async function initializeWorkerApp(env: WorkerEnv): Promise<WorkerApp> {
     const app = createApp({
       config, auth, authStore: applicationStore, objectStorage, searchTokenizer, searchEmbedder, screenshotTransformer, syncService,
       summaryService: summaryMethods.length ? new SummaryService(applicationStore.sync, applicationStore.accountSettings, summaryMethods) : undefined,
-      imageAnalysisEnabled: captioner !== undefined, onSyncMutation: jobs ? (owner) => jobs.notify(owner) : undefined,
+      imageAnalysisEnabled: captioner !== undefined,
+      onSyncMutation: jobs ? (owner, context) => context.waitUntil(jobs.notify(owner)) : undefined,
     });
     return Object.assign(app, { jobs, close: () => applicationStore.close?.() ?? Promise.resolve() });
   } catch (error) {
@@ -214,10 +215,10 @@ export async function closeAfterResponse(response: Response, close?: () => Promi
 
 export function createWorkerHandler(initialize: WorkerAppInitializer = initializeWorkerApp): ExportedHandler<WorkerEnv> {
   return {
-    async fetch(request, env): Promise<Response> {
+    async fetch(request, env, context): Promise<Response> {
       if (new URL(request.url).pathname === "/healthz") return healthApp.fetch(request, env);
       const app = await initialize(env);
-      try { return await closeAfterResponse(await app.fetch(request, env), app.close); }
+      try { return await closeAfterResponse(await app.fetch(request, env, context), app.close); }
       catch (error) { await app.close?.(); throw error; }
     },
     async scheduled(_controller, env): Promise<void> {

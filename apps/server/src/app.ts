@@ -99,7 +99,7 @@ export interface AppDependencies {
   screenshotTransformer?: ScreenshotTransformer;
   imageAnalysisEnabled?: boolean;
   summaryService?: SummaryService;
-  onSyncMutation?(ownerUserId: string): Promise<void>;
+  onSyncMutation?(ownerUserId: string, context: { waitUntil(task: Promise<unknown>): void }): void;
 }
 
 export async function authenticateMcpRequest(
@@ -175,9 +175,11 @@ export function createApp(dependencies: AppDependencies) {
     const owner = jobOwners.get(context.req.raw);
     if (owner && dependencies.onSyncMutation && context.res.ok && !["GET", "HEAD", "OPTIONS"].includes(context.req.method)
       && !["/api/v1/search", "/api/v1/transactions/resolve"].includes(context.req.path)) {
-      await dependencies.onSyncMutation(owner).catch(() => {
+      try {
+        dependencies.onSyncMutation(owner, context.executionCtx);
+      } catch {
         console.warn(JSON.stringify({ level: "warn", event: "job_notification_failed" }));
-      });
+      }
     }
     const fileRead = ["GET", "HEAD"].includes(context.req.method)
       && /^\/api\/v1\/files\/[^/]+(?:\/variants\/[^/]+)?$/.test(context.req.path)
@@ -369,7 +371,9 @@ export function createApp(dependencies: AppDependencies) {
     if ((requiresBrowserOrigin || context.req.header("origin")) && !mutationOriginAllowed(context.req.raw, config.baseUrl)) {
       return context.json({ error: "invalid_origin" }, 403);
     }
-    const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
+    const identity = action === "retry"
+      ? await syncIdentity(context.req.raw)
+      : await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
     const service = dependencies.summaryService;
     if (!service) return context.json({ error: "summary_unavailable" }, 503);
     const vaultId = sync.parseId(context.req.param("vaultId"));

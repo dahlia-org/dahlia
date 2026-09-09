@@ -399,6 +399,43 @@ describe("server summary jobs", () => {
     } finally { await store.close?.(); }
   });
 
+  it("returns retried jobs before their Worker queue hint settles", async () => {
+    const { store, service, config, vaultId, meetingId } = await setup();
+    let release!: () => void;
+    let notified!: () => void;
+    const pending = new Promise<void>((resolve) => { release = resolve; });
+    const notificationStarted = new Promise<void>((resolve) => { notified = resolve; });
+    const notify = vi.fn((ownerUserId: string) => { expect(ownerUserId).toBe("owner"); notified(); return pending; });
+    const app = createApp({ config, authStore: store, summaryService: service,
+      onSyncMutation: (ownerUserId, context) => context.waitUntil(notify(ownerUserId)) });
+    const worker = createWorkerHandler(async () => app);
+    const fetch = worker.fetch!.bind(worker) as unknown as
+      (request: Request, env: Cloudflare.Env, context: ExecutionContext) => Promise<Response>;
+    const waitUntil: Promise<unknown>[] = [];
+    const execution = { waitUntil: (task: Promise<unknown>) => { waitUntil.push(task); } } as unknown as ExecutionContext;
+    const headers = { "x-forwarded-email": "owner@example.com", "x-forwarded-user": "owner", "content-type": "application/json" };
+    const path = `/api/v1/vaults/${vaultId}/meetings/${meetingId}/summary`;
+    try {
+      const original = await service.start(owner, vaultId, meetingId, { id: uuidV7() });
+      await service.cancel(owner, vaultId, meetingId, original.id);
+      const response = fetch(new Request(`http://localhost:5173${path}/job/${original.id}/retry`, {
+        method: "POST", headers, body: JSON.stringify({ id: uuidV7() }),
+      }), {} as Cloudflare.Env, execution);
+      await notificationStarted;
+      expect(await Promise.race([
+        response.then(() => "returned"),
+        new Promise<string>((resolve) => setImmediate(() => resolve("blocked"))),
+      ])).toBe("returned");
+      expect((await response).status).toBe(202);
+      expect(notify).toHaveBeenCalledWith("owner");
+      expect(waitUntil).toEqual([pending]);
+    } finally {
+      release();
+      await Promise.all(waitUntil);
+      await store.close?.();
+    }
+  });
+
   it.each(["short", "qualified", "failure", "cloudflare"])("shares model resolution and safe diagnostics (%s)", async (scenario) => {
     const cloudflare = scenario === "cloudflare";
     const withImages = scenario === "qualified";
