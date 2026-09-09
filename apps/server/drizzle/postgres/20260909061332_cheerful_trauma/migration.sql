@@ -1,1 +1,0 @@
-CREATE POLICY "vault_transfer_reader" ON "app"."vault_transfers" AS PERMISSIVE FOR SELECT TO public USING ("app"."current_identity_can_read_vault"("app"."vault_transfers"."source_vault_id") OR "app"."current_identity_can_read_vault"("app"."vault_transfers"."destination_vault_id"));

@@ -96,13 +96,13 @@ describe("PostgreSQL migrations", () => {
     const authMigrations = readPostgresMigrations({ migrationsFolder: authDirectory!.path });
     const applicationMigrations = readPostgresMigrations({ migrationsFolder: applicationDirectory!.path });
     expect(authMigrations.map(({ name }) => name)).toEqual(["20260903034253_melodic_scalphunter"]);
-    expect(applicationMigrations.map(({ name }) => name)).toEqual(["20260903173551_bumpy_freak", "20260905172527_ancient_bedlam", "20260905172627_sync_history_backfill", "20260906125708_colossal_stepford_cuckoos", "20260906142206_force_file_rls", "20260907070726_flimsy_banshee", "20260907071320_force_meeting_event_rls", "20260907091206_chunky_gideon", "20260907091230_force_account_settings_rls", "20260907131014_colorful_the_leader", "20260907131333_force_recording_rls", "20260907132433_violet_black_bird", "20260907172548_rainy_maddog", "20260907172710_force_summary_job_rls", "20260908013210_reflective_morg", "20260908040348_slim_nebula", "20260908040458_summary_version_backfill", "20260908080351_burly_lady_vermin", "20260908092913_fancy_cerise", "20260908093012_account_settings_backfill", "20260908093034_stormy_peter_quill", "20260908144655_wild_energizer", "20260908144925_force_transcript_rls", "20260908155654_transcript_activity", "20260908164224_brave_marvel_zombies", "20260908164318_force_summary_rls", "20260908180425_schema_organization", "20260909031421_parallel_smasher", "20260909055950_red_mole_man", "20260909060014_vault_transfer_constraints", "20260909061332_cheerful_trauma", "20260909091102_canonical_appearance_fields", "20260909104404_public_swordsman", "20260909104431_summary_detail_keys"]);
+    expect(applicationMigrations.map(({ name }) => `${name}/migration.sql`)).toEqual(applicationDirectory!.files);
     expect([...authMigrations, ...applicationMigrations].every(({ hash, sql }) => hash.length === 64 && sql.length > 0))
       .toBe(true);
     const authSql = authMigrations.flatMap((migration) => migration.sql).join("\n");
     const sql = applicationMigrations.flatMap((migration) => migration.sql).join("\n");
     const snapshot = readFileSync(
-      new URL("../drizzle/postgres/20260903173551_bumpy_freak/snapshot.json", import.meta.url),
+      new URL("../drizzle/postgres/20260909134056_initial/snapshot.json", import.meta.url),
       "utf8",
     );
     expect(authSql).toContain('CREATE TABLE "auth"."user"');
@@ -111,7 +111,7 @@ describe("PostgreSQL migrations", () => {
     expect(sql).toContain('FROM "auth"."member"');
     expect(sql).not.toContain('CREATE TABLE "auth"."member"');
     expect(sql).not.toContain('model_alias');
-    expect(sql).toContain('CREATE TABLE "app"."artifact"');
+    expect(sql).not.toContain('CREATE TABLE "app"."artifact"');
     expect(sql).toContain('CREATE TABLE "app"."vaults"');
     expect(sql).toContain('CREATE TABLE "app"."vault_permissions"');
     expect(sql).toContain('"granted_by_user_id" text NOT NULL');
@@ -121,16 +121,15 @@ describe("PostgreSQL migrations", () => {
     expect(sql).toContain('REFERENCES "auth"."user"("id")');
     expect(sql).toContain('CREATE TABLE "app"."meetings"');
     expect(sql).toContain('CREATE TABLE "app"."transcript_segments"');
-    expect(sql).toContain('CREATE TABLE "app"."screenshots"');
+
     expect(sql).toContain('CREATE TABLE "app"."search_documents"');
     expect(sql).toContain('CREATE TABLE "app"."search_embeddings"');
-    expect(sql).toContain('ALTER TABLE "app"."search_index_jobs" RENAME TO "jobs_search_index"');
+    expect(sql).toContain('CREATE TABLE "app"."jobs_search_index"');
     expect(sql).toContain('"search_text" text DEFAULT \'\' NOT NULL');
     expect(sql).toContain("tsvector GENERATED ALWAYS AS (to_tsvector('simple', search_text)) STORED");
     expect(sql).toContain('"embedding" real[] NOT NULL');
     expect(sql).toContain('"vault_id" uuid');
     expect(sql).toContain('"meeting_id" uuid');
-    expect(sql).toContain('"screenshot_id" uuid');
     expect(sql).toContain('"segment_id" uuid');
     expect(sql).not.toContain("artifact_reservation");
     expect(sql).toContain('CREATE SCHEMA "app"');
@@ -165,8 +164,6 @@ describe("PostgreSQL migrations", () => {
       "transcript_write",
       "transcript_patch_select",
       "transcript_patch_write",
-      "screenshot_select",
-      "screenshot_write",
       "transaction_receipt_owner",
       "search_document_select",
       "search_document_write",
@@ -176,7 +173,7 @@ describe("PostgreSQL migrations", () => {
       expect(snapshot).toContain(`"name": "${policy}"`);
     }
     expect(sql).not.toContain('FOREIGN KEY ("owner_workspace_id")');
-    for (const table of ["meetings", "transcript_segments", "screenshots"]) {
+    for (const table of ["meetings", "transcript_segments"]) {
       const definition = sql.match(new RegExp(`CREATE TABLE "app"\\."${table}" \\(([\\s\\S]*?)\\n\\);`))?.[1];
       expect(definition).toBeDefined();
       expect(definition).not.toContain("owner_workspace_id");

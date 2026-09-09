@@ -4,7 +4,7 @@ import { DEFAULT_ACCOUNT_SETTINGS } from "../src/account-settings";
 import { TextContentDigest } from "../src/sync/text-content";
 import { summaryMetadata } from "../src/summary/metadata";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { mkdtempSync, rmSync, readFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -748,19 +748,7 @@ describe("audio summary jobs", () => {
     } finally { await store.close?.(); }
   });
 
-  it("migrates existing settings without changing transcript settings or jobs", async () => {
-    for (const path of ["sqlite/20260908080352_zippy_aaron_stack/migration.sql", "d1/20260908080352_zippy_aaron_stack.sql"]) {
-      const db = new DatabaseSync(":memory:");
-      try {
-        db.exec("CREATE TABLE account_settings (user_id TEXT PRIMARY KEY, summary_method TEXT, transcript_summary TEXT); INSERT INTO account_settings VALUES ('owner', 'transcript', '{\"model\":\"saved\"}'); CREATE TABLE jobs_summary (id TEXT, settings TEXT); INSERT INTO jobs_summary VALUES ('running', 'unchanged');");
-        db.exec(readFileSync(new URL(`../drizzle/${path}`, import.meta.url), "utf8"));
-        expect(db.prepare("SELECT summary_method, transcript_summary, audio_summary FROM account_settings").get()).toEqual({
-          summary_method: "transcript", transcript_summary: '{"model":"saved"}', audio_summary: JSON.stringify({ ...DEFAULT_ACCOUNT_SETTINGS.summary.methodSettings.audio, detail: "detailed" }),
-        });
-        expect(db.prepare("SELECT * FROM jobs_summary").get()).toEqual({ id: "running", settings: "unchanged" });
-      } finally { db.close(); }
-    }
-  });
+
 });
 
 const cloudTranscript = { segments: [{ recording_index: 0, audio_source: "mic", start_seconds: 3, end_seconds: 4,

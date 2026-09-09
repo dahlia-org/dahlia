@@ -1,2 +1,0 @@
-ALTER TABLE `account_settings` ADD `summary` text DEFAULT '{"method":"transcript","detail":"detailed","methodSettings":{"transcript":{"model":"gpt-5.4","reasoningEffort":"medium"},"audio":{"model":"gemini-3-8-flash","reasoningEffort":"medium"}}}' NOT NULL;--> statement-breakpoint
-ALTER TABLE `account_settings` ADD `change_version` integer DEFAULT 1 NOT NULL;

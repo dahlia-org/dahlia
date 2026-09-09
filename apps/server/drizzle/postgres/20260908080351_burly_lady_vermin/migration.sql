@@ -1,1 +1,0 @@
-ALTER TABLE "app"."account_settings" ADD COLUMN "audio_summary" jsonb DEFAULT '{"model":"gemini-3-8-flash","reasoningEffort":"medium","detail":"detailed"}' NOT NULL;

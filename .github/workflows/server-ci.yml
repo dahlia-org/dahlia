@@ -124,19 +124,19 @@ jobs:
           DAHLIA_EMBEDDING_MODEL: test-embedding-model
           DAHLIA_SEARCH_EMBEDDING_DIMENSIONS: 32
 
-      - name: Validate PostgreSQL retention upgrade
+      - name: Validate PostgreSQL baseline
         run: |
-          psql postgresql://postgres@127.0.0.1:5432/postgres -v ON_ERROR_STOP=1 -c 'CREATE DATABASE dahlia_retention_upgrade OWNER dahlia'
-          pnpm exec vitest run tests/postgres-retention-upgrade.test.ts
+          psql postgresql://postgres@127.0.0.1:5432/postgres -v ON_ERROR_STOP=1 -c 'CREATE DATABASE dahlia_baseline OWNER dahlia'
+          pnpm exec vitest run tests/postgres-baseline.test.ts
         env:
-          TEST_MIGRATION_DATABASE_URL: postgresql://dahlia@127.0.0.1:5432/dahlia_retention_upgrade
+          TEST_MIGRATION_DATABASE_URL: postgresql://dahlia@127.0.0.1:5432/dahlia_baseline
 
-      - name: Validate PostgreSQL account settings upgrade
+      - name: Validate PostgreSQL account settings
         run: |
-          psql postgresql://postgres@127.0.0.1:5432/postgres -v ON_ERROR_STOP=1 -c 'CREATE DATABASE dahlia_account_settings_upgrade OWNER dahlia'
+          psql postgresql://postgres@127.0.0.1:5432/postgres -v ON_ERROR_STOP=1 -c 'CREATE DATABASE dahlia_account_settings OWNER dahlia'
           pnpm exec vitest run tests/account-settings-store.test.ts
         env:
-          TEST_ACCOUNT_SETTINGS_DATABASE_URL: postgresql://dahlia@127.0.0.1:5432/dahlia_account_settings_upgrade
+          TEST_ACCOUNT_SETTINGS_DATABASE_URL: postgresql://dahlia@127.0.0.1:5432/dahlia_account_settings
 
       - name: Validate PostgreSQL application store
         run: pnpm exec vitest run tests/postgres-store.test.ts tests/postgres-retention.test.ts tests/sync-sqlite.test.ts
