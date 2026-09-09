@@ -60,6 +60,7 @@ describe("SQLite Better Auth store", () => {
       database.exec("CREATE TRIGGER fail_initial_owner BEFORE INSERT ON member BEGIN SELECT RAISE(ABORT, 'owner insert failed'); END");
       await expect(store.ensureIdentityUser(identity(first))).rejects.toThrow();
       expect(database.prepare("SELECT count(*) AS count FROM organization").get()).toEqual({ count: 0 });
+      expect(database.prepare("SELECT count(*) AS count FROM server_initializations").get()).toEqual({ count: 0 });
       database.exec("DROP TRIGGER fail_initial_owner");
       expect(await Promise.all([store.ensureIdentityUser(identity(first)), store.ensureIdentityUser(identity(first))]))
         .toEqual([true, true]);
@@ -308,7 +309,7 @@ describe("SQLite Better Auth store", () => {
 
     expect(database.prepare('SELECT "name" FROM "__drizzle_migrations" ORDER BY "created_at" DESC LIMIT 1').get())
       .toEqual({
-      name: "20260909134100_runtime_support",
+      name: "20260909154652_default_organization_initialization",
     });
     expect(database.prepare('SELECT "client_id" FROM "oauth_client" WHERE "client_id" = ?').get("databricks-cli"))
       .toEqual({ client_id: "databricks-cli" });

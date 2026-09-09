@@ -11,9 +11,17 @@ it.runIf(process.env.TEST_MIGRATION_DATABASE_URL)("creates the complete PostgreS
     expect((await client.query("SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user")).rows)
       .toEqual([{ rolsuper: false, rolbypassrls: false }]);
     await client.query("BEGIN");
-    for (const file of serverMigrationManifest.postgres.files) {
+    for (const file of serverMigrationManifest.postgres.files.slice(0, -1)) {
       await client.query(readFileSync(new URL(`../${file}`, import.meta.url), "utf8"));
     }
+    await client.query("INSERT INTO auth.organization(id, name, slug, created_at) VALUES ('external', 'Custom name', 'external', to_timestamp(1))");
+    await client.query(readFileSync(new URL(`../${serverMigrationManifest.postgres.files.at(-1)!}`, import.meta.url), "utf8"));
+    expect((await client.query("SELECT name, initialized_at FROM app.server_initializations")).rows)
+      .toEqual([{ name: "default_organization", initialized_at: new Date(1000) }]);
+    expect((await client.query("SELECT name FROM auth.organization")).rows).toEqual([{ name: "Custom name" }]);
+    expect((await client.query("SELECT * FROM auth.member")).rows).toEqual([]);
+    await client.query("DELETE FROM auth.organization");
+    expect((await client.query("SELECT count(*)::int AS count FROM app.server_initializations")).rows).toEqual([{ count: 1 }]);
     const protectedTables = await client.query<{ relname: string; relforcerowsecurity: boolean }>(`SELECT relname, relforcerowsecurity FROM pg_class
       WHERE relnamespace = 'app'::regnamespace AND relrowsecurity ORDER BY relname`);
     expect(protectedTables.rows.map((row) => row.relname)).toEqual([
