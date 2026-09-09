@@ -13,6 +13,9 @@ let package = Package(
         .executable(name: "dahlia-search-ranking-benchmark", targets: ["DahliaSearchRankingBenchmark"]),
     ],
     dependencies: [
+        .package(url: "https://github.com/apple/swift-openapi-generator.git", exact: "1.13.1"),
+        .package(url: "https://github.com/apple/swift-openapi-runtime.git", exact: "1.12.1"),
+        .package(url: "https://github.com/apple/swift-openapi-urlsession.git", exact: "1.3.1"),
         .package(url: "https://github.com/groue/GRDB.swift.git", from: "7.0.0"),
         .package(url: "https://github.com/getsentry/sentry-cocoa", from: "9.10.0"),
         .package(url: "https://github.com/TelemetryDeck/SwiftSDK", from: "2.13.0"),
@@ -21,6 +24,15 @@ let package = Package(
         .package(url: "https://github.com/SDWebImage/libwebp-Xcode.git", exact: "1.6.0"),
     ],
     targets: [
+        .target(
+            name: "DahliaServerAPI",
+            dependencies: [
+                .product(name: "OpenAPIRuntime", package: "swift-openapi-runtime"),
+                .product(name: "OpenAPIURLSession", package: "swift-openapi-urlsession"),
+            ],
+            path: "apps/desktop/Sources/DahliaServerAPI",
+            plugins: [.plugin(name: "OpenAPIGenerator", package: "swift-openapi-generator")]
+        ),
         .binaryTarget(
             name: "DahliaAEC3",
             path: "Vendor/DahliaAEC3.xcframework"
@@ -64,6 +76,9 @@ let package = Package(
         .executableTarget(
             name: "Dahlia",
             dependencies: [
+                "DahliaServerAPI",
+                .product(name: "OpenAPIRuntime", package: "swift-openapi-runtime"),
+                .product(name: "OpenAPIURLSession", package: "swift-openapi-urlsession"),
                 "DahliaAEC3",
                 "DahliaMeetingAccess",
                 "DahliaRuntimeSupport",

@@ -1,7 +1,9 @@
 import CryptoKit
 import DahliaRuntimeSupport
+import DahliaServerAPI
 import Foundation
 import GRDB
+import OpenAPIRuntime
 import Synchronization
 
 struct SyncOperationBody: Encodable {
@@ -384,13 +386,12 @@ actor SyncWorker {
 
     private func push(_ transaction: SyncQueuedTransaction) async throws -> SyncTransactionResponse? {
         guard let target = try await connection(id: transaction.connectionId) else {
-            throw SyncHTTPError(status: 403, body: Data("{\"error\":\"connection_missing\"}".utf8))
+            throw SyncHTTPError(status: 403, body: Data("{\"code\":\"connection_missing\"}".utf8))
         }
         if transaction.operations.allSatisfy({ $0.entity == .meetingEvent }) {
-            let data = try await sendData(
-                request(origin: target, path: "api/v1/capabilities", method: "GET"),
-                connectionId: transaction.connectionId
-            )
+            let data = try await sendData(origin: target, connectionId: transaction.connectionId, upgradeOnMissing: true) {
+                try await $0.getCapabilities().ok.body.json
+            }
             let capabilities = try decode(ServerCapabilities.self, from: data)
             if capabilities.meetingEvents?.version != 1 {
                 // A downgraded Server must not block unrelated durable content behind unsupported diagnostics.
@@ -405,10 +406,10 @@ actor SyncWorker {
             }
         }
         let body = try await transactionBody(transaction, origin: target, stageAttachments: false)
-        let resolved = try await sendData(
-            request(origin: target, path: "api/v1/transactions/resolve", method: "POST", body: body, contentType: "application/json"),
-            connectionId: transaction.connectionId
-        )
+        let typedBody = try SyncJSON.decoder.decode(Components.Schemas.Transaction.self, from: body)
+        let resolved = try await sendData(origin: target, connectionId: transaction.connectionId, upgradeOnMissing: true, preservingJSONBody: body) {
+            try await $0.resolveTransaction(body: .json(typedBody)).ok.body.json
+        }
         let resolution = try SyncJSON.decoder.decode(SyncTransactionResolution.self, from: resolved)
         guard resolution.id == transaction.id else { throw SyncTransactionQueueError.invalidReceipt }
         if resolution.status == "committed" {
@@ -418,10 +419,9 @@ actor SyncWorker {
         if try await reconcileRelocations(vaultId: transaction.vaultId, connectionId: transaction.connectionId, origin: target) { return nil }
         let stagedBody = try await transactionBody(transaction, origin: target, stageAttachments: true)
         guard stagedBody == body else { throw SyncTransactionQueueError.invalidReceipt }
-        let data = try await sendData(
-            request(origin: target, path: "api/v1/transactions", method: "POST", body: body, contentType: "application/json"),
-            connectionId: transaction.connectionId
-        )
+        let data = try await sendData(origin: target, connectionId: transaction.connectionId, preservingJSONBody: body) {
+            try await $0.commitTransaction(body: .json(typedBody)).ok.body.json
+        }
         return try SyncJSON.decoder.decode(SyncTransactionResponse.self, from: data)
     }
 
@@ -440,29 +440,35 @@ actor SyncWorker {
                    dbQueue: dbQueue
                ) {
                 let payload = try decode(FileOperationPayload.self, from: operation.payloadJSON)
-                var components = URLComponents()
-                components.path = "api/v1/files"
-                components.queryItems = [
-                    URLQueryItem(name: "id", value: operation.entityId.lowercase),
-                    URLQueryItem(name: "vaultId", value: transaction.vaultId.lowercase),
-                    URLQueryItem(name: "name", value: payload.name),
-                    URLQueryItem(name: "source", value: payload.metadata.source.rawValue),
-                ]
-                if let width = payload.metadata.width {
-                    components.queryItems?.append(URLQueryItem(name: "width", value: String(width)))
+                typealias Reservation = Operations.ReserveFileUpload.Input.Body.JsonPayload
+                guard let source = Reservation.MetadataPayload.SourcePayload(rawValue: payload.metadata.source.rawValue) else {
+                    throw SyncTransactionQueueError.invalidReceipt
                 }
-                if let height = payload.metadata.height {
-                    components.queryItems?.append(URLQueryItem(name: "height", value: String(height)))
+                let reservation = Reservation(
+                    id: operation.entityId.lowercase,
+                    vaultId: transaction.vaultId.lowercase,
+                    name: payload.name,
+                    contentType: attachment.mimeType,
+                    metadata: .init(
+                        source: source,
+                        width: payload.metadata.width,
+                        height: payload.metadata.height
+                    )
+                )
+                _ = try await sendData(origin: target, connectionId: transaction.connectionId) {
+                    let response = try await $0.reserveFileUpload(body: .json(reservation))
+                    if case let .created(value) = response { return try value.body.json }
+                    return try response.ok.body.json
                 }
-                // URL query parsers treat a literal plus as a space.
-                guard let path = components.string?.replacingOccurrences(of: "+", with: "%2B") else { throw URLError(.badURL) }
-                let data = try await sendData(request(
-                    origin: target,
-                    path: path,
-                    method: "POST",
-                    body: attachment.bytes,
-                    contentType: attachment.mimeType
-                ), connectionId: transaction.connectionId)
+                let data = try await sendData(origin: target, connectionId: transaction.connectionId) {
+                    let response = try await $0.putFileContent(
+                        path: .init(fileId: operation.entityId.lowercase),
+                        headers: .init(contentLength: String(attachment.bytes.count)),
+                        body: .binary(HTTPBody(attachment.bytes))
+                    )
+                    if case let .created(value) = response { return try value.body.json }
+                    return try response.ok.body.json
+                }
                 let uploaded = try SyncJSON.decoder.decode(FileUploadResponse.self, from: data)
                 guard uploaded.id == operation.entityId, uploaded.vaultId == transaction.vaultId,
                       uploaded.size == attachment.bytes.count,
@@ -493,13 +499,19 @@ actor SyncWorker {
             vaultId: transaction.vaultId,
             createdAt: transaction.createdAt,
             operations: operations.map { operation in
-                try SyncOperationBody(
+                var data = try operation.payloadJSON.map { try SyncJSON.decoder.decode(JSONValue.self, from: $0) } ?? .object([:])
+                if operation.entity == .file, var fields = data.objectValue, var metadata = fields["metadata"]?.objectValue {
+                    metadata["ocrText"] = metadata.removeValue(forKey: "ocr_text")
+                    fields["metadata"] = .object(metadata)
+                    data = .object(fields)
+                }
+                return SyncOperationBody(
                     id: operation.id,
                     entity: operation.entity,
                     action: operation.action,
                     entityId: operation.entityId,
                     baseRevision: operation.baseRevision,
-                    data: operation.payloadJSON.map { try SyncJSON.decoder.decode(JSONValue.self, from: $0) }
+                    data: data
                 )
             }
         ))
@@ -531,7 +543,7 @@ actor SyncWorker {
         guard mutation.mode == "replace" || (segmentCount <= Self.transcriptPatchItemLimit
             && deletionCount <= Self.transcriptPatchItemLimit
             && (preparedChunks?.count ?? 0) <= Self.transcriptPatchMaximumChunks) else {
-            throw SyncHTTPError(status: 422, body: Data("{\"error\":\"transcript_patch_too_large\"}".utf8))
+            throw SyncHTTPError(status: 422, body: Data("{\"code\":\"transcript_patch_too_large\"}".utf8))
         }
         var chunks: [TranscriptPatchData.Chunk] = []
         var position = 0
@@ -555,15 +567,14 @@ actor SyncWorker {
             let data = chunk.data
             let hash = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
             if sendUploads {
-                var upload = try request(
-                    origin: origin,
-                    path: "api/v1/vaults/\(transaction.vaultId.lowercase)/meetings/\(operation.entityId.lowercase)/transcripts/\(operation.id.lowercase)/chunks/\(index)",
-                    method: "PUT",
-                    body: data,
-                    contentType: "application/json"
-                )
-                upload.setValue(hash, forHTTPHeaderField: "X-Dahlia-Content-SHA256")
-                try await send(upload, connectionId: transaction.connectionId)
+                let input = try SyncJSON.decoder.decode(Operations.PutTranscriptChunk.Input.Body.JsonPayload.self, from: data)
+                _ = try await apiClient.perform(origin: origin, connectionId: transaction.connectionId, preservingJSONBody: data) {
+                    try await $0.putTranscriptChunk(
+                        path: .init(meetingId: operation.entityId.lowercase, patchId: operation.id.lowercase, chunkIndex: String(index)),
+                        headers: .init(xDahliaContentSha256: hash),
+                        body: .json(input)
+                    ).noContent
+                }
             }
             chunks.append(.init(
                 index: index,
@@ -730,10 +741,10 @@ actor SyncWorker {
     private func reconcileRelocations(vaultId: UUID, connectionId: UUID, origin: URL) async throws -> Bool {
         guard transferConnections.contains(connectionId) else { return false }
         do {
-            let relocation = try await SyncJSON.decoder.decode(VaultRelocation.self, from: sendData(
-                request(origin: origin, path: "api/v1/vaults/\(vaultId.lowercase)/relocations", method: "GET"),
-                connectionId: connectionId
-            ))
+            let data = try await sendData(origin: origin, connectionId: connectionId) {
+                try await $0.getRelocations(path: .init(vaultId: vaultId.lowercase)).ok.body.json
+            }
+            let relocation = try SyncJSON.decoder.decode(VaultRelocation.self, from: data)
             let changed = try await dbQueue.write { db in
                 let changed = try relocation.apply(connectionId: connectionId, in: db)
                 try db.execute(
@@ -760,10 +771,9 @@ actor SyncWorker {
         guard Self.pullingVaults.withLock({ $0.insert(key).inserted }) else { throw TextContentError.changed }
         defer { _ = Self.pullingVaults.withLock { $0.remove(key) } }
         do {
-            let data = try await sendData(
-                request(origin: target.origin, path: "api/v1/capabilities", method: "GET"),
-                connectionId: target.connectionId
-            )
+            let data = try await sendData(origin: target.origin, connectionId: target.connectionId, upgradeOnMissing: true) {
+                try await $0.getCapabilities().ok.body.json
+            }
             let capabilities = try decode(ServerCapabilities.self, from: data)
             guard capabilities.sync?.version == 4 else {
                 throw SyncHTTPError(status: 426, body: Data())
@@ -889,16 +899,13 @@ actor SyncWorker {
         var startCursor: String?
         repeat {
             try Task.checkCancellation()
-            var components = URLComponents()
-            components.path = "/api/v1/vaults/\(target.vaultId.lowercase)/snapshot"
-            components.queryItems = []
-            if let position { components.queryItems?.append(URLQueryItem(name: "cursor", value: position)) }
-            if let startCursor { components.queryItems?.append(URLQueryItem(name: "startCursor", value: startCursor)) }
-            guard let path = components.string else { throw URLError(.badURL) }
-            let page = try await SyncJSON.decoder.decode(
-                SyncSnapshotPage.self,
-                from: sendData(request(origin: target.origin, path: path, method: "GET"), connectionId: target.connectionId)
-            )
+            let pagePosition = position
+            let pageStart = startCursor
+            let data = try await sendData(origin: target.origin, connectionId: target.connectionId, upgradeOnMissing: true) {
+                try await $0.getSnapshot(path: .init(vaultId: target.vaultId.lowercase), query: .init(cursor: pagePosition, startCursor: pageStart))
+                    .ok.body.json
+            }
+            let page = try SyncJSON.decoder.decode(SyncSnapshotPage.self, from: data)
             if let startCursor, startCursor != page.startCursor { throw SyncTransactionQueueError.invalidReceipt }
             try await staged.merge(page.items.map {
                 SyncChangePage.Change(sequence: 0, entity: $0.entity, entityId: $0.id, action: "upsert", revision: $0.revision, record: $0.record)
@@ -1001,14 +1008,9 @@ actor SyncWorker {
         )
         var parentMeetings: [SyncChangePage.Change] = []
         for meetingId in missingMeetingIDs {
-            let data = try await sendData(
-                request(
-                    origin: target.origin,
-                    path: "api/v1/vaults/\(target.vaultId.lowercase)/meetings/\(meetingId.lowercase)",
-                    method: "GET"
-                ),
-                connectionId: target.connectionId
-            )
+            let data = try await sendData(origin: target.origin, connectionId: target.connectionId) {
+                try await $0.getMeeting(path: .init(meetingId: meetingId.lowercase)).ok.body.json
+            }
             let header = try SyncJSON.decoder.decode(SyncMeetingSnapshotHeader.self, from: data)
             let record = try SyncJSON.decoder.decode(SyncCanonicalPayload.self, from: data)
             parentMeetings.append(.init(
@@ -1026,10 +1028,9 @@ actor SyncWorker {
                 parentFiles.append(canonical)
                 continue
             }
-            let data = try await sendData(
-                request(origin: target.origin, path: "api/v1/files/\(fileId.lowercase)/metadata", method: "GET"),
-                connectionId: target.connectionId
-            )
+            let data = try await sendData(origin: target.origin, connectionId: target.connectionId) {
+                try await $0.getFile(path: .init(fileId: fileId.lowercase)).ok.body.json
+            }
             struct Header: Decodable { let id: UUID
                 let vaultId: UUID
                 let revision: Int
@@ -1077,14 +1078,9 @@ actor SyncWorker {
             }) else {
             return changes
         }
-        let data = try await sendData(
-            request(
-                origin: target.origin,
-                path: "api/v1/vaults/\(target.vaultId.lowercase)/projects",
-                method: "GET"
-            ),
-            connectionId: target.connectionId
-        )
+        let data = try await sendData(origin: target.origin, connectionId: target.connectionId) {
+            try await $0.listProjects(path: .init(vaultId: target.vaultId.lowercase)).ok.body.json
+        }
         let projects = try SyncJSON.decoder.decode(SyncProjectSnapshotPage.self, from: data).items
         guard try await RemoteChangeApplier.reconcileProjectSnapshot(
             projects,
@@ -1159,17 +1155,10 @@ actor SyncWorker {
         cursor: String?,
         highWaterCursor: String?
     ) async throws -> SyncChangePage {
-        var components = URLComponents()
-        components.path = "/api/v1/vaults/\(target.vaultId.lowercase)/changes"
-        components.queryItems = [
-            cursor.map { URLQueryItem(name: "cursor", value: $0) },
-            highWaterCursor.map { URLQueryItem(name: "highWaterCursor", value: $0) },
-        ].compactMap(\.self)
-        guard let path = components.string else { throw URLError(.badURL) }
-        let data = try await sendData(
-            request(origin: target.origin, path: path, method: "GET"),
-            connectionId: target.connectionId
-        )
+        let data = try await sendData(origin: target.origin, connectionId: target.connectionId) {
+            try await $0.getChanges(path: .init(vaultId: target.vaultId.lowercase), query: .init(cursor: cursor, highWaterCursor: highWaterCursor)).ok
+                .body.json
+        }
         return try SyncJSON.decoder.decode(SyncChangePage.self, from: data)
     }
 
@@ -1345,26 +1334,16 @@ actor SyncWorker {
     private func consumeEvents(connectionId: UUID, origin: URL) async {
         while !Task.isCancelled {
             do {
-                var eventRequest = try request(origin: origin, path: "api/v1/events", method: "GET")
-                let token = try await DahliaCloudTokenServiceRegistry.shared.validAccessToken(connectionID: connectionId)
-                eventRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-                let (bytes, response) = try await session.bytes(for: eventRequest)
-                guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
-                    throw URLError(.badServerResponse)
+                let body = try await apiClient.perform(origin: origin, connectionId: connectionId) {
+                    try await $0.getEvents().ok.body.textEventStream
                 }
                 _ = await MainActor.run { ServerAccountSettingsModel.shared.refresh(connectionID: connectionId) }
-                var event = ""
-                for try await line in bytes.lines {
-                    guard !Task.isCancelled else { return }
-                    if line.hasPrefix("event:") {
-                        event = String(line.dropFirst(6)).trimmingCharacters(in: .whitespaces)
-                    } else if line.hasPrefix("data:") {
-                        if event == "account_settings" {
-                            _ = await MainActor.run { ServerAccountSettingsModel.shared.refresh(connectionID: connectionId) }
-                        } else {
-                            try await pullRemoteChanges()
-                        }
-                        event = ""
+                for try await event in body.asDecodedServerSentEvents() {
+                    try Task.checkCancellation()
+                    if event.event == "account_settings" {
+                        _ = await MainActor.run { ServerAccountSettingsModel.shared.refresh(connectionID: connectionId) }
+                    } else if event.event == "invalidation" {
+                        try await pullRemoteChanges()
                     }
                 }
             } catch is CancellationError {
@@ -1381,38 +1360,18 @@ actor SyncWorker {
         }
     }
 
-    private func request(
+    private func sendData(
         origin: URL,
-        path: String,
-        method: String,
-        body: Data? = nil,
-        contentType: String? = nil
-    ) throws -> URLRequest {
-        guard let url = URL(string: path, relativeTo: origin)?.absoluteURL else { throw URLError(.badURL) }
-        var request = URLRequest(url: url)
-        request.httpMethod = method
-        request.httpBody = body
-        if let body { request.setValue(String(body.count), forHTTPHeaderField: "Content-Length") }
-        if let contentType { request.setValue(contentType, forHTTPHeaderField: "Content-Type") }
-        return request
-    }
-
-    private func send(_ request: URLRequest, connectionId: UUID) async throws {
-        _ = try await perform(request, connectionId: connectionId)
-    }
-
-    private func sendData(_ request: URLRequest, connectionId: UUID) async throws -> Data {
-        try await perform(request, connectionId: connectionId)
-    }
-
-    private func perform(_ unsignedRequest: URLRequest, connectionId: UUID) async throws -> Data {
+        connectionId: UUID,
+        upgradeOnMissing: Bool = false,
+        preservingJSONBody: Data? = nil,
+        operation: @Sendable (DahliaServerAPI.Client) async throws -> some Sendable
+    ) async throws -> Data {
         do {
-            return try await apiClient.data(for: unsignedRequest, connectionId: connectionId)
+            return try await apiClient.data(origin: origin, connectionId: connectionId, preservingJSONBody: preservingJSONBody, operation: operation)
         } catch let error as SyncHTTPError {
-            let path = unsignedRequest.url?.path ?? ""
-            if error.status == 404, error.code != "vault_not_found",
-               path.hasSuffix("/snapshot") || path.hasSuffix("/transactions/resolve") || path.hasSuffix("/capabilities") {
-                throw SyncHTTPError(status: 426, body: Data("{\"error\":\"sync_upgrade_required\"}".utf8))
+            if upgradeOnMissing, error.status == 404, error.code != "vault_not_found" {
+                throw SyncHTTPError(status: 426, body: Data("{\"code\":\"sync_upgrade_required\"}".utf8))
             }
             throw error
         }

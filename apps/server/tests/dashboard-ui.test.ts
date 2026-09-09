@@ -1,6 +1,7 @@
+import { apiUrls } from "../src/client/generated-operations";
 import { SummaryHistory } from "../src/client/SummaryHistory";
 import { RecordingIndicator } from "../src/client/RecordingIndicator";
-import { projectAncestors, selectedSidebarVault, Sidebar, SidebarProvider, vaultListURL } from "../src/client/Sidebar";
+import { projectAncestors, selectedSidebarVault, Sidebar, SidebarProvider } from "../src/client/Sidebar";
 import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -40,15 +41,15 @@ describe("desktop-style meeting layout", () => {
       for (const [language, label] of [["ja-JP", "過去版（閲覧のみ）"], ["en-US", "Read-only version"]]) {
         vi.stubGlobal("navigator", { language });
         const render = (selected: number | null) => renderToStaticMarkup(createElement(SummaryHistory, {
-          base: "/api/v1/vaults/v/meetings/m", latest: { version: 7, revision: 2, present: true, record: { title: "New", document: latest, createdAt: null } },
+          meetingId: "m", latest: { formatVersion: 1, entity: "summary", entityId: "m", count: 1, byteCount: 0, sha256: "", version: 7, revision: 2, present: true, record: { title: "New", document: latest, createdAt: null } },
           selected, onSelect: vi.fn(),
         }));
         expect(render(null)).toContain("Current result");
         expect(render(null)).toContain("v7");
         expect(render(null)).not.toContain("Previous result");
         const historical = render(1);
-        expect(page).toHaveBeenCalledWith("/api/v1/vaults/v/meetings/m/summary");
-        expect(query).toHaveBeenCalledWith("/api/v1/vaults/v/meetings/m/summary/1");
+        expect(page).toHaveBeenCalledWith(expect.objectContaining({ key: "[\"listSummaries\",{\"params\":{\"path\":{\"meetingId\":\"m\"}}}]" }));
+        expect(query).toHaveBeenCalledWith(expect.objectContaining({ key: "[\"getSummary\",{\"params\":{\"path\":{\"meetingId\":\"m\",\"version\":\"1\"}}}]" }));
         expect(historical).toContain("Previous result");
         expect(historical).not.toContain("Current result");
         expect(historical).toContain(label);
@@ -70,17 +71,17 @@ describe("desktop-style meeting layout", () => {
     try {
       for (const ready of ["neither", "meeting", "vault", "both"]) {
         query.mockImplementation((url) => {
-          if (url === "/api/v1/vaults/v1/meetings/m1" && ["meeting", "both"].includes(ready)) {
+          if (typeof url === "object" && url.key.startsWith('["getMeeting"') && ["meeting", "both"].includes(ready)) {
             return { ...empty, data: meeting };
           }
-          if (url === "/api/v1/vaults/v1" && ["vault", "both"].includes(ready)) {
+          if (typeof url === "object" && url.key.startsWith('["getVault"') && ["vault", "both"].includes(ready)) {
             return { ...empty, data: { role: "member" } };
           }
           return empty;
         });
         const html = render();
-        expect(query).toHaveBeenCalledWith("/api/v1/vaults/v1/meetings/m1");
-        expect(query).toHaveBeenCalledWith("/api/v1/vaults/v1/meetings/m1/summary/latest");
+        expect(query).toHaveBeenCalledWith(expect.objectContaining({ key: "[\"getMeeting\",{\"params\":{\"path\":{\"meetingId\":\"m1\"}}}]" }));
+        expect(query).toHaveBeenCalledWith(expect.objectContaining({ key: "[\"getLatestSummary\",{\"params\":{\"path\":{\"meetingId\":\"m1\"}}}]" }));
         expect(html.includes("<h1>")).toBe(ready === "both");
         expect(html.includes("Planning")).toBe(ready === "both");
         expect(html).not.toContain("<h1>ミーティング</h1>");
@@ -225,18 +226,18 @@ describe("desktop-style meeting layout", () => {
 
 describe("dashboard navigation", () => {
   it("uses advertised thumbnails for browsing and preserves the original link", () => {
-    const file = { id: "file", content_type: "image/png", metadata: { source: "screenshot" },
+    const file = { id: "file", vaultId: "vault", name: "image.png", size: 1, checksum: "hash", revision: 1, createdAt: "2026-09-07T00:00:00Z", updatedAt: "2026-09-07T00:00:00Z", contentType: "image/png", metadata: { source: "screenshot" as const },
       variants: { thumb_480: "/small", thumb_1280: "/medium", thumb_1568: "/preview", thumb_1920: "/large" } };
     const capturedAt = "2026-09-07T00:00:00Z";
     const html = renderToStaticMarkup(createElement(ScreenshotFigure, { file, capturedAt }));
     expect(html).toContain('src="/small"');
     expect(html).toContain('href="/files/file"');
     expect(html).not.toContain('target="_blank"');
-    expect(html).toContain('href="/api/v1/files/file"');
+    expect(html).toContain('href="/api/v1/files/file/content"');
     expect(html).toContain("Download original");
     expect(html).toContain(`dateTime="${capturedAt}"`);
     const portable = renderToStaticMarkup(createElement(ScreenshotFigure, { file: { ...file, variants: {} } }));
-    expect(portable).toContain('src="/api/v1/files/file"');
+    expect(portable).toContain('src="/api/v1/files/file/content"');
     expect(portable).not.toContain("/large");
   });
   it("previews images but never embeds active file content, and removes inaccessible previews", () => {
@@ -244,9 +245,9 @@ describe("dashboard navigation", () => {
     const query = vi.spyOn(liveData, "useLiveJSON");
     try {
       for (const contentType of ["image/png", "image/tiff", "text/html", "image/svg+xml"]) {
-        query.mockReturnValue({ data: { id: "f1", revision: 2, name: "Example", content_type: contentType, metadata: { ocr_text: "Detected text", caption: "Image caption" }, variants: { thumb_1568: "/preview" } }, error: undefined, loading: false, reload: vi.fn(), replace: vi.fn() });
+        query.mockReturnValue({ data: { id: "f1", revision: 2, name: "Example", contentType, metadata: { ocrText: "Detected text", caption: "Image caption" }, variants: { thumb_1568: "/preview" } }, error: undefined, loading: false, reload: vi.fn(), replace: vi.fn() });
         const html = renderToStaticMarkup(createElement(FileViewer, { fileId: "f1", separateTab: true }));
-        expect(query).toHaveBeenCalledWith("/api/v1/files/f1/metadata");
+        expect(query).toHaveBeenCalledWith(expect.objectContaining({ key: "[\"getFile\",{\"params\":{\"path\":{\"fileId\":\"f1\"}}}]" }));
         expect(html).toContain('aria-label="Image information" aria-expanded="false"');
         expect(html).toContain('aria-label="Copy image"');
         expect(html).toContain('aria-label="Zoom out"');
@@ -314,14 +315,14 @@ describe("dashboard navigation", () => {
       expect(dashboardNavigationPath(path, current)).toBe(path);
       expect(dashboardNavigationPath(`https://dahlia.example${path}`, current)).toBe(path);
     }
-    for (const href of ["https://other.example/dashboard", "/api/v1/files/f1", "/sign-in", "/oauth/consent", "/dashboard/extension", "/dashboard?q=search", "#section", "mailto:user@example.com"]) {
+    for (const href of ["https://other.example/dashboard", "/api/v1/files/f1/content", "/sign-in", "/oauth/consent", "/dashboard/extension", "/dashboard?q=search", "#section", "mailto:user@example.com"]) {
       expect(dashboardNavigationPath(href, current)).toBeUndefined();
     }
   });
 
   it("builds exclusive scopes and expands the selected Project ancestry by ID", () => {
-    expect(vaultListURL("")).toBe("/api/v1/vaults");
-    expect(vaultListURL("org+1")).toBe("/api/v1/vaults?organizationId=org%2B1");
+    expect(apiUrls.listVaults({})).toBe("/api/v1/vaults");
+    expect(apiUrls.listVaults({ params: { query: { organizationId: "org+1" } } })).toBe("/api/v1/vaults?organizationId=org%2B1");
     const projects = [
       { projectId: "parent", name: "Same" },
       { projectId: "child", parentProjectId: "parent", name: "Same" },

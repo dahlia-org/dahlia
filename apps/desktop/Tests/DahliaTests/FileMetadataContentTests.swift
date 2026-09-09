@@ -27,7 +27,7 @@
                 #expect(request.url?.query?.contains("content=") != true)
                 if request.url!.path.hasSuffix("/capabilities") { return (200, [:], Data(#"{"sync":{"version":4}}"#.utf8)) }
                 if request.url!.path.hasSuffix("/changes") { return (200, [:], changeData) }
-                #expect(request.url!.path.hasSuffix("/metadata"))
+                #expect(request.url!.path == "/api/v1/files/\(file.id.uuidString.lowercased())")
                 return (503, [:], Data())
             }
             defer { ImageURLProtocol.remove(origin: fixture.origin) }
@@ -51,7 +51,7 @@
             let calls = Mutex(0)
             let restarted = provider(fixture) { request in
                 calls.withLock { $0 += 1 }
-                #expect(request.url!.path == "/api/v1/files/\(file.id.uuidString.lowercased())/metadata")
+                #expect(request.url!.path == "/api/v1/files/\(file.id.uuidString.lowercased())")
                 #expect(request.url!.query == nil)
                 return (200, [:], body)
             }
@@ -102,8 +102,8 @@
             let fixture = try textFixture()
             let file = try await fileMetadataFixture(fixture)
             var json = file.record(revision: 1)
-            json["metadata"] = ["ocr_text": "", "caption": "new"]
-            if scenario == "missing-field" { json["metadata"] = ["ocr_text": ""] }
+            json["metadata"] = ["ocrText": "", "caption": "new"]
+            if scenario == "missing-field" { json["metadata"] = ["ocrText": ""] }
             if scenario == "wrong-id" { json["id"] = UUID.v7().uuidString }
             if scenario == "wrong-vault" { json["vaultId"] = UUID.v7().uuidString }
             if scenario == "checksum" { json["checksum"] = "SHA-256:" + String(repeating: "b", count: 64) }
@@ -156,7 +156,7 @@
                     "uri": "/Volumes/test/app/file",
                     "offset": 0,
                     "size": 1,
-                    "content_type": "image/png",
+                    "contentType": "image/png",
                     "checksum": checksum,
                     "name": "Image",
                     "metadata": ["source": "screenshot"],
@@ -167,7 +167,7 @@
 
             func body(revision: Int) throws -> Data {
                 var json = record(revision: revision)
-                json["metadata"] = ["source": "screenshot", "ocr_text": "", "caption": "new"]
+                json["metadata"] = ["source": "screenshot", "ocrText": "", "caption": "new"]
                 return try JSONSerialization.data(withJSONObject: json)
             }
 
@@ -178,6 +178,8 @@
                 return try JSONSerialization.data(withJSONObject: [
                     "items": [[
                         "sequence": revision,
+                        "vaultId": vaultId.uuidString,
+                        "transactionId": UUID.v7().uuidString,
                         "entity": "file",
                         "entityId": id.uuidString,
                         "action": "upsert",

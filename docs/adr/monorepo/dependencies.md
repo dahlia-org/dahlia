@@ -7,3 +7,5 @@
 Server の install、build、container context、CI、公開、環境変数と source path は `apps/server` を基準にする。Server の `pnpm-workspace.yaml` は package orchestration ではなく dependency build allowlist を保持する。
 
 モノレポと root `deploy/` は維持し、DAB は `apps/server` だけを同期、共有可能な Cloudflare template は `deploy/cloudflare` に置く。root pnpm shortcut は持たず、package 間の実際の共有依存が生じるまで workspace orchestration を再導入しない。
+
+Server の wire 契約は `@hono/zod-openapi` が所有し、`openapi-typescript` と `openapi-fetch` が Web の型・通信を生成する。Desktop は Apple `swift-openapi-generator` を build plugin として使い、`swift-openapi-runtime` / `swift-openapi-urlsession` を runtime に使用する。`DahliaServerAPI/openapi.json` は Server の committed spec を参照し、別の手書き DTO を正本にしない。

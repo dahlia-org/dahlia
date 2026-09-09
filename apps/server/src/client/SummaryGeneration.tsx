@@ -1,12 +1,15 @@
+import { apiOperations as api } from "./generated-operations";
+import type { components, operations } from "./generated-api";
+import { apiQuery } from "./live-data";
 import { Select } from "./Select";
 import { MenuIcon } from "./Sidebar";
 import { useEffect, useRef, useState } from "react";
-import { json, RequestError, uiText } from "./api";
+import { RequestError, uiText } from "./api";
 import { refreshData, useLiveJSON } from "./live-data";
 import { uuidV7 } from "../id";
 import type { GatewayModelList } from "../ai-gateway/backend";
 import { DEFAULT_ACCOUNT_SETTINGS, type AccountSettings, type AccountSettingsPatch } from "../account-settings-model";
-import type { summaryJobResponse, SummaryRequest } from "../summary/service";
+type SummaryRequest = operations["startSummaryJob"]["requestBody"]["content"]["application/json"];
 import { isAudioSummaryModel, isStructuredSummaryModel } from "../summary/audio-model";
 import { CODEX_AUTO_REVIEW_ALIAS } from "../ai-gateway/model-alias";
 
@@ -18,13 +21,13 @@ const summaryErrors: Record<string, string> = {
   summary_audio_unavailable: uiText("Recording audio could not be read.", "録音音声を読み取れませんでした。"),
   summary_invalid_audio_model: uiText("Select an available audio-capable Gemini model in settings.", "設定で利用可能な音声対応Geminiモデルを選択してください。"),
 };
-type Job = ReturnType<typeof summaryJobResponse>;
+type Job = components["schemas"]["SummaryJob"] | null;
 const details = ["low", "medium", "high", "xhigh", "max"] as const;
 const detailLabel = (detail: typeof details[number]) => ({ low: uiText("Concise", "簡潔"), medium: uiText("Standard", "標準"),
   high: uiText("Detailed", "詳細"), xhigh: uiText("Event session", "イベントセッション"), max: uiText("Event Play-by-Play", "イベント実況中継") })[detail];
 
 function useSummaryMethods() {
-  const capabilities = useLiveJSON<{ meetingSummaryGeneration?: { version: number; sources: string[] } }>("/api/v1/capabilities");
+  const capabilities = useLiveJSON<{ meetingSummaryGeneration?: { version: number; sources: string[] } }>(apiQuery("getCapabilities", {}));
   const summary = capabilities.data?.meetingSummaryGeneration;
   return summary?.version === 1 ? summary.sources : [];
 }
@@ -32,7 +35,7 @@ function useSummaryMethods() {
 export function ServerSummarySettings() {
   const availableMethods = useSummaryMethods();
   const methods = availableMethods.includes("audio") ? ["transcript", "cloudTranscription", "audio"] : availableMethods;
-  const query = useLiveJSON<{ settings: AccountSettings | null }>("/api/v1/account/settings", "account");
+  const query = useLiveJSON<{ settings: AccountSettings | null }>(apiQuery("getSettings", {}), "account");
   const [error, setError] = useState<string>();
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -42,8 +45,7 @@ export function ServerSummarySettings() {
   const save = async (patch: AccountSettingsPatch) => {
     setSaving(true); setSaved(false); setError(undefined);
     try {
-      const result = await json<{ settings: AccountSettings }>("/api/v1/account/settings",
-        { method: "PATCH", body: JSON.stringify(patch) }, { notifyMutation: false });
+      const result = await api.updateSettings({ body: patch }, false);
       query.replace(result); query.reload(); setSaved(true);
     }
     catch (error) { setError(error instanceof Error ? error.message : uiText("Could not save settings", "設定を保存できません")); }
@@ -119,10 +121,10 @@ export function ServerSummarySettings() {
   </>;
 }
 
-export function ServerSummaryGeneration({ base }: { base: string }) {
+export function ServerSummaryGeneration({ meetingId }: { meetingId: string }) {
   const methods = useSummaryMethods();
   const enabled = methods.length > 0;
-  const query = useLiveJSON<{ job: Job }>(enabled ? `${base}/summary/job` : undefined);
+  const query = useLiveJSON<{ job: Job }>(enabled ? apiQuery("getLatestSummaryJob", { params: { path: { meetingId } } }) : undefined);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string>();
   const [detail, setDetail] = useState("");
@@ -134,7 +136,7 @@ export function ServerSummaryGeneration({ base }: { base: string }) {
     if (!enabled) return;
     const timer = window.setInterval(query.reload, 5000);
     return () => window.clearInterval(timer);
-  }, [enabled, base]); // reload uses the query's current queue.
+  }, [enabled, meetingId]); // reload uses the query's current queue.
   useEffect(() => {
     if (job?.id === requestID.current) { requestID.current = undefined; requestBody.current = undefined; }
     if (job?.status === "succeeded" && completed.current !== job.id) {
@@ -148,20 +150,20 @@ export function ServerSummaryGeneration({ base }: { base: string }) {
     requestID.current ??= uuidV7();
     try {
       if (!requestBody.current) {
-        const account = await json<{ settings: AccountSettings | null }>("/api/v1/account/settings");
+        const account = await api.getSettings({});
         const settings = account.settings ?? DEFAULT_ACCOUNT_SETTINGS;
         const method = settings.summary.method;
         let input: Extract<SummaryRequest, { input: unknown }>["input"];
         if (method === "transcript") {
-          const versions = await json<{ items: { version: number }[] }>(`${base}/transcript?limit=1`);
+          const versions = await api.listTranscripts({ params: { path: { meetingId }, query: { limit: "1" } } });
           if (!versions.items[0]) throw new Error(uiText("No transcript is available", "文字起こしがありません"));
           input = { type: "transcript", version: String(versions.items[0].version) };
         } else {
           const recordings: { micFileId: string | null; systemFileId: string | null }[] = [];
           let cursor: string | null = null;
           do {
-            const page: { items: { audio: Partial<Record<"mic" | "system", { fileId: string }>> }[]; nextCursor: string | null } =
-              await json(`/api/v1/meetings/${base.split("/").at(-1)!}/recordings${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`);
+            const page: { items: { audio: Partial<Record<"mic" | "system", { fileId?: string }>> }[]; nextCursor: string | null } =
+              await api.listRecordings({ params: { path: { meetingId }, query: { cursor: cursor ?? undefined } } });
             recordings.push(...page.items.map(({ audio }) => ({ micFileId: audio.mic?.fileId ?? null, systemFileId: audio.system?.fileId ?? null })));
             cursor = page.nextCursor;
           } while (cursor !== null);
@@ -170,9 +172,9 @@ export function ServerSummaryGeneration({ base }: { base: string }) {
         }
         requestBody.current = { id: requestID.current, input,
           model: settings.summary.methodSettings[method === "audio" ? "audio" : "transcript"].model,
-          detailLevel: (detail || settings.summary.detail) as typeof details[number], summaryLanguage: settings.outputLanguage };
+          detail: (detail || settings.summary.detail) as typeof details[number], outputLanguage: settings.outputLanguage };
       }
-      await json(`${base}/summary`, { method: "POST", body: JSON.stringify(requestBody.current) });
+      await api.startSummaryJob({ params: { path: { meetingId } }, body: requestBody.current });
       requestID.current = undefined; requestBody.current = undefined; query.reload();
     } catch (error) {
       if (error instanceof RequestError && error.status === 400) {
@@ -187,8 +189,9 @@ export function ServerSummaryGeneration({ base }: { base: string }) {
     setStarting(true); setError(undefined);
     requestID.current ??= uuidV7();
     try {
-      await json(`${base}/summary/job/${job.id}/${action}`, { method: "POST",
-        ...(action === "retry" ? { body: JSON.stringify({ id: requestID.current }) } : {}) });
+      const params = { path: { meetingId, jobId: job.id } };
+      if (action === "retry") await api.retrySummaryJob({ params, body: { id: requestID.current } });
+      else await api.cancelSummaryJob({ params });
       requestID.current = undefined; requestBody.current = undefined; query.reload();
     } catch (error) { setError(error instanceof Error ? error.message : String(error)); }
     finally { setStarting(false); }

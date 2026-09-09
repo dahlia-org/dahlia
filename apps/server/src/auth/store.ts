@@ -126,7 +126,7 @@ export interface ApplicationStore {
   listAdminUsers(): Promise<AdminUserRecord[]>;
   isAdminUser(userId: string): Promise<boolean>;
   addAdminUser(email: string): Promise<AdminUserRecord | null>;
-  removeAdminUser(email: string): Promise<RemoveAdminResult>;
+  removeAdminUser(userId: string): Promise<RemoveAdminResult>;
   getExternalOrganization(userId: string): Promise<OrganizationRecord | null>;
   listExternalOrganizationMembers(userId: string): Promise<OrganizationMemberRecord[] | null>;
   listExternalTeams(userId: string): Promise<TeamRecord[] | null>;
@@ -411,20 +411,20 @@ export function createPostgresApplicationStore(
         });
       return updated ?? null;
     },
-    async removeAdminUser(email) {
+    async removeAdminUser(userId) {
       return db.transaction(async (transaction) => {
         await transaction.execute(sql`select pg_advisory_xact_lock(hashtext('dahlia_admin_mutation'))`);
         const [updated] = await transaction.update(postgresAuthSchema.user)
           .set({ role: "user", updatedAt: new Date() })
           .where(and(
-            eq(postgresAuthSchema.user.email, email),
+            eq(postgresAuthSchema.user.id, userId),
             sql`(',' || coalesce(${postgresAuthSchema.user.role}, 'user') || ',') like '%,admin,%'`,
             sql`(select count(*) from ${postgresAuthSchema.user} as admins where (',' || coalesce(admins.role, 'user') || ',') like '%,admin,%') > 1`,
           )).returning({ id: postgresAuthSchema.user.id });
         if (updated) return "removed";
         const [admin] = await transaction.select({ id: postgresAuthSchema.user.id })
           .from(postgresAuthSchema.user).where(and(
-            eq(postgresAuthSchema.user.email, email),
+            eq(postgresAuthSchema.user.id, userId),
             sql`(',' || coalesce(${postgresAuthSchema.user.role}, 'user') || ',') like '%,admin,%'`,
           )).limit(1);
         return admin ? "last_admin" : "not_found";
@@ -856,16 +856,16 @@ export function createSqliteApplicationStore(
         });
       return updated ?? null;
     },
-    async removeAdminUser(email) {
+    async removeAdminUser(userId) {
       const [updated] = await db.update(sqliteAuthSchema.user).set({ role: "user", updatedAt: new Date() })
         .where(and(
-          eq(sqliteAuthSchema.user.email, email),
+          eq(sqliteAuthSchema.user.id, userId),
           sql`(',' || coalesce(${sqliteAuthSchema.user.role}, 'user') || ',') like '%,admin,%'`,
           sql`(select count(*) from ${sqliteAuthSchema.user} as admins where (',' || coalesce(admins.role, 'user') || ',') like '%,admin,%') > 1`,
         )).returning({ id: sqliteAuthSchema.user.id });
       if (updated) return "removed";
       const [admin] = await db.select({ id: sqliteAuthSchema.user.id }).from(sqliteAuthSchema.user).where(and(
-        eq(sqliteAuthSchema.user.email, email),
+        eq(sqliteAuthSchema.user.id, userId),
         sql`(',' || coalesce(${sqliteAuthSchema.user.role}, 'user') || ',') like '%,admin,%'`,
       )).limit(1);
       return admin ? "last_admin" : "not_found";

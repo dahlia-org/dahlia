@@ -1,23 +1,20 @@
+import type { components } from "./generated-api";
 import { Select } from "./Select";
 import { useEffect } from "react";
 import { RequestError, uiText } from "./api";
-import { useLiveJSON, useLivePage } from "./live-data";
+import { apiQuery, useLiveJSON, useLivePage } from "./live-data";
 import { parseSummary, SummaryContent } from "./MeetingContent";
-import { summaryMetadata, type SummaryVersion } from "../summary/metadata";
+import { summaryMetadata } from "../summary/metadata";
 
-export interface LatestSummary {
-  version: number;
-  revision: number;
-  present: boolean;
-  record?: { title: string | null; document: string | null; createdAt: string | null };
-}
-type Version = Omit<SummaryVersion, "createdAt" | "savedAt"> & { createdAt: string | null; savedAt: string };
+export type LatestSummary = components["schemas"]["SummaryContent"];
 
-export function SummaryHistory({ base, latest, selected, onSelect }: {
-  base: string; latest?: LatestSummary; selected: number | null; onSelect: (version: number | null) => void;
+type Version = components["schemas"]["Summary"];
+
+export function SummaryHistory({ meetingId, latest, selected, onSelect }: {
+  meetingId: string; latest?: LatestSummary; selected: number | null; onSelect: (version: number | null) => void;
 }) {
-  const versions = useLivePage<Omit<Version, "document">>(`${base}/summary`);
-  const history = useLiveJSON<Version>(selected === null ? undefined : `${base}/summary/${selected}`);
+  const versions = useLivePage<Omit<Version, "document">>(apiQuery("listSummaries", { params: { path: { meetingId } } }));
+  const history = useLiveJSON<Version>(selected === null ? undefined : apiQuery("getSummary", { params: { path: { meetingId, version: String(selected) } } }));
   useEffect(() => {
     if (history.error instanceof RequestError && history.error.status === 404) onSelect(null);
   }, [history.error, onSelect]);

@@ -33,19 +33,19 @@ describe.each(["node", "worker"])("v1 HTTP contract (%s)", (runtime) => {
 
   it("distinguishes unsupported methods, missing paths, disabled features and extensions", async () => {
     const send = fixture();
-    for (const path of ["/api/v1/files/id/metadata", "/api/v1/capabilities", "/api/v1/transactions"]) {
+    for (const path of ["/api/v1/files/id", "/api/v1/capabilities", "/api/v1/transactions"]) {
       const response = await send(path, "DELETE");
       expect(response.status).toBe(405);
-      expect(response.headers.get("allow")).toBe(path.endsWith("/metadata") ? "PATCH, GET, HEAD"
+      expect(response.headers.get("allow")).toBe(path.match(/\/files\/[^/]+$/) ? "PATCH, GET, HEAD"
         : path.endsWith("/transactions") ? "POST" : "GET, HEAD, POST");
     }
-    expect((await send("/api/v1/files/id/metadata", "PUT", undefined, {})).status).toBe(401);
+    expect((await send("/api/v1/files/id", "PUT", undefined, {})).status).toBe(401);
     expect((await send("/api/v1/missing")).status).toBe(404);
     expect((await send("/api/auth/sign-in/google", "PATCH")).status).toBe(404);
     const permissions = await send("/api/v1/vaults/id/permissions", "POST");
     expect(permissions.status).toBe(405);
     expect(permissions.headers.get("allow")).toBe("GET, HEAD");
-    expect((await send("/api/sessions", "POST", undefined, { ...identityHeaders, origin: config.baseUrl })).status).toBe(404);
+    expect((await send("/api/v1/sessions", "POST", undefined, { ...identityHeaders, origin: config.baseUrl })).status).toBe(404);
     expect(await (await send("/api/v1/custom", "POST")).json()).toEqual({ extension: true });
     expect(await (await send("/api/v1/vaults/custom", "POST")).json()).toEqual({ userId: "owner" });
     expect((await send("/api/v1/vaults/custom", "POST", undefined, {})).status).toBe(401);

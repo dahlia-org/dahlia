@@ -1,58 +1,10 @@
-export interface SyncedVaultInfo {
-  hasResources?: boolean;
-  icon?: string | null;
-  color?: string | null;
-  vaultId: string;
-  name: string;
-  role: "owner" | "member";
-  createdAt: string;
-  updatedAt: string;
-  revision: number;
-}
-
-export interface OrganizationInfo {
-  id: string;
-  name: string;
-  slug: string;
-}
-
-export interface SyncedMeetingInfo {
-  meetingId: string;
-  vaultId: string;
-  projectId?: string;
-  name: string;
-  description: string;
-  status: string;
-  duration?: number;
-  recordingStartedAt?: string;
-  isRecording?: boolean;
-  createdAt: string;
-  updatedAt: string;
-  revision: number;
-  summaryRevision: number;
-  transcriptRevision: number;
-}
-
-export interface SyncedMeetingPage {
-  items: SyncedMeetingInfo[];
-  nextCursor?: string;
-}
-
-export interface SyncedProjectInfo {
-  icon?: string | null;
-  color?: string | null;
-  projectId: string;
-  vaultId: string;
-  parentProjectId?: string;
-  name: string;
-  description: string;
-  projectType?: "customer" | "internal" | "personal" | "undefined";
-  effectiveType: "customer" | "internal" | "personal" | "undefined";
-  revision: number;
-  path: string;
-  directMeetingCount: number;
-  subtreeMeetingCount: number;
-}
+import createClient from "openapi-fetch";
+import type { paths, components } from "./generated-api";
+export type SyncedVaultInfo = components["schemas"]["Vault"];
+export type OrganizationInfo = components["schemas"]["Organization"];
+export type SyncedMeetingInfo = components["schemas"]["Meeting"];
+export type SyncedMeetingPage = { items: SyncedMeetingInfo[]; nextCursor: string | null };
+export type SyncedProjectInfo = components["schemas"]["Project"];
 
 export function uiText(english: string, japanese: string): string {
   return globalThis.navigator?.language.startsWith("ja") ? japanese : english;
@@ -106,4 +58,21 @@ export async function json<T>(url: string, init?: RequestInit, { notifyMutation 
     window.dispatchEvent(new Event(clientMutationEvent));
   }
   return value as T;
+}
+
+export const serverClient = createClient<paths>({
+  baseUrl: globalThis.location?.origin ?? "http://localhost",
+  headers: { "X-Dahlia-Vault-Transfers": "1" },
+  fetch: (request) => globalThis.fetch(request),
+});
+
+export async function unwrap<T>(pending: Promise<{ data?: T; error?: unknown; response: Response }>, notifyMutation = false): Promise<T> {
+  const { data, error, response } = await pending;
+  if (!response.ok) {
+    if (response.status === 401 && typeof window !== "undefined") window.dispatchEvent(new Event("dahlia:unauthorized"));
+    const problem = error as components["schemas"]["Problem"] | undefined;
+    throw new RequestError((problem?.code && syncMessage(problem.code)) || problem?.detail || problem?.code || `Request failed (${response.status})`, response.status);
+  }
+  if (notifyMutation && typeof window !== "undefined") window.dispatchEvent(new Event(clientMutationEvent));
+  return data as T;
 }

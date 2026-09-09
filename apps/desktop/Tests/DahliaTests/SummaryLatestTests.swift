@@ -59,15 +59,18 @@ import Synchronization
             var changes: [[String: Any]] = []
             if pending == "deferred" {
                 changes.append([
+                    "vaultId": fixture.vaultId.uuidString, "transactionId": UUID.v7().uuidString,
                     "sequence": 3, "entity": "transcript", "entityId": otherMeetingId.uuidString,
                     "action": "upsert", "revision": 2,
-                    "record": ["contentOmitted": true, "contentPresent": true, "contentCount": 1],
+                    "record": ["meetingId": otherMeetingId.uuidString, "contentOmitted": true, "contentPresent": true, "contentCount": 1],
                 ])
             }
             changes.append([
+                "vaultId": fixture.vaultId.uuidString, "transactionId": UUID.v7().uuidString,
                 "sequence": 4, "entity": "summary", "entityId": fixture.meetingId.uuidString,
                 "action": "upsert", "revision": 4,
                 "record": [
+                    "id": UUID.v7().uuidString, "meetingId": fixture.meetingId.uuidString, "version": 2,
                     "title": "Latest",
                     "createdAt": "2026-01-01T00:00:00.000Z",
                     "contentOmitted": true,
@@ -88,7 +91,7 @@ import Synchronization
                 }
                 #expect(request.url?
                     .path ==
-                    "/api/v1/vaults/\(fixture.vaultId.uuidString.lowercased())/meetings/\(fixture.meetingId.uuidString.lowercased())/summary/latest")
+                    "/api/v1/meetings/\(fixture.meetingId.uuidString.lowercased())/summaries/latest")
                 #expect(!(request.url!.query ?? "").contains("revision"))
                 let call = calls.withLock { $0 += 1
                     return $0

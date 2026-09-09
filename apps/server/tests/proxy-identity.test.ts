@@ -17,7 +17,7 @@ function headerConfig(authHeader: string): AppConfig {
 describe("proxy identity boundary", () => {
   it("uses forwarded user ID and preferred username headers", async () => {
     const config = headerConfig("X-Forwarded-Email");
-    const identity = await new IdentityService(config).fromBrowser(new Request("https://dahlia.example/api/session", {
+    const identity = await new IdentityService(config).fromBrowser(new Request("https://dahlia.example/api/v1/session", {
       headers: {
         "X-Forwarded-Email": " User@Example.com ",
         "X-Forwarded-Preferred-Username": " Dahlia User ",
@@ -36,7 +36,7 @@ describe("proxy identity boundary", () => {
 
   it("uses the configured email header as the full identity", async () => {
     const config = headerConfig("Cf-Access-Authenticated-User-Email");
-    const identity = await new IdentityService(config).fromBrowser(new Request("https://dahlia.example/api/session", {
+    const identity = await new IdentityService(config).fromBrowser(new Request("https://dahlia.example/api/v1/session", {
       headers: { "Cf-Access-Authenticated-User-Email": " User@Example.com " },
     }));
 
@@ -51,7 +51,7 @@ describe("proxy identity boundary", () => {
   it("rejects a missing configured identity header", async () => {
     const config = headerConfig("X-Forwarded-Email");
 
-    await expect(new IdentityService(config).fromBrowser(new Request("https://dahlia.example/api/session")))
+    await expect(new IdentityService(config).fromBrowser(new Request("https://dahlia.example/api/v1/session")))
       .rejects.toThrow("X-Forwarded-Email is missing");
   });
 
@@ -62,7 +62,7 @@ describe("proxy identity boundary", () => {
       return true;
     });
 
-    await identities.fromBrowser(new Request("https://dahlia.example/api/session", {
+    await identities.fromBrowser(new Request("https://dahlia.example/api/v1/session", {
       headers: {
         "X-Forwarded-Email": "user@example.com",
         "X-Forwarded-User": "stable-user-id",
@@ -79,7 +79,7 @@ describe("proxy identity boundary", () => {
       () => Promise.resolve(false),
     );
 
-    await expect(identities.fromBrowser(new Request("https://dahlia.example/api/session", {
+    await expect(identities.fromBrowser(new Request("https://dahlia.example/api/v1/session", {
       headers: { "X-Forwarded-Email": "user@example.com" },
     }))).rejects.toThrow("identity_projection_failed");
   });

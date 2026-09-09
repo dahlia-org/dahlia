@@ -28,10 +28,10 @@ it("omits maxItems and accepts arrays beyond every former limit", () => {
 
 
 it("normalizes legacy details without changing their meaning or reasoning effort", async () => {
-  const { summaryDetailSchema, summaryDetails, DEFAULT_ACCOUNT_SETTINGS, accountSettingsPatchSchema } = await import("../src/account-settings-model");
+  const { summaryDetailSchema, normalizeSummaryDetail, summaryDetails, DEFAULT_ACCOUNT_SETTINGS, accountSettingsPatchSchema } = await import("../src/account-settings-model");
   for (const [old, canonical] of [["concise", "low"], ["standard", "medium"], ["detailed", "high"], ["eventSession", "xhigh"]]) {
-    expect(summaryDetailSchema.parse(old)).toBe(canonical);
-    expect(accountSettingsPatchSchema.parse({ summary: { detail: old } })).toEqual({ summary: { detail: canonical } });
+    expect(normalizeSummaryDetail(old!)).toBe(canonical);
+    expect(accountSettingsPatchSchema.safeParse({ summary: { detail: old } }).success).toBe(false);
   }
   expect(DEFAULT_ACCOUNT_SETTINGS.summary.detail).toBe("high");
   expect(summaryDetails).toEqual(["low", "medium", "high", "xhigh", "max"]);

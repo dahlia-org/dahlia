@@ -26,6 +26,8 @@ macOS、ローカル SQLite、録音、UI、内蔵 Codex / local MCP。
 
 Server / Private Web、配置、API、認可、storage。
 
+- [Server API 契約と生成クライアント](server/openapi.md)
+
 - [AI Gateway と配布契約](server/gateway.md)
 - [Databricks 配置と upstream identity](server/databricks.md)
 - [Artifact storage / API / MCP / Web](server/artifacts.md)

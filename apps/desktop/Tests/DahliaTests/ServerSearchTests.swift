@@ -67,7 +67,8 @@
             )
             #expect(pending.meetings.map(\.id) == [fixture.meetingId])
             #expect(pending.pendingMeetings.map(\.id) == [second])
-            #expect(paths.withLock { $0 } == ["/api/v1/capabilities", "/api/v1/search", "/api/v1/capabilities", "/api/v1/search"])
+            let searchPath = "/api/v1/vaults/\(fixture.vaultId.uuidString.lowercased())/search"
+            #expect(paths.withLock { $0 } == ["/api/v1/capabilities", searchPath, "/api/v1/capabilities", searchPath])
         }
 
         @Test(arguments: ["recent", "date", "project"])

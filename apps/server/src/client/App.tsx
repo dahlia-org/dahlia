@@ -1,4 +1,10 @@
-import type { ServerUserRecord, ServerOrganizationRecord } from "../auth/store";
+import { apiUrls } from "./generated-operations";
+import { apiOperations as api } from "./generated-operations";
+import type { components } from "./generated-api";
+import { apiQuery, mapQuery } from "./live-data";
+import type { operations } from "./generated-api";
+type ServerUserRecord = operations["listServerUsers"]["responses"][200]["content"]["application/json"]["items"][number];
+type ServerOrganizationRecord = operations["listServerOrganizations"]["responses"][200]["content"]["application/json"]["items"][number];
 import { Select } from "./Select";
 import type { Appearance } from "../appearance-model";
 import { collectionAppearance, AppearanceIcon, projectAppearance } from "./AppearancePicker";
@@ -19,7 +25,6 @@ import {
 } from "./routes";
 import { dashboardNavigationEvent, dashboardNavigationPath, navigateDashboard } from "./navigation";
 import { summaryEditor } from "./summary-editor";
-import type { ScreenshotVariant } from "../sync/screenshot-variants";
 import { clientMutationEvent, json, RequestError, syncMessage, uiText, type SyncedVaultInfo, type OrganizationInfo, type SyncedMeetingInfo, type SyncedProjectInfo } from "./api";
 import { DetailTabs, MeetingTabs, parseSummary, SummaryTags } from "./MeetingContent";
 import { FileLink, FileViewer } from "./FileViewer";
@@ -83,7 +88,7 @@ interface DeviceSession {
   id: string;
   createdAt: string;
   expiresAt: string;
-  userAgent?: string;
+  userAgent: string | null;
   current: boolean;
 }
 
@@ -132,43 +137,33 @@ interface VaultPermissionInfo {
 
 
 
-interface SyncedScreenshotInfo {
-  id: string;
-  capturedAt: string | null;
-  file: { id: string; content_type: string; variants: Partial<Record<ScreenshotVariant, string>>; metadata: { source: string; ocr_text?: string; caption?: string } };
-}
+type SyncedScreenshotInfo = operations["listMeetingFiles"]["responses"][200]["content"]["application/json"]["items"][number];
 
-type SyncOperation = {
-  entity: "vault" | "project" | "meeting" | "summary";
-  action: "create" | "update" | "delete" | "upsert" | "reset";
-  entityId: string;
-  baseRevision: number | null;
-  data: Record<string, unknown>;
-};
+type WithoutOperationId<T> = T extends unknown ? Omit<T, "id"> : never;
+type SyncOperation = WithoutOperationId<components["schemas"]["Transaction"]["operations"][number]>;
 
 export async function commitSyncTransaction(vaultId: string, operations: SyncOperation[], onRecovery: (active: boolean) => void = () => {}) {
   const transactionId = uuidV7();
   const request = {
-    method: "POST",
-    body: JSON.stringify({
-      schemaVersion: 2,
+    body: {
+      schemaVersion: 2 as const,
       id: transactionId,
       vaultId,
       createdAt: new Date().toISOString(),
       operations: operations.map((operation) => ({ ...operation, id: uuidV7() })),
-    }),
+    },
   };
   type Receipt = { id: string; status: "committed" | "unknown"; receipt?: "full" | "compact" };
   try {
     let result: Receipt;
     try {
-      result = await json<Receipt>("/api/v1/transactions", request, { notifyMutation: false });
+      result = await api.commitTransaction(request, false);
     } catch (error) {
       if (error instanceof RequestError && error.status && error.status < 500 && ![408, 410, 425, 429].includes(error.status)) throw error;
       onRecovery(true);
       let resolved: Receipt;
       try {
-        resolved = await json<Receipt>("/api/v1/transactions/resolve", request, { notifyMutation: false });
+        resolved = await api.resolveTransaction(request, false);
       } catch (resolveError) {
         if (resolveError instanceof RequestError && resolveError.status === 404) {
           throw new RequestError(syncMessage("sync_upgrade_required")!, 426, { cause: resolveError });
@@ -177,7 +172,7 @@ export async function commitSyncTransaction(vaultId: string, operations: SyncOpe
       }
       if (resolved.id !== transactionId) throw new Error("Invalid transaction receipt", { cause: error });
       result = resolved.status === "unknown"
-        ? await json<Receipt>("/api/v1/transactions", request, { notifyMutation: false })
+        ? await api.commitTransaction(request, false)
         : resolved;
     }
     if (result.id !== transactionId || result.status !== "committed"
@@ -420,7 +415,7 @@ function Settings({ session, extensions }: { session: SessionInfo; extensions: r
   const [error, setError] = useState<string>();
   const load = useCallback(() => {
     setError(undefined);
-    void json<DeviceSession[]>("/api/sessions").then(setSessions).catch((caught: Error) => setError(caught.message));
+    void api.listSessions({}).then(({ items }) => setSessions(items)).catch((caught: Error) => setError(caught.message));
   }, []);
   useEffect(() => { if (sessionsEnabled) load(); }, [load, sessionsEnabled]);
 
@@ -431,7 +426,7 @@ function Settings({ session, extensions }: { session: SessionInfo; extensions: r
         ? uiText("You will be signed out of this browser. Your meetings will remain available when you sign in again.", "このブラウザからサインアウトします。再度サインインすれば、ミーティングを引き続き閲覧できます。")
         : uiText("This device will need to sign in again. Existing access tokens may remain valid for up to 15 minutes.", "このデバイスでは再度サインインが必要になります。発行済みのアクセストークンは最大15分間有効な場合があります。"),
       confirmLabel: uiText("Revoke session", "セッションを解除"), destructive: true,
-      onSubmit: async () => { await json(`/api/sessions/${encodeURIComponent(device.id)}`, { method: "DELETE" }); load(); },
+      onSubmit: async () => { await api.revokeSession({ params: { path: { id: device.id } } }); load(); },
     });
   }
 
@@ -484,7 +479,7 @@ function Vaults({ home = false }: { home?: boolean }) {
   useEffect(() => {
     if (recentVault) setRecentVaultId(recentVault.vaultId);
   }, [recentVault]);
-  const recent = useLiveJSON<{ items: SyncedMeetingInfo[] }>(home && recentVault ? `/api/v1/vaults/${recentVault.vaultId}/meetings` : undefined);
+  const recent = useLiveJSON<{ items: SyncedMeetingInfo[] }>(home && recentVault ? apiQuery("listMeetings", { params: { path: { vaultId: recentVault.vaultId } } }) : undefined);
   const [recovering, setRecovering] = useState(false);
 
   const createVault = () => openDialog({
@@ -538,15 +533,15 @@ function VaultSharing({ session, vault }: { session: SessionInfo; vault: SyncedV
   const [error, setError] = useState<string>();
   const sharingQuery = useLiveQuery(`sharing:${vault.vaultId}:${session.capabilities.sessions}`, async (signal) => {
     const [{ items }, organizationItems] = await Promise.all([
-      json<{ items: VaultPermissionInfo[] }>(`/api/v1/vaults/${vault.vaultId}/permissions`, { signal }),
+      api.listPermissions({ params: { path: { vaultId: vault.vaultId } }, signal }),
       session.capabilities.sessions
         ? json<OrganizationInfo[]>("/api/auth/organization/list", { signal })
-        : json<OrganizationInfo[]>("/api/v1/organizations", { signal }),
+        : api.listOrganizations({ signal }).then(({ items }) => items),
     ]);
     const teamItems = (await Promise.all(organizationItems.map((organization) =>
       session.capabilities.sessions
         ? json<TeamInfo[]>(`/api/auth/organization/list-teams?organizationId=${encodeURIComponent(organization.id)}`, { signal })
-        : json<TeamInfo[]>(`/api/v1/organizations/${encodeURIComponent(organization.id)}/teams`, { signal })
+        : api.listTeams({ params: { path: { organizationId: organization.id } }, signal }).then(({ items }) => items)
     ))).flat();
     return { permissions: items, organizations: organizationItems, teams: teamItems };
   });
@@ -559,10 +554,13 @@ function VaultSharing({ session, vault }: { session: SessionInfo; vault: SyncedV
     setSaving(true);
     setError(undefined);
     try {
-      const target = `${principalType === "organization" ? "organizations" : "teams"}/${encodeURIComponent(principalId)}`;
-      await json(`/api/v1/vaults/${vault.vaultId}/permissions/${target}`, {
-        method: enabled ? "PUT" : "DELETE",
-      });
+      if (principalType === "organization") {
+        const params = { path: { vaultId: vault.vaultId, organizationId: principalId } };
+        await (enabled ? api.putOrganizationPermission({ params }) : api.deleteOrganizationPermission({ params }));
+      } else {
+        const params = { path: { vaultId: vault.vaultId, teamId: principalId } };
+        await (enabled ? api.putTeamPermission({ params }) : api.deleteTeamPermission({ params }));
+      }
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : uiText("Could not update sharing", "共有設定を更新できませんでした"));
     } finally {
@@ -636,7 +634,7 @@ function VaultSharing({ session, vault }: { session: SessionInfo; vault: SyncedV
 
 function VaultTransfer({ vault }: { vault: SyncedVaultInfo }) {
   const { dialog, openDialog } = useActionDialog();
-  const targets = useLiveJSON<{ items: SyncedVaultInfo[] }>("/api/v1/vaults");
+  const targets = useLiveJSON<{ items: SyncedVaultInfo[] }>(apiQuery("listVaults", {}));
   const [destinationId, setDestinationId] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>();
@@ -648,10 +646,9 @@ function VaultTransfer({ vault }: { vault: SyncedVaultInfo }) {
     setError(undefined);
     try {
       const [source, target, audience] = await Promise.all([
-        json<SyncedVaultInfo>(`/api/v1/vaults/${vault.vaultId}`),
-        json<SyncedVaultInfo>(`/api/v1/vaults/${destination.vaultId}`),
-        json<{ audienceHash: string; removed: { name: string; email: string }[]; added: { name: string; email: string }[] }>(
-          `/api/v1/vaults/${vault.vaultId}/transfer-audience?destinationVaultId=${destination.vaultId}`),
+        api.getVault({ params: { path: { vaultId: vault.vaultId } } }),
+        api.getVault({ params: { path: { vaultId: destination.vaultId } } }),
+        api.getTransferAudience({ params: { path: { vaultId: vault.vaultId }, query: { destinationVaultId: destination.vaultId } } }),
       ]);
       const people = (items: { name: string; email: string }[]) => items.map((person) => `${person.name} (${person.email})`).join(", ");
       const description = [
@@ -664,11 +661,11 @@ function VaultTransfer({ vault }: { vault: SyncedVaultInfo }) {
           "移管先を閲覧できない端末はローカルデータを保持して同期を停止します。未同期データは移管されません。"),
       ].filter(Boolean).join("\n\n");
       const key = uuidV7();
-      const body = JSON.stringify({ destinationVaultId: target.vaultId, sourceRevision: source.revision, destinationRevision: target.revision, audienceHash: audience.audienceHash });
+      const body = { destinationVaultId: target.vaultId, sourceRevision: source.revision, destinationRevision: target.revision, audienceHash: audience.audienceHash };
       openDialog({ title: uiText("Transfer content", "内容を移管"), description,
         confirmLabel: uiText("Transfer", "移管する"), destructive: true,
         onSubmit: async () => {
-          await json(`/api/v1/vaults/${source.vaultId}/transfer`, { method: "POST", headers: { "Idempotency-Key": key }, body });
+          await api.transferVault({ params: { path: { vaultId: source.vaultId }, header: { "idempotency-key": key } }, body });
           window.location.assign(`/vaults/${target.vaultId}`);
         },
       });
@@ -715,10 +712,10 @@ export function MeetingList({ meetings, loading, filtered = false, onClear }: { 
 
 function VaultMeetings({ session, vaultId }: { session: SessionInfo; vaultId: string }) {
   const { dialog, openDialog } = useActionDialog();
-  const vaultQuery = useLiveJSON<SyncedVaultInfo>(`/api/v1/vaults/${vaultId}`);
+  const vaultQuery = useLiveJSON<SyncedVaultInfo>(apiQuery("getVault", { params: { path: { vaultId: vaultId } } }));
   const vault = vaultQuery.data;
   const [recovering, setRecovering] = useState(false);
-  const projectsQuery = useLiveJSON<{ items: SyncedProjectInfo[] }>(`/api/v1/vaults/${vaultId}/projects`);
+  const projectsQuery = useLiveJSON<{ items: SyncedProjectInfo[] }>(apiQuery("listProjects", { params: { path: { vaultId: vaultId } } }));
   const projects = vault ? projectsQuery.data?.items ?? [] : [];
   const [query, setQuery] = useState("");
   const [projectId, setProjectId] = useState("");
@@ -730,10 +727,8 @@ function VaultMeetings({ session, vaultId }: { session: SessionInfo; vaultId: st
     const timer = setTimeout(() => setSearch(query), 250);
     return () => clearTimeout(timer);
   }, [query]);
-  const params = new URLSearchParams();
-  if (search) params.set("q", search);
-  if (projectId) params.set("projectId", projectId);
-  const meetingsQuery = useLivePage<SyncedMeetingInfo>(`/api/v1/vaults/${vaultId}/meetings?${params}`);
+  const meetingFilters = { query: search || undefined, projectId: projectId || undefined };
+  const meetingsQuery = useLivePage<SyncedMeetingInfo>(apiQuery("listMeetings", { params: { path: { vaultId }, query: meetingFilters } }));
   const meetings = vault ? meetingsQuery.data?.items : undefined;
   const nextCursor = meetingsQuery.data?.nextCursor;
   const loadingMore = meetingsQuery.loadingMore;
@@ -773,7 +768,7 @@ function VaultMeetings({ session, vaultId }: { session: SessionInfo; vaultId: st
     onSubmit: async ({ name, description }) => {
       const id = uuidV7();
       await commitSyncTransaction(vaultId, [{ entity: "project", action: "create", entityId: id, baseRevision: null,
-        data: { parentProjectId: null, name: name!.trim(), description, projectType: "undefined", createdAt: new Date().toISOString() } }], setRecovering);
+        data: { parentProjectId: null, name: name!.trim(), description: description ?? "", projectType: "undefined", createdAt: new Date().toISOString() } }], setRecovering);
       navigateDashboard(`/projects/${id}`);
     },
   });
@@ -806,7 +801,7 @@ function VaultMeetings({ session, vaultId }: { session: SessionInfo; vaultId: st
         {projectsQuery.loading && !projectsQuery.data && <p className="content-empty">{uiText("Loading…", "読み込み中…")}</p>}
         {projectsQuery.data && projects.length === 0 && <p className="content-empty">{uiText("No projects yet", "プロジェクトはまだありません")}</p>}
         <div className="collection-list">{projects.map((project) => <a className="collection-row" href={`/projects/${project.projectId}`} key={project.projectId}>
-          <span className="collection-project-name"><AppearanceIcon appearance={projectAppearance(project, projects.find((parent) => parent.projectId === project.parentProjectId))} /><span><strong>{project.path}</strong>{project.description && <small>{project.description}</small>}</span></span><span className="muted">{meetingCount(project.subtreeMeetingCount)}</span>
+          <span className="collection-project-name"><AppearanceIcon appearance={projectAppearance(project, projects.find((parent) => parent.projectId === project.parentProjectId))} /><span><strong>{project.path}</strong>{project.description && <small>{project.description}</small>}</span></span><span className="muted">{meetingCount(project.subtreeMeetingCount ?? 0)}</span>
         </a>)}</div>
       </> },
       ...(session.capabilities.sharing && vault ? [{ id: "permissions", label: uiText("Permissions", "権限"), content: <VaultSharing session={session} vault={vault} /> }] : []),
@@ -824,14 +819,14 @@ function VaultMeetings({ session, vaultId }: { session: SessionInfo; vaultId: st
 
 function SyncedProject({ vaultId, projectId }: { vaultId: string; projectId: string }) {
   const { dialog, openDialog } = useActionDialog();
-  const vaultQuery = useLiveJSON<SyncedVaultInfo>(`/api/v1/vaults/${vaultId}`);
+  const vaultQuery = useLiveJSON<SyncedVaultInfo>(apiQuery("getVault", { params: { path: { vaultId: vaultId } } }));
   const vault = vaultQuery.data;
   const [recovering, setRecovering] = useState(false);
-  const projectQuery = useLiveJSON<SyncedProjectInfo>(`/api/v1/vaults/${vaultId}/projects/${projectId}`);
+  const projectQuery = useLiveJSON<SyncedProjectInfo>(apiQuery("getProject", { params: { path: { projectId: projectId } } }));
   const project = vault ? projectQuery.data : undefined;
-  const parentQuery = useLiveJSON<SyncedProjectInfo>(project?.parentProjectId ? `/api/v1/projects/${project.parentProjectId}` : undefined);
-  const params = new URLSearchParams({ projectId });
-  const meetingsQuery = useLivePage<SyncedMeetingInfo>(`/api/v1/vaults/${vaultId}/meetings?${params}`);
+  const parentQuery = useLiveJSON<SyncedProjectInfo>(project?.parentProjectId ? apiQuery("getProject", { params: { path: { projectId: project.parentProjectId } } }) : undefined);
+  const meetingFilters = { projectId };
+  const meetingsQuery = useLivePage<SyncedMeetingInfo>(apiQuery("listMeetings", { params: { path: { vaultId }, query: meetingFilters } }));
   const meetings = project ? meetingsQuery.data?.items : undefined;
   const nextCursor = meetingsQuery.data?.nextCursor;
   const loadingMore = meetingsQuery.loadingMore;
@@ -846,7 +841,7 @@ function SyncedProject({ vaultId, projectId }: { vaultId: string; projectId: str
       ],
       onSubmit: async ({ name, description, appearance }) => {
         await commitSyncTransaction(vaultId, [{ entity: "project", action: "update", entityId: projectId, baseRevision: project.revision,
-          data: { ...(!project.parentProjectId ? JSON.parse(appearance!) as Appearance : {}), parentProjectId: project.parentProjectId ?? null, name: name!.trim(), description,
+          data: { ...(!project.parentProjectId ? JSON.parse(appearance!) as Appearance : {}), parentProjectId: project.parentProjectId ?? null, name: name!.trim(), description: description ?? "",
             projectType: project.parentProjectId ? null : project.projectType ?? "undefined" } }], setRecovering);
       },
     });
@@ -872,7 +867,7 @@ function SyncedProject({ vaultId, projectId }: { vaultId: string; projectId: str
       </nav>
       <h1><AppearanceIcon appearance={projectAppearance(project, parentQuery.data)} size={28} />{project?.name ?? uiText("Project", "プロジェクト")}</h1>
       {project?.description && <p className="project-description">{project.description}</p>}
-      {project && <div className="meeting-metadata"><span className="metadata-chip">{meetingCount(project.subtreeMeetingCount)}</span></div>}
+      {project && <div className="meeting-metadata"><span className="metadata-chip">{meetingCount(project.subtreeMeetingCount ?? 0)}</span></div>}
     </header>
     {dialog}
     {recovering && <p role="status">{syncMessage("sync_recovering")}</p>}
@@ -905,20 +900,19 @@ function SyncedProject({ vaultId, projectId }: { vaultId: string; projectId: str
 
 export function SyncedMeeting({ vaultId, meetingId }: { vaultId: string; meetingId: string }) {
   const { dialog, openDialog } = useActionDialog();
-  const base = `/api/v1/vaults/${vaultId}/meetings/${meetingId}`;
-  const meetingQuery = useLiveJSON<SyncedMeetingInfo>(base);
-  const vaultQuery = useLiveJSON<SyncedVaultInfo>(`/api/v1/vaults/${vaultId}`);
-  const projectsQuery = useLiveJSON<{ items: SyncedProjectInfo[] }>(`/api/v1/vaults/${vaultId}/projects`);
-  const screenshotsQuery = useLivePage<SyncedScreenshotInfo>(`${base}/files`);
+  const meetingQuery = useLiveJSON(apiQuery("getMeeting", { params: { path: { meetingId } } }));
+  const vaultQuery = useLiveJSON<SyncedVaultInfo>(apiQuery("getVault", { params: { path: { vaultId: vaultId } } }));
+  const projectsQuery = useLiveJSON<{ items: SyncedProjectInfo[] }>(apiQuery("listProjects", { params: { path: { vaultId: vaultId } } }));
+  const screenshotsQuery = useLivePage<SyncedScreenshotInfo>(apiQuery("listMeetingFiles", { params: { path: { meetingId } } }));
   const meeting = vaultQuery.data ? meetingQuery.data : undefined;
   const vault = vaultQuery.data;
   const screenshots = screenshotsQuery.data?.items;
   const screenshotCursor = screenshotsQuery.data?.nextCursor;
   const loadingScreenshots = screenshotsQuery.loadingMore;
   const [recovering, setRecovering] = useState(false);
-  const latestSummary = useLiveJSON<LatestSummary>(`${base}/summary/latest`);
+  const latestSummary = useLiveJSON<LatestSummary>(apiQuery("getLatestSummary", { params: { path: { meetingId } } }));
   const [selectedSummary, setSelectedSummary] = useState<number | null>(null);
-  useEffect(() => { setSelectedSummary(null); }, [base]);
+  useEffect(() => { setSelectedSummary(null); }, [meetingId]);
   const currentSummary = latestSummary.data?.record;
   const document = useMemo(() => parseSummary(currentSummary?.document ?? undefined), [currentSummary?.document]);
   const project = projectsQuery.data?.items.find((item) => item.projectId === meeting?.projectId);
@@ -932,7 +926,7 @@ export function SyncedMeeting({ vaultId, meetingId }: { vaultId: string; meeting
       ],
       onSubmit: async ({ name, description }) => {
         await commitSyncTransaction(vaultId, [{ entity: "meeting", action: "update", entityId: meetingId, baseRevision: meeting.revision,
-          data: { projectId: meeting.projectId ?? null, name: name!.trim(), description, status: meeting.status,
+          data: { projectId: meeting.projectId ?? null, name: name!.trim(), description: description ?? "", status: meeting.status,
             duration: meeting.duration ?? null, recordingStartedAt: meeting.recordingStartedAt ?? null, updatedAt: new Date().toISOString() } }], setRecovering);
       },
     });
@@ -989,7 +983,7 @@ export function SyncedMeeting({ vaultId, meetingId }: { vaultId: string; meeting
       <DataError error={meetingQuery.error} retry={meetingQuery.reload} />
       <DataError error={vaultQuery.error} retry={vaultQuery.reload} />
       <DataError error={projectsQuery.error} retry={projectsQuery.reload} />
-      {meeting && vault?.role === "owner" && <ServerSummaryGeneration key={base} base={base} />}
+      {meeting && vault?.role === "owner" && <ServerSummaryGeneration key={meetingId} meetingId={meetingId} />}
       {meeting && <MeetingTabs
         actions={vault?.role === "owner" && <div className="meeting-actions">
           <button className="action-trigger" aria-label={uiText("Meeting actions", "ミーティングの操作")} popoverTarget="meeting-actions"><span aria-hidden="true">⋯</span>{" "}<span className="action-label">{uiText("Actions", "操作")}</span></button>
@@ -1001,7 +995,7 @@ export function SyncedMeeting({ vaultId, meetingId }: { vaultId: string; meeting
         </div>}
         summary={<>
           <DataError error={latestSummary.error} retry={latestSummary.reload} />
-          <SummaryHistory key={base} base={base} latest={latestSummary.data} selected={selectedSummary} onSelect={setSelectedSummary} />
+          <SummaryHistory key={meetingId} meetingId={meetingId} latest={latestSummary.data} selected={selectedSummary} onSelect={setSelectedSummary} />
         </>}
         screenshots={<>
           <DataError error={screenshotsQuery.error} retry={screenshotsQuery.reload} />
@@ -1015,7 +1009,7 @@ export function SyncedMeeting({ vaultId, meetingId }: { vaultId: string; meeting
             {loadingScreenshots ? uiText("Loading…", "読み込み中…") : uiText("Load more", "さらに表示")}
           </button>}
         </>}
-        transcript={<TranscriptHistory key={base} base={base} timeBase={meeting.recordingStartedAt ?? meeting.createdAt} />}
+        transcript={<TranscriptHistory key={meetingId} meetingId={meetingId} timeBase={meeting.recordingStartedAt ?? meeting.createdAt} />}
       />}
     </article>
   );
@@ -1029,11 +1023,11 @@ export function ScreenshotFigure({ file, capturedAt }: { file: SyncedScreenshotI
     for (const event of events) window.addEventListener(event, retry);
     return () => { for (const event of events) window.removeEventListener(event, retry); };
   }, []);
-  const original = `/api/v1/files/${file.id}`;
+  const original = apiUrls.getFileContent({ params: { path: { fileId: file.id } } });
   return <figure className="panel">
     <FileLink fileId={file.id} capturedAt={capturedAt} label={uiText("Open screenshot", "スクリーンショットを開く")}>
       {failed ? <span role="alert">{uiText("Unable to load screenshot.", "スクリーンショットを読み込めませんでした。")}</span> : <img
-        src={file.variants.thumb_480 ?? original}
+        src={file.variants?.thumb_480 ?? original}
         alt={file.metadata.caption || uiText("Screenshot", "スクリーンショット")}
         loading="lazy"
         onError={() => setFailed(true)}
@@ -1041,7 +1035,7 @@ export function ScreenshotFigure({ file, capturedAt }: { file: SyncedScreenshotI
     </FileLink>
     {failed && <button className="secondary" onClick={() => setFailed(false)}>{uiText("Retry", "再試行")}</button>}
     {capturedAt && <time className="screenshot-time" dateTime={capturedAt}>{new Date(capturedAt).toLocaleTimeString()}</time>}
-    {(file.metadata.caption || file.metadata.ocr_text) && <figcaption>{file.metadata.caption || file.metadata.ocr_text}</figcaption>}
+    {(file.metadata.caption || file.metadata.ocrText) && <figcaption>{file.metadata.caption || file.metadata.ocrText}</figcaption>}
     <a href={original} download>{uiText("Download original", "原本をダウンロード")}</a>
   </figure>;
 }
@@ -1063,12 +1057,10 @@ function OrganizationDetails({ organization, session }: { organization: Organiza
     try {
       const accounts = session.capabilities.sessions;
       const [memberPage, teamItems] = await Promise.all([
-        json<{ members: OrganizationMember[] }>(accounts
-          ? `/api/auth/organization/list-members?organizationId=${organizationId}`
-          : `/api/v1/organizations/${organizationId}/members`),
-        json<TeamInfo[]>(accounts
-          ? `/api/auth/organization/list-teams?organizationId=${organizationId}`
-          : `/api/v1/organizations/${organizationId}/teams`),
+        accounts ? json<{ members: OrganizationMember[] }>(`/api/auth/organization/list-members?organizationId=${organizationId}`)
+          : api.listOrganizationMembers({ params: { path: { organizationId: organization.id } } }).then(({ items }) => ({ members: items })),
+        accounts ? json<TeamInfo[]>(`/api/auth/organization/list-teams?organizationId=${organizationId}`)
+          : api.listTeams({ params: { path: { organizationId: organization.id } } }).then(({ items }) => items),
       ]);
       setMembers(memberPage.members);
       const role = memberPage.members.find((member) => member.userId === session.user.id)?.role;
@@ -1097,9 +1089,7 @@ function OrganizationDetails({ organization, session }: { organization: Organiza
             ? Promise.resolve([] as [string, TeamMember[]][])
             : Promise.all(teamItems.map(async (team): Promise<[string, TeamMember[]]> => [
                 team.id,
-                await json<TeamMember[]>(
-                  `/api/v1/organizations/${organizationId}/teams/${encodeURIComponent(team.id)}/members`,
-                ),
+                await api.listTeamMembers({ params: { path: { organizationId: organization.id, teamId: team.id } } }).then(({ items }) => items),
               ])),
       ]);
       setInvitations(invitationItems.filter((invitation) => invitation.status === "pending"));
@@ -1185,11 +1175,9 @@ function OrganizationDetails({ organization, session }: { organization: Organiza
       confirmLabel: uiText("Create team", "チームを作成"),
       fields: [{ name: "name", label: uiText("Team name", "チーム名"), required: true }],
       onSubmit: async ({ name }) => {
-        const team = await json<TeamInfo>(session.capabilities.sessions
-          ? "/api/auth/organization/create-team" : `/api/v1/organizations/${organizationId}/teams`, {
-          method: "POST", body: JSON.stringify(session.capabilities.sessions
-            ? { name: name!.trim(), organizationId: organization.id } : { name: name!.trim() }),
-        });
+        const team = session.capabilities.sessions ? await json<TeamInfo>("/api/auth/organization/create-team", {
+          method: "POST", body: JSON.stringify({ name: name!.trim(), organizationId: organization.id }),
+        }) : await api.createTeam({ params: { path: { organizationId: organization.id } }, body: { name: name!.trim() } });
         // Creation succeeded: a membership failure must not invite a duplicate team retry.
         if (session.capabilities.sessions) {
           try {
@@ -1213,10 +1201,9 @@ function OrganizationDetails({ organization, session }: { organization: Organiza
       fields: [{ name: "name", label: uiText("Team name", "チーム名"), hideLabel: true, value: team.name, required: true }],
       onSubmit: async ({ name }) => {
         if (name!.trim() === team.name) return;
-        await json(session.capabilities.sessions ? "/api/auth/organization/update-team" : `/api/v1/organizations/${organizationId}/teams/${encodeURIComponent(team.id)}`, {
-          method: session.capabilities.sessions ? "POST" : "PATCH",
-          body: JSON.stringify(session.capabilities.sessions ? { teamId: team.id, data: { name: name!.trim(), organizationId: organization.id } } : { name: name!.trim() }),
-        });
+        if (session.capabilities.sessions) await json("/api/auth/organization/update-team", {
+          method: "POST", body: JSON.stringify({ teamId: team.id, data: { name: name!.trim(), organizationId: organization.id } }),
+        }); else await api.updateTeam({ params: { path: { organizationId: organization.id, teamId: team.id } }, body: { name: name!.trim() } });
         await load();
       },
     });
@@ -1228,10 +1215,9 @@ function OrganizationDetails({ organization, session }: { organization: Organiza
       description: uiText(`“${team.name}” will be deleted. Members will lose access to Vaults shared through this team.`, `「${team.name}」を削除し、このチームを通じた保管庫へのアクセスを解除します。`),
       confirmLabel: uiText("Delete team", "チームを削除"), destructive: true,
       onSubmit: async () => {
-        await json(session.capabilities.sessions ? "/api/auth/organization/remove-team" : `/api/v1/organizations/${organizationId}/teams/${encodeURIComponent(team.id)}`, {
-          method: session.capabilities.sessions ? "POST" : "DELETE",
-          body: session.capabilities.sessions ? JSON.stringify({ teamId: team.id, organizationId: organization.id }) : undefined,
-        });
+        if (session.capabilities.sessions) await json("/api/auth/organization/remove-team", {
+          method: "POST", body: JSON.stringify({ teamId: team.id, organizationId: organization.id }),
+        }); else await api.deleteTeam({ params: { path: { organizationId: organization.id, teamId: team.id } } });
         await load();
       },
     });
@@ -1242,14 +1228,12 @@ function OrganizationDetails({ organization, session }: { organization: Organiza
     setPending(true);
     setError(undefined);
     try {
-      await json(session.capabilities.sessions
-        ? `/api/auth/organization/${enabled ? "add" : "remove"}-team-member`
-        : `/api/v1/organizations/${organizationId}/teams/${encodeURIComponent(team.id)}/members/${encodeURIComponent(userId)}`, {
-        method: session.capabilities.sessions ? "POST" : enabled ? "PUT" : "DELETE",
-        body: session.capabilities.sessions
-          ? JSON.stringify({ teamId: team.id, userId, organizationId: organization.id })
-          : undefined,
-      });
+      if (session.capabilities.sessions) await json(`/api/auth/organization/${enabled ? "add" : "remove"}-team-member`, {
+        method: "POST", body: JSON.stringify({ teamId: team.id, userId, organizationId: organization.id }),
+      }); else {
+        const params = { path: { organizationId: organization.id, teamId: team.id, userId } };
+        await (enabled ? api.putTeamMember({ params }) : api.deleteTeamMember({ params }));
+      }
       await load();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not update team membership");
@@ -1360,7 +1344,7 @@ function OrganizationDetails({ organization, session }: { organization: Organiza
 }
 
 function Organization({ session, slug }: { session: SessionInfo; slug: string }) {
-  const query = useLiveJSON<OrganizationInfo[]>(session.capabilities.sessions ? "/api/auth/organization/list" : "/api/v1/organizations");
+  const query = useLiveJSON<OrganizationInfo[]>(session.capabilities.sessions ? "/api/auth/organization/list" : mapQuery(apiQuery("listOrganizations", {}), ({ items }) => items));
   const organization = query.data?.find((item) => encodeURIComponent(item.slug) === slug);
   return <>
     <nav className="detail-breadcrumbs" aria-label={uiText("Breadcrumbs", "パンくず")}>
@@ -1385,7 +1369,7 @@ function Organizations({ session }: { session: SessionInfo }) {
     try {
       const accounts = session.capabilities.sessions;
       const [organizationItems, invitationItems] = await Promise.all([
-        json<OrganizationInfo[]>(accounts ? "/api/auth/organization/list" : "/api/v1/organizations"),
+        accounts ? json<OrganizationInfo[]>("/api/auth/organization/list") : api.listOrganizations({}).then(({ items }) => items),
         accounts ? json<OrganizationInvitation[]>("/api/auth/organization/list-user-invitations") : Promise.resolve([]),
       ]);
       setOrganizations(organizationItems);
@@ -1517,7 +1501,7 @@ function Invitation({ invitationId }: { invitationId: string }) {
 
 function AdminDirectory({ kind }: { kind: "users" | "organizations" }) {
   const [offset, setOffset] = useState(0);
-  const query = useLiveJSON<{ items: (ServerUserRecord | ServerOrganizationRecord)[]; hasMore: boolean }>(`/api/admin/${kind}?offset=${offset}`);
+  const query = useLiveJSON<{ items: (ServerUserRecord | ServerOrganizationRecord)[]; hasMore: boolean }>(kind === "users" ? apiQuery("listServerUsers", { params: { query: { offset: String(offset) } } }) : apiQuery("listServerOrganizations", { params: { query: { offset: String(offset) } } }));
   const organizations = kind === "organizations";
   return <>
     <PageHeader title={organizations ? uiText("Organization management", "組織管理") : uiText("User management", "ユーザー管理")}
@@ -1550,7 +1534,7 @@ function AdminMembers() {
   const [error, setError] = useState<string>();
   const load = useCallback(() => {
     setError(undefined);
-    void json<AdminMember[]>("/api/admin/members").then(setMembers).catch((caught: Error) => setError(caught.message));
+    void api.listAdministrators({}).then(({ items }) => setMembers(items)).catch((caught: Error) => setError(caught.message));
   }, []);
   useEffect(load, [load]);
 
@@ -1560,7 +1544,7 @@ function AdminMembers() {
     setPending(true);
     setError(undefined);
     try {
-      await json("/api/admin/members", { method: "POST", body: JSON.stringify({ email }) });
+      await api.addAdministrator({ body: { email } });
       setEmail("");
       load();
     } catch (caught) {
@@ -1575,7 +1559,7 @@ function AdminMembers() {
       title: uiText("Remove administrator?", "管理者権限を解除しますか？"),
       description: uiText(`${member.email} will lose administrator access. Their personal account and meetings will remain.`, `${member.email} の管理者権限を解除します。個人アカウントとミーティングは残ります。`),
       confirmLabel: uiText("Remove access", "権限を解除"), destructive: true,
-      onSubmit: async () => { await json(`/api/admin/members/${encodeURIComponent(member.email)}`, { method: "DELETE" }); load(); },
+      onSubmit: async () => { await api.removeAdministrator({ params: { path: { userId: member.id } } }); load(); },
     });
   }
 
@@ -1650,7 +1634,7 @@ export function App({ brand = defaultBrand, extensions = [] }: AppProps) {
     if (!needsSession) return;
     const controller = new AbortController();
     setSessionError(undefined);
-    void json<SessionInfo>("/api/session", { signal: controller.signal })
+    void api.getSession({ signal: controller.signal })
       .then((value) => { if (!controller.signal.aborted) setSession(value); })
       .catch((caught: unknown) => {
         if (controller.signal.aborted) return;
@@ -1670,8 +1654,11 @@ export function App({ brand = defaultBrand, extensions = [] }: AppProps) {
     return subscribeLiveUpdates();
   }, [needsSession, unauthorized, userId, syncEnabled]);
 
-  const detailPath = /^\/(meetings|projects|files)\/[^/]+$/.test(path) ? path : undefined;
-  const detailQuery = useLiveJSON<{ vaultId: string }>(session?.capabilities.sync && detailPath ? `/api/v1${detailPath}` : undefined);
+  const detailPath = path.match(/^\/(meetings|projects|files)\/([^/]+)$/);
+  const detailQuery = useLiveJSON<{ vaultId: string }>(!session?.capabilities.sync || !detailPath ? undefined
+    : detailPath[1] === "meetings" ? apiQuery("getMeeting", { params: { path: { meetingId: decodeURIComponent(detailPath[2]!) } } })
+      : detailPath[1] === "projects" ? apiQuery("getProject", { params: { path: { projectId: decodeURIComponent(detailPath[2]!) } } })
+        : apiQuery("getFile", { params: { path: { fileId: decodeURIComponent(detailPath[2]!) } } }));
   const detailVaultId = detailQuery.data?.vaultId;
 
   if (path === "/sign-in") return <SignIn brand={brand} />;

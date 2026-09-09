@@ -5,7 +5,7 @@ import type { PostgresDatabase, SQLiteDatabase } from "./db/client";
 import * as postgresSchema from "./db/auth-schema";
 import * as sqliteSchema from "./db/sqlite-schema";
 
-import { accountSettingsSchema, DEFAULT_ACCOUNT_SETTINGS, type AccountSettings, type AccountSettingsPatch } from "./account-settings-model";
+import { accountSettingsSchema, normalizeSummaryDetail, DEFAULT_ACCOUNT_SETTINGS, type AccountSettings, type AccountSettingsPatch } from "./account-settings-model";
 export { accountSettingsPatchSchema, DEFAULT_ACCOUNT_SETTINGS, type AccountSettings, type AccountSettingsPatch } from "./account-settings-model";
 
 export interface AccountSettingsStore {
@@ -32,7 +32,7 @@ export function createAccountSettingsStore(
       summary: table.summary,
       analysisLanguages: table.analysisLanguages,
     }).from(table).where(eq(table.userId, userId));
-    return row ? accountSettingsSchema.parse(row) : null;
+    return row ? accountSettingsSchema.parse({ ...row, summary: { ...row.summary, detail: normalizeSummaryDetail(row.summary.detail) } }) : null;
   };
   return {
     getRevision: (userId) => withUser(userId, async (connection) => {

@@ -61,15 +61,15 @@
                 clientID: "desktop-client"
             ))
             let url = try DahliaCloudService.authorizationURL(
-                endpoint: URL(string: "https://accounts.example.com/authorize")!,
+                endpoint: #require(URL(string: "https://accounts.example.com/authorize")),
                 configuration: configuration,
                 resource: "https://cloud.example.com/api/v1",
                 scopes: ["openid", "offline_access"],
                 state: "state-value",
                 codeChallenge: "challenge-value"
             )
-            let values = Dictionary(uniqueKeysWithValues: URLComponents(url: url, resolvingAgainstBaseURL: false)!
-                .queryItems!.map { ($0.name, $0.value) })
+            let values = try Dictionary(uniqueKeysWithValues: #require(URLComponents(url: url, resolvingAgainstBaseURL: false)?
+                    .queryItems?.map { ($0.name, $0.value) }))
 
             #expect(values["client_id"] == "desktop-client")
             #expect(values["redirect_uri"] == "http://localhost:8020")
@@ -81,12 +81,12 @@
 
         @Test
         func callbackRejectsStateMismatchAndOAuthErrorsWithoutLeakingDetails() throws {
-            let mismatch = URL(string: "http://127.0.0.1:8020/?code=secret-code&state=wrong")!
+            let mismatch = try #require(URL(string: "http://127.0.0.1:8020/?code=secret-code&state=wrong"))
             #expect(throws: DahliaCloudError.stateMismatch) {
                 try DahliaCloudService.authorizationCode(from: mismatch, expectedState: "right")
             }
 
-            let denied = URL(string: "http://127.0.0.1:8020/?error=access_denied&error_description=secret&state=right")!
+            let denied = try #require(URL(string: "http://127.0.0.1:8020/?error=access_denied&error_description=secret&state=right"))
             do {
                 _ = try DahliaCloudService.authorizationCode(from: denied, expectedState: "right")
                 Issue.record("Expected authorization failure")
@@ -96,7 +96,7 @@
                 #expect(!error.localizedDescription.contains("access_denied"))
             }
 
-            let forgedDenial = URL(string: "http://127.0.0.1:8020/?error=access_denied&state=wrong")!
+            let forgedDenial = try #require(URL(string: "http://127.0.0.1:8020/?error=access_denied&state=wrong"))
             #expect(throws: DahliaCloudError.stateMismatch) {
                 try DahliaCloudService.authorizationCode(from: forgedDenial, expectedState: "right")
             }
@@ -146,7 +146,7 @@
             #expect(credential.account == DahliaCloudAccount(id: "user-1", name: "User One", email: "user@example.com"))
             let requests = recorder.requests
             #expect(requests.contains { $0.url?.path == "/userinfo" })
-            #expect(!requests.contains { $0.url?.path == "/api/session" })
+            #expect(!requests.contains { $0.url?.path == "/api/v1/session" })
             let authorizationURL = try #require(recorder.authorizationURL)
             #expect(URLComponents(url: authorizationURL, resolvingAgainstBaseURL: false)?.queryItems?
                 .first(where: { $0.name == "client_id" })?.value == "databricks-cli")
@@ -170,7 +170,7 @@
             let credential = try await service.signIn()
 
             #expect(credential.account.id == "db-user")
-            #expect(recorder.requests.contains { $0.url?.path == "/api/session" })
+            #expect(recorder.requests.contains { $0.url?.path == "/api/v1/session" })
             let authorizationURL = try #require(recorder.authorizationURL)
             #expect(URLComponents(url: authorizationURL, resolvingAgainstBaseURL: false)?.queryItems?
                 .first(where: { $0.name == "client_id" })?.value == "databricks-cli")
@@ -638,8 +638,8 @@
         @Test
         func storedCredentialFromDifferentConfiguredOriginIsNotReused() async throws {
             let store = CloudCredentialStoreFake(credential: makeCredential(expirationDate: .distantFuture))
-            let service = DahliaCloudService(
-                configuration: try #require(DahliaCloudConfiguration.make(
+            let service = try DahliaCloudService(
+                configuration: #require(DahliaCloudConfiguration.make(
                     urlString: "https://replacement.example.com",
                     clientID: "desktop-client"
                 )),
@@ -869,7 +869,9 @@
                     ? ",\"revocation_endpoint\":\"https://accounts.example.com/revoke\""
                     : ""
                 body = """
-                {"issuer":"https://accounts.example.com","authorization_endpoint":"https://accounts.example.com/authorize","token_endpoint":"https://accounts.example.com/token","code_challenge_methods_supported":["S256"]\(userInfo)\(revocation)}
+                {"issuer":"https://accounts.example.com","authorization_endpoint":"https://accounts.example.com/authorize","token_endpoint":"https://accounts.example.com/token","code_challenge_methods_supported":["S256"]\(
+                    userInfo
+                )\(revocation)}
                 """
             case "/token":
                 let scope = tokenScope.map { ",\"scope\":\"\($0)\"" } ?? ""
@@ -879,8 +881,12 @@
                     : "{\"access_token\":\"\(accessToken)\",\"refresh_token\":\"signed-refresh\",\"token_type\":\"Bearer\",\"expires_in\":3600\(scope)}"
             case "/userinfo":
                 body = "{\"sub\":\"user-1\",\"name\":\"User One\",\"email\":\"user@example.com\"}"
-            case "/api/session":
-                body = "{\"user\":{\"id\":\"db-user\",\"name\":\"DB User\",\"email\":\"db@example.com\"}}"
+            case "/api/v1/session":
+                body = """
+                {"user":{"id":"db-user","name":"DB User","email":"db@example.com"},
+                "capabilities":{"admin":false,"sessions":false,"sync":true,"sharing":true},
+                "workspace":{"id":"db-user","type":"personal"}}
+                """
             default:
                 body = "{}"
             }

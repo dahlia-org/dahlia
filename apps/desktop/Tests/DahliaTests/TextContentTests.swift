@@ -144,14 +144,14 @@
             let header: [String: Any] = [
                 "id": fileId.uuidString, "vaultId": fixture.vaultId.uuidString, "revision": 2,
                 "contentOmitted": true, "contentPresent": true, "contentCount": 2,
-                "uri": "/Volumes/test/app/files/original", "offset": 0, "size": 3, "content_type": "image/png",
+                "uri": "/Volumes/test/app/files/original", "offset": 0, "size": 3, "contentType": "image/png",
                 "checksum": checksum,
                 "name": "image", "metadata": ["source": "screenshot"],
                 "createdAt": "2026-01-01T00:00:00.000Z", "updatedAt": "2026-01-01T00:00:01.000Z",
             ]
             let headerData = try JSONSerialization.data(withJSONObject: header)
             let bodyData = try JSONSerialization.data(withJSONObject: header.merging([
-                "metadata": ["source": "screenshot", "ocr_text": "", "caption": "Server caption during recording"],
+                "metadata": ["source": "screenshot", "ocrText": "", "caption": "Server caption during recording"],
             ]) { _, new in new })
             let connectionId = try await fixture.queue.write { db -> UUID in
                 let connectionId = try #require(try VaultRecord.fetchOne(db, key: fixture.vaultId)?.accountConnectionId)
@@ -210,7 +210,7 @@
             let calls = Mutex<[String]>([])
             let provider = provider(fixture) { request in
                 calls.withLock { $0.append(request.url!.path) }
-                #expect(request.url!.path == "/api/v1/files/\(fileId.uuidString.lowercased())/metadata")
+                #expect(request.url!.path == "/api/v1/files/\(fileId.uuidString.lowercased())")
                 #expect(request.url!.query == nil)
                 return (200, [:], bodyData)
             }
@@ -614,7 +614,7 @@
             let manifestData = try JSONSerialization.data(withJSONObject: manifest)
             let bodyData = try JSONSerialization.data(withJSONObject: body)
             let provider = provider(fixture) { request in
-                if request.url!.path.contains("/summary/") {
+                if request.url!.path.contains("/summaries/") {
                     return (200, [:], (request.url!.query ?? "").contains("manifest") ? manifestData : bodyData)
                 }
                 return fixture.response(request)
@@ -1009,8 +1009,8 @@
             let fixture = try textFixture()
             let queries = Mutex<[String]>([])
             let provider = provider(fixture) { request in
-                let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!.queryItems!
-                    .first { $0.name == "q" }!.value!
+                #expect(request.httpMethod == "POST")
+                let query = ImageURLProtocol.requestJSON(request)?["query"] as? String ?? ""
                 queries.withLock { $0.append(query) }
                 return (200, [:], Data(#"{"version":1,"scope":"server","items":[],"nextCursor":null}"#.utf8))
             }
@@ -1059,7 +1059,11 @@
             let calls = Mutex(0)
             let provider = provider(fixture) { request in
                 calls.withLock { $0 += 1 }
-                let next = request.url!.query!.contains("cursor=")
+                #expect(request.httpMethod == "POST")
+                #expect(request.url?.path == "/api/v1/vaults/\(fixture.vaultId.uuidString.lowercased())/text-search")
+                let input = ImageURLProtocol.requestJSON(request)
+                #expect(input?["query"] as? String == "match")
+                let next = input?["cursor"] as? String == "next"
                 let id = next ? includedId : fixture.meetingId
                 let body: [String: Any] = [
                     "version": 1,
@@ -1358,7 +1362,7 @@
                     {"items":[],"cursor":"\(cursor)","highWaterCursor":"\(cursor)","hasMore":false}
                     """.utf8))
                 }
-                if path.contains("/summary/") { return (200, [:], summaryManifest) }
+                if path.contains("/summaries/") { return (200, [:], summaryManifest) }
                 if scenario == "textFailure" { return (503, [:], Data()) }
                 return fixture.response(request)
             }
@@ -1436,6 +1440,8 @@
             let payload = try JSONSerialization.data(withJSONObject: [
                 "items": [[
                     "sequence": 1,
+                    "vaultId": fixture.vaultId.uuidString,
+                    "transactionId": UUID.v7().uuidString,
                     "entity": "transcript",
                     "entityId": fixture.meetingId.uuidString,
                     "action": "upsert",
@@ -1494,11 +1500,11 @@
             let body: [String: Any] = entity == .summary
                 ? manifest.merging(["record": ["title": "Remote", "document": document, "createdAt": "2026-01-01T00:00:00.000Z"]]) { _, new in new }
                 : [
-                    "id": id.uuidString,
-                    "vaultId": fixture.vaultId.uuidString,
-                    "revision": 3,
+                    "id": id.uuidString, "vaultId": fixture.vaultId.uuidString, "revision": 3,
+                    "size": 0, "contentType": "image/png", "name": "image",
+                    "createdAt": "2026-01-01T00:00:00Z", "updatedAt": "2026-01-01T00:00:00Z",
                     "checksum": "SHA-256:" + String(repeating: "0", count: 64),
-                    "metadata": ["source": "screenshot", "ocr_text": NSNull(), "caption": "cloudcaption"],
+                    "metadata": ["source": "screenshot", "ocrText": NSNull(), "caption": "cloudcaption"],
                 ]
             let bodyData = try JSONSerialization.data(withJSONObject: body)
             try await fixture.queue.write { db in
@@ -1718,6 +1724,7 @@
                     "createdAt": NSNull(),
                 ]
                 pages.append([
+                    "entityId": meetingId.uuidString, "entity": "transcript", "present": true,
                     "formatVersion": 1, "version": 1,
                     "syncRevision": 3,
                     "sha256": pageDigest.digestHex(),

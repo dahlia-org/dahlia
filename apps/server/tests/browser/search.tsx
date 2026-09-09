@@ -11,14 +11,16 @@ let release: (() => void) | undefined;
 let aborted = false;
 const image = "data:image/svg+xml," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400"><rect width="600" height="400" fill="#ddd"/></svg>');
 window.fetch = async (input, init) => {
-  const path = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+  const request = input instanceof Request ? input : new Request(new URL(input, location.origin), init);
+  const path = new URL(request.url).pathname;
   if (path.endsWith("/projects")) return Response.json({ items: [{ projectId: "p1", path: "Parent / Child" }] });
-  if (path.endsWith("/metadata")) return Response.json({ id: "f1", name: "Image", content_type: "image/png", variants: { thumb_1568: image }, metadata: { caption: "Image preview" } });
-  if (path !== "/api/v1/search") throw new Error(`Unexpected URL: ${path}`);
-  const body = JSON.parse(init?.body as string) as { query: string; vaultId: string };
+  if (path === "/api/v1/files/f1") return Response.json({ id: "f1", name: "Image", contentType: "image/png", variants: { thumb_1568: image }, metadata: { caption: "Image preview" } });
+  if (!/^\/api\/v1\/vaults\/[^/]+\/search$/.test(path)) throw new Error(`Unexpected URL: ${path}`);
+  const inputBody: { query: string } = await request.json();
+  const body = { ...inputBody, vaultId: path.split("/")[4]! };
   requests.push(body);
   if (body.query === "slow") {
-    await new Promise<void>((resolve) => { release = resolve; init?.signal?.addEventListener("abort", () => { aborted = true; resolve(); }); });
+    await new Promise<void>((resolve) => { release = resolve; request.signal.addEventListener("abort", () => { aborted = true; resolve(); }); });
   }
   return Response.json({ vaultId: body.vaultId,
     meetings: Array.from({ length: 30 }, (_, i) => ({ id: `m${i}`, meetingId: `m${i}`, kind: "meeting", title: `${body.query || "Recent"} ${i}`, date: "2026-09-03T00:00:00Z", snippet: "Summary", projectPath: "Parent / Child" })),
@@ -57,7 +59,7 @@ async function run() {
   const thumbnail = document.querySelector<HTMLImageElement>(".search-result img")!;
   assert(thumbnail.getAttribute("src") === "/api/v1/files/f1/variants/thumb_480", "Thumbnail route must select bounded variant");
   thumbnail.dispatchEvent(new Event("error"));
-  assert(thumbnail.getAttribute("src") === "/api/v1/files/f1", "Unavailable variant must fall back to original");
+  assert(thumbnail.getAttribute("src") === "/api/v1/files/f1/content", "Unavailable variant must fall back to original");
   input().dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true })); type("契約");
   key("k", input(), { ctrlKey: true, isComposing: true });
   await new Promise(requestAnimationFrame);

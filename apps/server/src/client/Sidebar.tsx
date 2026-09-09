@@ -1,3 +1,4 @@
+import { apiQuery, mapQuery } from "./live-data";
 import { collectionAppearance, AppearanceIcon, projectAppearance, type Appearance } from "./AppearancePicker";
 import { Tooltip } from "./Tooltip";
 import { Search } from "./Search";
@@ -9,16 +10,13 @@ import type { SessionInfo } from "./App";
 import type { OrganizationInfo, SyncedMeetingInfo, SyncedProjectInfo, SyncedVaultInfo } from "./api";
 import { json, RequestError, uiText } from "./api";
 
-export function vaultListURL(organizationId: string) {
-  return organizationId ? `/api/v1/vaults?${new URLSearchParams({ organizationId })}` : "/api/v1/vaults";
-}
 
 export function projectAncestors(projects: SyncedProjectInfo[], projectId?: string): Set<string> {
   const parents = new Map(projects.map((project) => [project.projectId, project.parentProjectId]));
   const result = new Set<string>();
   while (projectId && parents.has(projectId) && !result.has(projectId)) {
     result.add(projectId);
-    projectId = parents.get(projectId);
+    projectId = parents.get(projectId) ?? undefined;
   }
   return result;
 }
@@ -57,15 +55,12 @@ export function useSidebar() {
 
 export function SidebarProvider({ session, children }: { session: SessionInfo; children: ReactNode }) {
   const [organizationId, setOrganizationId] = useState(() => session.capabilities.sharing ? readSelection(`dahlia:sidebar:${session.user.id}:organization`) : "");
-  let organizationsURL: string | undefined;
-  if (session.capabilities.sharing) {
-    organizationsURL = session.capabilities.sessions ? "/api/auth/organization/list" : "/api/v1/organizations";
-  }
-  const organizationsQuery = useLiveJSON<OrganizationInfo[]>(organizationsURL);
+  const organizationsQuery = useLiveJSON<OrganizationInfo[]>(!session.capabilities.sharing ? undefined
+    : session.capabilities.sessions ? "/api/auth/organization/list" : mapQuery(apiQuery("listOrganizations", {}), ({ items }) => items));
   const organizations = organizationsQuery.data;
   const organizationAllowed = !organizationId || organizations?.some(({ id }) => id === organizationId);
   const vaultsQuery = useLiveJSON<{ items: SyncedVaultInfo[] }>(session.capabilities.sync && organizationAllowed
-    ? vaultListURL(organizationId) : undefined);
+    ? apiQuery("listVaults", { params: { query: { organizationId: organizationId || undefined } } }) : undefined);
   const select = (id: string) => {
     save(`dahlia:sidebar:${session.user.id}:organization`, id);
     setOrganizationId(id);
@@ -155,7 +150,7 @@ export function Sidebar({ brand, session, children, serverLinks, routeVaultId: r
     : uiText("No organization selected", "組織未選択");
   const routeVaultId = resolvedVaultId ?? (typeof window === "undefined" ? undefined : window.location.pathname.match(/^\/vaults\/([^/]+)/)?.[1]);
   const selectionKey = `dahlia:sidebar:${session.user.id}:${state.organizationId || "personal"}:vault`;
-  const routedVault = useLiveJSON<SyncedVaultInfo>(resolvedVaultId ? `/api/v1/vaults/${resolvedVaultId}` : undefined);
+  const routedVault = useLiveJSON<SyncedVaultInfo>(resolvedVaultId ? apiQuery("getVault", { params: { path: { vaultId: resolvedVaultId } } }) : undefined);
   const selectedVault = selectedSidebarVault(state.vaults, routeVaultId, readSelection(selectionKey)) ?? routedVault.data;
   const selectedVaultId = selectedVault?.vaultId;
   const selectableVaults = selectedVault && !state.vaults?.some((vault) => vault.vaultId === selectedVaultId)
@@ -259,14 +254,14 @@ function VaultChildren({ vaultId }: { vaultId: string }) {
   const route = window.location.pathname;
   const meetingId = route.match(/^\/meetings\/([^/]+)$/)?.[1];
   const projectId = route.match(/^\/projects\/([^/]+)$/)?.[1];
-  const projectsQuery = useLiveJSON<{ items: SyncedProjectInfo[] }>(`/api/v1/vaults/${vaultId}/projects`);
-  const meetingQuery = useLiveJSON<SyncedMeetingInfo>(meetingId ? `/api/v1/vaults/${vaultId}/meetings/${meetingId}` : undefined);
+  const projectsQuery = useLiveJSON<{ items: SyncedProjectInfo[] }>(apiQuery("listProjects", { params: { path: { vaultId: vaultId } } }));
+  const meetingQuery = useLiveJSON<SyncedMeetingInfo>(meetingId ? apiQuery("getMeeting", { params: { path: { meetingId: meetingId } } }) : undefined);
   const projects = projectsQuery.data?.items;
   const selectedMeeting = meetingQuery.data;
   if (!projects) return projectsQuery.error
     ? <Failure message={projectsQuery.error.message} retry={projectsQuery.reload} />
     : <p className="sidebar-status">{uiText("Loading Projects…", "プロジェクトを読み込み中…")}</p>;
-  const ancestors = projectAncestors(projects, projectId ?? selectedMeeting?.projectId);
+  const ancestors = projectAncestors(projects, projectId ?? selectedMeeting?.projectId ?? undefined);
   const childrenByParent = new Map<string | undefined, SyncedProjectInfo[]>();
   for (const project of projects) {
     const parent = project.parentProjectId ?? undefined;
@@ -295,8 +290,8 @@ function VaultChildren({ vaultId }: { vaultId: string }) {
 }
 
 function Meetings({ vaultId, projectId, selectedMeeting }: { vaultId: string; projectId?: string; selectedMeeting?: SyncedMeetingInfo }) {
-  const params = new URLSearchParams(projectId ? { projectId, projectScope: "direct" } : { projectScope: "unassigned" });
-  const query = useLivePage<SyncedMeetingInfo>(`/api/v1/vaults/${vaultId}/meetings?${params}`);
+  const filters = projectId ? { projectId, projectScope: "direct" as const } : { projectScope: "unassigned" as const };
+  const query = useLivePage<SyncedMeetingInfo>(apiQuery("listMeetings", { params: { path: { vaultId }, query: filters } }));
   const items = query.data?.items ?? [];
   const nextCursor = query.data?.nextCursor;
   const loading = query.loading;

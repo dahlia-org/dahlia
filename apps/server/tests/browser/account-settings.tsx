@@ -19,15 +19,16 @@ function gate() {
   return { promise: new Promise<void>((resolve) => { release = resolve; }), release: () => release() };
 }
 window.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
-  const path = new URL(input instanceof Request ? input.url : input, location.origin).pathname;
+  const request = input instanceof Request ? input : new Request(new URL(input, location.origin), init);
+  const path = new URL(request.url).pathname;
   if (path === "/api/v1/capabilities") return Response.json({ meetingSummaryGeneration: { version: 1, sources: ["transcript", "audio"] } });
   if (path === "/api/v1/models") {
     modelReads++;
     return Response.json(modelList([{ id: "gpt-5.4" }, { id: "gemini-3-8-flash" }]));
   }
   if (path !== "/api/v1/account/settings") throw new Error(`Unexpected fixture request ${path}`);
-  if (init?.method === "PATCH") {
-    const patch = JSON.parse(init.body as string) as AccountSettingsPatch;
+  if (request.method === "PATCH") {
+    const patch: AccountSettingsPatch = await request.json();
     patches.push(patch);
     if (failPatch) return Response.json({ error: "save_failed" }, { status: 503 });
     await patchGate?.promise;

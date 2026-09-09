@@ -60,12 +60,16 @@
                     operation.id: SyncScreenshotAttachmentReference(mimeType: "image/png", source: fixture.source),
                 ], in: db))
             }
-            let uploadRecord: [String: JSONValue] = try [
+            let metadataData = try SyncJSON.encoder.encode(payload.metadata)
+            var wireMetadata: [String: JSONValue] = [:]
+            wireMetadata = try SyncJSON.decoder.decode(type(of: wireMetadata), from: metadataData)
+            wireMetadata["ocrText"] = wireMetadata.removeValue(forKey: "ocr_text")
+            let uploadRecord: [String: JSONValue] = [
                 "id": .string(fixture.screenshotId.uuidString), "vaultId": .string(fixture.vaultId.uuidString),
                 "size": .number(Double(fixture.bytes.count)), "checksum": .string(payload.checksum),
                 "uri": .string("/Volumes/test/app/files/files/\(fixture.screenshotId.uuidString.lowercased())/original"),
-                "offset": .number(0), "content_type": .string("image/png"), "name": .string(filename),
-                "metadata": SyncJSON.decoder.decode(JSONValue.self, from: SyncJSON.encoder.encode(payload.metadata)),
+                "offset": .number(0), "contentType": .string("image/png"), "name": .string(filename),
+                "metadata": .object(wireMetadata),
                 "revision": .number(1), "createdAt": .string("2026-09-07T00:00:00Z"), "updatedAt": .string("2026-09-07T00:00:00Z"),
             ]
             let uploaded = try SyncJSON.encoder.encode(uploadRecord)
@@ -94,7 +98,7 @@
                     defer { stream.close() }
                     var body = Data()
                     var buffer = [UInt8](repeating: 0, count: 1024)
-                    while stream.hasBytesAvailable {
+                    while true {
                         let count = stream.read(&buffer, maxLength: buffer.count)
                         if count <= 0 { break }
                         body.append(contentsOf: buffer.prefix(count))
@@ -106,7 +110,8 @@
                 if path == "/api/v1/transactions/resolve" {
                     return (200, [:], Data("{\"id\":\"\(transactionId)\",\"status\":\"unknown\"}".utf8))
                 }
-                if path == "/api/v1/files" {
+                if path == "/api/v1/file-uploads" { return (201, [:], uploaded) }
+                if path == "/api/v1/file-uploads/\(fixture.screenshotId.uuidString.lowercased())/content" {
                     let first = requests.withLock { $0.filter { $0.url?.path == path }.count } == 1
                     return (first ? 201 : 200, [:], first ? firstUpload : uploaded)
                 }
@@ -147,27 +152,30 @@
             }
             await worker.stop()
             let all = requests.withLock { $0 }
-            let uploads = all.filter { $0.url?.path == "/api/v1/files" }
+            let uploads = all.filter { $0.url?.path == "/api/v1/file-uploads/\(fixture.screenshotId.uuidString.lowercased())/content" }
             #expect(uploads.count == 2)
             for upload in uploads {
-                #expect(upload.httpMethod == "POST")
+                #expect(upload.httpMethod == "PUT")
                 #expect(upload.httpBody == fixture.bytes)
-                #expect(upload.value(forHTTPHeaderField: "Content-Type") == "image/png")
+                #expect(upload.value(forHTTPHeaderField: "Content-Type") == "application/octet-stream")
                 #expect(upload.value(forHTTPHeaderField: "Content-Length") == String(fixture.bytes.count))
-                let url = try #require(upload.url)
-                let components = try #require(URLComponents(url: url, resolvingAgainstBaseURL: false))
-                let query = Dictionary(uniqueKeysWithValues: (components.queryItems ?? []).map { ($0.name, $0.value ?? "") })
-                #expect(query == [
-                    "id": fixture.screenshotId.uuidString.lowercased(),
-                    "vaultId": fixture.vaultId.uuidString.lowercased(),
-                    "name": filename,
-                    "source": "screenshot",
-                    "width": "1800",
-                    "height": "900",
-                ])
-                #expect(upload.url?.absoluteString.contains("%2B") == true)
+                #expect(upload.url?.query == nil)
             }
-            #expect(!all.contains { $0.httpMethod == "PUT" })
+            let reservations = all.filter { $0.url?.path == "/api/v1/file-uploads" }
+            #expect(reservations.count == 2)
+            for reservation in reservations {
+                let data = try #require(reservation.httpBody)
+                let body = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+                #expect(reservation.httpMethod == "POST")
+                #expect(body["id"] as? String == fixture.screenshotId.uuidString.lowercased())
+                #expect(body["vaultId"] as? String == fixture.vaultId.uuidString.lowercased())
+                #expect(body["name"] as? String == filename)
+                #expect(body["contentType"] as? String == "image/png")
+                let metadata = try #require(body["metadata"] as? [String: Any])
+                #expect(metadata["source"] as? String == "screenshot")
+                #expect(metadata["width"] as? Int == 1800)
+                #expect(metadata["height"] as? Int == 900)
+            }
             let resolves = try all.filter { request in
                 guard request.url?.path == "/api/v1/transactions/resolve", let body = request.httpBody else { return false }
                 let object = try JSONSerialization.jsonObject(with: body) as? [String: Any]
@@ -292,7 +300,7 @@
             let provider = try makeProvider(fixture: fixture, cache: ScreenshotFileStore(directory: root)) { request in
                 let variant = request.url!.path.hasSuffix("variants/thumb_480") ? "thumb_480" : "original"
                 if variant == "original" {
-                    #expect(request.url!.path == "/api/v1/files/\(fixture.source.fileId.uuidString.lowercased())")
+                    #expect(request.url!.path == "/api/v1/files/\(fixture.source.fileId.uuidString.lowercased())/content")
                 }
                 variants.withLock { $0.append(variant) }
                 return (200, [
@@ -947,18 +955,19 @@
                 Data("{\"items\":[],\"cursor\":\"after\",\"highWaterCursor\":\"after\",\"hasMore\":false}".utf8)
             )
         }
-        if url.path.hasSuffix("/metadata") {
+        if url.path.hasPrefix("/api/v1/files/"), UUID(uuidString: url.lastPathComponent) != nil {
             do {
-                let id = try #require(UUID(uuidString: url.deletingLastPathComponent().lastPathComponent))
+                let id = try #require(UUID(uuidString: url.lastPathComponent))
                 let data = try queue.read { db in
                     let file = try #require(try FileRecord.fetchOne(db, key: id))
                     let source = try #require(try TextContentStore.source(entity: .file, id: id, in: db))
                     let body = try TextContentAccess.cachedFileText(fileId: id, in: db)
                     return try JSONSerialization.data(withJSONObject: [
                         "id": id.uuidString, "vaultId": source.vaultId.uuidString, "revision": source.revision,
-                        "checksum": file.checksum, "metadata": [
+                        "checksum": file.checksum, "name": file.name, "contentType": file.contentType, "size": file.size,
+                        "createdAt": "2026-09-07T00:00:00Z", "updatedAt": "2026-09-07T00:00:00Z", "metadata": [
                             "source": "screenshot",
-                            "ocr_text": body?.ocrText as Any? ?? NSNull(),
+                            "ocrText": body?.ocrText as Any? ?? NSNull(),
                             "caption": body?.caption as Any? ?? NSNull(),
                         ],
                     ])
@@ -966,8 +975,8 @@
                 return (200, [:], data)
             } catch { return (500, [:], Data()) }
         }
-        let isLatestSummary = url.path.hasSuffix("/summary/latest")
-        guard isLatestSummary || url.path.hasSuffix("/transcript/latest") else { return nil }
+        let isLatestSummary = url.path.hasSuffix("/summaries/latest")
+        guard isLatestSummary || url.path.hasSuffix("/transcripts/latest") else { return nil }
         do {
             let resourceURL = url.deletingLastPathComponent().deletingLastPathComponent()
             let id = try #require(UUID(uuidString: resourceURL.lastPathComponent))
@@ -1099,6 +1108,21 @@
 
     /// URLProtocol callbacks are synchronous here; handler registration is protected across parallel tests.
     final class ImageURLProtocol: URLProtocol, @unchecked Sendable {
+        nonisolated static func requestJSON(_ request: URLRequest) -> [String: Any]? {
+            var bytes = request.httpBody ?? Data()
+            if let stream = request.httpBodyStream, request.httpBody == nil {
+                stream.open()
+                defer { stream.close() }
+                var buffer = [UInt8](repeating: 0, count: 1024)
+                while true {
+                    let count = stream.read(&buffer, maxLength: buffer.count)
+                    if count <= 0 { break }
+                    bytes.append(buffer, count: count)
+                }
+            }
+            return (try? JSONSerialization.jsonObject(with: bytes)) as? [String: Any]
+        }
+
         typealias Handler = @Sendable (URLRequest) -> (Int, [String: String], Data)
         private static let handlers = Mutex<[String: Handler]>([:])
 
