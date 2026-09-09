@@ -26,7 +26,7 @@ enum TextContentMigration {
             ocrText TEXT,
             caption TEXT
         );
-        INSERT INTO transcript_segment_bodies SELECT id, text FROM transcript_segments;
+        INSERT INTO transcript_segment_bodies SELECT id, text FROM transcript_segments WHERE isConfirmed = 1;
         INSERT INTO summary_bodies SELECT meetingId, document FROM summaries;
         INSERT INTO file_text_bodies
             SELECT id, json_extract(metadata, '$.ocr_text'), json_extract(metadata, '$.caption') FROM files;

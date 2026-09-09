@@ -13,44 +13,13 @@ import os
     // swiftlint:disable:next type_body_length
     struct AppDatabaseManagerTests {
         @Test
-        func canonicalAppearanceMigrationPreservesSavedValues() throws {
-            let queue = try DatabaseQueue()
-            try AppDatabaseManager.migrator.migrate(queue, upTo: "v52_vaultRelocation")
-            let vaultID = UUID.v7()
-            let projectID = UUID.v7()
-            try queue.write { db in
-                try db.execute(
-                    sql: "INSERT INTO vaults (id, name, createdAt, lastOpenedAt, appearance) VALUES (?, 'Saved', ?, ?, ?)",
-                    arguments: [vaultID, Date.now, Date.now, #"{"icon":"archivebox","color":"green"}"#]
-                )
-                try db.execute(
-                    sql: """
-                    INSERT INTO projects (id, vaultId, name, nameKey, createdAt, projectType, icon, appearance)
-                    VALUES (?, ?, 'Saved', 'saved', ?, 'undefined', 'star', ?)
-                    """,
-                    arguments: [projectID, vaultID, Date.now, #"{"icon":"folder","color":"blue"}"#]
-                )
-            }
-            try AppDatabaseManager.migrator.migrate(queue)
-            try queue.read { db in
-                let vault = try #require(try VaultRecord.fetchOne(db, key: vaultID))
-                let project = try #require(try ProjectRecord.fetchOne(db, key: projectID))
-                #expect(vault.icon == "archivebox" && vault.color == "green")
-                #expect(project.icon == "star" && project.color == "blue")
-                #expect(project.vaultId == vaultID)
-                #expect(try !db.columns(in: "projects").contains { $0.name == "appearance" })
-                #expect(try !db.columns(in: "vaults").contains { $0.name == "appearance" })
-            }
-        }
-
-        @Test
         func collectionAppearanceMigrationPreservesExistingRows() throws {
             let queue = try DatabaseQueue()
-            try AppDatabaseManager.migrator.migrate(queue, upTo: "v50_transcriptActivity")
+            try AppDatabaseManager.migrator.migrate(queue, upTo: "v41_vaultAISettingsBackfill")
             let vaultID = UUID.v7()
             try queue.write { db in
                 try db.execute(
-                    sql: "INSERT INTO vaults (id, name, createdAt, lastOpenedAt) VALUES (?, ?, ?, ?)",
+                    sql: "INSERT INTO vaults (id, path, name, createdAt, lastOpenedAt) VALUES (?, '/tmp/preserved', ?, ?, ?)",
                     arguments: [vaultID, "Preserved", Date.now, Date.now]
                 )
             }

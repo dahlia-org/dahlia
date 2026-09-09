@@ -9,3 +9,15 @@
 - Update versions during release preparation, not as part of ordinary feature or fix changes.
 - Treat `CFBundleVersion` as an integer build number independent of the marketing version. Increase it from the latest published build for every newly published distribution artifact, including a replacement with the same marketing version. Local builds and unpublished attempts do not require an increment.
 - During release preparation, update `CFBundleShortVersionString` and `CFBundleVersion` together in `Resources/Info.plist`.
+
+## v0.21.0 以降の未配布 DB マイグレーション
+
+v0.21.0（2026-09-01、`a2bb5d3b`）の最終マイグレーションは `v41_vaultAISettingsBackfill`。
+次のリリースでは、未配布だった v42〜v54（v51 の2件を含む）を `v42_localFirstSchema` に統合した。
+v41 以前の登録名・順序・処理は維持し、公開版からの更新と新規 DB の作成は同じ経路を使う。
+同期キューは最終形式で作成し、既存の会議・録音・画像・本文の変換を単一トランザクションで適用する。
+失敗時には v41 の状態にロールバックして再試行できる。以後の変更はこの統合版の末尾へ追加する。
+
+旧 v42〜v54 を適用した開発・QA DB は配布対象外で、自動互換移行は設けない。
+空の QA 環境ではアプリを終了して、対象の開発プロファイルの SQLite ファイルと WAL/SHM を退避してから再起動する。
+`grdb_migrations` だけを書き換えて再適用しない。通常利用中の `Application Support/Dahlia` の DB はこの作業の対象外。

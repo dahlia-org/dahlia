@@ -10,7 +10,7 @@ import GRDB
         @Test
         func upgradePreservesVectorsAndJobsButStopsEnqueueing() throws {
             let queue = try DatabaseQueue(configuration: AppDatabaseManager.configuration())
-            try AppDatabaseManager.migrator.migrate(queue, upTo: "v43_syncRecovery")
+            try AppDatabaseManager.migrator.migrate(queue, upTo: "v41_vaultAISettingsBackfill")
             let documentID = try queue.write { db in
                 try db.execute(sql: "UPDATE search_index_state SET isEnabled = 1 WHERE indexKind = 'vector'")
                 try db.execute(

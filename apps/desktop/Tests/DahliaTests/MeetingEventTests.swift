@@ -8,51 +8,6 @@
     @MainActor
     struct MeetingEventTests {
         @Test
-        func migrationPreservesPendingTranscriptPayloadsAndIdentifiers() throws {
-            let queue = try DatabaseQueue()
-            try AppDatabaseManager.migrator.migrate(queue, upTo: "v46_textContent")
-            let connection = DahliaAccountConnectionRecord(id: .v7(), origin: "https://events.invalid", clientID: "test", createdAt: .now)
-            let transactionId = UUID.v7()
-            let operationId = UUID.v7()
-            let vaultId = UUID.v7()
-            try queue.write { db in
-                try connection.insert(db)
-                try db.execute(
-                    sql: "INSERT INTO vaults(id, name, createdAt, lastOpenedAt) VALUES (?, 'Existing', ?, ?)",
-                    arguments: [vaultId, Date.now, Date.now]
-                )
-                try db.execute(
-                    sql: "INSERT INTO sync_transactions(id, vaultId, connectionId, createdAt, availableAt) VALUES (?, ?, ?, ?, ?)",
-                    arguments: [transactionId, vaultId, connection.id, Date(), Date()]
-                )
-                try db.execute(
-                    sql: "INSERT INTO sync_operations(transactionId, position, id, entity, action, entityId, payloadJSON) VALUES (?, 0, ?, 'transcript', 'patch', ?, ?)",
-                    arguments: [transactionId, operationId, UUID.v7(), "immutable payload"]
-                )
-                try db.execute(sql: """
-                INSERT INTO sync_transcript_patch_items(operationId, position, action, segmentId, startTime, text, isConfirmed)
-                VALUES (?, 0, 'upsert', ?, ?, 'pending original transcript', 1)
-                """, arguments: [operationId, UUID.v7(), Date()])
-            }
-            try AppDatabaseManager.migrator.migrate(queue)
-            try queue.write { db in
-                #expect(try String
-                    .fetchOne(db, sql: "SELECT text FROM sync_transcript_patch_items WHERE operationId = ?", arguments: [operationId]) ==
-                    "pending original transcript")
-                #expect(try String
-                    .fetchOne(db, sql: "SELECT payloadJSON FROM sync_operations WHERE id = ?", arguments: [operationId]) == "immutable payload")
-                #expect(try UUID.fetchOne(db, sql: "SELECT id FROM sync_transactions") == transactionId)
-                #expect(try Int.fetchOne(db, sql: "SELECT syncMeetingEventsVersion FROM vaults WHERE id = ?", arguments: [vaultId]) == 0)
-                #expect(try Row.fetchAll(db, sql: "PRAGMA foreign_key_check").isEmpty)
-                try MeetingEventMigration.migrate(in: db)
-                try db.execute(
-                    sql: "INSERT INTO sync_operations(transactionId, position, id, entity, action, entityId) VALUES (?, 1, ?, 'meeting_event', 'create', ?)",
-                    arguments: [transactionId, UUID.v7(), UUID.v7()]
-                )
-            }
-        }
-
-        @Test
         func recordsOnlyActualTagChangesOnSupportedServerVaults() throws {
             let fixture = try BatchAudioTestFixture(name: "MeetingEventsTags")
             defer { fixture.removeFiles() }

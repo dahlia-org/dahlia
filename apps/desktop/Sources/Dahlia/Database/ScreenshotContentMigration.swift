@@ -2,7 +2,7 @@ import DahliaRuntimeSupport
 import Foundation
 import GRDB
 
-/// v45 is unreleased. Released BLOBs remain recoverable until the file provider verifies their originals.
+/// Released BLOBs remain recoverable until the file provider verifies their originals.
 enum ScreenshotContentMigration {
     static func migrate(in db: Database) throws {
         guard try db.tableExists("screenshots"), try db.tableExists("meetings") else { return }
@@ -36,134 +36,9 @@ enum ScreenshotContentMigration {
             ).insert(db)
             try db.execute(sql: "INSERT INTO file_migration_content(fileId, imageData) VALUES (?, ?)", arguments: [id, bytes])
         }
-        if try db.tableExists("sync_operations") { try migrateOperations(in: db) }
         try db.execute(sql: "DROP TABLE screenshots")
         try db.execute(sql: imageViewSQL)
         if try db.tableExists("search_index_jobs") { try db.execute(sql: searchTriggersSQL) }
-        if try db.tableExists("sync_entity_state") {
-            try db.execute(sql: "DELETE FROM sync_entity_state WHERE entity = 'screenshot'")
-            try db.execute(sql: "UPDATE vaults SET syncPullCursor = NULL WHERE accountConnectionId IS NOT NULL")
-        }
-    }
-
-    private static func migrateOperations(in db: Database) throws {
-        // Materialize old attachment guards before replacing their source table.
-        try db.execute(sql: """
-        UPDATE sync_operations SET attachmentBytes = (
-            SELECT imageData FROM screenshots WHERE screenshots.id = sync_operations.entityId
-        ) WHERE entity = 'screenshot' AND attachmentMimeType IS NOT NULL AND attachmentBytes IS NULL;
-        DROP TRIGGER IF EXISTS sync_screenshot_attachment_before_update;
-        DROP TRIGGER IF EXISTS sync_screenshot_attachment_before_delete;
-        """)
-        guard let originalSQL = try String.fetchOne(db, sql: "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'sync_operations'")
-        else { return }
-        let replacement = originalSQL.replacingOccurrences(of: "sync_operations", with: "sync_operations_v45")
-            .replacingOccurrences(of: "'transcript', 'screenshot'", with: "'transcript', 'file', 'meeting_file'")
-            .replacingOccurrences(of: "entity = 'screenshot'", with: "entity = 'file'")
-            .replacingOccurrences(of: "attachmentBytes BLOB,", with: "attachmentBytes BLOB, attachmentReference TEXT,")
-        try db.execute(sql: replacement)
-        try db.execute(sql: """
-        INSERT INTO sync_operations_v45 SELECT *, NULL FROM sync_operations WHERE entity != 'screenshot';
-        """)
-        let operations = try Row.fetchAll(db, sql: """
-        SELECT o.*, t.vaultId, t.createdAt, t.sequence FROM sync_operations o JOIN sync_transactions t ON t.id = o.transactionId
-        WHERE o.entity = 'screenshot' ORDER BY t.sequence, o.position
-        """)
-        var changedTransactions: Set<UUID> = []
-        for row in operations {
-            let transactionId: UUID = row["transactionId"]
-            let id: UUID = row["entityId"]
-            let oldOperationId: UUID = row["id"]
-            let action: String = row["action"]
-            changedTransactions.insert(transactionId)
-            let position: Int = row["position"]
-            let payload = try (row["payloadJSON"] as String?).flatMap {
-                try JSONSerialization.jsonObject(with: Data($0.utf8)) as? [String: Any]
-            }
-            if action == "delete" {
-                try db.execute(sql: """
-                INSERT INTO sync_operations_v45(transactionId, position, id, entity, action, entityId, baseRevision, payloadJSON)
-                VALUES (?, ?, ?, 'meeting_file', 'delete', ?, ?, '{}')
-                """, arguments: [transactionId, position, oldOperationId, id, row["baseRevision"] as Int?])
-                continue
-            }
-            var file = try FileRecord.fetchOne(db, key: id)
-            // A later deletion supersedes an attachment-free OCR update whose original no longer exists.
-            if file == nil, row["attachmentMimeType"] as String? == nil,
-               try Bool.fetchOne(db, sql: """
-               SELECT EXISTS(
-                   SELECT 1 FROM sync_operations d JOIN sync_transactions t ON t.id = d.transactionId
-                   WHERE t.vaultId = ? AND d.action = 'delete'
-                     AND (t.sequence > ? OR (t.sequence = ? AND d.position > ?))
-                     AND ((d.entity = 'screenshot' AND d.entityId = ?) OR (d.entity = 'meeting' AND d.entityId = ?))
-               )
-               """, arguments: [
-                   row["vaultId"] as UUID, row["sequence"] as Int64, row["sequence"] as Int64, position,
-                   id, (payload?["meetingId"] as? String).flatMap(UUID.init(uuidString:)),
-               ]) == true { continue }
-            if file == nil, let bytes: Data = row["attachmentBytes"], let mime: String = row["attachmentMimeType"] {
-                let date: Date = row["createdAt"]
-                file = FileRecord(
-                    id: id,
-                    vaultId: row["vaultId"],
-                    size: Int64(bytes.count),
-                    contentType: mime,
-                    checksum: "SHA-256:" + ScreenshotRemoteReference.digest(bytes),
-                    name: "capture",
-                    metadata: FileMetadata(source: .screenshot),
-                    createdAt: date,
-                    updatedAt: date
-                )
-                try file?.insert(db)
-                try db.execute(sql: "INSERT INTO file_migration_content(fileId, imageData) VALUES (?, ?)", arguments: [id, bytes])
-            }
-            guard let file else { throw ScreenshotContentError.unavailable }
-            var metadata = file.metadata
-            metadata.ocrText = payload?["ocrText"] as? String
-            metadata.caption = payload?["caption"] as? String
-            let filePayload = try SyncJSON.encoder.encode(FileOperationPayload(name: file.name, checksum: file.checksum, metadata: metadata))
-            try db.execute(sql: """
-            INSERT INTO sync_operations_v45(transactionId, position, id, entity, action, entityId, payloadJSON,
-                                           attachmentMimeType, attachmentSHA256, attachmentBytes)
-            VALUES (?, ?, ?, 'file', 'upsert', ?, ?, ?, ?, ?)
-            """, arguments: [
-                transactionId,
-                position,
-                oldOperationId,
-                id,
-                String(decoding: filePayload, as: UTF8.self),
-                file.contentType,
-                file.contentHash,
-                row["attachmentBytes"] as Data?,
-            ])
-            if let link = try MeetingFileRecord.fetchOne(db, key: id) {
-                let last = try Int
-                    .fetchOne(db, sql: "SELECT max(position) FROM sync_operations WHERE transactionId = ?", arguments: [transactionId]) ?? 0
-                let associationPayload = try SyncInitialSnapshotBuilder.meetingFileOperation(link).payloadJSON!
-                try db.execute(sql: """
-                INSERT INTO sync_operations_v45(transactionId, position, id, entity, action, entityId, payloadJSON)
-                VALUES (?, ?, ?, 'meeting_file', 'upsert', ?, ?)
-                """, arguments: [transactionId, last + position + 1, UUID.v7(), id, String(decoding: associationPayload, as: UTF8.self)])
-            }
-        }
-        try db.execute(sql: """
-        DROP TABLE sync_operations;
-        ALTER TABLE sync_operations_v45 RENAME TO sync_operations;
-        CREATE INDEX sync_operations_entity_idx ON sync_operations(entity, entityId, transactionId);
-        CREATE INDEX sync_operations_attachment_reference_idx ON sync_operations(attachmentReference);
-        """)
-        for oldId in changedTransactions {
-            if try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_operations WHERE transactionId = ?", arguments: [oldId]) == 0 {
-                try db.execute(sql: "DELETE FROM sync_transactions WHERE id = ?", arguments: [oldId])
-                continue
-            }
-            let newId = UUID.v7()
-            try db.execute(sql: "UPDATE sync_operations SET transactionId = ? WHERE transactionId = ?", arguments: [newId, oldId])
-            try db.execute(sql: """
-            UPDATE sync_transactions SET id = ?, attempts = 0, availableAt = ?, leaseExpiresAt = NULL,
-                blockedReason = NULL, serverResponseJSON = NULL WHERE id = ?
-            """, arguments: [newId, Date(), oldId])
-        }
     }
 
     private static let schemaSQL = """
