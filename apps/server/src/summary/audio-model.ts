@@ -10,3 +10,10 @@ export function isStructuredSummaryModel(id: string, catalog: GatewayModelList):
   return catalog.data.some((model) => model.id === id)
     && catalog.models.some((model) => model.slug === id && model.supports_json_schema === true);
 }
+
+export function isSummaryModel(id: string, catalog: GatewayModelList, method: "transcript" | "audio"): boolean {
+  const model = catalog.models.find((model) => model.slug === id);
+  return isStructuredSummaryModel(id, catalog)
+    && (!Array.isArray(model?.summary_methods) || model.summary_methods.includes(method))
+    && (method !== "audio" || isAudioSummaryModel(id, catalog));
+}

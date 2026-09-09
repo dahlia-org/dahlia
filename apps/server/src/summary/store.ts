@@ -5,12 +5,18 @@ import * as postgresSchema from "../db/auth-schema";
 import * as sqliteSchema from "../db/sqlite-schema";
 import { storedTranscriptSettingsSchema, type SummaryJob, type SummaryStage } from "./model";
 
+export type SummaryJobReference = Pick<SummaryJob, "id" | "ownerUserId">;
+
 export interface SummaryJobStore {
-  claim(): Promise<SummaryJob | null>;
+  claim(reference?: SummaryJobReference): Promise<SummaryJob | null>;
   advance(job: SummaryJob, stage: SummaryStage): Promise<boolean>;
   fail(job: SummaryJob, code: string, retryable: boolean): Promise<void>;
 }
-export function createSummaryJobStore(database: PostgresDatabase | SQLiteDatabase, isPostgres: boolean): SummaryJobStore {
+export interface SummaryJobQueueStore extends SummaryJobStore {
+  due(ownerUserId: string, after?: string): Promise<SummaryJobReference[]>;
+}
+
+export function createSummaryJobStore(database: PostgresDatabase | SQLiteDatabase, isPostgres: boolean): SummaryJobQueueStore {
   const db = database as NodePgDatabase;
   const schema = (isPostgres ? postgresSchema : sqliteSchema) as typeof postgresSchema;
   const jobs = schema.summaryJob;
@@ -19,13 +25,20 @@ export function createSummaryJobStore(database: PostgresDatabase | SQLiteDatabas
     return action(connection);
   });
   return {
-    async claim() {
-      const owners = await db.selectDistinct({ id: schema.syncedVaultPermission.principalId }).from(schema.syncedVaultPermission)
+    due(ownerUserId, after) {
+      return withOwner(ownerUserId, (connection) => connection.select({ id: jobs.id, ownerUserId: jobs.ownerUserId }).from(jobs)
+        .where(and(eq(jobs.ownerUserId, ownerUserId), after ? gt(jobs.id, after) : undefined,
+          lte(jobs.availableAt, new Date()), or(eq(jobs.status, "pending"),
+            and(eq(jobs.status, "processing"), lte(jobs.leaseExpiresAt, new Date())))))
+        .orderBy(asc(jobs.id)).limit(100));
+    },
+    async claim(reference) {
+      const owners = reference ? [{ id: reference.ownerUserId }] : await db.selectDistinct({ id: schema.syncedVaultPermission.principalId }).from(schema.syncedVaultPermission)
         .where(and(eq(schema.syncedVaultPermission.principalType, "user"), eq(schema.syncedVaultPermission.role, "owner")));
       for (const owner of owners) {
         const job = await withOwner(owner.id, async (connection) => {
           const now = new Date();
-          const eligible = and(eq(jobs.ownerUserId, owner.id), lte(jobs.availableAt, now),
+          const eligible = and(eq(jobs.ownerUserId, owner.id), reference ? eq(jobs.id, reference.id) : undefined, lte(jobs.availableAt, now),
             or(eq(jobs.status, "pending"), and(eq(jobs.status, "processing"), lte(jobs.leaseExpiresAt, now))));
           const query = connection.select().from(jobs).where(eligible).orderBy(asc(jobs.availableAt)).limit(1);
           const [row] = isPostgres ? await query.for("update", { skipLocked: true }) : await query;

@@ -308,6 +308,25 @@ import DahliaRuntimeSupport
             #expect(summary.detailLevel == .standard)
         }
 
+        @Test
+        func summaryModelChoicesRespectServerMethods() throws {
+            for (id, methods, transcript, audio) in [
+                ("gpt-4.1", ["transcript"], true, false),
+                ("gemini-3-flash", ["audio"], false, true),
+                ("gpt-5.6-luna", [], false, false),
+            ] {
+                let data = try JSONSerialization.data(withJSONObject: [
+                    "slug": id, "display_name": id, "supported_reasoning_levels": [],
+                    "input_modalities": ["text", "image", "audio"], "supports_json_schema": true,
+                    "summary_methods": methods,
+                ])
+                let model = try JSONDecoder().decode(ServerSummaryService.Model.self, from: data)
+                #expect(model.supportsSummary(method: "transcript") == transcript)
+                #expect(model.supportsSummary(method: "cloudTranscription") == transcript)
+                #expect(model.supportsSummary(method: "audio") == audio)
+            }
+        }
+
         @Test(arguments: [
             ("gemini-3-8-flash", ["text", "image", "audio"], true),
             ("gemini-3-7-flash", ["audio"], true),

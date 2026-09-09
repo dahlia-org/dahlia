@@ -13,6 +13,7 @@ export type ProviderConfig = {
   backend: "cloudflare" | "openai";
   apiKey: string;
   baseUrl: string;
+  gatewayId?: string;
 } | {
   backend: "databricks";
   baseUrl: string;
@@ -184,6 +185,8 @@ function providerConfig(
   return {
     backend,
     apiKey,
+    ...(backend === "cloudflare" ? { gatewayId: z.string().regex(/^[a-zA-Z0-9_-]{1,64}$/)
+      .parse(env.CLOUDFLARE_AI_GATEWAY_ID?.trim() || "default") } : {}),
     baseUrl: validateBaseUrl(
       backend === "cloudflare"
         ? required(env, "OPENAI_BASE_URL")
@@ -269,11 +272,20 @@ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
       : undefined,
   };
 
-  if (config.searchEmbedding && config.provider?.backend !== "databricks") {
-    throw new Error("DAHLIA_EMBEDDING_MODEL requires DAHLIA_AI_BACKEND=databricks");
+  if (config.searchEmbedding && !["databricks", "cloudflare"].includes(config.provider?.backend ?? "")) {
+    throw new Error("DAHLIA_EMBEDDING_MODEL requires DAHLIA_AI_BACKEND=databricks or cloudflare");
   }
-  if (config.captioningModel && config.provider?.backend !== "databricks") {
-    throw new Error("DAHLIA_CAPTIONING_MODEL requires DAHLIA_AI_BACKEND=databricks");
+  if (config.captioningModel && !["databricks", "cloudflare"].includes(config.provider?.backend ?? "")) {
+    throw new Error("DAHLIA_CAPTIONING_MODEL requires DAHLIA_AI_BACKEND=databricks or cloudflare");
+  }
+
+  if (config.provider?.backend === "cloudflare") {
+    if (config.searchEmbedding && (config.searchEmbedding.model !== "@cf/baai/bge-m3" || config.searchEmbedding.dimensions !== 1024)) {
+      throw new Error("Cloudflare embeddings require @cf/baai/bge-m3 with 1024 dimensions");
+    }
+    if (config.captioningModel && !["gpt-4.1", "openai/gpt-4.1"].includes(config.captioningModel)) {
+      throw new Error("Cloudflare image analysis requires openai/gpt-4.1");
+    }
   }
 
   if (authProvider === "accounts") {

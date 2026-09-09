@@ -25,9 +25,11 @@ export interface SearchIndexDocumentRecord extends SearchIndexJobRecord {
   contentHash: string;
 }
 
+export type SearchIndexReference = Pick<SearchIndexJobRecord, "vaultId" | "documentId" | "ownerUserId" | "generation">;
+
 export interface SearchIndexStore {
   reconcile(model: string, dimensions: number): Promise<void>;
-  claim(model: string, dimensions: number, limit: number): Promise<SearchIndexJobRecord[]>;
+  claim(model: string, dimensions: number, limit: number, references?: readonly SearchIndexReference[]): Promise<SearchIndexJobRecord[]>;
   load(job: SearchIndexJobRecord): Promise<SearchIndexDocumentRecord | null>;
   loadMany(jobs: SearchIndexJobRecord[]): Promise<SearchIndexDocumentRecord[]>;
   save(job: SearchIndexDocumentRecord, model: string, dimensions: number, embedding: number[]): Promise<boolean>;
@@ -42,11 +44,16 @@ export interface SearchIndexStore {
   discard(job: SearchIndexJobRecord): Promise<void>;
 }
 
-export function createPostgresSearchIndexStore(db: PostgresDatabase): SearchIndexStore {
+export interface SearchIndexQueueStore extends SearchIndexStore {
+  reconcilePage(model: string, dimensions: number, ownerUserId: string, after?: string): Promise<string | undefined>;
+  due(model: string, dimensions: number, ownerUserId: string, after?: string): Promise<SearchIndexReference[]>;
+}
+
+export function createPostgresSearchIndexStore(db: PostgresDatabase): SearchIndexQueueStore {
   return createSearchIndexStore(db, postgresSchema, true);
 }
 
-export function createSqliteSearchIndexStore(db: SQLiteDatabase): SearchIndexStore {
+export function createSqliteSearchIndexStore(db: SQLiteDatabase): SearchIndexQueueStore {
   return createSearchIndexStore(
     db as unknown as SearchDatabase,
     sqliteSchema as unknown as SearchSchema,
@@ -58,7 +65,7 @@ function createSearchIndexStore(
   db: SearchDatabase,
   schema: SearchSchema,
   isPostgres: boolean,
-): SearchIndexStore {
+): SearchIndexQueueStore {
   const ownerFilter = (userId: string, vault: AnyColumn) => exists(
     db.select({ value: sql`1` }).from(schema.syncedVaultPermission).where(and(
       eq(schema.syncedVaultPermission.vaultId, vault),
@@ -182,7 +189,80 @@ function createSearchIndexStore(
     return new Set(savedGroups.flatMap((keys) => [...keys]));
   }
 
+  function afterDocument(documentId: AnyColumn, vaultId: AnyColumn, after?: string) {
+    if (!after) return undefined;
+    const [id, vault] = after.split("/");
+    return or(gt(documentId, id!), and(eq(documentId, id!), gt(vaultId, vault!)));
+  }
+  async function reconcilePage(model: string, dimensions: number, userId: string, after?: string, batchSize = 100): Promise<string | undefined> {
+    return withOwner(userId, async (transaction) => {
+      const documents = await transaction.select({
+        vaultId: schema.searchDocument.vaultId,
+        documentId: schema.searchDocument.documentId,
+      }).from(schema.searchDocument)
+        .leftJoin(schema.searchEmbedding, and(
+          eq(schema.searchEmbedding.vaultId, schema.searchDocument.vaultId),
+          eq(schema.searchEmbedding.documentId, schema.searchDocument.documentId),
+          eq(schema.searchEmbedding.model, model),
+          eq(schema.searchEmbedding.dimensions, dimensions),
+          eq(schema.searchEmbedding.contentHash, schema.searchDocument.embeddingContentHash),
+        ))
+        .leftJoin(schema.searchIndexJob, and(
+          eq(schema.searchIndexJob.vaultId, schema.searchDocument.vaultId),
+          eq(schema.searchIndexJob.documentId, schema.searchDocument.documentId),
+        ))
+        .where(and(
+          ownerFilter(userId, schema.searchDocument.vaultId),
+          isNotNull(schema.searchDocument.embeddingText),
+          isNotNull(schema.searchDocument.embeddingContentHash),
+          isNull(schema.searchEmbedding.documentId),
+          afterDocument(schema.searchDocument.documentId, schema.searchDocument.vaultId, after),
+          or(
+            isNull(schema.searchIndexJob.documentId),
+            ne(schema.searchIndexJob.model, model),
+            ne(schema.searchIndexJob.dimensions, dimensions),
+          ),
+        )).orderBy(asc(schema.searchDocument.documentId), asc(schema.searchDocument.vaultId)).limit(batchSize);
+      if (documents.length === 0) return undefined;
+      const now = new Date();
+      await transaction.insert(schema.searchIndexJob).values(documents.map((document) => ({
+        ...document,
+        ownerUserId: userId,
+        model,
+        dimensions,
+        availableAt: now,
+        updatedAt: now,
+      }))).onConflictDoUpdate({
+        target: [schema.searchIndexJob.vaultId, schema.searchIndexJob.documentId],
+        set: {
+          ownerUserId: userId,
+          model,
+          dimensions,
+          generation: sql`${schema.searchIndexJob.generation} + 1`,
+          status: "pending",
+          attempts: 0,
+          availableAt: now,
+          claimedAt: null,
+          leaseExpiresAt: null,
+          lastErrorCode: null,
+          updatedAt: now,
+        },
+      });
+      if (documents.length < batchSize) return undefined;
+      const last = documents.at(-1)!;
+      return `${last.documentId}/${last.vaultId}`;
+    });
+  }
   return {
+    reconcilePage,
+    due(model, dimensions, ownerUserId, after) {
+      const jobs = schema.searchIndexJob;
+      return db.select({ vaultId: jobs.vaultId, documentId: jobs.documentId, ownerUserId: jobs.ownerUserId, generation: jobs.generation })
+        .from(jobs).where(and(eq(jobs.model, model), eq(jobs.dimensions, dimensions), eq(jobs.ownerUserId, ownerUserId),
+          afterDocument(jobs.documentId, jobs.vaultId, after), lte(jobs.availableAt, new Date()),
+          or(eq(jobs.status, "pending"), and(eq(jobs.status, "processing"), lte(jobs.leaseExpiresAt, new Date())))))
+        .orderBy(asc(jobs.documentId), asc(jobs.vaultId)).limit(100);
+    },
     async reconcile(model, dimensions) {
       const owners = await db.selectDistinct({ userId: schema.syncedVaultPermission.principalId })
         .from(schema.syncedVaultPermission).where(and(
@@ -192,74 +272,21 @@ function createSearchIndexStore(
       for (const { userId } of owners) {
         let after: string | undefined;
         while (true) {
-          const page = await withOwner(userId, async (transaction) => {
-            const documents = await transaction.select({
-              vaultId: schema.searchDocument.vaultId,
-              documentId: schema.searchDocument.documentId,
-            }).from(schema.searchDocument)
-              .leftJoin(schema.searchEmbedding, and(
-                eq(schema.searchEmbedding.vaultId, schema.searchDocument.vaultId),
-                eq(schema.searchEmbedding.documentId, schema.searchDocument.documentId),
-                eq(schema.searchEmbedding.model, model),
-                eq(schema.searchEmbedding.dimensions, dimensions),
-                eq(schema.searchEmbedding.contentHash, schema.searchDocument.embeddingContentHash),
-              ))
-              .leftJoin(schema.searchIndexJob, and(
-                eq(schema.searchIndexJob.vaultId, schema.searchDocument.vaultId),
-                eq(schema.searchIndexJob.documentId, schema.searchDocument.documentId),
-              ))
-              .where(and(
-                ownerFilter(userId, schema.searchDocument.vaultId),
-                isNotNull(schema.searchDocument.embeddingText),
-                isNotNull(schema.searchDocument.embeddingContentHash),
-                isNull(schema.searchEmbedding.documentId),
-                after ? gt(schema.searchDocument.documentId, after) : undefined,
-                or(
-                  isNull(schema.searchIndexJob.documentId),
-                  ne(schema.searchIndexJob.model, model),
-                  ne(schema.searchIndexJob.dimensions, dimensions),
-                ),
-              )).orderBy(asc(schema.searchDocument.documentId)).limit(RECONCILE_BATCH_SIZE);
-            if (documents.length === 0) return null;
-            const now = new Date();
-            await transaction.insert(schema.searchIndexJob).values(documents.map((document) => ({
-              ...document,
-              ownerUserId: userId,
-              model,
-              dimensions,
-              availableAt: now,
-              updatedAt: now,
-            }))).onConflictDoUpdate({
-              target: [schema.searchIndexJob.vaultId, schema.searchIndexJob.documentId],
-              set: {
-                ownerUserId: userId,
-                model,
-                dimensions,
-                generation: sql`${schema.searchIndexJob.generation} + 1`,
-                status: "pending",
-                attempts: 0,
-                availableAt: now,
-                claimedAt: null,
-                leaseExpiresAt: null,
-                lastErrorCode: null,
-                updatedAt: now,
-              },
-            });
-            return {
-              after: documents.at(-1)!.documentId,
-              complete: documents.length < RECONCILE_BATCH_SIZE,
-            };
-          });
-          if (!page) break;
-          after = page.after;
-          if (page.complete) break;
+          const next = await reconcilePage(model, dimensions, userId, after, RECONCILE_BATCH_SIZE);
+          if (!next) break;
+          after = next;
         }
       }
     },
-    claim(model, dimensions, limit) {
+    claim(model, dimensions, limit, references) {
+      if (references?.length === 0) return Promise.resolve([]);
       return db.transaction(async (transaction) => {
         const now = new Date();
         const filter = and(
+          references ? or(...references.map((ref) => and(
+            eq(schema.searchIndexJob.vaultId, ref.vaultId), eq(schema.searchIndexJob.documentId, ref.documentId),
+            eq(schema.searchIndexJob.ownerUserId, ref.ownerUserId), eq(schema.searchIndexJob.generation, ref.generation),
+          ))) : undefined,
           eq(schema.searchIndexJob.model, model),
           eq(schema.searchIndexJob.dimensions, dimensions),
           lte(schema.searchIndexJob.availableAt, now),

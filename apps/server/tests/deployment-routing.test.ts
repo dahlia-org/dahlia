@@ -115,7 +115,7 @@ describe("deployment routing", () => {
     expect(await discovery.json()).toEqual({ error: "not_found" });
   });
 
-  it("initializes the Cloudflare application once per isolate and keeps health independent", async () => {
+  it("initializes the Cloudflare application per event and keeps health independent", async () => {
     const initialize = vi.fn(async () => createApp({ config: headerConfig, authStore: testStore() }));
     const handler = createWorkerHandler(initialize);
     const env = {} as Cloudflare.Env;
@@ -131,7 +131,7 @@ describe("deployment routing", () => {
 
     await fetch(new Request("https://dahlia.example/api/not-defined"), env, {} as ExecutionContext);
     await fetch(new Request("https://dahlia.example/api/not-defined"), env, {} as ExecutionContext);
-    expect(initialize).toHaveBeenCalledTimes(1);
+    expect(initialize).toHaveBeenCalledTimes(2);
   });
 
   it.each([

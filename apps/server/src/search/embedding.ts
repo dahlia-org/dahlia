@@ -1,5 +1,6 @@
 import type { AppConfig } from "../config";
-import { DatabricksTokenError, DatabricksTokenProvider } from "../databricks/token";
+import { createJobProvider } from "../ai-gateway/job-provider";
+import { DatabricksTokenError } from "../databricks/token";
 
 export const SEARCH_EMBEDDING_BATCH_SIZE = 16;
 export const SEARCH_EMBEDDING_DOCUMENT_MAX_BYTES = 64 * 1024;
@@ -26,15 +27,16 @@ export function createSearchEmbedder(
 ): SearchEmbedder | undefined {
   const embedding = config.searchEmbedding;
   if (!embedding) return undefined;
-  if (config.provider?.backend !== "databricks" || !config.databricksWorkspace) {
-    throw new Error("Databricks embedding configuration is incomplete");
-  }
-  const tokens = new DatabricksTokenProvider(config.databricksWorkspace, transport);
-  const endpoint = new URL(`${config.provider.baseUrl.replace(/\/$/, "")}/embeddings`);
+  const execution = createJobProvider(config, transport);
+  if (!execution) throw new Error("Embedding provider is not configured");
+  const cloudflare = execution.provider.backend === "cloudflare";
+  const endpoint = new URL(cloudflare
+    ? `${execution.provider.baseUrl.replace(/\/v1\/?$/, "")}/run/${embedding.model}`
+    : `${execution.provider.baseUrl.replace(/\/$/, "")}/embeddings`);
   const request = async (input: string[], instruction?: string, signal?: AbortSignal): Promise<number[][]> => {
-    let token: string;
+    let headers: Record<string, string>;
     try {
-      token = await tokens.getToken();
+      headers = await execution.headers();
     } catch (error) {
       throw new SearchEmbeddingError(
         "embedding_authentication_failed",
@@ -47,11 +49,11 @@ export function createSearchEmbedder(
         method: "POST",
         headers: {
           accept: "application/json",
-          authorization: `Bearer ${token}`,
+          ...headers,
           "content-type": "application/json",
           "user-agent": "dahlia-server/0.1",
         },
-        body: JSON.stringify({
+        body: JSON.stringify(cloudflare ? { text: input } : {
           model: embedding.model,
           input,
           dimensions: embedding.dimensions,
@@ -65,16 +67,36 @@ export function createSearchEmbedder(
       throw new SearchEmbeddingError("embedding_transport_failed", true);
     }
     if (!response.ok) {
+      await response.body?.cancel();
       throw new SearchEmbeddingError(
         `embedding_http_${response.status}`,
         response.status === 429 || response.status >= 500,
       );
     }
-    const body: unknown = await response.json().catch(() => undefined);
-    if (!body || typeof body !== "object" || !("data" in body) || !Array.isArray(body.data)) {
+    let responseBytes = 0;
+    const bounded = response.body?.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
+      transform(chunk, controller) {
+        responseBytes += chunk.byteLength;
+        if (responseBytes > 4 * 1024 * 1024) throw new SearchEmbeddingError("embedding_response_too_large", false);
+        controller.enqueue(chunk);
+      },
+    }));
+    let raw: unknown;
+    try { raw = await new Response(bounded).json(); }
+    catch (error) {
+      if (error instanceof SearchEmbeddingError) throw error;
+      throw new SearchEmbeddingError(error instanceof SyntaxError ? "embedding_invalid_response" : "embedding_transport_failed", !(error instanceof SyntaxError));
+    }
+    if (cloudflare && raw && typeof raw === "object" && "success" in raw && raw.success !== true) {
       throw new SearchEmbeddingError("embedding_invalid_response", false);
     }
-    const rows = body.data as unknown[];
+    const result = cloudflare && raw && typeof raw === "object" && "result" in raw ? raw.result : raw;
+    if (!result || typeof result !== "object" || !("data" in result) || !Array.isArray(result.data)) {
+      throw new SearchEmbeddingError("embedding_invalid_response", false);
+    }
+    const rows: unknown[] = cloudflare
+      ? result.data.map((vector: unknown, index: number) => ({ index, embedding: vector }))
+      : result.data;
     if (rows.length !== input.length) throw new SearchEmbeddingError("embedding_count_mismatch", false);
     const vectors = new Array<number[]>(input.length);
     for (const row of rows) {

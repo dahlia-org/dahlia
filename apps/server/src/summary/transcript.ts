@@ -5,12 +5,11 @@ import type { AppConfig } from "../config";
 import type { IdentitySyncStore, MeetingSyncStore, SyncTranscriptSegment, SyncScreenshotRecord } from "../sync/types";
 import type { MeetingSyncService } from "../sync/service";
 import { personalWorkspaceId } from "../auth/workspace";
-import { DatabricksTokenError, DatabricksTokenProvider } from "../databricks/token";
-import { DatabricksBackend, resolveDatabricksModel } from "../ai-gateway/databricks";
+import { DatabricksTokenError } from "../databricks/token";
+import { createJobProvider } from "../ai-gateway/job-provider";
 import { GatewayRequestError } from "../ai-gateway/errors";
-import { CODEX_AUTO_REVIEW_ALIAS } from "../ai-gateway/model-alias";
 import { sendOpenAIResponses } from "../ai-gateway/adapters";
-import { isStructuredSummaryModel } from "./audio-model";
+import { isSummaryModel } from "./audio-model";
 import { SummaryError, summaryDocument, summaryResponseSchema, type SummaryMethod, type SummaryInput } from "./model";
 
 export async function fingerprint(value: unknown): Promise<string> {
@@ -58,19 +57,18 @@ export async function collectSummaryInput(store: IdentitySyncStore, vaultId: str
 }
 export function createTranscriptSummaryMethod(config: AppConfig, store: MeetingSyncStore, sync: MeetingSyncService,
   transport: typeof fetch = fetch): SummaryMethod | undefined {
-  const provider = config.provider;
-  if (provider?.backend !== "databricks" || !config.databricksWorkspace) return undefined;
-  const backend = new DatabricksBackend(provider, config.databricksWorkspace, transport);
-  const tokens = new DatabricksTokenProvider(config.databricksWorkspace, transport);
+  const execution = createJobProvider(config, transport);
+  if (!execution) return undefined;
+  const { provider, backend } = execution;
   return {
     id: "transcript",
     captureSettings: (settings, detail) => ({ ...settings.summary.methodSettings.transcript, detail: detail ?? settings.summary.detail }),
     async version(scoped, vaultId, meetingId, input) { return fingerprint(await collectSummaryInput(scoped, vaultId, meetingId, true, input)); },
     async validateSettings(settings, input) {
-      if (!input) return;
+      if (!input && provider.backend === "databricks") return;
       const catalog = await backend.listModels({ signal: AbortSignal.timeout(30_000) });
-      const model = settings.model.startsWith(`${provider.modelSchema}.`) ? settings.model.slice(provider.modelSchema.length + 1) : settings.model;
-      if (!isStructuredSummaryModel(model, catalog)) throw new SummaryError("summary_invalid_structured_model");
+      const model = execution.normalizeModel(settings.model);
+      if (!isSummaryModel(model, catalog, "transcript")) throw new SummaryError("summary_invalid_structured_model");
       if (!catalog.models.find((entry) => entry.slug === model)!.supported_reasoning_levels.some(({ effort }) => effort === settings.reasoningEffort)) {
         throw new SummaryError("summary_invalid_reasoning_effort");
       }
@@ -85,17 +83,15 @@ export function createTranscriptSummaryMethod(config: AppConfig, store: MeetingS
       if (!job.transcriptResult && await fingerprint(input) !== job.inputVersion) throw new SummaryError("summary_input_changed");
       if (!input.transcript?.some((segment) => segment.text.trim())) throw new SummaryError("summary_transcript_empty");
       const { content, images, imageIds } = await summaryImageContent(input, sync, identity, signal);
-      const token = await tokens.getToken();
-      // Existing account settings may contain the previously required qualified model name.
-      const configuredModel = job.settings.model.startsWith(`${provider.modelSchema}.`)
-        ? job.settings.model.slice(provider.modelSchema.length + 1) : job.settings.model;
-      const model = resolveDatabricksModel(provider, configuredModel,
-        configuredModel === CODEX_AUTO_REVIEW_ALIAS ? config.codexAutoReviewModel?.trim() : undefined);
-      const response = await sendOpenAIResponses(provider, `Bearer ${token}`, {
-        requestHeaders: new Headers({ accept: "application/json" }), signal,
-        upstreamHeaders: { "Databricks-Ai-Gateway-Request-Tags": JSON.stringify({ user_id: job.ownerUserId }) },
+      const model = execution.resolveModel(job.settings.model);
+      if (provider.backend === "cloudflare" && (model !== "openai/gpt-4.1" || job.settings.reasoningEffort !== "none")) {
+        throw new SummaryError("summary_invalid_model");
+      }
+      const headers = await execution.headers(job.ownerUserId);
+      const response = await sendOpenAIResponses(provider, headers.authorization!, {
+        requestHeaders: new Headers({ accept: "application/json" }), signal, upstreamHeaders: headers,
         body: JSON.stringify({ model, stream: false, store: false,
-          reasoning: { effort: job.settings.reasoningEffort },
+          ...(provider.backend === "cloudflare" ? {} : { reasoning: { effort: job.settings.reasoningEffort } }),
           instructions: summaryInstructions(job.outputLanguage, job.settings.detail),
           input: [{ role: "user", content }],
           text: { format: { type: "json_schema", name: "meeting_summary", strict: true,
@@ -183,11 +179,14 @@ ${input.transcript.map((segment) => `  <segment>
     <text>${summaryXMLText(segment.text)}</text>
   </segment>`).join("\n")}
 </transcript>` });
+  let imageBytes = 0;
   for (const image of images) {
     const { upstream } = await sync.readFileContent(identity, image.fileId, "thumb_1280", "GET",
       new Request("https://dahlia.invalid/", { signal }));
     if (!upstream.ok) { await upstream.body?.cancel(); throw new SummaryError("summary_image_unavailable", upstream.status >= 500); }
     const bytes = await boundedBytes(upstream, 4 * 1024 * 1024);
+    imageBytes += bytes.byteLength;
+    if (imageBytes > 12 * 1024 * 1024) throw new SummaryError("summary_input_too_large");
     content.push({ type: "input_text", text: `<image><image_id>${summaryXMLText(image.screenshotId)}</image_id><captured_at>${image.capturedAt.toISOString()}</captured_at></image>` },
       { type: "input_image", image_url: `data:image/webp;base64,${Buffer.from(bytes).toString("base64")}` });
   }
