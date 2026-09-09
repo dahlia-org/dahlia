@@ -106,7 +106,7 @@ export function createDahliaAuth(
           openidConfig: true,
         },
       }),
-      ...(config.syncSharingEnabled ? [organization({
+      organization({
         cancelPendingInvitationsOnReInvite: true,
         requireEmailVerificationOnInvitation: true,
         sendInvitationEmail: async () => {},
@@ -122,7 +122,7 @@ export function createDahliaAuth(
             await authStore.deleteVaultPermissionsForPrincipal("team", deleted.id).catch(() => undefined);
           },
         },
-      })] : []),
+      }),
       ...extensions.flatMap((extension) => extension.plugins),
     ],
   });

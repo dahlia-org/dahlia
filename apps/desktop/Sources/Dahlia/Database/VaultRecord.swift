@@ -7,6 +7,7 @@ struct VaultRecord: Codable, FetchableRecord, PersistableRecord, Identifiable, E
 
     var id: UUID
     var path: String?
+    var appearance: ProjectAppearance?
     var name: String
     var createdAt: Date
     var lastOpenedAt: Date

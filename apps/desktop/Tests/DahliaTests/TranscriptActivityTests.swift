@@ -93,7 +93,7 @@
             let speechEnd = session.startedAt.addingTimeInterval(4)
             try queue.write { db in
                 try connection.insert(db)
-                try VaultRecord(id: vaultId, path: nil, name: "Legacy", createdAt: base, lastOpenedAt: base).insert(db)
+                try insertLegacyVault(VaultRecord(id: vaultId, path: nil, name: "Legacy", createdAt: base, lastOpenedAt: base), in: db)
                 try MeetingRecord(
                     id: meetingId,
                     vaultId: vaultId,

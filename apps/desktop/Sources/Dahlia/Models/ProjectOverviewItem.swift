@@ -8,6 +8,7 @@ struct ProjectOverviewItem: Decodable, Equatable, FetchableRecord, Identifiable,
     var projectDisplayName = ""
     var parentProjectId: UUID?
     var projectDescription = ""
+    var appearance: ProjectAppearance?
     var explicitProjectType: ProjectType?
     var effectiveProjectType: ProjectType = .undefined
     var typeOwnerProjectId: UUID?

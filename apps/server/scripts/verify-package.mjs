@@ -74,7 +74,7 @@ try {
     if (typeof createPostgresApplicationStore !== "function" || typeof createPostgresAuthStore !== "function") {
       throw new Error("PostgreSQL store factories are missing from the Node package export");
     }
-    if (serverMigrationManifest.sqlite.files.length !== 19) {
+    if (serverMigrationManifest.sqlite.files.length !== 21) {
       throw new Error("Migration manifest is incomplete");
     }
     const style = await readFile(new URL(import.meta.resolve("@dahlia-ai/server/client/styles.css")), "utf8");
@@ -134,7 +134,7 @@ try {
     if (database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'artifact'").get()) throw new Error("Retired Artifact table remains");
     database.close();
     await store.close?.();
-    if (applied.length !== serverMigrationManifest.sqlite.files.length || applied.at(-1)?.name !== "20260908164304_spicy_lady_vermin") {
+    if (applied.length !== serverMigrationManifest.sqlite.files.length || applied.at(-1)?.name !== "20260909055951_sour_dexter_bennett") {
       throw new Error("Installed package migrations did not run from the package directory");
     }
   `);

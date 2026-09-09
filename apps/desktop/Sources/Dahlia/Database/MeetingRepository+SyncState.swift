@@ -8,6 +8,7 @@ enum MeetingSyncState: Equatable, Sendable {
     case synced
     case recovering
     case updateRequired
+    case relocationPaused
     case blocked(SyncBlockedReason)
 }
 
@@ -90,6 +91,8 @@ extension MeetingRepository {
         let hasPending = try SyncTransactionQueue.hasPending(vaultId: vault.id, in: db)
         return if let blocked {
             .blocked(blocked)
+        } else if vault.syncRecoveryState == "transferBlocked" {
+            .relocationPaused
         } else if vault.syncRecoveryState == "updateRequired" {
             .updateRequired
         } else if vault.syncRecoveryState != nil {
@@ -124,7 +127,7 @@ private extension MeetingSyncState {
         case .synced: 1
         case .pending: 2
         case .recovering: 3
-        case .updateRequired: 4
+        case .updateRequired, .relocationPaused: 4
         case .blocked(.validation): 5
         case .blocked(.conflict): 6
         case .blocked(.authorization): 7

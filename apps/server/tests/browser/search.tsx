@@ -50,6 +50,7 @@ async function run() {
   createRoot(document.getElementById("root")!).render(<StrictMode><App /></StrictMode>);
   await until(() => document.querySelector(".sidebar-search"));
   const opener = document.querySelector<HTMLButtonElement>(".sidebar-search")!;
+  assert(opener.getAttribute("aria-label") === "Search" && opener.querySelector("svg") && !opener.textContent, "Search icon is missing its accessible label");
   opener.focus(); opener.click();
   await until(() => document.querySelectorAll(".search-result").length === 8);
   assert(document.activeElement === input(), "Initial focus missing");

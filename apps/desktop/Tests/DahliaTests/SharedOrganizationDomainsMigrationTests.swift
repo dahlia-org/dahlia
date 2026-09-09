@@ -109,7 +109,7 @@ import GRDB
                     sql: "SELECT identifier FROM grdb_migrations ORDER BY rowid DESC LIMIT 1"
                 )
             }
-            #expect(applied == "v50_transcriptActivity")
+            #expect(applied == "v52_vaultRelocation")
         }
 
         private func insertRootOrganization(

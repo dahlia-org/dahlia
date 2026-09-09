@@ -1,3 +1,4 @@
+import { Select } from "./Select";
 import { useEffect, useRef, useState } from "react";
 import { json, uiText } from "./api";
 import { useLivePage, useLiveQuery } from "./live-data";
@@ -73,23 +74,23 @@ export function TranscriptHistory({ base, timeBase }: { base: string; timeBase: 
   const status = useTranscriptStatus(body.data?.transcript);
   const error = versions.error ?? body.error;
   return <div className="transcript-document">
-    <div className="summary-generation">
-      <label>{uiText("Version", "バージョン")} <select value={selected ?? "latest"} onChange={(event) => {
+    <div className="history-toolbar">
+      <label>{uiText("Version", "バージョン")} <Select value={selected ?? "latest"} onValueChange={(value) => {
         demand.current = 1;
-        setSelected(event.target.value === "latest" ? null : Number(event.target.value));
+        setSelected(value === "latest" ? null : Number(value));
       }}>
         <option value="latest">{uiText("Current", "現在")}</option>
         {versions.data?.items.map((version) => <option key={version.id} value={version.version}>
           v{version.version} · {new Date(version.createdAt).toLocaleString()} · {version.metadata?.request.model ?? "—"}
         </option>)}
-      </select></label>
-      {versions.data?.nextCursor && <button disabled={versions.loadingMore} onClick={versions.loadMore}>{uiText("Load older versions", "以前の版を読み込む")}</button>}
+      </Select></label>
+      {versions.data?.nextCursor && <button className="secondary" disabled={versions.loadingMore} onClick={versions.loadMore}>{uiText("Load older versions", "以前の版を読み込む")}</button>}
       {body.data?.transcript && <span role="status" title={uiText("Activity is estimated from segment creation times; it does not indicate connection or recording state.", "セグメントの作成日時から推定した活動状態です。接続や録音継続を示すものではありません。")}>{
         transcriptStatusLabel(status)
       }</span>}
       {selected !== null && <span>{uiText("Read-only version", "過去版（閲覧のみ）")}</span>}
     </div>
-    {error && <p role="alert" className="error">{error.message} <button onClick={() => { versions.reload(); body.reload(); }}>{uiText("Retry", "再試行")}</button></p>}
+    {error && <p role="alert" className="error">{error.message} <button className="secondary" onClick={() => { versions.reload(); body.reload(); }}>{uiText("Retry", "再試行")}</button></p>}
     {body.loading && !body.data && <p role="status">{uiText("Loading…", "読み込み中…")}</p>}
     {metadata && <details className="summary-generation-metadata">
       <summary>{uiText("Generation details", "生成情報")} · {metadata.request.model}</summary>
@@ -110,7 +111,7 @@ export function TranscriptHistory({ base, timeBase }: { base: string; timeBase: 
       <TranscriptTime startTime={segment.startedAt} timeBase={timeBase} />
       <p>{segment.speakerLabel && <strong>{segment.speakerLabel}: </strong>}{segment.text}</p>
     </div>)}
-    {body.data?.nextCursor && <button disabled={body.loading} onClick={() => {
+    {body.data?.nextCursor && <button className="secondary" disabled={body.loading} onClick={() => {
       demand.current = (body.data?.items.length ?? 0) + 1;
       body.reload();
     }}>{uiText("Load more", "さらに表示")}</button>}

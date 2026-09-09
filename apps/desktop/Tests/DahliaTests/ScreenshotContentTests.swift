@@ -1048,7 +1048,11 @@
             let meeting = MeetingRecord(id: meetingId, vaultId: vaultId, projectId: nil, name: "Meeting", createdAt: .now, updatedAt: .now)
             try self.dbQueue.write { db in
                 try connection.insert(db)
-                try vault.insert(db)
+                try insertLegacyVault(vault, in: db)
+                try db.execute(
+                    sql: "UPDATE vaults SET accountConnectionId = ?, syncConfirmedConnectionId = ?, syncPullCursor = ? WHERE id = ?",
+                    arguments: [vault.accountConnectionId, vault.syncConfirmedConnectionId, vault.syncPullCursor, vault.id]
+                )
                 try meeting.insert(db)
                 if priorSchema {
                     try db.execute(

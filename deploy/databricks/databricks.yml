@@ -23,9 +23,6 @@ variables:
   search_embedding_dimensions:
     description: Power-of-two embedding dimensions from 32 through 1024.
     default: "1024"
-  sync_sharing_enabled:
-    description: Enables explicit Organization and Team Vault sharing.
-    default: "false"
   catalog:
     description: Unity Catalog catalog containing Dahlia Server storage.
     default: dahlia
@@ -48,7 +45,6 @@ targets:
     variables:
       app_name: dahlia-dev
       database_project_id: dahlia-db-dev
-      sync_sharing_enabled: "true"
     resources:
       postgres_projects:
         dahlia_database_project:

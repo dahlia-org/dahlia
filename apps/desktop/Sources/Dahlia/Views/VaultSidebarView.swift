@@ -76,8 +76,7 @@ struct VaultSidebarView: View {
                                     .truncationMode(.middle)
                             }
                         } icon: {
-                            Image(systemName: "externaldrive")
-                                .dahliaFixedSymbol()
+                            ProjectAppearanceIcon(appearance: vault.appearance ?? .vaultDefault)
                         }
 
                         Spacer()

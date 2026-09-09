@@ -847,7 +847,7 @@ import Synchronization
                 caption: "old caption"
             )
             try queue.write { db in
-                try vault.insert(db)
+                try insertLegacyVault(vault, in: db)
                 try meeting.insert(db)
                 try db.execute(
                     sql: "INSERT INTO screenshots(id, meetingId, capturedAt, imageData, mimeType, ocrText, caption) VALUES (?, ?, ?, ?, ?, ?, ?)",

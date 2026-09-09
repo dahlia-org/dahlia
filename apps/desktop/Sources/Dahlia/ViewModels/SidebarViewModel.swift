@@ -530,6 +530,7 @@ final class SidebarViewModel {
                     projectDisplayName: project.name,
                     parentProjectId: project.parentProjectId,
                     projectDescription: project.description,
+                    appearance: project.appearance,
                     explicitProjectType: project.projectType,
                     effectiveProjectType: effectiveType?.type ?? .undefined,
                     typeOwnerProjectId: effectiveType?.ownerProjectId,
@@ -690,7 +691,8 @@ final class SidebarViewModel {
         name: String,
         parentProjectId: UUID?,
         projectType: ProjectType? = nil,
-        description: String = ""
+        description: String = "",
+        appearance: ProjectAppearance? = nil
     ) -> ProjectRecord? {
         guard canEditCurrentVault, let projectWorkspaceService else { return nil }
         do {
@@ -698,7 +700,8 @@ final class SidebarViewModel {
                 name: name,
                 parentProjectId: parentProjectId,
                 projectType: projectType,
-                description: description
+                description: description,
+                appearance: appearance
             )
             lastError = nil
             return project
@@ -774,7 +777,8 @@ final class SidebarViewModel {
         parentProjectId: UUID?,
         projectType: ProjectType,
         description: String,
-        expectedRevision: Int
+        expectedRevision: Int,
+        appearance: ProjectAppearance? = nil
     ) async -> ProjectRecord? {
         guard canEditCurrentVault, let projectWorkspaceService else { return nil }
         do {
@@ -785,7 +789,8 @@ final class SidebarViewModel {
                     parentProjectId: parentProjectId,
                     projectType: projectType,
                     description: description,
-                    expectedRevision: expectedRevision
+                    expectedRevision: expectedRevision,
+                    appearance: appearance
                 )
             }.value
             lastError = nil

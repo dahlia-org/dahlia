@@ -1,4 +1,4 @@
-import { useId, useState, type ReactNode } from "react";
+import { useEffect, useId, useState, type ReactNode } from "react";
 import { uiText } from "./api";
 
 function record(value: unknown): Record<string, unknown> {
@@ -94,14 +94,18 @@ export function MeetingTabs({ summary, screenshots, transcript, actions }: { sum
   return <DetailTabs tabs={tabs} actions={actions} label={uiText("Meeting content", "ミーティングの内容")} />;
 }
 
-export function DetailTabs({ tabs, actions, label }: { tabs: { id: string; label: string; content: ReactNode }[]; actions?: ReactNode; label: string }) {
-  const [selected, setSelected] = useState(0);
+export function DetailTabs({ tabs, actions, label }: { tabs: { id: string; label: ReactNode; content: ReactNode }[]; actions?: ReactNode; label: string }) {
+  const [selected, setSelected] = useState(tabs[0]?.id);
+  const selectedId = tabs.some((tab) => tab.id === selected) ? selected : tabs[0]?.id;
+  useEffect(() => {
+    if (selected !== selectedId) setSelected((current) => current === selected ? selectedId : current);
+  }, [selected, selectedId]);
   const id = useId();
   return <>
     <div className="meeting-toolbar">
       <div className="meeting-tabs" role="tablist" aria-label={label}>
         {tabs.map((tab, index) => <button key={tab.id} type="button" role="tab" id={`${id}-${tab.id}`} aria-controls={`${id}-panel-${tab.id}`}
-          aria-selected={selected === index} tabIndex={selected === index ? 0 : -1} onClick={() => setSelected(index)}
+          aria-selected={selectedId === tab.id} tabIndex={selectedId === tab.id ? 0 : -1} onClick={() => setSelected(tab.id)}
           onKeyDown={(event) => {
             let next: number;
             if (event.key === "ArrowRight") next = (index + 1) % tabs.length;
@@ -110,13 +114,13 @@ export function DetailTabs({ tabs, actions, label }: { tabs: { id: string; label
             else if (event.key === "End") next = tabs.length - 1;
             else return;
             event.preventDefault();
-            setSelected(next);
+            setSelected(tabs[next]!.id);
             document.getElementById(`${id}-${tabs[next]!.id}`)?.focus();
           }}>{tab.label}</button>)}
       </div>
       {actions}
     </div>
-    {tabs.map((tab, index) => <div key={tab.id} role="tabpanel" id={`${id}-panel-${tab.id}`} aria-labelledby={`${id}-${tab.id}`}
-      hidden={selected !== index} tabIndex={0} className="meeting-tab-content">{selected === index && tab.content}</div>)}
+    {tabs.map((tab) => <div key={tab.id} role="tabpanel" id={`${id}-panel-${tab.id}`} aria-labelledby={`${id}-${tab.id}`}
+      hidden={selectedId !== tab.id} tabIndex={0} className="meeting-tab-content">{selectedId === tab.id && tab.content}</div>)}
   </>;
 }

@@ -12,6 +12,7 @@ export interface Identity {
   workspaceId: string;
   source: "accounts" | "header";
   impersonated?: boolean;
+  syncClient?: { vaultTransfers: boolean };
 }
 
 export class AuthenticationError extends Error {

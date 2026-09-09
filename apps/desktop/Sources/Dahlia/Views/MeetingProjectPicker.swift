@@ -44,7 +44,8 @@ struct MeetingProjectPicker: View {
         guard let projectId = viewModel.currentProjectId else { return nil }
         guard let project = sidebarViewModel.projectItemsByID[projectId] else { return nil }
         return mainWindowNavigation.projectAppearance(
-            for: project,
+            for: project.projectId,
+            in: sidebarViewModel.projectItemsByID,
             vaultId: sidebarViewModel.currentVault?.id
         ).color.color
     }

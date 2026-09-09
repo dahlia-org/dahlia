@@ -41,7 +41,6 @@ export function createNodeApplicationStore(
         connection.db,
         config.databaseType,
         config.searchEmbedding,
-        config.syncSharingEnabled,
       ),
       migrate: () => migrateApplicationDatabase(
         config,
@@ -100,7 +99,6 @@ export function createNodeApplicationStore(
     transactionalSqlite,
     true,
     config.searchEmbedding,
-    config.syncSharingEnabled,
   );
   const applyMigrationQueries = (queries: string[]) => {
     for (const query of queries) database.exec(query);

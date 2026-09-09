@@ -28,6 +28,7 @@ extension MeetingSyncState {
         case .synced: L10n.meetingSyncSynced
         case .recovering: L10n.vaultSyncRecovering
         case .updateRequired: L10n.vaultSyncUpdateRequired
+        case .relocationPaused: L10n.meetingSyncRelocationPaused
         case .blocked(.conflict): L10n.vaultSyncConflict
         case .blocked(.authorization): L10n.meetingSyncAuthorization
         case .blocked(.validation): L10n.meetingSyncValidation
@@ -39,7 +40,7 @@ extension MeetingSyncState {
         case .local: "internaldrive"
         case .pending, .recovering: "arrow.triangle.2.circlepath"
         case .synced: "checkmark.icloud"
-        case .updateRequired, .blocked: "exclamationmark.triangle"
+        case .updateRequired, .relocationPaused, .blocked: "exclamationmark.triangle"
         }
     }
 }

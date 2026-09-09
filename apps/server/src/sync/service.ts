@@ -1,3 +1,4 @@
+import { appearanceSchema } from "../appearance-model";
 import { transcriptWriteSchema } from "./transcript";
 import { summaryMetadataSchema } from "../summary/metadata";
 import { conditionalRead } from "../storage/http-read";
@@ -113,11 +114,11 @@ const transactionDataSchemas = {
     z.object({ meetingId: uuidSchema, kind: z.enum(["recording_started", "recording_ended"]), occurredAt: dateSchema, sessionId: uuidSchema }).strict(),
     z.object({ meetingId: uuidSchema, kind: z.literal("segment_rotated"), occurredAt: dateSchema, sessionId: uuidSchema, relatedId: uuidSchema, audioSource: z.enum(["mic", "system"]), segmentIndex: z.number().int().positive().max(2147483647) }).strict(),
   ]),
-  "vault:create": z.object({ name: z.string().trim().min(1), createdAt: dateSchema }).strict(),
-  "vault:update": z.object({ name: z.string().trim().min(1) }).strict(),
+  "vault:create": z.object({ appearance: appearanceSchema.optional(), name: z.string().trim().min(1), createdAt: dateSchema }).strict(),
+  "vault:update": z.object({ appearance: appearanceSchema.optional(), name: z.string().trim().min(1) }).strict(),
   "vault:reset": z.object({ preservePermissions: z.boolean().optional() }).strict(),
-  "project:create": z.object({ parentProjectId: uuidSchema.nullable(), name: projectNameSchema, description: z.string().max(20_000).default(""), projectType: projectTypeSchema.nullable(), createdAt: dateSchema }).strict(),
-  "project:update": z.object({ parentProjectId: uuidSchema.nullable(), name: projectNameSchema, description: z.string().max(20_000).default(""), projectType: projectTypeSchema.nullable() }).strict(),
+  "project:create": z.object({ appearance: appearanceSchema.optional(), parentProjectId: uuidSchema.nullable(), name: projectNameSchema, description: z.string().max(20_000).default(""), projectType: projectTypeSchema.nullable(), createdAt: dateSchema }).strict().refine((data) => data.parentProjectId === null || data.appearance === undefined, { message: "Child projects inherit their parent appearance", path: ["appearance"] }),
+  "project:update": z.object({ appearance: appearanceSchema.optional(), parentProjectId: uuidSchema.nullable(), name: projectNameSchema, description: z.string().max(20_000).default(""), projectType: projectTypeSchema.nullable() }).strict().refine((data) => data.parentProjectId === null || data.appearance === undefined, { message: "Child projects inherit their parent appearance", path: ["appearance"] }),
   "project:delete": z.object({}).strict(),
   "meeting:create": z.object({ projectId: uuidSchema.nullable(), name: z.string(), description: z.string().default(""), status: meetingStatusSchema, duration: z.number().finite().nonnegative().nullable(), recordingStartedAt: nullableDateSchema, createdAt: dateSchema, updatedAt: dateSchema }).strict(),
   "meeting:update": z.object({ projectId: uuidSchema.nullable(), name: z.string(), description: z.string().default(""), status: meetingStatusSchema, duration: z.number().finite().nonnegative().nullable(), recordingStartedAt: nullableDateSchema, updatedAt: dateSchema }).strict(),
@@ -199,6 +200,27 @@ export class MeetingSyncService {
     const parsed = permissionPrincipalSchema.safeParse(value);
     if (!parsed.success) throw new RequestError(400, "invalid_sync_share_target");
     return parsed.data;
+  }
+
+  async vaultTransferAudience(identity: Identity, sourceVaultId: string, destinationVaultId: string) {
+    return this.store.withIdentity(identity, (scoped) => scoped.vaultTransferAudience(sourceVaultId, destinationVaultId));
+  }
+
+  async transferVault(identity: Identity, sourceVaultId: string, key: string | undefined, body: unknown) {
+    this.requireWritableIdentity(identity);
+    const idempotencyKey = uuidV7Schema.safeParse(key);
+    const parsed = z.object({ destinationVaultId: uuidSchema, sourceRevision: z.number().int().positive(),
+      destinationRevision: z.number().int().positive() }).strict().safeParse(body);
+    if (!idempotencyKey.success || !parsed.success) throw new RequestError(400, "invalid_vault_transfer");
+    const requestHash = await sha256(canonicalJson({ sourceVaultId, ...parsed.data }));
+    const result = await this.store.withIdentity(identity, (scoped) => scoped.transferVault({
+      sourceVaultId, ...parsed.data, idempotencyKey: idempotencyKey.data, requestHash,
+    }));
+    return { id: result.id, status: "committed" as const, sourceVaultId, destinationVaultId: result.destinationVaultId };
+  }
+
+  async getVaultRelocations(identity: Identity, vaultId: string) {
+    return this.store.withIdentity(identity, (scoped) => scoped.getVaultRelocations(vaultId));
   }
 
   async resolveTransaction(identity: Identity, body: unknown) {

@@ -103,7 +103,7 @@ final class SyncSnapshotStore: Sendable {
                     return SyncProjectSnapshot(
                         projectId: change.entityId, parentProjectId: record.parentProjectId, name: name,
                         description: record.description ?? "", projectType: record.projectType,
-                        revision: revision, createdAt: createdAt
+                        revision: revision, createdAt: createdAt, appearance: record.appearance
                     )
                 }
         }

@@ -164,7 +164,7 @@ describe("desktop-style meeting layout", () => {
     expect(html).not.toContain("Hidden transcript");
   });
 
-  it("groups the account, Vaults, organizations and sign-out in the footer menu", () => {
+  it("groups account actions in the footer and keeps Vault navigation in the sidebar", () => {
     vi.stubGlobal("navigator", { language: "en" });
     const session = { user: { id: "user", name: "Example User" }, workspace: { id: "personal", type: "personal" as const }, capabilities: { sync: true, sharing: true, sessions: true, admin: false } };
     const html = renderToStaticMarkup(createElement(SidebarProvider, { session, children: createElement(Sidebar, {
@@ -173,18 +173,21 @@ describe("desktop-style meeting layout", () => {
     const [navigation, footer] = html.split('<div class="sidebar-footer">');
     expect(navigation).toContain("Project navigation");
     expect(navigation).not.toContain("organization-switcher");
-    expect(navigation).not.toContain("Settings");
+    expect(navigation).not.toContain("Account settings");
     expect(footer).toContain('popoverTarget="account-menu"');
-    expect(footer).toContain("Personal");
-    expect(footer).toContain('<strong>Vaults</strong>');
+    expect(footer).toContain("No organization selected");
+    expect(footer).not.toContain('href="/vaults"');
+    expect(navigation).toContain('href="/vaults"');
     expect(footer).toContain('<strong>Organizations</strong>');
     expect(footer).toContain('class="menu-account" href="/dashboard"');
     expect(footer).toContain('class="menu-icon"');
     expect(footer).toContain("Sign out");
     expect(footer).not.toContain("Workspace");
     expect(footer).not.toContain("Local account");
-    expect(footer).toContain("Manage organizations");
+    expect(footer).toContain('href="/organizations"');
+    expect(navigation).toContain('href="/organizations"');
     expect(footer).toContain("Settings");
+    expect(footer).not.toContain("sidebar-settings");
     expect(footer).not.toContain("Artifacts");
   });
 
@@ -194,25 +197,29 @@ describe("desktop-style meeting layout", () => {
     const html = renderToStaticMarkup(createElement(SidebarProvider, { session, children: createElement(Sidebar, {
       session, brand: "Dahlia", children: null,
     }) }));
-    expect(html).toContain('<strong>保管庫</strong>');
-    expect(html).toContain("保管庫を管理");
+    expect(html).toContain('aria-label="保管庫"');
+    expect(html).not.toContain("保管庫を管理");
     expect(html).not.toContain("サインアウト");
     expect(html).not.toContain('<strong>組織</strong>');
     expect(html).not.toContain("組織を管理");
     expect(html).not.toContain('href="/admin/members"');
   });
 
-  it.each([false, true])("places platform Members under Organizations with sharing=%s", (sharing) => {
+  it.each([false, true])("keeps server administration outside the account menu with sharing=%s", (sharing) => {
     vi.stubGlobal("navigator", { language: "ja-JP" });
     const session = { user: { id: "user", name: "Example User" }, workspace: { id: "personal", type: "personal" as const }, capabilities: { sync: true, sharing, sessions: true, admin: true } };
     const html = renderToStaticMarkup(createElement(SidebarProvider, { session, children: createElement(Sidebar, {
       session, brand: "Dahlia", children: createElement("a", { href: "/dashboard/settings" }, "設定"),
     }) }));
-    const organizationSection = html.split('<strong>組織</strong>')[1]?.split('<span class="nav-divider">')[0];
-    expect(organizationSection).toContain('href="/admin/members"');
-    expect(organizationSection).toContain("メンバー");
-    expect(organizationSection).not.toContain("設定");
-    expect(html.match(/href="\/admin\/members"/g)).toHaveLength(1);
+    const [navigation, footer] = html.split('<div class="sidebar-footer">');
+    for (const path of ["/admin/organizations", "/admin/users", "/admin/settings"]) {
+      expect(navigation).toContain(`href="${path}"`);
+      expect(footer).not.toContain(`href="${path}"`);
+    }
+    expect(navigation).toContain("サーバー設定");
+    expect(footer?.includes('href="/organizations"')).toBe(sharing);
+    if (sharing) expect(footer).toContain("所属組織一覧");
+    expect(footer).toContain("設定");
   });
 });
 
@@ -350,7 +357,7 @@ describe("dashboard navigation", () => {
     expect(html).toContain("Planning");
     expect(html).not.toContain("TRANSCRIPT_NOT_FOUND");
     vi.stubGlobal("navigator", { language: "ja-JP" });
-    expect(renderToStaticMarkup(createElement(MeetingList, { meetings: [], loading: false }))).toContain("ミーティングがありません");
+    expect(renderToStaticMarkup(createElement(MeetingList, { meetings: [], loading: false }))).toContain("ミーティングはまだありません");
   });
 
   it("gates synchronized Vault routes with the sync capability", () => {
@@ -368,6 +375,14 @@ describe("dashboard navigation", () => {
   it("gates organization and invitation routes with session capabilities", () => {
     const enabled = { admin: false, sessions: true, sharing: true };
     expect(resolveDashboardRoute("/organizations", enabled)).toEqual({ page: "organizations" });
+    expect(resolveDashboardRoute("/organizations/alpha-team", enabled))
+      .toEqual({ page: "organization", organizationSlug: "alpha-team" });
+    expect(dashboardNavigationPath("/organizations/alpha-team", "https://example.com/organizations"))
+      .toBe("/organizations/alpha-team");
+    expect(resolveDashboardRoute("/organizations/alpha-team", { ...enabled, sharing: false }))
+      .toEqual({ redirect: "/dashboard" });
+    expect(resolveDashboardRoute("/organizations/external", { ...enabled, sessions: false }))
+      .toEqual({ page: "organization", organizationSlug: "external" });
     expect(resolveDashboardRoute("/accept-invitation/invitation-1", enabled))
       .toEqual({ page: "invitation", invitationId: "invitation-1" });
     expect(resolveDashboardRoute("/organizations", { ...enabled, sharing: false }))
@@ -386,9 +401,13 @@ describe("dashboard navigation", () => {
   it("gates administration routes", () => {
     const admin = { admin: true, sessions: false };
     const user = { admin: false, sessions: false };
-    expect(resolveDashboardRoute("/admin", admin)).toEqual({ redirect: "/admin/members" });
+    expect(resolveDashboardRoute("/admin", admin)).toEqual({ redirect: "/admin/settings" });
     expect(resolveDashboardRoute("/admin/models", admin)).toEqual({ redirect: "/dashboard" });
-    expect(resolveDashboardRoute("/admin/members", admin)).toEqual({ page: "admin-members" });
+    expect(resolveDashboardRoute("/admin/members", admin)).toEqual({ redirect: "/admin/users" });
+    for (const [path, page] of [["/admin/users", "admin-users"], ["/admin/organizations", "admin-organizations"], ["/admin/settings", "admin-settings"]]) {
+      expect(resolveDashboardRoute(path!, admin)).toEqual({ page });
+      expect(resolveDashboardRoute(path!, user)).toEqual({ redirect: "/dashboard" });
+    }
     expect(resolveDashboardRoute("/admin/models", user)).toEqual({ redirect: "/dashboard" });
   });
 
@@ -438,7 +457,8 @@ describe("dashboard navigation", () => {
     expect(source).toContain("/api/auth/organization/list-user-teams?");
     expect(source).not.toContain("/api/auth/organization/list-team-members?");
     expect(source).toContain('team.id !== "external-default"');
-    expect(source).toContain("summaryDisplayText(currentSummary?.document ?? null)");
+    expect(source).not.toContain("window.prompt(");
+    expect(source).not.toContain("window.confirm(");
     expect(source).not.toContain("<pre>{meeting.summaryDocument}</pre>");
   });
 

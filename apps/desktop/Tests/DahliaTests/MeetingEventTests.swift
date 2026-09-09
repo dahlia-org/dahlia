@@ -17,7 +17,7 @@
             let vaultId = UUID.v7()
             try queue.write { db in
                 try connection.insert(db)
-                try VaultRecord(id: vaultId, path: nil, name: "Existing", createdAt: .now, lastOpenedAt: .now).insert(db)
+                try insertLegacyVault(VaultRecord(id: vaultId, path: nil, name: "Existing", createdAt: .now, lastOpenedAt: .now), in: db)
                 try db.execute(
                     sql: "INSERT INTO sync_transactions(id, vaultId, connectionId, createdAt, availableAt) VALUES (?, ?, ?, ?, ?)",
                     arguments: [transactionId, vaultId, connection.id, Date(), Date()]

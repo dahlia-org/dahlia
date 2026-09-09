@@ -1,3 +1,4 @@
+import type { Appearance } from "../appearance-model";
 import type { TranscriptMetadata } from "../sync/transcript";
 import type { SummaryMetadata } from "../summary/metadata";
 import type { SummaryJob } from "../summary/model";
@@ -23,6 +24,7 @@ export const accountSettings = sqliteTable("account_settings", {
 export const syncedVault = sqliteTable("vaults", {
   vaultId: text("vault_id").primaryKey(),
   name: text("name").notNull(),
+  appearance: text("appearance", { mode: "json" }).$type<Appearance>(),
   revision: integer("revision").default(1).notNull(),
   deletingAt: sqliteTimestamp("deleting_at"),
   createdAt: sqliteTimestamp("created_at").default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`).notNull(),
@@ -34,6 +36,7 @@ export const syncedProject = sqliteTable("projects", {
   vaultId: text("vault_id").notNull(),
   parentProjectId: text("parent_project_id"),
   name: text("name").notNull(),
+  appearance: text("appearance", { mode: "json" }).$type<Appearance>(),
   description: text("description").default("").notNull(),
   projectType: text("project_type"),
   revision: integer("revision").notNull(),
@@ -459,4 +462,19 @@ export const summary = sqliteTable("summaries", {
 }, (table) => [
   unique("summary_meeting_version_unique").on(table.meetingId, table.version),
   foreignKey({ columns: [table.meetingId], foreignColumns: [syncedMeeting.meetingId] }).onDelete("cascade"),
+]);
+
+// Retained independently of Vault deletion and ordinary sync-history pruning.
+export const vaultTransfer = sqliteTable("vault_transfers", {
+  sequence: integer("sequence").primaryKey({ autoIncrement: true }),
+  id: text("id").notNull().unique(),
+  ownerUserId: text("owner_user_id").notNull().references(() => authUser.id, { onDelete: "cascade" }),
+  idempotencyKey: text("idempotency_key").notNull(),
+  requestHash: text("request_hash").notNull(),
+  sourceVaultId: text("source_vault_id").notNull(),
+  destinationVaultId: text("destination_vault_id").notNull(),
+  manifest: text("manifest", { mode: "json" }).$type<{ projects: string[]; meetings: string[]; files: string[] }>().notNull(),
+}, (table) => [
+  unique("vault_transfer_owner_key_unique").on(table.ownerUserId, table.idempotencyKey),
+  index("vault_transfer_owner_sequence_idx").on(table.ownerUserId, table.sequence),
 ]);

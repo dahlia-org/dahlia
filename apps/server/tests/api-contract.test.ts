@@ -42,7 +42,9 @@ describe.each(["node", "worker"])("v1 HTTP contract (%s)", (runtime) => {
     expect((await send("/api/v1/files/id/metadata", "PUT", undefined, {})).status).toBe(401);
     expect((await send("/api/v1/missing")).status).toBe(404);
     expect((await send("/api/auth/sign-in/google", "PATCH")).status).toBe(404);
-    expect((await send("/api/v1/vaults/id/permissions", "POST")).status).toBe(404);
+    const permissions = await send("/api/v1/vaults/id/permissions", "POST");
+    expect(permissions.status).toBe(405);
+    expect(permissions.headers.get("allow")).toBe("GET, HEAD");
     expect((await send("/api/sessions", "POST", undefined, { ...identityHeaders, origin: config.baseUrl })).status).toBe(404);
     expect(await (await send("/api/v1/custom", "POST")).json()).toEqual({ extension: true });
     expect(await (await send("/api/v1/vaults/custom", "POST")).json()).toEqual({ userId: "owner" });

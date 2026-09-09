@@ -35,7 +35,8 @@ extension MeetingRepository {
         parentProjectId: UUID?,
         name: String,
         description: String,
-        projectType: ProjectType?
+        projectType: ProjectType?,
+        appearance: ProjectAppearance? = nil
     ) throws -> ProjectRecord {
         try dbQueue.write { db in
             guard DahliaProjectName.normalizedName(name) == name else {
@@ -60,7 +61,8 @@ extension MeetingRepository {
                 name: name,
                 createdAt: .now,
                 description: description,
-                projectType: parentProjectId == nil ? (projectType ?? .undefined) : nil
+                projectType: parentProjectId == nil ? (projectType ?? .undefined) : nil,
+                appearance: parentProjectId == nil ? appearance : nil
             )
             try record.insert(db)
             try SyncTransactionRecorder.record(
@@ -137,7 +139,8 @@ extension MeetingRepository {
         description: String,
         projectType: ProjectType,
         vaultExportUpdates: [MeetingVaultExportUpdate],
-        expectedRevision: Int
+        expectedRevision: Int,
+        appearance: ProjectAppearance? = nil
     ) throws -> ProjectRecord {
         try dbQueue.write { db in
             let records = try ProjectRecord.fetchResolvedAll(vaultId: vaultId, in: db)
@@ -166,13 +169,16 @@ extension MeetingRepository {
             }
             let locationChanged = project.parentProjectId != parentProjectId || project.name != name
             let typeChanged = parentProjectId == nil && project.projectType != projectType
+            let nextAppearance = parentProjectId == nil ? (appearance ?? project.appearance) : nil
             let changed = locationChanged || typeChanged || project.description != description
+                || project.appearance != nextAppearance
             guard changed else { return project }
 
             project.parentProjectId = parentProjectId
             project.name = name
             project.description = description
             project.projectType = parentProjectId == nil ? projectType : nil
+            project.appearance = nextAppearance
             project.revision += 1
             try project.update(db)
             if locationChanged || typeChanged {
@@ -264,6 +270,7 @@ extension MeetingRepository {
             }
             let effectiveType = ProjectRecord.effectiveType(for: project.id, records: records)?.type ?? .undefined
             let wasRoot = project.parentProjectId == nil
+            if parentProjectId != nil { project.appearance = nil }
             project.parentProjectId = parentProjectId
             project.name = name
             project.projectType = parentProjectId == nil

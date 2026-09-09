@@ -159,6 +159,7 @@ struct SyncCanonicalPayload: Codable, Sendable {
     let parentProjectId: UUID?
     let projectId: UUID?
     let meetingId: UUID?
+    var appearance: ProjectAppearance?
     let name: String?
     let description: String?
     let projectType: String?
@@ -185,6 +186,7 @@ struct SyncCanonicalPayload: Codable, Sendable {
 
     enum CodingKeys: String, CodingKey {
         case contentOmitted, contentPresent, contentCount, hasSummary, transcriptRevision, transcript
+        case appearance
         case parentProjectId, projectId, meetingId, name, description, projectType, status, duration, recordingStartedAt
         case createdAt, updatedAt, title, document, capturedAt, fileId, sessionId, uri, offset, size, checksum, metadata
         case recordingNumber
@@ -741,8 +743,10 @@ enum SyncTransactionQueue {
         if try TextContentStore.observe(entity: entity, id: id, vaultId: vaultId, value: value, in: db) { return }
         switch entity {
         case .vault:
-            if let name = value.name {
-                try db.execute(sql: "UPDATE vaults SET name = ? WHERE id = ?", arguments: [name, vaultId])
+            if var vault = try VaultRecord.fetchOne(db, key: vaultId) {
+                if let name = value.name { vault.name = name }
+                vault.appearance = value.appearance
+                try vault.update(db)
             }
         case .project:
             guard let name = value.name, let createdAt = value.createdAt else { return }
@@ -754,6 +758,7 @@ enum SyncTransactionQueue {
                 createdAt: createdAt,
                 description: value.description ?? "",
                 projectType: value.projectType.flatMap(ProjectType.init(rawValue:)),
+                appearance: value.appearance,
                 in: db
             )
         case .meeting:

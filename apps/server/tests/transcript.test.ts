@@ -26,7 +26,7 @@ async function setup() {
   const databasePath = join(directory, "db.sqlite");
   const config: AppConfig = { authProvider: "header", authHeader: "X-Forwarded-Email", databaseType: "sqlite",
     databaseUrl: `file:${databasePath}`, baseUrl: "http://localhost:5173", oauthRedirectUris: [],
-    maxRequestBytes: 1_048_576, syncSharingEnabled: true };
+    maxRequestBytes: 1_048_576 };
   const store = createNodeApplicationStore(config);
   await store.migrate(); await store.ensureIdentityUser(owner); await store.ensureIdentityUser(member);
   const sync = new MeetingSyncService(store.sync);

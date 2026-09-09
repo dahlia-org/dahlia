@@ -21,7 +21,6 @@ describe("configuration", () => {
       storageLocalPath: ".data/storage",
       codexAutoReviewModel: undefined,
       searchEmbedding: undefined,
-      syncSharingEnabled: false,
     });
   });
 
@@ -30,11 +29,6 @@ describe("configuration", () => {
       .toBe("provider/reviewer");
     expect(loadConfig({ ...accounts, CODEX_AUTO_REVIEW_MODEL: " " }).codexAutoReviewModel).toBeUndefined();
     expect(() => loadConfig({ ...accounts, CODEX_AUTO_REVIEW_MODEL: "m".repeat(768) })).toThrow();
-  });
-
-  it("keeps Vault sharing opt-in", () => {
-    expect(loadConfig({ ...accounts, DAHLIA_SYNC_SHARING_ENABLED: "true" }).syncSharingEnabled).toBe(true);
-    expect(() => loadConfig({ ...accounts, DAHLIA_SYNC_SHARING_ENABLED: "yes" })).toThrow();
   });
 
   it("keeps embeddings off unless a Databricks model is configured", () => {

@@ -366,6 +366,37 @@ final class AppDatabaseManager: Sendable {
             try TranscriptActivityMigration.migrate(in: db)
         }
 
+        migrator.registerMigration("v51_collectionAppearance") { db in
+            try addColumnIfNeeded(in: db, table: "vaults", column: "appearance", type: .text)
+            try addColumnIfNeeded(in: db, table: "projects", column: "appearance", type: .text)
+        }
+
+        migrator.registerMigration("v52_vaultRelocation") { db in
+            // Canonical relocation updates roots, children, and meetings in one transaction.
+            // Ordinary project edits still require their original Vault in ProjectRecord.
+            try db.execute(sql: """
+            CREATE TABLE vault_relocation_scope (
+                sourceVaultId BLOB NOT NULL, destinationVaultId BLOB NOT NULL,
+                PRIMARY KEY(sourceVaultId, destinationVaultId)
+            );
+            DROP TRIGGER projects_prevent_vault_change;
+            DROP TRIGGER IF EXISTS meetings_prevent_vault_change;
+            CREATE TRIGGER projects_prevent_vault_change BEFORE UPDATE OF vaultId ON projects
+            WHEN NEW.vaultId <> OLD.vaultId AND NOT EXISTS (
+                SELECT 1 FROM vault_relocation_scope WHERE sourceVaultId = OLD.vaultId AND destinationVaultId = NEW.vaultId
+            ) BEGIN SELECT RAISE(ABORT, 'project vault is immutable'); END;
+            """)
+            if try db.tableExists("meetings") {
+                try db.execute(sql: """
+                CREATE TRIGGER meetings_prevent_vault_change BEFORE UPDATE OF vaultId ON meetings
+                WHEN NEW.vaultId <> OLD.vaultId AND NOT EXISTS (
+                    SELECT 1 FROM vault_relocation_scope WHERE sourceVaultId = OLD.vaultId AND destinationVaultId = NEW.vaultId
+                ) BEGIN SELECT RAISE(ABORT, 'meeting vault is immutable'); END;
+                """)
+            }
+            try addColumnIfNeeded(in: db, table: "recording_audio_files", column: "originalVaultPath", type: .text)
+        }
+
         return migrator
     }()
 

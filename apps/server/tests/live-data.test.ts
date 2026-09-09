@@ -1,7 +1,7 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { accountSettingsEvent, inaccessible, liveDataEvent, readVisiblePages, refreshQueue, retainEqual, subscribeLiveUpdates } from "../src/client/live-data";
 import { RequestError } from "../src/client/api";
-import { dashboardNavigationPath, navigateDashboard } from "../src/client/navigation";
+import { dashboardNavigationEvent, dashboardNavigationPath, navigateDashboard } from "../src/client/navigation";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -105,13 +105,19 @@ it("navigates within browser history and allows explicitly registered extension 
   vi.stubGlobal("PopStateEvent", Event);
   const changed = vi.fn();
   browser.addEventListener("popstate", changed);
+  const navigated = vi.fn();
+  browser.addEventListener(dashboardNavigationEvent, navigated);
   navigateDashboard("/vaults");
+  expect(navigated).toHaveBeenCalledOnce();
   expect(changed).not.toHaveBeenCalled();
+  expect(browser.history.pushState).not.toHaveBeenCalled();
+  expect(browser.history.replaceState).not.toHaveBeenCalled();
   navigateDashboard("/organizations");
   expect(browser.history.pushState).toHaveBeenCalledWith(null, "", "/organizations");
   navigateDashboard("/dashboard", true);
   expect(browser.history.replaceState).toHaveBeenCalledWith(null, "", "/dashboard");
   expect(changed).toHaveBeenCalledTimes(2);
+  expect(navigated).toHaveBeenCalledTimes(3);
   expect(dashboardNavigationPath("/custom", "https://dahlia.test", ["/custom"])).toBe("/custom");
   expect(dashboardNavigationPath("https://elsewhere.test/custom", "https://dahlia.test", ["/custom"])).toBeUndefined();
 });

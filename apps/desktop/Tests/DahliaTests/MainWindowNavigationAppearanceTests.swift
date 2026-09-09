@@ -24,7 +24,7 @@
                 createdAt: .distantPast,
                 meetingCount: 0
             )
-            let projectsByID = [parent.projectId: parent, child.projectId: child]
+            var projectsByID = [parent.projectId: parent, child.projectId: child]
             let navigation = MainWindowNavigation(openMainWindow: {}, settingsDefaults: defaults)
             let parentAppearance = ProjectAppearance(icon: .music, color: .purple)
 
@@ -43,6 +43,19 @@
             #expect(
                 navigation.projectAppearance(for: child.projectId, in: projectsByID, vaultId: vault) == updatedAppearance
             )
+
+            let canonicalParent = ProjectAppearance(icon: .book, color: .green)
+            projectsByID[parent.projectId]?.appearance = canonicalParent
+            #expect(navigation.projectAppearance(for: parent.projectId, in: projectsByID, vaultId: vault) == canonicalParent)
+            #expect(navigation.projectAppearance(for: child.projectId, in: projectsByID, vaultId: vault) == canonicalParent)
+
+            let explicitChild = ProjectAppearance(icon: .code, color: .pink)
+            projectsByID[child.projectId]?.appearance = explicitChild
+            #expect(navigation.projectAppearance(for: child.projectId, in: projectsByID, vaultId: vault) == canonicalParent)
+            projectsByID[parent.projectId]?.appearance = parentAppearance
+            #expect(navigation.projectAppearance(for: child.projectId, in: projectsByID, vaultId: vault) == parentAppearance)
+            projectsByID[child.projectId]?.appearance = nil
+            #expect(navigation.projectAppearance(for: child.projectId, in: projectsByID, vaultId: vault) == parentAppearance)
         }
     }
 #endif

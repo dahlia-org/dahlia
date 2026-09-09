@@ -266,6 +266,7 @@ enum RemoteChangeApplier {
                     createdAt: project.createdAt,
                     description: project.description,
                     projectType: project.projectType.flatMap(ProjectType.init(rawValue:)),
+                    appearance: project.appearance,
                     in: db
                 )
                 if let previous {
@@ -310,7 +311,8 @@ enum RemoteChangeApplier {
             name: project.name,
             createdAt: project.createdAt,
             description: project.description,
-            projectType: project.projectType.flatMap(ProjectType.init(rawValue:))
+            projectType: project.projectType.flatMap(ProjectType.init(rawValue:)),
+            appearance: project.appearance
         ).insert(db)
     }
 

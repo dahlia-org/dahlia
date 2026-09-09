@@ -19,10 +19,10 @@
                     sql: "INSERT INTO vaults (id, path, name, createdAt, lastOpenedAt) VALUES (?, ?, 'First', ?, ?)",
                     arguments: [firstVault, "/tmp/first", Date.now, Date.now]
                 )
-                try ProjectRecord(
-                    id: project, vaultId: firstVault, parentProjectId: nil,
-                    name: "Project", createdAt: .now, projectType: .undefined
-                ).insert(db)
+                try db.execute(
+                    sql: "INSERT INTO projects (id, vaultId, name, nameKey, createdAt, projectType) VALUES (?, ?, 'Project', 'project', ?, 'undefined')",
+                    arguments: [project, firstVault, Date.now]
+                )
                 try MeetingRecord(
                     id: meeting, vaultId: firstVault, projectId: project,
                     name: "Meeting", createdAt: .now, updatedAt: .now
@@ -38,12 +38,12 @@
                 ).insert(db)
             }
             let result = try queue.read { db in
-                (
-                    try VaultRecord.fetchOne(db, key: firstVault),
-                    try VaultRecord.fetchOne(db, key: secondVault),
-                    try ProjectRecord.fetchOne(db, key: project),
-                    try MeetingRecord.fetchOne(db, key: meeting),
-                    try Row.fetchOne(db, sql: "PRAGMA foreign_key_check")
+                try (
+                    VaultRecord.fetchOne(db, key: firstVault),
+                    VaultRecord.fetchOne(db, key: secondVault),
+                    ProjectRecord.fetchOne(db, key: project),
+                    MeetingRecord.fetchOne(db, key: meeting),
+                    Row.fetchOne(db, sql: "PRAGMA foreign_key_check")
                 )
             }
             #expect(result.0?.path == "/tmp/first")

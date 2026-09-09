@@ -1,3 +1,4 @@
+import { Select } from "./Select";
 import { useEffect } from "react";
 import { RequestError, uiText } from "./api";
 import { useLiveJSON, useLivePage } from "./live-data";
@@ -30,9 +31,9 @@ export function SummaryHistory({ base, latest, selected, onSelect }: {
   const detailLabels: Record<string, string> = { concise: uiText("Concise", "簡潔"), standard: uiText("Standard", "標準"),
     detailed: uiText("Detailed", "詳細"), eventSession: uiText("Event session", "イベントセッション") };
   return <>
-    <div className="summary-generation">
-      <label>{uiText("Version", "バージョン")} <select value={selected ?? "latest"}
-        onChange={(event) => onSelect(event.target.value === "latest" ? null : Number(event.target.value))}>
+    <div className="history-toolbar">
+      <label>{uiText("Version", "バージョン")} <Select value={selected ?? "latest"}
+        onValueChange={(value) => onSelect(value === "latest" ? null : Number(value))}>
         <option value="latest">{uiText("Current", "現在")}{latest && ` (v${latest.version})`}</option>
         {selected !== null && !versions.data?.items.some((version) => version.version === selected) && <option value={selected}>v{selected}</option>}
         {versions.data?.items.map((version) => {
@@ -41,11 +42,11 @@ export function SummaryHistory({ base, latest, selected, onSelect }: {
             v{version.version} · {new Date(version.savedAt).toLocaleString()}{model && ` · ${model}`}
           </option>;
         })}
-      </select></label>
-      {versions.data?.nextCursor && <button disabled={versions.loadingMore} onClick={versions.loadMore}>{uiText("Load older versions", "以前の版を読み込む")}</button>}
+      </Select></label>
+      {versions.data?.nextCursor && <button className="secondary" disabled={versions.loadingMore} onClick={versions.loadMore}>{uiText("Load older versions", "以前の版を読み込む")}</button>}
       {selected !== null && <span>{uiText("Read-only version", "過去版（閲覧のみ）")}</span>}
     </div>
-    {error && <p role="alert" className="error">{error.message} <button onClick={() => { versions.reload(); history.reload(); }}>{uiText("Retry", "再試行")}</button></p>}
+    {error && <p role="alert" className="error">{error.message} <button className="secondary" onClick={() => { versions.reload(); history.reload(); }}>{uiText("Retry", "再試行")}</button></p>}
     {selected !== null && history.loading && !history.data && <p role="status">{uiText("Loading…", "読み込み中…")}</p>}
     {raw ? <>
       {title && <h2 className="summary-title">{title}</h2>}

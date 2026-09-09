@@ -13,6 +13,26 @@ import os
     // swiftlint:disable:next type_body_length
     struct AppDatabaseManagerTests {
         @Test
+        func collectionAppearanceMigrationPreservesExistingRows() throws {
+            let queue = try DatabaseQueue()
+            try AppDatabaseManager.migrator.migrate(queue, upTo: "v50_transcriptActivity")
+            let vaultID = UUID.v7()
+            try queue.write { db in
+                try db.execute(
+                    sql: "INSERT INTO vaults (id, name, createdAt, lastOpenedAt) VALUES (?, ?, ?, ?)",
+                    arguments: [vaultID, "Preserved", Date.now, Date.now]
+                )
+            }
+            try AppDatabaseManager.migrator.migrate(queue)
+            try queue.read { db in
+                let vault = try #require(try VaultRecord.fetchOne(db, key: vaultID))
+                #expect(vault.name == "Preserved")
+                #expect(vault.appearance == nil)
+                #expect(try db.columns(in: "projects").contains { $0.name == "appearance" })
+            }
+        }
+
+        @Test
         func databaseFileUsesPrivatePermissions() throws {
             let databaseURL = FileManager.default.temporaryDirectory
                 .appending(path: "dahlia-database-permissions-\(UUID.v7().uuidString)")
@@ -105,7 +125,7 @@ import os
 
             #expect(columns == [
                 "id", "vaultId", "parentProjectId", "name", "nameKey",
-                "createdAt", "description", "projectType", "revision",
+                "createdAt", "description", "projectType", "revision", "appearance",
             ])
         }
 

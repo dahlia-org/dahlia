@@ -34,7 +34,11 @@
                         arguments: [transactionId, UUID.v7(), meetingId, "pending body"]
                     )
                 }
-                try vault.insert(db)
+                try insertLegacyVault(vault, in: db)
+                try db.execute(
+                    sql: "UPDATE vaults SET accountConnectionId = ?, syncConfirmedConnectionId = ? WHERE id = ?",
+                    arguments: [vault.accountConnectionId, vault.syncConfirmedConnectionId, vault.id]
+                )
                 try MeetingRecord(id: meetingId, vaultId: vaultId, projectId: nil, name: "Existing", createdAt: .now, updatedAt: .now).insert(db)
                 try db.execute(
                     sql: """

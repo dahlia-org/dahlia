@@ -74,7 +74,7 @@ export function FileViewer({ fileId, separateTab = false, capturedAt, onClose }:
       preview = <p className="content-empty">{uiText("Download this file to view its contents.", "ダウンロードしてファイルの内容を確認してください。")}</p>;
     } else if (failed) {
       preview = <p className="error" role="alert">
-        {uiText("Unable to load preview.", "プレビューを読み込めません。")} <button onClick={() => { setFailed(false); query.reload(); }}>{uiText("Retry", "再試行")}</button>
+        {uiText("Unable to load preview.", "プレビューを読み込めません。")} <button className="secondary" onClick={() => { setFailed(false); query.reload(); }}>{uiText("Retry", "再試行")}</button>
       </p>;
     } else {
       preview = <img ref={previewImage} className="file-preview-image" src={file.variants.thumb_1568 ?? content} alt={file.metadata.caption || file.name} onError={() => setFailed(true)} onClick={closeOnBackdropClick} />;
@@ -93,7 +93,7 @@ export function FileViewer({ fileId, separateTab = false, capturedAt, onClose }:
       {onClose && <button autoFocus className="file-action" title={uiText("Close", "閉じる")} aria-label={uiText("Close", "閉じる")} onClick={onClose}><ViewerIcon path="m6 6 12 12M18 6 6 18" /></button>}
     </header>
     <div className="file-stage" onClick={closeOnBackdropClick}>
-      {query.error && <p className="error file-load-error" role="alert">{uiText("Unable to load this file. It may have been deleted or access has changed.", "ファイルを読み込めません。削除されたか、アクセス権が変更された可能性があります。")} <button onClick={query.reload}>{uiText("Retry", "再試行")}</button></p>}
+      {query.error && <p className="error file-load-error" role="alert">{uiText("Unable to load this file. It may have been deleted or access has changed.", "ファイルを読み込めません。削除されたか、アクセス権が変更された可能性があります。")} <button className="secondary" onClick={query.reload}>{uiText("Retry", "再試行")}</button></p>}
       {!file && !query.error && <p className="content-empty">{uiText("Loading…", "読み込み中…")}</p>}
       {file && <div className="file-image-size" style={{ width: `${zoom}%`, height: `${zoom}%` }}>{preview}</div>}
     </div>

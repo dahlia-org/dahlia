@@ -1,3 +1,4 @@
+import type { Appearance } from "../appearance-model";
 import type { TranscriptVersion } from "./transcript";
 import type { SummaryVersion } from "../summary/metadata";
 import type { SummaryJob } from "../summary/model";
@@ -22,8 +23,10 @@ export interface SyncTranscriptCursor {
 }
 
 export interface SyncVaultRecord {
+  hasResources?: boolean;
   vaultId: string;
   name: string;
+  appearance?: Appearance | null;
   revision?: number;
   createdAt: Date;
   updatedAt: Date;
@@ -35,6 +38,7 @@ export interface SyncProjectRecord {
   vaultId: string;
   parentProjectId: string | null;
   name: string;
+  appearance?: Appearance | null;
   description: string;
   projectType: "customer" | "internal" | "personal" | "undefined" | null;
   revision: number;
@@ -195,7 +199,32 @@ export interface SyncSearchQuery {
   };
 }
 
+export interface VaultRelocations {
+  vaults: SyncVaultRecord[];
+  items: { entity: "project" | "meeting" | "file"; id: string; vaultId: string }[];
+}
+
+export interface VaultTransferRequest {
+  sourceVaultId: string;
+  destinationVaultId: string;
+  sourceRevision: number;
+  destinationRevision: number;
+  idempotencyKey: string;
+  requestHash: string;
+}
+
+export interface VaultTransferRecord {
+  sequence: number;
+  id: string;
+  sourceVaultId: string;
+  destinationVaultId: string;
+  manifest: { projects: string[]; meetings: string[]; files: string[] };
+}
+
 export interface IdentitySyncStore {
+  vaultTransferAudience(sourceVaultId: string, destinationVaultId: string): Promise<{ removed: { id: string; name: string; email: string }[]; added: { id: string; name: string; email: string }[] }>;
+  transferVault(request: VaultTransferRequest): Promise<VaultTransferRecord>;
+  getVaultRelocations(vaultId: string): Promise<VaultRelocations>;
   listSummaryVersions(vaultId: string, meetingId: string, limit: number, before?: number): Promise<Omit<SummaryVersion, "document">[]>;
   getSummaryVersion(vaultId: string, meetingId: string, version?: number): Promise<SummaryVersion | null>;
   getSummaryJob(vaultId: string, meetingId: string, id?: string): Promise<SummaryJob | null>;
