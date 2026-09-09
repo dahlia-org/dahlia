@@ -132,7 +132,7 @@ jobs:
           test -s "$endpoint_file"
           set -o pipefail
           DAHLIA_OPENAPI_TEST_URL="$(cat "$endpoint_file")" swift test --skip-build --filter OpenAPIIntegrationTests 2>&1 | tee integration-output.log
-          grep -Eq "Test run with 1 test in 1 suite passed" integration-output.log
+          grep -Fq "Test generatedClientPreservesNullsDatesReceiptsAndStreamedBytes() passed" integration-output.log
 
       - name: Verify tests executed
         run: grep -Eq "Test run with [1-9][0-9]* tests" test-output.log
