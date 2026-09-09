@@ -16,7 +16,7 @@ PostgreSQL は generated tsvector / GIN、Lakebase は `lakebase_text` / BM25、
 
 ## Hybrid 検索
 
-`app.search_embeddings` に model / dimensions / content hash / vector を保存する。`app.search_index_jobs` は raw text を持たない lease 付き durable queue。Node worker が owner identity で文書を読み、App service principal により最大16文書ずつ非同期推論する。保存直前に hash と owner permission を再確認する。
+`app.search_embeddings` に model / dimensions / content hash / vector を保存する。`app.jobs_search_index` は raw text を持たない lease 付き durable queue。Node worker が owner identity で文書を読み、App service principal により最大16文書ずつ非同期推論する。保存直前に hash と owner permission を再確認する。
 
 - `DAHLIA_EMBEDDING_MODEL` が空なら無効。dimensions は32〜1024の2の冪、既定1024。DAB は `${var.catalog}.${var.ai_schema}.embedding` を使い、未登録時に `qwen3-embedding-0-6b` を登録する。
 - Lakebase は `lakebase_vector` / ANN、他 PostgreSQL は pgvector / HNSW、SQLite Node は Float32 BLOB の exact cosine。model / dimensions を index と query の条件に含める。

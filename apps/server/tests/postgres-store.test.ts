@@ -117,6 +117,52 @@ integration("PostgreSQL application store", () => {
     expect(await connection!.db.select().from(schema.vaultTransfer)).toEqual([]);
   });
 
+  it("derives recording scope from its meeting under FORCE RLS", async () => {
+    const store = createPostgresAuthStore(connection!.db, "postgres");
+    const suffix = crypto.randomUUID();
+    const owner: Identity = { userId: `recording-owner-${suffix}`, workspaceId: `personal:recording-owner-${suffix}`, source: "header" };
+    const member: Identity = { userId: `recording-member-${suffix}`, workspaceId: `personal:recording-member-${suffix}`, source: "header" };
+    const vaultId = crypto.randomUUID();
+    const meetingId = crypto.randomUUID();
+    const sessionId = crypto.randomUUID();
+    const now = new Date();
+    await store.ensureIdentityUser(owner);
+    await store.ensureIdentityUser(member);
+    try {
+      await store.sync.withIdentity(owner, async (sync) => {
+        await createVault(sync, vaultId, [{ id: crypto.randomUUID(), entity: "meeting", action: "create", entityId: meetingId,
+          baseRevision: null, data: meetingData(null, now, "Recording", "") }]);
+        for (const kind of ["recording_started", "recording_ended"]) {
+          await commit(sync, vaultId, [{ id: crypto.randomUUID(), entity: "meeting_event", action: "create", entityId: crypto.randomUUID(),
+            baseRevision: null, data: { meetingId, sessionId, kind, occurredAt: now } }]);
+        }
+        const record = await sync.reserveRecording(vaultId, meetingId, sessionId, "mic");
+        expect(record).toMatchObject({ vaultId, meetingId, sessionId, number: 1 });
+      });
+      expect(await connection!.db.select().from(schema.syncedRecording).where(eq(schema.syncedRecording.sessionId, sessionId))).toEqual([]);
+      expect(await store.sync.withIdentity(member, (sync) => sync.getRecording(meetingId, 1))).toBeNull();
+      await store.sync.withIdentity(owner, (sync) => sync.putMemberPermission(vaultId, "organization", "external"));
+      expect(await store.sync.withIdentity(member, (sync) => sync.getRecording(meetingId, 1))).toMatchObject({ vaultId, meetingId });
+      expect(await store.sync.withIdentity(member, (sync) => sync.getRecording(meetingId, 1, true))).toBeNull();
+      await connection!.db.transaction(async (tx) => {
+        await tx.execute(sql`select set_config('app.user_id', ${member.userId}, true)`);
+        await tx.execute(sql`select set_config('app.sharing_enabled', 'true', true)`);
+        expect(await tx.select().from(schema.syncedRecording).where(eq(schema.syncedRecording.sessionId, sessionId))).toHaveLength(1);
+        expect(await tx.update(schema.syncedRecording).set({ revision: 99 })
+          .where(eq(schema.syncedRecording.sessionId, sessionId)).returning()).toEqual([]);
+      });
+      await store.sync.withIdentity(owner, (sync) => sync.deleteMemberPermission(vaultId, "organization", "external"));
+      expect(await store.sync.withIdentity(member, (sync) => sync.getRecording(meetingId, 1))).toBeNull();
+      const record = await store.sync.withIdentity(owner, (sync) => sync.getRecording(meetingId, 1));
+      await store.sync.withIdentity(owner, (sync) => commit(sync, vaultId, [{ id: crypto.randomUUID(), entity: "meeting", action: "delete",
+        entityId: meetingId, baseRevision: 1, data: {} }]));
+      expect(await store.sync.withIdentity(owner, (sync) => sync.markRecordingUploaded(sessionId, "mic", record!.audio.mic!.generation, 1, "SHA-256:test"))).toBeNull();
+      expect(await store.sync.withIdentity(owner, (sync) => sync.getRecording(meetingId, 1))).toBeNull();
+    } finally {
+      await store.sync.withIdentity(owner, (sync) => resetVault(sync, vaultId));
+    }
+  });
+
   it("fails readiness when meeting event FORCE RLS is missing", async () => {
     expect(await createPostgresMeetingSyncStore(connection!.db).isAvailable()).toBe(true);
     try {
@@ -703,6 +749,8 @@ integration("PostgreSQL application store", () => {
         expect(await sync.listTranscript(vaultId, meetingId, 10, undefined, 1)).toHaveLength(1);
         expect(await sync.listTranscript(vaultId, meetingId, 10, undefined, 2)).toHaveLength(2);
         expect(await sync.listTranscriptVersions(vaultId, meetingId, 10)).toHaveLength(2);
+        expect(await sync.countTranscript(vaultId, meetingId)).toBe(2);
+        expect(await sync.countTranscript(crypto.randomUUID(), meetingId)).toBe(0);
       });
       await expect(write(secondId, 4, "live", "overwrite")).rejects.toMatchObject({ code: "transcript_version_immutable" });
       expect((await connection!.db.execute(sql`SELECT * FROM app.transcripts WHERE meeting_id = ${meetingId}`)).rows).toEqual([]);
@@ -763,6 +811,8 @@ function meetingData(
 
 async function resetVault(sync: IdentitySyncStore, vaultId: string) {
   const vault = await sync.getVault(vaultId);
+  await commit(sync, vaultId, [{ id: crypto.randomUUID(), entity: "vault", action: "reset", entityId: vaultId,
+    baseRevision: vault?.revision ?? null, data: { preservePermissions: true } }]);
   return commit(sync, vaultId, [{ id: crypto.randomUUID(), entity: "vault", action: "reset", entityId: vaultId,
-    baseRevision: vault?.revision ?? null, data: {} }]);
+    baseRevision: 0, data: {} }]);
 }

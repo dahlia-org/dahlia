@@ -1,4 +1,3 @@
-import type { Appearance } from "../../src/appearance-model";
 // Run with pnpm dev:client, then open /tests/browser/live-data.html.
 // All API responses and mutations are local fixtures; no backend is contacted.
 import { StrictMode } from "react";
@@ -97,7 +96,7 @@ window.fetch = (input, init) => Promise.resolve((() => {
   }
   if (url.pathname.startsWith(`${base}/meetings/`)) return Response.json(meeting(url.pathname.split("/").at(-1)!));
   if (url.pathname === "/api/v1/transactions") {
-    const body = JSON.parse(init?.body as string) as { id: string; operations: { entity: string; action: string; entityId: string; baseRevision?: number; data: { name?: string; preservePermissions?: boolean; appearance?: Appearance } }[] };
+    const body = JSON.parse(init?.body as string) as { id: string; operations: { entity: string; action: string; entityId: string; baseRevision?: number; data: { name?: string; preservePermissions?: boolean; icon?: string; color?: string } }[] };
     for (const op of body.operations) {
       if (op.entity === "vault" && op.action === "update") Object.assign(vault, op.data);
       if (op.entity === "vault" && op.action === "reset") {
@@ -106,7 +105,7 @@ window.fetch = (input, init) => Promise.resolve((() => {
       }
       if (op.entity === "meeting") meetingName = op.data.name!;
       if (op.entity === "project" && op.action === "create") projects.push({ ...projects[0]!, projectId: op.entityId, ...op.data, name: op.data.name!, path: op.data.name! });
-      if (op.entity === "project" && op.action === "update" && "parentProjectId" in op.data && op.data.parentProjectId) assert(op.data.appearance === undefined, "Child Project update included appearance");
+      if (op.entity === "project" && op.action === "update" && "parentProjectId" in op.data && op.data.parentProjectId) assert(op.data.icon === undefined && op.data.color === undefined, "Child Project update included appearance");
       if (op.entity === "project" && op.action === "update") Object.assign(projects.find((p) => p.projectId === op.entityId)!, { ...op.data, name: op.data.name!, path: op.data.name! });
       if (op.entity === "project" && op.action === "delete") projects.splice(projects.findIndex((p) => p.projectId === op.entityId), 1);
     }
@@ -252,7 +251,7 @@ async function run() {
     assert(location.pathname === target && !navigation.open, "Same-page search result left navigation open");
   }
   navigateDashboard("/meetings/m1");
-  await until(() => document.querySelector('[role="tab"]'));
+  await until(() => [...document.querySelectorAll('[role="tab"]')].some((tab) => tab.textContent === "Screenshots"));
   if (!window.matchMedia("(max-width: 820px)").matches) navigation.show();
   button("Screenshots").click();
   await until(() => document.querySelectorAll(".screenshot-grid figure").length === 3);
@@ -439,7 +438,9 @@ async function run() {
   assert(!document.querySelector('[aria-label="Project actions"]'), "Project actions should be in Settings");
   assert(document.querySelector('[role="tab"][aria-selected="true"]')?.textContent === "Meetings", "Project should open Meetings first");
   failures.set("/api/v1/transactions", 409);
-  button("Settings").click(); button("Edit Project").click(); await editDialog("Failed project edit", "Description");
+  button("Settings").click();
+  await until(() => [...document.querySelectorAll("button")].some((button) => button.textContent === "Edit Project"));
+  button("Edit Project").click(); await editDialog("Failed project edit", "Description");
   await until(() => document.querySelector(".action-dialog .dialog-error")?.textContent?.includes("fixture_409"));
   failures.clear();
   await editDialog("Edited project", "Description");
@@ -499,12 +500,14 @@ async function run() {
   const sidebarIcon = document.querySelector('.vault-switcher-trigger .appearance-icon')!;
   assert(sidebarIcon.getBoundingClientRect().width === 18, "Vault icon expanded into the label space");
   assert(getComputedStyle(document.querySelector('h1 .appearance-icon svg')!).color === getComputedStyle(sidebarIcon).color, "Heading and sidebar icon colors differ");
-  const child = { ...projects[1]!, parentProjectId: projects[0]!.projectId, appearance: { icon: "heart", color: "red" } as Appearance };
-  Object.assign(projects[0]!, { appearance: { icon: "book.closed", color: "green" } });
+  const child = { ...projects[1]!, parentProjectId: projects[0]!.projectId, icon: "heart", color: "red" };
+  Object.assign(projects[0]!, { icon: "book.closed", color: "green" });
   Object.assign(projects[1]!, child);
   navigateDashboard(`/projects/${child.projectId}`);
   await until(() => document.querySelector("h1")?.textContent === child.name && document.querySelector('h1 .appearance-icon')?.getAttribute("style")?.includes("34, 197, 94"));
-  button("Settings").click(); button("Edit Project").click();
+  button("Settings").click();
+  await until(() => [...document.querySelectorAll("button")].some((button) => button.textContent === "Edit Project"));
+  button("Edit Project").click();
   await until(() => document.querySelector('.action-dialog .appearance-trigger'));
   assert(document.querySelector('.action-dialog .appearance-trigger')?.tagName === "SPAN" && !document.querySelector('.appearance-popover'), "Child Project exposed an editable appearance");
   await editDialog("Renamed child");

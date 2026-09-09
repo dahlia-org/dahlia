@@ -352,7 +352,10 @@ import GRDB
             defer { fixture.removeFiles() }
             let vault = try fixture.database.dbQueue.read { try #require(try VaultRecord.fetchOne($0, key: fixture.meeting.vaultId)) }
             try queue.write { db in
-                try insertLegacyVault(vault, in: db)
+                try db.execute(
+                    sql: "INSERT INTO vaults(id, path, name, createdAt, lastOpenedAt) VALUES (?, ?, ?, ?, ?)",
+                    arguments: [vault.id, vault.path, vault.name, vault.createdAt, vault.lastOpenedAt]
+                )
                 try fixture.meeting.insert(db)
                 try fixture.session.insert(db)
                 try connection.insert(db)

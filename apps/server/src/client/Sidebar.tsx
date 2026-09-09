@@ -1,4 +1,4 @@
-import { AppearanceIcon, projectAppearance, type Appearance } from "./AppearancePicker";
+import { collectionAppearance, AppearanceIcon, projectAppearance, type Appearance } from "./AppearancePicker";
 import { Tooltip } from "./Tooltip";
 import { Search } from "./Search";
 import { RecordingIndicator } from "./RecordingIndicator";
@@ -173,12 +173,12 @@ export function Sidebar({ brand, session, children, serverLinks, routeVaultId: r
     {session.capabilities.sync && selectedVault && <div className="vault-switcher">
       <span>{uiText("Current Vault", "現在の保管庫")}</span>
       <button className="dropdown-trigger vault-switcher-trigger" popoverTarget="vault-menu" aria-label={uiText(`Current Vault: ${selectedVault.name}`, `現在の保管庫: ${selectedVault.name}`)}>
-        <AppearanceIcon appearance={selectedVault.appearance ?? { icon: "vault", color: "neutral" }} /><span>{selectedVault.name}</span><Chevron expanded />
+        <AppearanceIcon appearance={collectionAppearance(selectedVault, "vault")} /><span>{selectedVault.name}</span><Chevron expanded />
       </button>
       <nav id="vault-menu" popover="auto" className="dropdown-menu vault-picker" aria-label={uiText("Choose a Vault", "保管庫を選択")}>
         <strong>{uiText("Vaults", "保管庫")}</strong>
         {selectableVaults.map((vault) => <a className="dropdown-option" key={vault.vaultId} href={`/vaults/${vault.vaultId}`} aria-current={selectedVaultId === vault.vaultId ? "true" : undefined}>
-          <AppearanceIcon appearance={vault.appearance ?? { icon: "vault", color: "neutral" }} /><span>{vault.name}</span>{selectedVaultId === vault.vaultId && <MenuIcon name="check" />}
+          <AppearanceIcon appearance={collectionAppearance(vault, "vault")} /><span>{vault.name}</span>{selectedVaultId === vault.vaultId && <MenuIcon name="check" />}
         </a>)}
       </nav>
     </div>}

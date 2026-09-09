@@ -8,10 +8,11 @@ struct ProjectOverviewItem: Decodable, Equatable, FetchableRecord, Identifiable,
     var projectDisplayName = ""
     var parentProjectId: UUID?
     var projectDescription = ""
-    var appearance: ProjectAppearance?
     var explicitProjectType: ProjectType?
     var effectiveProjectType: ProjectType = .undefined
     var typeOwnerProjectId: UUID?
+    var icon: String?
+    var color: String?
     var revision = 1
     var createdAt: Date
     var meetingCount: Int

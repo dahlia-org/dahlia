@@ -48,7 +48,7 @@ export async function metadataRecord(value: SyncCanonicalRecord, store: Identity
       contentOmitted: true, contentPresent: record.document !== null && record.document !== undefined };
   } else if (value.entity === "transcript") {
     record = { meetingId: record.meetingId, contentOmitted: true, contentPresent: true,
-      contentCount: await store.countTranscript(vaultId, value.id), transcript: await store.getTranscript(vaultId, value.id) };
+      contentCount: await store.countTranscript(vaultId, value.id), transcript: record.transcript };
   } else if (value.entity === "file") {
     record = fileTextMetadata(record);
   }

@@ -1,4 +1,3 @@
-import type { Appearance } from "../appearance-model";
 import type { TranscriptVersion } from "./transcript";
 import type { SummaryVersion } from "../summary/metadata";
 import type { SummaryJob } from "../summary/model";
@@ -24,9 +23,10 @@ export interface SyncTranscriptCursor {
 
 export interface SyncVaultRecord {
   hasResources?: boolean;
+  icon?: string | null;
+  color?: string | null;
   vaultId: string;
   name: string;
-  appearance?: Appearance | null;
   revision?: number;
   createdAt: Date;
   updatedAt: Date;
@@ -34,11 +34,12 @@ export interface SyncVaultRecord {
 }
 
 export interface SyncProjectRecord {
+  icon?: string | null;
+  color?: string | null;
   projectId: string;
   vaultId: string;
   parentProjectId: string | null;
   name: string;
-  appearance?: Appearance | null;
   description: string;
   projectType: "customer" | "internal" | "personal" | "undefined" | null;
   revision: number;

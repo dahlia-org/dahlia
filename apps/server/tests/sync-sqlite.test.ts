@@ -177,7 +177,7 @@ describe("SQLite canonical sync", () => {
     expect((await store.sync.withIdentity(owner, (sync) => sync.getVaultRelocations(vaultId))).items).toEqual(expect.arrayContaining([expect.objectContaining({ entity: "meeting", id: meetingId, vaultId: destinationVaultId })]));
     const database = new DatabaseSync(databasePath);
     expect(database.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
-    expect(database.prepare("SELECT count(*) AS count FROM storage_delete_jobs").get()).toMatchObject({ count: 0 });
+    expect(database.prepare("SELECT count(*) AS count FROM jobs_storage_delete").get()).toMatchObject({ count: 0 });
     database.close();
     await store.close?.();
   });
@@ -187,20 +187,20 @@ describe("SQLite canonical sync", () => {
     await createVault(store);
     const appearance = { icon: "book.closed", color: "green" };
     const first = await commit(store, owner, transaction(freshId(), [
-      { id: freshId(), entity: "vault", action: "update", entityId: vaultId, baseRevision: 1, data: { name: "Styled", appearance } },
-      { id: freshId(), entity: "project", action: "create", entityId: projectId, baseRevision: null, data: { ...projectData("Styled project"), appearance } },
+      { id: freshId(), entity: "vault", action: "update", entityId: vaultId, baseRevision: 1, data: { name: "Styled", ...appearance } },
+      { id: freshId(), entity: "project", action: "create", entityId: projectId, baseRevision: null, data: { ...projectData("Styled project"), ...appearance } },
     ]));
-    expect(first.records.find((item) => item.entity === "vault")?.record).toMatchObject({ appearance });
-    expect(first.records.find((item) => item.entity === "project")?.record).toMatchObject({ appearance });
+    expect(first.records.find((item) => item.entity === "vault")?.record).toMatchObject({ ...appearance });
+    expect(first.records.find((item) => item.entity === "project")?.record).toMatchObject({ ...appearance });
     await commit(store, owner, transaction(freshId(), [
       { id: freshId(), entity: "vault", action: "update", entityId: vaultId, baseRevision: 2, data: { name: "Renamed" } },
       { id: freshId(), entity: "project", action: "update", entityId: projectId, baseRevision: 1, data: { parentProjectId: null, name: "Renamed project", description: "", projectType: "undefined" } },
     ]));
-    expect(await store.sync.withIdentity(owner, (sync) => sync.getVault(vaultId))).toMatchObject({ appearance, revision: 3 });
-    expect(await store.sync.withIdentity(owner, (sync) => sync.listProjects(vaultId))).toEqual(expect.arrayContaining([expect.objectContaining({ appearance, revision: 2 })]));
+    expect(await store.sync.withIdentity(owner, (sync) => sync.getVault(vaultId))).toMatchObject({ ...appearance, revision: 3 });
+    expect(await store.sync.withIdentity(owner, (sync) => sync.listProjects(vaultId))).toEqual(expect.arrayContaining([expect.objectContaining({ ...appearance, revision: 2 })]));
     const app = createApp({ config: testConfig(databasePath), authStore: store });
     const response = await app.request("http://localhost:5173/api/v1/transactions", { method: "POST", headers: headers(), body: JSON.stringify(transaction(freshId(), [
-      { id: freshId(), entity: "vault", action: "update", entityId: vaultId, baseRevision: 3, data: { name: "Unsafe", appearance: { icon: "<svg>", color: "red" } } },
+      { id: freshId(), entity: "vault", action: "update", entityId: vaultId, baseRevision: 3, data: { name: "Unsafe", icon: "<svg>", color: "red" } },
     ])) });
     expect(response.status).toBe(400);
   });
@@ -211,12 +211,12 @@ describe("SQLite canonical sync", () => {
     const childId = freshId();
     const appearance = { icon: "book.closed", color: "green" };
     await commit(store, owner, transaction(freshId(), [
-      { id: freshId(), entity: "project", action: "create", entityId: projectId, baseRevision: null, data: { ...projectData("Parent"), appearance } },
-      { id: freshId(), entity: "project", action: "create", entityId: childId, baseRevision: null, data: { ...projectData("Child"), appearance } },
+      { id: freshId(), entity: "project", action: "create", entityId: projectId, baseRevision: null, data: { ...projectData("Parent"), ...appearance } },
+      { id: freshId(), entity: "project", action: "create", entityId: childId, baseRevision: null, data: { ...projectData("Child"), ...appearance } },
     ]));
     const service = new MeetingSyncService(store.sync);
     for (const action of ["create", "update"] as const) {
-      const data = { ...projectData("Child"), parentProjectId: projectId, projectType: null, appearance };
+      const data = { ...projectData("Child"), parentProjectId: projectId, projectType: null, ...appearance };
       if (action === "update") delete (data as { createdAt?: Date }).createdAt;
       await expect(service.commitTransaction(owner, JSON.parse(JSON.stringify(wire([
         { entity: "project", action, entityId: action === "create" ? freshId() : childId, baseRevision: action === "create" ? null : 1, data },
@@ -227,8 +227,55 @@ describe("SQLite canonical sync", () => {
         data: { parentProjectId: projectId, name: "Child", description: "", projectType: null } },
     ]))));
     const projects = await store.sync.withIdentity(owner, (sync) => sync.listProjects(vaultId));
-    expect(projects.find((project) => project.projectId === childId)).toMatchObject({ appearance: null });
-    expect(projects.find((project) => project.projectId === projectId)).toMatchObject({ appearance });
+    expect(projects.find((project) => project.projectId === childId)).toMatchObject({ icon: null, color: null });
+    expect(projects.find((project) => project.projectId === projectId)).toMatchObject({ ...appearance });
+  });
+
+  it.each(["node", "worker"])("round-trips appearance with revision checks and partial updates through %s", async (runtime) => {
+    const { store, databasePath } = await setup();
+    const app = createApp({ config: testConfig(databasePath), authStore: store });
+    const worker = createWorkerHandler(async () => app);
+    const fetchWorker = worker.fetch!.bind(worker) as unknown as (request: Request, env: Cloudflare.Env, context: ExecutionContext) => Promise<Response>;
+    const send = (body: unknown, user = owner.userId) => {
+      const request = new Request("http://localhost:5173/api/v1/transactions", { method: "POST",
+        headers: { ...headers(), "x-forwarded-user": user, "x-forwarded-email": `${user}@example.com` }, body: JSON.stringify(body) });
+      return runtime === "node" ? app.request(request) : fetchWorker(request, {} as Cloudflare.Env, {} as ExecutionContext);
+    };
+    const project = { parentProjectId: null, name: "Project", description: "", projectType: "internal" };
+    try {
+      const created = await send(wire([
+        { entity: "vault", action: "create", entityId: vaultId, baseRevision: null,
+          data: { name: "Vault", createdAt: now.toISOString(), icon: "folder", color: "blue" } },
+        { entity: "project", action: "create", entityId: projectId, baseRevision: null,
+          data: { ...project, createdAt: now.toISOString(), icon: "music.note", color: "purple" } },
+      ]));
+      expect(created.status).toBe(200);
+      expect(await created.json()).toMatchObject({ records: [
+        { entity: "vault", revision: 1, record: { icon: "folder", color: "blue" } },
+        { entity: "project", revision: 1, record: { icon: "music.note", color: "purple" } },
+      ] });
+      const update = (baseRevision: number, fields: Record<string, unknown> = {}) => wire([
+        { entity: "project", action: "update", entityId: projectId, baseRevision, data: { ...project, ...fields } },
+      ]);
+      const rename = update(1, { name: "Renamed" });
+      expect((await send(rename)).status).toBe(200);
+      expect((await send(rename)).status).toBe(200); // An offline retry is idempotent.
+      const clear = await send(update(2, { icon: null }));
+      expect(clear.status).toBe(200);
+      expect(await clear.json()).toMatchObject({ records: [{ revision: 3, record: { icon: null, color: "purple" } }] });
+      expect((await send(update(2, { color: "red" }))).status).toBe(409);
+      expect((await send(update(3, { icon: "not-an-icon" }))).status).toBe(400);
+      expect((await send(update(3, { color: "not-a-color" }))).status).toBe(400);
+      const service = new MeetingSyncService(store.sync);
+      const snapshot = await service.listSnapshot(owner, vaultId);
+      expect(snapshot.items.find((item) => item.entity === "vault")).toMatchObject({ record: { icon: "folder", color: "blue" } });
+      expect(snapshot.items.find((item) => item.entity === "project")).toMatchObject({ revision: 3, record: { icon: null, color: "purple" } });
+      await store.sync.withIdentity(owner, (sync) => sync.putMemberPermission(vaultId, "organization", "external"));
+      const shared = await service.listSnapshot(other, vaultId);
+      expect(shared.items.find((item) => item.entity === "project")).toMatchObject({ record: { color: "purple" } });
+      expect((await send(update(3, { color: "red" }), other.userId)).status).toBe(409);
+      expect((await store.sync.withIdentity(owner, (sync) => sync.listProjects(vaultId)))[0]).toMatchObject({ icon: null, color: "purple", revision: 3 });
+    } finally { await store.close?.(); }
   });
 
   it.each(["node", "worker"])("serves the common POST search with prefiltered candidates through %s", async (runtime) => {
@@ -488,7 +535,7 @@ describe("SQLite canonical sync", () => {
       expect(response.status, kind).toBe(409);
       expect(await response.json()).toMatchObject({ error: "vault_not_empty" });
       expect(await store.sync.withIdentity(owner, (sync) => sync.getVault(vaultId))).toMatchObject({ hasResources: true, revision: 1 });
-      expect(db.prepare("SELECT count(*) AS count FROM storage_delete_jobs").get()).toMatchObject({ count: 0 });
+      expect(db.prepare("SELECT count(*) AS count FROM jobs_storage_delete").get()).toMatchObject({ count: 0 });
       if (kind === "project") {
         expect(db.prepare("SELECT count(*) AS count FROM projects").get()).toMatchObject({ count: 1 });
         await commit(store, owner, transaction(freshId(), [{ id: freshId(), entity: "project", action: "delete", entityId: projectId, baseRevision: 1, data: {} }]));
@@ -630,7 +677,7 @@ describe("SQLite canonical sync", () => {
     const original = await service.getFile(owner, file.id);
     await store.close?.();
     const database = new DatabaseSync(databasePath);
-    database.exec("DROP TABLE summary_jobs; DROP TABLE image_analysis_jobs; DROP TABLE account_settings");
+    database.exec("DROP TABLE jobs_summary; DROP TABLE jobs_image_analysis; DROP TABLE account_settings");
     database.prepare("DELETE FROM __drizzle_migrations WHERE name IN (?, ?, ?)").run("20260907091207_funny_black_bird", "20260907172550_nice_starhawk", "20260908080352_zippy_aaron_stack");
     database.exec("DELETE FROM __drizzle_migrations WHERE name IN ('20260908092914_massive_luke_cage', '20260908093013_account_settings_backfill', '20260908093035_stale_sue_storm')");
     database.close();
@@ -660,15 +707,15 @@ describe("SQLite canonical sync", () => {
     expect(await store.accountSettings.get(owner.userId)).toMatchObject({ summary: {
       method: "transcript", detail: "concise", methodSettings: { transcript: { model: "saved-model", reasoningEffort: "medium" } },
     } });
-    const version = await store.accountSettings.getChangeVersion(owner.userId);
+    const version = await store.accountSettings.getRevision(owner.userId);
     await store.accountSettings.update(owner.userId, { summary: { detail: "concise" } });
-    expect(await store.accountSettings.getChangeVersion(owner.userId)).toBe(version);
+    expect(await store.accountSettings.getRevision(owner.userId)).toBe(version);
     await Promise.all([
       store.accountSettings.update(owner.userId, { summary: { methodSettings: { audio: { model: "audio-model" } } } }),
       store.accountSettings.update(owner.userId, { summary: { methodSettings: { audio: { reasoningEffort: "high" } } } }),
     ]);
     expect((await store.accountSettings.get(owner.userId))?.summary.methodSettings.audio).toEqual({ model: "audio-model", reasoningEffort: "high" });
-    expect(await store.accountSettings.getChangeVersion(owner.userId)).toBe(version! + 2);
+    expect(await store.accountSettings.getRevision(owner.userId)).toBe(version! + 2);
     await store.accountSettings.update(owner.userId, { summary: { detail: "standard" } });
     await store.accountSettings.update(owner.userId, { summary: { detail: "detailed" } });
     expect((await store.accountSettings.get(owner.userId))?.summary.detail).toBe("detailed");
@@ -708,8 +755,8 @@ describe("SQLite canonical sync", () => {
     const database = new DatabaseSync(databasePath);
     expect(database.prepare("SELECT embedding_text FROM search_documents WHERE kind = 'screenshot'").all())
       .toEqual([{ embedding_text: "Architecture diagram" }, { embedding_text: "Architecture diagram" }]);
-    expect(database.prepare("SELECT count(*) AS n FROM search_index_jobs").get()).toMatchObject({ n: 2 });
-    expect(database.prepare("SELECT count(*) AS n FROM image_analysis_jobs").get()).toMatchObject({ n: 0 });
+    expect(database.prepare("SELECT count(*) AS n FROM jobs_search_index").get()).toMatchObject({ n: 2 });
+    expect(database.prepare("SELECT count(*) AS n FROM jobs_image_analysis").get()).toMatchObject({ n: 0 });
     database.close();
     await jobs.reconcile(captioner.model);
     expect(await worker.processOne()).toBe(false);
@@ -748,7 +795,7 @@ describe("SQLite canonical sync", () => {
       database.close();
     } else if (change === "lease") {
       const database = new DatabaseSync(databasePath);
-      database.prepare("UPDATE image_analysis_jobs SET lease_expires_at = 0").run();
+      database.prepare("UPDATE jobs_image_analysis SET lease_expires_at = 0").run();
       database.close();
       const nextClaim = await store.imageAnalysis!.claim("model");
       expect(nextClaim).not.toBeNull();
@@ -771,9 +818,9 @@ describe("SQLite canonical sync", () => {
     expect(await worker.processOne()).toBe(true);
     await store.close?.();
     const database = new DatabaseSync(databasePath);
-    expect(database.prepare("SELECT status, attempts, last_error_code FROM image_analysis_jobs").get())
+    expect(database.prepare("SELECT status, attempts, last_error_code FROM jobs_image_analysis").get())
       .toEqual({ status: "pending", attempts: 1, last_error_code: "captioning_http_429" });
-    database.prepare("UPDATE image_analysis_jobs SET available_at = 0").run();
+    database.prepare("UPDATE jobs_image_analysis SET available_at = 0").run();
     database.exec("DELETE FROM __drizzle_migrations WHERE name IN ('20260908092914_massive_luke_cage', '20260908093013_account_settings_backfill', '20260908093035_stale_sue_storm')");
     database.close();
     const reopened = createNodeApplicationStore({ ...testConfig(databasePath), captioningModel: "model" });
@@ -1728,7 +1775,7 @@ describe("SQLite canonical sync", () => {
         { entity: "meeting", action: "create", entityId: meetingId, baseRevision: null, data: { ...meetingData(), projectId: null } },
       ]);
       const snapshot = () => ["vaults", "vault_permissions", "projects", "meetings", "meeting_events",
-        "sync_changes", "sync_vault_state", "transaction_receipts", "search_documents", "search_index_jobs"]
+        "sync_changes", "sync_vault_state", "transaction_receipts", "search_documents", "jobs_search_index"]
         .map((table) => database.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all());
       for (const shared of [false, true]) {
         if (shared) await store.sync.withIdentity(owner, (sync) => sync.putMemberPermission(vaultId, "organization", "external"));
@@ -1783,7 +1830,7 @@ describe("SQLite canonical sync", () => {
     await store.sync.enqueueStorageDelete(storageKey);
     const first = (await store.sync.claimStorageDeletes(1))[0]!;
     const database = new DatabaseSync(databasePath);
-    database.prepare("update storage_delete_jobs set lease_expires_at = 0 where storage_key = ?")
+    database.prepare("update jobs_storage_delete set lease_expires_at = 0 where storage_key = ?")
       .run(storageKey);
     database.close();
     const second = (await store.sync.claimStorageDeletes(1))[0]!;

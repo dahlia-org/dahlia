@@ -108,17 +108,21 @@ const transactionSchema = z.object({
   createdAt: dateSchema,
   operations: z.array(transactionOperationSchema).min(1).max(10_000),
 }).strict();
+const appearanceFields = {
+  icon: appearanceSchema.shape.icon.nullable().optional(),
+  color: appearanceSchema.shape.color.nullable().optional(),
+};
 const transactionDataSchemas = {
   "meeting_event:create": z.discriminatedUnion("kind", [
     z.object({ meetingId: uuidSchema, kind: z.enum(["tag_added", "tag_removed"]), occurredAt: dateSchema, relatedId: z.string().regex(/^[0-9]{1,19}$/) }).strict(),
     z.object({ meetingId: uuidSchema, kind: z.enum(["recording_started", "recording_ended"]), occurredAt: dateSchema, sessionId: uuidSchema }).strict(),
     z.object({ meetingId: uuidSchema, kind: z.literal("segment_rotated"), occurredAt: dateSchema, sessionId: uuidSchema, relatedId: uuidSchema, audioSource: z.enum(["mic", "system"]), segmentIndex: z.number().int().positive().max(2147483647) }).strict(),
   ]),
-  "vault:create": z.object({ appearance: appearanceSchema.optional(), name: z.string().trim().min(1), createdAt: dateSchema }).strict(),
-  "vault:update": z.object({ appearance: appearanceSchema.optional(), name: z.string().trim().min(1) }).strict(),
+  "vault:create": z.object({ ...appearanceFields, name: z.string().trim().min(1), createdAt: dateSchema }).strict(),
+  "vault:update": z.object({ ...appearanceFields, name: z.string().trim().min(1) }).strict(),
   "vault:reset": z.object({ preservePermissions: z.boolean().optional() }).strict(),
-  "project:create": z.object({ appearance: appearanceSchema.optional(), parentProjectId: uuidSchema.nullable(), name: projectNameSchema, description: z.string().max(20_000).default(""), projectType: projectTypeSchema.nullable(), createdAt: dateSchema }).strict().refine((data) => data.parentProjectId === null || data.appearance === undefined, { message: "Child projects inherit their parent appearance", path: ["appearance"] }),
-  "project:update": z.object({ appearance: appearanceSchema.optional(), parentProjectId: uuidSchema.nullable(), name: projectNameSchema, description: z.string().max(20_000).default(""), projectType: projectTypeSchema.nullable() }).strict().refine((data) => data.parentProjectId === null || data.appearance === undefined, { message: "Child projects inherit their parent appearance", path: ["appearance"] }),
+  "project:create": z.object({ ...appearanceFields, parentProjectId: uuidSchema.nullable(), name: projectNameSchema, description: z.string().max(20_000).default(""), projectType: projectTypeSchema.nullable(), createdAt: dateSchema }).strict().refine((data) => data.parentProjectId === null || (data.icon == null && data.color == null), { message: "Child projects inherit their parent appearance", path: ["icon"] }),
+  "project:update": z.object({ ...appearanceFields, parentProjectId: uuidSchema.nullable(), name: projectNameSchema, description: z.string().max(20_000).default(""), projectType: projectTypeSchema.nullable() }).strict().refine((data) => data.parentProjectId === null || (data.icon == null && data.color == null), { message: "Child projects inherit their parent appearance", path: ["icon"] }),
   "project:delete": z.object({}).strict(),
   "meeting:create": z.object({ projectId: uuidSchema.nullable(), name: z.string(), description: z.string().default(""), status: meetingStatusSchema, duration: z.number().finite().nonnegative().nullable(), recordingStartedAt: nullableDateSchema, createdAt: dateSchema, updatedAt: dateSchema }).strict(),
   "meeting:update": z.object({ projectId: uuidSchema.nullable(), name: z.string(), description: z.string().default(""), status: meetingStatusSchema, duration: z.number().finite().nonnegative().nullable(), recordingStartedAt: nullableDateSchema, updatedAt: dateSchema }).strict(),

@@ -53,8 +53,17 @@ export const appearanceIcons = {
 
 
 // Child appearance is always derived, including when an old record contains a value.
-export function projectAppearance(project: { parentProjectId?: string | null; appearance?: Appearance | null } | undefined, parent?: { appearance?: Appearance | null }): Appearance {
-  return (project?.parentProjectId ? parent?.appearance : project?.appearance) ?? { icon: "folder", color: "neutral" };
+export function collectionAppearance(collection: { icon?: string | null; color?: string | null } | undefined, fallbackIcon: Appearance["icon"] = "folder"): Appearance {
+  const icon = collection?.icon;
+  const color = collection?.color;
+  return {
+    icon: icon && icon in appearanceIcons ? icon as Appearance["icon"] : fallbackIcon,
+    color: color && color in appearanceColors ? color as Appearance["color"] : "neutral",
+  };
+}
+
+export function projectAppearance(project: { parentProjectId?: string | null; icon?: string | null; color?: string | null } | undefined, parent?: { icon?: string | null; color?: string | null }): Appearance {
+  return collectionAppearance(project?.parentProjectId ? parent : project);
 }
 
 export function AppearanceIcon({ appearance, size = 18 }: { appearance: Appearance; size?: number }) {

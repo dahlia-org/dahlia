@@ -266,7 +266,7 @@ enum RemoteChangeApplier {
                     createdAt: project.createdAt,
                     description: project.description,
                     projectType: project.projectType.flatMap(ProjectType.init(rawValue:)),
-                    appearance: project.appearance,
+                    icon: project.icon, color: project.color,
                     in: db
                 )
                 if let previous {
@@ -312,7 +312,7 @@ enum RemoteChangeApplier {
             createdAt: project.createdAt,
             description: project.description,
             projectType: project.projectType.flatMap(ProjectType.init(rawValue:)),
-            appearance: project.appearance
+            icon: project.icon, color: project.color
         ).insert(db)
     }
 
@@ -879,7 +879,7 @@ enum RemoteChangeApplier {
         case .meetingFile:
             try MeetingFileRecord.applyCanonical(id: change.entityId, vaultId: vaultId, value: record, in: db)
             try db.execute(
-                sql: "DELETE FROM search_index_jobs WHERE indexKind = 'fts' AND targetKind = 'screenshotAnalysis' AND targetKey = ?",
+                sql: "DELETE FROM jobs_search_index WHERE indexKind = 'fts' AND targetKind = 'screenshotAnalysis' AND targetKey = ?",
                 arguments: [change.entityId]
             )
             let generation = try Int.fetchOne(

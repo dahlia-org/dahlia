@@ -20,7 +20,7 @@
                     arguments: [firstVault, "/tmp/first", Date.now, Date.now]
                 )
                 try db.execute(
-                    sql: "INSERT INTO projects (id, vaultId, name, nameKey, createdAt, projectType) VALUES (?, ?, 'Project', 'project', ?, 'undefined')",
+                    sql: "INSERT INTO projects(id, vaultId, name, nameKey, createdAt, projectType) VALUES (?, ?, 'Project', 'project', ?, 'undefined')",
                     arguments: [project, firstVault, Date.now]
                 )
                 try MeetingRecord(
@@ -58,7 +58,7 @@
             let cleanupJob = try queue.read { db in
                 try Row.fetchOne(
                     db,
-                    sql: "SELECT targetKind, targetKey FROM search_index_jobs WHERE targetKind = 'vaultCleanup'"
+                    sql: "SELECT targetKind, targetKey FROM jobs_search_index WHERE targetKind = 'vaultCleanup'"
                 )
             }
             #expect(cleanupJob?["targetKind"] as String? == "vaultCleanup")

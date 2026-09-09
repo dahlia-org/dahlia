@@ -217,6 +217,8 @@ describe("sync history retention", () => {
       data: { projectId: null, name: "Meeting", description: "", status: "READY", duration: null,
         recordingStartedAt: null, createdAt, updatedAt: createdAt },
     }))));
+    expect((await service.listSnapshot(owner, vaultId)).items
+      .filter((item) => item.entity === "meeting").map((item) => item.record?.hasSummary)).toEqual([false, false, false]);
     // Multibyte text and escaped quotes exercise serialized bytes rather than string length.
     const document = JSON.stringify({ text: 'あ"'.repeat(700_000) });
     for (const meetingId of meetings) {
@@ -225,6 +227,7 @@ describe("sync history retention", () => {
     }
     const seen: string[] = [];
     let page = await service.listSnapshot(owner, vaultId);
+    expect(page.items.filter((item) => item.entity === "meeting").map((item) => item.record?.hasSummary)).toEqual([true, true, true]);
     const startCursor = page.startCursor;
     let pages = 0;
     while (true) {

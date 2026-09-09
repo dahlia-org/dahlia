@@ -159,6 +159,8 @@ struct SyncResetSnapshot {
 }
 
 struct SyncProjectSnapshot: Decodable, Sendable {
+    var icon: String?
+    var color: String?
     let projectId: UUID
     let parentProjectId: UUID?
     let name: String
@@ -166,7 +168,6 @@ struct SyncProjectSnapshot: Decodable, Sendable {
     let projectType: String?
     let revision: Int
     let createdAt: Date
-    var appearance: ProjectAppearance?
 }
 
 private struct SyncProjectSnapshotPage: Decodable {

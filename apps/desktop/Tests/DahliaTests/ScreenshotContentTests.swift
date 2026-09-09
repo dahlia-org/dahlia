@@ -240,7 +240,7 @@
                 )
                 try db.execute(sql: "UPDATE file_text_bodies SET ocrText = NULL, caption = NULL WHERE fileId = ?", arguments: [fixture.screenshotId])
                 try db.execute(
-                    sql: "INSERT INTO search_index_jobs(indexKind, targetKind, targetKey, priority, availableAt, updatedAt) VALUES ('fts', 'screenshotAnalysis', ?, -10, ?, ?)",
+                    sql: "INSERT INTO jobs_search_index(indexKind, targetKind, targetKey, priority, availableAt, updatedAt) VALUES ('fts', 'screenshotAnalysis', ?, -10, ?, ?)",
                     arguments: [fixture.screenshotId, Date(), Date()]
                 )
                 try SyncTransactionRecorder.record(vaultId: fixture.vaultId, operations: [
@@ -257,15 +257,15 @@
             let remotePending = ScreenshotOCRState.remote(ocrText: nil, caption: nil, state: .ready)
             #expect(await viewModel.screenshotOCRState(id: fixture.screenshotId) == (uploaded ? remotePending : .pending))
             try await fixture.dbQueue.write { db in
-                try db.execute(sql: "UPDATE search_index_jobs SET status = 'processing', attempts = 1 WHERE targetKind = 'screenshotAnalysis'")
+                try db.execute(sql: "UPDATE jobs_search_index SET status = 'processing', attempts = 1 WHERE targetKind = 'screenshotAnalysis'")
             }
             #expect(await viewModel.screenshotOCRState(id: fixture.screenshotId) == (uploaded ? remotePending : .processing))
             try await fixture.dbQueue.write { db in
-                try db.execute(sql: "UPDATE search_index_jobs SET status = 'pending', attempts = 5 WHERE targetKind = 'screenshotAnalysis'")
+                try db.execute(sql: "UPDATE jobs_search_index SET status = 'pending', attempts = 5 WHERE targetKind = 'screenshotAnalysis'")
             }
             #expect(await viewModel.screenshotOCRState(id: fixture.screenshotId) == (uploaded ? remotePending : .failed))
             try await fixture.dbQueue.write { db in
-                try db.execute(sql: "UPDATE search_index_jobs SET status = 'pending', attempts = 0 WHERE targetKind = 'screenshotAnalysis'")
+                try db.execute(sql: "UPDATE jobs_search_index SET status = 'pending', attempts = 0 WHERE targetKind = 'screenshotAnalysis'")
             }
             #expect(await viewModel.screenshotOCRState(id: fixture.screenshotId) == (uploaded ? remotePending : .pending))
             try await fixture.dbQueue.write { db in
@@ -1048,11 +1048,14 @@
             let meeting = MeetingRecord(id: meetingId, vaultId: vaultId, projectId: nil, name: "Meeting", createdAt: .now, updatedAt: .now)
             try self.dbQueue.write { db in
                 try connection.insert(db)
-                try insertLegacyVault(vault, in: db)
-                try db.execute(
-                    sql: "UPDATE vaults SET accountConnectionId = ?, syncConfirmedConnectionId = ?, syncPullCursor = ? WHERE id = ?",
-                    arguments: [vault.accountConnectionId, vault.syncConfirmedConnectionId, vault.syncPullCursor, vault.id]
-                )
+                if priorSchema {
+                    try db.execute(
+                        sql: "INSERT INTO vaults(id, name, createdAt, lastOpenedAt, accountConnectionId, syncConfirmedConnectionId, syncPullCursor) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                        arguments: [vault.id, vault.name, vault.createdAt, vault.lastOpenedAt, connectionId, connectionId, vault.syncPullCursor]
+                    )
+                } else {
+                    try vault.insert(db)
+                }
                 try meeting.insert(db)
                 if priorSchema {
                     try db.execute(

@@ -190,6 +190,8 @@ final class MeetingRepository {
             vault.syncRole = serverVault?.role
             if let serverVault, serverVault.role == "member" {
                 vault.name = serverVault.name
+                vault.icon = serverVault.icon
+                vault.color = serverVault.color
                 vault.createdAt = serverVault.createdAt
                 vault.syncConfirmedConnectionId = connectionID
                 try db.execute(

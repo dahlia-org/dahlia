@@ -34,7 +34,7 @@ import GRDB
                     Int.fetchOne(
                         db,
                         sql: """
-                        SELECT COUNT(*) FROM search_index_jobs
+                        SELECT COUNT(*) FROM jobs_search_index
                         WHERE indexKind = 'fts' AND targetKind = 'segment'
                         """
                     ) ?? 0,
@@ -245,7 +245,7 @@ import GRDB
                         in: db
                     )
                 }
-                try db.execute(sql: "DELETE FROM search_index_jobs")
+                try db.execute(sql: "DELETE FROM jobs_search_index")
                 try db.execute(sql: "UPDATE search_index_state SET phase = 'ready' WHERE indexKind = 'fts'")
             }
 
@@ -288,7 +288,7 @@ import GRDB
                         in: db
                     )
                 }
-                try db.execute(sql: "DELETE FROM search_index_jobs")
+                try db.execute(sql: "DELETE FROM jobs_search_index")
                 try db.execute(sql: "UPDATE search_index_state SET phase = 'ready' WHERE indexKind = 'fts'")
             }
 
@@ -537,7 +537,7 @@ import GRDB
                     Int.fetchOne(db, sql: "SELECT COUNT(*) FROM search_documents") ?? -1,
                     Int.fetchOne(
                         db,
-                        sql: "SELECT COUNT(*) FROM search_index_jobs WHERE indexKind = 'fts'"
+                        sql: "SELECT COUNT(*) FROM jobs_search_index WHERE indexKind = 'fts'"
                     ) ?? -1
                 )
             }
@@ -550,7 +550,7 @@ import GRDB
                     String.fetchOne(db, sql: "SELECT phase FROM search_index_state WHERE indexKind = 'fts'"),
                     Int.fetchOne(
                         db,
-                        sql: "SELECT COUNT(*) FROM search_index_jobs WHERE indexKind = 'fts'"
+                        sql: "SELECT COUNT(*) FROM jobs_search_index WHERE indexKind = 'fts'"
                     ) ?? -1
                 )
             }
@@ -566,7 +566,7 @@ import GRDB
                 try db.execute(sql: "UPDATE search_index_state SET phase = 'ready' WHERE indexKind = 'fts'")
                 try db.execute(
                     sql: """
-                    INSERT INTO search_index_jobs(
+                    INSERT INTO jobs_search_index(
                         indexKind, targetKind, targetKey, availableAt, updatedAt
                     ) VALUES('fts', 'invalid', ?, ?, ?)
                     """,
@@ -578,20 +578,20 @@ import GRDB
                 await database.searchIndexer.drain()
                 try await database.dbQueue.write { db in
                     try db.execute(
-                        sql: "UPDATE search_index_jobs SET availableAt = ? WHERE targetKey = ?",
+                        sql: "UPDATE jobs_search_index SET availableAt = ? WHERE targetKey = ?",
                         arguments: [Date.distantPast, targetID]
                     )
                 }
             }
             let attempts = try await database.dbQueue.read { db in
-                try Int.fetchOne(db, sql: "SELECT attempts FROM search_index_jobs WHERE targetKey = ?", arguments: [targetID])
+                try Int.fetchOne(db, sql: "SELECT attempts FROM jobs_search_index WHERE targetKey = ?", arguments: [targetID])
             }
             #expect(attempts == 4)
             await database.searchIndexer.drain()
 
             let result = try await database.dbQueue.read { db in
                 try (
-                    Int.fetchOne(db, sql: "SELECT COUNT(*) FROM search_index_jobs WHERE targetKey = ?", arguments: [targetID]),
+                    Int.fetchOne(db, sql: "SELECT COUNT(*) FROM jobs_search_index WHERE targetKey = ?", arguments: [targetID]),
                     String.fetchOne(db, sql: "SELECT phase FROM search_index_state WHERE indexKind = 'fts'")
                 )
             }
@@ -643,7 +643,7 @@ import GRDB
                 try Int.fetchOne(
                     db,
                     sql: """
-                    SELECT COUNT(*) FROM search_index_jobs
+                    SELECT COUNT(*) FROM jobs_search_index
                     WHERE indexKind = 'fts' AND targetKind = 'segment' AND targetKey = ?
                     """,
                     arguments: [segment.id]
@@ -682,7 +682,7 @@ import GRDB
             let queuedMeetingIDs = try await database.dbQueue.read { db in
                 try UUID.fetchAll(
                     db,
-                    sql: "SELECT targetKey FROM search_index_jobs WHERE indexKind = 'fts' AND targetKind = 'meeting'"
+                    sql: "SELECT targetKey FROM jobs_search_index WHERE indexKind = 'fts' AND targetKind = 'meeting'"
                 )
             }
             #expect(queuedMeetingIDs == [linkedMeeting.id])
@@ -733,7 +733,7 @@ import GRDB
             let contentJobs = try database.dbQueue.read { db in
                 try Row.fetchAll(
                     db,
-                    sql: "SELECT targetKind, targetKey FROM search_index_jobs WHERE indexKind = 'fts'"
+                    sql: "SELECT targetKind, targetKey FROM jobs_search_index WHERE indexKind = 'fts'"
                 )
             }
             #expect(contentJobs.count == 1)
@@ -757,7 +757,7 @@ import GRDB
             let hierarchyJobs = try database.dbQueue.read { db in
                 try Row.fetchAll(
                     db,
-                    sql: "SELECT targetKind, targetKey FROM search_index_jobs WHERE indexKind = 'fts'"
+                    sql: "SELECT targetKind, targetKey FROM jobs_search_index WHERE indexKind = 'fts'"
                 )
             }
             #expect(hierarchyJobs.count == 1)

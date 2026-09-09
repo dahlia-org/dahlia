@@ -1,4 +1,3 @@
-import type { Appearance } from "../appearance-model";
 import { uuidV7 } from "../id";
 import { transcriptStatus, sameTranscriptModel, type TranscriptVersion } from "./transcript";
 import { summaryMetadata } from "../summary/metadata";
@@ -9,6 +8,7 @@ import {
   and,
   asc,
   count,
+  getTableColumns,
   desc,
   eq,
   exists,
@@ -327,7 +327,7 @@ async function roleSupportsRls(db: PostgresDatabase): Promise<boolean> {
       "app.search_documents",
       "app.search_embeddings",
       "app.account_settings",
-      "app.summary_jobs",
+      "app.jobs_summary",
       "app.summaries",
     ];
     const secured = (await client.query<{ count: number }>(`
@@ -512,7 +512,7 @@ function createIdentityStore(
       ),
     )).limit(1);
     if (blocked) throw new SyncTransactionError(409, "transfer_unsynced_data");
-    const recordings = await db.select().from(schema.syncedRecording).where(inArray(schema.syncedRecording.vaultId, affected));
+    const recordings = await selectRecordings().where(inArray(schema.syncedMeeting.vaultId, affected));
     if (recordings.some((recording) => Object.values(recording.audio).some((audio) => !audio.active || !audio.uploadedAt))) {
       throw new SyncTransactionError(409, "transfer_unsynced_data");
     }
@@ -548,16 +548,17 @@ function createIdentityStore(
       ]),
       ...files.map((file) => ({ entity: "file" as const, entityId: file.id, action: "upsert" as const, revision: file.revision })),
     ];
-    for (const [entity, table, key] of [["meeting_file", schema.meetingFile, schema.meetingFile.id], ["recording", schema.syncedRecording, schema.syncedRecording.sessionId]] as const) {
-      const rows = await db.select({ entityId: key, revision: table.revision }).from(table).where(eq(table.vaultId, sourceVaultId));
-      movedChanges.push(...rows.map((row) => ({ entity, ...row, action: "upsert" as const })));
-    }
+    const meetingFiles = await db.select({ entityId: schema.meetingFile.id, revision: schema.meetingFile.revision })
+      .from(schema.meetingFile).where(eq(schema.meetingFile.vaultId, sourceVaultId));
+    movedChanges.push(...meetingFiles.map((row) => ({ entity: "meeting_file" as const, ...row, action: "upsert" as const })));
+    movedChanges.push(...recordings.filter((recording) => recording.vaultId === sourceVaultId)
+      .map((recording) => ({ entity: "recording" as const, entityId: recording.sessionId, revision: recording.revision, action: "upsert" as const })));
     if (searchBackend === "sqlite") {
       await (db as unknown as SQLiteDatabase).run(sql`PRAGMA defer_foreign_keys = ON`);
     } else {
       await db.execute(sql`SET CONSTRAINTS ALL DEFERRED`);
     }
-    for (const table of [schema.syncedProject, schema.syncedMeeting, schema.syncedFile, schema.syncedRecording,
+    for (const table of [schema.syncedProject, schema.syncedMeeting, schema.syncedFile,
       schema.meetingFile, schema.meetingEvent, schema.transcriptPatchChunk, schema.searchDocument,
       schema.searchEmbedding, schema.searchIndexJob, schema.imageAnalysisJob, schema.summaryJob]) {
       await db.update(table).set({ vaultId: destinationVaultId }).where(eq(table.vaultId, sourceVaultId));
@@ -621,7 +622,7 @@ function createIdentityStore(
     const vaults: VaultRelocations["vaults"] = [];
     for (const id of new Set(destinations.values())) {
       const [vault] = await db.select({ vaultId: schema.syncedVault.vaultId, name: schema.syncedVault.name,
-        appearance: schema.syncedVault.appearance, revision: schema.syncedVault.revision,
+        icon: schema.syncedVault.icon, color: schema.syncedVault.color, revision: schema.syncedVault.revision,
         createdAt: schema.syncedVault.createdAt, updatedAt: schema.syncedVault.updatedAt, role: vaultRole(schema.syncedVault.vaultId),
       }).from(schema.syncedVault).where(and(eq(schema.syncedVault.vaultId, id), readable(schema.syncedVault.vaultId), isNull(schema.syncedVault.deletingAt))).limit(1);
       if (!vault) throw new SyncTransactionError(403, "transfer_access_required");
@@ -932,9 +933,15 @@ function createIdentityStore(
     return meeting?.active === true && meeting.deletingAt === null;
   }
 
+  function selectRecordings() {
+    return db.select({ ...getTableColumns(schema.syncedRecording), vaultId: schema.syncedMeeting.vaultId })
+      .from(schema.syncedRecording)
+      .innerJoin(schema.syncedMeeting, eq(schema.syncedMeeting.meetingId, schema.syncedRecording.meetingId));
+  }
+
   async function queueRecordingDeletes(vaultId: string, meetingId?: string) {
-    const records = await db.select().from(schema.syncedRecording).where(and(
-      eq(schema.syncedRecording.vaultId, vaultId),
+    const records = await selectRecordings().where(and(
+      eq(schema.syncedMeeting.vaultId, vaultId),
       meetingId ? eq(schema.syncedRecording.meetingId, meetingId) : undefined,
     ));
     for (const record of records) {
@@ -1024,9 +1031,9 @@ function createIdentityStore(
         record: { ...record, hasSummary: summary !== null } };
     }
     if (entity === "recording") {
-      const [record] = await db.select().from(schema.syncedRecording).where(and(
-        eq(schema.syncedRecording.vaultId, vaultId), eq(schema.syncedRecording.sessionId, entityId),
-        canAccess(schema.syncedRecording.vaultId),
+      const [record] = await selectRecordings().where(and(
+        eq(schema.syncedMeeting.vaultId, vaultId), eq(schema.syncedRecording.sessionId, entityId),
+        canAccess(schema.syncedMeeting.vaultId),
       )).limit(1);
       return { entity, id: entityId, revision: record?.revision || null,
         record: record && record.revision > 0 ? recordingCanonical(record) : null };
@@ -1349,7 +1356,8 @@ function createIdentityStore(
           if (existing?.revision === 0) {
             const [restored] = await db.update(schema.syncedVault).set({
               name: String(data.name),
-            ...(data.appearance !== undefined ? { appearance: data.appearance as Appearance } : {}),
+              icon: data.icon as string | null | undefined,
+              color: data.color as string | null | undefined,
               revision: 1,
               createdAt: data.createdAt as Date,
               updatedAt: now,
@@ -1376,7 +1384,8 @@ function createIdentityStore(
             await db.insert(schema.syncedVault).values({
               vaultId: transaction.vaultId,
               name: String(data.name),
-            ...(data.appearance !== undefined ? { appearance: data.appearance as Appearance } : {}),
+              icon: data.icon as string | null | undefined,
+              color: data.color as string | null | undefined,
               revision: 1,
               createdAt: data.createdAt as Date,
               updatedAt: now,
@@ -1393,7 +1402,8 @@ function createIdentityStore(
           await assertRevision(transaction, "vault", operation.entityId, operation.baseRevision);
           await db.update(schema.syncedVault).set({
             name: String(data.name),
-            ...(data.appearance !== undefined ? { appearance: data.appearance as Appearance } : {}),
+            icon: data.icon as string | null | undefined,
+            color: data.color as string | null | undefined,
             revision: sql`${schema.syncedVault.revision} + 1`,
             updatedAt: now,
           }).where(ownedVault(transaction.vaultId));
@@ -1445,7 +1455,8 @@ function createIdentityStore(
             vaultId: transaction.vaultId,
             parentProjectId,
             name: String(data.name),
-            ...(parentProjectId ? { appearance: null } : data.appearance !== undefined ? { appearance: data.appearance as Appearance } : {}),
+            icon: parentProjectId ? null : data.icon as string | null | undefined,
+            color: parentProjectId ? null : data.color as string | null | undefined,
             description: stringField(data, "description"),
             projectType: data.projectType as string | null,
             revision: 1,
@@ -1460,7 +1471,8 @@ function createIdentityStore(
           await db.update(schema.syncedProject).set({
             parentProjectId,
             name: String(data.name),
-            ...(parentProjectId ? { appearance: null } : data.appearance !== undefined ? { appearance: data.appearance as Appearance } : {}),
+            icon: parentProjectId ? null : data.icon as string | null | undefined,
+            color: parentProjectId ? null : data.color as string | null | undefined,
             description: stringField(data, "description"),
             projectType: data.projectType as string | null,
             revision: sql`${schema.syncedProject.revision} + 1`,
@@ -1685,9 +1697,9 @@ function createIdentityStore(
         }).where(ownedMeeting(transaction.vaultId, operation.entityId));
         await db.delete(schema.transcriptPatchChunk).where(patchScope);
       } else if (operation.entity === "recording") {
-        const [record] = await db.select().from(schema.syncedRecording).where(and(
-          eq(schema.syncedRecording.vaultId, transaction.vaultId), eq(schema.syncedRecording.sessionId, operation.entityId),
-          ownerAccess(schema.syncedRecording.vaultId),
+        const [record] = await selectRecordings().where(and(
+          eq(schema.syncedMeeting.vaultId, transaction.vaultId), eq(schema.syncedRecording.sessionId, operation.entityId),
+          ownerAccess(schema.syncedMeeting.vaultId),
         )).limit(1);
         if (!record || !await ensureUploadTarget(transaction.vaultId, record.meetingId)) {
           throw new SyncTransactionError(409, "recording_not_found", [], operation.id);
@@ -2038,6 +2050,22 @@ function createIdentityStore(
         if (!afterId || vaultId > afterId) append(vault);
         continue;
       }
+      if (entity === "meeting") {
+        const meeting = schema.syncedMeeting;
+        const rows = await db.select({
+          ...getTableColumns(meeting),
+          hasSummary: exists(db.select({ id: schema.summary.id }).from(schema.summary)
+            .where(eq(schema.summary.meetingId, meeting.meetingId))),
+        }).from(meeting).where(and(
+          readableMeeting(vaultId), eq(meeting.active, true), isNull(meeting.deletingAt),
+          afterId ? gt(meeting.meetingId, afterId) : undefined,
+        )).orderBy(asc(meeting.meetingId)).limit(remaining + 1);
+        for (const row of rows) {
+          if (!append({ entity, id: row.meetingId, revision: row.revision,
+            record: { ...row, hasSummary: Boolean(row.hasSummary) } })) return { items: records, hasMore: true };
+        }
+        continue;
+      }
       const source = entity === "project"
         ? { table: schema.syncedProject, id: schema.syncedProject.projectId, active: undefined }
         : entity === "recording" ? { table: schema.syncedRecording, id: schema.syncedRecording.sessionId, active: gt(schema.syncedRecording.revision, 0) }
@@ -2048,8 +2076,13 @@ function createIdentityStore(
               entity === "summary" ? exists(db.select({ id: schema.summary.id }).from(schema.summary).where(eq(schema.summary.meetingId, schema.syncedMeeting.meetingId))) : undefined,
               entity === "transcript" ? gt(schema.syncedMeeting.transcriptRevision, 0) : undefined,
             ) };
-      const rows = await db.select({ id: source.id }).from(source.table).where(and(
-        eq(source.table.vaultId, vaultId), readable(source.table.vaultId), source.active,
+      const sourceVault = "vaultId" in source.table ? source.table.vaultId : schema.syncedMeeting.vaultId;
+      const selection = db.select({ id: source.id }).from(source.table);
+      const query = entity === "recording"
+        ? selection.innerJoin(schema.syncedMeeting, eq(schema.syncedMeeting.meetingId, schema.syncedRecording.meetingId))
+        : selection;
+      const rows = await query.where(and(
+        eq(sourceVault, vaultId), readable(sourceVault), source.active,
         afterId ? gt(source.id, afterId) : undefined,
       )).orderBy(asc(source.id)).limit(remaining + 1);
       for (const row of rows) {
@@ -2164,7 +2197,7 @@ function createIdentityStore(
         eq(schema.recordingSession.sessionId, sessionId),
       )).limit(1);
       if (!session?.startedAt || !session.endedAt) throw new SyncTransactionError(409, "recording_session_not_finalized");
-      let [record] = await db.select().from(schema.syncedRecording)
+      let [record] = await selectRecordings()
         .where(eq(schema.syncedRecording.sessionId, sessionId)).limit(1);
       if (record && (record.vaultId !== vaultId || record.meetingId !== meetingId)) {
         throw new SyncTransactionError(409, "recording_session_meeting_mismatch");
@@ -2173,10 +2206,11 @@ function createIdentityStore(
       if (!record) {
         const [last] = await db.select({ number: schema.syncedRecording.number }).from(schema.syncedRecording)
           .where(eq(schema.syncedRecording.meetingId, meetingId)).orderBy(desc(schema.syncedRecording.number)).limit(1);
-        [record] = await db.insert(schema.syncedRecording).values({ sessionId, vaultId, meetingId,
+        const [inserted] = await db.insert(schema.syncedRecording).values({ sessionId, meetingId,
           number: (last?.number ?? 0) + 1, startedAt: session.startedAt, endedAt: session.endedAt,
           audio: {}, revision: 0, createdAt: now, updatedAt: now,
         }).returning();
+        record = { ...inserted!, vaultId };
       }
       if (!record) throw new SyncTransactionError(409, "recording_session_conflict");
       const [pending] = await db.select().from(schema.storageDeleteJob)
@@ -2191,19 +2225,19 @@ function createIdentityStore(
       return record;
     },
     async getRecording(meetingId, number, ownerOnly = false) {
-      const [record] = await db.select().from(schema.syncedRecording).where(and(
+      const [record] = await selectRecordings().where(and(
         eq(schema.syncedRecording.meetingId, meetingId), eq(schema.syncedRecording.number, number),
-        ownerOnly ? ownerAccess(schema.syncedRecording.vaultId) : readable(schema.syncedRecording.vaultId),
+        ownerOnly ? ownerAccess(schema.syncedMeeting.vaultId) : readable(schema.syncedMeeting.vaultId),
       )).limit(1);
       return record ?? null;
     },
     async markRecordingUploaded(sessionId, source, generation, size, checksum) {
-      const [initial] = await db.select().from(schema.syncedRecording).where(and(
-        eq(schema.syncedRecording.sessionId, sessionId), ownerAccess(schema.syncedRecording.vaultId),
+      const [initial] = await selectRecordings().where(and(
+        eq(schema.syncedRecording.sessionId, sessionId), ownerAccess(schema.syncedMeeting.vaultId),
       )).limit(1);
       if (!initial) return null;
       await lockVault(initial.vaultId);
-      const [record] = await db.select().from(schema.syncedRecording).where(eq(schema.syncedRecording.sessionId, sessionId)).limit(1);
+      const [record] = await selectRecordings().where(eq(schema.syncedRecording.sessionId, sessionId)).limit(1);
       const audio = record?.audio[source];
       if (!record || audio?.generation !== generation || !await ensureUploadTarget(record.vaultId, record.meetingId)) return null;
       const [pending] = await db.select().from(schema.storageDeleteJob)
@@ -2216,9 +2250,9 @@ function createIdentityStore(
       return updated;
     },
     async listRecordings(meetingId, after, limit) {
-      return db.select().from(schema.syncedRecording).where(and(
+      return selectRecordings().where(and(
         eq(schema.syncedRecording.meetingId, meetingId), gt(schema.syncedRecording.number, after),
-        gt(schema.syncedRecording.revision, 0), readable(schema.syncedRecording.vaultId),
+        gt(schema.syncedRecording.revision, 0), readable(schema.syncedMeeting.vaultId),
       )).orderBy(asc(schema.syncedRecording.number)).limit(limit);
     },
     async expireRecordingUploads(vaultId, before) {
@@ -2226,8 +2260,8 @@ function createIdentityStore(
       const expired = (source: RecordingSource) => searchBackend === "sqlite"
         ? sql`json_extract(${schema.syncedRecording.audio}, ${`$.${source}.active`}) = 0 AND json_extract(${schema.syncedRecording.audio}, ${`$.${source}.createdAt`}) < ${before.toISOString()}`
         : sql`${schema.syncedRecording.audio}->${source}->>'active' = 'false' AND ${schema.syncedRecording.audio}->${source}->>'createdAt' < ${before.toISOString()}`;
-      const records = await db.select().from(schema.syncedRecording).where(and(
-        eq(schema.syncedRecording.vaultId, vaultId), ownerAccess(schema.syncedRecording.vaultId),
+      const records = await selectRecordings().where(and(
+        eq(schema.syncedMeeting.vaultId, vaultId), ownerAccess(schema.syncedMeeting.vaultId),
         or(expired("mic"), expired("system")),
       )).limit(100);
       for (const record of records) {
@@ -2329,7 +2363,7 @@ function createIdentityStore(
       const rows = await db.select({
         vaultId: schema.syncedVault.vaultId,
         name: schema.syncedVault.name,
-        appearance: schema.syncedVault.appearance,
+        icon: schema.syncedVault.icon, color: schema.syncedVault.color,
         revision: schema.syncedVault.revision,
         createdAt: schema.syncedVault.createdAt,
         updatedAt: schema.syncedVault.updatedAt,
@@ -2347,7 +2381,7 @@ function createIdentityStore(
         vaultId: schema.syncedVault.vaultId,
         name: schema.syncedVault.name,
         hasResources: vaultHasResources(schema.syncedVault.vaultId).mapWith(Boolean),
-        appearance: schema.syncedVault.appearance,
+        icon: schema.syncedVault.icon, color: schema.syncedVault.color,
         revision: schema.syncedVault.revision,
         createdAt: schema.syncedVault.createdAt,
         updatedAt: schema.syncedVault.updatedAt,
@@ -2434,10 +2468,12 @@ function createIdentityStore(
       return rows.map((row: Omit<TranscriptVersion, "status">) => ({ ...row, status: transcriptStatus(row.endedAt, row.latestSegmentCreatedAt, now) }));
     },
     async countTranscript(vaultId, meetingId) {
-      const latest = await getTranscript(vaultId, meetingId);
-      if (!latest) return 0;
+      const latest = db.select({ id: schema.transcript.id }).from(schema.transcript)
+        .innerJoin(schema.syncedMeeting, eq(schema.transcript.meetingId, schema.syncedMeeting.meetingId)).where(and(
+          readable(schema.syncedMeeting.vaultId), eq(schema.syncedMeeting.vaultId, vaultId), eq(schema.transcript.meetingId, meetingId),
+        )).orderBy(desc(schema.transcript.version)).limit(1);
       const [row] = await db.select({ count: sql<number>`count(*)` }).from(schema.syncedTranscriptSegment)
-        .where(eq(schema.syncedTranscriptSegment.transcriptId, latest.id));
+        .where(eq(schema.syncedTranscriptSegment.transcriptId, latest));
       return Number(row?.count ?? 0);
     },
     async searchTextPage(vaultId, query, kind, offset, limit) {

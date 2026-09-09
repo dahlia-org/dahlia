@@ -59,13 +59,13 @@ import Synchronization
             #expect(await analyzer.runtimeProviders[screenshot.id] == (fallsBack ? .dahlia(connectionID: connection.id) : nil))
             try await database.dbQueue.read { db throws in
                 #expect(try MeetingScreenshotRecord.fetchOne(db, key: screenshot.id)?.ocrText == (fallsBack ? "device OCR" : nil))
-                let jobs = try Int.fetchOne(db, sql: "SELECT count(*) FROM search_index_jobs WHERE targetKind = 'screenshotAnalysis'")
+                let jobs = try Int.fetchOne(db, sql: "SELECT count(*) FROM jobs_search_index WHERE targetKind = 'screenshotAnalysis'")
                 #expect(jobs == (capability == "unavailable" || capability == "detached" ? 1 : 0))
             }
             if capability == "unavailable" {
                 unavailable.withLock { $0 = false }
                 try await database.dbQueue.write { db in
-                    try db.execute(sql: "UPDATE search_index_jobs SET availableAt = ?", arguments: [Date.distantPast])
+                    try db.execute(sql: "UPDATE jobs_search_index SET availableAt = ?", arguments: [Date.distantPast])
                 }
                 await indexer.drain()
                 #expect(await analyzer.runtimeProviders[screenshot.id] == .dahlia(connectionID: connection.id))
@@ -180,9 +180,9 @@ import Synchronization
                     db,
                     sql: """
                     SELECT
-                        (SELECT priority FROM search_index_jobs WHERE targetKind = 'meeting' AND targetKey = ?)
+                        (SELECT priority FROM jobs_search_index WHERE targetKind = 'meeting' AND targetKey = ?)
                         >
-                        (SELECT priority FROM search_index_jobs WHERE targetKind = 'screenshotAnalysis' AND targetKey = ?)
+                        (SELECT priority FROM jobs_search_index WHERE targetKind = 'screenshotAnalysis' AND targetKey = ?)
                     """,
                     arguments: [meeting.id, screenshot.id]
                 ) ?? false
@@ -354,7 +354,7 @@ import Synchronization
                     Int.fetchOne(
                         db,
                         sql: """
-                        SELECT COUNT(*) FROM search_index_jobs
+                        SELECT COUNT(*) FROM jobs_search_index
                         WHERE targetKind = 'screenshotAnalysis' AND status = 'pending'
                         """
                     ) ?? 0
@@ -397,7 +397,7 @@ import Synchronization
                     Int.fetchOne(
                         db,
                         sql: """
-                        SELECT COUNT(*) FROM search_index_jobs
+                        SELECT COUNT(*) FROM jobs_search_index
                         WHERE targetKind = 'screenshotAnalysis' AND status = 'pending'
                         """
                     ) ?? 0
@@ -526,10 +526,10 @@ import Synchronization
                     ) ?? 0,
                     Int.fetchOne(
                         db,
-                        sql: "SELECT attempts FROM search_index_jobs WHERE targetKey = ?",
+                        sql: "SELECT attempts FROM jobs_search_index WHERE targetKey = ?",
                         arguments: [failingID]
                     ),
-                    Int.fetchOne(db, sql: "SELECT COUNT(*) FROM search_index_jobs WHERE targetKind = 'screenshotAnalysis'") ?? 0
+                    Int.fetchOne(db, sql: "SELECT COUNT(*) FROM jobs_search_index WHERE targetKind = 'screenshotAnalysis'") ?? 0
                 )
             }
             #expect(state.0 == 7)
@@ -579,7 +579,7 @@ import Synchronization
                     Int.fetchOne(
                         db,
                         sql: """
-                        SELECT COUNT(*) FROM search_index_jobs
+                        SELECT COUNT(*) FROM jobs_search_index
                         WHERE targetKind = 'screenshotAnalysis' AND targetKey != ?
                         """,
                         arguments: [failingID]
@@ -587,7 +587,7 @@ import Synchronization
                     Row.fetchOne(
                         db,
                         sql: """
-                        SELECT status, attempts FROM search_index_jobs
+                        SELECT status, attempts FROM jobs_search_index
                         WHERE targetKind = 'screenshotAnalysis' AND targetKey = ?
                         """,
                         arguments: [failingID]
@@ -624,7 +624,7 @@ import Synchronization
                     try screenshot.insertLegacyForTesting(db)
                 }
                 try db.execute(
-                    sql: "UPDATE search_index_jobs SET attempts = 3 WHERE targetKind = 'screenshotAnalysis'"
+                    sql: "UPDATE jobs_search_index SET attempts = 3 WHERE targetKind = 'screenshotAnalysis'"
                 )
             }
 
@@ -638,7 +638,7 @@ import Synchronization
                     db,
                     sql: """
                     SELECT COUNT(*) AS pendingCount, SUM(attempts = 3) AS preservedAttempts, MIN(availableAt) AS availableAt
-                    FROM search_index_jobs WHERE targetKind = 'screenshotAnalysis' AND status = 'pending'
+                    FROM jobs_search_index WHERE targetKind = 'screenshotAnalysis' AND status = 'pending'
                     """
                 )
             }
@@ -651,7 +651,7 @@ import Synchronization
 
             try await database.dbQueue.write { db in
                 try db.execute(
-                    sql: "UPDATE search_index_jobs SET availableAt = ? WHERE targetKind = 'screenshotAnalysis'",
+                    sql: "UPDATE jobs_search_index SET availableAt = ? WHERE targetKind = 'screenshotAnalysis'",
                     arguments: [Date.distantPast]
                 )
             }
@@ -687,7 +687,7 @@ import Synchronization
                 try screenshot.insertLegacyForTesting(db)
                 try db.execute(
                     sql: """
-                    UPDATE search_index_jobs SET attempts = 4
+                    UPDATE jobs_search_index SET attempts = 4
                     WHERE targetKind = 'screenshotAnalysis' AND targetKey = ?
                     """,
                     arguments: [screenshot.id]
@@ -700,7 +700,7 @@ import Synchronization
                     try Int.fetchOne(
                         db,
                         sql: """
-                        SELECT attempts FROM search_index_jobs
+                        SELECT attempts FROM jobs_search_index
                         WHERE targetKind = 'screenshotAnalysis' AND targetKey = ?
                         """,
                         arguments: [screenshot.id]
@@ -713,7 +713,7 @@ import Synchronization
             let reset = try database.dbQueue.read { db in
                 try Row.fetchOne(
                     db,
-                    sql: "SELECT status, attempts FROM search_index_jobs WHERE targetKind = 'screenshotAnalysis' AND targetKey = ?",
+                    sql: "SELECT status, attempts FROM jobs_search_index WHERE targetKind = 'screenshotAnalysis' AND targetKey = ?",
                     arguments: [screenshot.id]
                 )
             }
@@ -768,7 +768,7 @@ import Synchronization
                     Int.fetchOne(
                         db,
                         sql: """
-                        SELECT COUNT(*) FROM search_index_jobs
+                        SELECT COUNT(*) FROM jobs_search_index
                         WHERE indexKind = 'fts' AND targetKind = 'screenshotAnalysis' AND targetKey = ?
                         """,
                         arguments: [screenshot.id]
@@ -874,7 +874,7 @@ import Synchronization
                     Int.fetchOne(
                         db,
                         sql: """
-                        SELECT COUNT(*) FROM search_index_jobs
+                        SELECT COUNT(*) FROM jobs_search_index
                         WHERE targetKind = 'screenshotAnalysis' AND targetKey = ?
                         """,
                         arguments: [screenshot.id]

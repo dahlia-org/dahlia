@@ -1,6 +1,7 @@
 import type { ServerUserRecord, ServerOrganizationRecord } from "../auth/store";
 import { Select } from "./Select";
-import { AppearanceIcon, projectAppearance } from "./AppearancePicker";
+import type { Appearance } from "../appearance-model";
+import { collectionAppearance, AppearanceIcon, projectAppearance } from "./AppearancePicker";
 import { useActionDialog } from "./ActionDialog";
 import { TranscriptHistory } from "./TranscriptHistory";
 import { SummaryHistory, type LatestSummary } from "./SummaryHistory";
@@ -514,7 +515,7 @@ function Vaults({ home = false }: { home?: boolean }) {
         <p>{organizationId ? uiText("Vaults shared with this organization will appear here.", "この組織に共有された保管庫がここに表示されます。") : uiText("Create a Vault, then connect it in Dahlia for macOS to bring your meeting notes, transcripts and screenshots here.", "保管庫を作成して macOS 版 Dahlia で接続すると、ミーティングの要約・文字起こし・スクリーンショットをここで閲覧できます。")}</p>
       </div>}
       <div className="vault-grid">{vaults?.map((vault) => <a className="vault-card" href={`/vaults/${vault.vaultId}`} key={vault.vaultId}>
-        <div className="vault-card-top"><span className="vault-symbol"><AppearanceIcon appearance={vault.appearance ?? { icon: "vault", color: "neutral" }} size={22} /></span><span className={`status${vault.role === "owner" ? "" : " shared"}`}>{vault.role === "owner" ? uiText("Personal", "個人") : uiText("Shared · read-only", "共有・閲覧のみ")}</span></div>
+        <div className="vault-card-top"><span className="vault-symbol"><AppearanceIcon appearance={collectionAppearance(vault, "vault")} size={22} /></span><span className={`status${vault.role === "owner" ? "" : " shared"}`}>{vault.role === "owner" ? uiText("Personal", "個人") : uiText("Shared · read-only", "共有・閲覧のみ")}</span></div>
         <h3>{vault.name}</h3>
         <div className="vault-card-bottom"><span>{uiText("Updated", "更新日")} {new Date(vault.updatedAt ?? vault.createdAt).toLocaleDateString()}</span><MenuIcon name="arrow" /></div>
       </a>)}</div>
@@ -522,7 +523,7 @@ function Vaults({ home = false }: { home?: boolean }) {
     {home && recentVault && <section className="section-block recent-meetings">
       <div className="collection-heading"><h2>{uiText("Recent meetings", "最近のミーティング")}</h2>
         <Select aria-label={uiText("Vault for recent meetings", "最近のミーティングの保管庫")} value={recentVault.vaultId} onValueChange={(value) => setRecentVaultId(value)}>
-          {vaults?.map((vault) => <option value={vault.vaultId} key={vault.vaultId}><AppearanceIcon appearance={vault.appearance ?? { icon: "vault", color: "neutral" }} /><span>{vault.name}</span></option>)}
+          {vaults?.map((vault) => <option value={vault.vaultId} key={vault.vaultId}><AppearanceIcon appearance={collectionAppearance(vault, "vault")} /><span>{vault.name}</span></option>)}
         </Select>
       </div>
       <DataError error={recent.error} retry={recent.reload} />
@@ -678,7 +679,7 @@ function VaultTransfer({ vault }: { vault: SyncedVaultInfo }) {
     <p>{uiText("Move all saved content to another Vault you own.", "保存済みの全内容を、自分が所有する別の保管庫へ移します。")}</p>
     <div className="collection-heading"><Select aria-label={uiText("Destination Vault", "移管先の保管庫")} placeholder={uiText("Choose a Vault", "保管庫を選択")} menuLabel={uiText("Vaults", "保管庫")} value={destinationId} disabled={loading}
       onValueChange={(value) => setDestinationId(value)}>
-      {available.map((item) => <option key={item.vaultId} value={item.vaultId}><AppearanceIcon appearance={item.appearance ?? { icon: "vault", color: "neutral" }} /><span>{item.name}</span></option>)}
+      {available.map((item) => <option key={item.vaultId} value={item.vaultId}><AppearanceIcon appearance={collectionAppearance(item, "vault")} /><span>{item.name}</span></option>)}
     </Select><button className="secondary" disabled={!destination || loading || vault.hasResources !== true} onClick={() => void confirm()}>
       {loading ? uiText("Checking…", "確認中…") : uiText("Transfer content", "内容を移管")}</button></div>
     {targets.data && !available.length && <p className="muted">{uiText("Create another Vault to transfer content.", "移管先となる別の保管庫を作成してください。")}</p>}
@@ -741,10 +742,10 @@ function VaultMeetings({ session, vaultId }: { session: SessionInfo; vaultId: st
     openDialog({
       title: uiText("Edit Vault", "保管庫を編集"), confirmLabel: uiText("Save changes", "変更を保存"),
       fields: [{ name: "name", label: uiText("Vault name", "保管庫名"), value: vault.name, required: true },
-        { name: "appearance", label: uiText("Appearance", "見た目"), appearance: "editable", value: JSON.stringify(vault.appearance ?? { icon: "vault", color: "neutral" }) }],
+        { name: "appearance", label: uiText("Appearance", "見た目"), appearance: "editable", value: JSON.stringify(collectionAppearance(vault, "vault")) }],
       onSubmit: async ({ name, appearance }) => {
         await commitSyncTransaction(vaultId, [{ entity: "vault", action: "update", entityId: vaultId,
-          baseRevision: vault.revision, data: { name: name!.trim(), appearance: JSON.parse(appearance!) } }], setRecovering);
+          baseRevision: vault.revision, data: { name: name!.trim(), ...(JSON.parse(appearance!) as Appearance) } }], setRecovering);
       },
     });
   };
@@ -779,7 +780,7 @@ function VaultMeetings({ session, vaultId }: { session: SessionInfo; vaultId: st
   return <article className="meeting-detail collection-detail">
     <header className="meeting-header">
       <nav className="detail-breadcrumbs" aria-label={uiText("Breadcrumbs", "パンくず")}><a href="/vaults">{uiText("All Vaults", "保管庫一覧")}</a></nav>
-      <h1><AppearanceIcon appearance={vault?.appearance ?? { icon: "vault", color: "neutral" }} size={28} />{vault?.name ?? uiText("Vault", "保管庫")}</h1>
+      <h1><AppearanceIcon appearance={collectionAppearance(vault, "vault")} size={28} />{vault?.name ?? uiText("Vault", "保管庫")}</h1>
       {vault && <div className="meeting-metadata"><span className="metadata-chip">{vault.role === "owner" ? uiText("Owner", "所有者") : uiText("Read-only", "閲覧のみ")}</span></div>}
     </header>
     {dialog}
@@ -845,7 +846,7 @@ function SyncedProject({ vaultId, projectId }: { vaultId: string; projectId: str
       ],
       onSubmit: async ({ name, description, appearance }) => {
         await commitSyncTransaction(vaultId, [{ entity: "project", action: "update", entityId: projectId, baseRevision: project.revision,
-          data: { ...(!project.parentProjectId ? { appearance: JSON.parse(appearance!) } : {}), parentProjectId: project.parentProjectId ?? null, name: name!.trim(), description,
+          data: { ...(!project.parentProjectId ? JSON.parse(appearance!) as Appearance : {}), parentProjectId: project.parentProjectId ?? null, name: name!.trim(), description,
             projectType: project.parentProjectId ? null : project.projectType ?? "undefined" } }], setRecovering);
       },
     });
@@ -967,7 +968,7 @@ export function SyncedMeeting({ vaultId, meetingId }: { vaultId: string; meeting
     <article className="meeting-detail" aria-busy={!meeting && (meetingQuery.loading || vaultQuery.loading)}>
       {meeting && <header className="meeting-header">
         <nav className="detail-breadcrumbs" aria-label={uiText("Breadcrumbs", "パンくず")}>
-          <a href={`/vaults/${vaultId}`}><AppearanceIcon appearance={vault?.appearance ?? { icon: "vault", color: "neutral" }} />{vault?.name ?? uiText("Vault", "保管庫")}</a>
+          <a href={`/vaults/${vaultId}`}><AppearanceIcon appearance={collectionAppearance(vault, "vault")} />{vault?.name ?? uiText("Vault", "保管庫")}</a>
           {project && <><span aria-hidden="true">/</span><a href={`/projects/${project.projectId}`}>{project.path}</a></>}
         </nav>
         <h1>{meeting.name || uiText("Untitled meeting", "無題のミーティング")}</h1>

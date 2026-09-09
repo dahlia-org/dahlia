@@ -264,12 +264,17 @@ import Foundation
             )
             let dataURI = TestCodexChatFixtures.historyImageDataURI
 
-            _ = try await service.send(
+            let stream = try await service.send(
                 threadID: "thread-1",
                 inputs: [.text("Describe this"), .imageDataURI(dataURI)],
                 model: "default-model",
                 effort: "medium"
             )
+            var events: [CodexChatTurnEvent] = []
+            for try await event in stream {
+                events.append(event)
+            }
+            #expect(events.contains(.completed(itemID: nil, text: nil)))
             let params = try #require(await transport.messages().first {
                 $0.objectValue?["method"]?.stringValue == "turn/start"
             }?.objectValue?["params"]?.objectValue)

@@ -79,10 +79,6 @@
       "entityType": "tables"
     },
     {
-      "name": "image_analysis_jobs",
-      "entityType": "tables"
-    },
-    {
       "name": "meeting_events",
       "entityType": "tables"
     },
@@ -99,19 +95,7 @@
       "entityType": "tables"
     },
     {
-      "name": "search_index_jobs",
-      "entityType": "tables"
-    },
-    {
-      "name": "storage_delete_jobs",
-      "entityType": "tables"
-    },
-    {
       "name": "summaries",
-      "entityType": "tables"
-    },
-    {
-      "name": "summary_jobs",
       "entityType": "tables"
     },
     {
@@ -1987,16 +1971,6 @@
       "table": "account_settings"
     },
     {
-      "type": "integer",
-      "notNull": true,
-      "autoincrement": false,
-      "default": "1",
-      "generated": null,
-      "name": "change_version",
-      "entityType": "columns",
-      "table": "account_settings"
-    },
-    {
       "type": "text",
       "notNull": true,
       "autoincrement": false,
@@ -2015,106 +1989,6 @@
       "name": "analysis_languages",
       "entityType": "columns",
       "table": "account_settings"
-    },
-    {
-      "type": "text",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "file_id",
-      "entityType": "columns",
-      "table": "image_analysis_jobs"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "vault_id",
-      "entityType": "columns",
-      "table": "image_analysis_jobs"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "owner_user_id",
-      "entityType": "columns",
-      "table": "image_analysis_jobs"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "model",
-      "entityType": "columns",
-      "table": "image_analysis_jobs"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": "'pending'",
-      "generated": null,
-      "name": "status",
-      "entityType": "columns",
-      "table": "image_analysis_jobs"
-    },
-    {
-      "type": "integer",
-      "notNull": true,
-      "autoincrement": false,
-      "default": "0",
-      "generated": null,
-      "name": "attempts",
-      "entityType": "columns",
-      "table": "image_analysis_jobs"
-    },
-    {
-      "type": "integer",
-      "notNull": true,
-      "autoincrement": false,
-      "default": "(cast(unixepoch('subsecond') * 1000 as integer))",
-      "generated": null,
-      "name": "available_at",
-      "entityType": "columns",
-      "table": "image_analysis_jobs"
-    },
-    {
-      "type": "integer",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "claimed_at",
-      "entityType": "columns",
-      "table": "image_analysis_jobs"
-    },
-    {
-      "type": "integer",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "lease_expires_at",
-      "entityType": "columns",
-      "table": "image_analysis_jobs"
-    },
-    {
-      "type": "text",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "last_error_code",
-      "entityType": "columns",
-      "table": "image_analysis_jobs"
     },
     {
       "type": "text",
@@ -2468,216 +2342,6 @@
     },
     {
       "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "vault_id",
-      "entityType": "columns",
-      "table": "search_index_jobs"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "document_id",
-      "entityType": "columns",
-      "table": "search_index_jobs"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "owner_user_id",
-      "entityType": "columns",
-      "table": "search_index_jobs"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "model",
-      "entityType": "columns",
-      "table": "search_index_jobs"
-    },
-    {
-      "type": "integer",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "dimensions",
-      "entityType": "columns",
-      "table": "search_index_jobs"
-    },
-    {
-      "type": "integer",
-      "notNull": true,
-      "autoincrement": false,
-      "default": "1",
-      "generated": null,
-      "name": "generation",
-      "entityType": "columns",
-      "table": "search_index_jobs"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": "'pending'",
-      "generated": null,
-      "name": "status",
-      "entityType": "columns",
-      "table": "search_index_jobs"
-    },
-    {
-      "type": "integer",
-      "notNull": true,
-      "autoincrement": false,
-      "default": "0",
-      "generated": null,
-      "name": "attempts",
-      "entityType": "columns",
-      "table": "search_index_jobs"
-    },
-    {
-      "type": "integer",
-      "notNull": true,
-      "autoincrement": false,
-      "default": "(cast(unixepoch('subsecond') * 1000 as integer))",
-      "generated": null,
-      "name": "available_at",
-      "entityType": "columns",
-      "table": "search_index_jobs"
-    },
-    {
-      "type": "integer",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "claimed_at",
-      "entityType": "columns",
-      "table": "search_index_jobs"
-    },
-    {
-      "type": "integer",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "lease_expires_at",
-      "entityType": "columns",
-      "table": "search_index_jobs"
-    },
-    {
-      "type": "text",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "last_error_code",
-      "entityType": "columns",
-      "table": "search_index_jobs"
-    },
-    {
-      "type": "integer",
-      "notNull": true,
-      "autoincrement": false,
-      "default": "(cast(unixepoch('subsecond') * 1000 as integer))",
-      "generated": null,
-      "name": "updated_at",
-      "entityType": "columns",
-      "table": "search_index_jobs"
-    },
-    {
-      "type": "text",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "storage_key",
-      "entityType": "columns",
-      "table": "storage_delete_jobs"
-    },
-    {
-      "type": "integer",
-      "notNull": true,
-      "autoincrement": false,
-      "default": "0",
-      "generated": null,
-      "name": "attempts",
-      "entityType": "columns",
-      "table": "storage_delete_jobs"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": "'pending'",
-      "generated": null,
-      "name": "status",
-      "entityType": "columns",
-      "table": "storage_delete_jobs"
-    },
-    {
-      "type": "integer",
-      "notNull": true,
-      "autoincrement": false,
-      "default": "(cast(unixepoch('subsecond') * 1000 as integer))",
-      "generated": null,
-      "name": "available_at",
-      "entityType": "columns",
-      "table": "storage_delete_jobs"
-    },
-    {
-      "type": "integer",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "claimed_at",
-      "entityType": "columns",
-      "table": "storage_delete_jobs"
-    },
-    {
-      "type": "integer",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "lease_expires_at",
-      "entityType": "columns",
-      "table": "storage_delete_jobs"
-    },
-    {
-      "type": "text",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "last_error_code",
-      "entityType": "columns",
-      "table": "storage_delete_jobs"
-    },
-    {
-      "type": "integer",
-      "notNull": true,
-      "autoincrement": false,
-      "default": "(cast(unixepoch('subsecond') * 1000 as integer))",
-      "generated": null,
-      "name": "created_at",
-      "entityType": "columns",
-      "table": "storage_delete_jobs"
-    },
-    {
-      "type": "text",
       "notNull": false,
       "autoincrement": false,
       "default": null,
@@ -2755,176 +2419,6 @@
       "name": "metadata",
       "entityType": "columns",
       "table": "summaries"
-    },
-    {
-      "type": "text",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "id",
-      "entityType": "columns",
-      "table": "summary_jobs"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "vault_id",
-      "entityType": "columns",
-      "table": "summary_jobs"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "meeting_id",
-      "entityType": "columns",
-      "table": "summary_jobs"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "owner_user_id",
-      "entityType": "columns",
-      "table": "summary_jobs"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "method",
-      "entityType": "columns",
-      "table": "summary_jobs"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "settings",
-      "entityType": "columns",
-      "table": "summary_jobs"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "output_language",
-      "entityType": "columns",
-      "table": "summary_jobs"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": "'pending'",
-      "generated": null,
-      "name": "status",
-      "entityType": "columns",
-      "table": "summary_jobs"
-    },
-    {
-      "type": "integer",
-      "notNull": true,
-      "autoincrement": false,
-      "default": "0",
-      "generated": null,
-      "name": "attempts",
-      "entityType": "columns",
-      "table": "summary_jobs"
-    },
-    {
-      "type": "integer",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "created_at",
-      "entityType": "columns",
-      "table": "summary_jobs"
-    },
-    {
-      "type": "integer",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "available_at",
-      "entityType": "columns",
-      "table": "summary_jobs"
-    },
-    {
-      "type": "integer",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "claimed_at",
-      "entityType": "columns",
-      "table": "summary_jobs"
-    },
-    {
-      "type": "integer",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "lease_expires_at",
-      "entityType": "columns",
-      "table": "summary_jobs"
-    },
-    {
-      "type": "text",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "last_error_code",
-      "entityType": "columns",
-      "table": "summary_jobs"
-    },
-    {
-      "type": "integer",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "summary_revision",
-      "entityType": "columns",
-      "table": "summary_jobs"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "input_version",
-      "entityType": "columns",
-      "table": "summary_jobs"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "request_hash",
-      "entityType": "columns",
-      "table": "summary_jobs"
     },
     {
       "type": "integer",
@@ -3533,16 +3027,6 @@
       "default": null,
       "generated": null,
       "name": "session_id",
-      "entityType": "columns",
-      "table": "recordings"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "vault_id",
       "entityType": "columns",
       "table": "recordings"
     },
@@ -4398,51 +3882,6 @@
     },
     {
       "columns": [
-        "file_id"
-      ],
-      "tableTo": "files",
-      "columnsTo": [
-        "file_id"
-      ],
-      "onUpdate": "NO ACTION",
-      "onDelete": "CASCADE",
-      "nameExplicit": false,
-      "name": "fk_image_analysis_jobs_file_id_files_file_id_fk",
-      "entityType": "fks",
-      "table": "image_analysis_jobs"
-    },
-    {
-      "columns": [
-        "vault_id"
-      ],
-      "tableTo": "vaults",
-      "columnsTo": [
-        "vault_id"
-      ],
-      "onUpdate": "NO ACTION",
-      "onDelete": "CASCADE",
-      "nameExplicit": false,
-      "name": "fk_image_analysis_jobs_vault_id_vaults_vault_id_fk",
-      "entityType": "fks",
-      "table": "image_analysis_jobs"
-    },
-    {
-      "columns": [
-        "owner_user_id"
-      ],
-      "tableTo": "user",
-      "columnsTo": [
-        "id"
-      ],
-      "onUpdate": "NO ACTION",
-      "onDelete": "CASCADE",
-      "nameExplicit": false,
-      "name": "fk_image_analysis_jobs_owner_user_id_user_id_fk",
-      "entityType": "fks",
-      "table": "image_analysis_jobs"
-    },
-    {
-      "columns": [
         "vault_id"
       ],
       "tableTo": "vaults",
@@ -4541,36 +3980,6 @@
     },
     {
       "columns": [
-        "vault_id"
-      ],
-      "tableTo": "vaults",
-      "columnsTo": [
-        "vault_id"
-      ],
-      "onUpdate": "NO ACTION",
-      "onDelete": "CASCADE",
-      "nameExplicit": false,
-      "name": "fk_search_index_jobs_vault_id_vaults_vault_id_fk",
-      "entityType": "fks",
-      "table": "search_index_jobs"
-    },
-    {
-      "columns": [
-        "owner_user_id"
-      ],
-      "tableTo": "user",
-      "columnsTo": [
-        "id"
-      ],
-      "onUpdate": "NO ACTION",
-      "onDelete": "CASCADE",
-      "nameExplicit": false,
-      "name": "fk_search_index_jobs_owner_user_id_user_id_fk",
-      "entityType": "fks",
-      "table": "search_index_jobs"
-    },
-    {
-      "columns": [
         "meeting_id"
       ],
       "tableTo": "meetings",
@@ -4583,51 +3992,6 @@
       "name": "fk_summaries_meeting_id_meetings_meeting_id_fk",
       "entityType": "fks",
       "table": "summaries"
-    },
-    {
-      "columns": [
-        "vault_id"
-      ],
-      "tableTo": "vaults",
-      "columnsTo": [
-        "vault_id"
-      ],
-      "onUpdate": "NO ACTION",
-      "onDelete": "CASCADE",
-      "nameExplicit": false,
-      "name": "fk_summary_jobs_vault_id_vaults_vault_id_fk",
-      "entityType": "fks",
-      "table": "summary_jobs"
-    },
-    {
-      "columns": [
-        "meeting_id"
-      ],
-      "tableTo": "meetings",
-      "columnsTo": [
-        "meeting_id"
-      ],
-      "onUpdate": "NO ACTION",
-      "onDelete": "CASCADE",
-      "nameExplicit": false,
-      "name": "fk_summary_jobs_meeting_id_meetings_meeting_id_fk",
-      "entityType": "fks",
-      "table": "summary_jobs"
-    },
-    {
-      "columns": [
-        "owner_user_id"
-      ],
-      "tableTo": "user",
-      "columnsTo": [
-        "id"
-      ],
-      "onUpdate": "NO ACTION",
-      "onDelete": "CASCADE",
-      "nameExplicit": false,
-      "name": "fk_summary_jobs_owner_user_id_user_id_fk",
-      "entityType": "fks",
-      "table": "summary_jobs"
     },
     {
       "columns": [
@@ -4740,23 +4104,6 @@
     },
     {
       "columns": [
-        "vault_id",
-        "meeting_id"
-      ],
-      "tableTo": "meetings",
-      "columnsTo": [
-        "vault_id",
-        "meeting_id"
-      ],
-      "onUpdate": "NO ACTION",
-      "onDelete": "CASCADE",
-      "nameExplicit": false,
-      "name": "fk_recordings_vault_id_meeting_id_meetings_vault_id_meeting_id_fk",
-      "entityType": "fks",
-      "table": "recordings"
-    },
-    {
-      "columns": [
         "transcript_id"
       ],
       "tableTo": "transcripts",
@@ -4866,16 +4213,6 @@
       "name": "search_embeddings_pk",
       "entityType": "pks",
       "table": "search_embeddings"
-    },
-    {
-      "columns": [
-        "vault_id",
-        "document_id"
-      ],
-      "nameExplicit": false,
-      "name": "search_index_jobs_pk",
-      "entityType": "pks",
-      "table": "search_index_jobs"
     },
     {
       "columns": [
@@ -5084,15 +4421,6 @@
     },
     {
       "columns": [
-        "file_id"
-      ],
-      "nameExplicit": false,
-      "name": "image_analysis_jobs_pk",
-      "table": "image_analysis_jobs",
-      "entityType": "pks"
-    },
-    {
-      "columns": [
         "id"
       ],
       "nameExplicit": false,
@@ -5111,29 +4439,11 @@
     },
     {
       "columns": [
-        "storage_key"
-      ],
-      "nameExplicit": false,
-      "name": "storage_delete_jobs_pk",
-      "table": "storage_delete_jobs",
-      "entityType": "pks"
-    },
-    {
-      "columns": [
         "id"
       ],
       "nameExplicit": false,
       "name": "summaries_pk",
       "table": "summaries",
-      "entityType": "pks"
-    },
-    {
-      "columns": [
-        "id"
-      ],
-      "nameExplicit": false,
-      "name": "summary_jobs_pk",
-      "table": "summary_jobs",
       "entityType": "pks"
     },
     {
@@ -5606,28 +4916,6 @@
     {
       "columns": [
         {
-          "value": "status",
-          "isExpression": false
-        },
-        {
-          "value": "available_at",
-          "isExpression": false
-        },
-        {
-          "value": "lease_expires_at",
-          "isExpression": false
-        }
-      ],
-      "isUnique": false,
-      "where": null,
-      "origin": "manual",
-      "name": "image_analysis_job_claim_idx",
-      "entityType": "indexes",
-      "table": "image_analysis_jobs"
-    },
-    {
-      "columns": [
-        {
           "value": "vault_id",
           "isExpression": false
         },
@@ -5716,82 +5004,6 @@
       "name": "search_document_vault_kind_meeting_document_idx",
       "entityType": "indexes",
       "table": "search_documents"
-    },
-    {
-      "columns": [
-        {
-          "value": "status",
-          "isExpression": false
-        },
-        {
-          "value": "available_at",
-          "isExpression": false
-        },
-        {
-          "value": "lease_expires_at",
-          "isExpression": false
-        }
-      ],
-      "isUnique": false,
-      "where": null,
-      "origin": "manual",
-      "name": "search_index_job_claim_idx",
-      "entityType": "indexes",
-      "table": "search_index_jobs"
-    },
-    {
-      "columns": [
-        {
-          "value": "status",
-          "isExpression": false
-        },
-        {
-          "value": "available_at",
-          "isExpression": false
-        },
-        {
-          "value": "lease_expires_at",
-          "isExpression": false
-        }
-      ],
-      "isUnique": false,
-      "where": null,
-      "origin": "manual",
-      "name": "storage_delete_job_claim_idx",
-      "entityType": "indexes",
-      "table": "storage_delete_jobs"
-    },
-    {
-      "columns": [
-        {
-          "value": "meeting_id",
-          "isExpression": false
-        }
-      ],
-      "isUnique": true,
-      "where": "\"summary_jobs\".\"status\" IN ('pending', 'processing')",
-      "origin": "manual",
-      "name": "summary_job_active_meeting_idx",
-      "entityType": "indexes",
-      "table": "summary_jobs"
-    },
-    {
-      "columns": [
-        {
-          "value": "owner_user_id",
-          "isExpression": false
-        },
-        {
-          "value": "created_at",
-          "isExpression": false
-        }
-      ],
-      "isUnique": false,
-      "where": null,
-      "origin": "manual",
-      "name": "summary_job_owner_created_idx",
-      "entityType": "indexes",
-      "table": "summary_jobs"
     },
     {
       "columns": [
@@ -5912,24 +5124,6 @@
       "name": "project_vault_parent_name_idx",
       "entityType": "indexes",
       "table": "projects"
-    },
-    {
-      "columns": [
-        {
-          "value": "vault_id",
-          "isExpression": false
-        },
-        {
-          "value": "session_id",
-          "isExpression": false
-        }
-      ],
-      "isUnique": false,
-      "where": null,
-      "origin": "manual",
-      "name": "recordings_vault_session_idx",
-      "entityType": "indexes",
-      "table": "recordings"
     },
     {
       "columns": [
@@ -6182,12 +5376,6 @@
       "table": "vault_transfers"
     },
     {
-      "value": "\"status\" IN ('pending', 'processing', 'failed')",
-      "name": "image_analysis_job_status_check",
-      "entityType": "checks",
-      "table": "image_analysis_jobs"
-    },
-    {
       "value": "\"kind\" IN ('meeting_created', 'meeting_updated', 'meeting_deleted', 'tag_added', 'tag_removed', 'recording_started', 'recording_ended', 'segment_rotated')",
       "name": "meeting_events_kind_check",
       "entityType": "checks",
@@ -6210,30 +5398,6 @@
       "name": "search_embedding_dimensions_check",
       "entityType": "checks",
       "table": "search_embeddings"
-    },
-    {
-      "value": "\"status\" IN ('pending', 'processing', 'failed')",
-      "name": "search_index_job_status_check",
-      "entityType": "checks",
-      "table": "search_index_jobs"
-    },
-    {
-      "value": "\"dimensions\" BETWEEN 32 AND 1024",
-      "name": "search_index_job_dimensions_check",
-      "entityType": "checks",
-      "table": "search_index_jobs"
-    },
-    {
-      "value": "\"status\" IN ('pending', 'processing', 'failed')",
-      "name": "storage_delete_job_status_check",
-      "entityType": "checks",
-      "table": "storage_delete_jobs"
-    },
-    {
-      "value": "\"status\" IN ('pending', 'processing', 'succeeded', 'failed')",
-      "name": "summary_job_status_check",
-      "entityType": "checks",
-      "table": "summary_jobs"
     },
     {
       "value": "\"entity\" IN ('vault', 'project', 'meeting', 'summary', 'transcript', 'file', 'meeting_file', 'recording')",
@@ -6326,6 +5490,870 @@
       "error": null,
       "name": "meeting_images",
       "entityType": "views"
+    },
+    {
+      "name": "jobs_image_analysis",
+      "entityType": "tables"
+    },
+    {
+      "name": "jobs_search_index",
+      "entityType": "tables"
+    },
+    {
+      "name": "jobs_storage_delete",
+      "entityType": "tables"
+    },
+    {
+      "name": "jobs_summary",
+      "entityType": "tables"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "1",
+      "generated": null,
+      "name": "revision",
+      "entityType": "columns",
+      "table": "account_settings"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "file_id",
+      "entityType": "columns",
+      "table": "jobs_image_analysis"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "vault_id",
+      "entityType": "columns",
+      "table": "jobs_image_analysis"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "owner_user_id",
+      "entityType": "columns",
+      "table": "jobs_image_analysis"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "model",
+      "entityType": "columns",
+      "table": "jobs_image_analysis"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "'pending'",
+      "generated": null,
+      "name": "status",
+      "entityType": "columns",
+      "table": "jobs_image_analysis"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "attempts",
+      "entityType": "columns",
+      "table": "jobs_image_analysis"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "(cast(unixepoch('subsecond') * 1000 as integer))",
+      "generated": null,
+      "name": "available_at",
+      "entityType": "columns",
+      "table": "jobs_image_analysis"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "claimed_at",
+      "entityType": "columns",
+      "table": "jobs_image_analysis"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "lease_expires_at",
+      "entityType": "columns",
+      "table": "jobs_image_analysis"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "last_error_code",
+      "entityType": "columns",
+      "table": "jobs_image_analysis"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "vault_id",
+      "entityType": "columns",
+      "table": "jobs_search_index"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "document_id",
+      "entityType": "columns",
+      "table": "jobs_search_index"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "owner_user_id",
+      "entityType": "columns",
+      "table": "jobs_search_index"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "model",
+      "entityType": "columns",
+      "table": "jobs_search_index"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "dimensions",
+      "entityType": "columns",
+      "table": "jobs_search_index"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "1",
+      "generated": null,
+      "name": "generation",
+      "entityType": "columns",
+      "table": "jobs_search_index"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "'pending'",
+      "generated": null,
+      "name": "status",
+      "entityType": "columns",
+      "table": "jobs_search_index"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "attempts",
+      "entityType": "columns",
+      "table": "jobs_search_index"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "(cast(unixepoch('subsecond') * 1000 as integer))",
+      "generated": null,
+      "name": "available_at",
+      "entityType": "columns",
+      "table": "jobs_search_index"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "claimed_at",
+      "entityType": "columns",
+      "table": "jobs_search_index"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "lease_expires_at",
+      "entityType": "columns",
+      "table": "jobs_search_index"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "last_error_code",
+      "entityType": "columns",
+      "table": "jobs_search_index"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "(cast(unixepoch('subsecond') * 1000 as integer))",
+      "generated": null,
+      "name": "updated_at",
+      "entityType": "columns",
+      "table": "jobs_search_index"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "storage_key",
+      "entityType": "columns",
+      "table": "jobs_storage_delete"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "attempts",
+      "entityType": "columns",
+      "table": "jobs_storage_delete"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "'pending'",
+      "generated": null,
+      "name": "status",
+      "entityType": "columns",
+      "table": "jobs_storage_delete"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "(cast(unixepoch('subsecond') * 1000 as integer))",
+      "generated": null,
+      "name": "available_at",
+      "entityType": "columns",
+      "table": "jobs_storage_delete"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "claimed_at",
+      "entityType": "columns",
+      "table": "jobs_storage_delete"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "lease_expires_at",
+      "entityType": "columns",
+      "table": "jobs_storage_delete"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "last_error_code",
+      "entityType": "columns",
+      "table": "jobs_storage_delete"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "(cast(unixepoch('subsecond') * 1000 as integer))",
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "jobs_storage_delete"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "jobs_summary"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "vault_id",
+      "entityType": "columns",
+      "table": "jobs_summary"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "meeting_id",
+      "entityType": "columns",
+      "table": "jobs_summary"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "owner_user_id",
+      "entityType": "columns",
+      "table": "jobs_summary"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "method",
+      "entityType": "columns",
+      "table": "jobs_summary"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "settings",
+      "entityType": "columns",
+      "table": "jobs_summary"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "output_language",
+      "entityType": "columns",
+      "table": "jobs_summary"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "'pending'",
+      "generated": null,
+      "name": "status",
+      "entityType": "columns",
+      "table": "jobs_summary"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "attempts",
+      "entityType": "columns",
+      "table": "jobs_summary"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "jobs_summary"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "available_at",
+      "entityType": "columns",
+      "table": "jobs_summary"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "claimed_at",
+      "entityType": "columns",
+      "table": "jobs_summary"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "lease_expires_at",
+      "entityType": "columns",
+      "table": "jobs_summary"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "last_error_code",
+      "entityType": "columns",
+      "table": "jobs_summary"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "summary_revision",
+      "entityType": "columns",
+      "table": "jobs_summary"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "input_version",
+      "entityType": "columns",
+      "table": "jobs_summary"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "request_hash",
+      "entityType": "columns",
+      "table": "jobs_summary"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "icon",
+      "entityType": "columns",
+      "table": "projects"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "color",
+      "entityType": "columns",
+      "table": "projects"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "icon",
+      "entityType": "columns",
+      "table": "vaults"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "color",
+      "entityType": "columns",
+      "table": "vaults"
+    },
+    {
+      "columns": [
+        "file_id"
+      ],
+      "tableTo": "files",
+      "columnsTo": [
+        "file_id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "name": "fk_image_analysis_jobs_file_id_files_file_id_fk",
+      "entityType": "fks",
+      "table": "jobs_image_analysis"
+    },
+    {
+      "columns": [
+        "vault_id"
+      ],
+      "tableTo": "vaults",
+      "columnsTo": [
+        "vault_id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "name": "fk_image_analysis_jobs_vault_id_vaults_vault_id_fk",
+      "entityType": "fks",
+      "table": "jobs_image_analysis"
+    },
+    {
+      "columns": [
+        "owner_user_id"
+      ],
+      "tableTo": "user",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "name": "fk_image_analysis_jobs_owner_user_id_user_id_fk",
+      "entityType": "fks",
+      "table": "jobs_image_analysis"
+    },
+    {
+      "columns": [
+        "vault_id"
+      ],
+      "tableTo": "vaults",
+      "columnsTo": [
+        "vault_id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "name": "fk_search_index_jobs_vault_id_vaults_vault_id_fk",
+      "entityType": "fks",
+      "table": "jobs_search_index"
+    },
+    {
+      "columns": [
+        "owner_user_id"
+      ],
+      "tableTo": "user",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "name": "fk_search_index_jobs_owner_user_id_user_id_fk",
+      "entityType": "fks",
+      "table": "jobs_search_index"
+    },
+    {
+      "columns": [
+        "vault_id"
+      ],
+      "tableTo": "vaults",
+      "columnsTo": [
+        "vault_id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "name": "fk_summary_jobs_vault_id_vaults_vault_id_fk",
+      "entityType": "fks",
+      "table": "jobs_summary"
+    },
+    {
+      "columns": [
+        "meeting_id"
+      ],
+      "tableTo": "meetings",
+      "columnsTo": [
+        "meeting_id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "name": "fk_summary_jobs_meeting_id_meetings_meeting_id_fk",
+      "entityType": "fks",
+      "table": "jobs_summary"
+    },
+    {
+      "columns": [
+        "owner_user_id"
+      ],
+      "tableTo": "user",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "name": "fk_summary_jobs_owner_user_id_user_id_fk",
+      "entityType": "fks",
+      "table": "jobs_summary"
+    },
+    {
+      "columns": [
+        "meeting_id"
+      ],
+      "tableTo": "meetings",
+      "columnsTo": [
+        "meeting_id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "name": "fk_recordings_meeting_id_meetings_meeting_id_fk",
+      "entityType": "fks",
+      "table": "recordings"
+    },
+    {
+      "columns": [
+        "vault_id",
+        "document_id"
+      ],
+      "nameExplicit": false,
+      "name": "search_index_jobs_pk",
+      "entityType": "pks",
+      "table": "jobs_search_index"
+    },
+    {
+      "columns": [
+        "file_id"
+      ],
+      "nameExplicit": false,
+      "name": "image_analysis_jobs_pk",
+      "table": "jobs_image_analysis",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "storage_key"
+      ],
+      "nameExplicit": false,
+      "name": "storage_delete_jobs_pk",
+      "table": "jobs_storage_delete",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "summary_jobs_pk",
+      "table": "jobs_summary",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        {
+          "value": "status",
+          "isExpression": false
+        },
+        {
+          "value": "available_at",
+          "isExpression": false
+        },
+        {
+          "value": "lease_expires_at",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "image_analysis_job_claim_idx",
+      "entityType": "indexes",
+      "table": "jobs_image_analysis"
+    },
+    {
+      "columns": [
+        {
+          "value": "status",
+          "isExpression": false
+        },
+        {
+          "value": "available_at",
+          "isExpression": false
+        },
+        {
+          "value": "lease_expires_at",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "search_index_job_claim_idx",
+      "entityType": "indexes",
+      "table": "jobs_search_index"
+    },
+    {
+      "columns": [
+        {
+          "value": "status",
+          "isExpression": false
+        },
+        {
+          "value": "available_at",
+          "isExpression": false
+        },
+        {
+          "value": "lease_expires_at",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "storage_delete_job_claim_idx",
+      "entityType": "indexes",
+      "table": "jobs_storage_delete"
+    },
+    {
+      "columns": [
+        {
+          "value": "meeting_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "where": "\"jobs_summary\".\"status\" IN ('pending', 'processing')",
+      "origin": "manual",
+      "name": "summary_job_active_meeting_idx",
+      "entityType": "indexes",
+      "table": "jobs_summary"
+    },
+    {
+      "columns": [
+        {
+          "value": "owner_user_id",
+          "isExpression": false
+        },
+        {
+          "value": "created_at",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "summary_job_owner_created_idx",
+      "entityType": "indexes",
+      "table": "jobs_summary"
+    },
+    {
+      "columns": [
+        {
+          "value": "meeting_id",
+          "isExpression": false
+        },
+        {
+          "value": "session_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "recordings_meeting_session_idx",
+      "entityType": "indexes",
+      "table": "recordings"
+    },
+    {
+      "value": "\"status\" IN ('pending', 'processing', 'failed')",
+      "name": "image_analysis_job_status_check",
+      "entityType": "checks",
+      "table": "jobs_image_analysis"
+    },
+    {
+      "value": "\"status\" IN ('pending', 'processing', 'failed')",
+      "name": "search_index_job_status_check",
+      "entityType": "checks",
+      "table": "jobs_search_index"
+    },
+    {
+      "value": "\"dimensions\" BETWEEN 32 AND 1024",
+      "name": "search_index_job_dimensions_check",
+      "entityType": "checks",
+      "table": "jobs_search_index"
+    },
+    {
+      "value": "\"status\" IN ('pending', 'processing', 'failed')",
+      "name": "storage_delete_job_status_check",
+      "entityType": "checks",
+      "table": "jobs_storage_delete"
+    },
+    {
+      "value": "\"status\" IN ('pending', 'processing', 'succeeded', 'failed')",
+      "name": "summary_job_status_check",
+      "entityType": "checks",
+      "table": "jobs_summary"
     }
   ],
   "renames": []

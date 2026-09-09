@@ -246,7 +246,10 @@
             let connection = DahliaAccountConnectionRecord(id: .v7(), origin: "https://migration.invalid", clientID: "test", createdAt: .now)
             try queue.write { db in
                 try connection.insert(db)
-                try insertLegacyVault(VaultRecord(id: vaultId, path: nil, name: "Existing", createdAt: .now, lastOpenedAt: .now), in: db)
+                try db.execute(
+                    sql: "INSERT INTO vaults(id, name, createdAt, lastOpenedAt) VALUES (?, 'Existing', ?, ?)",
+                    arguments: [vaultId, Date.now, Date.now]
+                )
                 try MeetingRecord(id: meetingId, vaultId: vaultId, projectId: nil, name: "Existing", createdAt: .now, updatedAt: .now).insert(db)
                 let segmentId = UUID.v7()
                 try db.execute(

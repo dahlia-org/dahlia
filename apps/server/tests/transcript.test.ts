@@ -62,6 +62,23 @@ async function setup() {
 }
 
 describe("transcript versions", () => {
+  it("counts only the latest authorized transcript and preserves its snapshot header", async () => {
+    const { store, sync, vaultId, meetingId, write } = await setup();
+    try {
+      expect(await store.sync.withIdentity(owner, (scoped) => scoped.countTranscript(vaultId, meetingId))).toBe(0);
+      await write(uuidV7(), 0, "completed", "replace", ["old", "old second"]);
+      const latestId = uuidV7();
+      await write(latestId, 1, "completed", "replace", ["current"]);
+      expect(await store.sync.withIdentity(owner, (scoped) => scoped.countTranscript(vaultId, meetingId))).toBe(1);
+      expect(await store.sync.withIdentity(member, (scoped) => scoped.countTranscript(vaultId, meetingId))).toBe(0);
+      expect(await store.sync.withIdentity(owner, (scoped) => scoped.countTranscript(uuidV7(), meetingId))).toBe(0);
+      const page = await sync.listSnapshot(owner, vaultId);
+      expect(page.items.find((item) => item.entity === "transcript")?.record).toMatchObject({
+        contentOmitted: true, contentCount: 1, transcript: { id: latestId, version: 2 },
+      });
+    } finally { await store.close?.(); }
+  });
+
   it("publishes large snapshots atomically and replays them without another version", async () => {
     const { store, sync, vaultId, meetingId, databasePath, stage, write } = await setup();
     try {

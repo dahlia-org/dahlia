@@ -661,7 +661,7 @@ private extension ContentView {
             parentProjectId: parentProjectId,
             projectType: parentProjectId == nil ? projectType : nil,
             description: description,
-            appearance: appearance
+            appearance: parentProjectId == nil ? appearance : nil
         ) != nil else {
             return sidebarViewModel.lastError ?? L10n.projectCreationFailedDescription
         }
@@ -681,10 +681,10 @@ private extension ContentView {
         expectedRevision: Int
     ) async -> String? {
         let projectDataChanged = name != projectDisplayName(project)
+            || (parentProjectId == nil && appearance != projectAppearance(project))
             || description != project.projectDescription
             || parentProjectId != project.parentProjectId
             || (parentProjectId == nil && projectType != project.effectiveProjectType)
-            || project.appearance != (parentProjectId == nil ? appearance : nil)
         if projectDataChanged {
             guard await sidebarViewModel.updateProject(
                 id: project.projectId,
@@ -693,7 +693,7 @@ private extension ContentView {
                 projectType: projectType,
                 description: description,
                 expectedRevision: expectedRevision,
-                appearance: appearance
+                appearance: parentProjectId == nil ? appearance : nil
             ) != nil else {
                 return sidebarViewModel.lastError ?? L10n.projectOperationFailedDescription
             }

@@ -1,4 +1,3 @@
-import type { Appearance } from "../appearance-model";
 import type { TranscriptMetadata } from "../sync/transcript";
 import type { SummaryMetadata } from "../summary/metadata";
 import type { SummaryJob } from "../summary/model";
@@ -16,7 +15,7 @@ const sqliteTimestamp = (name: string) => integer(name, { mode: "timestamp_ms" }
 export const accountSettings = sqliteTable("account_settings", {
   userId: text("user_id").primaryKey().references(() => authUser.id, { onDelete: "cascade" }),
   summary: text("summary", { mode: "json" }).$type<AccountSettings["summary"]>().default(DEFAULT_ACCOUNT_SETTINGS.summary).notNull(),
-  changeVersion: integer("change_version").default(1).notNull(),
+  revision: integer("revision").default(1).notNull(),
   outputLanguage: text("output_language").$type<AccountSettings["outputLanguage"]>().notNull(),
   analysisLanguages: text("analysis_languages", { mode: "json" }).$type<AccountSettings["analysisLanguages"]>().notNull(),
 });
@@ -24,7 +23,8 @@ export const accountSettings = sqliteTable("account_settings", {
 export const syncedVault = sqliteTable("vaults", {
   vaultId: text("vault_id").primaryKey(),
   name: text("name").notNull(),
-  appearance: text("appearance", { mode: "json" }).$type<Appearance>(),
+  icon: text("icon"),
+  color: text("color"),
   revision: integer("revision").default(1).notNull(),
   deletingAt: sqliteTimestamp("deleting_at"),
   createdAt: sqliteTimestamp("created_at").default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`).notNull(),
@@ -36,7 +36,8 @@ export const syncedProject = sqliteTable("projects", {
   vaultId: text("vault_id").notNull(),
   parentProjectId: text("parent_project_id"),
   name: text("name").notNull(),
-  appearance: text("appearance", { mode: "json" }).$type<Appearance>(),
+  icon: text("icon"),
+  color: text("color"),
   description: text("description").default("").notNull(),
   projectType: text("project_type"),
   revision: integer("revision").notNull(),
@@ -226,7 +227,6 @@ export const syncedFile = sqliteTable("files", {
 
 export const syncedRecording = sqliteTable("recordings", {
   sessionId: text("session_id").primaryKey(),
-  vaultId: text("vault_id").notNull(),
   meetingId: text("meeting_id").notNull(),
   number: integer("number").notNull(),
   startedAt: integer("started_at", { mode: "timestamp_ms" }).notNull(),
@@ -236,9 +236,9 @@ export const syncedRecording = sqliteTable("recordings", {
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
 }, (table) => [
-  foreignKey({ columns: [table.vaultId, table.meetingId], foreignColumns: [syncedMeeting.vaultId, syncedMeeting.meetingId] }).onDelete("cascade"),
+  foreignKey({ columns: [table.meetingId], foreignColumns: [syncedMeeting.meetingId] }).onDelete("cascade"),
   unique("recordings_meeting_number_unique").on(table.meetingId, table.number),
-  index("recordings_vault_session_idx").on(table.vaultId, table.sessionId),
+  index("recordings_meeting_session_idx").on(table.meetingId, table.sessionId),
   check("recordings_number_check", sql`${table.number} > 0`),
 
 ]);
@@ -323,7 +323,7 @@ export const searchEmbedding = sqliteTable("search_embeddings", {
   check("search_embedding_dimensions_check", sql`${table.dimensions} BETWEEN 32 AND 1024`),
 ]);
 
-export const searchIndexJob = sqliteTable("search_index_jobs", {
+export const searchIndexJob = sqliteTable("jobs_search_index", {
   vaultId: text("vault_id").notNull(),
   documentId: text("document_id").notNull(),
   ownerUserId: text("owner_user_id").notNull(),
@@ -394,7 +394,7 @@ export const syncVaultState = sqliteTable("sync_vault_state", {
   check("sync_vault_state_boundary_check", sql`${table.prunedThrough} >= 0 AND ${table.latestSequence} >= ${table.prunedThrough}`),
 ]);
 
-export const storageDeleteJob = sqliteTable("storage_delete_jobs", {
+export const storageDeleteJob = sqliteTable("jobs_storage_delete", {
   storageKey: text("storage_key").primaryKey(),
   attempts: integer("attempts").default(0).notNull(),
   status: text("status").default("pending").notNull(),
@@ -409,7 +409,7 @@ export const storageDeleteJob = sqliteTable("storage_delete_jobs", {
 ]);
 
 // Operational queue metadata only; canonical image/text access remains owner-scoped.
-export const imageAnalysisJob = sqliteTable("image_analysis_jobs", {
+export const imageAnalysisJob = sqliteTable("jobs_image_analysis", {
   fileId: text("file_id").primaryKey().references(() => syncedFile.fileId, { onDelete: "cascade" }),
   vaultId: text("vault_id").notNull().references(() => syncedVault.vaultId, { onDelete: "cascade" }),
   ownerUserId: text("owner_user_id").notNull().references(() => authUser.id, { onDelete: "cascade" }),
@@ -426,7 +426,7 @@ export const imageAnalysisJob = sqliteTable("image_analysis_jobs", {
 ]);
 
 // Settings and input fingerprints are owner-private; no transcript or provider credentials are queued.
-export const summaryJob = sqliteTable("summary_jobs", {
+export const summaryJob = sqliteTable("jobs_summary", {
   id: text("id").primaryKey(),
   vaultId: text("vault_id").notNull().references(() => syncedVault.vaultId, { onDelete: "cascade" }),
   meetingId: text("meeting_id").notNull().references(() => syncedMeeting.meetingId, { onDelete: "cascade" }),

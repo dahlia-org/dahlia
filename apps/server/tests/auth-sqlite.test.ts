@@ -182,7 +182,7 @@ describe("SQLite Better Auth store", () => {
 
     database.prepare('INSERT INTO vaults (vault_id, name) VALUES (?, ?)').run("019d493d-f5f4-7b8b-a9da-8ef51975b171", "Vault");
     database.prepare(`
-      INSERT INTO search_index_jobs
+      INSERT INTO jobs_search_index
         (vault_id, document_id, owner_user_id, model, dimensions)
       VALUES (?, ?, ?, 'model', 32)
     `).run(
@@ -191,7 +191,7 @@ describe("SQLite Better Auth store", () => {
       "stable-user-id",
     );
     database.prepare('DELETE FROM "user" WHERE id = ?').run("stable-user-id");
-    expect(database.prepare("SELECT count(*) AS count FROM search_index_jobs").get()).toEqual({ count: 0 });
+    expect(database.prepare("SELECT count(*) AS count FROM jobs_search_index").get()).toEqual({ count: 0 });
 
     const now = Date.now();
     database.prepare(`
@@ -247,7 +247,7 @@ describe("SQLite Better Auth store", () => {
 
     expect(database.prepare('SELECT "name" FROM "__drizzle_migrations" ORDER BY "created_at" DESC LIMIT 1').get())
       .toEqual({
-      name: "20260909055951_sour_dexter_bennett",
+      name: "20260909091111_canonical_appearance_fields",
     });
     expect(database.prepare('SELECT "client_id" FROM "oauth_client" WHERE "client_id" = ?').get("databricks-cli"))
       .toEqual({ client_id: "databricks-cli" });

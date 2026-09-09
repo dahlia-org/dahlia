@@ -19,7 +19,24 @@ struct ProjectRecord: Codable, FetchableRecord, PersistableRecord, Identifiable,
     var createdAt: Date
     var description = ""
     var projectType: ProjectType?
-    var appearance: ProjectAppearance?
+    var icon: String?
+    var color: String?
+    var legacyAppearanceMigrated = false
+
+    var appearance: ProjectAppearance? {
+        get {
+            guard icon != nil || color != nil else { return nil }
+            return ProjectAppearance(
+                icon: icon.flatMap(ProjectIcon.init(rawValue:)) ?? .folder,
+                color: color.flatMap(ProjectThemeColor.init(rawValue:)) ?? .neutral
+            )
+        }
+        set {
+            icon = newValue?.icon.rawValue
+            color = newValue?.color.rawValue
+        }
+    }
+
     var revision = 1
 
     /// Populated by hierarchy-aware repository reads. It is never persisted.
@@ -38,7 +55,7 @@ struct ProjectRecord: Codable, FetchableRecord, PersistableRecord, Identifiable,
         case createdAt
         case description
         case projectType
-        case appearance
+        case icon, color, legacyAppearanceMigrated
         case revision
     }
 
@@ -50,6 +67,8 @@ struct ProjectRecord: Codable, FetchableRecord, PersistableRecord, Identifiable,
         createdAt: Date,
         description: String = "",
         projectType: ProjectType?,
+        icon: String? = nil,
+        color: String? = nil,
         revision: Int = 1,
         resolvedPath: String? = nil,
         appearance: ProjectAppearance? = nil
@@ -62,9 +81,11 @@ struct ProjectRecord: Codable, FetchableRecord, PersistableRecord, Identifiable,
         self.createdAt = createdAt
         self.description = description
         self.projectType = projectType
+        self.icon = icon
+        self.color = color
         self.revision = revision
         self.resolvedPath = resolvedPath
-        self.appearance = parentProjectId == nil ? appearance : nil
+        if let appearance, parentProjectId == nil { self.appearance = appearance }
     }
 
     /// Compatibility initializer for call sites that construct a root or an in-memory path fixture.
@@ -201,10 +222,10 @@ struct ProjectRecord: Codable, FetchableRecord, PersistableRecord, Identifiable,
         createdAt: Date,
         description: String,
         projectType: ProjectType?,
-        appearance: ProjectAppearance? = nil,
+        icon: String? = nil,
+        color: String? = nil,
         in db: Database
     ) throws {
-        let appearance = parentProjectId == nil ? appearance : nil
         guard var project = try fetchOne(db, key: id) else {
             try Self(
                 id: id,
@@ -214,7 +235,7 @@ struct ProjectRecord: Codable, FetchableRecord, PersistableRecord, Identifiable,
                 createdAt: createdAt,
                 description: description,
                 projectType: projectType,
-                appearance: appearance
+                icon: icon, color: color
             ).insert(db)
             return
         }
@@ -228,14 +249,15 @@ struct ProjectRecord: Codable, FetchableRecord, PersistableRecord, Identifiable,
         guard hierarchyChanged
             || project.createdAt != createdAt
             || project.description != description
-            || project.appearance != appearance else { return }
+            || project.icon != icon || project.color != color else { return }
         let descendantIDs = try Set(hierarchy(projectId: id, vaultId: vaultId, in: db).dropFirst().map(\.id))
         project.parentProjectId = parentProjectId
         project.name = name
         project.createdAt = createdAt
         project.description = description
+        project.icon = icon
+        project.color = color
         project.projectType = projectType
-        project.appearance = appearance
         project.revision += 1
         try project.update(db)
         try incrementRevisions(hierarchyChanged ? descendantIDs : [], in: db)

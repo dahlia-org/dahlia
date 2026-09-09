@@ -1,4 +1,5 @@
 import Foundation
+import GRDB
 import Observation
 
 enum MainWindowLocation: Equatable {
@@ -60,6 +61,7 @@ final class MainWindowNavigation {
     }
 
     private var pinnedProjectIDsByVault: [String: [String]]
+    private var canonicalProjectAppearancesByVault: [String: [String: ProjectAppearance]] = [:]
     private var projectAppearancesByVault: [String: [String: ProjectAppearance]]
     private var projectDetailDisplayModesByVault: [String: ProjectDetailDisplayMode]
     private var navigationGeneration = 0
@@ -141,7 +143,8 @@ final class MainWindowNavigation {
 
     func projectAppearance(projectId: UUID, vaultId: UUID?) -> ProjectAppearance {
         guard let vaultId else { return .default }
-        return projectAppearancesByVault[vaultId.uuidString]?[projectId.uuidString] ?? .default
+        return canonicalProjectAppearancesByVault[vaultId.uuidString]?[projectId.uuidString]
+            ?? projectAppearancesByVault[vaultId.uuidString]?[projectId.uuidString] ?? .default
     }
 
     func projectAppearance(
@@ -151,13 +154,25 @@ final class MainWindowNavigation {
     ) -> ProjectAppearance {
         guard let project = projectsByID[projectId] else { return .default }
         let ownerId = project.parentProjectId ?? project.projectId
-        return projectsByID[ownerId]?.appearance ?? projectAppearance(projectId: ownerId, vaultId: vaultId)
+        return projectAppearance(projectId: ownerId, vaultId: vaultId)
     }
 
-    func setProjectAppearance(_ appearance: ProjectAppearance, projectId: UUID, vaultId: UUID?) {
-        guard let vaultId else { return }
-        projectAppearancesByVault[vaultId.uuidString, default: [:]][projectId.uuidString] = appearance
-        saveProjectAppearances()
+    func updateProjectAppearances(_ projects: [ProjectOverviewItem], vaultId: UUID) {
+        canonicalProjectAppearancesByVault[vaultId.uuidString] = Dictionary(uniqueKeysWithValues: projects.map {
+            ($0.projectId.uuidString, ProjectAppearance(
+                icon: $0.icon.flatMap(ProjectIcon.init(rawValue:)) ?? .folder,
+                color: $0.color.flatMap(ProjectThemeColor.init(rawValue:)) ?? .neutral
+            ))
+        })
+    }
+
+    func migrateProjectAppearances(vaultId: UUID, dbQueue: DatabaseQueue) async throws {
+        guard let saved = projectAppearancesByVault[vaultId.uuidString], !saved.isEmpty else { return }
+        let completed = try await ProjectAppearanceMigration.migrate(saved, vaultId: vaultId, dbQueue: dbQueue)
+        for id in completed where projectAppearancesByVault[vaultId.uuidString]?[id] == saved[id] {
+            projectAppearancesByVault[vaultId.uuidString]?.removeValue(forKey: id)
+        }
+        if !completed.isEmpty { saveProjectAppearances() }
     }
 
     func projectDetailDisplayMode(vaultId: UUID?) -> ProjectDetailDisplayMode {

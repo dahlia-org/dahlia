@@ -21,14 +21,14 @@
             let payload = try SyncJSON.decoder.decode(
                 SyncCanonicalPayload.self,
                 from: Data(
-                    #"{"name":"Styled","createdAt":"2026-09-09T00:00:00Z","projectType":"undefined","appearance":{"icon":"book.closed","color":"green"}}"#
+                    #"{"name":"Styled","createdAt":"2026-09-09T00:00:00Z","projectType":"undefined","icon":"book.closed","color":"green"}"#
                         .utf8
                 )
             )
             let renamed = try SyncJSON.decoder.decode(
                 SyncCanonicalPayload.self,
                 from: Data(
-                    #"{"name":"Renamed","createdAt":"2026-09-09T00:00:00Z","projectType":"undefined","appearance":{"icon":"book.closed","color":"green"}}"#
+                    #"{"name":"Renamed","createdAt":"2026-09-09T00:00:00Z","projectType":"undefined","icon":"book.closed","color":"green"}"#
                         .utf8
                 )
             )
@@ -53,7 +53,8 @@
             ] {
                 let data = try #require(operation.payloadJSON)
                 let body = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
-                #expect((body["appearance"] as? [String: String]) == ["icon": "book.closed", "color": "green"])
+                #expect(body["icon"] as? String == "book.closed")
+                #expect(body["color"] as? String == "green")
             }
         }
 
@@ -69,20 +70,20 @@
             if useSnapshot {
                 #expect(try await RemoteChangeApplier.reconcileProjectSnapshot([
                     .init(
+                        icon: nil, color: nil,
                         projectId: project.id,
                         parentProjectId: nil,
                         name: project.name,
                         description: "",
                         projectType: "undefined",
                         revision: 2,
-                        createdAt: project.createdAt,
-                        appearance: nil
+                        createdAt: project.createdAt
                     ),
                 ], vaultId: vault.id, expectedConnectionId: #require(vault.syncConfirmedConnectionId), dbQueue: database.dbQueue))
             } else {
                 let canonical = try SyncJSON.decoder.decode(
                     SyncCanonicalPayload.self,
-                    from: Data(#"{"name":"Project","createdAt":"1970-01-01T00:16:40Z","projectType":"undefined","appearance":null}"#
+                    from: Data(#"{"name":"Project","createdAt":"1970-01-01T00:16:40Z","projectType":"undefined","icon":null,"color":null}"#
                         .utf8)
                 )
                 try await database.dbQueue.write { db in
@@ -95,7 +96,8 @@
             let operation = try SyncInitialSnapshotBuilder.projectOperation(saved, action: .update)
             let data = try #require(operation.payloadJSON)
             let payload = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
-            #expect(payload["appearance"] == nil)
+            #expect(payload["icon"] is NSNull)
+            #expect(payload["color"] is NSNull)
         }
 
         @Test
@@ -470,7 +472,7 @@
 
             let canonical = try SyncJSON.decoder.decode(
                 SyncCanonicalPayload.self,
-                from: Data(#"{"name":"Server name","appearance":null}"#.utf8)
+                from: Data(#"{"name":"Server name","icon":null,"color":null}"#.utf8)
             )
             let changes: [SyncChangePage.Change] = [
                 .init(sequence: 4, entity: .vault, entityId: vault.id, action: "upsert", revision: 4, record: canonical),

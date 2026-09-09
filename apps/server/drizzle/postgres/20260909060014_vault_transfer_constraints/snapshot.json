@@ -17,12 +17,6 @@
       "schema": "app"
     },
     {
-      "isRlsEnabled": false,
-      "name": "image_analysis_jobs",
-      "entityType": "tables",
-      "schema": "app"
-    },
-    {
       "isRlsEnabled": true,
       "name": "meeting_events",
       "entityType": "tables",
@@ -47,26 +41,8 @@
       "schema": "app"
     },
     {
-      "isRlsEnabled": false,
-      "name": "search_index_jobs",
-      "entityType": "tables",
-      "schema": "app"
-    },
-    {
-      "isRlsEnabled": false,
-      "name": "storage_delete_jobs",
-      "entityType": "tables",
-      "schema": "app"
-    },
-    {
       "isRlsEnabled": true,
       "name": "summaries",
-      "entityType": "tables",
-      "schema": "app"
-    },
-    {
-      "isRlsEnabled": true,
-      "name": "summary_jobs",
       "entityType": "tables",
       "schema": "app"
     },
@@ -175,19 +151,6 @@
       "table": "account_settings"
     },
     {
-      "type": "integer",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": "1",
-      "generated": null,
-      "identity": null,
-      "name": "change_version",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "account_settings"
-    },
-    {
       "type": "text",
       "typeSchema": null,
       "notNull": true,
@@ -212,136 +175,6 @@
       "entityType": "columns",
       "schema": "app",
       "table": "account_settings"
-    },
-    {
-      "type": "uuid",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "file_id",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "image_analysis_jobs"
-    },
-    {
-      "type": "uuid",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "vault_id",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "image_analysis_jobs"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "owner_user_id",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "image_analysis_jobs"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "model",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "image_analysis_jobs"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": "'pending'",
-      "generated": null,
-      "identity": null,
-      "name": "status",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "image_analysis_jobs"
-    },
-    {
-      "type": "integer",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": "0",
-      "generated": null,
-      "identity": null,
-      "name": "attempts",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "image_analysis_jobs"
-    },
-    {
-      "type": "timestamp",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": "now()",
-      "generated": null,
-      "identity": null,
-      "name": "available_at",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "image_analysis_jobs"
-    },
-    {
-      "type": "timestamp",
-      "typeSchema": null,
-      "notNull": false,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "claimed_at",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "image_analysis_jobs"
-    },
-    {
-      "type": "timestamp",
-      "typeSchema": null,
-      "notNull": false,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "lease_expires_at",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "image_analysis_jobs"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": false,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "last_error_code",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "image_analysis_jobs"
     },
     {
       "type": "uuid",
@@ -822,279 +655,6 @@
       "default": null,
       "generated": null,
       "identity": null,
-      "name": "vault_id",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "search_index_jobs"
-    },
-    {
-      "type": "uuid",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "document_id",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "search_index_jobs"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "owner_user_id",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "search_index_jobs"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "model",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "search_index_jobs"
-    },
-    {
-      "type": "integer",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "dimensions",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "search_index_jobs"
-    },
-    {
-      "type": "integer",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": "1",
-      "generated": null,
-      "identity": null,
-      "name": "generation",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "search_index_jobs"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": "'pending'",
-      "generated": null,
-      "identity": null,
-      "name": "status",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "search_index_jobs"
-    },
-    {
-      "type": "integer",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": "0",
-      "generated": null,
-      "identity": null,
-      "name": "attempts",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "search_index_jobs"
-    },
-    {
-      "type": "timestamp",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": "now()",
-      "generated": null,
-      "identity": null,
-      "name": "available_at",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "search_index_jobs"
-    },
-    {
-      "type": "timestamp",
-      "typeSchema": null,
-      "notNull": false,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "claimed_at",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "search_index_jobs"
-    },
-    {
-      "type": "timestamp",
-      "typeSchema": null,
-      "notNull": false,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "lease_expires_at",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "search_index_jobs"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": false,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "last_error_code",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "search_index_jobs"
-    },
-    {
-      "type": "timestamp",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": "now()",
-      "generated": null,
-      "identity": null,
-      "name": "updated_at",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "search_index_jobs"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "storage_key",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "storage_delete_jobs"
-    },
-    {
-      "type": "integer",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": "0",
-      "generated": null,
-      "identity": null,
-      "name": "attempts",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "storage_delete_jobs"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": "'pending'",
-      "generated": null,
-      "identity": null,
-      "name": "status",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "storage_delete_jobs"
-    },
-    {
-      "type": "timestamp",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": "now()",
-      "generated": null,
-      "identity": null,
-      "name": "available_at",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "storage_delete_jobs"
-    },
-    {
-      "type": "timestamp",
-      "typeSchema": null,
-      "notNull": false,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "claimed_at",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "storage_delete_jobs"
-    },
-    {
-      "type": "timestamp",
-      "typeSchema": null,
-      "notNull": false,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "lease_expires_at",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "storage_delete_jobs"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": false,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "last_error_code",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "storage_delete_jobs"
-    },
-    {
-      "type": "timestamp",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": "now()",
-      "generated": null,
-      "identity": null,
-      "name": "created_at",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "storage_delete_jobs"
-    },
-    {
-      "type": "uuid",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
       "name": "id",
       "entityType": "columns",
       "schema": "app",
@@ -1190,227 +750,6 @@
       "entityType": "columns",
       "schema": "app",
       "table": "summaries"
-    },
-    {
-      "type": "uuid",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "id",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "summary_jobs"
-    },
-    {
-      "type": "uuid",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "vault_id",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "summary_jobs"
-    },
-    {
-      "type": "uuid",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "meeting_id",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "summary_jobs"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "owner_user_id",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "summary_jobs"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "method",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "summary_jobs"
-    },
-    {
-      "type": "jsonb",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "settings",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "summary_jobs"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "output_language",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "summary_jobs"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": "'pending'",
-      "generated": null,
-      "identity": null,
-      "name": "status",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "summary_jobs"
-    },
-    {
-      "type": "integer",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": "0",
-      "generated": null,
-      "identity": null,
-      "name": "attempts",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "summary_jobs"
-    },
-    {
-      "type": "timestamp",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "created_at",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "summary_jobs"
-    },
-    {
-      "type": "timestamp",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "available_at",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "summary_jobs"
-    },
-    {
-      "type": "timestamp",
-      "typeSchema": null,
-      "notNull": false,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "claimed_at",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "summary_jobs"
-    },
-    {
-      "type": "timestamp",
-      "typeSchema": null,
-      "notNull": false,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "lease_expires_at",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "summary_jobs"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": false,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "last_error_code",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "summary_jobs"
-    },
-    {
-      "type": "integer",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "summary_revision",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "summary_jobs"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "input_version",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "summary_jobs"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "request_hash",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "summary_jobs"
     },
     {
       "type": "bigserial",
@@ -2213,19 +1552,6 @@
       "default": null,
       "generated": null,
       "identity": null,
-      "name": "vault_id",
-      "entityType": "columns",
-      "schema": "app",
-      "table": "recordings"
-    },
-    {
-      "type": "uuid",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
       "name": "meeting_id",
       "entityType": "columns",
       "schema": "app",
@@ -2898,41 +2224,6 @@
       "nameExplicit": true,
       "columns": [
         {
-          "value": "status",
-          "isExpression": false,
-          "asc": true,
-          "nullsFirst": false,
-          "opclass": null
-        },
-        {
-          "value": "available_at",
-          "isExpression": false,
-          "asc": true,
-          "nullsFirst": false,
-          "opclass": null
-        },
-        {
-          "value": "lease_expires_at",
-          "isExpression": false,
-          "asc": true,
-          "nullsFirst": false,
-          "opclass": null
-        }
-      ],
-      "isUnique": false,
-      "where": null,
-      "with": "",
-      "method": "btree",
-      "concurrently": false,
-      "name": "image_analysis_job_claim_idx",
-      "entityType": "indexes",
-      "schema": "app",
-      "table": "image_analysis_jobs"
-    },
-    {
-      "nameExplicit": true,
-      "columns": [
-        {
           "value": "vault_id",
           "isExpression": false,
           "asc": true,
@@ -3075,125 +2366,6 @@
       "entityType": "indexes",
       "schema": "app",
       "table": "search_documents"
-    },
-    {
-      "nameExplicit": true,
-      "columns": [
-        {
-          "value": "status",
-          "isExpression": false,
-          "asc": true,
-          "nullsFirst": false,
-          "opclass": null
-        },
-        {
-          "value": "available_at",
-          "isExpression": false,
-          "asc": true,
-          "nullsFirst": false,
-          "opclass": null
-        },
-        {
-          "value": "lease_expires_at",
-          "isExpression": false,
-          "asc": true,
-          "nullsFirst": false,
-          "opclass": null
-        }
-      ],
-      "isUnique": false,
-      "where": null,
-      "with": "",
-      "method": "btree",
-      "concurrently": false,
-      "name": "search_index_job_claim_idx",
-      "entityType": "indexes",
-      "schema": "app",
-      "table": "search_index_jobs"
-    },
-    {
-      "nameExplicit": true,
-      "columns": [
-        {
-          "value": "status",
-          "isExpression": false,
-          "asc": true,
-          "nullsFirst": false,
-          "opclass": null
-        },
-        {
-          "value": "available_at",
-          "isExpression": false,
-          "asc": true,
-          "nullsFirst": false,
-          "opclass": null
-        },
-        {
-          "value": "lease_expires_at",
-          "isExpression": false,
-          "asc": true,
-          "nullsFirst": false,
-          "opclass": null
-        }
-      ],
-      "isUnique": false,
-      "where": null,
-      "with": "",
-      "method": "btree",
-      "concurrently": false,
-      "name": "storage_delete_job_claim_idx",
-      "entityType": "indexes",
-      "schema": "app",
-      "table": "storage_delete_jobs"
-    },
-    {
-      "nameExplicit": true,
-      "columns": [
-        {
-          "value": "meeting_id",
-          "isExpression": false,
-          "asc": true,
-          "nullsFirst": false,
-          "opclass": null
-        }
-      ],
-      "isUnique": true,
-      "where": "\"status\" IN ('pending', 'processing')",
-      "with": "",
-      "method": "btree",
-      "concurrently": false,
-      "name": "summary_job_active_meeting_idx",
-      "entityType": "indexes",
-      "schema": "app",
-      "table": "summary_jobs"
-    },
-    {
-      "nameExplicit": true,
-      "columns": [
-        {
-          "value": "owner_user_id",
-          "isExpression": false,
-          "asc": true,
-          "nullsFirst": false,
-          "opclass": null
-        },
-        {
-          "value": "created_at",
-          "isExpression": false,
-          "asc": true,
-          "nullsFirst": false,
-          "opclass": null
-        }
-      ],
-      "isUnique": false,
-      "where": null,
-      "with": "",
-      "method": "btree",
-      "concurrently": false,
-      "name": "summary_job_owner_created_idx",
-      "entityType": "indexes",
-      "schema": "app",
-      "table": "summary_jobs"
     },
     {
       "nameExplicit": true,
@@ -3388,34 +2560,6 @@
       "nameExplicit": true,
       "columns": [
         {
-          "value": "vault_id",
-          "isExpression": false,
-          "asc": true,
-          "nullsFirst": false,
-          "opclass": null
-        },
-        {
-          "value": "session_id",
-          "isExpression": false,
-          "asc": true,
-          "nullsFirst": false,
-          "opclass": null
-        }
-      ],
-      "isUnique": false,
-      "where": null,
-      "with": "",
-      "method": "btree",
-      "concurrently": false,
-      "name": "recordings_vault_session_idx",
-      "entityType": "indexes",
-      "schema": "app",
-      "table": "recordings"
-    },
-    {
-      "nameExplicit": true,
-      "columns": [
-        {
           "value": "transcript_id",
           "isExpression": false,
           "asc": true,
@@ -3586,57 +2730,6 @@
     {
       "nameExplicit": false,
       "columns": [
-        "file_id"
-      ],
-      "schemaTo": "app",
-      "tableTo": "files",
-      "columnsTo": [
-        "file_id"
-      ],
-      "onUpdate": "NO ACTION",
-      "onDelete": "CASCADE",
-      "name": "image_analysis_jobs_file_id_files_file_id_fkey",
-      "entityType": "fks",
-      "schema": "app",
-      "table": "image_analysis_jobs"
-    },
-    {
-      "nameExplicit": false,
-      "columns": [
-        "vault_id"
-      ],
-      "schemaTo": "app",
-      "tableTo": "vaults",
-      "columnsTo": [
-        "vault_id"
-      ],
-      "onUpdate": "NO ACTION",
-      "onDelete": "CASCADE",
-      "name": "image_analysis_jobs_vault_id_vaults_vault_id_fkey",
-      "entityType": "fks",
-      "schema": "app",
-      "table": "image_analysis_jobs"
-    },
-    {
-      "nameExplicit": false,
-      "columns": [
-        "owner_user_id"
-      ],
-      "schemaTo": "auth",
-      "tableTo": "user",
-      "columnsTo": [
-        "id"
-      ],
-      "onUpdate": "NO ACTION",
-      "onDelete": "CASCADE",
-      "name": "image_analysis_jobs_owner_user_id_user_id_fkey",
-      "entityType": "fks",
-      "schema": "app",
-      "table": "image_analysis_jobs"
-    },
-    {
-      "nameExplicit": false,
-      "columns": [
         "vault_id"
       ],
       "schemaTo": "app",
@@ -3745,40 +2838,6 @@
       "table": "search_embeddings"
     },
     {
-      "nameExplicit": true,
-      "columns": [
-        "vault_id"
-      ],
-      "schemaTo": "app",
-      "tableTo": "vaults",
-      "columnsTo": [
-        "vault_id"
-      ],
-      "onUpdate": "NO ACTION",
-      "onDelete": "CASCADE",
-      "name": "search_index_job_vault_fk",
-      "entityType": "fks",
-      "schema": "app",
-      "table": "search_index_jobs"
-    },
-    {
-      "nameExplicit": true,
-      "columns": [
-        "owner_user_id"
-      ],
-      "schemaTo": "auth",
-      "tableTo": "user",
-      "columnsTo": [
-        "id"
-      ],
-      "onUpdate": "NO ACTION",
-      "onDelete": "CASCADE",
-      "name": "search_index_job_owner_user_fk",
-      "entityType": "fks",
-      "schema": "app",
-      "table": "search_index_jobs"
-    },
-    {
       "nameExplicit": false,
       "columns": [
         "meeting_id"
@@ -3794,57 +2853,6 @@
       "entityType": "fks",
       "schema": "app",
       "table": "summaries"
-    },
-    {
-      "nameExplicit": false,
-      "columns": [
-        "vault_id"
-      ],
-      "schemaTo": "app",
-      "tableTo": "vaults",
-      "columnsTo": [
-        "vault_id"
-      ],
-      "onUpdate": "NO ACTION",
-      "onDelete": "CASCADE",
-      "name": "summary_jobs_vault_id_vaults_vault_id_fkey",
-      "entityType": "fks",
-      "schema": "app",
-      "table": "summary_jobs"
-    },
-    {
-      "nameExplicit": false,
-      "columns": [
-        "meeting_id"
-      ],
-      "schemaTo": "app",
-      "tableTo": "meetings",
-      "columnsTo": [
-        "meeting_id"
-      ],
-      "onUpdate": "NO ACTION",
-      "onDelete": "CASCADE",
-      "name": "summary_jobs_meeting_id_meetings_meeting_id_fkey",
-      "entityType": "fks",
-      "schema": "app",
-      "table": "summary_jobs"
-    },
-    {
-      "nameExplicit": false,
-      "columns": [
-        "owner_user_id"
-      ],
-      "schemaTo": "auth",
-      "tableTo": "user",
-      "columnsTo": [
-        "id"
-      ],
-      "onUpdate": "NO ACTION",
-      "onDelete": "CASCADE",
-      "name": "summary_jobs_owner_user_id_user_id_fkey",
-      "entityType": "fks",
-      "schema": "app",
-      "table": "summary_jobs"
     },
     {
       "nameExplicit": true,
@@ -3968,25 +2976,6 @@
       "entityType": "fks",
       "schema": "app",
       "table": "projects"
-    },
-    {
-      "nameExplicit": false,
-      "columns": [
-        "vault_id",
-        "meeting_id"
-      ],
-      "schemaTo": "app",
-      "tableTo": "meetings",
-      "columnsTo": [
-        "vault_id",
-        "meeting_id"
-      ],
-      "onUpdate": "NO ACTION",
-      "onDelete": "CASCADE",
-      "name": "recordings_F4PH1EVMFEtd_fkey",
-      "entityType": "fks",
-      "schema": "app",
-      "table": "recordings"
     },
     {
       "nameExplicit": true,
@@ -4116,17 +3105,6 @@
     },
     {
       "columns": [
-        "vault_id",
-        "document_id"
-      ],
-      "nameExplicit": true,
-      "name": "search_index_job_pk",
-      "entityType": "pks",
-      "schema": "app",
-      "table": "search_index_jobs"
-    },
-    {
-      "columns": [
         "owner_user_id",
         "vault_id"
       ],
@@ -4184,16 +3162,6 @@
     },
     {
       "columns": [
-        "file_id"
-      ],
-      "nameExplicit": false,
-      "name": "image_analysis_jobs_pkey",
-      "schema": "app",
-      "table": "image_analysis_jobs",
-      "entityType": "pks"
-    },
-    {
-      "columns": [
         "id"
       ],
       "nameExplicit": false,
@@ -4214,32 +3182,12 @@
     },
     {
       "columns": [
-        "storage_key"
-      ],
-      "nameExplicit": false,
-      "name": "storage_delete_jobs_pkey",
-      "schema": "app",
-      "table": "storage_delete_jobs",
-      "entityType": "pks"
-    },
-    {
-      "columns": [
         "id"
       ],
       "nameExplicit": false,
       "name": "summaries_pkey",
       "schema": "app",
       "table": "summaries",
-      "entityType": "pks"
-    },
-    {
-      "columns": [
-        "id"
-      ],
-      "nameExplicit": false,
-      "name": "summary_jobs_pkey",
-      "schema": "app",
-      "table": "summary_jobs",
       "entityType": "pks"
     },
     {
@@ -4440,13 +3388,6 @@
       "entityType": "uniques"
     },
     {
-      "value": "\"status\" IN ('pending', 'processing', 'failed')",
-      "name": "image_analysis_job_status_check",
-      "entityType": "checks",
-      "schema": "app",
-      "table": "image_analysis_jobs"
-    },
-    {
       "value": "\"kind\" IN ('meeting_created', 'meeting_updated', 'meeting_deleted', 'tag_added', 'tag_removed', 'recording_started', 'recording_ended', 'segment_rotated')",
       "name": "meeting_events_kind_check",
       "entityType": "checks",
@@ -4473,34 +3414,6 @@
       "entityType": "checks",
       "schema": "app",
       "table": "search_embeddings"
-    },
-    {
-      "value": "\"status\" IN ('pending', 'processing', 'failed')",
-      "name": "search_index_job_status_check",
-      "entityType": "checks",
-      "schema": "app",
-      "table": "search_index_jobs"
-    },
-    {
-      "value": "\"dimensions\" BETWEEN 32 AND 1024",
-      "name": "search_index_job_dimensions_check",
-      "entityType": "checks",
-      "schema": "app",
-      "table": "search_index_jobs"
-    },
-    {
-      "value": "\"status\" IN ('pending', 'processing', 'failed')",
-      "name": "storage_delete_job_status_check",
-      "entityType": "checks",
-      "schema": "app",
-      "table": "storage_delete_jobs"
-    },
-    {
-      "value": "\"status\" IN ('pending', 'processing', 'succeeded', 'failed')",
-      "name": "summary_job_status_check",
-      "entityType": "checks",
-      "schema": "app",
-      "table": "summary_jobs"
     },
     {
       "value": "\"entity\" IN ('vault', 'project', 'meeting', 'summary', 'transcript', 'file', 'meeting_file', 'recording')",
@@ -4742,19 +3655,6 @@
       "roles": [
         "public"
       ],
-      "using": "\"app\".\"summary_jobs\".\"owner_user_id\" = nullif(current_setting('app.user_id', true), '')",
-      "withCheck": "\"app\".\"summary_jobs\".\"owner_user_id\" = nullif(current_setting('app.user_id', true), '')",
-      "name": "summary_job_owner",
-      "entityType": "policies",
-      "schema": "app",
-      "table": "summary_jobs"
-    },
-    {
-      "as": "PERMISSIVE",
-      "for": "ALL",
-      "roles": [
-        "public"
-      ],
       "using": "\"app\".\"transaction_receipts\".\"owner_user_id\" = current_setting('app.user_id', true)",
       "withCheck": "\"app\".\"transaction_receipts\".\"owner_user_id\" = current_setting('app.user_id', true)",
       "name": "transaction_receipt_owner",
@@ -4872,7 +3772,7 @@
       "roles": [
         "public"
       ],
-      "using": "\"app\".\"current_identity_can_read_vault\"(\"app\".\"recordings\".\"vault_id\")",
+      "using": "EXISTS (SELECT 1 FROM \"app\".\"meetings\" WHERE \"meeting_id\" = \"app\".\"recordings\".\"meeting_id\" AND \"app\".\"current_identity_can_read_vault\"(\"vault_id\"))",
       "withCheck": null,
       "name": "recording_select",
       "entityType": "policies",
@@ -4885,8 +3785,8 @@
       "roles": [
         "public"
       ],
-      "using": "\"app\".\"current_identity_owns_vault\"(\"app\".\"recordings\".\"vault_id\")",
-      "withCheck": "\"app\".\"current_identity_owns_vault\"(\"app\".\"recordings\".\"vault_id\")",
+      "using": "EXISTS (SELECT 1 FROM \"app\".\"meetings\" WHERE \"meeting_id\" = \"app\".\"recordings\".\"meeting_id\" AND \"app\".\"current_identity_owns_vault\"(\"vault_id\"))",
+      "withCheck": "EXISTS (SELECT 1 FROM \"app\".\"meetings\" WHERE \"meeting_id\" = \"app\".\"recordings\".\"meeting_id\" AND \"app\".\"current_identity_owns_vault\"(\"vault_id\"))",
       "name": "recording_write",
       "entityType": "policies",
       "schema": "app",
@@ -5100,6 +4000,1143 @@
       "name": "meeting_images",
       "entityType": "views",
       "schema": "app"
+    },
+    {
+      "isRlsEnabled": false,
+      "name": "jobs_image_analysis",
+      "entityType": "tables",
+      "schema": "app"
+    },
+    {
+      "isRlsEnabled": false,
+      "name": "jobs_search_index",
+      "entityType": "tables",
+      "schema": "app"
+    },
+    {
+      "isRlsEnabled": false,
+      "name": "jobs_storage_delete",
+      "entityType": "tables",
+      "schema": "app"
+    },
+    {
+      "isRlsEnabled": true,
+      "name": "jobs_summary",
+      "entityType": "tables",
+      "schema": "app"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "1",
+      "generated": null,
+      "identity": null,
+      "name": "revision",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "account_settings"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "file_id",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "jobs_image_analysis"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "vault_id",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "jobs_image_analysis"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "owner_user_id",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "jobs_image_analysis"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "model",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "jobs_image_analysis"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "'pending'",
+      "generated": null,
+      "identity": null,
+      "name": "status",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "jobs_image_analysis"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "0",
+      "generated": null,
+      "identity": null,
+      "name": "attempts",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "jobs_image_analysis"
+    },
+    {
+      "type": "timestamp",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "now()",
+      "generated": null,
+      "identity": null,
+      "name": "available_at",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "jobs_image_analysis"
+    },
+    {
+      "type": "timestamp",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "claimed_at",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "jobs_image_analysis"
+    },
+    {
+      "type": "timestamp",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "lease_expires_at",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "jobs_image_analysis"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "last_error_code",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "jobs_image_analysis"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "vault_id",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "jobs_search_index"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "document_id",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "jobs_search_index"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "owner_user_id",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "jobs_search_index"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "model",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "jobs_search_index"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "dimensions",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "jobs_search_index"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "1",
+      "generated": null,
+      "identity": null,
+      "name": "generation",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "jobs_search_index"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "'pending'",
+      "generated": null,
+      "identity": null,
+      "name": "status",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "jobs_search_index"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "0",
+      "generated": null,
+      "identity": null,
+      "name": "attempts",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "jobs_search_index"
+    },
+    {
+      "type": "timestamp",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "now()",
+      "generated": null,
+      "identity": null,
+      "name": "available_at",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "jobs_search_index"
+    },
+    {
+      "type": "timestamp",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "claimed_at",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "jobs_search_index"
+    },
+    {
+      "type": "timestamp",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "lease_expires_at",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "jobs_search_index"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "last_error_code",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "jobs_search_index"
+    },
+    {
+      "type": "timestamp",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "now()",
+      "generated": null,
+      "identity": null,
+      "name": "updated_at",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "jobs_search_index"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "storage_key",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "jobs_storage_delete"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "0",
+      "generated": null,
+      "identity": null,
+      "name": "attempts",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "jobs_storage_delete"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "'pending'",
+      "generated": null,
+      "identity": null,
+      "name": "status",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "jobs_storage_delete"
+    },
+    {
+      "type": "timestamp",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "now()",
+      "generated": null,
+      "identity": null,
+      "name": "available_at",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "jobs_storage_delete"
+    },
+    {
+      "type": "timestamp",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "claimed_at",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "jobs_storage_delete"
+    },
+    {
+      "type": "timestamp",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "lease_expires_at",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "jobs_storage_delete"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "last_error_code",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "jobs_storage_delete"
+    },
+    {
+      "type": "timestamp",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "now()",
+      "generated": null,
+      "identity": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "jobs_storage_delete"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "id",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "jobs_summary"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "vault_id",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "jobs_summary"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "meeting_id",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "jobs_summary"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "owner_user_id",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "jobs_summary"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "method",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "jobs_summary"
+    },
+    {
+      "type": "jsonb",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "settings",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "jobs_summary"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "output_language",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "jobs_summary"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "'pending'",
+      "generated": null,
+      "identity": null,
+      "name": "status",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "jobs_summary"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "0",
+      "generated": null,
+      "identity": null,
+      "name": "attempts",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "jobs_summary"
+    },
+    {
+      "type": "timestamp",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "jobs_summary"
+    },
+    {
+      "type": "timestamp",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "available_at",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "jobs_summary"
+    },
+    {
+      "type": "timestamp",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "claimed_at",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "jobs_summary"
+    },
+    {
+      "type": "timestamp",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "lease_expires_at",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "jobs_summary"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "last_error_code",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "jobs_summary"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "summary_revision",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "jobs_summary"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "input_version",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "jobs_summary"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "request_hash",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "jobs_summary"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "icon",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "projects"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "color",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "projects"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "icon",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "vaults"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "color",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "vaults"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        {
+          "value": "status",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "available_at",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "lease_expires_at",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "image_analysis_job_claim_idx",
+      "entityType": "indexes",
+      "schema": "app",
+      "table": "jobs_image_analysis"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        {
+          "value": "status",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "available_at",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "lease_expires_at",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "search_index_job_claim_idx",
+      "entityType": "indexes",
+      "schema": "app",
+      "table": "jobs_search_index"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        {
+          "value": "status",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "available_at",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "lease_expires_at",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "storage_delete_job_claim_idx",
+      "entityType": "indexes",
+      "schema": "app",
+      "table": "jobs_storage_delete"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        {
+          "value": "meeting_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": true,
+      "where": "\"status\" IN ('pending', 'processing')",
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "summary_job_active_meeting_idx",
+      "entityType": "indexes",
+      "schema": "app",
+      "table": "jobs_summary"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        {
+          "value": "owner_user_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "created_at",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "summary_job_owner_created_idx",
+      "entityType": "indexes",
+      "schema": "app",
+      "table": "jobs_summary"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        {
+          "value": "meeting_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "session_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "recordings_meeting_session_idx",
+      "entityType": "indexes",
+      "schema": "app",
+      "table": "recordings"
+    },
+    {
+      "nameExplicit": false,
+      "columns": [
+        "file_id"
+      ],
+      "schemaTo": "app",
+      "tableTo": "files",
+      "columnsTo": [
+        "file_id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "name": "image_analysis_jobs_file_id_files_file_id_fkey",
+      "entityType": "fks",
+      "schema": "app",
+      "table": "jobs_image_analysis"
+    },
+    {
+      "nameExplicit": false,
+      "columns": [
+        "vault_id"
+      ],
+      "schemaTo": "app",
+      "tableTo": "vaults",
+      "columnsTo": [
+        "vault_id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "name": "image_analysis_jobs_vault_id_vaults_vault_id_fkey",
+      "entityType": "fks",
+      "schema": "app",
+      "table": "jobs_image_analysis"
+    },
+    {
+      "nameExplicit": false,
+      "columns": [
+        "owner_user_id"
+      ],
+      "schemaTo": "auth",
+      "tableTo": "user",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "name": "image_analysis_jobs_owner_user_id_user_id_fkey",
+      "entityType": "fks",
+      "schema": "app",
+      "table": "jobs_image_analysis"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        "vault_id"
+      ],
+      "schemaTo": "app",
+      "tableTo": "vaults",
+      "columnsTo": [
+        "vault_id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "name": "search_index_job_vault_fk",
+      "entityType": "fks",
+      "schema": "app",
+      "table": "jobs_search_index"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        "owner_user_id"
+      ],
+      "schemaTo": "auth",
+      "tableTo": "user",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "name": "search_index_job_owner_user_fk",
+      "entityType": "fks",
+      "schema": "app",
+      "table": "jobs_search_index"
+    },
+    {
+      "nameExplicit": false,
+      "columns": [
+        "vault_id"
+      ],
+      "schemaTo": "app",
+      "tableTo": "vaults",
+      "columnsTo": [
+        "vault_id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "name": "summary_jobs_vault_id_vaults_vault_id_fkey",
+      "entityType": "fks",
+      "schema": "app",
+      "table": "jobs_summary"
+    },
+    {
+      "nameExplicit": false,
+      "columns": [
+        "meeting_id"
+      ],
+      "schemaTo": "app",
+      "tableTo": "meetings",
+      "columnsTo": [
+        "meeting_id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "name": "summary_jobs_meeting_id_meetings_meeting_id_fkey",
+      "entityType": "fks",
+      "schema": "app",
+      "table": "jobs_summary"
+    },
+    {
+      "nameExplicit": false,
+      "columns": [
+        "owner_user_id"
+      ],
+      "schemaTo": "auth",
+      "tableTo": "user",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "name": "summary_jobs_owner_user_id_user_id_fkey",
+      "entityType": "fks",
+      "schema": "app",
+      "table": "jobs_summary"
+    },
+    {
+      "nameExplicit": false,
+      "columns": [
+        "meeting_id"
+      ],
+      "schemaTo": "app",
+      "tableTo": "meetings",
+      "columnsTo": [
+        "meeting_id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "name": "recordings_meeting_id_meetings_meeting_id_fkey",
+      "entityType": "fks",
+      "schema": "app",
+      "table": "recordings"
+    },
+    {
+      "columns": [
+        "vault_id",
+        "document_id"
+      ],
+      "nameExplicit": true,
+      "name": "search_index_job_pk",
+      "entityType": "pks",
+      "schema": "app",
+      "table": "jobs_search_index"
+    },
+    {
+      "columns": [
+        "file_id"
+      ],
+      "nameExplicit": false,
+      "name": "image_analysis_jobs_pkey",
+      "schema": "app",
+      "table": "jobs_image_analysis",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "storage_key"
+      ],
+      "nameExplicit": false,
+      "name": "storage_delete_jobs_pkey",
+      "schema": "app",
+      "table": "jobs_storage_delete",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "summary_jobs_pkey",
+      "schema": "app",
+      "table": "jobs_summary",
+      "entityType": "pks"
+    },
+    {
+      "value": "\"status\" IN ('pending', 'processing', 'failed')",
+      "name": "image_analysis_job_status_check",
+      "entityType": "checks",
+      "schema": "app",
+      "table": "jobs_image_analysis"
+    },
+    {
+      "value": "\"status\" IN ('pending', 'processing', 'failed')",
+      "name": "search_index_job_status_check",
+      "entityType": "checks",
+      "schema": "app",
+      "table": "jobs_search_index"
+    },
+    {
+      "value": "\"dimensions\" BETWEEN 32 AND 1024",
+      "name": "search_index_job_dimensions_check",
+      "entityType": "checks",
+      "schema": "app",
+      "table": "jobs_search_index"
+    },
+    {
+      "value": "\"status\" IN ('pending', 'processing', 'failed')",
+      "name": "storage_delete_job_status_check",
+      "entityType": "checks",
+      "schema": "app",
+      "table": "jobs_storage_delete"
+    },
+    {
+      "value": "\"status\" IN ('pending', 'processing', 'succeeded', 'failed')",
+      "name": "summary_job_status_check",
+      "entityType": "checks",
+      "schema": "app",
+      "table": "jobs_summary"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "ALL",
+      "roles": [
+        "public"
+      ],
+      "using": "\"app\".\"jobs_summary\".\"owner_user_id\" = nullif(current_setting('app.user_id', true), '')",
+      "withCheck": "\"app\".\"jobs_summary\".\"owner_user_id\" = nullif(current_setting('app.user_id', true), '')",
+      "name": "summary_job_owner",
+      "entityType": "policies",
+      "schema": "app",
+      "table": "jobs_summary"
     }
   ],
   "renames": []

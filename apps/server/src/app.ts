@@ -486,7 +486,7 @@ export function createApp(dependencies: AppDependencies) {
           sequence = latest;
           await stream.writeSSE({ event: "invalidation", id: cursor, data: JSON.stringify({ cursor }) });
         }
-        const settingsKey = await store.accountSettings.getChangeVersion(identity.userId);
+        const settingsKey = await store.accountSettings.getRevision(identity.userId);
         if (settingsKey !== accountSettingsKey) {
           accountSettingsKey = settingsKey;
           await stream.writeSSE({ event: "account_settings", data: "{}" });

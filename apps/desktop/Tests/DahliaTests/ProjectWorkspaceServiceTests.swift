@@ -35,7 +35,8 @@ import GRDB
                 let operation = try SyncInitialSnapshotBuilder.projectOperation(staleChild, action: action)
                 let payload = try #require(operation.payloadJSON)
                 let body = try #require(JSONSerialization.jsonObject(with: payload) as? [String: Any])
-                #expect(body["appearance"] == nil)
+                #expect(body["icon"] is NSNull)
+                #expect(body["color"] is NSNull)
             }
             #expect(try context.repository.fetchProject(id: parent.id)?.appearance == style)
         }
@@ -70,22 +71,28 @@ import GRDB
         }
 
         @Test
-        func localAppearanceChangeDoesNotChangeProjectRevision() throws {
+        func appearanceChangePersistsAndIncrementsProjectRevision() throws {
             let context = try makeContext()
             defer { try? FileManager.default.removeItem(at: context.rootURL) }
-            let suiteName = "ProjectWorkspaceServiceTests-\(UUID.v7())"
-            let defaults = try #require(UserDefaults(suiteName: suiteName))
-            defer { defaults.removePersistentDomain(forName: suiteName) }
             let project = try context.service.createProject(name: "Project", parentProjectId: nil)
-            let navigation = MainWindowNavigation(openMainWindow: {}, settingsDefaults: defaults)
-
-            navigation.setProjectAppearance(
-                ProjectAppearance(icon: .music, color: .purple),
-                projectId: project.id,
-                vaultId: context.vault.id
+            let updated = try context.service.updateProject(
+                id: project.id, name: project.name, parentProjectId: nil,
+                projectType: .undefined, description: project.description,
+                expectedRevision: project.revision,
+                appearance: ProjectAppearance(icon: .music, color: .purple)
             )
-
-            #expect(try context.repository.fetchProject(id: project.id)?.revision == project.revision)
+            #expect(updated.revision == project.revision + 1)
+            let stored = try #require(try context.repository.fetchProject(id: project.id))
+            #expect(stored.icon == ProjectIcon.music.rawValue)
+            #expect(stored.color == "purple")
+            #expect(throws: ProjectWorkspaceError.self) {
+                try context.service.updateProject(
+                    id: project.id, name: project.name, parentProjectId: nil,
+                    projectType: .undefined, description: project.description,
+                    expectedRevision: project.revision,
+                    appearance: ProjectAppearance(icon: .folder, color: .blue)
+                )
+            }
         }
 
         @Test(arguments: ["", ".hidden", "_internal", "a/b", "a:b", "..", "../Outside", "A/../../Outside"])

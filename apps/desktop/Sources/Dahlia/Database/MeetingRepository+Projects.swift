@@ -62,7 +62,8 @@ extension MeetingRepository {
                 createdAt: .now,
                 description: description,
                 projectType: parentProjectId == nil ? (projectType ?? .undefined) : nil,
-                appearance: parentProjectId == nil ? appearance : nil
+                icon: parentProjectId == nil ? appearance?.icon.rawValue : nil,
+                color: parentProjectId == nil ? appearance?.color.rawValue : nil
             )
             try record.insert(db)
             try SyncTransactionRecorder.record(
@@ -169,16 +170,19 @@ extension MeetingRepository {
             }
             let locationChanged = project.parentProjectId != parentProjectId || project.name != name
             let typeChanged = parentProjectId == nil && project.projectType != projectType
-            let nextAppearance = parentProjectId == nil ? (appearance ?? project.appearance) : nil
-            let changed = locationChanged || typeChanged || project.description != description
-                || project.appearance != nextAppearance
+            let appearanceChanged = appearance.map { project.icon != $0.icon.rawValue || project.color != $0.color.rawValue } ?? false
+            let changed = locationChanged || typeChanged || project.description != description || appearanceChanged
             guard changed else { return project }
 
             project.parentProjectId = parentProjectId
             project.name = name
             project.description = description
             project.projectType = parentProjectId == nil ? projectType : nil
-            project.appearance = nextAppearance
+            if parentProjectId != nil {
+                project.appearance = nil
+            } else if let appearance {
+                project.appearance = appearance
+            }
             project.revision += 1
             try project.update(db)
             if locationChanged || typeChanged {

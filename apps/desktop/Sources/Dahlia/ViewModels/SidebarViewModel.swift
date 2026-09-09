@@ -530,10 +530,10 @@ final class SidebarViewModel {
                     projectDisplayName: project.name,
                     parentProjectId: project.parentProjectId,
                     projectDescription: project.description,
-                    appearance: project.appearance,
                     explicitProjectType: project.projectType,
                     effectiveProjectType: effectiveType?.type ?? .undefined,
                     typeOwnerProjectId: effectiveType?.ownerProjectId,
+                    icon: project.icon, color: project.color,
                     revision: project.revision,
                     createdAt: project.createdAt,
                     meetingCount: aggregates[project.id]?.0 ?? 0,
@@ -559,9 +559,15 @@ final class SidebarViewModel {
                     guard let self,
                           self.currentVault?.id == vaultId,
                           self.projectCatalogObservationTracker.isCurrent(observationGeneration) else { return }
+                    MainWindowNavigation.shared.updateProjectAppearances(projects, vaultId: vaultId)
                     self.allProjectItems = projects
                     self.isProjectCatalogLoaded = true
                     self.projectCatalogLoadFailed = false
+                    do {
+                        try await MainWindowNavigation.shared.migrateProjectAppearances(vaultId: vaultId, dbQueue: dbQueue)
+                    } catch {
+                        sidebarViewModelLogger.error("Project appearance migration failed; retained legacy settings")
+                    }
                 }
             }
         )

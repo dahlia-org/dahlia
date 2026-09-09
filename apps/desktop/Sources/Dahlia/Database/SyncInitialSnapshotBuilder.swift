@@ -130,7 +130,7 @@ enum SyncInitialSnapshotBuilder {
                     entity: .vault,
                     action: .create,
                     id: vault.id,
-                    payload: ["name": vault.name, "createdAt": vault.createdAt.ISO8601Format()]
+                    payload: ["name": vault.name, "icon": json(vault.icon), "color": json(vault.color), "createdAt": vault.createdAt.ISO8601Format()]
                 )],
                 allowAfterReset: restoring,
                 connectionIdOverride: connectionId,
@@ -536,18 +536,15 @@ enum SyncInitialSnapshotBuilder {
             "name": project.name,
             "description": project.description,
             "projectType": json(project.projectType?.rawValue),
+            "icon": json(project.parentProjectId == nil ? project.icon : nil),
+            "color": json(project.parentProjectId == nil ? project.color : nil),
         ]
-        if project.parentProjectId == nil, let appearance = project.appearance { payload["appearance"] = [
-            "icon": appearance.icon.rawValue,
-            "color": appearance.color.rawValue,
-        ] }
         if action == .create { payload["createdAt"] = project.createdAt.ISO8601Format() }
         return try operation(entity: .project, action: action, id: project.id, payload: payload)
     }
 
     static func vaultOperation(_ vault: VaultRecord, action: SyncAction) throws -> SyncOperationDraft {
-        var payload: [String: Any] = ["name": vault.name]
-        if let appearance = vault.appearance { payload["appearance"] = ["icon": appearance.icon.rawValue, "color": appearance.color.rawValue] }
+        var payload: [String: Any] = ["name": vault.name, "icon": json(vault.icon), "color": json(vault.color)]
         if action == .create { payload["createdAt"] = vault.createdAt.ISO8601Format() }
         return try operation(entity: .vault, action: action, id: vault.id, payload: payload)
     }

@@ -298,14 +298,14 @@ describe("server summary jobs", () => {
     const setupValue = await setup(); const { store, service, vaultId, meetingId, config, path, method } = setupValue;
     await service.start(owner, vaultId, meetingId, { id: uuidV7() });
     const stale = (await store.summaryJobs.claim())!; await store.close?.();
-    const raw = new DatabaseSync(path); raw.exec("UPDATE summary_jobs SET lease_expires_at = 0"); raw.close();
+    const raw = new DatabaseSync(path); raw.exec("UPDATE jobs_summary SET lease_expires_at = 0"); raw.close();
     const reopened = createNodeApplicationStore(config); const sync = new MeetingSyncService(reopened.sync);
     try {
       const current = (await reopened.summaryJobs.claim())!;
       expect(current.attempts).toBe(2);
       expect(await sync.completeSummary(owner, stale, doc(), method)).toBe(false);
       await reopened.summaryJobs.fail(current, "temporary", true);
-      const raw = new DatabaseSync(path); raw.exec("UPDATE summary_jobs SET available_at = 0"); raw.close();
+      const raw = new DatabaseSync(path); raw.exec("UPDATE jobs_summary SET available_at = 0"); raw.close();
       method.generate = async () => { throw new SummaryError("temporary", true); };
       await new SummaryWorker(reopened.summaryJobs, [method], sync).processOne();
       expect(await new SummaryService(reopened.sync, reopened.accountSettings, [method]).status(owner, vaultId, meetingId)).toMatchObject({ status: "failed", attempts: 3 });
@@ -634,12 +634,12 @@ describe("audio summary jobs", () => {
     for (const path of ["sqlite/20260908080352_zippy_aaron_stack/migration.sql", "d1/20260908080352_zippy_aaron_stack.sql"]) {
       const db = new DatabaseSync(":memory:");
       try {
-        db.exec("CREATE TABLE account_settings (user_id TEXT PRIMARY KEY, summary_method TEXT, transcript_summary TEXT); INSERT INTO account_settings VALUES ('owner', 'transcript', '{\"model\":\"saved\"}'); CREATE TABLE summary_jobs (id TEXT, settings TEXT); INSERT INTO summary_jobs VALUES ('running', 'unchanged');");
+        db.exec("CREATE TABLE account_settings (user_id TEXT PRIMARY KEY, summary_method TEXT, transcript_summary TEXT); INSERT INTO account_settings VALUES ('owner', 'transcript', '{\"model\":\"saved\"}'); CREATE TABLE jobs_summary (id TEXT, settings TEXT); INSERT INTO jobs_summary VALUES ('running', 'unchanged');");
         db.exec(readFileSync(new URL(`../drizzle/${path}`, import.meta.url), "utf8"));
         expect(db.prepare("SELECT summary_method, transcript_summary, audio_summary FROM account_settings").get()).toEqual({
           summary_method: "transcript", transcript_summary: '{"model":"saved"}', audio_summary: JSON.stringify({ ...DEFAULT_ACCOUNT_SETTINGS.summary.methodSettings.audio, detail: "detailed" }),
         });
-        expect(db.prepare("SELECT * FROM summary_jobs").get()).toEqual({ id: "running", settings: "unchanged" });
+        expect(db.prepare("SELECT * FROM jobs_summary").get()).toEqual({ id: "running", settings: "unchanged" });
       } finally { db.close(); }
     }
   });
