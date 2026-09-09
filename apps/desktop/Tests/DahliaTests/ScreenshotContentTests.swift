@@ -496,103 +496,6 @@
             }
         }
 
-        @Test(arguments: ["screenshot", "meeting", "none"], [false, true])
-        func v44UpgradeDropsOnlySupersededImageMetadata(deletion: String, keepsUnrelatedOperation: Bool) async throws {
-            let queue = try DatabaseQueue(configuration: AppDatabaseManager.configuration())
-            try AppDatabaseManager.migrator.migrate(queue, upTo: "v44_retireVectorSearch")
-            let fixture = try ScreenshotContentFixture(dbQueue: queue, priorSchema: true)
-            let updateTransaction = UUID.v7()
-            let deleteTransaction = UUID.v7()
-            let metadataOperation = UUID.v7()
-            let unrelatedOperation = UUID.v7()
-            let deleteOperation = UUID.v7()
-            try await queue.write { db in
-                for id in [updateTransaction, deleteTransaction] {
-                    try db.execute(sql: """
-                    INSERT INTO sync_transactions(id, vaultId, connectionId, createdAt, availableAt) VALUES (?, ?, ?, ?, ?)
-                    """, arguments: [id, fixture.vaultId, fixture.connectionId, Date(), Date()])
-                }
-                let payload = "{\"meetingId\":\"\(fixture.meetingId.uuidString.lowercased())\",\"ocrText\":\"Pending OCR\",\"caption\":\"Pending caption\"}"
-                try db.execute(sql: """
-                INSERT INTO sync_operations(transactionId, position, id, entity, action, entityId, payloadJSON)
-                VALUES (?, 0, ?, 'screenshot', 'upsert', ?, ?)
-                """, arguments: [updateTransaction, metadataOperation, fixture.screenshotId, payload])
-                if keepsUnrelatedOperation {
-                    try db.execute(sql: """
-                    INSERT INTO sync_operations(transactionId, position, id, entity, action, entityId, payloadJSON)
-                    VALUES (?, 1, ?, 'vault', 'update', ?, '{"name":"Preserved"}')
-                    """, arguments: [updateTransaction, unrelatedOperation, fixture.vaultId])
-                }
-                try db.execute(sql: "DELETE FROM screenshots WHERE id = ?", arguments: [fixture.screenshotId])
-                if deletion != "none" {
-                    let target = deletion == "meeting" ? fixture.meetingId : fixture.screenshotId
-                    try db.execute(sql: """
-                    INSERT INTO sync_operations(transactionId, position, id, entity, action, entityId, payloadJSON)
-                    VALUES (?, 0, ?, ?, 'delete', ?, '{}')
-                    """, arguments: [deleteTransaction, deleteOperation, deletion, target])
-                    if deletion == "meeting" { try MeetingRecord.deleteOne(db, key: fixture.meetingId) }
-                }
-            }
-            if deletion == "none" {
-                #expect(throws: ScreenshotContentError.unavailable) { try AppDatabaseManager.migrator.migrate(queue) }
-                return
-            }
-            try AppDatabaseManager.migrator.migrate(queue)
-            try await queue.read { db throws in
-                #expect(try FileRecord.fetchCount(db) == 0)
-                #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_operations WHERE id = ?", arguments: [metadataOperation]) == 0)
-                #expect(try String.fetchOne(db, sql: "SELECT action FROM sync_operations WHERE id = ?", arguments: [deleteOperation]) == "delete")
-                #expect(try Int
-                    .fetchOne(db, sql: "SELECT count(*) FROM sync_operations WHERE id = ?", arguments: [unrelatedOperation]) ==
-                    (keepsUnrelatedOperation ? 1 : 0))
-                #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_transactions") == (keepsUnrelatedOperation ? 2 : 1))
-                #expect(try Row.fetchAll(db, sql: "PRAGMA foreign_key_check").isEmpty)
-            }
-        }
-
-        @Test
-        func v44UpgradeExternalizesImagesAndPreservesQueuedAttachments() async throws {
-            let dbQueue = try DatabaseQueue(configuration: AppDatabaseManager.configuration())
-            try AppDatabaseManager.migrator.migrate(dbQueue, upTo: "v44_retireVectorSearch")
-            let fixture = try ScreenshotContentFixture(dbQueue: dbQueue, priorSchema: true)
-            let transactionId = UUID.v7()
-            let operationId = UUID.v7()
-            try await dbQueue.write { db in
-                try db.execute(
-                    sql: "INSERT INTO sync_transactions(id, vaultId, connectionId, createdAt, availableAt) VALUES (?, ?, ?, ?, ?)",
-                    arguments: [transactionId, fixture.vaultId, fixture.connectionId, Date(), Date()]
-                )
-                try db.execute(sql: """
-                INSERT INTO sync_operations(transactionId, position, id, entity, action, entityId, attachmentMimeType, attachmentSHA256)
-                VALUES (?, 0, ?, 'screenshot', 'upsert', ?, 'image/png', ?)
-                """, arguments: [transactionId, operationId, fixture.screenshotId, fixture.source.contentHash])
-            }
-            try AppDatabaseManager.migrator.migrate(dbQueue)
-            try await dbQueue.read { db in
-                let row = try #require(try MeetingScreenshotRecord.fetchOne(db, key: fixture.screenshotId))
-                #expect(row.imageData == fixture.bytes)
-                #expect(row.ocrText == "durable OCR")
-                #expect(row.caption == "durable caption")
-                #expect(row.contentLength == fixture.bytes.count)
-                #expect(try Row.fetchAll(db, sql: "PRAGMA foreign_key_check").isEmpty)
-                #expect(try db.tableExists("screenshots") == false)
-                #expect(try db.tableExists("files"))
-                #expect(try db.tableExists("meeting_files"))
-            }
-            let provider = ScreenshotContentProvider()
-            try await provider.migrateLegacyImages(vaultId: fixture.vaultId, dbQueue: dbQueue)
-            try await provider.migrateLegacyImages(vaultId: fixture.vaultId, dbQueue: dbQueue)
-            #expect(try await fixture.storedBytes() == nil)
-            #expect(try await provider.content(id: fixture.screenshotId, dbQueue: dbQueue).data == fixture.bytes)
-            try await dbQueue.write { db in
-                #expect(try String.fetchOne(db, sql: "SELECT attachmentReference FROM sync_operations WHERE id = ?", arguments: [operationId]) != nil)
-                #expect(try Data.fetchOne(db, sql: "SELECT attachmentBytes FROM sync_operations WHERE id = ?", arguments: [operationId]) == nil)
-                _ = try MeetingFileRecord.deleteOne(db, key: fixture.screenshotId)
-                #expect(try Data.fetchOne(db, sql: "SELECT attachmentBytes FROM sync_operations WHERE id = ?", arguments: [operationId]) == nil)
-            }
-            #expect(try await provider.attachment(operationId: operationId, dbQueue: dbQueue)?.bytes == fixture.bytes)
-        }
-
         @Test(arguments: [false, true])
         func evictionProtectsUnconfirmedQueuedAndRecoveryOriginals(remoteOnly: Bool) async throws {
             let fixture = try ScreenshotContentFixture()
@@ -1032,7 +935,7 @@
         let bytes = Data([1, 2, 3, 4, 5, 6])
         let source: ScreenshotRemoteReference
 
-        init(dbQueue: DatabaseQueue? = nil, priorSchema: Bool = false) throws {
+        init(dbQueue: DatabaseQueue? = nil) throws {
             self.dbQueue = try dbQueue ?? AppDatabaseManager(path: ":memory:").dbQueue
             source = ScreenshotRemoteReference(
                 origin: "https://\(UUID().uuidString.lowercased()).example.test",
@@ -1048,32 +951,18 @@
             let meeting = MeetingRecord(id: meetingId, vaultId: vaultId, projectId: nil, name: "Meeting", createdAt: .now, updatedAt: .now)
             try self.dbQueue.write { db in
                 try connection.insert(db)
-                if priorSchema {
-                    try db.execute(
-                        sql: "INSERT INTO vaults(id, name, createdAt, lastOpenedAt, accountConnectionId, syncConfirmedConnectionId, syncPullCursor) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                        arguments: [vault.id, vault.name, vault.createdAt, vault.lastOpenedAt, connectionId, connectionId, vault.syncPullCursor]
-                    )
-                } else {
-                    try vault.insert(db)
-                }
+                try vault.insert(db)
                 try meeting.insert(db)
-                if priorSchema {
-                    try db.execute(
-                        sql: "INSERT INTO screenshots(id, meetingId, capturedAt, imageData, mimeType, ocrText, caption) VALUES (?, ?, ?, ?, 'image/png', 'durable OCR', 'durable caption')",
-                        arguments: [screenshotId, meetingId, Date(), bytes]
-                    )
-                } else {
-                    try MeetingScreenshotRecord(
-                        id: screenshotId,
-                        meetingId: meetingId,
-                        capturedAt: .now,
-                        imageData: bytes,
-                        mimeType: "image/png",
-                        ocrText: "durable OCR",
-                        caption: "durable caption",
-                        remoteReference: source.jsonString()
-                    ).insertLegacyForTesting(db)
-                }
+                try MeetingScreenshotRecord(
+                    id: screenshotId,
+                    meetingId: meetingId,
+                    capturedAt: .now,
+                    imageData: bytes,
+                    mimeType: "image/png",
+                    ocrText: "durable OCR",
+                    caption: "durable caption",
+                    remoteReference: source.jsonString()
+                ).insertLegacyForTesting(db)
             }
         }
 

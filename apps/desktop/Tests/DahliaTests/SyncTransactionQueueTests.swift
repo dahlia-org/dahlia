@@ -782,13 +782,13 @@
         }
 
         @Test
-        func recoveryMigrationPreservesExistingVaultAndCursor() throws {
+        func recoveryMigrationPreservesReleasedVault() throws {
             let queue = try DatabaseQueue()
-            try AppDatabaseManager.migrator.migrate(queue, upTo: "v42_meetingSync")
+            try AppDatabaseManager.migrator.migrate(queue, upTo: "v41_vaultAISettingsBackfill")
             let id = UUID.v7()
             try queue.write { db in
                 try db.execute(
-                    sql: "INSERT INTO vaults(id, path, name, createdAt, lastOpenedAt, syncPullCursor) VALUES (?, '/tmp/recovery', 'Preserved', ?, ?, 'old-cursor')",
+                    sql: "INSERT INTO vaults(id, path, name, createdAt, lastOpenedAt) VALUES (?, '/tmp/recovery', 'Preserved', ?, ?)",
                     arguments: [id, Date.now, Date.now]
                 )
             }
@@ -796,7 +796,7 @@
             try queue.read { db in
                 let vault = try #require(try VaultRecord.fetchOne(db, key: id))
                 #expect(vault.name == "Preserved")
-                #expect(vault.syncPullCursor == "old-cursor")
+                #expect(vault.syncPullCursor == nil)
                 #expect(vault.syncRecoveryState == nil)
                 #expect(try Int.fetchOne(db, sql: "SELECT syncMutationGeneration FROM vaults WHERE id = ?", arguments: [id]) == 0)
                 #expect(try Row.fetchAll(db, sql: "PRAGMA foreign_key_check").isEmpty)

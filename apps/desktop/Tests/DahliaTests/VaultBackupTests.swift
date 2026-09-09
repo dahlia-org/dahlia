@@ -315,7 +315,7 @@ import GRDB
             defer { fixture.removeFiles() }
             let service = BackupService(dbQueue: fixture.database.dbQueue, applicationSupportURL: fixture.testRootURL)
             let generation = try await service.createGeneration(vaultIds: [fixture.meeting.vaultId])
-            let identifier = "v45_screenshotContent"
+            let identifier = "v41_vaultAISettingsBackfill"
             let oldURL = fixture.testRootURL.appending(path: "older.sqlite")
             let old = try DatabaseQueue(path: oldURL.path, configuration: AppDatabaseManager.configuration())
             try AppDatabaseManager.migrator.migrate(old, upTo: identifier)
@@ -323,11 +323,20 @@ import GRDB
                 try db.execute(sql: "ATTACH DATABASE ? AS current_backup", arguments: [extractedBackupDatabase(generation.fileURL).path])
             }
             try await old.write { db in
-                let vaultColumns = try db.columns(in: "vaults").map(\.name.quotedDatabaseIdentifier).joined(separator: ", ")
-                try db.execute(sql: "INSERT INTO vaults (\(vaultColumns)) SELECT \(vaultColumns) FROM current_backup.vaults")
+                let vaultColumnNames = try db.columns(in: "vaults").map(\.name)
+                let vaultColumns = vaultColumnNames.map(\.quotedDatabaseIdentifier).joined(separator: ", ")
+                // Current backups omit device paths; published v41 required one.
+                let vaultValues = vaultColumnNames.map { $0 == "path" ? "?" : $0.quotedDatabaseIdentifier }.joined(separator: ", ")
+                try db.execute(
+                    sql: "INSERT INTO vaults (\(vaultColumns)) SELECT \(vaultValues) FROM current_backup.vaults",
+                    arguments: [fixture.vaultURL.path]
+                )
                 try fixture.meeting.insert(db)
                 let sessionColumns = try db.columns(in: "recording_sessions").map(\.name.quotedDatabaseIdentifier).joined(separator: ", ")
-                try db.execute(sql: "INSERT INTO recording_sessions (\(sessionColumns)) SELECT \(sessionColumns) FROM current_backup.recording_sessions")
+                try db
+                    .execute(
+                        sql: "INSERT INTO recording_sessions (\(sessionColumns)) SELECT \(sessionColumns) FROM current_backup.recording_sessions"
+                    )
                 try db.execute(
                     sql: "INSERT INTO transcript_segments(id, meetingId, startTime, text, isConfirmed) VALUES (?, ?, ?, ?, 1)",
                     arguments: [UUID.v7(), fixture.meeting.id, Date(), "old backup transcript"]

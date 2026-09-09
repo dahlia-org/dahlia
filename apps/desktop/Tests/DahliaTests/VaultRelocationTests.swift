@@ -9,7 +9,7 @@
         @Test(arguments: [false, true])
         func preservesRecordingAndIDsWithEitherVaultLoadedFirst(destinationExists: Bool) throws {
             let queue = try DatabaseQueue()
-            try AppDatabaseManager.migrator.migrate(queue, upTo: "v51_collectionAppearance")
+            try AppDatabaseManager.migrator.migrate(queue)
             let connection = DahliaAccountConnectionRecord(id: .v7(), origin: "https://example.com", clientID: "test", createdAt: .now)
             let source = VaultRecord(
                 id: .v7(),
@@ -121,9 +121,18 @@
                         archive.number = 1
                         let manifest = RecordingArchiveManifest(sampleRate: 16000, frameCount: 1, ranges: [])
                         let prepared = RecordingArchiveEncoder.Prepared(relativePath: "audio.m4a", size: 1, checksum: "checksum", manifest: manifest)
-                        let audio = RecordingArchivedAudio(contentType: "audio/mp4", size: 1, checksum: "checksum", contentURL: "/audio", manifest: manifest)
-                        archive.preparedJSON = String(decoding: try SyncJSON.encoder.encode(["mic": prepared, "system": prepared]), as: UTF8.self)
-                        archive.audioJSON = String(decoding: try SyncJSON.encoder.encode(state == "partial" ? ["mic": audio] : ["mic": audio, "system": audio]), as: UTF8.self)
+                        let audio = RecordingArchivedAudio(
+                            contentType: "audio/mp4",
+                            size: 1,
+                            checksum: "checksum",
+                            contentURL: "/audio",
+                            manifest: manifest
+                        )
+                        archive.preparedJSON = try String(decoding: SyncJSON.encoder.encode(["mic": prepared, "system": prepared]), as: UTF8.self)
+                        archive.audioJSON = try String(
+                            decoding: SyncJSON.encoder.encode(state == "partial" ? ["mic": audio] : ["mic": audio, "system": audio]),
+                            as: UTF8.self
+                        )
                     }
                     try archive.insert(db)
                 }
@@ -158,7 +167,14 @@
                 id: .v7(), path: nil, name: "Source", createdAt: .now, lastOpenedAt: .now,
                 accountConnectionId: connection.id, syncConfirmedConnectionId: connection.id
             )
-            let project = ProjectRecord(id: .v7(), vaultId: source.id, parentProjectId: nil, name: "Project", createdAt: .now, projectType: .undefined)
+            let project = ProjectRecord(
+                id: .v7(),
+                vaultId: source.id,
+                parentProjectId: nil,
+                name: "Project",
+                createdAt: .now,
+                projectType: .undefined
+            )
             let meeting = MeetingRecord(id: .v7(), vaultId: source.id, projectId: project.id, name: "Meeting", createdAt: .now, updatedAt: .now)
             let contact = UUID.v7(), organization = UUID.v7(), insight = UUID.v7(), topic = UUID.v7(), target = UUID.v7()
             try database.dbQueue.write { db in
@@ -166,13 +182,38 @@
                 try source.insert(db)
                 try project.insert(db)
                 try meeting.insert(db)
-                try ContactRecord(id: contact, vaultId: source.id, email: "test@example.com", displayName: "Contact", revision: 1, createdAt: .now, updatedAt: .now).insert(db)
+                try ContactRecord(
+                    id: contact,
+                    vaultId: source.id,
+                    email: "test@example.com",
+                    displayName: "Contact",
+                    revision: 1,
+                    createdAt: .now,
+                    updatedAt: .now
+                ).insert(db)
                 try OrganizationRecord(
                     id: organization, vaultId: source.id, parentOrganizationId: nil, nodeKind: .organization,
                     name: "Organization", revision: 1, createdAt: .now, updatedAt: .now
                 ).insert(db)
-                try InsightRecord(id: insight, vaultId: source.id, content: "Insight", isAccepted: false, metadataJSON: "{}", revision: 1, createdAt: .now, updatedAt: .now).insert(db)
-                try ConversationTopicRecord(id: topic, vaultId: source.id, title: "Topic", currentState: "Open", revision: 1, createdAt: .now, updatedAt: .now).insert(db)
+                try InsightRecord(
+                    id: insight,
+                    vaultId: source.id,
+                    content: "Insight",
+                    isAccepted: false,
+                    metadataJSON: "{}",
+                    revision: 1,
+                    createdAt: .now,
+                    updatedAt: .now
+                ).insert(db)
+                try ConversationTopicRecord(
+                    id: topic,
+                    vaultId: source.id,
+                    title: "Topic",
+                    currentState: "Open",
+                    revision: 1,
+                    createdAt: .now,
+                    updatedAt: .now
+                ).insert(db)
                 switch reference {
                 case "organization", "contact":
                     try ProjectResourceReferenceRecord(
@@ -180,7 +221,15 @@
                         resourceId: reference == "contact" ? contact : organization, relationLabel: "", createdAt: .now, updatedAt: .now
                     ).insert(db)
                 case "participant":
-                    try MeetingParticipantRecord(meetingId: meeting.id, contactId: contact, role: .attendee, responseStatus: .accepted, source: "calendar", createdAt: .now, updatedAt: .now).insert(db)
+                    try MeetingParticipantRecord(
+                        meetingId: meeting.id,
+                        contactId: contact,
+                        role: .attendee,
+                        responseStatus: .accepted,
+                        source: "calendar",
+                        createdAt: .now,
+                        updatedAt: .now
+                    ).insert(db)
                 case "insightProject", "insightMeeting":
                     try InsightReferenceRecord(
                         insightId: insight, resourceType: reference == "insightProject" ? .project : .meeting,

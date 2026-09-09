@@ -314,49 +314,5 @@
             try await coordinator.shutdown()
         }
 
-        @Test
-        func migrationPreservesBodyAndFreezesPendingSnapshot() throws {
-            let queue = try DatabaseQueue()
-            try AppDatabaseManager.migrator.migrate(queue, upTo: "v48_recordingArchives")
-            let vaultId = UUID.v7(), meetingId = UUID.v7(), operationId = UUID.v7(), transactionId = UUID.v7()
-            let connection = DahliaAccountConnectionRecord(id: .v7(), origin: "https://migration.invalid", clientID: "test", createdAt: .now)
-            try queue.write { db in
-                try connection.insert(db)
-                try db.execute(
-                    sql: "INSERT INTO vaults(id, name, createdAt, lastOpenedAt) VALUES (?, 'Existing', ?, ?)",
-                    arguments: [vaultId, Date.now, Date.now]
-                )
-                try MeetingRecord(id: meetingId, vaultId: vaultId, projectId: nil, name: "Existing", createdAt: .now, updatedAt: .now).insert(db)
-                let segmentId = UUID.v7()
-                try db.execute(
-                    sql: "INSERT INTO transcript_segments(id, meetingId, startTime, isConfirmed) VALUES (?, ?, ?, 1)",
-                    arguments: [segmentId, meetingId, Date()]
-                )
-                try db.execute(sql: "INSERT INTO transcript_segment_bodies(segmentId, text) VALUES (?, 'preserved 日本語')", arguments: [segmentId])
-                try db.execute(
-                    sql: "INSERT INTO sync_transactions(id, vaultId, connectionId, createdAt, availableAt) VALUES (?, ?, ?, ?, ?)",
-                    arguments: [transactionId, vaultId, connection.id, Date(), Date()]
-                )
-                try db.execute(
-                    sql: "INSERT INTO sync_operations(transactionId, position, id, entity, action, entityId, baseRevision) VALUES (?, 0, ?, 'transcript', 'patch', ?, 0)",
-                    arguments: [transactionId, operationId, meetingId]
-                )
-            }
-            try AppDatabaseManager.migrator.migrate(queue)
-            try queue.read { db in
-                #expect(try String.fetchOne(db, sql: "SELECT text FROM transcript_segment_bodies") == "preserved 日本語")
-                #expect(try String.fetchOne(db, sql: "SELECT text FROM sync_transcript_patch_items") == "preserved 日本語")
-                let payload = try #require(try String.fetchOne(
-                    db,
-                    sql: "SELECT payloadJSON FROM sync_operations WHERE id = ?",
-                    arguments: [operationId]
-                ))
-                let mutation = try SyncJSON.decoder.decode(TranscriptMutation.self, from: Data(payload.utf8))
-                #expect(mutation.mode == "replace")
-                #expect(mutation.transcript.metadata == nil)
-                #expect(try TranscriptRecord.current(meetingId, in: db)?.id == mutation.transcript.id)
-                #expect(try Row.fetchAll(db, sql: "PRAGMA foreign_key_check").isEmpty)
-            }
-        }
     }
 #endif

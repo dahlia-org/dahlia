@@ -368,10 +368,7 @@ import GRDB
         @Test
         func migrationPreservesExistingMeetingAndDoesNotEnqueueHistory() throws {
             let queue = try DatabaseQueue(path: ":memory:")
-            try AppDatabaseManager.migrator.migrate(queue, upTo: "v47_meetingEvents")
-            let transactionId = UUID.v7()
-            let operationId = UUID.v7()
-            let connection = DahliaAccountConnectionRecord(id: .v7(), origin: "https://migration.invalid", clientID: "test", createdAt: .now)
+            try AppDatabaseManager.migrator.migrate(queue, upTo: "v41_vaultAISettingsBackfill")
             let fixture = try BatchAudioTestFixture(name: "ArchiveMigration")
             defer { fixture.removeFiles() }
             let vault = try fixture.database.dbQueue.read { try #require(try VaultRecord.fetchOne($0, key: fixture.meeting.vaultId)) }
@@ -397,26 +394,10 @@ import GRDB
                     fixture.session.batchCompletedAt,
                     fixture.session.batchAttemptCount,
                 ])
-                try connection.insert(db)
-                try db.execute(
-                    sql: "INSERT INTO sync_transactions(id, vaultId, connectionId, createdAt, availableAt) VALUES (?, ?, ?, ?, ?)",
-                    arguments: [transactionId, vault.id, connection.id, Date.now, Date.now]
-                )
-                try db.execute(
-                    sql: "INSERT INTO sync_operations(transactionId, position, id, entity, action, entityId, payloadJSON) VALUES (?, 0, ?, 'transcript', 'patch', ?, ?)",
-                    arguments: [transactionId, operationId, fixture.meeting.id, "immutable payload"]
-                )
-                try db.execute(
-                    sql: "INSERT INTO sync_transcript_patch_items(operationId, position, action, segmentId, startTime, text, isConfirmed) VALUES (?, 0, 'upsert', ?, ?, 'pending transcript', 1)",
-                    arguments: [operationId, UUID.v7(), Date.now]
-                )
+
             }
             try AppDatabaseManager.migrator.migrate(queue)
-            try queue.read { db in
-                let pendingText = try String.fetchOne(db, sql: "SELECT text FROM sync_transcript_patch_items")
-                #expect(pendingText == "pending transcript")
-                #expect(try UUID.fetchOne(db, sql: "SELECT id FROM sync_transactions") == transactionId)
-                #expect(try String.fetchOne(db, sql: "SELECT payloadJSON FROM sync_operations") == "immutable payload")
+            try queue.read { db throws in
                 #expect(try Row.fetchAll(db, sql: "PRAGMA foreign_key_check").isEmpty)
             }
             #expect(try queue.read { try MeetingRecord.fetchOne($0, key: fixture.meeting.id)?.name } == fixture.meeting.name)

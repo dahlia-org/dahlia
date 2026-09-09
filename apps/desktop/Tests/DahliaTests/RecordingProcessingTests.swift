@@ -60,10 +60,13 @@
         @Test
         func migrationPreservesExistingRecording() throws {
             let queue = try DatabaseQueue(configuration: AppDatabaseManager.configuration())
-            try AppDatabaseManager.migrator.migrate(queue, upTo: "v53_canonicalAppearanceFields")
+            try AppDatabaseManager.migrator.migrate(queue, upTo: "v41_vaultAISettingsBackfill")
             let vaultID = UUID.v7(), meetingID = UUID.v7(), sessionID = UUID.v7()
             try queue.write { db in
-                try VaultRecord(id: vaultID, path: nil, name: "Existing", createdAt: .now, lastOpenedAt: .now).insert(db)
+                try db.execute(
+                    sql: "INSERT INTO vaults(id, path, name, createdAt, lastOpenedAt) VALUES (?, '/tmp/existing', 'Existing', ?, ?)",
+                    arguments: [vaultID, Date.now, Date.now]
+                )
                 try MeetingRecord(id: meetingID, vaultId: vaultID, projectId: nil, name: "Existing", createdAt: .now, updatedAt: .now).insert(db)
                 try db.execute(sql: """
                 INSERT INTO recording_sessions(id, meetingId, startedAt, endedAt, offsetSeconds, createdAt, updatedAt, transcriptionMode,
