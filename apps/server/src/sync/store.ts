@@ -1862,6 +1862,22 @@ function createIdentityStore(
         if (!afterId || vaultId > afterId) append(vault);
         continue;
       }
+      if (entity === "meeting") {
+        const meeting = schema.syncedMeeting;
+        const rows = await db.select({
+          ...getTableColumns(meeting),
+          hasSummary: exists(db.select({ id: schema.summary.id }).from(schema.summary)
+            .where(eq(schema.summary.meetingId, meeting.meetingId))),
+        }).from(meeting).where(and(
+          readableMeeting(vaultId), eq(meeting.active, true), isNull(meeting.deletingAt),
+          afterId ? gt(meeting.meetingId, afterId) : undefined,
+        )).orderBy(asc(meeting.meetingId)).limit(remaining + 1);
+        for (const row of rows) {
+          if (!append({ entity, id: row.meetingId, revision: row.revision,
+            record: { ...row, hasSummary: Boolean(row.hasSummary) } })) return { items: records, hasMore: true };
+        }
+        continue;
+      }
       const source = entity === "project"
         ? { table: schema.syncedProject, id: schema.syncedProject.projectId, active: undefined }
         : entity === "recording" ? { table: schema.syncedRecording, id: schema.syncedRecording.sessionId, active: gt(schema.syncedRecording.revision, 0) }
