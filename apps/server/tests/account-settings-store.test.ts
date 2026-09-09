@@ -65,25 +65,25 @@ it.runIf(url)("migrates PostgreSQL under FORCE RLS and atomically merges concurr
     await client.query("COMMIT");
   } catch (error) { await client.query("ROLLBACK"); throw error; }
   finally { client.release(); }
-  for (const method of ["transcript", "audio"]) expect((await store.get(method))?.summary).toEqual(expectedSummary(method));
+  for (const method of ["transcript", "audio"]) expect((await store.get(method))?.summary).toEqual({ ...expectedSummary(method), detail: method === "audio" ? "medium" : "low" });
   expect((await pool!.query("SELECT * FROM app.account_settings")).rows).toEqual([]);
   expect((await pool!.query("SELECT * FROM app.summary_jobs")).rows).toEqual([{ settings: "immutable-job-settings" }]);
   expect(await store.get("other")).toBeNull();
   expect(await store.getRevision("audio")).toBe(1);
-  await store.update("audio", { summary: { detail: "standard" } });
+  await store.update("audio", { summary: { detail: "medium" } });
   expect(await store.getRevision("audio")).toBe(1);
   await Promise.all([
     store.update("audio", { summary: { methodSettings: { audio: { model: "changed" } } } }),
     store.update("audio", { summary: { methodSettings: { audio: { reasoningEffort: "high" } } } }),
-    store.update("audio", { summary: { detail: "detailed" } }),
+    store.update("audio", { summary: { detail: "high" } }),
   ]);
-  expect((await store.get("audio"))?.summary).toEqual({ ...expectedSummary("audio"), detail: "detailed", methodSettings: {
+  expect((await store.get("audio"))?.summary).toEqual({ ...expectedSummary("audio"), detail: "high", methodSettings: {
     ...expectedSummary("audio").methodSettings, audio: { model: "changed", reasoningEffort: "high" },
   } });
   expect(await store.getRevision("audio")).toBe(4);
-  await store.update("audio", { summary: { detail: "concise" } });
-  await store.update("audio", { summary: { detail: "standard" } });
-  expect((await store.get("audio"))?.summary.detail).toBe("standard");
+  await store.update("audio", { summary: { detail: "low" } });
+  await store.update("audio", { summary: { detail: "medium" } });
+  expect((await store.get("audio"))?.summary.detail).toBe("medium");
   await Promise.all([store.update("new", { outputLanguage: "en" }, true), store.update("new", { outputLanguage: "ja" }, true)]);
   const initial = await store.get("new");
   expect(await store.getRevision("new")).toBe(1);

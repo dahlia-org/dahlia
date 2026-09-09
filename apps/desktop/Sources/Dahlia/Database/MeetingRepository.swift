@@ -717,9 +717,18 @@ final class MeetingRepository {
     nonisolated func applyGeneratedSummary(
         toMeetingId meetingId: UUID,
         document: SummaryDocument,
-        tags: [String]
+        tags: [String],
+        expectation: SummaryGenerationExpectation? = nil
     ) throws {
         try dbQueue.write { db in
+            try expectation?.validate(meetingID: meetingId, in: db)
+            let processing = try expectation?.recordingSessionID.flatMap { try RecordingProcessing.load(sessionID: $0, in: db) }
+            if processing?.summaryApplied == true {
+                guard try SummaryBodyRecord.fetchOne(db, key: meetingId)?.document == document.databaseJSONString() else {
+                    throw TextContentError.changed
+                }
+                return
+            }
             guard var meeting = try MeetingRecord.fetchOne(db, key: meetingId) else { return }
 
             let existingSummary = try SummaryContent.fetchOne(db, key: meetingId)
@@ -753,6 +762,16 @@ final class MeetingRepository {
                 .deleteAll(db)
 
             try Self.mergeGeneratedSummaryTags(tags, meetingId: meetingId, recordEvents: true, in: db)
+            if let sessionID = expectation?.recordingSessionID, var processing {
+                processing.summaryApplied = true
+                processing.summaryExpectation = try SummaryGenerationExpectation(
+                    summaryDocument: document.databaseJSONString(), transcriptID: expectation?.transcriptID,
+                    recordingSessionID: sessionID, jobID: processing.id
+                )
+                processing.stage = .succeeded
+                processing.error = nil
+                try processing.save(sessionID: sessionID, in: db)
+            }
         }
     }
 

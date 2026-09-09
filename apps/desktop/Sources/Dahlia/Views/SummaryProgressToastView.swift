@@ -94,7 +94,7 @@ private struct SummaryGenerationJobProgressView: View {
                     .font(.callout.weight(.semibold))
                     .lineLimit(1)
                 Spacer(minLength: 8)
-                if job.hasFailure, job.isFinished {
+                if job.hasFailure || job.isCancelled, job.isFinished {
                     Button(L10n.close, systemImage: "xmark", action: { onDismiss(job.id) })
                         .labelStyle(.iconOnly)
                         .dahliaFixedSymbol()
@@ -103,6 +103,19 @@ private struct SummaryGenerationJobProgressView: View {
                 }
             }
 
+            if job.isCancelled {
+                Text(L10n.processingCancelled).font(.caption).foregroundStyle(.secondary)
+            }
+            if let retry = job.retry, job.isFinished, job.hasFailure || job.isCancelled {
+                Button(L10n.retry, action: retry).buttonStyle(.borderless)
+            }
+            if let stage = job.stageLabel {
+                Text(stage).font(.caption).foregroundStyle(.secondary)
+                    .accessibilityAddTraits(.updatesFrequently)
+            }
+            if let cancel = job.cancel, !job.isFinished {
+                Button(L10n.cancel, action: cancel).buttonStyle(.borderless)
+            }
             if !job.progress.transcription.isSkipped {
                 SummaryProgressStepRow(
                     label: L10n.transcription,

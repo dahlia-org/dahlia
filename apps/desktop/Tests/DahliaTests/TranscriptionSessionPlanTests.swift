@@ -3,6 +3,21 @@
     @testable import Dahlia
 
     struct TranscriptionSessionPlanTests {
+        @Test(arguments: [false, true], [false, true])
+        func liveDraftIsIndependentOfSubtitlesAndSharesRecognition(draft: Bool, subtitles: Bool) {
+            var plan = TranscriptionSessionPlan(
+                finalMode: .batch,
+                liveSubtitlesEnabled: subtitles,
+                liveTranscriptDraftEnabled: draft
+            )
+            #expect(plan.recordsBatchAudio)
+            #expect(plan.persistsRealtimeTranscript == draft)
+            #expect(plan.liveRecognizerCountPerSource == (draft || subtitles ? 1 : 0))
+            plan.liveChatEnabled = true
+            #expect(plan.liveRecognizerCountPerSource == 1)
+            #expect(plan.persistsRealtimeTranscript == draft)
+        }
+
         @Test
         func batchIsTheDefaultTranscriptionMode() {
             #expect(TranscriptionMode.defaultMode == .batch)
@@ -12,19 +27,19 @@
         func capabilitiesCoverAllModeAndSubtitleCombinations() {
             let realtimeWithoutSubtitles = TranscriptionSessionPlan(
                 finalMode: .realtime,
-                liveSubtitlesEnabled: false,
+                liveSubtitlesEnabled: false
             )
             let realtimeWithSubtitles = TranscriptionSessionPlan(
                 finalMode: .realtime,
-                liveSubtitlesEnabled: true,
+                liveSubtitlesEnabled: true
             )
             let batchWithoutSubtitles = TranscriptionSessionPlan(
                 finalMode: .batch,
-                liveSubtitlesEnabled: false,
+                liveSubtitlesEnabled: false
             )
             let batchWithSubtitles = TranscriptionSessionPlan(
                 finalMode: .batch,
-                liveSubtitlesEnabled: true,
+                liveSubtitlesEnabled: true
             )
 
             #expect(realtimeWithoutSubtitles.requiresLiveRecognition)
@@ -56,7 +71,7 @@
         func liveSubtitleCapabilityCanChangeWithoutChangingFinalMode() {
             var plan = TranscriptionSessionPlan(
                 finalMode: .batch,
-                liveSubtitlesEnabled: false,
+                liveSubtitlesEnabled: false
             )
 
             plan.liveSubtitlesEnabled = true

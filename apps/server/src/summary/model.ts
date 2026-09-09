@@ -1,3 +1,4 @@
+import type { GeneratedTranscript } from "./transcription";
 import type { SummaryMetadata } from "./metadata";
 import { z } from "zod";
 import type { AccountSettings } from "../account-settings";
@@ -6,13 +7,31 @@ import type { IdentitySyncStore } from "../sync/types";
 
 import { summaryDetailSchema, summaryModelSettingsSchema } from "../account-settings-model";
 export { summaryDetailSchema } from "../account-settings-model";
-export const transcriptSettingsSchema = summaryModelSettingsSchema.extend({ detail: summaryDetailSchema });
+export const transcriptSettingsSchema = summaryModelSettingsSchema.extend({ detail: summaryDetailSchema, transcriptionReasoningEffort: summaryModelSettingsSchema.shape.reasoningEffort.optional() });
 export type TranscriptSettings = z.infer<typeof transcriptSettingsSchema>;
+const contentVersion = z.string().min(1).max(200);
+export const summaryInputSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("transcript"), version: contentVersion }).strict(),
+  z.object({ type: z.literal("recording"), recordings: z.array(z.object({
+    micFileId: z.uuid().transform((value) => value.toLowerCase()).nullable(),
+    systemFileId: z.uuid().transform((value) => value.toLowerCase()).nullable(),
+  }).strict().refine((pair) => pair.micFileId !== null || pair.systemFileId !== null)).min(1).max(1000)
+    .refine((pairs) => { const ids = pairs.flatMap((pair) => [pair.micFileId, pair.systemFileId]).filter((id) => id !== null); return new Set(ids).size === ids.length; }),
+    transcriptionModel: z.string().trim().min(1).max(200).optional() }).strict(),
+]);
+export type SummaryInput = z.infer<typeof summaryInputSchema>;
+export type SummaryStage = "transcribing" | "summarizing" | "generating" | "saving";
+export interface SummaryTranscriptResult {
+  transcriptId: string; version: string;
+}
+export type SummaryGenerationResult = SummaryDocument & { transcript?: GeneratedTranscript };
 export interface SummaryJob {
   id: string; vaultId: string; meetingId: string; ownerUserId: string;
   method: "transcript" | "audio"; settings: TranscriptSettings; outputLanguage: string;
   status: string; attempts: number; createdAt: Date; availableAt: Date;
   claimedAt: Date | null; leaseExpiresAt: Date | null; lastErrorCode: string | null;
+  input?: SummaryInput | null; stage?: SummaryStage | null;
+  transcriptRevision?: number | null; transcriptResult?: SummaryTranscriptResult | null;
   summaryRevision: number; inputVersion: string; requestHash: string;
 }
 export class SummaryError extends Error {
@@ -59,6 +78,8 @@ export type SummaryDocument = ReturnType<typeof summaryDocument> & { metadata?: 
 export interface SummaryMethod {
   readonly id: SummaryJob["method"];
   captureSettings(settings: AccountSettings, detail?: z.infer<typeof summaryDetailSchema>): SummaryJob["settings"];
-  version(store: IdentitySyncStore, vaultId: string, meetingId: string): Promise<string>;
-  generate(job: SummaryJob, signal: AbortSignal): Promise<SummaryDocument>;
+  validateSettings?(settings: TranscriptSettings, input?: SummaryInput): Promise<void>;
+  version(store: IdentitySyncStore, vaultId: string, meetingId: string, input?: SummaryInput | null): Promise<string>;
+  transcribe?(job: SummaryJob, signal: AbortSignal): Promise<GeneratedTranscript>;
+  generate(job: SummaryJob, signal: AbortSignal): Promise<SummaryGenerationResult>;
 }

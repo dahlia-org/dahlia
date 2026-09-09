@@ -25,3 +25,20 @@ it("omits maxItems and accepts arrays beyond every former limit", () => {
   expect(() => summaryDocument({ ...value, sections: [{ heading: "Image", blocks: [{ ...block, type: "image", image_id: "unknown" }] }] }, new Set()))
     .toThrow("summary_invalid_image_reference");
 });
+
+
+it("normalizes legacy details without changing their meaning or reasoning effort", async () => {
+  const { summaryDetailSchema, summaryDetails, DEFAULT_ACCOUNT_SETTINGS, accountSettingsPatchSchema } = await import("../src/account-settings-model");
+  for (const [old, canonical] of [["concise", "low"], ["standard", "medium"], ["detailed", "high"], ["eventSession", "xhigh"]]) {
+    expect(summaryDetailSchema.parse(old)).toBe(canonical);
+    expect(accountSettingsPatchSchema.parse({ summary: { detail: old } })).toEqual({ summary: { detail: canonical } });
+  }
+  expect(DEFAULT_ACCOUNT_SETTINGS.summary.detail).toBe("high");
+  expect(summaryDetails).toEqual(["low", "medium", "high", "xhigh", "max"]);
+  for (const value of summaryDetails) expect(summaryDetailSchema.parse(value)).toBe(value);
+  expect(summaryDetailSchema.safeParse("unknown").success).toBe(false);
+  expect(accountSettingsPatchSchema.parse({ summary: { detail: "max", methodSettings: { transcript: { reasoningEffort: "low" } } } }))
+    .toEqual({ summary: { detail: "max", methodSettings: { transcript: { reasoningEffort: "low" } } } });
+  const { summaryInstructions } = await import("../src/summary/transcript");
+  expect(summaryInstructions("en", "max")).toContain("event play-by-play");
+});

@@ -23,14 +23,14 @@ struct ServerAccountSettings: Codable, Equatable, Sendable {
 
         var selectedSettings: SummaryModelSettings? {
             switch method {
-            case "transcript": methodSettings.transcript
+            case "transcript", "cloudTranscription": methodSettings.transcript
             case "audio": methodSettings.audio
             default: nil
             }
         }
 
         var detailLevel: SummaryDetailLevel? {
-            SummaryDetailLevel(rawValue: detail)
+            SummaryDetailLevel.fromPersistedValue(detail)
         }
     }
 

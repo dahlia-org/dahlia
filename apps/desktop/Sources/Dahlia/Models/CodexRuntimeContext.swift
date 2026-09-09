@@ -1,6 +1,6 @@
 import Foundation
 
-enum CodexRuntimeProvider: Hashable, Sendable {
+enum CodexRuntimeProvider: Codable, Hashable, Sendable {
     case chatGPTSubscription
     case databricks(profile: String)
     case dahlia(connectionID: UUID)

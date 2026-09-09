@@ -6,6 +6,16 @@
 
     @MainActor
     struct ServerAccountSettingsTests {
+        @Test(arguments: [[], ["transcript"], ["audio"], ["transcript", "audio"]])
+        func recordingChoicesRequireTheirServerMethods(methods: [String]) {
+            var state = ServerAccountSettingsModel.State()
+            state.summaryMethods = methods
+            let choices = state.recordingProcessingMethods
+            #expect(choices.contains(.transcript) == methods.contains("transcript"))
+            #expect(choices.contains(.audio) == methods.contains("audio"))
+            #expect(choices.contains(.cloudTranscription) == (methods.contains("transcript") && methods.contains("audio")))
+        }
+
         @Test
         func initializesOnceAndKeepsMemoryReadOnlyAfterFailureOrDisconnect() async {
             let account = connection()

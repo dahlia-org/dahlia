@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { normalizeSummaryDetail } from "../account-settings-model";
 
 const reasoning = z.object({ effort: z.string().max(100).nullish(), summary: z.string().max(100).nullish() });
 const tokens = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).nullish();
@@ -18,7 +19,7 @@ export const summaryResponseMetadataSchema = z.object({
 export const summaryMetadataSchema = z.object({
   generatedBy: z.enum(["server", "local_codex"]),
   inputTypes: z.array(z.enum(["transcript", "image", "audio", "note", "context"])).max(5),
-  detailLevel: z.string().max(100).nullish(),
+  detailLevel: z.string().max(100).transform(normalizeSummaryDetail).nullish(),
   outputLanguage: z.string().max(100).nullish(),
   request: z.object({ model: z.string().max(500).nullish(), reasoning: reasoning.optional() }),
   response: summaryResponseMetadataSchema.optional(),

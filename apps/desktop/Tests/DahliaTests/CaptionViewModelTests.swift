@@ -248,20 +248,17 @@ import os
         func liveBatchTranslationVisibilityUsesLiveRecognitionLocale() {
             let settings = AppSettings.shared
             let previousValues = (
-                settings.transcriptionMode,
                 settings.transcriptionLocale,
                 settings.liveSubtitleLocale,
                 settings.liveSubtitleTranslationEnabled,
                 settings.liveSubtitleTranslationTargetLanguage
             )
             defer {
-                settings.transcriptionMode = previousValues.0
-                settings.transcriptionLocale = previousValues.1
-                settings.liveSubtitleLocale = previousValues.2
-                settings.liveSubtitleTranslationEnabled = previousValues.3
-                settings.liveSubtitleTranslationTargetLanguage = previousValues.4
+                settings.transcriptionLocale = previousValues.0
+                settings.liveSubtitleLocale = previousValues.1
+                settings.liveSubtitleTranslationEnabled = previousValues.2
+                settings.liveSubtitleTranslationTargetLanguage = previousValues.3
             }
-            settings.transcriptionMode = .batch
             settings.transcriptionLocale = "en_US"
             settings.liveSubtitleLocale = "ja_JP"
             settings.liveSubtitleTranslationEnabled = true
@@ -279,29 +276,27 @@ import os
         func liveSubtitleTranslationUsesCurrentRecognitionLanguage() {
             let settings = AppSettings.shared
             let previousValues = (
-                settings.transcriptionMode,
                 settings.transcriptionLocale,
                 settings.liveSubtitleLocale,
                 settings.liveSubtitleTranslationEnabled,
                 settings.liveSubtitleTranslationTargetLanguage
             )
             defer {
-                settings.transcriptionMode = previousValues.0
-                settings.transcriptionLocale = previousValues.1
-                settings.liveSubtitleLocale = previousValues.2
-                settings.liveSubtitleTranslationEnabled = previousValues.3
-                settings.liveSubtitleTranslationTargetLanguage = previousValues.4
+                settings.transcriptionLocale = previousValues.0
+                settings.liveSubtitleLocale = previousValues.1
+                settings.liveSubtitleTranslationEnabled = previousValues.2
+                settings.liveSubtitleTranslationTargetLanguage = previousValues.3
             }
             settings.transcriptionLocale = "ja_JP"
             settings.liveSubtitleLocale = "en_US"
             settings.liveSubtitleTranslationEnabled = true
             settings.liveSubtitleTranslationTargetLanguage = "en"
 
-            settings.transcriptionMode = .realtime
-            #expect(settings.isLiveSubtitleTranslationEffectivelyEnabled)
-
-            settings.transcriptionMode = .batch
             #expect(!settings.isLiveSubtitleTranslationEffectivelyEnabled)
+
+            settings.liveSubtitleLocale = "ja_JP"
+
+            #expect(settings.isLiveSubtitleTranslationEffectivelyEnabled)
         }
 
         @Test

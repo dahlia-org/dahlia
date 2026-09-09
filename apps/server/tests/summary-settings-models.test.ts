@@ -5,6 +5,16 @@ import { ServerSummaryGeneration, ServerSummarySettings } from "../src/client/Su
 import { useLiveJSON } from "../src/client/live-data";
 import { DEFAULT_ACCOUNT_SETTINGS } from "../src/account-settings-model";
 import { modelList } from "../src/ai-gateway/models";
+import { isStructuredSummaryModel } from "../src/summary/audio-model";
+
+it("preserves structured output support for available fallback models including the account default", () => {
+  const supported = [DEFAULT_ACCOUNT_SETTINGS.summary.methodSettings.transcript.model, "gpt-5.4-mini", "gpt-5.2"];
+  const unsupported = ["gpt-5.4-pro", "gpt-unknown"];
+  const catalog = modelList([...supported, ...unsupported].map((id) => ({ id })));
+  for (const id of supported) expect(isStructuredSummaryModel(id, catalog)).toBe(true);
+  for (const id of unsupported) expect(isStructuredSummaryModel(id, catalog)).toBe(false);
+  expect(isStructuredSummaryModel("gpt-5.4", modelList([]))).toBe(false);
+});
 
 // These tests inspect available choices; real picker interactions run in tests/browser/select.html.
 vi.mock("../src/client/Select", () => ({ Select: ({ value, disabled, children }: ComponentProps<typeof import("../src/client/Select").Select>) =>
@@ -49,11 +59,11 @@ it.each([true, false])("filters audio choices to available audio-capable Gemini 
   vi.mocked(useLiveJSON).mockImplementation((url) => ({
     data: url === "/api/v1/models" ? catalog
       : url === "/api/v1/capabilities" ? { meetingSummaryGeneration: { version: 1, sources: ["transcript", "audio"] } }
-      : { settings: { summary: { method: "audio", detail: "standard", methodSettings: { audio: { model: "gemini-3-8-flash", reasoningEffort: "medium" } } } } },
+      : { settings: { summary: { method: "audio", detail: "medium", methodSettings: { audio: { model: "gemini-3-8-flash", reasoningEffort: "medium" } } } } },
     loading: false, error: undefined, reload: vi.fn(), replace: vi.fn(),
   }));
   const html = renderToStaticMarkup(createElement(ServerSummarySettings));
-  expect(html).toContain("Summary source"); expect(html).toContain("Audio and images");
+  expect(html).toContain("Summary source"); expect(html).toContain("Summarize recordings directly");
   expect(html).not.toContain('value="gpt-5.6-terra"'); expect(html).not.toContain('value="codex-auto-review"');
   expect(html).not.toContain('value="gemini-unknown"');
   if (available) { expect(html).toContain('value="gemini-3-8-flash" selected'); expect(html).toContain('value="gemini-3-7-flash"'); }

@@ -116,6 +116,7 @@ function fallbackCodexModel(slug: string): CodexModelWire {
     visibility: "list",
     supported_in_api: true,
     priority: 99,
+    supports_json_schema: ["gpt-5.4", "gpt-5.4-mini", "gpt-5.2"].includes(slug),
     availability_nux: null,
     upgrade: null,
     model_messages: {

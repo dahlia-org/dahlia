@@ -28,7 +28,7 @@ enum BatchTranscriptionConfirmationService {
         return try await dbQueue.write { db in
             let session = try validSession(id: sessionId, db: db)
             let sessions: [RecordingSessionRecord]
-            if session.batchLastError?.nilIfBlank != nil {
+            if session.processingJSON != nil || session.batchLastError?.nilIfBlank != nil {
                 sessions = [session]
             } else {
                 guard session.batchLastError == nil,
@@ -56,6 +56,10 @@ enum BatchTranscriptionConfirmationService {
                     db: db
                 )
             }
+            if var processing = try RecordingProcessing.load(sessionID: sessionId, in: db) {
+                processing.sessionIDs = sessions.map(\.id)
+                try processing.save(sessionID: sessionId, in: db)
+            }
             return Result(meetingId: session.meetingId, sessionIds: sessions.map(\.id))
         }
     }
@@ -65,6 +69,8 @@ extension BatchTranscriptionConfirmationService {
     /// Requeues completed sessions without removing their last successful transcript.
     static func confirmRetranscription(
         sessionIds: [UUID],
+        processing: RecordingProcessing? = nil,
+        processingSessionID: UUID? = nil,
         languageSelection: BatchTranscriptionLanguageSelection,
         automaticLanguageCandidates: BatchLanguageDetectionCandidateSnapshot?,
         dbQueue: DatabaseQueue
@@ -120,6 +126,17 @@ extension BatchTranscriptionConfirmationService {
                     db: db
                 )
             }
+            // A deliberate regeneration supersedes the old recording operation, including its cached results.
+            for session in sessions {
+                try db.execute(sql: "UPDATE recording_sessions SET processingJSON = NULL WHERE id = ?", arguments: [session.id])
+            }
+            if var processing {
+                guard let processingSessionID, sessions.contains(where: { $0.id == processingSessionID }) else {
+                    throw CocoaError(.fileNoSuchFile)
+                }
+                processing.sessionIDs = sessions.map(\.id)
+                try processing.save(sessionID: processingSessionID, in: db)
+            }
             return Result(meetingId: meetingId, sessionIds: sessions.map(\.id))
         }
     }
@@ -146,7 +163,7 @@ extension BatchTranscriptionConfirmationService {
             try db.execute(
                 sql: """
                 UPDATE recording_sessions
-                SET batchLastAttemptAt = batchCompletedAt, batchAttemptCount = 0,
+                SET batchLastAttemptAt = batchCompletedAt, batchAttemptCount = 0, processingJSON = NULL,
                     batchLastError = NULL, batchFailureKind = NULL, updatedAt = ?
                 WHERE id IN (\(databasePlaceholders(count: uniqueSessionIds.count)))
                 """,

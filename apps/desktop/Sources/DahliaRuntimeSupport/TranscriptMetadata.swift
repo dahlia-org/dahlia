@@ -21,6 +21,17 @@ public struct TranscriptMetadata: Codable, Equatable, Sendable {
     }
 
     public struct Run: Codable, Equatable, Sendable {
+        public struct AudioInput: Codable, Equatable, Sendable {
+            public var recordingNumber: Int
+            public var source: String
+            public var checksum: String
+            public init(recordingNumber: Int, source: String, checksum: String) {
+                self.recordingNumber = recordingNumber
+                self.source = source
+                self.checksum = checksum
+            }
+        }
+
         public var generatedBy: String
         public var inputTypes: [String]
         public var startedAt: Date?
@@ -28,13 +39,16 @@ public struct TranscriptMetadata: Codable, Equatable, Sendable {
         public var language: Language?
         public var recognitionLocales: [String]?
         public var response: SummaryMetadata.Response?
+        public var audioInputs: [AudioInput]?
+        public var recordingSessionId: UUID?
 
         public init(
             generatedBy: String = "desktop",
             startedAt: Date?,
             completedAt: Date? = nil,
             language: Language? = nil,
-            recognitionLocales: [String]? = nil
+            recognitionLocales: [String]? = nil,
+            recordingSessionId: UUID? = nil
         ) {
             self.generatedBy = generatedBy
             self.inputTypes = ["audio"]
@@ -42,6 +56,7 @@ public struct TranscriptMetadata: Codable, Equatable, Sendable {
             self.completedAt = completedAt
             self.language = language
             self.recognitionLocales = recognitionLocales
+            self.recordingSessionId = recordingSessionId
         }
     }
 

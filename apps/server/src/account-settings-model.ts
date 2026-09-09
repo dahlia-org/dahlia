@@ -1,14 +1,24 @@
 import { z } from "zod";
 
-const outputLanguage = z.enum(["ja", "en", "zh", "ko", "fr", "de", "es"]);
+export const outputLanguageSchema = z.enum(["ja", "en", "zh", "ko", "fr", "de", "es"]);
 const analysisLanguages = z.object({
   scope: z.enum(["all", "selected"]),
   identifiers: z.array(z.string().regex(/^[a-z]{2,3}(?:-[A-Z][a-z]{3})?$/)).max(200)
     .transform((values) => [...new Set(values)].sort()),
 }).strict().refine((value) => value.scope === "all" || value.identifiers.length > 0);
 
-const summaryMethodSchema = z.enum(["transcript", "audio"]);
-export const summaryDetailSchema = z.enum(["concise", "standard", "detailed", "eventSession"]);
+const summaryMethodSchema = z.enum(["transcript", "cloudTranscription", "audio"]);
+export const summaryDetails = ["low", "medium", "high", "xhigh", "max"] as const;
+export function normalizeSummaryDetail(value: string): string {
+  switch (value) {
+    case "concise": return "low";
+    case "standard": return "medium";
+    case "detailed": return "high";
+    case "eventSession": return "xhigh";
+    default: return value;
+  }
+}
+export const summaryDetailSchema = z.string().transform(normalizeSummaryDetail).pipe(z.enum(summaryDetails));
 export const summaryModelSettingsSchema = z.object({
   model: z.string().trim().min(1).max(200),
   reasoningEffort: z.enum(["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"]),
@@ -18,18 +28,18 @@ const summarySchema = z.object({
   detail: summaryDetailSchema,
   methodSettings: z.object({ transcript: summaryModelSettingsSchema, audio: summaryModelSettingsSchema }).strict(),
 }).strict();
-export const accountSettingsSchema = z.object({ outputLanguage, analysisLanguages, summary: summarySchema }).strict();
+export const accountSettingsSchema = z.object({ outputLanguage: outputLanguageSchema, analysisLanguages, summary: summarySchema }).strict();
 export type AccountSettings = z.infer<typeof accountSettingsSchema>;
 export const DEFAULT_ACCOUNT_SETTINGS: AccountSettings = {
   outputLanguage: "ja",
-  summary: { method: "transcript", detail: "detailed", methodSettings: {
+  summary: { method: "transcript", detail: "high", methodSettings: {
     transcript: { model: "gpt-5.4", reasoningEffort: "medium" },
     audio: { model: "gemini-3-8-flash", reasoningEffort: "medium" },
   } },
   analysisLanguages: { scope: "all", identifiers: [] },
 };
 export const accountSettingsPatchSchema = z.object({
-  outputLanguage: outputLanguage.optional(), analysisLanguages: analysisLanguages.optional(),
+  outputLanguage: outputLanguageSchema.optional(), analysisLanguages: analysisLanguages.optional(),
   summary: z.object({
     method: summaryMethodSchema.optional(),
     detail: summaryDetailSchema.optional(),

@@ -66,9 +66,7 @@ struct LiveSubtitleSettingsView: View {
                 if !settings.liveSubtitleTranslationEnabled {
                     Text(L10n.enableLiveSubtitleTranslationToChooseLanguage)
                 } else if !settings.isLiveSubtitleTranslationEffectivelyEnabled {
-                    Text(settings.transcriptionMode == .realtime
-                        ? L10n.liveSubtitleTranslationDisabledForMatchingTranscriptionLanguage
-                        : L10n.liveSubtitleTranslationDisabledForMatchingLiveSubtitleLanguage)
+                    Text(L10n.liveSubtitleTranslationDisabledForMatchingLiveSubtitleLanguage)
                 }
             }
         }

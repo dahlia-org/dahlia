@@ -1,4 +1,4 @@
-struct SummaryGenerationOptions: Equatable {
+struct SummaryGenerationOptions: Codable, Equatable {
     let exportOptions: SummaryExportOptions
     let detailLevel: SummaryDetailLevel?
 

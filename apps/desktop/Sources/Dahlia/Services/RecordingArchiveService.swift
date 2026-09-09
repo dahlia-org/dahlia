@@ -50,8 +50,7 @@ actor RecordingArchiveService {
                    OR (v.accountConnectionId = a.connectionId AND v.syncConfirmedConnectionId = a.connectionId))
               AND (a.connectionId IS NULL) = ?
               AND v.syncRecoveryState IS NULL AND COALESCE(v.syncRole, 'owner') = 'owner'
-              AND s.endedAt IS NOT NULL AND s.batchCompletedAt IS NOT NULL AND s.batchDiscardedAt IS NULL
-              AND (s.batchLastAttemptAt IS NULL OR s.batchLastAttemptAt <= s.batchCompletedAt)
+              AND s.endedAt IS NOT NULL AND s.batchDiscardedAt IS NULL
               AND NOT EXISTS (SELECT 1 FROM recording_audio_segments WHERE recordingSessionId = a.sessionId AND state NOT IN ('ready', 'purgePending', 'purged'))
               AND NOT EXISTS (SELECT 1 FROM sync_transactions WHERE vaultId = a.vaultId)
               AND NOT EXISTS (SELECT 1 FROM recording_audio_segments WHERE state IN ('recording', 'finalizing'))

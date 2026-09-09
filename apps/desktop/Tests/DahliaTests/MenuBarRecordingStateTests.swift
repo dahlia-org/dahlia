@@ -25,17 +25,15 @@
         }
 
         @Test
-        func routesLiveSubtitleLocaleByTranscriptionMode() {
+        func liveSubtitleLocaleIsIndependentOfFinalTranscription() {
             let settings = AppSettings.shared
             let previousValues = (
-                settings.transcriptionMode,
                 settings.transcriptionLocale,
                 settings.liveSubtitleLocale
             )
             defer {
-                settings.transcriptionMode = previousValues.0
-                settings.transcriptionLocale = previousValues.1
-                settings.liveSubtitleLocale = previousValues.2
+                settings.transcriptionLocale = previousValues.0
+                settings.liveSubtitleLocale = previousValues.1
             }
             settings.transcriptionLocale = "ja_JP"
             settings.liveSubtitleLocale = "de_DE"
@@ -43,14 +41,12 @@
             let viewModel = makeViewModel()
             let state = MenuBarRecordingState(viewModel: viewModel)
 
-            settings.transcriptionMode = .realtime
             state.selectLiveSubtitleLocale("en_US")
-            #expect(state.transcriptionLocale == "en_US")
-            #expect(state.liveSubtitleLocale == "de_DE")
+            #expect(state.transcriptionLocale == "ja_JP")
+            #expect(state.liveSubtitleLocale == "en_US")
 
-            settings.transcriptionMode = .batch
             state.selectLiveSubtitleLocale("fr_FR")
-            #expect(state.transcriptionLocale == "en_US")
+            #expect(state.transcriptionLocale == "ja_JP")
             #expect(state.liveSubtitleLocale == "fr_FR")
         }
 

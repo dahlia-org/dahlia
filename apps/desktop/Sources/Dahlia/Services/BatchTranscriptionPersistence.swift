@@ -5,6 +5,31 @@ import GRDB
 
 /// Publish a complete new transcript and its generation facts in one local transaction.
 enum BatchTranscriptionPersistence {
+    static func validateReplacementCoverage(meetingID: UUID, sessions: [RecordingSessionRecord], in db: Database) throws {
+        let ids = sessions.map(\.id)
+        let uncovered = try TranscriptSegmentRecord.filter(Column("meetingId") == meetingID)
+            .filter(Column("sessionId") == nil || !ids.contains(Column("sessionId"))).fetchCount(db)
+        guard uncovered > 0 else { return }
+        guard let metadata = try TranscriptRecord.current(meetingID, in: db)?.metadata, !metadata.runs.isEmpty,
+              let meeting = try MeetingRecord.fetchOne(db, key: meetingID),
+              let vault = try VaultRecord.fetchOne(db, key: meeting.vaultId) else { throw TranscriptVersionError.fullTranscriptionUnavailable }
+        let archives = try RecordingArchiveRecord.filter(Column("meetingId") == meetingID)
+            .filter(ids.contains(Column("sessionId"))).fetchAll(db)
+        for run in metadata.runs {
+            if run.generatedBy == "desktop", let sessionID = run.recordingSessionId, ids.contains(sessionID) { continue }
+            guard run.generatedBy == "server", let inputs = run.audioInputs, !inputs.isEmpty else {
+                throw TranscriptVersionError.fullTranscriptionUnavailable
+            }
+            for input in inputs {
+                guard let archive = archives.first(where: {
+                    $0.number == input.recordingNumber && $0.vaultId == vault.id && $0.connectionId == vault.accountConnectionId
+                }), try archive.audio[input.source]?.checksum == input.checksum else {
+                    throw TranscriptVersionError.fullTranscriptionUnavailable
+                }
+            }
+        }
+    }
+
     static func complete(
         sessionId: UUID,
         meetingId: UUID,
@@ -26,11 +51,20 @@ enum BatchTranscriptionPersistence {
                   session.batchCompletedAt == nil || session.isBatchRetranscriptionPending else {
                 throw CancellationError()
             }
+            guard try RecordingProcessing.load(sessionID: sessionId, in: db)?.stage != .cancelled else { throw CancellationError() }
             let previous = try TranscriptRecord.current(meetingId, in: db)
             guard previous?.id == expectedTranscriptId else { throw TextContentError.changed }
             if let expectedSessions {
                 for expected in expectedSessions {
-                    guard try RecordingSessionRecord.fetchOne(db, key: expected.id) == expected else { throw CancellationError() }
+                    guard var current = try RecordingSessionRecord.fetchOne(db, key: expected.id) else { throw CancellationError() }
+                    let expectedProcessing = try expected.processingJSON.map {
+                        try JSONDecoder().decode(RecordingProcessing.self, from: Data($0.utf8))
+                    }
+                    let currentProcessing = try RecordingProcessing.load(sessionID: expected.id, in: db)
+                    guard currentProcessing?.id == expectedProcessing?.id,
+                          currentProcessing?.stage != .cancelled || expectedProcessing?.stage == .cancelled else { throw CancellationError() }
+                    current.processingJSON = expected.processingJSON
+                    guard current == expected else { throw CancellationError() }
                 }
             }
             let sessions = expectedSessions ?? [session]
@@ -39,6 +73,7 @@ enum BatchTranscriptionPersistence {
                 throw TextContentError.integrityFailure
             }
             if replacingMeeting {
+                try validateReplacementCoverage(meetingID: meetingId, sessions: sessions, in: db)
                 guard try RecordingSessionRecord.filter(Column("meetingId") == meetingId)
                     .filter(Column("endedAt") == nil).fetchCount(db) == 0,
                     try RecordingSessionRecord.filter(Column("meetingId") == meetingId)
@@ -69,7 +104,8 @@ enum BatchTranscriptionPersistence {
                     locales: session
                         .batchSelectedLocaleIdentifier
                         .map { [$0] } ?? []
-                )
+                ),
+                recordingSessionId: session.id
             )] : runs
             let metadata = TranscriptMetadata(
                 provider: "apple",

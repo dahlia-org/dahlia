@@ -70,27 +70,27 @@ async function run() {
   createRoot(document.getElementById("root")!).render(<ServerSummarySettings />);
   await ready();
   await until(() => document.querySelectorAll('[role="combobox"]').length === 5 && modelReads === 1);
-  choose("Detail", "concise");
-  await until(() => settings.summary.detail === "concise");
+  choose("Detail", "low");
+  await until(() => settings.summary.detail === "low");
   await ready();
-  assert(JSON.stringify(patches.at(-1)) === '{"summary":{"detail":"concise"}}', "Detail PATCH must be common");
+  assert(JSON.stringify(patches.at(-1)) === '{"summary":{"detail":"low"}}', "Detail PATCH must be common");
   choose("Summary source", "audio");
   await until(() => settings.summary.method === "audio");
   await ready();
-  assert(select("Detail").value === "concise", "Switching method changed detail");
+  assert(select("Detail").value === "low", "Switching method changed detail");
 
   // A notification starts an old GET while PATCH is in flight. Its response must not undo the save.
   patchGate = gate();
-  choose("Detail", "standard");
-  await until(() => patches.at(-1)?.summary?.detail === "standard");
+  choose("Detail", "medium");
+  await until(() => patches.at(-1)?.summary?.detail === "medium");
   const staleRead = gate(); readGate = staleRead; readStarted = false;
   window.dispatchEvent(new Event(accountSettingsEvent));
   await until(() => readStarted);
   patchGate.release(); patchGate = undefined;
-  await until(() => select("Detail").value === "standard");
+  await until(() => select("Detail").value === "medium");
   staleRead.release();
   await ready();
-  assert(select("Detail").value === "standard", "Old GET overwrote PATCH");
+  assert(select("Detail").value === "medium", "Old GET overwrote PATCH");
   assert(modelReads === 1, "Settings updates reloaded models");
 
   settings.outputLanguage = "fr";
@@ -98,13 +98,13 @@ async function run() {
   await until(() => select("Output language").value === "fr");
   await ready();
   failPatch = true;
-  choose("Detail", "detailed");
+  choose("Detail", "high");
   await until(() => document.querySelector('[role="alert"]'));
   await ready();
-  assert(select("Detail").value === "standard", "Failed save discarded confirmed settings");
+  assert(select("Detail").value === "medium", "Failed save discarded confirmed settings");
   failPatch = false;
-  choose("Detail", "detailed");
-  await until(() => select("Detail").value === "detailed");
+  choose("Detail", "high");
+  await until(() => select("Detail").value === "high");
   await ready();
   assert(!document.querySelector('[role="alert"]'), "Retry did not clear the save error");
   assert(modelReads === 1, "Retry reloaded models");

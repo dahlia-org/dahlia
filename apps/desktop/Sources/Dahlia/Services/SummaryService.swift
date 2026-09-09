@@ -3,7 +3,7 @@ import Foundation
 
 /// Codex app-server で文字起こしを要約し、Obsidian 互換の Markdown を生成するサービス。
 enum SummaryService {
-    struct GeneratedSummary {
+    struct GeneratedSummary: Codable, Sendable {
         let document: SummaryDocument
         let fileName: String
         let markdown: String

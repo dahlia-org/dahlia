@@ -4,9 +4,10 @@ struct TranscriptionSessionPlan: Equatable {
     let finalMode: TranscriptionMode
     var liveSubtitlesEnabled: Bool
     var liveChatEnabled = false
+    var liveTranscriptDraftEnabled = false
     /// 正本文字起こし、ライブ字幕、またはライブチャットのために逐次認識が必要か。
     var requiresLiveRecognition: Bool {
-        finalMode == .realtime || liveSubtitlesEnabled || liveChatEnabled
+        finalMode == .realtime || liveTranscriptDraftEnabled || liveSubtitlesEnabled || liveChatEnabled
     }
 
     /// バッチ文字起こし用の音声を録音するか。
@@ -16,7 +17,7 @@ struct TranscriptionSessionPlan: Equatable {
 
     /// 逐次認識の結果を正本文字起こしとして永続化するか。
     var persistsRealtimeTranscript: Bool {
-        finalMode == .realtime
+        finalMode == .realtime || liveTranscriptDraftEnabled
     }
 
     /// 有効な各音源に対して生成する逐次認識器数。

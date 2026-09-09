@@ -38,7 +38,7 @@ import GRDB
         }
 
         @Test
-        func vaultExportAndFallbackPersistenceFailureStillEmitExportTerminal() async throws {
+        func persistenceFailureDoesNotStartVaultExport() async throws {
             let fixture = try SummaryGenerationFixture()
             defer { fixture.removeFiles() }
             let runner = BlockingSummaryRunner()
@@ -63,8 +63,6 @@ import GRDB
 
             #expect(events == [
                 .summary(.started, trigger: .manual),
-                .export(.started, destination: .vault, trigger: .summaryGeneration),
-                .export(.failed(.export), destination: .vault, trigger: .summaryGeneration),
                 .summary(.failed(.generation), trigger: .manual),
             ])
         }

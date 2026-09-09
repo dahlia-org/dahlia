@@ -1,4 +1,4 @@
-import transcriptPolicy from "../../../desktop/Sources/DahliaRuntimeSupport/Resources/TranscriptPolicy.json";
+import transcriptPolicy from "./transcript-policy.json";
 import { z } from "zod";
 import { summaryResponseMetadataSchema } from "../summary/metadata";
 
@@ -15,6 +15,9 @@ export const transcriptMetadataSchema = z.object({
     language: z.object({ mode: z.enum(["auto", "fixed"]), locales: z.array(locale).max(100) }).strict().optional(),
     recognitionLocales: z.array(locale).max(100).optional(),
     response: summaryResponseMetadataSchema.optional(),
+    recordingSessionId: z.uuid().optional(),
+    audioInputs: z.array(z.object({ recordingNumber: z.number().int().positive(), source: z.enum(["mic", "system"]),
+      checksum: z.string().regex(/^SHA-256:[a-f0-9]{64}$/) }).strict()).min(1).max(2000).optional(),
   }).strict()).min(1).max(1000),
 }).strict().refine((value) => new TextEncoder().encode(JSON.stringify(value)).length <= 256 * 1024, "Transcript metadata is too large");
 

@@ -1,12 +1,13 @@
-import { and, asc, eq, lte, or, sql } from "drizzle-orm";
+import { and, asc, eq, lte, gt, or, sql } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import type { PostgresDatabase, SQLiteDatabase } from "../db/client";
 import * as postgresSchema from "../db/auth-schema";
 import * as sqliteSchema from "../db/sqlite-schema";
-import type { SummaryJob } from "./model";
+import { transcriptSettingsSchema, type SummaryJob, type SummaryStage } from "./model";
 
 export interface SummaryJobStore {
   claim(): Promise<SummaryJob | null>;
+  advance(job: SummaryJob, stage: SummaryStage): Promise<boolean>;
   fail(job: SummaryJob, code: string, retryable: boolean): Promise<void>;
 }
 export function createSummaryJobStore(database: PostgresDatabase | SQLiteDatabase, isPostgres: boolean): SummaryJobStore {
@@ -34,13 +35,22 @@ export function createSummaryJobStore(database: PostgresDatabase | SQLiteDatabas
               .where(eq(jobs.id, row.id));
             return null;
           }
-          const claimed = { ...row, status: "processing", attempts: row.attempts + 1, claimedAt: now, leaseExpiresAt: new Date(now.getTime() + 300_000) };
+          const claimed = { ...row, settings: transcriptSettingsSchema.parse(row.settings), status: "processing", attempts: row.attempts + 1, claimedAt: now, leaseExpiresAt: new Date(now.getTime() + 300_000) };
           await connection.update(jobs).set(claimed).where(eq(jobs.id, row.id));
           return claimed;
         });
         if (job) return job;
       }
       return null;
+    },
+    async advance(job, stage) {
+      return withOwner(job.ownerUserId, async (connection) => {
+        const updated = await connection.update(jobs).set({ stage }).where(and(
+          eq(jobs.id, job.id), eq(jobs.ownerUserId, job.ownerUserId), eq(jobs.status, "processing"),
+          eq(jobs.claimedAt, job.claimedAt!), gt(jobs.leaseExpiresAt, new Date()),
+        )).returning({ id: jobs.id });
+        return updated.length > 0;
+      });
     },
     async fail(job, code, retryable) {
       await withOwner(job.ownerUserId, async (connection) => {

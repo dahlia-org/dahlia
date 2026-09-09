@@ -8,6 +8,82 @@
 
     @MainActor
     struct TranscriptVersionTests {
+        @Test(arguments: ["covered", "missing", "checksum", "source", "changedDuringWork", "noProvenance", "localAppend", "foreignRun"])
+        func cloudReplacementRequiresAllOriginalAudioAtPreparationAndCommit(scenario: String) throws {
+            let fixture = try BatchAudioTestFixture(name: "CloudCoverage", endedAt: .now)
+            defer { fixture.removeFiles() }
+            let checksum = "SHA-256:" + String(repeating: "0", count: 64)
+            var run = TranscriptMetadata.Run(generatedBy: "server", startedAt: .now)
+            if scenario != "noProvenance" {
+                run.audioInputs = [.init(
+                    recordingNumber: scenario == "missing" ? 2 : 1,
+                    source: scenario == "source" ? "system" : "mic",
+                    checksum: checksum
+                )]
+            }
+            var runs = [run]
+            if scenario == "localAppend" || scenario == "foreignRun" {
+                runs.append(.init(startedAt: .now, recordingSessionId: scenario == "localAppend" ? fixture.session.id : .v7()))
+            }
+            let info = TranscriptInfo(
+                id: .v7(),
+                startedAt: fixture.now,
+                endedAt: .now,
+                metadata: .init(provider: "gemini", model: "gemini", runs: runs)
+            )
+            let audio = RecordingArchivedAudio(
+                contentType: "audio/mp4", size: 1, checksum: scenario == "checksum" ? "different" : checksum,
+                contentURL: "/recording", manifest: .init(sampleRate: 16000, frameCount: 16000, ranges: [])
+            )
+            let old = TranscriptContent(
+                from: .init(startTime: fixture.now, text: "cloud", isConfirmed: true),
+                meetingId: fixture.meeting.id,
+                defaultSessionId: nil
+            )
+            try fixture.database.dbQueue.write { db in
+                try TranscriptRecord(meetingId: fixture.meeting.id, info: info).insert(db)
+                try old.insert(db)
+                try RecordingArchiveRecord(
+                    sessionId: fixture.session.id,
+                    meetingId: fixture.meeting.id,
+                    vaultId: fixture.meeting.vaultId,
+                    number: 1,
+                    audioJSON: String(decoding: SyncJSON.encoder.encode(["mic": audio]), as: UTF8.self)
+                ).insert(db)
+            }
+            let prepare = {
+                try fixture.database.dbQueue.read { db in
+                    try BatchTranscriptionPersistence.validateReplacementCoverage(
+                        meetingID: fixture.meeting.id, sessions: [fixture.session], in: db
+                    )
+                }
+            }
+            let covered = scenario == "covered" || scenario == "changedDuringWork" || scenario == "localAppend"
+            if covered { try prepare() } else { #expect(throws: TranscriptVersionError.self) { try prepare() } }
+            if scenario == "changedDuringWork" {
+                try fixture.database.dbQueue.write { db in
+                    try db.execute(sql: "UPDATE recording_archives SET audioJSON = '{}' WHERE sessionId = ?", arguments: [fixture.session.id])
+                }
+            }
+            let replacement = TranscriptContent(
+                from: .init(startTime: fixture.now, text: "apple", isConfirmed: true),
+                meetingId: fixture.meeting.id,
+                defaultSessionId: fixture.session.id
+            )
+            let sessions = try fixture.database.dbQueue.read { db in try RecordingSessionRecord.fetchAll(db) }
+            let complete = {
+                try BatchTranscriptionPersistence.complete(
+                    sessionId: fixture.session.id, meetingId: fixture.meeting.id, records: [replacement], completedAt: .now,
+                    dbQueue: fixture.database.dbQueue, replacingMeeting: true,
+                    expectedTranscriptId: info.id, expectedSessions: sessions
+                )
+            }
+            if scenario == "covered" || scenario == "localAppend" { try complete() } else {
+                #expect(throws: TranscriptVersionError.self) { try complete() }
+                #expect(try fixture.database.dbQueue.read { try fetchTranscriptContent(id: old.id, in: $0)?.text } == "cloud")
+            }
+        }
+
         @Test
         func liveVersionSealsAndNextRunPreservesBody() throws {
             let fixture = try BatchAudioTestFixture(name: "TranscriptVersions")

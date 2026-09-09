@@ -146,9 +146,9 @@ struct MenuBarRecordingControls: View {
 
     private var effectiveTranscriptionMode: TranscriptionMode {
         if state.isListening {
-            state.activeTranscriptionMode ?? settings.transcriptionMode
+            state.activeTranscriptionMode ?? .batch
         } else {
-            settings.transcriptionMode
+            .batch
         }
     }
 

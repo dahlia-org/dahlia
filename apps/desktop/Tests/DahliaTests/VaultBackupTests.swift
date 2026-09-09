@@ -326,7 +326,8 @@ import GRDB
                 let vaultColumns = try db.columns(in: "vaults").map(\.name.quotedDatabaseIdentifier).joined(separator: ", ")
                 try db.execute(sql: "INSERT INTO vaults (\(vaultColumns)) SELECT \(vaultColumns) FROM current_backup.vaults")
                 try fixture.meeting.insert(db)
-                try fixture.session.insert(db)
+                let sessionColumns = try db.columns(in: "recording_sessions").map(\.name.quotedDatabaseIdentifier).joined(separator: ", ")
+                try db.execute(sql: "INSERT INTO recording_sessions (\(sessionColumns)) SELECT \(sessionColumns) FROM current_backup.recording_sessions")
                 try db.execute(
                     sql: "INSERT INTO transcript_segments(id, meetingId, startTime, text, isConfirmed) VALUES (?, ?, ?, ?, 1)",
                     arguments: [UUID.v7(), fixture.meeting.id, Date(), "old backup transcript"]
