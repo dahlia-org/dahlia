@@ -20,13 +20,45 @@ if [ -f .env.local ]; then
 fi
 
 SIGN_IDENTITY="${CODESIGN_IDENTITY:-Developer ID Application: Kazuki Matsuda (XCHHYPN52N)}"
-unlock_codesigning_keychain_if_needed
+
+BUILD_ONLY=false
+OPEN_SETTINGS=0
+for argument in "$@"; do
+    case "$argument" in
+        --build-only) BUILD_ONLY=true ;;
+        --settings) OPEN_SETTINGS=1 ;;
+        *) echo "usage: $0 [--build-only] [--settings]" >&2; exit 1 ;;
+    esac
+done
+
+CACHE_DIR="${PROJECT_DIR}/.build/run-dev"
+mkdir -p "$CACHE_DIR"
+if ! mkdir "${CACHE_DIR}/lock" 2>/dev/null; then
+    echo "error: another run-dev build holds ${CACHE_DIR}/lock; remove it only if that build is no longer running" >&2
+    exit 1
+fi
+trap 'rmdir "${CACHE_DIR}/lock"' EXIT
+
+fingerprint() {
+    python3 "${SCRIPT_DIR}/dev-build-fingerprint.py" "$@"
+}
 
 export CLANG_MODULE_CACHE_PATH="${TMPDIR:-/tmp}/dahlia-clang-module-cache"
 mkdir -p "$CLANG_MODULE_CACHE_PATH"
 
 echo "=== Building ${APP_NAME} (debug) ==="
-bash "${SCRIPT_DIR}/build-codex.sh"
+HELPER_INPUTS=(
+    "${SCRIPT_DIR}/build-codex.sh" "${SCRIPT_DIR}/common.sh" "${SCRIPT_DIR}/dev-build-fingerprint.py"
+    "$CODEX_ENTITLEMENTS_PATH" "Resources/Codex-LICENSE" "Resources/Codex-NOTICE.txt"
+    "apps/desktop/Sources/Dahlia/Services/CodexBundle.swift" ".build/codex-helper"
+)
+if [ -f "${CACHE_DIR}/helper.inputs" ] \
+    && [ "$(fingerprint "${HELPER_INPUTS[@]}")" = "$(cat "${CACHE_DIR}/helper.inputs")" ]; then
+    bash "${SCRIPT_DIR}/build-codex.sh" --validate-only
+else
+    bash "${SCRIPT_DIR}/build-codex.sh"
+    fingerprint "${HELPER_INPUTS[@]}" > "${CACHE_DIR}/helper.inputs"
+fi
 CODEX_VERSION="$(bash "${SCRIPT_DIR}/build-codex.sh" --print-version)"
 swift build --arch arm64
 
@@ -37,6 +69,86 @@ MACOS="${CONTENTS}/MacOS"
 HELPERS="${CONTENTS}/Helpers"
 ICON_SRC="apps/desktop/Sources/Dahlia/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon.png"
 ICONSET_DIR="${CONTENTS}/Resources/AppIcon.iconset"
+
+# ponytail: support assets share one cache; split it if resource-heavy edits become common.
+SUPPORT_INPUTS=(
+    "${SCRIPT_DIR}/run-dev.sh" "${SCRIPT_DIR}/common.sh" "${SCRIPT_DIR}/dev-build-fingerprint.py"
+    "$ENTITLEMENTS_PATH" "$CODEX_ENTITLEMENTS_PATH" "$ICON_SRC" "Resources"
+    "${BUILD_DIR}/dahlia-mcp" "${BUILD_DIR}/Dahlia_Dahlia.bundle"
+    "${BUILD_DIR}/Dahlia_DahliaRuntimeSupport.bundle" "${BUILD_DIR}/TelemetryDeck_TelemetryDeck.bundle"
+    ".build/codex-helper" ".build/artifacts/sparkle/Sparkle"
+    ".build/checkouts/argmax-oss-swift/LICENSE" ".build/checkouts/argmax-oss-swift/NOTICES"
+    ".build/checkouts/SwiftSDK/LICENSE" ".build/checkouts/libwebp-Xcode/LICENSE"
+    ".build/checkouts/libwebp-Xcode/libwebp/COPYING" ".build/checkouts/libwebp-Xcode/libwebp/PATENTS"
+    ".build/checkouts/libwebp-Xcode/libwebp/AUTHORS"
+    "Vendor/DahliaLindera-LICENSE.txt" "Vendor/DahliaLindera-THIRD-PARTY-NOTICES.txt"
+)
+# Hash configuration without persisting its potentially secret values.
+SUPPORT_FILE_FINGERPRINT="$(fingerprint "${SUPPORT_INPUTS[@]}")"
+SUPPORT_FINGERPRINT="$(
+    {
+        printf '%s\0' "$SUPPORT_FILE_FINGERPRINT" "$SIGN_IDENTITY" "${GOOGLE_CLIENT_ID:-}" "${GOOGLE_CLIENT_SECRET:-}" \
+            "${DAHLIA_CLOUD_URL:-}" "${DAHLIA_CLOUD_OAUTH_CLIENT_ID:-}" \
+            "${SENTRY_DSN:-}" "${TELEMETRYDECK_APP_ID:-}"
+    } | shasum -a 256
+)"
+APP_INPUT_FINGERPRINT="$(fingerprint "${BUILD_DIR}/${APP_NAME}")"
+
+ensure_app_is_not_running() {
+    if [ -f "${MACOS}/${APP_NAME}" ] \
+        && /usr/sbin/lsof -t "${PROJECT_DIR}/${MACOS}/${APP_NAME}" >/dev/null 2>&1; then
+        echo "error: this development app is running; finish recording and quit it before rebuilding" >&2
+        exit 1
+    fi
+}
+
+finish_build() {
+    if [ "$(lipo -archs "${MACOS}/${APP_NAME}")" != "arm64" ]; then
+        echo "error: Dahlia.app must contain only arm64" >&2
+        exit 1
+    fi
+    codesign --verify --deep --strict --verbose=2 "$APP_BUNDLE"
+    printf '%s\n' "$SUPPORT_FINGERPRINT" > "${CACHE_DIR}/support.inputs"
+    printf '%s\n' "$APP_INPUT_FINGERPRINT" > "${CACHE_DIR}/app.inputs"
+    fingerprint "$APP_BUNDLE" > "${CACHE_DIR}/app.output"
+    echo "=== ${APP_NAME} ready (${SECONDS}s) ==="
+    rmdir "${CACHE_DIR}/lock"
+    trap - EXIT
+    if "$BUILD_ONLY"; then
+        exit 0
+    fi
+
+    echo "=== Running ${APP_NAME} (development profile) ==="
+    local lsregister="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+    if [ -x "$lsregister" ]; then
+        "$lsregister" -f "$APP_BUNDLE" >/dev/null 2>&1 || true
+    fi
+    exec env DAHLIA_RUNTIME_PROFILE=development DAHLIA_DEV_OPEN_SETTINGS="$OPEN_SETTINGS" "${MACOS}/${APP_NAME}"
+}
+
+if [ -f "${CACHE_DIR}/support.inputs" ] && [ -f "${CACHE_DIR}/app.output" ] \
+    && [ "$SUPPORT_FINGERPRINT" = "$(cat "${CACHE_DIR}/support.inputs")" ] \
+    && [ "$(fingerprint "$APP_BUNDLE")" = "$(cat "${CACHE_DIR}/app.output")" ]; then
+    if [ -f "${CACHE_DIR}/app.inputs" ] \
+        && [ "$APP_INPUT_FINGERPRINT" = "$(cat "${CACHE_DIR}/app.inputs")" ]; then
+        echo "=== Reusing signed ${APP_NAME}.app ==="
+    else
+        echo "=== Updating ${APP_NAME} executable; reusing signed support assets ==="
+        ensure_app_is_not_running
+        unlock_codesigning_keychain_if_needed
+        cp "${BUILD_DIR}/${APP_NAME}" "${MACOS}/${APP_NAME}"
+        if has_entitlements "$ENTITLEMENTS_PATH"; then
+            codesign_path "$APP_BUNDLE" --entitlements "$ENTITLEMENTS_PATH"
+        else
+            codesign_path "$APP_BUNDLE"
+        fi
+    fi
+    finish_build
+fi
+
+ensure_app_is_not_running
+unlock_codesigning_keychain_if_needed
+echo "=== Assembling ${APP_NAME}.app ==="
 
 rm -rf "${APP_BUNDLE}"
 mkdir -p "${MACOS}"
@@ -132,16 +244,4 @@ else
     codesign_path "${MACOS}/${APP_NAME}"
     codesign_path "${APP_BUNDLE}"
 fi
-if [ "$(lipo -archs "${MACOS}/${APP_NAME}")" != "arm64" ]; then
-    echo "error: Dahlia.app must contain only arm64" >&2
-    exit 1
-fi
-codesign --verify --deep --strict --verbose=2 "${APP_BUNDLE}"
-
-echo "=== Running ${APP_NAME} (development profile) ==="
-LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
-if [ -x "$LSREGISTER" ]; then
-    "$LSREGISTER" -f "${APP_BUNDLE}" >/dev/null 2>&1 || true
-fi
-
-exec env DAHLIA_RUNTIME_PROFILE=development "${MACOS}/${APP_NAME}"
+finish_build

@@ -634,5 +634,6 @@ test_codex_code_mode_host_packaging
 test_telemetrydeck_adapter_allowlist
 test_codesigning_keychain_unlock
 test_pre_commit_compatibility_entrypoint
+python3 "${DESKTOP_SCRIPTS_DIR}/test-run-dev.py"
 
 echo "Release script tests passed"
