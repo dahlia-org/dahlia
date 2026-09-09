@@ -80,6 +80,7 @@
     "test": "vitest run",
     "test:package": "node scripts/verify-package.mjs",
     "test:watch": "vitest",
+    "test:worker": "node scripts/verify-worker.mjs",
     "typecheck": "tsc --noEmit",
     "worker:dev": "pnpm run dev:cloudflare",
     "worker:dry-run": "pnpm run build:cloudflare && WRANGLER_WRITE_LOGS=false WRANGLER_SEND_METRICS=false wrangler deploy --dry-run --outdir dist/worker",

@@ -399,13 +399,14 @@ describe("server summary jobs", () => {
     } finally { await store.close?.(); }
   });
 
-  it.each(["short", "qualified", "failure"])("shares model resolution and safe diagnostics (%s)", async (scenario) => {
+  it.each(["short", "qualified", "failure", "cloudflare"])("shares model resolution and safe diagnostics (%s)", async (scenario) => {
+    const cloudflare = scenario === "cloudflare";
     const withImages = scenario === "qualified";
     const { store, sync, vaultId, meetingId } = await setup();
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     try {
       await store.accountSettings.update(owner.userId, { summary: { methodSettings: { transcript: {
-        model: withImages ? "catalog.ai.gpt-5-6-luna" : "gpt-5-6-luna", reasoningEffort: "medium",
+        model: cloudflare ? "gpt-4.1" : withImages ? "catalog.ai.gpt-5-6-luna" : "gpt-5-6-luna", reasoningEffort: cloudflare ? "none" : "medium",
       } } } });
       const patchId = uuidV7(); const hash = "a".repeat(64);
       await sync.putTranscriptChunk(owner, vaultId, meetingId, patchId, 0, hash, {
@@ -429,11 +430,11 @@ describe("server summary jobs", () => {
       const transport = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
         if (String(url).endsWith("/token")) return Response.json({ access_token: "app-token", expires_in: 3600 });
         const headers = new Headers(init?.headers);
-        expect(headers.get("authorization")).toBe("Bearer app-token");
-        expect(JSON.parse(headers.get("Databricks-Ai-Gateway-Request-Tags")!)).toEqual({ user_id: "owner" });
+        expect(headers.get("authorization")).toBe(cloudflare ? "Bearer synthetic" : "Bearer app-token");
+        if (!cloudflare) expect(JSON.parse(headers.get("Databricks-Ai-Gateway-Request-Tags")!)).toEqual({ user_id: "owner" });
         expect(headers.has("X-Forwarded-Access-Token")).toBe(false);
         const body = JSON.parse(String(init?.body)) as { input: { content: { type: string; text?: string; image_url?: string }[] }[] };
-        expect(body).toMatchObject({ model: "catalog.ai.gpt-5-6-luna", stream: false, store: false, text: { format: { strict: true, name: "meeting_summary" } } });
+        expect(body).toMatchObject({ model: cloudflare ? "openai/gpt-4.1" : "catalog.ai.gpt-5-6-luna", stream: false, store: false, text: { format: { strict: true, name: "meeting_summary" } } });
         const content = body.input[0]!.content;
         expect(content[0]!.text).toMatch(/^<context>[\s\S]*<\/context>$/);
         expect(content[1]!.text).toMatch(/^<transcript>[\s\S]*<\/transcript>$/);
@@ -455,7 +456,8 @@ describe("server summary jobs", () => {
           reasoning: { effort: "medium" }, usage: { input_tokens: 100, output_tokens: 20, total_tokens: 120,
             input_tokens_details: { cached_tokens: 10 }, output_tokens_details: { reasoning_tokens: 5 } } } : {}), status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify(output) }] }] });
       });
-      const method = createTranscriptSummaryMethod(loadConfig({ DAHLIA_AUTH_TYPE: "header", DAHLIA_AI_BACKEND: "databricks",
+      const method = createTranscriptSummaryMethod(loadConfig({ DAHLIA_AUTH_TYPE: "header", DAHLIA_AI_BACKEND: cloudflare ? "cloudflare" : "databricks",
+        OPENAI_API_KEY: "synthetic", OPENAI_BASE_URL: "https://api.cloudflare.com/client/v4/accounts/synthetic/ai/v1",
         DATABRICKS_HOST: "https://workspace.example", DATABRICKS_CLIENT_ID: "client", DATABRICKS_CLIENT_SECRET: "secret", DATABRICKS_MODEL_SCHEMA: "catalog.ai" }), store.sync, sync, transport)!;
       const service = new SummaryService(store.sync, store.accountSettings, [method]);
       await service.start(owner, vaultId, meetingId, { id: uuidV7() });
@@ -469,11 +471,11 @@ describe("server summary jobs", () => {
         return;
       }
       expect((await service.status(owner, vaultId, meetingId))?.status).toBe("succeeded");
-      expect(transport).toHaveBeenCalledTimes(2);
+      expect(transport).toHaveBeenCalledTimes(cloudflare ? 1 : 2);
       const meeting = await store.sync.withIdentity(owner, (scoped) => scoped.getMeeting(vaultId, meetingId));
       expect(meeting).toMatchObject({ name: "Decisions", description: "Launch discussion" });
       const metadata = summaryMetadata(meeting!.summaryDocument!);
-      expect(metadata).toMatchObject({ generatedBy: "server", request: { model: "catalog.ai.gpt-5-6-luna", reasoning: { effort: "medium" } } });
+      expect(metadata).toMatchObject({ generatedBy: "server", request: { model: cloudflare ? "openai/gpt-4.1" : "catalog.ai.gpt-5-6-luna", reasoning: { effort: cloudflare ? "none" : "medium" } } });
       if (withImages) expect(metadata?.response).toMatchObject({ id: "resp-example", model: "actual-model", usage: { total_tokens: 120, output_tokens_details: { reasoning_tokens: 5 } } });
       else expect(metadata?.response).toEqual({});
     } finally { await store.close?.(); }
@@ -835,7 +837,9 @@ describe("staged summary generation", () => {
           completeSummaryJob: async (job, transaction) => { await scoped.completeSummaryJob(job, transaction); throw new Error("storage failed"); },
         }));
       }
-      await new SummaryWorker(store.summaryJobs, [method], sync).processOne();
+      const processing = new SummaryWorker(store.summaryJobs, [method], sync).processOne();
+      if (failure === "save") await expect(processing).rejects.toThrow("storage failed");
+      else await processing;
       expect((await service.status(owner, vaultId, meetingId))?.status).not.toBe("succeeded");
       await store.sync.withIdentity(owner, async (scoped) => {
         expect(await scoped.getTranscript(vaultId, meetingId)).toBeNull();
@@ -955,4 +959,41 @@ it("reads the exact transcript ID and historical version instead of silently sub
         .rejects.toMatchObject({ code: "summary_input_version_unavailable" });
     }
   } finally { await store.close?.(); }
+});
+
+describe("Cloudflare native audio summary", () => {
+  it.each(["success", "429", "503", "invalid"])("streams both tracks and preserves canonical output on %s", async (scenario) => {
+    const value = await setup(); const { store, sync, vaultId, meetingId } = value;
+    try {
+      await addRecording(value);
+      const config = loadConfig({ DAHLIA_AUTH_TYPE: "header", DAHLIA_AI_BACKEND: "cloudflare", OPENAI_API_KEY: "test-token",
+        OPENAI_BASE_URL: "https://api.cloudflare.com/client/v4/accounts/test/ai/v1" });
+      let calls = 0;
+      const transport: typeof fetch = async (url, init) => {
+        calls++;
+        expect(String(url)).toBe("https://api.cloudflare.com/client/v4/accounts/test/ai/run");
+        expect(init?.headers).toMatchObject({ authorization: "Bearer test-token", "cf-aig-gateway-id": "default" });
+        expect(init?.body).toBeInstanceOf(ReadableStream);
+        const body = JSON.parse(await new Response(init?.body).text()) as { model: string; input: { contents: { parts: { text?: string; inlineData?: { mimeType: string; data: string } }[] }[] } };
+        expect(body.model).toBe("google/gemini-3-flash");
+        const parts = body.input.contents[0]!.parts;
+        expect(parts.filter((part) => part.inlineData?.mimeType === "audio/mp4")).toHaveLength(2);
+        expect(JSON.stringify(parts)).toContain("<source>mic</source>");
+        expect(JSON.stringify(parts)).toContain("<source>system</source>");
+        expect(JSON.stringify(parts)).toContain("<session_offset_seconds>");
+        if (scenario === "429" || scenario === "503") return new Response(null, { status: Number(scenario) });
+        return Response.json({ success: true, result: { responseId: "synthetic", modelVersion: "gemini-3-flash",
+          candidates: [{ finishReason: "STOP", content: { parts: [{ text: scenario === "invalid" ? "{}" : JSON.stringify({ summary: output, transcription: cloudTranscript }) }] } }] } });
+      };
+      const method = createAudioSummaryMethod(config, store.sync, sync, transport)!;
+      const service = new SummaryService(store.sync, store.accountSettings, [method]);
+      await service.start(owner, vaultId, meetingId, { id: uuidV7(), input: await recordingInput(value), model: "gemini-3-flash", detailLevel: "high", summaryLanguage: "ja" });
+      await new SummaryWorker(store.summaryJobs, [method], sync).processOne();
+      expect(calls).toBe(1);
+      expect((await service.status(owner, vaultId, meetingId))?.status).toBe(scenario === "success" ? "succeeded" : scenario === "invalid" ? "failed" : "pending");
+      const transcript = await store.sync.withIdentity(owner, (scoped) => scoped.getTranscript(vaultId, meetingId));
+      if (scenario === "success") expect(transcript?.metadata?.runs[0]?.audioInputs).toHaveLength(2);
+      else expect(transcript).toBeNull();
+    } finally { await store.close?.(); }
+  });
 });

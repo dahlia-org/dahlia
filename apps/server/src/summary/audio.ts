@@ -1,11 +1,11 @@
 import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
-import { Readable } from "node:stream";
 import { z } from "zod";
 import type { AppConfig } from "../config";
 import { personalWorkspaceId } from "../auth/workspace";
-import { DatabricksBackend, resolveDatabricksModel } from "../ai-gateway/databricks";
-import { DatabricksTokenError, DatabricksTokenProvider } from "../databricks/token";
+import { createJobProvider } from "../ai-gateway/job-provider";
+import { geminiChatResponse, geminiPart } from "./gemini";
+import { DatabricksTokenError } from "../databricks/token";
 import { GatewayRequestError } from "../ai-gateway/errors";
 import { RequestError } from "../storage/upload";
 import type { IdentitySyncStore, MeetingSyncStore } from "../sync/types";
@@ -14,7 +14,7 @@ import { cloudTranscriptionSchema, combinedSummaryResponseSchema, generatedTrans
 import type { RecordingManifest, RecordingSource, RecordingRecord } from "../recordings/model";
 import { SummaryError, summaryDocument, summaryResponseSchema, type SummaryMethod, type SummaryJob, type SummaryInput, type SummaryGenerationResult } from "./model";
 import { summaryResponseMetadataSchema } from "./metadata";
-import { isAudioSummaryModel, isStructuredSummaryModel } from "./audio-model";
+import { isAudioSummaryModel, isSummaryModel } from "./audio-model";
 import { boundedBytes, collectSummaryInput, fingerprint, summaryImageContent, summaryInstructions, summaryXMLText } from "./transcript";
 
 interface AudioInput {
@@ -101,26 +101,24 @@ export async function* audioBase64(response: Response, size: number, checksum: s
 
 export function createAudioSummaryMethod(config: AppConfig, store: MeetingSyncStore, sync: MeetingSyncService,
   transport: typeof fetch = fetch): SummaryMethod | undefined {
-  const provider = config.provider;
-  if (provider?.backend !== "databricks" || !config.databricksWorkspace) return undefined;
-  const audioProvider = provider;
-  const tokens = new DatabricksTokenProvider(config.databricksWorkspace, transport);
-  const backend = new DatabricksBackend(provider, config.databricksWorkspace, transport);
+  const execution = createJobProvider(config, transport);
+  if (!execution) return undefined;
+  const { provider: audioProvider, backend, normalizeModel, resolveModel, headers: executionHeaders } = execution;
+  const cloudflare = audioProvider.backend === "cloudflare";
   return {
     id: "audio",
     captureSettings: (settings, detail) => ({ ...settings.summary.methodSettings.audio,
       detail: detail ?? settings.summary.detail }),
     async version(scoped, vaultId, meetingId, input) { return audioFingerprint(await collectAudio(scoped, vaultId, meetingId, input)); },
     async validateSettings(settings, input) {
-      if (!input) return;
+      if (!input && !cloudflare) return;
       const catalog = await backend.listModels({ signal: AbortSignal.timeout(30_000) });
-      const unqualified = (model: string) => model.startsWith(`${audioProvider.modelSchema}.`)
-        ? model.slice(audioProvider.modelSchema.length + 1) : model;
+      const unqualified = normalizeModel;
       const summaryModel = unqualified(settings.model);
-      if (!isStructuredSummaryModel(summaryModel, catalog)) throw new SummaryError("summary_invalid_structured_model");
-      const audioModel = input.type === "recording" && input.transcriptionModel ? unqualified(input.transcriptionModel) : summaryModel;
-      if (!isAudioSummaryModel(audioModel, catalog) || !isStructuredSummaryModel(audioModel, catalog)) throw new SummaryError("summary_invalid_audio_model");
-      if (input.type === "recording" && input.transcriptionModel) {
+      if (!isSummaryModel(summaryModel, catalog, input?.type === "recording" && input.transcriptionModel ? "transcript" : "audio")) throw new SummaryError("summary_invalid_structured_model");
+      const audioModel = input?.type === "recording" && input.transcriptionModel ? unqualified(input.transcriptionModel) : summaryModel;
+      if (!isSummaryModel(audioModel, catalog, "audio")) throw new SummaryError("summary_invalid_audio_model");
+      if (input?.type === "recording" && input.transcriptionModel) {
         const model = catalog.models.find((model) => model.slug === audioModel)!;
         settings.transcriptionReasoningEffort = model.default_reasoning_level as typeof settings.transcriptionReasoningEffort;
         if (!settings.transcriptionReasoningEffort || !model.supported_reasoning_levels.some(({ effort }) => effort === settings.transcriptionReasoningEffort)) {
@@ -151,8 +149,7 @@ export function createAudioSummaryMethod(config: AppConfig, store: MeetingSyncSt
         const input = await store.withIdentity(identity, (scoped) => collectAudio(scoped, job.vaultId, job.meetingId, job.input));
         if (await audioFingerprint(input) !== job.inputVersion) throw new SummaryError("summary_input_changed");
         const selectedModel = transcriptionOnly && job.input?.type === "recording" ? job.input.transcriptionModel! : job.settings.model;
-        const configuredModel = selectedModel.startsWith(`${audioProvider.modelSchema}.`)
-          ? selectedModel.slice(audioProvider.modelSchema.length + 1) : selectedModel;
+        const configuredModel = normalizeModel(selectedModel);
         const catalog = await backend.listModels({ signal });
         if (!isAudioSummaryModel(configuredModel, catalog)) throw new SummaryError("summary_invalid_audio_model");
         const levels = catalog.models.find((model) => model.slug === configuredModel)!.supported_reasoning_levels;
@@ -160,7 +157,7 @@ export function createAudioSummaryMethod(config: AppConfig, store: MeetingSyncSt
           ? job.settings.transcriptionReasoningEffort ?? "medium"
           : job.settings.reasoningEffort;
         if (!levels.some(({ effort }) => effort === reasoningEffort)) throw new SummaryError("summary_invalid_reasoning_effort");
-        const model = resolveDatabricksModel(audioProvider, configuredModel);
+        const model = resolveModel(configuredModel);
         const { content, imageIds, images } = await summaryImageContent(input, sync, identity, signal);
         const chatContent = content.map((item) => item.type === "input_text"
           ? { type: "text", text: item.text } : { type: "image_url", image_url: { url: item.image_url } });
@@ -169,15 +166,26 @@ export function createAudioSummaryMethod(config: AppConfig, store: MeetingSyncSt
         const instructions = (transcriptionOnly ? transcriptionInstructions : summaryInstructions(job.outputLanguage, job.settings.detail)
           + (job.input ? "\nReturn both summary and transcription in a single response. " + transcriptionInstructions : ""))
           + (transcriptionOnly ? "" : "\nSummarize the supplied audio directly. Use recording start times and manifest ranges to align mic/system tracks and screenshots; do not treat parallel tracks as consecutive conversations. Do not invent missing speech. Tags must contain only lowercase ASCII letters, digits and underscores, with at least one letter.");
+        if (cloudflare && input.audio.reduce((bytes, audio) => bytes + 4 * Math.ceil(audio.size / 3), 0) > 20_000_000) {
+          throw new SummaryError("summary_audio_request_too_large");
+        }
         let streamFailure: Error | undefined;
         let complete = false;
         const uploadAbort = new AbortController();
         const uploadSignal = AbortSignal.any([signal, uploadAbort.signal]);
         async function* requestBody() {
           try {
-            yield JSON.stringify(parameters).slice(0, -1) + ',"messages":['
-              + JSON.stringify({ role: "system", content: instructions }) + ',{"role":"user","content":['
-              + chatContent.map((item) => JSON.stringify(item)).join(",");
+            if (cloudflare) {
+              const header = { model, input: { systemInstruction: { parts: [{ text: instructions }] },
+                generationConfig: { responseMimeType: "application/json", responseJsonSchema: parameters.response_format.json_schema.schema,
+                  thinkingConfig: { thinkingLevel: reasoningEffort.toUpperCase() } } } };
+              yield JSON.stringify(header).slice(0, -2) + ',"contents":[{"role":"user","parts":['
+                + content.map((part) => JSON.stringify(geminiPart(part))).join(",");
+            } else {
+              yield JSON.stringify(parameters).slice(0, -1) + ',"messages":['
+                + JSON.stringify({ role: "system", content: instructions }) + ',{"role":"user","content":['
+                + chatContent.map((item) => JSON.stringify(item)).join(",");
+            }
             for (const audio of input.audio) {
               uploadSignal.throwIfAborted();
               const response = await sync.recordingContent(identity, job.meetingId, String(audio.number), audio.source,
@@ -186,7 +194,7 @@ export function createAudioSummaryMethod(config: AppConfig, store: MeetingSyncSt
                 await response.body?.cancel();
                 throw new SummaryError("summary_audio_unavailable", response.status >= 500);
               }
-              yield ',' + JSON.stringify({ type: "text", text: `<audio>
+              yield ',' + JSON.stringify({ ...(cloudflare ? {} : { type: "text" }), text: `<audio>
   <recording_index>${audio.recordingIndex}</recording_index>
   <recording_number>${audio.number}</recording_number>
   <source>${audio.source}</source>
@@ -200,28 +208,46 @@ export function createAudioSummaryMethod(config: AppConfig, store: MeetingSyncSt
     </ranges>
   </manifest>
 </audio>` })
-                + ',{"type":"audio_url","audio_url":{"url":"data:audio/mp4;base64,';
+                + (cloudflare ? ',{"inlineData":{"mimeType":"audio/mp4","data":"' : ',{"type":"audio_url","audio_url":{"url":"data:audio/mp4;base64,');
               yield* audioBase64(response, audio.size, audio.checksum, uploadSignal);
               yield '"}}';
             }
             complete = true;
-            yield "]}]}";
+            yield cloudflare ? "]}]}}" : "]}]}";
           } catch (error) { streamFailure = error instanceof Error ? error : new SummaryError("summary_audio_unavailable"); throw streamFailure; }
         }
         const endpoint = new URL(audioProvider.baseUrl);
-        endpoint.pathname = `${endpoint.pathname.replace(/\/$/, "")}/chat/completions`;
-        const body = Readable.from(requestBody());
-        const token = await tokens.getToken();
+        endpoint.pathname = cloudflare ? `${endpoint.pathname.replace(/\/v1\/?$/, "")}/run`
+          : `${endpoint.pathname.replace(/\/$/, "")}/chat/completions`;
+        const headers = await executionHeaders(job.ownerUserId);
+        const iterator = requestBody();
+        let sentBytes = 0;
+        const encoder = new TextEncoder();
+        const body = new ReadableStream<Uint8Array>({
+          async pull(controller) {
+            try {
+              const next = await iterator.next();
+              if (next.done) { controller.close(); return; }
+              const bytes = encoder.encode(next.value);
+              sentBytes += bytes.byteLength;
+              if (cloudflare && sentBytes > 20_000_000) throw new SummaryError("summary_audio_request_too_large");
+              controller.enqueue(bytes);
+            } catch (error) {
+              streamFailure = error instanceof Error ? error : new SummaryError("summary_audio_unavailable");
+              uploadAbort.abort(); controller.error(streamFailure);
+            }
+          },
+          async cancel() { uploadAbort.abort(); await iterator.return(); },
+        });
         let response: Response;
         try {
           const init: RequestInit & { duplex: "half" } = {
-            method: "POST", signal, duplex: "half", body: (Readable.toWeb(body) as ReadableStream<string>).pipeThrough(new TextEncoderStream()),
-            headers: { "content-type": "application/json", accept: "application/json", authorization: `Bearer ${token}`,
-              "Databricks-Ai-Gateway-Request-Tags": JSON.stringify({ user_id: job.ownerUserId }) },
+            method: "POST", signal, duplex: "half", body,
+            headers: { "content-type": "application/json", accept: "application/json", ...headers },
           };
           response = await transport(endpoint, init);
         } catch (error) { throw streamFailure ?? error; }
-        finally { uploadAbort.abort(); body.destroy(); }
+        finally { uploadAbort.abort(); await iterator.return(); }
         const upstreamId = response.headers.get("x-databricks-request-id") ?? response.headers.get("x-request-id") ?? response.headers.get("request-id");
         requestId = upstreamId && /^[a-zA-Z0-9._:-]{1,128}$/.test(upstreamId) ? upstreamId : undefined;
         if (!response.ok) {
@@ -230,12 +256,13 @@ export function createAudioSummaryMethod(config: AppConfig, store: MeetingSyncSt
             response.status === 429 || response.status >= 500, requestId);
         }
         if (streamFailure || !complete) { await response.body?.cancel(); throw streamFailure ?? new SummaryError("summary_audio_unavailable", true); }
+        const raw: unknown = JSON.parse(new TextDecoder().decode(await boundedBytes(response, 2 * 1024 * 1024)));
         const parsed = summaryResponseMetadataSchema.pick({ id: true, model: true }).extend({ created: z.number().nullish(),
           usage: z.object({ prompt_tokens: z.number().optional(), completion_tokens: z.number().optional(), total_tokens: z.number().optional(), reasoning_tokens: z.number().optional(),
             prompt_tokens_details: z.object({ cached_tokens: z.number().optional() }).nullish(),
             completion_tokens_details: z.object({ reasoning_tokens: z.number().optional() }).nullish() }).nullish(),
           choices: z.array(z.object({ finish_reason: z.literal("stop"), message: z.object({ content: z.union([z.string(), z.array(z.object({ type: z.string(), text: z.string().optional() }))]) }) })).length(1),
-        }).parse(JSON.parse(new TextDecoder().decode(await boundedBytes(response, 2 * 1024 * 1024))));
+        }).parse(cloudflare ? geminiChatResponse(raw) : raw);
         // Databricks Gemini reports thinking tokens separately from completion_tokens.
         const usage = parsed.usage;
         const outputTokens = usage?.completion_tokens === undefined ? undefined

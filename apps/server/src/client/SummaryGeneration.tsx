@@ -7,7 +7,7 @@ import { uuidV7 } from "../id";
 import type { GatewayModelList } from "../ai-gateway/backend";
 import { DEFAULT_ACCOUNT_SETTINGS, type AccountSettings, type AccountSettingsPatch } from "../account-settings-model";
 import type { summaryJobResponse, SummaryRequest } from "../summary/service";
-import { isAudioSummaryModel, isStructuredSummaryModel } from "../summary/audio-model";
+import { isSummaryModel } from "../summary/audio-model";
 import { CODEX_AUTO_REVIEW_ALIAS } from "../ai-gateway/model-alias";
 
 const summaryErrors: Record<string, string> = {
@@ -54,8 +54,7 @@ export function ServerSummarySettings() {
     save({ summary: { methodSettings: { [method === "audio" ? "audio" : "transcript"]: value } } });
   const source = settings?.summary.methodSettings[method === "audio" ? "audio" : "transcript"] ?? DEFAULT_ACCOUNT_SETTINGS.summary.methodSettings[method === "audio" ? "audio" : "transcript"];
   const models = catalog.data?.data.filter((model) => model.id !== CODEX_AUTO_REVIEW_ALIAS
-    && isStructuredSummaryModel(model.id, catalog.data!)
-    && (method !== "audio" || isAudioSummaryModel(model.id, catalog.data!))) ?? [];
+    && isSummaryModel(model.id, catalog.data!, method === "audio" ? "audio" : "transcript")) ?? [];
   const selected = models.find((model) => model.id === source.model || source.model.endsWith(`.${model.id}`));
   const metadata = catalog.data?.models.find((model) => model.slug === selected?.id);
   const efforts = metadata?.supported_reasoning_levels.map(({ effort }) => effort) ?? [];
@@ -110,7 +109,7 @@ export function ServerSummarySettings() {
           void save({ summary: { methodSettings: { audio: { model: value,
             reasoningEffort: (selected?.default_reasoning_level ?? "medium") as typeof source.reasoningEffort } } } });
         }}>
-        {catalog.data?.data.filter((entry) => isAudioSummaryModel(entry.id, catalog.data!) && isStructuredSummaryModel(entry.id, catalog.data!))
+        {catalog.data?.data.filter((entry) => isSummaryModel(entry.id, catalog.data!, "audio"))
           .map((entry) => <option key={entry.id} value={entry.id}>{entry.display_name}</option>)}
       </Select></label>}
     </fieldset>

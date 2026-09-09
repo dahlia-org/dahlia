@@ -14,7 +14,7 @@ struct ServerSummarySettingsSection: View {
     }
 
     private var models: [ServerSummaryService.Model] {
-        state.summaryModels.filter { $0.supportsStructuredSummary && (method != "audio" || $0.supportsAudioSummary) }
+        state.summaryModels.filter { $0.supportsSummary(method: method) }
     }
 
     private var selectedModel: ServerSummaryService.Model? {
@@ -74,7 +74,7 @@ struct ServerSummarySettingsSection: View {
                         get: { state.settings?.summary?.methodSettings.audio?.model ?? "gemini-3-8-flash" },
                         set: { value in
                             guard let selected = state.summaryModels.first(where: {
-                                $0.id == value && $0.supportsAudioSummary && $0.supportsStructuredSummary
+                                $0.id == value && $0.supportsSummary(method: "audio")
                             }) else { return }
                             model.save(.init(summary: .init(methodSettings: .init(audio: .init(
                                 model: value,
@@ -82,7 +82,7 @@ struct ServerSummarySettingsSection: View {
                             )))), connectionID: connectionID)
                         }
                     )) {
-                        ForEach(state.summaryModels.filter { $0.supportsAudioSummary && $0.supportsStructuredSummary }) {
+                        ForEach(state.summaryModels.filter { $0.supportsSummary(method: "audio") }) {
                             Text($0.displayName).tag($0.id)
                         }
                     }

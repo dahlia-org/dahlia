@@ -1,12 +1,9 @@
 import { setTimeout as delay } from "node:timers/promises";
-import { DEFAULT_ACCOUNT_SETTINGS, type AccountSettingsStore } from "../account-settings";
-import type { Identity } from "../auth/identity";
-import { personalWorkspaceId } from "../auth/workspace";
-import { RequestError } from "../storage/upload";
+import type { AccountSettingsStore } from "../account-settings";
 import type { MeetingSyncService } from "../sync/service";
 import type { MeetingSyncStore } from "../sync/types";
 import type { ImageCaptioner } from "./captioner";
-import { ImageAnalysisError } from "./model";
+import { processImageAnalysisJob } from "./process";
 import type { ImageAnalysisStore } from "./store";
 
 export class ImageAnalysisWorker {
@@ -44,40 +41,7 @@ export class ImageAnalysisWorker {
     }
   }
 
-  async processOne(): Promise<boolean> {
-    const job = await this.jobs.claim(this.captioner.model);
-    if (!job) return false;
-    const identity: Identity = { userId: job.ownerUserId, workspaceId: personalWorkspaceId(job.ownerUserId), source: "accounts" };
-    try {
-      const input = await this.syncStore.withIdentity(identity, (scoped) => scoped.loadImageAnalysis(job));
-      if (!input) {
-        await this.jobs.finish(job);
-        return true;
-      }
-      const settings = await this.settings.get(job.ownerUserId) ?? DEFAULT_ACCOUNT_SETTINGS;
-      const { upstream } = await this.sync.readFileContent(identity, job.fileId, "thumb_1280", "GET",
-        new Request("https://dahlia.invalid/", { signal: this.abort.signal }));
-      if (!upstream.ok) {
-        await upstream.body?.cancel();
-        throw new ImageAnalysisError(`captioning_image_http_${upstream.status}`, upstream.status === 429 || upstream.status >= 500);
-      }
-      const bytes = new Uint8Array(await upstream.arrayBuffer());
-      this.abort.signal.throwIfAborted();
-      const analysis = await this.captioner.analyze(bytes, settings, this.abort.signal);
-      this.abort.signal.throwIfAborted();
-      if (!await this.sync.completeImageAnalysis(identity, input, analysis)) {
-        await this.jobs.finish(job, { code: "stale_image", retryAt: new Date() });
-      }
-    } catch (error) {
-      const failure = error instanceof ImageAnalysisError ? error
-        : error instanceof RequestError
-          ? new ImageAnalysisError(`captioning_image_http_${error.status}`, error.status === 429 || error.status >= 500)
-          : new ImageAnalysisError("captioning_processing_failed", true);
-      await this.jobs.finish(job, {
-        code: failure.code,
-        retryAt: failure.retryable ? new Date(Date.now() + Math.min(15 * 60_000, 1_000 * 2 ** Math.min(job.attempts, 10))) : undefined,
-      });
-    }
-    return true;
+  processOne(): Promise<boolean> {
+    return processImageAnalysisJob(this.jobs, this.captioner, this.syncStore, this.sync, this.settings, this.abort.signal);
   }
 }

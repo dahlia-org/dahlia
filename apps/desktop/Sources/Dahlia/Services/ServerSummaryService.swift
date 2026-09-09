@@ -32,8 +32,15 @@ actor ServerSummaryService {
         let defaultReasoningLevel: String?
         let inputModalities: [String]?
         let supportsJSONSchema: Bool?
+        let summaryMethods: [String]?
         var supportsStructuredSummary: Bool { supportsJSONSchema == true }
         var supportsAudioSummary: Bool { slug.hasPrefix("gemini-") && inputModalities?.contains("audio") == true }
+        func supportsSummary(method: String) -> Bool {
+            let source = method == "audio" ? "audio" : "transcript"
+            return supportsStructuredSummary && (summaryMethods?.contains(source) ?? true)
+                && (source != "audio" || supportsAudioSummary)
+        }
+
         var id: String { slug }
         private enum CodingKeys: String, CodingKey {
             case slug
@@ -42,6 +49,7 @@ actor ServerSummaryService {
             case defaultReasoningLevel = "default_reasoning_level"
             case inputModalities = "input_modalities"
             case supportsJSONSchema = "supports_json_schema"
+            case summaryMethods = "summary_methods"
         }
     }
 

@@ -32,7 +32,7 @@ describe("gateway adapter contract", () => {
     expect(String(init?.body)).not.toContain("provider-secret");
   });
 
-  it("disables Cloudflare payload logging without adding gateway selection headers", async () => {
+  it("disables Cloudflare payload logging and selects the default gateway", async () => {
     const transport = vi.fn<GatewayFetch>(async () => new Response("{}"));
     await new CloudflareBackend({ ...provider, backend: "cloudflare" }, transport).responses(
       { model: "openai/gpt-5.6-luna", input: [] },
@@ -41,7 +41,7 @@ describe("gateway adapter contract", () => {
 
     const headers = new Headers(transport.mock.calls[0]![1]?.headers);
     expect(headers.get("cf-aig-collect-log-payload")).toBe("false");
-    expect(headers.has("cf-aig-gateway-id")).toBe(false);
+    expect(headers.get("cf-aig-gateway-id")).toBe("default");
     expect(headers.has("databricks-model-provider-service")).toBe(false);
   });
 

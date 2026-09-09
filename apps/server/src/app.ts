@@ -99,6 +99,7 @@ export interface AppDependencies {
   screenshotTransformer?: ScreenshotTransformer;
   imageAnalysisEnabled?: boolean;
   summaryService?: SummaryService;
+  onSyncMutation?(ownerUserId: string): Promise<void>;
 }
 
 export async function authenticateMcpRequest(
@@ -154,6 +155,7 @@ export function createApp(dependencies: AppDependencies) {
     config.storageBackend === "databricks" ? config.storageDatabricksVolumePath : undefined,
   );
   const mcp = createServerMcpHandler(config, sync);
+  const jobOwners = new WeakMap<Request, string>();
   const mcpMetadataUrl = `${config.baseUrl}/.well-known/oauth-protected-resource/mcp`;
   const mcpRequestAuth = auth
     ? (request: Request) => authenticateMcpRequest(
@@ -170,6 +172,13 @@ export function createApp(dependencies: AppDependencies) {
   app.use("*", secureHeaders());
   app.use("/api/*", async (context, next) => {
     await next();
+    const owner = jobOwners.get(context.req.raw);
+    if (owner && dependencies.onSyncMutation && context.res.ok && !["GET", "HEAD", "OPTIONS"].includes(context.req.method)
+      && !["/api/v1/search", "/api/v1/transactions/resolve"].includes(context.req.path)) {
+      await dependencies.onSyncMutation(owner).catch(() => {
+        console.warn(JSON.stringify({ level: "warn", event: "job_notification_failed" }));
+      });
+    }
     const fileRead = ["GET", "HEAD"].includes(context.req.method)
       && /^\/api\/v1\/files\/[^/]+(?:\/variants\/[^/]+)?$/.test(context.req.path)
       && (context.res.ok || context.res.status === 304);
@@ -406,6 +415,7 @@ export function createApp(dependencies: AppDependencies) {
 
   async function syncIdentity(request: Request): Promise<Identity> {
     const identity = await identities.fromBrowserOrGateway(request, ALL_APIS_SCOPE);
+    if (dependencies.onSyncMutation) jobOwners.set(request, identity.userId);
     return { ...identity, syncClient: { vaultTransfers: request.headers.get("X-Dahlia-Vault-Transfers") === "1" } };
   }
 

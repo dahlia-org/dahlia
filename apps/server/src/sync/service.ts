@@ -188,6 +188,7 @@ export class MeetingSyncService {
     private readonly embedder?: SearchEmbedder,
     private readonly screenshotTransformer?: ScreenshotTransformer,
     private readonly fileStorageRoot?: string,
+    private readonly automaticStorageMaintenance = true,
   ) {
     if (storage) {
       this.scheduleStorageDeletes();
@@ -439,11 +440,12 @@ export class MeetingSyncService {
       after = targets.at(-1);
     }
     await this.storageDeleteDrain;
-    this.scheduleStorageDeletes();
+    this.scheduleStorageDeletes(true);
     await this.storageDeleteDrain;
   }
 
-  private scheduleStorageDeletes(): void {
+  private scheduleStorageDeletes(explicit = false): void {
+    if (!this.automaticStorageMaintenance && !explicit) return;
     this.storageDeleteDrain ??= this.drainStorageDeletes()
       .catch(() => undefined)
       .finally(() => {
@@ -453,6 +455,7 @@ export class MeetingSyncService {
   }
 
   private scheduleStorageDeleteRetry(): void {
+    if (!this.automaticStorageMaintenance) return;
     if (this.storageDeleteRetry) return;
     this.storageDeleteRetry = setTimeout(() => {
       this.storageDeleteRetry = undefined;

@@ -61,10 +61,10 @@ describe("AI Gateway", () => {
     }
   });
 
-  it.each(configs.slice(0, 2))("uses a mock list without reading the database ($provider.backend)", async (backendConfig) => {
+  it.each(configs.slice(0, 2))("uses the provider catalog without reading the database ($provider.backend)", async (backendConfig) => {
     const transport = vi.fn<GatewayFetch>();
     const models = await new GatewayService(backendConfig, transport).models();
-    expect(models.data.map((m) => m.id)).toEqual(["gpt-5.6-luna"]);
+    expect(models.data.map((m) => m.id)).toEqual(backendConfig.provider?.backend === "cloudflare" ? ["gpt-5.6-luna", "gpt-4.1", "gemini-3-flash"] : ["gpt-5.6-luna"]);
     expect(models.models.find((m) => m.slug === "gpt-5.6-luna")).toMatchObject({ visibility: "list", input_modalities: ["text", "image"] });
     expect(transport).not.toHaveBeenCalled();
   });
