@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createContractApp as createApp } from "./api-test-client";
 import { loadConfig } from "../src/config";
-import { DEFAULT_ACCOUNT_SETTINGS } from "../src/account-settings";
 import { testStore } from "./test-store";
 
 describe("account settings API", () => {
@@ -30,23 +29,28 @@ describe("account settings API", () => {
     const headers = { "x-forwarded-email": "owner@example.com", "x-forwarded-user": "owner", "content-type": "application/json" };
     const patch = (body: unknown) => app.request("/api/v1/account/settings", { method: "PATCH", headers, body: JSON.stringify(body) });
     expect(await (await app.request("/api/v1/capabilities", { headers })).json()).toEqual({});
-    const summary = { method: "transcript", detail: "high", methodSettings: { transcript: { model: "saved-model", reasoningEffort: "high" } } };
+    const summary = { mode: "remote", remote: {
+      detail: "high", model: "saved-model", reasoningEffort: "high", transcriptionModel: "gemini-3-8-flash",
+    } } as const;
     expect((await patch({ initialize: true, outputLanguage: "en", analysisLanguages: { scope: "all", identifiers: [] }, summary })).status).toBe(200);
-    const response = await patch({ summary: { detail: "low" } });
+    const response = await patch({ summary: { remote: { detail: "low" } } });
     expect(await response.json()).toEqual({ settings: {
       outputLanguage: "en", analysisLanguages: { scope: "all", identifiers: [] },
-      summary: { ...summary, detail: "low", methodSettings: { audio: DEFAULT_ACCOUNT_SETTINGS.summary.methodSettings.audio, transcript: summary.methodSettings.transcript } },
+      summary: { ...summary, remote: { ...summary.remote, detail: "low" } },
     } });
+    expect(await (await patch({ summary: { remote: { transcriptionModel: null } } })).json()).toMatchObject({
+      settings: { summary: { mode: "remote", remote: { detail: "low", model: "saved-model", reasoningEffort: "high" } } },
+    });
     for (const body of [
-      {}, { summary: {} }, { summary: { methodSettings: { audio: {} } } }, { summary: { detail: null } },
-      { summaryMethod: "transcript" }, { transcriptSummary: summary.methodSettings.transcript }, { settings: { summary } },
-      { summary: { method: "gemini" } }, { summary: { unknown: true } },
-      { summary: { methodSettings: { gemini: {} } } },
-      { summary: { methodSettings: { transcript: { unknown: true } } } },
-      { summary: { methodSettings: { transcript: { detail: "invalid" } } } },
-      { summary: { methodSettings: { transcript: { detail: "low" } } } },
-      { summary: { methodSettings: { transcript: { model: "" } } } },
-      { summary: { methodSettings: { transcript: { reasoningEffort: "invalid" } } } },
+      {}, { summary: {} }, { summary: { remote: {} } }, { summary: { remote: { detail: null } } },
+      { summaryMethod: "transcript" }, { transcriptSummary: summary.remote }, { settings: { summary } },
+      { summary: { mode: "audio" } }, { summary: { unknown: true } },
+      { summary: { method: "transcript" } }, { summary: { methodSettings: {} } },
+      { summary: { remote: { unknown: true } } },
+      { summary: { remote: { detail: "invalid" } } },
+      { summary: { remote: { model: "" } } },
+      { summary: { remote: { transcriptionModel: "" } } },
+      { summary: { remote: { reasoningEffort: "invalid" } } },
     ]) expect((await patch(body)).status).toBe(400);
   });
 });

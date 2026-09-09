@@ -82,7 +82,7 @@ import DahliaRuntimeSupport
                 if path == "/api/v1/capabilities" { return (
                     200,
                     [:],
-                    Data(#"{"meetingSummaryGeneration":{"version":1,"sources":["transcript"]}}"#.utf8)
+                    Data(#"{"meetingSummaryGeneration":{"version":2,"sources":["transcript"]}}"#.utf8)
                 )
                 }
                 // Synchronization is unavailable; the unsynchronized meeting's job API must never be queried.
@@ -126,22 +126,47 @@ import DahliaRuntimeSupport
                 info.version = 1
                 try TranscriptRecord(meetingId: target.meetingID, info: info).insert(db)
             }
-            let posts = Mutex(0)
+            let posts = Mutex<[Data]>([])
+            let legacySettings = try JSONDecoder().decode(ServerAccountSettings.self, from: Data("""
+            {"summary":{"method":"transcript","detail":"high","methodSettings":{"transcript":{"model":"gpt-5.4","reasoningEffort":"medium"}}},
+             "outputLanguage":"ja","analysisLanguages":{"scope":"all","identifiers":[]}}
+            """.utf8))
+            var processing = RecordingProcessing(
+                id: id,
+                automatic: true,
+                liveDraft: false,
+                localeIdentifier: "ja_JP",
+                method: .transcript,
+                options: .init(exportOptions: .manual, detailLevel: .detailed),
+                generationSettings: .init(
+                    modelID: "gpt-5.4",
+                    reasoningEffort: "medium",
+                    detailLevelInstruction: "detail",
+                    languageDisplayName: "Japanese",
+                    runtimeProvider: .chatGPTSubscription
+                ),
+                serverSettings: legacySettings
+            )
+            processing.serverRequest = .init(
+                id: id.uuidString.lowercased(), input: .init(type: "transcript", version: "1"),
+                model: "gpt-5.4", detailLevel: "high", summaryLanguage: "ja"
+            )
             ImageURLProtocol.register(origin: target.origin) { request in
                 if request.url!.path == "/api/v1/capabilities" { return (
                     200,
                     [:],
-                    Data(#"{"meetingSummaryGeneration":{"version":1,"sources":["transcript"]}}"#.utf8)
+                    Data(#"{"meetingSummaryGeneration":{"version":2,"sources":["transcript"]}}"#.utf8)
                 )
                 }
                 if request.url!.path == "/api/v1/account/settings" {
                     return (200, [:], Data("""
-                    {"settings":{"summary":{"method":"transcript","detail":"high",
-                    "methodSettings":{"transcript":{"model":"gpt-5.4","reasoningEffort":"medium"},"audio":{"model":"gemini-3-8-flash","reasoningEffort":"medium"}}},
+                    {"settings":{"summary":{"mode":"remote","remote":{"detail":"high","model":"gemini-3-8-flash","reasoningEffort":"medium","transcriptionModel":"gemini-3-8-flash"}},
                     "outputLanguage":"ja","analysisLanguages":{"scope":"all","identifiers":[]}}}
                     """.utf8))
                 }
-                if request.httpMethod == "POST" { posts.withLock { $0 += 1 } } else if posts.withLock({ $0 }) == 0 { return (
+                if request.httpMethod == "POST", let body = request.httpBody ?? request.httpBodyStream.map(Self.read) {
+                    posts.withLock { $0.append(body) }
+                } else if posts.withLock({ $0 }).isEmpty { return (
                     404,
                     ["Content-Type": "application/problem+json"],
                     Data(#"{"type":"about:blank","title":"Not found","status":404,"code":"summary_job_not_found"}"#.utf8)
@@ -174,12 +199,17 @@ import DahliaRuntimeSupport
             )
             if transientFailure {
                 await #expect(throws: URLError.self) {
-                    try await service.generate(target, id: id, detail: nil, dbQueue: queue)
+                    try await service.generate(target, id: id, detail: nil, dbQueue: queue, processing: processing)
                 }
             }
-            try await service.generate(target, id: id, detail: nil, dbQueue: queue)
+            try await service.generate(target, id: id, detail: nil, dbQueue: queue, processing: processing)
             #expect(pulls.withLock { $0 } == (transientFailure && contendedCall == 2 ? 4 : 3))
-            #expect(posts.withLock { $0 } == 1)
+            let body = try JSONDecoder().decode(
+                Operations.StartSummaryJob.Input.Body.JsonPayload.Value1Payload.self,
+                from: #require(posts.withLock { $0.first })
+            )
+            #expect(body.reasoningEffort?.rawValue == "medium")
+            #expect(posts.withLock { $0.count } == 1)
         }
 
         @Test(arguments: [String?.none, "low"])
@@ -191,7 +221,7 @@ import DahliaRuntimeSupport
             ImageURLProtocol.register(origin: origin) { request in
                 #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer test-token")
                 if request.url?.path == "/api/v1/capabilities" {
-                    return (200, [:], Data(#"{"meetingSummaryGeneration":{"version":1,"sources":["transcript"]}}"#.utf8))
+                    return (200, [:], Data(#"{"meetingSummaryGeneration":{"version":2,"sources":["transcript"]}}"#.utf8))
                 }
                 #expect(request.url?
                     .path ==
@@ -278,8 +308,8 @@ import DahliaRuntimeSupport
                 """.utf8
             )
             let response = try JSONDecoder().decode(ServerAccountSettings.Response.self, from: body)
-            #expect(response.settings?.summary?.methodSettings.transcript.model == "catalog.ai.model")
-            #expect(response.settings?.summary?.method == "transcript")
+            #expect(response.settings?.summary?.remote.model == "catalog.ai.model")
+            #expect(response.settings?.summary?.mode == .local)
             let patch = try JSONEncoder().encode(ServerAccountSettings.Patch(outputLanguage: .en))
             let json = try #require(JSONSerialization.jsonObject(with: patch) as? [String: String])
             #expect(json == ["outputLanguage": "en"])
@@ -296,15 +326,11 @@ import DahliaRuntimeSupport
                 """.utf8
             )
             var summary = try JSONDecoder().decode(ServerAccountSettings.Summary.self, from: body)
-            #expect(summary.selectedSettings?.model == "gemini-3-8-flash")
-            #expect(summary.selectedSettings?.reasoningEffort == "medium")
+            #expect(summary.remote.model == "gemini-3-8-flash")
+            #expect(summary.remote.reasoningEffort == "medium")
+            #expect(summary.mode == .remote)
             #expect(summary.detailLevel == .standard)
-            summary.method = "transcript"
-            #expect(summary.detailLevel == .standard)
-            summary.method = "future"
-            #expect(summary.detailLevel == .standard)
-            summary.method = "audio"
-            summary.methodSettings.audio = nil
+            summary.mode = .local
             #expect(summary.detailLevel == .standard)
         }
 
@@ -343,7 +369,7 @@ import DahliaRuntimeSupport
 
         @Test(arguments: [
             "{}",
-            #"{"meetingSummaryGeneration":{"version":2,"sources":["transcript","audio"]}}"#,
+            #"{"meetingSummaryGeneration":{"version":3,"sources":["transcript","audio"]}}"#,
             #"{"meetingSummaryGeneration":{"version":2,"sources":[]}}"#,
         ])
         func missingOrUnsupportedCapabilitiesHaveNoMethods(_ json: String) async throws {
@@ -362,11 +388,11 @@ import DahliaRuntimeSupport
         }
 
         @Test
-        func encodesCommonSummaryDetailPatch() throws {
-            let patch = ServerAccountSettings.Patch(summary: .init(detail: "concise"))
+        func encodesRemoteSummaryDetailPatch() throws {
+            let patch = ServerAccountSettings.Patch(summary: .init(remote: .init(detail: "low")))
             let data = try JSONEncoder().encode(patch)
-            let json = try #require(JSONSerialization.jsonObject(with: data) as? [String: [String: String]])
-            #expect(json == ["summary": ["detail": "concise"]])
+            let json = try #require(JSONSerialization.jsonObject(with: data) as? [String: [String: [String: String]]])
+            #expect(json == ["summary": ["remote": ["detail": "low"]]])
             let response = try JSONDecoder().decode(ServerAccountSettings.Response.self, from: Data(#"{"settings":null}"#.utf8))
             #expect(response.settings == nil)
         }
@@ -413,14 +439,9 @@ import DahliaRuntimeSupport
                 ).insert(db)
             }
             let settings = ServerAccountSettings(
-                summary: .init(
-                    method: "cloudTranscription",
-                    detail: "max",
-                    methodSettings: .init(
-                        transcript: .init(model: "summary-model", reasoningEffort: "low"),
-                        audio: .init(model: "gemini-audio", reasoningEffort: "medium")
-                    )
-                ),
+                summary: .init(mode: .remote, remote: .init(
+                    detail: "max", model: "summary-model", reasoningEffort: "low", transcriptionModel: "gemini-audio"
+                )),
                 outputLanguage: .en,
                 analysisLanguages: .init(scope: .all, identifiers: [])
             )
@@ -444,7 +465,7 @@ import DahliaRuntimeSupport
             let bodies = Mutex<[Data]>([])
             ImageURLProtocol.register(origin: target.origin) { request in
                 if request.url!.path.hasSuffix("/capabilities") {
-                    return (200, [:], Data(#"{"meetingSummaryGeneration":{"version":1,"sources":["transcript","audio"]}}"#.utf8))
+                    return (200, [:], Data(#"{"meetingSummaryGeneration":{"version":2,"sources":["transcript","audio"]}}"#.utf8))
                 }
                 if request.url!.path.hasSuffix("/recordings") {
                     return (200, [:], Data("""
@@ -504,6 +525,7 @@ import DahliaRuntimeSupport
             #expect(input.recordings.first?.micFileId == fileID.uuidString.lowercased())
             #expect(input.transcriptionModel == "gemini-audio")
             #expect(body.model == "summary-model")
+            #expect(body.reasoningEffort?.rawValue == "low")
             #expect(body.outputLanguage.rawValue == "en")
             let sessions = try await queue.read { db in try RecordingSessionRecord.fetchAll(db) }
             #expect((sessions.first { $0.id == first }?.batchCompletedAt != nil) == (status == "succeeded"))

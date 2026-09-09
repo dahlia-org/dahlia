@@ -20,11 +20,44 @@ it.runIf(process.env.TEST_MIGRATION_DATABASE_URL)("creates the complete PostgreS
     expect((await client.query("SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user")).rows)
       .toEqual([{ rolsuper: false, rolbypassrls: false }]);
     await client.query("BEGIN");
-    for (const file of serverMigrationManifest.postgres.files.slice(0, -1)) {
+    const files = serverMigrationManifest.postgres.files;
+    const organizationIndex = files.findIndex((file) => file.includes("default_organization_initialization"));
+    const summaryIndex = files.findIndex((file) => file.includes("damp_miss_america"));
+    for (const file of files.slice(0, organizationIndex)) {
       await client.query(readFileSync(new URL(`../${file}`, import.meta.url), "utf8"));
     }
     await client.query("INSERT INTO auth.organization(id, name, slug, created_at) VALUES ('01990ab0-0000-7000-8000-000000000001', 'Custom name', 'external', to_timestamp(1))");
-    await client.query(readFileSync(new URL(`../${serverMigrationManifest.postgres.files.at(-1)!}`, import.meta.url), "utf8"));
+    for (const file of files.slice(organizationIndex, summaryIndex)) {
+      await client.query(readFileSync(new URL(`../${file}`, import.meta.url), "utf8"));
+    }
+    for (const method of ["transcript", "cloudTranscription", "audio"] as const) {
+      await client.query("INSERT INTO auth.\"user\"(id, name, email) VALUES ($1, $1, $2)", [method, `${method}@example.com`]);
+      await client.query("SELECT set_config('app.user_id', $1, true)", [method]);
+      await client.query(`INSERT INTO app.account_settings(user_id, summary, output_language, analysis_languages)
+        VALUES ($1, $2::jsonb, 'ja', '{}'::jsonb)`, [method, JSON.stringify({
+        method, detail: method === "audio" ? "standard" : "detailed", methodSettings: {
+          transcript: { model: "saved-summary", reasoningEffort: "high" },
+          audio: { model: "saved-audio", reasoningEffort: "low" },
+        },
+      })]);
+    }
+    for (const file of files.slice(summaryIndex)) {
+      await client.query(readFileSync(new URL(`../${file}`, import.meta.url), "utf8"));
+    }
+    const expected = {
+      audio: { mode: "remote", remote: { detail: "medium", model: "saved-audio", reasoningEffort: "low" } },
+      cloudTranscription: { mode: "remote", remote: {
+        detail: "high", model: "saved-summary", reasoningEffort: "high", transcriptionModel: "saved-audio",
+      } },
+      transcript: { mode: "local", remote: {
+        detail: "high", model: "gemini-3-8-flash", reasoningEffort: "medium", transcriptionModel: "gemini-3-8-flash",
+      } },
+    };
+    for (const method of Object.keys(expected) as (keyof typeof expected)[]) {
+      await client.query("SELECT set_config('app.user_id', $1, true)", [method]);
+      expect((await client.query("SELECT summary FROM app.account_settings WHERE user_id = $1", [method])).rows)
+        .toEqual([{ summary: expected[method] }]);
+    }
     expect((await client.query("SELECT name, initialized_at FROM app.server_initializations")).rows)
       .toEqual([{ name: "default_organization", initialized_at: new Date(1000) }]);
     expect((await client.query("SELECT name FROM auth.organization")).rows).toEqual([{ name: "Custom name" }]);

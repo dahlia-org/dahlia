@@ -62,7 +62,10 @@ export function createTranscriptSummaryMethod(config: AppConfig, store: MeetingS
   const { provider, backend } = execution;
   return {
     id: "transcript",
-    captureSettings: (settings, detail) => ({ ...settings.summary.methodSettings.transcript, detail: detail ?? settings.summary.detail }),
+    captureSettings: (settings, detail) => ({
+      model: settings.summary.remote.model, reasoningEffort: settings.summary.remote.reasoningEffort,
+      detail: detail ?? settings.summary.remote.detail,
+    }),
     async version(scoped, vaultId, meetingId, input) { return fingerprint(await collectSummaryInput(scoped, vaultId, meetingId, true, input)); },
     async validateSettings(settings, input) {
       if (!input && provider.backend === "databricks") return;

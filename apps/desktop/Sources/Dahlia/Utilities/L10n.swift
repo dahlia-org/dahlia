@@ -5,6 +5,19 @@ import Foundation
 
 /// ローカライズ文字列への型安全なアクセスを提供する。
 enum L10n { // swiftlint:disable:this type_body_length
+    static var transcriptionAndSummary: String { String(localized: "settings.processing.title", bundle: bundle) }
+    static var appliesToAccount: String { String(localized: "settings.processing.account", bundle: bundle) }
+    static var settingsScope: String { String(localized: "settings.processing.scope", bundle: bundle) }
+    static var syncedDahliaAccount: String { String(localized: "settings.processing.synced", bundle: bundle) }
+    static var processingLocation: String { String(localized: "settings.processing.location", bundle: bundle) }
+    static var localProcessing: String { String(localized: "settings.processing.local", bundle: bundle) }
+    static var remoteProcessing: String { String(localized: "settings.processing.remote", bundle: bundle) }
+    static var localAccountScopeDescription: String { String(localized: "settings.processing.localScope", bundle: bundle) }
+    static var syncedAccountScopeDescription: String { String(localized: "settings.processing.syncedScope", bundle: bundle) }
+    static var localProcessingDescription: String { String(localized: "settings.processing.localDescription", bundle: bundle) }
+    static var transcribeBeforeSummary: String { String(localized: "settings.processing.transcribeFirst", bundle: bundle) }
+    static var thisMac: String { String(localized: "settings.processing.thisMac", bundle: bundle) }
+    static var thisMacSettingsDescription: String { String(localized: "settings.processing.thisMacDescription", bundle: bundle) }
     static var transcriptFullTranscriptionUnavailable: String { String(localized: "transcript.fullTranscriptionUnavailable", bundle: bundle) }
     static var serverSearchPendingUnavailable: String { String(localized: "search.server.pendingUnavailable", bundle: bundle) }
     static var serverSearchRanked: String { String(localized: "search.server.ranked", bundle: bundle) }

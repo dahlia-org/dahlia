@@ -144,8 +144,7 @@ Dahlia の scope 外であり、妨げない。
 
 **設計上の判断**:
 
-- 文字起こしはリアルタイムもバッチも Apple Speech の `SpeechTranscriber` が on-device で行い、録音音声を外部へ
-  送信して認識しない。Server Account の新規バッチ録音は、[結合音声保管のADR](docs/adr/shared/recording-audio-archive.md) に従い保管できる。WhisperKit は付加機能であるバッチ自動言語判定で言語を選ぶためだけに使い、文字起こし自体は行わない。
+- 既定の文字起こしはリアルタイムもバッチも Apple Speech の `SpeechTranscriber` が on-device で行う。Server Accountで利用者がリモート処理を明示選択した保存済み録音だけは、[処理場所のADR](docs/adr/shared/transcription-summary-processing.md) に従いServerで文字起こしできる。WhisperKit は付加機能であるバッチ自動言語判定で言語を選ぶためだけに使い、文字起こし自体は行わない。
 - ローカルアカウントの会議データと端末固有ファイルはローカルの SQLite と file system だけで完結する。一方、ServerアカウントのVault／ProjectはNotionやAsanaと同様にDesktopとWebが共有するServer canonical recordであり、Desktopからクラウドへ転送するコピーではない。SQLite は即時反映できるoffline working copyとし、
   Vault 名、Project の名前・説明・階層、meeting metadata、summary、transcript 原文、screenshot、OCR、AI caption を双方向同期する。翻訳文は同期しない。新規バッチ録音の結合音声は [音声保管契約](docs/adr/shared/recording-audio-archive.md) に従う
   ([正本とアカウント境界](docs/adr/shared/sync.md#正本とアカウント境界), [同期対象とモデル](docs/adr/shared/sync.md#同期対象とモデル), [Transaction と競合](docs/adr/shared/sync.md#transaction-と競合))。Server record は個人所有を維持し、owner が複数の特定 organization
@@ -160,7 +159,7 @@ Dahlia の scope 外であり、妨げない。
 
 **許容する例外**: 疎結合な付加機能は外部依存を持ってよい。Google Calendar と EventKit の読み取り、Google Docs や
 Drive への書き出し、Codex による要約生成、Sparkle の更新確認、Sentry の障害報告、TelemetryDeck の匿名利用計測、
-バッチ自動言語判定の初回モデル取得、Serverアカウントのcloud-backed working copyと明示的な read-only 共有がこれにあたる。Codex の接続先として任意の Dahlia Server Gateway を選ぶ場合も
+バッチ自動言語判定の初回モデル取得、Serverアカウントのcloud-backed working copyと明示的な read-only 共有、利用者が明示選択した保存済み録音のServer処理がこれにあたる。Codex の接続先として任意の Dahlia Server Gateway を選ぶ場合も
 同じ境界に置き、いずれも中核の前提条件にしない。
 
 **誤読しやすい点**: 「スタンドアローン」は「オフライン専用」ではない。外部機能を持つこと自体は否定せず、
@@ -201,7 +200,7 @@ Drive への書き出し、Codex による要約生成、Sparkle の更新確認
 
 - 共同編集
 - CRM や SFA との双方向同期
-- クラウドでの音声処理（Server Account の結合音声保管は [承認済みの例外](docs/adr/shared/recording-audio-archive.md)）
+- Local Accountまたはローカル選択時のクラウド音声処理（Server Accountの明示的なリモート処理だけは[承認済みの例外](docs/adr/shared/transcription-summary-processing.md)）
 - 汎用の統合ハブ、ワークフロー自動化
 - Vault 横断または全社の人物 identity 解決
 

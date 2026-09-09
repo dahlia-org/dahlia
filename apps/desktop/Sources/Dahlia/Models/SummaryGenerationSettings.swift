@@ -22,16 +22,10 @@ struct SummaryGenerationSettings: Codable, Equatable, Sendable {
             ? vaultAISettings.databricksProfile
             : settings.codexDatabricksProfile
         return Self(
-            modelID: usesVaultSettings
-                ? vaultAISettings.summaryModelID.nilIfBlank
-                : settings.codexModelID.nilIfBlank,
-            reasoningEffort: usesVaultSettings
-                ? vaultAISettings.summaryReasoningEffort
-                : settings.codexReasoningEffort,
+            modelID: settings.codexModelID.nilIfBlank,
+            reasoningEffort: settings.codexReasoningEffort,
             detailLevelInstruction: (detailLevel ?? settings.summaryDetailLevel).instruction,
-            languageDisplayName: ((usesVaultSettings ? vaultAISettings.accountConnectionID : nil).flatMap {
-                ServerAccountSettingsModel.shared.state(for: $0).settings?.outputLanguage
-            } ?? settings.llmSummaryLanguage).displayName,
+            languageDisplayName: settings.llmSummaryLanguage.displayName,
             runtimeProvider: CodexRuntimeProvider(
                 accountConnectionID: usesVaultSettings ? vaultAISettings.accountConnectionID : nil,
                 localProvider: localProvider,
@@ -51,13 +45,4 @@ struct SummaryGenerationSettings: Codable, Equatable, Sendable {
         )
     }
 
-    func applying(language: SummaryLanguage) -> Self {
-        Self(
-            modelID: modelID,
-            reasoningEffort: reasoningEffort,
-            detailLevelInstruction: detailLevelInstruction,
-            languageDisplayName: language.displayName,
-            runtimeProvider: runtimeProvider
-        )
-    }
 }

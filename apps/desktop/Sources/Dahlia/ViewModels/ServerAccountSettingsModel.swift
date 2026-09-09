@@ -15,16 +15,6 @@ final class ServerAccountSettingsModel {
         var isAvailable = false
         var errorMessage: String?
         var summaryMethods: [String] = []
-        var recordingProcessingMethods: [RecordingProcessingMethod] {
-            RecordingProcessingMethod.allCases.filter { method in
-                switch method {
-                case .transcript: summaryMethods.contains("transcript")
-                case .cloudTranscription: summaryMethods.contains("transcript") && summaryMethods.contains("audio")
-                case .audio: summaryMethods.contains("audio")
-                }
-            }
-        }
-
         var summaryModels: [ServerSummaryService.Model] = []
         var modelErrorMessage: String?
         var canEdit: Bool { settings != nil && isAvailable && !isLoading && !isSaving }

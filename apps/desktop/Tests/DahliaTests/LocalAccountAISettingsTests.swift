@@ -20,6 +20,8 @@
             var latest = makeVault(openedAt: Date(timeIntervalSince1970: 2))
             latest.localProvider = .databricks
             latest.databricksProfile = "LOCAL"
+            latest.summaryModelID = "latest-summary"
+            latest.summaryReasoningEffort = "max"
             var server = makeVault(openedAt: Date(timeIntervalSince1970: 3))
             server.accountConnectionId = connection.id
             server.databricksProfile = "SERVER"
@@ -35,6 +37,8 @@
             try await model.inheritLocalAccountSettings(from: database.dbQueue)
 
             #expect(model.localAccountSettings == .init(provider: .databricks, databricksProfile: "LOCAL"))
+            #expect(defaults.string(forKey: LocalAccountAISettings.summaryModelKey) == "latest-summary")
+            #expect(defaults.string(forKey: LocalAccountAISettings.summaryReasoningEffortKey) == "max")
             model.databricksProfile = "CHANGED"
             let restored = VaultAISettingsModel(setupDefaults: defaults, activateRuntime: { _ in })
             restored.configure(dbQueue: database.dbQueue)
@@ -61,6 +65,7 @@
 
             #expect(model.localAccountSettings == .init(provider: .databricks, databricksProfile: "LEGACY"))
             #expect(defaults.bool(forKey: LocalAccountAISettings.migrationKey))
+            #expect(defaults.bool(forKey: LocalAccountAISettings.summaryMigrationKey))
         }
 
         @Test

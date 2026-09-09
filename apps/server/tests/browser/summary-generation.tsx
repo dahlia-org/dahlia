@@ -13,9 +13,9 @@ window.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
   await Promise.resolve();
   const request = input instanceof Request ? input : new Request(new URL(input, location.origin), init);
   const path = new URL(request.url).pathname;
-  if (path === "/api/v1/capabilities") return Response.json({ meetingSummaryGeneration: { version: 1, sources: ["transcript", "audio"] } });
+  if (path === "/api/v1/capabilities") return Response.json({ meetingSummaryGeneration: { version: 2, sources: ["transcript", "audio"] } });
   if (path === "/api/v1/account/settings") return Response.json({ settings: {
-    ...DEFAULT_ACCOUNT_SETTINGS, summary: { ...DEFAULT_ACCOUNT_SETTINGS.summary, method: "audio" },
+    ...DEFAULT_ACCOUNT_SETTINGS, summary: { ...DEFAULT_ACCOUNT_SETTINGS.summary, mode: "remote" },
   } });
   if (path.endsWith("/recordings")) return Response.json({ items: [{ audio: {
     mic: { fileId: "mic" }, ...(uploaded ? { system: { fileId: "system" } } : {}),

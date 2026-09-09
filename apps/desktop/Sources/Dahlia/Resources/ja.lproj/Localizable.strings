@@ -1700,6 +1700,19 @@
 "serverSummaryTranscript" = "文字起こしと画像";
 
 "serverSummaryDescription" = "サーバーで生成します。画面を閉じても処理は続きます。詳細度は要約のソース間で共通です。エクスポートは生成後に個別に行います。";
+"settings.processing.title" = "文字起こしと要約";
+"settings.processing.account" = "適用対象";
+"settings.processing.scope" = "保存先";
+"settings.processing.synced" = "Dahliaアカウント（同期）";
+"settings.processing.location" = "処理する場所";
+"settings.processing.local" = "ローカル（このMac）";
+"settings.processing.remote" = "リモート（サーバー）";
+"settings.processing.localScope" = "この設定は、このMacのローカルアカウントに保存されます。";
+"settings.processing.syncedScope" = "処理する場所とリモート設定は、このDahliaアカウントでサインインしたすべての端末に同期されます。";
+"settings.processing.localDescription" = "このMacのApple Speechで文字起こしし、ローカルアカウント設定を使う内蔵Codexで要約します。";
+"settings.processing.transcribeFirst" = "先に文字起こしする";
+"settings.processing.thisMac" = "このMac";
+"settings.processing.thisMacDescription" = "これらの録音設定はこのMacだけに適用され、同期されません。";
 
 "serverSummaryUnavailable" = "このサーバーでは要約生成を利用できません。";
 

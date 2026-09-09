@@ -1,13 +1,18 @@
 import Speech
 import SwiftUI
 
-/// 設定画面「文字起こし」タブ。認識方法と利用する言語を管理する。
+/// 文字起こしと要約の処理場所、およびこのMac固有の録音設定を管理する。
 struct TranscriptionSettingsView: View {
     @ObservedObject private var settings = AppSettings.shared
     @Bindable private var accountSettings = ServerAccountSettingsModel.shared
+    @State private var accountController = DahliaCloudAccountController.shared
     private var connectionID: UUID? { settings.currentVault?.accountConnectionId }
-    private var processingMethods: [RecordingProcessingMethod] {
-        connectionID.map { accountSettings.state(for: $0).recordingProcessingMethods } ?? [.transcript]
+    private var serverState: ServerAccountSettingsModel.State? { connectionID.map(accountSettings.state(for:)) }
+    private var mode: ServerAccountSettings.SummaryMode { serverState?.settings?.summary?.mode ?? .local }
+    private var canSelectRemote: Bool { serverState?.summaryMethods.contains("audio") == true }
+    private var accountName: String {
+        guard let connectionID else { return L10n.localAccount }
+        return accountController.connections.first { $0.id == connectionID }?.displayName ?? L10n.dahliaAccount
     }
 
     @State private var supportedLocales: [Locale] = []
@@ -18,21 +23,52 @@ struct TranscriptionSettingsView: View {
     var body: some View {
         Form {
             Section {
-                Picker(L10n.processingMethod, selection: Binding(
-                    get: { connectionID.flatMap { accountSettings.state(for: $0).settings?.summary?.method }
-                        .flatMap(RecordingProcessingMethod.init(rawValue:)) ?? .transcript
-                    },
-                    set: { value in
-                        if let connectionID { accountSettings.save(.init(summary: .init(method: value.rawValue)), connectionID: connectionID) }
+                LabeledContent(L10n.appliesToAccount, value: accountName)
+                LabeledContent(L10n.settingsScope, value: connectionID == nil ? L10n.localAccount : L10n.syncedDahliaAccount)
+                if let connectionID {
+                    Picker(L10n.processingLocation, selection: Binding(
+                        get: { mode },
+                        set: { accountSettings.save(.init(summary: .init(mode: $0)), connectionID: connectionID) }
+                    )) {
+                        Text(L10n.localProcessing).tag(ServerAccountSettings.SummaryMode.local)
+                        if canSelectRemote || mode == .remote {
+                            Text(L10n.remoteProcessing).tag(ServerAccountSettings.SummaryMode.remote)
+                                .disabled(!canSelectRemote)
+                        }
                     }
-                )) {
-                    ForEach(processingMethods) { Text($0.displayName).tag($0) }
+                    .disabled(serverState?.canEdit != true)
+                    if serverState?.isLoading == true {
+                        LabeledContent(L10n.processingLocation) { ProgressView().controlSize(.small) }
+                    } else if let error = serverState?.errorMessage {
+                        SettingsStatusMessage(text: error, systemImage: "exclamationmark.triangle.fill", tint: .red)
+                        Button(L10n.retry) { accountSettings.refresh(connectionID: connectionID) }
+                    } else if mode == .remote, !canSelectRemote {
+                        SettingsStatusMessage(text: L10n.serverSummaryUnavailable, systemImage: "exclamationmark.triangle.fill", tint: .orange)
+                    }
+                } else {
+                    LabeledContent(L10n.processingLocation, value: L10n.localProcessing)
                 }
-                .disabled(processingMethods.isEmpty || (connectionID.map { !accountSettings.state(for: $0).canEdit } ?? true))
+            } header: {
+                Text(L10n.transcriptionAndSummary)
+            } footer: {
+                Text(connectionID == nil ? L10n.localAccountScopeDescription : L10n.syncedAccountScopeDescription)
+            }
+
+            if mode == .local {
+                LocalSummarySettingsSection()
+            } else if let connectionID {
+                ServerSummarySettingsSection(connectionID: connectionID)
+            }
+
+            Section {
                 Toggle(L10n.liveTranscriptDraft, isOn: $settings.liveTranscriptDraftEnabled)
                     .toggleStyle(.switch)
                 Toggle(L10n.automaticRecordingProcessing, isOn: $settings.automaticRecordingProcessingEnabled)
                     .toggleStyle(.switch)
+            } header: {
+                Text(L10n.thisMac)
+            } footer: {
+                Text(L10n.thisMacSettingsDescription)
             }
 
             Group {
@@ -108,6 +144,9 @@ struct TranscriptionSettingsView: View {
         }
         .task {
             await loadSupportedLocales()
+        }
+        .task(id: connectionID) {
+            if let connectionID, let task = accountSettings.refresh(connectionID: connectionID) { await task.value }
         }
     }
 

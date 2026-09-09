@@ -54,3 +54,39 @@ it.each(["sqlite", "d1"])("creates canonical tables, defaults, and cascading rel
     expect(db.prepare("SELECT * FROM meeting_events").all()).toEqual([]);
   } finally { db.close(); }
 });
+
+it.each(["sqlite", "d1"])("migrates every legacy summary mode (%s)", (dialect) => {
+  const db = new DatabaseSync(":memory:");
+  const files = serverMigrationManifest.sqlite.files;
+  const path = (file: string) => dialect === "d1"
+    ? file.replace("drizzle/sqlite/", "drizzle/d1/").replace("/migration.sql", ".sql")
+    : file;
+  try {
+    for (const file of files.slice(0, -1)) db.exec(readFileSync(new URL(`../${path(file)}`, import.meta.url), "utf8"));
+    for (const method of ["transcript", "cloudTranscription", "audio"] as const) {
+      db.prepare("INSERT INTO user(id, name, email, updated_at) VALUES (?, ?, ?, 1)")
+        .run(method, method, `${method}@example.com`);
+      const summary = { method, detail: method === "audio" ? "standard" : "detailed", methodSettings: {
+        transcript: { model: "saved-summary", reasoningEffort: "high" },
+        audio: { model: "saved-audio", reasoningEffort: "low" },
+      } };
+      db.prepare("INSERT INTO account_settings(user_id, summary, output_language, analysis_languages) VALUES (?, ?, 'ja', '{}')")
+        .run(method, JSON.stringify(summary));
+    }
+    db.exec(readFileSync(new URL(`../${path(files.at(-1)!)}`, import.meta.url), "utf8"));
+    const summaries: Record<string, unknown> = Object.fromEntries(
+      (db.prepare("SELECT user_id, summary FROM account_settings ORDER BY user_id").all() as
+        Array<{ user_id: string; summary: string }>)
+        .map((row) => [row.user_id, JSON.parse(row.summary) as unknown]),
+    );
+    expect(summaries).toEqual({
+      audio: { mode: "remote", remote: { detail: "medium", model: "saved-audio", reasoningEffort: "low" } },
+      cloudTranscription: { mode: "remote", remote: {
+        detail: "high", model: "saved-summary", reasoningEffort: "high", transcriptionModel: "saved-audio",
+      } },
+      transcript: { mode: "local", remote: {
+        detail: "high", model: "gemini-3-8-flash", reasoningEffort: "medium", transcriptionModel: "gemini-3-8-flash",
+      } },
+    });
+  } finally { db.close(); }
+});

@@ -19,7 +19,10 @@ describe.runIf(databaseUrl)("PostgreSQL targeted summary delivery", () => {
     const vaultId = uuidV7(), meetingId = uuidV7(); const now = new Date().toISOString();
     const document = summaryDocument({ title: "Synthetic", description: "test", tags: [], action_items: [], sections: [{ heading: "Test", blocks: [{ type: "paragraph", level: 3, content: { text: "Synthetic", transcript_ref: null }, items: [], language: "", image_id: "" }] }] }, new Set());
     let generations = 0;
-    const method: SummaryMethod = { id: "transcript", captureSettings: (settings) => ({ ...settings.summary.methodSettings.transcript, detail: settings.summary.detail }),
+    const method: SummaryMethod = { id: "transcript", captureSettings: (settings) => ({
+      model: settings.summary.remote.model, reasoningEffort: settings.summary.remote.reasoningEffort,
+      detail: settings.summary.remote.detail,
+    }),
       version: () => Promise.resolve("v1"), generate: async () => {
         generations++;
         if (scenario === "permission") await connection.db.execute(sql`delete from app.vault_permissions where vault_id = ${vaultId}`);

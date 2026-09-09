@@ -1582,6 +1582,7 @@ final class CaptionViewModel: ObservableObject {
                     localeIdentifier: execution.confirmation.suggestedLocaleIdentifier,
                     method: .transcript, options: options,
                     generationSettings: .current(detailLevel: options.detailLevel), serverSettings: nil,
+                    summaryMode: .local,
                     stage: .transcribing
                 )
             }
@@ -3546,13 +3547,19 @@ final class CaptionViewModel: ObservableObject {
         let generationSettings = SummaryGenerationSettings.current(detailLevel: options.detailLevel)
         let connectionID = try await dbQueue.read { db in try VaultRecord.fetchOne(db, key: vaultID)?.accountConnectionId }
         let serverSettings = connectionID.flatMap { ServerAccountSettingsModel.shared.state(for: $0).settings }
-        if let detail = serverSettings?.summary?.detailLevel {
+        if serverSettings?.summary?.mode == .remote, let detail = serverSettings?.summary?.detailLevel {
             options = .init(exportOptions: options.exportOptions, detailLevel: detail)
+        }
+        let method: RecordingProcessingMethod = switch serverSettings?.summary?.mode {
+        case .remote:
+            serverSettings?.summary?.remote.transcriptionModel == nil ? .audio : .cloudTranscription
+        default:
+            .transcript
         }
         return RecordingProcessing(
             id: .v7(), automatic: automatic, liveDraft: plan.liveTranscriptDraftEnabled, localeIdentifier: locale.identifier,
-            method: serverSettings?.summary.flatMap { RecordingProcessingMethod(rawValue: $0.method) } ?? .transcript,
-            options: options, generationSettings: generationSettings.applying(detailLevel: options.detailLevel), serverSettings: serverSettings
+            method: method, options: options, generationSettings: generationSettings.applying(detailLevel: options.detailLevel),
+            serverSettings: serverSettings, summaryMode: serverSettings?.summary?.mode ?? .local
         )
     }
 
@@ -4742,7 +4749,18 @@ final class CaptionViewModel: ObservableObject {
                 guard sessionID == nil || (saved?.id == expectedJobID && saved?.stage != .cancelled) else { throw CancellationError() }
                 return saved
             }
-            if let target = try await ServerSummaryService.shared.target(meetingID: request.meetingId, dbQueue: request.dbQueue) {
+            let usesServerSummary: Bool
+            if let processing {
+                usesServerSummary = processing.usesServerSummary
+                    ?? (request.generationSettings.runtimeProvider.accountConnectionID != nil)
+            } else {
+                let currentServerMode = request.generationSettings.runtimeProvider.accountConnectionID.flatMap {
+                    ServerAccountSettingsModel.shared.state(for: $0).settings?.summary?.mode
+                }
+                usesServerSummary = currentServerMode == .remote
+            }
+            if usesServerSummary,
+               let target = try await ServerSummaryService.shared.target(meetingID: request.meetingId, dbQueue: request.dbQueue) {
                 if job.recordingSessionID == nil { configureServerSummaryActions(job: job, target: target, request: request) }
                 job.progress.summaryGeneration = .running
                 job.progress.vaultExport = .skipped

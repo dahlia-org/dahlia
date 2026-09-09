@@ -8,6 +8,8 @@ import "../../src/client/styles.css";
 
 Object.defineProperty(navigator, "language", { value: "en-US", configurable: true });
 let settings = structuredClone(DEFAULT_ACCOUNT_SETTINGS);
+settings.summary.mode = "remote";
+let remoteCapability = false;
 let modelReads = 0;
 let failPatch = false;
 let patchGate: ReturnType<typeof gate> | undefined;
@@ -21,7 +23,9 @@ function gate() {
 window.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
   const request = input instanceof Request ? input : new Request(new URL(input, location.origin), init);
   const path = new URL(request.url).pathname;
-  if (path === "/api/v1/capabilities") return Response.json({ meetingSummaryGeneration: { version: 1, sources: ["transcript", "audio"] } });
+  if (path === "/api/v1/capabilities") return Response.json(remoteCapability
+    ? { meetingSummaryGeneration: { version: 2, sources: ["transcript", "audio"] } }
+    : {});
   if (path === "/api/v1/models") {
     modelReads++;
     return Response.json(modelList([{ id: "gpt-5.4" }, { id: "gemini-3-8-flash" }]));
@@ -32,9 +36,16 @@ window.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
     patches.push(patch);
     if (failPatch) return Response.json({ error: "save_failed" }, { status: 503 });
     await patchGate?.promise;
-    settings = { ...settings, ...patch, summary: { ...settings.summary, ...patch.summary,
-      methodSettings: { transcript: { ...settings.summary.methodSettings.transcript, ...patch.summary?.methodSettings?.transcript },
-        audio: { ...settings.summary.methodSettings.audio, ...patch.summary?.methodSettings?.audio } } } };
+    const remote = { ...settings.summary.remote,
+      ...(patch.summary?.remote?.detail === undefined ? {} : { detail: patch.summary.remote.detail }),
+      ...(patch.summary?.remote?.model === undefined ? {} : { model: patch.summary.remote.model }),
+      ...(patch.summary?.remote?.reasoningEffort === undefined ? {} : { reasoningEffort: patch.summary.remote.reasoningEffort }),
+      ...(typeof patch.summary?.remote?.transcriptionModel === "string"
+        ? { transcriptionModel: patch.summary.remote.transcriptionModel } : {}) };
+    if (patch.summary?.remote?.transcriptionModel === null) delete remote.transcriptionModel;
+    settings = { ...settings, ...patch, summary: {
+      mode: patch.summary?.mode ?? settings.summary.mode, remote,
+    } };
     return Response.json({ settings });
   }
   const snapshot = structuredClone(settings);
@@ -68,22 +79,32 @@ function choose(label: string, value: string) {
 }
 async function ready() { await until(() => document.querySelector<HTMLButtonElement>('[role="combobox"]') && !select("Output language").matches(":disabled")); }
 async function run() {
+  const first = createRoot(document.getElementById("root")!);
+  first.render(<ServerSummarySettings />);
+  await ready();
+  choose("Processing location", "local");
+  await until(() => settings.summary.mode === "local");
+  first.unmount();
+
+  remoteCapability = true;
+  settings.summary.mode = "remote";
+  settings.summary.remote.transcriptionModel = "catalog.ai.unavailable";
   createRoot(document.getElementById("root")!).render(<ServerSummarySettings />);
   await ready();
-  await until(() => document.querySelectorAll('[role="combobox"]').length === 5 && modelReads === 1);
+  await until(() => document.querySelectorAll('[role="combobox"]').length >= 5 && modelReads === 1);
+  assert(select("Transcription model").value === "", "Unavailable transcription model appeared selected");
+  choose("Transcription model", "gemini-3-8-flash");
+  await until(() => settings.summary.remote.transcriptionModel === "gemini-3-8-flash");
+  await ready();
   choose("Detail", "low");
-  await until(() => settings.summary.detail === "low");
+  await until(() => settings.summary.remote.detail === "low");
   await ready();
-  assert(JSON.stringify(patches.at(-1)) === '{"summary":{"detail":"low"}}', "Detail PATCH must be common");
-  choose("Summary source", "audio");
-  await until(() => settings.summary.method === "audio");
-  await ready();
-  assert(select("Detail").value === "low", "Switching method changed detail");
+  assert(JSON.stringify(patches.at(-1)) === '{"summary":{"remote":{"detail":"low"}}}', "Detail PATCH must be remote");
 
   // A notification starts an old GET while PATCH is in flight. Its response must not undo the save.
   patchGate = gate();
   choose("Detail", "medium");
-  await until(() => patches.at(-1)?.summary?.detail === "medium");
+  await until(() => patches.at(-1)?.summary?.remote?.detail === "medium");
   const staleRead = gate(); readGate = staleRead; readStarted = false;
   window.dispatchEvent(new Event(accountSettingsEvent));
   await until(() => readStarted);
@@ -109,6 +130,6 @@ async function run() {
   await ready();
   assert(!document.querySelector('[role="alert"]'), "Retry did not clear the save error");
   assert(modelReads === 1, "Retry reloaded models");
-  document.getElementById("result")!.textContent = "PASS: common detail, method switch, stale GET, settings notification, failed save/retry, stable model catalog";
+  document.getElementById("result")!.textContent = "PASS: local fallback, invalid transcription model, remote detail, stale GET, settings notification, failed save/retry, stable model catalog";
 }
 void run().catch((error: unknown) => { document.getElementById("result")!.textContent = `FAIL: ${String(error)}`; console.error(error); });

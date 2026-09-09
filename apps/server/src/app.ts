@@ -532,7 +532,7 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
       meetingEvents: { version: 1 },
       search: { version: 1 },
       ...(dependencies.imageAnalysisEnabled === true ? { imageAnalysis: { version: 1 } } : {}),
-      ...(sources.length ? { meetingSummaryGeneration: { version: 1, sources } } : {}),
+      ...(sources.length ? { meetingSummaryGeneration: { version: 2, sources } } : {}),
     });
   });
   registerApi(app, "search", bodyLimit({ maxSize: 16 * 1024,

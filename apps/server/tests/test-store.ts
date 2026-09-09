@@ -11,11 +11,17 @@ export function testStore(overrides: Partial<AuthStore> = {}): AuthStore {
       get: (userId) => Promise.resolve(settings.get(userId) ?? null),
       update: (userId, patch, initialize) => {
         const current = settings.get(userId) ?? DEFAULT_ACCOUNT_SETTINGS;
+        const remote: AccountSettings["summary"]["remote"] = { ...current.summary.remote,
+          ...(patch.summary?.remote?.detail === undefined ? {} : { detail: patch.summary.remote.detail }),
+          ...(patch.summary?.remote?.model === undefined ? {} : { model: patch.summary.remote.model }),
+          ...(patch.summary?.remote?.reasoningEffort === undefined ? {} : { reasoningEffort: patch.summary.remote.reasoningEffort }),
+          ...(typeof patch.summary?.remote?.transcriptionModel === "string"
+            ? { transcriptionModel: patch.summary.remote.transcriptionModel } : {}) };
+        if (patch.summary?.remote?.transcriptionModel === null) delete remote.transcriptionModel;
         const value = initialize && settings.has(userId) ? settings.get(userId)!
           : { ...current, ...patch, summary: {
-            detail: patch.summary?.detail ?? current.summary.detail,
-            method: patch.summary?.method ?? current.summary.method,
-            methodSettings: { audio: { ...current.summary.methodSettings.audio, ...patch.summary?.methodSettings?.audio }, transcript: { ...current.summary.methodSettings.transcript, ...patch.summary?.methodSettings?.transcript } },
+            mode: patch.summary?.mode ?? current.summary.mode,
+            remote,
           } };
         settings.set(userId, value);
         return Promise.resolve(value);

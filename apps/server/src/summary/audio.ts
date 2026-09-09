@@ -107,8 +107,10 @@ export function createAudioSummaryMethod(config: AppConfig, store: MeetingSyncSt
   const cloudflare = audioProvider.backend === "cloudflare";
   return {
     id: "audio",
-    captureSettings: (settings, detail) => ({ ...settings.summary.methodSettings.audio,
-      detail: detail ?? settings.summary.detail }),
+    captureSettings: (settings, detail) => ({
+      model: settings.summary.remote.model, reasoningEffort: settings.summary.remote.reasoningEffort,
+      detail: detail ?? settings.summary.remote.detail,
+    }),
     async version(scoped, vaultId, meetingId, input) { return audioFingerprint(await collectAudio(scoped, vaultId, meetingId, input)); },
     async validateSettings(settings, input) {
       if (!input && !cloudflare) return;
@@ -117,7 +119,7 @@ export function createAudioSummaryMethod(config: AppConfig, store: MeetingSyncSt
       const summaryModel = unqualified(settings.model);
       if (!isSummaryModel(summaryModel, catalog, input?.type === "recording" && input.transcriptionModel ? "transcript" : "audio")) throw new SummaryError("summary_invalid_structured_model");
       const audioModel = input?.type === "recording" && input.transcriptionModel ? unqualified(input.transcriptionModel) : summaryModel;
-      if (!isSummaryModel(audioModel, catalog, "audio")) throw new SummaryError("summary_invalid_audio_model");
+      if (!isAudioSummaryModel(audioModel, catalog)) throw new SummaryError("summary_invalid_audio_model");
       if (input?.type === "recording" && input.transcriptionModel) {
         const model = catalog.models.find((model) => model.slug === audioModel)!;
         settings.transcriptionReasoningEffort = model.default_reasoning_level as typeof settings.transcriptionReasoningEffort;

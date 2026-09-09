@@ -2354,95 +2354,61 @@
               "summary": {
                 "type": "object",
                 "properties": {
-                  "method": {
+                  "mode": {
                     "type": "string",
                     "enum": [
-                      "transcript",
-                      "cloudTranscription",
-                      "audio"
+                      "local",
+                      "remote"
                     ]
                   },
-                  "detail": {
-                    "type": "string",
-                    "enum": [
-                      "low",
-                      "medium",
-                      "high",
-                      "xhigh",
-                      "max"
-                    ]
-                  },
-                  "methodSettings": {
+                  "remote": {
                     "type": "object",
                     "properties": {
-                      "transcript": {
-                        "type": "object",
-                        "properties": {
-                          "model": {
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 200
-                          },
-                          "reasoningEffort": {
-                            "type": "string",
-                            "enum": [
-                              "none",
-                              "minimal",
-                              "low",
-                              "medium",
-                              "high",
-                              "xhigh",
-                              "max",
-                              "ultra"
-                            ]
-                          }
-                        },
-                        "required": [
-                          "model",
-                          "reasoningEffort"
-                        ],
-                        "additionalProperties": false
+                      "model": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200
                       },
-                      "audio": {
-                        "type": "object",
-                        "properties": {
-                          "model": {
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 200
-                          },
-                          "reasoningEffort": {
-                            "type": "string",
-                            "enum": [
-                              "none",
-                              "minimal",
-                              "low",
-                              "medium",
-                              "high",
-                              "xhigh",
-                              "max",
-                              "ultra"
-                            ]
-                          }
-                        },
-                        "required": [
-                          "model",
-                          "reasoningEffort"
-                        ],
-                        "additionalProperties": false
+                      "reasoningEffort": {
+                        "type": "string",
+                        "enum": [
+                          "none",
+                          "minimal",
+                          "low",
+                          "medium",
+                          "high",
+                          "xhigh",
+                          "max",
+                          "ultra"
+                        ]
+                      },
+                      "detail": {
+                        "type": "string",
+                        "enum": [
+                          "low",
+                          "medium",
+                          "high",
+                          "xhigh",
+                          "max"
+                        ]
+                      },
+                      "transcriptionModel": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200
                       }
                     },
                     "required": [
-                      "transcript",
-                      "audio"
+                      "model",
+                      "reasoningEffort",
+                      "detail"
                     ],
                     "additionalProperties": false
                   }
                 },
                 "required": [
-                  "method",
-                  "detail",
-                  "methodSettings"
+                  "mode",
+                  "remote"
                 ],
                 "additionalProperties": false
               }
@@ -6833,74 +6799,51 @@
                   "summary": {
                     "type": "object",
                     "properties": {
-                      "method": {
+                      "mode": {
                         "type": "string",
                         "enum": [
-                          "transcript",
-                          "cloudTranscription",
-                          "audio"
+                          "local",
+                          "remote"
                         ]
                       },
-                      "detail": {
-                        "type": "string",
-                        "enum": [
-                          "low",
-                          "medium",
-                          "high",
-                          "xhigh",
-                          "max"
-                        ]
-                      },
-                      "methodSettings": {
+                      "remote": {
                         "type": "object",
                         "properties": {
-                          "transcript": {
-                            "type": "object",
-                            "properties": {
-                              "model": {
-                                "type": "string",
-                                "minLength": 1,
-                                "maxLength": 200
-                              },
-                              "reasoningEffort": {
-                                "type": "string",
-                                "enum": [
-                                  "none",
-                                  "minimal",
-                                  "low",
-                                  "medium",
-                                  "high",
-                                  "xhigh",
-                                  "max",
-                                  "ultra"
-                                ]
-                              }
-                            },
-                            "additionalProperties": false
+                          "model": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200
                           },
-                          "audio": {
-                            "type": "object",
-                            "properties": {
-                              "model": {
-                                "type": "string",
-                                "minLength": 1,
-                                "maxLength": 200
-                              },
-                              "reasoningEffort": {
-                                "type": "string",
-                                "enum": [
-                                  "none",
-                                  "minimal",
-                                  "low",
-                                  "medium",
-                                  "high",
-                                  "xhigh",
-                                  "max",
-                                  "ultra"
-                                ]
-                              }
-                            },
-                            "additionalProperties": false
+                          "reasoningEffort": {
+                            "type": "string",
+                            "enum": [
+                              "none",
+                              "minimal",
+                              "low",
+                              "medium",
+                              "high",
+                              "xhigh",
+                              "max",
+                              "ultra"
+                            ]
+                          },
+                          "detail": {
+                            "type": "string",
+                            "enum": [
+                              "low",
+                              "medium",
+                              "high",
+                              "xhigh",
+                              "max"
+                            ]
+                          },
+                          "transcriptionModel": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "minLength": 1,
+                            "maxLength": 200
                           }
                         },
                         "additionalProperties": false
@@ -7821,6 +7764,19 @@
                           "fr",
                           "de",
                           "es"
+                        ]
+                      },
+                      "reasoningEffort": {
+                        "type": "string",
+                        "enum": [
+                          "none",
+                          "minimal",
+                          "low",
+                          "medium",
+                          "high",
+                          "xhigh",
+                          "max",
+                          "ultra"
                         ]
                       }
                     },

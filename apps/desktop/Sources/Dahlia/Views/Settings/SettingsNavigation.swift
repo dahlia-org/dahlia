@@ -17,8 +17,8 @@ enum SettingsNavigation {
         switch selection {
         case .dahliaAccounts, .vault, .modelProvider:
             .accountsAndVaults
-        case .instructions, .mcp:
-            .aiSummary
+        case .aiSummary, .instructions, .mcp:
+            .transcription
         default:
             selection
         }

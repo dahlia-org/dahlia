@@ -37,13 +37,13 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .permissions: L10n.permissions
         case .backups: L10n.backups
         case .search: L10n.search
-        case .transcription: L10n.transcription
+        case .transcription: L10n.transcriptionAndSummary
         case .liveSubtitles: L10n.liveSubtitles
         case .screenshots: L10n.screenshots
         case .calendar: L10n.calendar
         case .cloudStorage: L10n.export
         case .modelProvider: L10n.modelProvider
-        case .aiSummary: L10n.summary
+        case .aiSummary: L10n.transcriptionAndSummary
         case .mcp: L10n.mcp
         case .instructions: L10n.instructions
         case .betaFeatures: L10n.betaFeatures

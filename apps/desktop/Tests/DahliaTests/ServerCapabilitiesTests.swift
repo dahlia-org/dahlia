@@ -28,7 +28,7 @@ import Foundation
             #expect(capabilities.meetingSummaryGeneration?.sources == ["transcript", "audio"])
         }
 
-        @Test(arguments: [#"{"version":2}"#, #"{"version":2,"sources":{"future":true}}"#])
+        @Test(arguments: [#"{"version":3}"#, #"{"version":3,"sources":{"future":true}}"#])
         func unsupportedSummaryPayloadPreservesOtherCapabilities(_ summary: String) throws {
             let data = Data("""
             {"sync":{"version":4},"recordingArchive":{"version":1},"meetingEvents":{"version":1},
@@ -40,11 +40,11 @@ import Foundation
             #expect(capabilities.meetingEvents?.version == 1)
             #expect(capabilities.search?.version == 1)
             #expect(capabilities.imageAnalysis?.version == 1)
-            #expect(capabilities.meetingSummaryGeneration?.version == 2)
+            #expect(capabilities.meetingSummaryGeneration?.version == 3)
             #expect(capabilities.meetingSummaryGeneration?.sources.isEmpty == true)
         }
 
-        @Test(arguments: [#"{"version":1}"#, #"{"version":1,"sources":{}}"#])
+        @Test(arguments: [#"{"version":1}"#, #"{"version":1,"sources":{}}"#, #"{"version":2}"#, #"{"version":2,"sources":{}}"#])
         func supportedSummaryRequiresValidSources(_ summary: String) {
             let data = Data("{\"meetingSummaryGeneration\":\(summary)}".utf8)
             #expect(throws: DecodingError.self) {

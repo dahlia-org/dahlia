@@ -6,31 +6,75 @@ struct ServerAccountSettings: Codable, Equatable, Sendable {
         var identifiers: [String]
     }
 
-    struct SummaryModelSettings: Codable, Equatable, Sendable {
-        var model = "gpt-5.4"
+    enum SummaryMode: String, Codable, CaseIterable, Identifiable, Sendable {
+        case local, remote
+        var id: Self { self }
+    }
+
+    struct RemoteSummarySettings: Codable, Equatable, Sendable {
+        var detail = "high"
+        var model = "gemini-3-8-flash"
         var reasoningEffort = "medium"
+        var transcriptionModel: String?
     }
 
     struct Summary: Codable, Equatable, Sendable {
-        struct MethodSettings: Codable, Equatable, Sendable {
-            var transcript: SummaryModelSettings
-            var audio: SummaryModelSettings?
+        var mode: SummaryMode
+        var remote: RemoteSummarySettings
+        private(set) var legacyMethod: String?
+
+        private enum CodingKeys: String, CodingKey { case mode, remote, method, detail, methodSettings, legacyMethod }
+        private struct LegacyModelSettings: Decodable {
+            var model: String
+            var reasoningEffort: String
         }
 
-        var method: String
-        var detail: String
-        var methodSettings: MethodSettings
+        private struct LegacyMethodSettings: Decodable {
+            var transcript: LegacyModelSettings?
+            var audio: LegacyModelSettings?
+        }
 
-        var selectedSettings: SummaryModelSettings? {
-            switch method {
-            case "transcript", "cloudTranscription": methodSettings.transcript
-            case "audio": methodSettings.audio
-            default: nil
+        init(mode: SummaryMode, remote: RemoteSummarySettings) {
+            self.mode = mode
+            self.remote = remote
+            legacyMethod = nil
+        }
+
+        init(from decoder: Decoder) throws {
+            let values = try decoder.container(keyedBy: CodingKeys.self)
+            if let mode = try values.decodeIfPresent(SummaryMode.self, forKey: .mode) {
+                try self.init(mode: mode, remote: values.decode(RemoteSummarySettings.self, forKey: .remote))
+                legacyMethod = try values.decodeIfPresent(String.self, forKey: .legacyMethod)
+                return
             }
+            let method = try values.decode(String.self, forKey: .method)
+            let detail = try values.decodeIfPresent(String.self, forKey: .detail) ?? "high"
+            let legacy = try values.decodeIfPresent(LegacyMethodSettings.self, forKey: .methodSettings)
+            let selected = method == "audio" ? legacy?.audio : legacy?.transcript
+            let remote = RemoteSummarySettings(
+                detail: detail,
+                model: selected?.model ?? "gemini-3-8-flash",
+                reasoningEffort: selected?.reasoningEffort ?? "medium",
+                transcriptionModel: method == "cloudTranscription"
+                    ? legacy?.audio?.model ?? "gemini-3-8-flash"
+                    : nil
+            )
+            self.init(
+                mode: method == "transcript" ? .local : .remote,
+                remote: remote
+            )
+            legacyMethod = method
+        }
+
+        func encode(to encoder: Encoder) throws {
+            var values = encoder.container(keyedBy: CodingKeys.self)
+            try values.encode(mode, forKey: .mode)
+            try values.encode(remote, forKey: .remote)
+            try values.encodeIfPresent(legacyMethod, forKey: .legacyMethod)
         }
 
         var detailLevel: SummaryDetailLevel? {
-            SummaryDetailLevel.fromPersistedValue(detail)
+            SummaryDetailLevel.fromPersistedValue(remote.detail)
         }
     }
 
@@ -54,19 +98,15 @@ struct ServerAccountSettings: Codable, Equatable, Sendable {
         var analysisLanguages: AnalysisLanguages?
         var initialize: Bool?
         struct Summary: Encodable, Sendable {
-            var method: String?
+            var mode: SummaryMode?
+            var remote: Remote?
+        }
+
+        struct Remote: Encodable, Sendable {
             var detail: String?
-            var methodSettings: MethodSettings?
-        }
-
-        struct MethodSettings: Encodable, Sendable {
-            var transcript: ModelSettings?
-            var audio: ModelSettings?
-        }
-
-        struct ModelSettings: Encodable, Sendable {
             var model: String?
             var reasoningEffort: String?
+            var transcriptionModel: String??
         }
 
         var summary: Summary?

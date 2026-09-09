@@ -8,7 +8,7 @@ import Foundation
         @Test
         func groupsContainEveryCategoryOnce() {
             let groupedCategories = SettingsGroup.allCases.flatMap(\.categories)
-            let hiddenCategories: Set<SettingsCategory> = [.dahliaAccounts, .vault, .modelProvider, .instructions, .mcp]
+            let hiddenCategories: Set<SettingsCategory> = [.dahliaAccounts, .vault, .modelProvider, .aiSummary, .instructions, .mcp]
             let expectedCategories = SettingsCategory.allCases.filter { !hiddenCategories.contains($0) }
 
             #expect(SettingsCategory.allCases == [
@@ -40,6 +40,7 @@ import Foundation
             #expect(!groupedCategories.contains(.mcp))
             #expect(!groupedCategories.contains(.dahliaAccounts))
             #expect(!groupedCategories.contains(.vault))
+            #expect(!groupedCategories.contains(.aiSummary))
             #expect(SettingsGroup.allCases.last == .advanced)
             #expect(SettingsGroup.app.categories == [
                 .accountsAndVaults,
@@ -51,7 +52,7 @@ import Foundation
                 .search,
             ])
             #expect(SettingsGroup.meetings.label == L10n.meetings)
-            #expect(SettingsGroup.meetings.categories == [.transcription, .liveSubtitles, .screenshots, .aiSummary])
+            #expect(SettingsGroup.meetings.categories == [.transcription, .liveSubtitles, .screenshots])
             #expect(SettingsGroup.advanced.categories == [.betaFeatures, .developer, .audioDiagnostics])
             #expect(!AppSettings.defaultCustomerIntelligenceBetaEnabled)
             #expect(!AppSettings.defaultConversationAnalyticsBetaEnabled)
@@ -60,8 +61,9 @@ import Foundation
 
         @Test
         func hiddenSelectionsResolveToVisibleSettings() {
-            #expect(SettingsNavigation.visibleSelection(.instructions) == .aiSummary)
-            #expect(SettingsNavigation.visibleSelection(.mcp) == .aiSummary)
+            #expect(SettingsNavigation.visibleSelection(.instructions) == .transcription)
+            #expect(SettingsNavigation.visibleSelection(.mcp) == .transcription)
+            #expect(SettingsNavigation.visibleSelection(.aiSummary) == .transcription)
             #expect(SettingsNavigation.visibleSelection(.dahliaAccounts) == .accountsAndVaults)
             #expect(SettingsNavigation.visibleSelection(.vault) == .accountsAndVaults)
             #expect(SettingsNavigation.visibleSelection(.modelProvider) == .accountsAndVaults)
@@ -78,7 +80,7 @@ import Foundation
 
             defaults.set(SettingsCategory.instructions.rawValue, forKey: SettingsNavigation.selectedCategoryDefaultsKey)
 
-            #expect(SettingsNavigation.savedSelection(in: defaults) == .aiSummary)
+            #expect(SettingsNavigation.savedSelection(in: defaults) == .transcription)
 
             defaults.set(SettingsCategory.dahliaAccounts.rawValue, forKey: SettingsNavigation.selectedCategoryDefaultsKey)
             #expect(SettingsNavigation.savedSelection(in: defaults) == .accountsAndVaults)
@@ -117,7 +119,7 @@ import Foundation
             #expect(SettingsCategory.language.systemImage == "globe")
             #expect(SettingsCategory.modelProvider.label == L10n.modelProvider)
             #expect(SettingsCategory.modelProvider.systemImage == "sparkles")
-            #expect(SettingsCategory.aiSummary.label == L10n.summary)
+            #expect(SettingsCategory.aiSummary.label == L10n.transcriptionAndSummary)
             #expect(SettingsCategory.aiSummary.systemImage == "list.bullet.clipboard")
             #expect(SettingsCategory.liveSubtitles.rawValue == "liveSubtitles")
             #expect(SettingsCategory.liveSubtitles.label == L10n.liveSubtitles)

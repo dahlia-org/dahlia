@@ -1524,20 +1524,14 @@ export interface components {
                 };
                 summary: {
                     /** @enum {string} */
-                    method: "transcript" | "cloudTranscription" | "audio";
-                    /** @enum {string} */
-                    detail: "low" | "medium" | "high" | "xhigh" | "max";
-                    methodSettings: {
-                        transcript: {
-                            model: string;
-                            /** @enum {string} */
-                            reasoningEffort: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
-                        };
-                        audio: {
-                            model: string;
-                            /** @enum {string} */
-                            reasoningEffort: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
-                        };
+                    mode: "local" | "remote";
+                    remote: {
+                        model: string;
+                        /** @enum {string} */
+                        reasoningEffort: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+                        /** @enum {string} */
+                        detail: "low" | "medium" | "high" | "xhigh" | "max";
+                        transcriptionModel?: string;
                     };
                 };
             } | null;
@@ -2620,20 +2614,14 @@ export interface operations {
                     };
                     summary?: {
                         /** @enum {string} */
-                        method?: "transcript" | "cloudTranscription" | "audio";
-                        /** @enum {string} */
-                        detail?: "low" | "medium" | "high" | "xhigh" | "max";
-                        methodSettings?: {
-                            transcript?: {
-                                model?: string;
-                                /** @enum {string} */
-                                reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
-                            };
-                            audio?: {
-                                model?: string;
-                                /** @enum {string} */
-                                reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
-                            };
+                        mode?: "local" | "remote";
+                        remote?: {
+                            model?: string;
+                            /** @enum {string} */
+                            reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+                            /** @enum {string} */
+                            detail?: "low" | "medium" | "high" | "xhigh" | "max";
+                            transcriptionModel?: string | null;
                         };
                     };
                     initialize?: boolean;
@@ -3040,6 +3028,8 @@ export interface operations {
                     detail: "low" | "medium" | "high" | "xhigh" | "max";
                     /** @enum {string} */
                     outputLanguage: "ja" | "en" | "zh" | "ko" | "fr" | "de" | "es";
+                    /** @enum {string} */
+                    reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
                 } | {
                     id: string;
                     /** @enum {string} */

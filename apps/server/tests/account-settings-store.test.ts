@@ -21,31 +21,29 @@ it.runIf(url)("enforces PostgreSQL FORCE RLS and atomically merges concurrent le
   } catch (error) { await client.query("ROLLBACK"); throw error; }
   finally { client.release(); }
   const expectedSummary = {
-    method: "audio",
-    detail: "medium",
-    methodSettings: {
-      transcript: { model: "saved-transcript", reasoningEffort: "high" },
-      audio: { model: "saved-audio", reasoningEffort: "medium" },
-    },
+    mode: "remote",
+    remote: { detail: "medium", model: "saved-audio", reasoningEffort: "medium", transcriptionModel: "saved-transcript" },
   } as const;
   await store.update("01990ab0-0000-7000-8000-000000000101", { summary: expectedSummary });
   expect((await pool!.query("SELECT * FROM app.account_settings")).rows).toEqual([]);
   expect(await store.get("01990ab0-0000-7000-8000-000000000103")).toBeNull();
   expect(await store.getRevision("01990ab0-0000-7000-8000-000000000101")).toBe(1);
-  await store.update("01990ab0-0000-7000-8000-000000000101", { summary: { detail: "medium" } });
+  await store.update("01990ab0-0000-7000-8000-000000000101", { summary: { remote: { detail: "medium" } } });
   expect(await store.getRevision("01990ab0-0000-7000-8000-000000000101")).toBe(1);
   await Promise.all([
-    store.update("01990ab0-0000-7000-8000-000000000101", { summary: { methodSettings: { audio: { model: "changed" } } } }),
-    store.update("01990ab0-0000-7000-8000-000000000101", { summary: { methodSettings: { audio: { reasoningEffort: "high" } } } }),
-    store.update("01990ab0-0000-7000-8000-000000000101", { summary: { detail: "high" } }),
+    store.update("01990ab0-0000-7000-8000-000000000101", { summary: { remote: { model: "changed" } } }),
+    store.update("01990ab0-0000-7000-8000-000000000101", { summary: { remote: { reasoningEffort: "high" } } }),
+    store.update("01990ab0-0000-7000-8000-000000000101", { summary: { remote: { detail: "high" } } }),
   ]);
-  expect((await store.get("01990ab0-0000-7000-8000-000000000101"))?.summary).toEqual({ ...expectedSummary, detail: "high", methodSettings: {
-    ...expectedSummary.methodSettings, audio: { model: "changed", reasoningEffort: "high" },
+  expect((await store.get("01990ab0-0000-7000-8000-000000000101"))?.summary).toEqual({ ...expectedSummary, remote: {
+    ...expectedSummary.remote, detail: "high", model: "changed", reasoningEffort: "high",
   } });
   expect(await store.getRevision("01990ab0-0000-7000-8000-000000000101")).toBe(4);
-  await store.update("01990ab0-0000-7000-8000-000000000101", { summary: { detail: "low" } });
-  await store.update("01990ab0-0000-7000-8000-000000000101", { summary: { detail: "medium" } });
-  expect((await store.get("01990ab0-0000-7000-8000-000000000101"))?.summary.detail).toBe("medium");
+  await store.update("01990ab0-0000-7000-8000-000000000101", { summary: { remote: { detail: "low" } } });
+  await store.update("01990ab0-0000-7000-8000-000000000101", { summary: { remote: { detail: "medium" } } });
+  expect((await store.get("01990ab0-0000-7000-8000-000000000101"))?.summary.remote.detail).toBe("medium");
+  await store.update("01990ab0-0000-7000-8000-000000000101", { summary: { remote: { transcriptionModel: null } } });
+  expect((await store.get("01990ab0-0000-7000-8000-000000000101"))?.summary.remote.transcriptionModel).toBeUndefined();
   await Promise.all([store.update("01990ab0-0000-7000-8000-000000000102", { outputLanguage: "en" }, true), store.update("01990ab0-0000-7000-8000-000000000102", { outputLanguage: "ja" }, true)]);
   const initial = await store.get("01990ab0-0000-7000-8000-000000000102");
   expect(await store.getRevision("01990ab0-0000-7000-8000-000000000102")).toBe(1);

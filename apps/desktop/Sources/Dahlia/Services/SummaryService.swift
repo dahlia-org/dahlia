@@ -19,11 +19,7 @@ enum SummaryService {
         recordingSessions: [RecordingSessionTimeline] = [],
         generationSettings: SummaryGenerationSettings? = nil
     ) async throws -> GeneratedSummary {
-        var generationSettings = generationSettings ?? .current()
-        if let connectionID = generationSettings.runtimeProvider.accountConnectionID {
-            let settings = try await ServerAccountSettingsModel.shared.loadedSettings(connectionID: connectionID)
-            generationSettings = generationSettings.applying(language: settings.outputLanguage)
-        }
+        let generationSettings = generationSettings ?? .current()
 
         let systemPrompt = summaryGenerationInstructions(generationSettings: generationSettings)
         let inputs = try await makeCodexInputs(.init(

@@ -86,6 +86,7 @@ actor ServerSummaryService {
         let model: String
         let detailLevel: String
         let summaryLanguage: String
+        var reasoningEffort: String?
     }
 
     enum Failure: LocalizedError {
@@ -131,7 +132,7 @@ actor ServerSummaryService {
             try await $0.getCapabilities().ok.body.json
         }
         let summary = try JSONDecoder().decode(ServerCapabilities.self, from: data).meetingSummaryGeneration
-        guard let summary, summary.version == 1 else { return [] }
+        guard let summary, summary.version == 2 else { return [] }
         return summary.sources
     }
 
@@ -180,9 +181,17 @@ actor ServerSummaryService {
         guard let detail = Body.DetailPayload(rawValue: SummaryDetailLevel.fromPersistedValue(body.detailLevel).rawValue),
               let language = Body.OutputLanguagePayload(rawValue: body.summaryLanguage) else { throw Failure.unavailable }
         let input = try JSONDecoder().decode(Body.InputPayload.self, from: JSONEncoder().encode(body.input))
+        let reasoningEffort = body.reasoningEffort.flatMap(Body.ReasoningEffortPayload.init(rawValue:))
         return try await start(
             target,
-            body: .init(value1: Body(id: body.id, input: input, model: body.model, detail: detail, outputLanguage: language))
+            body: .init(value1: Body(
+                id: body.id,
+                input: input,
+                model: body.model,
+                detail: detail,
+                outputLanguage: language,
+                reasoningEffort: reasoningEffort
+            ))
         )
     }
 
@@ -241,7 +250,8 @@ actor ServerSummaryService {
         }
         if job == nil {
             let body: Request
-            if let saved = processing?.serverRequest {
+            if var saved = processing?.serverRequest {
+                saved.reasoningEffort = saved.reasoningEffort ?? processing?.serverSettings?.summary?.remote.reasoningEffort
                 body = saved
             } else {
                 let settings: ServerAccountSettings
@@ -256,7 +266,10 @@ actor ServerSummaryService {
                     else { throw Failure.unavailable }
                     settings = saved
                 }
-                let method = processing?.method ?? RecordingProcessingMethod(rawValue: settings.summary?.method ?? "transcript") ?? .transcript
+                let isLegacyProcessing = processing != nil && processing?.summaryMode == nil
+                guard let summary = settings.summary,
+                      summary.mode == .remote || summary.legacyMethod != nil || isLegacyProcessing else { throw Failure.unavailable }
+                let method = processing?.method ?? (summary.remote.transcriptionModel == nil ? .audio : .cloudTranscription)
                 let input: Input
                 if method == .transcript {
                     guard let version = try await dbQueue.read({ db in try TranscriptRecord.current(target.meetingID, in: db)?.version }) else {
@@ -274,20 +287,18 @@ actor ServerSummaryService {
                     input = try await Input(
                         type: "recording",
                         recordings: recordings(target, numbers: numbers),
-                        transcriptionModel: method == .cloudTranscription ? settings.summary?.methodSettings.audio?.model : nil
+                        transcriptionModel: method == .cloudTranscription ? summary.remote.transcriptionModel : nil
                     )
                     if method == .cloudTranscription, input.transcriptionModel == nil { throw Failure.unavailable }
-                }
-                guard let selected = method == .audio ? settings.summary?.methodSettings.audio : settings.summary?.methodSettings.transcript else {
-                    throw Failure.unavailable
                 }
                 body = Request(
                     id: id.uuidString.lowercased(),
                     input: input,
-                    model: selected.model,
-                    detailLevel: detail.map { SummaryDetailLevel.fromPersistedValue($0).rawValue } ?? settings.summary?.detailLevel?
+                    model: summary.remote.model,
+                    detailLevel: detail.map { SummaryDetailLevel.fromPersistedValue($0).rawValue } ?? summary.detailLevel?
                         .rawValue ?? "high",
-                    summaryLanguage: settings.outputLanguage.rawValue
+                    summaryLanguage: settings.outputLanguage.rawValue,
+                    reasoningEffort: summary.remote.reasoningEffort
                 )
                 try await onPrepared(body)
             }

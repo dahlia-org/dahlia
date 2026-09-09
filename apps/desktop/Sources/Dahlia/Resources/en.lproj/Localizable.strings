@@ -1700,6 +1700,19 @@
 "serverSummaryTranscript" = "Transcript and images";
 
 "serverSummaryDescription" = "Generate on the server, even after closing the app. Detail is shared across summary sources. Export separately after generation.";
+"settings.processing.title" = "Transcription and Summary";
+"settings.processing.account" = "Applies to";
+"settings.processing.scope" = "Saved in";
+"settings.processing.synced" = "Dahlia Account (synced)";
+"settings.processing.location" = "Processing location";
+"settings.processing.local" = "Local (this Mac)";
+"settings.processing.remote" = "Remote (server)";
+"settings.processing.localScope" = "These settings belong to the Local Account on this Mac.";
+"settings.processing.syncedScope" = "The processing location and remote settings are shared across devices signed in to this Dahlia Account.";
+"settings.processing.localDescription" = "Apple Speech creates the transcript on this Mac, then built-in Codex creates the summary using Local Account settings.";
+"settings.processing.transcribeFirst" = "Transcribe before generating the summary";
+"settings.processing.thisMac" = "This Mac";
+"settings.processing.thisMacDescription" = "These recording controls apply only to this Mac and are not synced.";
 
 "serverSummaryUnavailable" = "Summary generation is unavailable on this server.";
 

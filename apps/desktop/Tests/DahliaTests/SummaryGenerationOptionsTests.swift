@@ -5,20 +5,20 @@
 
     @MainActor
     struct SummaryGenerationOptionsTests {
-        @Test(arguments: ["transcript", "audio"])
-        func batchDefaultsUseServerDetailWithoutChangingExports(method: String) {
+        @Test
+        func batchDefaultsUseRemoteDetailWithoutChangingExports() {
             let local = AppSettings.shared.batchSummaryGenerationOptions()
             var server = ServerAccountSettings.initialValues()
-            server.summary = .init(method: method, detail: "standard", methodSettings: .init(
-                transcript: .init(), audio: .init(model: "gemini-3-8-flash")
-            ))
+            server.summary = .init(mode: .remote, remote: .init(detail: "medium", transcriptionModel: nil))
             let options = AppSettings.shared.batchSummaryGenerationOptions(serverSettings: server)
             #expect(options.detailLevel == .standard)
             #expect(options.exportOptions == local.exportOptions)
             #expect(local.detailLevel == AppSettings.shared.summaryDetailLevel)
             let unavailable = AppSettings.shared.batchSummaryGenerationOptions(serverSettings: nil)
-            #expect(unavailable.detailLevel == nil)
+            #expect(unavailable.detailLevel == local.detailLevel)
             #expect(unavailable.exportOptions == local.exportOptions)
+            server.summary?.mode = .local
+            #expect(AppSettings.shared.batchSummaryGenerationOptions(serverSettings: server).detailLevel == local.detailLevel)
         }
 
         @Test

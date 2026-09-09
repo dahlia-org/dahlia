@@ -7,7 +7,7 @@ const analysisLanguages = z.object({
     .transform((values) => [...new Set(values)].sort()),
 }).strict().refine((value) => value.scope === "all" || value.identifiers.length > 0);
 
-const summaryMethodSchema = z.enum(["transcript", "cloudTranscription", "audio"]);
+export const summaryModeSchema = z.enum(["local", "remote"]);
 export const summaryDetails = ["low", "medium", "high", "xhigh", "max"] as const;
 export function normalizeSummaryDetail(value: string): string {
   switch (value) {
@@ -23,27 +23,26 @@ export const summaryModelSettingsSchema = z.object({
   model: z.string().trim().min(1).max(200),
   reasoningEffort: z.enum(["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"]),
 }).strict();
-const summarySchema = z.object({
-  method: summaryMethodSchema,
+export const remoteSummarySettingsSchema = summaryModelSettingsSchema.extend({
   detail: summaryDetailSchema,
-  methodSettings: z.object({ transcript: summaryModelSettingsSchema, audio: summaryModelSettingsSchema }).strict(),
+  transcriptionModel: z.string().trim().min(1).max(200).optional(),
 }).strict();
+const summarySchema = z.object({ mode: summaryModeSchema, remote: remoteSummarySettingsSchema }).strict();
 export const accountSettingsSchema = z.object({ outputLanguage: outputLanguageSchema, analysisLanguages, summary: summarySchema }).strict();
 export type AccountSettings = z.infer<typeof accountSettingsSchema>;
 export const DEFAULT_ACCOUNT_SETTINGS: AccountSettings = {
   outputLanguage: "ja",
-  summary: { method: "transcript", detail: "high", methodSettings: {
-    transcript: { model: "gpt-5.4", reasoningEffort: "medium" },
-    audio: { model: "gemini-3-8-flash", reasoningEffort: "medium" },
+  summary: { mode: "local", remote: {
+    detail: "high", model: "gemini-3-8-flash", reasoningEffort: "medium",
+    transcriptionModel: "gemini-3-8-flash",
   } },
   analysisLanguages: { scope: "all", identifiers: [] },
 };
 export const accountSettingsPatchSchema = z.object({
   outputLanguage: outputLanguageSchema.optional(), analysisLanguages: analysisLanguages.optional(),
   summary: z.object({
-    method: summaryMethodSchema.optional(),
-    detail: summaryDetailSchema.optional(),
-    methodSettings: z.object({ transcript: summaryModelSettingsSchema.partial().optional(), audio: summaryModelSettingsSchema.partial().optional() }).strict().optional(),
+    mode: summaryModeSchema.optional(),
+    remote: remoteSummarySettingsSchema.partial().extend({ transcriptionModel: remoteSummarySettingsSchema.shape.transcriptionModel.nullable() }).strict().optional(),
   }).strict().optional(),
   initialize: z.boolean().optional(),
 }).strict().refine((patch) => {
@@ -52,7 +51,6 @@ export const accountSettingsPatchSchema = z.object({
   }
   if (patch.outputLanguage !== undefined || patch.analysisLanguages !== undefined) return true;
   const summary = patch.summary;
-  if (summary?.method !== undefined || summary?.detail !== undefined) return true;
-  return Object.values(summary?.methodSettings ?? {}).some((fields) => Object.keys(fields).length > 0);
+  return summary?.mode !== undefined || Object.keys(summary?.remote ?? {}).length > 0;
 });
 export type AccountSettingsPatch = Omit<z.infer<typeof accountSettingsPatchSchema>, "initialize">;

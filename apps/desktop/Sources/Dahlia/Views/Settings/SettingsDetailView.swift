@@ -73,7 +73,7 @@ struct SettingsDetailView: View {
             )
         case .search:
             SearchSettingsView(database: appDatabase)
-        case .transcription:
+        case .transcription, .aiSummary:
             TranscriptionSettingsView()
         case .liveSubtitles:
             LiveSubtitleSettingsView()
@@ -83,8 +83,8 @@ struct SettingsDetailView: View {
             CalendarSettingsView()
         case .cloudStorage:
             CloudStorageSettingsView()
-        case .aiSummary, .mcp:
-            AISummarySettingsView()
+        case .mcp:
+            TranscriptionSettingsView()
         case .instructions:
             InstructionsSettingsView(sidebarViewModel: sidebarViewModel)
         case .betaFeatures:
