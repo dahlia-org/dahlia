@@ -28,7 +28,6 @@ export interface RuntimeSecrets {
   DAHLIA_DATABASE_TYPE?: string;
   DAHLIA_DATABASE_URL?: string;
   DAHLIA_MAX_REQUEST_BYTES?: string;
-  DAHLIA_SYNC_SHARING_ENABLED?: string;
   DAHLIA_STORAGE_BACKEND?: string;
   DAHLIA_STORAGE_LOCAL_PATH?: string;
   DAHLIA_STORAGE_S3_BUCKET?: string;
@@ -65,16 +64,16 @@ healthApp.get("/healthz", (context) => context.json({ status: "ok" }));
 function createWorkerApplicationStore(config: AppConfig, env: WorkerEnv): ApplicationStore {
   if (config.databaseType === "d1") {
     if (!env.dahlia_db_prod) throw new Error("The dahlia_db_prod D1 binding is required");
-    return createD1ApplicationStore(env.dahlia_db_prod, config.syncSharingEnabled);
+    return createD1ApplicationStore(env.dahlia_db_prod);
   }
   if (config.databaseType === "hyperdrive") {
     if (!env.HYPERDRIVE) throw new Error("The HYPERDRIVE binding is required");
     const connection = connectPostgresUrl(env.HYPERDRIVE.connectionString, 5);
-    return { ...createPostgresApplicationStore(connection.db, "postgres", undefined, config.syncSharingEnabled), close: connection.close };
+    return { ...createPostgresApplicationStore(connection.db, "postgres", undefined), close: connection.close };
   }
   if (config.databaseType === "postgres" && config.databaseUrl) {
     const connection = connectPostgresUrl(config.databaseUrl, 5);
-    return { ...createPostgresApplicationStore(connection.db, "postgres", undefined, config.syncSharingEnabled), close: connection.close };
+    return { ...createPostgresApplicationStore(connection.db, "postgres", undefined), close: connection.close };
   }
   throw new Error("Worker storage supports DAHLIA_DATABASE_TYPE=d1, hyperdrive, or postgres");
 }
@@ -96,7 +95,6 @@ export async function initializeWorkerApp(env: WorkerEnv): Promise<WorkerApp> {
       Number(env.DAHLIA_MAX_REQUEST_BYTES ?? WORKER_DEFAULT_MAX_REQUEST_BYTES),
       WORKER_DEFAULT_MAX_REQUEST_BYTES,
     )),
-    DAHLIA_SYNC_SHARING_ENABLED: env.DAHLIA_SYNC_SHARING_ENABLED,
     DAHLIA_STORAGE_BACKEND: env.DAHLIA_STORAGE_BACKEND,
     DAHLIA_STORAGE_LOCAL_PATH: env.DAHLIA_STORAGE_LOCAL_PATH,
     DAHLIA_STORAGE_S3_BUCKET: env.DAHLIA_STORAGE_S3_BUCKET,

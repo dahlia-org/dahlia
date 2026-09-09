@@ -124,10 +124,11 @@ final class MeetingRepository {
     }
 
     /// 保管庫の表示名を更新する。
-    nonisolated func updateVaultName(id: UUID, name: String) async throws -> VaultRecord? {
+    nonisolated func updateVaultName(id: UUID, name: String, appearance: ProjectAppearance? = nil) async throws -> VaultRecord? {
         try await dbQueue.write { db in
             guard var vault = try VaultRecord.fetchOne(db, key: id) else { return nil }
             vault.name = name
+            if let appearance { vault.appearance = appearance }
             try vault.update(db)
             try SyncTransactionRecorder.record(
                 vaultId: id,

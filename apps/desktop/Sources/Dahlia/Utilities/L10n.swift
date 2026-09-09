@@ -75,6 +75,7 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var meetingSyncLocalSaved: String { String(localized: "meetingSync.local", bundle: bundle) }
     static var meetingSyncPending: String { String(localized: "meetingSync.pending", bundle: bundle) }
     static var meetingSyncSynced: String { String(localized: "meetingSync.synced", bundle: bundle) }
+    static var meetingSyncRelocationPaused: String { String(localized: "meetingSync.relocationPaused", bundle: bundle) }
     static var meetingSyncAuthorization: String { String(localized: "meetingSync.authorization", bundle: bundle) }
     static var meetingSyncValidation: String { String(localized: "meetingSync.validation", bundle: bundle) }
 

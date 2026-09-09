@@ -290,11 +290,11 @@ final class VaultManagementModel {
         }
     }
 
-    func renameVault(_ vault: VaultRecord, to proposedName: String) async -> VaultRecord? {
+    func renameVault(_ vault: VaultRecord, to proposedName: String, appearance: ProjectAppearance? = nil) async -> VaultRecord? {
         guard vault.allowsCanonicalEdits else { return nil }
         let name = proposedName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { return nil }
-        guard name != vault.name else { return vault }
+        guard name != vault.name || (appearance != nil && appearance != vault.appearance) else { return vault }
         guard !isRenamingVault else { return nil }
         guard let repository else {
             presentError(L10n.vaultRenameFailed, source: "renameVault")
@@ -304,7 +304,7 @@ final class VaultManagementModel {
         isRenamingVault = true
         defer { isRenamingVault = false }
         do {
-            guard let renamedVault = try await repository.updateVaultName(id: vault.id, name: name) else {
+            guard let renamedVault = try await repository.updateVaultName(id: vault.id, name: name, appearance: appearance) else {
                 presentError(L10n.vaultRenameFailed, source: "renameVault")
                 return nil
             }

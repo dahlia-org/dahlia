@@ -4,7 +4,7 @@
 
 ## 共有境界
 
-個人所有 Vault を owner が特定 Organization / Team へ明示的に read-only 共有する。write、delete、共有設定変更は owner のみ。`DAHLIA_SYNC_SHARING_ENABLED` 明示指定時だけ共有を有効にし、既定無効でも owner の同期と read は維持する。
+個人所有 Vault を owner が特定 Organization / Team へ明示的に read-only 共有する。write、delete、共有設定変更は owner のみ。共有機能は常に有効とし、機能を無効化する環境設定は設けない。
 
 - accounts mode は Better Auth Organization / Team を使う。共有先追加時の owner の所属と閲覧時の現在 membership を確認し、脱退・member 削除で read を失効させる。
 - header user は ID / slug / name が `external` の Organization へ JIT 登録する。最初の user を変更不能な owner、以降を member とし、`external-default` Team と最初の owner membership も変更不能にする。自動 Team 登録は最初の owner だけ。
@@ -19,6 +19,8 @@ accounts の招待は verified login email と招待 email の一致を要求し
 `auth.user.role` の `admin` を管理権限の唯一の正本とし、Better Auth admin plugin を runtime と schema 生成で使う。認証方式にかかわらず最初の user を初期 admin にし、0人になれば次の認証済み request で最古 user を再昇格する。
 
 `/api/admin/**` と管理画面は同じ role を使い、accounts では標準 admin API も公開する。Dahlia API は最後の admin の降格を拒否するが、標準 API の動作は変更しない。impersonation session は read-only とし、OAuth consent reference と署名 token claim にも引き継ぎ、Gateway / MCP mutation を拒否する。
+
+Server 管理者は `/api/admin/users` と `/api/admin/organizations` で、所属に依存しないユーザー・組織のディレクトリ情報をページ単位で取得できる。この権限は Vault の所有・共有権限を変更せず、他ユーザーのミーティング内容へのアクセスを付与しない。Private Web はサーバー管理をサイドバー下部に分離し、アカウントメニューにはアカウント設定と active Organization の切り替えを置く。
 
 ## 経緯と未解決事項
 

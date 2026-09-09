@@ -62,7 +62,8 @@ extension MeetingRepository {
                 createdAt: .now,
                 description: description,
                 projectType: parentProjectId == nil ? (projectType ?? .undefined) : nil,
-                icon: appearance?.icon.rawValue, color: appearance?.color.rawValue
+                icon: parentProjectId == nil ? appearance?.icon.rawValue : nil,
+                color: parentProjectId == nil ? appearance?.color.rawValue : nil
             )
             try record.insert(db)
             try SyncTransactionRecorder.record(
@@ -177,9 +178,10 @@ extension MeetingRepository {
             project.name = name
             project.description = description
             project.projectType = parentProjectId == nil ? projectType : nil
-            if let appearance {
-                project.icon = appearance.icon.rawValue
-                project.color = appearance.color.rawValue
+            if parentProjectId != nil {
+                project.appearance = nil
+            } else if let appearance {
+                project.appearance = appearance
             }
             project.revision += 1
             try project.update(db)
@@ -272,6 +274,7 @@ extension MeetingRepository {
             }
             let effectiveType = ProjectRecord.effectiveType(for: project.id, records: records)?.type ?? .undefined
             let wasRoot = project.parentProjectId == nil
+            if parentProjectId != nil { project.appearance = nil }
             project.parentProjectId = parentProjectId
             project.name = name
             project.projectType = parentProjectId == nil

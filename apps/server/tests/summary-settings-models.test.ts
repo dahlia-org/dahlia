@@ -1,4 +1,4 @@
-import { createElement } from "react";
+import { createElement, type ComponentProps } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { expect, it, vi } from "vitest";
 import { ServerSummaryGeneration, ServerSummarySettings } from "../src/client/SummaryGeneration";
@@ -6,6 +6,9 @@ import { useLiveJSON } from "../src/client/live-data";
 import { DEFAULT_ACCOUNT_SETTINGS } from "../src/account-settings-model";
 import { modelList } from "../src/ai-gateway/models";
 
+// These tests inspect available choices; real picker interactions run in tests/browser/select.html.
+vi.mock("../src/client/Select", () => ({ Select: ({ value, disabled, children }: ComponentProps<typeof import("../src/client/Select").Select>) =>
+  createElement("select", { value, disabled, onChange: () => {} }, children) }));
 vi.mock("../src/client/live-data", () => ({ useLiveJSON: vi.fn(), refreshData: vi.fn() }));
 vi.mock("../src/client/api", () => ({ json: vi.fn(), uiText: (en: string) => en }));
 

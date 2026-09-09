@@ -705,7 +705,8 @@ private extension ContentView {
 
     private func projectAppearance(_ project: ProjectOverviewItem) -> ProjectAppearance {
         mainWindowNavigation.projectAppearance(
-            for: project,
+            for: project.projectId,
+            in: sidebarViewModel.projectItemsByID,
             vaultId: sidebarViewModel.currentVault?.id
         )
     }

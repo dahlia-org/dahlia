@@ -81,7 +81,8 @@ struct MainSidebarAccountRootMenuView: View {
             ForEach(vaults.enumerated(), id: \.element.id) { index, vault in
                 MainSidebarAccountMenuRow(
                     title: vault.name,
-                    image: Image(systemName: "externaldrive"),
+                    image: Image(systemName: (vault.appearance ?? .vaultDefault).icon.systemImageName),
+                    imageColor: (vault.appearance ?? .vaultDefault).color.color,
                     selectionState: vault.id == currentVault?.id,
                     isKeyboardHighlighted: navigation.activeMenu == .root && navigation.rootSelection == vaultOffset + index,
                     onHoverStart: { hover(index: vaultOffset + index, submenu: nil, action: onDismissSubmenu) },

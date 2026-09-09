@@ -50,7 +50,7 @@ describe("deployment routing", () => {
       migrations_dir: "drizzle/d1",
     }));
     const d1Migrations = readdirSync(new URL("../drizzle/d1", import.meta.url)).toSorted();
-    expect(d1Migrations).toEqual(["20260903173555_lying_slipstream.sql", "20260905172528_unique_marvel_zombies.sql", "20260905172654_sync_history_backfill.sql", "20260906125718_dashing_roughhouse.sql", "20260907070728_dashing_sinister_six.sql", "20260907091207_funny_black_bird.sql", "20260907131015_big_excalibur.sql", "20260907132433_stiff_slyde.sql", "20260907172550_nice_starhawk.sql", "20260908013212_chief_enchantress.sql", "20260908040349_cuddly_brood.sql", "20260908040515_summary_version_backfill.sql", "20260908080352_zippy_aaron_stack.sql", "20260908092914_massive_luke_cage.sql", "20260908093013_account_settings_backfill.sql", "20260908093035_stale_sue_storm.sql", "20260908144757_aberrant_miek.sql", "20260908155902_transcript_activity.sql", "20260908164304_spicy_lady_vermin.sql", "20260908180502_schema_organization.sql"]);
+    expect(d1Migrations).toEqual(["20260903173555_lying_slipstream.sql", "20260905172528_unique_marvel_zombies.sql", "20260905172654_sync_history_backfill.sql", "20260906125718_dashing_roughhouse.sql", "20260907070728_dashing_sinister_six.sql", "20260907091207_funny_black_bird.sql", "20260907131015_big_excalibur.sql", "20260907132433_stiff_slyde.sql", "20260907172550_nice_starhawk.sql", "20260908013212_chief_enchantress.sql", "20260908040349_cuddly_brood.sql", "20260908040515_summary_version_backfill.sql", "20260908080352_zippy_aaron_stack.sql", "20260908092914_massive_luke_cage.sql", "20260908093013_account_settings_backfill.sql", "20260908093035_stale_sue_storm.sql", "20260908144757_aberrant_miek.sql", "20260908155902_transcript_activity.sql", "20260908164304_spicy_lady_vermin.sql", "20260908180502_schema_organization.sql", "20260909031422_perfect_rictor.sql", "20260909055951_sour_dexter_bennett.sql", "20260909091111_canonical_appearance_fields.sql"]);
     for (const migration of d1Migrations) {
       expect(readText(`../drizzle/d1/${migration}`))
         .toBe(readText(`../drizzle/sqlite/${migration.replace(/\.sql$/, "")}/migration.sql`));
@@ -227,9 +227,6 @@ describe("deployment routing", () => {
     expect(resource).toContain("value: ${var.catalog}.${var.ai_schema}");
     expect(resource).toContain("name: ${var.ai_schema}");
     expect(resource).toMatch(/ai_schema:[\s\S]*?principal: account users\s+privileges:\s+- EXECUTE/);
-    expect(bundle).toContain("sync_sharing_enabled:");
-    expect(bundle).toMatch(/sync_sharing_enabled:[\s\S]*?default: "false"/);
-    expect(bundle).toMatch(/dev:[\s\S]*?sync_sharing_enabled: "true"[\s\S]*?prod:/);
     expect(bundle).toMatch(/prod:[\s\S]*?volumes:[\s\S]*?prevent_destroy: true/);
     expect(bundle).toMatch(/dev:[\s\S]*?purge_on_delete: true[\s\S]*?prod:/);
     expect(bundle).not.toContain("admin_email");
@@ -253,8 +250,6 @@ describe("deployment routing", () => {
     expect(resource).toContain("name: DAHLIA_STORAGE_BACKEND");
     expect(resource).toContain("value: databricks");
     expect(resource).toContain("name: DAHLIA_STORAGE_DATABRICKS_VOLUME_PATH");
-    expect(resource).toContain("name: DAHLIA_SYNC_SHARING_ENABLED");
-    expect(resource).toContain("value: ${var.sync_sharing_enabled}");
     expect(resource).toContain("/Volumes/${resources.volumes.dahlia_storage.catalog_name}/${resources.volumes.dahlia_storage.schema_name}/${resources.volumes.dahlia_storage.name}");
     expect(resource).toContain("securable_full_name: ${resources.volumes.dahlia_storage.catalog_name}.${resources.volumes.dahlia_storage.schema_name}.${resources.volumes.dahlia_storage.name}");
     expect(resource).toContain("postgres_projects:");

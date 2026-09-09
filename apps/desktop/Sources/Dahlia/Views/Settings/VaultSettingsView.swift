@@ -88,10 +88,11 @@ struct VaultSettingsView: View {
                 ForEach(model.vaults) { vault in
                     HStack {
                         HStack {
-                            Image(systemName: "externaldrive")
-                                .dahliaFixedSymbol()
-                                .foregroundStyle(DahliaDesign.secondaryTextColor)
-                                .accessibilityHidden(true)
+                            VaultAppearanceButton(vault: vault) { appearance in
+                                guard let updated = await model.renameVault(vault, to: vault.name, appearance: appearance) else { return false }
+                                if currentVault?.id == updated.id { onUpdateVault(updated) }
+                                return true
+                            }
 
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(vault.name)

@@ -18,23 +18,27 @@ const coreDashboardPaths = new Set([
   "/admin",
   "/admin/models",
   "/admin/members",
+  "/admin/users",
+  "/admin/organizations",
+  "/admin/settings",
 ]);
 
 export function isCoreDashboardPath(path: string): boolean {
   return coreDashboardPaths.has(path)
-    || /^\/(?:meetings|projects|files)\/[^/]+$/.test(path)
+    || /^\/(?:meetings|projects|files|organizations)\/[^/]+$/.test(path)
     || /^\/vaults\/[^/]+(?:\/(?:meetings|projects)\/[^/]+)?$/.test(path)
     || /^\/accept-invitation\/[^/]+$/.test(path);
 }
 
 export type DashboardRoute = {
-  page?: "file" | "overview" | "settings" | "vaults" | "vault" | "meeting" | "project" | "organizations" | "invitation" | "admin-members";
+  page?: "file" | "overview" | "settings" | "vaults" | "vault" | "meeting" | "project" | "organizations" | "organization" | "invitation" | "admin-users" | "admin-organizations" | "admin-settings";
   redirect?: string;
   fileId?: string;
   vaultId?: string;
   meetingId?: string;
   projectId?: string;
   invitationId?: string;
+  organizationSlug?: string;
 };
 
 export function resolveDashboardRoute(
@@ -49,6 +53,10 @@ export function resolveDashboardRoute(
       ? { page: "organizations" }
       : { redirect: "/dashboard" };
   }
+  const organization = path.match(/^\/organizations\/([^/]+)$/);
+  if (organization) return capabilities.sharing
+    ? { page: "organization", organizationSlug: organization[1] }
+    : { redirect: "/dashboard" };
   const invitation = path.match(/^\/accept-invitation\/([^/]+)$/);
   if (invitation) {
     return capabilities.sharing && capabilities.sessions
@@ -70,12 +78,13 @@ export function resolveDashboardRoute(
   if (path === "/dashboard/settings") {
     return { page: "settings" };
   }
-  if (path === "/admin") return { redirect: capabilities.admin ? "/admin/members" : "/dashboard" };
+  if (path === "/admin") return { redirect: capabilities.admin ? "/admin/settings" : "/dashboard" };
   if (path === "/admin/models") {
     return { redirect: "/dashboard" };
   }
-  if (path === "/admin/members") {
-    return capabilities.admin ? { page: "admin-members" } : { redirect: "/dashboard" };
-  }
+  if (path === "/admin/members") return { redirect: capabilities.admin ? "/admin/users" : "/dashboard" };
+  if (path === "/admin/users") return capabilities.admin ? { page: "admin-users" } : { redirect: "/dashboard" };
+  if (path === "/admin/organizations") return capabilities.admin ? { page: "admin-organizations" } : { redirect: "/dashboard" };
+  if (path === "/admin/settings") return capabilities.admin ? { page: "admin-settings" } : { redirect: "/dashboard" };
   return { redirect: "/dashboard" };
 }

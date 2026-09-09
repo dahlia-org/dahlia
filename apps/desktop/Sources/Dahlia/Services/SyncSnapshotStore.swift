@@ -101,6 +101,7 @@ final class SyncSnapshotStore: Sendable {
                     guard let record = change.record, let name = record.name, let revision = change.revision,
                           let createdAt = record.createdAt else { throw SyncTransactionQueueError.invalidReceipt }
                     return SyncProjectSnapshot(
+                        icon: record.icon, color: record.color,
                         projectId: change.entityId, parentProjectId: record.parentProjectId, name: name,
                         description: record.description ?? "", projectType: record.projectType,
                         revision: revision, createdAt: createdAt

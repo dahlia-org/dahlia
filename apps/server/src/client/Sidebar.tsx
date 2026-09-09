@@ -1,3 +1,5 @@
+import { collectionAppearance, AppearanceIcon, projectAppearance, type Appearance } from "./AppearancePicker";
+import { Tooltip } from "./Tooltip";
 import { Search } from "./Search";
 import { RecordingIndicator } from "./RecordingIndicator";
 import { useLiveJSON, useLivePage } from "./live-data";
@@ -108,6 +110,14 @@ const menuIconPaths = {
   members: "M14 7a3 3 0 1 1-6 0 3 3 0 0 1 6 0ZM3 20v-3a5 5 0 0 1 5-5h6a5 5 0 0 1 5 5v3ZM18 4a3 3 0 0 1 0 6M20 13a4 4 0 0 1 3 4v3",
   signOut: "M9 4H3v16h6M8 12h14m-5-5 5 5-5 5",
   check: "m5 12 4 4L19 6",
+  home: "m3 10 9-7 9 7v11h-6v-7H9v7H3V10Z",
+  search: "M17 10a7 7 0 1 1-14 0 7 7 0 0 1 14 0Zm-2 5 6 6",
+  edit: "m15 4 5 5M4 20l4-1L21 6l-5-5L3 14l-1 8 6-3",
+  trash: "M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7",
+  plus: "M12 5v14M5 12h14",
+  arrow: "M5 12h14m-5-5 5 5-5 5",
+  menu: "M4 6h16M4 12h16M4 18h16",
+  sparkles: "m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5L12 3Z",
 };
 
 export function MenuIcon({ name }: { name: keyof typeof menuIconPaths }) {
@@ -137,65 +147,81 @@ function SignOutButton() {
   </>;
 }
 
-export function Sidebar({ brand, session, children, routeVaultId: resolvedVaultId }: { brand: ReactNode; session: SessionInfo; children: ReactNode; routeVaultId?: string }) {
+export function Sidebar({ brand, session, children, serverLinks, routeVaultId: resolvedVaultId }: { brand: ReactNode; session: SessionInfo; children: ReactNode; serverLinks?: ReactNode; routeVaultId?: string }) {
   const state = useSidebar();
   const identity = session.user.name || session.user.email || session.user.id;
   const current = state.organizationId
     ? state.organizations?.find(({ id }) => id === state.organizationId)?.name ?? "Organization"
-    : uiText("Personal", "個人");
+    : uiText("No organization selected", "組織未選択");
   const routeVaultId = resolvedVaultId ?? (typeof window === "undefined" ? undefined : window.location.pathname.match(/^\/vaults\/([^/]+)/)?.[1]);
   const selectionKey = `dahlia:sidebar:${session.user.id}:${state.organizationId || "personal"}:vault`;
   const routedVault = useLiveJSON<SyncedVaultInfo>(resolvedVaultId ? `/api/v1/vaults/${resolvedVaultId}` : undefined);
   const selectedVault = selectedSidebarVault(state.vaults, routeVaultId, readSelection(selectionKey)) ?? routedVault.data;
   const selectedVaultId = selectedVault?.vaultId;
+  const selectableVaults = selectedVault && !state.vaults?.some((vault) => vault.vaultId === selectedVaultId)
+    ? [selectedVault, ...(state.vaults ?? [])] : state.vaults ?? [];
   useEffect(() => {
     if (selectedVaultId) save(selectionKey, selectedVaultId);
   }, [selectionKey, selectedVaultId]);
   return <aside className="sidebar">
     <div className="sidebar-brand">{brand}</div>
-    {session.capabilities.sync && selectedVaultId && <Search key={`${selectionKey}:${selectedVaultId}`} vaultId={selectedVaultId} />}
+    <nav className="primary-navigation" aria-label={uiText("Library navigation", "ライブラリ")}>
+      <Tooltip label={uiText("Home", "ホーム")}><a href="/dashboard" aria-label={uiText("Home", "ホーム")} aria-current={typeof window !== "undefined" && window.location.pathname === "/dashboard" ? "page" : undefined}><MenuIcon name="home" /><span className="navigation-label">{uiText("Home", "ホーム")}</span></a></Tooltip>
+      {session.capabilities.sync && <Tooltip label={uiText("Vaults", "保管庫")}><a href="/vaults" aria-label={uiText("Vaults", "保管庫")} aria-current={typeof window !== "undefined" && window.location.pathname === "/vaults" ? "page" : undefined}><MenuIcon name="vault" /><span className="navigation-label">{uiText("Vaults", "保管庫")}</span></a></Tooltip>}
+      {session.capabilities.sync && selectedVaultId && <Search key={`${selectionKey}:${selectedVaultId}`} vaultId={selectedVaultId} />}
+    </nav>
+    {session.capabilities.sync && selectedVault && <div className="vault-switcher">
+      <span>{uiText("Current Vault", "現在の保管庫")}</span>
+      <button className="dropdown-trigger vault-switcher-trigger" popoverTarget="vault-menu" aria-label={uiText(`Current Vault: ${selectedVault.name}`, `現在の保管庫: ${selectedVault.name}`)}>
+        <AppearanceIcon appearance={collectionAppearance(selectedVault, "vault")} /><span>{selectedVault.name}</span><Chevron expanded />
+      </button>
+      <nav id="vault-menu" popover="auto" className="dropdown-menu vault-picker" aria-label={uiText("Choose a Vault", "保管庫を選択")}>
+        <strong>{uiText("Vaults", "保管庫")}</strong>
+        {selectableVaults.map((vault) => <a className="dropdown-option" key={vault.vaultId} href={`/vaults/${vault.vaultId}`} aria-current={selectedVaultId === vault.vaultId ? "true" : undefined}>
+          <AppearanceIcon appearance={collectionAppearance(vault, "vault")} /><span>{vault.name}</span>{selectedVaultId === vault.vaultId && <MenuIcon name="check" />}
+        </a>)}
+      </nav>
+    </div>}
     <div className="sidebar-scroll">
       {session.capabilities.sync && <nav className="vault-navigation" aria-label={uiText("Project navigation", "プロジェクト")}>
         <h2 className="vault-heading">{uiText("Projects", "プロジェクト")}</h2>
         {state.error && <Failure message={state.error} retry={state.reload} />}
-        {!state.vaults && !state.error && <p className="sidebar-status">{state.organizationError ? "Choose Personal or retry loading organizations." : "Loading Vaults…"}</p>}
+        {!state.vaults && !state.error && <p className="sidebar-status">{state.organizationError ? uiText("Clear the organization selection or retry loading organizations.", "組織の選択を解除するか、組織の読み込みを再試行してください。") : "Loading Vaults…"}</p>}
         {state.vaults?.length === 0 && <p className="sidebar-status">{uiText("No Vaults", "保管庫がありません")}</p>}
         {selectedVault && <VaultChildren key={`${state.organizationId}:${selectedVault.vaultId}`} vaultId={selectedVault.vaultId} />}
-        {Boolean(state.vaults?.length) && !selectedVault && <p className="sidebar-status">{uiText("Choose a Vault from the account menu", "アカウントメニューから保管庫を選択してください")}</p>}
+        {Boolean(state.vaults?.length) && !selectedVault && <p className="sidebar-status">{uiText("Choose a Vault from Vaults", "保管庫から表示する保管庫を選択してください")}</p>}
+      </nav>}
+      {session.capabilities.admin ? <nav className="server-navigation" aria-label={uiText("Server settings", "サーバー設定")}>
+        <h2 className="section-label">{uiText("Server settings", "サーバー設定")}</h2>
+        {([["/admin/organizations", "organization", uiText("Organizations", "組織管理")],
+          ["/admin/users", "members", uiText("Users", "ユーザー管理")],
+          ["/admin/settings", "settings", uiText("General settings", "全体設定")]] as const).map(([href, icon, label]) =>
+          <a key={href} href={href} aria-current={typeof window !== "undefined" && window.location.pathname === href ? "page" : undefined}><MenuIcon name={icon} /><span>{label}</span></a>)}
+        {serverLinks}
+      </nav> : session.capabilities.sharing && <nav className="server-navigation" aria-label={uiText("Organization settings", "組織設定")}>
+        <a href="/organizations" aria-current={typeof window !== "undefined" && (window.location.pathname === "/organizations" || window.location.pathname.startsWith("/organizations/")) ? "page" : undefined}><MenuIcon name="organization" /><span>{uiText("Organization settings", "組織設定")}</span></a>
       </nav>}
     </div>
     <div className="sidebar-footer">
       <button className="organization-switcher" popoverTarget="account-menu" aria-label={uiText(`Account menu: ${identity}`, `アカウントメニュー: ${identity}`)}>
         <MenuIcon name="account" />
-        <span className="identity-copy"><strong>{identity}</strong><small>{selectedVault?.name ?? current}</small></span>
-        <Chevron expanded />
+        <span className="identity-copy"><strong>{identity}</strong><small>{current}</small></span>
+        <svg className="account-menu-chevron" width="16" height="20" viewBox="0 0 16 20" aria-hidden="true">
+          <path d="m5 6 3-3 3 3M5 14l3 3 3-3" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
       </button>
       <div id="account-menu" popover="auto" className="organization-picker">
         <a className="menu-account" href="/dashboard"><MenuIcon name="account" /><span>{identity}</span></a>
-        {session.capabilities.sync && <>
-          <span className="nav-divider" />
-          <strong>{uiText("Vaults", "保管庫")}</strong>
-          {state.error && <Failure message={state.error} retry={state.reload} />}
-          {!state.vaults && !state.error && <p className="sidebar-status">{uiText("Loading Vaults…", "保管庫を読み込み中…")}</p>}
-          {state.vaults?.length === 0 && <p className="sidebar-status">{uiText("No Vaults", "保管庫がありません")}</p>}
-          {state.vaults?.map((vault) => <a key={vault.vaultId} href={`/vaults/${vault.vaultId}`} aria-current={selectedVaultId === vault.vaultId ? "true" : undefined}>
-            <MenuIcon name="vault" /><span>{vault.name}</span>{selectedVaultId === vault.vaultId && <MenuIcon name="check" />}
-          </a>)}
-          <a href="/vaults"><MenuIcon name="settings" />{uiText("Manage Vaults", "保管庫を管理")}</a>
-        </>}
-        {(session.capabilities.sharing || session.capabilities.admin) && <>
+        {session.capabilities.sharing && <>
           <span className="nav-divider" />
           <strong>{uiText("Organizations", "組織")}</strong>
-          {session.capabilities.sharing && <>
-            <button onClick={() => state.select("")} aria-pressed={!state.organizationId}><MenuIcon name="account" /><span>{uiText("Personal", "個人")}</span>{!state.organizationId && <MenuIcon name="check" />}</button>
-            {state.organizations?.map((organization) => <button key={organization.id} onClick={() => state.select(organization.id)} aria-pressed={state.organizationId === organization.id}>
-              <MenuIcon name="organization" /><span>{organization.name}</span>{state.organizationId === organization.id && <MenuIcon name="check" />}
-            </button>)}
-            {!state.organizations && !state.organizationError && <p className="sidebar-status">{uiText("Loading organizations…", "組織を読み込み中…")}</p>}
-            {state.organizationError && <Failure message={state.organizationError} retry={state.reload} />}
-            <a href="/organizations"><MenuIcon name="settings" />{uiText("Manage organizations", "組織を管理")}</a>
-          </>}
-          {session.capabilities.admin && <a href="/admin/members" aria-current={typeof window !== "undefined" && window.location.pathname === "/admin/members" ? "page" : undefined}><MenuIcon name="members" />{uiText("Members", "メンバー")}</a>}
+          <button onClick={() => state.select("")} aria-pressed={!state.organizationId}><MenuIcon name="account" /><span>{uiText("No organization selected", "組織未選択")}</span>{!state.organizationId && <MenuIcon name="check" />}</button>
+          {state.organizations?.map((organization) => <button key={organization.id} onClick={() => state.select(organization.id)} aria-pressed={state.organizationId === organization.id}>
+            <MenuIcon name="organization" /><span>{organization.name}</span>{state.organizationId === organization.id && <MenuIcon name="check" />}
+          </button>)}
+          {!state.organizations && !state.organizationError && <p className="sidebar-status">{uiText("Loading organizations…", "組織を読み込み中…")}</p>}
+          {state.organizationError && <Failure message={state.organizationError} retry={state.reload} />}
+          <a href="/organizations" aria-current={typeof window !== "undefined" && (window.location.pathname === "/organizations" || window.location.pathname.startsWith("/organizations/")) ? "page" : undefined}><MenuIcon name="organization" /><span>{uiText("Your organizations", "所属組織一覧")}</span><MenuIcon name="arrow" /></a>
         </>}
         <span className="nav-divider" />
         {children}
@@ -205,7 +231,7 @@ export function Sidebar({ brand, session, children, routeVaultId: resolvedVaultI
   </aside>;
 }
 
-function TreeNode({ id, name, href, initialOpen, children }: { id: string; name: string; href?: string; initialOpen: boolean; children: ReactNode }) {
+function TreeNode({ id, name, href, initialOpen, children, appearance }: { id: string; name: string; href?: string; initialOpen: boolean; children: ReactNode; appearance?: Appearance | null }) {
   const { userId, organizationId } = useSidebar();
   const key = `dahlia:sidebar:${userId}:${organizationId || "personal"}:${id}`;
   const [open, setOpen] = useState(() => initialOpen || readSelection(key) === "true");
@@ -221,7 +247,7 @@ function TreeNode({ id, name, href, initialOpen, children }: { id: string; name:
   return <li>
     <div className={`tree-row${active ? " active" : ""}`}>
       <button className="tree-toggle" aria-label={`${open ? uiText("Collapse", "閉じる") : uiText("Expand", "展開")} ${name}`} aria-expanded={open} onClick={toggle}><Chevron expanded={open} /></button>
-      <svg className="folder-icon" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7V5a1 1 0 0 1 1-1h5l2 2h9a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V7Zm0 2h18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" /></svg>
+      <AppearanceIcon appearance={appearance ?? { icon: "folder", color: "neutral" }} />
       {href ? <a href={href} title={name} aria-current={active ? "page" : undefined}>{name}</a>
         : <button className="tree-group" aria-expanded={open} onClick={toggle}>{name}</button>}
     </div>
@@ -230,7 +256,6 @@ function TreeNode({ id, name, href, initialOpen, children }: { id: string; name:
 }
 
 function VaultChildren({ vaultId }: { vaultId: string }) {
-  const base = `/vaults/${vaultId}`;
   const route = window.location.pathname;
   const meetingId = route.match(/^\/meetings\/([^/]+)$/)?.[1];
   const projectId = route.match(/^\/projects\/([^/]+)$/)?.[1];
@@ -250,7 +275,7 @@ function VaultChildren({ vaultId }: { vaultId: string }) {
     childrenByParent.set(parent, siblings);
   }
   const projectsUnder = (parentId?: string): ReactNode => (childrenByParent.get(parentId) ?? []).map((project) =>
-    <TreeNode key={project.projectId} id={`${vaultId}:${project.projectId}`} name={project.name} href={`/projects/${project.projectId}`} initialOpen={ancestors.has(project.projectId)}>
+    <TreeNode key={project.projectId} id={`${vaultId}:${project.projectId}`} name={project.name} appearance={projectAppearance(project, projects.find((parent) => parent.projectId === project.parentProjectId))} href={`/projects/${project.projectId}`} initialOpen={ancestors.has(project.projectId)}>
       <ul className="sidebar-tree">
         {projectsUnder(project.projectId)}
         <Meetings vaultId={vaultId} projectId={project.projectId} selectedMeeting={selectedMeeting} />
@@ -261,11 +286,11 @@ function VaultChildren({ vaultId }: { vaultId: string }) {
     {meetingQuery.error && <Failure message={meetingQuery.error.message} retry={meetingQuery.reload} />}
     <ul className="sidebar-tree">
       {projectsUnder()}
-      <TreeNode id={`${vaultId}:unassigned`} name={uiText("Unassigned", "未分類")}
-        initialOpen={route === base || Boolean(selectedMeeting && !selectedMeeting.projectId)}>
-        <ul className="sidebar-tree"><Meetings vaultId={vaultId} selectedMeeting={selectedMeeting} /></ul>
-      </TreeNode>
     </ul>
+    <section className="unassigned-meetings" aria-labelledby="unassigned-heading">
+      <h2 id="unassigned-heading" className="vault-heading">{uiText("Unassigned", "未分類")}</h2>
+      <ul className="sidebar-tree"><Meetings vaultId={vaultId} selectedMeeting={selectedMeeting} /></ul>
+    </section>
   </>;
 }
 

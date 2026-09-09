@@ -618,3 +618,27 @@ export const summary = appSchema.table("summaries", {
   pgPolicy("summary_select", { for: "select", using: sql`EXISTS (SELECT 1 FROM "app"."meetings" m WHERE m.meeting_id = ${table.meetingId} AND "app"."current_identity_can_read_vault"(m.vault_id))` }),
   pgPolicy("summary_write", { for: "all", using: sql`EXISTS (SELECT 1 FROM "app"."meetings" m WHERE m.meeting_id = ${table.meetingId} AND "app"."current_identity_owns_vault"(m.vault_id))`, withCheck: sql`EXISTS (SELECT 1 FROM "app"."meetings" m WHERE m.meeting_id = ${table.meetingId} AND "app"."current_identity_owns_vault"(m.vault_id))` }),
 ]).enableRLS();
+
+// Retained independently of Vault deletion and ordinary sync-history pruning.
+export const vaultTransfer = appSchema.table("vault_transfers", {
+  sequence: bigserial("sequence", { mode: "number" }).primaryKey(),
+  id: uuid("id").notNull().unique(),
+  ownerUserId: text("owner_user_id").notNull().references(() => authUser.id, { onDelete: "cascade" }),
+  idempotencyKey: uuid("idempotency_key").notNull(),
+  requestHash: text("request_hash").notNull(),
+  sourceVaultId: uuid("source_vault_id").notNull(),
+  destinationVaultId: uuid("destination_vault_id").notNull(),
+  manifest: jsonb("manifest").$type<{ projects: string[]; meetings: string[]; files: string[] }>().notNull(),
+}, (table) => [
+  unique("vault_transfer_owner_key_unique").on(table.ownerUserId, table.idempotencyKey),
+  index("vault_transfer_owner_sequence_idx").on(table.ownerUserId, table.sequence),
+  pgPolicy("vault_transfer_reader", {
+    for: "select",
+    using: sql`"app"."current_identity_can_read_vault"(${table.sourceVaultId}) OR "app"."current_identity_can_read_vault"(${table.destinationVaultId})`,
+  }),
+  pgPolicy("vault_transfer_owner", {
+    for: "all",
+    using: sql`${table.ownerUserId} = nullif(current_setting('app.user_id', true), '')`,
+    withCheck: sql`${table.ownerUserId} = nullif(current_setting('app.user_id', true), '')`,
+  }),
+]).enableRLS();

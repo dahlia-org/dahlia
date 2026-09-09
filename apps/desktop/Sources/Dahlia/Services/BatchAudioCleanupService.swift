@@ -31,7 +31,7 @@ enum BatchAudioCleanupService {
             let rows = try Row.fetchAll(
                 db,
                 sql: """
-                SELECT vaults.path AS vaultPath,
+                SELECT coalesce(recording_audio_files.originalVaultPath, vaults.path) AS vaultPath,
                        recording_audio_files.storageLocation AS storageLocation,
                        recording_audio_files.relativePath AS relativePath
                 FROM recording_audio_files

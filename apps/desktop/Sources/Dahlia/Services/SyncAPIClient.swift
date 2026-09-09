@@ -27,6 +27,7 @@ struct SyncAPIClient: Sendable {
     func data(for unsigned: URLRequest, connectionId: UUID, maximumBytes: Int? = nil) async throws -> Data {
         for attempt in 0 ... 1 {
             var request = unsigned
+            request.setValue("1", forHTTPHeaderField: "X-Dahlia-Vault-Transfers")
             let token = try await tokenProvider(connectionId, attempt == 1)
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
             let data: Data
@@ -57,6 +58,7 @@ extension SyncAPIClient {
     func upload(_ unsigned: URLRequest, from file: URL, connectionId: UUID) async throws -> Data {
         for attempt in 0 ... 1 {
             var request = unsigned
+            request.setValue("1", forHTTPHeaderField: "X-Dahlia-Vault-Transfers")
             try await request.setValue("Bearer \(tokenProvider(connectionId, attempt == 1))", forHTTPHeaderField: "Authorization")
             let (data, response) = try await session.upload(for: request, fromFile: file)
             guard let http = response as? HTTPURLResponse, data.count <= 1024 * 1024 else { throw URLError(.badServerResponse) }
@@ -71,6 +73,7 @@ extension SyncAPIClient {
     func download(_ unsigned: URLRequest, connectionId: UUID, expectedSize: Int64) async throws -> URL {
         for attempt in 0 ... 1 {
             var request = unsigned
+            request.setValue("1", forHTTPHeaderField: "X-Dahlia-Vault-Transfers")
             try await request.setValue("Bearer \(tokenProvider(connectionId, attempt == 1))", forHTTPHeaderField: "Authorization")
             let (url, response) = try await session.download(for: request, delegate: RecordingDownloadLimit(expectedSize: expectedSize))
             guard let http = response as? HTTPURLResponse else {

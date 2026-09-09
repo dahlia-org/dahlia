@@ -9,7 +9,9 @@ it.each(["sqlite", "d1"])("preserves populated records and pending jobs during s
     ? path.replace("drizzle/sqlite/", "drizzle/d1/").replace("/migration.sql", ".sql") : path}`, import.meta.url), "utf8");
   try {
     const files = serverMigrationManifest.sqlite.files;
-    for (const file of files.slice(0, -1)) db.exec(read(file));
+    const upgradeIndex = files.findIndex((file) => file.includes("_schema_organization/"));
+    expect(upgradeIndex).toBeGreaterThan(0);
+    for (const file of files.slice(0, upgradeIndex)) db.exec(read(file));
     db.exec(`
       INSERT INTO user(id, name, email, updated_at) VALUES ('owner', 'Owner', 'owner@example.com', 1);
       INSERT INTO vaults(vault_id, name) VALUES ('vault', 'Vault');
@@ -42,7 +44,7 @@ it.each(["sqlite", "d1"])("preserves populated records and pending jobs during s
     const jobs = Object.keys(tables).map((table) => db.prepare(`SELECT * FROM ${table}`).all());
     const recording = db.prepare("SELECT * FROM recordings").get()!;
     delete recording.vault_id;
-    db.exec(read(files.at(-1)!));
+    for (const file of files.slice(upgradeIndex)) db.exec(read(file));
     expect(Object.values(tables).map((table) => db.prepare(`SELECT * FROM ${table}`).all())).toEqual(jobs);
     expect(db.prepare("SELECT * FROM recordings").get()).toEqual(recording);
     expect(db.prepare("SELECT revision FROM account_settings").get()).toEqual({ revision: 19 });
@@ -56,5 +58,27 @@ it.each(["sqlite", "d1"])("preserves populated records and pending jobs during s
     expect(db.prepare("SELECT count(*) AS count FROM meeting_events").get()).toEqual({ count: 1 });
     db.exec("DELETE FROM vaults WHERE vault_id = 'vault'");
     expect(db.prepare("SELECT * FROM meeting_events").all()).toEqual([]);
+  } finally { db.close(); }
+});
+
+it.each(["sqlite", "d1"])("preserves saved appearance when consolidating canonical fields (%s)", (dialect) => {
+  const db = new DatabaseSync(":memory:");
+  const read = (path: string) => readFileSync(new URL(`../${dialect === "d1"
+    ? path.replace("drizzle/sqlite/", "drizzle/d1/").replace("/migration.sql", ".sql") : path}`, import.meta.url), "utf8");
+  try {
+    const files = serverMigrationManifest.sqlite.files;
+    const index = files.findIndex((file) => file.includes("_canonical_appearance_fields/"));
+    expect(index).toBeGreaterThan(0);
+    for (const file of files.slice(0, index)) db.exec(read(file));
+    db.exec(`
+      INSERT INTO vaults(vault_id, name, appearance) VALUES ('vault', 'Saved', '{"icon":"archivebox","color":"green"}');
+      INSERT INTO projects(project_id, vault_id, name, icon, appearance, revision, created_at)
+        VALUES ('project', 'vault', 'Saved', 'star', '{"icon":"folder","color":"blue"}', 1, 1);
+    `);
+    for (const file of files.slice(index)) db.exec(read(file));
+    expect(db.prepare("SELECT icon, color FROM vaults").get()).toEqual({ icon: "archivebox", color: "green" });
+    expect(db.prepare("SELECT vault_id, icon, color FROM projects").get()).toEqual({ vault_id: "vault", icon: "star", color: "blue" });
+    expect(db.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
+    expect(db.prepare("SELECT name FROM pragma_table_info('projects') WHERE name = 'appearance'").all()).toEqual([]);
   } finally { db.close(); }
 });

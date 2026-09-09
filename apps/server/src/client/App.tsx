@@ -1,3 +1,8 @@
+import type { ServerUserRecord, ServerOrganizationRecord } from "../auth/store";
+import { Select } from "./Select";
+import type { Appearance } from "../appearance-model";
+import { collectionAppearance, AppearanceIcon, projectAppearance } from "./AppearancePicker";
+import { useActionDialog } from "./ActionDialog";
 import { TranscriptHistory } from "./TranscriptHistory";
 import { SummaryHistory, type LatestSummary } from "./SummaryHistory";
 import { ServerSummaryGeneration, ServerSummarySettings } from "./SummaryGeneration";
@@ -12,8 +17,8 @@ import {
   shouldRedirectToSignIn,
   type DashboardCapabilities,
 } from "./routes";
-import { dashboardNavigationPath, navigateDashboard } from "./navigation";
-import { summaryDisplayText } from "../search/summary";
+import { dashboardNavigationEvent, dashboardNavigationPath, navigateDashboard } from "./navigation";
+import { summaryEditor } from "./summary-editor";
 import type { ScreenshotVariant } from "../sync/screenshot-variants";
 import { clientMutationEvent, json, RequestError, syncMessage, uiText, type SyncedVaultInfo, type OrganizationInfo, type SyncedMeetingInfo, type SyncedProjectInfo } from "./api";
 import { DetailTabs, MeetingTabs, parseSummary, SummaryTags } from "./MeetingContent";
@@ -35,6 +40,10 @@ export interface DashboardNavigationItem {
   capability?: string;
   label: string;
   path: string;
+}
+
+function isServerNavigation(item: DashboardNavigationItem): boolean {
+  return item.capability === "admin" || item.path.startsWith("/admin/");
 }
 
 export interface DashboardExtensionRoute {
@@ -131,7 +140,7 @@ interface SyncedScreenshotInfo {
 
 type SyncOperation = {
   entity: "vault" | "project" | "meeting" | "summary";
-  action: "create" | "update" | "delete" | "upsert";
+  action: "create" | "update" | "delete" | "upsert" | "reset";
   entityId: string;
   baseRevision: number | null;
   data: Record<string, unknown>;
@@ -196,21 +205,6 @@ function uuidV7(): string {
   return `${value.slice(0, 8)}-${value.slice(8, 12)}-${value.slice(12, 16)}-${value.slice(16, 20)}-${value.slice(20)}`;
 }
 
-function summaryDocument(title: string, text: string): string {
-  return JSON.stringify({
-    schemaVersion: 3,
-    title,
-    description: "",
-    sections: [{
-      id: uuidV7(),
-      heading: "",
-      blocks: [{ id: uuidV7(), type: "paragraph", content: { text } }],
-    }],
-    tags: [],
-    actionItems: [],
-  });
-}
-
 async function beginSignIn(callbackURL: string): Promise<string | undefined> {
   try {
     const authClient = createAuthClient({ baseURL: window.location.origin });
@@ -239,15 +233,18 @@ function Brand({ brand }: { brand: DashboardBrand }) {
 }
 
 function SignIn({ brand }: { brand: DashboardBrand }) {
+  const [pending, setPending] = useState(false);
   const [error, setError] = useState<string>();
 
   async function signIn() {
+    if (pending) return;
+    setPending(true);
     setError(undefined);
     const params = new URLSearchParams(window.location.search);
     const next = params.get("next");
     const safeNext = next?.startsWith("/") && !next.startsWith("//") ? next : undefined;
-    setError(await beginSignIn(safeNext
-      ?? (params.has("client_id") ? `/api/auth/oauth2/authorize${window.location.search}` : "/dashboard")));
+    const failure = await beginSignIn(safeNext ?? (params.has("client_id") ? `/api/auth/oauth2/authorize${window.location.search}` : "/dashboard"));
+    if (failure) { setError(failure); setPending(false); }
   }
 
   return (
@@ -255,15 +252,12 @@ function SignIn({ brand }: { brand: DashboardBrand }) {
       <section className="auth-card">
         <Brand brand={brand} />
         <div className="auth-copy">
-          <span className="eyebrow">Personal AI gateway</span>
-          <h1>Use the model configured for your Dahlia deployment.</h1>
-          <p>
-            Audio and local recordings stay on your Mac. When you enable Vault sync, meeting summaries,
-            transcripts, screenshots, OCR text, and captions are stored privately on this server.
-          </p>
+          <span className="eyebrow">{uiText("Your meeting library", "ミーティングライブラリ")}</span>
+          <h1>{uiText("Every conversation,\nwithin reach.", "会話の記録を、\nいつでも手元に。")}</h1>
+          <p>{uiText("Find the decisions, details and next steps in your meetings. Sign in to access the Vaults you sync with Dahlia for macOS.", "ミーティングで決まったこと、話した内容、次のアクションをすぐに確認。macOS 版 Dahlia と同期した保管庫にアクセスできます。")}</p>
         </div>
-        <button className="primary full" onClick={() => void signIn()}>
-          Continue with Google
+        <button className="primary full" disabled={pending} onClick={() => void signIn()}>
+          {pending ? uiText("Signing in…", "サインイン中…") : uiText("Continue with Google", "Google で続ける")}
         </button>
         {error && <p className="error">{error}</p>}
       </section>
@@ -272,10 +266,14 @@ function SignIn({ brand }: { brand: DashboardBrand }) {
 }
 
 function Consent({ brand }: { brand: DashboardBrand }) {
+  const [pending, setPending] = useState(false);
   const [error, setError] = useState<string>();
   const oauthQuery = window.location.search.slice(1);
 
   async function decide(accept: boolean) {
+    if (pending) return;
+    setPending(true);
+    setError(undefined);
     try {
       const result = await json<{ redirect_uri: string }>("/api/auth/oauth2/consent", {
         method: "POST",
@@ -284,6 +282,8 @@ function Consent({ brand }: { brand: DashboardBrand }) {
       window.location.assign(result.redirect_uri);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Consent failed");
+    } finally {
+      setPending(false);
     }
   }
 
@@ -297,8 +297,8 @@ function Consent({ brand }: { brand: DashboardBrand }) {
           <p>This grants the app a short-lived access token. Provider credentials are never sent to your Mac.</p>
         </div>
         <div className="button-row">
-          <button className="secondary" onClick={() => void decide(false)}>Cancel</button>
-          <button className="primary" onClick={() => void decide(true)}>Allow</button>
+          <button className="secondary" disabled={pending} onClick={() => void decide(false)}>{uiText("Cancel", "キャンセル")}</button>
+          <button className="primary" disabled={pending} onClick={() => void decide(true)}>Allow</button>
         </div>
         {error && <p className="error">{error}</p>}
       </section>
@@ -324,10 +324,35 @@ function Shell({
   routeVaultId?: string;
 }) {
   const main = useRef<HTMLElement>(null);
+  const navigation = useRef<HTMLDialogElement>(null);
+  const attachNavigation = useCallback((element: HTMLDialogElement | null) => {
+    navigation.current = element;
+    if (element && !window.matchMedia("(max-width: 820px)").matches) element.show();
+  }, []);
+  const [compact, setCompact] = useState(() => window.matchMedia("(max-width: 820px)").matches);
   useEffect(() => {
+    const media = window.matchMedia("(max-width: 820px)");
+    const update = () => {
+      navigation.current?.close();
+      setCompact(media.matches);
+      if (!media.matches) navigation.current?.show();
+    };
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
+  useEffect(() => {
+    if (navigation.current?.matches(":modal")) navigation.current.close();
     main.current?.focus({ preventScroll: true });
     window.scrollTo(0, 0);
   }, [path]);
+  useEffect(() => {
+    const closeNavigation = () => {
+      if (navigation.current?.matches(":modal")) navigation.current.close();
+    };
+    window.addEventListener(dashboardNavigationEvent, closeNavigation);
+    return () => window.removeEventListener(dashboardNavigationEvent, closeNavigation);
+  }, []);
   const followLink = (event: MouseEvent<HTMLDivElement>) => {
     if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     const link = event.target instanceof Element ? event.target.closest("a") : null;
@@ -341,29 +366,36 @@ function Shell({
   return (
     <SidebarProvider key={session.user.id} session={session}>
       <div className="app-shell" onClick={followLink}>
-        <Sidebar brand={<Brand brand={brand} />} session={session} routeVaultId={routeVaultId}>
-          <nav aria-label="Account navigation">
-            {extensions.flatMap((extension) => extension.navigation ?? []).map((item) => (
-              (!item.capability || session.capabilities[item.capability])
-                ? <a className={path === item.path ? "active" : ""} href={item.path} key={item.path}><MenuIcon name="document" />{item.label}</a>
-                : null
-            ))}
+        <a className="skip-link" href="#main-content">{uiText("Skip to content", "本文へ移動")}</a>
+        <header className="mobile-header">
+          <button className="icon-button" aria-label={uiText("Open navigation", "ナビゲーションを開く")} aria-controls="primary-navigation" onClick={() => navigation.current?.showModal()}><MenuIcon name="menu" /></button>
+          <Brand brand={brand} />
+        </header>
+        <dialog ref={attachNavigation} id="primary-navigation" className="sidebar-container" aria-label={compact ? uiText("Navigation", "ナビゲーション") : undefined} role={compact ? "dialog" : "presentation"}
+          onClick={(event) => { if (event.target === event.currentTarget && compact) event.currentTarget.close(); }}>
+        <button className="icon-button navigation-close" aria-label={uiText("Close navigation", "ナビゲーションを閉じる")} onClick={() => navigation.current?.close()}>×</button>
+        <Sidebar brand={<Brand brand={brand} />} session={session} routeVaultId={routeVaultId}
+          serverLinks={extensions.flatMap((extension) => extension.navigation ?? []).filter(isServerNavigation).map((item) =>
+            (!item.capability || session.capabilities[item.capability]) && <a key={item.path} href={item.path}><MenuIcon name="settings" />{item.label}</a>)}>
+          <nav aria-label={uiText("Account navigation", "アカウント")}>
             <a className={path === "/dashboard/settings" ? "active" : ""} href="/dashboard/settings">
-              <MenuIcon name="settings" />{uiText("Settings", "設定")}
+              <MenuIcon name="settings" />{uiText("Account settings", "アカウント設定")}
             </a>
           </nav>
         </Sidebar>
-        <main className="workspace" key={path} ref={main} tabIndex={-1}>{children}</main>
+        </dialog>
+        <main id="main-content" className="workspace" key={path} ref={main} tabIndex={-1}>{children}</main>
       </div>
     </SidebarProvider>
   );
 }
 
-function PageHeader({ title }: { title: string }) {
-  return <header className="page-header"><h1>{title}</h1></header>;
+function PageHeader({ title, description, actions }: { title: string; description?: string; actions?: ReactNode }) {
+  return <header className="page-header"><div><h1>{title}</h1>{description && <p>{description}</p>}</div>{actions}</header>;
 }
 
 function Overview({ session }: { session: SessionInfo }) {
+  if (session.capabilities.sync) return <Vaults home />;
   return (
     <>
       <PageHeader title="Overview" />
@@ -381,7 +413,9 @@ function Overview({ session }: { session: SessionInfo }) {
   );
 }
 
-function Settings({ sessionsEnabled }: { sessionsEnabled: boolean }) {
+function Settings({ session, extensions }: { session: SessionInfo; extensions: readonly DashboardExtension[] }) {
+  const sessionsEnabled = session.capabilities.sessions;
+  const { dialog, openDialog } = useActionDialog();
   const [sessions, setSessions] = useState<DeviceSession[]>();
   const [error, setError] = useState<string>();
   const load = useCallback(() => {
@@ -390,96 +424,117 @@ function Settings({ sessionsEnabled }: { sessionsEnabled: boolean }) {
   }, []);
   useEffect(() => { if (sessionsEnabled) load(); }, [load, sessionsEnabled]);
 
-  async function revoke(id: string) {
-    try {
-      await json(`/api/sessions/${id}`, { method: "DELETE" });
-      load();
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not revoke session");
-    }
+  function revoke(device: DeviceSession) {
+    openDialog({
+      title: uiText("Revoke this session?", "このセッションを解除しますか？"),
+      description: device.current
+        ? uiText("You will be signed out of this browser. Your meetings will remain available when you sign in again.", "このブラウザからサインアウトします。再度サインインすれば、ミーティングを引き続き閲覧できます。")
+        : uiText("This device will need to sign in again. Existing access tokens may remain valid for up to 15 minutes.", "このデバイスでは再度サインインが必要になります。発行済みのアクセストークンは最大15分間有効な場合があります。"),
+      confirmLabel: uiText("Revoke session", "セッションを解除"), destructive: true,
+      onSubmit: async () => { await json(`/api/sessions/${encodeURIComponent(device.id)}`, { method: "DELETE" }); load(); },
+    });
   }
 
   return (
     <>
-      <PageHeader title={uiText("Settings", "設定")} />
+      {dialog}
+      <PageHeader title={uiText("Account settings", "アカウント設定")} description={uiText("Make Dahlia work the way you do.", "出力や要約の設定、アカウントへのアクセスを管理します。")} />
       <ServerSummarySettings />
+      <section className="section-block settings-section">
+        <h2 className="section-label">{uiText("Account", "アカウント")}</h2>
+        <div className="panel account-card"><dl className="account-details">
+          <div><dt>{uiText("Name", "名前")}</dt><dd>{session.user.name || "—"}</dd></div>
+          <div><dt>{uiText("Email address", "メールアドレス")}</dt><dd>{session.user.email || "—"}</dd></div>
+        </dl></div>
+      </section>
+      {extensions.flatMap((extension) => extension.navigation ?? []).filter((item) => !isServerNavigation(item)).map((item) =>
+        (!item.capability || session.capabilities[item.capability]) && <a className="text-link" key={item.path} href={item.path}><MenuIcon name="document" />{item.label}</a>)}
       {sessionsEnabled && <section className="section-block">
-        <h2 className="section-label">Active Sessions</h2>
+        <h2 className="section-label">{uiText("Active sessions", "接続中のセッション")}</h2>
         <div className="panel sessions-panel">
           {error && <p className="error">{error}</p>}
-          {!sessions && !error && <p className="muted">Loading sessions…</p>}
+          {!sessions && !error && <p className="muted">{uiText("Loading sessions…", "セッションを読み込み中…")}</p>}
           {sessions?.length === 0 && (
-            <div className="empty-state"><strong>No active sessions</strong><span>Connect Dahlia for macOS to see it here.</span></div>
+            <div className="empty-state"><strong>{uiText("No active sessions", "接続中のセッションはありません")}</strong><span>{uiText("Connected devices will appear here.", "接続したデバイスがここに表示されます。")}</span></div>
           )}
           {sessions?.map((session) => (
             <div className="row" key={session.id}>
               <div>
-                <strong>{session.current ? "This browser" : session.userAgent || "Dahlia session"}</strong>
-                <span>Created {new Date(session.createdAt).toLocaleString()}</span>
+                <strong>{session.current ? uiText("This browser", "このブラウザ") : session.userAgent || uiText("Dahlia session", "Dahlia セッション")}</strong>
+                <span>{uiText("Connected", "接続日時")} {new Date(session.createdAt).toLocaleString()}</span>
               </div>
               <div className="row-actions">
-                {session.current && <span className="status good">Current</span>}
-                <button className="secondary" onClick={() => void revoke(session.id)}>Revoke</button>
+                {session.current && <span className="status good">{uiText("Current", "現在")}</span>}
+                <button className="secondary danger-button" onClick={() => revoke(session)}>{uiText("Revoke", "解除")}</button>
               </div>
             </div>
           ))}
         </div>
-        <p className="section-note">Revoked access can remain valid for up to 15 minutes.</p>
+        <p className="section-note">{uiText("Revoked access can remain valid for up to 15 minutes.", "解除後も、発行済みのアクセストークンは最大15分間有効な場合があります。")}</p>
       </section>}
     </>
   );
 }
 
-function Vaults() {
+function Vaults({ home = false }: { home?: boolean }) {
+  const { dialog, openDialog } = useActionDialog();
   const { vaults, error: loadError, reload, organizationId } = useSidebar();
-  const [error, setError] = useState<string>();
+  const [recentVaultId, setRecentVaultId] = useState("");
+  const recentVault = vaults?.find((vault) => vault.vaultId === recentVaultId) ?? vaults?.[0];
+  useEffect(() => {
+    if (recentVault) setRecentVaultId(recentVault.vaultId);
+  }, [recentVault]);
+  const recent = useLiveJSON<{ items: SyncedMeetingInfo[] }>(home && recentVault ? `/api/v1/vaults/${recentVault.vaultId}/meetings` : undefined);
   const [recovering, setRecovering] = useState(false);
 
-  const createVault = async () => {
-    const name = window.prompt(uiText("Vault name", "保管庫名"))?.trim();
-    if (!name) return;
-    const id = uuidV7();
-    setError(undefined);
-    try {
-      await commitSyncTransaction(id, [{
-        entity: "vault",
-        action: "create",
-        entityId: id,
-        baseRevision: null,
-        data: { name, createdAt: new Date().toISOString() },
-      }], setRecovering);
+  const createVault = () => openDialog({
+    title: uiText("New Vault", "保管庫を作成"),
+    description: uiText("Keep related meetings together. Only you can access a new Vault until you share it.", "関連するミーティングをまとめる場所です。共有するまでは、あなたのみが閲覧できます。"),
+    confirmLabel: uiText("Create Vault", "保管庫を作成"),
+    fields: [{ name: "name", label: uiText("Vault name", "保管庫名"), required: true }],
+    onSubmit: async ({ name }) => {
+      const id = uuidV7();
+      await commitSyncTransaction(id, [{ entity: "vault", action: "create", entityId: id, baseRevision: null,
+        data: { name: name!.trim(), createdAt: new Date().toISOString() } }], setRecovering);
       navigateDashboard(`/vaults/${id}`);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not create Vault");
-    }
-  };
-  return (
-    <>
-      <PageHeader title="Vaults" />
-      {recovering && <p role="status">{syncMessage("sync_recovering")}</p>}
-      <section className="section-block">
-        <h2 className="section-label">Synchronized Vaults</h2>
-        {!organizationId && <button className="secondary" onClick={() => void createVault()}>New Vault</button>}
-        <div className="panel resource-list">
-          {!vaults && !loadError && <p className="muted">Loading Vaults…</p>}
-          {loadError && <p role="alert">{loadError} <button onClick={reload}>Retry</button></p>}
-          {vaults?.length === 0 && <div className="empty-state"><strong>No synchronized Vaults</strong></div>}
-          {vaults?.map((vault) => (
-            <a className="resource-row" href={`/vaults/${vault.vaultId}`} key={vault.vaultId}>
-              <span className="resource-copy">
-                <strong>{vault.name}</strong>
-                <span>{vault.role === "owner" ? "Owned by you" : "Shared with you"} · Updated {new Date(vault.updatedAt).toLocaleString()}</span>
-              </span>
-            </a>
-          ))}
-        </div>
-        {error && <p className="error resource-error">{error}</p>}
-      </section>
-    </>
-  );
+    },
+  });
+  return <>
+    {dialog}
+    <PageHeader title={home ? uiText("Home", "ホーム") : uiText("Vaults", "保管庫")}
+      description={home ? uiText("Pick up where your last conversation left off.", "前回の会話の続きから、始めましょう。") : uiText("Your meetings, organized in one place.", "ミーティングとその記録を、保管庫ごとに整理します。")}
+      actions={!organizationId && <button className="primary" onClick={createVault}><MenuIcon name="plus" />{uiText("New Vault", "保管庫を作成")}</button>} />
+    {recovering && <p role="status">{syncMessage("sync_recovering")}</p>}
+    <section className="section-block">
+      <div className="collection-heading"><h2>{uiText("Your Vaults", "保管庫一覧")}</h2>{vaults && <span className="muted">{vaults.length}</span>}</div>
+      {!vaults && !loadError && <p className="content-empty" role="status">{uiText("Loading Vaults…", "保管庫を読み込み中…")}</p>}
+      {loadError && <p className="error" role="alert">{loadError} <button className="secondary" onClick={reload}>{uiText("Retry", "再試行")}</button></p>}
+      {vaults?.length === 0 && <div className="welcome-empty">
+        <span className="empty-symbol"><MenuIcon name="vault" /></span>
+        <h2>{uiText("A home for your meetings", "ミーティングの記録を、ひとつの場所に")}</h2>
+        <p>{organizationId ? uiText("Vaults shared with this organization will appear here.", "この組織に共有された保管庫がここに表示されます。") : uiText("Create a Vault, then connect it in Dahlia for macOS to bring your meeting notes, transcripts and screenshots here.", "保管庫を作成して macOS 版 Dahlia で接続すると、ミーティングの要約・文字起こし・スクリーンショットをここで閲覧できます。")}</p>
+      </div>}
+      <div className="vault-grid">{vaults?.map((vault) => <a className="vault-card" href={`/vaults/${vault.vaultId}`} key={vault.vaultId}>
+        <div className="vault-card-top"><span className="vault-symbol"><AppearanceIcon appearance={collectionAppearance(vault, "vault")} size={22} /></span><span className={`status${vault.role === "owner" ? "" : " shared"}`}>{vault.role === "owner" ? uiText("Personal", "個人") : uiText("Shared · read-only", "共有・閲覧のみ")}</span></div>
+        <h3>{vault.name}</h3>
+        <div className="vault-card-bottom"><span>{uiText("Updated", "更新日")} {new Date(vault.updatedAt ?? vault.createdAt).toLocaleDateString()}</span><MenuIcon name="arrow" /></div>
+      </a>)}</div>
+    </section>
+    {home && recentVault && <section className="section-block recent-meetings">
+      <div className="collection-heading"><h2>{uiText("Recent meetings", "最近のミーティング")}</h2>
+        <Select aria-label={uiText("Vault for recent meetings", "最近のミーティングの保管庫")} value={recentVault.vaultId} onValueChange={(value) => setRecentVaultId(value)}>
+          {vaults?.map((vault) => <option value={vault.vaultId} key={vault.vaultId}><AppearanceIcon appearance={collectionAppearance(vault, "vault")} /><span>{vault.name}</span></option>)}
+        </Select>
+      </div>
+      <DataError error={recent.error} retry={recent.reload} />
+      <MeetingList meetings={recent.data?.items.slice(0, 10)} loading={recent.loading} />
+      <a className="text-link" href={`/vaults/${recentVault.vaultId}`}>{uiText("View all meetings", "すべてのミーティングを見る")} <MenuIcon name="arrow" /></a>
+    </section>}
+  </>;
 }
 
 function VaultSharing({ session, vault }: { session: SessionInfo; vault: SyncedVaultInfo }) {
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string>();
   const sharingQuery = useLiveQuery(`sharing:${vault.vaultId}:${session.capabilities.sessions}`, async (signal) => {
     const [{ items }, organizationItems] = await Promise.all([
@@ -500,6 +555,8 @@ function VaultSharing({ session, vault }: { session: SessionInfo; vault: SyncedV
   const teams = sharingQuery.data?.teams ?? [];
 
   async function toggle(principalType: "organization" | "team", principalId: string, enabled: boolean) {
+    if (saving) return;
+    setSaving(true);
     setError(undefined);
     try {
       const target = `${principalType === "organization" ? "organizations" : "teams"}/${encodeURIComponent(principalId)}`;
@@ -508,6 +565,8 @@ function VaultSharing({ session, vault }: { session: SessionInfo; vault: SyncedV
       });
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : uiText("Could not update sharing", "共有設定を更新できませんでした"));
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -550,6 +609,7 @@ function VaultSharing({ session, vault }: { session: SessionInfo; vault: SyncedV
             <span><strong>{organization.name}</strong><small>{organization.slug}</small></span>
             <input
               type="checkbox"
+              disabled={saving || sharingQuery.loading || !permissions}
               checked={shared("organization", organization.id)}
               onChange={(event) => void toggle("organization", organization.id, event.target.checked)}
             />
@@ -560,38 +620,103 @@ function VaultSharing({ session, vault }: { session: SessionInfo; vault: SyncedV
             <span><strong>{team.name}</strong><small>{uiText("Team · read-only access", "チーム・閲覧のみ")}</small></span>
             <input
               type="checkbox"
+              disabled={saving || sharingQuery.loading || !permissions}
               checked={shared("team", team.id)}
               onChange={(event) => void toggle("team", team.id, event.target.checked)}
             />
           </label>
         ))}
       </div>
+      {saving && <p className="muted" role="status">{uiText("Updating access…", "アクセス権を更新中…")}</p>}
       <DataError error={sharingQuery.error} retry={sharingQuery.reload} />
       {error && <p className="error resource-error">{error}</p>}
     </section>
   );
 }
 
+function VaultTransfer({ vault }: { vault: SyncedVaultInfo }) {
+  const { dialog, openDialog } = useActionDialog();
+  const targets = useLiveJSON<{ items: SyncedVaultInfo[] }>("/api/v1/vaults");
+  const [destinationId, setDestinationId] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string>();
+  const available = targets.data?.items.filter((item) => item.role === "owner" && item.vaultId !== vault.vaultId) ?? [];
+  const destination = available.find((item) => item.vaultId === destinationId);
+  async function confirm() {
+    if (!destination || loading) return;
+    setLoading(true);
+    setError(undefined);
+    try {
+      const [source, target, audience] = await Promise.all([
+        json<SyncedVaultInfo>(`/api/v1/vaults/${vault.vaultId}`),
+        json<SyncedVaultInfo>(`/api/v1/vaults/${destination.vaultId}`),
+        json<{ audienceHash: string; removed: { name: string; email: string }[]; added: { name: string; email: string }[] }>(
+          `/api/v1/vaults/${vault.vaultId}/transfer-audience?destinationVaultId=${destination.vaultId}`),
+      ]);
+      const people = (items: { name: string; email: string }[]) => items.map((person) => `${person.name} (${person.email})`).join(", ");
+      const description = [
+        uiText(`Move all Server-saved content from “${source.name}” to “${target.name}”. The source Vault will remain empty.`,
+          `「${source.name}」のServer保存済みの全内容を「${target.name}」へ移管します。元の保管庫は空で残ります。`),
+        audience.removed.length ? uiText(`Will lose access: ${people(audience.removed)}.`, `閲覧できなくなる人：${people(audience.removed)}。`) : "",
+        audience.added.length ? uiText(`Will gain access: ${people(audience.added)}.`, `新しく閲覧できる人：${people(audience.added)}。`) : "",
+        !audience.removed.length && !audience.added.length ? uiText("No change to the current readers.", "現在の閲覧者に変更はありません。") : "",
+        uiText("Devices without access will pause sync and keep local data. Unsynced data is not transferred.",
+          "移管先を閲覧できない端末はローカルデータを保持して同期を停止します。未同期データは移管されません。"),
+      ].filter(Boolean).join("\n\n");
+      const key = uuidV7();
+      const body = JSON.stringify({ destinationVaultId: target.vaultId, sourceRevision: source.revision, destinationRevision: target.revision, audienceHash: audience.audienceHash });
+      openDialog({ title: uiText("Transfer content", "内容を移管"), description,
+        confirmLabel: uiText("Transfer", "移管する"), destructive: true,
+        onSubmit: async () => {
+          await json(`/api/v1/vaults/${source.vaultId}/transfer`, { method: "POST", headers: { "Idempotency-Key": key }, body });
+          window.location.assign(`/vaults/${target.vaultId}`);
+        },
+      });
+    } catch (caught) { setError(caught instanceof Error ? caught.message : String(caught)); }
+    finally { setLoading(false); }
+  }
+  return <section className="vault-settings"><h2>{uiText("Transfer content", "内容を移管")}</h2>
+    <p>{uiText("Move all saved content to another Vault you own.", "保存済みの全内容を、自分が所有する別の保管庫へ移します。")}</p>
+    <div className="collection-heading"><Select aria-label={uiText("Destination Vault", "移管先の保管庫")} placeholder={uiText("Choose a Vault", "保管庫を選択")} menuLabel={uiText("Vaults", "保管庫")} value={destinationId} disabled={loading}
+      onValueChange={(value) => setDestinationId(value)}>
+      {available.map((item) => <option key={item.vaultId} value={item.vaultId}><AppearanceIcon appearance={collectionAppearance(item, "vault")} /><span>{item.name}</span></option>)}
+    </Select><button className="secondary" disabled={!destination || loading || vault.hasResources !== true} onClick={() => void confirm()}>
+      {loading ? uiText("Checking…", "確認中…") : uiText("Transfer content", "内容を移管")}</button></div>
+    {targets.data && !available.length && <p className="muted">{uiText("Create another Vault to transfer content.", "移管先となる別の保管庫を作成してください。")}</p>}
+    <DataError error={targets.error} retry={targets.reload} />{error && <p className="error" role="alert">{error}</p>}{dialog}
+  </section>;
+}
+
 function meetingCount(count: number) { return uiText(`${count} meeting${count === 1 ? "" : "s"}`, `${count}件のミーティング`); }
 
-export function MeetingList({ meetings, loading }: { meetings?: SyncedMeetingInfo[]; loading: boolean }) {
-  return <div className="collection-list">
-    {!meetings && loading && <p className="content-empty">{uiText("Loading meetings…", "ミーティングを読み込み中…")}</p>}
-    {meetings?.length === 0 && <p className="content-empty">{uiText("No meetings found", "ミーティングがありません")}</p>}
+export function MeetingList({ meetings, loading, filtered = false, onClear }: { meetings?: SyncedMeetingInfo[]; loading: boolean; filtered?: boolean; onClear?: () => void }) {
+  return <div className="collection-list" aria-busy={loading}>
+    {!meetings && loading && <p className="content-empty" role="status">{uiText("Loading meetings…", "ミーティングを読み込み中…")}</p>}
+    {meetings?.length === 0 && <div className="welcome-empty compact-empty">
+      <span className="empty-symbol"><MenuIcon name={filtered ? "search" : "document"} /></span>
+      <h2>{filtered ? uiText("No matching meetings", "条件に一致するミーティングがありません") : uiText("No meetings yet", "ミーティングはまだありません")}</h2>
+      <p>{filtered ? uiText("Try a different title or clear your filters.", "別のタイトルで検索するか、絞り込みを解除してください。") : uiText("Meetings synced from Dahlia for macOS will appear here.", "macOS 版 Dahlia から同期されたミーティングがここに表示されます。")}</p>
+      {filtered && onClear && <button className="secondary" onClick={onClear}>{uiText("Clear filters", "絞り込みを解除")}</button>}
+    </div>}
     {meetings?.map((meeting) => {
       const date = meeting.recordingStartedAt ?? meeting.createdAt;
-      return <a className="collection-row" href={`/meetings/${meeting.meetingId}`} key={meeting.meetingId}>
-        <strong>{meeting.name || uiText("Untitled meeting", "無題のミーティング")} <RecordingIndicator isRecording={meeting.isRecording} /></strong>
-        <time dateTime={date}>{new Date(date).toLocaleString(undefined, { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</time>
+      return <a className="collection-row meeting-list-row" href={`/meetings/${meeting.meetingId}`} key={meeting.meetingId}>
+        <span className="collection-icon"><MenuIcon name="document" /></span>
+        <span className="collection-copy"><strong>{meeting.name || uiText("Untitled meeting", "無題のミーティング")} <RecordingIndicator isRecording={meeting.isRecording} /></strong>
+          {meeting.description && <small>{meeting.description}</small>}
+          <span className="collection-date"><time dateTime={date}>{new Date(date).toLocaleString(undefined, { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</time>
+          {meeting.duration != null && <span> · {Math.floor(meeting.duration / 60)}:{String(Math.floor(meeting.duration % 60)).padStart(2, "0")}</span>}</span>
+        </span>
+        <MenuIcon name="arrow" />
       </a>;
     })}
   </div>;
 }
 
 function VaultMeetings({ session, vaultId }: { session: SessionInfo; vaultId: string }) {
+  const { dialog, openDialog } = useActionDialog();
   const vaultQuery = useLiveJSON<SyncedVaultInfo>(`/api/v1/vaults/${vaultId}`);
   const vault = vaultQuery.data;
-  const [error, setError] = useState<string>();
   const [recovering, setRecovering] = useState(false);
   const projectsQuery = useLiveJSON<{ items: SyncedProjectInfo[] }>(`/api/v1/vaults/${vaultId}/projects`);
   const projects = vault ? projectsQuery.data?.items ?? [] : [];
@@ -612,85 +737,95 @@ function VaultMeetings({ session, vaultId }: { session: SessionInfo; vaultId: st
   const meetings = vault ? meetingsQuery.data?.items : undefined;
   const nextCursor = meetingsQuery.data?.nextCursor;
   const loadingMore = meetingsQuery.loadingMore;
-  const renameVault = async () => {
+  const renameVault = () => {
     if (!vault) return;
-    const name = window.prompt(uiText("Vault name", "保管庫名"), vault.name)?.trim();
-    if (!name || name === vault.name) return;
-    setError(undefined);
-    try {
-      await commitSyncTransaction(vaultId, [{
-        entity: "vault", action: "update", entityId: vaultId,
-        baseRevision: vault.revision, data: { name },
-      }], setRecovering);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : uiText("Could not rename Vault", "保管庫名を変更できませんでした"));
-    }
+    openDialog({
+      title: uiText("Edit Vault", "保管庫を編集"), confirmLabel: uiText("Save changes", "変更を保存"),
+      fields: [{ name: "name", label: uiText("Vault name", "保管庫名"), value: vault.name, required: true },
+        { name: "appearance", label: uiText("Appearance", "見た目"), appearance: "editable", value: JSON.stringify(collectionAppearance(vault, "vault")) }],
+      onSubmit: async ({ name, appearance }) => {
+        await commitSyncTransaction(vaultId, [{ entity: "vault", action: "update", entityId: vaultId,
+          baseRevision: vault.revision, data: { name: name!.trim(), ...(JSON.parse(appearance!) as Appearance) } }], setRecovering);
+      },
+    });
   };
-  const createProject = async () => {
-    const name = window.prompt(uiText("Project name", "プロジェクト名"))?.trim();
-    if (!name) return;
-    const id = uuidV7();
-    setError(undefined);
-    try {
-      await commitSyncTransaction(vaultId, [{
-        entity: "project", action: "create", entityId: id, baseRevision: null,
-        data: {
-          parentProjectId: null,
-          name,
-          description: "",
-          projectType: "undefined",
-          createdAt: new Date().toISOString(),
-        },
-      }], setRecovering);
+  const deleteVault = () => {
+    if (!vault || vault.role !== "owner") return;
+    openDialog({
+      title: uiText("Delete Vault?", "保管庫を削除しますか？"),
+      description: uiText(`Delete the empty Vault “${vault.name}”? This cannot be undone.`, `空の保管庫「${vault.name}」を削除します。この操作は取り消せません。`),
+      confirmLabel: uiText("Delete Vault", "保管庫を削除"), destructive: true,
+      onSubmit: async () => {
+        await commitSyncTransaction(vaultId, [{ entity: "vault", action: "reset", entityId: vaultId,
+          baseRevision: vault.revision, data: { preservePermissions: false } }], setRecovering);
+        navigateDashboard("/vaults");
+      },
+    });
+  };
+  const createProject = () => openDialog({
+    title: uiText("New Project", "プロジェクトを作成"),
+    description: uiText(`Organize meetings in ${vault?.name ?? "this Vault"}.`, `「${vault?.name ?? "この保管庫"}」のミーティングを整理します。`),
+    confirmLabel: uiText("Create Project", "プロジェクトを作成"),
+    fields: [
+      { name: "name", label: uiText("Project name", "プロジェクト名"), required: true },
+      { name: "description", label: uiText("Description", "説明"), multiline: true },
+    ],
+    onSubmit: async ({ name, description }) => {
+      const id = uuidV7();
+      await commitSyncTransaction(vaultId, [{ entity: "project", action: "create", entityId: id, baseRevision: null,
+        data: { parentProjectId: null, name: name!.trim(), description, projectType: "undefined", createdAt: new Date().toISOString() } }], setRecovering);
       navigateDashboard(`/projects/${id}`);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : uiText("Could not create Project", "プロジェクトを作成できませんでした"));
-    }
-  };
+    },
+  });
   return <article className="meeting-detail collection-detail">
     <header className="meeting-header">
       <nav className="detail-breadcrumbs" aria-label={uiText("Breadcrumbs", "パンくず")}><a href="/vaults">{uiText("All Vaults", "保管庫一覧")}</a></nav>
-      <h1><MenuIcon name="vault" />{vault?.name ?? uiText("Vault", "保管庫")}</h1>
+      <h1><AppearanceIcon appearance={collectionAppearance(vault, "vault")} size={28} />{vault?.name ?? uiText("Vault", "保管庫")}</h1>
       {vault && <div className="meeting-metadata"><span className="metadata-chip">{vault.role === "owner" ? uiText("Owner", "所有者") : uiText("Read-only", "閲覧のみ")}</span></div>}
     </header>
+    {dialog}
     {recovering && <p role="status">{syncMessage("sync_recovering")}</p>}
     <DataError error={vaultQuery.error} retry={vaultQuery.reload} />
-    {error && <p className="error" role="alert">{error}</p>}
     <DetailTabs label={uiText("Vault content", "保管庫の内容")} tabs={[
       { id: "meetings", label: uiText("Meetings", "ミーティング"), content: <>
         <div className="collection-filters">
           <input type="search" className="model-search" aria-label={uiText("Search meetings", "ミーティングを検索")} placeholder={uiText("Search meetings", "ミーティングを検索")} value={query} onChange={(event) => setQuery(event.target.value)} />
-          {projects.length > 0 && <select aria-label={uiText("Filter by Project", "プロジェクトで絞り込み")} value={projectId} onChange={(event) => setProjectId(event.target.value)}>
+          {projects.length > 0 && <Select aria-label={uiText("Filter by Project", "プロジェクトで絞り込み")} value={projectId} onValueChange={(value) => setProjectId(value)}>
             <option value="">{uiText("All Projects", "すべてのプロジェクト")}</option>
             {projects.map((project) => <option key={project.projectId} value={project.projectId}>{project.path}</option>)}
-          </select>}
+          </Select>}
         </div>
         <DataError error={projectsQuery.error} retry={projectsQuery.reload} />
         <DataError error={meetingsQuery.error} retry={meetingsQuery.reload} />
-        <MeetingList meetings={meetings} loading={meetingsQuery.loading} />
+        <MeetingList meetings={meetings} loading={meetingsQuery.loading} filtered={Boolean(query || projectId)} onClear={() => { setQuery(""); setSearch(""); setProjectId(""); }} />
         {nextCursor && <button className="secondary load-more" disabled={loadingMore} onClick={meetingsQuery.loadMore}>{loadingMore ? uiText("Loading…", "読み込み中…") : uiText("Load more", "さらに表示")}</button>}
       </> },
       { id: "projects", label: uiText("Projects", "プロジェクト"), content: <>
-        <div className="collection-heading"><h2>{uiText("Projects", "プロジェクト")}</h2>{vault?.role === "owner" && <button className="secondary" onClick={() => void createProject()}>{uiText("New Project", "プロジェクトを作成")}</button>}</div>
+        <div className="collection-heading"><h2>{uiText("Projects", "プロジェクト")}</h2>{vault?.role === "owner" && <button className="secondary" onClick={createProject}>{uiText("New Project", "プロジェクトを作成")}</button>}</div>
         <DataError error={projectsQuery.error} retry={projectsQuery.reload} />
         {projectsQuery.loading && !projectsQuery.data && <p className="content-empty">{uiText("Loading…", "読み込み中…")}</p>}
         {projectsQuery.data && projects.length === 0 && <p className="content-empty">{uiText("No projects yet", "プロジェクトはまだありません")}</p>}
         <div className="collection-list">{projects.map((project) => <a className="collection-row" href={`/projects/${project.projectId}`} key={project.projectId}>
-          <span><strong>{project.path}</strong>{project.description && <small>{project.description}</small>}</span><span className="muted">{meetingCount(project.subtreeMeetingCount)}</span>
+          <span className="collection-project-name"><AppearanceIcon appearance={projectAppearance(project, projects.find((parent) => parent.projectId === project.parentProjectId))} /><span><strong>{project.path}</strong>{project.description && <small>{project.description}</small>}</span></span><span className="muted">{meetingCount(project.subtreeMeetingCount)}</span>
         </a>)}</div>
       </> },
+      ...(session.capabilities.sharing && vault ? [{ id: "permissions", label: uiText("Permissions", "権限"), content: <VaultSharing session={session} vault={vault} /> }] : []),
       { id: "settings", label: uiText("Settings", "設定"), content: <>
-        <section className="vault-settings"><h2>{uiText("Vault details", "保管庫の詳細")}</h2><div className="collection-heading"><span>{vault?.name}</span>{vault?.role === "owner" && <button className="secondary" onClick={() => void renameVault()}>{uiText("Rename Vault", "保管庫名を変更")}</button>}</div></section>
-        {session.capabilities.sharing && vault && <VaultSharing session={session} vault={vault} />}
+        <section className="vault-settings"><h2>{uiText("Vault details", "保管庫の詳細")}</h2><div className="collection-heading"><span>{vault?.name}</span>{vault?.role === "owner" && <button className="secondary" onClick={renameVault}>{uiText("Edit Vault", "保管庫を編集")}</button>}</div></section>
+        {vault?.role === "owner" && <VaultTransfer vault={vault} />}
+        {vault?.role === "owner" && <section className="vault-settings"><h2>{uiText("Delete Vault", "保管庫を削除")}</h2>
+          <div className="collection-heading"><p>{uiText("Only empty Vaults can be deleted. Transfer or delete all resources first.", "空の保管庫のみ削除できます。リソースが残っている場合は、先に移管または削除してください。")}</p>
+          <button className="secondary danger-button" disabled={vault.hasResources !== false} onClick={deleteVault}>{uiText("Delete Vault", "保管庫を削除")}</button></div>
+        </section>}
       </> },
     ]} />
   </article>;
 }
 
 function SyncedProject({ vaultId, projectId }: { vaultId: string; projectId: string }) {
+  const { dialog, openDialog } = useActionDialog();
   const vaultQuery = useLiveJSON<SyncedVaultInfo>(`/api/v1/vaults/${vaultId}`);
   const vault = vaultQuery.data;
-  const [error, setError] = useState<string>();
   const [recovering, setRecovering] = useState(false);
   const projectQuery = useLiveJSON<SyncedProjectInfo>(`/api/v1/vaults/${vaultId}/projects/${projectId}`);
   const project = vault ? projectQuery.data : undefined;
@@ -700,38 +835,34 @@ function SyncedProject({ vaultId, projectId }: { vaultId: string; projectId: str
   const meetings = project ? meetingsQuery.data?.items : undefined;
   const nextCursor = meetingsQuery.data?.nextCursor;
   const loadingMore = meetingsQuery.loadingMore;
-  const editProject = async () => {
+  const editProject = () => {
     if (!project) return;
-    const name = window.prompt(uiText("Project name", "プロジェクト名"), project.name)?.trim();
-    if (!name) return;
-    const description = window.prompt(uiText("Project description", "プロジェクトの説明"), project.description) ?? project.description;
-    setError(undefined);
-    try {
-      await commitSyncTransaction(vaultId, [{
-        entity: "project", action: "update", entityId: projectId, baseRevision: project.revision,
-        data: {
-          parentProjectId: project.parentProjectId ?? null,
-          name,
-          description,
-          projectType: project.parentProjectId ? null : project.projectType ?? "undefined",
-        },
-      }], setRecovering);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : uiText("Could not update Project", "プロジェクトを更新できませんでした"));
-    }
+    openDialog({
+      title: uiText("Edit Project", "プロジェクトを編集"), confirmLabel: uiText("Save changes", "変更を保存"),
+      fields: [
+        { name: "name", label: uiText("Project name", "プロジェクト名"), value: project.name, required: true },
+        { name: "description", label: uiText("Description", "説明"), value: project.description, multiline: true },
+        { name: "appearance", label: uiText("Appearance", "見た目"), appearance: project.parentProjectId ? "inherited" : "editable", value: JSON.stringify(projectAppearance(project, parentQuery.data)) },
+      ],
+      onSubmit: async ({ name, description, appearance }) => {
+        await commitSyncTransaction(vaultId, [{ entity: "project", action: "update", entityId: projectId, baseRevision: project.revision,
+          data: { ...(!project.parentProjectId ? JSON.parse(appearance!) as Appearance : {}), parentProjectId: project.parentProjectId ?? null, name: name!.trim(), description,
+            projectType: project.parentProjectId ? null : project.projectType ?? "undefined" } }], setRecovering);
+      },
+    });
   };
-  const deleteProject = async () => {
-    if (!project || !window.confirm(uiText(`Delete empty Project ${project.path}?`, `空のプロジェクト「${project.path}」を削除しますか？`))) return;
-    setError(undefined);
-    try {
-      await commitSyncTransaction(vaultId, [{
-        entity: "project", action: "delete", entityId: projectId,
-        baseRevision: project.revision, data: {},
-      }], setRecovering);
-      navigateDashboard(`/vaults/${vaultId}`);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : uiText("Could not delete Project", "プロジェクトを削除できませんでした"));
-    }
+  const deleteProject = () => {
+    if (!project) return;
+    openDialog({
+      title: uiText("Delete Project?", "プロジェクトを削除しますか？"),
+      description: uiText(`“${project.path}” will be permanently deleted. Only empty projects can be deleted.`, `「${project.path}」を完全に削除します。削除できるのは空のプロジェクトのみです。`),
+      confirmLabel: uiText("Delete Project", "プロジェクトを削除"), destructive: true,
+      onSubmit: async () => {
+        await commitSyncTransaction(vaultId, [{ entity: "project", action: "delete", entityId: projectId,
+          baseRevision: project.revision, data: {} }], setRecovering);
+        navigateDashboard(`/vaults/${vaultId}`);
+      },
+    });
   };
   return <article className="meeting-detail collection-detail">
     <header className="meeting-header">
@@ -739,30 +870,41 @@ function SyncedProject({ vaultId, projectId }: { vaultId: string; projectId: str
         <a href={`/vaults/${vaultId}`}>{vault?.name ?? uiText("Vault", "保管庫")}</a>
         {project?.parentProjectId && <><span aria-hidden="true">/</span><a href={`/projects/${project.parentProjectId}`}>{parentQuery.data?.name ?? uiText("Parent Project", "親プロジェクト")}</a></>}
       </nav>
-      <h1><MenuIcon name="folder" />{project?.name ?? uiText("Project", "プロジェクト")}</h1>
+      <h1><AppearanceIcon appearance={projectAppearance(project, parentQuery.data)} size={28} />{project?.name ?? uiText("Project", "プロジェクト")}</h1>
       {project?.description && <p className="project-description">{project.description}</p>}
       {project && <div className="meeting-metadata"><span className="metadata-chip">{meetingCount(project.subtreeMeetingCount)}</span></div>}
     </header>
+    {dialog}
     {recovering && <p role="status">{syncMessage("sync_recovering")}</p>}
     <DataError error={vaultQuery.error} retry={vaultQuery.reload} />
     <DataError error={projectQuery.error} retry={projectQuery.reload} />
-    {error && <p className="error" role="alert">{error}</p>}
-    <div className="meeting-toolbar collection-heading"><h2>{uiText("Meetings", "ミーティング")}</h2>
-      {project && vault?.role === "owner" && <div className="meeting-actions">
-        <button className="action-trigger" popoverTarget="project-actions">{uiText("⋯ Actions", "⋯ 操作")}</button>
-        <div id="project-actions" popover="auto" className="action-menu">
-          <button onClick={() => void editProject()}>{uiText("Edit Project", "プロジェクトを編集")}</button>
-          <button className="danger-button" onClick={() => void deleteProject()}>{uiText("Delete Project", "プロジェクトを削除")}</button>
-        </div>
-      </div>}
-    </div>
-    <DataError error={meetingsQuery.error} retry={meetingsQuery.reload} />
-    <MeetingList meetings={meetings} loading={meetingsQuery.loading} />
-    {nextCursor && <button className="secondary load-more" disabled={loadingMore} onClick={meetingsQuery.loadMore}>{loadingMore ? uiText("Loading…", "読み込み中…") : uiText("Load more", "さらに表示")}</button>}
+    <DetailTabs label={uiText("Project content", "プロジェクトの内容")} tabs={[
+      { id: "meetings", label: uiText("Meetings", "ミーティング"), content: <>
+        <DataError error={meetingsQuery.error} retry={meetingsQuery.reload} />
+        <MeetingList meetings={meetings} loading={meetingsQuery.loading} />
+        {nextCursor && <button className="secondary load-more" disabled={loadingMore} onClick={meetingsQuery.loadMore}>{loadingMore ? uiText("Loading…", "読み込み中…") : uiText("Load more", "さらに表示")}</button>}
+      </> },
+      { id: "settings", label: uiText("Settings", "設定"), content: <>
+        <section className="vault-settings">
+          <h2>{uiText("Project details", "プロジェクトの詳細")}</h2>
+          <div className="collection-heading"><span>{project?.name}</span>
+            {project && vault?.role === "owner" && <button className="secondary" onClick={editProject}>{uiText("Edit Project", "プロジェクトを編集")}</button>}
+          </div>
+        </section>
+        {project && vault?.role === "owner" && <section className="vault-settings">
+          <h2>{uiText("Delete Project", "プロジェクトを削除")}</h2>
+          <div className="collection-heading">
+            <p>{uiText("Only empty projects can be deleted.", "削除できるのは空のプロジェクトのみです。")}</p>
+            <button className="secondary danger-button" onClick={deleteProject}>{uiText("Delete Project", "プロジェクトを削除")}</button>
+          </div>
+        </section>}
+      </> },
+    ]} />
   </article>;
 }
 
 export function SyncedMeeting({ vaultId, meetingId }: { vaultId: string; meetingId: string }) {
+  const { dialog, openDialog } = useActionDialog();
   const base = `/api/v1/vaults/${vaultId}/meetings/${meetingId}`;
   const meetingQuery = useLiveJSON<SyncedMeetingInfo>(base);
   const vaultQuery = useLiveJSON<SyncedVaultInfo>(`/api/v1/vaults/${vaultId}`);
@@ -773,71 +915,64 @@ export function SyncedMeeting({ vaultId, meetingId }: { vaultId: string; meeting
   const screenshots = screenshotsQuery.data?.items;
   const screenshotCursor = screenshotsQuery.data?.nextCursor;
   const loadingScreenshots = screenshotsQuery.loadingMore;
-  const [error, setError] = useState<string>();
   const [recovering, setRecovering] = useState(false);
   const latestSummary = useLiveJSON<LatestSummary>(`${base}/summary/latest`);
   const [selectedSummary, setSelectedSummary] = useState<number | null>(null);
   useEffect(() => { setSelectedSummary(null); }, [base]);
   const currentSummary = latestSummary.data?.record;
-  const summaryText = summaryDisplayText(currentSummary?.document ?? null);
   const document = useMemo(() => parseSummary(currentSummary?.document ?? undefined), [currentSummary?.document]);
   const project = projectsQuery.data?.items.find((item) => item.projectId === meeting?.projectId);
-  const editMeeting = async () => {
+  const editMeeting = () => {
     if (!meeting) return;
-    const name = window.prompt("Meeting name", meeting.name)?.trim();
-    if (!name) return;
-    const description = window.prompt("Meeting description", meeting.description) ?? meeting.description;
-    setError(undefined);
-    try {
-      await commitSyncTransaction(vaultId, [{
-        entity: "meeting", action: "update", entityId: meetingId, baseRevision: meeting.revision,
-        data: {
-          projectId: meeting.projectId ?? null,
-          name,
-          description,
-          status: meeting.status,
-          duration: meeting.duration ?? null,
-          recordingStartedAt: meeting.recordingStartedAt ?? null,
-          updatedAt: new Date().toISOString(),
-        },
-      }], setRecovering);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not update Meeting");
-    }
+    openDialog({
+      title: uiText("Edit Meeting", "ミーティングを編集"), confirmLabel: uiText("Save changes", "変更を保存"),
+      fields: [
+        { name: "name", label: uiText("Meeting name", "ミーティング名"), value: meeting.name, required: true },
+        { name: "description", label: uiText("Description", "説明"), value: meeting.description, multiline: true },
+      ],
+      onSubmit: async ({ name, description }) => {
+        await commitSyncTransaction(vaultId, [{ entity: "meeting", action: "update", entityId: meetingId, baseRevision: meeting.revision,
+          data: { projectId: meeting.projectId ?? null, name: name!.trim(), description, status: meeting.status,
+            duration: meeting.duration ?? null, recordingStartedAt: meeting.recordingStartedAt ?? null, updatedAt: new Date().toISOString() } }], setRecovering);
+      },
+    });
   };
-  const editSummary = async () => {
+  const editSummary = () => {
     if (!meeting || !latestSummary.data || selectedSummary !== null) return;
-    const title = window.prompt("Summary title", currentSummary?.title ?? meeting.name)?.trim();
-    if (!title) return;
-    const text = window.prompt("Summary", summaryText) ?? summaryText;
-    setError(undefined);
-    try {
-      await commitSyncTransaction(vaultId, [{
-        entity: "summary", action: "upsert", entityId: meetingId,
-        baseRevision: latestSummary.data.revision,
-        data: { title, document: summaryDocument(title, text), createdAt: new Date().toISOString() },
-      }], setRecovering);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not update Summary");
-    }
+    const editor = summaryEditor(currentSummary?.document, currentSummary?.title ?? meeting.name);
+    openDialog({
+      title: currentSummary?.document ? uiText("Edit Summary", "要約を編集") : uiText("New Summary", "要約を追加"),
+      description: uiText("Your changes are saved as a new version. Previous versions remain available.", "変更は新しいバージョンとして保存され、過去のバージョンも引き続き閲覧できます。"),
+      confirmLabel: uiText("Save summary", "要約を保存"), fields: editor.fields,
+      onSubmit: async (values) => {
+        await commitSyncTransaction(vaultId, [{ entity: "summary", action: "upsert", entityId: meetingId,
+          baseRevision: latestSummary.data!.revision,
+          data: { title: values.title!.trim(), document: editor.document(values), createdAt: new Date().toISOString() } }], setRecovering);
+      },
+    });
   };
-  const deleteSummary = async () => {
-    if (!meeting || !currentSummary?.document || !window.confirm(uiText("Delete this summary and all its versions?", "要約とすべての過去バージョンを削除しますか？"))) return;
-    setError(undefined);
-    try {
-      await commitSyncTransaction(vaultId, [{
-        entity: "summary", action: "delete", entityId: meetingId,
-        baseRevision: latestSummary.data!.revision, data: {},
-      }], setRecovering);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not delete Summary");
-    }
+  const deleteSummary = () => {
+    if (!meeting || !currentSummary?.document) return;
+    openDialog({
+      title: uiText("Delete summary and history?", "要約と履歴を削除しますか？"),
+      description: uiText(`The summary for “${meeting.name}” and all its versions will be permanently deleted. The meeting, transcript and screenshots will remain.`, `「${meeting.name}」の要約とすべての過去バージョンを完全に削除します。ミーティング、文字起こし、スクリーンショットは残ります。`),
+      confirmLabel: uiText("Delete summary", "要約を削除"), destructive: true,
+      onSubmit: async () => {
+        await commitSyncTransaction(vaultId, [{ entity: "summary", action: "delete", entityId: meetingId,
+          baseRevision: latestSummary.data!.revision, data: {} }], setRecovering);
+      },
+    });
   };
   const visibleScreenshots = screenshots?.filter((screenshot) => screenshot.file.metadata.source === "screenshot");
   return (
     <article className="meeting-detail" aria-busy={!meeting && (meetingQuery.loading || vaultQuery.loading)}>
       {meeting && <header className="meeting-header">
+        <nav className="detail-breadcrumbs" aria-label={uiText("Breadcrumbs", "パンくず")}>
+          <a href={`/vaults/${vaultId}`}><AppearanceIcon appearance={collectionAppearance(vault, "vault")} />{vault?.name ?? uiText("Vault", "保管庫")}</a>
+          {project && <><span aria-hidden="true">/</span><a href={`/projects/${project.projectId}`}>{project.path}</a></>}
+        </nav>
         <h1>{meeting.name || uiText("Untitled meeting", "無題のミーティング")}</h1>
+        {meeting.description && <p className="project-description">{meeting.description}</p>}
         <div className="meeting-metadata">
           <RecordingIndicator isRecording={meeting.isRecording} />
           <span className="metadata-chip"><time dateTime={meeting.recordingStartedAt ?? meeting.createdAt}>
@@ -849,19 +984,19 @@ export function SyncedMeeting({ vaultId, meetingId }: { vaultId: string; meeting
           <SummaryTags document={document} />
         </div>
       </header>}
+      {dialog}
       {recovering && <p role="status">{syncMessage("sync_recovering")}</p>}
-      {error && <p className="error" role="alert">{error}</p>}
       <DataError error={meetingQuery.error} retry={meetingQuery.reload} />
       <DataError error={vaultQuery.error} retry={vaultQuery.reload} />
       <DataError error={projectsQuery.error} retry={projectsQuery.reload} />
       {meeting && vault?.role === "owner" && <ServerSummaryGeneration key={base} base={base} />}
       {meeting && <MeetingTabs
         actions={vault?.role === "owner" && <div className="meeting-actions">
-          <button className="action-trigger" popoverTarget="meeting-actions">{uiText("⋯ Actions", "⋯ 操作")} <span aria-hidden="true">⌄</span></button>
+          <button className="action-trigger" aria-label={uiText("Meeting actions", "ミーティングの操作")} popoverTarget="meeting-actions"><span aria-hidden="true">⋯</span>{" "}<span className="action-label">{uiText("Actions", "操作")}</span></button>
           <div id="meeting-actions" popover="auto" className="action-menu">
-            <button onClick={() => void editMeeting()}>{uiText("Edit Meeting", "ミーティングを編集")}</button>
-            <button disabled={selectedSummary !== null || !latestSummary.data} onClick={() => void editSummary()}>{currentSummary?.document ? uiText("Edit Summary", "要約を編集") : uiText("New Summary", "要約を追加")}</button>
-            {currentSummary?.document && <button className="danger-button" onClick={() => void deleteSummary()}>{uiText("Delete Summary", "要約を削除")}</button>}
+            <button onClick={editMeeting}>{uiText("Edit Meeting", "ミーティングを編集")}</button>
+            <button disabled={selectedSummary !== null || !latestSummary.data || Boolean(currentSummary?.document && !Array.isArray(document.sections))} onClick={editSummary}>{currentSummary?.document ? uiText("Edit Summary", "要約を編集") : uiText("New Summary", "要約を追加")}</button>
+            {currentSummary?.document && <button className="danger-button" onClick={deleteSummary}>{uiText("Delete Summary", "要約を削除")}</button>}
           </div>
         </div>}
         summary={<>
@@ -904,29 +1039,23 @@ export function ScreenshotFigure({ file, capturedAt }: { file: SyncedScreenshotI
         onError={() => setFailed(true)}
       />}
     </FileLink>
-    {failed && <button onClick={() => setFailed(false)}>{uiText("Retry", "再試行")}</button>}
+    {failed && <button className="secondary" onClick={() => setFailed(false)}>{uiText("Retry", "再試行")}</button>}
     {capturedAt && <time className="screenshot-time" dateTime={capturedAt}>{new Date(capturedAt).toLocaleTimeString()}</time>}
     {(file.metadata.caption || file.metadata.ocr_text) && <figcaption>{file.metadata.caption || file.metadata.ocr_text}</figcaption>}
     <a href={original} download>{uiText("Download original", "原本をダウンロード")}</a>
   </figure>;
 }
 
-function OrganizationCard({
-  organization,
-  session,
-  reloadOrganizations,
-}: {
-  organization: OrganizationInfo;
-  session: SessionInfo;
-  reloadOrganizations: () => void;
-}) {
+function OrganizationDetails({ organization, session }: { organization: OrganizationInfo; session: SessionInfo }) {
+  const { dialog, openDialog } = useActionDialog();
   const [members, setMembers] = useState<OrganizationMember[]>();
   const [teams, setTeams] = useState<TeamInfo[]>([]);
   const [teamMembers, setTeamMembers] = useState<Record<string, TeamMember[]>>({});
   const [invitations, setInvitations] = useState<OrganizationInvitation[]>();
-  const [email, setEmail] = useState("");
-  const [teamName, setTeamName] = useState("");
+  const [memberSearch, setMemberSearch] = useState("");
+  const [copied, setCopied] = useState(false);
   const [invitationLink, setInvitationLink] = useState<string>();
+  const [pending, setPending] = useState(false);
   const [error, setError] = useState<string>();
   const organizationId = encodeURIComponent(organization.id);
   const load = useCallback(async () => {
@@ -982,39 +1111,48 @@ function OrganizationCard({
   }, [organizationId, session.capabilities.sessions, session.user.id]);
   useEffect(() => { void load(); }, [load]);
 
-  async function invite(event: React.FormEvent) {
-    event.preventDefault();
-    setError(undefined);
-    setInvitationLink(undefined);
+  function invite() {
+    openDialog({
+      title: uiText("Invite member", "メンバーを招待"),
+      description: uiText("Create a link and share it with this person. An email is not sent automatically.", "招待リンクを作成して相手に共有します。メールは自動送信されません。"),
+      confirmLabel: uiText("Create invitation link", "招待リンクを作成"),
+      fields: [{ name: "email", label: uiText("Email address", "メールアドレス"), type: "email", required: true }],
+      onSubmit: async ({ email }) => {
+        const invitation = await json<OrganizationInvitation>("/api/auth/organization/invite-member", {
+          method: "POST", body: JSON.stringify({ email: email!.trim(), role: "member", organizationId: organization.id }),
+        });
+        setInvitationLink(`${window.location.origin}/accept-invitation/${invitation.id}`);
+        setCopied(false);
+        await load();
+      },
+    });
+  }
+
+  async function copyInvitation() {
     try {
-      const invitation = await json<OrganizationInvitation>("/api/auth/organization/invite-member", {
-        method: "POST",
-        body: JSON.stringify({ email, role: "member", organizationId: organization.id }),
-      });
-      const link = `${window.location.origin}/accept-invitation/${invitation.id}`;
-      setInvitationLink(link);
-      setEmail("");
-      await navigator.clipboard.writeText(link).catch(() => undefined);
-      await load();
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not create invitation");
+      await navigator.clipboard.writeText(invitationLink!);
+      setCopied(true);
+    } catch {
+      setError(uiText("Could not copy. Select the link and copy it manually.", "コピーできませんでした。リンクを選択してコピーしてください。"));
     }
   }
 
-  async function removeMember(member: OrganizationMember) {
-    if (!window.confirm(`Remove ${member.user.email} from ${organization.name}?`)) return;
-    try {
-      await json("/api/auth/organization/remove-member", {
-        method: "POST",
-        body: JSON.stringify({ memberIdOrEmail: member.id, organizationId: organization.id }),
-      });
-      await load();
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not remove member");
-    }
+  function removeMember(member: OrganizationMember) {
+    openDialog({
+      title: uiText("Remove member?", "メンバーを削除しますか？"),
+      description: uiText(`${member.user.email} will lose access through ${organization.name}.`, `${member.user.email} は「${organization.name}」を通じたアクセスを失います。`),
+      confirmLabel: uiText("Remove member", "メンバーを削除"), destructive: true,
+      onSubmit: async () => {
+        await json("/api/auth/organization/remove-member", { method: "POST", body: JSON.stringify({ memberIdOrEmail: member.id, organizationId: organization.id }) });
+        await load();
+      },
+    });
   }
 
   async function cancelInvitation(invitation: OrganizationInvitation) {
+    if (pending) return;
+    setPending(true);
+    setError(undefined);
     try {
       await json("/api/auth/organization/cancel-invitation", {
         method: "POST",
@@ -1023,80 +1161,86 @@ function OrganizationCard({
       await load();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not cancel invitation");
+    } finally {
+      setPending(false);
     }
   }
 
-  async function deleteOrganization() {
-    if (!window.confirm(`Delete ${organization.name}? Shared Vault access will be revoked.`)) return;
-    try {
-      await json("/api/auth/organization/delete", {
-        method: "POST",
-        body: JSON.stringify({ organizationId: organization.id }),
-      });
-      reloadOrganizations();
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not delete organization");
-    }
+  function deleteOrganization() {
+    openDialog({
+      title: uiText("Delete organization?", "組織を削除しますか？"),
+      description: uiText(`“${organization.name}” and its teams will be deleted. Members will lose access to Vaults shared through this organization. The Vaults themselves will remain.`, `「${organization.name}」とそのチームを削除します。この組織を通じて共有している保管庫へのアクセスは失われますが、保管庫そのものは残ります。`),
+      confirmLabel: uiText("Delete organization", "組織を削除"), destructive: true,
+      onSubmit: async () => {
+        await json("/api/auth/organization/delete", { method: "POST", body: JSON.stringify({ organizationId: organization.id }) });
+        navigateDashboard("/organizations");
+      },
+    });
   }
 
-  async function createTeam(event: React.FormEvent) {
-    event.preventDefault();
-    try {
-      const team = await json<TeamInfo>(session.capabilities.sessions
-        ? "/api/auth/organization/create-team"
-        : `/api/v1/organizations/${organizationId}/teams`, {
-        method: "POST",
-        body: JSON.stringify(session.capabilities.sessions
-          ? { name: teamName, organizationId: organization.id }
-          : { name: teamName }),
-      });
-      if (session.capabilities.sessions) {
-        await json("/api/auth/organization/add-team-member", {
-          method: "POST",
-          body: JSON.stringify({ teamId: team.id, userId: session.user.id, organizationId: organization.id }),
+  function createTeam() {
+    openDialog({
+      title: uiText("Create team", "チームを作成"),
+      description: uiText("Group members to share Vaults with a team. You can manage members after creating it.", "保管庫の共有先となるチームを作成します。作成後にメンバーを設定できます。"),
+      confirmLabel: uiText("Create team", "チームを作成"),
+      fields: [{ name: "name", label: uiText("Team name", "チーム名"), required: true }],
+      onSubmit: async ({ name }) => {
+        const team = await json<TeamInfo>(session.capabilities.sessions
+          ? "/api/auth/organization/create-team" : `/api/v1/organizations/${organizationId}/teams`, {
+          method: "POST", body: JSON.stringify(session.capabilities.sessions
+            ? { name: name!.trim(), organizationId: organization.id } : { name: name!.trim() }),
         });
-      }
-      setTeamName("");
-      await load();
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not create team");
-    }
+        // Creation succeeded: a membership failure must not invite a duplicate team retry.
+        if (session.capabilities.sessions) {
+          try {
+            await json("/api/auth/organization/add-team-member", {
+              method: "POST", body: JSON.stringify({ teamId: team.id, userId: session.user.id, organizationId: organization.id }),
+            });
+          } catch {
+            await load();
+            setError(uiText("Team created. Add yourself from the team's member list.", "チームを作成しました。チームのメンバー一覧から自分を追加してください。"));
+            return;
+          }
+        }
+        await load();
+      },
+    });
   }
 
-  async function renameTeam(team: TeamInfo) {
-    const name = window.prompt("Team name", team.name)?.trim();
-    if (!name || name === team.name) return;
-    try {
-      await json(session.capabilities.sessions
-        ? "/api/auth/organization/update-team"
-        : `/api/v1/organizations/${organizationId}/teams/${encodeURIComponent(team.id)}`, {
-        method: session.capabilities.sessions ? "POST" : "PATCH",
-        body: JSON.stringify(session.capabilities.sessions
-          ? { teamId: team.id, data: { name, organizationId: organization.id } }
-          : { name }),
-      });
-      await load();
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not rename team");
-    }
+  function renameTeam(team: TeamInfo) {
+    openDialog({
+      title: uiText("Rename team", "チーム名を変更"), confirmLabel: uiText("Save changes", "変更を保存"),
+      fields: [{ name: "name", label: uiText("Team name", "チーム名"), hideLabel: true, value: team.name, required: true }],
+      onSubmit: async ({ name }) => {
+        if (name!.trim() === team.name) return;
+        await json(session.capabilities.sessions ? "/api/auth/organization/update-team" : `/api/v1/organizations/${organizationId}/teams/${encodeURIComponent(team.id)}`, {
+          method: session.capabilities.sessions ? "POST" : "PATCH",
+          body: JSON.stringify(session.capabilities.sessions ? { teamId: team.id, data: { name: name!.trim(), organizationId: organization.id } } : { name: name!.trim() }),
+        });
+        await load();
+      },
+    });
   }
 
-  async function deleteTeam(team: TeamInfo) {
-    if (!window.confirm(`Delete ${team.name}? Shared Vault access will be revoked.`)) return;
-    try {
-      await json(session.capabilities.sessions
-        ? "/api/auth/organization/remove-team"
-        : `/api/v1/organizations/${organizationId}/teams/${encodeURIComponent(team.id)}`, {
-        method: session.capabilities.sessions ? "POST" : "DELETE",
-        body: session.capabilities.sessions ? JSON.stringify({ teamId: team.id, organizationId: organization.id }) : undefined,
-      });
-      await load();
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not delete team");
-    }
+  function deleteTeam(team: TeamInfo) {
+    openDialog({
+      title: uiText("Delete team?", "チームを削除しますか？"),
+      description: uiText(`“${team.name}” will be deleted. Members will lose access to Vaults shared through this team.`, `「${team.name}」を削除し、このチームを通じた保管庫へのアクセスを解除します。`),
+      confirmLabel: uiText("Delete team", "チームを削除"), destructive: true,
+      onSubmit: async () => {
+        await json(session.capabilities.sessions ? "/api/auth/organization/remove-team" : `/api/v1/organizations/${organizationId}/teams/${encodeURIComponent(team.id)}`, {
+          method: session.capabilities.sessions ? "POST" : "DELETE",
+          body: session.capabilities.sessions ? JSON.stringify({ teamId: team.id, organizationId: organization.id }) : undefined,
+        });
+        await load();
+      },
+    });
   }
 
   async function setTeamMember(team: TeamInfo, userId: string, enabled: boolean) {
+    if (pending) return;
+    setPending(true);
+    setError(undefined);
     try {
       await json(session.capabilities.sessions
         ? `/api/auth/organization/${enabled ? "add" : "remove"}-team-member`
@@ -1109,6 +1253,8 @@ function OrganizationCard({
       await load();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not update team membership");
+    } finally {
+      setPending(false);
     }
   }
 
@@ -1117,87 +1263,122 @@ function OrganizationCard({
   const teamMemberIds = useMemo(() => Object.fromEntries(
     Object.entries(teamMembers).map(([teamId, entries]) => [teamId, new Set(entries.map(({ userId }) => userId))]),
   ), [teamMembers]);
+  const visibleMembers = members?.filter((member) => `${member.user.name} ${member.user.email}`.toLocaleLowerCase().includes(memberSearch.trim().toLocaleLowerCase()));
   return (
-    <section className="panel organization-card">
-      <div className="organization-heading">
-        <div><h2>{organization.name}</h2><span>{organization.slug}</span></div>
-        {session.capabilities.sessions && currentRole === "owner" && (
-          <button className="secondary danger-button" onClick={() => void deleteOrganization()}>Delete</button>
-        )}
-      </div>
-      <h3>Members</h3>
-      {!members && !error && <p className="muted">Loading members…</p>}
-      {members?.map((member) => (
-        <div className="member-row organization-row" key={member.id}>
-          <div><strong>{member.user.name || member.user.email}</strong><span>{member.user.email} · {member.role}</span></div>
-          {session.capabilities.sessions && canManage && member.userId !== session.user.id && (
-            <button className="secondary danger-button" onClick={() => void removeMember(member)}>Remove</button>
-          )}
-        </div>
-      ))}
-      <h3>Teams</h3>
-      {teams.map((team) => (
-        <div className="team-block" key={team.id}>
-          <div className="member-row organization-row">
-            <div><strong>{team.name}</strong><span>{teamMembers[team.id]?.length ?? 0} members</span></div>
-            {canManage && (
-              <div className="row-actions">
-                <button className="secondary" onClick={() => void renameTeam(team)}>Rename</button>
-                {teams.length > 1 && (session.capabilities.sessions || team.id !== "external-default") && (
-                  <button className="secondary danger-button" onClick={() => void deleteTeam(team)}>Delete</button>
-                )}
-              </div>
-            )}
+    <section className="organization-card">
+      {dialog}
+      <fieldset className="organization-controls" disabled={pending}>
+      <DetailTabs label={uiText("Organization content", "組織の内容")} tabs={[
+        { id: "members", label: <>{uiText("Members", "メンバー")}{members && <> <span className="org-count">{members.length}</span></>}</>, content: <>
+          <div className="org-section-header org-member-toolbar">
+            {members && members.length > 0 && <input className="org-search" type="search" aria-label={uiText("Find members", "メンバーを検索")} placeholder={uiText("Search by name or email", "名前・メールアドレスで検索")} value={memberSearch} onChange={(event) => setMemberSearch(event.target.value)} />}
+            {session.capabilities.sessions && canManage && <button className="primary" onClick={invite}><MenuIcon name="plus" />{uiText("Invite member", "メンバーを招待")}</button>}
           </div>
-          {(!session.capabilities.sessions || canManage) && members?.map((member) => (
-            <label className="share-row" key={`${team.id}-${member.userId}`}>
-              <span><strong>{member.user.name || member.user.email}</strong><small>{member.user.email}</small></span>
-              <input
-                type="checkbox"
-                disabled={!canManage || (!session.capabilities.sessions
-                  && team.id === "external-default" && member.userId === session.user.id)}
-                checked={teamMemberIds[team.id]?.has(member.userId) === true}
-                onChange={(event) => void setTeamMember(team, member.userId, event.target.checked)}
-              />
-            </label>
-          ))}
-        </div>
-      ))}
-      {canManage && (
-        <form className="organization-invite" onSubmit={(event) => void createTeam(event)}>
-          <label>Team name<input required value={teamName} onChange={(event) => setTeamName(event.target.value)} /></label>
-          <button className="secondary">Create team</button>
-        </form>
-      )}
-      {session.capabilities.sessions && canManage && (
-        <>
-          <h3>Pending invitations</h3>
-          {invitations?.length === 0 && <p className="muted">No pending invitations.</p>}
-          {invitations?.map((invitation) => (
-            <div className="member-row organization-row" key={invitation.id}>
-              <div><strong>{invitation.email}</strong><span>Expires {new Date(invitation.expiresAt).toLocaleString()}</span></div>
-              <button className="secondary danger-button" onClick={() => void cancelInvitation(invitation)}>Cancel</button>
+          {visibleMembers?.length === 0 && <p className="empty-state">{uiText("No matching members.", "該当するメンバーはいません。")}</p>}
+          {!members && !error && <p className="muted">{uiText("Loading members…", "メンバーを読み込み中…")}</p>}
+          {visibleMembers?.map((member) => (
+            <div className="member-row organization-row" key={member.id}>
+              <div className="org-person"><span className="org-avatar" aria-hidden="true">{(member.user.name || member.user.email).slice(0, 1).toLocaleUpperCase()}</span><div><strong>{member.user.name || member.user.email}{member.userId === session.user.id && <small className="org-you">{uiText("You", "あなた")}</small>}</strong><span>{member.user.email}</span></div></div>
+              <span className="org-role">{member.role === "owner" ? uiText("Owner", "所有者") : member.role === "admin" ? uiText("Administrator", "管理者") : uiText("Member", "メンバー")}</span>
+              {session.capabilities.sessions && canManage && member.userId !== session.user.id && (
+                <button className="secondary danger-button" onClick={() => removeMember(member)}>{uiText("Remove", "解除")}</button>
+              )}
             </div>
           ))}
-          <form className="organization-invite" onSubmit={(event) => void invite(event)}>
-            <label>Email<input type="email" required value={email} onChange={(event) => setEmail(event.target.value)} /></label>
-            <button className="secondary">Create invitation link</button>
-          </form>
-          {invitationLink && (
-            <label className="invitation-link">Invitation link<input readOnly value={invitationLink} onFocus={(event) => event.target.select()} /></label>
+          {session.capabilities.sessions && canManage && (
+            <>
+              <h3>{uiText("Pending invitations", "承認待ちの招待")}</h3>
+              {invitations?.length === 0 && <p className="muted">{uiText("No pending invitations.", "承認待ちの招待はありません。")}</p>}
+              {invitations?.map((invitation) => (
+                <div className="member-row organization-row" key={invitation.id}>
+                  <div><strong>{invitation.email}</strong><span>{uiText("Expires", "有効期限")} {new Date(invitation.expiresAt).toLocaleString()}</span></div>
+                  <button className="secondary danger-button" onClick={() => void cancelInvitation(invitation)}>{uiText("Cancel", "キャンセル")}</button>
+                </div>
+              ))}
+              {invitationLink && <div className="org-invitation-result" role="status">
+                <strong>{uiText("Invitation link ready", "招待リンクを作成しました")}</strong>
+                <p>{uiText("Share this link with the invited person.", "招待した相手にこのリンクを共有してください。")}</p>
+                <div className="org-copy-row"><input aria-label={uiText("Invitation link", "招待リンク")} readOnly value={invitationLink} onFocus={(event) => event.target.select()} />
+                  <button className="secondary" onClick={() => void copyInvitation()}>{copied ? uiText("Copied", "コピーしました") : uiText("Copy link", "リンクをコピー")}</button></div>
+              </div>}
+            </>
           )}
-        </>
-      )}
-      {error && <p className="error">{error}</p>}
+        </> },
+        { id: "teams", label: <>{uiText("Teams", "チーム")}{invitations && <> <span className="org-count">{teams.length}</span></>}</>, content: <>
+          <div className="org-section-header"><div><p>{uiText("Share Vaults with a smaller group. Open a team to see its members.", "チーム単位で保管庫を共有できます。チームを開いてメンバーを確認します。")}</p></div>
+            {canManage && <button className="primary" onClick={createTeam}><MenuIcon name="plus" />{uiText("Create team", "チームを作成")}</button>}</div>
+          {invitations && teams.length === 0 && <div className="empty-state"><strong>{uiText("No teams yet", "チームはまだありません")}</strong><span>{uiText("Create a team for the people you share with regularly.", "よく共有するメンバーをチームにまとめられます。")}</span></div>}
+          {teams.map((team) => (
+            <details className="team-block" key={team.id}>
+              <summary className="org-team-summary"><MenuIcon name="organization" /><strong>{team.name}</strong><span>{teamMembers[team.id] ? uiText(`${teamMembers[team.id]!.length} members`, `${teamMembers[team.id]!.length}名のメンバー`) : uiText("Team", "チーム")}</span></summary>
+              <div className="org-team-content"><div className="org-team-toolbar"><p>{canManage ? uiText("Select members. Changes are saved immediately.", "メンバーを選択すると、変更がすぐに保存されます。") : uiText("Team members", "チームのメンバー")}</p>
+                {canManage && (
+                  <div className="row-actions">
+                    <button className="secondary" onClick={() => renameTeam(team)}>{uiText("Rename", "名前を変更")}</button>
+                    {teams.length > 1 && (session.capabilities.sessions || team.id !== "external-default") && (
+                      <button className="secondary danger-button" onClick={() => deleteTeam(team)}>{uiText("Delete", "削除")}</button>
+                    )}
+                  </div>
+                )}
+              </div>
+              {(!session.capabilities.sessions || canManage) && members?.map((member) => (
+                <label className="share-row" key={`${team.id}-${member.userId}`}>
+                  <span><strong>{member.user.name || member.user.email}</strong><small>{member.user.email}</small></span>
+                  <input
+                    type="checkbox"
+                    disabled={!canManage || (!session.capabilities.sessions
+                      && team.id === "external-default" && member.userId === session.user.id)}
+                    checked={teamMemberIds[team.id]?.has(member.userId) === true}
+                    onChange={(event) => void setTeamMember(team, member.userId, event.target.checked)}
+                  />
+                </label>
+              ))}
+              {session.capabilities.sessions && !canManage && <p className="muted">{uiText("Ask an organization administrator to manage this team's members.", "メンバーの管理は組織の管理者にお問い合わせください。")}</p>}
+              </div>
+            </details>
+          ))}
+        </> },
+        { id: "settings", label: uiText("Settings", "設定"), content: <>
+          <section className="org-settings-info">
+            <h3>{uiText("General", "基本情報")}</h3>
+            <dl className="org-settings-fields">
+              <div><dt>{uiText("Organization name", "組織名")}</dt><dd>{organization.name}</dd></div>
+              <div><dt>slug</dt><dd><code>{organization.slug}</code></dd></div>
+            </dl>
+          </section>
+          {session.capabilities.sessions && currentRole === "owner" && <section className="org-danger-zone">
+            <div><h3>{uiText("Delete organization", "組織を削除")}</h3><p>{uiText("Permanently delete this organization and its teams. Shared access will be removed; Vaults will remain.", "組織とチームを削除し、共有アクセスを解除します。保管庫そのものは残ります。この操作は取り消せません。")}</p></div>
+            <button className="secondary danger-button" onClick={deleteOrganization}>{uiText("Delete organization", "組織を削除")}</button>
+          </section>}
+        </> },
+      ]} />
+      </fieldset>
+      {pending && <p className="muted" role="status">{uiText("Saving changes…", "変更を保存中…")}</p>}
+      {error && <div className="org-error" role="alert"><p className="error">{error}</p><button className="secondary" disabled={pending} onClick={() => void load()}>{uiText("Reload", "再読み込み")}</button></div>}
     </section>
   );
+}
+
+function Organization({ session, slug }: { session: SessionInfo; slug: string }) {
+  const query = useLiveJSON<OrganizationInfo[]>(session.capabilities.sessions ? "/api/auth/organization/list" : "/api/v1/organizations");
+  const organization = query.data?.find((item) => encodeURIComponent(item.slug) === slug);
+  return <>
+    <nav className="detail-breadcrumbs" aria-label={uiText("Breadcrumbs", "パンくず")}>
+      <a className="text-link" href="/organizations">{uiText("Your organizations", "所属組織")}</a>
+    </nav>
+    <PageHeader title={organization?.name ?? uiText("Organization", "組織")} />
+    <DataError error={query.error} retry={query.reload} />
+    {!query.data && query.loading && <p role="status">{uiText("Loading organization…", "組織を読み込み中…")}</p>}
+    {query.data && !organization && <p role="alert">{uiText("Organization not found or you no longer have access.", "組織が見つからないか、アクセス権がありません。")}</p>}
+    {organization && <OrganizationDetails key={organization.id} organization={organization} session={session} />}
+  </>;
 }
 
 function Organizations({ session }: { session: SessionInfo }) {
   const [organizations, setOrganizations] = useState<OrganizationInfo[]>();
   const [invitations, setInvitations] = useState<OrganizationInvitation[]>();
-  const [name, setName] = useState("");
-  const [slug, setSlug] = useState("");
+  const { dialog, openDialog } = useActionDialog();
+  const [pending, setPending] = useState(false);
   const [error, setError] = useState<string>();
   const load = useCallback(async () => {
     setError(undefined);
@@ -1215,23 +1396,26 @@ function Organizations({ session }: { session: SessionInfo }) {
   }, [session.capabilities.sessions]);
   useEffect(() => { void load(); }, [load]);
 
-  async function create(event: React.FormEvent) {
-    event.preventDefault();
-    setError(undefined);
-    try {
-      await json("/api/auth/organization/create", {
-        method: "POST",
-        body: JSON.stringify({ name, slug }),
-      });
-      setName("");
-      setSlug("");
-      await load();
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not create organization");
-    }
+  function create() {
+    openDialog({
+      title: uiText("Create organization", "組織を作成"),
+      description: uiText("Use lowercase letters, numbers and hyphens for the slug.", "slugには半角英小文字・数字・ハイフンを使用してください。"),
+      confirmLabel: uiText("Create organization", "組織を作成"),
+      fields: [{ name: "name", label: uiText("Name", "名前"), required: true },
+        { name: "slug", label: "slug", required: true, pattern: "(?:[a-z0-9]|-)+" }],
+      onSubmit: async ({ name, slug }) => {
+        const organization = await json<OrganizationInfo>("/api/auth/organization/create", {
+          method: "POST", body: JSON.stringify({ name: name!.trim(), slug: slug!.trim() }),
+        });
+        navigateDashboard(`/organizations/${encodeURIComponent(organization.slug)}`);
+      },
+    });
   }
 
   async function decide(invitationId: string, accept: boolean) {
+    if (pending) return;
+    setPending(true);
+    setError(undefined);
     try {
       await json(`/api/auth/organization/${accept ? "accept" : "reject"}-invitation`, {
         method: "POST",
@@ -1240,22 +1424,26 @@ function Organizations({ session }: { session: SessionInfo }) {
       await load();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not update invitation");
+    } finally {
+      setPending(false);
     }
   }
 
   return (
     <>
-      <PageHeader title="Organizations" />
+      {dialog}
+      <PageHeader title={uiText("Your organizations", "所属組織")} description={uiText("Choose an organization to manage its members and teams.", "組織を選んで、メンバーやチームを管理します。")}
+        actions={session.capabilities.sessions && <button className="primary" onClick={create}><MenuIcon name="plus" />{uiText("Create organization", "組織を作成")}</button>} />
       {invitations && invitations.length > 0 && (
         <section className="section-block">
-          <h2 className="section-label">Invitations</h2>
+          <h2 className="section-label">{uiText("Invitations", "招待")}</h2>
           <div className="panel admin-list">
             {invitations.map((invitation) => (
               <div className="member-row organization-row" key={invitation.id}>
-                <div><strong>{invitation.organizationName}</strong><span>{invitation.role} · expires {new Date(invitation.expiresAt).toLocaleString()}</span></div>
+                <div><strong>{invitation.organizationName}</strong><span>{uiText("Expires", "有効期限")} {new Date(invitation.expiresAt).toLocaleString()}</span></div>
                 <div className="row-actions">
-                  <button className="secondary" onClick={() => void decide(invitation.id, false)}>Decline</button>
-                  <button className="primary" onClick={() => void decide(invitation.id, true)}>Accept</button>
+                  <button className="secondary" disabled={pending} onClick={() => void decide(invitation.id, false)}>{uiText("Decline", "辞退")}</button>
+                  <button className="primary" disabled={pending} onClick={() => void decide(invitation.id, true)}>{uiText("Accept", "参加")}</button>
                 </div>
               </div>
             ))}
@@ -1263,33 +1451,25 @@ function Organizations({ session }: { session: SessionInfo }) {
         </section>
       )}
       <section className="section-block organization-list">
-        <h2 className="section-label">Your organizations</h2>
-        {!organizations && !error && <p className="muted">Loading organizations…</p>}
-        {organizations?.length === 0 && <div className="panel empty-state"><strong>No organizations</strong></div>}
-        {organizations?.map((organization) => (
-          <OrganizationCard
-            organization={organization}
-            session={session}
-            reloadOrganizations={() => void load()}
-            key={organization.id}
-          />
-        ))}
+        <h2 className="section-label">{uiText("Your organizations", "参加している組織")}</h2>
+        {!organizations && !error && <p className="muted">{uiText("Loading organizations…", "組織を読み込み中…")}</p>}
+        {organizations?.length === 0 && <div className="panel empty-state"><strong>{uiText("No organizations", "参加している組織はありません")}</strong><span>{uiText("Create an organization or ask its administrator for an invitation link.", "組織を作成するか、管理者から招待リンクを受け取って参加してください。")}</span></div>}
+        <div className="collection-list">{organizations?.map((organization) => (
+          <a className="collection-row" href={`/organizations/${encodeURIComponent(organization.slug)}`} key={organization.id}>
+            <span className="collection-icon"><MenuIcon name="organization" /></span>
+            <span className="collection-copy"><strong>{organization.name}</strong><small>{organization.slug}</small></span>
+            <MenuIcon name="arrow" />
+          </a>
+        ))}</div>
       </section>
-      {session.capabilities.sessions && <section className="section-block">
-        <h2 className="section-label">Create organization</h2>
-        <form className="panel admin-form organization-form" onSubmit={(event) => void create(event)}>
-          <label>Name<input required value={name} onChange={(event) => setName(event.target.value)} /></label>
-          <label>Slug<input required pattern="[a-z0-9-]+" value={slug} onChange={(event) => setSlug(event.target.value)} /></label>
-          <button className="primary">Create</button>
-        </form>
-      </section>}
-      {error && <p className="error page-error">{error}</p>}
+      {error && <div className="org-error" role="alert"><p className="error">{error}</p><button className="secondary" onClick={() => void load()}>{uiText("Reload", "再読み込み")}</button></div>}
     </>
   );
 }
 
 function Invitation({ invitationId }: { invitationId: string }) {
   const [invitation, setInvitation] = useState<OrganizationInvitation>();
+  const [pending, setPending] = useState(false);
   const [error, setError] = useState<string>();
   useEffect(() => {
     void json<OrganizationInvitation>(`/api/auth/organization/get-invitation?id=${encodeURIComponent(invitationId)}`)
@@ -1298,6 +1478,9 @@ function Invitation({ invitationId }: { invitationId: string }) {
   }, [invitationId]);
 
   async function decide(accept: boolean) {
+    if (pending) return;
+    setPending(true);
+    setError(undefined);
     try {
       await json(`/api/auth/organization/${accept ? "accept" : "reject"}-invitation`, {
         method: "POST",
@@ -1306,21 +1489,23 @@ function Invitation({ invitationId }: { invitationId: string }) {
       navigateDashboard("/organizations");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not update invitation");
+    } finally {
+      setPending(false);
     }
   }
 
   return (
     <>
-      <PageHeader title="Organization invitation" />
+      <PageHeader title={uiText("Organization invitation", "組織への招待")} />
       <section className="panel invitation-card">
-        {!invitation && !error && <p className="muted">Loading invitation…</p>}
+        {!invitation && !error && <p className="muted" role="status">{uiText("Loading invitation…", "招待を読み込み中…")}</p>}
         {invitation && (
           <>
-            <h2>Join {invitation.organizationName}</h2>
-            <p>You were invited as {invitation.role}. This link expires {new Date(invitation.expiresAt).toLocaleString()}.</p>
+            <h2>{uiText(`Join ${invitation.organizationName}`, `「${invitation.organizationName}」に参加`)}</h2>
+            <p>{uiText("Accept to join this organization.", "招待を承認すると、この組織のメンバーになります。")}</p><p className="muted">{uiText("Expires", "有効期限")} {new Date(invitation.expiresAt).toLocaleString()}</p>
             <div className="button-row">
-              <button className="secondary" onClick={() => void decide(false)}>Decline</button>
-              <button className="primary" onClick={() => void decide(true)}>Accept invitation</button>
+              <button className="secondary" disabled={pending} onClick={() => void decide(false)}>{uiText("Decline", "辞退")}</button>
+              <button className="primary" disabled={pending} onClick={() => void decide(true)}>{uiText("Accept invitation", "招待を承認")}</button>
             </div>
           </>
         )}
@@ -1330,9 +1515,38 @@ function Invitation({ invitationId }: { invitationId: string }) {
   );
 }
 
+function AdminDirectory({ kind }: { kind: "users" | "organizations" }) {
+  const [offset, setOffset] = useState(0);
+  const query = useLiveJSON<{ items: (ServerUserRecord | ServerOrganizationRecord)[]; hasMore: boolean }>(`/api/admin/${kind}?offset=${offset}`);
+  const organizations = kind === "organizations";
+  return <>
+    <PageHeader title={organizations ? uiText("Organization management", "組織管理") : uiText("User management", "ユーザー管理")}
+      description={organizations ? uiText("All organizations on this server, including those you have not joined.", "所属していない組織を含む、サーバー内のすべての組織です。") : uiText("All users registered on this server.", "このサーバーに登録されているすべてのユーザーです。")}
+      actions={organizations && <a className="secondary" href="/organizations">{uiText("Manage your organizations", "所属組織を管理")}</a>} />
+    <section className="section-block">
+      <DataError error={query.error} retry={query.reload} />
+      {query.loading && <p role="status">{uiText("Loading…", "読み込み中…")}</p>}
+      {query.data && <><div className="admin-directory-scroll"><table className={`admin-directory${organizations ? " org-directory" : ""}`}>
+        <thead><tr><th>{uiText("Name", "名前")}</th><th>{organizations ? "slug" : uiText("Email address", "メールアドレス")}</th><th>{organizations ? uiText("Members", "メンバー") : uiText("Role", "権限")}</th>{organizations && <th>{uiText("Teams", "チーム")}</th>}</tr></thead>
+        <tbody>{query.data.items.map((item) => <tr key={item.id}>
+          <td>{organizations ? <span className="org-directory-identity"><MenuIcon name="organization" /><strong>{item.name}</strong></span> : item.name}</td>{"email" in item ? <><td>{item.email}</td><td>{item.role?.split(",").includes("admin") ? uiText("Administrator", "管理者") : uiText("User", "ユーザー")}</td></>
+            : <><td><code>{item.slug}</code></td><td>{item.memberCount}</td><td>{item.teamCount}</td></>}
+        </tr>)}</tbody>
+      </table></div>
+      {!query.data.items.length && <p className="muted">{uiText("No results", "該当する項目はありません")}</p>}
+      {(offset > 0 || query.data.hasMore) && <div className="admin-pagination">
+        <button className="secondary" disabled={query.loading || offset === 0} onClick={() => setOffset(offset - 100)}>{uiText("Previous", "前へ")}</button>
+        <button className="secondary" disabled={query.loading || !query.data.hasMore} onClick={() => setOffset(offset + 100)}>{uiText("Next", "次へ")}</button>
+      </div>}</>}
+    </section>
+  </>;
+}
+
 function AdminMembers() {
+  const { dialog, openDialog } = useActionDialog();
   const [members, setMembers] = useState<AdminMember[]>();
   const [email, setEmail] = useState("");
+  const [pending, setPending] = useState(false);
   const [error, setError] = useState<string>();
   const load = useCallback(() => {
     setError(undefined);
@@ -1342,6 +1556,8 @@ function AdminMembers() {
 
   async function add(event: React.FormEvent) {
     event.preventDefault();
+    if (pending) return;
+    setPending(true);
     setError(undefined);
     try {
       await json("/api/admin/members", { method: "POST", body: JSON.stringify({ email }) });
@@ -1349,40 +1565,41 @@ function AdminMembers() {
       load();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not add administrator");
+    } finally {
+      setPending(false);
     }
   }
 
-  async function remove(member: AdminMember) {
-    if (!window.confirm(`Remove administrator access for ${member.email}?`)) return;
-    try {
-      await json(`/api/admin/members/${encodeURIComponent(member.email)}`, { method: "DELETE" });
-      load();
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not remove administrator");
-    }
+  function remove(member: AdminMember) {
+    openDialog({
+      title: uiText("Remove administrator?", "管理者権限を解除しますか？"),
+      description: uiText(`${member.email} will lose administrator access. Their personal account and meetings will remain.`, `${member.email} の管理者権限を解除します。個人アカウントとミーティングは残ります。`),
+      confirmLabel: uiText("Remove access", "権限を解除"), destructive: true,
+      onSubmit: async () => { await json(`/api/admin/members/${encodeURIComponent(member.email)}`, { method: "DELETE" }); load(); },
+    });
   }
 
   return (
     <>
-      <PageHeader title="Members" />
+      {dialog}
       <section className="section-block">
-        <h2 className="section-label">Administrators</h2>
+        <h2 className="section-label">{uiText("Administrators", "管理者")}</h2>
         <div className="panel admin-list">
-          {!members && !error && <p className="muted">Loading administrators…</p>}
-          {members?.length === 0 && <div className="empty-state"><strong>No administrators</strong><span>Add an email below.</span></div>}
+          {!members && !error && <p className="muted">{uiText("Loading administrators…", "管理者を読み込み中…")}</p>}
+          {members?.length === 0 && <div className="empty-state"><strong>{uiText("No administrators", "管理者はいません")}</strong><span>{uiText("Add an email below.", "メールアドレスを入力して追加してください。")}</span></div>}
           {members?.map((member) => (
             <div className="admin-row member-row" key={member.id}>
               <div><strong>{member.email}</strong><span>{member.name} · Admin</span></div>
-              <button className="secondary danger-button" disabled={!member.removable} onClick={() => void remove(member)}>Remove</button>
+              <button className="secondary danger-button" disabled={!member.removable} onClick={() => remove(member)}>{uiText("Remove", "解除")}</button>
             </div>
           ))}
         </div>
       </section>
       <section className="section-block">
-        <h2 className="section-label">Add administrator</h2>
+        <h2 className="section-label">{uiText("Add administrator", "管理者を追加")}</h2>
         <form className="panel admin-form member-form" onSubmit={(event) => void add(event)}>
-          <label>Email<input type="email" value={email} required placeholder="admin@example.com" onChange={(event) => setEmail(event.target.value)} /></label>
-          <button className="primary">Add administrator</button>
+          <label>{uiText("Email", "メールアドレス")}<input type="email" value={email} required placeholder="admin@example.com" onChange={(event) => setEmail(event.target.value)} /></label>
+          <button className="primary" disabled={pending}>{pending ? uiText("Adding…", "追加中…") : uiText("Add administrator", "管理者を追加")}</button>
         </form>
       </section>
       {error && <p className="error page-error admin-error">{error}</p>}
@@ -1396,7 +1613,7 @@ function DashboardRedirect({ path }: { path: string }) {
 }
 
 function DataError({ error, retry }: { error?: Error; retry: () => void }) {
-  return error ? <p className="error" role="alert">{error.message} <button onClick={retry}>{uiText("Retry", "再試行")}</button></p> : null;
+  return error ? <p className="error" role="alert">{error.message} <button className="secondary" onClick={retry}>{uiText("Retry", "再試行")}</button></p> : null;
 }
 
 export function App({ brand = defaultBrand, extensions = [] }: AppProps) {
@@ -1479,15 +1696,18 @@ export function App({ brand = defaultBrand, extensions = [] }: AppProps) {
     const ExtensionPage = extensionRoute.component;
     page = <ExtensionPage session={session} />;
   }
-  else if (route.page === "admin-members") page = <AdminMembers />;
+  else if (route.page === "admin-users") page = <><AdminDirectory kind="users" /><AdminMembers /></>;
+  else if (route.page === "admin-organizations") page = <AdminDirectory kind="organizations" />;
+  else if (route.page === "admin-settings") page = <><PageHeader title={uiText("Server settings", "サーバー全体の設定")} /><p className="muted">{uiText("No settings are available yet.", "設定項目はまだありません。")}</p></>;
   else if (route.page === "vaults") page = <Vaults />;
   else if (route.page === "vault") page = <VaultMeetings session={session} vaultId={route.vaultId!} />;
   else if (route.page === "meeting") page = detailVaultId ? <SyncedMeeting vaultId={detailVaultId} meetingId={route.meetingId!} /> : null;
   else if (route.page === "project") page = detailVaultId ? <SyncedProject vaultId={detailVaultId} projectId={route.projectId!} /> : null;
   else if (route.page === "file") page = <FileViewer fileId={route.fileId!} />;
   else if (route.page === "organizations") page = <Organizations session={session} />;
+  else if (route.page === "organization") page = <Organization session={session} slug={route.organizationSlug!} />;
   else if (route.page === "invitation") page = <Invitation invitationId={route.invitationId!} />;
-  else if (route.page === "settings") page = <Settings sessionsEnabled={session.capabilities.sessions} />;
+  else if (route.page === "settings") page = <Settings session={session} extensions={extensions} />;
   else page = <Overview session={session} />;
   return <Shell brand={brand} extensions={extensions} session={session} path={path} navigate={navigateDashboard} routeVaultId={detailVaultId ?? route.vaultId}>
     <DataError error={sessionError ? new Error(sessionError) : undefined} retry={() => setSessionAttempt((attempt) => attempt + 1)} />

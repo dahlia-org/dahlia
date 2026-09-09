@@ -11,7 +11,7 @@ it.runIf(databaseUrl)("upgrades populated PostgreSQL tables without losing jobs,
   const previous = createNodeApplicationStore(config, {
     ...serverMigrationManifest,
     postgres: { ...serverMigrationManifest.postgres, directories: serverMigrationManifest.postgres.directories.map((directory) =>
-      directory.id === "server" ? { ...directory, files: directory.files!.slice(0, -1) } : directory) },
+      directory.id === "server" ? { ...directory, files: directory.files!.slice(0, directory.files!.findIndex((file) => file.includes("_schema_organization/"))) } : directory) },
   });
   const raw = new Client({ connectionString: databaseUrl });
   await raw.connect();
@@ -40,15 +40,26 @@ it.runIf(databaseUrl)("upgrades populated PostgreSQL tables without losing jobs,
     const recording = (await raw.query<Record<string, unknown>>("SELECT * FROM app.recordings WHERE session_id = $1", [session])).rows[0]!;
     delete recording.vault_id;
     await raw.query("COMMIT");
-    const updated = createNodeApplicationStore(config);
+    const updated = createNodeApplicationStore(config, {
+      ...serverMigrationManifest,
+      postgres: { ...serverMigrationManifest.postgres, directories: serverMigrationManifest.postgres.directories.map((directory) =>
+        directory.id === "server" ? { ...directory, files: directory.files!.slice(0,
+          directory.files!.findIndex((file) => file.includes("_canonical_appearance_fields/"))) } : directory) },
+    });
     try { await updated.migrate(); } finally { await updated.close?.(); }
+    await raw.query("BEGIN");
+    await raw.query("SELECT set_config('app.user_id', $1, true)", [user]);
+    await raw.query("UPDATE app.vaults SET icon = 'folder', appearance = $2 WHERE vault_id = $1", [vault, { icon: "book.closed", color: "green" }]);
+    await raw.query("COMMIT");
+    const canonical = createNodeApplicationStore(config);
+    try { await canonical.migrate(); } finally { await canonical.close?.(); }
     expect((await raw.query<Record<string, unknown>>("SELECT * FROM app.recordings WHERE session_id = $1", [session])).rows).toEqual([]);
     await raw.query("BEGIN");
     await raw.query("SELECT set_config('app.user_id', $1, true)", [user]);
     expect((await raw.query<Record<string, unknown>>("SELECT * FROM app.recordings WHERE session_id = $1", [session])).rows).toEqual([recording]);
     expect(await Promise.all(Object.values(tables).map(async (table) => (await raw.query<Record<string, unknown>>(`SELECT * FROM app.${table}`)).rows))).toEqual(jobs);
     expect((await raw.query("SELECT revision FROM app.account_settings WHERE user_id = $1", [user])).rows).toEqual([{ revision: 19 }]);
-    expect((await raw.query("SELECT icon, color FROM app.vaults WHERE vault_id = $1", [vault])).rows).toEqual([{ icon: null, color: null }]);
+    expect((await raw.query("SELECT icon, color FROM app.vaults WHERE vault_id = $1", [vault])).rows).toEqual([{ icon: "folder", color: "green" }]);
     await raw.query("DELETE FROM app.meetings WHERE meeting_id = $1", [meeting]);
     expect((await raw.query<Record<string, unknown>>("SELECT * FROM app.recordings WHERE session_id = $1", [session])).rows).toEqual([]);
     await raw.query("COMMIT");

@@ -536,7 +536,8 @@ enum SyncInitialSnapshotBuilder {
             "name": project.name,
             "description": project.description,
             "projectType": json(project.projectType?.rawValue),
-            "icon": json(project.icon), "color": json(project.color),
+            "icon": json(project.parentProjectId == nil ? project.icon : nil),
+            "color": json(project.parentProjectId == nil ? project.color : nil),
         ]
         if action == .create { payload["createdAt"] = project.createdAt.ISO8601Format() }
         return try operation(entity: .project, action: action, id: project.id, payload: payload)

@@ -46,7 +46,6 @@ async function setup() {
   const config: AppConfig = {
     authProvider: "header", authHeader: "X-Forwarded-Email", baseUrl: "https://dahlia.example",
     databaseType: "sqlite", databaseUrl: `file:${path}`, oauthRedirectUris: [], maxRequestBytes: 1024 * 1024,
-    syncSharingEnabled: true,
   };
   const store = createNodeApplicationStore(config);
   await store.migrate();

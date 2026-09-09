@@ -32,7 +32,7 @@ async function setup() {
   const dir = mkdtempSync(join(tmpdir(), "dahlia-summary-")); dirs.push(dir);
   const path = join(dir, "db.sqlite");
   const config: AppConfig = { authProvider: "header", authHeader: "X-Forwarded-Email", databaseType: "sqlite", databaseUrl: `file:${path}`,
-    baseUrl: "http://localhost:5173", oauthRedirectUris: [], maxRequestBytes: 1_048_576, syncSharingEnabled: true };
+    baseUrl: "http://localhost:5173", oauthRedirectUris: [], maxRequestBytes: 1_048_576 };
   const store = createNodeApplicationStore(config); await store.migrate(); await store.ensureIdentityUser(owner);
   const sync = new MeetingSyncService(store.sync, new LocalObjectStorage(join(dir, "recordings"))); const vaultId = uuidV7(); const meetingId = uuidV7();
   await sync.commitTransaction(owner, { schemaVersion: 2, id: uuidV7(), vaultId, createdAt: new Date().toISOString(), operations: [
@@ -83,7 +83,7 @@ describe("server summary jobs", () => {
       };
       expect((await send(false)).status).toBe(401);
       expect(await (await send(true)).json()).toEqual({
-        sync: { version: 4 }, recordingArchive: { version: 1 }, meetingEvents: { version: 1 },
+        sync: { version: 4 }, vaultTransfers: { version: 1 }, recordingArchive: { version: 1 }, meetingEvents: { version: 1 },
         search: { version: 1 }, imageAnalysis: { version: 1 },
         meetingSummaryGeneration: { version: 1, sources: ["transcript", "audio"] },
       });

@@ -358,7 +358,7 @@ struct MeetingListSidebarView: View {
             group: group,
             showsHeader: showsHeader,
             projectAppearance: group.project.map {
-                mainWindowNavigation.projectAppearance(for: $0, vaultId: sidebarViewModel.currentVault?.id)
+                resolvedProjectAppearance($0.projectId)
             } ?? .default,
             isPinned: isPinned,
             isExpanded: isExpanded ?? projectGroupIsExpanded(group.key),

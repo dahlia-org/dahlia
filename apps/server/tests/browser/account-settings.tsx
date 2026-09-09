@@ -53,21 +53,23 @@ async function until(predicate: () => unknown) {
   }
 }
 function select(label: string) {
-  const element = [...document.querySelectorAll("label")].find((node) => node.firstChild?.textContent === label)?.querySelector("select");
+  const element = [...document.querySelectorAll("label")].find((node) => node.firstChild?.textContent === label)?.querySelector<HTMLButtonElement>('[role="combobox"]');
   assert(element, `Missing control ${label}`);
   return element;
 }
 function choose(label: string, value: string) {
   const element = select(label);
   assert(!element.matches(":disabled"), `${label} is disabled`);
-  element.value = value;
-  element.dispatchEvent(new Event("change", { bubbles: true }));
+  element.click();
+  const option = document.getElementById(element.getAttribute("aria-controls")!)?.querySelector<HTMLButtonElement>(`button[value="${value}"]`);
+  assert(option, `Missing option ${value}`);
+  option.click();
 }
-async function ready() { await until(() => document.querySelector("select") && !select("Output language").matches(":disabled")); }
+async function ready() { await until(() => document.querySelector<HTMLButtonElement>('[role="combobox"]') && !select("Output language").matches(":disabled")); }
 async function run() {
   createRoot(document.getElementById("root")!).render(<ServerSummarySettings />);
   await ready();
-  await until(() => document.querySelectorAll("select").length === 5 && modelReads === 1);
+  await until(() => document.querySelectorAll('[role="combobox"]').length === 5 && modelReads === 1);
   choose("Detail", "concise");
   await until(() => settings.summary.detail === "concise");
   await ready();

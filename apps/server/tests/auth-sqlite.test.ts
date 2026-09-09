@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -7,6 +8,7 @@ import { DatabaseSync } from "node:sqlite";
 import { cimd } from "@better-auth/cimd";
 import { afterEach, describe, expect, it } from "vitest";
 
+import { createWorkerHandler } from "../src/worker";
 import { createApp } from "../src/app";
 import { LocalObjectStorage } from "../src/storage/local";
 import { initializeDahliaAuth } from "../src/auth/better-auth";
@@ -36,6 +38,48 @@ afterEach(() => {
 });
 
 describe("SQLite Better Auth store", () => {
+  it.each(["node", "worker"])("lists all users and non-member organizations for administrators only through %s", async (runtime) => {
+    const directory = mkdtempSync(join(tmpdir(), "dahlia-admin-directory-"));
+    directories.push(directory);
+    const path = join(directory, "auth.sqlite");
+    const config = { ...testConfig(path), authProvider: "header" as const };
+    const store = createNodeAuthStore(config);
+    await store.migrate();
+    const app = createApp({ config, authStore: store });
+    const worker = createWorkerHandler(async () => app);
+    const workerFetch = worker.fetch!.bind(worker) as unknown as (request: Request, env: Cloudflare.Env, context: ExecutionContext) => Promise<Response>;
+    const send = (path: string, email = "admin@example.com", origin = config.baseUrl) => {
+      const request = new Request(`${config.baseUrl}${path}`, { headers: { "X-Forwarded-Email": email, origin } });
+      return runtime === "node" ? app.request(request) : workerFetch(request, {} as Cloudflare.Env, {} as ExecutionContext);
+    };
+    await send("/api/session");
+    await send("/api/session", "member@example.com");
+    const raw = new DatabaseSync(path);
+    const page = z.object({ items: z.array(z.object({ id: z.string() }).passthrough()), hasMore: z.boolean() });
+    try {
+      raw.prepare('INSERT INTO organization (id, name, slug, created_at) VALUES (?, ?, ?, ?)').run("other", "Other organization", "other", Date.now());
+      raw.prepare('INSERT INTO member (id, organization_id, user_id, role, created_at) VALUES (?, ?, ?, ?, ?)').run("other-member", "other", "member@example.com", "owner", Date.now());
+      raw.prepare('INSERT INTO team (id, name, organization_id, created_at) VALUES (?, ?, ?, ?)').run("other-team", "Other team", "other", Date.now());
+      const organizations = page.parse(await (await send("/api/admin/organizations")).json());
+      expect(organizations.items).toContainEqual({ id: "other", name: "Other organization", slug: "other", memberCount: 1, teamCount: 1 });
+      expect(organizations.hasMore).toBe(false);
+      const users = page.parse(await (await send("/api/admin/users")).json());
+      expect(users.items.map(({ email, role }) => ({ email, role }))).toEqual([{ email: "admin@example.com", role: "admin" }, { email: "member@example.com", role: "user" }]);
+      expect(users.hasMore).toBe(false);
+      expect(Object.keys(users.items[0]!).sort()).toEqual(["createdAt", "email", "id", "name", "role"]);
+      for (let index = 0; index < 100; index++) raw.prepare('INSERT INTO "user" (id, name, email, email_verified, created_at, updated_at) VALUES (?, ?, ?, 0, ?, ?)').run(`u${index}`, `User ${index}`, `u${index}@example.com`, Date.now(), Date.now());
+      const first = page.parse(await (await send("/api/admin/users")).json());
+      const second = page.parse(await (await send("/api/admin/users?offset=100")).json());
+      expect(first.items).toHaveLength(100); expect(first.hasMore).toBe(true);
+      expect(second.items).toHaveLength(2); expect(second.hasMore).toBe(false);
+      expect(new Set([...first.items, ...second.items].map((user) => user.id)).size).toBe(102);
+      for (const kind of ["users", "organizations"]) {
+        expect((await send(`/api/admin/${kind}`, "member@example.com")).status).toBe(403);
+        expect((await send(`/api/admin/${kind}?offset=-1`)).status).toBe(400);
+      }
+    } finally { raw.close(); await store.close?.(); }
+  });
+
   it("creates one external organization owner under concurrent first header access", async () => {
     const directory = mkdtempSync(join(tmpdir(), "dahlia-header-concurrent-"));
     directories.push(directory);
@@ -203,7 +247,7 @@ describe("SQLite Better Auth store", () => {
 
     expect(database.prepare('SELECT "name" FROM "__drizzle_migrations" ORDER BY "created_at" DESC LIMIT 1').get())
       .toEqual({
-      name: "20260908180502_schema_organization",
+      name: "20260909091111_canonical_appearance_fields",
     });
     expect(database.prepare('SELECT "client_id" FROM "oauth_client" WHERE "client_id" = ?').get("databricks-cli"))
       .toEqual({ client_id: "databricks-cli" });
@@ -243,7 +287,7 @@ describe("SQLite Better Auth store", () => {
     expect(unauthorizedMcp.status).toBe(401);
     expect(unauthorizedMcp.headers.get("www-authenticate"))
       .toContain('resource_metadata="http://localhost:5173/.well-known/oauth-protected-resource/mcp"');
-    expect((await app.request("/api/auth/organization/list")).status).toBe(404);
+    expect((await app.request("/api/auth/organization/list")).status).toBe(401);
     expect((await app.request("/api/auth/admin/list-users")).status).toBe(401);
     expect(database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('organization', 'member', 'invitation', 'team', 'team_member') ORDER BY name").all())
       .toEqual([{ name: "invitation" }, { name: "member" }, { name: "organization" }, { name: "team" }, { name: "team_member" }]);

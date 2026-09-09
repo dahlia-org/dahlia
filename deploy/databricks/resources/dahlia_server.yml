@@ -61,8 +61,6 @@ resources:
             value: ${var.catalog}.${var.ai_schema}.gpt-5-6-luna
           - name: DAHLIA_SEARCH_EMBEDDING_DIMENSIONS
             value: ${var.search_embedding_dimensions}
-          - name: DAHLIA_SYNC_SHARING_ENABLED
-            value: ${var.sync_sharing_enabled}
           - name: LAKEBASE_ENDPOINT
             value_from: postgres
       resources:

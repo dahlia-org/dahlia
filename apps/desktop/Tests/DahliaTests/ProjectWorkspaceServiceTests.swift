@@ -10,6 +10,38 @@ import GRDB
     @MainActor
     struct ProjectWorkspaceServiceTests {
         @Test
+        func childAppearanceIsNotStoredOrUploaded() throws {
+            let context = try makeContext(usesExportFolder: false)
+            defer { try? FileManager.default.removeItem(at: context.rootURL) }
+            let style = ProjectAppearance(icon: .book, color: .green)
+            let parent = try context.service.createProject(name: "Parent", parentProjectId: nil, appearance: style)
+            let child = try context.service.createProject(name: "Child", parentProjectId: parent.id, appearance: style)
+            #expect(child.appearance == nil)
+            let updated = try context.service.updateProject(
+                id: child.id, name: child.name, parentProjectId: parent.id,
+                projectType: .undefined, description: "Updated", expectedRevision: child.revision, appearance: style
+            )
+            #expect(updated.appearance == nil)
+            let promoted = try context.service.updateProject(
+                id: child.id, name: child.name, parentProjectId: nil,
+                projectType: .undefined, description: "Updated", expectedRevision: updated.revision, appearance: style
+            )
+            #expect(promoted.appearance == style)
+            let demoted = try context.service.reparentProject(id: child.id, parentProjectId: parent.id, expectedRevision: promoted.revision)
+            #expect(demoted.appearance == nil)
+            var staleChild = demoted
+            staleChild.appearance = style
+            for action in [SyncAction.create, .update] {
+                let operation = try SyncInitialSnapshotBuilder.projectOperation(staleChild, action: action)
+                let payload = try #require(operation.payloadJSON)
+                let body = try #require(JSONSerialization.jsonObject(with: payload) as? [String: Any])
+                #expect(body["icon"] is NSNull)
+                #expect(body["color"] is NSNull)
+            }
+            #expect(try context.repository.fetchProject(id: parent.id)?.appearance == style)
+        }
+
+        @Test
         func createsProjectsWithoutALocalExportFolder() throws {
             let context = try makeContext(usesExportFolder: false)
             defer { try? FileManager.default.removeItem(at: context.rootURL) }

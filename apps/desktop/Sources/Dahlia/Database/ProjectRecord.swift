@@ -22,6 +22,21 @@ struct ProjectRecord: Codable, FetchableRecord, PersistableRecord, Identifiable,
     var icon: String?
     var color: String?
     var legacyAppearanceMigrated = false
+
+    var appearance: ProjectAppearance? {
+        get {
+            guard icon != nil || color != nil else { return nil }
+            return ProjectAppearance(
+                icon: icon.flatMap(ProjectIcon.init(rawValue:)) ?? .folder,
+                color: color.flatMap(ProjectThemeColor.init(rawValue:)) ?? .neutral
+            )
+        }
+        set {
+            icon = newValue?.icon.rawValue
+            color = newValue?.color.rawValue
+        }
+    }
+
     var revision = 1
 
     /// Populated by hierarchy-aware repository reads. It is never persisted.
@@ -55,7 +70,8 @@ struct ProjectRecord: Codable, FetchableRecord, PersistableRecord, Identifiable,
         icon: String? = nil,
         color: String? = nil,
         revision: Int = 1,
-        resolvedPath: String? = nil
+        resolvedPath: String? = nil,
+        appearance: ProjectAppearance? = nil
     ) {
         self.id = id
         self.vaultId = vaultId
@@ -69,6 +85,7 @@ struct ProjectRecord: Codable, FetchableRecord, PersistableRecord, Identifiable,
         self.color = color
         self.revision = revision
         self.resolvedPath = resolvedPath
+        if let appearance, parentProjectId == nil { self.appearance = appearance }
     }
 
     /// Compatibility initializer for call sites that construct a root or an in-memory path fixture.

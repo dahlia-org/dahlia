@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { Client } from "pg";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import { eq, sql } from "drizzle-orm";
 
 import { createPostgresAuthStore } from "../src/auth/store";
@@ -27,8 +27,142 @@ const connection = databaseUrl ? connectAuthDatabase(config) : undefined;
 afterAll(async () => connection?.close());
 
 integration("PostgreSQL application store", () => {
+  it.each(["app.vault_permissions", "auth.member", "auth.team_member"])("holds %s membership writes until the transfer commits", async (table) => {
+    const store = createPostgresAuthStore(connection!.db, "postgres");
+    const userId = crypto.randomUUID();
+    const owner: Identity = { userId, workspaceId: `personal:${userId}`, source: "header" };
+    await store.ensureIdentityUser(owner);
+    const source = crypto.randomUUID(), destination = crypto.randomUUID();
+    await store.sync.withIdentity(owner, (sync) => createVault(sync, source));
+    await store.sync.withIdentity(owner, (sync) => createVault(sync, destination));
+    const audience = await store.sync.withIdentity(owner, (sync) => sync.vaultTransferAudience(source, destination));
+    let markReady!: () => void, failReady!: (error: unknown) => void, release!: () => void;
+    const ready = new Promise<void>((resolve, reject) => { markReady = resolve; failReady = reject; });
+    const released = new Promise<void>((resolve) => { release = resolve; });
+    const transfer = store.sync.withIdentity(owner, async (sync) => {
+      await sync.transferVault({ sourceVaultId: source, destinationVaultId: destination, sourceRevision: 1, destinationRevision: 1,
+        audienceHash: audience.audienceHash, idempotencyKey: crypto.randomUUID(), requestHash: table });
+      markReady();
+      await released;
+    }).catch((error: unknown) => { failReady(error); throw error; });
+    const writer = new Client({ connectionString: databaseUrl });
+    let write: Promise<unknown> | undefined;
+    let settled = false;
+    try {
+      await ready;
+      await writer.connect();
+      const pid = (await writer.query<{ pid: number }>("SELECT pg_backend_pid() AS pid")).rows[0]!.pid;
+      write = writer.query(`DELETE FROM ${table} WHERE false`).then(() => { settled = true; });
+      await vi.waitFor(async () => {
+        const waiting = await connection!.db.execute<{ waiting: boolean }>(sql`SELECT EXISTS (
+          SELECT 1 FROM pg_stat_activity WHERE pid = ${pid} AND wait_event_type = 'Lock') AS waiting`);
+        expect(settled || waiting.rows[0]?.waiting).toBe(true);
+      });
+      expect(settled).toBe(false);
+    } finally {
+      release();
+      await transfer;
+      await write;
+      await writer.end();
+    }
+    expect(settled).toBe(true);
+  });
+
+  it.each(["file", "transcript", "expiry"])("serializes %s staging with the transfer lock", async (kind) => {
+    const store = createPostgresAuthStore(connection!.db, "postgres");
+    const userId = crypto.randomUUID();
+    const owner: Identity = { userId, workspaceId: `personal:${userId}`, source: "header" };
+    await store.ensureIdentityUser(owner);
+    const source = crypto.randomUUID(), destination = crypto.randomUUID(), meeting = crypto.randomUUID();
+    const now = new Date();
+    await store.sync.withIdentity(owner, (sync) => createVault(sync, source, [{ id: crypto.randomUUID(), entity: "meeting",
+      action: "create", entityId: meeting, baseRevision: null, data: meetingData(null, now, "Meeting", "") }]));
+    await store.sync.withIdentity(owner, (sync) => createVault(sync, destination));
+    const blocker = new Client({ connectionString: databaseUrl });
+    await blocker.connect();
+    await blocker.query("BEGIN");
+    await blocker.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [`vault:${source}`]);
+    let settled = false;
+    const staging = store.sync.withIdentity(owner, async (sync) => {
+      if (kind === "transcript") return sync.putTranscriptChunk(source, meeting, crypto.randomUUID(), 0, "hash", [], []);
+      if (kind === "expiry") return sync.expireFileUploads(source, now);
+      return sync.reserveFile({ fileId: crypto.randomUUID(), vaultId: source, uri: "/Volumes/test/staged", offset: 0,
+        size: 0, checksum: "", contentType: "image/png", name: "Staged", metadata: { source: "screenshot" },
+        active: false, uploadedAt: null, revision: 0, createdAt: now, updatedAt: now });
+    }).then((value) => ({ value }), (error: unknown) => ({ error })).finally(() => { settled = true; });
+    try {
+      await vi.waitFor(async () => {
+        const waiting = await blocker.query<{ waiting: boolean }>(
+          "SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE pg_backend_pid() = ANY(pg_blocking_pids(pid))) AS waiting");
+        expect(settled || waiting.rows[0]?.waiting).toBe(true);
+      });
+      expect(settled).toBe(false);
+    } finally {
+      await blocker.query("ROLLBACK");
+      await blocker.end();
+      const result = await staging;
+      expect(result).not.toHaveProperty("error");
+    }
+    if (kind !== "expiry") {
+      await expect(store.sync.withIdentity(owner, async (sync) => sync.transferVault({ sourceVaultId: source, destinationVaultId: destination,
+        audienceHash: (await sync.vaultTransferAudience(source, destination)).audienceHash,
+        sourceRevision: 1, destinationRevision: 1, idempotencyKey: crypto.randomUUID(), requestHash: kind })))
+        .rejects.toMatchObject({ status: 409, code: "transfer_unsynced_data" });
+    }
+  });
+
+  it("lists server directory records with correlated organization counts", async () => {
+    const store = createPostgresAuthStore(connection!.db, "postgres");
+    const id = crypto.randomUUID();
+    const now = new Date();
+    await connection!.db.insert(schema.user).values({ id, name: "Directory member", email: `${id}@example.com`, emailVerified: true });
+    await connection!.db.insert(schema.organization).values({ id, name: "Directory organization", slug: id, createdAt: now });
+    try {
+      await connection!.db.insert(schema.member).values({ id, organizationId: id, userId: id, role: "member", createdAt: now });
+      await connection!.db.insert(schema.team).values({ id, organizationId: id, name: "Directory team", createdAt: now });
+      expect(await store.listServerOrganizations(1000, 0)).toContainEqual({ id, name: "Directory organization", slug: id, memberCount: 1, teamCount: 1 });
+      expect(await store.listServerUsers(1000, 0)).toEqual(expect.arrayContaining([expect.objectContaining({ id, email: `${id}@example.com` })]));
+    } finally {
+      await connection!.db.delete(schema.organization).where(eq(schema.organization.id, id));
+      await connection!.db.delete(schema.user).where(eq(schema.user.id, id));
+    }
+  });
+
+  it("moves composite relationships atomically and serializes competing transfers", async () => {
+    const store = createPostgresAuthStore(connection!.db, "postgres");
+    const userId = crypto.randomUUID();
+    const owner: Identity = { userId, workspaceId: `personal:${userId}`, source: "header" };
+    await store.ensureIdentityUser(owner);
+    const source = crypto.randomUUID(), destination = crypto.randomUUID(), alternative = crypto.randomUUID();
+    const root = crypto.randomUUID(), child = crypto.randomUUID(), meeting = crypto.randomUUID();
+    const now = new Date();
+    for (const vault of [source, destination, alternative]) await store.sync.withIdentity(owner, (sync) => createVault(sync, vault));
+    await store.sync.withIdentity(owner, (sync) => commit(sync, source, [
+      { id: crypto.randomUUID(), entity: "project", action: "create", entityId: root, baseRevision: null,
+        data: { parentProjectId: null, name: "Root", description: "", projectType: "undefined", createdAt: now } },
+      { id: crypto.randomUUID(), entity: "project", action: "create", entityId: child, baseRevision: null,
+        data: { parentProjectId: root, name: "Child", description: "", projectType: null, createdAt: now } },
+      { id: crypto.randomUUID(), entity: "meeting", action: "create", entityId: meeting, baseRevision: null,
+        data: meetingData(child, now, "Meeting", "") },
+    ]));
+    const request = { sourceVaultId: source, destinationVaultId: destination, sourceRevision: 1, destinationRevision: 1,
+      audienceHash: (await store.sync.withIdentity(owner, (sync) => sync.vaultTransferAudience(source, destination))).audienceHash,
+      idempotencyKey: crypto.randomUUID(), requestHash: "first" };
+    const outcomes = await Promise.allSettled([request, { ...request, destinationVaultId: alternative,
+      audienceHash: (await store.sync.withIdentity(owner, (sync) => sync.vaultTransferAudience(source, alternative))).audienceHash,
+      idempotencyKey: crypto.randomUUID(), requestHash: "second" }].map((input) => store.sync.withIdentity(owner, (sync) => sync.transferVault(input))));
+    expect(outcomes.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    expect(outcomes.filter((result) => result.status === "rejected")).toHaveLength(1);
+    const resolved = await store.sync.withIdentity(owner, (sync) => sync.getVaultRelocations(source));
+    const moved = resolved.items.find((item) => item.id === meeting)!;
+    expect([destination, alternative]).toContain(moved.vaultId);
+    expect(await store.sync.withIdentity(owner, (sync) => sync.getMeeting(moved.vaultId, meeting))).toMatchObject({ meetingId: meeting, projectId: child });
+    expect(await store.sync.withIdentity(owner, (sync) => sync.getVault(source))).toMatchObject({ hasResources: false });
+    expect(await connection!.db.select().from(schema.vaultTransfer)).toEqual([]);
+  });
+
   it("derives recording scope from its meeting under FORCE RLS", async () => {
-    const store = createPostgresAuthStore(connection!.db, "postgres", undefined, true);
+    const store = createPostgresAuthStore(connection!.db, "postgres");
     const suffix = crypto.randomUUID();
     const owner: Identity = { userId: `recording-owner-${suffix}`, workspaceId: `personal:recording-owner-${suffix}`, source: "header" };
     const member: Identity = { userId: `recording-member-${suffix}`, workspaceId: `personal:recording-member-${suffix}`, source: "header" };
@@ -85,7 +219,7 @@ integration("PostgreSQL application store", () => {
   });
 
   it("authorizes summaries through meetings and separates generation from sync revision", async () => {
-    const store = createPostgresAuthStore(connection!.db, "postgres", undefined, true);
+    const store = createPostgresAuthStore(connection!.db, "postgres");
     const userId = crypto.randomUUID();
     const owner: Identity = { userId, workspaceId: `personal:${userId}`, source: "header" };
     const reader: Identity = { userId: `reader-${userId}`, workspaceId: `personal:reader-${userId}`, source: "header" };
@@ -133,7 +267,7 @@ integration("PostgreSQL application store", () => {
   });
 
   it("projects recording history through an invoker view and enforces event RLS", async () => {
-    const store = createPostgresAuthStore(connection!.db, "postgres", undefined, true);
+    const store = createPostgresAuthStore(connection!.db, "postgres");
     const userId = crypto.randomUUID();
     const identity: Identity = { userId, workspaceId: `personal:${userId}`, source: "header" };
     await store.ensureIdentityUser(identity);
@@ -169,7 +303,7 @@ integration("PostgreSQL application store", () => {
   });
 
   it("serializes optimistic transactions within a Vault", async () => {
-    const store = createPostgresAuthStore(connection!.db, "postgres", undefined, true);
+    const store = createPostgresAuthStore(connection!.db, "postgres");
     const userId = crypto.randomUUID();
     const identity: Identity = { userId, workspaceId: `personal:${userId}`, source: "header" };
     const vaultId = crypto.randomUUID();
@@ -201,7 +335,7 @@ integration("PostgreSQL application store", () => {
   });
 
   it("enforces FORCE RLS and does not leak transaction-local identity", async () => {
-    const store = createPostgresAuthStore(connection!.db, "postgres", undefined, true);
+    const store = createPostgresAuthStore(connection!.db, "postgres");
     const suffix = crypto.randomUUID();
     const owner: Identity = { userId: suffix, workspaceId: `personal:${suffix}`, source: "header" };
     const other: Identity = { userId: `other-${suffix}`, workspaceId: `personal:other-${suffix}`, source: "header" };
@@ -341,7 +475,7 @@ integration("PostgreSQL application store", () => {
   });
 
   it("persists Better Auth administrators", async () => {
-    const store = createPostgresAuthStore(connection!.db, "postgres", undefined, true);
+    const store = createPostgresAuthStore(connection!.db, "postgres");
     const suffix = crypto.randomUUID();
     const email = `${suffix}@example.com`;
 
@@ -358,7 +492,7 @@ integration("PostgreSQL application store", () => {
   });
 
   it("grants read-only Vault access through an explicit organization share", async () => {
-    const store = createPostgresAuthStore(connection!.db, "postgres", undefined, true);
+    const store = createPostgresAuthStore(connection!.db, "postgres");
     const suffix = crypto.randomUUID();
     const owner: Identity = { userId: `owner-${suffix}`, workspaceId: `personal:owner-${suffix}`, source: "accounts" };
     const member: Identity = { userId: `member-${suffix}`, workspaceId: `personal:member-${suffix}`, source: "accounts" };
@@ -440,8 +574,6 @@ integration("PostgreSQL application store", () => {
         .toBe(true);
       expect(await store.sync.withIdentity(member, (sync) => sync.getVault(vaultId)))
         .toMatchObject({ vaultId, role: "member" });
-      const sharingDisabledStore = createPostgresAuthStore(connection!.db, "postgres", undefined, false);
-      expect(await sharingDisabledStore.sync.withIdentity(member, (sync) => sync.getVault(vaultId))).toBeNull();
       await store.sync.withIdentity(member, async (sync) => {
         expect(await sync.getMeeting(vaultId, meetingId)).toMatchObject({ name: "Shared meeting" });
         expect(await sync.listMeetings(vaultId, { text: "shared", tokens: ["shared"] }, 10)).toHaveLength(1);
@@ -475,7 +607,7 @@ integration("PostgreSQL application store", () => {
   });
 
   it("keeps header Vaults private until the owner shares with the external organization", async () => {
-    const store = createPostgresAuthStore(connection!.db, "postgres", undefined, true);
+    const store = createPostgresAuthStore(connection!.db, "postgres");
     const suffix = crypto.randomUUID();
     const owner: Identity = { userId: `owner-${suffix}`, workspaceId: `personal:owner-${suffix}`, source: "header" };
     const member: Identity = { userId: `member-${suffix}`, workspaceId: `personal:member-${suffix}`, source: "header" };
@@ -527,7 +659,7 @@ integration("PostgreSQL application store", () => {
   });
 
   it("rejects non-owner restoration of a revision-zero Vault without side effects", async () => {
-    const store = createPostgresAuthStore(connection!.db, "postgres", undefined, true);
+    const store = createPostgresAuthStore(connection!.db, "postgres");
     const suffix = crypto.randomUUID();
     const owner: Identity = { userId: `restore-owner-${suffix}`, workspaceId: `personal:restore-owner-${suffix}`, source: "header" };
     const member: Identity = { userId: `restore-member-${suffix}`, workspaceId: `personal:restore-member-${suffix}`, source: "header" };
@@ -579,7 +711,7 @@ integration("PostgreSQL application store", () => {
   });
 
   it("supports direct user members without granting writes or another owner", async () => {
-    const store = createPostgresAuthStore(connection!.db, "postgres", undefined, true);
+    const store = createPostgresAuthStore(connection!.db, "postgres");
     const suffix = crypto.randomUUID();
     const owner: Identity = { userId: `owner-${suffix}`, workspaceId: `personal:owner-${suffix}`, source: "header" };
     const member: Identity = { userId: `member-${suffix}`, workspaceId: `personal:member-${suffix}`, source: "header" };
@@ -633,7 +765,7 @@ integration("PostgreSQL application store", () => {
   });
 
   it("copies full transcript versions under parent RLS and seals them immutably", async () => {
-    const store = createPostgresAuthStore(connection!.db, "postgres", undefined, true);
+    const store = createPostgresAuthStore(connection!.db, "postgres");
     const suffix = crypto.randomUUID();
     const owner: Identity = { userId: `transcript-${suffix}`, workspaceId: `personal:transcript-${suffix}`, source: "header" };
     const vaultId = crypto.randomUUID(), meetingId = crypto.randomUUID(), firstId = crypto.randomUUID(), secondId = crypto.randomUUID();
@@ -723,6 +855,8 @@ function meetingData(
 
 async function resetVault(sync: IdentitySyncStore, vaultId: string) {
   const vault = await sync.getVault(vaultId);
+  await commit(sync, vaultId, [{ id: crypto.randomUUID(), entity: "vault", action: "reset", entityId: vaultId,
+    baseRevision: vault?.revision ?? null, data: { preservePermissions: true } }]);
   return commit(sync, vaultId, [{ id: crypto.randomUUID(), entity: "vault", action: "reset", entityId: vaultId,
-    baseRevision: vault?.revision ?? null, data: {} }]);
+    baseRevision: 0, data: {} }]);
 }

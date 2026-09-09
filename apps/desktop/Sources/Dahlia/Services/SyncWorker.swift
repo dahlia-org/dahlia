@@ -220,6 +220,7 @@ actor SyncWorker {
     private var drainTask: Task<Void, Never>?
     private var eventTasks: [UUID: Task<Void, Never>] = [:]
     private var isPulling = false
+    private var transferConnections: Set<UUID> = []
     private struct PullKey: Hashable { let database: ObjectIdentifier
         let vaultId: UUID
     }
@@ -414,6 +415,7 @@ actor SyncWorker {
             return try SyncJSON.decoder.decode(SyncTransactionResponse.self, from: resolved)
         }
         guard resolution.status == "unknown" else { throw SyncTransactionQueueError.invalidReceipt }
+        if try await reconcileRelocations(vaultId: transaction.vaultId, connectionId: transaction.connectionId, origin: target) { return nil }
         let stagedBody = try await transactionBody(transaction, origin: target, stageAttachments: true)
         guard stagedBody == body else { throw SyncTransactionQueueError.invalidReceipt }
         let data = try await sendData(
@@ -700,17 +702,56 @@ actor SyncWorker {
             } catch let error as SyncHTTPError where error.status == 410 && error.code == "sync_cursor_expired" {
                 try? await recoverSnapshot(target)
             } catch let error as SyncHTTPError where error.status == 404 && error.code == "vault_not_found" {
-                if try await RemoteChangeApplier.reconcileMissingVault(
-                    vaultId: target.vaultId,
-                    expectedConnectionId: target.connectionId,
-                    dbQueue: dbQueue,
-                    expectedMutationGeneration: target.mutationGeneration
-                ) {
-                    await vaultsDidChange()
+                do {
+                    if try await reconcileRelocations(vaultId: target.vaultId, connectionId: target.connectionId, origin: target.origin) { continue }
+                    if transferConnections.contains(target.connectionId) {
+                        try? await setRecoveryState("transferBlocked", target: target)
+                        continue
+                    }
+                    if try await RemoteChangeApplier.reconcileMissingVault(
+                        vaultId: target.vaultId,
+                        expectedConnectionId: target.connectionId,
+                        dbQueue: dbQueue,
+                        expectedMutationGeneration: target.mutationGeneration
+                    ) {
+                        await vaultsDidChange()
+                    }
+                } catch is CancellationError {
+                    throw CancellationError()
+                } catch {
+                    continue
                 }
             } catch {
                 continue
             }
+        }
+    }
+
+    private func reconcileRelocations(vaultId: UUID, connectionId: UUID, origin: URL) async throws -> Bool {
+        guard transferConnections.contains(connectionId) else { return false }
+        do {
+            let relocation = try await SyncJSON.decoder.decode(VaultRelocation.self, from: sendData(
+                request(origin: origin, path: "api/v1/vaults/\(vaultId.lowercase)/relocations", method: "GET"),
+                connectionId: connectionId
+            ))
+            let changed = try await dbQueue.write { db in
+                let changed = try relocation.apply(connectionId: connectionId, in: db)
+                try db.execute(
+                    sql: "UPDATE vaults SET syncRecoveryState = NULL WHERE id = ? AND accountConnectionId = ? AND syncRecoveryState = 'transferBlocked'",
+                    arguments: [vaultId, connectionId]
+                )
+                return changed
+            }
+            if changed { await vaultsDidChange() }
+            return changed
+        } catch let error as SyncHTTPError {
+            if error.code == "transfer_access_required" || error.code == "transfer_local_changes" {
+                try await dbQueue.write { db in
+                    guard try SyncTransactionQueue.matchesExpectedConnection(vaultId: vaultId, connectionId: connectionId, in: db) else { return }
+                    try db.execute(sql: "UPDATE vaults SET syncRecoveryState = 'transferBlocked' WHERE id = ?", arguments: [vaultId])
+                }
+            }
+            throw error
         }
     }
 
@@ -727,6 +768,7 @@ actor SyncWorker {
             guard capabilities.sync?.version == 4 else {
                 throw SyncHTTPError(status: 426, body: Data())
             }
+            if capabilities.vaultTransfers?.version == 1 { transferConnections.insert(target.connectionId) }
             let meetingEventsVersion = capabilities.meetingEvents?.version == 1 ? 1 : 0
             try await dbQueue.write { db in
                 guard try SyncTransactionQueue.matchesExpectedConnection(
@@ -766,6 +808,7 @@ actor SyncWorker {
                 cursor: cursor,
                 highWaterCursor: highWaterCursor
             )
+            if try await reconcileRelocations(vaultId: target.vaultId, connectionId: target.connectionId, origin: target.origin) { return false }
             highWaterCursor = page.highWaterCursor
             if page.items.contains(where: { $0.entity == .vault && $0.action == "reset" }) {
                 var snapshotItems = page.items
@@ -778,6 +821,7 @@ actor SyncWorker {
                     )
                     snapshotItems.append(contentsOf: snapshotPage.items)
                 }
+                if try await reconcileRelocations(vaultId: target.vaultId, connectionId: target.connectionId, origin: target.origin) { return false }
                 let snapshot = Self.initialSnapshotChanges(snapshotItems)
                 return try await applySnapshot(snapshot, cursor: snapshotPage.cursor, target: target)
             }
@@ -879,6 +923,10 @@ actor SyncWorker {
             cursor = page.cursor
             if !page.hasMore { break }
         } while true
+
+        if try await reconcileRelocations(vaultId: target.vaultId, connectionId: target.connectionId, origin: target.origin) {
+            return false
+        }
 
         if let deletedVault, let generation {
             return try await RemoteChangeApplier.apply(
@@ -1399,6 +1447,7 @@ struct ServerCapabilities: Decodable {
 
     let sync: Feature?
     let recordingArchive: Feature?
+    let vaultTransfers: Feature?
     let meetingEvents: Feature?
     let search: Feature?
     let imageAnalysis: Feature?

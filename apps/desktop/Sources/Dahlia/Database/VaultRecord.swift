@@ -9,6 +9,21 @@ struct VaultRecord: Codable, FetchableRecord, PersistableRecord, Identifiable, E
     var path: String?
     var icon: String?
     var color: String?
+
+    var appearance: ProjectAppearance? {
+        get {
+            guard icon != nil || color != nil else { return nil }
+            return ProjectAppearance(
+                icon: icon.flatMap(ProjectIcon.init(rawValue:)) ?? .vault,
+                color: color.flatMap(ProjectThemeColor.init(rawValue:)) ?? .neutral
+            )
+        }
+        set {
+            icon = newValue?.icon.rawValue
+            color = newValue?.color.rawValue
+        }
+    }
+
     var name: String
     var createdAt: Date
     var lastOpenedAt: Date

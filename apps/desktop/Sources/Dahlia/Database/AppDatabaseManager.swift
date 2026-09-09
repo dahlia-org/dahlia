@@ -370,6 +370,62 @@ final class AppDatabaseManager: Sendable {
             try SchemaOrganizationMigration.migrate(in: db)
         }
 
+        migrator.registerMigration("v51_collectionAppearance") { db in
+            try addColumnIfNeeded(in: db, table: "vaults", column: "appearance", type: .text)
+            try addColumnIfNeeded(in: db, table: "projects", column: "appearance", type: .text)
+        }
+
+        migrator.registerMigration("v52_vaultRelocation") { db in
+            // Canonical relocation updates roots, children, and meetings in one transaction.
+            // Ordinary project edits still require their original Vault in ProjectRecord.
+            try db.execute(sql: """
+            CREATE TABLE vault_relocation_scope (
+                sourceVaultId BLOB NOT NULL, destinationVaultId BLOB NOT NULL,
+                PRIMARY KEY(sourceVaultId, destinationVaultId)
+            );
+            DROP TRIGGER projects_prevent_vault_change;
+            DROP TRIGGER IF EXISTS meetings_prevent_vault_change;
+            CREATE TRIGGER projects_prevent_vault_change BEFORE UPDATE OF vaultId ON projects
+            WHEN NEW.vaultId <> OLD.vaultId AND NOT EXISTS (
+                SELECT 1 FROM vault_relocation_scope WHERE sourceVaultId = OLD.vaultId AND destinationVaultId = NEW.vaultId
+            ) BEGIN SELECT RAISE(ABORT, 'project vault is immutable'); END;
+            """)
+            if try db.tableExists("meetings") {
+                try db.execute(sql: """
+                CREATE TRIGGER meetings_prevent_vault_change BEFORE UPDATE OF vaultId ON meetings
+                WHEN NEW.vaultId <> OLD.vaultId AND NOT EXISTS (
+                    SELECT 1 FROM vault_relocation_scope WHERE sourceVaultId = OLD.vaultId AND destinationVaultId = NEW.vaultId
+                ) BEGIN SELECT RAISE(ABORT, 'meeting vault is immutable'); END;
+                """)
+            }
+            try addColumnIfNeeded(in: db, table: "recording_audio_files", column: "originalVaultPath", type: .text)
+        }
+
+        migrator.registerMigration("v53_canonicalAppearanceFields") { db in
+            // As in TextContentMigration, preserve legacy views/triggers while altering their tables.
+            let objects = try Row.fetchAll(db, sql: """
+            SELECT type, name, sql FROM sqlite_master
+            WHERE type IN ('trigger', 'view') AND sql IS NOT NULL ORDER BY rowid
+            """)
+            for object in objects.reversed() {
+                let type: String = object["type"]
+                let name: String = object["name"]
+                try db.execute(sql: "DROP \(type) \(name.quotedDatabaseIdentifier)")
+            }
+            for table in ["projects", "vaults"] where try db.tableExists(table) {
+                try db.execute(sql: """
+                UPDATE \(table) SET
+                    icon = COALESCE(icon, json_extract(appearance, '$.icon')),
+                    color = COALESCE(color, json_extract(appearance, '$.color'))
+                WHERE appearance IS NOT NULL;
+                ALTER TABLE \(table) DROP COLUMN appearance;
+                """)
+            }
+            for object in objects {
+                try db.execute(sql: object["sql"] as String)
+            }
+        }
+
         return migrator
     }()
 

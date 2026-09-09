@@ -27,7 +27,8 @@ Better Auth schemas are generated unmodified into `src/db/generated`; Dahlia tab
 | Path | `accounts` | `header` |
 | --- | --- | --- |
 | `/`, `/sign-in`, `/dashboard/**`, `/vaults/**` | Static SPA | Static SPA |
-| `/organizations` | Better Auth Organization and Team management | External Organization and Team management |
+| `/organizations` | Joined organizations and invitations; create an organization in a modal | Joined organizations |
+| `/organizations/{slug}` | Members, Teams, and Settings tabs | External organization Members, Teams, and Settings tabs |
 | `/accept-invitation/**` | Better Auth invitation management | Not used |
 | `/api/auth/**` | Google sign-in and OAuth 2.1 endpoints | Disabled |
 | `/api/session` | Account session and capabilities | Validated email-header identity and capabilities |
@@ -172,7 +173,7 @@ The meeting detail header and body appear only once meeting and Vault data are a
 
 `GET /api/v1/vaults` accepts mutually exclusive `userId` and `organizationId` filters. No parameter means the authenticated user's own `userId`. A user filter returns owned Vaults and only permits the authenticated user's ID (another user is `403`). An Organization filter requires current membership (`403` otherwise), and returns only Vaults shared to that Organization or to one of the user's Teams within it. Owning a Vault or access through a different Organization is insufficient for this filter. Multiple matching grants produce one row. Empty, whitespace-containing, control-containing, over-200-character IDs and simultaneous filters return `400`; IDs are opaque auth IDs, not necessarily UUIDs.
 
-**Client compatibility:** the default Vault listing now returns owned Vaults, rather than all accessible Vaults. Clients needing all accessible Vaults must union the default listing with each `organizationId` listing by Vault ID. `GET /api/v1/organizations` lists the authenticated user's Organizations in both accounts and header modes and accepts browser or `all-apis` gateway authentication; sharing-disabled deployments return an empty array. Desktop Vault discovery performs this union. Update Desktop along with Server to preserve shared Vault discovery; older Desktop versions continue synchronizing already-registered Vaults but will not discover additional shared Vaults through the default list.
+**Client compatibility:** the default Vault listing now returns owned Vaults, rather than all accessible Vaults. Clients needing all accessible Vaults must union the default listing with each `organizationId` listing by Vault ID. `GET /api/v1/organizations` lists the authenticated user's Organizations in both accounts and header modes and accepts browser or `all-apis` gateway authentication. Desktop Vault discovery performs this union. Update Desktop along with Server to preserve shared Vault discovery; older Desktop versions continue synchronizing already-registered Vaults but will not discover additional shared Vaults through the default list.
 
 
 Files API storage currently requires the Databricks Volume backend. `POST /api/v1/files` accepts the file itself as an uncompressed raw body, with required query parameters `id` (client-generated UUIDv7), `vaultId`, `name` (1–255 characters), and `source` (`upload` or `screenshot`). Optional `width` and `height` are positive integers up to 33,554,432. Query values must be URL-encoded; OCR and captions belong in metadata mutations, not URLs. Use `Content-Type` for the MIME type and a required `Content-Length` up to 64 MiB. The Server counts the received bytes and computes SHA-256 while streaming to storage, checks that the received length matches `Content-Length`, and records `size`, `checksum` (`SHA-256:` plus lowercase hex), and `offset: 0`. Clients do not submit these fields. A missing length returns `411`, an excessive length returns `413`, and unsupported content encoding returns `415`.
@@ -206,7 +207,7 @@ Web screenshot grids use `thumb_480`, open `thumb_1568`, and offer an original l
 
 `GET /api/v1/vaults/{vaultId}/meetings/{meetingId}/transcript` returns up to 10,000 segments in chronological order. Pass `nextCursor` as `cursor` to continue; MCP `get_meeting_transcript` uses the same page contract.
 
-Explicit Organization and Team sharing is disabled unless `DAHLIA_SYNC_SHARING_ENABLED=true`. Disabled deployments do not expose permission mutations or member reads; owner sync and owner reads remain available.
+Explicit Organization and Team sharing is always available. Only owners can grant or revoke access; shared members have read-only access.
 
 In accounts mode, owners use Better Auth Organizations, invitations, and Teams. In header mode, every validated proxy user is projected into the visible `external` Organization; the first user is its immutable owner and belongs to the `External` default Team, while later users join only the Organization. Organization owners manage Team membership from the same Web page. Vault owners explicitly grant read-only access through `PUT|DELETE /api/v1/vaults/{vaultId}/permissions/organizations/{organizationId}` or `/permissions/teams/{teamId}`; direct user member rows remain schema-only. PostgreSQL/Lakebase always migrate the generated `auth` baseline before the application baseline. RLS receives only transaction-local `app.user_id` and resolves current membership from `auth.member` and `auth.team_member`.
 
@@ -448,6 +449,41 @@ The Worker-safe package root exports the backend extension contract from `@dahli
 
 Run `pnpm dev:client` and open `/tests/browser/live-data.html` on the Vite origin. This isolated fixture renders the real App under React Strict Mode, replaces API/SSE with local fixtures, and never calls the backend. A successful run sets `document.body.dataset.testResult` to `passed` and prints `PASS` in the console. It checks thumbnail failure recovery through Retry/reconnect/online, DOM identity, tabs and scroll, empty Project rows during refresh, live sharing settings, paginated additions/deletions, reconnects, transient failures/retry, obsolete reads, failed then successful edits, search, deleted Project filter recovery, browser history, Project creation/deletion, Organization switching, canonical URL redirects, file modals and standalone previews, focus restoration, and 403/404 removal.
 
+### Private Web workspace
+
+Home shows the accessible Vaults and the ten most recent meetings from a selected Vault.
+Live updates preserve that selection, including the initial default, while the Vault remains accessible.
+The sidebar exposes Home, All Vaults, the current Vault selector, search beside the logo, and the Project tree;
+The account menu contains Account settings, organization switching ("No organization selected" without an active organization), and sign-out.
+Server administrators have a separate bottom sidebar section for Organization management, User management, and General settings.
+`/admin/organizations` includes organizations the administrator has not joined; `/admin/users` lists registered users and the existing administrator controls.
+The read-only directories use administrator-only `GET /api/admin/organizations` and `GET /api/admin/users`, with pages of 100 and an `offset` query parameter.
+They expose directory metadata only and do not grant access to other users' Vault content. `/admin/settings` is currently an empty settings page.
+Members can reach their organization settings from the sidebar; administrators use "Manage your organizations" on the organization directory.
+Account extension links, such as billing, live on Account settings. Administrator extension links live in the Server section.
+At widths up to 820px the same
+navigation becomes a native modal drawer, with Escape, backdrop dismissal and focus containment.
+Selecting a destination closes the drawer even when it is already the current page; canceling search keeps it open.
+Meetings retain their readable Summary, Screenshots and Transcript tabs, breadcrumbs and owner-only actions.
+
+Creation, editing, deletion and session revocation use native HTML dialogs styled consistently
+with the workspace. Editors retain multiline drafts after errors, protect dirty drafts from
+accidental dismissal, and block duplicate submissions and dismissal during a save. Destructive
+confirmations explain their scope and initially focus Cancel. Closing restores focus to the
+opener. Summary edits preserve block structure, IDs, tables, references and attachments; a changed
+manual version clears generation metadata, following the existing summary contract.
+Single-value fields use `src/client/Select.tsx`; its trigger, menu, and row styles are shared with the Vault selector. Keep new dropdowns on this component so keyboard navigation, disabled states, and modal focus behavior stay consistent.
+`/tests/browser/select.html` checks picker interactions and `/tests/browser/account-settings.html` checks saving through those controls.
+
+Settings report automatic-save progress and success. Narrow layouts use larger touch targets;
+search exposes active filter counts, a clear-filters action and keyboard selection to assistive technology.
+
+For visual review, open `/tests/browser/live-data.html?preview&lang=ja` on the Vite origin.
+Add `&page=home`, `&page=vault`, or `&page=settings` for other views; omit `lang=ja` for English.
+These are local fixtures, not live account data. Reopen the fixture URL after a development reload.
+`/tests/browser/dialogs.html` runs the draft, validation, focus, duplicate-submit, pending-operation
+and destructive-confirmation regression checks; success sets `document.body.dataset.testResult` to `passed`.
+
 ### Private Web detail navigation
 
 The canonical detail URLs are `/projects/{project_id}`, `/meetings/{meeting_id}`, and
@@ -505,3 +541,45 @@ Cloudflare's [current request body limits](https://developers.cloudflare.com/wor
 
 Search UI regression: run `pnpm dev:client`, open `/tests/browser/search.html`, and verify `document.body.dataset.testResult === "passed"`. It uses isolated fixtures for IME, debounce, cancellation, navigation, preview, focus, refresh and Vault switching.
 Summary worker diagnostics use structured `summary_job_started`, `summary_job_succeeded`, `summary_job_lease_lost`, and `summary_job_failed` events. Failure records include the generation/publish phase, bounded error code, attempt, retryability, duration, and an upstream request ID when supplied. They never include meeting content, prompts, provider response bodies, model/user/meeting identifiers, or credentials. A `summary_input_changed` failure means canonical input changed after enqueue; wait for transcript/image processing to finish, then retry. The existing summary is preserved.
+
+The sidebar groups Home, Vaults, and Search into an icon row with accessible names and tooltips. The current Vault button opens a popover with the selected Vault marked.
+Unassigned meetings appear in their own sidebar section below the project tree.
+Selected sidebar navigation expands to show its label. The shared `Tooltip` component provides hover/focus help, optional shortcuts, and Escape dismissal.
+Vault selection and management live in the sidebar; the account menu contains account and organization actions.
+Vault owners can delete an empty Vault from its Settings tab after confirmation. Vault detail includes `hasResources`; the client disables deletion while resources remain. The revision-checked `vault:reset` transaction with `preservePermissions: false` also rejects Projects, Meetings, or Files (including staged Files) with `409 vault_not_empty`, then returns to Vaults after a committed receipt. The owner-only restore operation with `preservePermissions: true` retains its reset semantics.
+Account settings are accessed through the account menu without a separate footer settings icon.
+
+### Collection appearance and permissions
+
+Vault and Project edits include an icon and color beside the name. Appearance is
+stored as `{ icon, color }` on the canonical Vault/Project and travels through
+transactions, snapshots and changes to Desktop. Omitted appearance in transaction writes preserves an
+existing value; canonical reads replace the appearance, including clearing it when null; root collections without one use the default icon. Child Projects always inherit their parent's appearance and show a read-only icon in the editor. Child create/update payloads reject explicit appearance; demotion to a child clears any stored appearance. Desktop's older
+local Project preferences remain a fallback and become canonical when saved in
+the Project editor. New nullable columns are added by forward migrations.
+
+The Vault **Permissions** tab contains organization/team sharing controls. Owners
+can change access; members can inspect their access. The **Settings** tab contains
+Vault details and deletion. The permissions tab is always available.
+
+### Transfer all Vault content
+
+Owners can move all Server-saved content to another Vault they own with
+`POST /api/v1/vaults/{vault_id}/transfer`, `Idempotency-Key: <UUIDv7>`, and
+`{"destinationVaultId":"<UUID>","sourceRevision":3,"destinationRevision":5,"audienceHash":"<preview hash>"}`.
+The atomic response is `200 {"id":"<Server UUIDv7>","status":"committed","sourceVaultId":"<UUID>","destinationVaultId":"<UUID>"}`.
+IDs and object-storage keys remain unchanged; the empty source Vault remains and deletion is separate.
+Retries with the same owner/key/body return the saved result; key reuse with a different body returns `409 idempotency_key_reused`.
+Identical Vaults return 400; missing or non-owned Vaults return 404. Stale revisions, staged data, running work,
+and normalized root-Project name collisions return distinct 409 errors.
+
+`GET /api/v1/vaults/{vault_id}/transfer-audience?destinationVaultId=<UUID>` returns the current readers gaining or losing access and their `audienceHash`. Submit that hash with the transfer; a changed reader set returns `409 transfer_audience_changed` and requires a new confirmation. PostgreSQL locks sharing and membership writes until the checked transfer commits.
+Transferred content inherits destination sharing. Desktop retains local data and pauses when destination access is unavailable,
+then checks again after access is restored. Unsynced local changes also pause relocation; they are never discarded automatically.
+`GET /api/v1/vaults/{vault_id}/relocations` resolves transferred IDs to their current accessible Vaults, including after delta expiry.
+Clients declare support with `X-Dahlia-Vault-Transfers: 1`; affected Vaults reject older sync clients with 426.
+There is no transfer-history acknowledgement or client transfer cursor.
+
+Organization management: the account menu links to your organizations. Member invitations and team creation use dialogs; team membership expands within each team and saves immediately. Invitation links must be shared manually (no automatic email). Server administrators can inspect the separate server-wide organization directory.
+
+Project details use Meetings and Settings tabs. Project editing and deletion are available to Vault owners from Settings.

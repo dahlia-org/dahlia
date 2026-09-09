@@ -64,6 +64,9 @@ export interface AdminUserRecord {
   createdAt: Date;
 }
 
+export interface ServerUserRecord extends AdminUserRecord { role: string | null }
+export interface ServerOrganizationRecord { id: string; name: string; slug: string; memberCount: number; teamCount: number }
+
 export type RemoveAdminResult = "removed" | "not_found" | "last_admin";
 
 export interface OrganizationRecord {
@@ -118,6 +121,8 @@ export interface ApplicationStore {
   seedDahliaClient(config: AppConfig): Promise<void>;
   listDahliaSessions(userId: string): Promise<DahliaOAuthSession[]>;
   revokeDahliaSession(userId: string, refreshTokenId: string): Promise<boolean>;
+  listServerUsers(limit: number, offset: number): Promise<ServerUserRecord[]>;
+  listServerOrganizations(limit: number, offset: number): Promise<ServerOrganizationRecord[]>;
   listAdminUsers(): Promise<AdminUserRecord[]>;
   isAdminUser(userId: string): Promise<boolean>;
   addAdminUser(email: string): Promise<AdminUserRecord | null>;
@@ -146,7 +151,6 @@ export function createPostgresApplicationStore(
   db: PostgresDatabase,
   searchBackend: SyncSearchBackend = "postgres",
   searchEmbedding?: AppConfig["searchEmbedding"],
-  sharingEnabled = false,
 ): ApplicationStore {
   const externalMembership = async (userId: string) => {
     const [membership] = await db.select({ role: postgresAuthSchema.member.role })
@@ -159,7 +163,7 @@ export function createPostgresApplicationStore(
   return {
     database: drizzleAdapter(db, { provider: "pg", schema: postgresAuthSchema, schemaName: "auth" }),
     accountSettings: createAccountSettingsStore(db, true),
-    sync: createPostgresMeetingSyncStore(db, searchBackend, searchEmbedding, sharingEnabled),
+    sync: createPostgresMeetingSyncStore(db, searchBackend, searchEmbedding),
     async ensureIdentityUser(identity) {
       const now = new Date();
       const identityUser = () => db.select({
@@ -372,6 +376,15 @@ export function createPostgresApplicationStore(
         .where(eq(postgresSchema.oauthAccessToken.refreshId, refreshTokenId));
       return true;
     },
+    listServerUsers: (limit, offset) => db.select({
+      id: postgresAuthSchema.user.id, name: postgresAuthSchema.user.name, email: postgresAuthSchema.user.email,
+      role: postgresAuthSchema.user.role, createdAt: postgresAuthSchema.user.createdAt,
+    }).from(postgresAuthSchema.user).orderBy(asc(postgresAuthSchema.user.email), asc(postgresAuthSchema.user.id)).limit(limit).offset(offset),
+    listServerOrganizations: (limit, offset) => db.select({
+      id: postgresAuthSchema.organization.id, name: postgresAuthSchema.organization.name, slug: postgresAuthSchema.organization.slug,
+      memberCount: sql<number>`(select count(*) from ${postgresAuthSchema.member} where ${postgresAuthSchema.member.organizationId} = ${postgresAuthSchema.organization}."id")`.mapWith(Number),
+      teamCount: sql<number>`(select count(*) from ${postgresAuthSchema.team} where ${postgresAuthSchema.team.organizationId} = ${postgresAuthSchema.organization}."id")`.mapWith(Number),
+    }).from(postgresAuthSchema.organization).orderBy(asc(postgresAuthSchema.organization.name), asc(postgresAuthSchema.organization.id)).limit(limit).offset(offset),
     listAdminUsers: () => db.select({
       id: postgresAuthSchema.user.id,
       name: postgresAuthSchema.user.name,
@@ -584,7 +597,6 @@ export function createSqliteApplicationStore(
   db: SQLiteDatabase,
   transactions = false,
   searchEmbedding?: AppConfig["searchEmbedding"],
-  sharingEnabled = false,
 ): ApplicationStore {
   const externalMembership = async (userId: string) => {
     const [membership] = await db.select({ role: sqliteAuthSchema.member.role })
@@ -597,7 +609,7 @@ export function createSqliteApplicationStore(
   return {
     database: drizzleAdapter(db, { provider: "sqlite", schema: sqliteAuthSchema, transaction: transactions }),
     accountSettings: createAccountSettingsStore(db, false),
-    sync: createSqliteMeetingSyncStore(db, searchEmbedding, sharingEnabled),
+    sync: createSqliteMeetingSyncStore(db, searchEmbedding),
     async ensureIdentityUser(identity) {
       const now = new Date();
       const identityUser = () => db.select({
@@ -809,6 +821,15 @@ export function createSqliteApplicationStore(
       await db.delete(sqliteSchema.oauthAccessToken).where(eq(sqliteSchema.oauthAccessToken.refreshId, refreshTokenId));
       return true;
     },
+    listServerUsers: (limit, offset) => db.select({
+      id: sqliteAuthSchema.user.id, name: sqliteAuthSchema.user.name, email: sqliteAuthSchema.user.email,
+      role: sqliteAuthSchema.user.role, createdAt: sqliteAuthSchema.user.createdAt,
+    }).from(sqliteAuthSchema.user).orderBy(asc(sqliteAuthSchema.user.email), asc(sqliteAuthSchema.user.id)).limit(limit).offset(offset),
+    listServerOrganizations: (limit, offset) => db.select({
+      id: sqliteAuthSchema.organization.id, name: sqliteAuthSchema.organization.name, slug: sqliteAuthSchema.organization.slug,
+      memberCount: sql<number>`(select count(*) from ${sqliteAuthSchema.member} where ${sqliteAuthSchema.member.organizationId} = ${sqliteAuthSchema.organization}."id")`.mapWith(Number),
+      teamCount: sql<number>`(select count(*) from ${sqliteAuthSchema.team} where ${sqliteAuthSchema.team.organizationId} = ${sqliteAuthSchema.organization}."id")`.mapWith(Number),
+    }).from(sqliteAuthSchema.organization).orderBy(asc(sqliteAuthSchema.organization.name), asc(sqliteAuthSchema.organization.id)).limit(limit).offset(offset),
     listAdminUsers: () => db.select({
       id: sqliteAuthSchema.user.id,
       name: sqliteAuthSchema.user.name,
@@ -1012,8 +1033,8 @@ export function createSqliteApplicationStore(
   };
 }
 
-export function createD1ApplicationStore(database: D1DatabaseLike, sharingEnabled = false): ApplicationStore {
-  const store = createSqliteApplicationStore(drizzleD1(database as unknown as D1Database), false, undefined, sharingEnabled);
+export function createD1ApplicationStore(database: D1DatabaseLike): ApplicationStore {
+  const store = createSqliteApplicationStore(drizzleD1(database as unknown as D1Database), false, undefined);
   return { ...store, sync: createUnavailableMeetingSyncStore() };
 }
 

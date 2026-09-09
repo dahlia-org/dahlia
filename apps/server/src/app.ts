@@ -229,7 +229,7 @@ export function createApp(dependencies: AppDependencies) {
       admin: await isAdministrator(store, identity),
       sessions: auth !== undefined,
       sync: await store.sync.isAvailable(),
-      sharing: config.syncSharingEnabled === true,
+      sharing: true,
     };
     for (const extension of extensions) {
       const additions = await extension.sessionCapabilities?.(identity) ?? {};
@@ -261,6 +261,16 @@ export function createApp(dependencies: AppDependencies) {
     context.set("identity", identity);
     await next();
   });
+  for (const kind of ["users", "organizations"] as const) {
+    app.get(`/api/admin/${kind}`, async (context) => {
+      const page = z.object({ offset: z.coerce.number().int().min(0).max(1_000_000).default(0) }).safeParse(context.req.query());
+      if (!page.success) return context.json({ error: "invalid_page" }, 400);
+      const limit = 100;
+      const items = kind === "users" ? await store.listServerUsers(limit + 1, page.data.offset)
+        : await store.listServerOrganizations(limit + 1, page.data.offset);
+      return context.json({ items: items.slice(0, limit), hasMore: items.length > limit });
+    });
+  }
   app.get("/api/admin/members", async (context) => {
     const admins = await store.listAdminUsers();
     return context.json(admins.map((admin) => ({ ...admin, role: "admin", removable: admins.length > 1 })));
@@ -320,25 +330,25 @@ export function createApp(dependencies: AppDependencies) {
   });
 
   app.get("/api/v1/vaults/:vaultId/meetings/:meetingId/summary/latest", async (context) => {
-    const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
+    const identity = await syncIdentity(context.req.raw);
     context.header("Cache-Control", "no-store");
     return context.json(await sync.latestSummary(identity, sync.parseId(context.req.param("vaultId")),
       sync.parseId(context.req.param("meetingId")), context.req.query("manifest")));
   });
   app.get("/api/v1/vaults/:vaultId/meetings/:meetingId/summary", async (context) => {
-    const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
+    const identity = await syncIdentity(context.req.raw);
     context.header("Cache-Control", "no-store");
     return context.json(await sync.summaryVersions(identity, sync.parseId(context.req.param("vaultId")),
       sync.parseId(context.req.param("meetingId")), context.req.query("cursor"), context.req.query("limit")));
   });
   app.get("/api/v1/vaults/:vaultId/meetings/:meetingId/summary/:version{[0-9]+}", async (context) => {
-    const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
+    const identity = await syncIdentity(context.req.raw);
     context.header("Cache-Control", "no-store");
     return context.json(await sync.summaryVersion(identity, sync.parseId(context.req.param("vaultId")),
       sync.parseId(context.req.param("meetingId")), context.req.param("version")));
   });
   app.get("/api/v1/vaults/:vaultId/meetings/:meetingId/summary/job", async (context) => {
-    const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
+    const identity = await syncIdentity(context.req.raw);
     if (!dependencies.summaryService) return context.json({ error: "summary_unavailable" }, 503);
     context.header("cache-control", "no-store");
     return context.json({ job: summaryJobResponse(await dependencies.summaryService.status(identity,
@@ -349,7 +359,7 @@ export function createApp(dependencies: AppDependencies) {
     if ((requiresBrowserOrigin || context.req.header("origin")) && !mutationOriginAllowed(context.req.raw, config.baseUrl)) {
       return context.json({ error: "invalid_origin" }, 403);
     }
-    const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
+    const identity = await syncIdentity(context.req.raw);
     if (!dependencies.summaryService) return context.json({ error: "summary_unavailable" }, 503);
     const vaultId = sync.parseId(context.req.param("vaultId"));
     const meetingId = sync.parseId(context.req.param("meetingId"));
@@ -359,7 +369,7 @@ export function createApp(dependencies: AppDependencies) {
   });
 
   app.get("/api/v1/account/settings", async (context) => {
-    const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
+    const identity = await syncIdentity(context.req.raw);
     context.header("cache-control", "no-store");
     return context.json({ settings: await store.accountSettings.get(identity.userId) });
   });
@@ -369,7 +379,7 @@ export function createApp(dependencies: AppDependencies) {
       && !mutationOriginAllowed(context.req.raw, config.baseUrl)) {
       return context.json({ error: "invalid_origin" }, 403);
     }
-    const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
+    const identity = await syncIdentity(context.req.raw);
     if (identity.impersonated) return context.json({ error: "impersonation_read_only" }, 403);
     const parsed = accountSettingsPatchSchema.safeParse(await context.req.json().catch(() => null));
     if (!parsed.success) return context.json({ error: "invalid_account_settings" }, 400);
@@ -378,17 +388,41 @@ export function createApp(dependencies: AppDependencies) {
     return context.json({ settings: await store.accountSettings.update(identity.userId, patch, initialize) });
   });
 
+  async function syncIdentity(request: Request): Promise<Identity> {
+    const identity = await identities.fromBrowserOrGateway(request, ALL_APIS_SCOPE);
+    return { ...identity, syncClient: { vaultTransfers: request.headers.get("X-Dahlia-Vault-Transfers") === "1" } };
+  }
+
+  app.get("/api/v1/vaults/:vaultId/transfer-audience", async (context) => {
+    const identity = await syncIdentity(context.req.raw);
+    return context.json(await sync.vaultTransferAudience(identity, sync.parseId(context.req.param("vaultId")),
+      sync.parseId(context.req.query("destinationVaultId") ?? "")));
+  });
+  app.post("/api/v1/vaults/:vaultId/transfer", syncBodyLimit, async (context) => {
+    const requiresBrowserOrigin = config.authProvider === "accounts" && !context.req.header("authorization");
+    if ((requiresBrowserOrigin || context.req.header("origin")) && !mutationOriginAllowed(context.req.raw, config.baseUrl)) {
+      return context.json({ error: "invalid_origin" }, 403);
+    }
+    const identity = await syncIdentity(context.req.raw);
+    return context.json(await sync.transferVault(identity, sync.parseId(context.req.param("vaultId")),
+      context.req.header("Idempotency-Key"), await context.req.json().catch(() => null)));
+  });
+  app.get("/api/v1/vaults/:vaultId/relocations", async (context) => {
+    const identity = await syncIdentity(context.req.raw);
+    return context.json(await sync.getVaultRelocations(identity, sync.parseId(context.req.param("vaultId"))));
+  });
+
   app.post("/api/v1/transactions", syncBodyLimit, async (context) => {
     const requiresBrowserOrigin = config.authProvider === "accounts" && !context.req.header("authorization");
     if ((requiresBrowserOrigin || context.req.header("origin"))
       && !mutationOriginAllowed(context.req.raw, config.baseUrl)) {
       return context.json({ error: "invalid_origin" }, 403);
     }
-    const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
+    const identity = await syncIdentity(context.req.raw);
     return context.json(await sync.commitTransaction(identity, await context.req.json().catch(() => null)));
   });
   app.get("/api/v1/vaults/:vaultId/changes", async (context) => {
-    const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
+    const identity = await syncIdentity(context.req.raw);
     return context.json(await sync.listChanges(
       identity,
       sync.parseId(context.req.param("vaultId")),
@@ -402,11 +436,11 @@ export function createApp(dependencies: AppDependencies) {
       && !mutationOriginAllowed(context.req.raw, config.baseUrl)) {
       return context.json({ error: "invalid_origin" }, 403);
     }
-    const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
+    const identity = await syncIdentity(context.req.raw);
     return context.json(await sync.resolveTransaction(identity, await context.req.json().catch(() => null)));
   });
   app.get("/api/v1/vaults/:vaultId/snapshot", async (context) => {
-    const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
+    const identity = await syncIdentity(context.req.raw);
     return context.json(await sync.listSnapshot(
       identity,
       sync.parseId(context.req.param("vaultId")),
@@ -415,11 +449,12 @@ export function createApp(dependencies: AppDependencies) {
     ));
   });
   app.get("/api/v1/capabilities", async (context) => {
-    await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
+    await syncIdentity(context.req.raw);
     if (!await store.sync.isAvailable()) return context.json({});
     const sources = dependencies.summaryService?.methods.map((method) => method.id) ?? [];
     return context.json({
       sync: { version: 4 },
+      vaultTransfers: { version: 1 },
       recordingArchive: { version: 1 },
       meetingEvents: { version: 1 },
       search: { version: 1 },
@@ -429,17 +464,17 @@ export function createApp(dependencies: AppDependencies) {
   });
   app.post("/api/v1/search", bodyLimit({ maxSize: 16 * 1024,
     onError: (context) => context.json({ error: "search_request_too_large" }, 413) }), async (context) => {
-    const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
+    const identity = await syncIdentity(context.req.raw);
     context.header("Cache-Control", "no-store");
     return context.json(await sync.searchAll(identity, await context.req.json().catch(() => null), context.req.raw.signal));
   });
   app.get("/api/v1/vaults/:vaultId/search", async (context) => {
-    const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
+    const identity = await syncIdentity(context.req.raw);
     return context.json(await sync.searchText(identity, sync.parseId(context.req.param("vaultId")),
       context.req.query("q"), context.req.query("kind"), context.req.query("cursor"), context.req.query("limit")));
   });
   app.get("/api/v1/events", async (context) => {
-    const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
+    const identity = await syncIdentity(context.req.raw);
     const suppliedCursor = context.req.query("cursor") ?? context.req.header("last-event-id");
     let sequence = suppliedCursor ? decodeSyncCursor(suppliedCursor) : 0;
     return streamSSE(context, async (stream) => {
@@ -503,16 +538,16 @@ export function createApp(dependencies: AppDependencies) {
     if ((requiresBrowserOrigin || context.req.header("origin")) && !mutationOriginAllowed(context.req.raw, config.baseUrl)) {
       return context.json({ error: "invalid_origin" }, 403);
     }
-    const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
+    const identity = await syncIdentity(context.req.raw);
     const result = await sync.postRecording(identity, sync.parseId(context.req.param("meetingId")), context.req.raw);
     return context.json(result.record, result.created ? 201 : 200);
   });
   app.get("/api/v1/meetings/:meetingId/recordings", async (context) => {
-    const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
+    const identity = await syncIdentity(context.req.raw);
     return context.json(await sync.listRecordings(identity, sync.parseId(context.req.param("meetingId")), context.req.query("cursor")));
   });
   app.on(["GET", "HEAD"], "/api/v1/meetings/:meetingId/recordings/:recordingId/audio/:source", async (context) => {
-    const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
+    const identity = await syncIdentity(context.req.raw);
     return sync.recordingContent(identity, sync.parseId(context.req.param("meetingId")), context.req.param("recordingId"), context.req.param("source"), context.req.raw);
   });
   app.post("/api/v1/files", async (context) => {
@@ -520,7 +555,7 @@ export function createApp(dependencies: AppDependencies) {
     if ((requiresBrowserOrigin || context.req.header("origin")) && !mutationOriginAllowed(context.req.raw, config.baseUrl)) {
       return context.json({ error: "invalid_origin" }, 403);
     }
-    const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
+    const identity = await syncIdentity(context.req.raw);
     const result = await sync.postFile(identity, context.req.raw);
     return context.json(result.file, result.created ? 201 : 200);
   });
@@ -530,42 +565,42 @@ export function createApp(dependencies: AppDependencies) {
     if ((requiresBrowserOrigin || context.req.header("origin")) && !mutationOriginAllowed(context.req.raw, config.baseUrl)) {
       return context.json({ error: "invalid_origin" }, 403);
     }
-    const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
+    const identity = await syncIdentity(context.req.raw);
     return context.json(await sync.patchFile(identity, sync.parseId(context.req.param("fileId")), await context.req.json().catch(() => null)));
   });
   app.get("/api/v1/files/:fileId/metadata", async (context) => {
-    const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
+    const identity = await syncIdentity(context.req.raw);
     return context.json(await sync.getFile(identity, sync.parseId(context.req.param("fileId"))));
   });
   app.get("/api/v1/vaults/:vaultId/files", async (context) => {
-    const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
+    const identity = await syncIdentity(context.req.raw);
     return context.json(await sync.listFiles(identity, sync.parseId(context.req.param("vaultId")), context.req.query("cursor")));
   });
   app.get("/api/v1/vaults", async (context) => {
-    const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
+    const identity = await syncIdentity(context.req.raw);
     return context.json({ items: await sync.listVaults(identity, context.req.query("userId"), context.req.query("organizationId")) });
   });
   app.get("/api/v1/vaults/:vaultId", async (context) => {
-    const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
+    const identity = await syncIdentity(context.req.raw);
     const vault = await sync.getVault(identity, sync.parseId(context.req.param("vaultId")));
     return vault ? context.json(vault) : context.json({ error: "vault_not_found" }, 404);
   });
   app.get("/api/v1/projects/:projectId", async (context) => {
-    const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
+    const identity = await syncIdentity(context.req.raw);
     const project = await sync.getProjectById(identity, sync.parseId(context.req.param("projectId")));
     return project ? context.json(project) : context.json({ error: "project_not_found" }, 404);
   });
   app.get("/api/v1/meetings/:meetingId", async (context) => {
-    const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
+    const identity = await syncIdentity(context.req.raw);
     const meeting = await sync.getMeetingById(identity, sync.parseId(context.req.param("meetingId")));
     return meeting ? context.json(meetingMetadata({ ...meeting })) : context.json({ error: "meeting_not_found" }, 404);
   });
   app.get("/api/v1/vaults/:vaultId/projects", async (context) => {
-    const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
+    const identity = await syncIdentity(context.req.raw);
     return context.json({ items: await sync.listProjects(identity, sync.parseId(context.req.param("vaultId"))) });
   });
   app.get("/api/v1/vaults/:vaultId/projects/:projectId", async (context) => {
-    const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
+    const identity = await syncIdentity(context.req.raw);
     const project = await sync.getProject(
       identity,
       sync.parseId(context.req.param("vaultId")),
@@ -574,7 +609,7 @@ export function createApp(dependencies: AppDependencies) {
     return project ? context.json(project) : context.json({ error: "project_not_found" }, 404);
   });
   app.get("/api/v1/vaults/:vaultId/meetings", async (context) => {
-    const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
+    const identity = await syncIdentity(context.req.raw);
     const vaultId = sync.parseId(context.req.param("vaultId"));
     return context.json(await sync.listMeetings(
       identity,
@@ -587,7 +622,7 @@ export function createApp(dependencies: AppDependencies) {
     ));
   });
   app.get("/api/v1/vaults/:vaultId/meetings/:meetingId", async (context) => {
-    const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
+    const identity = await syncIdentity(context.req.raw);
     const meeting = await sync.getMeeting(
       identity,
       sync.parseId(context.req.param("vaultId")),
@@ -597,19 +632,19 @@ export function createApp(dependencies: AppDependencies) {
   });
   app.get("/api/v1/vaults/:vaultId/meetings/:meetingId/transcript", async (context) => {
     context.header("cache-control", "no-store");
-    const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
+    const identity = await syncIdentity(context.req.raw);
     const vaultId = sync.parseId(context.req.param("vaultId"));
     const meetingId = sync.parseId(context.req.param("meetingId"));
     return context.json(await sync.transcriptVersions(identity, vaultId, meetingId, context.req.query("cursor"), context.req.query("limit")));
   });
   app.get("/api/v1/vaults/:vaultId/meetings/:meetingId/transcript/:version", async (context) => {
     context.header("cache-control", "no-store");
-    const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
+    const identity = await syncIdentity(context.req.raw);
     return context.json(await sync.transcriptContent(identity, sync.parseId(context.req.param("vaultId")),
       sync.parseId(context.req.param("meetingId")), context.req.param("version"), context.req.query("manifest"), context.req.query("cursor")));
   });
   app.get("/api/v1/vaults/:vaultId/meetings/:meetingId/files", async (context) => {
-    const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
+    const identity = await syncIdentity(context.req.raw);
     return context.json(await sync.listFiles(identity, sync.parseId(context.req.param("vaultId")),
       context.req.query("cursor"), sync.parseId(context.req.param("meetingId"))));
   });
@@ -618,7 +653,6 @@ export function createApp(dependencies: AppDependencies) {
     return context.json({ items: await sync.listPermissions(identity, sync.parseId(context.req.param("vaultId"))) });
   });
   app.put("/api/v1/vaults/:vaultId/permissions/organizations/:organizationId", async (context) => {
-    if (!config.syncSharingEnabled) return context.json({ error: "not_found" }, 404);
     if (!mutationOriginAllowed(context.req.raw, config.baseUrl)) return context.json({ error: "invalid_origin" }, 403);
     const identity = await identities.fromBrowser(context.req.raw);
     await sync.putMemberPermission(
@@ -630,7 +664,6 @@ export function createApp(dependencies: AppDependencies) {
     return context.body(null, 204);
   });
   app.delete("/api/v1/vaults/:vaultId/permissions/organizations/:organizationId", async (context) => {
-    if (!config.syncSharingEnabled) return context.json({ error: "not_found" }, 404);
     if (!mutationOriginAllowed(context.req.raw, config.baseUrl)) return context.json({ error: "invalid_origin" }, 403);
     const identity = await identities.fromBrowser(context.req.raw);
     await sync.deleteMemberPermission(
@@ -642,7 +675,6 @@ export function createApp(dependencies: AppDependencies) {
     return context.body(null, 204);
   });
   app.put("/api/v1/vaults/:vaultId/permissions/teams/:teamId", async (context) => {
-    if (!config.syncSharingEnabled) return context.json({ error: "not_found" }, 404);
     if (!mutationOriginAllowed(context.req.raw, config.baseUrl)) return context.json({ error: "invalid_origin" }, 403);
     const identity = await identities.fromBrowser(context.req.raw);
     await sync.putMemberPermission(
@@ -654,7 +686,6 @@ export function createApp(dependencies: AppDependencies) {
     return context.body(null, 204);
   });
   app.delete("/api/v1/vaults/:vaultId/permissions/teams/:teamId", async (context) => {
-    if (!config.syncSharingEnabled) return context.json({ error: "not_found" }, 404);
     if (!mutationOriginAllowed(context.req.raw, config.baseUrl)) return context.json({ error: "invalid_origin" }, 403);
     const identity = await identities.fromBrowser(context.req.raw);
     await sync.deleteMemberPermission(
@@ -667,11 +698,11 @@ export function createApp(dependencies: AppDependencies) {
   });
 
   app.get("/api/v1/organizations", async (context) => {
-    const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
+    const identity = await syncIdentity(context.req.raw);
     return context.json(await sync.listOrganizations(identity));
   });
   app.get("/api/v1/organizations/:organizationId", async (context) => {
-    if (!config.syncSharingEnabled || config.authProvider !== "header" || context.req.param("organizationId") !== EXTERNAL_ORGANIZATION_ID) {
+    if (config.authProvider !== "header" || context.req.param("organizationId") !== EXTERNAL_ORGANIZATION_ID) {
       return context.json({ error: "not_found" }, 404);
     }
     const identity = await identities.fromBrowser(context.req.raw);
@@ -679,7 +710,7 @@ export function createApp(dependencies: AppDependencies) {
     return organization ? context.json(organization) : context.json({ error: "not_found" }, 404);
   });
   app.get("/api/v1/organizations/:organizationId/members", async (context) => {
-    if (!config.syncSharingEnabled || config.authProvider !== "header" || context.req.param("organizationId") !== EXTERNAL_ORGANIZATION_ID) {
+    if (config.authProvider !== "header" || context.req.param("organizationId") !== EXTERNAL_ORGANIZATION_ID) {
       return context.json({ error: "not_found" }, 404);
     }
     const identity = await identities.fromBrowser(context.req.raw);
@@ -694,7 +725,7 @@ export function createApp(dependencies: AppDependencies) {
       : context.json({ error: "not_found" }, 404);
   });
   app.get("/api/v1/organizations/:organizationId/teams", async (context) => {
-    if (!config.syncSharingEnabled || config.authProvider !== "header" || context.req.param("organizationId") !== EXTERNAL_ORGANIZATION_ID) {
+    if (config.authProvider !== "header" || context.req.param("organizationId") !== EXTERNAL_ORGANIZATION_ID) {
       return context.json({ error: "not_found" }, 404);
     }
     const identity = await identities.fromBrowser(context.req.raw);
@@ -702,7 +733,7 @@ export function createApp(dependencies: AppDependencies) {
     return teams ? context.json(teams) : context.json({ error: "not_found" }, 404);
   });
   app.post("/api/v1/organizations/:organizationId/teams", authBodyLimit, async (context) => {
-    if (!config.syncSharingEnabled || config.authProvider !== "header" || context.req.param("organizationId") !== EXTERNAL_ORGANIZATION_ID) {
+    if (config.authProvider !== "header" || context.req.param("organizationId") !== EXTERNAL_ORGANIZATION_ID) {
       return context.json({ error: "not_found" }, 404);
     }
     if (!mutationOriginAllowed(context.req.raw, config.baseUrl)) return context.json({ error: "invalid_origin" }, 403);
@@ -713,7 +744,7 @@ export function createApp(dependencies: AppDependencies) {
     return team ? context.json(team, 201) : context.json({ error: "not_found" }, 404);
   });
   app.patch("/api/v1/organizations/:organizationId/teams/:teamId", authBodyLimit, async (context) => {
-    if (!config.syncSharingEnabled || config.authProvider !== "header" || context.req.param("organizationId") !== EXTERNAL_ORGANIZATION_ID) {
+    if (config.authProvider !== "header" || context.req.param("organizationId") !== EXTERNAL_ORGANIZATION_ID) {
       return context.json({ error: "not_found" }, 404);
     }
     if (!mutationOriginAllowed(context.req.raw, config.baseUrl)) return context.json({ error: "invalid_origin" }, 403);
@@ -728,7 +759,7 @@ export function createApp(dependencies: AppDependencies) {
     return team ? context.json(team) : context.json({ error: "not_found" }, 404);
   });
   app.delete("/api/v1/organizations/:organizationId/teams/:teamId", async (context) => {
-    if (!config.syncSharingEnabled || config.authProvider !== "header" || context.req.param("organizationId") !== EXTERNAL_ORGANIZATION_ID) {
+    if (config.authProvider !== "header" || context.req.param("organizationId") !== EXTERNAL_ORGANIZATION_ID) {
       return context.json({ error: "not_found" }, 404);
     }
     if (!mutationOriginAllowed(context.req.raw, config.baseUrl)) return context.json({ error: "invalid_origin" }, 403);
@@ -739,7 +770,7 @@ export function createApp(dependencies: AppDependencies) {
     ) ? context.body(null, 204) : context.json({ error: "not_found" }, 404);
   });
   app.get("/api/v1/organizations/:organizationId/teams/:teamId/members", async (context) => {
-    if (!config.syncSharingEnabled || config.authProvider !== "header" || context.req.param("organizationId") !== EXTERNAL_ORGANIZATION_ID) {
+    if (config.authProvider !== "header" || context.req.param("organizationId") !== EXTERNAL_ORGANIZATION_ID) {
       return context.json({ error: "not_found" }, 404);
     }
     const identity = await identities.fromBrowser(context.req.raw);
@@ -752,7 +783,7 @@ export function createApp(dependencies: AppDependencies) {
       : context.json({ error: "not_found" }, 404);
   });
   app.put("/api/v1/organizations/:organizationId/teams/:teamId/members/:userId", async (context) => {
-    if (!config.syncSharingEnabled || config.authProvider !== "header" || context.req.param("organizationId") !== EXTERNAL_ORGANIZATION_ID) {
+    if (config.authProvider !== "header" || context.req.param("organizationId") !== EXTERNAL_ORGANIZATION_ID) {
       return context.json({ error: "not_found" }, 404);
     }
     if (!mutationOriginAllowed(context.req.raw, config.baseUrl)) return context.json({ error: "invalid_origin" }, 403);
@@ -764,7 +795,7 @@ export function createApp(dependencies: AppDependencies) {
     ) ? context.body(null, 204) : context.json({ error: "not_found" }, 404);
   });
   app.delete("/api/v1/organizations/:organizationId/teams/:teamId/members/:userId", async (context) => {
-    if (!config.syncSharingEnabled || config.authProvider !== "header" || context.req.param("organizationId") !== EXTERNAL_ORGANIZATION_ID) {
+    if (config.authProvider !== "header" || context.req.param("organizationId") !== EXTERNAL_ORGANIZATION_ID) {
       return context.json({ error: "not_found" }, 404);
     }
     if (!mutationOriginAllowed(context.req.raw, config.baseUrl)) return context.json({ error: "invalid_origin" }, 403);
@@ -776,11 +807,11 @@ export function createApp(dependencies: AppDependencies) {
     ) ? context.body(null, 204) : context.json({ error: "not_found" }, 404);
   });
   app.on(["GET", "HEAD"], "/api/v1/files/:fileId", async (context) => {
-    const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
+    const identity = await syncIdentity(context.req.raw);
     return sync.readFile(identity, sync.parseId(context.req.param("fileId")), context.req.method as "GET" | "HEAD", context.req.raw);
   });
   app.on(["GET", "HEAD"], "/api/v1/files/:fileId/variants/:variant", async (context) => {
-    const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
+    const identity = await syncIdentity(context.req.raw);
     const variant = context.req.param("variant");
     if (!Object.hasOwn(SCREENSHOT_VARIANTS, variant)) return context.json({ error: "file_variant_unavailable" }, 404);
     return sync.readFile(identity, sync.parseId(context.req.param("fileId")), context.req.method as "GET" | "HEAD", context.req.raw, variant as ScreenshotVariant);
@@ -878,13 +909,12 @@ export function createApp(dependencies: AppDependencies) {
 
   for (const path of methodPaths) {
     app.all(path, async (context) => {
-      if ((!config.syncSharingEnabled && (path.includes("/permissions") || path.startsWith("/api/v1/organizations/")))
-        || (path.startsWith("/api/sessions") && !auth)
+      if ((path.startsWith("/api/sessions") && !auth)
         || (path.startsWith("/api/v1/organizations/") && config.authProvider !== "header")) {
         return context.json({ error: "not_found" }, 404);
       }
       if (path.startsWith("/mcp/resources/")) await identities.fromMcpResource(context.req.raw, MCP_READ_SCOPE);
-      else if (path.startsWith("/api/v1/")) await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
+      else if (path.startsWith("/api/v1/")) await syncIdentity(context.req.raw);
       const allowed = new Set(methodRoutes.match("ALL", context.req.path)[0].map(([method]) => method));
       return context.json({ error: "method_not_allowed" }, 405, { Allow: [...allowed].join(", ") });
     });

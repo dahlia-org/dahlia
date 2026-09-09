@@ -4,6 +4,7 @@ struct MainSidebarAccountMenuRow: View {
     let title: String
     var subtitle: String?
     var image: Image?
+    var imageColor: Color?
     var syncState: MeetingSyncState?
     var showsDisclosure = false
     var selectionState: Bool?
@@ -29,6 +30,7 @@ struct MainSidebarAccountMenuRow: View {
                 } else if let image {
                     image
                         .resizable()
+                        .foregroundStyle(imageColor ?? DahliaDesign.sidebarPrimaryTextColor)
                         .scaledToFit()
                         .frame(width: 16, height: 16)
                         .frame(width: 18)

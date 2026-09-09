@@ -1,3 +1,4 @@
+import { appearanceSchema } from "../appearance-model";
 import { transcriptWriteSchema } from "./transcript";
 import { summaryMetadataSchema } from "../summary/metadata";
 import { conditionalRead } from "../storage/http-read";
@@ -12,7 +13,7 @@ import type { Identity } from "../auth/identity";
 import { MAX_FILE_BYTES } from "../config";
 import { ObjectStorageError, type StorageReadMethod, type ObjectStorage } from "../storage/storage";
 import { RequestError, boundedUploadBody, parseUpload, type ParsedUpload } from "../storage/upload";
-import { sha256Passthrough, sha256Stream } from "../storage/sha256";
+import { sha256, sha256Passthrough, sha256Stream } from "../storage/sha256";
 import {
   createSearchText,
   createIntlSearchTokenizer,
@@ -108,8 +109,8 @@ const transactionSchema = z.object({
   operations: z.array(transactionOperationSchema).min(1).max(10_000),
 }).strict();
 const appearanceFields = {
-  icon: z.enum(["folder", "dollarsign.circle", "book.closed", "graduationcap", "pencil", "tag", "curlybraces", "terminal", "music.note", "popcorn", "paintbrush", "paintpalette", "stethoscope", "asterisk", "camera.macro", "briefcase", "chart.bar", "medal", "dumbbell", "notebook", "scales", "globe.desk", "airplane", "globe", "wrench", "pawprint", "flask", "brain", "heart", "pottedplant", "film", "cross.case", "puzzlepiece", "leaf"]).nullable().optional(),
-  color: z.enum(["neutral", "red", "orange", "yellow", "green", "blue", "purple", "pink"]).nullable().optional(),
+  icon: appearanceSchema.shape.icon.nullable().optional(),
+  color: appearanceSchema.shape.color.nullable().optional(),
 };
 const transactionDataSchemas = {
   "meeting_event:create": z.discriminatedUnion("kind", [
@@ -120,8 +121,8 @@ const transactionDataSchemas = {
   "vault:create": z.object({ ...appearanceFields, name: z.string().trim().min(1), createdAt: dateSchema }).strict(),
   "vault:update": z.object({ ...appearanceFields, name: z.string().trim().min(1) }).strict(),
   "vault:reset": z.object({ preservePermissions: z.boolean().optional() }).strict(),
-  "project:create": z.object({ ...appearanceFields, parentProjectId: uuidSchema.nullable(), name: projectNameSchema, description: z.string().max(20_000).default(""), projectType: projectTypeSchema.nullable(), createdAt: dateSchema }).strict(),
-  "project:update": z.object({ ...appearanceFields, parentProjectId: uuidSchema.nullable(), name: projectNameSchema, description: z.string().max(20_000).default(""), projectType: projectTypeSchema.nullable() }).strict(),
+  "project:create": z.object({ ...appearanceFields, parentProjectId: uuidSchema.nullable(), name: projectNameSchema, description: z.string().max(20_000).default(""), projectType: projectTypeSchema.nullable(), createdAt: dateSchema }).strict().refine((data) => data.parentProjectId === null || (data.icon == null && data.color == null), { message: "Child projects inherit their parent appearance", path: ["icon"] }),
+  "project:update": z.object({ ...appearanceFields, parentProjectId: uuidSchema.nullable(), name: projectNameSchema, description: z.string().max(20_000).default(""), projectType: projectTypeSchema.nullable() }).strict().refine((data) => data.parentProjectId === null || (data.icon == null && data.color == null), { message: "Child projects inherit their parent appearance", path: ["icon"] }),
   "project:delete": z.object({}).strict(),
   "meeting:create": z.object({ projectId: uuidSchema.nullable(), name: z.string(), description: z.string().default(""), status: meetingStatusSchema, duration: z.number().finite().nonnegative().nullable(), recordingStartedAt: nullableDateSchema, createdAt: dateSchema, updatedAt: dateSchema }).strict(),
   "meeting:update": z.object({ projectId: uuidSchema.nullable(), name: z.string(), description: z.string().default(""), status: meetingStatusSchema, duration: z.number().finite().nonnegative().nullable(), recordingStartedAt: nullableDateSchema, updatedAt: dateSchema }).strict(),
@@ -203,6 +204,27 @@ export class MeetingSyncService {
     const parsed = permissionPrincipalSchema.safeParse(value);
     if (!parsed.success) throw new RequestError(400, "invalid_sync_share_target");
     return parsed.data;
+  }
+
+  async vaultTransferAudience(identity: Identity, sourceVaultId: string, destinationVaultId: string) {
+    return this.store.withIdentity(identity, (scoped) => scoped.vaultTransferAudience(sourceVaultId, destinationVaultId));
+  }
+
+  async transferVault(identity: Identity, sourceVaultId: string, key: string | undefined, body: unknown) {
+    this.requireWritableIdentity(identity);
+    const idempotencyKey = uuidV7Schema.safeParse(key);
+    const parsed = z.object({ destinationVaultId: uuidSchema, sourceRevision: z.number().int().positive(),
+      destinationRevision: z.number().int().positive(), audienceHash: z.string().regex(/^[0-9a-f]{64}$/) }).strict().safeParse(body);
+    if (!idempotencyKey.success || !parsed.success) throw new RequestError(400, "invalid_vault_transfer");
+    const requestHash = await sha256(canonicalJson({ sourceVaultId, ...parsed.data }));
+    const result = await this.store.withIdentity(identity, (scoped) => scoped.transferVault({
+      sourceVaultId, ...parsed.data, idempotencyKey: idempotencyKey.data, requestHash,
+    }));
+    return { id: result.id, status: "committed" as const, sourceVaultId, destinationVaultId: result.destinationVaultId };
+  }
+
+  async getVaultRelocations(identity: Identity, vaultId: string) {
+    return this.store.withIdentity(identity, (scoped) => scoped.getVaultRelocations(vaultId));
   }
 
   async resolveTransaction(identity: Identity, body: unknown) {
@@ -1334,11 +1356,6 @@ function canonicalJson(value: unknown): string {
       .map(([key, child]) => `${JSON.stringify(key)}:${canonicalJson(child)}`).join(",")}}`;
   }
   return JSON.stringify(value);
-}
-
-async function sha256(value: string): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
-  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
 async function normalizeTransaction(body: unknown): Promise<SyncTransaction> {

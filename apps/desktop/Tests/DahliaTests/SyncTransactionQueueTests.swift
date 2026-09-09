@@ -8,6 +8,99 @@
     @MainActor
     struct SyncTransactionQueueTests {
         @Test
+        func collectionAppearanceRoundTripsThroughCanonicalStorageAndUpload() async throws {
+            let (database, vault) = try await syncedDatabase()
+            let project = ProjectRecord(
+                id: .v7(),
+                vaultId: vault.id,
+                parentProjectId: nil,
+                name: "Project",
+                createdAt: .now,
+                projectType: .undefined
+            )
+            let payload = try SyncJSON.decoder.decode(
+                SyncCanonicalPayload.self,
+                from: Data(
+                    #"{"name":"Styled","createdAt":"2026-09-09T00:00:00Z","projectType":"undefined","icon":"book.closed","color":"green"}"#
+                        .utf8
+                )
+            )
+            let renamed = try SyncJSON.decoder.decode(
+                SyncCanonicalPayload.self,
+                from: Data(
+                    #"{"name":"Renamed","createdAt":"2026-09-09T00:00:00Z","projectType":"undefined","icon":"book.closed","color":"green"}"#
+                        .utf8
+                )
+            )
+            try await database.dbQueue.write { db in
+                try project.insert(db)
+                for (entity, id) in [(SyncEntity.vault, vault.id), (.project, project.id)] {
+                    try SyncTransactionQueue.applyCanonical(entity, id: id, vaultId: vault.id, value: payload, in: db)
+                    try SyncTransactionQueue.applyCanonical(entity, id: id, vaultId: vault.id, value: renamed, in: db)
+                }
+            }
+            let (savedVault, savedProject) = try await database.dbQueue.read { db in
+                try (VaultRecord.fetchOne(db, key: vault.id), ProjectRecord.fetchOne(db, key: project.id))
+            }
+            let storedVault = try #require(savedVault)
+            let storedProject = try #require(savedProject)
+            #expect(storedVault.appearance?.icon.rawValue == "book.closed")
+            #expect(storedVault.appearance?.color.rawValue == "green")
+            #expect(storedProject.appearance == storedVault.appearance)
+            for operation in try [
+                SyncInitialSnapshotBuilder.vaultOperation(storedVault, action: .update),
+                SyncInitialSnapshotBuilder.projectOperation(storedProject, action: .update),
+            ] {
+                let data = try #require(operation.payloadJSON)
+                let body = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+                #expect(body["icon"] as? String == "book.closed")
+                #expect(body["color"] as? String == "green")
+            }
+        }
+
+        @Test(arguments: [false, true])
+        func canonicalProjectAbsenceClearsLocalAppearance(useSnapshot: Bool) async throws {
+            let (database, vault) = try await syncedDatabase()
+            let project = ProjectRecord(
+                id: .v7(), vaultId: vault.id, parentProjectId: nil, name: "Project",
+                createdAt: Date(timeIntervalSince1970: 1000), projectType: .undefined,
+                appearance: ProjectAppearance(icon: .book, color: .green)
+            )
+            try await database.dbQueue.write { db in try project.insert(db) }
+            if useSnapshot {
+                #expect(try await RemoteChangeApplier.reconcileProjectSnapshot([
+                    .init(
+                        icon: nil, color: nil,
+                        projectId: project.id,
+                        parentProjectId: nil,
+                        name: project.name,
+                        description: "",
+                        projectType: "undefined",
+                        revision: 2,
+                        createdAt: project.createdAt
+                    ),
+                ], vaultId: vault.id, expectedConnectionId: #require(vault.syncConfirmedConnectionId), dbQueue: database.dbQueue))
+            } else {
+                let canonical = try SyncJSON.decoder.decode(
+                    SyncCanonicalPayload.self,
+                    from: Data(#"{"name":"Project","createdAt":"1970-01-01T00:16:40Z","projectType":"undefined","icon":null,"color":null}"#
+                        .utf8)
+                )
+                try await database.dbQueue.write { db in
+                    try SyncTransactionQueue.applyCanonical(.project, id: project.id, vaultId: vault.id, value: canonical, in: db)
+                }
+            }
+            let saved = try await database.dbQueue.read { db in try #require(try ProjectRecord.fetchOne(db, key: project.id)) }
+            #expect(saved.appearance == nil)
+            #expect(saved.revision == 2)
+            let operation = try SyncInitialSnapshotBuilder.projectOperation(saved, action: .update)
+            let data = try #require(operation.payloadJSON)
+            let payload = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+            #expect(payload["icon"] is NSNull)
+            #expect(payload["color"] is NSNull)
+        }
+
+        @Test
         func operationBodyEncodesAbsentValuesAsExplicitNull() throws {
             let body = SyncOperationBody(
                 id: .v7(),
@@ -341,6 +434,7 @@
                 }
                 var edited = vault
                 edited.name = "Rejected local name"
+                edited.appearance = ProjectAppearance(icon: .book, color: .green)
                 try edited.update(db)
                 try SyncTransactionRecorder.record(
                     vaultId: vault.id,
@@ -378,7 +472,7 @@
 
             let canonical = try SyncJSON.decoder.decode(
                 SyncCanonicalPayload.self,
-                from: Data("{\"name\":\"Server name\"}".utf8)
+                from: Data(#"{"name":"Server name","icon":null,"color":null}"#.utf8)
             )
             let changes: [SyncChangePage.Change] = [
                 .init(sequence: 4, entity: .vault, entityId: vault.id, action: "upsert", revision: 4, record: canonical),
@@ -398,6 +492,9 @@
             #expect(try await database.dbQueue.read { db in
                 try VaultRecord.fetchOne(db, key: vault.id)?.name
             } == "Server name")
+            #expect(try await database.dbQueue.read { db in
+                try VaultRecord.fetchOne(db, key: vault.id)?.appearance
+            } == nil)
         }
 
         @Test

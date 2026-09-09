@@ -68,7 +68,6 @@ export interface AppConfig {
     dimensions: number;
   };
   captioningModel?: string;
-  syncSharingEnabled?: boolean;
 }
 
 const authProviderSchema = z.enum(["accounts", "header"]);
@@ -268,7 +267,6 @@ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
     captioningModel: env.DAHLIA_CAPTIONING_MODEL?.trim()
       ? z.string().max(UPSTREAM_MODEL_MAX_LENGTH).parse(env.DAHLIA_CAPTIONING_MODEL.trim())
       : undefined,
-    syncSharingEnabled: z.enum(["true", "false"]).parse(env.DAHLIA_SYNC_SHARING_ENABLED?.trim() || "false") === "true",
   };
 
   if (config.searchEmbedding && config.provider?.backend !== "databricks") {

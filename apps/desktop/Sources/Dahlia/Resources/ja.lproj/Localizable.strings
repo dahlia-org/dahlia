@@ -1715,3 +1715,5 @@
 "serverSummaryAccountDefault" = "アカウント設定";
 
 "transcript.fullTranscriptionUnavailable" = "前の文字起こしとモデルが異なります。全文の再文字起こしには、すべての元音声と保存音声を処理できるモデルが必要です。";
+
+"meetingSync.relocationPaused" = "移管先の権限または未同期の変更を確認するため同期を停止しています。ローカルデータは保持されています。";

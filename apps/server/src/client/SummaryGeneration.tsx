@@ -1,3 +1,5 @@
+import { Select } from "./Select";
+import { MenuIcon } from "./Sidebar";
 import { useEffect, useRef, useState } from "react";
 import { json, uiText } from "./api";
 import { refreshData, useLiveJSON } from "./live-data";
@@ -32,15 +34,16 @@ export function ServerSummarySettings() {
   const query = useLiveJSON<{ settings: AccountSettings | null }>("/api/v1/account/settings", "account");
   const [error, setError] = useState<string>();
   const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
   const catalog = useLiveJSON<GatewayModelList>(methods.length ? "/api/v1/models" : undefined, "manual");
   const settings = query.data?.settings;
 
   const save = async (patch: AccountSettingsPatch) => {
-    setSaving(true); setError(undefined);
+    setSaving(true); setSaved(false); setError(undefined);
     try {
       const result = await json<{ settings: AccountSettings }>("/api/v1/account/settings",
         { method: "PATCH", body: JSON.stringify(patch) }, { notifyMutation: false });
-      query.replace(result); query.reload();
+      query.replace(result); query.reload(); setSaved(true);
     }
     catch (error) { setError(error instanceof Error ? error.message : uiText("Could not save settings", "設定を保存できません")); }
     finally { setSaving(false); }
@@ -55,51 +58,52 @@ export function ServerSummarySettings() {
   const metadata = catalog.data?.models.find((model) => model.slug === selected?.id);
   const efforts = metadata?.supported_reasoning_levels.map(({ effort }) => effort) ?? [];
   return <>
-    <section className="section-block">
+    <p className="settings-save-status" role="status" data-saved={saved && !saving}>{saving ? uiText("Saving changes…", "変更を保存中…") : saved ? uiText("Changes saved", "変更を保存しました") : uiText("Changes save automatically and apply to your next summary.", "変更は自動で保存され、次回の要約から適用されます。")}</p>
+    <section className="section-block settings-section">
       <h2 className="section-label">{uiText("Output language", "出力言語")}</h2>
       <p>{uiText("Shared by summaries and image analysis.", "要約と画像解析に共通で使用します。")}</p>
       <fieldset className="account-settings" disabled={saving || query.loading}>
-        <label>{uiText("Output language", "出力言語")}<select value={settings?.outputLanguage ?? DEFAULT_ACCOUNT_SETTINGS.outputLanguage}
-          onChange={(event) => void save({ outputLanguage: event.target.value as AccountSettings["outputLanguage"] })}>
+        <label>{uiText("Output language", "出力言語")}<Select value={settings?.outputLanguage ?? DEFAULT_ACCOUNT_SETTINGS.outputLanguage}
+          onValueChange={(value) => void save({ outputLanguage: value as AccountSettings["outputLanguage"] })}>
           {Object.entries({ ja: "日本語", en: "English", zh: "中文", ko: "한국어", fr: "Français", de: "Deutsch", es: "Español" }).map(([id, name]) => <option key={id} value={id}>{name}</option>)}
-        </select></label>
+        </Select></label>
       </fieldset>
     </section>
-    {methods.length > 0 && <section className="section-block">
+    {methods.length > 0 && <section className="section-block settings-section">
     <h2 className="section-label">{uiText("Server summary", "サーバー要約")}</h2>
-    <p>{uiText("Settings apply to new jobs. Export summaries separately after generation.", "設定は次回の生成から適用されます。エクスポートは生成後に個別に行います。")}</p>
+    <p>{uiText("Choose the source and level of detail for your meeting summaries.", "ミーティングの要約に使用するソースと、内容の詳しさを設定します。")}</p>
     {method === "audio" && <p>{uiText("Uses uploaded recordings and images. The combined mic/system audio limit is 9.5 hours. Oversized requests fail without truncation.", "アップロード済みの音声と画像を使用します。マイク・システム音声の合計上限は9.5時間です。送信上限を超える場合は切り捨てずに停止します。")}</p>}
     <fieldset className="account-settings" disabled={saving || query.loading}>
-      <label>{uiText("Summary source", "要約のソース")}<select value={method}
-        onChange={(event) => void save({ summary: { method: event.target.value as typeof method } })}>
+      <label>{uiText("Summary source", "要約のソース")}<Select value={method}
+        onValueChange={(value) => void save({ summary: { method: value as typeof method } })}>
         {methods.map((method) => <option key={method} value={method}>{method === "audio" ? uiText("Audio and images", "音声と画像") : uiText("Transcript and images", "文字起こしと画像")}</option>)}
-      </select></label>
-      <label>{uiText("Detail", "詳細度")}<select value={settings?.summary.detail ?? DEFAULT_ACCOUNT_SETTINGS.summary.detail}
-        onChange={(event) => void save({ summary: { detail: event.target.value as AccountSettings["summary"]["detail"] } })}>
+      </Select></label>
+      <label>{uiText("Detail", "詳細度")}<Select value={settings?.summary.detail ?? DEFAULT_ACCOUNT_SETTINGS.summary.detail}
+        onValueChange={(value) => void save({ summary: { detail: value as AccountSettings["summary"]["detail"] } })}>
         {details.map((detail) => <option key={detail} value={detail}>{detailLabel(detail)}</option>)}
-      </select></label>
-      <label>{uiText("Model", "モデル")}<select value={selected?.id ?? ""} disabled={catalog.loading || !models.length}
-        onChange={(event) => {
-          const model = catalog.data?.models.find((model) => model.slug === event.target.value);
+      </Select></label>
+      <label>{uiText("Model", "モデル")}<Select value={selected?.id ?? ""} disabled={catalog.loading || !models.length}
+        onValueChange={(value) => {
+          const model = catalog.data?.models.find((model) => model.slug === value);
           const supported = model?.supported_reasoning_levels.map(({ effort }) => effort) ?? [];
-          void saveSource({ model: event.target.value,
+          void saveSource({ model: value,
             reasoningEffort: (supported.includes(source.reasoningEffort) ? source.reasoningEffort
               : model?.default_reasoning_level ?? supported[0] ?? "none") as typeof source.reasoningEffort });
         }}>
         {!selected && <option value="" disabled>{uiText("Select an available model", "利用可能なモデルを選択")}</option>}
         {models.map((model) => <option key={model.id} value={model.id}>{model.display_name}</option>)}
-      </select></label>
+      </Select></label>
       {catalog.error && <p role="alert" className="error">{catalog.error.message}</p>}
       {!catalog.loading && !models.length && <p>{uiText("No models available", "利用可能なモデルがありません")}</p>}
-      <button onClick={catalog.reload} disabled={catalog.loading}>{uiText("Reload models", "モデル一覧を再取得")}</button>
-      <label>{uiText("Reasoning effort", "推論強度")}<select value={efforts.includes(source.reasoningEffort) ? source.reasoningEffort : ""} disabled={!efforts.length}
-        onChange={(event) => void saveSource({ reasoningEffort: event.target.value as typeof source.reasoningEffort })}>
+      <button className="secondary" onClick={catalog.reload} disabled={catalog.loading}>{uiText("Reload models", "モデル一覧を再取得")}</button>
+      <label>{uiText("Reasoning effort", "推論強度")}<Select value={efforts.includes(source.reasoningEffort) ? source.reasoningEffort : ""} disabled={!efforts.length}
+        onValueChange={(value) => void saveSource({ reasoningEffort: value as typeof source.reasoningEffort })}>
         {!efforts.includes(source.reasoningEffort) && <option value="" disabled>{uiText("Select reasoning effort", "推論強度を選択")}</option>}
         {efforts.map((effort) => <option key={effort}>{effort}</option>)}
-      </select></label>
+      </Select></label>
     </fieldset>
     </section>}
-    {(error || query.error) && <p role="alert" className="error">{error ?? query.error?.message}</p>}
+    {(error || query.error) && <p role="alert" className="error">{error ?? query.error?.message} {query.error && <button className="secondary" onClick={query.reload}>{uiText("Retry", "再試行")}</button>}</p>}
   </>;
 }
 
@@ -150,14 +154,17 @@ export function ServerSummaryGeneration({ base }: { base: string }) {
   }
 
   return <div className="summary-generation">
-    <select aria-label={uiText("Summary detail", "要約の詳細度")} value={detail} disabled={active || starting}
-      onChange={(event) => { setDetail(event.target.value); requestID.current = undefined; }}>
+    <div className="generation-copy"><strong><MenuIcon name="sparkles" />{uiText("AI summary", "AI 要約")}</strong><span>{uiText("Turn this conversation into clear next steps.", "会話のポイントと、次のアクションを整理します。")}</span></div>
+    <div className="generation-controls">
+    <Select aria-label={uiText("Summary detail", "要約の詳細度")} value={detail} disabled={active || starting}
+      onValueChange={(value) => { setDetail(value); requestID.current = undefined; }}>
       <option value="">{uiText("Account default", "アカウント設定")}</option>
       {details.map((detail) => <option key={detail} value={detail}>{detailLabel(detail)}</option>)}
-    </select>
-    <button disabled={starting || active || query.loading} onClick={() => void start()}>
-      {buttonLabel}
+    </Select>
+    <button className="primary" disabled={starting || active || query.loading} onClick={() => void start()}>
+      {starting ? uiText("Starting…", "開始中…") : buttonLabel}
     </button>
+    </div>
     {active && <span role="status">{uiText("You can close this window.", "画面を閉じても処理は続きます。")}</span>}
     {job?.status === "failed" && <span role="alert">{failureMessage}
       {job.error && <> ({job.error})</>}</span>}
