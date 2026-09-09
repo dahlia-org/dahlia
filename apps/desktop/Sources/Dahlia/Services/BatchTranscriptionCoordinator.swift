@@ -161,6 +161,17 @@ actor BatchTranscriptionCoordinator {
         }
     }
 
+    func cancel(sessionId: UUID) async {
+        pendingSessionIds.removeAll { $0 == sessionId }
+        guard runningSessionId == sessionId else { return }
+        let task = processorTask
+        task?.cancel()
+        await task?.value
+        if processorTask == nil, !pendingSessionIds.isEmpty {
+            processorTask = Task { [weak self] in await self?.processQueue() }
+        }
+    }
+
     func runningState(sessionId: UUID) -> BatchTranscriptionState? {
         guard runningSessionId == sessionId else { return nil }
         return .running(sessionId: sessionId, progress: runningProgress)
@@ -332,10 +343,7 @@ actor BatchTranscriptionCoordinator {
                 throw TranscriptVersionError.fullTranscriptionUnavailable
             }
             if replaceAll {
-                let known = sessions.map(\.id)
-                let uncovered = try TranscriptSegmentRecord.filter(Column("meetingId") == job.meeting.id)
-                    .filter(Column("sessionId") == nil || !known.contains(Column("sessionId"))).fetchCount(db)
-                guard uncovered == 0 else { throw TranscriptVersionError.fullTranscriptionUnavailable }
+                try BatchTranscriptionPersistence.validateReplacementCoverage(meetingID: job.meeting.id, sessions: sessions, in: db)
             }
             return (id: current?.id, replaceAll: replaceAll, sessions: sessions)
         }
@@ -356,7 +364,8 @@ actor BatchTranscriptionCoordinator {
                     mode: item.session.batchLanguageDetectionMode == .automatic ? "auto" : "fixed",
                     locales: locale.map { [$0] } ?? []
                 ),
-                recognitionLocales: result.locales
+                recognitionLocales: result.locales,
+                recordingSessionId: item.session.id
             ))
         }
         try Task.checkCancellation()
@@ -965,6 +974,8 @@ extension BatchTranscriptionCoordinator {
 
     func confirmRetranscriptionAndEnqueue(
         sessionIds: [UUID],
+        processing: RecordingProcessing? = nil,
+        processingSessionID: UUID? = nil,
         languageSelection: BatchTranscriptionLanguageSelection,
         automaticLanguageCandidates: BatchLanguageDetectionCandidateSnapshot?,
         onConfirmed: @Sendable (BatchTranscriptionConfirmationService.Result) async -> Void
@@ -973,6 +984,8 @@ extension BatchTranscriptionCoordinator {
         defer { finishConfirmation() }
         let result = try await BatchTranscriptionConfirmationService.confirmRetranscription(
             sessionIds: sessionIds,
+            processing: processing,
+            processingSessionID: processingSessionID,
             languageSelection: languageSelection,
             automaticLanguageCandidates: automaticLanguageCandidates,
             dbQueue: dbQueue

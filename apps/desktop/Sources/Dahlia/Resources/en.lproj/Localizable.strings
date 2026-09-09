@@ -488,6 +488,7 @@
 "Controls how much reasoning Codex uses for each summary." = "Controls how much reasoning Codex uses for each summary.";
 "Summary Output" = "Summary Output";
 "Detail Level" = "Detail Level";
+"Event Play-by-Play" = "Event Play-by-Play";
 "Event Session" = "Event Session";
 "Controls how much information is included in each summary." = "Controls how much information is included in each summary.";
 "Concise" = "Concise";
@@ -1717,3 +1718,24 @@
 "transcript.fullTranscriptionUnavailable" = "The transcript uses a different model. Full retranscription requires all original audio and a model that can process saved audio.";
 
 "meetingSync.relocationPaused" = "Sync is paused while destination access or unsynced changes need attention. Local data is retained.";
+"liveTranscriptDraft" = "Create a first draft with live transcription";
+"automaticRecordingProcessing" = "Process automatically after recording";
+"processingLocalTranscription" = "Local transcription → summary";
+"processingCloudTranscription" = "Cloud transcription → summary";
+"processingDirectAudio" = "Summarize recordings directly";
+"processingMethod" = "Recording processing method";
+
+"processingUploading" = "Saving and uploading recordings";
+"processingTranscribing" = "Transcribing";
+"processingSummarizing" = "Summarizing";
+"processingGenerating" = "Generating transcription and summary";
+"processingSaving" = "Saving results";
+"processingCancelled" = "Cancelled";
+
+"transcriptionModel" = "Transcription model";
+
+"録音を処理" = "Process Recording";
+
+"保存した録音から文字起こしと要約を作成します。" = "Create a transcript and summary from the saved recording.";
+
+"処理を開始" = "Start Processing";

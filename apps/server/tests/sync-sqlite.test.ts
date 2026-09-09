@@ -739,13 +739,13 @@ describe("SQLite canonical sync", () => {
     expect(await store.accountSettings.get(owner.userId)).toEqual({ ...DEFAULT_ACCOUNT_SETTINGS, outputLanguage: "fr", analysisLanguages: { scope: "all", identifiers: [] } });
     await Promise.all([
       store.accountSettings.update(owner.userId, { summary: { methodSettings: { transcript: { model: "saved-model" } } } }),
-      store.accountSettings.update(owner.userId, { summary: { detail: "concise" } }),
+      store.accountSettings.update(owner.userId, { summary: { detail: "low" } }),
     ]);
     expect(await store.accountSettings.get(owner.userId)).toMatchObject({ summary: {
-      method: "transcript", detail: "concise", methodSettings: { transcript: { model: "saved-model", reasoningEffort: "medium" } },
+      method: "transcript", detail: "low", methodSettings: { transcript: { model: "saved-model", reasoningEffort: "medium" } },
     } });
     const version = await store.accountSettings.getRevision(owner.userId);
-    await store.accountSettings.update(owner.userId, { summary: { detail: "concise" } });
+    await store.accountSettings.update(owner.userId, { summary: { detail: "low" } });
     expect(await store.accountSettings.getRevision(owner.userId)).toBe(version);
     await Promise.all([
       store.accountSettings.update(owner.userId, { summary: { methodSettings: { audio: { model: "audio-model" } } } }),
@@ -753,9 +753,9 @@ describe("SQLite canonical sync", () => {
     ]);
     expect((await store.accountSettings.get(owner.userId))?.summary.methodSettings.audio).toEqual({ model: "audio-model", reasoningEffort: "high" });
     expect(await store.accountSettings.getRevision(owner.userId)).toBe(version! + 2);
-    await store.accountSettings.update(owner.userId, { summary: { detail: "standard" } });
-    await store.accountSettings.update(owner.userId, { summary: { detail: "detailed" } });
-    expect((await store.accountSettings.get(owner.userId))?.summary.detail).toBe("detailed");
+    await store.accountSettings.update(owner.userId, { summary: { detail: "medium" } });
+    await store.accountSettings.update(owner.userId, { summary: { detail: "high" } });
+    expect((await store.accountSettings.get(owner.userId))?.summary.detail).toBe("high");
     expect(await store.accountSettings.get(other.userId)).toBeNull();
     await store.close?.();
   });

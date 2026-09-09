@@ -51,7 +51,7 @@ export const recordingContentURL = (record: Pick<RecordingRecord, "meetingId" | 
 export function recordingResponse(record: RecordingRecord, includeStaging = false) {
   const audio = Object.fromEntries(Object.entries(record.audio).filter(([, value]) => value.uploadedAt && (value.active || includeStaging))
     .map(([source, value]) => [source, {
-      content_type: value.content_type, size: value.size, checksum: value.checksum,
+      fileId: value.generation, content_type: value.content_type, size: value.size, checksum: value.checksum,
       contentURL: recordingContentURL(record, source as RecordingSource),
     }]));
   return { id: record.number, startedAt: record.startedAt, endedAt: record.endedAt, audio };

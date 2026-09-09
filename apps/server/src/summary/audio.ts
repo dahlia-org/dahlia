@@ -10,42 +10,62 @@ import { GatewayRequestError } from "../ai-gateway/errors";
 import { RequestError } from "../storage/upload";
 import type { IdentitySyncStore, MeetingSyncStore } from "../sync/types";
 import type { MeetingSyncService } from "../sync/service";
-import type { RecordingManifest, RecordingSource } from "../recordings/model";
-import { SummaryError, summaryDocument, summaryResponseSchema, type SummaryMethod } from "./model";
+import { cloudTranscriptionSchema, combinedSummaryResponseSchema, generatedTranscript, transcriptionInstructions, type GeneratedTranscript } from "./transcription";
+import type { RecordingManifest, RecordingSource, RecordingRecord } from "../recordings/model";
+import { SummaryError, summaryDocument, summaryResponseSchema, type SummaryMethod, type SummaryJob, type SummaryInput, type SummaryGenerationResult } from "./model";
 import { summaryResponseMetadataSchema } from "./metadata";
-import { isAudioSummaryModel } from "./audio-model";
+import { isAudioSummaryModel, isStructuredSummaryModel } from "./audio-model";
 import { boundedBytes, collectSummaryInput, fingerprint, summaryImageContent, summaryInstructions, summaryXMLText } from "./transcript";
 
 interface AudioInput {
-  number: number; source: RecordingSource; startedAt: Date; endedAt: Date;
+  recordingIndex: number; number: number; source: RecordingSource; startedAt: Date; endedAt: Date;
   size: number; checksum: string; manifest: RecordingManifest;
 }
 const MAX_AUDIO_SECONDS = 9.5 * 60 * 60;
-async function collectAudio(store: IdentitySyncStore, vaultId: string, meetingId: string) {
+async function collectAudio(store: IdentitySyncStore, vaultId: string, meetingId: string, reference?: SummaryInput | null) {
   const context = await collectSummaryInput(store, vaultId, meetingId, false);
-  const audio: AudioInput[] = [];
-  let after = 0; let seconds = 0; let size = JSON.stringify(context).length;
+  const records: RecordingRecord[] = [];
+  let after = 0;
   while (true) {
     const page = await store.listRecordings(meetingId, after, 200);
-    for (const record of page) {
-      for (const source of ["mic", "system"] as const) {
-        const track = record.audio[source];
-        if (!track?.active || !track.uploadedAt) continue;
-        if (!track.manifest || !track.checksum) throw new SummaryError("summary_audio_unavailable");
-        seconds += track.manifest.frameCount / track.manifest.sampleRate;
-        if (seconds > MAX_AUDIO_SECONDS) throw new SummaryError("summary_audio_too_long");
-        const input = { number: record.number, source, startedAt: record.startedAt, endedAt: record.endedAt,
-          size: track.size, checksum: track.checksum, manifest: track.manifest };
-        size += JSON.stringify(input).length;
-        if (size > 2_000_000) throw new SummaryError("summary_input_too_large");
-        audio.push(input);
-      }
-    }
+    records.push(...page);
+    if (records.length > 1000) throw new SummaryError("summary_input_too_large");
     if (page.length < 200) break;
     after = page.at(-1)!.number;
   }
+  const selected = reference?.type === "recording" ? reference.recordings.map((pair) => {
+    const record = records.find((record) => (["mic", "system"] as const).every((source) =>
+      pair[source === "mic" ? "micFileId" : "systemFileId"] === null || record.audio[source]?.generation === pair[source === "mic" ? "micFileId" : "systemFileId"]));
+    if (!record) throw new SummaryError("summary_audio_unavailable");
+    for (const source of ["mic", "system"] as const) {
+      const track = record.audio[source];
+      if (track && (!pair[source === "mic" ? "micFileId" : "systemFileId"] || !track.active || !track.uploadedAt)) throw new SummaryError("summary_audio_pair_incomplete");
+    }
+    return record;
+  }) : records;
+  const audio: AudioInput[] = [];
+  let seconds = 0; let size = JSON.stringify(context).length;
+  for (const [recordingIndex, record] of selected.entries()) {
+    for (const source of ["mic", "system"] as const) {
+      const track = record.audio[source];
+      if (!track?.active || !track.uploadedAt) continue;
+      if (!track.manifest || !track.checksum) throw new SummaryError("summary_audio_unavailable");
+      seconds += track.manifest.frameCount / track.manifest.sampleRate;
+      if (seconds > MAX_AUDIO_SECONDS) throw new SummaryError("summary_audio_too_long");
+      const input = { recordingIndex, number: record.number, source, startedAt: record.startedAt, endedAt: record.endedAt,
+        size: track.size, checksum: track.checksum, manifest: track.manifest };
+      size += JSON.stringify(input).length;
+      if (size > 2_000_000) throw new SummaryError("summary_input_too_large");
+      audio.push(input);
+    }
+  }
   if (!audio.length) throw new SummaryError("summary_audio_empty");
   return { ...context, audio };
+}
+
+function audioFingerprint(input: Awaited<ReturnType<typeof collectAudio>>) {
+  // Array order already identifies the recording pair; keep accepted legacy job hashes unchanged.
+  return fingerprint({ ...input, audio: input.audio.map((track) => ({ ...track, recordingIndex: undefined })) });
 }
 
 // Stream base64 across arbitrary storage chunk boundaries; verify the committed bytes before publishing.
@@ -83,33 +103,72 @@ export function createAudioSummaryMethod(config: AppConfig, store: MeetingSyncSt
   transport: typeof fetch = fetch): SummaryMethod | undefined {
   const provider = config.provider;
   if (provider?.backend !== "databricks" || !config.databricksWorkspace) return undefined;
+  const audioProvider = provider;
   const tokens = new DatabricksTokenProvider(config.databricksWorkspace, transport);
   const backend = new DatabricksBackend(provider, config.databricksWorkspace, transport);
   return {
     id: "audio",
     captureSettings: (settings, detail) => ({ ...settings.summary.methodSettings.audio,
       detail: detail ?? settings.summary.detail }),
-    async version(scoped, vaultId, meetingId) { return fingerprint(await collectAudio(scoped, vaultId, meetingId)); },
+    async version(scoped, vaultId, meetingId, input) { return audioFingerprint(await collectAudio(scoped, vaultId, meetingId, input)); },
+    async validateSettings(settings, input) {
+      if (!input) return;
+      const catalog = await backend.listModels({ signal: AbortSignal.timeout(30_000) });
+      const unqualified = (model: string) => model.startsWith(`${audioProvider.modelSchema}.`)
+        ? model.slice(audioProvider.modelSchema.length + 1) : model;
+      const summaryModel = unqualified(settings.model);
+      if (!isStructuredSummaryModel(summaryModel, catalog)) throw new SummaryError("summary_invalid_structured_model");
+      const audioModel = input.type === "recording" && input.transcriptionModel ? unqualified(input.transcriptionModel) : summaryModel;
+      if (!isAudioSummaryModel(audioModel, catalog) || !isStructuredSummaryModel(audioModel, catalog)) throw new SummaryError("summary_invalid_audio_model");
+      if (input.type === "recording" && input.transcriptionModel) {
+        const model = catalog.models.find((model) => model.slug === audioModel)!;
+        settings.transcriptionReasoningEffort = model.default_reasoning_level as typeof settings.transcriptionReasoningEffort;
+        if (!settings.transcriptionReasoningEffort || !model.supported_reasoning_levels.some(({ effort }) => effort === settings.transcriptionReasoningEffort)) {
+          throw new SummaryError("summary_invalid_reasoning_effort");
+        }
+      }
+      if (!catalog.models.find((model) => model.slug === summaryModel)!.supported_reasoning_levels.some(({ effort }) => effort === settings.reasoningEffort)) {
+        throw new SummaryError("summary_invalid_reasoning_effort");
+      }
+    },
+    async transcribe(job, signal) {
+      const result = await generateAudio(job, signal, true);
+      if (!result.transcription) throw new SummaryError("summary_invalid_transcript");
+      return result.transcription;
+    },
     async generate(job, signal) {
+      const result = await generateAudio(job, signal, false);
+      if (!result.document) throw new SummaryError("summary_invalid_response");
+      return result.document;
+    },
+  };
+  async function generateAudio(job: SummaryJob, signal: AbortSignal, transcriptionOnly: boolean): Promise<{
+    document?: SummaryGenerationResult; transcription?: GeneratedTranscript;
+  }> {
       let requestId: string | undefined;
       try {
         const identity = { userId: job.ownerUserId, workspaceId: personalWorkspaceId(job.ownerUserId), source: "accounts" as const };
-        const input = await store.withIdentity(identity, (scoped) => collectAudio(scoped, job.vaultId, job.meetingId));
-        if (await fingerprint(input) !== job.inputVersion) throw new SummaryError("summary_input_changed");
-        const configuredModel = job.settings.model.startsWith(`${provider.modelSchema}.`)
-          ? job.settings.model.slice(provider.modelSchema.length + 1) : job.settings.model;
+        const input = await store.withIdentity(identity, (scoped) => collectAudio(scoped, job.vaultId, job.meetingId, job.input));
+        if (await audioFingerprint(input) !== job.inputVersion) throw new SummaryError("summary_input_changed");
+        const selectedModel = transcriptionOnly && job.input?.type === "recording" ? job.input.transcriptionModel! : job.settings.model;
+        const configuredModel = selectedModel.startsWith(`${audioProvider.modelSchema}.`)
+          ? selectedModel.slice(audioProvider.modelSchema.length + 1) : selectedModel;
         const catalog = await backend.listModels({ signal });
         if (!isAudioSummaryModel(configuredModel, catalog)) throw new SummaryError("summary_invalid_audio_model");
         const levels = catalog.models.find((model) => model.slug === configuredModel)!.supported_reasoning_levels;
-        if (!levels.some(({ effort }) => effort === job.settings.reasoningEffort)) throw new SummaryError("summary_invalid_reasoning_effort");
-        const model = resolveDatabricksModel(provider, configuredModel);
+        const reasoningEffort = transcriptionOnly
+          ? job.settings.transcriptionReasoningEffort ?? "medium"
+          : job.settings.reasoningEffort;
+        if (!levels.some(({ effort }) => effort === reasoningEffort)) throw new SummaryError("summary_invalid_reasoning_effort");
+        const model = resolveDatabricksModel(audioProvider, configuredModel);
         const { content, imageIds, images } = await summaryImageContent(input, sync, identity, signal);
         const chatContent = content.map((item) => item.type === "input_text"
           ? { type: "text", text: item.text } : { type: "image_url", image_url: { url: item.image_url } });
-        const parameters = { model, stream: false, reasoning_effort: job.settings.reasoningEffort,
-          response_format: { type: "json_schema", json_schema: { name: "meeting_summary", strict: true, schema: z.toJSONSchema(summaryResponseSchema) } } };
-        const instructions = summaryInstructions(job.outputLanguage, job.settings.detail)
-          + "\nSummarize the supplied audio directly. Use recording start times and manifest ranges to align mic/system tracks and screenshots; do not treat parallel tracks as consecutive conversations. Do not invent missing speech. Tags must contain only lowercase ASCII letters, digits and underscores, with at least one letter.";
+        const parameters = { model, stream: false, reasoning_effort: reasoningEffort,
+          response_format: { type: "json_schema", json_schema: { name: "meeting_summary", strict: true, schema: z.toJSONSchema(transcriptionOnly ? cloudTranscriptionSchema : job.input ? combinedSummaryResponseSchema : summaryResponseSchema) } } };
+        const instructions = (transcriptionOnly ? transcriptionInstructions : summaryInstructions(job.outputLanguage, job.settings.detail)
+          + (job.input ? "\nReturn both summary and transcription in a single response. " + transcriptionInstructions : ""))
+          + (transcriptionOnly ? "" : "\nSummarize the supplied audio directly. Use recording start times and manifest ranges to align mic/system tracks and screenshots; do not treat parallel tracks as consecutive conversations. Do not invent missing speech. Tags must contain only lowercase ASCII letters, digits and underscores, with at least one letter.");
         let streamFailure: Error | undefined;
         let complete = false;
         const uploadAbort = new AbortController();
@@ -128,6 +187,7 @@ export function createAudioSummaryMethod(config: AppConfig, store: MeetingSyncSt
                 throw new SummaryError("summary_audio_unavailable", response.status >= 500);
               }
               yield ',' + JSON.stringify({ type: "text", text: `<audio>
+  <recording_index>${audio.recordingIndex}</recording_index>
   <recording_number>${audio.number}</recording_number>
   <source>${audio.source}</source>
   <start>${audio.startedAt.toISOString()}</start>
@@ -148,7 +208,7 @@ export function createAudioSummaryMethod(config: AppConfig, store: MeetingSyncSt
             yield "]}]}";
           } catch (error) { streamFailure = error instanceof Error ? error : new SummaryError("summary_audio_unavailable"); throw streamFailure; }
         }
-        const endpoint = new URL(provider.baseUrl);
+        const endpoint = new URL(audioProvider.baseUrl);
         endpoint.pathname = `${endpoint.pathname.replace(/\/$/, "")}/chat/completions`;
         const body = Readable.from(requestBody());
         const token = await tokens.getToken();
@@ -184,15 +244,24 @@ export function createAudioSummaryMethod(config: AppConfig, store: MeetingSyncSt
           ?? (usage?.reasoning_tokens === undefined ? undefined : { reasoning_tokens: usage.reasoning_tokens });
         const message = parsed.choices[0]!.message.content;
         const text = typeof message === "string" ? message : message.filter((part) => part.type === "text").map((part) => part.text ?? "").join("");
-        return { ...summaryDocument(JSON.parse(text), imageIds), metadata: {
+        const responseMetadata = summaryResponseMetadataSchema.parse({ id: parsed.id, model: parsed.model, created_at: parsed.created,
+          ...(usage ? { usage: { input_tokens: usage.prompt_tokens, output_tokens: outputTokens,
+            total_tokens: usage.total_tokens, input_tokens_details: usage.prompt_tokens_details,
+            output_tokens_details: outputDetails } } : {}) });
+        const value: unknown = JSON.parse(text);
+        const combined = !transcriptionOnly && job.input ? combinedSummaryResponseSchema.parse(value) : undefined;
+        const transcript = transcriptionOnly || combined ? generatedTranscript(transcriptionOnly ? value : combined!.transcription, input.audio, {
+          provider: "gemini", request: { model }, runs: [{ generatedBy: "server", inputTypes: ["audio"],
+            audioInputs: input.audio.map(({ number, source, checksum }) => ({ recordingNumber: number, source, checksum })),
+            startedAt: job.createdAt.toISOString(), completedAt: new Date().toISOString(), response: responseMetadata }],
+        }) : undefined;
+        if (transcriptionOnly) return { transcription: transcript };
+        return { document: { ...summaryDocument(combined ? combined.summary : value, imageIds),
+          ...(transcript ? { transcript } : {}), metadata: {
           generatedBy: "server", inputTypes: ["context", "audio", ...(images.length ? ["image" as const] : [])],
           detailLevel: job.settings.detail, outputLanguage: job.outputLanguage,
-          request: { model, reasoning: { effort: job.settings.reasoningEffort } },
-          response: summaryResponseMetadataSchema.parse({ id: parsed.id, model: parsed.model, created_at: parsed.created,
-            ...(usage ? { usage: { input_tokens: usage.prompt_tokens, output_tokens: outputTokens,
-              total_tokens: usage.total_tokens, input_tokens_details: usage.prompt_tokens_details,
-              output_tokens_details: outputDetails } } : {}) }),
-        } };
+          request: { model, reasoning: { effort: reasoningEffort } }, response: responseMetadata,
+        } } };
       } catch (error) {
         if (error instanceof SummaryError) throw error;
         if (error instanceof RequestError) throw new SummaryError("summary_audio_unavailable", error.status >= 500);
@@ -201,6 +270,6 @@ export function createAudioSummaryMethod(config: AppConfig, store: MeetingSyncSt
         if (error instanceof z.ZodError || error instanceof SyntaxError) throw new SummaryError("summary_invalid_response", false, requestId);
         throw new SummaryError("summary_processing_failed", true);
       }
-    },
-  };
+
+  }
 }

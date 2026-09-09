@@ -141,6 +141,7 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
         Self.migrateLiveSubtitleLocaleSetting(in: .standard)
         Self.migrateAppLanguageSettings(in: .standard)
         Self.migrateBatchAudioRetentionPeriodSetting(in: .standard)
+        summaryDetailLevelRawValue = summaryDetailLevel.rawValue
         migrateGoogleDriveExportFolderSetting()
         meetingNotificationPresentationRawValue = meetingNotificationPresentation.rawValue
         batchTranscriptionStallTimeoutRawValue = batchTranscriptionStallTimeout.rawValue
@@ -284,7 +285,8 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
 
     @AppStorage(AppSettings.transcriptionLocaleUserDefaultsKey) var transcriptionLocale: String = Locale.current.identifier
     @AppStorage(AppSettings.liveSubtitleLocaleUserDefaultsKey) var liveSubtitleLocale: String = Locale.current.identifier
-    @AppStorage(TranscriptionMode.userDefaultsKey) var transcriptionModeRawValue = TranscriptionMode.defaultMode.rawValue
+    @AppStorage("liveTranscriptDraftEnabled") var liveTranscriptDraftEnabled = false
+    @AppStorage("automaticRecordingProcessingEnabled") var automaticRecordingProcessingEnabled = true
     @AppStorage("forceEchoCancellationForExternalMicrophone") var forceEchoCancellationForExternalMicrophone = false
     @AppStorage(AppSettings.batchTranscriptionStallTimeoutUserDefaultsKey) private var batchTranscriptionStallTimeoutRawValue =
         BatchTranscriptionStallTimeout.defaultValue.rawValue
@@ -308,11 +310,6 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
     var automaticScreenshotDetectChangesInSharedRegionOnly = false
     @AppStorage(AppSettings.automaticScreenshotSharedRegionCropKey)
     var automaticScreenshotCropToSharedRegion = false
-
-    var transcriptionMode: TranscriptionMode {
-        get { TranscriptionMode(rawValue: transcriptionModeRawValue) ?? .defaultMode }
-        set { transcriptionModeRawValue = newValue.rawValue }
-    }
 
     var batchTranscriptionStallTimeout: BatchTranscriptionStallTimeout {
         get { BatchTranscriptionStallTimeout.resolved(rawValue: batchTranscriptionStallTimeoutRawValue) }
@@ -390,7 +387,7 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
     }
 
     var isLiveSubtitleTranslationEffectivelyEnabled: Bool {
-        let liveRecognitionLocale = transcriptionMode == .realtime ? transcriptionLocale : liveSubtitleLocale
+        let liveRecognitionLocale = liveSubtitleLocale
         return liveSubtitleTranslationEnabled && TranscriptTranslationLanguage.shouldTranslate(
             transcriptionLocaleIdentifier: liveRecognitionLocale,
             targetLanguageIdentifier: liveSubtitleTranslationTargetLanguage

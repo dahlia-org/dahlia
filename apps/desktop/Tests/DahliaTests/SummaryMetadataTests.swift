@@ -17,7 +17,7 @@ import Foundation
             """
             let document = try SummaryDocument.decode(databaseJSON: json)
             #expect(document.metadata?.generatedBy == "server")
-            #expect(document.metadata?.detailLevel == "concise")
+            #expect(document.metadata?.detailLevel == "low")
             #expect(document.metadata?.response?.model == "returned")
             #expect(document.metadata?.response?.usage?.totalTokens == nil)
             #expect(document.metadata?.response?.usage?.inputTokensDetails?.cachedTokens == 10)

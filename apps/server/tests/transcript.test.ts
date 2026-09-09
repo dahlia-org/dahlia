@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { createHash } from "node:crypto";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -13,6 +13,12 @@ import type { AppConfig } from "../src/config";
 import { uuidV7 } from "../src/id";
 import { MeetingSyncService } from "../src/sync/service";
 import { transcriptMetadataSchema, transcriptStatus, TRANSCRIPT_ACTIVITY_WINDOW_MS } from "../src/sync/transcript";
+import transcriptPolicy from "../src/sync/transcript-policy.json";
+
+it("ships the same activity policy as Desktop without a runtime dependency on its source tree", () => {
+  const desktop: unknown = JSON.parse(readFileSync(new URL("../../desktop/Sources/DahliaRuntimeSupport/Resources/TranscriptPolicy.json", import.meta.url), "utf8"));
+  expect(transcriptPolicy).toEqual(desktop);
+});
 
 const directories: string[] = [];
 afterEach(() => { vi.useRealTimers(); for (const path of directories.splice(0)) rmSync(path, { recursive: true, force: true }); });

@@ -582,6 +582,10 @@ export const summaryJob = appSchema.table("jobs_summary", {
   ownerUserId: text("owner_user_id").notNull().references(() => authUser.id, { onDelete: "cascade" }),
   method: text("method").$type<"transcript" | "audio">().notNull(),
   settings: jsonb("settings").$type<SummaryJob["settings"]>().notNull(),
+  input: jsonb("input").$type<SummaryJob["input"]>(),
+  stage: text("stage").$type<SummaryJob["stage"]>(),
+  transcriptRevision: integer("transcript_revision"),
+  transcriptResult: jsonb("transcript_result").$type<SummaryJob["transcriptResult"]>(),
   outputLanguage: text("output_language").notNull(),
   status: text("status").default("pending").notNull(),
   attempts: integer("attempts").default(0).notNull(),
@@ -594,7 +598,7 @@ export const summaryJob = appSchema.table("jobs_summary", {
   inputVersion: text("input_version").notNull(),
   requestHash: text("request_hash").notNull(),
 }, (table) => [
-  check("summary_job_status_check", sql`${table.status} IN ('pending', 'processing', 'succeeded', 'failed')`),
+  check("summary_job_status_check", sql`${table.status} IN ('pending', 'processing', 'succeeded', 'failed', 'cancelled')`),
   uniqueIndex("summary_job_active_meeting_idx").on(table.meetingId).where(sql`${table.status} IN ('pending', 'processing')`),
   index("summary_job_owner_created_idx").on(table.ownerUserId, table.createdAt),
   pgPolicy("summary_job_owner", {

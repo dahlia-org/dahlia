@@ -1,7 +1,8 @@
 import { sha256 } from "../storage/sha256";
+import { transcriptSettingsSchema } from "../summary/model";
 import { uuidV7 } from "../id";
 import { transcriptStatus, sameTranscriptModel, type TranscriptVersion } from "./transcript";
-import { summaryMetadata } from "../summary/metadata";
+import { summaryMetadata, summaryMetadataSchema } from "../summary/metadata";
 import { fileResponse, fileStorageKey, imageContentTypes, type FileMetadata } from "../files/model";
 import { needsImageAnalysis, type ImageAnalysisClaim, type ImageAnalysisInput } from "../image-analysis/model";
 import { recordingCanonical, recordingStorageKey, type RecordingRecord, type RecordingSource, type RecordingManifest } from "../recordings/model";
@@ -972,7 +973,7 @@ function createIdentityStore(
       readableSummary(vaultId, meetingId),
       version === undefined ? undefined : eq(schema.summary.version, version),
     )).orderBy(desc(schema.summary.version)).limit(1);
-    return row ?? null;
+    return row ? { ...row, metadata: row.metadata ? summaryMetadataSchema.parse(row.metadata) : null } : null;
   }
 
   const transcriptSelection = {
@@ -2110,10 +2111,11 @@ function createIdentityStore(
     getSummaryVersion,
     async listSummaryVersions(vaultId, meetingId, limit, before) {
       const columns = schema.summary;
-      return db.select({ id: columns.id, meetingId: columns.meetingId, version: columns.version,
+      const rows = await db.select({ id: columns.id, meetingId: columns.meetingId, version: columns.version,
         title: columns.title, createdAt: columns.createdAt, savedAt: columns.savedAt, metadata: columns.metadata }).from(schema.summary).where(and(
         readableSummary(vaultId, meetingId), before === undefined ? undefined : lt(columns.version, before),
       )).orderBy(desc(columns.version)).limit(limit);
+      return rows.map((row) => ({ ...row, metadata: row.metadata ? summaryMetadataSchema.parse(row.metadata) : null }));
     },
     async getSummaryJob(vaultId, meetingId, id) {
       const [row] = await db.select().from(schema.summaryJob).where(and(
@@ -2122,11 +2124,33 @@ function createIdentityStore(
         id ? eq(schema.summaryJob.id, id) : undefined,
         ownerAccess(schema.summaryJob.vaultId),
       )).orderBy(desc(schema.summaryJob.createdAt), desc(schema.summaryJob.id)).limit(1);
-      return row ?? null;
+      return row ? { ...row, settings: transcriptSettingsSchema.parse(row.settings) } : null;
     },
     async insertSummaryJob(job) {
       const inserted = await db.insert(schema.summaryJob).values(job).onConflictDoNothing({ target: schema.summaryJob.id }).returning({ id: schema.summaryJob.id });
       if (!inserted.length) throw new SyncTransactionError(409, "summary_id_reused");
+    },
+    async cancelSummaryJob(vaultId, meetingId, id) {
+      const jobs = schema.summaryJob;
+      const [row] = await db.update(jobs).set({ status: "cancelled", claimedAt: null, leaseExpiresAt: null })
+        .where(and(eq(jobs.id, id), eq(jobs.vaultId, vaultId), eq(jobs.meetingId, meetingId),
+          eq(jobs.ownerUserId, identity.userId), ownerAccess(jobs.vaultId), inArray(jobs.status, ["pending", "processing"])))
+        .returning();
+      return row ? { ...row, settings: transcriptSettingsSchema.parse(row.settings) } : null;
+    },
+    async completeSummaryTranscript(job, transaction, transcriptId) {
+      const jobs = schema.summaryJob;
+      const filter = and(eq(jobs.id, job.id), eq(jobs.ownerUserId, identity.userId),
+        eq(jobs.status, "processing"), eq(jobs.claimedAt, job.claimedAt!), gt(jobs.leaseExpiresAt, new Date()));
+      const query = db.select().from(jobs).where(filter);
+      const [current] = searchBackend === "sqlite" ? await query : await query.for("update");
+      if (!current) return null;
+      if (current.transcriptResult) return getTranscript(job.vaultId, job.meetingId, Number(current.transcriptResult.version));
+      await commitTransaction(transaction);
+      const transcript = await getTranscript(job.vaultId, job.meetingId);
+      if (!transcript || transcript.id !== transcriptId) throw new SyncTransactionError(409, "summary_transcript_conflict");
+      await db.update(jobs).set({ stage: "summarizing", transcriptResult: { transcriptId, version: String(transcript.version) } }).where(filter);
+      return transcript;
     },
     async completeSummaryJob(job, transaction) {
       const jobs = schema.summaryJob;

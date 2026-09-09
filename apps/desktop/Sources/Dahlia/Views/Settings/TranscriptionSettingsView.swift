@@ -4,6 +4,12 @@ import SwiftUI
 /// 設定画面「文字起こし」タブ。認識方法と利用する言語を管理する。
 struct TranscriptionSettingsView: View {
     @ObservedObject private var settings = AppSettings.shared
+    @Bindable private var accountSettings = ServerAccountSettingsModel.shared
+    private var connectionID: UUID? { settings.currentVault?.accountConnectionId }
+    private var processingMethods: [RecordingProcessingMethod] {
+        connectionID.map { accountSettings.state(for: $0).recordingProcessingMethods } ?? [.transcript]
+    }
+
     @State private var supportedLocales: [Locale] = []
     @State private var isLoadingLocales = true
     @State private var pendingShorterAudioRetentionPeriod: BatchAudioRetentionPeriod?
@@ -12,17 +18,24 @@ struct TranscriptionSettingsView: View {
     var body: some View {
         Form {
             Section {
-                DahliaSegmentedPicker(
-                    title: L10n.transcriptionMethod,
-                    selection: $settings.transcriptionMode,
-                    options: TranscriptionMode.allCases,
-                    label: \.displayName
-                )
-            } footer: {
-                Text(transcriptionModeDescription)
+                Picker(L10n.processingMethod, selection: Binding(
+                    get: { connectionID.flatMap { accountSettings.state(for: $0).settings?.summary?.method }
+                        .flatMap(RecordingProcessingMethod.init(rawValue:)) ?? .transcript
+                    },
+                    set: { value in
+                        if let connectionID { accountSettings.save(.init(summary: .init(method: value.rawValue)), connectionID: connectionID) }
+                    }
+                )) {
+                    ForEach(processingMethods) { Text($0.displayName).tag($0) }
+                }
+                .disabled(processingMethods.isEmpty || (connectionID.map { !accountSettings.state(for: $0).canEdit } ?? true))
+                Toggle(L10n.liveTranscriptDraft, isOn: $settings.liveTranscriptDraftEnabled)
+                    .toggleStyle(.switch)
+                Toggle(L10n.automaticRecordingProcessing, isOn: $settings.automaticRecordingProcessingEnabled)
+                    .toggleStyle(.switch)
             }
 
-            if settings.transcriptionMode == .batch {
+            Group {
                 Section {
                     DahliaMenuPicker(
                         title: L10n.transcriptionLanguage,
@@ -53,27 +66,19 @@ struct TranscriptionSettingsView: View {
                         label: \.displayName
                     )
 
-                    Toggle(isOn: $settings.generateSummaryAfterBatchTranscription) {
-                        Text(L10n.generateSummaryAfterBatchTranscription)
-                        Text(L10n.generateSummaryAfterBatchTranscriptionDescription)
-                    }
-                    .toggleStyle(.switch)
-
                     Toggle(isOn: $settings.exportBatchSummaryToVault) {
                         Text(L10n.exportBatchSummaryToVault)
                         Text(L10n.exportBatchSummaryToVaultDescription)
                     }
                     .toggleStyle(.switch)
-                    .disabled(!settings.generateSummaryAfterBatchTranscription)
 
                     Toggle(isOn: $settings.exportBatchSummaryToGoogleDocs) {
                         Text(L10n.exportBatchSummaryToGoogleDocs)
                         Text(L10n.exportBatchSummaryToGoogleDocsDescription)
                     }
                     .toggleStyle(.switch)
-                    .disabled(!settings.generateSummaryAfterBatchTranscription)
                 } header: {
-                    Text(L10n.batchTranscription)
+                    Text(L10n.processingConfirmationTitle)
                 }
             }
 
@@ -107,13 +112,6 @@ struct TranscriptionSettingsView: View {
     }
 
     // MARK: - Private
-
-    private var transcriptionModeDescription: String {
-        switch settings.transcriptionMode {
-        case .realtime: L10n.realtimeTranscriptionDescription
-        case .batch: L10n.batchTranscriptionDescription
-        }
-    }
 
     private var audioRetentionPeriodSelection: Binding<BatchAudioRetentionPeriod> {
         Binding(

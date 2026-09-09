@@ -8,6 +8,30 @@ import GRDB
 
     @MainActor
     struct RecordingArchiveTests {
+        @Test(arguments: [false, true])
+        func archiveDoesNotWaitForFinalTranscription(failed: Bool) async throws {
+            let fixture = try BatchAudioTestFixture(name: "ArchiveBeforeTranscription")
+            defer { fixture.removeFiles() }
+            try await fixture.recordMicrophoneAudio()
+            try await fixture.database.dbQueue.write { db in
+                try RecordingArchiveRecord.enqueue(fixture.session, in: db)
+                try db.execute(sql: """
+                UPDATE recording_sessions SET endedAt = ?, batchLastAttemptAt = ?, batchLastError = ? WHERE id = ?
+                """, arguments: [fixture.now, failed ? fixture.now : nil, failed ? "transcription failed" : nil, fixture.session.id])
+            }
+            let service = RecordingArchiveService(dbQueue: fixture.database.dbQueue, root: fixture.managedRootURL)
+            try await service.runNext(localOnly: true)
+            let result = try await fixture.database.dbQueue.read { db in
+                try (RecordingArchiveRecord.fetchOne(db, key: fixture.session.id), RecordingSessionRecord.fetchOne(db, key: fixture.session.id))
+            }
+            #expect(result.0?.state == "saved")
+            #expect(result.1?.batchCompletedAt == nil)
+            try await service.withArchivedSegments(sessionId: fixture.session.id) { segments in
+                let segment = try #require(segments.first)
+                #expect(try AVAudioFile(forReading: segment.url).length == 160)
+            }
+        }
+
         @Test(arguments: ["pending", "saved", "corrupt"])
         func localArchiveReplacesCAFOnlyAfterVerification(initialState: String) async throws {
             let fixture = try BatchAudioTestFixture(name: "ArchiveRoundTrip")
@@ -357,7 +381,22 @@ import GRDB
                     arguments: [vault.id, vault.path, vault.name, vault.createdAt, vault.lastOpenedAt]
                 )
                 try fixture.meeting.insert(db)
-                try fixture.session.insert(db)
+                try db.execute(sql: """
+                INSERT INTO recording_sessions(id, meetingId, startedAt, endedAt, duration, offsetSeconds, createdAt, updatedAt, transcriptionMode,
+                    batchCompletedAt, batchAttemptCount) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, arguments: [
+                    fixture.session.id,
+                    fixture.session.meetingId,
+                    fixture.session.startedAt,
+                    fixture.session.endedAt,
+                    fixture.session.duration,
+                    fixture.session.offsetSeconds,
+                    fixture.session.createdAt,
+                    fixture.session.updatedAt,
+                    fixture.session.transcriptionMode.rawValue,
+                    fixture.session.batchCompletedAt,
+                    fixture.session.batchAttemptCount,
+                ])
                 try connection.insert(db)
                 try db.execute(
                     sql: "INSERT INTO sync_transactions(id, vaultId, connectionId, createdAt, availableAt) VALUES (?, ?, ?, ?, ?)",

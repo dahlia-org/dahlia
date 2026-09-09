@@ -18,7 +18,10 @@ actor ServerSummaryService {
         let id: String
         let status: String
         let error: String?
+        let stage: String?
         var isActive: Bool { status == "pending" || status == "processing" }
+        var isRetryable: Bool { status == "failed" || status == "cancelled" }
+        var isTerminal: Bool { isRetryable || status == "succeeded" }
     }
 
     struct Model: Decodable, Identifiable, Sendable {
@@ -28,6 +31,8 @@ actor ServerSummaryService {
         let supportedReasoningLevels: [Effort]
         let defaultReasoningLevel: String?
         let inputModalities: [String]?
+        let supportsJSONSchema: Bool?
+        var supportsStructuredSummary: Bool { supportsJSONSchema == true }
         var supportsAudioSummary: Bool { slug.hasPrefix("gemini-") && inputModalities?.contains("audio") == true }
         var id: String { slug }
         private enum CodingKeys: String, CodingKey {
@@ -36,6 +41,7 @@ actor ServerSummaryService {
             case supportedReasoningLevels = "supported_reasoning_levels"
             case defaultReasoningLevel = "default_reasoning_level"
             case inputModalities = "input_modalities"
+            case supportsJSONSchema = "supports_json_schema"
         }
     }
 
@@ -48,6 +54,33 @@ actor ServerSummaryService {
     private struct Response: Decodable { let job: Job? }
     private struct Start: Encodable { let id: String
         let detail: String?
+        let outputLanguage: String?
+    }
+
+    struct RecordingPair: Codable, Sendable {
+        let micFileId: String?
+        let systemFileId: String?
+        enum CodingKeys: String, CodingKey { case micFileId, systemFileId }
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(micFileId, forKey: .micFileId)
+            try container.encode(systemFileId, forKey: .systemFileId)
+        }
+    }
+
+    struct Input: Codable, Sendable {
+        let type: String
+        var version: String?
+        var recordings: [RecordingPair]?
+        var transcriptionModel: String?
+    }
+
+    struct Request: Codable, Sendable {
+        let id: String
+        let input: Input
+        let model: String
+        let detailLevel: String
+        let summaryLanguage: String
     }
 
     enum Failure: LocalizedError {
@@ -106,41 +139,204 @@ actor ServerSummaryService {
             .compactMap { entry in list.models.first { $0.id == entry.id } }
     }
 
-    func status(_ target: Target) async throws -> Job? {
-        let data = try await client.data(for: request(target, path: "summary/job"), connectionId: target.connectionID, maximumBytes: 8192)
+    func status(_ target: Target, id: UUID? = nil) async throws -> Job? {
+        let path = "summary/job" + (id.map { "?id=\($0.uuidString.lowercased())" } ?? "")
+        let data = try await client.data(for: request(target, path: path), connectionId: target.connectionID, maximumBytes: 65536)
         return try JSONDecoder().decode(Response.self, from: data).job
     }
 
-    func start(_ target: Target, id: UUID, detail: String?) async throws -> Job? {
+    func start(_ target: Target, id: UUID, detail: String?, outputLanguage: SummaryLanguage? = nil) async throws -> Job? {
         var request = try request(target, path: "summary")
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONEncoder().encode(Start(id: id.uuidString.lowercased(), detail: detail))
+        request.httpBody = try JSONEncoder().encode(Start(
+            id: id.uuidString.lowercased(),
+            detail: detail.map { SummaryDetailLevel.fromPersistedValue($0).rawValue },
+            outputLanguage: outputLanguage?.rawValue
+        ))
         let data = try await client.data(for: request, connectionId: target.connectionID, maximumBytes: 8192)
         return try JSONDecoder().decode(Response.self, from: data).job
     }
 
-    func generate(_ target: Target, id: UUID, detail: String?, dbQueue: DatabaseQueue) async throws {
+    func start(_ target: Target, request body: Request) async throws -> Job? {
+        var request = try request(target, path: "summary")
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(body)
+        let data = try await client.data(for: request, connectionId: target.connectionID, maximumBytes: 65536)
+        return try JSONDecoder().decode(Response.self, from: data).job
+    }
+
+    func cancel(_ target: Target, id: UUID) async throws -> Job? {
+        var request = try request(target, path: "summary/job/\(id.uuidString.lowercased())/cancel")
+        request.httpMethod = "POST"
+        let data = try await client.data(for: request, connectionId: target.connectionID, maximumBytes: 65536)
+        return try JSONDecoder().decode(Response.self, from: data).job
+    }
+
+    func retry(_ target: Target, previousID: String, id: UUID) async throws -> Job? {
+        guard UUID(uuidString: previousID) != nil else { throw Failure.unavailable }
+        var request = try request(target, path: "summary/job/\(previousID)/retry")
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(["id": id.uuidString.lowercased()])
+        let data = try await client.data(for: request, connectionId: target.connectionID, maximumBytes: 65536)
+        return try JSONDecoder().decode(Response.self, from: data).job
+    }
+
+    func generate(
+        _ target: Target,
+        id: UUID,
+        detail: String?,
+        dbQueue: DatabaseQueue,
+        processing: RecordingProcessing? = nil,
+        onPrepared: @Sendable (Request) async throws -> Void = { _ in },
+        onStage: @MainActor @Sendable (String) async -> Void = { _ in }
+    ) async throws {
         guard try await !methods(connectionID: target.connectionID, origin: target.origin).isEmpty else { throw Failure.unavailable }
-        try await awaitSynchronization(target, dbQueue: dbQueue)
-        var job = try await status(target)
-        if job?.isActive != true {
-            do {
-                job = try await start(target, id: id, detail: detail)
-            } catch let error as SyncHTTPError where error.status == 409 && error.code == "summary_already_running" {
-                job = try await status(target)
+        let sessionIDs: [UUID] = if let processing {
+            processing.sessionIDs
+        } else {
+            try await dbQueue.read { db in
+                try RecordingSessionRecord.filter(Column("meetingId") == target.meetingID)
+                    .filter(Column("transcriptionMode") == "batch" && Column("batchDiscardedAt") == nil)
+                    .order(Column("startedAt").asc).fetchAll(db).map(\.id)
             }
         }
-        guard let jobID = job?.id else { throw Failure.unavailable }
+        await onStage("uploading")
+        try await awaitSynchronization(target, dbQueue: dbQueue)
+        var job = try await status(target, id: id)
+        if job == nil, let previousID = processing?.retryOf {
+            job = try await retry(target, previousID: previousID, id: id)
+        }
+        if job == nil {
+            let body: Request
+            if let saved = processing?.serverRequest {
+                body = saved
+            } else {
+                let settings: ServerAccountSettings
+                if let captured = processing?.serverSettings {
+                    settings = captured
+                } else {
+                    let data = try await client.data(
+                        for: request(origin: target.origin, path: "/api/v1/account/settings"),
+                        connectionId: target.connectionID,
+                        maximumBytes: 8192
+                    )
+                    guard let saved = try JSONDecoder().decode(ServerAccountSettings.Response.self, from: data).settings
+                    else { throw Failure.unavailable }
+                    settings = saved
+                }
+                let method = processing?.method ?? RecordingProcessingMethod(rawValue: settings.summary?.method ?? "transcript") ?? .transcript
+                let input: Input
+                if method == .transcript {
+                    guard let version = try await dbQueue.read({ db in try TranscriptRecord.current(target.meetingID, in: db)?.version }) else {
+                        throw Failure.syncPending
+                    }
+                    input = Input(type: "transcript", version: String(version))
+                } else {
+                    try await awaitRecordingUploads(target, sessionIDs: sessionIDs, dbQueue: dbQueue)
+                    let numbers = try await dbQueue.read { db in
+                        try sessionIDs.map { id in
+                            guard let number = try RecordingArchiveRecord.fetchOne(db, key: id)?.number else { throw Failure.syncPending }
+                            return number
+                        }
+                    }
+                    input = try await Input(
+                        type: "recording",
+                        recordings: recordings(target, numbers: numbers),
+                        transcriptionModel: method == .cloudTranscription ? settings.summary?.methodSettings.audio?.model : nil
+                    )
+                    if method == .cloudTranscription, input.transcriptionModel == nil { throw Failure.unavailable }
+                }
+                guard let selected = method == .audio ? settings.summary?.methodSettings.audio : settings.summary?.methodSettings.transcript else {
+                    throw Failure.unavailable
+                }
+                body = Request(
+                    id: id.uuidString.lowercased(),
+                    input: input,
+                    model: selected.model,
+                    detailLevel: detail.map { SummaryDetailLevel.fromPersistedValue($0).rawValue } ?? settings.summary?.detailLevel?
+                        .rawValue ?? "high",
+                    summaryLanguage: settings.outputLanguage.rawValue
+                )
+                try await onPrepared(body)
+            }
+            try Task.checkCancellation()
+            job = try await start(target, request: body)
+        }
+        guard UUID(uuidString: job?.id ?? "") == id else { throw Failure.unavailable }
         while job?.isActive == true {
+            await onStage(job?.status == "pending" ? "pending" : job?.stage ?? "summarizing")
             try await Task.sleep(for: .seconds(3))
             guard try await self.target(meetingID: target.meetingID, dbQueue: dbQueue) == target else { throw Failure.unavailable }
-            job = try await status(target)
-            guard job?.id == jobID else { throw Failure.unavailable }
+            job = try await status(target, id: id)
         }
+        if let stage = job?.stage { await onStage(stage) }
+        if job?.status == "cancelled" { throw CancellationError() }
         guard job?.status == "succeeded" else { throw Failure.generationFailed(job?.error) }
-        // The normal remote applier owns the result. Never applyGeneratedSummary or enqueue a local summary mutation.
+        await onStage("saving")
+        // The normal remote applier owns both generated results.
         try await awaitSynchronization(target, dbQueue: dbQueue)
+        if processing?.method != .transcript, processing != nil {
+            try await dbQueue.write { db in
+                for id in sessionIDs {
+                    try db.execute(
+                        sql: "UPDATE recording_sessions SET batchCompletedAt = ?, batchLastError = NULL WHERE id = ? AND endedAt IS NOT NULL AND batchDiscardedAt IS NULL",
+                        arguments: [Date.now, id]
+                    )
+                }
+            }
+        }
+    }
+
+    private func awaitRecordingUploads(_ target: Target, sessionIDs: [UUID], dbQueue: DatabaseQueue) async throws {
+        guard !sessionIDs.isEmpty else { throw Failure.unavailable }
+        while true {
+            try Task.checkCancellation()
+            guard try await self.target(meetingID: target.meetingID, dbQueue: dbQueue) == target else { throw Failure.unavailable }
+            let ready = try await dbQueue.read { db in
+                try sessionIDs.allSatisfy { id in
+                    guard let session = try RecordingSessionRecord.fetchOne(db, key: id),
+                          session.batchDiscardedAt == nil else { throw Failure.unavailable }
+                    return try session.endedAt != nil && RecordingArchiveRecord.isAvailable(sessionId: id, in: db)
+                }
+            }
+            if ready { return }
+            try await Task.sleep(for: .seconds(3))
+        }
+    }
+
+    private func recordings(_ target: Target, numbers: [Int]) async throws -> [RecordingPair] {
+        struct Page: Decodable {
+            struct Item: Decodable {
+                struct Audio: Decodable { let fileId: String }
+                let id: Int
+                let audio: [String: Audio]
+            }
+
+            let items: [Item]
+            let nextCursor: String?
+        }
+        var result: [Int: RecordingPair] = [:]
+        var cursor: String?
+        repeat {
+            let path = "/api/v1/meetings/\(target.meetingID.uuidString.lowercased())/recordings" + (cursor.map { "?cursor=\($0)" } ?? "")
+            let data = try await client.data(
+                for: request(origin: target.origin, path: path),
+                connectionId: target.connectionID,
+                maximumBytes: 2 * 1024 * 1024
+            )
+            let page = try JSONDecoder().decode(Page.self, from: data)
+            for item in page.items where numbers.contains(item.id) {
+                result[item.id] = RecordingPair(micFileId: item.audio["mic"]?.fileId, systemFileId: item.audio["system"]?.fileId)
+            }
+            cursor = page.nextCursor
+        } while cursor != nil
+        return try numbers.map { number in
+            guard let pair = result[number] else { throw Failure.unavailable }
+            return pair
+        }
     }
 
     private func awaitSynchronization(_ target: Target, dbQueue: DatabaseQueue) async throws {

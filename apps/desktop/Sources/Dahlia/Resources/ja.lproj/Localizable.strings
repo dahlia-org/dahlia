@@ -488,6 +488,7 @@
 "Controls how much reasoning Codex uses for each summary." = "要約ごとに Codex が使用する推論の強度を設定します。";
 "Summary Output" = "要約の出力";
 "Detail Level" = "詳細度";
+"Event Play-by-Play" = "イベント実況中継";
 "Event Session" = "イベントセッション";
 "Controls how much information is included in each summary." = "要約に含める情報量を設定します。";
 "Concise" = "簡潔";
@@ -1717,3 +1718,24 @@
 "transcript.fullTranscriptionUnavailable" = "前の文字起こしとモデルが異なります。全文の再文字起こしには、すべての元音声と保存音声を処理できるモデルが必要です。";
 
 "meetingSync.relocationPaused" = "移管先の権限または未同期の変更を確認するため同期を停止しています。ローカルデータは保持されています。";
+"liveTranscriptDraft" = "ライブ文字起こしで初版を作成";
+"automaticRecordingProcessing" = "録音終了後に自動処理";
+"processingLocalTranscription" = "ローカルで文字起こし → 要約";
+"processingCloudTranscription" = "クラウドで文字起こし → 要約";
+"processingDirectAudio" = "録音から直接要約";
+"processingMethod" = "録音の処理方法";
+
+"processingUploading" = "録音を保存・アップロード中";
+"processingTranscribing" = "文字起こし中";
+"processingSummarizing" = "要約中";
+"processingGenerating" = "文字起こし・要約を生成中";
+"processingSaving" = "結果を保存中";
+"processingCancelled" = "キャンセル済み";
+
+"transcriptionModel" = "文字起こしモデル";
+
+"録音を処理" = "録音を処理";
+
+"保存した録音から文字起こしと要約を作成します。" = "保存した録音から文字起こしと要約を作成します。";
+
+"処理を開始" = "処理を開始";

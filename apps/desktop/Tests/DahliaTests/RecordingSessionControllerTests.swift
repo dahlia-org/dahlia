@@ -96,6 +96,23 @@
         }
 
         @Test
+        func liveDraftKeepsOneRecognizerPerSourceAcrossSubtitleAndChatToggles() async throws {
+            let runtime = try await makeRuntime(mode: .batch, liveSubtitlesEnabled: false, liveTranscriptDraftEnabled: true)
+            #expect(await runtime.controller.resourceCounts().recognizers == 2)
+            _ = try await runtime.controller.setLiveSubtitlesEnabled(true, translateSegment: nil)
+            _ = try await runtime.controller.setLiveChatEnabled(true, translateSegment: nil)
+            _ = try await runtime.controller.setLiveSubtitlesEnabled(false, translateSegment: nil)
+            let snapshot = try await runtime.controller.setLiveChatEnabled(false, translateSegment: nil)
+            #expect(snapshot.plan.persistsRealtimeTranscript)
+            #expect(snapshot.plan.recordsBatchAudio)
+            #expect(await runtime.controller.resourceCounts().recognizers == 2)
+            let result = try await runtime.controller.stop()
+            #expect(result.batchRecordingSucceeded)
+            await runtime.controller.completeStop()
+            #expect(await runtime.controller.resourceCounts().recognizers == 0)
+        }
+
+        @Test
         func liveToggleAttachesOnlyBatchRecognizerAndNeverDuplicatesRealtimeRecognizer() async throws {
             let batch = try await makeRuntime(mode: .batch, liveSubtitlesEnabled: false)
             var counts = await batch.controller.resourceCounts()
@@ -553,6 +570,7 @@
         func makeRuntime(
             mode: TranscriptionMode,
             liveSubtitlesEnabled: Bool,
+            liveTranscriptDraftEnabled: Bool = false,
             liveChatEnabled: Bool = false,
             recognitionFailureMode: FakeRecognitionFailureMode = .none,
             failingRecognitionFinishSource: RecordingAudioSource? = nil,
@@ -581,7 +599,8 @@
             let plan = TranscriptionSessionPlan(
                 finalMode: mode,
                 liveSubtitlesEnabled: liveSubtitlesEnabled,
-                liveChatEnabled: liveChatEnabled
+                liveChatEnabled: liveChatEnabled,
+                liveTranscriptDraftEnabled: liveTranscriptDraftEnabled
             )
             try await controller.prepare(
                 RecordingSessionController.PreparationRequest(

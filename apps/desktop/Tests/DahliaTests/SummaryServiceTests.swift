@@ -9,6 +9,23 @@ import Testing
 @MainActor
 struct SummaryServiceTests {
     @Test
+    func detailKeysPreserveLegacyChoicesAndAddPlayByPlay() {
+        let mappings: [(String, SummaryDetailLevel)] = [
+            ("concise", .concise), ("standard", .standard), ("detailed", .detailed), ("eventSession", .eventSession),
+        ]
+        for (legacy, detail) in mappings {
+            #expect(SummaryDetailLevel.fromPersistedValue(legacy) == detail)
+            #expect(SummaryDetailLevel.fromPersistedValue(detail.rawValue) == detail)
+        }
+        #expect(SummaryDetailLevel.allCases.map(\.rawValue) == ["low", "medium", "high", "xhigh", "max"])
+        #expect(SummaryDetailLevel.allCases.map(\.mergePriority) == [0, 1, 2, 3, 4])
+        #expect(SummaryDetailLevel.defaultValue.rawValue == "high")
+        #expect(SummaryDetailLevel.max.displayName == L10n.summaryDetailMax)
+        #expect(SummaryDetailLevel.max.instruction.contains("chronological order"))
+        #expect(SummaryDetailLevel.max.instruction.contains("Never invent"))
+    }
+
+    @Test
     func summaryResultDecodesActionItems() throws {
         let json = """
         {
@@ -449,7 +466,7 @@ struct SummaryServiceTests {
             detailLevel: .eventSession
         )
 
-        #expect(SummaryDetailLevel.eventSession.rawValue == "eventSession")
+        #expect(SummaryDetailLevel.eventSession.rawValue == "xhigh")
         #expect(SummaryDetailLevel.eventSession.displayName == L10n.summaryDetailEventSession)
         #expect(generationSettings.detailLevelInstruction == instruction)
         #expect(settings.summaryDetailLevel == .concise)

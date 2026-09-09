@@ -2726,6 +2726,7 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var summaryDetailConcise: String { String(localized: "Concise", bundle: bundle) }
     static var summaryDetailStandard: String { String(localized: "Standard", bundle: bundle) }
     static var summaryDetailDetailed: String { String(localized: "Detailed", bundle: bundle) }
+    static var summaryDetailMax: String { String(localized: "Event Play-by-Play", bundle: bundle) }
     static var summaryDetailEventSession: String { String(localized: "Event Session", bundle: bundle) }
     static var summaryOutputLanguage: String { String(localized: "Output Language", bundle: bundle) }
     static var summaryOutputLanguageDescription: String { String(
@@ -3500,4 +3501,20 @@ enum L10n { // swiftlint:disable:this type_body_length
         localized: "Voice features are measured only during batch transcription.",
         bundle: bundle
     ) }
+    static var liveTranscriptDraft: String { String(localized: "liveTranscriptDraft", bundle: bundle) }
+    static var automaticRecordingProcessing: String { String(localized: "automaticRecordingProcessing", bundle: bundle) }
+    static var processingConfirmationTitle: String { String(localized: "録音を処理", bundle: bundle) }
+    static var processingConfirmationDescription: String { String(localized: "保存した録音から文字起こしと要約を作成します。", bundle: bundle) }
+    static var startProcessing: String { String(localized: "処理を開始", bundle: bundle) }
+    static var processingLocalTranscription: String { String(localized: "processingLocalTranscription", bundle: bundle) }
+    static var processingCloudTranscription: String { String(localized: "processingCloudTranscription", bundle: bundle) }
+    static var processingDirectAudio: String { String(localized: "processingDirectAudio", bundle: bundle) }
+    static var processingMethod: String { String(localized: "processingMethod", bundle: bundle) }
+    static var processingUploading: String { String(localized: "processingUploading", bundle: bundle) }
+    static var processingTranscribing: String { String(localized: "processingTranscribing", bundle: bundle) }
+    static var processingSummarizing: String { String(localized: "processingSummarizing", bundle: bundle) }
+    static var processingGenerating: String { String(localized: "processingGenerating", bundle: bundle) }
+    static var processingSaving: String { String(localized: "processingSaving", bundle: bundle) }
+    static var processingCancelled: String { String(localized: "processingCancelled", bundle: bundle) }
+    static var transcriptionModel: String { String(localized: "transcriptionModel", bundle: bundle) }
 }

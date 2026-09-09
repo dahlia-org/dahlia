@@ -1,4 +1,4 @@
-struct SummaryExportOptions: Equatable {
+struct SummaryExportOptions: Codable, Equatable {
     let exportsToVault: Bool
     let exportsToGoogleDocs: Bool
 

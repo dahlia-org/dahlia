@@ -49,7 +49,13 @@
                 try root.insert(db)
                 try child.insert(db)
                 try meeting.insert(db)
-                try session.insert(db)
+                try db.execute(sql: """
+                INSERT INTO recording_sessions(id, meetingId, startedAt, endedAt, duration, offsetSeconds, createdAt, updatedAt, transcriptionMode)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, arguments: [
+                    session.id, session.meetingId, session.startedAt, session.endedAt, session.duration,
+                    session.offsetSeconds, session.createdAt, session.updatedAt, session.transcriptionMode.rawValue,
+                ])
                 try db.execute(sql: """
                 INSERT INTO recording_audio_files(id, recordingSessionId, source, relativePath, storageLocation, sampleRate, channelCount, createdAt, updatedAt)
                 VALUES (?, ?, 'mic', 'audio.caf', 'vault', 16000, 1, ?, ?)

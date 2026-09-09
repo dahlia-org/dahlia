@@ -19,10 +19,30 @@ public struct SummaryMetadata: Codable, Equatable, Sendable {
     ) {
         self.generatedBy = generatedBy
         self.inputTypes = inputTypes
-        self.detailLevel = detailLevel
+        self.detailLevel = detailLevel.map(Self.normalizedDetailLevel)
         self.outputLanguage = outputLanguage
         self.request = request
         self.response = response
+    }
+
+    public static func normalizedDetailLevel(_ value: String) -> String {
+        switch value {
+        case "concise": "low"
+        case "standard": "medium"
+        case "detailed": "high"
+        case "eventSession": "xhigh"
+        default: value
+        }
+    }
+
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        generatedBy = try values.decode(String.self, forKey: .generatedBy)
+        inputTypes = try values.decode([String].self, forKey: .inputTypes)
+        detailLevel = try values.decodeIfPresent(String.self, forKey: .detailLevel).map(Self.normalizedDetailLevel)
+        outputLanguage = try values.decodeIfPresent(String.self, forKey: .outputLanguage)
+        request = try values.decode(Request.self, forKey: .request)
+        response = try values.decodeIfPresent(Response.self, forKey: .response)
     }
 
     public struct Reasoning: Codable, Equatable, Sendable {

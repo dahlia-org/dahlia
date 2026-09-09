@@ -5,3 +5,8 @@ export function isAudioSummaryModel(id: string, catalog: GatewayModelList): bool
     && catalog.models.some((model) => model.slug === id
       && Array.isArray(model.input_modalities) && model.input_modalities.includes("audio"));
 }
+
+export function isStructuredSummaryModel(id: string, catalog: GatewayModelList): boolean {
+  return catalog.data.some((model) => model.id === id)
+    && catalog.models.some((model) => model.slug === id && model.supports_json_schema === true);
+}

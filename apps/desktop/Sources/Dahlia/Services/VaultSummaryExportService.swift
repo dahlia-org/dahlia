@@ -12,6 +12,8 @@ enum VaultSummaryExportService {
         let document: SummaryDocument
         let summaryFileName: String
         let summaryMarkdown: String
+        var isAlreadyPersisted = false
+        var previousVaultRelativePath: String?
     }
 
     struct LockedSummaryExportResult: Sendable {
@@ -191,11 +193,17 @@ enum VaultSummaryExportService {
             }
 
             let repository = MeetingRepository(dbQueue: request.dbQueue)
-            try repository.applyGeneratedSummary(
-                toMeetingId: request.meetingID,
-                document: request.document,
-                tags: request.document.tags
-            )
+            if request.isAlreadyPersisted {
+                guard try request.dbQueue.read({ db in
+                    try SummaryBodyRecord.fetchOne(db, key: request.meetingID)?.document == request.document.databaseJSONString()
+                }) else { throw TextContentError.changed }
+            } else {
+                try repository.applyGeneratedSummary(
+                    toMeetingId: request.meetingID,
+                    document: request.document,
+                    tags: request.document.tags
+                )
+            }
             let projectName = latest.1?.path ?? ""
             let projectURL = latest.1.map {
                 request.vaultURL.appending(path: $0.path, directoryHint: .isDirectory)
@@ -203,7 +211,7 @@ enum VaultSummaryExportService {
             let fileURL = try resolveSummaryFileURL(
                 projectURL: projectURL,
                 vaultURL: request.vaultURL,
-                storedSummaryRelativePath: latest.2,
+                storedSummaryRelativePath: latest.2 ?? request.previousVaultRelativePath,
                 meetingId: request.meetingID,
                 summaryFileName: request.summaryFileName
             )

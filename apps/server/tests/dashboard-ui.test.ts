@@ -30,7 +30,7 @@ describe("desktop-style meeting layout", () => {
     const query = vi.spyOn(liveData, "useLiveJSON");
     const page = vi.spyOn(liveData, "useLivePage");
     const old = JSON.stringify({ title: "Old", sections: [{ heading: "", blocks: [{ type: "paragraph", content: { text: "Previous result" } }] }],
-      metadata: { generatedBy: "server", inputTypes: ["transcript"], detailLevel: "concise", outputLanguage: "ja",
+      metadata: { generatedBy: "server", inputTypes: ["transcript"], detailLevel: "low", outputLanguage: "ja",
         request: { model: "first-model", reasoning: { effort: "low" } }, response: { usage: { input_tokens: 10 } } } });
     const latest = JSON.stringify({ title: "New", sections: [{ heading: "", blocks: [{ type: "paragraph", content: { text: "Current result" } }] }] });
     const ready = { error: undefined, loading: false, reload: vi.fn(), replace: vi.fn() };

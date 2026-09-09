@@ -1,13 +1,13 @@
 import { Select } from "./Select";
 import { MenuIcon } from "./Sidebar";
 import { useEffect, useRef, useState } from "react";
-import { json, uiText } from "./api";
+import { json, RequestError, uiText } from "./api";
 import { refreshData, useLiveJSON } from "./live-data";
 import { uuidV7 } from "../id";
 import type { GatewayModelList } from "../ai-gateway/backend";
 import { DEFAULT_ACCOUNT_SETTINGS, type AccountSettings, type AccountSettingsPatch } from "../account-settings-model";
-import type { summaryJobResponse } from "../summary/service";
-import { isAudioSummaryModel } from "../summary/audio-model";
+import type { summaryJobResponse, SummaryRequest } from "../summary/service";
+import { isAudioSummaryModel, isStructuredSummaryModel } from "../summary/audio-model";
 import { CODEX_AUTO_REVIEW_ALIAS } from "../ai-gateway/model-alias";
 
 const summaryErrors: Record<string, string> = {
@@ -19,9 +19,9 @@ const summaryErrors: Record<string, string> = {
   summary_invalid_audio_model: uiText("Select an available audio-capable Gemini model in settings.", "設定で利用可能な音声対応Geminiモデルを選択してください。"),
 };
 type Job = ReturnType<typeof summaryJobResponse>;
-const details = ["concise", "standard", "detailed", "eventSession"] as const;
-const detailLabel = (detail: typeof details[number]) => ({ concise: uiText("Concise", "簡潔"), standard: uiText("Standard", "標準"),
-  detailed: uiText("Detailed", "詳細"), eventSession: uiText("Event session", "イベントセッション") })[detail];
+const details = ["low", "medium", "high", "xhigh", "max"] as const;
+const detailLabel = (detail: typeof details[number]) => ({ low: uiText("Concise", "簡潔"), medium: uiText("Standard", "標準"),
+  high: uiText("Detailed", "詳細"), xhigh: uiText("Event session", "イベントセッション"), max: uiText("Event Play-by-Play", "イベント実況中継") })[detail];
 
 function useSummaryMethods() {
   const capabilities = useLiveJSON<{ meetingSummaryGeneration?: { version: number; sources: string[] } }>("/api/v1/capabilities");
@@ -30,7 +30,8 @@ function useSummaryMethods() {
 }
 
 export function ServerSummarySettings() {
-  const methods = useSummaryMethods();
+  const availableMethods = useSummaryMethods();
+  const methods = availableMethods.includes("audio") ? ["transcript", "cloudTranscription", "audio"] : availableMethods;
   const query = useLiveJSON<{ settings: AccountSettings | null }>("/api/v1/account/settings", "account");
   const [error, setError] = useState<string>();
   const [saving, setSaving] = useState(false);
@@ -50,9 +51,10 @@ export function ServerSummarySettings() {
   };
   const method = settings?.summary.method ?? "transcript";
   const saveSource = (value: Partial<AccountSettings["summary"]["methodSettings"]["transcript"]>) =>
-    save({ summary: { methodSettings: { [method]: value } } });
-  const source = settings?.summary.methodSettings[method] ?? DEFAULT_ACCOUNT_SETTINGS.summary.methodSettings[method];
+    save({ summary: { methodSettings: { [method === "audio" ? "audio" : "transcript"]: value } } });
+  const source = settings?.summary.methodSettings[method === "audio" ? "audio" : "transcript"] ?? DEFAULT_ACCOUNT_SETTINGS.summary.methodSettings[method === "audio" ? "audio" : "transcript"];
   const models = catalog.data?.data.filter((model) => model.id !== CODEX_AUTO_REVIEW_ALIAS
+    && isStructuredSummaryModel(model.id, catalog.data!)
     && (method !== "audio" || isAudioSummaryModel(model.id, catalog.data!))) ?? [];
   const selected = models.find((model) => model.id === source.model || source.model.endsWith(`.${model.id}`));
   const metadata = catalog.data?.models.find((model) => model.slug === selected?.id);
@@ -76,7 +78,7 @@ export function ServerSummarySettings() {
     <fieldset className="account-settings" disabled={saving || query.loading}>
       <label>{uiText("Summary source", "要約のソース")}<Select value={method}
         onValueChange={(value) => void save({ summary: { method: value as typeof method } })}>
-        {methods.map((method) => <option key={method} value={method}>{method === "audio" ? uiText("Audio and images", "音声と画像") : uiText("Transcript and images", "文字起こしと画像")}</option>)}
+        {methods.map((method) => <option key={method} value={method}>{method === "audio" ? uiText("Summarize recordings directly", "録音から直接要約") : method === "cloudTranscription" ? uiText("Cloud transcription → summary", "クラウドで文字起こし → 要約") : uiText("Local transcription → summary", "ローカルで文字起こし → 要約")}</option>)}
       </Select></label>
       <label>{uiText("Detail", "詳細度")}<Select value={settings?.summary.detail ?? DEFAULT_ACCOUNT_SETTINGS.summary.detail}
         onValueChange={(value) => void save({ summary: { detail: value as AccountSettings["summary"]["detail"] } })}>
@@ -101,6 +103,16 @@ export function ServerSummarySettings() {
         {!efforts.includes(source.reasoningEffort) && <option value="" disabled>{uiText("Select reasoning effort", "推論強度を選択")}</option>}
         {efforts.map((effort) => <option key={effort}>{effort}</option>)}
       </Select></label>
+      {method === "cloudTranscription" && <label>{uiText("Transcription model", "文字起こしモデル")}<Select
+        value={settings?.summary.methodSettings.audio.model ?? DEFAULT_ACCOUNT_SETTINGS.summary.methodSettings.audio.model}
+        onValueChange={(value) => {
+          const selected = catalog.data?.models.find((entry) => entry.slug === value);
+          void save({ summary: { methodSettings: { audio: { model: value,
+            reasoningEffort: (selected?.default_reasoning_level ?? "medium") as typeof source.reasoningEffort } } } });
+        }}>
+        {catalog.data?.data.filter((entry) => isAudioSummaryModel(entry.id, catalog.data!) && isStructuredSummaryModel(entry.id, catalog.data!))
+          .map((entry) => <option key={entry.id} value={entry.id}>{entry.display_name}</option>)}
+      </Select></label>}
     </fieldset>
     </section>}
     {(error || query.error) && <p role="alert" className="error">{error ?? query.error?.message} {query.error && <button className="secondary" onClick={query.reload}>{uiText("Retry", "再試行")}</button>}</p>}
@@ -116,6 +128,7 @@ export function ServerSummaryGeneration({ base }: { base: string }) {
   const [detail, setDetail] = useState("");
   const completed = useRef<string | undefined>(undefined);
   const requestID = useRef<string | undefined>(undefined);
+  const requestBody = useRef<SummaryRequest | undefined>(undefined);
   const job = query.data?.job;
   useEffect(() => {
     if (!enabled) return;
@@ -123,7 +136,7 @@ export function ServerSummaryGeneration({ base }: { base: string }) {
     return () => window.clearInterval(timer);
   }, [enabled, base]); // reload uses the query's current queue.
   useEffect(() => {
-    if (job?.id === requestID.current) requestID.current = undefined;
+    if (job?.id === requestID.current) { requestID.current = undefined; requestBody.current = undefined; }
     if (job?.status === "succeeded" && completed.current !== job.id) {
       completed.current = job.id; refreshData();
     }
@@ -134,14 +147,55 @@ export function ServerSummaryGeneration({ base }: { base: string }) {
     setStarting(true); setError(undefined);
     requestID.current ??= uuidV7();
     try {
-      await json(`${base}/summary`, { method: "POST", body: JSON.stringify({ id: requestID.current, ...(detail ? { detail } : {}) }) });
-      requestID.current = undefined; query.reload();
-    } catch (error) { setError(error instanceof Error ? summaryErrors[error.message] ?? error.message : uiText("Could not start summary", "要約を開始できません")); query.reload(); }
+      if (!requestBody.current) {
+        const account = await json<{ settings: AccountSettings | null }>("/api/v1/account/settings");
+        const settings = account.settings ?? DEFAULT_ACCOUNT_SETTINGS;
+        const method = settings.summary.method;
+        let input: Extract<SummaryRequest, { input: unknown }>["input"];
+        if (method === "transcript") {
+          const versions = await json<{ items: { version: number }[] }>(`${base}/transcript?limit=1`);
+          if (!versions.items[0]) throw new Error(uiText("No transcript is available", "文字起こしがありません"));
+          input = { type: "transcript", version: String(versions.items[0].version) };
+        } else {
+          const recordings: { micFileId: string | null; systemFileId: string | null }[] = [];
+          let cursor: string | null = null;
+          do {
+            const page: { items: { audio: Partial<Record<"mic" | "system", { fileId: string }>> }[]; nextCursor: string | null } =
+              await json(`/api/v1/meetings/${base.split("/").at(-1)!}/recordings${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`);
+            recordings.push(...page.items.map(({ audio }) => ({ micFileId: audio.mic?.fileId ?? null, systemFileId: audio.system?.fileId ?? null })));
+            cursor = page.nextCursor;
+          } while (cursor !== null);
+          input = { type: "recording", recordings,
+            ...(method === "cloudTranscription" ? { transcriptionModel: settings.summary.methodSettings.audio.model } : {}) };
+        }
+        requestBody.current = { id: requestID.current, input,
+          model: settings.summary.methodSettings[method === "audio" ? "audio" : "transcript"].model,
+          detailLevel: (detail || settings.summary.detail) as typeof details[number], summaryLanguage: settings.outputLanguage };
+      }
+      await json(`${base}/summary`, { method: "POST", body: JSON.stringify(requestBody.current) });
+      requestID.current = undefined; requestBody.current = undefined; query.reload();
+    } catch (error) {
+      if (error instanceof RequestError && error.status === 400) {
+        requestID.current = undefined; requestBody.current = undefined;
+      }
+      setError(error instanceof Error ? summaryErrors[error.message] ?? error.message : uiText("Could not start summary", "要約を開始できません")); query.reload();
+    }
+    finally { setStarting(false); }
+  };
+  const action = async (action: "cancel" | "retry") => {
+    if (!job) return;
+    setStarting(true); setError(undefined);
+    requestID.current ??= uuidV7();
+    try {
+      await json(`${base}/summary/job/${job.id}/${action}`, { method: "POST",
+        ...(action === "retry" ? { body: JSON.stringify({ id: requestID.current }) } : {}) });
+      requestID.current = undefined; requestBody.current = undefined; query.reload();
+    } catch (error) { setError(error instanceof Error ? error.message : String(error)); }
     finally { setStarting(false); }
   };
   let buttonLabel = uiText("Generate summary", "要約を生成");
   if (active) buttonLabel = uiText("Generating on server…", "サーバーで生成中…");
-  else if (job?.status === "failed") buttonLabel = uiText("Retry summary", "要約を再試行");
+
 
   let failureMessage: string | undefined;
   if (job?.status === "failed") {
@@ -157,7 +211,7 @@ export function ServerSummaryGeneration({ base }: { base: string }) {
     <div className="generation-copy"><strong><MenuIcon name="sparkles" />{uiText("AI summary", "AI 要約")}</strong><span>{uiText("Turn this conversation into clear next steps.", "会話のポイントと、次のアクションを整理します。")}</span></div>
     <div className="generation-controls">
     <Select aria-label={uiText("Summary detail", "要約の詳細度")} value={detail} disabled={active || starting}
-      onValueChange={(value) => { setDetail(value); requestID.current = undefined; }}>
+      onValueChange={(value) => { setDetail(value); requestID.current = undefined; requestBody.current = undefined; }}>
       <option value="">{uiText("Account default", "アカウント設定")}</option>
       {details.map((detail) => <option key={detail} value={detail}>{detailLabel(detail)}</option>)}
     </Select>
@@ -165,9 +219,23 @@ export function ServerSummaryGeneration({ base }: { base: string }) {
       {starting ? uiText("Starting…", "開始中…") : buttonLabel}
     </button>
     </div>
-    {active && <span role="status">{uiText("You can close this window.", "画面を閉じても処理は続きます。")}</span>}
-    {job?.status === "failed" && <span role="alert">{failureMessage}
+    {active && <><span role="status">{stageLabel(job.stage)} — {uiText("You can close this window.", "画面を閉じても処理は続きます。")}</span>
+      <button disabled={starting} onClick={() => void action("cancel")}>{uiText("Cancel", "キャンセル")}</button></>}
+    {(job?.status === "failed" || job?.status === "cancelled") && <button disabled={starting} onClick={() => void action("retry")}>
+      {uiText("Retry with the same settings", "同じ設定で再試行")}</button>}
+    {job?.status === "cancelled" && <span role="status">{uiText("Cancelled", "キャンセル済み")}</span>}
+    {job?.status === "failed" && <span role="alert">{stageLabel(job.stage)}: {failureMessage}
       {job.error && <> ({job.error})</>}</span>}
     {(error || query.error) && <span role="alert">{error ?? query.error?.message}</span>}
   </div>;
+}
+
+function stageLabel(stage: NonNullable<Job>["stage"]) {
+  switch (stage) {
+    case "transcribing": return uiText("Transcribing", "文字起こし中");
+    case "summarizing": return uiText("Summarizing", "要約中");
+    case "generating": return uiText("Generating transcription and summary", "文字起こし・要約を生成中");
+    case "saving": return uiText("Saving results", "結果を保存中");
+    default: return uiText("Waiting", "待機中");
+  }
 }

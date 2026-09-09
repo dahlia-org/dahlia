@@ -5,6 +5,7 @@ struct BatchTranscriptionConfirmationView: View {
     let automaticLanguageLocales: [Locale]
     let displayLocale: Locale
     let projects: [FlatProjectRow]
+    let processingMethod: RecordingProcessingMethod?
     let isRetranscription: Bool
     let allowsRecordedLanguageSelection: Bool
     let onStart: (BatchTranscriptionLanguageSelection, Bool, SummaryGenerationOptions, UUID?) -> String?
@@ -30,6 +31,7 @@ struct BatchTranscriptionConfirmationView: View {
         initiallyGeneratesSummary: Bool,
         summaryGenerationOptions: SummaryGenerationOptions,
         isRetranscription: Bool,
+        processingMethod: RecordingProcessingMethod? = nil,
         onStart: @escaping (BatchTranscriptionLanguageSelection, Bool, SummaryGenerationOptions, UUID?) -> String?,
         onPostpone: @escaping () -> Void
     ) {
@@ -39,6 +41,7 @@ struct BatchTranscriptionConfirmationView: View {
         self.projects = projects
         self.onStart = onStart
         self.onPostpone = onPostpone
+        self.processingMethod = processingMethod
         self.isRetranscription = isRetranscription
         self.allowsRecordedLanguageSelection = allowsRecordedLanguageSelection
         _languageSelection = State(initialValue: initialLanguageSelection)
@@ -53,12 +56,10 @@ struct BatchTranscriptionConfirmationView: View {
     var body: some View {
         VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 6) {
-                Text(isRetranscription ? L10n.batchRetranscriptionConfirmationTitle : L10n.batchTranscriptionConfirmationTitle)
+                Text(confirmationText.title)
                     .font(.headline)
 
-                Text(isRetranscription
-                    ? L10n.batchRetranscriptionConfirmationDescription
-                    : L10n.batchTranscriptionConfirmationDescription)
+                Text(confirmationText.description)
                     .foregroundStyle(DahliaDesign.secondaryTextColor)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -77,7 +78,8 @@ struct BatchTranscriptionConfirmationView: View {
                 exportBatchSummaryToVault: $exportBatchSummaryToVault,
                 exportBatchSummaryToGoogleDocs: $exportBatchSummaryToGoogleDocs,
                 projects: projects,
-                selectedProjectId: $selectedProjectId
+                selectedProjectId: $selectedProjectId,
+                processingMethod: processingMethod
             )
 
             if let errorMessage {
@@ -97,11 +99,11 @@ struct BatchTranscriptionConfirmationView: View {
                     .keyboardShortcut(.cancelAction)
                 if isRetranscription {
                     Button(L10n.retranscribe, action: startTranscription)
-                        .disabled(languageSelection == .automatic && automaticLanguageLocales.isEmpty)
+                        .disabled(isStartDisabled)
                 } else {
-                    Button(L10n.startTranscription, action: startTranscription)
+                    Button(processingMethod != nil ? L10n.startProcessing : L10n.startTranscription, action: startTranscription)
                         .keyboardShortcut(.defaultAction)
-                        .disabled(languageSelection == .automatic && automaticLanguageLocales.isEmpty)
+                        .disabled(isStartDisabled)
                 }
             }
             .padding(20)
@@ -110,6 +112,21 @@ struct BatchTranscriptionConfirmationView: View {
         .onChange(of: generateSummaryAfterBatchTranscription) { _, _ in persistSummaryPreferencesIfNeeded() }
         .onChange(of: exportBatchSummaryToVault) { _, _ in persistSummaryPreferencesIfNeeded() }
         .onChange(of: exportBatchSummaryToGoogleDocs) { _, _ in persistSummaryPreferencesIfNeeded() }
+    }
+
+    private var confirmationText: (title: String, description: String) {
+        if processingMethod != nil {
+            (L10n.processingConfirmationTitle, L10n.processingConfirmationDescription)
+        } else if isRetranscription {
+            (L10n.batchRetranscriptionConfirmationTitle, L10n.batchRetranscriptionConfirmationDescription)
+        } else {
+            (L10n.batchTranscriptionConfirmationTitle, L10n.batchTranscriptionConfirmationDescription)
+        }
+    }
+
+    private var isStartDisabled: Bool {
+        (processingMethod == nil || processingMethod == .transcript)
+            && languageSelection == .automatic && automaticLanguageLocales.isEmpty
     }
 
     private func startTranscription() {
@@ -122,7 +139,7 @@ struct BatchTranscriptionConfirmationView: View {
         )
         errorMessage = onStart(
             languageSelection,
-            generateSummaryAfterBatchTranscription,
+            processingMethod != nil || generateSummaryAfterBatchTranscription,
             summaryOptions,
             selectedProjectId
         )
@@ -131,7 +148,7 @@ struct BatchTranscriptionConfirmationView: View {
     private func persistSummaryPreferencesIfNeeded() {
         guard !isRetranscription else { return }
         let settings = AppSettings.shared
-        settings.generateSummaryAfterBatchTranscription = generateSummaryAfterBatchTranscription
+        if processingMethod == nil { settings.generateSummaryAfterBatchTranscription = generateSummaryAfterBatchTranscription }
         settings.exportBatchSummaryToVault = exportBatchSummaryToVault
         settings.exportBatchSummaryToGoogleDocs = exportBatchSummaryToGoogleDocs
     }

@@ -109,7 +109,8 @@
         "image"
       ],
       "model_specialty": null,
-      "multi_agent_version": "v2"
+      "multi_agent_version": "v2",
+      "supports_json_schema": true
     },
     {
       "slug": "gpt-5.6-sol",
@@ -182,7 +183,8 @@
         "image"
       ],
       "model_specialty": null,
-      "multi_agent_version": "v2"
+      "multi_agent_version": "v2",
+      "supports_json_schema": true
     },
     {
       "slug": "gpt-5-6-sol",
@@ -255,7 +257,8 @@
         "image"
       ],
       "model_specialty": null,
-      "multi_agent_version": "v2"
+      "multi_agent_version": "v2",
+      "supports_json_schema": true
     },
     {
       "slug": "gpt-5.6-terra",
@@ -328,7 +331,8 @@
         "image"
       ],
       "model_specialty": null,
-      "multi_agent_version": "v2"
+      "multi_agent_version": "v2",
+      "supports_json_schema": true
     },
     {
       "slug": "gpt-5-6-terra",
@@ -401,7 +405,8 @@
         "image"
       ],
       "model_specialty": null,
-      "multi_agent_version": "v2"
+      "multi_agent_version": "v2",
+      "supports_json_schema": true
     },
     {
       "slug": "gpt-5.6-luna",
@@ -474,7 +479,8 @@
         "image"
       ],
       "model_specialty": null,
-      "multi_agent_version": "v1"
+      "multi_agent_version": "v1",
+      "supports_json_schema": true
     },
     {
       "slug": "gpt-5-6-luna",
@@ -547,7 +553,8 @@
         "image"
       ],
       "model_specialty": null,
-      "multi_agent_version": "v1"
+      "multi_agent_version": "v1",
+      "supports_json_schema": true
     },
     {
       "slug": "gpt-5.5",
@@ -610,7 +617,8 @@
         "image"
       ],
       "model_specialty": null,
-      "multi_agent_version": null
+      "multi_agent_version": null,
+      "supports_json_schema": true
     },
     {
       "slug": "gpt-5-5",
@@ -673,7 +681,8 @@
         "image"
       ],
       "model_specialty": null,
-      "multi_agent_version": null
+      "multi_agent_version": null,
+      "supports_json_schema": true
     },
     {
       "slug": "codex-auto-review",
@@ -1061,7 +1070,8 @@
         "audio"
       ],
       "model_specialty": null,
-      "multi_agent_version": "v1"
+      "multi_agent_version": "v1",
+      "supports_json_schema": true
     },
     {
       "slug": "gemini-3-7-flash",
@@ -1127,7 +1137,8 @@
         "audio"
       ],
       "model_specialty": null,
-      "multi_agent_version": "v1"
+      "multi_agent_version": "v1",
+      "supports_json_schema": true
     }
   ]
 }

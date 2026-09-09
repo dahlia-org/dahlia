@@ -98,7 +98,8 @@ final class MeetingPersistenceService {
                 allowsCalendarSeriesProjectInheritance: allowsCalendarSeriesProjectInheritance,
                 calendarEvent: calendarEvent,
                 startedAt: startedAt,
-                transcriptionMode: transcriptionMode
+                transcriptionMode: transcriptionMode,
+                liveDraft: transcriptionMode == .batch && persistencePolicy == .streaming
             ),
             dbQueue: dbQueue
         )
@@ -133,7 +134,8 @@ final class MeetingPersistenceService {
                 meetingId: existingMeetingId,
                 recordingSessionId: recordingSessionId,
                 recordingStartDate: recordingStartDate,
-                transcriptionMode: transcriptionMode
+                transcriptionMode: transcriptionMode,
+                liveDraft: transcriptionMode == .batch && persistencePolicy == .streaming
             ),
             dbQueue: dbQueue
         )
@@ -291,6 +293,7 @@ private enum MeetingPersistenceStarter {
         let calendarEvent: CalendarEvent?
         let startedAt: Date
         let transcriptionMode: TranscriptionMode
+        var liveDraft = false
     }
 
     struct NewResult {
@@ -304,6 +307,7 @@ private enum MeetingPersistenceStarter {
         let recordingSessionId: UUID
         let recordingStartDate: Date
         let transcriptionMode: TranscriptionMode
+        var liveDraft = false
     }
 
     struct AppendResult {
@@ -356,7 +360,7 @@ private enum MeetingPersistenceStarter {
                 transcriptionMode: request.transcriptionMode
             )
             try recordingSession.insert(db)
-            try TranscriptRecord.beginLive(recordingSession, in: db)
+            try TranscriptRecord.beginLive(recordingSession, liveDraft: request.liveDraft, in: db)
             try RecordingArchiveRecord.enqueue(recordingSession, in: db)
             let projectName = try projectId.flatMap { id in
                 try ProjectRecord.fetchResolved(id: id, in: db)?.path
@@ -425,7 +429,7 @@ private enum MeetingPersistenceStarter {
                 transcriptionMode: request.transcriptionMode
             )
             try recordingSession.insert(db)
-            try TranscriptRecord.beginLive(recordingSession, in: db)
+            try TranscriptRecord.beginLive(recordingSession, liveDraft: request.liveDraft, in: db)
             try RecordingArchiveRecord.enqueue(recordingSession, in: db)
             return AppendResult(
                 recordingSession: recordingSession,

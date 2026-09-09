@@ -1,8 +1,9 @@
 import { appearanceSchema } from "../appearance-model";
+import type { GeneratedTranscript } from "../summary/transcription";
 import { transcriptWriteSchema } from "./transcript";
 import { summaryMetadataSchema } from "../summary/metadata";
 import { conditionalRead } from "../storage/http-read";
-import { SummaryError, type SummaryJob, type SummaryDocument, type SummaryMethod } from "../summary/model";
+import { SummaryError, type SummaryJob, type SummaryGenerationResult, type SummaryMethod } from "../summary/model";
 import { RECORDING_MAX_BYTES, recordingManifestSchema, recordingSourceSchema, recordingStorageKey, recordingContentURL, recordingResponse } from "../recordings/model";
 import { z } from "zod";
 import { searchRequestSchema, searchSnippet, type SearchHit, type SearchResults } from "../search/model";
@@ -235,18 +236,21 @@ export class MeetingSyncService {
     );
   }
 
-  async completeSummary(identity: Identity, job: SummaryJob, document: SummaryDocument, method: SummaryMethod): Promise<boolean> {
+  async completeSummary(identity: Identity, job: SummaryJob, result: SummaryGenerationResult, method: SummaryMethod): Promise<boolean> {
     this.requireWritableIdentity(identity);
+    const { transcript, ...document } = result;
     return this.store.withIdentity(identity, async (scoped) => {
       await scoped.lockVault(job.vaultId);
       if ((await scoped.getVault(job.vaultId))?.role !== "owner") throw new SummaryError("summary_meeting_unavailable");
       const meeting = await scoped.getMeeting(job.vaultId, job.meetingId);
       if (!meeting) throw new SummaryError("summary_meeting_unavailable");
       if ((meeting.summaryRevision ?? 0) !== job.summaryRevision) throw new SummaryError("summary_conflict");
-      if (await method.version(scoped, job.vaultId, job.meetingId) !== job.inputVersion) throw new SummaryError("summary_input_changed");
+      if (await method.version(scoped, job.vaultId, job.meetingId, job.input) !== job.inputVersion) throw new SummaryError("summary_input_changed");
+      const transcriptOperation = transcript ? await this.stageSummaryTranscript(scoped, job, transcript) : undefined;
       const transaction = await normalizeTransaction({
         schemaVersion: 2, id: job.id, vaultId: job.vaultId, createdAt: job.createdAt.toISOString(),
         operations: [
+          ...(transcriptOperation ? [transcriptOperation.operation] : []),
           { id: uuidV7(), entity: "meeting", action: "update", entityId: job.meetingId, baseRevision: meeting.revision,
             data: { projectId: meeting.projectId, name: document.title, description: document.description,
               status: meeting.status, duration: meeting.duration, recordingStartedAt: meeting.recordingStartedAt?.toISOString() ?? null,
@@ -257,12 +261,50 @@ export class MeetingSyncService {
       });
       const summaryText = summarySearchableText(JSON.stringify(document));
       const embeddingText = summaryText.trim() || null;
-      for (const operation of transaction.operations) Object.assign(operation.data!, {
+      for (const operation of transaction.operations.filter((operation) => operation.entity !== "transcript")) Object.assign(operation.data!, {
         searchText: createSearchText(this.tokenizer, [document.title, document.description, summaryText]),
         embeddingText, embeddingContentHash: await embeddingContentHash(embeddingText),
       });
       return scoped.completeSummaryJob(job, transaction);
     });
+  }
+
+  async saveSummaryTranscript(identity: Identity, job: SummaryJob, transcript: GeneratedTranscript, method: SummaryMethod) {
+    this.requireWritableIdentity(identity);
+    return this.store.withIdentity(identity, async (scoped) => {
+      await scoped.lockVault(job.vaultId);
+      if ((await scoped.getVault(job.vaultId))?.role !== "owner") throw new SummaryError("summary_meeting_unavailable");
+      if (await method.version(scoped, job.vaultId, job.meetingId, job.input) !== job.inputVersion) throw new SummaryError("summary_input_changed");
+      const staged = await this.stageSummaryTranscript(scoped, job, transcript);
+      const transaction = await normalizeTransaction({ schemaVersion: 2, id: uuidV7(), vaultId: job.vaultId,
+        createdAt: new Date().toISOString(), operations: [staged.operation] });
+      return scoped.completeSummaryTranscript(job, transaction, staged.transcriptId);
+    });
+  }
+
+  private async stageSummaryTranscript(scoped: IdentitySyncStore, job: SummaryJob, transcript: GeneratedTranscript) {
+    const meeting = await scoped.getMeeting(job.vaultId, job.meetingId);
+    if (!meeting || job.transcriptRevision === null || job.transcriptRevision === undefined
+      || (meeting.transcriptRevision ?? 0) !== job.transcriptRevision) throw new SummaryError("summary_transcript_conflict");
+    const patchId = uuidV7();
+    const transcriptId = uuidV7();
+    const chunks: Array<{ index: number; sha256: string; segmentCount: number; deletionCount: number }> = [];
+    for (let offset = 0; offset < transcript.segments.length; offset += 500) {
+      const index = chunks.length;
+      const payload = { segments: transcript.segments.slice(offset, offset + 500).map((segment) => ({ ...segment,
+        startedAt: segment.startedAt.toISOString(), endedAt: segment.endedAt?.toISOString() ?? null,
+        createdAt: segment.createdAt?.toISOString() ?? null })), deletions: [] };
+      const parsed = transcriptChunkSchema.parse(payload);
+      const hash = await sha256(JSON.stringify(payload));
+      if (!await scoped.putTranscriptChunk(job.vaultId, job.meetingId, patchId, index, hash, parsed.segments, parsed.deletions)) {
+        throw new SummaryError("summary_transcript_save_failed", true);
+      }
+      chunks.push({ index, sha256: hash, segmentCount: parsed.segments.length, deletionCount: 0 });
+    }
+    return { transcriptId, operation: { id: patchId, entity: "transcript", action: "patch", entityId: job.meetingId,
+      baseRevision: job.transcriptRevision, data: { mode: "replace", patchId, segmentCount: transcript.segments.length,
+        deletionCount: 0, chunks, transcript: { id: transcriptId, startedAt: transcript.startedAt.toISOString(),
+          endedAt: transcript.endedAt.toISOString(), metadata: transcript.metadata } } } };
   }
 
   async completeImageAnalysis(identity: Identity, input: ImageAnalysisInput, output: ImageAnalysis): Promise<boolean> {

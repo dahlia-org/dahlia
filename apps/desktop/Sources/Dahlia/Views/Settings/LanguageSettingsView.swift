@@ -26,7 +26,7 @@ struct LanguageSettingsView: View {
                 Text(L10n.appLanguagesDescription)
             }
 
-            if settings.transcriptionMode == .batch {
+            Group {
                 Section(L10n.transcription) {
                     DahliaMenuPicker(
                         title: L10n.transcriptionLanguage,
@@ -43,12 +43,7 @@ struct LanguageSettingsView: View {
             Section {
                 DahliaMenuPicker(
                     title: L10n.liveSubtitleLanguage,
-                    description: settings.transcriptionMode == .realtime
-                        ? L10n.liveSubtitleLanguageUsedForRealtimeTranscription
-                        : nil,
-                    selection: settings.transcriptionMode == .realtime
-                        ? $settings.transcriptionLocale
-                        : $settings.liveSubtitleLocale,
+                    selection: $settings.liveSubtitleLocale,
                     options: enabledLocaleOptions(including: liveSubtitleLocale).map(\.identifier)
                 ) { identifier in
                     Locale(identifier: identifier).localizedString(forIdentifier: identifier) ?? identifier
@@ -76,9 +71,7 @@ struct LanguageSettingsView: View {
                 if !settings.liveSubtitleTranslationEnabled {
                     Text(L10n.enableLiveSubtitleTranslationToChooseLanguage)
                 } else if !settings.isLiveSubtitleTranslationEffectivelyEnabled {
-                    Text(settings.transcriptionMode == .realtime
-                        ? L10n.liveSubtitleTranslationDisabledForMatchingTranscriptionLanguage
-                        : L10n.liveSubtitleTranslationDisabledForMatchingLiveSubtitleLanguage)
+                    Text(L10n.liveSubtitleTranslationDisabledForMatchingLiveSubtitleLanguage)
                 }
             }
         }
@@ -90,7 +83,7 @@ struct LanguageSettingsView: View {
     }
 
     private var liveSubtitleLocale: String {
-        settings.transcriptionMode == .realtime ? settings.transcriptionLocale : settings.liveSubtitleLocale
+        settings.liveSubtitleLocale
     }
 
     private func enabledLocaleOptions(including selectedIdentifier: String) -> [Locale] {

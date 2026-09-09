@@ -13,7 +13,7 @@ import { MeetingSyncService } from "../src/sync/service";
 import { SummaryService } from "../src/summary/service";
 import { SummaryWorker } from "../src/summary/node-worker";
 import { SummaryError, summaryDocument, type SummaryMethod } from "../src/summary/model";
-import { createTranscriptSummaryMethod, summaryImageContent } from "../src/summary/transcript";
+import { collectSummaryInput, createTranscriptSummaryMethod, fingerprint, summaryImageContent } from "../src/summary/transcript";
 import { accountSettingsPatchSchema } from "../src/account-settings";
 import { loadConfig } from "../src/config";
 import { createApp } from "../src/app";
@@ -46,6 +46,41 @@ async function setup() {
 }
 
 describe("server summary jobs", () => {
+  it("validates provider settings outside the transaction and rechecks a concurrently accepted job", async () => {
+    const { store, method, service, vaultId, meetingId } = await setup();
+    const withIdentity = store.sync.withIdentity.bind(store.sync);
+    let transactions = 0;
+    vi.spyOn(store.sync, "withIdentity").mockImplementation(async (identity, action) => {
+      transactions++;
+      try { return await withIdentity(identity, action); }
+      finally { transactions--; }
+    });
+    const body = { id: uuidV7(), input: { type: "transcript", version: "1" }, model: "gpt-5.4", detailLevel: "high", summaryLanguage: "en" };
+    let onEntered!: () => void; let release!: () => void;
+    const entered = new Promise<void>((resolve) => { onEntered = resolve; });
+    const released = new Promise<void>((resolve) => { release = resolve; });
+    let pending: ReturnType<typeof service.start> | undefined;
+    let validationTransactions = -1;
+    try {
+      const validateSettings = vi.fn(async () => {
+        validationTransactions = transactions;
+        onEntered();
+        await released;
+      });
+      method.validateSettings = validateSettings;
+      pending = service.start(owner, vaultId, meetingId, body);
+      await entered;
+      expect(validationTransactions).toBe(0);
+      // Another request may win while catalog validation is pending.
+      const other = new SummaryService(store.sync, store.accountSettings, [{ ...method, validateSettings: undefined }]);
+      const accepted = await other.start(owner, vaultId, meetingId, body);
+      release();
+      expect((await pending).id).toBe(accepted.id);
+      expect((await service.start(owner, vaultId, meetingId, body)).id).toBe(accepted.id);
+      expect(validateSettings).toHaveBeenCalledTimes(1);
+    } finally { release(); await pending?.catch(() => {}); await store.close?.(); }
+  });
+
   it("escapes meeting and project XML without serializing internal input fields", async () => {
     const date = new Date(0);
     const { content } = await summaryImageContent({
@@ -111,7 +146,7 @@ describe("server summary jobs", () => {
       const first = await sync.summaryVersion(owner, vaultId, meetingId, "1");
       expect(first).not.toHaveProperty("kind");
       expect(first).not.toHaveProperty("generation");
-      expect(first.metadata).toMatchObject({ generatedBy: "server", inputTypes: ["transcript"], detailLevel: "detailed" });
+      expect(first.metadata).toMatchObject({ generatedBy: "server", inputTypes: ["transcript"], detailLevel: "high" });
       expect(first.metadata).not.toHaveProperty("source");
       expect(first.metadata).not.toHaveProperty("method");
       expect(first.metadata?.request).toEqual({ model: "first-model", reasoning: { effort: "low" } });
@@ -243,26 +278,41 @@ describe("server summary jobs", () => {
       await store.accountSettings.update(owner.userId, { outputLanguage: "en" });
       const database = new DatabaseSync(path);
       database.prepare("UPDATE account_settings SET summary = ? WHERE user_id = ?")
-        .run(JSON.stringify({ ...DEFAULT_ACCOUNT_SETTINGS.summary, detail: "concise", methodSettings: {
+        .run(JSON.stringify({ ...DEFAULT_ACCOUNT_SETTINGS.summary, detail: "low", methodSettings: {
           ...DEFAULT_ACCOUNT_SETTINGS.summary.methodSettings, transcript: { model: "existing-model", reasoningEffort: "high" },
         } }), owner.userId);
       database.close();
       expect(await store.accountSettings.get(owner.userId)).toMatchObject({ outputLanguage: "en", summary: {
-        method: "transcript", detail: "concise", methodSettings: { transcript: { model: "existing-model", reasoningEffort: "high" } },
+        method: "transcript", detail: "low", methodSettings: { transcript: { model: "existing-model", reasoningEffort: "high" } },
       } });
+    } finally { await store.close?.(); }
+  });
+
+  it("freezes explicit summary language and includes it in idempotency", async () => {
+    const { store, service, vaultId, meetingId } = await setup();
+    try {
+      const id = uuidV7();
+      const job = await service.start(owner, vaultId, meetingId, { id, outputLanguage: "en" });
+      expect(job.outputLanguage).toBe("en");
+      await store.accountSettings.update(owner.userId, { outputLanguage: "fr" });
+      expect(await service.start(owner, vaultId, meetingId, { id, outputLanguage: "en" })).toEqual(job);
+      await expect(service.start(owner, vaultId, meetingId, { id, outputLanguage: "ja" })).rejects.toMatchObject({ status: 409 });
+      for (const outputLanguage of ["", "xx", null]) {
+        await expect(service.start(owner, vaultId, meetingId, { id: uuidV7(), outputLanguage })).rejects.toMatchObject({ status: 400 });
+      }
     } finally { await store.close?.(); }
   });
 
   it("fixes settings at start, keeps starts idempotent and saves through canonical delta and search", async () => {
     const { store, sync, method, service, vaultId, meetingId } = await setup();
     try {
-      await store.accountSettings.update(owner.userId, { summary: { detail: "standard", methodSettings: { transcript: { model: "model1", reasoningEffort: "high" } } } });
-      const id = uuidV7(); const job = await service.start(owner, vaultId, meetingId, { id, detail: "concise" });
-      await store.accountSettings.update(owner.userId, { outputLanguage: "en", summary: { detail: "detailed", methodSettings: { transcript: { model: "model2", reasoningEffort: "low" } } } });
-      expect(await service.start(owner, vaultId, meetingId, { id, detail: "concise" })).toEqual(job);
-      expect(job.settings).toEqual({ model: "model1", reasoningEffort: "high", detail: "concise" });
+      await store.accountSettings.update(owner.userId, { summary: { detail: "medium", methodSettings: { transcript: { model: "model1", reasoningEffort: "high" } } } });
+      const id = uuidV7(); const job = await service.start(owner, vaultId, meetingId, { id, detail: "low" });
+      await store.accountSettings.update(owner.userId, { outputLanguage: "en", summary: { detail: "high", methodSettings: { transcript: { model: "model2", reasoningEffort: "low" } } } });
+      expect(await service.start(owner, vaultId, meetingId, { id, detail: "low" })).toEqual(job);
+      expect(job.settings).toEqual({ model: "model1", reasoningEffort: "high", detail: "low" });
       expect(job.outputLanguage).toBe("ja");
-      await expect(service.start(owner, vaultId, meetingId, { id, detail: "detailed" })).rejects.toMatchObject({ status: 409 });
+      await expect(service.start(owner, vaultId, meetingId, { id, detail: "high" })).rejects.toMatchObject({ status: 409 });
       await expect(service.start(owner, vaultId, meetingId, { id: uuidV7() })).rejects.toMatchObject({ status: 409 });
       const cursor = await sync.latestCursor(owner);
       expect(await new SummaryWorker(store.summaryJobs, [method], sync).processOne()).toBe(true);
@@ -413,7 +463,7 @@ describe("server summary jobs", () => {
       if (scenario === "failure") {
         expect((await service.status(owner, vaultId, meetingId))).toMatchObject({ status: "failed", lastErrorCode: "summary_http_400" });
         const log: unknown = JSON.parse(String(warn.mock.calls[0]?.[0]));
-        expect(log).toMatchObject({ event: "summary_job_failed", phase: "generate", code: "summary_http_400", requestId: "req-123", retryable: false, attempt: 1 });
+        expect(log).toMatchObject({ event: "summary_job_failed", phase: "summarizing", code: "summary_http_400", requestId: "req-123", retryable: false, attempt: 1 });
         expect(JSON.stringify(warn.mock.calls)).not.toContain("sensitive upstream response");
         expect(JSON.stringify(warn.mock.calls)).not.toContain(meetingId);
         return;
@@ -495,6 +545,74 @@ function audioMethod(value: Awaited<ReturnType<typeof setup>>, result?: () => Re
 }
 
 describe("audio summary jobs", () => {
+  it.each(["summary", "transcript", "input"])("rebases %s guards on explicit retry and still rejects later changes", async (changed) => {
+    const value = await setup(); const { store, sync, vaultId, meetingId } = value;
+    try {
+      await addRecording(value);
+      let changeDuringGeneration = true;
+      const { method, calls } = audioMethod(value, () => {
+        if (changeDuringGeneration) {
+          const db = new DatabaseSync(value.path);
+          db.exec(changed === "summary" ? "UPDATE meetings SET summary_revision = summary_revision + 1"
+            : changed === "transcript" ? "UPDATE meetings SET transcript_revision = transcript_revision + 1"
+            : "UPDATE meetings SET name = name || ' changed'");
+          db.close();
+        }
+        return combinedResponse();
+      });
+      const service = new SummaryService(store.sync, store.accountSettings, [method]);
+      let job = await service.start(owner, vaultId, meetingId, { id: uuidV7(), input: await recordingInput(value),
+        model: "gemini-3-8-flash", detailLevel: "high", summaryLanguage: "en" });
+      const captured = { input: job.input, settings: job.settings, outputLanguage: job.outputLanguage };
+      for (let attempt = 0; attempt < 2; attempt++) {
+        await new SummaryWorker(store.summaryJobs, [method], sync).processOne();
+        expect(await service.status(owner, vaultId, meetingId, job.id)).toMatchObject({ status: "failed", lastErrorCode:
+          changed === "summary" ? "summary_conflict" : changed === "transcript" ? "summary_transcript_conflict" : "summary_input_changed" });
+        job = await service.retry(owner, vaultId, meetingId, job.id, { id: uuidV7() });
+        expect(job).toMatchObject(captured);
+        const current = await store.sync.withIdentity(owner, async (scoped) => ({
+          meeting: await scoped.getMeeting(vaultId, meetingId), inputVersion: await method.version(scoped, vaultId, meetingId, job.input),
+        }));
+        expect(job).toMatchObject({ summaryRevision: current.meeting!.summaryRevision,
+          transcriptRevision: current.meeting!.transcriptRevision, inputVersion: current.inputVersion });
+      }
+      changeDuringGeneration = false;
+      await new SummaryWorker(store.summaryJobs, [method], sync).processOne();
+      expect((await service.status(owner, vaultId, meetingId, job.id))?.status).toBe("succeeded");
+      expect(calls).toHaveLength(3);
+    } finally { await store.close?.(); }
+  });
+
+  it.each([false, true])("resumes pre-upgrade audio fingerprints without changing recordings (retry: %s)", async (retry) => {
+    const value = await setup(); const { store, sync, vaultId, meetingId } = value;
+    try {
+      await addRecording(value);
+      await store.accountSettings.update(owner.userId, { summary: { method: "audio" } });
+      const legacyVersion = await store.sync.withIdentity(owner, async (scoped) => {
+        const context = await collectSummaryInput(scoped, vaultId, meetingId, false);
+        const records = await scoped.listRecordings(meetingId, 0, 200);
+        const audio = records.flatMap((record) => (["mic", "system"] as const).map((source) => {
+          const track = record.audio[source]!;
+          return { number: record.number, source, startedAt: record.startedAt, endedAt: record.endedAt,
+            size: track.size, checksum: track.checksum, manifest: track.manifest };
+        }));
+        return fingerprint({ ...context, audio });
+      });
+      const { method, calls } = audioMethod(value);
+      const service = new SummaryService(store.sync, store.accountSettings, [method]);
+      let job = await service.start(owner, vaultId, meetingId, { id: uuidV7() });
+      expect(job.inputVersion).toBe(legacyVersion);
+      const db = new DatabaseSync(value.path);
+      db.prepare("UPDATE jobs_summary SET input_version = ?, status = ? WHERE id = ?")
+        .run(legacyVersion, retry ? "failed" : "pending", job.id);
+      db.close();
+      if (retry) job = await service.retry(owner, vaultId, meetingId, job.id, { id: uuidV7() });
+      await new SummaryWorker(store.summaryJobs, [method], sync).processOne();
+      expect(await service.status(owner, vaultId, meetingId, job.id)).toMatchObject({ status: "succeeded" });
+      expect(calls).toHaveLength(1);
+    } finally { await store.close?.(); }
+  });
+
   it.each([["mic"], ["system"], ["mic", "system"]] as Array<Array<"mic" | "system">>)("summarizes committed %j tracks with images and keeps source settings independent", async (...sources) => {
     const value = await setup(); const { store, sync, vaultId, meetingId } = value;
     try {
@@ -508,16 +626,16 @@ describe("audio summary jobs", () => {
           contentType: "image/webp", storageKey: "unused", contentLength: 1, contentHash: "a".repeat(64), ocrText: "slide evidence", caption: "Excluded audio image description" }],
       }));
       vi.spyOn(sync, "readFileContent").mockResolvedValue({ file: {} as never, upstream: new Response(new Uint8Array([1])), contentType: "image/webp" });
-      await store.accountSettings.update(owner.userId, { summary: { method: "audio", detail: "standard", methodSettings: {
+      await store.accountSettings.update(owner.userId, { summary: { method: "audio", detail: "medium", methodSettings: {
         audio: { model: "catalog.ai.gemini-3-8-flash" }, transcript: { model: "saved-transcript-model" },
       } } });
       const { method, calls } = audioMethod(value);
       const service = new SummaryService(store.sync, store.accountSettings, [method]);
-      const id = uuidV7(); const job = await service.start(owner, vaultId, meetingId, { id, detail: "concise" });
-      expect(await service.start(owner, vaultId, meetingId, { id, detail: "concise" })).toEqual(job);
-      expect(job.settings.detail).toBe("concise");
-      await store.accountSettings.update(owner.userId, { summary: { method: "transcript", detail: "detailed" } });
-      expect(await store.accountSettings.get(owner.userId)).toMatchObject({ summary: { method: "transcript", detail: "detailed", methodSettings: {
+      const id = uuidV7(); const job = await service.start(owner, vaultId, meetingId, { id, detail: "low" });
+      expect(await service.start(owner, vaultId, meetingId, { id, detail: "low" })).toEqual(job);
+      expect(job.settings.detail).toBe("low");
+      await store.accountSettings.update(owner.userId, { summary: { method: "transcript", detail: "high" } });
+      expect(await store.accountSettings.get(owner.userId)).toMatchObject({ summary: { method: "transcript", detail: "high", methodSettings: {
         audio: { model: "catalog.ai.gemini-3-8-flash", reasoningEffort: "medium" },
         transcript: { model: "saved-transcript-model", reasoningEffort: "medium" },
       } } });
@@ -558,7 +676,7 @@ describe("audio summary jobs", () => {
       const saved = await sync.summaryVersion(owner, vaultId, meetingId, "1");
       expect(saved.document).not.toContain("Do not persist this");
       expect(saved.document).not.toContain("thoughtSignature");
-      expect(saved.metadata).toMatchObject({ inputTypes: ["context", "audio", "image"], detailLevel: "concise",
+      expect(saved.metadata).toMatchObject({ inputTypes: ["context", "audio", "image"], detailLevel: "low",
         request: { model: "catalog.ai.gemini-3-8-flash" }, response: { id: null, model: "actual-gemini", created_at: 123,
           usage: { input_tokens: 100, output_tokens: 25, total_tokens: 125, output_tokens_details: { reasoning_tokens: 5 } } } });
     } finally { await store.close?.(); }
@@ -643,4 +761,210 @@ describe("audio summary jobs", () => {
       } finally { db.close(); }
     }
   });
+});
+
+const cloudTranscript = { segments: [{ recording_index: 0, audio_source: "mic", start_seconds: 3, end_seconds: 4,
+  text: "出荷は来週です。", speaker_label: null }] };
+const combinedResponse = (transcription: unknown = cloudTranscript, summary: unknown = output) => Response.json({
+  choices: [{ finish_reason: "stop", message: { content: JSON.stringify({ summary, transcription }) } }],
+});
+async function recordingInput(value: Awaited<ReturnType<typeof setup>>, transcriptionModel?: string) {
+  const records = await value.store.sync.withIdentity(owner, (scoped) => scoped.listRecordings(value.meetingId, 0, 200));
+  return { type: "recording" as const, recordings: records.map((record) => ({ micFileId: record.audio.mic?.generation ?? null, systemFileId: record.audio.system?.generation ?? null })),
+    ...(transcriptionModel === undefined ? {} : { transcriptionModel }) };
+}
+
+describe("staged summary generation", () => {
+  it("replays an accepted legacy request after switching the account to cloud transcription", async () => {
+    const value = await setup();
+    try {
+      const service = new SummaryService(value.store.sync, value.store.accountSettings, [value.method]);
+      const request = { id: uuidV7() };
+      const accepted = await service.start(owner, value.vaultId, value.meetingId, request);
+      await value.store.accountSettings.update(owner.userId, { summary: { method: "cloudTranscription" } });
+      expect(await service.start(owner, value.vaultId, value.meetingId, request)).toEqual(accepted);
+      await expect(service.start(owner, value.vaultId, value.meetingId, { id: uuidV7() }))
+        .rejects.toMatchObject({ code: "summary_input_required" });
+    } finally { await value.store.close?.(); }
+  });
+
+  it("validates the exclusive input and treats only omitted transcriptionModel as direct generation", async () => {
+    const { summaryStartSchema } = await import("../src/summary/service");
+    const request = { id: uuidV7(), input: { type: "recording", recordings: [{ micFileId: uuidV7(), systemFileId: uuidV7() }] }, model: "gemini-3-8-flash", detailLevel: "high", summaryLanguage: "ja" };
+    expect(summaryStartSchema.safeParse(request).success).toBe(true);
+    for (const transcriptionModel of [null, "", "  "]) {
+      expect(summaryStartSchema.safeParse({ ...request, input: { ...request.input, transcriptionModel } }).success).toBe(false);
+    }
+    for (const extra of [{ transcriptId: uuidV7() }, { type: "transcript" }, { version: "" }]) {
+      expect(summaryStartSchema.safeParse({ ...request, input: { ...request.input, ...extra } }).success).toBe(false);
+    }
+    expect(summaryStartSchema.safeParse({ ...request, input: { type: "transcript", version: "1" } }).success).toBe(true);
+  });
+
+  it("generates both results once, uses both session tracks, and atomically saves their canonical histories", async () => {
+    const value = await setup(); const { store, sync, vaultId, meetingId } = value;
+    try {
+      await addRecording(value);
+      const { method, calls } = audioMethod(value, () => combinedResponse());
+      const service = new SummaryService(store.sync, store.accountSettings, [method]);
+      const input = await recordingInput(value);
+      const job = await service.start(owner, vaultId, meetingId, { id: uuidV7(), input, model: "gemini-3-8-flash", detailLevel: "max", summaryLanguage: "en" });
+      expect(job.stage).toBe("generating");
+      await new SummaryWorker(store.summaryJobs, [method], sync).processOne();
+      expect(calls).toHaveLength(1);
+      expect(JSON.stringify(calls[0])).toContain('"audio_source"');
+      const messages = calls[0]!.messages as Array<{ content: Array<{ type: string }> }>;
+      expect(messages[1]!.content.filter((part) => part.type === "audio_url")).toHaveLength(2);
+      const result = await store.sync.withIdentity(owner, async (scoped) => ({
+        meeting: await scoped.getMeeting(vaultId, meetingId), transcript: await scoped.getTranscript(vaultId, meetingId),
+        segments: await scoped.listTranscript(vaultId, meetingId, 100), versions: await scoped.listSummaryVersions(vaultId, meetingId, 100),
+      }));
+      expect((await service.status(owner, vaultId, meetingId))?.status).toBe("succeeded");
+      expect(result.meeting).toMatchObject({ transcriptRevision: 1, summaryRevision: 1 });
+      expect(result.transcript).toMatchObject({ version: 1, metadata: { provider: "gemini" } });
+      const recordings = await store.sync.withIdentity(owner, (scoped) => scoped.listRecordings(meetingId, 0, 100));
+      expect(result.transcript!.metadata!.runs[0]!.audioInputs).toEqual(["mic", "system"].map((source) => ({
+        recordingNumber: recordings[0]!.number, source, checksum: recordings[0]!.audio[source as "mic" | "system"]!.checksum,
+      })));
+      expect(result.segments.map((segment) => segment.text)).toEqual(["出荷は来週です。"]);
+      expect(result.versions).toHaveLength(1);
+      expect(result.versions[0]!.metadata).toMatchObject({ detailLevel: "max", outputLanguage: "en" });
+      expect(JSON.parse(result.meeting!.summaryDocument!)).not.toHaveProperty("transcript");
+    } finally { await store.close?.(); }
+  });
+
+  it.each(["transcript", "summary", "save"])("preserves both previous results when direct %s is invalid or cannot save", async (failure) => {
+    const value = await setup(); const { store, sync, vaultId, meetingId } = value;
+    try {
+      await addRecording(value);
+      const { method } = audioMethod(value, () => combinedResponse(failure === "transcript" ? { segments: [{ ...cloudTranscript.segments[0], end_seconds: 1000 }] } : cloudTranscript,
+        failure === "summary" ? { ...output, title: "" } : output));
+      const service = new SummaryService(store.sync, store.accountSettings, [method]);
+      await service.start(owner, vaultId, meetingId, { id: uuidV7(), input: await recordingInput(value), model: "gemini-3-8-flash", detailLevel: "high", summaryLanguage: "ja" });
+      if (failure === "save") {
+        const original = store.sync.withIdentity.bind(store.sync);
+        store.sync.withIdentity = (identity, action) => original(identity, (scoped) => action({ ...scoped,
+          completeSummaryJob: async (job, transaction) => { await scoped.completeSummaryJob(job, transaction); throw new Error("storage failed"); },
+        }));
+      }
+      await new SummaryWorker(store.summaryJobs, [method], sync).processOne();
+      expect((await service.status(owner, vaultId, meetingId))?.status).not.toBe("succeeded");
+      await store.sync.withIdentity(owner, async (scoped) => {
+        expect(await scoped.getTranscript(vaultId, meetingId)).toBeNull();
+        expect(await scoped.listSummaryVersions(vaultId, meetingId, 100)).toEqual([]);
+        expect((await scoped.listRecordings(meetingId, 0, 100))[0]!.audio.mic!.active).toBe(true);
+      });
+    } finally { await store.close?.(); }
+  });
+
+  it("resumes summary from its saved transcript after failure, without another audio generation", async () => {
+    const value = await setup(); const { store, sync, vaultId, meetingId } = value;
+    try {
+      await addRecording(value);
+      const { method, calls } = audioMethod(value, () => Response.json({ choices: [{ finish_reason: "stop", message: { content: JSON.stringify(cloudTranscript) } }] }));
+      const generate = vi.fn<SummaryMethod["generate"]>().mockRejectedValueOnce(new SummaryError("summary_http_503", true)).mockImplementation(async (job) => {
+        expect(job.transcriptResult).toBeTruthy();
+        const saved = await store.sync.withIdentity(owner, (scoped) => scoped.listTranscript(vaultId, meetingId, 100, undefined, Number(job.transcriptResult!.version)));
+        expect(saved[0]!.text).toBe("出荷は来週です。");
+        const transcript = await store.sync.withIdentity(owner, (scoped) => scoped.getTranscript(vaultId, meetingId));
+        expect(transcript!.metadata!.runs[0]!.audioInputs?.map(({ source }) => source)).toEqual(["mic", "system"]);
+        return doc();
+      });
+      const transcriptMethod: SummaryMethod = { ...value.method, generate };
+      const service = new SummaryService(store.sync, store.accountSettings, [method, transcriptMethod]);
+      await service.start(owner, vaultId, meetingId, { id: uuidV7(), input: await recordingInput(value, "gemini-3-8-flash"), model: "gemini-3-8-flash", detailLevel: "high", summaryLanguage: "ja" });
+      await new SummaryWorker(store.summaryJobs, [method, transcriptMethod], sync).processOne();
+      const failed = await service.status(owner, vaultId, meetingId);
+      expect(failed).toMatchObject({ status: "pending", stage: "summarizing", transcriptResult: { version: "1" } });
+      expect(calls).toHaveLength(1);
+      const db = new DatabaseSync(value.path);
+      db.exec("UPDATE jobs_summary SET available_at = 0"); db.close();
+      await new SummaryWorker(store.summaryJobs, [method, transcriptMethod], sync).processOne();
+      expect(calls).toHaveLength(1);
+      expect(generate).toHaveBeenCalledTimes(2);
+      expect((await service.status(owner, vaultId, meetingId))?.status).toBe("succeeded");
+      const versions = await store.sync.withIdentity(owner, (scoped) => scoped.listTranscriptVersions(vaultId, meetingId, 100));
+      expect(versions).toHaveLength(1);
+    } finally { await store.close?.(); }
+  });
+
+  it("discards a delayed direct response after cancellation and retries with the captured input and language", async () => {
+    const value = await setup(); const { store, sync, vaultId, meetingId } = value;
+    try {
+      let start!: () => void;
+      let finish!: (value: ReturnType<typeof doc>) => void;
+      const started = new Promise<void>((resolve) => { start = resolve; });
+      const result = new Promise<ReturnType<typeof doc>>((resolve) => { finish = resolve; });
+      const method = { ...value.method, generate: vi.fn(async () => { start(); return result; }) };
+      const service = new SummaryService(store.sync, store.accountSettings, [method]);
+      const job = await service.start(owner, vaultId, meetingId, { id: uuidV7(), outputLanguage: "en" });
+      const processing = new SummaryWorker(store.summaryJobs, [method], sync).processOne();
+      await started;
+      expect((await service.cancel(owner, vaultId, meetingId, job.id)).status).toBe("cancelled");
+      finish(doc()); await processing;
+      expect((await service.status(owner, vaultId, meetingId))?.status).toBe("cancelled");
+      expect(await store.sync.withIdentity(owner, (scoped) => scoped.listSummaryVersions(vaultId, meetingId, 100))).toEqual([]);
+      await store.accountSettings.update(owner.userId, { outputLanguage: "fr", summary: { detail: "low" } });
+      const id = uuidV7(); const retried = await service.retry(owner, vaultId, meetingId, job.id, { id });
+      expect(retried).toMatchObject({ outputLanguage: "en", settings: job.settings, inputVersion: job.inputVersion });
+      expect(await service.retry(owner, vaultId, meetingId, job.id, { id })).toEqual(retried);
+    } finally { await store.close?.(); }
+  });
+});
+
+it("preserves audio-pair order and rejects foreign, partial, or duplicated pairs", async () => {
+  const value = await setup(); const { store, vaultId, meetingId, sync } = value;
+  try {
+    await addRecording(value); await addRecording(value, ["system"]);
+    const originalInput = await recordingInput(value);
+    const input = { ...originalInput, recordings: [...originalInput.recordings].reverse() };
+    const { method, calls } = audioMethod(value, () => combinedResponse({ segments: [
+      { ...cloudTranscript.segments[0], recording_index: 0, audio_source: "system" },
+      { ...cloudTranscript.segments[0], recording_index: 1 },
+    ] }));
+    const service = new SummaryService(store.sync, store.accountSettings, [method]);
+    const request = { id: uuidV7(), input, model: "gemini-3-8-flash", detailLevel: "high", summaryLanguage: "ja" };
+    await expect(service.start(owner, vaultId, meetingId, { ...request, meetingId })).rejects.toMatchObject({ code: "invalid_summary_request" });
+    for (const recordings of [
+      [{ micFileId: uuidV7(), systemFileId: null }],
+      [{ ...originalInput.recordings[0], systemFileId: null }],
+      [originalInput.recordings[0], originalInput.recordings[0]],
+      [{ micFileId: null, systemFileId: null }],
+    ]) await expect(service.start(owner, vaultId, meetingId, { ...request, input: { ...input, recordings } })).rejects.toMatchObject({ status: 400 });
+    await expect(service.start(owner, vaultId, meetingId, { ...request, input: { ...input, transcriptionModel: "unsupported" } })).rejects.toMatchObject({ status: 400 });
+    await service.start(owner, vaultId, meetingId, request);
+    await new SummaryWorker(store.summaryJobs, [method], sync).processOne();
+    expect(calls).toHaveLength(1);
+    const wire = JSON.stringify(calls[0]);
+    expect(wire.indexOf("<recording_number>2</recording_number>")).toBeLessThan(wire.indexOf("<recording_number>1</recording_number>"));
+    expect((await service.status(owner, vaultId, meetingId))?.status).toBe("succeeded");
+  } finally { await store.close?.(); }
+});
+
+it("reads the exact transcript ID and historical version instead of silently substituting latest", async () => {
+  const value = await setup(); const { store, vaultId, meetingId, sync } = value;
+  try {
+    const transcriptIds = [uuidV7(), uuidV7()]; const now = new Date().toISOString();
+    for (const [index, id] of transcriptIds.entries()) {
+      const patchId = uuidV7();
+      const payload = { segments: [{ segmentId: uuidV7(), startedAt: now, endedAt: now, text: index === 0 ? "original evidence" : "newer evidence",
+        createdAt: now, audioSource: "mic", speakerLabel: null }], deletions: [] };
+      const hash = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify(payload)))), (byte) => byte.toString(16).padStart(2, "0")).join("");
+      await sync.putTranscriptChunk(owner, vaultId, meetingId, patchId, 0, hash, payload);
+      await sync.commitTransaction(owner, { schemaVersion: 2, id: uuidV7(), vaultId, createdAt: now, operations: [{
+        id: patchId, entity: "transcript", action: "patch", entityId: meetingId, baseRevision: index,
+        data: { mode: "replace", patchId, segmentCount: 1, deletionCount: 0,
+          chunks: [{ index: 0, sha256: hash, segmentCount: 1, deletionCount: 0 }],
+          transcript: { id, startedAt: now, endedAt: now, metadata: null } },
+      }] });
+    }
+    const { collectSummaryInput } = await import("../src/summary/transcript");
+    const input = { type: "transcript" as const, version: "1" };
+    const original = await store.sync.withIdentity(owner, (scoped) => collectSummaryInput(scoped, vaultId, meetingId, true, input));
+    expect(original.transcript?.map((segment) => segment.text)).toEqual(["original evidence"]);
+    for (const reference of [{ ...input, version: "999" }, { ...input, version: "0" }, { ...input, version: "invalid" }]) {
+      await expect(store.sync.withIdentity(owner, (scoped) => collectSummaryInput(scoped, vaultId, meetingId, true, reference)))
+        .rejects.toMatchObject({ code: "summary_input_version_unavailable" });
+    }
+  } finally { await store.close?.(); }
 });

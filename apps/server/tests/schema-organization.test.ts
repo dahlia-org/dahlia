@@ -8,7 +8,8 @@ it.each(["sqlite", "d1"])("preserves populated records and pending jobs during s
   const read = (path: string) => readFileSync(new URL(`../${dialect === "d1"
     ? path.replace("drizzle/sqlite/", "drizzle/d1/").replace("/migration.sql", ".sql") : path}`, import.meta.url), "utf8");
   try {
-    const files = serverMigrationManifest.sqlite.files;
+    const files = serverMigrationManifest.sqlite.files.slice(0,
+      serverMigrationManifest.sqlite.files.findIndex((file) => file.includes("_canonical_appearance_fields/")) + 1);
     const upgradeIndex = files.findIndex((file) => file.includes("_schema_organization/"));
     expect(upgradeIndex).toBeGreaterThan(0);
     for (const file of files.slice(0, upgradeIndex)) db.exec(read(file));

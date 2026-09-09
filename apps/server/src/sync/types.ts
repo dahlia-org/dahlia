@@ -231,6 +231,8 @@ export interface IdentitySyncStore {
   getSummaryVersion(vaultId: string, meetingId: string, version?: number): Promise<SummaryVersion | null>;
   getSummaryJob(vaultId: string, meetingId: string, id?: string): Promise<SummaryJob | null>;
   insertSummaryJob(job: SummaryJob): Promise<void>;
+  cancelSummaryJob(vaultId: string, meetingId: string, id: string): Promise<SummaryJob | null>;
+  completeSummaryTranscript(job: SummaryJob, transaction: SyncTransaction, transcriptId: string): Promise<TranscriptVersion | null>;
   completeSummaryJob(job: SummaryJob, transaction: SyncTransaction): Promise<boolean>;
   loadImageAnalysis(claim: ImageAnalysisClaim): Promise<ImageAnalysisInput | null>;
   completeImageAnalysis(input: ImageAnalysisInput, transaction: SyncTransaction): Promise<boolean>;

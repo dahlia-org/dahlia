@@ -25,6 +25,7 @@ struct BatchTranscriptionConfirmation: Identifiable, Equatable {
     let allowsRecordedLanguageSelection: Bool
     let automaticLanguageCandidateSnapshot: BatchLanguageDetectionCandidateSnapshot?
     let purpose: Purpose
+    let processingMethod: RecordingProcessingMethod?
     let initiallyGeneratesSummary: Bool
     let summaryGenerationOptions: SummaryGenerationOptions
     let projectSelection: BatchTranscriptionProjectSelection
@@ -38,6 +39,7 @@ struct BatchTranscriptionConfirmation: Identifiable, Equatable {
         automaticLanguageCandidateSnapshot: BatchLanguageDetectionCandidateSnapshot? = nil,
         purpose: Purpose = .initialOrRetry,
         initiallyGeneratesSummary: Bool = false,
+        processingMethod: RecordingProcessingMethod? = nil,
         summaryGenerationOptions: SummaryGenerationOptions = .manual,
         projectSelection: BatchTranscriptionProjectSelection = .unavailable
     ) {
@@ -54,7 +56,8 @@ struct BatchTranscriptionConfirmation: Identifiable, Equatable {
             ?? (resolvedLanguageSelection == .recorded)
         self.automaticLanguageCandidateSnapshot = automaticLanguageCandidateSnapshot
         self.purpose = purpose
-        self.initiallyGeneratesSummary = initiallyGeneratesSummary
+        self.processingMethod = processingMethod
+        self.initiallyGeneratesSummary = processingMethod != nil || initiallyGeneratesSummary
         self.summaryGenerationOptions = summaryGenerationOptions
         self.projectSelection = projectSelection
     }

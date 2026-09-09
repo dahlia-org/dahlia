@@ -1,7 +1,7 @@
 import { setTimeout as delay } from "node:timers/promises";
 import { personalWorkspaceId } from "../auth/workspace";
 import type { MeetingSyncService } from "../sync/service";
-import { SummaryError, type SummaryMethod } from "./model";
+import { SummaryError, type SummaryMethod, type SummaryStage } from "./model";
 import type { SummaryJobStore } from "./store";
 
 export class SummaryWorker {
@@ -27,15 +27,33 @@ export class SummaryWorker {
     const job = await this.jobs.claim();
     if (!job) return false;
     const startedAt = Date.now();
-    let phase = "generate";
+    let phase: SummaryStage = job.stage ?? (job.method === "audio" ? "generating" : "summarizing");
     console.info(JSON.stringify({ level: "info", event: "summary_job_started", method: job.method, attempt: job.attempts }));
     try {
       const method = this.methods.find((method) => method.id === job.method);
       if (!method) throw new SummaryError("summary_method_unavailable");
       const signal = AbortSignal.any([this.abort.signal, AbortSignal.timeout(240_000)]);
-      const document = await method.generate(job, signal);
-      signal.throwIfAborted();
-      phase = "publish";
+      const identity = { userId: job.ownerUserId, workspaceId: personalWorkspaceId(job.ownerUserId), source: "accounts" as const };
+      const advance = async (next: SummaryStage) => {
+        signal.throwIfAborted();
+        if (!await this.jobs.advance(job, next)) throw new SummaryError("summary_job_inactive");
+        phase = next;
+      };
+      const twoStage = job.input?.type === "recording" && job.input.transcriptionModel !== undefined;
+      if (twoStage && !job.transcriptResult) {
+        if (!method.transcribe) throw new SummaryError("summary_method_unavailable");
+        await advance("transcribing");
+        const transcript = await method.transcribe(job, signal);
+        await advance("saving");
+        const saved = await this.sync.saveSummaryTranscript(identity, job, transcript, method);
+        if (!saved) throw new SummaryError("summary_job_inactive");
+        job.transcriptResult = { transcriptId: saved.id, version: String(saved.version) };
+      }
+      const generator = twoStage ? this.methods.find((method) => method.id === "transcript") : method;
+      if (!generator) throw new SummaryError("summary_method_unavailable");
+      await advance(twoStage || job.method === "transcript" ? "summarizing" : "generating");
+      const document = await generator.generate(job, signal);
+      await advance("saving");
       const saved = await this.sync.completeSummary({ userId: job.ownerUserId, workspaceId: personalWorkspaceId(job.ownerUserId), source: "accounts" }, job, document, method);
       console.info(JSON.stringify({ level: "info", event: saved ? "summary_job_succeeded" : "summary_job_lease_lost",
         attempt: job.attempts, durationMs: Date.now() - startedAt }));

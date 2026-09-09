@@ -5,13 +5,16 @@ struct ServerSummarySettingsSection: View {
     @Bindable private var model = ServerAccountSettingsModel.shared
     private var state: ServerAccountSettingsModel.State { model.state(for: connectionID) }
     private var method: String { state.settings?.summary?.method ?? "transcript" }
-    private var methods: [String] { state.summaryMethods.filter { $0 == "transcript" || $0 == "audio" } }
+    private var methods: [String] {
+        state.recordingProcessingMethods.map(\.rawValue)
+    }
+
     private var settings: ServerAccountSettings.SummaryModelSettings {
         state.settings?.summary?.selectedSettings ?? .init(model: method == "audio" ? "gemini-3-8-flash" : "gpt-5.4")
     }
 
     private var models: [ServerSummaryService.Model] {
-        state.summaryModels.filter { method != "audio" || $0.supportsAudioSummary }
+        state.summaryModels.filter { $0.supportsStructuredSummary && (method != "audio" || $0.supportsAudioSummary) }
     }
 
     private var selectedModel: ServerSummaryService.Model? {
@@ -28,11 +31,11 @@ struct ServerSummarySettingsSection: View {
                     set: { model.save(.init(summary: .init(method: $0)), connectionID: connectionID) }
                 )) {
                     ForEach(methods, id: \.self) { method in
-                        Text(method == "audio" ? L10n.serverSummaryAudio : L10n.serverSummaryTranscript).tag(method)
+                        Text((RecordingProcessingMethod(rawValue: method) ?? .transcript).displayName).tag(method)
                     }
                 }
                 Picker(L10n.summaryDetailLevel, selection: Binding(
-                    get: { state.settings?.summary?.detail ?? "detailed" },
+                    get: { state.settings?.summary?.detail ?? "high" },
                     set: { model.save(.init(summary: .init(detail: $0)), connectionID: connectionID) }
                 )) {
                     ForEach(SummaryDetailLevel.allCases) { Text($0.displayName).tag($0.rawValue) }
@@ -66,6 +69,24 @@ struct ServerSummarySettingsSection: View {
                     ForEach(efforts, id: \.self) { Text($0).tag($0) }
                 }
                 .disabled(efforts.isEmpty)
+                if method == "cloudTranscription" {
+                    Picker(L10n.transcriptionModel, selection: Binding(
+                        get: { state.settings?.summary?.methodSettings.audio?.model ?? "gemini-3-8-flash" },
+                        set: { value in
+                            guard let selected = state.summaryModels.first(where: {
+                                $0.id == value && $0.supportsAudioSummary && $0.supportsStructuredSummary
+                            }) else { return }
+                            model.save(.init(summary: .init(methodSettings: .init(audio: .init(
+                                model: value,
+                                reasoningEffort: selected.defaultReasoningLevel ?? "medium"
+                            )))), connectionID: connectionID)
+                        }
+                    )) {
+                        ForEach(state.summaryModels.filter { $0.supportsAudioSummary && $0.supportsStructuredSummary }) {
+                            Text($0.displayName).tag($0.id)
+                        }
+                    }
+                }
             } else {
                 Text(L10n.serverSummaryUnavailable).foregroundStyle(.secondary)
             }
@@ -81,7 +102,7 @@ struct ServerSummarySettingsSection: View {
     private func save(_ settings: ServerAccountSettings.Patch.ModelSettings) {
         let patch: ServerAccountSettings.Patch.MethodSettings
         switch method {
-        case "transcript": patch = .init(transcript: settings)
+        case "transcript", "cloudTranscription": patch = .init(transcript: settings)
         case "audio": patch = .init(audio: settings)
         default: return
         }

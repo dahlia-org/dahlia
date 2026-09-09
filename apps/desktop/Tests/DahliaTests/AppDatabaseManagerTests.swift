@@ -245,27 +245,15 @@ import os
                     ]
                 )
                 for startedAt in [secondRecordingStartedAt, firstRecordingStartedAt] {
-                    try RecordingSessionRecord(
-                        id: .v7(),
-                        meetingId: meetingID,
-                        startedAt: startedAt,
-                        endedAt: startedAt.addingTimeInterval(30),
-                        duration: 30,
-                        offsetSeconds: 0,
-                        createdAt: startedAt,
-                        updatedAt: startedAt
-                    ).insert(db)
+                    try db.execute(sql: """
+                    INSERT INTO recording_sessions(id, meetingId, startedAt, endedAt, duration, offsetSeconds, createdAt, updatedAt)
+                    VALUES (?, ?, ?, ?, 30, 0, ?, ?)
+                    """, arguments: [UUID.v7(), meetingID, startedAt, startedAt.addingTimeInterval(30), startedAt, startedAt])
                 }
-                try RecordingSessionRecord(
-                    id: placeholderSessionID,
-                    meetingId: unrecordedMeetingID,
-                    startedAt: createdAt,
-                    endedAt: nil,
-                    duration: nil,
-                    offsetSeconds: 0,
-                    createdAt: createdAt,
-                    updatedAt: createdAt
-                ).insert(db)
+                try db.execute(sql: """
+                INSERT INTO recording_sessions(id, meetingId, startedAt, offsetSeconds, createdAt, updatedAt)
+                VALUES (?, ?, ?, 0, ?, ?)
+                """, arguments: [placeholderSessionID, unrecordedMeetingID, createdAt, createdAt, createdAt])
                 try db.execute(
                     sql: """
                     INSERT INTO recording_audio_segments (

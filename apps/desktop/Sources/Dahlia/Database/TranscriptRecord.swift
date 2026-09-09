@@ -42,8 +42,8 @@ struct TranscriptRecord: Codable, FetchableRecord, PersistableRecord, Sendable {
         try Self(meetingId: meetingId, sessionId: sessionId, info: info).save(db)
     }
 
-    static func beginLive(_ session: RecordingSessionRecord, in db: Database) throws {
-        guard session.transcriptionMode == .realtime else { return }
+    static func beginLive(_ session: RecordingSessionRecord, liveDraft: Bool = false, in db: Database) throws {
+        guard session.transcriptionMode == .realtime || liveDraft else { return }
         try TextContentAccess.requireComplete(entity: .transcript, id: session.meetingId, in: db)
         let previousRecord = try fetchOne(db, key: session.meetingId)
         let previous = try previousRecord?.info
@@ -55,14 +55,18 @@ struct TranscriptRecord: Codable, FetchableRecord, PersistableRecord, Sendable {
         guard try RecordingSessionRecord.filter(Column("meetingId") == session.meetingId)
             .filter(Column("id") != session.id).filter(Column("endedAt") == nil)
             .filter(sql: RecordingSessionRecord.hasRecordingEvidenceSQL).fetchCount(db) == 0 else { throw TextContentError.changed }
-        guard !hasText || previous?.metadata?.usesAppleModel("apple-speech-live") == true else {
+        guard liveDraft || !hasText || previous?.metadata?.usesAppleModel("apple-speech-live") == true else {
             throw TranscriptVersionError.fullTranscriptionUnavailable
         }
         var metadata = TranscriptMetadata(provider: "apple", model: "apple-speech-live", runs: hasText ? previous?.metadata?.runs ?? [] : [])
         let startedAt = Date.now
-        metadata.runs.append(.init(startedAt: startedAt))
+        metadata.runs.append(.init(startedAt: startedAt, recordingSessionId: session.id))
         let info = TranscriptInfo(id: .v7(), startedAt: startedAt, endedAt: nil, metadata: metadata)
         try Self(meetingId: session.meetingId, sessionId: session.id, info: info).save(db)
+        if liveDraft, hasText, previous?.metadata?.usesAppleModel("apple-speech-live") != true {
+            try enqueueSnapshot(meetingId: session.meetingId, info: info, in: db)
+            return
+        }
         let operation = try mutation(meetingId: session.meetingId, info: info, mode: hasText ? "append" : "replace")
         if let meeting = try MeetingRecord.fetchOne(db, key: session.meetingId) {
             try SyncTransactionRecorder.record(vaultId: meeting.vaultId, operations: [operation], in: db)

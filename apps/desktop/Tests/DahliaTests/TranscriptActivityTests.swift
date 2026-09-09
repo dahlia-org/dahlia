@@ -107,7 +107,22 @@
                     updatedAt: end,
                     recordingStartedAt: base
                 ).insert(db)
-                try session.insert(db)
+                try db.execute(sql: """
+                INSERT INTO recording_sessions(id, meetingId, startedAt, endedAt, duration, offsetSeconds, createdAt, updatedAt, transcriptionMode,
+                    batchCompletedAt, batchAttemptCount) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, arguments: [
+                    session.id,
+                    session.meetingId,
+                    session.startedAt,
+                    session.endedAt,
+                    session.duration,
+                    session.offsetSeconds,
+                    session.createdAt,
+                    session.updatedAt,
+                    session.transcriptionMode.rawValue,
+                    session.batchCompletedAt,
+                    session.batchAttemptCount,
+                ])
                 try db.execute(
                     sql: "INSERT INTO transcript_segments(id, meetingId, sessionId, startTime, endTime, isConfirmed) VALUES (?, ?, ?, ?, ?, 1)",
                     arguments: [segmentId, meetingId, session.id, speechStart, speechEnd]

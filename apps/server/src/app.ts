@@ -352,7 +352,23 @@ export function createApp(dependencies: AppDependencies) {
     if (!dependencies.summaryService) return context.json({ error: "summary_unavailable" }, 503);
     context.header("cache-control", "no-store");
     return context.json({ job: summaryJobResponse(await dependencies.summaryService.status(identity,
-      sync.parseId(context.req.param("vaultId")), sync.parseId(context.req.param("meetingId")))) });
+      sync.parseId(context.req.param("vaultId")), sync.parseId(context.req.param("meetingId")),
+      context.req.query("id") ? sync.parseId(context.req.query("id")!) : undefined)) });
+  });
+  for (const action of ["cancel", "retry"] as const) app.post(`/api/v1/vaults/:vaultId/meetings/:meetingId/summary/job/:jobId/${action}`, accountSettingsBodyLimit, async (context) => {
+    const requiresBrowserOrigin = config.authProvider === "accounts" && !context.req.header("authorization");
+    if ((requiresBrowserOrigin || context.req.header("origin")) && !mutationOriginAllowed(context.req.raw, config.baseUrl)) {
+      return context.json({ error: "invalid_origin" }, 403);
+    }
+    const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
+    const service = dependencies.summaryService;
+    if (!service) return context.json({ error: "summary_unavailable" }, 503);
+    const vaultId = sync.parseId(context.req.param("vaultId"));
+    const meetingId = sync.parseId(context.req.param("meetingId"));
+    const jobId = sync.parseId(context.req.param("jobId"));
+    const job = action === "cancel" ? await service.cancel(identity, vaultId, meetingId, jobId)
+      : await service.retry(identity, vaultId, meetingId, jobId, await context.req.json().catch(() => null));
+    return context.json({ job: summaryJobResponse(job) }, action === "retry" ? 202 : 200);
   });
   app.post("/api/v1/vaults/:vaultId/meetings/:meetingId/summary", accountSettingsBodyLimit, async (context) => {
     const requiresBrowserOrigin = config.authProvider === "accounts" && !context.req.header("authorization");

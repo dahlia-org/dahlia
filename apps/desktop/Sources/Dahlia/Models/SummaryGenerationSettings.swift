@@ -1,7 +1,7 @@
 import Foundation
 
 /// Immutable LLM settings captured when a summary job starts.
-struct SummaryGenerationSettings: Equatable, Sendable {
+struct SummaryGenerationSettings: Codable, Equatable, Sendable {
     let modelID: String?
     let reasoningEffort: String
     let detailLevelInstruction: String

@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -22,8 +22,19 @@ async function readEntryGraph(entry) {
 }
 
 try {
+  const source = join(directory, "source");
+  await mkdir(source);
+  for (const path of [
+    "src", "drizzle", "scripts", "package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml",
+    "tsconfig.json", "tsup.config.ts", "tsup.client.config.ts", "vite.config.ts", "worker-configuration.d.ts",
+    "index.html", "README.md", "Codex-LICENSE", "Codex-NOTICE.txt",
+  ]) {
+    await cp(new URL(`../${path}`, import.meta.url), join(source, path), { recursive: true });
+  }
+  // Build only shipped source. Reuse installed dependencies, never sibling app files or existing dist output.
+  await symlink(fileURLToPath(new URL("../node_modules", import.meta.url)), join(source, "node_modules"));
   const packed = spawnSync("pnpm", ["pack", "--pack-destination", directory], {
-    cwd: new URL("..", import.meta.url),
+    cwd: source,
     encoding: "utf8",
   });
   if (packed.status !== 0) throw new Error(packed.stderr || packed.stdout || "pnpm pack failed");
@@ -74,7 +85,7 @@ try {
     if (typeof createPostgresApplicationStore !== "function" || typeof createPostgresAuthStore !== "function") {
       throw new Error("PostgreSQL store factories are missing from the Node package export");
     }
-    if (serverMigrationManifest.sqlite.files.length !== 23) {
+    if (serverMigrationManifest.sqlite.files.length !== 25) {
       throw new Error("Migration manifest is incomplete");
     }
     const style = await readFile(new URL(import.meta.resolve("@dahlia-ai/server/client/styles.css")), "utf8");
@@ -134,7 +145,7 @@ try {
     if (database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'artifact'").get()) throw new Error("Retired Artifact table remains");
     database.close();
     await store.close?.();
-    if (applied.length !== serverMigrationManifest.sqlite.files.length || applied.at(-1)?.name !== "20260909091111_canonical_appearance_fields") {
+    if (applied.length !== serverMigrationManifest.sqlite.files.length || applied.at(-1)?.name !== "20260909104431_summary_detail_keys") {
       throw new Error("Installed package migrations did not run from the package directory");
     }
   `);

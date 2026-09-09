@@ -426,6 +426,10 @@ final class AppDatabaseManager: Sendable {
             }
         }
 
+        migrator.registerMigration("v54_recordingProcessing") { db in
+            try addColumnIfNeeded(in: db, table: "recording_sessions", column: "processingJSON", type: .text)
+        }
+
         return migrator
     }()
 
