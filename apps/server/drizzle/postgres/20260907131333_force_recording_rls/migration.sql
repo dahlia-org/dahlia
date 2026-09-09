@@ -1,1 +1,0 @@
-ALTER TABLE "app"."recordings" FORCE ROW LEVEL SECURITY;

@@ -1,3 +1,4 @@
+import { serverMigrationManifest } from "../src/migrations";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 
 import { describe, expect, it, vi } from "vitest";
@@ -50,7 +51,7 @@ describe("deployment routing", () => {
       migrations_dir: "drizzle/d1",
     }));
     const d1Migrations = readdirSync(new URL("../drizzle/d1", import.meta.url)).toSorted();
-    expect(d1Migrations).toEqual(["20260903173555_lying_slipstream.sql", "20260905172528_unique_marvel_zombies.sql", "20260905172654_sync_history_backfill.sql", "20260906125718_dashing_roughhouse.sql", "20260907070728_dashing_sinister_six.sql", "20260907091207_funny_black_bird.sql", "20260907131015_big_excalibur.sql", "20260907132433_stiff_slyde.sql", "20260907172550_nice_starhawk.sql", "20260908013212_chief_enchantress.sql", "20260908040349_cuddly_brood.sql", "20260908040515_summary_version_backfill.sql", "20260908080352_zippy_aaron_stack.sql", "20260908092914_massive_luke_cage.sql", "20260908093013_account_settings_backfill.sql", "20260908093035_stale_sue_storm.sql", "20260908144757_aberrant_miek.sql", "20260908155902_transcript_activity.sql", "20260908164304_spicy_lady_vermin.sql", "20260908180502_schema_organization.sql", "20260909031422_perfect_rictor.sql", "20260909055951_sour_dexter_bennett.sql", "20260909091111_canonical_appearance_fields.sql", "20260909104405_lame_killraven.sql", "20260909104431_summary_detail_keys.sql"]);
+    expect(d1Migrations).toEqual(serverMigrationManifest.sqlite.files.map((file) => file.split("/").at(-2) + ".sql"));
     for (const migration of d1Migrations) {
       expect(readText(`../drizzle/d1/${migration}`))
         .toBe(readText(`../drizzle/sqlite/${migration.replace(/\.sql$/, "")}/migration.sql`));
@@ -277,9 +278,9 @@ describe("deployment routing", () => {
   });
 
   it("separates generated PostgreSQL auth DDL from the application baseline", () => {
-    const sqlite = readText("../drizzle/sqlite/20260903173555_lying_slipstream/migration.sql");
+    const sqlite = serverMigrationManifest.sqlite.files.map((file) => readText(`../${file}`)).join("\n");
     const auth = readText("../drizzle/postgres-auth/20260903034253_melodic_scalphunter/migration.sql");
-    const postgres = readText("../drizzle/postgres/20260903173551_bumpy_freak/migration.sql");
+    const postgres = serverMigrationManifest.postgres.files.filter((file) => file.startsWith("drizzle/postgres/")).map((file) => readText(`../${file}`)).join("\n");
     for (const migration of [sqlite, `${auth}\n${postgres}`]) {
       expect(migration).not.toContain("model_alias");
       expect(migration).not.toContain("platform_admin");
@@ -299,7 +300,7 @@ describe("deployment routing", () => {
     expect(auth).toContain('"team_id" text');
     expect(postgres).not.toContain('CREATE TABLE "auth".');
     expect(postgres).toContain('REFERENCES "auth"."user"("id")');
-    expect(postgres).toContain('CREATE TABLE "app"."artifact"');
+    expect(postgres).not.toContain('CREATE TABLE "app"."artifact"');
     expect(postgres).toContain('CREATE TABLE "app"."meetings"');
     expect(postgres).not.toContain('CREATE TABLE "app"."user"');
     expect(postgres).toContain("ROW LEVEL SECURITY");

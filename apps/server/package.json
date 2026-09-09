@@ -43,7 +43,8 @@
     "dist/client",
     "dist/client-library",
     "dist/server",
-    "drizzle"
+    "drizzle/*/*/migration.sql",
+    "drizzle/d1/*.sql"
   ],
   "engines": {
     "node": ">=22.13"

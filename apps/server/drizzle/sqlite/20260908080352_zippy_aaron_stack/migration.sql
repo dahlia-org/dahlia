@@ -1,1 +1,0 @@
-ALTER TABLE `account_settings` ADD `audio_summary` text DEFAULT '{"model":"gemini-3-8-flash","reasoningEffort":"medium","detail":"detailed"}' NOT NULL;
