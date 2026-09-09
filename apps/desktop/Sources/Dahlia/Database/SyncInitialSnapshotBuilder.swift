@@ -84,11 +84,10 @@ enum SyncInitialSnapshotBuilder {
         }
         for (vaultId, connectionId, restoring) in pending {
             do {
-                try await enqueue(
+                if try await enqueue(
                     vaultId: vaultId, connectionId: connectionId, restoring: restoring,
                     dbQueue: dbQueue, screenshotContent: screenshotContent
-                )
-                return
+                ) { return }
             } catch is CancellationError {
                 throw CancellationError()
             } catch {
@@ -105,12 +104,12 @@ enum SyncInitialSnapshotBuilder {
         restoring: Bool,
         dbQueue: DatabaseQueue,
         screenshotContent: ScreenshotContentProvider
-    ) async throws {
+    ) async throws -> Bool {
         screenshotContent.retainOriginals(vaultIds: [vaultId], dbQueue: dbQueue)
         defer { screenshotContent.releaseOriginals(vaultIds: [vaultId], dbQueue: dbQueue) }
         try await screenshotContent.prepareOriginals(vaultId: vaultId, dbQueue: dbQueue)
         guard let markerId = try await dbQueue.write({ db -> UUID? in
-            guard try !hasActiveRecording(in: db),
+            guard try !RecordingSessionRecord.hasActiveRecording(vaultId: vaultId, in: db),
                   let vault = try VaultRecord.fetchOne(db, key: vaultId),
                   vault.accountConnectionId == connectionId,
                   vault.syncConfirmedConnectionId == nil else { return nil }
@@ -136,7 +135,7 @@ enum SyncInitialSnapshotBuilder {
                 connectionIdOverride: connectionId,
                 in: db
             )
-        }) else { return }
+        }) else { return false }
 
         try await enqueueProjects(
             vaultId: vaultId,
@@ -154,7 +153,7 @@ enum SyncInitialSnapshotBuilder {
             dbQueue: dbQueue
         )
 
-        _ = try await dbQueue.write { db in
+        return try await dbQueue.write { db in
             guard try canContinue(markerId: markerId, vaultId: vaultId, in: db) else { return false }
             if restoring {
                 try db.execute(sql: "DELETE FROM sync_entity_state WHERE vaultId = ?", arguments: [vaultId])
@@ -382,18 +381,11 @@ enum SyncInitialSnapshotBuilder {
             arguments: [markerId, vaultId]
         ) ?? false
         guard markerExists else { return false }
-        if try hasActiveRecording(in: db) {
+        if try RecordingSessionRecord.hasActiveRecording(vaultId: vaultId, in: db) {
             try SyncTransactionQueue.discardPartialSnapshot(vaultId: vaultId, in: db)
             return false
         }
         return true
-    }
-
-    private static func hasActiveRecording(in db: Database) throws -> Bool {
-        try Bool.fetchOne(
-            db,
-            sql: "SELECT EXISTS(SELECT 1 FROM recording_sessions WHERE endedAt IS NULL)"
-        ) ?? false
     }
 
     private static func restoreResetOperation(vaultId: UUID) throws -> SyncOperationDraft {

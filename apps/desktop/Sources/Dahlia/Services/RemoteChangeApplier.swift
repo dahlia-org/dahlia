@@ -7,7 +7,7 @@ enum RemoteChangeApplier {
         try await dbQueue.read { db in
             guard try SyncTransactionQueue.matchesExpectedConnection(vaultId: vaultId, connectionId: expectedConnectionId, in: db),
                   try !SyncTransactionQueue.hasPending(vaultId: vaultId, in: db),
-                  try !hasActiveRecording(in: db) else { return nil }
+                  try !RecordingSessionRecord.hasActiveRecording(vaultId: vaultId, in: db) else { return nil }
             return try Int64.fetchOne(db, sql: "SELECT syncMutationGeneration FROM vaults WHERE id = ?", arguments: [vaultId])
         }
     }
@@ -31,7 +31,7 @@ enum RemoteChangeApplier {
             } else if let expectedMutationGeneration {
                 guard try Int64.fetchOne(
                     db, sql: "SELECT syncMutationGeneration FROM vaults WHERE id = ?", arguments: [vaultId]
-                ) == expectedMutationGeneration, try !hasActiveRecording(in: db) else { return false }
+                ) == expectedMutationGeneration, try !RecordingSessionRecord.hasActiveRecording(vaultId: vaultId, in: db) else { return false }
             }
             return try body(db)
         }
@@ -57,7 +57,10 @@ enum RemoteChangeApplier {
             if incrementalContext != nil {
                 return try meetingIds.allSatisfy { try RemoteChangePolicy.permits(.meeting, id: $0, action: "delete", vaultId: vaultId, in: db) }
             }
-            return try !SyncTransactionQueue.hasPending(vaultId: vaultId, in: db) && !hasActiveRecording(in: db)
+            return try !SyncTransactionQueue.hasPending(vaultId: vaultId, in: db) && !RecordingSessionRecord.hasActiveRecording(
+                vaultId: vaultId,
+                in: db
+            )
         }
         guard preflight else { return false }
 
@@ -219,7 +222,10 @@ enum RemoteChangeApplier {
                     guard try RemoteChangePolicy.permits(.project, id: id, action: "delete", vaultId: vaultId, in: db) else { return false }
                 }
             } else {
-                guard try !SyncTransactionQueue.hasPending(vaultId: vaultId, in: db), try !hasActiveRecording(in: db) else { return false }
+                guard try !SyncTransactionQueue.hasPending(vaultId: vaultId, in: db), try !RecordingSessionRecord.hasActiveRecording(
+                    vaultId: vaultId,
+                    in: db
+                ) else { return false }
             }
 
             // Keep retained rows in place so local-only CRM references survive canonical refreshes.
@@ -316,13 +322,6 @@ enum RemoteChangeApplier {
         ).insert(db)
     }
 
-    private static func hasActiveRecording(in db: Database) throws -> Bool {
-        try Bool.fetchOne(
-            db,
-            sql: "SELECT EXISTS (SELECT 1 FROM recording_sessions WHERE endedAt IS NULL)"
-        ) ?? false
-    }
-
     static func beginTranscript(
         meetingId: UUID,
         vaultId: UUID,
@@ -341,7 +340,10 @@ enum RemoteChangeApplier {
             if incrementalContext != nil {
                 guard try RemoteChangePolicy.permits(.transcript, id: meetingId, vaultId: vaultId, in: db) else { return false }
             } else {
-                guard try !SyncTransactionQueue.hasPending(vaultId: vaultId, in: db), try !hasActiveRecording(in: db) else { return false }
+                guard try !SyncTransactionQueue.hasPending(vaultId: vaultId, in: db), try !RecordingSessionRecord.hasActiveRecording(
+                    vaultId: vaultId,
+                    in: db
+                ) else { return false }
             }
             try db.execute(sql: """
             CREATE TEMP TABLE IF NOT EXISTS sync_remote_transcript_items (
@@ -383,7 +385,10 @@ enum RemoteChangeApplier {
             if incrementalContext != nil {
                 guard try RemoteChangePolicy.permits(.transcript, id: meetingId, vaultId: vaultId, in: db) else { return false }
             } else {
-                guard try !SyncTransactionQueue.hasPending(vaultId: vaultId, in: db), try !hasActiveRecording(in: db) else { return false }
+                guard try !SyncTransactionQueue.hasPending(vaultId: vaultId, in: db), try !RecordingSessionRecord.hasActiveRecording(
+                    vaultId: vaultId,
+                    in: db
+                ) else { return false }
             }
             for segment in segments {
                 try db.execute(
@@ -528,11 +533,14 @@ enum RemoteChangeApplier {
                 if incrementalContext == nil {
                     guard try !SyncTransactionQueue.hasPending(vaultId: vaultId, in: db) else { return false }
                 }
-                if incrementalContext == nil, changes.contains(where: { $0.entity == .transcript }), try hasActiveRecording(in: db) {
+                if incrementalContext == nil, changes.contains(where: { $0.entity == .transcript }), try RecordingSessionRecord.hasActiveRecording(
+                    vaultId: vaultId,
+                    in: db
+                ) {
                     return false
                 }
                 if changes.contains(where: { $0.action == "reset" && $0.record != nil }),
-                   try hasActiveRecording(in: db) {
+                   try RecordingSessionRecord.hasActiveRecording(vaultId: vaultId, in: db) {
                     return false
                 }
                 let deletingActiveMeeting = try changes.contains { change in
@@ -690,7 +698,7 @@ enum RemoteChangeApplier {
                         expectedMutationGeneration: expectedMutationGeneration
                     ) { db in
                         guard try !SyncTransactionQueue.hasPending(vaultId: vaultId, in: db),
-                              try !hasActiveRecording(in: db)
+                              try !RecordingSessionRecord.hasActiveRecording(vaultId: vaultId, in: db)
                         else { return false }
                         for id in batch {
                             let arguments: StatementArguments = deletion.vaultScoped ? [id, vaultId] : [id]
@@ -721,7 +729,7 @@ enum RemoteChangeApplier {
             expectedMutationGeneration: expectedMutationGeneration
         ) { db in
             guard try !SyncTransactionQueue.hasPending(vaultId: vaultId, in: db),
-                  try !hasActiveRecording(in: db)
+                  try !RecordingSessionRecord.hasActiveRecording(vaultId: vaultId, in: db)
             else { return false }
             try db.execute(
                 sql: "DELETE FROM sync_entity_state WHERE vaultId = ? AND confirmedRevision IS NULL",
@@ -777,7 +785,7 @@ enum RemoteChangeApplier {
             expectedMutationGeneration: expectedMutationGeneration
         ) { db in
             guard try !SyncTransactionQueue.hasPending(vaultId: vaultId, in: db),
-                  try !hasActiveRecording(in: db),
+                  try !RecordingSessionRecord.hasActiveRecording(vaultId: vaultId, in: db),
                   try VaultRecord.fetchOne(db, key: vaultId)?.allowsCanonicalEdits == true else { return false }
             // Expired reset history has the same owner recovery semantics as a retained reset event.
             try forgetRemoteVault(vaultId: vaultId, in: db)
@@ -816,7 +824,7 @@ enum RemoteChangeApplier {
                 expectedMutationGeneration: expectedMutationGeneration
             ) { db in
                 guard try !SyncTransactionQueue.hasPending(vaultId: vaultId, in: db),
-                      try !hasActiveRecording(in: db)
+                      try !RecordingSessionRecord.hasActiveRecording(vaultId: vaultId, in: db)
                 else { return false }
                 try db.execute(
                     sql: "DELETE FROM vaults WHERE id = ? AND syncRole = 'member'",

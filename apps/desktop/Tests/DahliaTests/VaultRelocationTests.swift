@@ -159,6 +159,53 @@
             }
         }
 
+        @Test(arguments: ["source", "destination", "local"])
+        func recordingBlocksOnlyAffectedVaults(recordingVault: String) throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            let connection = DahliaAccountConnectionRecord(id: .v7(), origin: "https://example.com", clientID: "test", createdAt: .now)
+            let source = VaultRecord(
+                id: .v7(), path: nil, name: "Source", createdAt: .now, lastOpenedAt: .now,
+                accountConnectionId: connection.id, syncConfirmedConnectionId: connection.id
+            )
+            var destination = source
+            destination.id = .v7()
+            let local = VaultRecord(id: .v7(), path: nil, name: "Local", createdAt: .now, lastOpenedAt: .now)
+            let meeting = MeetingRecord(id: .v7(), vaultId: source.id, projectId: nil, name: "Move", createdAt: .now, updatedAt: .now)
+            let recordingVaultId = switch recordingVault {
+            case "source": source.id
+            case "destination": destination.id
+            default: local.id
+            }
+            let recording = MeetingRecord(
+                id: .v7(), vaultId: recordingVaultId,
+                projectId: nil, name: "Recording", createdAt: .now, updatedAt: .now
+            )
+            try database.dbQueue.write { db in
+                try connection.insert(db)
+                for vault in [source, destination, local] {
+                    try vault.insert(db)
+                }
+                try meeting.insert(db)
+                try recording.insert(db)
+                try RecordingSessionRecord(id: .v7(), meetingId: recording.id, startedAt: .now, offsetSeconds: 0, createdAt: .now, updatedAt: .now)
+                    .insert(db)
+            }
+            let relocation = VaultRelocation(
+                vaults: [.init(vaultId: destination.id, name: "Destination", createdAt: .now, role: "owner")],
+                items: [.init(entity: .meeting, id: meeting.id, vaultId: destination.id)]
+            )
+            if recordingVault == "local" {
+                #expect(try database.dbQueue.write { try relocation.apply(connectionId: connection.id, in: $0) })
+            } else {
+                #expect(throws: SyncHTTPError.self) { try database.dbQueue.write { try relocation.apply(connectionId: connection.id, in: $0) } }
+            }
+            try database.dbQueue.read { db throws in
+                #expect(try MeetingRecord.fetchOne(db, key: meeting.id)?.vaultId == (recordingVault == "local" ? destination.id : source.id))
+                #expect(try RecordingSessionRecord.fetchOne(db)?.endedAt == nil)
+                #expect(try RecordingSessionRecord.fetchCount(db) == 1)
+            }
+        }
+
         @Test(arguments: ["none", "organization", "contact", "participant", "insightProject", "insightMeeting", "topicProject", "topicMeeting"])
         func localRelationshipsPauseRelocationUntilResolved(reference: String) throws {
             let database = try AppDatabaseManager(path: ":memory:")
