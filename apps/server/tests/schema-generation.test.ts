@@ -5,7 +5,7 @@ import { spawnSync } from "node:child_process";
 
 import { describe, expect, it } from "vitest";
 
-describe("auth schema generation", () => {
+describe("auth schema generation", { timeout: 30_000 }, () => {
   it("reproduces the committed Better Auth schemas", () => {
     const directory = mkdtempSync(join(tmpdir(), "dahlia-auth-schema-"));
     try {

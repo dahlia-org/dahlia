@@ -2258,10 +2258,12 @@ function createIdentityStore(
       return rows.map((row: Omit<TranscriptVersion, "status">) => ({ ...row, status: transcriptStatus(row.endedAt, row.latestSegmentCreatedAt, now) }));
     },
     async countTranscript(vaultId, meetingId) {
-      const latest = await getTranscript(vaultId, meetingId);
-      if (!latest) return 0;
+      const latest = db.select({ id: schema.transcript.id }).from(schema.transcript)
+        .innerJoin(schema.syncedMeeting, eq(schema.transcript.meetingId, schema.syncedMeeting.meetingId)).where(and(
+          readable(schema.syncedMeeting.vaultId), eq(schema.syncedMeeting.vaultId, vaultId), eq(schema.transcript.meetingId, meetingId),
+        )).orderBy(desc(schema.transcript.version)).limit(1);
       const [row] = await db.select({ count: sql<number>`count(*)` }).from(schema.syncedTranscriptSegment)
-        .where(eq(schema.syncedTranscriptSegment.transcriptId, latest.id));
+        .where(eq(schema.syncedTranscriptSegment.transcriptId, latest));
       return Number(row?.count ?? 0);
     },
     async searchTextPage(vaultId, query, kind, offset, limit) {

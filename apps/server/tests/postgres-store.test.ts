@@ -661,6 +661,8 @@ integration("PostgreSQL application store", () => {
         expect(await sync.listTranscript(vaultId, meetingId, 10, undefined, 1)).toHaveLength(1);
         expect(await sync.listTranscript(vaultId, meetingId, 10, undefined, 2)).toHaveLength(2);
         expect(await sync.listTranscriptVersions(vaultId, meetingId, 10)).toHaveLength(2);
+        expect(await sync.countTranscript(vaultId, meetingId)).toBe(2);
+        expect(await sync.countTranscript(crypto.randomUUID(), meetingId)).toBe(0);
       });
       await expect(write(secondId, 4, "live", "overwrite")).rejects.toMatchObject({ code: "transcript_version_immutable" });
       expect((await connection!.db.execute(sql`SELECT * FROM app.transcripts WHERE meeting_id = ${meetingId}`)).rows).toEqual([]);
