@@ -77,7 +77,7 @@ jobs:
       - name: Validate Server application
         run: pnpm check
         env:
-          VITEST_MAX_WORKERS: 2
+          VITEST_MAX_WORKERS: 4
 
       - name: Validate shared PostgreSQL migration in header mode
         run: |
