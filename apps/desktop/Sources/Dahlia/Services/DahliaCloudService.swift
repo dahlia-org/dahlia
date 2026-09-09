@@ -1,5 +1,6 @@
 import AppKit
 import CryptoKit
+import DahliaServerAPI
 import Foundation
 import Network
 
@@ -440,7 +441,17 @@ actor DahliaCloudService {
         usesProxySession: Bool
     ) async throws -> DahliaCloudAccount {
         guard userInfoEndpoint != nil || usesProxySession else { throw DahliaCloudError.unsupportedAuthorizationServer }
-        let endpoint = userInfoEndpoint ?? baseURL.appending(path: "api/session")
+        guard let endpoint = userInfoEndpoint else {
+            let api = SyncAPIClient(session: session, tokenProvider: { _, _ in accessToken })
+            do {
+                let data = try await api.data(origin: baseURL, connectionId: UUID()) { try await $0.getSession().ok.body.json }
+                return try JSONDecoder().decode(SessionPayload.self, from: data).user
+            } catch let error as SyncHTTPError {
+                throw DahliaCloudError.identityRequestFailed(error.status)
+            } catch {
+                throw DahliaCloudError.invalidIdentityResponse
+            }
+        }
         var request = URLRequest(url: endpoint)
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         let (data, response) = try await session.data(for: request)

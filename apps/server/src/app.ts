@@ -1,6 +1,10 @@
 import { meetingMetadata } from "./sync/text-content";
 import { summaryJobResponse, type SummaryService } from "./summary/service";
-import { Hono } from "hono";
+import { OpenAPIHono } from "@hono/zod-openapi";
+import { HTTPException } from "hono/http-exception";
+import { textSearchRequest } from "./api/schemas";
+import { registerApi, openapiDocument } from "./api/contracts";
+import { problemResponse, problemMiddleware } from "./api/problem";
 import { TrieRouter } from "hono/router/trie-router";
 import { bodyLimit } from "hono/body-limit";
 import { secureHeaders } from "hono/secure-headers";
@@ -43,7 +47,7 @@ import { gatewayError, GatewayRequestError, GatewayService } from "./ai-gateway/
 
 export const AUTH_MAX_REQUEST_BYTES = 64 * 1024;
 const SYNC_JSON_MAX_REQUEST_BYTES = 8 * 1024 * 1024;
-const teamInputSchema = z.object({ name: z.string().trim().min(1).max(100) });
+const teamInputSchema = z.object({ name: z.string().trim().min(1).max(100) }).strict();
 
 export const authBodyLimit = bodyLimit({
   maxSize: AUTH_MAX_REQUEST_BYTES,
@@ -66,7 +70,7 @@ export interface AppVariables {
   identity: Identity;
 }
 
-export type DahliaServerApp = Hono<{ Variables: AppVariables }>;
+export type DahliaServerApp = OpenAPIHono<{ Variables: AppVariables }>;
 
 export interface ServerExtensionServices {
   auth?: DahliaAuth;
@@ -132,9 +136,20 @@ export function mutationOriginAllowed(request: Request, baseUrl: string): boolea
   return request.headers.get("origin") === new URL(baseUrl).origin;
 }
 
-export function createApp(dependencies: AppDependencies) {
+export function createApp(dependencies: AppDependencies): DahliaServerApp & { runStorageMaintenance(): Promise<void> } {
   const { config } = dependencies;
-  const app = new Hono<{ Variables: AppVariables }>();
+  const app = new OpenAPIHono<{ Variables: AppVariables }>({ defaultHook: async (result, context) => {
+    if (!result.success) {
+      if (result.target === "header" && result.error.issues.some((issue) => issue.path[0] === "content-length") && !context.req.header("content-length")) return problemResponse(411, "content_length_required");
+      if (result.target === "json" && ["/api/v1/transactions", "/api/v1/transactions/resolve"].includes(context.req.path)) {
+        const index = result.error.issues.find((issue) => issue.path[0] === "operations" && typeof issue.path[1] === "number")?.path[1];
+        const input = z.object({ operations: z.array(z.object({ id: z.unknown().optional() }).loose()) }).safeParse(await context.req.json());
+        const operationId = typeof index === "number" && input.success ? input.data.operations[index]?.id : undefined;
+        if (typeof operationId === "string" && z.uuid().safeParse(operationId).success) return problemResponse(400, "invalid_sync_operation", { operationId });
+      }
+      return problemResponse(400, "invalid_request");
+    }
+  } });
   const store = dependencies.authStore;
   if (!store) throw new Error("The Dahlia application store must be initialized before creating the application");
   const authStore = config.authProvider === "accounts" ? store : undefined;
@@ -168,10 +183,20 @@ export function createApp(dependencies: AppDependencies) {
   };
 
   app.use("*", secureHeaders());
+  app.use("/api/v1/*", problemMiddleware);
+  app.use("/api/v1/*", async (context, next) => {
+    if (!["GET", "HEAD", "OPTIONS"].includes(context.req.method)
+      && !["/api/v1/models", "/api/v1/responses"].includes(context.req.path)) {
+      const requiresBrowserOrigin = config.authProvider === "accounts" && !context.req.header("authorization");
+      if ((requiresBrowserOrigin || context.req.header("origin")) && !mutationOriginAllowed(context.req.raw, config.baseUrl)) return problemResponse(403, "invalid_origin");
+    }
+    await next();
+  });
+  registerApi(app, "getOpenAPI", (context) => context.json(openapiDocument()));
   app.use("/api/*", async (context, next) => {
     await next();
     const fileRead = ["GET", "HEAD"].includes(context.req.method)
-      && /^\/api\/v1\/files\/[^/]+(?:\/variants\/[^/]+)?$/.test(context.req.path)
+      && /^\/api\/v1\/files\/[^/]+(?:\/content|\/variants\/[^/]+)$/.test(context.req.path)
       && (context.res.ok || context.res.status === 304);
     if (!fileRead) context.header("Cache-Control", "no-store");
   });
@@ -180,7 +205,7 @@ export function createApp(dependencies: AppDependencies) {
     context.header("Cache-Control", "no-store");
   });
 
-  app.get("/healthz", (context) => context.json({ status: "ok" }));
+  registerApi(app, "getHealth", (context) => context.json({ status: "ok" }));
 
   app.get("/.well-known/oauth-authorization-server", async (context) => {
     if (!auth) return context.json({ error: "not_found" }, 404);
@@ -219,11 +244,11 @@ export function createApp(dependencies: AppDependencies) {
     return auth.handler(context.req.raw);
   });
 
-  app.use("/api/session", async (context, next) => {
+  app.use("/api/v1/session", async (context, next) => {
     context.set("identity", await identities.fromBrowser(context.req.raw));
     await next();
   });
-  app.get("/api/session", async (context) => {
+  registerApi(app, "getSession", async (context) => {
     const identity = context.get("identity");
     const capabilities: Record<string, boolean> = {
       admin: await isAdministrator(store, identity),
@@ -249,8 +274,8 @@ export function createApp(dependencies: AppDependencies) {
     });
   });
 
-  app.use("/api/admin/*", authBodyLimit);
-  app.use("/api/admin/*", async (context, next) => {
+  app.use("/api/v1/admin/*", authBodyLimit);
+  app.use("/api/v1/admin/*", async (context, next) => {
     if (!mutationOriginAllowed(context.req.raw, config.baseUrl)) {
       return context.json({ error: "invalid_origin" }, 403);
     }
@@ -262,7 +287,7 @@ export function createApp(dependencies: AppDependencies) {
     await next();
   });
   for (const kind of ["users", "organizations"] as const) {
-    app.get(`/api/admin/${kind}`, async (context) => {
+    registerApi(app, kind === "users" ? "listServerUsers" : "listServerOrganizations", async (context) => {
       const page = z.object({ offset: z.coerce.number().int().min(0).max(1_000_000).default(0) }).safeParse(context.req.query());
       if (!page.success) return context.json({ error: "invalid_page" }, 400);
       const limit = 100;
@@ -271,11 +296,11 @@ export function createApp(dependencies: AppDependencies) {
       return context.json({ items: items.slice(0, limit), hasMore: items.length > limit });
     });
   }
-  app.get("/api/admin/members", async (context) => {
+  registerApi(app, "listAdministrators", async (context) => {
     const admins = await store.listAdminUsers();
-    return context.json(admins.map((admin) => ({ ...admin, role: "admin", removable: admins.length > 1 })));
+    return context.json({ items: admins.map((admin) => ({ ...admin, role: "admin", removable: admins.length > 1 })), nextCursor: null });
   });
-  app.post("/api/admin/members", async (context) => {
+  registerApi(app, "addAdministrator", async (context) => {
     const parsed = memberSchema.safeParse(await context.req.json().catch(() => null));
     if (!parsed.success) return context.json({ error: "invalid_email" }, 400);
     if ((await store.listAdminUsers()).some((admin) => admin.email === parsed.data.email)) {
@@ -283,79 +308,78 @@ export function createApp(dependencies: AppDependencies) {
     }
     const admin = await store.addAdminUser(parsed.data.email);
     return admin
-      ? context.json({ ...admin, role: "admin", removable: true }, 201)
+      ? context.json({ ...admin, role: "admin", removable: true }, 201, { Location: `/api/v1/admin/members/${encodeURIComponent(admin.id)}` })
       : context.json({ error: "user_not_found" }, 404);
   });
-  app.delete("/api/admin/members/:email", async (context) => {
-    const email = z.email().safeParse(context.req.param("email").trim().toLowerCase());
-    if (!email.success) return context.json({ error: "invalid_email" }, 400);
-    const result = await store.removeAdminUser(email.data);
+  registerApi(app, "removeAdministrator", async (context) => {
+    const userId = sync.parsePermissionPrincipal(context.req.param("userId")!);
+    const result = await store.removeAdminUser(userId);
     if (result === "removed") return context.body(null, 204);
     return result === "last_admin"
       ? context.json({ error: "last_administrator" }, 409)
       : context.json({ error: "administrator_not_found" }, 404);
   });
 
-  app.use("/api/sessions/*", async (context, next) => {
+  app.use("/api/v1/sessions/*", async (context, next) => {
     if (!mutationOriginAllowed(context.req.raw, config.baseUrl)) {
       return context.json({ error: "invalid_origin" }, 403);
     }
     context.set("identity", await identities.fromBrowser(context.req.raw));
     await next();
   });
-  app.get("/api/sessions", async (context) => {
+  registerApi(app, "listSessions", async (context) => {
     if (!auth) return context.json({ error: "not_available_in_this_auth_mode" }, 404);
     const identity = context.get("identity");
     const [current, sessions] = await Promise.all([
       auth.api.getSession({ headers: context.req.raw.headers }),
       authStore!.listDahliaSessions(identity.userId),
     ]);
-    return context.json(
+    return context.json({ items:
       sessions.map((session) => ({
         id: session.id,
         createdAt: session.createdAt,
         expiresAt: session.expiresAt,
         userAgent: session.userAgent,
         current: session.sessionId === current?.session.id,
-      })),
-    );
+      })), nextCursor: null,
+    });
   });
-  app.delete("/api/sessions/:id", async (context) => {
+  registerApi(app, "revokeSession", async (context) => {
     if (!auth) return context.json({ error: "not_available_in_this_auth_mode" }, 404);
     const revoked = await authStore!.revokeDahliaSession(
       context.get("identity").userId,
-      context.req.param("id"),
+      context.req.param("id")!,
     );
     return revoked ? context.body(null, 204) : context.json({ error: "session_not_found" }, 404);
   });
 
-  app.get("/api/v1/vaults/:vaultId/meetings/:meetingId/summary/latest", async (context) => {
+  registerApi(app, "getLatestSummary", async (context) => {
     const identity = await syncIdentity(context.req.raw);
     context.header("Cache-Control", "no-store");
-    return context.json(await sync.latestSummary(identity, sync.parseId(context.req.param("vaultId")),
-      sync.parseId(context.req.param("meetingId")), context.req.query("manifest")));
+    return context.json(await sync.latestSummary(identity, await sync.meetingVault(identity, sync.parseId(context.req.param("meetingId")!)),
+      sync.parseId(context.req.param("meetingId")!), context.req.query("manifest")));
   });
-  app.get("/api/v1/vaults/:vaultId/meetings/:meetingId/summary", async (context) => {
+  registerApi(app, "listSummaries", async (context) => {
     const identity = await syncIdentity(context.req.raw);
     context.header("Cache-Control", "no-store");
-    return context.json(await sync.summaryVersions(identity, sync.parseId(context.req.param("vaultId")),
-      sync.parseId(context.req.param("meetingId")), context.req.query("cursor"), context.req.query("limit")));
+    return context.json(await sync.summaryVersions(identity, await sync.meetingVault(identity, sync.parseId(context.req.param("meetingId")!)),
+      sync.parseId(context.req.param("meetingId")!), context.req.query("cursor"), context.req.query("limit")));
   });
-  app.get("/api/v1/vaults/:vaultId/meetings/:meetingId/summary/:version{[0-9]+}", async (context) => {
+  registerApi(app, "getSummary", async (context) => {
     const identity = await syncIdentity(context.req.raw);
     context.header("Cache-Control", "no-store");
-    return context.json(await sync.summaryVersion(identity, sync.parseId(context.req.param("vaultId")),
-      sync.parseId(context.req.param("meetingId")), context.req.param("version")));
+    return context.json(await sync.summaryVersion(identity, await sync.meetingVault(identity, sync.parseId(context.req.param("meetingId")!)),
+      sync.parseId(context.req.param("meetingId")!), context.req.param("version")!));
   });
-  app.get("/api/v1/vaults/:vaultId/meetings/:meetingId/summary/job", async (context) => {
+  registerApi(app, "getLatestSummaryJob", async (context) => {
     const identity = await syncIdentity(context.req.raw);
     if (!dependencies.summaryService) return context.json({ error: "summary_unavailable" }, 503);
     context.header("cache-control", "no-store");
     return context.json({ job: summaryJobResponse(await dependencies.summaryService.status(identity,
-      sync.parseId(context.req.param("vaultId")), sync.parseId(context.req.param("meetingId")),
-      context.req.query("id") ? sync.parseId(context.req.query("id")!) : undefined)) });
+      await sync.meetingVault(identity, sync.parseId(context.req.param("meetingId")!)), sync.parseId(context.req.param("meetingId")!),
+      undefined)) });
   });
-  for (const action of ["cancel", "retry"] as const) app.post(`/api/v1/vaults/:vaultId/meetings/:meetingId/summary/job/:jobId/${action}`, accountSettingsBodyLimit, async (context) => {
+  for (const action of ["cancel", "retry"] as const) registerApi(app, action === "cancel" ? "cancelSummaryJob" : "retrySummaryJob", accountSettingsBodyLimit, async (context) => {
     const requiresBrowserOrigin = config.authProvider === "accounts" && !context.req.header("authorization");
     if ((requiresBrowserOrigin || context.req.header("origin")) && !mutationOriginAllowed(context.req.raw, config.baseUrl)) {
       return context.json({ error: "invalid_origin" }, 403);
@@ -363,33 +387,43 @@ export function createApp(dependencies: AppDependencies) {
     const identity = await identities.fromBrowserOrGateway(context.req.raw, ALL_APIS_SCOPE);
     const service = dependencies.summaryService;
     if (!service) return context.json({ error: "summary_unavailable" }, 503);
-    const vaultId = sync.parseId(context.req.param("vaultId"));
-    const meetingId = sync.parseId(context.req.param("meetingId"));
-    const jobId = sync.parseId(context.req.param("jobId"));
+    const vaultId = await sync.meetingVault(identity, sync.parseId(context.req.param("meetingId")!));
+    const meetingId = sync.parseId(context.req.param("meetingId")!);
+    const jobId = sync.parseId(context.req.param("jobId")!);
     const job = action === "cancel" ? await service.cancel(identity, vaultId, meetingId, jobId)
       : await service.retry(identity, vaultId, meetingId, jobId, await context.req.json().catch(() => null));
+    if (action === "retry") context.header("Location", `/api/v1/meetings/${meetingId}/summary-jobs/${job.id}`);
     return context.json({ job: summaryJobResponse(job) }, action === "retry" ? 202 : 200);
   });
-  app.post("/api/v1/vaults/:vaultId/meetings/:meetingId/summary", accountSettingsBodyLimit, async (context) => {
+  registerApi(app, "startSummaryJob", accountSettingsBodyLimit, async (context) => {
     const requiresBrowserOrigin = config.authProvider === "accounts" && !context.req.header("authorization");
     if ((requiresBrowserOrigin || context.req.header("origin")) && !mutationOriginAllowed(context.req.raw, config.baseUrl)) {
       return context.json({ error: "invalid_origin" }, 403);
     }
     const identity = await syncIdentity(context.req.raw);
     if (!dependencies.summaryService) return context.json({ error: "summary_unavailable" }, 503);
-    const vaultId = sync.parseId(context.req.param("vaultId"));
-    const meetingId = sync.parseId(context.req.param("meetingId"));
+    const vaultId = await sync.meetingVault(identity, sync.parseId(context.req.param("meetingId")!));
+    const meetingId = sync.parseId(context.req.param("meetingId")!);
     const job = await dependencies.summaryService.start(identity, vaultId, meetingId, await context.req.json().catch(() => null));
-    context.header("Location", `/api/v1/vaults/${vaultId}/meetings/${meetingId}/summary/job`);
+    context.header("Location", `/api/v1/meetings/${meetingId}/summary-jobs/${job.id}`);
     return context.json({ job: summaryJobResponse(job) }, 202);
   });
 
-  app.get("/api/v1/account/settings", async (context) => {
+  registerApi(app, "getSummaryJob", async (context) => {
+    const identity = await syncIdentity(context.req.raw);
+    if (!dependencies.summaryService) return context.json({ error: "summary_unavailable" }, 503);
+    const meetingId = sync.parseId(context.req.param("meetingId")!);
+    const vaultId = await sync.meetingVault(identity, meetingId);
+    const job = await dependencies.summaryService.status(identity, vaultId, meetingId, sync.parseId(context.req.param("jobId")!));
+    return job ? context.json({ job: summaryJobResponse(job) }) : context.json({ error: "summary_job_not_found" }, 404);
+  });
+
+  registerApi(app, "getSettings", async (context) => {
     const identity = await syncIdentity(context.req.raw);
     context.header("cache-control", "no-store");
     return context.json({ settings: await store.accountSettings.get(identity.userId) });
   });
-  app.patch("/api/v1/account/settings", accountSettingsBodyLimit, async (context) => {
+  registerApi(app, "updateSettings", accountSettingsBodyLimit, async (context) => {
     const requiresBrowserOrigin = config.authProvider === "accounts" && !context.req.header("authorization");
     if ((requiresBrowserOrigin || context.req.header("origin"))
       && !mutationOriginAllowed(context.req.raw, config.baseUrl)) {
@@ -409,26 +443,26 @@ export function createApp(dependencies: AppDependencies) {
     return { ...identity, syncClient: { vaultTransfers: request.headers.get("X-Dahlia-Vault-Transfers") === "1" } };
   }
 
-  app.get("/api/v1/vaults/:vaultId/transfer-audience", async (context) => {
+  registerApi(app, "getTransferAudience", async (context) => {
     const identity = await syncIdentity(context.req.raw);
-    return context.json(await sync.vaultTransferAudience(identity, sync.parseId(context.req.param("vaultId")),
+    return context.json(await sync.vaultTransferAudience(identity, sync.parseId(context.req.param("vaultId")!),
       sync.parseId(context.req.query("destinationVaultId") ?? "")));
   });
-  app.post("/api/v1/vaults/:vaultId/transfer", syncBodyLimit, async (context) => {
+  registerApi(app, "transferVault", syncBodyLimit, async (context) => {
     const requiresBrowserOrigin = config.authProvider === "accounts" && !context.req.header("authorization");
     if ((requiresBrowserOrigin || context.req.header("origin")) && !mutationOriginAllowed(context.req.raw, config.baseUrl)) {
       return context.json({ error: "invalid_origin" }, 403);
     }
     const identity = await syncIdentity(context.req.raw);
-    return context.json(await sync.transferVault(identity, sync.parseId(context.req.param("vaultId")),
+    return context.json(await sync.transferVault(identity, sync.parseId(context.req.param("vaultId")!),
       context.req.header("Idempotency-Key"), await context.req.json().catch(() => null)));
   });
-  app.get("/api/v1/vaults/:vaultId/relocations", async (context) => {
+  registerApi(app, "getRelocations", async (context) => {
     const identity = await syncIdentity(context.req.raw);
-    return context.json(await sync.getVaultRelocations(identity, sync.parseId(context.req.param("vaultId"))));
+    return context.json(await sync.getVaultRelocations(identity, sync.parseId(context.req.param("vaultId")!)));
   });
 
-  app.post("/api/v1/transactions", syncBodyLimit, async (context) => {
+  registerApi(app, "commitTransaction", syncBodyLimit, async (context) => {
     const requiresBrowserOrigin = config.authProvider === "accounts" && !context.req.header("authorization");
     if ((requiresBrowserOrigin || context.req.header("origin"))
       && !mutationOriginAllowed(context.req.raw, config.baseUrl)) {
@@ -437,16 +471,16 @@ export function createApp(dependencies: AppDependencies) {
     const identity = await syncIdentity(context.req.raw);
     return context.json(await sync.commitTransaction(identity, await context.req.json().catch(() => null)));
   });
-  app.get("/api/v1/vaults/:vaultId/changes", async (context) => {
+  registerApi(app, "getChanges", async (context) => {
     const identity = await syncIdentity(context.req.raw);
     return context.json(await sync.listChanges(
       identity,
-      sync.parseId(context.req.param("vaultId")),
+      sync.parseId(context.req.param("vaultId")!),
       context.req.query("cursor"),
       context.req.query("highWaterCursor"),
     ));
   });
-  app.post("/api/v1/transactions/resolve", syncBodyLimit, async (context) => {
+  registerApi(app, "resolveTransaction", syncBodyLimit, async (context) => {
     const requiresBrowserOrigin = config.authProvider === "accounts" && !context.req.header("authorization");
     if ((requiresBrowserOrigin || context.req.header("origin"))
       && !mutationOriginAllowed(context.req.raw, config.baseUrl)) {
@@ -455,16 +489,16 @@ export function createApp(dependencies: AppDependencies) {
     const identity = await syncIdentity(context.req.raw);
     return context.json(await sync.resolveTransaction(identity, await context.req.json().catch(() => null)));
   });
-  app.get("/api/v1/vaults/:vaultId/snapshot", async (context) => {
+  registerApi(app, "getSnapshot", async (context) => {
     const identity = await syncIdentity(context.req.raw);
     return context.json(await sync.listSnapshot(
       identity,
-      sync.parseId(context.req.param("vaultId")),
+      sync.parseId(context.req.param("vaultId")!),
       context.req.query("cursor"),
       context.req.query("startCursor"),
     ));
   });
-  app.get("/api/v1/capabilities", async (context) => {
+  registerApi(app, "getCapabilities", async (context) => {
     await syncIdentity(context.req.raw);
     if (!await store.sync.isAvailable()) return context.json({});
     const sources = dependencies.summaryService?.methods.map((method) => method.id) ?? [];
@@ -478,18 +512,19 @@ export function createApp(dependencies: AppDependencies) {
       ...(sources.length ? { meetingSummaryGeneration: { version: 1, sources } } : {}),
     });
   });
-  app.post("/api/v1/search", bodyLimit({ maxSize: 16 * 1024,
+  registerApi(app, "search", bodyLimit({ maxSize: 16 * 1024,
     onError: (context) => context.json({ error: "search_request_too_large" }, 413) }), async (context) => {
     const identity = await syncIdentity(context.req.raw);
     context.header("Cache-Control", "no-store");
-    return context.json(await sync.searchAll(identity, await context.req.json().catch(() => null), context.req.raw.signal));
+    return context.json(await sync.searchAll(identity, { ...await context.req.json().catch(() => ({})), vaultId: sync.parseId(context.req.param("vaultId")!) }, context.req.raw.signal));
   });
-  app.get("/api/v1/vaults/:vaultId/search", async (context) => {
+  registerApi(app, "textSearch", accountSettingsBodyLimit, async (context) => {
     const identity = await syncIdentity(context.req.raw);
-    return context.json(await sync.searchText(identity, sync.parseId(context.req.param("vaultId")),
-      context.req.query("q"), context.req.query("kind"), context.req.query("cursor"), context.req.query("limit")));
+    const body = textSearchRequest.parse(await context.req.json());
+    return context.json(await sync.searchText(identity, sync.parseId(context.req.param("vaultId")!),
+      body.query, body.kind, body.cursor, body.limit === undefined ? undefined : String(body.limit)));
   });
-  app.get("/api/v1/events", async (context) => {
+  registerApi(app, "getEvents", async (context) => {
     const identity = await syncIdentity(context.req.raw);
     const suppliedCursor = context.req.query("cursor") ?? context.req.header("last-event-id");
     let sequence = suppliedCursor ? decodeSyncCursor(suppliedCursor) : 0;
@@ -512,22 +547,21 @@ export function createApp(dependencies: AppDependencies) {
     });
   });
 
-  app.put(
-    "/api/v1/vaults/:vaultId/meetings/:meetingId/transcripts/:patchId/chunks/:chunkIndex",
+  registerApi(app, "putTranscriptChunk",
     syncBodyLimit,
+    async (context, next) => { await context.req.arrayBuffer(); await next(); },
     async (context) => {
       const identity = await identities.fromGateway(context.req.raw, ALL_APIS_SCOPE);
-      const vaultId = sync.parseId(context.req.param("vaultId"));
-      const meetingId = sync.parseId(context.req.param("meetingId"));
-      const patchId = sync.parseId(context.req.param("patchId"));
-      if (!/^\d+$/.test(context.req.param("chunkIndex"))) {
+      const meetingId = sync.parseId(context.req.param("meetingId")!);
+      const patchId = sync.parseId(context.req.param("patchId")!);
+      if (!/^\d+$/.test(context.req.param("chunkIndex")!)) {
         throw new RequestError(400, "invalid_transcript_chunk_index");
       }
       const contentHash = context.req.header("x-dahlia-content-sha256")?.toLowerCase();
       if (!contentHash || !/^[0-9a-f]{64}$/.test(contentHash)) {
         throw new RequestError(400, "invalid_transcript_chunk_hash");
       }
-      const bytes = await context.req.raw.arrayBuffer();
+      const bytes = await context.req.arrayBuffer();
       const actualHash = [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))]
         .map((byte) => byte.toString(16).padStart(2, "0")).join("");
       if (actualHash !== contentHash) throw new RequestError(409, "transcript_chunk_hash_mismatch");
@@ -539,217 +573,213 @@ export function createApp(dependencies: AppDependencies) {
       }
       await sync.putTranscriptChunk(
         identity,
-        vaultId,
         meetingId,
         patchId,
-        Number(context.req.param("chunkIndex")),
+        Number(context.req.param("chunkIndex")!),
         contentHash,
         body,
       );
       return context.body(null, 204);
     },
   );
-  app.post("/api/v1/meetings/:meetingId/recordings", async (context) => {
+  registerApi(app, "putRecordingContent", async (context) => {
     const requiresBrowserOrigin = config.authProvider === "accounts" && !context.req.header("authorization");
     if ((requiresBrowserOrigin || context.req.header("origin")) && !mutationOriginAllowed(context.req.raw, config.baseUrl)) {
       return context.json({ error: "invalid_origin" }, 403);
     }
     const identity = await syncIdentity(context.req.raw);
-    const result = await sync.postRecording(identity, sync.parseId(context.req.param("meetingId")), context.req.raw);
+    const result = await sync.putRecordingContent(identity, sync.parseId(context.req.param("meetingId")!), context.req.param("sessionId")!, context.req.param("source")!, context.req.raw);
+    context.header("Location", result.record.contentUrl);
     return context.json(result.record, result.created ? 201 : 200);
   });
-  app.get("/api/v1/meetings/:meetingId/recordings", async (context) => {
+  registerApi(app, "listRecordings", async (context) => {
     const identity = await syncIdentity(context.req.raw);
-    return context.json(await sync.listRecordings(identity, sync.parseId(context.req.param("meetingId")), context.req.query("cursor")));
+    return context.json(await sync.listRecordings(identity, sync.parseId(context.req.param("meetingId")!), context.req.query("cursor")));
   });
-  app.on(["GET", "HEAD"], "/api/v1/meetings/:meetingId/recordings/:recordingId/audio/:source", async (context) => {
+  for (const operation of ["getRecordingContent", "headRecordingContent"] as const) registerApi(app, operation, async (context) => {
     const identity = await syncIdentity(context.req.raw);
-    return sync.recordingContent(identity, sync.parseId(context.req.param("meetingId")), context.req.param("recordingId"), context.req.param("source"), context.req.raw);
+    return sync.recordingContent(identity, sync.parseId(context.req.param("meetingId")!), context.req.param("recordingId")!, context.req.param("source")!, context.req.raw);
   });
-  app.post("/api/v1/files", async (context) => {
+  registerApi(app, "reserveFileUpload", accountSettingsBodyLimit, async (context) => {
     const requiresBrowserOrigin = config.authProvider === "accounts" && !context.req.header("authorization");
     if ((requiresBrowserOrigin || context.req.header("origin")) && !mutationOriginAllowed(context.req.raw, config.baseUrl)) {
       return context.json({ error: "invalid_origin" }, 403);
     }
     const identity = await syncIdentity(context.req.raw);
-    const result = await sync.postFile(identity, context.req.raw);
+    const result = await sync.reserveFileUpload(identity, await context.req.json().catch(() => null));
+    context.header("Location", `/api/v1/file-uploads/${result.file.id}/content`);
     return context.json(result.file, result.created ? 201 : 200);
   });
-  app.patch("/api/v1/files/:fileId/metadata", bodyLimit({ maxSize: 128 * 1024,
+  registerApi(app, "putFileContent", async (context) => {
+    const requiresBrowserOrigin = config.authProvider === "accounts" && !context.req.header("authorization");
+    if ((requiresBrowserOrigin || context.req.header("origin")) && !mutationOriginAllowed(context.req.raw, config.baseUrl)) {
+      return context.json({ error: "invalid_origin" }, 403);
+    }
+    const identity = await syncIdentity(context.req.raw);
+    const result = await sync.putFileContent(identity, sync.parseId(context.req.param("fileId")!), context.req.raw);
+    context.header("Location", `/api/v1/files/${result.file.id}/content`);
+    return context.json(result.file, result.created ? 201 : 200);
+  });
+  registerApi(app, "updateFile", bodyLimit({ maxSize: 128 * 1024,
     onError: (context) => context.json({ error: "file_patch_too_large" }, 413) }), async (context) => {
     const requiresBrowserOrigin = config.authProvider === "accounts" && !context.req.header("authorization");
     if ((requiresBrowserOrigin || context.req.header("origin")) && !mutationOriginAllowed(context.req.raw, config.baseUrl)) {
       return context.json({ error: "invalid_origin" }, 403);
     }
     const identity = await syncIdentity(context.req.raw);
-    return context.json(await sync.patchFile(identity, sync.parseId(context.req.param("fileId")), await context.req.json().catch(() => null)));
+    return context.json(await sync.patchFile(identity, sync.parseId(context.req.param("fileId")!), await context.req.json().catch(() => null)));
   });
-  app.get("/api/v1/files/:fileId/metadata", async (context) => {
+  registerApi(app, "getFile", async (context) => {
     const identity = await syncIdentity(context.req.raw);
-    return context.json(await sync.getFile(identity, sync.parseId(context.req.param("fileId"))));
+    return context.json(await sync.getFile(identity, sync.parseId(context.req.param("fileId")!)));
   });
-  app.get("/api/v1/vaults/:vaultId/files", async (context) => {
+  registerApi(app, "listFiles", async (context) => {
     const identity = await syncIdentity(context.req.raw);
-    return context.json(await sync.listFiles(identity, sync.parseId(context.req.param("vaultId")), context.req.query("cursor")));
+    return context.json(await sync.listFiles(identity, sync.parseId(context.req.param("vaultId")!), context.req.query("cursor")));
   });
-  app.get("/api/v1/vaults", async (context) => {
+  registerApi(app, "listVaults", async (context) => {
     const identity = await syncIdentity(context.req.raw);
-    return context.json({ items: await sync.listVaults(identity, context.req.query("userId"), context.req.query("organizationId")) });
+    return context.json({ items: await sync.listVaults(identity, context.req.query("userId"), context.req.query("organizationId")), nextCursor: null });
   });
-  app.get("/api/v1/vaults/:vaultId", async (context) => {
+  registerApi(app, "getVault", async (context) => {
     const identity = await syncIdentity(context.req.raw);
-    const vault = await sync.getVault(identity, sync.parseId(context.req.param("vaultId")));
+    const vault = await sync.getVault(identity, sync.parseId(context.req.param("vaultId")!));
     return vault ? context.json(vault) : context.json({ error: "vault_not_found" }, 404);
   });
-  app.get("/api/v1/projects/:projectId", async (context) => {
+  registerApi(app, "getProject", async (context) => {
     const identity = await syncIdentity(context.req.raw);
-    const project = await sync.getProjectById(identity, sync.parseId(context.req.param("projectId")));
+    const project = await sync.getProjectById(identity, sync.parseId(context.req.param("projectId")!));
     return project ? context.json(project) : context.json({ error: "project_not_found" }, 404);
   });
-  app.get("/api/v1/meetings/:meetingId", async (context) => {
+  registerApi(app, "getMeeting", async (context) => {
     const identity = await syncIdentity(context.req.raw);
-    const meeting = await sync.getMeetingById(identity, sync.parseId(context.req.param("meetingId")));
+    const meeting = await sync.getMeetingById(identity, sync.parseId(context.req.param("meetingId")!));
     return meeting ? context.json(meetingMetadata({ ...meeting })) : context.json({ error: "meeting_not_found" }, 404);
   });
-  app.get("/api/v1/vaults/:vaultId/projects", async (context) => {
+  registerApi(app, "listProjects", async (context) => {
     const identity = await syncIdentity(context.req.raw);
-    return context.json({ items: await sync.listProjects(identity, sync.parseId(context.req.param("vaultId"))) });
+    return context.json({ items: await sync.listProjects(identity, sync.parseId(context.req.param("vaultId")!)), nextCursor: null });
   });
-  app.get("/api/v1/vaults/:vaultId/projects/:projectId", async (context) => {
+
+  registerApi(app, "listMeetings", async (context) => {
     const identity = await syncIdentity(context.req.raw);
-    const project = await sync.getProject(
-      identity,
-      sync.parseId(context.req.param("vaultId")),
-      sync.parseId(context.req.param("projectId")),
-    );
-    return project ? context.json(project) : context.json({ error: "project_not_found" }, 404);
-  });
-  app.get("/api/v1/vaults/:vaultId/meetings", async (context) => {
-    const identity = await syncIdentity(context.req.raw);
-    const vaultId = sync.parseId(context.req.param("vaultId"));
-    return context.json(await sync.listMeetings(
+    const vaultId = sync.parseId(context.req.param("vaultId")!);
+    const page = await sync.listMeetings(
       identity,
       vaultId,
-      context.req.query("q"),
+      context.req.query("query"),
       context.req.raw.signal,
       context.req.query("projectId") !== undefined ? sync.parseId(context.req.query("projectId")!) : undefined,
       context.req.query("cursor"),
       context.req.query("projectScope"),
-    ));
-  });
-  app.get("/api/v1/vaults/:vaultId/meetings/:meetingId", async (context) => {
-    const identity = await syncIdentity(context.req.raw);
-    const meeting = await sync.getMeeting(
-      identity,
-      sync.parseId(context.req.param("vaultId")),
-      sync.parseId(context.req.param("meetingId")),
     );
-    return meeting ? context.json(meetingMetadata({ ...meeting })) : context.json({ error: "meeting_not_found" }, 404);
+    return context.json({ ...page, nextCursor: page.nextCursor ?? null });
   });
-  app.get("/api/v1/vaults/:vaultId/meetings/:meetingId/transcript", async (context) => {
+
+  registerApi(app, "listTranscripts", async (context) => {
     context.header("cache-control", "no-store");
     const identity = await syncIdentity(context.req.raw);
-    const vaultId = sync.parseId(context.req.param("vaultId"));
-    const meetingId = sync.parseId(context.req.param("meetingId"));
+    const vaultId = await sync.meetingVault(identity, sync.parseId(context.req.param("meetingId")!));
+    const meetingId = sync.parseId(context.req.param("meetingId")!);
     return context.json(await sync.transcriptVersions(identity, vaultId, meetingId, context.req.query("cursor"), context.req.query("limit")));
   });
-  app.get("/api/v1/vaults/:vaultId/meetings/:meetingId/transcript/:version", async (context) => {
+  for (const operation of ["getLatestTranscript", "getTranscript"] as const) registerApi(app, operation, async (context) => {
     context.header("cache-control", "no-store");
     const identity = await syncIdentity(context.req.raw);
-    return context.json(await sync.transcriptContent(identity, sync.parseId(context.req.param("vaultId")),
-      sync.parseId(context.req.param("meetingId")), context.req.param("version"), context.req.query("manifest"), context.req.query("cursor")));
+    return context.json(await sync.transcriptContent(identity, await sync.meetingVault(identity, sync.parseId(context.req.param("meetingId")!)),
+      sync.parseId(context.req.param("meetingId")!), context.req.param("version")! ?? "latest", context.req.query("manifest"), context.req.query("cursor")));
   });
-  app.get("/api/v1/vaults/:vaultId/meetings/:meetingId/files", async (context) => {
+  registerApi(app, "listMeetingFiles", async (context) => {
     const identity = await syncIdentity(context.req.raw);
-    return context.json(await sync.listFiles(identity, sync.parseId(context.req.param("vaultId")),
-      context.req.query("cursor"), sync.parseId(context.req.param("meetingId"))));
+    return context.json(await sync.listFiles(identity, await sync.meetingVault(identity, sync.parseId(context.req.param("meetingId")!)),
+      context.req.query("cursor"), sync.parseId(context.req.param("meetingId")!)));
   });
-  app.get("/api/v1/vaults/:vaultId/permissions", async (context) => {
+  registerApi(app, "listPermissions", async (context) => {
     const identity = await identities.fromBrowser(context.req.raw);
-    return context.json({ items: await sync.listPermissions(identity, sync.parseId(context.req.param("vaultId"))) });
+    return context.json({ items: await sync.listPermissions(identity, sync.parseId(context.req.param("vaultId")!)), nextCursor: null });
   });
-  app.put("/api/v1/vaults/:vaultId/permissions/organizations/:organizationId", async (context) => {
+  registerApi(app, "putOrganizationPermission", async (context) => {
     if (!mutationOriginAllowed(context.req.raw, config.baseUrl)) return context.json({ error: "invalid_origin" }, 403);
     const identity = await identities.fromBrowser(context.req.raw);
     await sync.putMemberPermission(
       identity,
-      sync.parseId(context.req.param("vaultId")),
+      sync.parseId(context.req.param("vaultId")!),
       "organization",
-      sync.parsePermissionPrincipal(context.req.param("organizationId")),
+      sync.parsePermissionPrincipal(context.req.param("organizationId")!),
     );
     return context.body(null, 204);
   });
-  app.delete("/api/v1/vaults/:vaultId/permissions/organizations/:organizationId", async (context) => {
+  registerApi(app, "deleteOrganizationPermission", async (context) => {
     if (!mutationOriginAllowed(context.req.raw, config.baseUrl)) return context.json({ error: "invalid_origin" }, 403);
     const identity = await identities.fromBrowser(context.req.raw);
     await sync.deleteMemberPermission(
       identity,
-      sync.parseId(context.req.param("vaultId")),
+      sync.parseId(context.req.param("vaultId")!),
       "organization",
-      sync.parsePermissionPrincipal(context.req.param("organizationId")),
+      sync.parsePermissionPrincipal(context.req.param("organizationId")!),
     );
     return context.body(null, 204);
   });
-  app.put("/api/v1/vaults/:vaultId/permissions/teams/:teamId", async (context) => {
+  registerApi(app, "putTeamPermission", async (context) => {
     if (!mutationOriginAllowed(context.req.raw, config.baseUrl)) return context.json({ error: "invalid_origin" }, 403);
     const identity = await identities.fromBrowser(context.req.raw);
     await sync.putMemberPermission(
       identity,
-      sync.parseId(context.req.param("vaultId")),
+      sync.parseId(context.req.param("vaultId")!),
       "team",
-      sync.parsePermissionPrincipal(context.req.param("teamId")),
+      sync.parsePermissionPrincipal(context.req.param("teamId")!),
     );
     return context.body(null, 204);
   });
-  app.delete("/api/v1/vaults/:vaultId/permissions/teams/:teamId", async (context) => {
+  registerApi(app, "deleteTeamPermission", async (context) => {
     if (!mutationOriginAllowed(context.req.raw, config.baseUrl)) return context.json({ error: "invalid_origin" }, 403);
     const identity = await identities.fromBrowser(context.req.raw);
     await sync.deleteMemberPermission(
       identity,
-      sync.parseId(context.req.param("vaultId")),
+      sync.parseId(context.req.param("vaultId")!),
       "team",
-      sync.parsePermissionPrincipal(context.req.param("teamId")),
+      sync.parsePermissionPrincipal(context.req.param("teamId")!),
     );
     return context.body(null, 204);
   });
 
-  app.get("/api/v1/organizations", async (context) => {
+  registerApi(app, "listOrganizations", async (context) => {
     const identity = await syncIdentity(context.req.raw);
-    return context.json(await sync.listOrganizations(identity));
+    return context.json({ items: await sync.listOrganizations(identity), nextCursor: null });
   });
-  app.get("/api/v1/organizations/:organizationId", async (context) => {
-    if (config.authProvider !== "header" || context.req.param("organizationId") !== EXTERNAL_ORGANIZATION_ID) {
+  registerApi(app, "getOrganization", async (context) => {
+    if (config.authProvider !== "header" || context.req.param("organizationId")! !== EXTERNAL_ORGANIZATION_ID) {
       return context.json({ error: "not_found" }, 404);
     }
     const identity = await identities.fromBrowser(context.req.raw);
     const organization = await store.getExternalOrganization(identity.userId);
     return organization ? context.json(organization) : context.json({ error: "not_found" }, 404);
   });
-  app.get("/api/v1/organizations/:organizationId/members", async (context) => {
-    if (config.authProvider !== "header" || context.req.param("organizationId") !== EXTERNAL_ORGANIZATION_ID) {
+  registerApi(app, "listOrganizationMembers", async (context) => {
+    if (config.authProvider !== "header" || context.req.param("organizationId")! !== EXTERNAL_ORGANIZATION_ID) {
       return context.json({ error: "not_found" }, 404);
     }
     const identity = await identities.fromBrowser(context.req.raw);
     const members = await store.listExternalOrganizationMembers(identity.userId);
     return members
-      ? context.json({ members: members.map((member) => ({
+      ? context.json({ items: members.map((member) => ({
           id: member.id,
           userId: member.userId,
           role: member.role,
           user: { name: member.name, email: member.email },
-        })) })
+        })), nextCursor: null })
       : context.json({ error: "not_found" }, 404);
   });
-  app.get("/api/v1/organizations/:organizationId/teams", async (context) => {
-    if (config.authProvider !== "header" || context.req.param("organizationId") !== EXTERNAL_ORGANIZATION_ID) {
+  registerApi(app, "listTeams", async (context) => {
+    if (config.authProvider !== "header" || context.req.param("organizationId")! !== EXTERNAL_ORGANIZATION_ID) {
       return context.json({ error: "not_found" }, 404);
     }
     const identity = await identities.fromBrowser(context.req.raw);
     const teams = await store.listExternalTeams(identity.userId);
-    return teams ? context.json(teams) : context.json({ error: "not_found" }, 404);
+    return teams ? context.json({ items: teams, nextCursor: null }) : context.json({ error: "not_found" }, 404);
   });
-  app.post("/api/v1/organizations/:organizationId/teams", authBodyLimit, async (context) => {
-    if (config.authProvider !== "header" || context.req.param("organizationId") !== EXTERNAL_ORGANIZATION_ID) {
+  registerApi(app, "createTeam", authBodyLimit, async (context) => {
+    if (config.authProvider !== "header" || context.req.param("organizationId")! !== EXTERNAL_ORGANIZATION_ID) {
       return context.json({ error: "not_found" }, 404);
     }
     if (!mutationOriginAllowed(context.req.raw, config.baseUrl)) return context.json({ error: "invalid_origin" }, 403);
@@ -757,10 +787,10 @@ export function createApp(dependencies: AppDependencies) {
     if (!input.success) return context.json({ error: "invalid_team" }, 400);
     const identity = await identities.fromBrowser(context.req.raw);
     const team = await store.createExternalTeam(identity.userId, input.data.name);
-    return team ? context.json(team, 201) : context.json({ error: "not_found" }, 404);
+    return team ? context.json(team, 201, { Location: `/api/v1/organizations/${encodeURIComponent(team.organizationId)}/teams/${encodeURIComponent(team.id)}` }) : context.json({ error: "not_found" }, 404);
   });
-  app.patch("/api/v1/organizations/:organizationId/teams/:teamId", authBodyLimit, async (context) => {
-    if (config.authProvider !== "header" || context.req.param("organizationId") !== EXTERNAL_ORGANIZATION_ID) {
+  registerApi(app, "updateTeam", authBodyLimit, async (context) => {
+    if (config.authProvider !== "header" || context.req.param("organizationId")! !== EXTERNAL_ORGANIZATION_ID) {
       return context.json({ error: "not_found" }, 404);
     }
     if (!mutationOriginAllowed(context.req.raw, config.baseUrl)) return context.json({ error: "invalid_origin" }, 403);
@@ -769,68 +799,68 @@ export function createApp(dependencies: AppDependencies) {
     const identity = await identities.fromBrowser(context.req.raw);
     const team = await store.updateExternalTeam(
       identity.userId,
-      sync.parsePermissionPrincipal(context.req.param("teamId")),
+      sync.parsePermissionPrincipal(context.req.param("teamId")!),
       input.data.name,
     );
     return team ? context.json(team) : context.json({ error: "not_found" }, 404);
   });
-  app.delete("/api/v1/organizations/:organizationId/teams/:teamId", async (context) => {
-    if (config.authProvider !== "header" || context.req.param("organizationId") !== EXTERNAL_ORGANIZATION_ID) {
+  registerApi(app, "deleteTeam", async (context) => {
+    if (config.authProvider !== "header" || context.req.param("organizationId")! !== EXTERNAL_ORGANIZATION_ID) {
       return context.json({ error: "not_found" }, 404);
     }
     if (!mutationOriginAllowed(context.req.raw, config.baseUrl)) return context.json({ error: "invalid_origin" }, 403);
     const identity = await identities.fromBrowser(context.req.raw);
     return await store.deleteExternalTeam(
       identity.userId,
-      sync.parsePermissionPrincipal(context.req.param("teamId")),
+      sync.parsePermissionPrincipal(context.req.param("teamId")!),
     ) ? context.body(null, 204) : context.json({ error: "not_found" }, 404);
   });
-  app.get("/api/v1/organizations/:organizationId/teams/:teamId/members", async (context) => {
-    if (config.authProvider !== "header" || context.req.param("organizationId") !== EXTERNAL_ORGANIZATION_ID) {
+  registerApi(app, "listTeamMembers", async (context) => {
+    if (config.authProvider !== "header" || context.req.param("organizationId")! !== EXTERNAL_ORGANIZATION_ID) {
       return context.json({ error: "not_found" }, 404);
     }
     const identity = await identities.fromBrowser(context.req.raw);
     const members = await store.listExternalTeamMembers(
       identity.userId,
-      sync.parsePermissionPrincipal(context.req.param("teamId")),
+      sync.parsePermissionPrincipal(context.req.param("teamId")!),
     );
     return members
-      ? context.json(members.map((member) => ({ ...member, teamId: context.req.param("teamId") })))
+      ? context.json({ items: members.map((member) => ({ ...member, teamId: context.req.param("teamId")! })), nextCursor: null })
       : context.json({ error: "not_found" }, 404);
   });
-  app.put("/api/v1/organizations/:organizationId/teams/:teamId/members/:userId", async (context) => {
-    if (config.authProvider !== "header" || context.req.param("organizationId") !== EXTERNAL_ORGANIZATION_ID) {
+  registerApi(app, "putTeamMember", async (context) => {
+    if (config.authProvider !== "header" || context.req.param("organizationId")! !== EXTERNAL_ORGANIZATION_ID) {
       return context.json({ error: "not_found" }, 404);
     }
     if (!mutationOriginAllowed(context.req.raw, config.baseUrl)) return context.json({ error: "invalid_origin" }, 403);
     const identity = await identities.fromBrowser(context.req.raw);
     return await store.addExternalTeamMember(
       identity.userId,
-      sync.parsePermissionPrincipal(context.req.param("teamId")),
-      sync.parsePermissionPrincipal(context.req.param("userId")),
+      sync.parsePermissionPrincipal(context.req.param("teamId")!),
+      sync.parsePermissionPrincipal(context.req.param("userId")!),
     ) ? context.body(null, 204) : context.json({ error: "not_found" }, 404);
   });
-  app.delete("/api/v1/organizations/:organizationId/teams/:teamId/members/:userId", async (context) => {
-    if (config.authProvider !== "header" || context.req.param("organizationId") !== EXTERNAL_ORGANIZATION_ID) {
+  registerApi(app, "deleteTeamMember", async (context) => {
+    if (config.authProvider !== "header" || context.req.param("organizationId")! !== EXTERNAL_ORGANIZATION_ID) {
       return context.json({ error: "not_found" }, 404);
     }
     if (!mutationOriginAllowed(context.req.raw, config.baseUrl)) return context.json({ error: "invalid_origin" }, 403);
     const identity = await identities.fromBrowser(context.req.raw);
     return await store.removeExternalTeamMember(
       identity.userId,
-      sync.parsePermissionPrincipal(context.req.param("teamId")),
-      sync.parsePermissionPrincipal(context.req.param("userId")),
+      sync.parsePermissionPrincipal(context.req.param("teamId")!),
+      sync.parsePermissionPrincipal(context.req.param("userId")!),
     ) ? context.body(null, 204) : context.json({ error: "not_found" }, 404);
   });
-  app.on(["GET", "HEAD"], "/api/v1/files/:fileId", async (context) => {
+  for (const operation of ["getFileContent", "headFileContent"] as const) registerApi(app, operation, async (context) => {
     const identity = await syncIdentity(context.req.raw);
-    return sync.readFile(identity, sync.parseId(context.req.param("fileId")), context.req.method as "GET" | "HEAD", context.req.raw);
+    return sync.readFile(identity, sync.parseId(context.req.param("fileId")!), context.req.method as "GET" | "HEAD", context.req.raw);
   });
-  app.on(["GET", "HEAD"], "/api/v1/files/:fileId/variants/:variant", async (context) => {
+  for (const operation of ["getFileVariant", "headFileVariant"] as const) registerApi(app, operation, async (context) => {
     const identity = await syncIdentity(context.req.raw);
-    const variant = context.req.param("variant");
+    const variant = context.req.param("variant")!;
     if (!Object.hasOwn(SCREENSHOT_VARIANTS, variant)) return context.json({ error: "file_variant_unavailable" }, 404);
-    return sync.readFile(identity, sync.parseId(context.req.param("fileId")), context.req.method as "GET" | "HEAD", context.req.raw, variant as ScreenshotVariant);
+    return sync.readFile(identity, sync.parseId(context.req.param("fileId")!), context.req.method as "GET" | "HEAD", context.req.raw, variant as ScreenshotVariant);
   });
   app.on(
     ["GET", "HEAD"],
@@ -925,7 +955,7 @@ export function createApp(dependencies: AppDependencies) {
 
   for (const path of methodPaths) {
     app.all(path, async (context) => {
-      if ((path.startsWith("/api/sessions") && !auth)
+      if ((path.startsWith("/api/v1/sessions") && !auth)
         || (path.startsWith("/api/v1/organizations/") && config.authProvider !== "header")) {
         return context.json({ error: "not_found" }, 404);
       }
@@ -939,6 +969,7 @@ export function createApp(dependencies: AppDependencies) {
   app.all("/api/*", (context) => context.json({ error: "not_found" }, 404));
 
   app.onError((error, context) => {
+    if (error instanceof HTTPException) return context.json({ error: "invalid_request" }, error.status);
     if (error instanceof AuthenticationError) {
       const challenge = error.oauthChallenge
         ? `Bearer resource_metadata="${config.baseUrl}/.well-known/oauth-protected-resource${

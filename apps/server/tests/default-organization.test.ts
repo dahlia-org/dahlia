@@ -42,7 +42,7 @@ for (const databaseType of ["sqlite", "postgres"] as const) {
         const cookie = `${context.authCookies.sessionToken.name}=${encodeURIComponent(`${session.token}.${await makeSignature(session.token, config.betterAuthSecret!)}`)}`;
         const headers = { cookie, origin: config.baseUrl };
         let app = createApp({ config, authStore: store, auth });
-        expect((await app.request("/api/session", { headers })).status).toBe(200);
+        expect((await app.request("/api/v1/session", { headers })).status).toBe(200);
         expect(await store.getExternalOrganization(user.id)).toMatchObject({ id: "external", role: "owner" });
         const deleted = await app.request("/api/auth/organization/delete", {
           method: "POST", headers: { ...headers, "content-type": "application/json" },
@@ -51,13 +51,13 @@ for (const databaseType of ["sqlite", "postgres"] as const) {
         expect(deleted.status, await deleted.text()).toBe(200);
         expect(await store.listServerOrganizations(10, 0)).toEqual([]);
         for (let attempt = 0; attempt < 2; attempt++) {
-          expect((await app.request("/api/session", { headers })).status).toBe(200);
+          expect((await app.request("/api/v1/session", { headers })).status).toBe(200);
           expect(await store.listServerOrganizations(10, 0)).toEqual([]);
         }
         await store.close?.();
         store = createNodeAuthStore(config);
         app = createApp({ config, authStore: store, auth: await initializeDahliaAuth(config, store) });
-        expect((await app.request("/api/session", { headers })).status).toBe(200);
+        expect((await app.request("/api/v1/session", { headers })).status).toBe(200);
         expect(await store.listServerOrganizations(10, 0)).toEqual([]);
       } finally {
         await store.close?.();

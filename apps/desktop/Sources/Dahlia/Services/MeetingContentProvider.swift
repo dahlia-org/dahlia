@@ -1,5 +1,6 @@
 import DahliaMeetingAccess
 import DahliaRuntimeSupport
+import DahliaServerAPI
 import Foundation
 import GRDB
 
@@ -302,7 +303,7 @@ actor MeetingContentProvider {
                 let ocrText: String?
                 let caption: String?
 
-                enum CodingKeys: String, CodingKey { case ocrText = "ocr_text", caption }
+                enum CodingKeys: String, CodingKey { case ocrText, caption }
 
                 init(from decoder: Decoder) throws {
                     let values = try decoder.container(keyedBy: CodingKeys.self)
@@ -410,21 +411,26 @@ actor MeetingContentProvider {
         manifest: Bool = false,
         cursor: String? = nil
     ) async throws -> Data {
-        guard var url = URLComponents(string: source.origin) else { throw URLError(.badURL) }
-        if entity == .file {
-            url.path = "/api/v1/files/\(id.uuidString.lowercased())/metadata"
-            url.queryItems = nil
-        } else {
-            url.path = "/api/v1/vaults/\(source.vaultId.uuidString.lowercased())/meetings/\(id.uuidString.lowercased())/\(entity.rawValue)/latest"
-            url.queryItems = []
-        }
-        if manifest { url.queryItems?.append(URLQueryItem(name: "manifest", value: "1")) }
-        if let cursor { url.queryItems?.append(URLQueryItem(name: "cursor", value: cursor)) }
-        if url.queryItems?.isEmpty == true { url.queryItems = nil }
-        guard let address = url.url else { throw URLError(.badURL) }
+        guard let origin = URL(string: source.origin) else { throw URLError(.badURL) }
         do {
-            // A single accepted 8 MiB transcript chunk needs room for the read response envelope.
-            return try await client.data(for: URLRequest(url: address), connectionId: source.connectionId, maximumBytes: 9 * 1024 * 1024)
+            switch entity {
+            case .file:
+                return try await client.data(origin: origin, connectionId: source.connectionId, maximumBytes: 9 * 1024 * 1024) {
+                    try await $0.getFile(path: .init(fileId: id.uuidString.lowercased())).ok.body.json
+                }
+            case .summary:
+                return try await client.data(origin: origin, connectionId: source.connectionId, maximumBytes: 9 * 1024 * 1024) {
+                    try await $0.getLatestSummary(path: .init(meetingId: id.uuidString.lowercased()), query: .init(manifest: manifest ? ._1 : nil)).ok
+                        .body.json
+                }
+            case .transcript:
+                return try await client.data(origin: origin, connectionId: source.connectionId, maximumBytes: 9 * 1024 * 1024) {
+                    try await $0.getLatestTranscript(
+                        path: .init(meetingId: id.uuidString.lowercased()),
+                        query: .init(manifest: manifest ? ._1 : nil, cursor: cursor)
+                    ).ok.body.json
+                }
+            }
         } catch let error as SyncHTTPError {
             switch error.status {
             case 401, 403: throw TextContentError.authorizationRequired

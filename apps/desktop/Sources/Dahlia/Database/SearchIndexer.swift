@@ -626,12 +626,12 @@ private extension SearchIndexer {
 
     func serverAnalyzesImages(connectionId: UUID) async throws -> Bool {
         guard let connection = try await dbQueue.read({ try DahliaAccountConnectionRecord.fetchOne($0, key: connectionId) }),
-              let origin = URL(string: connection.origin),
-              let url = URL(string: "/api/v1/capabilities", relativeTo: origin)?.absoluteURL else { throw URLError(.badURL) }
-        let request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 15)
+              let origin = URL(string: connection.origin) else { throw URLError(.badURL) }
         let data: Data
         do {
-            data = try await apiClient.data(for: request, connectionId: connectionId, maximumBytes: 8192)
+            data = try await apiClient.data(origin: origin, connectionId: connectionId, maximumBytes: 8192) {
+                try await $0.getCapabilities().ok.body.json
+            }
         } catch let error as SyncHTTPError where error.status == 404 {
             return false // Older servers use device analysis.
         }

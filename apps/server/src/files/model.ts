@@ -12,21 +12,23 @@ export const fileMetadataSchema = z.object({
 }).strict();
 export type FileMetadata = z.infer<typeof fileMetadataSchema>;
 
-const dimensionQuerySchema = z.string().regex(/^[1-9][0-9]*$/)
-  .transform(Number).pipe(fileDimensionSchema);
-
-export const fileUploadQuerySchema = z.object({
-  id: z.uuidv7().transform((id) => id.toLowerCase()),
-  vaultId: z.uuid().transform((id) => id.toLowerCase()),
-  name: z.string().min(1).max(255),
-  source: fileMetadataSchema.shape.source,
-  width: dimensionQuerySchema.optional(),
-  height: dimensionQuerySchema.optional(),
+// The database metadata stays unchanged; the HTTP contract uses camelCase.
+export const fileWireMetadataSchema = fileMetadataSchema.omit({ ocr_text: true }).extend({
+  ocrText: fileMetadataSchema.shape.ocr_text,
+}).strict();
+export function fileMetadataFromWire(value: Partial<z.infer<typeof fileWireMetadataSchema>>): Partial<FileMetadata> {
+  const { ocrText, ...metadata } = value;
+  return { ...metadata, ...(ocrText !== undefined ? { ocr_text: ocrText } : {}) };
+}
+export const fileUploadSchema = z.object({
+  id: z.uuidv7().transform((id) => id.toLowerCase()), vaultId: z.uuid().transform((id) => id.toLowerCase()), name: z.string().min(1).max(255),
+  contentType: z.string().max(255).regex(/^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/),
+  metadata: fileWireMetadataSchema.pick({ source: true, width: true, height: true }),
 }).strict();
 
 export const filePatchSchema = z.object({
   baseRevision: z.number().int().positive(),
-  metadata: fileMetadataSchema.omit({ source: true }).partial(),
+  metadata: fileWireMetadataSchema.omit({ source: true }).partial(),
 }).strict();
 
 export interface FileRecord {
@@ -62,9 +64,11 @@ export const fileVariantKey = (id: string, variant: ScreenshotVariant) => screen
 export const imageContentTypes = new Set(["image/png", "image/jpeg", "image/webp", "image/gif", "image/tiff"]);
 
 export function fileResponse(file: FileRecord) {
+  const { ocr_text, ...metadata } = file.metadata;
   return {
-    id: file.fileId, vaultId: file.vaultId, uri: file.uri, offset: file.offset, size: file.size,
-    content_type: file.contentType, checksum: file.checksum, name: file.name, metadata: file.metadata,
+    id: file.fileId, vaultId: file.vaultId, size: file.size,
+    contentType: file.contentType, checksum: file.checksum, name: file.name,
+    metadata: { ...metadata, ...(ocr_text !== undefined ? { ocrText: ocr_text } : {}) },
     revision: file.revision, createdAt: file.createdAt, updatedAt: file.updatedAt,
   };
 }

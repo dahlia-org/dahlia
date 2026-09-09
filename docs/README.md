@@ -37,3 +37,5 @@ Dahlia は Desktop、Server / Private Web、公開サイトを持つモノレポ
 ## 文書を増やす前に
 
 現在の契約は上の正本へ追記し、同じ説明を README・計画・ADR に複製しない。新規文書には対象と役割を冒頭に示し、この索引へ登録する。過去の調査は日付と限界を残す。完了した計画は固有の未解決事項を確認したうえで現行資料への案内に縮め、詳細は固定 commit の履歴で辿れるようにする。
+
+API の具体的な操作・旧→新対応・プロトコル委譲は [Server API audit](architecture/server-api-audit.md)、設計判断は [OpenAPI ADR](adr/server/openapi.md) を参照する。

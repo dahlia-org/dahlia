@@ -2,7 +2,7 @@ import { z } from "zod";
 
 const id = z.uuid().transform((value) => value.toLowerCase());
 const date = z.iso.datetime({ offset: true }).transform((value) => new Date(value));
-export const searchRequestSchema = z.object({
+const searchFields = z.object({
   vaultId: id,
   query: z.string().trim().max(500).default(""),
   kind: z.enum(["meeting", "screenshot", "project"]).optional(),
@@ -10,7 +10,10 @@ export const searchRequestSchema = z.object({
   from: date.optional(),
   to: date.optional(),
   limit: z.number().int().min(1).max(100).default(50),
-}).strict().refine(({ from, to }) => !from || !to || from < to);
+}).strict();
+const validDateRange = ({ from, to }: { from?: Date; to?: Date }) => !from || !to || from < to;
+export const searchRequestSchema = searchFields.refine(validDateRange);
+export const vaultSearchRequestSchema = searchFields.omit({ vaultId: true }).refine(validDateRange);
 
 export interface SearchHit {
   id: string;

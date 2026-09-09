@@ -139,14 +139,13 @@
             ImageURLProtocol.register(origin: account.origin) { request in
                 let path = request.url!.path
                 requests.withLock { $0.append(path) }
-                let body: String
-                switch path {
+                let body: String = switch path {
                 case "/api/v1/capabilities":
-                    body = #"{"meetingSummaryGeneration":{"version":1,"sources":["transcript","audio"]}}"#
+                    #"{"meetingSummaryGeneration":{"version":1,"sources":["transcript","audio"]}}"#
                 case "/api/v1/models":
-                    body = #"{"data":[],"models":[]}"#
+                    #"{"data":[],"models":[]}"#
                 default:
-                    body = Self.response("en")
+                    Self.response("en")
                 }
                 return (200, [:], Data(body.utf8))
             }
@@ -238,7 +237,7 @@
         }
 
         private nonisolated static func response(_ language: String) -> String {
-            "{\"settings\":{\"outputLanguage\":\"\(language)\",\"analysisLanguages\":{\"scope\":\"all\",\"identifiers\":[]}}}"
+            "{\"settings\":{\"summary\":{\"method\":\"transcript\",\"detail\":\"high\",\"methodSettings\":{\"audio\":{\"model\":\"gemini-3-8-flash\",\"reasoningEffort\":\"medium\"},\"transcript\":{\"model\":\"gpt-5.4\",\"reasoningEffort\":\"medium\"}}},\"outputLanguage\":\"\(language)\",\"analysisLanguages\":{\"scope\":\"all\",\"identifiers\":[]}}}"
         }
     }
 

@@ -1,5 +1,5 @@
 import { sha256 } from "../storage/sha256";
-import { transcriptSettingsSchema } from "../summary/model";
+import { storedTranscriptSettingsSchema } from "../summary/model";
 import { uuidV7 } from "../id";
 import { transcriptStatus, sameTranscriptModel, type TranscriptVersion } from "./transcript";
 import { summaryMetadata, summaryMetadataSchema } from "../summary/metadata";
@@ -1278,9 +1278,31 @@ function createIdentityStore(
     }
     // After Vault deletion only acknowledge the operation; do not expose old content.
     if (receipt.responseJson !== null && owner) {
-      return searchBackend === "sqlite"
+      const response = searchBackend === "sqlite"
         ? JSON.parse(receipt.responseJson as string) as SyncTransactionResponse
         : receipt.responseJson as SyncTransactionResponse;
+      // Project historical receipts without changing their committed content or revisions.
+      return { ...response, records: response.records.map((entry) => {
+        if (!entry.record) return entry;
+        if (entry.entity === "file" && "content_type" in entry.record) {
+          const { content_type, metadata, ...record } = entry.record;
+          delete record.uri;
+          delete record.offset;
+          const { ocr_text, ...fields } = metadata as Record<string, unknown>;
+          return { ...entry, record: { ...record, contentType: content_type,
+            metadata: { ...fields, ...(ocr_text !== undefined ? { ocrText: ocr_text } : {}) } } };
+        }
+        if (entry.entity === "recording") {
+          const audio = Object.fromEntries(Object.entries(entry.record.audio as Record<string, Record<string, unknown>>)
+            .map(([source, value]) => {
+              if (!("content_type" in value)) return [source, value];
+              const { content_type, contentURL, ...fields } = value;
+              return [source, { ...fields, contentType: content_type, contentUrl: contentURL }];
+            }));
+          return { ...entry, record: { ...entry.record, audio } };
+        }
+        return entry;
+      }) };
     }
     const results = searchBackend === "sqlite"
       ? JSON.parse(receipt.resultsJson as string) as SyncTransactionResponse["records"]
@@ -2124,7 +2146,7 @@ function createIdentityStore(
         id ? eq(schema.summaryJob.id, id) : undefined,
         ownerAccess(schema.summaryJob.vaultId),
       )).orderBy(desc(schema.summaryJob.createdAt), desc(schema.summaryJob.id)).limit(1);
-      return row ? { ...row, settings: transcriptSettingsSchema.parse(row.settings) } : null;
+      return row ? { ...row, settings: storedTranscriptSettingsSchema.parse(row.settings) } : null;
     },
     async insertSummaryJob(job) {
       const inserted = await db.insert(schema.summaryJob).values(job).onConflictDoNothing({ target: schema.summaryJob.id }).returning({ id: schema.summaryJob.id });
@@ -2136,7 +2158,7 @@ function createIdentityStore(
         .where(and(eq(jobs.id, id), eq(jobs.vaultId, vaultId), eq(jobs.meetingId, meetingId),
           eq(jobs.ownerUserId, identity.userId), ownerAccess(jobs.vaultId), inArray(jobs.status, ["pending", "processing"])))
         .returning();
-      return row ? { ...row, settings: transcriptSettingsSchema.parse(row.settings) } : null;
+      return row ? { ...row, settings: storedTranscriptSettingsSchema.parse(row.settings) } : null;
     },
     async completeSummaryTranscript(job, transaction, transcriptId) {
       const jobs = schema.summaryJob;

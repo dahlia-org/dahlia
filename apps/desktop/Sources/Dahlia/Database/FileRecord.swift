@@ -57,12 +57,11 @@ struct FileRecord: Codable, FetchableRecord, PersistableRecord, Sendable {
     var contentHash: String { String(checksum.dropFirst(8)) }
 
     static func applyCanonical(id: UUID, vaultId: UUID, value: SyncCanonicalPayload, in db: Database) throws {
-        guard let uri = value.uri, uri.hasPrefix("/Volumes/"),
-              let size = value.size, size >= 0, value.offset == 0,
+        guard let size = value.size, size >= 0,
               let type = value.contentType, let checksum = value.checksum,
               checksum.hasPrefix("SHA-256:"), checksum.count == 72,
               checksum.dropFirst(8).allSatisfy({ $0.isHexDigit && !$0.isUppercase }),
-              let metadata = value.metadata, let name = value.name,
+              let metadata = value.metadata, let sourceType = FileMetadata.Source(rawValue: metadata.source.rawValue), let name = value.name,
               let createdAt = value.createdAt, let updatedAt = value.updatedAt,
               let row = try Row.fetchOne(db, sql: """
               SELECT c.id, c.origin FROM vaults v JOIN dahlia_account_connections c ON c.id = v.accountConnectionId
@@ -78,12 +77,12 @@ struct FileRecord: Codable, FetchableRecord, PersistableRecord, Sendable {
         try Self(
             id: id,
             vaultId: vaultId,
-            uri: uri,
+            uri: existing?.uri,
             size: size,
             contentType: type,
             checksum: checksum,
             name: name,
-            metadata: FileStorageMetadata(source: metadata.source, width: metadata.width, height: metadata.height),
+            metadata: FileStorageMetadata(source: sourceType, width: metadata.width, height: metadata.height),
             createdAt: createdAt,
             updatedAt: updatedAt,
             localReference: existing?.checksum == checksum ? existing?.localReference : nil,

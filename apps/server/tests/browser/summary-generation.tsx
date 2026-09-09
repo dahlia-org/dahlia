@@ -5,13 +5,14 @@ import { DEFAULT_ACCOUNT_SETTINGS } from "../../src/account-settings-model";
 import type { SummaryRequest } from "../../src/summary/service";
 
 Object.defineProperty(navigator, "language", { value: "en-US", configurable: true });
-const base = "/api/v1/vaults/vault/meetings/meeting";
+const base = "/api/v1/meetings/meeting";
 let uploaded = false;
 let reject = true;
 const bodies: SummaryRequest[] = [];
 window.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
   await Promise.resolve();
-  const path = new URL(input instanceof Request ? input.url : input, location.origin).pathname;
+  const request = input instanceof Request ? input : new Request(new URL(input, location.origin), init);
+  const path = new URL(request.url).pathname;
   if (path === "/api/v1/capabilities") return Response.json({ meetingSummaryGeneration: { version: 1, sources: ["transcript", "audio"] } });
   if (path === "/api/v1/account/settings") return Response.json({ settings: {
     ...DEFAULT_ACCOUNT_SETTINGS, summary: { ...DEFAULT_ACCOUNT_SETTINGS.summary, method: "audio" },
@@ -19,10 +20,10 @@ window.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
   if (path.endsWith("/recordings")) return Response.json({ items: [{ audio: {
     mic: { fileId: "mic" }, ...(uploaded ? { system: { fileId: "system" } } : {}),
   } }], nextCursor: null });
-  if (path === `${base}/summary/job`) return Response.json({ job: null });
-  if (path === `${base}/summary` && init?.method === "POST") {
-    bodies.push(JSON.parse(init.body as string) as SummaryRequest);
-    if (reject) return Response.json({ error: "summary_audio_pair_incomplete" }, { status: 400 });
+  if (path === `${base}/summary-jobs/latest`) return Response.json({ job: null });
+  if (path === `${base}/summary-jobs` && request.method === "POST") {
+    bodies.push(await request.json());
+    if (reject) return Response.json({ type: "about:blank", title: "Incomplete audio", status: 400, code: "summary_audio_pair_incomplete" }, { status: 400 });
     throw new TypeError("Connection lost after sending request");
   }
   throw new Error(`Unexpected fixture request ${path}`);
@@ -42,7 +43,7 @@ async function start(count: number) {
   await until(() => bodies.length === count && !button()!.disabled);
 }
 async function run() {
-  createRoot(document.getElementById("root")!).render(<ServerSummaryGeneration base={base} />);
+  createRoot(document.getElementById("root")!).render(<ServerSummaryGeneration meetingId="meeting" />);
   await start(1);
   uploaded = true; reject = false;
   await start(2);

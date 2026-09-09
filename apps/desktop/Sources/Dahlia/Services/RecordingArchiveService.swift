@@ -1,5 +1,7 @@
+import DahliaServerAPI
 import Foundation
 import GRDB
+import OpenAPIRuntime
 
 /// Durable archive preparation runs in the sync worker's idle lane, never in recording stop/drain.
 actor RecordingArchiveService {
@@ -109,10 +111,8 @@ actor RecordingArchiveService {
         }
         if let origin = target.origin, let connectionId = archive.connectionId {
             let data = try await api.data(
-                for: URLRequest(url: origin.appending(path: "api/v1/capabilities")),
-                connectionId: connectionId,
-                maximumBytes: 64 * 1024
-            )
+                origin: origin, connectionId: connectionId, maximumBytes: 64 * 1024
+            ) { try await $0.getCapabilities().ok.body.json }
             guard try SyncJSON.decoder.decode(ServerCapabilities.self, from: data).recordingArchive?.version == 1 else {
                 throw SyncHTTPError(status: 426, body: Data())
             }
@@ -230,19 +230,27 @@ actor RecordingArchiveService {
         guard ["mic", "system"].contains(source),
               let url = BatchAudioStorage.safeURL(baseURL: root, relativePath: file.relativePath),
               try RecordingArchiveEncoder.checksum(url) == file.checksum else { throw RecordingAudioStoreError.integrityMismatch }
-        var components = URLComponents(
-            url: origin.appending(path: "api/v1/meetings/\(archive.meetingId.uuidString.lowercased())/recordings"),
-            resolvingAgainstBaseURL: false
-        )!
-        components.queryItems = [
-            URLQueryItem(name: "sessionId", value: archive.sessionId.uuidString.lowercased()),
-            URLQueryItem(name: "source", value: source),
-        ]
-        var request = URLRequest(url: components.url!)
-        request.httpMethod = "POST"
-        request.setValue("audio/mp4", forHTTPHeaderField: "Content-Type")
-        request.setValue(String(file.size), forHTTPHeaderField: "Content-Length")
-        let result = try await SyncJSON.decoder.decode(UploadResult.self, from: api.upload(request, from: url, connectionId: connectionId))
+        let data = try await api.data(origin: origin, connectionId: connectionId, maximumBytes: 1024 * 1024) { client in
+            let handle = try FileHandle(forReadingFrom: url)
+            defer { try? handle.close() }
+            let chunks = AsyncThrowingStream<ArraySlice<UInt8>, Error>(unfolding: {
+                try Task.checkCancellation()
+                guard let bytes = try handle.read(upToCount: 64 * 1024), !bytes.isEmpty else { return nil }
+                return Array(bytes)[...]
+            })
+            let response = try await client.putRecordingContent(
+                path: .init(
+                    meetingId: archive.meetingId.uuidString.lowercased(),
+                    sessionId: archive.sessionId.uuidString.lowercased(),
+                    source: source == "mic" ? .mic : .system
+                ),
+                headers: .init(contentLength: String(file.size)),
+                body: .audioMp4(HTTPBody(chunks, length: .known(file.size), iterationBehavior: .single))
+            )
+            if case let .created(value) = response { return try value.body.json }
+            return try response.ok.body.json
+        }
+        let result = try SyncJSON.decoder.decode(UploadResult.self, from: data)
         guard result.checksum == file.checksum, result.size == file.size else { throw RecordingAudioStoreError.integrityMismatch }
         return result
     }
@@ -359,9 +367,28 @@ actor RecordingArchiveService {
     private func download(_ audio: RecordingArchivedAudio, archive: RecordingArchiveRecord, source: String, origin: URL) async throws -> URL {
         guard let connectionId = archive.connectionId, ["mic", "system"].contains(source), let number = archive.number, number > 0,
               audio.contentType == "audio/mp4", audio.size > 0, audio.size <= 1024 * 1024 * 1024 else { throw RecordingAudioStoreError.invalidState }
-        let url = origin.appending(path: "api/v1/meetings/\(archive.meetingId.uuidString.lowercased())/recordings/\(number)/audio/\(source)")
-        let downloaded = try await api.download(URLRequest(url: url), connectionId: connectionId, expectedSize: audio.size)
+        let body = try await api.perform(origin: origin, connectionId: connectionId) { client in
+            try await client.getRecordingContent(path: .init(
+                meetingId: archive.meetingId.uuidString.lowercased(), recordingId: String(number),
+                source: source == "mic" ? .mic : .system
+            )).ok.body.audioMp4
+        }
+        let downloaded = FileManager.default.temporaryDirectory.appending(path: "dahlia-audio-\(UUID.v7().uuidString).m4a")
+        guard FileManager.default.createFile(atPath: downloaded.path, contents: nil, attributes: [.posixPermissions: 0o600]) else {
+            throw RecordingAudioStoreError.storageUnavailable
+        }
         do {
+            let handle = try FileHandle(forWritingTo: downloaded)
+            defer { try? handle.close() }
+            if case let .known(length) = body.length, length != audio.size { throw RecordingAudioStoreError.integrityMismatch }
+            var count: Int64 = 0
+            for try await chunk in body {
+                try Task.checkCancellation()
+                guard Int64(chunk.count) <= audio.size - count else { throw RecordingAudioStoreError.integrityMismatch }
+                try handle.write(contentsOf: Data(chunk))
+                count += Int64(chunk.count)
+            }
+            guard count == audio.size else { throw RecordingAudioStoreError.integrityMismatch }
             guard try RecordingArchiveEncoder.checksum(downloaded) == audio.checksum else { throw RecordingAudioStoreError.integrityMismatch }
             return downloaded
         } catch {

@@ -25,7 +25,7 @@ export class TextContentDigest {
 
 export function fileTextMetadata(record: Record<string, unknown>): Record<string, unknown> {
   const metadata = { ...(record.metadata ?? {}) as Record<string, unknown> };
-  delete metadata.ocr_text;
+  delete metadata.ocrText;
   delete metadata.caption;
   return { ...record, metadata, contentOmitted: true, contentPresent: true };
 }

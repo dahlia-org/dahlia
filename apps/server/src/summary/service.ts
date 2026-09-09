@@ -8,7 +8,7 @@ import { SummaryError, summaryDetailSchema, summaryInputSchema, type SummaryJob,
 
 export const summaryStartSchema = z.union([
   z.object({ id: z.uuidv7(), input: summaryInputSchema, model: z.string().trim().min(1).max(200),
-    detailLevel: summaryDetailSchema, summaryLanguage: outputLanguageSchema }).strict(),
+    detail: summaryDetailSchema, outputLanguage: outputLanguageSchema }).strict(),
   // Existing clients may omit the explicit input; already accepted jobs keep their original settings.
   z.object({ id: z.uuidv7(), detail: summaryDetailSchema.optional(), outputLanguage: outputLanguageSchema.optional() }).strict(),
 ]);
@@ -86,8 +86,8 @@ export class SummaryService {
     const request = parsed.data;
     const input = "input" in request ? request.input : undefined;
     const requestHash = JSON.stringify({ vaultId, meetingId,
-      ...("input" in request ? { input: request.input, model: request.model, detailLevel: request.detailLevel } : { detail: request.detail ?? null }),
-      ...("summaryLanguage" in request ? { summaryLanguage: request.summaryLanguage } : request.outputLanguage === undefined ? {} : { outputLanguage: request.outputLanguage }) });
+      ...("input" in request ? { input: request.input, model: request.model, detail: request.detail } : { detail: request.detail ?? null }),
+      ...(request.outputLanguage === undefined ? {} : { outputLanguage: request.outputLanguage }) });
     // Authorize and recover accepted requests before any provider I/O. Recheck under the lock before insertion.
     const accepted = await this.status(identity, vaultId, meetingId, request.id);
     if (accepted) {
@@ -98,7 +98,7 @@ export class SummaryService {
     const methodID = (input?.type === "recording" ? "audio" : input?.type) ?? (settings.summary.method === "cloudTranscription" ? "audio" : settings.summary.method);
     const method = this.methods.find((method) => method.id === methodID);
     if (!method) throw new RequestError(400, "summary_method_unavailable");
-    const captured = method.captureSettings(settings, "detailLevel" in request ? request.detailLevel : request.detail);
+    const captured = method.captureSettings(settings, request.detail);
     if (input?.type === "recording" && input.transcriptionModel) {
       captured.model = settings.summary.methodSettings.transcript.model;
       captured.reasoningEffort = settings.summary.methodSettings.transcript.reasoningEffort;
@@ -136,7 +136,7 @@ export class SummaryService {
         input: input ?? null, transcriptRevision: meeting.transcriptRevision ?? 0,
         stage: methodID === "transcript" ? "summarizing" : input?.type === "recording" && input.transcriptionModel ? "transcribing" : "generating",
         transcriptResult: null,
-        outputLanguage: "summaryLanguage" in request ? request.summaryLanguage : request.outputLanguage ?? settings.outputLanguage, requestHash, summaryRevision: meeting.summaryRevision ?? 0,
+        outputLanguage: request.outputLanguage ?? settings.outputLanguage, requestHash, summaryRevision: meeting.summaryRevision ?? 0,
         inputVersion,
         status: "pending", attempts: 0, createdAt: now, availableAt: now, claimedAt: null, leaseExpiresAt: null, lastErrorCode: null,
       };
@@ -148,13 +148,15 @@ export class SummaryService {
 export function summaryJobResponse(job: SummaryJob | null) {
   if (!job) return null;
   const { id, method, input, stage, transcriptResult, settings, outputLanguage, status, attempts, createdAt, lastErrorCode } = job;
-  return { id, method, input, stage, transcriptResult, settings, outputLanguage, status, attempts, createdAt, error: lastErrorCode };
+  return { id, method, ...(input ? { input } : {}), stage, transcriptResult, settings, outputLanguage, status, attempts, createdAt, error: lastErrorCode };
 }
 
 // Old accepted requests keep their identity when the detail vocabulary changes.
 function normalizeSummaryRequestHash(hash: string): string {
   const value: unknown = JSON.parse(hash);
-  if (!value || typeof value !== "object" || !("detail" in value)) return hash;
-  if (typeof value.detail === "string") value.detail = normalizeSummaryDetail(value.detail);
-  return JSON.stringify(value);
+  if (!value || typeof value !== "object") return hash;
+  return JSON.stringify(Object.fromEntries(Object.entries(value).map(([key, field]) => [
+    key === "detailLevel" ? "detail" : key === "summaryLanguage" ? "outputLanguage" : key,
+    ["detail", "detailLevel"].includes(key) && typeof field === "string" ? normalizeSummaryDetail(field) : field,
+  ])));
 }

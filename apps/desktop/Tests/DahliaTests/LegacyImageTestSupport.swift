@@ -40,12 +40,12 @@ import GRDB
     func canonicalImageChanges(fileId: UUID, meetingId: UUID, ocr: String? = nil, caption: String? = nil) throws -> [SyncChangePage.Change] {
         let file: [String: JSONValue] = [
             "uri": .string("/Volumes/catalog/schema/volume/files/\(fileId.uuidString.lowercased())/original"),
-            "offset": .number(0), "size": .number(3), "content_type": .string("image/png"),
+            "offset": .number(0), "size": .number(3), "contentType": .string("image/png"),
             "checksum": .string("SHA-256:" + ScreenshotRemoteReference.digest(Data([1, 2, 3]))),
             "name": .string("capture"), "createdAt": .string("2026-09-06T00:00:00Z"), "updatedAt": .string("2026-09-06T00:00:00Z"),
             "metadata": .object([
                 "source": .string("screenshot"),
-                "ocr_text": ocr.map(JSONValue.string) ?? .null,
+                "ocrText": ocr.map(JSONValue.string) ?? .null,
                 "caption": caption.map(JSONValue.string) ?? .null,
             ]),
         ]

@@ -1,9 +1,12 @@
+import { apiUrls } from "./generated-operations";
+import { apiOperations as api } from "./generated-operations";
+import { apiQuery } from "./live-data";
 import { Select } from "./Select";
 import { Tooltip } from "./Tooltip";
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
 import type { SearchHit, SearchResults } from "../search/model";
-import { json, uiText, type SyncedProjectInfo } from "./api";
+import { uiText, type SyncedProjectInfo } from "./api";
 import { useLiveJSON, useLiveQuery } from "./live-data";
 import { navigateDashboard } from "./navigation";
 import { FileViewer } from "./FileViewer";
@@ -46,14 +49,14 @@ function SearchDialog({ vaultId, onClose }: { vaultId: string; onClose: () => vo
   const [composing, setComposing] = useState(false);
   const [advanced, setAdvanced] = useState(false);
   const [projectId, setProjectId] = useState("");
-  const [kind, setKind] = useState("");
+  const [kind, setKind] = useState<"" | "meeting" | "screenshot" | "project">("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [selected, setSelected] = useState(0);
   const [visible, setVisible] = useState(6);
   const [preview, setPreview] = useState<SearchHit>();
   const filterCount = [projectId, kind, from, to].filter(Boolean).length;
-  const projects = useLiveJSON<{ items: SyncedProjectInfo[] }>(`/api/v1/vaults/${vaultId}/projects`);
+  const projects = useLiveJSON<{ items: SyncedProjectInfo[] }>(apiQuery("listProjects", { params: { path: { vaultId: vaultId } } }));
   useEffect(() => {
     const element = dialog.current;
     element?.showModal();
@@ -64,11 +67,11 @@ function SearchDialog({ vaultId, onClose }: { vaultId: string; onClose: () => vo
     const timer = setTimeout(() => { setQuery(text); setSelected(0); setVisible(text.trim() ? 20 : 6); }, 300);
     return () => clearTimeout(timer);
   }, [text, composing]);
-  const body = JSON.stringify({ vaultId, query, kind: kind || undefined, projectId: projectId || undefined,
-    from: searchDate(from), to: searchDate(to, true), limit: 100 });
+  const body = { query, kind: kind || undefined, projectId: projectId || undefined,
+    from: searchDate(from), to: searchDate(to, true), limit: 100 };
   const current = !composing && query === text;
-  const results = useLiveQuery<SearchResults>(current ? body : undefined, (signal) =>
-    json("/api/v1/search", { method: "POST", body, signal }, { notifyMutation: false }));
+  const results = useLiveQuery<SearchResults>(current ? JSON.stringify(body) : undefined, (signal) =>
+    api.search({ params: { path: { vaultId } }, body, signal }));
   const groups = [
     { title: query ? uiText("Meetings", "ミーティング") : uiText("Recent meetings", "最近のミーティング"), items: results.data?.meetings ?? [] },
     { title: uiText("Screenshots", "スクリーンショット"), items: results.data?.screenshots ?? [] },
@@ -115,7 +118,7 @@ function SearchDialog({ vaultId, onClose }: { vaultId: string; onClose: () => vo
           <option value="">{uiText("All projects", "すべて")}</option>
           {projects.data?.items.map((project) => <option key={project.projectId} value={project.projectId}>{project.path}</option>)}
         </Select></label>
-        <label>{uiText("Type", "種類")}<Select value={kind} onValueChange={(value) => { setKind(value); setSelected(0); }}>
+        <label>{uiText("Type", "種類")}<Select value={kind} onValueChange={(value) => { if (value === "" || value === "meeting" || value === "screenshot" || value === "project") setKind(value); setSelected(0); }}>
           <option value="">{uiText("All types", "すべて")}</option><option value="meeting">{uiText("Meetings", "ミーティング")}</option>
           <option value="screenshot">{uiText("Screenshots", "スクリーンショット")}</option><option value="project">{uiText("Projects", "プロジェクト")}</option>
         </Select></label>
@@ -134,8 +137,8 @@ function SearchDialog({ vaultId, onClose }: { vaultId: string; onClose: () => vo
           {group.items.slice(0, visible).map((hit) => {
             const position = index++;
             return <button key={hit.id} className="search-result" id={`${id}-result-${position}`} role="option" aria-selected={position === active} data-selected={position === active} onClick={() => activate(hit)}>
-              {hit.fileId && <img src={`/api/v1/files/${hit.fileId}/variants/thumb_480`} alt="" loading="lazy"
-                onError={(event) => { const image = event.currentTarget; const original = `/api/v1/files/${hit.fileId}`; if (image.getAttribute("src") !== original) image.src = original; }} />}
+              {hit.fileId && <img src={apiUrls.getFileVariant({ params: { path: { fileId: hit.fileId, variant: "thumb_480" } } })} alt="" loading="lazy"
+                onError={(event) => { const image = event.currentTarget; const original = apiUrls.getFileContent({ params: { path: { fileId: hit.fileId! } } }); if (image.getAttribute("src") !== original) image.src = original; }} />}
               <span className="search-result-copy"><strong>{hit.title}</strong><small>{hit.projectPath}{hit.meetingCount !== undefined ? ` · ${hit.meetingCount} ${uiText("meetings", "件のミーティング")}` : ""}</small>
                 {hit.snippet && <span>{hit.snippet}</span>}</span>
               <time>{new Date(hit.date).toLocaleDateString()}</time>{position < 9 && <kbd>{position + 1}</kbd>}

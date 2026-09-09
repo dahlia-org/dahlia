@@ -29,8 +29,8 @@ it("seeds authenticated empty SQLite users atomically with UUIDv7 content and pr
     }
     installDevelopmentSeed(config, store, sync);
     const app = createApp({ config, authStore: store, syncService: sync });
-    expect((await app.request("/api/session")).status).toBe(401);
-    const responses = await Promise.all(Array.from({ length: 3 }, async () => app.request("/api/session", { headers })));
+    expect((await app.request("/api/v1/session")).status).toBe(401);
+    const responses = await Promise.all(Array.from({ length: 3 }, async () => app.request("/api/v1/session", { headers })));
     expect(responses.map((response) => response.status)).toEqual([200, 200, 200]);
     const db = new DatabaseSync(path);
     try {
@@ -44,7 +44,7 @@ it("seeds authenticated empty SQLite users atomically with UUIDv7 content and pr
       db.prepare("UPDATE meetings SET name = ?").run("編集済み");
       store.ensureIdentityUser = originalProjector;
       installDevelopmentSeed(config, store, sync);
-      expect((await app.request("/api/session", { headers })).status).toBe(200);
+      expect((await app.request("/api/v1/session", { headers })).status).toBe(200);
       expect(db.prepare("SELECT name FROM meetings").all()).toEqual(Array.from({ length: 3 }, () => ({ name: "編集済み" })));
     } finally { db.close(); }
   } finally {

@@ -33,7 +33,7 @@ describe("server extensions", () => {
 
     expect((await app.request("/api/auth/extension/test")).status).toBe(418);
     expect((await app.request("/api/extension", { headers: identityHeaders })).status).toBe(200);
-    expect(await (await app.request("/api/session", { headers: identityHeaders })).json())
+    expect(await (await app.request("/api/v1/session", { headers: identityHeaders })).json())
       .toMatchObject({ capabilities: { extension: true } });
   });
 
@@ -109,7 +109,7 @@ describe("server extensions", () => {
     const extension: DahliaServerExtension = { sessionCapabilities: () => ({ admin: true }) };
     const app = createApp({ config, authStore: testStore(), extensions: [extension] });
 
-    const response = await app.request("/api/session", { headers: identityHeaders });
+    const response = await app.request("/api/v1/session", { headers: identityHeaders });
     expect(response.status).toBe(500);
   });
 

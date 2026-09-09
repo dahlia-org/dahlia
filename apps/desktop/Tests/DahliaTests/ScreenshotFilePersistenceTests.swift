@@ -43,7 +43,7 @@
             {"id":"\(transaction.id)","status":"committed","cursor":"after-image","records":[
               {"entity":"file","id":"\(stored.originalFileId)","revision":1,"record":{
                 "uri":"/Volumes/catalog/schema/volume/files/\(stored.originalFileId.uuidString.lowercased())/original",
-                "offset":0,"size":\(fixture.bytes.count),"content_type":"image/png","checksum":"SHA-256:\(fixture.source.contentHash)",
+                "offset":0,"size":\(fixture.bytes.count),"contentType":"image/png","checksum":"SHA-256:\(fixture.source.contentHash)",
                 "name":"capture","metadata":{"source":"screenshot"},
                 "createdAt":"2026-09-06T00:00:00Z","updatedAt":"2026-09-06T00:00:00Z"
               }},

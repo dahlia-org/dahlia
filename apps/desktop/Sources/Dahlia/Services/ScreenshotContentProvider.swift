@@ -1,7 +1,9 @@
 import DahliaMeetingAccess
 import DahliaRuntimeSupport
+import DahliaServerAPI
 import Foundation
 import GRDB
+import OpenAPIRuntime
 import Synchronization
 
 /// Owns image file persistence and retrieval; audio and transcript persistence never wait on this service.
@@ -187,38 +189,51 @@ actor ScreenshotContentProvider {
         try await acquireRead(variant: variant)
         defer { releaseRead(variant: variant) }
         try Task.checkCancellation()
-        let representation = variant == .original ? "" : "/variants/\(variant.rawValue)"
-        let url = origin.appending(path: "api/v1/files/\(source.fileId.uuidString.lowercased())\(representation)")
-        for attempt in 0 ... 1 {
-            var request = URLRequest(url: url)
-            let token = try await tokenProvider(connection.id, attempt == 1)
-            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-            let (stream, response) = try await session.bytes(for: request)
-            guard let http = response as? HTTPURLResponse else { throw ScreenshotContentError.unavailable }
-            if http.statusCode == 401, attempt == 0 { continue }
-            if [401, 403].contains(http.statusCode) { throw ScreenshotContentError.authorizationRequired }
-            if http.statusCode == 404 { throw ScreenshotContentError.deleted }
-            guard http.statusCode == 200, response.expectedContentLength <= 64 * 1024 * 1024 else {
-                throw ScreenshotContentError.unavailable
+        let client = SyncAPIClient(session: session, tokenProvider: tokenProvider)
+        do {
+            let (body, contentType, variantName, originalHash) = try await client.perform(origin: origin, connectionId: connection.id) { client in
+                if variant == .original {
+                    let response = try await client.getFileContent(path: .init(fileId: source.fileId.uuidString.lowercased())).ok
+                    return try (
+                        response.body.any,
+                        response.headers.contentType,
+                        response.headers.xDahliaImageVariant,
+                        response.headers.xDahliaOriginalSha256
+                    )
+                }
+                guard let value = Operations.GetFileVariant.Input.Path.VariantPayload(rawValue: variant.rawValue) else {
+                    throw ScreenshotContentError.unavailable
+                }
+                let response = try await client.getFileVariant(path: .init(fileId: source.fileId.uuidString.lowercased(), variant: value)).ok
+                return try (
+                    response.body.any,
+                    response.headers.contentType,
+                    response.headers.xDahliaImageVariant,
+                    response.headers.xDahliaOriginalSha256
+                )
             }
+            if case let .known(length) = body.length, length > 64 * 1024 * 1024 { throw ScreenshotContentError.unavailable }
             var bytes = Data()
-            for try await byte in stream {
-                guard bytes.count < 64 * 1024 * 1024 else { throw ScreenshotContentError.integrityFailure }
-                bytes.append(byte)
+            for try await chunk in body {
+                guard chunk.count <= 64 * 1024 * 1024 - bytes.count else { throw ScreenshotContentError.integrityFailure }
+                bytes.append(contentsOf: chunk)
             }
-            let actual = http.value(forHTTPHeaderField: "x-dahlia-image-variant").flatMap(ScreenshotVariant.init(rawValue:)) ?? .original
+            let actual = variantName.flatMap(ScreenshotVariant.init(rawValue:)) ?? .original
             guard variant != .original || actual == .original,
                   actual != .original || ScreenshotRemoteReference.digest(bytes) == source.contentHash,
-                  actual == .original || http.value(forHTTPHeaderField: "x-dahlia-original-sha256") == source.contentHash,
-                  let mimeType = response.mimeType else {
+                  actual == .original || originalHash == source.contentHash,
+                  let mimeType = contentType?.split(separator: ";", maxSplits: 1).first.map(String.init) else {
                 throw ScreenshotContentError.integrityFailure
             }
             let content = ScreenshotContent(data: bytes, mimeType: mimeType, variant: actual)
             try? files?.write(content, source: source)
             try? trimFiles(dbQueue: credentials)
             return content
+        } catch let error as SyncHTTPError {
+            if [401, 403].contains(error.status) { throw ScreenshotContentError.authorizationRequired }
+            if error.status == 404 { throw ScreenshotContentError.deleted }
+            throw ScreenshotContentError.unavailable
         }
-        throw ScreenshotContentError.authorizationRequired
     }
 
     private func acquireRead(variant: ScreenshotVariant) async throws {

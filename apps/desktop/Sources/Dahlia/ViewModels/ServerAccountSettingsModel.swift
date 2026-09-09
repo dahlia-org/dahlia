@@ -1,3 +1,4 @@
+import DahliaServerAPI
 import Foundation
 import Network
 import Observation
@@ -227,30 +228,25 @@ final class ServerAccountSettingsModel {
     }
 
     private nonisolated static func fetch(client: SyncAPIClient, connectionID: UUID, origin: String) async throws -> ServerAccountSettings? {
-        let request = try request(origin: origin)
-        let data = try await client.data(for: request, connectionId: connectionID, maximumBytes: 8192)
+        guard let origin = URL(string: origin) else { throw URLError(.badURL) }
+        let data = try await client.data(origin: origin, connectionId: connectionID, maximumBytes: 8192) {
+            try await $0.getSettings().ok.body.json
+        }
         return try JSONDecoder().decode(ServerAccountSettings.Response.self, from: data).settings
     }
 
     private nonisolated static func patch(
         _ patch: ServerAccountSettings.Patch, client: SyncAPIClient, connectionID: UUID, origin: String
     ) async throws -> ServerAccountSettings {
-        var request = try request(origin: origin)
-        request.httpMethod = "PATCH"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONEncoder().encode(patch)
-        let data = try await client.data(for: request, connectionId: connectionID, maximumBytes: 8192)
+        guard let origin = URL(string: origin) else { throw URLError(.badURL) }
+        let body = try JSONDecoder().decode(Operations.UpdateSettings.Input.Body.JsonPayload.self, from: JSONEncoder().encode(patch))
+        let data = try await client.data(origin: origin, connectionId: connectionID, maximumBytes: 8192) {
+            try await $0.updateSettings(body: .json(body)).ok.body.json
+        }
         guard let settings = try JSONDecoder().decode(ServerAccountSettings.Response.self, from: data).settings else {
             throw URLError(.badServerResponse)
         }
         return settings
     }
 
-    private nonisolated static func request(origin: String) throws -> URLRequest {
-        guard let origin = URL(string: origin),
-              let url = URL(string: "/api/v1/account/settings", relativeTo: origin)?.absoluteURL else { throw URLError(.badURL) }
-        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 15)
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        return request
-    }
 }

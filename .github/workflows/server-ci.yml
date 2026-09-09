@@ -5,6 +5,7 @@ on:
     paths:
       - ".github/workflows/server-ci.yml"
       - "apps/server/**"
+      - "docs/architecture/server-api-audit.md"
       - "deploy/**"
   push:
     branches:
@@ -12,6 +13,7 @@ on:
     paths:
       - ".github/workflows/server-ci.yml"
       - "apps/server/**"
+      - "docs/architecture/server-api-audit.md"
       - "deploy/**"
 
 concurrency:

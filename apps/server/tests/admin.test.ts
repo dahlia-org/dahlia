@@ -14,7 +14,7 @@ const config: AppConfig = {
   oauthRedirectUris: [],
   maxRequestBytes: 1024,
 };
-const ownerHeaders = { "X-Forwarded-Email": "OWNER@example.com", origin: config.baseUrl };
+const ownerHeaders = { "X-Forwarded-Email": "OWNER@example.com", origin: config.baseUrl, "content-type": "application/json" };
 function administrativeStore() {
   const users = new Map<string, AdminUserRecord & { role: "admin" | "user" }>();
   const ensureIdentityUser = (identity: Identity) => {
@@ -41,8 +41,8 @@ function administrativeStore() {
       user.role = "admin";
       return Promise.resolve(user);
     },
-    removeAdminUser: (email) => {
-      const user = [...users.values()].find((candidate) => candidate.email === email && candidate.role === "admin");
+    removeAdminUser: (id) => {
+      const user = [...users.values()].find((candidate) => candidate.id === id && candidate.role === "admin");
       if (!user) return Promise.resolve("not_found");
       if ([...users.values()].filter((candidate) => candidate.role === "admin").length === 1) {
         return Promise.resolve("last_admin");
@@ -58,9 +58,9 @@ describe("administration", () => {
   it("promotes the first authenticated user to administrator", async () => {
     const { store } = administrativeStore();
     const app = createApp({ config, authStore: store });
-    const response = await app.request("/api/session", { headers: { "X-Forwarded-Email": "user@example.com" } });
+    const response = await app.request("/api/v1/session", { headers: { "X-Forwarded-Email": "user@example.com" } });
     expect(await response.json()).toMatchObject({ capabilities: { admin: true } });
-    expect((await app.request("/api/admin/members", {
+    expect((await app.request("/api/v1/admin/members", {
       headers: { "X-Forwarded-Email": "user@example.com" },
     })).status).toBe(200);
   });
@@ -69,17 +69,17 @@ describe("administration", () => {
     const store = testStore({ isAdminUser: () => Promise.reject(new Error("database unavailable")) });
     const app = createApp({ config, authStore: store });
     const headers = { "X-Forwarded-Email": "user@example.com" };
-    const session = await app.request("/api/session", { headers });
+    const session = await app.request("/api/v1/session", { headers });
     expect(session.status).toBe(200);
     expect(await session.json()).toMatchObject({ capabilities: { admin: false } });
-    expect((await app.request("/api/admin/members", { headers })).status).toBe(403);
+    expect((await app.request("/api/v1/admin/members", { headers })).status).toBe(403);
   });
 
   it("does not expose model management endpoints", async () => {
     const { store } = administrativeStore();
     const app = createApp({ config, authStore: store });
-    for (const [method, path] of [["GET", ""], ["POST", ""], ["PATCH", "/summary"], ["DELETE", "/summary"]]) {
-      expect((await app.request(`/api/admin/models${path}`, { method, headers: ownerHeaders })).status).toBe(404);
+    for (const [method, path] of [["GET", ""], ["POST", ""], ["PATCH", "/summaries"], ["DELETE", "/summaries"]]) {
+      expect((await app.request(`/api/v1/admin/models${path}`, { method, headers: ownerHeaders })).status).toBe(404);
     }
   });
 
@@ -87,25 +87,25 @@ describe("administration", () => {
     const { store, users } = administrativeStore();
     const app = createApp({ config, authStore: store });
 
-    await app.request("/api/session", { headers: ownerHeaders });
-    await app.request("/api/session", { headers: { "X-Forwarded-Email": "second@example.com" } });
+    await app.request("/api/v1/session", { headers: ownerHeaders });
+    await app.request("/api/v1/session", { headers: { "X-Forwarded-Email": "second@example.com" } });
 
-    const added = await app.request("/api/admin/members", {
+    const added = await app.request("/api/v1/admin/members", {
       method: "POST",
       headers: ownerHeaders,
       body: JSON.stringify({ email: " SECOND@example.com " }),
     });
     expect(added.status).toBe(201);
     expect(users.get("second@example.com")?.role).toBe("admin");
-    expect(await (await app.request("/api/admin/members", { headers: ownerHeaders })).json()).toMatchObject([
+    expect(await (await app.request("/api/v1/admin/members", { headers: ownerHeaders })).json()).toMatchObject({ items: [
       { email: "owner@example.com", role: "admin", removable: true },
       { email: "second@example.com", role: "admin", removable: true },
-    ]);
-    expect((await app.request("/api/admin/members/second%40example.com", {
+    ], nextCursor: null });
+    expect((await app.request("/api/v1/admin/members/second%40example.com", {
       method: "DELETE",
       headers: ownerHeaders,
     })).status).toBe(204);
-    expect((await app.request("/api/admin/members/owner%40example.com", {
+    expect((await app.request("/api/v1/admin/members/owner%40example.com", {
       method: "DELETE",
       headers: ownerHeaders,
     })).status).toBe(409);

@@ -27,7 +27,7 @@ try {
   for (const path of [
     "src", "drizzle", "scripts", "package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml",
     "tsconfig.json", "tsup.config.ts", "tsup.client.config.ts", "vite.config.ts", "worker-configuration.d.ts",
-    "index.html", "README.md", "Codex-LICENSE", "Codex-NOTICE.txt",
+    "openapi.json", "index.html", "README.md", "Codex-LICENSE", "Codex-NOTICE.txt",
   ]) {
     await cp(new URL(`../${path}`, import.meta.url), join(source, path), { recursive: true });
   }
@@ -85,6 +85,8 @@ try {
     if (typeof createPostgresApplicationStore !== "function" || typeof createPostgresAuthStore !== "function") {
       throw new Error("PostgreSQL store factories are missing from the Node package export");
     }
+    const specification = JSON.parse(await readFile(new URL(import.meta.resolve("@dahlia-ai/server/openapi.json")), "utf8"));
+    if (specification.openapi !== "3.1.0" || !specification.paths["/api/v1/transactions"]) throw new Error("Missing OpenAPI contract");
     const style = await readFile(new URL(import.meta.resolve("@dahlia-ai/server/client/styles.css")), "utf8");
     const packageUrl = new URL(import.meta.resolve("@dahlia-ai/server/package.json"));
     for (const path of [...serverMigrationManifest.sqlite.files, ...serverMigrationManifest.postgres.files]) {

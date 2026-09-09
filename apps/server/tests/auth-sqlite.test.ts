@@ -116,30 +116,30 @@ describe("SQLite Better Auth store", () => {
       const request = new Request(`${config.baseUrl}${path}`, { headers: { "X-Forwarded-Email": email, origin } });
       return runtime === "node" ? app.request(request) : workerFetch(request, {} as Cloudflare.Env, {} as ExecutionContext);
     };
-    await send("/api/session");
-    await send("/api/session", "member@example.com");
+    await send("/api/v1/session");
+    await send("/api/v1/session", "member@example.com");
     const raw = new DatabaseSync(path);
     const page = z.object({ items: z.array(z.object({ id: z.string() }).passthrough()), hasMore: z.boolean() });
     try {
       raw.prepare('INSERT INTO organization (id, name, slug, created_at) VALUES (?, ?, ?, ?)').run("other", "Other organization", "other", Date.now());
       raw.prepare('INSERT INTO member (id, organization_id, user_id, role, created_at) VALUES (?, ?, ?, ?, ?)').run("other-member", "other", "member@example.com", "owner", Date.now());
       raw.prepare('INSERT INTO team (id, name, organization_id, created_at) VALUES (?, ?, ?, ?)').run("other-team", "Other team", "other", Date.now());
-      const organizations = page.parse(await (await send("/api/admin/organizations")).json());
+      const organizations = page.parse(await (await send("/api/v1/admin/organizations")).json());
       expect(organizations.items).toContainEqual({ id: "other", name: "Other organization", slug: "other", memberCount: 1, teamCount: 1 });
       expect(organizations.hasMore).toBe(false);
-      const users = page.parse(await (await send("/api/admin/users")).json());
+      const users = page.parse(await (await send("/api/v1/admin/users")).json());
       expect(users.items.map(({ email, role }) => ({ email, role }))).toEqual([{ email: "admin@example.com", role: "admin" }, { email: "member@example.com", role: "user" }]);
       expect(users.hasMore).toBe(false);
       expect(Object.keys(users.items[0]!).sort()).toEqual(["createdAt", "email", "id", "name", "role"]);
       for (let index = 0; index < 100; index++) raw.prepare('INSERT INTO "user" (id, name, email, email_verified, created_at, updated_at) VALUES (?, ?, ?, 0, ?, ?)').run(`u${index}`, `User ${index}`, `u${index}@example.com`, Date.now(), Date.now());
-      const first = page.parse(await (await send("/api/admin/users")).json());
-      const second = page.parse(await (await send("/api/admin/users?offset=100")).json());
+      const first = page.parse(await (await send("/api/v1/admin/users")).json());
+      const second = page.parse(await (await send("/api/v1/admin/users?offset=100")).json());
       expect(first.items).toHaveLength(100); expect(first.hasMore).toBe(true);
       expect(second.items).toHaveLength(2); expect(second.hasMore).toBe(false);
       expect(new Set([...first.items, ...second.items].map((user) => user.id)).size).toBe(102);
       for (const kind of ["users", "organizations"]) {
-        expect((await send(`/api/admin/${kind}`, "member@example.com")).status).toBe(403);
-        expect((await send(`/api/admin/${kind}?offset=-1`)).status).toBe(400);
+        expect((await send(`/api/v1/admin/${kind}`, "member@example.com")).status).toBe(403);
+        expect((await send(`/api/v1/admin/${kind}?offset=-1`)).status).toBe(400);
       }
     } finally { raw.close(); await store.close?.(); }
   });
@@ -153,7 +153,7 @@ describe("SQLite Better Auth store", () => {
     await store.migrate();
     const app = createApp({ config, authStore: store, objectStorage: new LocalObjectStorage(join(directory, "storage")) });
     const responses = await Promise.all(["first", "second"].map((user) => Promise.resolve().then(() =>
-      app.request("/api/session", { headers: {
+      app.request("/api/v1/session", { headers: {
         "X-Forwarded-Email": `${user}@example.com`,
         "X-Forwarded-User": user,
       } }))));
@@ -183,7 +183,7 @@ describe("SQLite Better Auth store", () => {
     });
     expect((await app.request("/api/auth/admin/list-users")).status).toBe(404);
 
-    const first = await app.request("/api/session", { headers: {
+    const first = await app.request("/api/v1/session", { headers: {
       "X-Forwarded-Email": "User@Example.com",
       "X-Forwarded-Preferred-Username": "First Name",
       "X-Forwarded-User": "stable-user-id",
@@ -209,7 +209,7 @@ describe("SQLite Better Auth store", () => {
     expect(database.prepare('SELECT user_id FROM team_member WHERE team_id = ?').get("external-default"))
       .toBeUndefined();
 
-    const updated = await app.request("/api/session", { headers: {
+    const updated = await app.request("/api/v1/session", { headers: {
       "X-Forwarded-Email": "renamed@example.com",
       "X-Forwarded-Preferred-Username": "Renamed User",
       "X-Forwarded-User": "stable-user-id",
@@ -218,15 +218,15 @@ describe("SQLite Better Auth store", () => {
     expect(database.prepare('SELECT name, email FROM "user" WHERE id = ?').get("stable-user-id"))
       .toEqual({ name: "Renamed User", email: "renamed@example.com" });
 
-    const conflict = await app.request("/api/session", { headers: {
+    const conflict = await app.request("/api/v1/session", { headers: {
       "X-Forwarded-Email": "renamed@example.com",
       "X-Forwarded-User": "different-user-id",
     } });
     expect(conflict.status).toBe(409);
-    expect(await conflict.json()).toEqual({ error: "identity_projection_failed" });
+    expect(await conflict.json()).toMatchObject({ code: "identity_projection_failed" });
     expect(database.prepare('SELECT count(*) AS count FROM "user"').get()).toEqual({ count: 1 });
 
-    expect((await app.request("/api/session", { headers: {
+    expect((await app.request("/api/v1/session", { headers: {
       "X-Forwarded-Email": "second@example.com",
       "X-Forwarded-User": "second-user-id",
     } })).status).toBe(200);
@@ -234,7 +234,7 @@ describe("SQLite Better Auth store", () => {
       .get("external", "second-user-id")).toEqual({ role: "member" });
     expect(database.prepare('SELECT 1 FROM team_member WHERE team_id = ? AND user_id = ?')
       .get("external-default", "second-user-id")).toBeUndefined();
-    expect((await app.request("/api/session", { headers: {
+    expect((await app.request("/api/v1/session", { headers: {
       "X-Forwarded-Email": "renamed@example.com",
       "X-Forwarded-Preferred-Username": "Renamed User",
       "X-Forwarded-User": "stable-user-id",
@@ -417,7 +417,7 @@ describe("SQLite Better Auth store", () => {
       expect.objectContaining({ id: "first-admin" }),
       expect.objectContaining({ id: "second-admin" }),
     ]));
-    expect(await store.removeAdminUser("second-admin@example.com")).toBe("removed");
+    expect(await store.removeAdminUser("second-admin")).toBe("removed");
 
     database.prepare(
       'INSERT INTO "user" ("id", "name", "email", "email_verified", "created_at", "updated_at") VALUES (?, ?, ?, ?, ?, ?)',
