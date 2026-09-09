@@ -6,6 +6,33 @@
     @MainActor
     struct MainWindowNavigationTests {
         @Test
+        func developmentLaunchOpensTheSavedSettingsCategoryOnlyWhenRequested() throws {
+            let suiteName = "MainWindowNavigationTests-\(UUID.v7())"
+            let defaults = try #require(UserDefaults(suiteName: suiteName))
+            defer { defaults.removePersistentDomain(forName: suiteName) }
+            SettingsNavigation.saveSelection(.calendar, in: defaults)
+
+            for (environment, shouldOpen) in [
+                (["DAHLIA_RUNTIME_PROFILE": "development", "DAHLIA_DEV_OPEN_SETTINGS": "1"], true),
+                (["DAHLIA_RUNTIME_PROFILE": "development"], false),
+                (["DAHLIA_DEV_OPEN_SETTINGS": "1"], false),
+                (["DAHLIA_RUNTIME_PROFILE": "production", "DAHLIA_DEV_OPEN_SETTINGS": "1"], false),
+            ] {
+                let navigation = MainWindowNavigation(
+                    openMainWindow: {},
+                    settingsDefaults: defaults,
+                    launchEnvironment: environment
+                )
+                #if DEBUG
+                    #expect(navigation.isShowingSettings == shouldOpen)
+                #else
+                    #expect(!navigation.isShowingSettings)
+                #endif
+                #expect(navigation.settingsCategory == .calendar)
+            }
+        }
+
+        @Test
         func switchesBetweenMeetingAndProjectSections() {
             let navigation = MainWindowNavigation(openMainWindow: {})
 

@@ -29,3 +29,29 @@ struct SettingsStatusMessage: View {
         .accessibilityElement(children: .combine)
     }
 }
+
+#Preview("Connected") {
+    SettingsStatusMessage(
+        text: "接続を確認しました",
+        systemImage: "checkmark.circle.fill",
+        tint: .green
+    )
+    .padding()
+    .frame(width: 360)
+}
+
+#Preview("Error details") {
+    @Previewable @State var showsDetail = true
+
+    VStack(alignment: .leading, spacing: 12) {
+        SettingsStatusMessage(
+            text: "接続できませんでした",
+            detail: showsDetail ? "サーバーへの接続がタイムアウトしました。設定を確認して再試行してください。" : nil,
+            systemImage: "exclamationmark.triangle.fill",
+            tint: .orange
+        )
+        Toggle("詳細を表示", isOn: $showsDetail)
+    }
+    .padding()
+    .frame(width: 360)
+}
