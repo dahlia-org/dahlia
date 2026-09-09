@@ -27,6 +27,47 @@ const connection = databaseUrl ? connectAuthDatabase(config) : undefined;
 afterAll(async () => connection?.close());
 
 integration("PostgreSQL application store", () => {
+  it.each(["app.vault_permissions", "auth.member", "auth.team_member"])("holds %s membership writes until the transfer commits", async (table) => {
+    const store = createPostgresAuthStore(connection!.db, "postgres");
+    const userId = crypto.randomUUID();
+    const owner: Identity = { userId, workspaceId: `personal:${userId}`, source: "header" };
+    await store.ensureIdentityUser(owner);
+    const source = crypto.randomUUID(), destination = crypto.randomUUID();
+    await store.sync.withIdentity(owner, (sync) => createVault(sync, source));
+    await store.sync.withIdentity(owner, (sync) => createVault(sync, destination));
+    const audience = await store.sync.withIdentity(owner, (sync) => sync.vaultTransferAudience(source, destination));
+    let markReady!: () => void, failReady!: (error: unknown) => void, release!: () => void;
+    const ready = new Promise<void>((resolve, reject) => { markReady = resolve; failReady = reject; });
+    const released = new Promise<void>((resolve) => { release = resolve; });
+    const transfer = store.sync.withIdentity(owner, async (sync) => {
+      await sync.transferVault({ sourceVaultId: source, destinationVaultId: destination, sourceRevision: 1, destinationRevision: 1,
+        audienceHash: audience.audienceHash, idempotencyKey: crypto.randomUUID(), requestHash: table });
+      markReady();
+      await released;
+    }).catch((error: unknown) => { failReady(error); throw error; });
+    const writer = new Client({ connectionString: databaseUrl });
+    let write: Promise<unknown> | undefined;
+    let settled = false;
+    try {
+      await ready;
+      await writer.connect();
+      const pid = (await writer.query<{ pid: number }>("SELECT pg_backend_pid() AS pid")).rows[0]!.pid;
+      write = writer.query(`DELETE FROM ${table} WHERE false`).then(() => { settled = true; });
+      await vi.waitFor(async () => {
+        const waiting = await connection!.db.execute<{ waiting: boolean }>(sql`SELECT EXISTS (
+          SELECT 1 FROM pg_stat_activity WHERE pid = ${pid} AND wait_event_type = 'Lock') AS waiting`);
+        expect(settled || waiting.rows[0]?.waiting).toBe(true);
+      });
+      expect(settled).toBe(false);
+    } finally {
+      release();
+      await transfer;
+      await write;
+      await writer.end();
+    }
+    expect(settled).toBe(true);
+  });
+
   it.each(["file", "transcript", "expiry"])("serializes %s staging with the transfer lock", async (kind) => {
     const store = createPostgresAuthStore(connection!.db, "postgres");
     const userId = crypto.randomUUID();
@@ -63,7 +104,8 @@ integration("PostgreSQL application store", () => {
       expect(result).not.toHaveProperty("error");
     }
     if (kind !== "expiry") {
-      await expect(store.sync.withIdentity(owner, (sync) => sync.transferVault({ sourceVaultId: source, destinationVaultId: destination,
+      await expect(store.sync.withIdentity(owner, async (sync) => sync.transferVault({ sourceVaultId: source, destinationVaultId: destination,
+        audienceHash: (await sync.vaultTransferAudience(source, destination)).audienceHash,
         sourceRevision: 1, destinationRevision: 1, idempotencyKey: crypto.randomUUID(), requestHash: kind })))
         .rejects.toMatchObject({ status: 409, code: "transfer_unsynced_data" });
     }
@@ -104,8 +146,10 @@ integration("PostgreSQL application store", () => {
         data: meetingData(child, now, "Meeting", "") },
     ]));
     const request = { sourceVaultId: source, destinationVaultId: destination, sourceRevision: 1, destinationRevision: 1,
+      audienceHash: (await store.sync.withIdentity(owner, (sync) => sync.vaultTransferAudience(source, destination))).audienceHash,
       idempotencyKey: crypto.randomUUID(), requestHash: "first" };
     const outcomes = await Promise.allSettled([request, { ...request, destinationVaultId: alternative,
+      audienceHash: (await store.sync.withIdentity(owner, (sync) => sync.vaultTransferAudience(source, alternative))).audienceHash,
       idempotencyKey: crypto.randomUUID(), requestHash: "second" }].map((input) => store.sync.withIdentity(owner, (sync) => sync.transferVault(input))));
     expect(outcomes.filter((result) => result.status === "fulfilled")).toHaveLength(1);
     expect(outcomes.filter((result) => result.status === "rejected")).toHaveLength(1);

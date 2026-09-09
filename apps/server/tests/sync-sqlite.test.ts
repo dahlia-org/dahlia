@@ -52,9 +52,11 @@ describe("SQLite canonical sync", () => {
       const request = new Request(`http://localhost:5173/api/v1/${path}`, { ...init, headers: { ...headers(), ...init?.headers } });
       return runtime === "node" ? app.request(request) : fetchWorker(request, {} as Cloudflare.Env, {} as ExecutionContext);
     };
+    const audience: { audienceHash: string } = await (await send(`vaults/${vaultId}/transfer-audience?destinationVaultId=${destinationVaultId}`)).json();
     const input = { method: "POST", headers: { "Idempotency-Key": freshId() },
-      body: JSON.stringify({ destinationVaultId, sourceRevision: 1, destinationRevision: 1 }) };
+      body: JSON.stringify({ destinationVaultId, sourceRevision: 1, destinationRevision: 1, audienceHash: audience.audienceHash }) };
     expect((await send(`vaults/${vaultId}/transfer`, { ...input, headers: {} })).status).toBe(400);
+    expect((await send(`vaults/${vaultId}/transfer`, { ...input, body: JSON.stringify({ destinationVaultId, sourceRevision: 1, destinationRevision: 1 }) })).status).toBe(400);
     const first = await send(`vaults/${vaultId}/transfer`, input);
     expect(first.status).toBe(200);
     const response: Record<string, unknown> = await first.json();
@@ -88,7 +90,8 @@ describe("SQLite canonical sync", () => {
     database.exec("COMMIT");
     const before = database.prepare("SELECT file_id, uri, checksum FROM files ORDER BY file_id").all();
     const started = performance.now();
-    const result = await store.sync.withIdentity(owner, (sync) => sync.transferVault({ sourceVaultId: vaultId, destinationVaultId,
+    const result = await store.sync.withIdentity(owner, async (sync) => sync.transferVault({ sourceVaultId: vaultId, destinationVaultId,
+      audienceHash: (await sync.vaultTransferAudience(vaultId, destinationVaultId)).audienceHash,
       sourceRevision: 1, destinationRevision: 1, idempotencyKey: freshId(), requestHash: freshId() }));
     console.info(`Vault transfer: 5000 meetings + 1000 files in ${Math.round(performance.now() - started)} ms (disposable SQLite)`);
     expect(result.manifest.meetings).toHaveLength(5000);
@@ -96,6 +99,37 @@ describe("SQLite canonical sync", () => {
     expect(database.prepare("SELECT file_id, uri, checksum FROM files ORDER BY file_id").all()).toEqual(before);
     expect(database.prepare("SELECT count(*) AS count FROM meetings WHERE vault_id = ?").get(destinationVaultId)).toMatchObject({ count: 5000 });
     expect(database.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
+    database.close();
+    await store.close?.();
+  });
+
+  it.each(["permission", "organization", "team"])("rejects changed %s readers until the owner reconfirms", async (kind) => {
+    const { store, databasePath } = await setup();
+    await createVault(store);
+    const destinationVaultId = freshId();
+    await commit(store, owner, { ...transaction(freshId(), [{ id: freshId(), entity: "vault", action: "create",
+      entityId: destinationVaultId, baseRevision: null, data: { name: "Destination", createdAt: now } }]), vaultId: destinationVaultId });
+    await commit(store, owner, transaction(freshId(), [{ id: freshId(), entity: "meeting", action: "create", entityId: meetingId,
+      baseRevision: null, data: { ...meetingData(), projectId: null } }]));
+    const database = new DatabaseSync(databasePath);
+    database.exec(`INSERT INTO organization(id, name, slug, created_at) VALUES ('audience-org', 'Audience', 'audience', 0);
+      INSERT INTO team(id, organization_id, name, created_at) VALUES ('audience-team', 'audience-org', 'Audience', 0);`);
+    const grant = database.prepare("INSERT INTO vault_permissions(vault_id, principal_type, principal_id, role, granted_by_user_id) VALUES (?, ?, ?, 'member', ?)");
+    if (kind !== "permission") grant.run(destinationVaultId, kind, kind === "team" ? "audience-team" : "audience-org", owner.userId);
+    const preview = () => store.sync.withIdentity(owner, (sync) => sync.vaultTransferAudience(vaultId, destinationVaultId));
+    const request = { sourceVaultId: vaultId, destinationVaultId, sourceRevision: 1, destinationRevision: 1,
+      audienceHash: (await preview()).audienceHash, idempotencyKey: freshId(), requestHash: "original" };
+    if (kind === "permission") grant.run(destinationVaultId, "user", other.userId, owner.userId);
+    else if (kind === "organization") database.prepare("INSERT INTO member(id, organization_id, user_id, role, created_at) VALUES ('audience-member', 'audience-org', ?, 'member', 0)").run(other.userId);
+    else database.prepare("INSERT INTO team_member(id, team_id, user_id, created_at) VALUES ('audience-member', 'audience-team', ?, 0)").run(other.userId);
+    await expect(store.sync.withIdentity(owner, (sync) => sync.transferVault(request)))
+      .rejects.toMatchObject({ status: 409, code: "transfer_audience_changed" });
+    expect(await store.sync.withIdentity(owner, (sync) => sync.getMeeting(vaultId, meetingId))).not.toBeNull();
+    const refreshed = await preview();
+    expect(refreshed.added.map((person) => person.id)).toContain(other.userId);
+    const confirmed = { ...request, audienceHash: refreshed.audienceHash, requestHash: "reconfirmed", idempotencyKey: freshId() };
+    const receipt = await store.sync.withIdentity(owner, (sync) => sync.transferVault(confirmed));
+    expect(await store.sync.withIdentity(owner, (sync) => sync.transferVault(confirmed))).toEqual(receipt);
     database.close();
     await store.close?.();
   });
@@ -114,7 +148,8 @@ describe("SQLite canonical sync", () => {
     const audience = await store.sync.withIdentity(owner, (sync) => sync.vaultTransferAudience(vaultId, destinationVaultId));
     expect(audience.removed.map((person) => person.id)).toEqual([other.userId]);
     expect(audience.added).toEqual([]);
-    await store.sync.withIdentity(owner, (sync) => sync.transferVault({ sourceVaultId: vaultId, destinationVaultId,
+    await store.sync.withIdentity(owner, async (sync) => sync.transferVault({ sourceVaultId: vaultId, destinationVaultId,
+      audienceHash: (await sync.vaultTransferAudience(vaultId, destinationVaultId)).audienceHash,
       sourceRevision: 1, destinationRevision: 1, idempotencyKey: freshId(), requestHash: freshId() }));
     await expect(store.sync.withIdentity(other, (sync) => sync.getVaultRelocations(vaultId))).rejects.toMatchObject({ status: 403, code: "transfer_access_required" });
     grant.run(destinationVaultId, other.userId, owner.userId);
@@ -134,7 +169,8 @@ describe("SQLite canonical sync", () => {
       baseRevision: null, data: projectData(destinationName) }]), vaultId: destinationVaultId });
     await commit(store, owner, transaction(freshId(), [{ id: freshId(), entity: "project", action: "create", entityId: projectId,
       baseRevision: null, data: projectData(sourceName) }]));
-    await expect(store.sync.withIdentity(owner, (sync) => sync.transferVault({ sourceVaultId: vaultId, destinationVaultId,
+    await expect(store.sync.withIdentity(owner, async (sync) => sync.transferVault({ sourceVaultId: vaultId, destinationVaultId,
+      audienceHash: (await sync.vaultTransferAudience(vaultId, destinationVaultId)).audienceHash,
       sourceRevision: 1, destinationRevision: 1, idempotencyKey: freshId(), requestHash: freshId() }))).rejects.toMatchObject({ status: 409, code: "transfer_name_conflict" });
     expect(await store.sync.withIdentity(owner, (sync) => sync.listProjects(vaultId))).toHaveLength(1);
     await store.close?.();
@@ -154,6 +190,7 @@ describe("SQLite canonical sync", () => {
       { id: freshId(), entity: "meeting", action: "create", entityId: meetingId, baseRevision: null, data: { ...meetingData(), projectId: childId } },
     ]));
     const request = { sourceVaultId: vaultId, destinationVaultId, sourceRevision: 1, destinationRevision: 1,
+      audienceHash: (await store.sync.withIdentity(owner, (sync) => sync.vaultTransferAudience(vaultId, destinationVaultId))).audienceHash,
       idempotencyKey: freshId(), requestHash: "transfer" };
     await expect(store.sync.withIdentity(other, (sync) => sync.transferVault(request))).rejects.toMatchObject({ status: 404 });
     await expect(store.sync.withIdentity(owner, async (sync) => {

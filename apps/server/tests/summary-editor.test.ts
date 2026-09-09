@@ -37,6 +37,18 @@ describe("summary editing", () => {
     expect(JSON.stringify(original)).toBe(raw);
   });
 
+  it("preserves legacy non-JSON text in an editable paragraph", () => {
+    const raw = "# Legacy summary\n\n- Keep this text\n- And this line";
+    const editor = summaryEditor(raw, "Legacy");
+    const values = Object.fromEntries(editor.fields.map((field) => [field.name, field.value!]));
+    const paragraph = editor.fields.find((field) => field.value === raw)!;
+    expect(paragraph.multiline).toBe(true);
+    values[paragraph.name] = `${raw}\nEdited`;
+    const saved = JSON.parse(editor.document(values)) as { schemaVersion: number; sections: { blocks: { content: { text: string } }[] }[] };
+    expect(saved.schemaVersion).toBe(3);
+    expect(saved.sections[0]!.blocks[0]!.content.text).toBe(`${raw}\nEdited`);
+  });
+
   it("creates a new structured summary and uses localized field labels", () => {
     for (const [language, label] of [["en-US", "Summary title"], ["ja-JP", "要約のタイトル"]]) {
       vi.stubGlobal("navigator", { language });

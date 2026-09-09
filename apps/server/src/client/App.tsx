@@ -650,7 +650,7 @@ function VaultTransfer({ vault }: { vault: SyncedVaultInfo }) {
       const [source, target, audience] = await Promise.all([
         json<SyncedVaultInfo>(`/api/v1/vaults/${vault.vaultId}`),
         json<SyncedVaultInfo>(`/api/v1/vaults/${destination.vaultId}`),
-        json<{ removed: { name: string; email: string }[]; added: { name: string; email: string }[] }>(
+        json<{ audienceHash: string; removed: { name: string; email: string }[]; added: { name: string; email: string }[] }>(
           `/api/v1/vaults/${vault.vaultId}/transfer-audience?destinationVaultId=${destination.vaultId}`),
       ]);
       const people = (items: { name: string; email: string }[]) => items.map((person) => `${person.name} (${person.email})`).join(", ");
@@ -664,7 +664,7 @@ function VaultTransfer({ vault }: { vault: SyncedVaultInfo }) {
           "移管先を閲覧できない端末はローカルデータを保持して同期を停止します。未同期データは移管されません。"),
       ].filter(Boolean).join("\n\n");
       const key = uuidV7();
-      const body = JSON.stringify({ destinationVaultId: target.vaultId, sourceRevision: source.revision, destinationRevision: target.revision });
+      const body = JSON.stringify({ destinationVaultId: target.vaultId, sourceRevision: source.revision, destinationRevision: target.revision, audienceHash: audience.audienceHash });
       openDialog({ title: uiText("Transfer content", "内容を移管"), description,
         confirmLabel: uiText("Transfer", "移管する"), destructive: true,
         onSubmit: async () => {

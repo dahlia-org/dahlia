@@ -210,6 +210,7 @@ export interface VaultTransferRequest {
   destinationVaultId: string;
   sourceRevision: number;
   destinationRevision: number;
+  audienceHash: string;
   idempotencyKey: string;
   requestHash: string;
 }
@@ -223,7 +224,7 @@ export interface VaultTransferRecord {
 }
 
 export interface IdentitySyncStore {
-  vaultTransferAudience(sourceVaultId: string, destinationVaultId: string): Promise<{ removed: { id: string; name: string; email: string }[]; added: { id: string; name: string; email: string }[] }>;
+  vaultTransferAudience(sourceVaultId: string, destinationVaultId: string): Promise<{ audienceHash: string; removed: { id: string; name: string; email: string }[]; added: { id: string; name: string; email: string }[] }>;
   transferVault(request: VaultTransferRequest): Promise<VaultTransferRecord>;
   getVaultRelocations(vaultId: string): Promise<VaultRelocations>;
   listSummaryVersions(vaultId: string, meetingId: string, limit: number, before?: number): Promise<Omit<SummaryVersion, "document">[]>;

@@ -9,10 +9,13 @@ const array = (value: unknown): unknown[] => Array.isArray(value) ? value : [];
 
 // Edit text in place: a plain-text conversion would discard lists, tables, references and attachments.
 export function summaryEditor(raw: string | null | undefined, title: string) {
-  const source: ObjectValue = raw ? object(JSON.parse(raw)) : {
+  let source: ObjectValue = {
     schemaVersion: 3, title, description: "", tags: [], actionItems: [],
-    sections: [{ id: uuidV7(), heading: "", blocks: [{ id: uuidV7(), type: "paragraph", content: { text: "" } }] }],
+    sections: [{ id: uuidV7(), heading: "", blocks: [{ id: uuidV7(), type: "paragraph", content: { text: raw ?? "" } }] }],
   };
+  if (raw) {
+    try { source = object(JSON.parse(raw)); } catch { /* Legacy text stays in the editable paragraph. */ }
+  }
   const fields: DialogField[] = [{ name: "title", label: uiText("Summary title", "要約のタイトル"), value: title, required: true }];
   const paths = new Map<string, Path>([["title", ["title"]]]);
   function addTextField(path: Path, label: string, multiline = false) {

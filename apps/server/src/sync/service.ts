@@ -13,7 +13,7 @@ import type { Identity } from "../auth/identity";
 import { MAX_FILE_BYTES } from "../config";
 import { ObjectStorageError, type StorageReadMethod, type ObjectStorage } from "../storage/storage";
 import { RequestError, boundedUploadBody, parseUpload, type ParsedUpload } from "../storage/upload";
-import { sha256Passthrough, sha256Stream } from "../storage/sha256";
+import { sha256, sha256Passthrough, sha256Stream } from "../storage/sha256";
 import {
   createSearchText,
   createIntlSearchTokenizer,
@@ -214,7 +214,7 @@ export class MeetingSyncService {
     this.requireWritableIdentity(identity);
     const idempotencyKey = uuidV7Schema.safeParse(key);
     const parsed = z.object({ destinationVaultId: uuidSchema, sourceRevision: z.number().int().positive(),
-      destinationRevision: z.number().int().positive() }).strict().safeParse(body);
+      destinationRevision: z.number().int().positive(), audienceHash: z.string().regex(/^[0-9a-f]{64}$/) }).strict().safeParse(body);
     if (!idempotencyKey.success || !parsed.success) throw new RequestError(400, "invalid_vault_transfer");
     const requestHash = await sha256(canonicalJson({ sourceVaultId, ...parsed.data }));
     const result = await this.store.withIdentity(identity, (scoped) => scoped.transferVault({
@@ -1356,11 +1356,6 @@ function canonicalJson(value: unknown): string {
       .map(([key, child]) => `${JSON.stringify(key)}:${canonicalJson(child)}`).join(",")}}`;
   }
   return JSON.stringify(value);
-}
-
-async function sha256(value: string): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
-  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
 async function normalizeTransaction(body: unknown): Promise<SyncTransaction> {

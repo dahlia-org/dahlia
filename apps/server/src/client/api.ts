@@ -60,6 +60,7 @@ export function uiText(english: string, japanese: string): string {
 
 export function syncMessage(code: string, language = globalThis.navigator?.language ?? "en"): string | undefined {
   const messages: Record<string, [string, string]> = {
+    transfer_audience_changed: ["Readers changed. Close this dialog and review the transfer again.", "閲覧者が変更されました。この画面を閉じ、移管内容を再確認してください。"],
     transfer_unsynced_data: ["Uploads or uncommitted data remain. Complete sync and try again.", "アップロード中または未確定のデータがあります。同期完了後に再試行してください。"],
     transfer_processing: ["Recording or processing is in progress. Try again when it finishes.", "録音または処理が進行中です。完了後に再試行してください。"],
     transfer_name_conflict: ["The destination already has a root Project with the same name.", "移管先に同名のルートプロジェクトがあります。名前を変更してから再試行してください。"],

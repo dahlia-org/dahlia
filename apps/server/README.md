@@ -566,14 +566,14 @@ Vault details and deletion. The permissions tab is always available.
 
 Owners can move all Server-saved content to another Vault they own with
 `POST /api/v1/vaults/{vault_id}/transfer`, `Idempotency-Key: <UUIDv7>`, and
-`{"destinationVaultId":"<UUID>","sourceRevision":3,"destinationRevision":5}`.
+`{"destinationVaultId":"<UUID>","sourceRevision":3,"destinationRevision":5,"audienceHash":"<preview hash>"}`.
 The atomic response is `200 {"id":"<Server UUIDv7>","status":"committed","sourceVaultId":"<UUID>","destinationVaultId":"<UUID>"}`.
 IDs and object-storage keys remain unchanged; the empty source Vault remains and deletion is separate.
 Retries with the same owner/key/body return the saved result; key reuse with a different body returns `409 idempotency_key_reused`.
 Identical Vaults return 400; missing or non-owned Vaults return 404. Stale revisions, staged data, running work,
 and normalized root-Project name collisions return distinct 409 errors.
 
-`GET /api/v1/vaults/{vault_id}/transfer-audience?destinationVaultId=<UUID>` returns the current readers gaining or losing access.
+`GET /api/v1/vaults/{vault_id}/transfer-audience?destinationVaultId=<UUID>` returns the current readers gaining or losing access and their `audienceHash`. Submit that hash with the transfer; a changed reader set returns `409 transfer_audience_changed` and requires a new confirmation. PostgreSQL locks sharing and membership writes until the checked transfer commits.
 Transferred content inherits destination sharing. Desktop retains local data and pauses when destination access is unavailable,
 then checks again after access is restored. Unsynced local changes also pause relocation; they are never discarded automatically.
 `GET /api/v1/vaults/{vault_id}/relocations` resolves transferred IDs to their current accessible Vaults, including after delta expiry.

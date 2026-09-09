@@ -1,3 +1,4 @@
+import { sha256 } from "../storage/sha256";
 import { uuidV7 } from "../id";
 import { transcriptStatus, sameTranscriptModel, type TranscriptVersion } from "./transcript";
 import { summaryMetadata } from "../summary/metadata";
@@ -462,6 +463,10 @@ function createIdentityStore(
       const [vault] = await db.select({ id: schema.syncedVault.vaultId }).from(schema.syncedVault).where(ownedVault(id)).limit(1);
       if (!vault) throw new SyncTransactionError(404, "vault_not_found");
     }
+    if (searchBackend !== "sqlite") {
+      // ponytail: transfer-wide sharing locks; use scoped permission versions if transfer traffic makes this costly.
+      await db.execute(sql`LOCK TABLE ${schema.syncedVaultPermission}, ${schema.member}, ${schema.teamMember} IN SHARE MODE`);
+    }
     const readers = async (id: string) => db.select({ id: schema.user.id, name: schema.user.name, email: schema.user.email })
       .from(schema.user).where(exists(db.select({ value: sql`1` }).from(schema.syncedVaultPermission).where(and(
         eq(schema.syncedVaultPermission.vaultId, id), or(
@@ -474,7 +479,9 @@ function createIdentityStore(
       )))).orderBy(asc(schema.user.name), asc(schema.user.id));
     const source = await readers(sourceVaultId);
     const destination = await readers(destinationVaultId);
-    return { removed: source.filter((person) => !destination.some((other) => other.id === person.id)),
+    const audienceHash = await sha256(JSON.stringify([sourceVaultId, destinationVaultId,
+      source.map((person) => person.id).sort(), destination.map((person) => person.id).sort()]));
+    return { audienceHash, removed: source.filter((person) => !destination.some((other) => other.id === person.id)),
       added: destination.filter((person) => !source.some((other) => other.id === person.id)) };
   }
 
@@ -503,6 +510,8 @@ function createIdentityStore(
       const expected = vault.vaultId === sourceVaultId ? request.sourceRevision : request.destinationRevision;
       if (vault.revision !== expected) throw new SyncTransactionError(409, "revision_conflict");
     }
+    const audience = await vaultTransferAudience(sourceVaultId, destinationVaultId);
+    if (audience.audienceHash !== request.audienceHash) throw new SyncTransactionError(409, "transfer_audience_changed");
     const affected = [sourceVaultId, destinationVaultId];
     const [blocked] = await db.select({ id: schema.syncedVault.vaultId }).from(schema.syncedVault).where(and(
       inArray(schema.syncedVault.vaultId, affected),
