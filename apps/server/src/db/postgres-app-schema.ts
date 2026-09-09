@@ -33,6 +33,11 @@ import { user as authUser } from "./generated/postgres-auth-schema";
 export const appSchema = pgSchema("app");
 const tsvector = customType<{ data: string }>({ dataType: () => "tsvector" });
 
+export const serverInitializations = appSchema.table("server_initializations", {
+  name: text("name").primaryKey(),
+  initializedAt: timestamp("initialized_at", { withTimezone: true }).notNull(),
+});
+
 export const accountSettings = appSchema.table("account_settings", {
   userId: text("user_id").primaryKey().references(() => authUser.id, { onDelete: "cascade" }),
   summary: jsonb("summary").$type<AccountSettings["summary"]>().default(DEFAULT_ACCOUNT_SETTINGS.summary).notNull(),

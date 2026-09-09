@@ -16,6 +16,14 @@
 
 2026-09-06: Server canonical model では Vault / Project と meeting が同じ正本を構成するため、未リリースの `core` / `content` を `app` に統合した。SQLite / D1 は prefix を除去する。baseline を直接更新し、旧開発 DB からの自動移行は提供しない。認可、保持期間、再生成可否はスキーマではなく各テーブルの責務で区別する。
 
+## リリース前 baseline 統合（2026-09-09）
+
+ユーザー承認により未リリース Server の開発履歴を現行 Drizzle schema から再生成した初期 migration に統合する。既存開発 DB の自動変換は提供せず、新しい空 DB への明示的な切り替えを必要とする。Desktop と既にリリースしたユーザー DB の migration は変更しない。
+
+PostgreSQL は既存の生成 Auth baseline → application initial → runtime_support、SQLite / D1 は initial → runtime_support とする。Drizzle が生成した policy は参照先 identity function の後に作成するため runtime_support に置く。FORCE RLS、membership index、移管の DEFERRABLE 制約、SQLite FTS5 と trigger を維持し、旧テーブル作成・変換・backfill は除去する。snapshot は将来の差分生成用に保持し、配布 package は実行 SQL のみを含む。
+
+以下の forward migration の説明は統合前の経緯であり、旧開発 DB からの移行保証ではない。リリース後は従来どおり forward-only とする。
+
 ## Header identity
 
 proxy は client-supplied identity header を除去・上書きし、Server への直接到達を防ぐ。Server 側の CIDR 判定で代替しない。
@@ -73,3 +81,9 @@ FORCE RLS は backfill transaction 内だけ解除し commit 前に復元する�
 `recordings` は `meeting_id` を外部キーとし、Vault は親会議から導出する。PostgreSQL RLS と共通 store の認可をともに親会議経由にし、API の `vaultId` は維持する。`meeting_events.vault_id` は会議削除後の履歴認可のため、`meeting_files.vault_id` は同一 Vault の複合外部キー制約のため維持する。
 
 コンテンツ世代は `version`、同期・更新検出は `revision` とする。`account_settings.change_version` は `revision` に改名するが、項目単位の更新方法は維持し、CAS 必須にはしない。処理世代の generation、録音 UUID、解析方式・通信形式のバージョンは別概念として扱う。
+
+## 既定組織の初期化記録（2026-09-10）
+
+accounts mode の既定組織は、組織・ユーザーに外部キーを持たない `server_initializations` の `default_organization` 行で一度だけ初期化する。記録、組織、初期 owner を同じ PostgreSQL / SQLite transaction または D1 batch で保存し、明示的な組織削除後も記録を残す。forward migration は既存の `external` 組織を記録し、名前・所有権・membership を変更しない。
+
+この table は処理名と初期化日時だけの運用 metadata として RLS 対象外とし、認証 store 以外へ公開しない。header mode の JIT projection は従来どおり維持する。

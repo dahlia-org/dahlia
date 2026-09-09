@@ -833,7 +833,7 @@ import Synchronization
         @Test
         func reappliesUnreleasedV38ForDevelopmentDatabases() throws {
             let queue = try DatabaseQueue(configuration: AppDatabaseManager.configuration())
-            try AppDatabaseManager.migrator.migrate(queue, upTo: "v44_retireVectorSearch")
+            try AppDatabaseManager.migrator.migrate(queue, upTo: "v41_vaultAISettingsBackfill")
             let vault = makeVault()
             let meeting = makeMeeting(vaultID: vault.id)
             let screenshot = MeetingScreenshotRecord(

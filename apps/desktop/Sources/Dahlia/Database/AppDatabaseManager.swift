@@ -15,8 +15,8 @@ final class AppDatabaseManager: Sendable {
     let searchIndexer: SearchIndexer
 
     /// アプリケーションサポートディレクトリに DB を作成・オープンする。
-    convenience init() throws {
-        try self.init(path: Self.databaseURL.path, enablesConcurrentSearch: true)
+    convenience init(onMigration: (@Sendable () -> Void)? = nil) throws {
+        try self.init(path: Self.databaseURL.path, enablesConcurrentSearch: true, onMigration: onMigration)
         let directory = DahliaApplicationSupport.currentDirectoryURL
         Task.detached(priority: .utility) {
             do {
@@ -31,6 +31,7 @@ final class AppDatabaseManager: Sendable {
     init(
         path: String,
         enablesConcurrentSearch: Bool = false,
+        onMigration: (@Sendable () -> Void)? = nil,
         screenshotAnalyzer: any ScreenshotAnalyzing = CodexScreenshotAnalysisService(),
         screenshotRuntimeProviderResolver: @escaping SearchIndexer.RuntimeProviderResolver = {
             CodexRuntimeContextStore.shared.provider
@@ -56,6 +57,10 @@ final class AppDatabaseManager: Sendable {
             usesConcurrentSearch = journalMode?.lowercased() == "wal"
         } else {
             usesConcurrentSearch = false
+        }
+        if let onMigration,
+           try dbQueue.read({ try !Self.migrator.hasCompletedMigrations($0) }) {
+            onMigration()
         }
         try Self.migrator.migrate(dbQueue)
         if !usesConcurrentSearch {
@@ -275,163 +280,97 @@ final class AppDatabaseManager: Sendable {
             try VaultAISettingsBackfillMigration.migrate(in: db)
         }
 
-        migrator.registerMigration("v42_meetingSync", foreignKeyChecks: .deferred) { db in
+        // v0.21.0 shipped through v41. The following changes have never been distributed.
+        migrator.registerMigration("v42_localFirstSchema", foreignKeyChecks: .deferred) { db in
             try MeetingSyncMigration.migrate(in: db)
-        }
-
-        migrator.registerMigration("v43_syncRecovery") { db in
-            guard try db.tableExists("vaults"), try db.tableExists("sync_transactions") else { return }
-            let columns = try db.columns(in: "vaults").map(\.name)
-            if !columns.contains("syncRecoveryState") {
-                try db.alter(table: "vaults") { $0.add(column: "syncRecoveryState", .text) }
-            }
-            if !columns.contains("syncMutationGeneration") {
-                try db.alter(table: "vaults") {
-                    $0.add(column: "syncMutationGeneration", .integer).notNull().defaults(to: 0)
-                }
-            }
-            try db.execute(sql: """
-            CREATE TRIGGER IF NOT EXISTS sync_mutation_generation
-            AFTER INSERT ON sync_transactions BEGIN
-                UPDATE vaults SET syncMutationGeneration = syncMutationGeneration + 1
-                WHERE id = NEW.vaultId;
-            END;
-            CREATE TRIGGER IF NOT EXISTS sync_association_generation
-            AFTER UPDATE OF accountConnectionId, syncConfirmedConnectionId ON vaults
-            WHEN NEW.accountConnectionId IS NOT OLD.accountConnectionId
-                OR NEW.syncConfirmedConnectionId IS NOT OLD.syncConfirmedConnectionId
-            BEGIN
-                UPDATE vaults SET syncMutationGeneration = syncMutationGeneration + 1,
-                    syncRecoveryState = NULL WHERE id = NEW.id;
-            END;
-            """)
-        }
-
-        migrator.registerMigration("v44_retireVectorSearch") { db in
+            try syncRecovery(in: db)
             try RetireVectorSearchMigration.migrate(in: db)
-        }
-
-        migrator.registerMigration("v45_screenshotContent", foreignKeyChecks: .deferred) { db in
             try ScreenshotContentMigration.migrate(in: db)
-        }
-
-        migrator.registerMigration("v46_textContent", foreignKeyChecks: .deferred) { db in
             try TextContentMigration.migrate(in: db)
-        }
-
-        migrator.registerMigration("v47_meetingEvents", foreignKeyChecks: .deferred) { db in
             try MeetingEventMigration.migrate(in: db)
-        }
-
-        migrator.registerMigration("v48_recordingArchives", foreignKeyChecks: .deferred) { db in
-            try db.execute(sql: """
-            CREATE TABLE recording_archives (
-                sessionId TEXT PRIMARY KEY NOT NULL REFERENCES recording_sessions(id) ON DELETE CASCADE,
-                meetingId TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
-                vaultId TEXT NOT NULL REFERENCES vaults(id) ON DELETE CASCADE,
-                connectionId TEXT,
-                number INTEGER,
-                audioJSON TEXT NOT NULL DEFAULT '{}',
-                preparedJSON TEXT NOT NULL DEFAULT '{}',
-                state TEXT NOT NULL DEFAULT 'pending',
-                retryAt DATETIME,
-                failureCode TEXT,
-                verifiedAt DATETIME
-            );
-            CREATE INDEX recording_archives_meeting ON recording_archives(meetingId);
-            """)
-            guard let original = try String.fetchOne(db, sql: "SELECT sql FROM sqlite_master WHERE name = 'sync_operations' AND type = 'table'")
-            else { return }
-            let replacement = original.replacingOccurrences(of: "sync_operations", with: "sync_operations_v48")
-                .replacingOccurrences(of: "'meeting_event'", with: "'meeting_event', 'recording'")
-            try db.execute(sql: replacement)
-            // Reuse the preceding queue migration's preservation of cascading transcript payloads.
-            try db.execute(sql: """
-            CREATE TEMP TABLE recording_archive_patch_backup AS SELECT * FROM sync_transcript_patch_items;
-            INSERT INTO sync_operations_v48 SELECT * FROM sync_operations;
-            DROP TABLE sync_operations;
-            ALTER TABLE sync_operations_v48 RENAME TO sync_operations;
-            INSERT OR IGNORE INTO sync_transcript_patch_items SELECT * FROM recording_archive_patch_backup;
-            DROP TABLE recording_archive_patch_backup;
-            CREATE INDEX sync_operations_entity_idx ON sync_operations(entity, entityId, transactionId);
-            CREATE INDEX sync_operations_attachment_reference_idx ON sync_operations(attachmentReference);
-            """)
-        }
-
-        migrator.registerMigration("v49_transcriptVersions", foreignKeyChecks: .deferred) { db in
+            try recordingArchives(in: db)
             try TranscriptVersionMigration.migrate(in: db)
-        }
-
-        migrator.registerMigration("v50_transcriptActivity", foreignKeyChecks: .deferred) { db in
             try TranscriptActivityMigration.migrate(in: db)
-        }
-
-        migrator.registerMigration("v51_schemaOrganization") { db in
             try SchemaOrganizationMigration.migrate(in: db)
-        }
-
-        migrator.registerMigration("v51_collectionAppearance") { db in
-            try addColumnIfNeeded(in: db, table: "vaults", column: "appearance", type: .text)
-            try addColumnIfNeeded(in: db, table: "projects", column: "appearance", type: .text)
-        }
-
-        migrator.registerMigration("v52_vaultRelocation") { db in
-            // Canonical relocation updates roots, children, and meetings in one transaction.
-            // Ordinary project edits still require their original Vault in ProjectRecord.
-            try db.execute(sql: """
-            CREATE TABLE vault_relocation_scope (
-                sourceVaultId BLOB NOT NULL, destinationVaultId BLOB NOT NULL,
-                PRIMARY KEY(sourceVaultId, destinationVaultId)
-            );
-            DROP TRIGGER projects_prevent_vault_change;
-            DROP TRIGGER IF EXISTS meetings_prevent_vault_change;
-            CREATE TRIGGER projects_prevent_vault_change BEFORE UPDATE OF vaultId ON projects
-            WHEN NEW.vaultId <> OLD.vaultId AND NOT EXISTS (
-                SELECT 1 FROM vault_relocation_scope WHERE sourceVaultId = OLD.vaultId AND destinationVaultId = NEW.vaultId
-            ) BEGIN SELECT RAISE(ABORT, 'project vault is immutable'); END;
-            """)
-            if try db.tableExists("meetings") {
-                try db.execute(sql: """
-                CREATE TRIGGER meetings_prevent_vault_change BEFORE UPDATE OF vaultId ON meetings
-                WHEN NEW.vaultId <> OLD.vaultId AND NOT EXISTS (
-                    SELECT 1 FROM vault_relocation_scope WHERE sourceVaultId = OLD.vaultId AND destinationVaultId = NEW.vaultId
-                ) BEGIN SELECT RAISE(ABORT, 'meeting vault is immutable'); END;
-                """)
-            }
-            try addColumnIfNeeded(in: db, table: "recording_audio_files", column: "originalVaultPath", type: .text)
-        }
-
-        migrator.registerMigration("v53_canonicalAppearanceFields") { db in
-            // As in TextContentMigration, preserve legacy views/triggers while altering their tables.
-            let objects = try Row.fetchAll(db, sql: """
-            SELECT type, name, sql FROM sqlite_master
-            WHERE type IN ('trigger', 'view') AND sql IS NOT NULL ORDER BY rowid
-            """)
-            for object in objects.reversed() {
-                let type: String = object["type"]
-                let name: String = object["name"]
-                try db.execute(sql: "DROP \(type) \(name.quotedDatabaseIdentifier)")
-            }
-            for table in ["projects", "vaults"] where try db.tableExists(table) {
-                try db.execute(sql: """
-                UPDATE \(table) SET
-                    icon = COALESCE(icon, json_extract(appearance, '$.icon')),
-                    color = COALESCE(color, json_extract(appearance, '$.color'))
-                WHERE appearance IS NOT NULL;
-                ALTER TABLE \(table) DROP COLUMN appearance;
-                """)
-            }
-            for object in objects {
-                try db.execute(sql: object["sql"] as String)
-            }
-        }
-
-        migrator.registerMigration("v54_recordingProcessing") { db in
+            try vaultRelocation(in: db)
             try addColumnIfNeeded(in: db, table: "recording_sessions", column: "processingJSON", type: .text)
         }
 
         return migrator
     }()
+
+    private static func syncRecovery(in db: Database) throws {
+        guard try db.tableExists("vaults"), try db.tableExists("sync_transactions") else { return }
+        let columns = try db.columns(in: "vaults").map(\.name)
+        if !columns.contains("syncRecoveryState") {
+            try db.alter(table: "vaults") { $0.add(column: "syncRecoveryState", .text) }
+        }
+        if !columns.contains("syncMutationGeneration") {
+            try db.alter(table: "vaults") {
+                $0.add(column: "syncMutationGeneration", .integer).notNull().defaults(to: 0)
+            }
+        }
+        try db.execute(sql: """
+        CREATE TRIGGER IF NOT EXISTS sync_mutation_generation
+        AFTER INSERT ON sync_transactions BEGIN
+            UPDATE vaults SET syncMutationGeneration = syncMutationGeneration + 1
+            WHERE id = NEW.vaultId;
+        END;
+        CREATE TRIGGER IF NOT EXISTS sync_association_generation
+        AFTER UPDATE OF accountConnectionId, syncConfirmedConnectionId ON vaults
+        WHEN NEW.accountConnectionId IS NOT OLD.accountConnectionId
+            OR NEW.syncConfirmedConnectionId IS NOT OLD.syncConfirmedConnectionId
+        BEGIN
+            UPDATE vaults SET syncMutationGeneration = syncMutationGeneration + 1,
+                syncRecoveryState = NULL WHERE id = NEW.id;
+        END;
+        """)
+    }
+
+    private static func recordingArchives(in db: Database) throws {
+        try db.execute(sql: """
+        CREATE TABLE recording_archives (
+            sessionId TEXT PRIMARY KEY NOT NULL REFERENCES recording_sessions(id) ON DELETE CASCADE,
+            meetingId TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
+            vaultId TEXT NOT NULL REFERENCES vaults(id) ON DELETE CASCADE,
+            connectionId TEXT,
+            number INTEGER,
+            audioJSON TEXT NOT NULL DEFAULT '{}',
+            preparedJSON TEXT NOT NULL DEFAULT '{}',
+            state TEXT NOT NULL DEFAULT 'pending',
+            retryAt DATETIME,
+            failureCode TEXT,
+            verifiedAt DATETIME
+        );
+        CREATE INDEX recording_archives_meeting ON recording_archives(meetingId);
+        """)
+    }
+
+    private static func vaultRelocation(in db: Database) throws {
+        // Canonical relocation updates roots, children, and meetings in one transaction.
+        // Ordinary project edits still require their original Vault in ProjectRecord.
+        try db.execute(sql: """
+        CREATE TABLE vault_relocation_scope (
+            sourceVaultId BLOB NOT NULL, destinationVaultId BLOB NOT NULL,
+            PRIMARY KEY(sourceVaultId, destinationVaultId)
+        );
+        DROP TRIGGER projects_prevent_vault_change;
+        DROP TRIGGER IF EXISTS meetings_prevent_vault_change;
+        CREATE TRIGGER projects_prevent_vault_change BEFORE UPDATE OF vaultId ON projects
+        WHEN NEW.vaultId <> OLD.vaultId AND NOT EXISTS (
+            SELECT 1 FROM vault_relocation_scope WHERE sourceVaultId = OLD.vaultId AND destinationVaultId = NEW.vaultId
+        ) BEGIN SELECT RAISE(ABORT, 'project vault is immutable'); END;
+        """)
+        if try db.tableExists("meetings") {
+            try db.execute(sql: """
+            CREATE TRIGGER meetings_prevent_vault_change BEFORE UPDATE OF vaultId ON meetings
+            WHEN NEW.vaultId <> OLD.vaultId AND NOT EXISTS (
+                SELECT 1 FROM vault_relocation_scope WHERE sourceVaultId = OLD.vaultId AND destinationVaultId = NEW.vaultId
+            ) BEGIN SELECT RAISE(ABORT, 'meeting vault is immutable'); END;
+            """)
+        }
+        try addColumnIfNeeded(in: db, table: "recording_audio_files", column: "originalVaultPath", type: .text)
+    }
 
     nonisolated static var migrationIdentifiers: [String] {
         migrator.migrations

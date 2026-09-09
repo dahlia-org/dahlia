@@ -112,7 +112,8 @@ export function createDahliaAuth(
         sendInvitationEmail: async () => {},
         teams: {
           enabled: true,
-          defaultTeam: { enabled: true },
+          defaultTeam: { enabled: false },
+          allowRemovingAllTeams: true,
         },
         organizationHooks: {
           beforeDeleteOrganization: async ({ organization: deleted }) => {

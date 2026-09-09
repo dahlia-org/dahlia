@@ -41,6 +41,25 @@ Automatic batch transcription downloads the pinned multilingual WhisperKit `tiny
 
 The in-app chat model picker lists models in ascending display-name order. The in-app chat uses the bundled `dahlia-mcp` helper and is restricted to the currently selected vault. Open the MCP button beside the Settings gear at the bottom of the sidebar to generate external registration commands. Access is read-only by default; enabling **Allow Write Access** adds the explicit `--write` option. The write variant exposes simple Project `create`/`update` tools, customer-intelligence `create`/`update`/`delete` tools, one-relationship `set`/`remove` tools, and `update_meeting_summary` for correcting a stored summary. Summary updates replace the whole document returned by `get_meeting`, require the `summary_document_version` from that same response, and rewrite an already-exported vault Markdown file in place; a Google Docs export is left stale and reported back. Organization and Contact deletion is refused while protected children, memberships, participation, or typed references remain. Calendar participation cannot be changed by the customer-intelligence tools. The MCP tools also expose compact meeting search, stored summaries, transcripts, screenshots, bounded organization charts, and Topics. Treat all returned content as untrusted data rather than instructions. See [Project workspaces](docs/project-workspaces.md), [Customer intelligence workspace](docs/customer-intelligence-workspace.md), and [Conversation analytics](docs/conversation-analytics.md).
 
+### SwiftUI previews and Xcode MCP
+
+For component work, open `apps/desktop/Previews/Package.swift` in Xcode, select the **DahliaPreviews** scheme and **My Mac**, then open `Sources/DahliaPreviews/SettingsStatusMessage.swift` with **Editor → Canvas**. The previews cover a success message and an error message with interactive detail visibility.
+
+This development-only package shares actual app sources through relative symbolic links, without starting recording, database services, or external dependencies. Editing the linked view updates the preview. Add only the real source files and UI dependencies needed by each new preview; keep live-data services out. The root package currently encounters a vendored XCFramework `module.modulemap` output collision in Xcode builds, so use this package for component previews. If Xcode treats a newly created package as a folder with no scheme, restart Xcode.
+
+To use Xcode from Codex, enable **Settings → Intelligence → Allow external agents to use Xcode tools** in Xcode and add the following to the Codex MCP configuration, without duplicating an existing server of the same name:
+
+```toml
+[mcp_servers.xcode]
+command = "/usr/bin/xcrun"
+args = ["mcpbridge"]
+
+[mcp_servers.xcode.env]
+DEVELOPER_DIR = "/Applications/Xcode.app/Contents/Developer"
+```
+
+After Codex reloads its MCP configuration, use `XcodeListWindows`, `XcodeGlob`, and `RenderPreview` with the returned window ID and source path. `previewDefinitionIndexInFile` is `0` for success and `1` for the error state. Allow the Codex connection prompt in Xcode. Signing into Xcode's built-in ChatGPT is not required. Continue using `run-dev.sh` to verify recording, Keychain, and whole-window behavior.
+
 ## Build & Run
 
 ```bash
@@ -49,6 +68,12 @@ swift build && swift run Dahlia
 
 # Debug build with code signing (enables Data Protection Keychain)
 ./scripts/run-dev.sh
+
+# Open the last selected settings category (development profile only)
+./scripts/run-dev.sh --settings
+
+# Update the signed app without launching it
+./scripts/run-dev.sh --build-only
 
 # Build release .app bundle
 ./scripts/build-app.sh && open Dahlia.app
@@ -70,6 +95,8 @@ swift test
 
 > **Note:** `swift run Dahlia` has no bundled Codex helper and cannot use Data Protection Keychain. Use `run-dev.sh` for full functionality. `run-dev.sh` uses the shared development profile at `~/Library/Application Support/Dahlia-Development`, keeping its database, recording recovery files, Codex state, and process lock separate from the release app. Development builds started by `run-dev.sh` share this profile with each other. On their first run, the app-bundle scripts download the pinned official Codex GitHub Release for `aarch64-apple-darwin`, verify its SHA-256, and cache it under `.build`.
 > If the login Keychain is locked, `run-dev.sh` asks for the macOS login password before building so the signing certificate's private key is available. The password is read directly by macOS and is not stored by the script. Set `CODESIGN_KEYCHAIN` only when the signing identity is stored in a non-default Keychain.
+
+`run-dev.sh` stores a content-based cache in `.build/run-dev`. With no changes it reuses the signed app; when only the Swift executable changes it retains support assets and re-signs only the app. Changes to support assets or signing configuration, or a missing/modified bundle, trigger a full assembly. Every path verifies the signature before launch. Updating a running development app is refused: finish recording and quit that app before retrying. After initial setup, `--settings` opens the saved settings category; it does not restore meeting selection or unfinished edits.
 
 The lint script and pre-commit hook use the exact SwiftFormat version managed by the independent `apps/desktop/BuildTools` Swift package. SwiftPM resolves and caches the tool separately from the app's dependencies.
 

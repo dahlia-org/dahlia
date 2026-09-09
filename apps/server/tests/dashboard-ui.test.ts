@@ -457,7 +457,7 @@ describe("dashboard navigation", () => {
     expect(source).not.toContain("Loading artifacts…");
     expect(source).toContain("/api/auth/organization/list-user-teams?");
     expect(source).not.toContain("/api/auth/organization/list-team-members?");
-    expect(source).toContain('team.id !== "external-default"');
+    expect(source).not.toContain("external-default");
     expect(source).not.toContain("window.prompt(");
     expect(source).not.toContain("window.confirm(");
     expect(source).not.toContain("<pre>{meeting.summaryDocument}</pre>");

@@ -70,7 +70,7 @@ try {
     } from "@dahlia-ai/server/node";
     import { App } from "@dahlia-ai/server/client";
     import { serverMigrationManifest } from "@dahlia-ai/server/migrations";
-    import { readFile } from "node:fs/promises";
+    import { readFile, readdir } from "node:fs/promises";
     import { DatabaseSync } from "node:sqlite";
     import { fileURLToPath } from "node:url";
 
@@ -85,9 +85,6 @@ try {
     if (typeof createPostgresApplicationStore !== "function" || typeof createPostgresAuthStore !== "function") {
       throw new Error("PostgreSQL store factories are missing from the Node package export");
     }
-    if (serverMigrationManifest.sqlite.files.length !== 25) {
-      throw new Error("Migration manifest is incomplete");
-    }
     const specification = JSON.parse(await readFile(new URL(import.meta.resolve("@dahlia-ai/server/openapi.json")), "utf8"));
     if (specification.openapi !== "3.1.0" || !specification.paths["/api/v1/transactions"]) throw new Error("Missing OpenAPI contract");
     const style = await readFile(new URL(import.meta.resolve("@dahlia-ai/server/client/styles.css")), "utf8");
@@ -95,11 +92,13 @@ try {
     for (const path of [...serverMigrationManifest.sqlite.files, ...serverMigrationManifest.postgres.files]) {
       await readFile(new URL(path, packageUrl), "utf8");
     }
+    const packagedMigrations = await readdir(new URL("./drizzle/", packageUrl), { recursive: true });
+    if (packagedMigrations.some((file) => file.endsWith("snapshot.json"))) throw new Error("Development snapshots shipped in package");
     await readFile(new URL("./dist/server/db/prune-sync-history.js", packageUrl), "utf8");
     const codexLicense = await readFile(new URL("./Codex-LICENSE", packageUrl), "utf8");
     const codexNotice = await readFile(new URL("./Codex-NOTICE.txt", packageUrl), "utf8");
     const migration = await readFile(
-      new URL(import.meta.resolve("@dahlia-ai/server/migrations/sqlite/20260903173555_lying_slipstream/migration.sql")),
+      new URL(import.meta.resolve("@dahlia-ai/server/migrations/sqlite/20260909134058_initial/migration.sql")),
       "utf8",
     );
     const authMigration = await readFile(
@@ -107,11 +106,11 @@ try {
       "utf8",
     );
     const applicationMigration = await readFile(
-      new URL(import.meta.resolve("@dahlia-ai/server/migrations/postgres/20260903173551_bumpy_freak/migration.sql")),
+      new URL(import.meta.resolve("@dahlia-ai/server/migrations/postgres/20260909134056_initial/migration.sql")),
       "utf8",
     );
     const fileRlsMigration = await readFile(
-      new URL(import.meta.resolve("@dahlia-ai/server/migrations/postgres/20260906142206_force_file_rls/migration.sql")),
+      new URL(import.meta.resolve("@dahlia-ai/server/migrations/postgres/20260909134100_runtime_support/migration.sql")),
       "utf8",
     );
     if (
@@ -147,7 +146,7 @@ try {
     if (database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'artifact'").get()) throw new Error("Retired Artifact table remains");
     database.close();
     await store.close?.();
-    if (applied.length !== serverMigrationManifest.sqlite.files.length || applied.at(-1)?.name !== "20260909104431_summary_detail_keys") {
+    if (applied.length !== serverMigrationManifest.sqlite.files.length || applied.at(-1)?.name !== serverMigrationManifest.sqlite.files.at(-1).split("/").at(-2)) {
       throw new Error("Installed package migrations did not run from the package directory");
     }
   `);

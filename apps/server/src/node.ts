@@ -46,6 +46,10 @@ const searchTokenizer = createNodeSearchTokenizer();
 const syncService = new MeetingSyncService(applicationStore.sync, objectStorage, searchTokenizer,
   searchEmbedder, transformScreenshot,
   config.storageBackend === "databricks" ? config.storageDatabricksVolumePath : undefined);
+if (process.argv.includes("--seed-dev")) {
+  const { installDevelopmentSeed } = await import("./dev-seed");
+  installDevelopmentSeed(config, applicationStore, syncService);
+}
 const captioner = createImageCaptioner(config);
 const imageAnalysis = captioner && applicationStore.imageAnalysis
   ? new ImageAnalysisWorker(applicationStore.imageAnalysis, captioner, applicationStore.sync, syncService, applicationStore.accountSettings)

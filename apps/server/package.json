@@ -44,7 +44,8 @@
     "dist/client",
     "dist/client-library",
     "dist/server",
-    "drizzle",
+    "drizzle/*/*/migration.sql",
+    "drizzle/d1/*.sql",
     "openapi.json"
   ],
   "engines": {
@@ -68,7 +69,7 @@
     "db:prune-sync-history": "tsx --env-file-if-exists=.env.local src/db/prune-sync-history.ts",
     "db:prune-sync-history:prod": "node dist/server/db/prune-sync-history.js",
     "dev": "concurrently -k -n api,web \"pnpm run dev:api\" \"pnpm run dev:client\"",
-    "dev:api": "tsx watch --env-file-if-exists=.env.local src/node.ts",
+    "dev:api": "tsx watch --env-file-if-exists=.env.local src/node.ts --seed-dev",
     "dev:client": "vite",
     "dev:cloudflare": "pnpm run ensure:wrangler && WRANGLER_WRITE_LOGS=false WRANGLER_SEND_METRICS=false vite dev --config vite.cloudflare.config.ts",
     "ensure:wrangler": "node -e \"const fs=require('node:fs');if(!fs.existsSync('wrangler.jsonc'))fs.copyFileSync('../../deploy/cloudflare/wrangler.example.jsonc','wrangler.jsonc')\"",

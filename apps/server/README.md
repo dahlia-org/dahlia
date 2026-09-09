@@ -18,7 +18,11 @@ Better Auth, Gateway administration, and meeting sync share one Drizzle applicat
 
 Node supports `sqlite`, `postgres`, and `lakebase`; Workers support `d1`, `hyperdrive`, and direct `postgres`. PostgreSQL-compatible connections keep generated Better Auth tables in `auth`, all Dahlia-owned tables in `app`; all schemas are owned by the connection user. References flow from `app` to `auth`. Lakebase uses the official `@databricks/lakebase` pool for OAuth credential refresh.
 
-The unreleased application baseline now uses `app` / unprefixed SQLite tables. Existing development databases using `core` / `content` require an explicit rebuild or separately planned data migration; rerunning migrations does not convert them.
+The 2026-09-09 prerelease baseline replaces the development migration history. Existing Server development databases (including databases already using `app`) require an explicit rebuild or a separately planned data migration; this baseline is for empty databases only. Back up needed development data and point the Server at a new empty database before running migrations. No database is reset automatically. Desktop migrations are unchanged.
+
+PostgreSQL applies the unchanged generated Auth baseline, the generated application `initial` migration, then `runtime_support`. SQLite/D1 apply `initial` then `runtime_support`. The latter contains only database support SQL: PostgreSQL identity functions, generated policies (after their functions), FORCE RLS, membership indexes and deferrable transfer constraints; SQLite/D1 membership indexes, FTS5 and its maintenance triggers. Generated snapshots stay in the repository for future `pnpm db:generate` runs; the npm package ships only migration SQL. D1 SQL is copied from SQLite by `scripts/sync-d1-migrations.mjs`.
+
+Earlier upgrade descriptions below document development history and do not provide an upgrade path from the replaced baseline. After release, migrations are immutable and changes use forward migrations.
 
 Better Auth schemas are generated unmodified into `src/db/generated`; Dahlia tables remain in the adjacent app schema files. `pnpm db:generate-auth` refreshes the auth definitions and `pnpm db:generate` produces separate PostgreSQL auth and application streams under `drizzle/postgres-auth` and `drizzle/postgres`. Every authentication mode applies both streams in that order. Header mode keeps Better Auth endpoints disabled and projects each verified proxy identity into `auth.user`; accounts mode leaves that table under Better Auth's control. The relations-v2 adapter is used with joins disabled. SQLite and D1 retain one stream with top-level Better Auth tables, keep Dahlia table names unprefixed, and rely on the same application permission checks instead of RLS.
 
@@ -39,7 +43,7 @@ Meeting and Project detail reads are unscoped (`/meetings/{meetingId}`, `/projec
 | --- | --- | --- |
 | `/`, `/sign-in`, `/dashboard/**`, `/vaults/**` | Static SPA | Static SPA |
 | `/organizations` | Joined organizations and invitations; create an organization in a modal | Joined organizations |
-| `/organizations/{slug}` | Members, Teams, and Settings tabs | External organization Members, Teams, and Settings tabs |
+| `/organizations/{slug}` | Members, Teams, and Settings tabs | Default organization Members, Teams, and Settings tabs |
 | `/accept-invitation/**` | Better Auth invitation management | Not used |
 | `/api/auth/**` | Google sign-in and OAuth 2.1 endpoints | Disabled |
 | `/api/v1/session` | Account session and capabilities | Validated email-header identity and capabilities |
@@ -227,7 +231,7 @@ Web screenshot grids use `thumb_480`, open `thumb_1568`, and offer an original l
 
 Explicit Organization and Team sharing is always available. Only owners can grant or revoke access; shared members have read-only access.
 
-In accounts mode, owners use Better Auth Organizations, invitations, and Teams. In header mode, every validated proxy user is projected into the visible `external` Organization; the first user is its immutable owner and belongs to the `External` default Team, while later users join only the Organization. Organization owners manage Team membership from the same Web page. Vault owners explicitly grant read-only access through `PUT|DELETE /api/v1/vaults/{vaultId}/permissions/organizations/{organizationId}` or `/permissions/teams/{teamId}`; direct user member rows remain schema-only. PostgreSQL/Lakebase always migrate the generated `auth` baseline before the application baseline. RLS receives only transaction-local `app.user_id` and resolves current membership from `auth.member` and `auth.team_member`.
+In accounts mode, owners use Better Auth Organizations, invitations, and Teams. In header mode, every validated proxy user is projected into `Default Organization` (ID / slug: `external`); the first user is its immutable owner. No default Team is created. Organization owners manage Team membership from the same Web page. Vault owners explicitly grant read-only access through `PUT|DELETE /api/v1/vaults/{vaultId}/permissions/organizations/{organizationId}` or `/permissions/teams/{teamId}`; direct user member rows remain schema-only. PostgreSQL/Lakebase always migrate the generated `auth` baseline before the application baseline. RLS receives only transaction-local `app.user_id` and resolves current membership from `auth.member` and `auth.team_member`.
 
 The exhaustive `/api/v1/vaults/{vaultId}/search` endpoint orders by document ID. This keeps its pages stable when writes to another Vault change corpus-wide relevance scores.
 
@@ -412,9 +416,13 @@ pnpm dev
 
 The development scripts load `apps/server/.env.local`. SQLite at `apps/server/.data/dahlia-auth.sqlite` is the default, so PostgreSQL and Docker are not required locally. Existing Server values in the repository-root `.env.local` must be copied manually; that file remains owned by macOS development and release tooling.
 
+`pnpm dev` / `pnpm dev:api` enables sample data for local SQLite when `DAHLIA_APP_URL` uses localhost or a loopback address. After normal sign-in, a user with no accessible Vaults receives a sample Vault, a Project, and three meetings with summaries (including an unclassified meeting). Existing data is left untouched; repeated requests and restarts do not duplicate the sample while a Vault exists. All generated content and transaction IDs use UUIDv7, and the normal transaction service handles SQLite serialization and search indexing. PostgreSQL, Lakebase, Workers, and `pnpm start` do not seed data. To check an empty state, delete the sample Vault during the same development process; restarting with no Vaults seeds it again. Google sign-in configuration is still required in accounts mode.
+
 Set `DAHLIA_DATABASE_TYPE=postgres` and `DAHLIA_DATABASE_URL` to move Better Auth and Gateway administration to PostgreSQL, or set `DAHLIA_AUTH_TYPE=header` for an identity-aware proxy.
 
 For `accounts`, configure the Google OAuth callback as `http://localhost:5173/api/auth/callback/google` locally or `https://<host>/api/auth/callback/google` in production.
+
+The first registered user becomes the Server administrator. In accounts mode, that user's authenticated request also initializes owner membership in `Default Organization` (ID / slug: `external`), including on existing databases with an administrator. No initial team is created. Existing organizations still named `external` are renamed on authenticated access; custom names and existing teams are preserved. Teams can be removed even when they are the last team. Later Google users are not automatically enrolled; invite them through the organization UI. This default organization initialization applies to all Server runtimes, independently of development sample data. Organization creation, its initial owner membership, and a durable initialization record are atomic. Migrations mark existing default organizations as initialized. Explicitly deleting the organization does not recreate it on later sessions or after a restart. Accounts-mode membership removals and role changes are preserved; deleting the initial account does not re-enroll another user. Existing organization ownership is preserved, and Vault access still requires ownership or explicit sharing.
 
 For an identity-aware proxy, set `DAHLIA_AUTH_TYPE=header` and `DAHLIA_AUTH_HEADER` to the verified email header. Ensure the proxy removes and replaces that header and the application server is not directly reachable.
 

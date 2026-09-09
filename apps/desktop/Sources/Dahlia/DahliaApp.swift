@@ -36,13 +36,14 @@ struct DahliaApp: App {
     private let mainWindowNavigation: MainWindowNavigation
     @State private var appDatabase: AppDatabaseManager?
     @State private var meetingSyncWorker: SyncWorker?
-    @State private var isInitializingVault = true
-    @State private var vaultInitializationTask: Task<Void, Never>?
+    @State private var startup: AppStartupModel
     @State private var showVaultPicker = true
     @State private var pendingSetupAdoptionVaultID: UUID?
 
     @MainActor
     init() {
+        let startup = AppStartupModel()
+        _startup = State(initialValue: startup)
         let updateController = AppUpdateController()
         let viewModel = CaptionViewModel()
         let sidebarViewModel = SidebarViewModel()
@@ -54,7 +55,8 @@ struct DahliaApp: App {
             sidebarViewModel: sidebarViewModel,
             mainWindowNavigation: mainWindowNavigation,
             onRecordingDidStart: meetingDetectionService.recordingDidStart,
-            onRecordingDidStop: meetingDetectionService.recordingDidStop
+            onRecordingDidStop: meetingDetectionService.recordingDidStop,
+            isAppReady: { startup.isReady && !startup.isTerminating }
         )
         let menuBarCalendarViewModel = MenuBarCalendarViewModel()
         let liveSubtitleOverlayCoordinator = LiveSubtitleOverlayCoordinator(
@@ -89,14 +91,12 @@ struct DahliaApp: App {
         Window(L10n.dahlia, id: WindowID.main) {
             ZStack {
                 Group {
-                    if isInitializingVault {
-                        VStack(spacing: 0) {
-                            DahliaWindowHeader(reservesWindowControls: true) {
-                                Spacer()
-                            }
-                            ProgressView(L10n.loadingVaults)
-                                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        }
+                    if !startup.isReady {
+                        AppStartupView(
+                            state: startup.state,
+                            onContinue: startup.continueAfterWarning,
+                            onQuit: { NSApplication.shared.terminate(nil) }
+                        )
                     } else if let setupTourMode = mainWindowNavigation.setupTourMode {
                         SetupTourView(
                             mode: setupTourMode,
@@ -242,11 +242,9 @@ struct DahliaApp: App {
             }
             .task {
                 _ = liveSubtitleOverlayCoordinator
-                await initializeAppIfNeeded()
-                let settings = AppSettings.shared
-                async let driveRestore: Void = GoogleDriveStore.shared.restoreSessionIfNeeded()
-                await CalendarSourceCoordinator.shared.refreshEnabledSources(settings.enabledCalendarSources)
-                await driveRestore
+                guard !appDelegate.isTerminating else { return }
+                appDelegate.startup = startup
+                await startup.start(onReady: finishLaunching) { try await initializeApp() }
             }
             .onChange(of: scenePhase) { _, phase in
                 guard phase == .active, let meetingSyncWorker else { return }
@@ -269,7 +267,8 @@ struct DahliaApp: App {
                 Button(L10n.createNewMeeting, action: recordingCoordinator.createEmptyMeeting)
                     .keyboardShortcut("n", modifiers: .command)
                     .disabled(
-                        showVaultPicker
+                        !startup.isReady
+                            || showVaultPicker
                             || mainWindowNavigation.isShowingSettings
                             || mainWindowNavigation.isShowingDahliaSignIn
                             || !sidebarViewModel.canEditCurrentVault
@@ -371,27 +370,26 @@ struct DahliaApp: App {
         .menuBarExtraStyle(.menu)
     }
 
-    private func initializeAppIfNeeded() async {
-        if let vaultInitializationTask {
-            await vaultInitializationTask.value
-            return
+    private func finishLaunching() {
+        guard let appDatabase else { return }
+        configureMeetingDetection(in: appDatabase)
+        Task {
+            let settings = AppSettings.shared
+            async let driveRestore: Void = GoogleDriveStore.shared.restoreSessionIfNeeded()
+            await CalendarSourceCoordinator.shared.refreshEnabledSources(settings.enabledCalendarSources)
+            await driveRestore
         }
-        guard isInitializingVault else { return }
-        let task = Task { @MainActor in
-            await initializeApp()
-        }
-        vaultInitializationTask = task
-        await task.value
-        vaultInitializationTask = nil
     }
 
-    private func initializeApp() async {
-        guard appDatabase == nil,
-              AppDelegate.hasMutationOwnership,
-              let db = try? AppDatabaseManager() else {
-            isInitializingVault = false
-            return
+    private func initializeApp() async throws -> String? {
+        guard AppDelegate.hasMutationOwnership else {
+            throw CocoaError(.fileLocking)
         }
+        let (db, restoreOutcome) = try await AppStartupModel.prepareDatabase { phase in
+            startup.show(phase)
+        }
+        AppDelegate.backupRestoreOutcome = restoreOutcome
+        startup.show(.loadingVaults)
         try? await ScreenshotStorageMaintenance.compactAtStartup(dbQueue: db.dbQueue)
         appDatabase = db
         let vaultAISettings = VaultAISettingsModel.shared
@@ -437,23 +435,26 @@ struct DahliaApp: App {
             return await viewModel?.prepareForTermination()
         }
 
+        let warning = AppStartupModel.restoreWarning(restoreOutcome)
+        guard startup.beginVaultLoading() else { return warning }
         await vaultManagementModel.configure(appDatabase: db)
+        guard !Task.isCancelled else { return warning }
         let setupVersion = UserDefaults.standard.integer(forKey: SetupTourPresentationPolicy.userDefaultsKey)
         let setupProgressExists = setupVersion < SetupTourPresentationPolicy.currentVersion
             && SetupTourPresentationPolicy.hasSavedProgress()
         if !setupProgressExists,
            let vault = await vaultManagementModel.resolveExistingStartupVault(appDatabase: db) {
+            guard !Task.isCancelled else { return warning }
             openVault(vault)
         } else if SetupTourPresentationPolicy.shouldPresentAutomatically(
             storedVersion: setupVersion,
             hasLoadedVaults: vaultManagementModel.hasLoadedVaults,
             hasRegisteredVaults: !vaultManagementModel.vaults.isEmpty,
             hasSavedProgress: setupProgressExists
-        ) {
+        ), !Task.isCancelled {
             mainWindowNavigation.presentInitialSetupTour()
         }
-        isInitializingVault = false
-        configureMeetingDetection(in: db)
+        return warning
     }
 
     @discardableResult
@@ -613,7 +614,8 @@ struct DahliaApp: App {
         in db: AppDatabaseManager,
         startTranscription: Bool
     ) {
-        guard let vault = AppSettings.shared.currentVault else { return }
+        guard startup.isReady, !startup.isTerminating,
+              let vault = AppSettings.shared.currentVault else { return }
         mainWindowNavigation.openMeetings()
 
         if let event = meeting.calendarEvent {
@@ -761,7 +763,7 @@ private extension Scene {
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     @MainActor private(set) static var hasMutationOwnership = false
-    @MainActor private(set) static var backupRestoreOutcome: BackupRestoreStartupOutcome = .none
+    @MainActor static var backupRestoreOutcome: BackupRestoreStartupOutcome = .none
     @MainActor private(set) static var isBackupRestorePreparationActive = false
 
     @MainActor
@@ -776,7 +778,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         isBackupRestorePreparationActive = false
     }
 
-    private var isWaitingForCodexShutdown = false
+    @MainActor var startup: AppStartupModel?
+    @MainActor private(set) var isTerminating = false
     private var processLock: AdvisoryFileLock?
     @MainActor var terminationHandler: (@MainActor () async -> String?)?
 
@@ -788,7 +791,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     .appending(path: ".process.lock")
             )
             Self.hasMutationOwnership = true
-            Self.backupRestoreOutcome = BackupRestoreStartupProcessor.applyPendingRestore()
         } catch AdvisoryFileLockError.alreadyLocked {
             let alert = NSAlert()
             alert.alertStyle = .warning
@@ -817,11 +819,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        guard !isWaitingForCodexShutdown else { return .terminateLater }
-        isWaitingForCodexShutdown = true
+        guard !isTerminating else { return .terminateLater }
+        isTerminating = true
         Task {
+            await startup?.prepareForTermination()
             if let failureMessage = await terminationHandler?() {
-                isWaitingForCodexShutdown = false
+                isTerminating = false
+                startup?.cancelTermination()
                 sender.reply(toApplicationShouldTerminate: false)
                 let alert = NSAlert()
                 alert.alertStyle = .warning

@@ -40,6 +40,25 @@ Dahlia は、同梱 Codex の状態と認証を他の Codex アプリや Codex C
 
 MCP は単一顧客の組織階層、会話トピック、根拠会議、AI提案も Vault 内に限定して返します。`--write` セッションで分析するときも、通常は proposal の作成までで止まり、ユーザーが明示的に反映を依頼した場合だけ一括適用します。Calendar の参加事実を生成する proposal 操作はありません。詳しくは [顧客組織ワークスペース](docs/customer-intelligence-workspace.md) を参照してください。ベータ版の指標については [会話分析](docs/conversation-analytics.md) を参照してください。
 
+### SwiftUI Preview と Xcode MCP
+
+UI 部品の調整には `apps/desktop/Previews/Package.swift` を Xcode で開き、scheme を **DahliaPreviews**、実行先を **My Mac** にします。`Sources/DahliaPreviews/SettingsStatusMessage.swift` を開いて **Editor → Canvas** を表示すると、成功表示と詳細を切り替えられるエラー表示を確認できます。
+
+この開発専用パッケージは相対シンボリックリンクでアプリの実ソースを共有し、録音・DB・外部依存を起動しません。リンク先の View を編集するとプレビューにも反映されます。対象を追加するときは実ソースと必要な UI 依存だけをリンクし、実データを使うサービスは持ち込まないでください。ルートパッケージは Xcode ビルド時に vendored XCFramework の `module.modulemap` 出力が衝突するため、部品の確認にはこのパッケージを使います。新しいパッケージがフォルダ扱いで scheme が出ない場合は Xcode を再起動してください。
+
+Codex から確認するには、Xcode の **Settings → Intelligence → Allow external agents to use Xcode tools** を有効にし、Codex の MCP 設定へ次を追加します（同名設定がある場合は重複させないでください）。
+
+```toml
+[mcp_servers.xcode]
+command = "/usr/bin/xcrun"
+args = ["mcpbridge"]
+
+[mcp_servers.xcode.env]
+DEVELOPER_DIR = "/Applications/Xcode.app/Contents/Developer"
+```
+
+MCP 設定を読み直した Codex で `XcodeListWindows` → `XcodeGlob` → `RenderPreview` を使い、取得したウィンドウ ID とファイルパスを渡します。`previewDefinitionIndexInFile` は成功表示が `0`、エラー表示が `1` です。Xcode 側に出る Codex の接続確認を許可してください。Xcode 内蔵の ChatGPT へのログインは不要です。録音・Keychain・ウィンドウ全体の確認には引き続き `run-dev.sh` を使用します。
+
 ## ビルド & 実行
 
 ```bash
@@ -48,6 +67,12 @@ swift build && swift run Dahlia
 
 # コード署名付きデバッグビルド（Data Protection Keychain が有効）
 ./scripts/run-dev.sh
+
+# 前回選んだ設定カテゴリを開く（開発版のみ）
+./scripts/run-dev.sh --settings
+
+# 署名付きアプリの更新だけを行い、起動しない
+./scripts/run-dev.sh --build-only
 
 # リリース用 .app バンドルのビルド
 ./scripts/build-app.sh && open Dahlia.app
@@ -68,6 +93,8 @@ swift test
 ```
 
 > **注意:** `swift run Dahlia` には同梱 Codex ヘルパーがなく、Data Protection Keychain も使用できません。フル機能には `run-dev.sh` を使用してください。`run-dev.sh` は共有開発プロファイル `~/Library/Application Support/Dahlia-Development` を使用し、DB、録音復旧ファイル、Codex 状態、プロセスロックを正アプリから分離します。`run-dev.sh` で起動する開発版同士はこのプロファイルを共有します。アプリバンドル用スクリプトの初回実行時は、固定した Codex の公式 GitHub Release を `aarch64-apple-darwin` 向けに取得し、SHA-256 を検証して `.build` 配下へキャッシュします。
+
+`run-dev.sh` は内容ベースのキャッシュを `.build/run-dev` に保存します。変更がなければ署名済みアプリを再利用し、Swift 実行ファイルだけが変わった場合は同梱資材を保ってアプリだけを再署名します。資材・署名設定の変更、バンドルの欠損・改変時は完全に組み立て直し、どの経路でも起動前に署名を検証します。更新対象の開発版が動作中なら停止するため、録音を終了してアプリを閉じてから再実行してください。`--settings` は初回セットアップ完了後に保存済みの設定カテゴリを開きます。会議選択や編集中の内容を復元するオプションではありません。
 
 `build-app.sh`、`notarize.sh`、または `run-dev.sh` の実行前に `SENTRY_DSN` を設定すると、生成されるアプリの `Info.plist` に DSN を埋め込み、Sentry を有効化できます。Debug イベントには `debug` environment を付与します。明示的に DSN を設定していない `swift run Dahlia` と `run-dev.sh` は Sentry イベントを送信しません。
 

@@ -1,1 +1,0 @@
-ALTER TABLE "app"."transcripts" FORCE ROW LEVEL SECURITY;

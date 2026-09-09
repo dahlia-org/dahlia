@@ -707,17 +707,12 @@ describe("SQLite canonical sync", () => {
   });
 
 
-  it("adds account settings and image jobs without changing existing canonical files", async () => {
+  it("reopening and rerunning migrations preserves canonical files", async () => {
     const { store, service, publish, attach, file, databasePath } = await fileSetup();
     await publish();
     await attach();
     const original = await service.getFile(owner, file.id);
     await store.close?.();
-    const database = new DatabaseSync(databasePath);
-    database.exec("DROP TABLE jobs_summary; DROP TABLE jobs_image_analysis; DROP TABLE account_settings");
-    database.prepare("DELETE FROM __drizzle_migrations WHERE name IN (?, ?, ?)").run("20260907091207_funny_black_bird", "20260907172550_nice_starhawk", "20260908080352_zippy_aaron_stack");
-    database.exec("DELETE FROM __drizzle_migrations WHERE name IN ('20260908092914_massive_luke_cage', '20260908093013_account_settings_backfill', '20260908093035_stale_sue_storm')");
-    database.close();
     const reopened = createNodeApplicationStore(testConfig(databasePath));
     await reopened.migrate();
     const restored = new MeetingSyncService(reopened.sync);
@@ -858,7 +853,6 @@ describe("SQLite canonical sync", () => {
     expect(database.prepare("SELECT status, attempts, last_error_code FROM jobs_image_analysis").get())
       .toEqual({ status: "pending", attempts: 1, last_error_code: "captioning_http_429" });
     database.prepare("UPDATE jobs_image_analysis SET available_at = 0").run();
-    database.exec("DELETE FROM __drizzle_migrations WHERE name IN ('20260908092914_massive_luke_cage', '20260908093013_account_settings_backfill', '20260908093035_stale_sue_storm')");
     database.close();
     const reopened = createNodeApplicationStore({ ...testConfig(databasePath), captioningModel: "model" });
     expect(await reopened.imageAnalysis!.claim("model")).toMatchObject({ attempts: 1 });

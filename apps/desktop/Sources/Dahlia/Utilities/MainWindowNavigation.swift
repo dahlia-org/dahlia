@@ -1,3 +1,4 @@
+import DahliaRuntimeSupport
 import Foundation
 import GRDB
 import Observation
@@ -78,7 +79,8 @@ final class MainWindowNavigation {
             MainWindowOpener.shared.openMainWindowWithoutActivation()
         },
         initialSettingsCategory: SettingsCategory? = nil,
-        settingsDefaults: UserDefaults = .standard
+        settingsDefaults: UserDefaults = .standard,
+        launchEnvironment: [String: String] = ProcessInfo.processInfo.environment
     ) {
         self.openMainWindow = openMainWindow
         self.openMainWindowWithoutActivation = openMainWindowWithoutActivation
@@ -101,6 +103,10 @@ final class MainWindowNavigation {
         }
         settingsCategory = initialSettingsCategory.map(SettingsNavigation.visibleSelection)
             ?? SettingsNavigation.savedSelection(in: settingsDefaults)
+        #if DEBUG
+            isShowingSettings = DahliaApplicationSupport.profile(environment: launchEnvironment) == .development
+                && launchEnvironment["DAHLIA_DEV_OPEN_SETTINGS"] == "1"
+        #endif
         meetingSidebarDisplayMode = settingsDefaults.string(forKey: Self.meetingSidebarDisplayModeDefaultsKey)
             .flatMap(MeetingSidebarDisplayMode.init(rawValue:)) ?? .chronological
         pinnedProjectIDsByVault = Self.loadPinnedProjectIDs(from: settingsDefaults)

@@ -71,14 +71,12 @@
         }
 
         @Test
-        func v49MigrationPreservesAbsoluteTimesPlaybackAndPendingData() throws {
+        func releasedMigrationPreservesAbsoluteTimesAndPlayback() throws {
             let queue = try DatabaseQueue()
-            try AppDatabaseManager.migrator.migrate(queue, upTo: "v49_transcriptVersions")
+            try AppDatabaseManager.migrator.migrate(queue, upTo: "v41_vaultAISettingsBackfill")
             let base = Date(timeIntervalSince1970: 1000)
             let end = base.addingTimeInterval(120)
-            let vaultId = UUID.v7(), meetingId = UUID.v7(), segmentId = UUID.v7(), transcriptId = UUID.v7()
-            let operationId = UUID.v7(), transactionId = UUID.v7()
-            let connection = DahliaAccountConnectionRecord(id: .v7(), origin: "https://migration.invalid", clientID: "test", createdAt: base)
+            let vaultId = UUID.v7(), meetingId = UUID.v7(), segmentId = UUID.v7()
             let session = RecordingSessionRecord(
                 id: .v7(),
                 meetingId: meetingId,
@@ -92,9 +90,8 @@
             let speechStart = session.startedAt.addingTimeInterval(3)
             let speechEnd = session.startedAt.addingTimeInterval(4)
             try queue.write { db in
-                try connection.insert(db)
                 try db.execute(
-                    sql: "INSERT INTO vaults(id, name, createdAt, lastOpenedAt) VALUES (?, 'Legacy', ?, ?)",
+                    sql: "INSERT INTO vaults(id, path, name, createdAt, lastOpenedAt) VALUES (?, '/tmp/activity', 'Legacy', ?, ?)",
                     arguments: [vaultId, base, base]
                 )
                 try MeetingRecord(
@@ -124,27 +121,10 @@
                     session.batchAttemptCount,
                 ])
                 try db.execute(
-                    sql: "INSERT INTO transcript_segments(id, meetingId, sessionId, startTime, endTime, isConfirmed) VALUES (?, ?, ?, ?, ?, 1)",
+                    sql: "INSERT INTO transcript_segments(id, meetingId, sessionId, startTime, endTime, text, isConfirmed) VALUES (?, ?, ?, ?, ?, 'preserved 日本語', 1)",
                     arguments: [segmentId, meetingId, session.id, speechStart, speechEnd]
                 )
-                try TranscriptSegmentBodyRecord(segmentId: segmentId, text: "preserved 日本語").insert(db)
-                let payload = "{\"transcript\":{\"id\":\"\(transcriptId)\",\"status\":\"interrupted\",\"completedAt\":null},\"mode\":\"replace\"}"
-                try db.execute(
-                    sql: "INSERT INTO transcripts(meetingId, infoJSON) VALUES (?, ?)",
-                    arguments: [meetingId, "{\"id\":\"\(transcriptId)\",\"status\":\"interrupted\",\"completedAt\":null}"]
-                )
-                try db.execute(
-                    sql: "INSERT INTO sync_transactions(id, vaultId, connectionId, createdAt, availableAt) VALUES (?, ?, ?, ?, ?)",
-                    arguments: [transactionId, vaultId, connection.id, base, base]
-                )
-                try db.execute(
-                    sql: "INSERT INTO sync_operations(id, transactionId, position, entity, action, entityId, baseRevision, payloadJSON) VALUES (?, ?, 0, 'transcript', 'patch', ?, 0, ?)",
-                    arguments: [operationId, transactionId, meetingId, payload]
-                )
-                try db.execute(
-                    sql: "INSERT INTO sync_transcript_patch_items(operationId, position, action, segmentId, startTime, endTime, text,isConfirmed) VALUES (?, 0, 'upsert', ?, ?, ?, 'preserved 日本語', 1)",
-                    arguments: [operationId, segmentId, speechStart, speechEnd]
-                )
+
             }
             try AppDatabaseManager.migrator.migrate(queue)
             try queue.read { db in
@@ -159,19 +139,8 @@
                     fallbackTimeBase: base
                 ) == 13)
                 #expect(try RecordingSessionRecord.fetchOne(db, key: session.id) == session)
-                let patch = try #require(try Row.fetchOne(
-                    db,
-                    sql: "SELECT * FROM sync_transcript_patch_items WHERE operationId = ?",
-                    arguments: [operationId]
-                ))
-                #expect(patch["segmentId"] as UUID == segmentId)
-                #expect(patch["createdAt"] as Date == end)
-                #expect(patch["startTime"] as Date == speechStart)
-                #expect(patch["text"] as String == content.text)
-                #expect(try String.fetchOne(db, sql: "SELECT json_extract(infoJSON, '$.status') FROM transcripts") == nil)
-                #expect(try TranscriptRecord.current(meetingId, in: db)?.id == transcriptId)
-                #expect(try TranscriptRecord.current(meetingId, in: db)?.endedAt == nil)
-                #expect(try UUID.fetchOne(db, sql: "SELECT id FROM sync_transactions") == transactionId)
+                #expect(try TranscriptRecord.current(meetingId, in: db) != nil)
+                #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_transactions") == 0)
                 let columns = try Set(db.columns(in: "transcript_segments").map(\.name))
                 #expect(columns.contains("startedAt") && columns.contains("endedAt") && columns.contains("createdAt"))
                 #expect(!columns.contains("startTime") && !columns.contains("isConfirmed"))

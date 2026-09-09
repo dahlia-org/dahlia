@@ -1,8 +1,9 @@
 import { createAccountSettingsStore, type AccountSettingsStore } from "../account-settings";
 import type { DBAdapterInstance } from "better-auth";
 import { drizzleAdapter } from "@better-auth/drizzle-adapter/relations-v2";
-import { and, asc, desc, eq, gt, inArray, isNull, or, sql } from "drizzle-orm";
-import { drizzle as drizzleD1 } from "drizzle-orm/d1";
+import { and, asc, desc, eq, gt, inArray, is, isNull, or, sql } from "drizzle-orm";
+import { drizzle as drizzleD1, DrizzleD1Database } from "drizzle-orm/d1";
+import { uuidV7 } from "../id";
 
 import { gatewayResource, type AppConfig } from "../config";
 import * as postgresSchema from "../db/auth-schema";
@@ -24,7 +25,8 @@ const DAHLIA_DESKTOP_CLIENT_ID = "databricks-cli";
 const LEGACY_DAHLIA_DESKTOP_CLIENT_ID = "dahlia-macos";
 const DAHLIA_DESKTOP_SESSION_CLIENT_IDS = [DAHLIA_DESKTOP_CLIENT_ID, LEGACY_DAHLIA_DESKTOP_CLIENT_ID];
 export const EXTERNAL_ORGANIZATION_ID = "external";
-export const EXTERNAL_DEFAULT_TEAM_ID = "external-default";
+const DEFAULT_ORGANIZATION_NAME = "Default Organization";
+const DEFAULT_ORGANIZATION_INITIALIZATION = "default_organization";
 
 function externalOwnerId(metadata: unknown): string | undefined {
   if (typeof metadata !== "string") return undefined;
@@ -167,30 +169,34 @@ export function createPostgresApplicationStore(
     async ensureIdentityUser(identity) {
       const now = new Date();
       const identityUser = () => db.select({
+        isInitialUser: sql<boolean>`${postgresAuthSchema.user.id} = (
+          select id from ${postgresAuthSchema.user} order by created_at, id limit 1
+        )`,
         email: postgresAuthSchema.user.email,
         emailVerified: postgresAuthSchema.user.emailVerified,
         hasAdmin: sql<boolean>`exists (
           select 1 from ${postgresAuthSchema.user} as admins
           where (',' || coalesce(admins.role, 'user') || ',') like '%,admin,%'
         )`,
-        hasExternalMembership: identity.source === "header" ? sql<boolean>`exists (
+        hasExternalMembership: sql<boolean>`exists (
           select 1 from ${postgresAuthSchema.member}
           where ${postgresAuthSchema.member.userId} = ${identity.userId}
             and ${postgresAuthSchema.member.organizationId} = ${EXTERNAL_ORGANIZATION_ID}
-        )` : sql<boolean>`true`,
-        hasExternalOrganization: identity.source === "header" ? sql<boolean>`exists (
+        )`,
+        hasDefaultOrganizationInitialization: sql<boolean>`exists (
+          select 1 from ${postgresSchema.serverInitializations}
+          where ${postgresSchema.serverInitializations.name} = ${DEFAULT_ORGANIZATION_INITIALIZATION}
+        )`,
+        hasLegacyExternalOrganization: sql<boolean>`exists (
           select 1 from ${postgresAuthSchema.organization}
           where ${postgresAuthSchema.organization.id} = ${EXTERNAL_ORGANIZATION_ID}
-        )` : sql<boolean>`true`,
-        hasExternalTeam: identity.source === "header" ? sql<boolean>`exists (
-          select 1 from ${postgresAuthSchema.team}
-          where ${postgresAuthSchema.team.id} = ${EXTERNAL_DEFAULT_TEAM_ID}
-            and ${postgresAuthSchema.team.organizationId} = ${EXTERNAL_ORGANIZATION_ID}
-        )` : sql<boolean>`true`,
-        hasExternalTeamMember: identity.source === "header" ? sql<boolean>`exists (
-          select 1 from ${postgresAuthSchema.teamMember}
-          where ${postgresAuthSchema.teamMember.teamId} = ${EXTERNAL_DEFAULT_TEAM_ID}
-        )` : sql<boolean>`true`,
+            and ${postgresAuthSchema.organization.name} = ${EXTERNAL_ORGANIZATION_ID}
+        )`,
+        hasInitializedExternalOrganization: sql<boolean>`exists (
+          select 1 from ${postgresAuthSchema.organization}
+          where ${postgresAuthSchema.organization.id} = ${EXTERNAL_ORGANIZATION_ID}
+            and ${postgresAuthSchema.organization.name} <> ${EXTERNAL_ORGANIZATION_ID}
+        )`,
         name: postgresAuthSchema.user.name,
       }).from(postgresAuthSchema.user).where(eq(postgresAuthSchema.user.id, identity.userId)).limit(1);
       let [existing] = await identityUser();
@@ -223,9 +229,11 @@ export function createPostgresApplicationStore(
           }
         }
       }
-      if (existing.hasAdmin && (identity.source !== "header"
-        || (existing.hasExternalMembership && existing.hasExternalOrganization
-          && existing.hasExternalTeam && existing.hasExternalTeamMember))) {
+      const usesDefaultOrganization = identity.source === "header" || existing.isInitialUser;
+      if (existing.hasAdmin && (!usesDefaultOrganization
+        || (identity.source === "accounts"
+          ? existing.hasDefaultOrganizationInitialization && !existing.hasLegacyExternalOrganization
+          : existing.hasInitializedExternalOrganization && existing.hasExternalMembership))) {
         return true;
       }
       await db.execute(sql`
@@ -237,18 +245,45 @@ export function createPostgresApplicationStore(
             where (',' || coalesce(role, 'user') || ',') like '%,admin,%'
           )
       `);
-      if (identity.source === "header") {
+      if (usesDefaultOrganization) {
+        if (identity.source === "accounts") {
+          await db.transaction(async (transaction) => {
+            const [initialized] = await transaction.insert(postgresSchema.serverInitializations).values({
+              name: DEFAULT_ORGANIZATION_INITIALIZATION, initializedAt: now,
+            }).onConflictDoNothing().returning({ name: postgresSchema.serverInitializations.name });
+            if (initialized) {
+              const [created] = await transaction.insert(postgresAuthSchema.organization).values({
+                id: EXTERNAL_ORGANIZATION_ID, name: DEFAULT_ORGANIZATION_NAME, slug: EXTERNAL_ORGANIZATION_ID,
+                createdAt: now, metadata: JSON.stringify({ ownerUserId: identity.userId }),
+              }).onConflictDoNothing().returning({ id: postgresAuthSchema.organization.id });
+              if (created) {
+                await transaction.insert(postgresAuthSchema.member).values({
+                  id: uuidV7(), organizationId: created.id, userId: identity.userId, role: "owner", createdAt: now,
+                });
+              }
+            }
+            await transaction.update(postgresAuthSchema.organization).set({ name: DEFAULT_ORGANIZATION_NAME }).where(and(
+              eq(postgresAuthSchema.organization.id, EXTERNAL_ORGANIZATION_ID),
+              eq(postgresAuthSchema.organization.name, EXTERNAL_ORGANIZATION_ID),
+            ));
+          });
+          return true;
+        }
         const [initialAdmin] = await db.select({ id: postgresAuthSchema.user.id }).from(postgresAuthSchema.user)
           .where(sql`(',' || coalesce(${postgresAuthSchema.user.role}, 'user') || ',') like '%,admin,%'`)
           .orderBy(asc(postgresAuthSchema.user.createdAt), asc(postgresAuthSchema.user.id)).limit(1);
         if (!initialAdmin) return false;
         await db.insert(postgresAuthSchema.organization).values({
           id: EXTERNAL_ORGANIZATION_ID,
-          name: EXTERNAL_ORGANIZATION_ID,
+          name: DEFAULT_ORGANIZATION_NAME,
           slug: EXTERNAL_ORGANIZATION_ID,
           createdAt: now,
           metadata: JSON.stringify({ ownerUserId: initialAdmin.id }),
-        }).onConflictDoNothing();
+        }).onConflictDoUpdate({
+          target: postgresAuthSchema.organization.id,
+          set: { name: DEFAULT_ORGANIZATION_NAME },
+          setWhere: eq(postgresAuthSchema.organization.name, EXTERNAL_ORGANIZATION_ID),
+        });
         const [external] = await db.select({ metadata: postgresAuthSchema.organization.metadata })
           .from(postgresAuthSchema.organization)
           .where(eq(postgresAuthSchema.organization.id, EXTERNAL_ORGANIZATION_ID)).limit(1);
@@ -277,22 +312,6 @@ export function createPostgresApplicationStore(
           target: postgresAuthSchema.member.id,
           set: { role: organizationRole },
         });
-        await db.insert(postgresAuthSchema.team).values({
-          id: EXTERNAL_DEFAULT_TEAM_ID,
-          name: "External",
-          organizationId: EXTERNAL_ORGANIZATION_ID,
-          createdAt: now,
-          updatedAt: now,
-        }).onConflictDoNothing();
-        await db.insert(postgresAuthSchema.teamMember).values({
-          id: `${EXTERNAL_DEFAULT_TEAM_ID}:${ownerUserId}`,
-          teamId: EXTERNAL_DEFAULT_TEAM_ID,
-          userId: ownerUserId,
-          createdAt: now,
-        }).onConflictDoNothing();
-        await db.update(postgresAuthSchema.team).set({
-          memberCount: sql`(select count(*) from ${postgresAuthSchema.teamMember} where ${postgresAuthSchema.teamMember.teamId} = ${EXTERNAL_DEFAULT_TEAM_ID})`,
-        }).where(eq(postgresAuthSchema.team.id, EXTERNAL_DEFAULT_TEAM_ID));
       }
       return true;
     },
@@ -486,7 +505,7 @@ export function createPostgresApplicationStore(
       return team ?? null;
     },
     async deleteExternalTeam(userId, teamId) {
-      if (teamId === EXTERNAL_DEFAULT_TEAM_ID || (await externalMembership(userId))?.role !== "owner") return false;
+      if ((await externalMembership(userId))?.role !== "owner") return false;
       const [target] = await db.select({ id: postgresAuthSchema.team.id }).from(postgresAuthSchema.team).where(and(
         eq(postgresAuthSchema.team.id, teamId),
         eq(postgresAuthSchema.team.organizationId, EXTERNAL_ORGANIZATION_ID),
@@ -545,7 +564,6 @@ export function createPostgresApplicationStore(
     },
     async removeExternalTeamMember(userId, teamId, memberUserId) {
       if ((await externalMembership(userId))?.role !== "owner") return false;
-      if (teamId === EXTERNAL_DEFAULT_TEAM_ID && memberUserId === userId) return false;
       const [team] = await db.select({ id: postgresAuthSchema.team.id }).from(postgresAuthSchema.team).where(and(
         eq(postgresAuthSchema.team.id, teamId),
         eq(postgresAuthSchema.team.organizationId, EXTERNAL_ORGANIZATION_ID),
@@ -613,30 +631,34 @@ export function createSqliteApplicationStore(
     async ensureIdentityUser(identity) {
       const now = new Date();
       const identityUser = () => db.select({
+        isInitialUser: sql<boolean>`${sqliteAuthSchema.user.id} = (
+          select id from ${sqliteAuthSchema.user} order by created_at, id limit 1
+        )`,
         email: sqliteAuthSchema.user.email,
         emailVerified: sqliteAuthSchema.user.emailVerified,
         hasAdmin: sql<boolean>`exists (
           select 1 from ${sqliteAuthSchema.user} as admins
           where (',' || coalesce(admins.role, 'user') || ',') like '%,admin,%'
         )`,
-        hasExternalMembership: identity.source === "header" ? sql<boolean>`exists (
+        hasExternalMembership: sql<boolean>`exists (
           select 1 from ${sqliteAuthSchema.member}
           where ${sqliteAuthSchema.member.userId} = ${identity.userId}
             and ${sqliteAuthSchema.member.organizationId} = ${EXTERNAL_ORGANIZATION_ID}
-        )` : sql<boolean>`true`,
-        hasExternalOrganization: identity.source === "header" ? sql<boolean>`exists (
+        )`,
+        hasDefaultOrganizationInitialization: sql<boolean>`exists (
+          select 1 from ${sqliteSchema.serverInitializations}
+          where ${sqliteSchema.serverInitializations.name} = ${DEFAULT_ORGANIZATION_INITIALIZATION}
+        )`,
+        hasLegacyExternalOrganization: sql<boolean>`exists (
           select 1 from ${sqliteAuthSchema.organization}
           where ${sqliteAuthSchema.organization.id} = ${EXTERNAL_ORGANIZATION_ID}
-        )` : sql<boolean>`true`,
-        hasExternalTeam: identity.source === "header" ? sql<boolean>`exists (
-          select 1 from ${sqliteAuthSchema.team}
-          where ${sqliteAuthSchema.team.id} = ${EXTERNAL_DEFAULT_TEAM_ID}
-            and ${sqliteAuthSchema.team.organizationId} = ${EXTERNAL_ORGANIZATION_ID}
-        )` : sql<boolean>`true`,
-        hasExternalTeamMember: identity.source === "header" ? sql<boolean>`exists (
-          select 1 from ${sqliteAuthSchema.teamMember}
-          where ${sqliteAuthSchema.teamMember.teamId} = ${EXTERNAL_DEFAULT_TEAM_ID}
-        )` : sql<boolean>`true`,
+            and ${sqliteAuthSchema.organization.name} = ${EXTERNAL_ORGANIZATION_ID}
+        )`,
+        hasInitializedExternalOrganization: sql<boolean>`exists (
+          select 1 from ${sqliteAuthSchema.organization}
+          where ${sqliteAuthSchema.organization.id} = ${EXTERNAL_ORGANIZATION_ID}
+            and ${sqliteAuthSchema.organization.name} <> ${EXTERNAL_ORGANIZATION_ID}
+        )`,
         name: sqliteAuthSchema.user.name,
       }).from(sqliteAuthSchema.user).where(eq(sqliteAuthSchema.user.id, identity.userId)).limit(1);
       let [existing] = await identityUser();
@@ -669,9 +691,11 @@ export function createSqliteApplicationStore(
           }
         }
       }
-      if (existing.hasAdmin && (identity.source !== "header"
-        || (existing.hasExternalMembership && existing.hasExternalOrganization
-          && existing.hasExternalTeam && existing.hasExternalTeamMember))) {
+      const usesDefaultOrganization = identity.source === "header" || existing.isInitialUser;
+      if (existing.hasAdmin && (!usesDefaultOrganization
+        || (identity.source === "accounts"
+          ? existing.hasDefaultOrganizationInitialization && !existing.hasLegacyExternalOrganization
+          : existing.hasInitializedExternalOrganization && existing.hasExternalMembership))) {
         return true;
       }
       await db.run(sql`
@@ -683,18 +707,58 @@ export function createSqliteApplicationStore(
             where (',' || coalesce(role, 'user') || ',') like '%,admin,%'
           )
       `);
-      if (identity.source === "header") {
+      if (usesDefaultOrganization) {
+        if (identity.source === "accounts") {
+          const initialization = (database: SQLiteDatabase) => [
+            database.insert(sqliteSchema.serverInitializations).values({
+              name: DEFAULT_ORGANIZATION_INITIALIZATION, initializedAt: now,
+            }).onConflictDoNothing(),
+            // Keep these inserts adjacent: changes() carries the initialization claim through organization and owner creation.
+            database.insert(sqliteAuthSchema.organization).select(database.select({
+              id: sql<string>`${EXTERNAL_ORGANIZATION_ID}`.as("id"),
+              name: sql<string>`${DEFAULT_ORGANIZATION_NAME}`.as("name"),
+              slug: sql<string>`${EXTERNAL_ORGANIZATION_ID}`.as("slug"),
+              logo: sql<string | null>`null`.as("logo"),
+              createdAt: sql<Date>`${now.getTime()}`.as("created_at"),
+              metadata: sql<string>`${JSON.stringify({ ownerUserId: identity.userId })}`.as("metadata"),
+            }).from(sqliteSchema.serverInitializations).where(and(
+              eq(sqliteSchema.serverInitializations.name, DEFAULT_ORGANIZATION_INITIALIZATION), sql`changes() = 1`,
+            ))).onConflictDoNothing(),
+            database.insert(sqliteAuthSchema.member).select(database.select({
+              id: sql<string>`${uuidV7()}`.as("id"), organizationId: sql<string>`${EXTERNAL_ORGANIZATION_ID}`.as("organization_id"),
+              userId: sql<string>`${identity.userId}`.as("user_id"), role: sql<string>`'owner'`.as("role"), createdAt: sql<Date>`${now.getTime()}`.as("created_at"),
+            }).from(sqliteAuthSchema.organization).where(and(
+              eq(sqliteAuthSchema.organization.id, EXTERNAL_ORGANIZATION_ID), sql`changes() = 1`,
+            ))),
+            database.update(sqliteAuthSchema.organization).set({ name: DEFAULT_ORGANIZATION_NAME }).where(and(
+              eq(sqliteAuthSchema.organization.id, EXTERNAL_ORGANIZATION_ID),
+              eq(sqliteAuthSchema.organization.name, EXTERNAL_ORGANIZATION_ID),
+            )),
+          ] as const;
+          if (is(db, DrizzleD1Database)) {
+            await db.batch(initialization(db));
+          } else {
+            await db.transaction(async (transaction) => {
+              for (const statement of initialization(transaction)) await statement;
+            });
+          }
+          return true;
+        }
         const [initialAdmin] = await db.select({ id: sqliteAuthSchema.user.id }).from(sqliteAuthSchema.user)
           .where(sql`(',' || coalesce(${sqliteAuthSchema.user.role}, 'user') || ',') like '%,admin,%'`)
           .orderBy(asc(sqliteAuthSchema.user.createdAt), asc(sqliteAuthSchema.user.id)).limit(1);
         if (!initialAdmin) return false;
         await db.insert(sqliteAuthSchema.organization).values({
           id: EXTERNAL_ORGANIZATION_ID,
-          name: EXTERNAL_ORGANIZATION_ID,
+          name: DEFAULT_ORGANIZATION_NAME,
           slug: EXTERNAL_ORGANIZATION_ID,
           createdAt: now,
           metadata: JSON.stringify({ ownerUserId: initialAdmin.id }),
-        }).onConflictDoNothing();
+        }).onConflictDoUpdate({
+          target: sqliteAuthSchema.organization.id,
+          set: { name: DEFAULT_ORGANIZATION_NAME },
+          setWhere: eq(sqliteAuthSchema.organization.name, EXTERNAL_ORGANIZATION_ID),
+        });
         const [external] = await db.select({ metadata: sqliteAuthSchema.organization.metadata })
           .from(sqliteAuthSchema.organization)
           .where(eq(sqliteAuthSchema.organization.id, EXTERNAL_ORGANIZATION_ID)).limit(1);
@@ -723,22 +787,6 @@ export function createSqliteApplicationStore(
           target: sqliteAuthSchema.member.id,
           set: { role: organizationRole },
         });
-        await db.insert(sqliteAuthSchema.team).values({
-          id: EXTERNAL_DEFAULT_TEAM_ID,
-          name: "External",
-          organizationId: EXTERNAL_ORGANIZATION_ID,
-          createdAt: now,
-          updatedAt: now,
-        }).onConflictDoNothing();
-        await db.insert(sqliteAuthSchema.teamMember).values({
-          id: `${EXTERNAL_DEFAULT_TEAM_ID}:${ownerUserId}`,
-          teamId: EXTERNAL_DEFAULT_TEAM_ID,
-          userId: ownerUserId,
-          createdAt: now,
-        }).onConflictDoNothing();
-        await db.update(sqliteAuthSchema.team).set({
-          memberCount: sql`(select count(*) from ${sqliteAuthSchema.teamMember} where ${sqliteAuthSchema.teamMember.teamId} = ${EXTERNAL_DEFAULT_TEAM_ID})`,
-        }).where(eq(sqliteAuthSchema.team.id, EXTERNAL_DEFAULT_TEAM_ID));
       }
       return true;
     },
@@ -926,7 +974,7 @@ export function createSqliteApplicationStore(
       return team ?? null;
     },
     async deleteExternalTeam(userId, teamId) {
-      if (teamId === EXTERNAL_DEFAULT_TEAM_ID || (await externalMembership(userId))?.role !== "owner") return false;
+      if ((await externalMembership(userId))?.role !== "owner") return false;
       const [target] = await db.select({ id: sqliteAuthSchema.team.id }).from(sqliteAuthSchema.team).where(and(
         eq(sqliteAuthSchema.team.id, teamId),
         eq(sqliteAuthSchema.team.organizationId, EXTERNAL_ORGANIZATION_ID),
@@ -985,7 +1033,6 @@ export function createSqliteApplicationStore(
     },
     async removeExternalTeamMember(userId, teamId, memberUserId) {
       if ((await externalMembership(userId))?.role !== "owner") return false;
-      if (teamId === EXTERNAL_DEFAULT_TEAM_ID && memberUserId === userId) return false;
       const [team] = await db.select({ id: sqliteAuthSchema.team.id }).from(sqliteAuthSchema.team).where(and(
         eq(sqliteAuthSchema.team.id, teamId),
         eq(sqliteAuthSchema.team.organizationId, EXTERNAL_ORGANIZATION_ID),

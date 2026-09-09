@@ -9,12 +9,12 @@
         @Test
         func upgradePreservesRelationshipsAndClaimedSearchJobs() throws {
             let queue = try DatabaseQueue(configuration: AppDatabaseManager.configuration())
-            try AppDatabaseManager.migrator.migrate(queue, upTo: "v50_transcriptActivity")
+            try AppDatabaseManager.migrator.migrate(queue, upTo: "v41_vaultAISettingsBackfill")
             let vaultId = UUID.v7()
             let projectId = UUID.v7()
             try queue.write { db in
                 try db.execute(
-                    sql: "INSERT INTO vaults(id, name, createdAt, lastOpenedAt) VALUES (?, 'Vault', ?, ?)",
+                    sql: "INSERT INTO vaults(id, path, name, createdAt, lastOpenedAt) VALUES (?, '/tmp/schema', 'Vault', ?, ?)",
                     arguments: [vaultId, Date.now, Date.now]
                 )
                 try db.execute(sql: """

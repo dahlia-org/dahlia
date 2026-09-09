@@ -82,7 +82,7 @@ enum MeetingSyncMigration {
         transactionId BLOB NOT NULL REFERENCES sync_transactions(id) ON DELETE CASCADE,
         position INTEGER NOT NULL,
         id BLOB NOT NULL UNIQUE,
-        entity TEXT NOT NULL CHECK(entity IN ('vault', 'project', 'meeting', 'summary', 'transcript', 'screenshot')),
+        entity TEXT NOT NULL CHECK(entity IN ('vault', 'project', 'meeting', 'summary', 'transcript', 'file', 'meeting_file', 'meeting_event', 'recording')),
         action TEXT NOT NULL CHECK(action IN ('create', 'update', 'delete', 'upsert', 'patch', 'reset')),
         entityId BLOB NOT NULL,
         baseRevision INTEGER,
@@ -90,34 +90,19 @@ enum MeetingSyncMigration {
         attachmentMimeType TEXT,
         attachmentSHA256 TEXT CHECK(attachmentSHA256 IS NULL OR length(attachmentSHA256) = 64),
         attachmentBytes BLOB,
+        attachmentReference TEXT,
         PRIMARY KEY(transactionId, position),
         UNIQUE(transactionId, entity, entityId),
         CHECK(
             (attachmentMimeType IS NULL AND attachmentSHA256 IS NULL AND attachmentBytes IS NULL)
-            OR (entity = 'screenshot' AND attachmentMimeType IS NOT NULL
+            OR (entity = 'file' AND attachmentMimeType IS NOT NULL
                 AND attachmentSHA256 IS NOT NULL)
         )
     );
     CREATE INDEX sync_operations_entity_idx
         ON sync_operations(entity, entityId, transactionId);
 
-    CREATE TRIGGER sync_screenshot_attachment_before_update
-    BEFORE UPDATE OF imageData, mimeType ON screenshots
-    BEGIN
-        UPDATE sync_operations
-        SET attachmentBytes = OLD.imageData
-        WHERE entity = 'screenshot' AND entityId = OLD.id
-          AND attachmentMimeType IS NOT NULL AND attachmentBytes IS NULL;
-    END;
-
-    CREATE TRIGGER sync_screenshot_attachment_before_delete
-    BEFORE DELETE ON screenshots
-    BEGIN
-        UPDATE sync_operations
-        SET attachmentBytes = OLD.imageData
-        WHERE entity = 'screenshot' AND entityId = OLD.id
-          AND attachmentMimeType IS NOT NULL AND attachmentBytes IS NULL;
-    END;
+    CREATE INDEX sync_operations_attachment_reference_idx ON sync_operations(attachmentReference);
 
     CREATE TABLE sync_entity_state (
         vaultId BLOB NOT NULL REFERENCES vaults(id) ON DELETE CASCADE,
@@ -134,6 +119,7 @@ enum MeetingSyncMigration {
         segmentId BLOB NOT NULL,
         startTime DATETIME,
         endTime DATETIME,
+        createdAt DATETIME,
         text TEXT,
         isConfirmed INTEGER,
         audioSource TEXT,

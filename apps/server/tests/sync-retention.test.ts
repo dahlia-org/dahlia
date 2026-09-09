@@ -1,4 +1,4 @@
-import { cpSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -8,7 +8,6 @@ import { createApp } from "../src/app";
 import { createNodeApplicationStore, type NodeApplicationStore } from "../src/auth/node-store";
 import type { Identity } from "../src/auth/identity";
 import type { AppConfig } from "../src/config";
-import { serverMigrationManifest } from "../src/migrations";
 import { pruneSyncHistory } from "../src/sync/retention";
 import { TextContentDigest } from "../src/sync/text-content";
 import { MeetingSyncService } from "../src/sync/service";
@@ -333,40 +332,7 @@ describe("sync history retention", () => {
     expect((await app.request(`/api/v1/vaults/${vaultId}/snapshot?cursor=invalid`, { headers })).status).toBe(400);
   });
 
-  it("upgrades the previous schema without losing receipt content or its committed result", async () => {
-    const { directory, config, store, raw, create, receipt, vaultId } = await setup();
-    // A separate database with the released predecessor's migration ledger.
-    const previousPath = join(directory, "previous-migrations");
-    const baseline = serverMigrationManifest.sqlite.directories[0]!.files[0]!;
-    cpSync(join(serverMigrationManifest.sqlite.directories[0]!.path, baseline.split("/")[0]!), join(previousPath, baseline.split("/")[0]!), { recursive: true });
-    const previousConfig = { ...config, databaseUrl: `file:${join(directory, "previous.sqlite")}` };
-    const previous = createNodeApplicationStore(previousConfig, {
-      ...serverMigrationManifest,
-      sqlite: { directories: [{ id: "server", path: previousPath, files: [baseline] }], files: [`drizzle/sqlite/${baseline}`] },
-    });
-    await previous.migrate();
-    await previous.ensureIdentityUser(owner);
-    const old = new DatabaseSync(join(directory, "previous.sqlite"));
-    old.prepare("INSERT INTO transaction_receipts(transaction_id, owner_user_id, vault_id, request_hash, response_json, cursor) VALUES (?, ?, ?, ?, ?, ?)")
-      .run(create.id, owner.userId, vaultId, "hash", JSON.stringify(receipt), decodeSyncCursor(receipt.cursor));
-    old.close();
-    await previous.close?.();
-    const upgraded = createNodeApplicationStore(previousConfig);
-    try {
-      await upgraded.migrate();
-      const check = new DatabaseSync(join(directory, "previous.sqlite"));
-      try {
-        const row = check.prepare("SELECT response_json, results_json FROM transaction_receipts").get()!;
-        expect(JSON.parse(row.response_json as string)).toEqual(receipt);
-        expect(JSON.parse(row.results_json as string)).toEqual([{ entity: "vault", id: vaultId, revision: 1 }]);
-        expect(check.prepare("SELECT latest_sequence, pruned_through FROM sync_vault_state").get())
-          .toEqual({ latest_sequence: decodeSyncCursor(receipt.cursor), pruned_through: 0 });
-        expect(check.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
-      } finally { check.close(); }
-    } finally { await upgraded.close?.(); }
-    expect(await store.sync.isAvailable()).toBe(true);
-    expect(raw.prepare("SELECT count(*) AS count FROM transaction_receipts").get()).toEqual({ count: 1 });
-  });
+
 });
 
 
