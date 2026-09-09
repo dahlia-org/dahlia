@@ -15,8 +15,8 @@ final class AppDatabaseManager: Sendable {
     let searchIndexer: SearchIndexer
 
     /// アプリケーションサポートディレクトリに DB を作成・オープンする。
-    convenience init() throws {
-        try self.init(path: Self.databaseURL.path, enablesConcurrentSearch: true)
+    convenience init(onMigration: (@Sendable () -> Void)? = nil) throws {
+        try self.init(path: Self.databaseURL.path, enablesConcurrentSearch: true, onMigration: onMigration)
         let directory = DahliaApplicationSupport.currentDirectoryURL
         Task.detached(priority: .utility) {
             do {
@@ -31,6 +31,7 @@ final class AppDatabaseManager: Sendable {
     init(
         path: String,
         enablesConcurrentSearch: Bool = false,
+        onMigration: (@Sendable () -> Void)? = nil,
         screenshotAnalyzer: any ScreenshotAnalyzing = CodexScreenshotAnalysisService(),
         screenshotRuntimeProviderResolver: @escaping SearchIndexer.RuntimeProviderResolver = {
             CodexRuntimeContextStore.shared.provider
@@ -56,6 +57,10 @@ final class AppDatabaseManager: Sendable {
             usesConcurrentSearch = journalMode?.lowercased() == "wal"
         } else {
             usesConcurrentSearch = false
+        }
+        if let onMigration,
+           try dbQueue.read({ try !Self.migrator.hasCompletedMigrations($0) }) {
+            onMigration()
         }
         try Self.migrator.migrate(dbQueue)
         if !usesConcurrentSearch {
