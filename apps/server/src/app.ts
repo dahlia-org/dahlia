@@ -1,3 +1,6 @@
+import { personalWorkspaceId } from "./auth/workspace";
+import { installPublicIDs } from "./public-http";
+import { wireValue } from "./public-wire";
 import { meetingMetadata } from "./sync/text-content";
 import { summaryJobResponse, type SummaryService } from "./summary/service";
 import { OpenAPIHono } from "@hono/zod-openapi";
@@ -32,7 +35,8 @@ import {
   MCP_READ_SCOPE,
   MCP_SCOPE,
 } from "./auth/scopes";
-import { EXTERNAL_ORGANIZATION_ID, type AuthStore } from "./auth/store";
+import type { AuthStore } from "./auth/store";
+import { EXTERNAL_ORGANIZATION_ID } from "./auth/ids";
 import { mcpResource, type AppConfig } from "./config";
 import { RequestError } from "./storage/upload";
 import type { ObjectStorage } from "./storage/storage";
@@ -159,7 +163,12 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
     throw new Error("Better Auth must be initialized before creating the application");
   }
   const extensions = dependencies.extensions ?? [];
-  const identities = new IdentityService(config, auth, (identity) => store.ensureIdentityUser(identity));
+  const identities = new IdentityService(config, auth, async (identity) => {
+    const userId = identity.source === "header" ? await store.resolveHeaderUser(identity) : identity.userId;
+    if (!userId) return null;
+    const resolved = { ...identity, userId, workspaceId: personalWorkspaceId(userId) };
+    return await store.ensureIdentityUser(resolved) ? resolved : null;
+  });
   const gateway = new GatewayService(config, dependencies.fetch);
   const sync = dependencies.syncService ?? new MeetingSyncService(
     store.sync,
@@ -575,13 +584,15 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
       if (!contentHash || !/^[0-9a-f]{64}$/.test(contentHash)) {
         throw new RequestError(400, "invalid_transcript_chunk_hash");
       }
-      const bytes = await context.req.arrayBuffer();
+      const bytes = new Uint8Array(await context.req.arrayBuffer());
       const actualHash = [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))]
         .map((byte) => byte.toString(16).padStart(2, "0")).join("");
       if (actualHash !== contentHash) throw new RequestError(409, "transcript_chunk_hash_mismatch");
       let body: unknown;
       try {
-        body = JSON.parse(new TextDecoder().decode(bytes));
+        body = context.req.header("x-dahlia-public-content-sha256")
+          ? JSON.parse(new TextDecoder().decode(bytes))
+          : wireValue(JSON.parse(new TextDecoder().decode(bytes)), "chunk", "decode");
       } catch {
         throw new RequestError(400, "invalid_transcript_chunk");
       }
@@ -590,7 +601,7 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
         meetingId,
         patchId,
         Number(context.req.param("chunkIndex")!),
-        contentHash,
+        context.req.header("x-dahlia-public-content-sha256") ?? contentHash,
         body,
       );
       return context.body(null, 204);
@@ -1013,6 +1024,7 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
     return context.json({ error: "internal_server_error" }, 500);
   });
 
+  installPublicIDs(app);
   return Object.assign(app, { runStorageMaintenance: () => sync.runStorageMaintenance() });
 }
 

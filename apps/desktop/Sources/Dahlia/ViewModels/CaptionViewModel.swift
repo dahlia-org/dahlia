@@ -311,7 +311,7 @@ final class CaptionViewModel: ObservableObject {
             try UUID.fetchOne(
                 db,
                 sql: """
-                SELECT a.fileId FROM meeting_files a JOIN files f ON f.id = a.fileId
+                SELECT a.fileId FROM meeting_attachments a JOIN files f ON f.id = a.fileId
                 JOIN sync_content_state c ON c.entity = 'file' AND c.entityId = f.id
                 JOIN vaults v ON v.id = f.vaultId
                 LEFT JOIN sync_entity_state s ON s.vaultId = v.id AND s.entity = 'file' AND s.entityId = f.id

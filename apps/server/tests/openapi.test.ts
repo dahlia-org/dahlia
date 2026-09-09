@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import createClient from "openapi-fetch";
 import { validate } from "./api-test-client";
-import { createApp } from "../src/app";
+import { createApp } from "./public-test-client";
 import { contracts, openapiDocument } from "../src/api/contracts";
 import { createDahliaAuth } from "../src/auth/better-auth";
 import { createNodeApplicationStore } from "../src/auth/node-store";

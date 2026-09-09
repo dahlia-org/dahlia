@@ -974,7 +974,7 @@ actor CodexAppServerService {
         return .object([
             "args": .array(invocationArguments + [
                 .string("--vault-id"),
-                .string(vaultID.uuidString),
+                .string(TypeID.encode(vaultID, as: .vault)),
                 .string("--write"),
                 .string("--telemetry-origin"),
                 .string("codexChat"),

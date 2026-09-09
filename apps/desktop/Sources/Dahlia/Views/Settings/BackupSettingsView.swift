@@ -1,4 +1,5 @@
 import AppKit
+import DahliaRuntimeSupport
 import GRDB
 import SwiftUI
 import UniformTypeIdentifiers
@@ -56,7 +57,7 @@ struct BackupSettingsView: View {
                         }
                     )) {
                         Text(vault.name)
-                        Text(vault.id.uuidString.suffix(8)).font(.caption).foregroundStyle(.secondary)
+                        Text(TypeID.encode(vault.id, as: .vault)).font(.caption).foregroundStyle(.secondary)
                     }
                     .toggleStyle(.checkbox)
                     .disabled(model.isBusy)
@@ -192,7 +193,7 @@ struct BackupSettingsView: View {
         let canOverwrite = model.canOverwrite(vaultId: vault.id)
         return VStack(alignment: .leading, spacing: 8) {
             Text(vault.name).font(.headline)
-            Text(vault.id.uuidString.suffix(8)).font(.caption).foregroundStyle(.secondary)
+            Text(TypeID.encode(vault.id, as: .vault)).font(.caption).foregroundStyle(.secondary)
             Picker(L10n.backupRestoreMode, selection: selection.mode) {
                 Text(L10n.backupSkipVault).tag(nil as VaultBackupRestoreRequest.Mode?)
                 Text(L10n.backupOverwriteOriginalVault).tag(VaultBackupRestoreRequest.Mode.overwrite as VaultBackupRestoreRequest.Mode?)

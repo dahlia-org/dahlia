@@ -1,3 +1,4 @@
+import { seedHeaderIdentity, testUserID } from "./public-test-client";
 import { z } from "zod";
 import { createHash } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
@@ -5,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createApp } from "../src/app";
+import { createApp } from "./public-test-client";
 import { createWorkerHandler } from "../src/worker";
 import { createNodeApplicationStore } from "../src/auth/node-store";
 import type { Identity } from "../src/auth/identity";
@@ -22,8 +23,8 @@ it("ships the same activity policy as Desktop without a runtime dependency on it
 
 const directories: string[] = [];
 afterEach(() => { vi.useRealTimers(); for (const path of directories.splice(0)) rmSync(path, { recursive: true, force: true }); });
-const owner: Identity = { userId: "owner", workspaceId: "personal:owner", source: "header" };
-const member: Identity = { userId: "reader", workspaceId: "personal:reader", source: "header" };
+const owner: Identity = { userId: testUserID("owner"), workspaceId: `personal:${testUserID("owner")}`, source: "header" };
+const member: Identity = { userId: testUserID("reader"), workspaceId: `personal:${testUserID("reader")}`, source: "header" };
 const metadata = (model = "apple-speech-live") => ({ provider: "apple", request: { model },
   runs: [{ generatedBy: "desktop", inputTypes: ["audio"], startedAt: null, completedAt: null }] });
 
@@ -34,7 +35,7 @@ async function setup() {
     databaseUrl: `file:${databasePath}`, baseUrl: "http://localhost:5173", oauthRedirectUris: [],
     maxRequestBytes: 1_048_576 };
   const store = createNodeApplicationStore(config);
-  await store.migrate(); await store.ensureIdentityUser(owner); await store.ensureIdentityUser(member);
+  await store.migrate(); await seedHeaderIdentity(store, databasePath, owner); await seedHeaderIdentity(store, databasePath, member);
   const sync = new MeetingSyncService(store.sync);
   const vaultId = uuidV7(); const meetingId = uuidV7(); const now = new Date().toISOString();
   const body = (operations: unknown[]) => ({ schemaVersion: 2, id: uuidV7(), vaultId, createdAt: now, operations });
@@ -206,20 +207,20 @@ describe("transcript versions", () => {
         (request: Request, env: Cloudflare.Env, context: ExecutionContext) => Promise<Response>;
       const send = (suffix: string, user = "reader") => {
         const request = new Request(`http://localhost:5173/api/v1/meetings/${meetingId}/transcripts${suffix}`, {
-          headers: { "x-forwarded-user": user, "x-forwarded-email": `${user}@example.com` },
+          headers: { "x-forwarded-user": testUserID(user), "x-forwarded-email": `${user}@example.com` },
         });
         return runtime === "node" ? app.request(request) : fetch(request, {} as Cloudflare.Env, {} as ExecutionContext);
       };
       expect((await send("/1")).status).toBe(404);
       const grantDb = new DatabaseSync(databasePath);
-      grantDb.prepare("INSERT INTO vault_permissions(vault_id, principal_type, principal_id, role, granted_by_user_id, created_at) VALUES (?, 'user', 'reader', 'member', 'owner', ?)").run(vaultId, Date.now());
+      grantDb.prepare("INSERT INTO vault_permissions(vault_id, principal_type, principal_id, role, granted_by_user_id, created_at) VALUES (?, 'user', ?, 'member', ?, ?)").run(vaultId, member.userId, owner.userId, Date.now());
       grantDb.close();
       const page = z.object({ items: z.array(z.unknown()), nextCursor: z.string() }).parse(await (await send("/1")).json());
       expect(page.items).toHaveLength(500);
       expect(await (await send(`/1?cursor=${encodeURIComponent(page.nextCursor)}`)).json()).toMatchObject({ items: [expect.any(Object)] });
       expect(await (await send("/latest?manifest=1")).json()).toMatchObject({ count: 501, version: 1 });
       const revokeDb = new DatabaseSync(databasePath);
-      revokeDb.prepare("DELETE FROM vault_permissions WHERE vault_id = ? AND principal_id = 'reader'").run(vaultId);
+      revokeDb.prepare("DELETE FROM vault_permissions WHERE vault_id = ? AND principal_id = ?").run(vaultId, member.userId);
       revokeDb.close();
       expect((await send("/1")).status).toBe(404);
       await sync.commitTransaction(owner, body([{ id: uuidV7(), entity: "meeting", action: "delete", entityId: meetingId, baseRevision: 1, data: {} }]));

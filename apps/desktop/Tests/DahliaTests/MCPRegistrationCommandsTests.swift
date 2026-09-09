@@ -14,7 +14,7 @@ import Foundation
             )
 
             let quotedHelper = "'/Applications/Dahlia'\\''s App.app/Contents/Helpers/dahlia-mcp'"
-            let quotedVault = "'019F6651-CCBE-7CF2-83B0-6EF955A9FD41'"
+            let quotedVault = "'vlt_01kxk53k5yfks87c3ez5atkza1'"
             #expect(commands.registrationCommand(for: .codex, writeEnabled: false)
                 == "codex mcp add dahlia -- \(quotedHelper) --vault-id \(quotedVault)")
             #expect(commands.registrationCommand(for: .codex, writeEnabled: true)
@@ -55,7 +55,7 @@ import Foundation
             let server = try #require(sample.mcpServers["dahlia"])
 
             #expect(server.command == "/Applications/Dahlia.app/Contents/Helpers/dahlia-mcp")
-            #expect(server.args == ["--vault-id", vaultID.uuidString, "--write"])
+            #expect(server.args == ["--vault-id", "vlt_01kxk53k5yfks87c3ez5atkza1", "--write"])
 
             let commandRange = try #require(json.range(of: "\"command\""))
             let argsRange = try #require(json.range(of: "\"args\""))

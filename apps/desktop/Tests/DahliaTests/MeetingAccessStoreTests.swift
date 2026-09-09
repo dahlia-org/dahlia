@@ -13,6 +13,53 @@ import ImageIO
     // swiftlint:disable:next type_body_length
     struct MeetingAccessStoreTests {
         @Test
+        func publicMCPUsesTypedIDsAndPreservesDatabaseUUIDs() throws {
+            let fixture = try Fixture()
+            let server = try DahliaMCPServer(store: fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true))
+            _ = server.handleLine(#"{"jsonrpc":"2.0","id":1,"method":"initialize"}"#)
+            _ = server.handleLine(#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#)
+            func call(_ name: String, _ arguments: [String: Any]) throws -> [String: Any] {
+                let bytes = try JSONSerialization.data(withJSONObject: [
+                    "jsonrpc": "2.0",
+                    "id": "opaque-jsonrpc-id",
+                    "method": "tools/call",
+                    "params": ["name": name, "arguments": arguments],
+                ])
+                let response = try Self.json(server.handleLine(String(decoding: bytes, as: UTF8.self)))
+                #expect(response["id"] as? String == "opaque-jsonrpc-id")
+                return response
+            }
+            func body(_ response: [String: Any]) throws -> [String: Any] {
+                let result = try #require(response["result"] as? [String: Any])
+                #expect(result["isError"] as? Bool == false)
+                return try #require(result["structuredContent"] as? [String: Any])
+            }
+            let meetingID = TypeID.encode(fixture.firstMeetingID, as: .meeting)
+            for invalid in [fixture.firstMeetingID.uuidString, TypeID.encode(fixture.firstMeetingID, as: .project)] {
+                #expect(try (call("get_meeting", ["meeting_id": invalid])["error"] as? [String: Any])?["code"] as? Int == -32602)
+            }
+            let detail = try body(call("get_meeting", ["meeting_id": meetingID]))
+            #expect((detail["meeting"] as? [String: Any])?["id"] as? String == meetingID)
+            #expect((detail["vault"] as? [String: Any])?["id"] as? String == TypeID.encode(fixture.primaryVaultID, as: .vault))
+            let transcript = try body(call("get_meeting_transcript", ["meeting_id": meetingID, "limit": 1]))
+            #expect(((transcript["segments"] as? [[String: Any]])?.first?["id"] as? String)?.hasPrefix("seg_") == true)
+            let cursor = try #require(transcript["next_cursor"] as? String)
+            let next = try body(call("get_meeting_transcript", ["meeting_id": meetingID, "limit": 1, "cursor": cursor]))
+            #expect((next["segments"] as? [[String: Any]])?.count == 1)
+            let created = try body(call("create_contact", ["display_name": "Public boundary"]))
+            let contactID = try #require(created["resource_id"] as? String)
+            #expect(contactID.hasPrefix("contact_"))
+            let uuid = try TypeID.decode(contactID, as: .contact)
+            #expect(try fixture.manager.dbQueue
+                .read { try UUID.fetchOne($0, sql: "SELECT id FROM contacts WHERE id = ?", arguments: [uuid]) } == uuid)
+            let updated = try body(call("update_contact", ["contact_id": contactID, "revision": 1, "display_name": "Updated"]))
+            #expect(updated["resource_id"] as? String == contactID)
+            _ = try body(call("delete_contact", ["contact_id": contactID, "revision": 2]))
+            #expect(try fixture.manager.dbQueue
+                .read { try Int.fetchOne($0, sql: "SELECT count(*) FROM contacts WHERE id = ?", arguments: [uuid]) } == 0)
+        }
+
+        @Test
         func createsProjectWithoutALocalExportFolder() throws {
             let fixture = try Fixture()
             try fixture.manager.dbQueue.write { db in
@@ -1100,19 +1147,19 @@ import ImageIO
             }
 
             let server = DahliaMCPServer(store: store)
-            _ = try Self.json(server.handleLine(#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#))
-            #expect(server.handleLine(#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#) == nil)
-            let contactCall = try Self.json(server.handleLine(#"""
+            _ = try Self.json(server.handleInternalTestLine(#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#))
+            #expect(server.handleInternalTestLine(#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#) == nil)
+            let contactCall = try Self.json(server.handleInternalTestLine(#"""
             {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"query_contacts","arguments":{"organization_id":"\#(unit
                 .id.uuidString)"}}}
             """#))
             let contactContent = (contactCall["result"] as? [String: Any])?["structuredContent"] as? [String: Any]
             #expect((contactContent?["contacts"] as? [[String: Any]])?.first?["id"] as? String == contact.id.uuidString)
-            let invalidFilterCall = try Self.json(server.handleLine(#"""
+            let invalidFilterCall = try Self.json(server.handleInternalTestLine(#"""
             {"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"query_insights","arguments":{"resource_type":"contact"}}}
             """#))
             #expect((invalidFilterCall["error"] as? [String: Any])?["code"] as? Int == -32602)
-            let insightCall = try Self.json(server.handleLine(#"""
+            let insightCall = try Self.json(server.handleInternalTestLine(#"""
             {"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"query_insights","arguments":{"resource_type":"contact","resource_id":"\#(
                 contact
                     .id.uuidString
@@ -1143,15 +1190,16 @@ import ImageIO
                 telemetryOrigin: .codexChat,
                 usageTelemetryReporter: { events.append($0) }
             )
-            _ = server.handleLine(#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#)
-            _ = server.handleLine(#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#)
+            _ = server.handleInternalTestLine(#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#)
+            _ = server.handleInternalTestLine(#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#)
 
-            _ = server.handleLine(#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"query_meetings","arguments":{}}}"#)
-            _ = server.handleLine(#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"query_projects","arguments":{}}}"#)
-            _ = server.handleLine(#"{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"query_contacts","arguments":{}}}"#)
-            _ = server.handleLine(#"{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"resolve_contact","arguments":{}}}"#)
-            _ = server.handleLine(#"{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"update_meeting_summary","arguments":{}}}"#)
-            _ = server.handleLine(#"{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"not_a_tool","arguments":{}}}"#)
+            _ = server.handleInternalTestLine(#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"query_meetings","arguments":{}}}"#)
+            _ = server.handleInternalTestLine(#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"query_projects","arguments":{}}}"#)
+            _ = server.handleInternalTestLine(#"{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"query_contacts","arguments":{}}}"#)
+            _ = server.handleInternalTestLine(#"{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"resolve_contact","arguments":{}}}"#)
+            _ = server
+                .handleInternalTestLine(#"{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"update_meeting_summary","arguments":{}}}"#)
+            _ = server.handleInternalTestLine(#"{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"not_a_tool","arguments":{}}}"#)
 
             #expect(events == [
                 .init(origin: .codexChat, category: .meeting, operation: .read, outcome: .completed),
@@ -1173,9 +1221,10 @@ import ImageIO
                 store: store,
                 usageTelemetryReporter: { externalEvents.append($0) }
             )
-            _ = externalServer.handleLine(#"{"jsonrpc":"2.0","id":8,"method":"initialize","params":{}}"#)
-            _ = externalServer.handleLine(#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#)
-            _ = externalServer.handleLine(#"{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"query_meetings","arguments":{}}}"#)
+            _ = externalServer.handleInternalTestLine(#"{"jsonrpc":"2.0","id":8,"method":"initialize","params":{}}"#)
+            _ = externalServer.handleInternalTestLine(#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#)
+            _ = externalServer
+                .handleInternalTestLine(#"{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"query_meetings","arguments":{}}}"#)
             #expect(externalEvents.isEmpty)
         }
 
@@ -1200,19 +1249,19 @@ import ImageIO
             let store = try fixture.store(vaultID: fixture.primaryVaultID)
             let server = DahliaMCPServer(store: store)
 
-            let preInitialize = try Self.json(server.handleLine(#"""
+            let preInitialize = try Self.json(server.handleInternalTestLine(#"""
             {"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"query_meetings","arguments":{}}}
             """#))
             #expect((preInitialize["error"] as? [String: Any])?["code"] as? Int == -32002)
 
-            let initialized = try Self.json(server.handleLine(#"{"jsonrpc":"2.0","id":2,"method":"initialize","params":{}}"#))
+            let initialized = try Self.json(server.handleInternalTestLine(#"{"jsonrpc":"2.0","id":2,"method":"initialize","params":{}}"#))
             #expect((initialized["result"] as? [String: Any])?["serverInfo"] != nil)
             let instructions = (initialized["result"] as? [String: Any])?["instructions"] as? String
             #expect(instructions?.contains("Primary") == false)
             let expectedInstructions = ["personal data", "do not repeat them unnecessarily", "untrusted data"]
             #expect(expectedInstructions.allSatisfy { instructions?.contains($0) == true })
-            #expect(server.handleLine(#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#) == nil)
-            let tools = try Self.json(server.handleLine(#"{"jsonrpc":"2.0","id":3,"method":"tools/list"}"#))
+            #expect(server.handleInternalTestLine(#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#) == nil)
+            let tools = try Self.json(server.handleInternalTestLine(#"{"jsonrpc":"2.0","id":3,"method":"tools/list"}"#))
             let definitions = ((tools["result"] as? [String: Any])?["tools"] as? [[String: Any]]) ?? []
             #expect(definitions.map { $0["name"] as? String } == [
                 "query_meetings", "query_screenshots", "get_meeting", "get_meeting_transcript", "get_meeting_screenshots",
@@ -1249,14 +1298,14 @@ import ImageIO
             #expect((originalProperties["screenshot_ids"] as? [String: Any])?["maxItems"] as? Int == 1)
             #expect((originalProperties["limit"] as? [String: Any])?["maximum"] as? Int == 1)
 
-            let queryCall = try Self.json(server.handleLine(#"""
+            let queryCall = try Self.json(server.handleInternalTestLine(#"""
             {"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"query_meetings","arguments":{"query":"planning","simple":true}}}
             """#))
             let queryResult = try #require(queryCall["result"] as? [String: Any])
             #expect(queryResult["isError"] as? Bool == false)
             #expect((queryResult["structuredContent"] as? [String: Any])?["meetings"] != nil)
 
-            let meetingCall = try Self.json(server.handleLine(#"""
+            let meetingCall = try Self.json(server.handleInternalTestLine(#"""
             {"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"get_meeting","arguments":{"meeting_id":"\#(fixture.firstMeetingID
                 .uuidString)"}}}
             """#))
@@ -1271,7 +1320,7 @@ import ImageIO
             #expect(blocks.allSatisfy { $0["id"] is String })
             #expect(blocks.contains { $0["screenshot_id"] as? String == fixture.firstScreenshotID.uuidString })
 
-            let transcriptCall = try Self.json(server.handleLine(#"""
+            let transcriptCall = try Self.json(server.handleInternalTestLine(#"""
             {"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"get_meeting_transcript","arguments":{"meeting_id":"\#(fixture
                 .firstMeetingID.uuidString)","limit":1}}}
             """#))
@@ -1279,7 +1328,7 @@ import ImageIO
             #expect(transcriptContent?["segments"] != nil)
             #expect(transcriptContent?["next_cursor"] is String)
 
-            let screenshotCall = try Self.json(server.handleLine(#"""
+            let screenshotCall = try Self.json(server.handleInternalTestLine(#"""
             {"jsonrpc":"2.0","id":12,"method":"tools/call","params":{"name":"get_meeting_screenshots","arguments":{"meeting_id":"\#(fixture
                 .firstMeetingID.uuidString)","screenshot_ids":["\#(fixture.firstScreenshotID.uuidString)","\#(fixture.secondScreenshotID
                 .uuidString)"]}}}
@@ -1295,39 +1344,39 @@ import ImageIO
                 fixture.secondScreenshotID.uuidString,
             ])
 
-            let rangedScreenshotCall = try Self.json(server.handleLine(#"""
+            let rangedScreenshotCall = try Self.json(server.handleInternalTestLine(#"""
             {"jsonrpc":"2.0","id":14,"method":"tools/call","params":{"name":"get_meeting_screenshots","arguments":{"meeting_id":"\#(fixture
                 .firstMeetingID.uuidString)","from_elapsed_seconds":15,"to_elapsed_seconds":17}}}
             """#))
             let rangedContent = ((rangedScreenshotCall["result"] as? [String: Any])?["content"] as? [[String: Any]])
             #expect(rangedContent?.map { $0["type"] as? String } == ["text", "text", "image"])
 
-            let missingSelector = try Self.json(server.handleLine(#"""
+            let missingSelector = try Self.json(server.handleInternalTestLine(#"""
             {"jsonrpc":"2.0","id":15,"method":"tools/call","params":{"name":"get_meeting_screenshots","arguments":{"meeting_id":"\#(fixture
                 .firstMeetingID.uuidString)"}}}
             """#))
             #expect((missingSelector["error"] as? [String: Any])?["code"] as? Int == -32602)
 
-            let invalid = try Self.json(server.handleLine(#"""
+            let invalid = try Self.json(server.handleInternalTestLine(#"""
             {"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"query_meetings","arguments":{"unexpected":true}}}
             """#))
             #expect((invalid["error"] as? [String: Any])?["code"] as? Int == -32602)
-            let unknown = try Self.json(server.handleLine(#"""
+            let unknown = try Self.json(server.handleInternalTestLine(#"""
             {"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"unknown","arguments":{}}}
             """#))
             #expect((unknown["error"] as? [String: Any])?["code"] as? Int == -32602)
-            let nonObjectArguments = try Self.json(server.handleLine(#"""
+            let nonObjectArguments = try Self.json(server.handleInternalTestLine(#"""
             {"jsonrpc":"2.0","id":10,"method":"tools/call","params":{"name":"query_meetings","arguments":"invalid"}}
             """#))
             #expect((nonObjectArguments["error"] as? [String: Any])?["code"] as? Int == -32602)
-            let invalidVersion = try Self.json(server.handleLine(#"""
+            let invalidVersion = try Self.json(server.handleInternalTestLine(#"""
             {"jsonrpc":"1.0","id":11,"method":"ping"}
             """#))
             #expect((invalidVersion["error"] as? [String: Any])?["code"] as? Int == -32600)
 
             let missingVaultStore = try fixture.store(vaultID: UUID.v7())
             let missingVaultServer = DahliaMCPServer(store: missingVaultStore)
-            let missing = try Self.json(missingVaultServer.handleLine(#"{"jsonrpc":"2.0","id":4,"method":"initialize","params":{}}"#))
+            let missing = try Self.json(missingVaultServer.handleInternalTestLine(#"{"jsonrpc":"2.0","id":4,"method":"initialize","params":{}}"#))
             #expect((missing["error"] as? [String: Any])?["code"] as? Int == -32000)
         }
 
@@ -1338,8 +1387,8 @@ import ImageIO
             let largeData = try #require(ImageEncoder.encode(largeImage, quality: 0.9))
             try fixture.updateFirstScreenshot(data: largeData)
             let server = try DahliaMCPServer(store: fixture.store(vaultID: fixture.primaryVaultID))
-            _ = server.handleLine(#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#)
-            _ = server.handleLine(#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#)
+            _ = server.handleInternalTestLine(#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#)
+            _ = server.handleInternalTestLine(#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#)
 
             func call(id: Int = 2, arguments: [String: Any]) throws -> [String: Any] {
                 let request: [String: Any] = [
@@ -1350,7 +1399,7 @@ import ImageIO
                 ]
                 let requestData = try JSONSerialization.data(withJSONObject: request)
                 let requestString = try #require(String(data: requestData, encoding: .utf8))
-                return try Self.json(server.handleLine(requestString))
+                return try Self.json(server.handleInternalTestLine(requestString))
             }
 
             func screenshotData(imageSize: String?, selectsByRange: Bool = false) throws -> Data {
@@ -1546,7 +1595,7 @@ import ImageIO
                 parentOrganizationID: nil
             )
             let server = DahliaMCPServer(store: store)
-            let initialized = try Self.json(server.handleLine(
+            let initialized = try Self.json(server.handleInternalTestLine(
                 #"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#
             ))
             let instructions = try #require(
@@ -1554,9 +1603,9 @@ import ImageIO
             )
             #expect(instructions.contains("domain may be shared"))
             #expect(instructions.contains("set_contact_organization_membership"))
-            _ = server.handleLine(#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#)
+            _ = server.handleInternalTestLine(#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#)
 
-            let tools = try Self.json(server.handleLine(#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#))
+            let tools = try Self.json(server.handleInternalTestLine(#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#))
             let definitions = ((tools["result"] as? [String: Any])?["tools"] as? [[String: Any]]) ?? []
             let setDefinition = try #require(
                 definitions.first { $0["name"] as? String == "set_organization_domain" }
@@ -1585,7 +1634,7 @@ import ImageIO
                     == CustomerIdentityNormalizer.maximumDomainNameLength
             )
 
-            let setCall = try Self.json(server.handleLine("""
+            let setCall = try Self.json(server.handleInternalTestLine("""
             {"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"set_organization_domain","arguments":{\
             "organization_id":"\(organization.resourceID.uuidString)",\
             "expected_organization_revision":\(organization.revision),\
@@ -1597,7 +1646,7 @@ import ImageIO
             #expect(setContent["changed"] as? Bool == true)
             let revision = try #require(setContent["revision"] as? Int)
 
-            let removeCall = try Self.json(server.handleLine("""
+            let removeCall = try Self.json(server.handleInternalTestLine("""
             {"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"remove_organization_domain","arguments":{\
             "organization_id":"\(organization.resourceID.uuidString)",\
             "expected_organization_revision":\(revision),\
@@ -1611,17 +1660,17 @@ import ImageIO
             let readOnlyServer = try DahliaMCPServer(
                 store: fixture.store(vaultID: fixture.primaryVaultID)
             )
-            _ = try Self.json(readOnlyServer.handleLine(
+            _ = try Self.json(readOnlyServer.handleInternalTestLine(
                 #"{"jsonrpc":"2.0","id":5,"method":"initialize","params":{}}"#
             ))
-            _ = readOnlyServer.handleLine(#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#)
+            _ = readOnlyServer.handleInternalTestLine(#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#)
             let readOnlyTools = try Self.json(
-                readOnlyServer.handleLine(#"{"jsonrpc":"2.0","id":6,"method":"tools/list"}"#)
+                readOnlyServer.handleInternalTestLine(#"{"jsonrpc":"2.0","id":6,"method":"tools/list"}"#)
             )
             let readOnlyDefinitions =
                 ((readOnlyTools["result"] as? [String: Any])?["tools"] as? [[String: Any]]) ?? []
             #expect(!readOnlyDefinitions.contains { $0["name"] as? String == "set_organization_domain" })
-            let denied = try Self.json(readOnlyServer.handleLine("""
+            let denied = try Self.json(readOnlyServer.handleInternalTestLine("""
             {"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"set_organization_domain","arguments":{\
             "organization_id":"\(organization.resourceID.uuidString)",\
             "expected_organization_revision":1,\
@@ -1635,16 +1684,16 @@ import ImageIO
         func writeMCPPublishesSimpleCrudToolsOnlyWhenEnabled() throws {
             let fixture = try Fixture()
             let readOnlyServer = try DahliaMCPServer(store: fixture.store(vaultID: fixture.primaryVaultID))
-            _ = try Self.json(readOnlyServer.handleLine(#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#))
-            _ = readOnlyServer.handleLine(#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#)
+            _ = try Self.json(readOnlyServer.handleInternalTestLine(#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#))
+            _ = readOnlyServer.handleInternalTestLine(#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#)
             let readOnlyTools = try Self.json(
-                readOnlyServer.handleLine(#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#)
+                readOnlyServer.handleInternalTestLine(#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#)
             )
             let readOnlyDefinitions = ((readOnlyTools["result"] as? [String: Any])?["tools"] as? [[String: Any]]) ?? []
             #expect(!readOnlyDefinitions.contains { $0["name"] as? String == "create_project" })
             #expect(!readOnlyDefinitions.contains { $0["name"] as? String == "create_organization" })
             #expect(!readOnlyDefinitions.contains { ($0["name"] as? String)?.hasPrefix("delete_") == true })
-            let deniedWrite = try Self.json(readOnlyServer.handleLine(#"""
+            let deniedWrite = try Self.json(readOnlyServer.handleInternalTestLine(#"""
             {"jsonrpc":"2.0","id":20,"method":"tools/call","params":{"name":"create_project","arguments":{"name":"Denied"}}}
             """#))
             #expect((deniedWrite["result"] as? [String: Any])?["isError"] as? Bool == true)
@@ -1665,9 +1714,9 @@ import ImageIO
             let writeServer = try DahliaMCPServer(
                 store: fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
             )
-            _ = try Self.json(writeServer.handleLine(#"{"jsonrpc":"2.0","id":3,"method":"initialize","params":{}}"#))
-            _ = writeServer.handleLine(#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#)
-            let writeTools = try Self.json(writeServer.handleLine(#"{"jsonrpc":"2.0","id":4,"method":"tools/list"}"#))
+            _ = try Self.json(writeServer.handleInternalTestLine(#"{"jsonrpc":"2.0","id":3,"method":"initialize","params":{}}"#))
+            _ = writeServer.handleInternalTestLine(#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#)
+            let writeTools = try Self.json(writeServer.handleInternalTestLine(#"{"jsonrpc":"2.0","id":4,"method":"tools/list"}"#))
             let writeDefinitions = ((writeTools["result"] as? [String: Any])?["tools"] as? [[String: Any]]) ?? []
             let names = Set(writeDefinitions.compactMap { $0["name"] as? String })
             let customerWriteNames: Set = [
@@ -1769,7 +1818,7 @@ import ImageIO
                 #expect(annotations["idempotentHint"] as? Bool == false)
             }
 
-            let create = try Self.json(writeServer.handleLine(#"""
+            let create = try Self.json(writeServer.handleInternalTestLine(#"""
             {"jsonrpc":"2.0","id":5,"method":"tools/call","params":{
                 "name":"create_project","arguments":{"name":"MCP Root","project_type":"personal"}
             }}
@@ -1788,12 +1837,12 @@ import ImageIO
                 "descendant_meeting_count", "description", "revision",
             ]
             for response in try [
-                Self.json(readOnlyServer.handleLine("""
+                Self.json(readOnlyServer.handleInternalTestLine("""
                 {"jsonrpc":"2.0","id":21,"method":"tools/call","params":{"name":"query_projects","arguments":{
                     "project_id":"\(projectID)"
                 }}}
                 """)),
-                Self.json(readOnlyServer.handleLine("""
+                Self.json(readOnlyServer.handleInternalTestLine("""
                 {"jsonrpc":"2.0","id":22,"method":"tools/call","params":{"name":"get_project","arguments":{
                     "project_id":"\(projectID)"
                 }}}
@@ -1807,7 +1856,7 @@ import ImageIO
                 #expect(Set(project.keys) == projectKeys)
             }
 
-            let rename = try Self.json(writeServer.handleLine("""
+            let rename = try Self.json(writeServer.handleInternalTestLine("""
             {"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"update_project","arguments":{
                 "project_id":"\(projectID)","revision":\(revision),"name":"Renamed Root"
             }}}
@@ -1819,7 +1868,7 @@ import ImageIO
             #expect(renamed["path"] as? String == "Renamed Root")
             #expect(appearanceKeys.isDisjoint(with: renamed.keys))
 
-            let childResponse = try Self.json(writeServer.handleLine("""
+            let childResponse = try Self.json(writeServer.handleInternalTestLine("""
             {"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"create_project","arguments":{
                 "name":"Child","parent_project_id":"\(projectID)"
             }}}
@@ -1831,7 +1880,7 @@ import ImageIO
             let childID = try #require(child["project_id"] as? String)
             let childRevision = try #require(child["revision"] as? Int)
 
-            let descriptionUpdate = try Self.json(writeServer.handleLine("""
+            let descriptionUpdate = try Self.json(writeServer.handleInternalTestLine("""
             {"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"update_project","arguments":{
                 "project_id":"\(childID)","revision":\(childRevision),"description":"Still nested"
             }}}
@@ -1843,7 +1892,7 @@ import ImageIO
             #expect(describedChild["parent_project_id"] as? String == projectID)
 
             let describedRevision = try #require(describedChild["revision"] as? Int)
-            let promote = try Self.json(writeServer.handleLine("""
+            let promote = try Self.json(writeServer.handleInternalTestLine("""
             {"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"update_project","arguments":{
                 "project_id":"\(childID)","revision":\(describedRevision),"parent_project_id":null
             }}}
@@ -1855,7 +1904,7 @@ import ImageIO
             #expect(promoted["parent_project_id"] == nil)
 
             let promotedRevision = try #require(promoted["revision"] as? Int)
-            let nullName = try Self.json(writeServer.handleLine("""
+            let nullName = try Self.json(writeServer.handleInternalTestLine("""
             {"jsonrpc":"2.0","id":10,"method":"tools/call","params":{"name":"update_project","arguments":{
                 "project_id":"\(childID)","revision":\(promotedRevision),"name":null
             }}}
@@ -1883,11 +1932,11 @@ import ImageIO
                 ProjectQuery(projectID: fixture.primaryProjectID)
             ).projects.first)
             let server = DahliaMCPServer(store: store)
-            _ = try Self.json(server.handleLine(#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#))
-            _ = server.handleLine(#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#)
+            _ = try Self.json(server.handleInternalTestLine(#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#))
+            _ = server.handleInternalTestLine(#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#)
 
             func errorCode(for request: String) throws -> String {
-                let response = try Self.json(server.handleLine(request))
+                let response = try Self.json(server.handleInternalTestLine(request))
                 let result = try #require(response["result"] as? [String: Any])
                 let content = try #require(result["structuredContent"] as? [String: Any])
                 let error = try #require(content["error"] as? [String: Any])
@@ -2635,9 +2684,9 @@ import ImageIO
         func screenshotIDSelectorRejectsPaginationArguments() throws {
             let fixture = try Fixture()
             let server = try DahliaMCPServer(store: fixture.store(vaultID: fixture.primaryVaultID))
-            _ = server.handleLine(#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#)
-            _ = server.handleLine(#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#)
-            let response = try Self.json(server.handleLine(#"""
+            _ = server.handleInternalTestLine(#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#)
+            _ = server.handleInternalTestLine(#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#)
+            let response = try Self.json(server.handleInternalTestLine(#"""
             {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_meeting_screenshots","arguments":{"meeting_id":"\#(fixture
                 .firstMeetingID.uuidString)","screenshot_ids":["\#(fixture.firstScreenshotID.uuidString)"],"limit":1}}}
             """#))
@@ -2654,7 +2703,7 @@ import ImageIO
                     ],
                 ]
                 let data = try JSONSerialization.data(withJSONObject: request)
-                return try Self.json(server.handleLine(String(decoding: data, as: UTF8.self)))
+                return try Self.json(server.handleInternalTestLine(String(decoding: data, as: UTF8.self)))
             }
 
             let invalidSelections = try [
@@ -2670,9 +2719,9 @@ import ImageIO
         func elapsedTimeInputsRejectInvalidRanges() throws {
             let fixture = try Fixture()
             let server = try DahliaMCPServer(store: fixture.store(vaultID: fixture.primaryVaultID))
-            _ = server.handleLine(#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#)
-            _ = server.handleLine(#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#)
-            let response = try Self.json(server.handleLine(#"""
+            _ = server.handleInternalTestLine(#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#)
+            _ = server.handleInternalTestLine(#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#)
+            let response = try Self.json(server.handleInternalTestLine(#"""
             {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_meeting_transcript","arguments":{"meeting_id":"\#(fixture
                 .firstMeetingID.uuidString)","from_elapsed_seconds":2,"to_elapsed_seconds":1}}}
             """#))
@@ -2927,14 +2976,14 @@ import ImageIO
             await fixture.manager.searchIndexer.drain()
             let server = try DahliaMCPServer(store: fixture.store(vaultID: fixture.primaryVaultID))
 
-            let initialized = try Self.json(server.handleLine(#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#))
+            let initialized = try Self.json(server.handleInternalTestLine(#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#))
             let instructions = try #require((initialized["result"] as? [String: Any])?["instructions"] as? String)
             #expect(instructions.contains("ical_uid"))
             #expect(instructions.contains("project_id"))
             #expect(instructions.contains("transcripts or screenshots only when supporting evidence is needed"))
-            #expect(server.handleLine(#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#) == nil)
+            #expect(server.handleInternalTestLine(#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#) == nil)
 
-            let tools = try Self.json(server.handleLine(#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#))
+            let tools = try Self.json(server.handleInternalTestLine(#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#))
             let definitions = ((tools["result"] as? [String: Any])?["tools"] as? [[String: Any]]) ?? []
             let queryDefinition = try #require(definitions.first { $0["name"] as? String == "query_meetings" })
             let queryDescription = try #require(queryDefinition["description"] as? String)
@@ -2963,7 +3012,7 @@ import ImageIO
             #expect(meetingProperties["ical_uid"] != nil)
             #expect(meetingProperties["recurrence_id"] != nil)
 
-            let metadataQuery = try Self.json(server.handleLine(#"""
+            let metadataQuery = try Self.json(server.handleInternalTestLine(#"""
             {"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"query_meetings","arguments":{"query":"planning"}}}
             """#))
             let metadataContent = (metadataQuery["result"] as? [String: Any])?["structuredContent"] as? [String: Any]
@@ -2972,7 +3021,7 @@ import ImageIO
             #expect(meeting["ical_uid"] as? String == "roadmap@example.com")
             #expect((meeting["recurrence_id"] as? String)?.isEmpty == true)
 
-            let simpleQuery = try Self.json(server.handleLine(#"""
+            let simpleQuery = try Self.json(server.handleInternalTestLine(#"""
             {"jsonrpc":"2.0","id":31,"method":"tools/call","params":{"name":"query_meetings","arguments":{
                 "query":"anning","simple":true
             }}}
@@ -2981,7 +3030,7 @@ import ImageIO
             #expect((simpleContent?["meetings"] as? [[String: Any]])?.first?["id"] as? String == fixture.firstMeetingID.uuidString)
 
             for (id, simple) in [(32, false), (33, true)] {
-                let summaryQuery = try Self.json(server.handleLine(#"""
+                let summaryQuery = try Self.json(server.handleInternalTestLine(#"""
                 {"jsonrpc":"2.0","id":\#(id),"method":"tools/call","params":{"name":"query_meetings","arguments":{
                     "query":"\#(simple ? "cret bo" : "secret body")","simple":\#(simple)
                 }}}
@@ -2991,14 +3040,14 @@ import ImageIO
                 #expect(simple ? meetings?.isEmpty == true : meetings?.first?["id"] as? String == fixture.firstMeetingID.uuidString)
             }
 
-            let projectQuery = try Self.json(server.handleLine(#"""
+            let projectQuery = try Self.json(server.handleInternalTestLine(#"""
             {"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"query_meetings","arguments":{"project_id":"\#(fixture
                 .primaryProjectID.uuidString)"}}}
             """#))
             let projectContent = (projectQuery["result"] as? [String: Any])?["structuredContent"] as? [String: Any]
             #expect((projectContent?["meetings"] as? [[String: Any]])?.count == 2)
 
-            let icalQuery = try Self.json(server.handleLine(#"""
+            let icalQuery = try Self.json(server.handleInternalTestLine(#"""
             {"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"query_meetings","arguments":{"ical_uid":"roadmap@example.com"}}}
             """#))
             let icalContent = (icalQuery["result"] as? [String: Any])?["structuredContent"] as? [String: Any]
@@ -3008,24 +3057,22 @@ import ImageIO
                 fixture.recurringMeetingID.uuidString,
             ])
 
-            let invalidProjectID = try Self.json(server.handleLine(#"""
+            let invalidProjectID = try Self.json(server.handleInternalTestLine(#"""
             {"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"query_meetings","arguments":{"project_id":"not-a-uuid"}}}
             """#))
             #expect((invalidProjectID["error"] as? [String: Any])?["code"] as? Int == -32602)
 
-            let blankFilters = try Self.json(server.handleLine(#"""
+            let blankFilters = try Self.json(server.handleInternalTestLine(#"""
             {"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"query_meetings","arguments":{
                 "created_before":"","created_from":" ","cursor":"","ical_uid":"   ",
                 "include_descendants":true,"limit":50,"organization_id":"","project":"","project_id":"",
                 "query":"","topic_id":""
             }}}
             """#))
-            #expect(blankFilters["error"] == nil)
-            let blankFilterContent = (blankFilters["result"] as? [String: Any])?["structuredContent"] as? [String: Any]
-            #expect((blankFilterContent?["meetings"] as? [[String: Any]])?.count == 3)
+            #expect((blankFilters["error"] as? [String: Any])?["code"] as? Int == -32602)
 
             for invalidTypedArguments in [#"{"limit":""}"#, #"{"include_descendants":" "}"#] {
-                let invalidTypedValue = try Self.json(server.handleLine(#"""
+                let invalidTypedValue = try Self.json(server.handleInternalTestLine(#"""
                 {"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"query_meetings","arguments":\#(invalidTypedArguments)}}
                 """#))
                 #expect((invalidTypedValue["error"] as? [String: Any])?["code"] as? Int == -32602)
@@ -3447,7 +3494,7 @@ import ImageIO
         func corruptPrimaryScreenshotSessionAssociation() throws {
             try manager.dbQueue.write { db in
                 try db.execute(
-                    sql: "UPDATE meeting_files SET sessionId = ? WHERE id = ?",
+                    sql: "UPDATE meeting_attachments SET sessionId = ? WHERE id = ?",
                     arguments: [otherVaultSessionID, firstScreenshotID]
                 )
             }

@@ -62,7 +62,7 @@ export const recording = z.object({ id: integer, startedAt: date, endedAt: date,
 }).openapi("Recording");
 const recordingProjection = recording.extend({ recordingNumber: integer, sessionId: id, meetingId: id, vaultId: id, revision: integer }).openapi("RecordingProjection");
 const canonicalSchemas = { vault, project, meeting, summary: summaryProjection, transcript: transcriptProjection, file,
-  meeting_file: meetingFile, recording: recordingProjection, meeting_event: z.object({}) };
+  meeting_attachment: meetingFile, recording: recordingProjection, meeting_event: z.object({}) };
 // Name the nullable object itself: Swift cannot generate the equivalent anyOf([$ref, null]).
 const nullableCanonicalSchemas = Object.fromEntries(Object.entries(canonicalSchemas).map(([entity, record]) => [
   entity, z.object(record.shape).nullable().openapi(`Nullable${entity.split("_").map((part) => part[0]!.toUpperCase() + part.slice(1)).join("")}Record`),
@@ -70,7 +70,7 @@ const nullableCanonicalSchemas = Object.fromEntries(Object.entries(canonicalSche
 export const canonicalRecord = z.union(Object.entries(nullableCanonicalSchemas).map(([entity, record]) => z.object({
   entity: z.literal(entity), id, revision: integer.nullable(), record: record.optional(),
 }))).openapi("CanonicalRecord");
-export const syncEntity = z.enum(["vault", "project", "meeting", "summary", "transcript", "file", "meeting_file", "recording", "meeting_event"]);
+export const syncEntity = z.enum(["vault", "project", "meeting", "summary", "transcript", "file", "meeting_attachment", "recording", "meeting_event"]);
 export const conflict = z.union(Object.entries(nullableCanonicalSchemas).map(([entity, record]) => z.object({
   entity: z.literal(entity), id, clientBaseRevision: integer.nullable(), serverRevision: integer.nullable(),
   record,

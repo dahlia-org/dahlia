@@ -265,7 +265,7 @@ export class MeetingSyncService {
               summaryDocument,
               summaryCreatedAt: operation.entity === "summary" && operation.action === "upsert" ? data.createdAt as Date : operation.action === "delete" ? null : meeting?.summaryCreatedAt ?? null,
             });
-          } else if (["file", "meeting_file"].includes(operation.entity) && operation.action === "upsert") {
+          } else if (["file", "meeting_attachment"].includes(operation.entity) && operation.action === "upsert") {
             const fileId = operation.entity === "file" ? operation.entityId : String(data.fileId);
             const file = fileMetadata.get(fileId) ?? (await scoped.getFile(fileId))?.metadata;
             const metadata = { ...file, ...(operation.entity === "file" ? data.metadata as object : {}) };
@@ -839,7 +839,7 @@ export class MeetingSyncService {
     const after = cursor === undefined ? undefined : this.parseId(cursor);
     return this.store.withIdentity(identity, async (scoped) => {
       if (meetingId) {
-        const rows = await scoped.listMeetingFiles(vaultId, meetingId, after, SYNC_READ_PAGE_SIZE + 1);
+        const rows = await scoped.listMeetingAttachments(vaultId, meetingId, after, SYNC_READ_PAGE_SIZE + 1);
         const items = rows.slice(0, SYNC_READ_PAGE_SIZE).map(({ file, ...link }) => ({ ...link, file: this.fileMetadata(fileResponse(file)) }));
         return { items, nextCursor: rows.length > SYNC_READ_PAGE_SIZE ? items.at(-1)!.id : null };
       }

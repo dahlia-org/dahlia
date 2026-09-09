@@ -1,5 +1,6 @@
 #if canImport(Testing)
     import CryptoKit
+    import DahliaRuntimeSupport
     import DahliaServerAPI
     import Foundation
     import HTTPTypes
@@ -9,6 +10,39 @@
     @testable import Dahlia
 
     struct SyncAPIMiddlewareTests {
+        @Test
+        func convertsPublicResponseIDsWithoutAnExplicitContentType() async throws {
+            let id = "019f0d36-0520-7000-8000-000000000001"
+            let capture = SyncJSONResponse()
+            let middleware = SyncAPIMiddleware(token: "test", maximumBytes: nil, preservingJSONBody: nil, capture: capture)
+            let bytes = try PublicIDWire.data(Data("{\"vaultId\":\"\(id)\"}".utf8), shape: "vault", direction: .encode)
+            _ = try await middleware.intercept(
+                HTTPRequest(method: .get, scheme: "https", authority: "example.com", path: "/api/v1/vaults/\(id)"),
+                body: nil, baseURL: #require(URL(string: "https://example.com")), operationID: "getVault"
+            ) { request, _, _ in
+                #expect(request.path?.contains("/vlt_") == true)
+                return (HTTPResponse(status: .ok), HTTPBody(bytes))
+            }
+            let data = try #require(capture.value.withLock { $0 })
+            #expect(try JSONSerialization.jsonObject(with: data) as? [String: String] == ["vaultId": id])
+        }
+
+        @Test
+        func preservesPlainTextAuthorizationErrors() async throws {
+            let middleware = SyncAPIMiddleware(token: "test", maximumBytes: nil, preservingJSONBody: nil, capture: nil)
+            let bytes = Data("forbidden".utf8)
+            do {
+                _ = try await middleware.intercept(
+                    HTTPRequest(method: .post, scheme: "https", authority: "example.com", path: "/api/v1/transactions"),
+                    body: nil, baseURL: #require(URL(string: "https://example.com")), operationID: "commitTransaction"
+                ) { _, _, _ in (HTTPResponse(status: .forbidden), HTTPBody(bytes)) }
+                Issue.record("Expected authorization failure")
+            } catch let error as SyncHTTPError {
+                #expect(error.body == bytes)
+                #expect(error.blockedReason == .authorization)
+            }
+        }
+
         @Test(arguments: [false, true])
         func sharedNullableDTOsPreserveRecordsAndTombstones(deleted: Bool) throws {
             let id = "019f0d36-0520-7000-8000-000000000001"

@@ -5,6 +5,7 @@ import {
   timestamp,
   boolean,
   integer,
+  uuid,
   jsonb,
   index,
   uniqueIndex,
@@ -13,7 +14,7 @@ import {
 export const authSchema = pgSchema("auth");
 
 export const user = authSchema.table("user", {
-  id: text("id").primaryKey(),
+  id: uuid("id").primaryKey(),
   name: text("name").notNull(),
   email: text("email").notNull().unique(),
   emailVerified: boolean("email_verified").default(false).notNull(),
@@ -32,7 +33,7 @@ export const user = authSchema.table("user", {
 export const session = authSchema.table(
   "session",
   {
-    id: text("id").primaryKey(),
+    id: uuid("id").primaryKey(),
     expiresAt: timestamp("expires_at").notNull(),
     token: text("token").notNull().unique(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -41,12 +42,12 @@ export const session = authSchema.table(
       .notNull(),
     ipAddress: text("ip_address"),
     userAgent: text("user_agent"),
-    userId: text("user_id")
+    userId: uuid("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
-    impersonatedBy: text("impersonated_by"),
-    activeOrganizationId: text("active_organization_id"),
-    activeTeamId: text("active_team_id"),
+    impersonatedBy: uuid("impersonated_by"),
+    activeOrganizationId: uuid("active_organization_id"),
+    activeTeamId: uuid("active_team_id"),
   },
   (table) => [index("session_userId_idx").on(table.userId)],
 );
@@ -54,11 +55,11 @@ export const session = authSchema.table(
 export const account = authSchema.table(
   "account",
   {
-    id: text("id").primaryKey(),
+    id: uuid("id").primaryKey(),
     issuer: text("issuer").notNull(),
     accountId: text("account_id").notNull(),
     providerId: text("provider_id").notNull(),
-    userId: text("user_id")
+    userId: uuid("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
     accessToken: text("access_token"),
@@ -85,7 +86,7 @@ export const account = authSchema.table(
 export const verification = authSchema.table(
   "verification",
   {
-    id: text("id").primaryKey(),
+    id: uuid("id").primaryKey(),
     identifier: text("identifier").notNull(),
     value: text("value").notNull(),
     expiresAt: timestamp("expires_at").notNull(),
@@ -99,7 +100,7 @@ export const verification = authSchema.table(
 );
 
 export const jwks = authSchema.table("jwks", {
-  id: text("id").primaryKey(),
+  id: uuid("id").primaryKey(),
   publicKey: text("public_key").notNull(),
   privateKey: text("private_key").notNull(),
   createdAt: timestamp("created_at").notNull(),
@@ -111,7 +112,7 @@ export const jwks = authSchema.table("jwks", {
 export const oauthClient = authSchema.table(
   "oauth_client",
   {
-    id: text("id").primaryKey(),
+    id: uuid("id").primaryKey(),
     clientId: text("client_id").notNull().unique(),
     clientSecret: text("client_secret"),
     clientDiscoveryId: text("client_discovery_id"),
@@ -123,7 +124,7 @@ export const oauthClient = authSchema.table(
     clientCredentialsScopes: text("client_credentials_scopes")
       .array()
       .default([]),
-    userId: text("user_id").references(() => user.id, { onDelete: "cascade" }),
+    userId: uuid("user_id").references(() => user.id, { onDelete: "cascade" }),
     createdAt: timestamp("created_at"),
     updatedAt: timestamp("updated_at"),
     name: text("name"),
@@ -156,7 +157,7 @@ export const oauthClient = authSchema.table(
 );
 
 export const oauthResource = authSchema.table("oauth_resource", {
-  id: text("id").primaryKey(),
+  id: uuid("id").primaryKey(),
   identifier: text("identifier").notNull().unique(),
   name: text("name").notNull(),
   accessTokenTtl: integer("access_token_ttl"),
@@ -178,7 +179,7 @@ export const oauthResource = authSchema.table("oauth_resource", {
 export const oauthClientResource = authSchema.table(
   "oauth_client_resource",
   {
-    id: text("id").primaryKey(),
+    id: uuid("id").primaryKey(),
     clientId: text("client_id")
       .notNull()
       .references(() => oauthClient.clientId, { onDelete: "cascade" }),
@@ -201,15 +202,15 @@ export const oauthClientResource = authSchema.table(
 export const oauthRefreshToken = authSchema.table(
   "oauth_refresh_token",
   {
-    id: text("id").primaryKey(),
+    id: uuid("id").primaryKey(),
     token: text("token").notNull().unique(),
     clientId: text("client_id")
       .notNull()
       .references(() => oauthClient.clientId, { onDelete: "cascade" }),
-    sessionId: text("session_id").references(() => session.id, {
+    sessionId: uuid("session_id").references(() => session.id, {
       onDelete: "set null",
     }),
-    userId: text("user_id")
+    userId: uuid("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
     referenceId: text("reference_id"),
@@ -239,20 +240,20 @@ export const oauthRefreshToken = authSchema.table(
 export const oauthAccessToken = authSchema.table(
   "oauth_access_token",
   {
-    id: text("id").primaryKey(),
+    id: uuid("id").primaryKey(),
     token: text("token").unique(),
     clientId: text("client_id")
       .notNull()
       .references(() => oauthClient.clientId, { onDelete: "cascade" }),
-    sessionId: text("session_id").references(() => session.id, {
+    sessionId: uuid("session_id").references(() => session.id, {
       onDelete: "set null",
     }),
-    userId: text("user_id").references(() => user.id, { onDelete: "cascade" }),
+    userId: uuid("user_id").references(() => user.id, { onDelete: "cascade" }),
     referenceId: text("reference_id"),
     authorizationCodeId: text("authorization_code_id"),
     resources: text("resources").array(),
     requestedUserInfoClaims: text("requested_user_info_claims").array(),
-    refreshId: text("refresh_id").references(() => oauthRefreshToken.id, {
+    refreshId: uuid("refresh_id").references(() => oauthRefreshToken.id, {
       onDelete: "cascade",
     }),
     expiresAt: timestamp("expires_at"),
@@ -275,11 +276,11 @@ export const oauthAccessToken = authSchema.table(
 export const oauthConsent = authSchema.table(
   "oauth_consent",
   {
-    id: text("id").primaryKey(),
+    id: uuid("id").primaryKey(),
     clientId: text("client_id")
       .notNull()
       .references(() => oauthClient.clientId, { onDelete: "cascade" }),
-    userId: text("user_id").references(() => user.id, { onDelete: "cascade" }),
+    userId: uuid("user_id").references(() => user.id, { onDelete: "cascade" }),
     referenceId: text("reference_id"),
     resources: text("resources").array(),
     requestedUserInfoClaims: text("requested_user_info_claims").array(),
@@ -301,7 +302,7 @@ export const oauthClientAssertion = authSchema.table("oauth_client_assertion", {
 export const organization = authSchema.table(
   "organization",
   {
-    id: text("id").primaryKey(),
+    id: uuid("id").primaryKey(),
     name: text("name").notNull(),
     slug: text("slug").notNull().unique(),
     logo: text("logo"),
@@ -314,10 +315,10 @@ export const organization = authSchema.table(
 export const team = authSchema.table(
   "team",
   {
-    id: text("id").primaryKey(),
+    id: uuid("id").primaryKey(),
     name: text("name").notNull(),
     memberCount: integer("member_count").default(0).notNull(),
-    organizationId: text("organization_id")
+    organizationId: uuid("organization_id")
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
     createdAt: timestamp("created_at").notNull(),
@@ -331,11 +332,11 @@ export const team = authSchema.table(
 export const teamMember = authSchema.table(
   "team_member",
   {
-    id: text("id").primaryKey(),
-    teamId: text("team_id")
+    id: uuid("id").primaryKey(),
+    teamId: uuid("team_id")
       .notNull()
       .references(() => team.id, { onDelete: "cascade" }),
-    userId: text("user_id")
+    userId: uuid("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
     membershipKey: text("membership_key").unique(),
@@ -350,11 +351,11 @@ export const teamMember = authSchema.table(
 export const member = authSchema.table(
   "member",
   {
-    id: text("id").primaryKey(),
-    organizationId: text("organization_id")
+    id: uuid("id").primaryKey(),
+    organizationId: uuid("organization_id")
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
-    userId: text("user_id")
+    userId: uuid("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
     role: text("role").default("member").notNull(),
@@ -369,8 +370,8 @@ export const member = authSchema.table(
 export const invitation = authSchema.table(
   "invitation",
   {
-    id: text("id").primaryKey(),
-    organizationId: text("organization_id")
+    id: uuid("id").primaryKey(),
+    organizationId: uuid("organization_id")
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
     email: text("email").notNull(),
@@ -379,7 +380,7 @@ export const invitation = authSchema.table(
     status: text("status").default("pending").notNull(),
     expiresAt: timestamp("expires_at").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
-    inviterId: text("inviter_id")
+    inviterId: uuid("inviter_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
   },

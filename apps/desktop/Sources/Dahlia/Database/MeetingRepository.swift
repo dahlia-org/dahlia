@@ -991,7 +991,7 @@ final class MeetingRepository {
             guard !deletedScreenshots.isEmpty else { return [] }
             let deletedIds = Set(deletedScreenshots.map(\.id))
 
-            _ = try MeetingFileRecord
+            _ = try MeetingAttachmentRecord
                 .filter(deletedIds.contains(Column("id")))
                 .deleteAll(db)
             guard let vaultId = try UUID.fetchOne(
@@ -1002,7 +1002,7 @@ final class MeetingRepository {
             try SyncTransactionRecorder.recordBatches(
                 vaultId: vaultId,
                 operations: deletedScreenshots.map {
-                    SyncOperationDraft(entity: .meetingFile, action: .delete, entityId: $0.id)
+                    SyncOperationDraft(entity: .meetingAttachment, action: .delete, entityId: $0.id)
                 },
                 in: db
             )

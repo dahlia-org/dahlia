@@ -26,7 +26,7 @@ enum ScreenshotContentMigration {
                 createdAt: capturedAt,
                 updatedAt: capturedAt
             ).insert(db)
-            try MeetingFileRecord(
+            try MeetingAttachmentRecord(
                 id: id,
                 meetingId: row["meetingId"],
                 fileId: id,
@@ -49,22 +49,22 @@ enum ScreenshotContentMigration {
         createdAt DATETIME NOT NULL, updatedAt DATETIME NOT NULL, localReference TEXT, remoteReference TEXT
     );
     CREATE INDEX files_vault_id ON files(vaultId, id);
-    CREATE TABLE meeting_files (
+    CREATE TABLE meeting_attachments (
         id BLOB PRIMARY KEY, meetingId BLOB NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
         fileId BLOB NOT NULL REFERENCES files(id), capturedAt DATETIME, sessionId BLOB,
         createdAt DATETIME NOT NULL, UNIQUE(meetingId, fileId)
     );
-    CREATE INDEX meeting_files_meeting_id ON meeting_files(meetingId, id);
-    CREATE INDEX meeting_files_file_id ON meeting_files(fileId);
+    CREATE INDEX meeting_attachments_meeting_id ON meeting_attachments(meetingId, id);
+    CREATE INDEX meeting_attachments_file_id ON meeting_attachments(fileId);
     CREATE TABLE file_migration_content (
         fileId BLOB PRIMARY KEY REFERENCES files(id) ON DELETE CASCADE, imageData BLOB NOT NULL
     );
-    CREATE TRIGGER meeting_file_same_vault_insert BEFORE INSERT ON meeting_files
+    CREATE TRIGGER meeting_attachment_same_vault_insert BEFORE INSERT ON meeting_attachments
     WHEN (SELECT vaultId FROM files WHERE id = new.fileId) IS NOT (SELECT vaultId FROM meetings WHERE id = new.meetingId)
-    BEGIN SELECT RAISE(ABORT, 'meeting_file_vault_mismatch'); END;
-    CREATE TRIGGER meeting_file_same_vault_update BEFORE UPDATE OF meetingId, fileId ON meeting_files
+    BEGIN SELECT RAISE(ABORT, 'meeting_attachment_vault_mismatch'); END;
+    CREATE TRIGGER meeting_attachment_same_vault_update BEFORE UPDATE OF meetingId, fileId ON meeting_attachments
     WHEN (SELECT vaultId FROM files WHERE id = new.fileId) IS NOT (SELECT vaultId FROM meetings WHERE id = new.meetingId)
-    BEGIN SELECT RAISE(ABORT, 'meeting_file_vault_mismatch'); END;
+    BEGIN SELECT RAISE(ABORT, 'meeting_attachment_vault_mismatch'); END;
     """
 
     private static let imageViewSQL = """
@@ -74,13 +74,13 @@ enum ScreenshotContentMigration {
         json_extract(f.metadata, '$.caption') AS caption, substr(f.checksum, 9) AS contentHash, f.size AS contentLength,
         json_extract(f.metadata, '$.width') AS pixelWidth, json_extract(f.metadata, '$.height') AS pixelHeight,
         f.localReference, f.remoteReference
-    FROM meeting_files a JOIN files f ON f.id = a.fileId
+    FROM meeting_attachments a JOIN files f ON f.id = a.fileId
     LEFT JOIN file_migration_content b ON b.fileId = f.id
     WHERE json_extract(f.metadata, '$.source') = 'screenshot';
     """
 
     private static let searchTriggersSQL = """
-    CREATE TRIGGER search_queue_meeting_files_insert AFTER INSERT ON meeting_files
+    CREATE TRIGGER search_queue_meeting_attachments_insert AFTER INSERT ON meeting_attachments
     WHEN (SELECT json_extract(metadata, '$.source') FROM files WHERE id = new.fileId) = 'screenshot'
     BEGIN
         INSERT INTO search_index_jobs(indexKind, targetKind, targetKey, priority, availableAt, updatedAt)
@@ -92,10 +92,10 @@ enum ScreenshotContentMigration {
     WHEN new.metadata IS NOT old.metadata AND json_extract(new.metadata, '$.source') = 'screenshot'
     BEGIN
         INSERT INTO search_index_jobs(indexKind, targetKind, targetKey, priority, availableAt, updatedAt)
-        SELECT 'fts', 'screenshot', id, 0, unixepoch('subsec'), unixepoch('subsec') FROM meeting_files WHERE fileId = new.id
+        SELECT 'fts', 'screenshot', id, 0, unixepoch('subsec'), unixepoch('subsec') FROM meeting_attachments WHERE fileId = new.id
         ON CONFLICT(indexKind, targetKind, targetKey) DO UPDATE SET generation = generation + 1, status = 'pending', attempts = 0;
     END;
-    CREATE TRIGGER search_queue_meeting_files_delete BEFORE DELETE ON meeting_files BEGIN
+    CREATE TRIGGER search_queue_meeting_attachments_delete BEFORE DELETE ON meeting_attachments BEGIN
         DELETE FROM search_index_jobs WHERE indexKind = 'fts' AND targetKind IN ('screenshotAnalysis', 'screenshot') AND targetKey = old.id;
         INSERT INTO search_index_jobs(indexKind, targetKind, targetKey, priority, availableAt, updatedAt)
         VALUES('fts', 'screenshotCleanup', old.id, 100, unixepoch('subsec'), unixepoch('subsec'))

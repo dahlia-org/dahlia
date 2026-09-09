@@ -1,3 +1,4 @@
+import { EXTERNAL_ORGANIZATION_ID, HEADER_IDENTITY_ISSUER } from "./ids";
 import { createAccountSettingsStore, type AccountSettingsStore } from "../account-settings";
 import type { DBAdapterInstance } from "better-auth";
 import { drizzleAdapter } from "@better-auth/drizzle-adapter/relations-v2";
@@ -24,7 +25,6 @@ import type { MeetingSyncStore } from "../sync/types";
 const DAHLIA_DESKTOP_CLIENT_ID = "databricks-cli";
 const LEGACY_DAHLIA_DESKTOP_CLIENT_ID = "dahlia-macos";
 const DAHLIA_DESKTOP_SESSION_CLIENT_IDS = [DAHLIA_DESKTOP_CLIENT_ID, LEGACY_DAHLIA_DESKTOP_CLIENT_ID];
-export const EXTERNAL_ORGANIZATION_ID = "external";
 const DEFAULT_ORGANIZATION_NAME = "Default Organization";
 const DEFAULT_ORGANIZATION_INITIALIZATION = "default_organization";
 
@@ -113,12 +113,14 @@ export interface D1PreparedStatementLike {
 /** Keeps Cloudflare globals out of declarations consumed by Node applications. */
 export interface D1DatabaseLike {
   prepare(query: string): D1PreparedStatementLike;
+  batch(statements: D1PreparedStatementLike[]): Promise<unknown[]>;
 }
 
 export interface ApplicationStore {
   database: DBAdapterInstance;
   accountSettings: AccountSettingsStore;
   sync: MeetingSyncStore;
+  resolveHeaderUser(identity: Identity): Promise<string | null>;
   ensureIdentityUser(identity: Identity): Promise<boolean>;
   seedDahliaClient(config: AppConfig): Promise<void>;
   listDahliaSessions(userId: string): Promise<DahliaOAuthSession[]>;
@@ -166,6 +168,29 @@ export function createPostgresApplicationStore(
     database: drizzleAdapter(db, { provider: "pg", schema: postgresAuthSchema, schemaName: "auth" }),
     accountSettings: createAccountSettingsStore(db, true),
     sync: createPostgresMeetingSyncStore(db, searchBackend, searchEmbedding),
+    async resolveHeaderUser(identity) {
+      const find = async () => {
+        const [account] = await db.select({ userId: postgresAuthSchema.account.userId }).from(postgresAuthSchema.account)
+          .where(and(eq(postgresAuthSchema.account.issuer, HEADER_IDENTITY_ISSUER), eq(postgresAuthSchema.account.accountId, identity.userId))).limit(1);
+        return account?.userId ?? null;
+      };
+      const existing = await find();
+      if (existing) return existing;
+      try {
+        return await db.transaction(async (tx) => {
+          const userId = uuidV7();
+          const now = new Date();
+          await tx.insert(postgresAuthSchema.user).values({ id: userId, email: identity.email ?? identity.userId,
+            name: identity.name ?? identity.email ?? identity.userId, emailVerified: true, role: "user", createdAt: now, updatedAt: now });
+          await tx.insert(postgresAuthSchema.account).values({ id: uuidV7(), userId, issuer: HEADER_IDENTITY_ISSUER,
+            providerId: "header", accountId: identity.userId, createdAt: now, updatedAt: now });
+          return userId;
+        });
+      } catch (error) {
+        if (!isUniqueConstraintError(error)) throw error;
+        return find();
+      }
+    },
     async ensureIdentityUser(identity) {
       const now = new Date();
       const identityUser = () => db.select({
@@ -190,12 +215,12 @@ export function createPostgresApplicationStore(
         hasLegacyExternalOrganization: sql<boolean>`exists (
           select 1 from ${postgresAuthSchema.organization}
           where ${postgresAuthSchema.organization.id} = ${EXTERNAL_ORGANIZATION_ID}
-            and ${postgresAuthSchema.organization.name} = ${EXTERNAL_ORGANIZATION_ID}
+            and ${postgresAuthSchema.organization.name} = 'external'
         )`,
         hasInitializedExternalOrganization: sql<boolean>`exists (
           select 1 from ${postgresAuthSchema.organization}
           where ${postgresAuthSchema.organization.id} = ${EXTERNAL_ORGANIZATION_ID}
-            and ${postgresAuthSchema.organization.name} <> ${EXTERNAL_ORGANIZATION_ID}
+            and ${postgresAuthSchema.organization.name} <> 'external'
         )`,
         name: postgresAuthSchema.user.name,
       }).from(postgresAuthSchema.user).where(eq(postgresAuthSchema.user.id, identity.userId)).limit(1);
@@ -253,7 +278,7 @@ export function createPostgresApplicationStore(
             }).onConflictDoNothing().returning({ name: postgresSchema.serverInitializations.name });
             if (initialized) {
               const [created] = await transaction.insert(postgresAuthSchema.organization).values({
-                id: EXTERNAL_ORGANIZATION_ID, name: DEFAULT_ORGANIZATION_NAME, slug: EXTERNAL_ORGANIZATION_ID,
+                id: EXTERNAL_ORGANIZATION_ID, name: DEFAULT_ORGANIZATION_NAME, slug: "external",
                 createdAt: now, metadata: JSON.stringify({ ownerUserId: identity.userId }),
               }).onConflictDoNothing().returning({ id: postgresAuthSchema.organization.id });
               if (created) {
@@ -264,7 +289,7 @@ export function createPostgresApplicationStore(
             }
             await transaction.update(postgresAuthSchema.organization).set({ name: DEFAULT_ORGANIZATION_NAME }).where(and(
               eq(postgresAuthSchema.organization.id, EXTERNAL_ORGANIZATION_ID),
-              eq(postgresAuthSchema.organization.name, EXTERNAL_ORGANIZATION_ID),
+              eq(postgresAuthSchema.organization.name, "external"),
             ));
           });
           return true;
@@ -276,13 +301,13 @@ export function createPostgresApplicationStore(
         await db.insert(postgresAuthSchema.organization).values({
           id: EXTERNAL_ORGANIZATION_ID,
           name: DEFAULT_ORGANIZATION_NAME,
-          slug: EXTERNAL_ORGANIZATION_ID,
+          slug: "external",
           createdAt: now,
           metadata: JSON.stringify({ ownerUserId: initialAdmin.id }),
         }).onConflictDoUpdate({
           target: postgresAuthSchema.organization.id,
           set: { name: DEFAULT_ORGANIZATION_NAME },
-          setWhere: eq(postgresAuthSchema.organization.name, EXTERNAL_ORGANIZATION_ID),
+          setWhere: eq(postgresAuthSchema.organization.name, "external"),
         });
         const [external] = await db.select({ metadata: postgresAuthSchema.organization.metadata })
           .from(postgresAuthSchema.organization)
@@ -295,21 +320,21 @@ export function createPostgresApplicationStore(
             .where(eq(postgresAuthSchema.organization.id, EXTERNAL_ORGANIZATION_ID));
         }
         await db.insert(postgresAuthSchema.member).values({
-          id: `${EXTERNAL_ORGANIZATION_ID}:${ownerUserId}`,
+          id: uuidV7(),
           organizationId: EXTERNAL_ORGANIZATION_ID,
           userId: ownerUserId,
           role: "owner",
           createdAt: now,
-        }).onConflictDoUpdate({ target: postgresAuthSchema.member.id, set: { role: "owner" } });
+        }).onConflictDoUpdate({ target: [postgresAuthSchema.member.organizationId, postgresAuthSchema.member.userId], set: { role: "owner" } });
         const organizationRole = ownerUserId === identity.userId ? "owner" : "member";
         await db.insert(postgresAuthSchema.member).values({
-          id: `${EXTERNAL_ORGANIZATION_ID}:${identity.userId}`,
+          id: uuidV7(),
           organizationId: EXTERNAL_ORGANIZATION_ID,
           userId: identity.userId,
           role: organizationRole,
           createdAt: now,
         }).onConflictDoUpdate({
-          target: postgresAuthSchema.member.id,
+          target: [postgresAuthSchema.member.organizationId, postgresAuthSchema.member.userId],
           set: { role: organizationRole },
         });
       }
@@ -318,7 +343,7 @@ export function createPostgresApplicationStore(
     async seedDahliaClient(config) {
       const now = new Date();
       await db.insert(postgresSchema.oauthClient).values({
-        id: "oauth-client-databricks-cli",
+        id: "01990ab0-0000-7000-8000-000000000003",
         clientId: DAHLIA_DESKTOP_CLIENT_ID,
         name: "Dahlia for macOS",
         tokenEndpointAuthMethod: "none",
@@ -355,7 +380,7 @@ export function createPostgresApplicationStore(
         .where(eq(postgresSchema.oauthResource.identifier, resource)).limit(1);
       if (!oauthResource) throw new Error("Dahlia AI Gateway OAuth resource was not created");
       await db.insert(postgresSchema.oauthClientResource).values({
-        id: "oauth-client-resource-databricks-cli",
+        id: "01990ab0-0000-7000-8000-000000000004",
         clientId: DAHLIA_DESKTOP_CLIENT_ID,
         resourceId: resource,
         createdAt: now,
@@ -488,7 +513,7 @@ export function createPostgresApplicationStore(
       if ((await externalMembership(userId))?.role !== "owner") return null;
       const now = new Date();
       const [team] = await db.insert(postgresAuthSchema.team).values({
-        id: crypto.randomUUID(),
+        id: uuidV7(),
         name,
         organizationId: EXTERNAL_ORGANIZATION_ID,
         createdAt: now,
@@ -552,7 +577,7 @@ export function createPostgresApplicationStore(
         )).limit(1);
       if (!candidate) return false;
       await db.insert(postgresAuthSchema.teamMember).values({
-        id: `${teamId}:${memberUserId}`,
+        id: uuidV7(),
         teamId,
         userId: memberUserId,
         createdAt: new Date(),
@@ -628,6 +653,29 @@ export function createSqliteApplicationStore(
     database: drizzleAdapter(db, { provider: "sqlite", schema: sqliteAuthSchema, transaction: transactions }),
     accountSettings: createAccountSettingsStore(db, false),
     sync: createSqliteMeetingSyncStore(db, searchEmbedding),
+    async resolveHeaderUser(identity) {
+      const find = async () => {
+        const [account] = await db.select({ userId: sqliteAuthSchema.account.userId }).from(sqliteAuthSchema.account)
+          .where(and(eq(sqliteAuthSchema.account.issuer, HEADER_IDENTITY_ISSUER), eq(sqliteAuthSchema.account.accountId, identity.userId))).limit(1);
+        return account?.userId ?? null;
+      };
+      const existing = await find();
+      if (existing) return existing;
+      try {
+        return await db.transaction(async (tx) => {
+          const userId = uuidV7();
+          const now = new Date();
+          await tx.insert(sqliteAuthSchema.user).values({ id: userId, email: identity.email ?? identity.userId,
+            name: identity.name ?? identity.email ?? identity.userId, emailVerified: true, role: "user", createdAt: now, updatedAt: now });
+          await tx.insert(sqliteAuthSchema.account).values({ id: uuidV7(), userId, issuer: HEADER_IDENTITY_ISSUER,
+            providerId: "header", accountId: identity.userId, createdAt: now, updatedAt: now });
+          return userId;
+        });
+      } catch (error) {
+        if (!isUniqueConstraintError(error)) throw error;
+        return find();
+      }
+    },
     async ensureIdentityUser(identity) {
       const now = new Date();
       const identityUser = () => db.select({
@@ -652,12 +700,12 @@ export function createSqliteApplicationStore(
         hasLegacyExternalOrganization: sql<boolean>`exists (
           select 1 from ${sqliteAuthSchema.organization}
           where ${sqliteAuthSchema.organization.id} = ${EXTERNAL_ORGANIZATION_ID}
-            and ${sqliteAuthSchema.organization.name} = ${EXTERNAL_ORGANIZATION_ID}
+            and ${sqliteAuthSchema.organization.name} = 'external'
         )`,
         hasInitializedExternalOrganization: sql<boolean>`exists (
           select 1 from ${sqliteAuthSchema.organization}
           where ${sqliteAuthSchema.organization.id} = ${EXTERNAL_ORGANIZATION_ID}
-            and ${sqliteAuthSchema.organization.name} <> ${EXTERNAL_ORGANIZATION_ID}
+            and ${sqliteAuthSchema.organization.name} <> 'external'
         )`,
         name: sqliteAuthSchema.user.name,
       }).from(sqliteAuthSchema.user).where(eq(sqliteAuthSchema.user.id, identity.userId)).limit(1);
@@ -717,7 +765,7 @@ export function createSqliteApplicationStore(
             database.insert(sqliteAuthSchema.organization).select(database.select({
               id: sql<string>`${EXTERNAL_ORGANIZATION_ID}`.as("id"),
               name: sql<string>`${DEFAULT_ORGANIZATION_NAME}`.as("name"),
-              slug: sql<string>`${EXTERNAL_ORGANIZATION_ID}`.as("slug"),
+              slug: sql<string>`'external'`.as("slug"),
               logo: sql<string | null>`null`.as("logo"),
               createdAt: sql<Date>`${now.getTime()}`.as("created_at"),
               metadata: sql<string>`${JSON.stringify({ ownerUserId: identity.userId })}`.as("metadata"),
@@ -732,7 +780,7 @@ export function createSqliteApplicationStore(
             ))),
             database.update(sqliteAuthSchema.organization).set({ name: DEFAULT_ORGANIZATION_NAME }).where(and(
               eq(sqliteAuthSchema.organization.id, EXTERNAL_ORGANIZATION_ID),
-              eq(sqliteAuthSchema.organization.name, EXTERNAL_ORGANIZATION_ID),
+              eq(sqliteAuthSchema.organization.name, "external"),
             )),
           ] as const;
           if (is(db, DrizzleD1Database)) {
@@ -751,13 +799,13 @@ export function createSqliteApplicationStore(
         await db.insert(sqliteAuthSchema.organization).values({
           id: EXTERNAL_ORGANIZATION_ID,
           name: DEFAULT_ORGANIZATION_NAME,
-          slug: EXTERNAL_ORGANIZATION_ID,
+          slug: "external",
           createdAt: now,
           metadata: JSON.stringify({ ownerUserId: initialAdmin.id }),
         }).onConflictDoUpdate({
           target: sqliteAuthSchema.organization.id,
           set: { name: DEFAULT_ORGANIZATION_NAME },
-          setWhere: eq(sqliteAuthSchema.organization.name, EXTERNAL_ORGANIZATION_ID),
+          setWhere: eq(sqliteAuthSchema.organization.name, "external"),
         });
         const [external] = await db.select({ metadata: sqliteAuthSchema.organization.metadata })
           .from(sqliteAuthSchema.organization)
@@ -770,21 +818,21 @@ export function createSqliteApplicationStore(
             .where(eq(sqliteAuthSchema.organization.id, EXTERNAL_ORGANIZATION_ID));
         }
         await db.insert(sqliteAuthSchema.member).values({
-          id: `${EXTERNAL_ORGANIZATION_ID}:${ownerUserId}`,
+          id: uuidV7(),
           organizationId: EXTERNAL_ORGANIZATION_ID,
           userId: ownerUserId,
           role: "owner",
           createdAt: now,
-        }).onConflictDoUpdate({ target: sqliteAuthSchema.member.id, set: { role: "owner" } });
+        }).onConflictDoUpdate({ target: [sqliteAuthSchema.member.organizationId, sqliteAuthSchema.member.userId], set: { role: "owner" } });
         const organizationRole = ownerUserId === identity.userId ? "owner" : "member";
         await db.insert(sqliteAuthSchema.member).values({
-          id: `${EXTERNAL_ORGANIZATION_ID}:${identity.userId}`,
+          id: uuidV7(),
           organizationId: EXTERNAL_ORGANIZATION_ID,
           userId: identity.userId,
           role: organizationRole,
           createdAt: now,
         }).onConflictDoUpdate({
-          target: sqliteAuthSchema.member.id,
+          target: [sqliteAuthSchema.member.organizationId, sqliteAuthSchema.member.userId],
           set: { role: organizationRole },
         });
       }
@@ -793,7 +841,7 @@ export function createSqliteApplicationStore(
     async seedDahliaClient(config) {
       const now = new Date();
       await db.insert(sqliteSchema.oauthClient).values({
-        id: "oauth-client-databricks-cli",
+        id: "01990ab0-0000-7000-8000-000000000003",
         clientId: DAHLIA_DESKTOP_CLIENT_ID,
         name: "Dahlia for macOS",
         tokenEndpointAuthMethod: "none",
@@ -830,7 +878,7 @@ export function createSqliteApplicationStore(
         .where(eq(sqliteSchema.oauthResource.identifier, resource)).limit(1);
       if (!oauthResource) throw new Error("Dahlia AI Gateway OAuth resource was not created");
       await db.insert(sqliteSchema.oauthClientResource).values({
-        id: "oauth-client-resource-databricks-cli",
+        id: "01990ab0-0000-7000-8000-000000000004",
         clientId: DAHLIA_DESKTOP_CLIENT_ID,
         resourceId: resource,
         createdAt: now,
@@ -957,7 +1005,7 @@ export function createSqliteApplicationStore(
       if ((await externalMembership(userId))?.role !== "owner") return null;
       const now = new Date();
       const [team] = await db.insert(sqliteAuthSchema.team).values({
-        id: crypto.randomUUID(),
+        id: uuidV7(),
         name,
         organizationId: EXTERNAL_ORGANIZATION_ID,
         createdAt: now,
@@ -1021,7 +1069,7 @@ export function createSqliteApplicationStore(
         )).limit(1);
       if (!candidate) return false;
       await db.insert(sqliteAuthSchema.teamMember).values({
-        id: `${teamId}:${memberUserId}`,
+        id: uuidV7(),
         teamId,
         userId: memberUserId,
         createdAt: new Date(),
@@ -1082,7 +1130,26 @@ export function createSqliteApplicationStore(
 
 export function createD1ApplicationStore(database: D1DatabaseLike): ApplicationStore {
   const store = createSqliteApplicationStore(drizzleD1(database as unknown as D1Database), false, undefined);
-  return { ...store, sync: createUnavailableMeetingSyncStore() };
+  return { ...store, sync: createUnavailableMeetingSyncStore(),
+    async resolveHeaderUser(identity) {
+      const userId = uuidV7();
+      const now = Date.now();
+      await database.batch([
+        database.prepare(`INSERT INTO user (id, name, email, email_verified, role, created_at, updated_at)
+          SELECT ?, ?, ?, 1, 'user', ?, ? WHERE NOT EXISTS (SELECT 1 FROM account WHERE issuer = ? AND account_id = ?)
+          ON CONFLICT DO NOTHING`).bind(userId, identity.name ?? identity.email ?? identity.userId,
+          identity.email ?? identity.userId, now, now, HEADER_IDENTITY_ISSUER, identity.userId),
+        database.prepare(`INSERT INTO account (id, user_id, issuer, provider_id, account_id, created_at, updated_at)
+          SELECT ?, id, ?, 'header', ?, ?, ? FROM user WHERE id = ? ON CONFLICT DO NOTHING`)
+          .bind(uuidV7(), HEADER_IDENTITY_ISSUER, identity.userId, now, now, userId),
+        database.prepare(`DELETE FROM user WHERE id = ? AND NOT EXISTS (SELECT 1 FROM account WHERE user_id = ?)`)
+          .bind(userId, userId),
+      ]);
+      const row = await database.prepare("SELECT user_id FROM account WHERE issuer = ? AND account_id = ?")
+        .bind(HEADER_IDENTITY_ISSUER, identity.userId).first<{ user_id: string }>();
+      return row?.user_id ?? null;
+    },
+  };
 }
 
 /** @deprecated Use createPostgresApplicationStore. */

@@ -1,3 +1,4 @@
+import { encodeId } from "../src/typeid";
 import { apiUrls } from "../src/client/generated-operations";
 import { SummaryHistory } from "../src/client/SummaryHistory";
 import { RecordingIndicator } from "../src/client/RecordingIndicator";
@@ -344,7 +345,7 @@ describe("dashboard navigation", () => {
   });
 
   it("resolves canonical detail URLs and preserves capability gates", () => {
-    for (const [path, result] of [["/projects/p1", { page: "project", projectId: "p1" }], ["/meetings/m1", { page: "meeting", meetingId: "m1" }], ["/files/f1", { page: "file", fileId: "f1" }]] as const) {
+    for (const [path, result] of [[`/projects/${encodeId("project", "01990ab0-0000-7000-8000-000000000001")}`, { page: "project", projectId: encodeId("project", "01990ab0-0000-7000-8000-000000000001") }], [`/meetings/${encodeId("meeting", "01990ab0-0000-7000-8000-000000000001")}`, { page: "meeting", meetingId: encodeId("meeting", "01990ab0-0000-7000-8000-000000000001") }], [`/files/${encodeId("file", "01990ab0-0000-7000-8000-000000000001")}`, { page: "file", fileId: encodeId("file", "01990ab0-0000-7000-8000-000000000001") }]] as const) {
       expect(resolveDashboardRoute(path, { admin: false, sessions: true, sync: true })).toEqual(result);
       expect(resolveDashboardRoute(path, { admin: false, sessions: true, sync: false })).toEqual({ redirect: "/dashboard" });
       expect(dashboardNavigationPath(path, "https://dahlia.example/vaults/v1")).toBe(path);
@@ -364,11 +365,12 @@ describe("dashboard navigation", () => {
   it("gates synchronized Vault routes with the sync capability", () => {
     const enabled = { admin: false, sessions: false, sync: true };
     expect(resolveDashboardRoute("/vaults", enabled)).toEqual({ page: "vaults" });
-    expect(resolveDashboardRoute("/vaults/v1", enabled)).toEqual({ page: "vault", vaultId: "v1" });
+    const vault = encodeId("vault", "01990ab0-0000-7000-8000-000000000001");
+    expect(resolveDashboardRoute(`/vaults/${vault}`, enabled)).toEqual({ page: "vault", vaultId: vault });
     expect(resolveDashboardRoute("/vaults/v1/projects/p1", enabled))
-      .toEqual({ redirect: "/projects/p1" });
+      .toEqual({ redirect: "/dashboard" });
     expect(resolveDashboardRoute("/vaults/v1/meetings/m1", enabled))
-      .toEqual({ redirect: "/meetings/m1" });
+      .toEqual({ redirect: "/dashboard" });
     expect(resolveDashboardRoute("/vaults", { admin: false, sessions: false, sync: false }))
       .toEqual({ redirect: "/dashboard" });
   });
@@ -384,8 +386,9 @@ describe("dashboard navigation", () => {
       .toEqual({ redirect: "/dashboard" });
     expect(resolveDashboardRoute("/organizations/external", { ...enabled, sessions: false }))
       .toEqual({ page: "organization", organizationSlug: "external" });
-    expect(resolveDashboardRoute("/accept-invitation/invitation-1", enabled))
-      .toEqual({ page: "invitation", invitationId: "invitation-1" });
+    const invitation = encodeId("invitation", "01990ab0-0000-7000-8000-000000000001");
+    expect(resolveDashboardRoute(`/accept-invitation/${invitation}`, enabled))
+      .toEqual({ page: "invitation", invitationId: invitation });
     expect(resolveDashboardRoute("/organizations", { ...enabled, sharing: false }))
       .toEqual({ redirect: "/dashboard" });
     expect(resolveDashboardRoute("/organizations", { ...enabled, sessions: false }))

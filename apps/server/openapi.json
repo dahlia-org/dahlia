@@ -1494,7 +1494,7 @@
               "entity": {
                 "type": "string",
                 "enum": [
-                  "meeting_file"
+                  "meeting_attachment"
                 ]
               },
               "id": {
@@ -1519,7 +1519,7 @@
                 "maximum": 9007199254740991
               },
               "record": {
-                "$ref": "#/components/schemas/NullableMeetingFileRecord"
+                "$ref": "#/components/schemas/NullableMeetingAttachmentRecord"
               }
             },
             "required": [
@@ -2451,7 +2451,7 @@
           "updatedAt"
         ]
       },
-      "NullableMeetingFileRecord": {
+      "NullableMeetingAttachmentRecord": {
         "type": [
           "object",
           "null"
@@ -3847,7 +3847,7 @@
               "entity": {
                 "type": "string",
                 "enum": [
-                  "meeting_file"
+                  "meeting_attachment"
                 ]
               },
               "id": {
@@ -3864,7 +3864,7 @@
                 "maximum": 9007199254740991
               },
               "record": {
-                "$ref": "#/components/schemas/NullableMeetingFileRecord"
+                "$ref": "#/components/schemas/NullableMeetingAttachmentRecord"
               }
             },
             "required": [
@@ -5759,7 +5759,7 @@
                     "entity": {
                       "type": "string",
                       "enum": [
-                        "meeting_file"
+                        "meeting_attachment"
                       ]
                     },
                     "action": {
@@ -5839,7 +5839,7 @@
                     "entity": {
                       "type": "string",
                       "enum": [
-                        "meeting_file"
+                        "meeting_attachment"
                       ]
                     },
                     "action": {
@@ -6300,7 +6300,7 @@
                     "entity": {
                       "type": "string",
                       "enum": [
-                        "meeting_file"
+                        "meeting_attachment"
                       ]
                     },
                     "entityId": {
@@ -6330,7 +6330,7 @@
                       "example": "019f0d36-0520-7000-8000-000000000001"
                     },
                     "record": {
-                      "$ref": "#/components/schemas/NullableMeetingFileRecord"
+                      "$ref": "#/components/schemas/NullableMeetingAttachmentRecord"
                     }
                   },
                   "required": [

@@ -1,10 +1,11 @@
+import { testUserID, seedHeaderIdentity } from "./public-test-client";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { createApp } from "../src/app";
+import { createApp } from "./public-test-client";
 import { createNodeApplicationStore, type NodeApplicationStore } from "../src/auth/node-store";
 import type { Identity } from "../src/auth/identity";
 import type { AppConfig } from "../src/config";
@@ -15,8 +16,8 @@ import { decodeSyncCursor, SYNC_HISTORY_RETENTION_MS, SYNC_SNAPSHOT_PAGE_BYTES }
 import type { SyncTransactionOperation } from "../src/sync/types";
 import { receipt as receiptSchema } from "../src/api/schemas";
 
-const owner: Identity = { userId: "retention-owner", workspaceId: "personal:retention-owner", source: "header" };
-const member: Identity = { userId: "retention-member", workspaceId: "personal:retention-member", source: "header" };
+const owner: Identity = { userId: testUserID("retention-owner"), workspaceId: `personal:${testUserID("retention-owner")}`, source: "header" };
+const member: Identity = { userId: testUserID("retention-member"), workspaceId: `personal:${testUserID("retention-member")}`, source: "header" };
 const resources: { directory: string; store: NodeApplicationStore; raw: DatabaseSync }[] = [];
 
 afterEach(async () => {
@@ -49,8 +50,8 @@ async function setup() {
   };
   const store = createNodeApplicationStore(config);
   await store.migrate();
-  await store.ensureIdentityUser(owner);
-  await store.ensureIdentityUser(member);
+  await seedHeaderIdentity(store, path, owner);
+  await seedHeaderIdentity(store, path, member);
   const raw = new DatabaseSync(path);
   resources.push({ directory, store, raw });
   const service = new MeetingSyncService(store.sync);
@@ -84,10 +85,10 @@ describe("sync history retention", () => {
       raw.prepare("UPDATE meetings SET transcript_revision = 1 WHERE meeting_id = ?").run(meetingId);
       raw.prepare("INSERT INTO files(file_id, vault_id, uri, size, content_type, checksum, name, metadata, active, uploaded_at, revision) VALUES (?, ?, ?, 1, 'image/png', ?, 'capture.png', ?, 1, ?, 1)")
         .run(screenshotId, vaultId, `/Volumes/test/app/files/files/${screenshotId}/original`, `SHA-256:${"a".repeat(64)}`, '{"source":"screenshot"}', Date.now());
-      raw.prepare("INSERT INTO meeting_files(id, vault_id, meeting_id, file_id, captured_at) VALUES (?, ?, ?, ?, ?)")
+      raw.prepare("INSERT INTO meeting_attachments(id, vault_id, meeting_id, file_id, captured_at) VALUES (?, ?, ?, ?, ?)")
         .run(screenshotId, vaultId, meetingId, screenshotId, Date.now());
       const snapshot = await service.listSnapshot(owner, vaultId);
-      expect(snapshot.items.map(({ entity }) => entity)).toEqual(["vault", "meeting", "summary", "transcript", "file", "meeting_file"]);
+      expect(snapshot.items.map(({ entity }) => entity)).toEqual(["vault", "meeting", "summary", "transcript", "file", "meeting_attachment"]);
       if (scenario === "updated") {
         await service.commitTransaction(owner, body(vaultId, [{
           entity: "meeting", action: "update", entityId: meetingId, baseRevision: 1,
@@ -110,7 +111,7 @@ describe("sync history retention", () => {
       expect(delta.items).toEqual(expect.arrayContaining([
         expect.objectContaining({ entity: "transcript", entityId: meetingId,
           action: scenario === "deleted" ? "delete" : "upsert", revision: scenario === "deleted" ? null : 0 }),
-        expect.objectContaining({ entity: "meeting_file", entityId: screenshotId, action: "delete" }),
+        expect.objectContaining({ entity: "meeting_attachment", entityId: screenshotId, action: "delete" }),
         expect.objectContaining({ entity: "meeting", entityId: meetingId, action: scenario === "deleted" ? "delete" : "upsert" }),
       ]));
       const summary = delta.items.find(({ entity }) => entity === "summary");

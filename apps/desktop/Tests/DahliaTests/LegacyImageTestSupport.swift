@@ -25,7 +25,7 @@ import GRDB
                 remoteReference: remoteReference
             ).insert(db)
             try FileTextBodyRecord(fileId: originalFileId, ocrText: ocrText, caption: caption).insert(db)
-            try MeetingFileRecord(
+            try MeetingAttachmentRecord(
                 id: id,
                 meetingId: meetingId,
                 fileId: originalFileId,
@@ -55,7 +55,7 @@ import GRDB
             "createdAt": .string("2026-09-06T00:00:00Z"),
             "capturedAt": .string("2026-09-06T00:00:00Z"),
         ]
-        return try [(SyncEntity.file, file), (.meetingFile, link)].enumerated().map { index, item in
+        return try [(SyncEntity.file, file), (.meetingAttachment, link)].enumerated().map { index, item in
             try SyncChangePage.Change(
                 sequence: index + 2,
                 entity: item.0,

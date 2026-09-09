@@ -49,7 +49,7 @@ enum TextContentMigration {
                 try db.execute(sql: sql.replacingOccurrences(of: "UPDATE OF document", with: "UPDATE"))
                 sql = sql.replacingOccurrences(of: name, with: name + "_body")
                     .replacingOccurrences(of: "ON summaries", with: "ON summary_bodies")
-            } else if name == "search_queue_meeting_files_insert" {
+            } else if name == "search_queue_meeting_attachments_insert" {
                 sql = sql.replacingOccurrences(
                     of: "json_extract(metadata, '$.ocr_text')",
                     with: "(SELECT ocrText FROM file_text_bodies WHERE fileId = files.id)"
@@ -138,7 +138,7 @@ enum TextContentMigration {
                     CREATE TRIGGER search_queue_file_text_\(event.lowercased()) AFTER \(event) ON file_text_bodies BEGIN
                         INSERT INTO search_index_jobs(indexKind, targetKind, targetKey, priority, availableAt, updatedAt)
                         SELECT 'fts', 'screenshot', id, 0, unixepoch('subsec'), unixepoch('subsec')
-                        FROM meeting_files WHERE fileId = \(row).fileId
+                        FROM meeting_attachments WHERE fileId = \(row).fileId
                         ON CONFLICT(indexKind, targetKind, targetKey) DO UPDATE SET
                             generation = generation + 1, status = 'pending', attempts = 0;
                     END;

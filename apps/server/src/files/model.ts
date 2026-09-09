@@ -48,7 +48,7 @@ export interface FileRecord {
   updatedAt: Date;
 }
 
-export interface MeetingFileRecord {
+export interface MeetingAttachmentRecord {
   id: string;
   vaultId: string;
   meetingId: string;

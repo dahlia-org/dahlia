@@ -1621,7 +1621,7 @@ export interface components {
             record: components["schemas"]["NullableFileRecord"];
         } | {
             /** @enum {string} */
-            entity: "meeting_file";
+            entity: "meeting_attachment";
             /**
              * Format: uuid
              * @example 019f0d36-0520-7000-8000-000000000001
@@ -1629,7 +1629,7 @@ export interface components {
             id: string;
             clientBaseRevision: number | null;
             serverRevision: number | null;
-            record: components["schemas"]["NullableMeetingFileRecord"];
+            record: components["schemas"]["NullableMeetingAttachmentRecord"];
         } | {
             /** @enum {string} */
             entity: "recording";
@@ -1894,7 +1894,7 @@ export interface components {
             contentOmitted?: boolean;
             contentPresent?: boolean;
         } | null;
-        NullableMeetingFileRecord: {
+        NullableMeetingAttachmentRecord: {
             /**
              * Format: uuid
              * @example 019f0d36-0520-7000-8000-000000000001
@@ -2270,14 +2270,14 @@ export interface components {
             record?: components["schemas"]["NullableFileRecord"];
         } | {
             /** @enum {string} */
-            entity: "meeting_file";
+            entity: "meeting_attachment";
             /**
              * Format: uuid
              * @example 019f0d36-0520-7000-8000-000000000001
              */
             id: string;
             revision: number | null;
-            record?: components["schemas"]["NullableMeetingFileRecord"];
+            record?: components["schemas"]["NullableMeetingAttachmentRecord"];
         } | {
             /** @enum {string} */
             entity: "recording";
@@ -2671,7 +2671,7 @@ export interface components {
             } | {
                 id: string;
                 /** @enum {string} */
-                entity: "meeting_file";
+                entity: "meeting_attachment";
                 /** @enum {string} */
                 action: "upsert";
                 /** Format: uuid */
@@ -2692,7 +2692,7 @@ export interface components {
             } | {
                 id: string;
                 /** @enum {string} */
-                entity: "meeting_file";
+                entity: "meeting_attachment";
                 /** @enum {string} */
                 action: "delete";
                 /** Format: uuid */
@@ -2857,7 +2857,7 @@ export interface components {
                  */
                 vaultId: string;
                 /** @enum {string} */
-                entity: "meeting_file";
+                entity: "meeting_attachment";
                 /**
                  * Format: uuid
                  * @example 019f0d36-0520-7000-8000-000000000001
@@ -2871,7 +2871,7 @@ export interface components {
                  * @example 019f0d36-0520-7000-8000-000000000001
                  */
                 transactionId: string;
-                record: components["schemas"]["NullableMeetingFileRecord"];
+                record: components["schemas"]["NullableMeetingAttachmentRecord"];
             } | {
                 sequence: number;
                 /**

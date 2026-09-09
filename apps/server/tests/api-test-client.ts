@@ -1,6 +1,7 @@
 import { expect } from "vitest";
 import { type RouteConfig, z } from "@hono/zod-openapi";
-import { createApp, type AppDependencies } from "../src/app";
+import type { AppDependencies } from "../src/app";
+import { createApp } from "./public-test-client";
 import { contracts } from "../src/api/contracts";
 
 export function validate(request: Request, response: Response) {

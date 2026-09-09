@@ -1,3 +1,4 @@
+import { testUserID } from "./public-test-client";
 import { describe, expect, it, vi } from "vitest";
 
 import type { AppConfig } from "../src/config";
@@ -198,7 +199,7 @@ describe("AI Gateway", () => {
       body: JSON.stringify({ model: "gpt-5-6-luna", input: [], identity: { userId: "forged" }, upstreamModel: "other.ai.model" }),
     });
     expect(response.status).toBe(200);
-    expect(new Headers(transport.mock.calls[0]![1]?.headers).get("Databricks-Ai-Gateway-Request-Tags")).toBe('{"user_id":"real@example.com"}');
+    expect(new Headers(transport.mock.calls[0]![1]?.headers).get("Databricks-Ai-Gateway-Request-Tags")).toBe(JSON.stringify({ user_id: testUserID("real@example.com") }));
     expect(JSON.parse(String(transport.mock.calls[0]![1]?.body))).toMatchObject({ model: "dahlia.ai.gpt-5-6-luna" });
   });
 

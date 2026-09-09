@@ -59,7 +59,7 @@ describe("proxy identity boundary", () => {
     const projected: string[] = [];
     const identities = new IdentityService(headerConfig("X-Forwarded-Email"), undefined, async (identity) => {
       projected.push(identity.userId);
-      return true;
+      return identity;
     });
 
     await identities.fromBrowser(new Request("https://dahlia.example/api/v1/session", {
@@ -76,7 +76,7 @@ describe("proxy identity boundary", () => {
     const identities = new IdentityService(
       headerConfig("X-Forwarded-Email"),
       undefined,
-      () => Promise.resolve(false),
+      () => Promise.resolve(null),
     );
 
     await expect(identities.fromBrowser(new Request("https://dahlia.example/api/v1/session", {

@@ -295,7 +295,7 @@ CREATE TABLE `meeting_events` (
 	CONSTRAINT "meeting_events_source_check" CHECK("audio_source" IN ('mic', 'system'))
 );
 --> statement-breakpoint
-CREATE TABLE `meeting_files` (
+CREATE TABLE `meeting_attachments` (
 	`id` text PRIMARY KEY,
 	`vault_id` text NOT NULL,
 	`meeting_id` text NOT NULL,
@@ -304,9 +304,9 @@ CREATE TABLE `meeting_files` (
 	`session_id` text,
 	`created_at` integer DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)) NOT NULL,
 	`revision` integer DEFAULT 1 NOT NULL,
-	CONSTRAINT `fk_meeting_files_vault_id_meeting_id_meetings_vault_id_meeting_id_fk` FOREIGN KEY (`vault_id`,`meeting_id`) REFERENCES `meetings`(`vault_id`,`meeting_id`) ON DELETE CASCADE,
-	CONSTRAINT `fk_meeting_files_vault_id_file_id_files_vault_id_file_id_fk` FOREIGN KEY (`vault_id`,`file_id`) REFERENCES `files`(`vault_id`,`file_id`),
-	CONSTRAINT `meeting_files_meeting_file_unique` UNIQUE(`meeting_id`,`file_id`)
+	CONSTRAINT `fk_meeting_attachments_vault_id_meeting_id_meetings_vault_id_meeting_id_fk` FOREIGN KEY (`vault_id`,`meeting_id`) REFERENCES `meetings`(`vault_id`,`meeting_id`) ON DELETE CASCADE,
+	CONSTRAINT `fk_meeting_attachments_vault_id_file_id_files_vault_id_file_id_fk` FOREIGN KEY (`vault_id`,`file_id`) REFERENCES `files`(`vault_id`,`file_id`),
+	CONSTRAINT `meeting_attachments_meeting_attachment_unique` UNIQUE(`meeting_id`,`file_id`)
 );
 --> statement-breakpoint
 CREATE TABLE `search_documents` (
@@ -420,7 +420,7 @@ CREATE TABLE `sync_changes` (
 	`revision` integer,
 	`transaction_id` text NOT NULL,
 	`created_at` integer DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)) NOT NULL,
-	CONSTRAINT "sync_change_entity_check" CHECK("entity" IN ('vault', 'project', 'meeting', 'summary', 'transcript', 'file', 'meeting_file', 'recording')),
+	CONSTRAINT "sync_change_entity_check" CHECK("entity" IN ('vault', 'project', 'meeting', 'summary', 'transcript', 'file', 'meeting_attachment', 'recording')),
 	CONSTRAINT "sync_change_action_check" CHECK("action" IN ('upsert', 'delete', 'reset'))
 );
 --> statement-breakpoint
@@ -634,7 +634,7 @@ CREATE INDEX `verification_identifier_idx` ON `verification` (`identifier`);--> 
 CREATE INDEX `image_analysis_job_claim_idx` ON `jobs_image_analysis` (`status`,`available_at`,`lease_expires_at`);--> statement-breakpoint
 CREATE INDEX `meeting_events_meeting_time_idx` ON `meeting_events` (`vault_id`,`meeting_id`,`occurred_at`,`id`);--> statement-breakpoint
 CREATE INDEX `meeting_events_session_idx` ON `meeting_events` (`vault_id`,`session_id`);--> statement-breakpoint
-CREATE INDEX `meeting_files_vault_meeting_id_idx` ON `meeting_files` (`vault_id`,`meeting_id`,`id`);--> statement-breakpoint
+CREATE INDEX `meeting_attachments_vault_meeting_id_idx` ON `meeting_attachments` (`vault_id`,`meeting_id`,`id`);--> statement-breakpoint
 CREATE INDEX `search_document_vault_kind_meeting_document_idx` ON `search_documents` (`vault_id`,`kind`,`meeting_id`,`document_id`);--> statement-breakpoint
 CREATE INDEX `search_index_job_claim_idx` ON `jobs_search_index` (`status`,`available_at`,`lease_expires_at`);--> statement-breakpoint
 CREATE INDEX `storage_delete_job_claim_idx` ON `jobs_storage_delete` (`status`,`available_at`,`lease_expires_at`);--> statement-breakpoint
@@ -668,6 +668,6 @@ CREATE VIEW `meeting_images` AS
     json_extract(f.metadata, '$.ocr_text') AS ocr_text,
     json_extract(f.metadata, '$.caption') AS caption,
     m.revision
-  FROM meeting_files m JOIN files f ON f.file_id = m.file_id AND f.vault_id = m.vault_id
+  FROM meeting_attachments m JOIN files f ON f.file_id = m.file_id AND f.vault_id = m.vault_id
   WHERE json_extract(f.metadata, '$.source') = 'screenshot'
 ;

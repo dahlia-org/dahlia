@@ -1,6 +1,6 @@
-CREATE INDEX `member_user_organization_idx` ON `member` (`user_id`,`organization_id`);
+CREATE UNIQUE INDEX `member_user_organization_idx` ON `member` (`user_id`,`organization_id`);
 --> statement-breakpoint
-CREATE INDEX `team_member_user_team_idx` ON `team_member` (`user_id`,`team_id`);
+CREATE UNIQUE INDEX `team_member_user_team_idx` ON `team_member` (`user_id`,`team_id`);
 --> statement-breakpoint
 CREATE VIRTUAL TABLE `search_documents_fts` USING fts5(
   `search_text`, content=`search_documents`, content_rowid=`rowid`, tokenize='unicode61'

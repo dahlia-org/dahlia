@@ -136,7 +136,7 @@
             #expect(stored.sha256 == attachment.sha256)
 
             try await database.dbQueue.write { db in
-                _ = try MeetingFileRecord.deleteOne(db, key: screenshot.id)
+                _ = try MeetingAttachmentRecord.deleteOne(db, key: screenshot.id)
             }
             #expect(try await database.dbQueue.read { db in
                 try Int.fetchOne(
@@ -446,7 +446,7 @@
                     vaultId: vault.id,
                     operations: [
                         SyncInitialSnapshotBuilder.fileOperation(#require(try FileRecord.fetchOne(db, key: screenshot.id)), in: db),
-                        SyncInitialSnapshotBuilder.meetingFileOperation(screenshot),
+                        SyncInitialSnapshotBuilder.meetingAttachmentOperation(screenshot),
                     ],
                     in: db
                 )
@@ -1309,7 +1309,7 @@
             try await database.dbQueue.write { try meeting.insert($0) }
             let fileId = UUID.v7()
             let changes = try canonicalImageChanges(fileId: fileId, meetingId: meeting.id)
-            let association = changes.filter { $0.entity == .meetingFile }
+            let association = changes.filter { $0.entity == .meetingAttachment }
             #expect(try await SyncWorker.missingParentFileIDs(in: association, vaultId: vault.id, dbQueue: database.dbQueue) == [fileId])
             #expect(try await RemoteChangeApplier.apply(
                 changes.filter { $0.entity == .file },
@@ -1330,7 +1330,7 @@
                 expectedConnectionId: #require(vault.accountConnectionId),
                 dbQueue: database.dbQueue
             ))
-            #expect(try await database.dbQueue.read { try MeetingFileRecord.fetchOne($0, key: fileId)?.fileId } == fileId)
+            #expect(try await database.dbQueue.read { try MeetingAttachmentRecord.fetchOne($0, key: fileId)?.fileId } == fileId)
         }
 
         @Test
@@ -1353,7 +1353,7 @@
                 ),
                 SyncChangePage.Change(
                     sequence: 2,
-                    entity: .meetingFile,
+                    entity: .meetingAttachment,
                     entityId: screenshotId,
                     action: "upsert",
                     revision: 1,

@@ -12,7 +12,7 @@ describe("PostgreSQL migrations", () => {
   it("forces RLS on the new file tables before enabling canonical sync", () => {
     const sql = serverMigrationManifest.postgres.files
       .map((path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8")).join("\n");
-    for (const table of ["files", "meeting_files", "account_settings", "summaries"]) {
+    for (const table of ["files", "meeting_attachments", "account_settings", "summaries"]) {
       const created = sql.indexOf(`CREATE TABLE "app"."${table}"`);
       expect(created).toBeGreaterThan(-1);
       expect(sql.indexOf(`ALTER TABLE "app"."${table}" FORCE ROW LEVEL SECURITY`, created)).toBeGreaterThan(created);
@@ -20,7 +20,7 @@ describe("PostgreSQL migrations", () => {
   });
 
   it("fails D1 sync closed until writes use atomic D1 batches", async () => {
-    const store = createD1ApplicationStore({ prepare: vi.fn() });
+    const store = createD1ApplicationStore({ batch: vi.fn(), prepare: vi.fn() });
     expect(await store.sync.isAvailable()).toBe(false);
   });
 
@@ -114,7 +114,7 @@ describe("PostgreSQL migrations", () => {
     expect(sql).not.toContain('CREATE TABLE "app"."artifact"');
     expect(sql).toContain('CREATE TABLE "app"."vaults"');
     expect(sql).toContain('CREATE TABLE "app"."vault_permissions"');
-    expect(sql).toContain('"granted_by_user_id" text NOT NULL');
+    expect(sql).toContain('"granted_by_user_id" uuid NOT NULL');
     expect(sql).not.toContain('"granted_by_principal_id"');
     expect(sql).toContain('CONSTRAINT "vault_permission_granted_by_user_fk"');
     expect(sql).toContain('CONSTRAINT "search_index_job_owner_user_fk"');
@@ -143,8 +143,8 @@ describe("PostgreSQL migrations", () => {
     expect(sql).not.toContain("dahlia.deployment_principal_id");
     expect(sql).not.toContain("dahlia.sync_sharing_enabled");
     expect(sql).toContain('CREATE UNIQUE INDEX "vault_permission_single_owner_idx"');
-    expect(sql).toContain('CREATE INDEX "member_user_organization_idx" ON "auth"."member" ("user_id","organization_id")');
-    expect(sql).toContain('CREATE INDEX "team_member_user_team_idx" ON "auth"."team_member" ("user_id","team_id")');
+    expect(sql).toContain('CREATE UNIQUE INDEX "member_user_organization_idx" ON "auth"."member" ("user_id","organization_id")');
+    expect(sql).toContain('CREATE UNIQUE INDEX "team_member_user_team_idx" ON "auth"."team_member" ("user_id","team_id")');
     expect(sql).toContain('"app"."current_identity_can_read_vault"("app"."vaults"."vault_id")');
     expect(sql).not.toContain('ALTER TABLE "app"."vault_permissions" ENABLE ROW LEVEL SECURITY');
     expect(sql).toContain('ALTER TABLE "app"."search_documents" FORCE ROW LEVEL SECURITY');

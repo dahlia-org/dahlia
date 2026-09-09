@@ -30,11 +30,11 @@ if arguments.first == "auth" {
 }
 
 guard arguments.count >= 2, arguments[0] == "--vault-id" else {
-    fail("Usage: dahlia-mcp --vault-id <UUID> [--write]")
+    fail("Usage: dahlia-mcp --vault-id <vlt_TypeID> [--write]")
 }
 
-guard let vaultID = UUID(uuidString: arguments[1]) else {
-    fail("--vault-id must be a valid UUID")
+guard let vaultID = try? TypeID.decode(arguments[1], as: .vault) else {
+    fail("--vault-id must be a valid vlt_ TypeID")
 }
 
 var allowsWrites = false
@@ -55,7 +55,7 @@ while argumentIndex < arguments.count {
         telemetryOrigin = origin
         argumentIndex += 2
     default:
-        fail("Usage: dahlia-mcp --vault-id <UUID> [--write]")
+        fail("Usage: dahlia-mcp --vault-id <vlt_TypeID> [--write]")
     }
 }
 

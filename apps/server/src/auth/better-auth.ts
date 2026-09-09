@@ -1,3 +1,4 @@
+import { uuidV7 } from "../id";
 import { oauthProvider } from "@better-auth/oauth-provider";
 import { oauthProviderResourceClient } from "@better-auth/oauth-provider/resource-client";
 import { betterAuth, type BetterAuthOptions } from "better-auth";
@@ -34,7 +35,7 @@ export function createDahliaAuth(
   const resource = gatewayResource(config);
   const mcp = mcpResource(config);
   return betterAuth({
-    advanced: { database: { joins: false } },
+    advanced: { database: { joins: false, generateId: () => uuidV7() } },
     appName: "Dahlia Server",
     basePath: "/api/auth",
     baseURL: config.baseUrl,

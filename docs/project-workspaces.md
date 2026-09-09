@@ -103,7 +103,7 @@ Meeting–Project is an exclusive assignment: a Meeting has zero or one `project
 
 ## MCP contract
 
-`dahlia-mcp --vault-id <UUID>` is read-only. Adding the sole capability flag, `--write`, publishes update tools.
+`dahlia-mcp --vault-id <vlt_TypeID>` is read-only. Adding the sole capability flag, `--write`, publishes update tools.
 Full-Vault in-app chat starts the helper with `--write`; summary-generation threads disable MCP tools.
 The in-app chat presets its skills in Dahlia's private `CODEX_HOME` and enables skill instructions for chat threads.
 Summary-generation threads keep skills disabled. `projects-optimizer` owns Project structure, Project descriptions, and
@@ -127,7 +127,7 @@ Read tools:
 
 All `query_meetings` parameters are optional filters. Clients should omit unused properties instead of sending empty
 strings. For compatibility with clients that populate every property, the server treats empty or whitespace-only
-optional string filters as unspecified; nonblank malformed UUIDs, dates, and cursors remain errors.
+optional string filters as unspecified; nonblank malformed TypeIDs, dates, and cursors remain errors.
 Text queries use the FTS index by default. Set `simple: true` to use literal substring matching (`LIKE`) against
 Meeting metadata instead. Project names and paths are excluded from both text-search modes; use `project` or
 `project_id` to filter meetings by Project. Summary body text is available only through the default FTS search.

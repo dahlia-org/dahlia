@@ -643,8 +643,8 @@ enum RemoteChangeApplier {
                 screenshots: Set(UUID.fetchAll(
                     db,
                     sql: """
-                    SELECT meeting_files.id FROM meeting_files
-                    JOIN meetings ON meetings.id = meeting_files.meetingId
+                    SELECT meeting_attachments.id FROM meeting_attachments
+                    JOIN meetings ON meetings.id = meeting_attachments.meetingId
                     WHERE meetings.vaultId = ?
                     """,
                     arguments: [vaultId]
@@ -664,7 +664,7 @@ enum RemoteChangeApplier {
         let deletions: [(sql: String, vaultScoped: Bool, ids: [UUID])] = [
             ("DELETE FROM recording_archives WHERE sessionId = ? AND vaultId = ?", true, Array(existing.recordings.subtracting(snapshot.recordings))),
             (
-                "DELETE FROM meeting_files WHERE id = ?",
+                "DELETE FROM meeting_attachments WHERE id = ?",
                 false,
                 Array(existing.screenshots.subtracting(snapshot.screenshots))
             ),
@@ -850,8 +850,8 @@ enum RemoteChangeApplier {
             try db.execute(sql: "DELETE FROM files WHERE id = ? AND vaultId = ?", arguments: [id, vaultId])
         case .recording:
             try db.execute(sql: "DELETE FROM recording_archives WHERE sessionId = ? AND vaultId = ?", arguments: [id, vaultId])
-        case .meetingFile:
-            try db.execute(sql: "DELETE FROM meeting_files WHERE id = ?", arguments: [id])
+        case .meetingAttachment:
+            try db.execute(sql: "DELETE FROM meeting_attachments WHERE id = ?", arguments: [id])
         case .vault, .meetingEvent:
             break
         }
@@ -884,8 +884,8 @@ enum RemoteChangeApplier {
                 segments: transcripts[change.entityId, default: []],
                 in: db
             )
-        case .meetingFile:
-            try MeetingFileRecord.applyCanonical(id: change.entityId, vaultId: vaultId, value: record, in: db)
+        case .meetingAttachment:
+            try MeetingAttachmentRecord.applyCanonical(id: change.entityId, vaultId: vaultId, value: record, in: db)
             try db.execute(
                 sql: "DELETE FROM jobs_search_index WHERE indexKind = 'fts' AND targetKind = 'screenshotAnalysis' AND targetKey = ?",
                 arguments: [change.entityId]
