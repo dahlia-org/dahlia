@@ -110,7 +110,7 @@ export const contracts: Record<OperationId, RouteConfig & { operationId: string 
   getVault: route("get", v, "getVault", "Get Vault", { 200: json(S.vault) }),
   listProjects: route("get", `${v}/projects`, "listProjects", "Vault project tree", { 200: json(S.page(S.project)) }),
   getProject: route("get", "/api/v1/projects/{projectId}", "getProject", "Resolve and get an accessible Project", { 200: json(S.project) }),
-  listMeetings: route("get", `${v}/meetings`, "listMeetings", "Meetings by creation time and ID; 200 per page", { 200: json(S.page(S.meeting)) }, { query: S.pageQuery.extend({ query: z.string().max(500).optional(), projectId: S.id.optional(), projectScope: z.enum(["direct", "subtree", "unassigned"]).optional() }).strict() }),
+  listMeetings: route("get", `${v}/meetings`, "listMeetings", "Meetings by creation time and ID; 200 per page", { 200: json(S.page(S.meeting)) }, { query: S.pageQuery.extend({ query: z.string().max(500).optional(), projectId: S.id.optional(), projectScope: z.enum(["direct", "unassigned"]).optional() }).strict() }),
   getMeeting: route("get", m, "getMeeting", "Resolve and get meeting metadata", { 200: json(S.meeting) }),
   listSummaries: route("get", `${m}/summaries`, "listSummaries", "Summary versions, newest first; bodies omitted", { 200: json(S.page(S.summary.omit({ document: true }))) }, { query: S.historyQuery }),
   getSummary: route("get", `${m}/summaries/{version}`, "getSummary", "Read a saved summary version", { 200: json(S.summary) }),

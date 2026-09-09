@@ -4322,7 +4322,7 @@ export interface operations {
                 cursor?: string;
                 query?: string;
                 projectId?: string;
-                projectScope?: "direct" | "subtree" | "unassigned";
+                projectScope?: "direct" | "unassigned";
             };
             header?: never;
             path: {

@@ -9471,7 +9471,6 @@
               "type": "string",
               "enum": [
                 "direct",
-                "subtree",
                 "unassigned"
               ]
             },

@@ -37,6 +37,9 @@ it("covers every Dahlia route exactly once and publishes the generated contract"
     expect(owned.has(`${route.method} ${route.path}`), `${route.method} ${route.path}`).toBe(true);
   }
   expect(await (await app.request("/openapi.json")).json()).toEqual(spec);
+  const meetingScope = spec.paths!["/api/v1/vaults/{vaultId}/meetings"]!.get!.parameters!
+    .find((parameter) => !("$ref" in parameter) && parameter.name === "projectScope");
+  expect(meetingScope).toMatchObject({ schema: { enum: ["direct", "unassigned"] } });
 });
 
 describe("generated Web client against the real SQLite Server", () => {

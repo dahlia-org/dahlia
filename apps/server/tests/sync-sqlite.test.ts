@@ -1652,7 +1652,7 @@ describe("SQLite canonical sync", () => {
     expect(await (await get(`projectId=${childId}&projectScope=direct`)).json()).toMatchObject({ items: [{ meetingId: childMeetingId }] });
     const legacy = await store.sync.withIdentity(owner, (sync) => sync.listMeetings(vaultId, undefined, 300, projectId));
     expect(legacy).toHaveLength(202);
-    for (const query of ["projectScope=direct", "projectScope=unknown", `projectScope=unassigned&projectId=${projectId}`]) {
+    for (const query of ["projectScope=direct", "projectScope=unknown", `projectScope=subtree&projectId=${projectId}`, `projectScope=unassigned&projectId=${projectId}`]) {
       expect((await get(query)).status).toBe(400);
     }
     await store.close?.();
