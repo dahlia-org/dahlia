@@ -18,6 +18,7 @@ const config = { authProvider: "header" as const, authHeader: "X-Forwarded-Email
 const headers = { "x-forwarded-email": "owner@example.com", "x-forwarded-user": "owner", "x-dahlia-vault-transfers": "1" };
 const id = () => crypto.randomUUID().replace(/^(.{14})./, "$17");
 const date = "2026-09-09T00:00:00.000Z";
+type PublishedResponse = { $ref?: string; headers?: unknown; content?: Record<string, { schema?: unknown; example?: unknown }> };
 
 
 it("covers every Dahlia route exactly once and publishes the generated contract", async () => {
@@ -135,9 +136,13 @@ it("keeps every published JSON example valid against the source wire schema", ()
       const parsed = requestSchema.safeParse(request.content["application/json"]?.example);
       expect.soft(parsed.success, `${contract.operationId} request: ${JSON.stringify(parsed.error?.issues)}`).toBe(true);
     }
-    const responses: Record<string, { $ref?: string; content?: Record<string, { example?: unknown }> }> = operation?.responses ?? {};
-    for (const [status, response] of Object.entries(responses)) {
-      if ("$ref" in response) continue;
+    const responses: Record<string, PublishedResponse> = operation?.responses ?? {};
+    for (const [status, declaredResponse] of Object.entries(responses)) {
+      const response: PublishedResponse = declaredResponse.$ref
+        ? spec.components!.responses![declaredResponse.$ref.split("/").at(-1)!]!
+        : declaredResponse;
+      expect(response).toBeDefined();
+      if ("$ref" in response) throw new Error("Expected a concrete shared response");
       for (const [type, media] of Object.entries(response.content ?? {})) {
         if (!type.includes("json")) continue;
         const declared = source.responses[status] as { content?: Record<string, { schema: z.ZodType }> };
@@ -146,6 +151,43 @@ it("keeps every published JSON example valid against the source wire schema", ()
       }
     }
   }
+});
+
+it("shares error responses and nullable record DTOs without losing their contracts", () => {
+  const spec = openapiDocument();
+  const responses = spec.components!.responses! as Record<string, PublishedResponse>;
+  expect(Object.keys(responses)).toHaveLength(18);
+  for (const contract of Object.values(contracts)) {
+    const operation = spec.paths![contract.path]![contract.method as "get"]!;
+    for (const [status, response] of Object.entries(operation.responses!)) {
+      if (Number(status) < 400) continue;
+      expect(response).toEqual({ $ref: `#/components/responses/Problem${status}` });
+      const shared = responses[`Problem${status}`]!;
+      if ("$ref" in shared) throw new Error("Expected a concrete shared response");
+      const source = contract.responses[status]!;
+      if ("$ref" in source) throw new Error("Expected a source response definition");
+      expect(shared.headers).toEqual(source.headers);
+      expect(shared.content!["application/problem+json"]!.schema).toEqual({ $ref: "#/components/schemas/Problem" });
+      expect(shared.content!["application/problem+json"]!.example).toMatchObject({ status: Number(status) });
+    }
+  }
+  // Nullable components preserve tombstones without unsupported Swift unions or allOf that rejects null.
+  const schemas = spec.components!.schemas! as Record<string, {
+    type?: string[];
+    anyOf?: { properties: Record<string, unknown>; required: string[] }[];
+    properties: Record<string, { items: { anyOf: { properties: Record<string, unknown>; required: string[] }[] } }>;
+  }>;
+  for (const name of ["CanonicalRecord", "RevisionConflict", "Changes"]) {
+    const variants = name === "Changes" ? schemas[name]!.properties.items!.items.anyOf : schemas[name]!.anyOf!;
+    const vault = variants.find((variant) => (variant.properties.entity as { enum: string[] }).enum[0] === "vault")!;
+    expect(vault.properties.record).toEqual({ $ref: "#/components/schemas/NullableVaultRecord" });
+    expect(schemas.NullableVaultRecord!.type).toEqual(["object", "null"]);
+    expect(vault.required.includes("record")).toBe(name !== "CanonicalRecord");
+  }
+  for (const name of ["NullableTranscriptRecord", "TranscriptContent"]) {
+    expect(schemas[name]!.properties.transcript).toEqual({ $ref: "#/components/schemas/NullableTranscript" });
+  }
+  expect(schemas.NullableTranscript!.type).toEqual(["object", "null"]);
 });
 
 it("audits the concrete installed Better Auth endpoints and MCP tools", async () => {

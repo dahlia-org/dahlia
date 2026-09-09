@@ -16,6 +16,8 @@ File は JSON 予約、octet-stream の PUT、Transaction による公開の順�
 
 `pnpm openapi:generate` は DB・認証情報なしで OpenAPI 3.1、Web の型と呼び出し関数、監査台帳を再生成する。同じ JSON を `/openapi.json` と npm package の `./openapi.json` で公開する。Web は openapi-typescript/openapi-fetch、Desktop は Apple swift-openapi-generator/runtime/urlsession を使う。Swift の生成先は独立した DahliaServerAPI target。生成物の nullable/date 再エンコードで hash や明示 null を変えないため、既存同期層では生成型による検証後も元の JSON bytes を保持する。
 
+共通エラー応答は `components.responses`、同期結果・競合・変更一覧のレコード DTO は `components.schemas` を参照し、操作ごとの重複展開を避ける。nullable な DTO は `type: [object, null]` の共通定義を参照し、削除済みレコードの明示 null と省略の違いを維持する。削減は生成元で行い、公開 JSON と生成クライアントは同じ契約から再生成する。
+
 Dahlia のエラーは RFC 9457 `application/problem+json` と安定した code、競合情報を返す。OAuth/Better Auth、OpenAI Gateway、MCP は元プロトコルを保持する。委譲はワイルドカードを OpenAPI 対応と見なさず、[全操作台帳](../../architecture/server-api-audit.md) に具体的な操作・提供条件を記録する。
 
 CI は台帳と登録ルート、operationId、再生成差分、生成クライアントによる実 Server 呼び出し、実 JSON 応答の Zod 契約適合を検証する。Swift build/test/lint、Node/Worker のテスト・build・package 検証を行う。これらは本番 deployment や実機での録音復旧確認を代替しない。

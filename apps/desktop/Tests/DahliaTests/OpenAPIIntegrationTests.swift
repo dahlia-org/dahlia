@@ -9,6 +9,28 @@
     @testable import Dahlia
 
     struct SyncAPIMiddlewareTests {
+        @Test(arguments: [false, true])
+        func sharedNullableDTOsPreserveRecordsAndTombstones(deleted: Bool) throws {
+            let id = "019f0d36-0520-7000-8000-000000000001"
+            let record = deleted ? "null" : """
+            {"vaultId":"\(id)","name":"Vault","revision":1,"createdAt":"2026-09-09T00:00:00Z","updatedAt":"2026-09-09T00:00:00Z"}
+            """
+            let expected = deleted ? nil : id
+            let canonical = try SyncJSON.decoder.decode(Components.Schemas.CanonicalRecord.self, from: Data("""
+            {"entity":"vault","id":"\(id)","revision":1,"record":\(record)}
+            """.utf8))
+            #expect(try #require(canonical.value1).record?.vaultId == expected)
+            let conflict = try SyncJSON.decoder.decode(Components.Schemas.RevisionConflict.self, from: Data("""
+            {"entity":"vault","id":"\(id)","clientBaseRevision":0,"serverRevision":1,"record":\(record)}
+            """.utf8))
+            #expect(try #require(conflict.value1).record?.vaultId == expected)
+            let changes = try SyncJSON.decoder.decode(Components.Schemas.Changes.self, from: Data("""
+            {"items":[{"sequence":1,"vaultId":"\(id)","entity":"vault","entityId":"\(id)","action":"upsert","revision":1,
+            "transactionId":"\(id)","record":\(record)}],"cursor":"1","highWaterCursor":"1","hasMore":false}
+            """.utf8))
+            #expect(try #require(changes.items.first?.value1).record?.vaultId == expected)
+        }
+
         @Test
         func refreshesAuthenticationOnceAndRecreatesTheOperation() async throws {
             let refreshes = Mutex<[Bool]>([])

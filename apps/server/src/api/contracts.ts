@@ -192,6 +192,7 @@ export function openapiDocument(): ReturnType<OpenAPIHono["getOpenAPI31Document"
   app.openAPIRegistry.registerComponent("securitySchemes", "browserSession", { type: "apiKey", in: "cookie", name: "__Secure-better-auth.session_token", description: "Better Auth session (development uses better-auth.session_token). Mutations require the configured Origin." });
   app.openAPIRegistry.registerComponent("securitySchemes", "trustedProxy", { type: "apiKey", in: "header", name: "X-Forwarded-Email", description: "Header auth mode only; configured identity header from a trusted proxy. Direct client-supplied identity is forbidden." });
   const document = app.getOpenAPI31Document({ openapi: "3.1.0", info: { title: "Dahlia Server API", version: "1.0.0", description: "Dahlia-owned HTTP API. OAuth, OpenAI Responses, and MCP preserve their native protocols; see the API audit for delegated operations." }, servers: [{ url: "/" }] });
+  const sharedResponses: NonNullable<NonNullable<typeof document.components>["responses"]> = {};
   for (const path of Object.values(document.paths ?? {})) for (const [method, value] of Object.entries(path ?? {})) {
     if (!["get", "post", "put", "patch", "delete", "head"].includes(method) || typeof value !== "object" || value === null || !("operationId" in value)) continue;
     const operation = value as NonNullable<typeof document.paths>[string]["get"];
@@ -208,7 +209,13 @@ export function openapiDocument(): ReturnType<OpenAPIHono["getOpenAPI31Document"
         else if (type === "application/json" && media.example === undefined) media.example = schemaExample(media.schema, document.components?.schemas ?? {});
         else if (type === "text/event-stream") media.example = 'event: invalidation\ndata: {"cursor":"opaque-cursor"}\n\n';
       }
+      if (status in problemResponses && operation.responses) {
+        const name = `Problem${status}`;
+        sharedResponses[name] = operation.responses[status] as (typeof sharedResponses)[string];
+        operation.responses[status] = { $ref: `#/components/responses/${name}` };
+      }
     }
   }
+  document.components = { ...document.components, responses: sharedResponses };
   return document;
 }

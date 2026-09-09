@@ -52,7 +52,8 @@ export const summary = z.object({ id, meetingId: id, version: integer, title: z.
 const summaryProjection = z.object({ id: id.nullable(), meetingId: id, version: integer.nullable(), title: z.string().nullable(),
   createdAt: date.nullable(), document: z.string().nullable().optional(), ...contentFields,
 }).openapi("SummaryProjection");
-const transcriptProjection = z.object({ meetingId: id, transcript: z.object(transcript.shape).nullable(), contentCount: integer.optional(), ...contentFields }).openapi("TranscriptProjection");
+const nullableTranscript = z.object(transcript.shape).nullable().openapi("NullableTranscript");
+const transcriptProjection = z.object({ meetingId: id, transcript: nullableTranscript, contentCount: integer.optional(), ...contentFields }).openapi("TranscriptProjection");
 export const audio = z.object({ fileId: id.optional(), contentType: z.literal("audio/mp4"), size: integer, checksum: z.string().nullable(),
   contentUrl: z.string(), manifest: recordingManifestSchema.optional(),
 }).openapi("RecordingAudio");
@@ -62,13 +63,17 @@ export const recording = z.object({ id: integer, startedAt: date, endedAt: date,
 const recordingProjection = recording.extend({ recordingNumber: integer, sessionId: id, meetingId: id, vaultId: id, revision: integer }).openapi("RecordingProjection");
 const canonicalSchemas = { vault, project, meeting, summary: summaryProjection, transcript: transcriptProjection, file,
   meeting_file: meetingFile, recording: recordingProjection, meeting_event: z.object({}) };
-export const canonicalRecord = z.union(Object.entries(canonicalSchemas).map(([entity, record]) => z.object({
-  entity: z.literal(entity), id, revision: integer.nullable(), record: z.object(record.shape).nullable().optional(),
+// Name the nullable object itself: Swift cannot generate the equivalent anyOf([$ref, null]).
+const nullableCanonicalSchemas = Object.fromEntries(Object.entries(canonicalSchemas).map(([entity, record]) => [
+  entity, z.object(record.shape).nullable().openapi(`Nullable${entity.split("_").map((part) => part[0]!.toUpperCase() + part.slice(1)).join("")}Record`),
+]));
+export const canonicalRecord = z.union(Object.entries(nullableCanonicalSchemas).map(([entity, record]) => z.object({
+  entity: z.literal(entity), id, revision: integer.nullable(), record: record.optional(),
 }))).openapi("CanonicalRecord");
 export const syncEntity = z.enum(["vault", "project", "meeting", "summary", "transcript", "file", "meeting_file", "recording", "meeting_event"]);
-export const conflict = z.union(Object.entries({ ...canonicalSchemas, meeting_event: z.object({}) }).map(([entity, record]) => z.object({
+export const conflict = z.union(Object.entries(nullableCanonicalSchemas).map(([entity, record]) => z.object({
   entity: z.literal(entity), id, clientBaseRevision: integer.nullable(), serverRevision: integer.nullable(),
-  record: z.object(record.shape).nullable(),
+  record,
 }))).openapi("RevisionConflict");
 export const problem = z.object({ type: z.string(), title: z.string(), status: z.number().int(), code: z.string(),
   detail: z.string().optional(), conflicts: z.array(conflict).optional(), operationId: id.optional(),
@@ -82,10 +87,10 @@ export const receipt = z.object({ id, status: z.literal("committed"), cursor, re
   records: z.array(canonicalRecord),
 }).openapi("TransactionReceipt");
 export const resolution = z.union([receipt, z.object({ id, status: z.literal("unknown") })]).openapi("TransactionResolution");
-export const changes = z.object({ items: z.array(z.union(Object.entries({ ...canonicalSchemas, meeting_event: z.object({}) }).map(([entity, record]) => z.object({
+export const changes = z.object({ items: z.array(z.union(Object.entries(nullableCanonicalSchemas).map(([entity, record]) => z.object({
   sequence: integer, vaultId: id, entity: z.literal(entity), entityId: id,
   action: z.enum(["upsert", "delete", "reset"]), revision: integer.nullable(), transactionId: id,
-  record: z.object(record.shape).nullable(),
+  record,
 })))), cursor, highWaterCursor: cursor, hasMore: z.boolean() }).openapi("Changes");
 export const snapshot = page(canonicalRecord).extend({ startCursor: cursor }).openapi("Snapshot");
 const envelope = { formatVersion: z.literal(1), version: integer, entityId: id, present: z.boolean(), count: integer, byteCount: integer, sha256: z.string(), nextCursor: cursor.nullable().optional() };
@@ -93,7 +98,7 @@ export const latestSummary = z.object({ ...envelope, entity: z.literal("summary"
   record: summary.partial().extend({ title: z.string().nullable(), document: z.string().nullable(), createdAt: date.nullable() }).optional(),
 }).openapi("SummaryContent");
 export const transcriptContent = z.object({ ...envelope, entity: z.literal("transcript"), syncRevision: integer,
-  transcript: z.object(transcript.shape).nullable(), items: z.array(segment).optional(),
+  transcript: nullableTranscript, items: z.array(segment).optional(),
 }).openapi("TranscriptContent");
 export const summaryJob = z.object({ id, method: z.enum(["transcript", "audio"]), input: summaryInputSchema.optional(),
   stage: z.enum(["transcribing", "summarizing", "generating", "saving"]).nullable().optional(),
